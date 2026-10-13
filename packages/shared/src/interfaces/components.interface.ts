@@ -448,6 +448,9 @@ export interface SidebarMenuItem {
   icon?: string;
   /** Router link path */
   routerLink?: string;
+  activeOnSubpaths?: boolean;
+  /** Further paths that also highlight this item, matched with the same options as `routerLink` */
+  activeAliases?: string[];
   /** External URL */
   url?: string;
   /** Target for external links */

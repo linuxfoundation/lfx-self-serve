@@ -91,12 +91,27 @@ export type RedditCallToAction = (typeof REDDIT_CALL_TO_ACTIONS)[number];
 /** One of the concrete video optimization goals Reddit accepts — see `REDDIT_VIDEO_GOALS`. */
 export type RedditVideoGoal = (typeof REDDIT_VIDEO_GOALS)[number];
 
+/** The three inputs needed to author a promoted post, once a creator has decided to author one. */
+export interface RedditAuthoredPostInput {
+  imageUrl: string;
+  headline: string;
+  callToAction: RedditCallToAction;
+}
+
 export interface RedditObjectiveParams {
   readonly redditObjective: string;
   readonly bidType: 'CPM' | 'CPC';
   /** Reserved for future manual-bid support; unused while campaign strategy is BIDLESS. */
   readonly bidValue: number;
-  readonly optimizationGoal: string;
+  /**
+   * The goal this objective always optimizes toward, where it has one.
+   *
+   * Optional because `video_views` does not: Reddit has no bare `VIDEO_VIEWS` goal, so the concrete
+   * goal is resolved per campaign from the request's `videoGoal` rather than baked into the table.
+   * Read it through `resolveRedditOptimizationGoal`, never directly — the direct read is what sent
+   * an unacceptable goal to Reddit (#3449).
+   */
+  readonly optimizationGoal?: string;
   readonly viewThroughConversionType?: string;
 }
 
@@ -1056,15 +1071,19 @@ export interface RedditBriefCopy {
  * alone: the controller forwards `redditConfig` verbatim, so a field named to match a tag there
  * needs no server-layer mapping here. Every field below is spelled to match one.
  *
- * ONLY the campaign-service arm honours `imageUrl`, `callToAction`, `conversionPixelId` and
- * `videoGoal`. The LEGACY vendor-direct creator (`server/services/reddit-ads.service.ts`) reads
- * `objective` and `postUrl` and nothing else, and it is what serves a create while the three-flag
- * create cutover is dark — the deployment state `canCreateDemandGen` (`campaign-service.service.ts`)
- * documents as the most likely one in effect. Sending any of the four on the legacy arm is
- * therefore silently dropped: the operator supplies creative and gets a campaign with no ad. Any
- * control that populates them has to gate on which arm will serve, the way `demandGenEnabled`
- * already reports the mirror-image case (there legacy has the capability and campaign-service does
- * not), or extend the legacy creator to match.
+ * BOTH creators honour `objective`, `postUrl`, `imageUrl` and `callToAction`. The LEGACY
+ * vendor-direct creator (`server/services/reddit-ads.service.ts`) is what serves a create while the
+ * three-flag create cutover is dark — the deployment state `canCreateDemandGen`
+ * (`campaign-service.service.ts`) documents as the most likely one in effect — and #3432 extended it
+ * to author the promoted post from `imageUrl` the way campaign-service does, so the creative fields
+ * no longer depend on which arm serves. `redditCreativeEnabled` reports that, and reports it as a
+ * capability rather than a literal because nothing in a create request tells the client which arm
+ * will serve.
+ *
+ * `videoGoal` joined that list in #3449 — both creators now read it, and both refuse a
+ * `video_views` create without it rather than sending Reddit an optimization goal it does not have.
+ * `conversionPixelId` is still campaign-service only: the legacy creator does not read it and
+ * sending it there is silently dropped, so it matters only AFTER the cutover (#3484).
  */
 export interface RedditCampaignCreateRequest {
   eventName: string;
@@ -1081,14 +1100,21 @@ export interface RedditCampaignCreateRequest {
   variants: RedditAdVariant[];
   project?: string;
   objective?: RedditObjective;
-  /** An existing Reddit post to promote. Set it and upstream ignores `imageUrl`/`callToAction`. */
+  /** An existing Reddit post to promote. Set it and BOTH creators ignore `imageUrl`/`callToAction`. */
   postUrl?: string;
   /**
-   * Image for a post upstream authors itself. The author-a-post path: without either this or
+   * Image for a post the creator authors itself. The author-a-post path: without either this or
    * `postUrl` the campaign is created with no ad and cannot serve.
+   *
+   * Must be a public absolute http(s) URL with no embedded credentials — Reddit ingests and
+   * re-hosts it at post-create time, so there is no upload step and a URL it cannot fetch fails the
+   * create. Both arms refuse a bad one before anything upstream is created.
    */
   imageUrl?: string;
-  /** Button label on an authored post. Empty resolves upstream to `DEFAULT_REDDIT_CALL_TO_ACTION`. */
+  /**
+   * Button label on an authored post, matched case-insensitively against `REDDIT_CALL_TO_ACTIONS`.
+   * Empty resolves on either arm to `DEFAULT_REDDIT_CALL_TO_ACTION`.
+   */
   callToAction?: RedditCallToAction;
   /**
    * Overrides the ad account's own conversion pixel for this campaign.
@@ -1106,11 +1132,12 @@ export interface RedditCampaignCreateRequest {
    */
   conversionPixelId?: string;
   /**
-   * Required by upstream for, and only for, the `video_views` objective.
+   * Required by BOTH creators for, and only for, the `video_views` objective — Reddit has no bare
+   * `VIDEO_VIEWS` goal, so a video-view campaign has to name a concrete duration goal and neither
+   * arm can invent one. Read it through `resolveRedditOptimizationGoal` (#3449).
    *
-   * Declared for the wire contract only — nothing populates it either, which is precisely why
-   * `REDDIT_SELECTABLE_OBJECTIVES` withholds `video_views`: offering that objective without this
-   * field would offer a create upstream always refuses.
+   * No control populates it, which is why `REDDIT_SELECTABLE_OBJECTIVES` withholds `video_views`:
+   * offering that objective with no way to set this field would offer a create both arms refuse.
    */
   videoGoal?: RedditVideoGoal;
 }
@@ -3063,21 +3090,20 @@ export interface CampaignListResult {
    * Whether a Reddit promoted post AUTHORED from `imageUrl`/`callToAction` will actually be
    * created.
    *
-   * Narrower than its Google sibling, because the two arms diverge per field rather than
-   * wholesale. `postUrl` — promote an EXISTING post — is read by both creators: the legacy path
-   * extracts the post id and creates the ad from it (`reddit-ads.service.ts`), exactly as
-   * campaign-service does. So `postUrl` is NOT gated by this and must stay offered whatever the
-   * cutover state; gating it would withhold a control that works today.
+   * Unlike its Google sibling this is NOT the cutover gate, and the difference is in the creators
+   * rather than in how the question is asked. `postUrl` — promote an EXISTING post — was always
+   * read by both: the legacy path extracts the post id and creates the ad from it
+   * (`reddit-ads.service.ts`), exactly as campaign-service does. The author-a-post path — no
+   * `postUrl`, an `imageUrl`, a new promoted post carrying `callToAction` — was campaign-service's
+   * alone (`internal/platform/reddit/client.go`) until #3432 gave the legacy creator the same
+   * capability. Both arms now author the post, so the answer is a constant `true`
+   * (`canCreateRedditCreative` in `campaign-service.service.ts`).
    *
-   * What only campaign-service has is the author-a-post path: with no `postUrl` and an
-   * `imageUrl`, it composes and submits a new promoted post carrying `callToAction`
-   * (`internal/platform/reddit/client.go`). The legacy creator reads neither key, so with the
-   * cutover dark an operator who supplies an image gets a campaign and ad group with NO ad, and
-   * the create still reports success — the same silent discard `googleCreativeEnabled` exists to
-   * prevent.
-   *
-   * This is therefore `cutoverOwnsCreate()` and nothing else. Read the same way as the three
-   * above and modelled the same way on the client (`boolean | null`, `null` for unanswered).
+   * Still carried on the wire, and still a capability rather than a literal on the client, because
+   * nothing in a create request says which arm will serve — this is how a third creator, or a
+   * legacy regression, would report itself. Read the same way as the three above and modelled the
+   * same way on the client (`boolean | null`, `null` for unanswered), so a deployment that has not
+   * answered yet still withholds the controls rather than guessing.
    */
   redditCreativeEnabled: boolean;
 }

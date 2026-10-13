@@ -11,7 +11,6 @@
 
 import {
   ICP_CONTRACT_ID,
-  ICP_DIMENSION_FIELDS,
   ICP_DISQUALIFIER_STATES,
   ICP_FIT_WARMTH_BAND,
   ICP_FORM_PREAMBLE_LINES,
@@ -22,13 +21,14 @@ import {
   ICP_INFERRED_DRAFT_LABEL,
   ICP_INTAKE_ANSWERS_MAX,
   ICP_INTAKE_ANSWERS_MIN,
+  ICP_INTAKE_MODES,
   ICP_ISO_TIMESTAMP_REGEX,
   ICP_KEY_PREFIX,
   ICP_KIND,
   ICP_MAX_DOCUMENT_BYTES,
   ICP_MIN_DOCUMENT_LENGTH,
-  ICP_PERSONA_FIELDS,
   ICP_PERSONAS_PER_ICP_BAND,
+  ICP_PERSONAS_TOTAL_BAND,
   ICP_PROJECT_SLUG_REGEX,
   ICP_PROJECT_UID_REGEX,
   ICP_Q_GITHUB_URL,
@@ -40,7 +40,7 @@ import {
   ICP_REVISED_INTAKE_FEEDBACK,
   ICP_SHA256_REGEX,
 } from '../constants/icp.constants';
-import { IcpEnvelope, IcpFormPayload, IcpFormPayloadOptions, IcpStructure, IcpValidationResult } from '../interfaces/icp.interface';
+import { IcpEnvelope, IcpFormPayload, IcpFormPayloadOptions, IcpIntakeMode, IcpStructure, IcpValidationResult } from '../interfaces/icp.interface';
 import { extractMktgEnvelopeCandidates } from './mktg-envelope.utils';
 
 /**
@@ -296,15 +296,15 @@ export function findMissingIcpHeadings(documentMarkdown: string): string[] {
 /**
  * Structure gates G1–G6 (contract §1a), re-run BFF-side over the envelope's
  * own `structure` spine. Returns human-readable violations (empty = pass),
- * mirroring the agent wrapper's `structureViolations`:
+ * mirroring the agent wrapper's `structureViolations` (0.4.0 re-pin):
  *
- * - G1 — 1–2 ICPs, each with 2–3 personas;
+ * - G1 — 1–2 ICPs, at least one persona under each, 4–9 personas in total;
  * - G2 — 4–6 fit/warmth attributes;
  * - G3 — every label / persona title / attribute appears verbatim inside
  *   `document_markdown` (the document is the single source);
  * - G4 — ICP labels unique, persona titles unique across all ICPs;
- * - G5 — the 5 Velocity Engine ICP dimension names and the 12 persona field
- *   names each appear in the document;
+ * - G5 — REMOVED in the 0.4.0 re-pin: the Velocity Engine field-name
+ *   alignment gate is gone (0.4.0 retired the twelve-field persona set);
  * - G6 — an unconfirmed disqualifier set is labelled an "inferred draft".
  *
  * These are the wrapper's own deterministic gates, so an envelope that really
@@ -325,6 +325,12 @@ export function findIcpStructureViolations(structure: IcpStructure, documentMark
         `G1: ICP ${JSON.stringify(icp.label)} has ${icp.personas.length} personas — the contract requires ${ICP_PERSONAS_PER_ICP_BAND.min}-${ICP_PERSONAS_PER_ICP_BAND.max}`
       );
     }
+  }
+  const totalPersonas = structure.icps.reduce((count, icp) => count + icp.personas.length, 0);
+  if (totalPersonas < ICP_PERSONAS_TOTAL_BAND.min || totalPersonas > ICP_PERSONAS_TOTAL_BAND.max) {
+    violations.push(
+      `G1: ${totalPersonas} personas in total — the contract requires ${ICP_PERSONAS_TOTAL_BAND.min}-${ICP_PERSONAS_TOTAL_BAND.max} across all ICPs`
+    );
   }
 
   const attributes = structure.fit_warmth_attributes;
@@ -358,12 +364,9 @@ export function findIcpStructureViolations(structure: IcpStructure, documentMark
     violations.push('G4: persona titles must be unique across all ICPs');
   }
 
-  const haystack = documentMarkdown.toLowerCase();
-  const missingFields = [...ICP_DIMENSION_FIELDS, ...ICP_PERSONA_FIELDS].filter((field) => !haystack.includes(field.toLowerCase()));
-  if (missingFields.length > 0) {
-    violations.push(`G5: document_markdown is missing Velocity Engine field names: ${missingFields.join('; ')}`);
-  }
+  // G5 removed (0.4.0 re-pin): no Velocity Engine field-name alignment gate.
 
+  const haystack = documentMarkdown.toLowerCase();
   if (structure.disqualifiers === 'inferred_draft' && !haystack.includes(ICP_INFERRED_DRAFT_LABEL)) {
     violations.push(`G6: disqualifiers are an inferred draft, so document_markdown must label them explicitly as an "${ICP_INFERRED_DRAFT_LABEL}"`);
   }
@@ -422,8 +425,16 @@ export function validateIcpEnvelope(candidate: unknown): IcpValidationResult {
   }
 
   errors.push(...validateStructure(envelope.structure, documentMarkdown));
-  errors.push(...validateInputs(envelope.inputs));
-  errors.push(...validateIntake(envelope.intake));
+  const inputsErrors = validateInputs(envelope.inputs);
+  const intakeErrors = validateIntake(envelope.intake);
+  errors.push(...inputsErrors, ...intakeErrors);
+
+  // The cross-field guard reads both records, so it only runs once both shapes
+  // are known-good — the agent's own zod `superRefine` behaves the same way,
+  // and a shape error already explains why the envelope was rejected.
+  if (inputsErrors.length === 0 && intakeErrors.length === 0) {
+    errors.push(...validateEmptyIntakeLog(envelope.intake as IcpEnvelope['intake'], envelope.inputs as IcpEnvelope['inputs']));
+  }
 
   return { valid: errors.length === 0, errors };
 }
@@ -498,7 +509,7 @@ function validateInputs(inputs: unknown): string[] {
   }
   const record = inputs as Record<string, unknown>;
   const errors: string[] = [];
-  for (const key of ['brand_kit_provided', 'message_foundation_provided', 'live_membership_data_provided']) {
+  for (const key of ['brand_kit_provided', 'message_foundation_provided', 'live_membership_data_provided', 'existing_documents_provided']) {
     if (typeof record[key] !== 'boolean') {
       errors.push(`inputs.${key} must be a boolean`);
     }
@@ -509,7 +520,26 @@ function validateInputs(inputs: unknown): string[] {
       errors.push(`inputs.${key} must be 64 lowercase hex characters when present`);
     }
   }
+  const count = record['existing_documents_count'];
+  if (count !== undefined && (typeof count !== 'number' || !Number.isInteger(count) || count < 1)) {
+    errors.push('inputs.existing_documents_count must be an integer >= 1 when present');
+  }
   return errors;
+}
+
+/**
+ * The agent's cross-field guard (0.4.0): an EMPTY interview log is legitimate
+ * only when there was no interviewee (`prefill`) or the run was grounded in
+ * attached existing documents. A form or conversational run with no documents
+ * must carry the interview answers — the log is the document's provenance
+ * record. Expects records that already passed `validateIntake` and
+ * `validateInputs`; the caller skips this gate otherwise.
+ */
+function validateEmptyIntakeLog(intake: IcpEnvelope['intake'], inputs: IcpEnvelope['inputs']): string[] {
+  if (intake.answers.length > 0 || intake.mode === 'prefill' || inputs.existing_documents_provided) {
+    return [];
+  }
+  return ['intake.answers may be empty only in a prefill run or when existing documents were provided'];
 }
 
 /** Schema gates for the envelope's verbatim intake log. */
@@ -520,8 +550,8 @@ function validateIntake(intake: unknown): string[] {
   const record = intake as Partial<IcpEnvelope['intake']>;
   const errors: string[] = [];
 
-  if (record.mode !== 'form' && record.mode !== 'conversational') {
-    errors.push('intake.mode must be "form" or "conversational"');
+  if (!ICP_INTAKE_MODES.includes(record.mode as IcpIntakeMode)) {
+    errors.push(`intake.mode must be one of: ${ICP_INTAKE_MODES.join(', ')}`);
   }
   if (typeof record.completed_at !== 'string' || !ICP_ISO_TIMESTAMP_REGEX.test(record.completed_at) || Number.isNaN(new Date(record.completed_at).getTime())) {
     errors.push('intake.completed_at must be an ISO-8601 timestamp');

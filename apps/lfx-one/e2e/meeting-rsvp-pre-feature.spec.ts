@@ -145,7 +145,6 @@ test.describe('Meeting RSVP UI — pre-feature vs invite-response enabled (GH-19
     await expect(organizerCard.getByTestId('rsvp-details-invitee-count')).toBeVisible();
     await expect(organizerCard.getByTestId('rsvp-details-breakdown')).toHaveCount(0);
     await expect(organizerCard.getByTestId('meeting-rsvp-button-yes')).toHaveCount(0);
-    await expect(organizerCard.getByTestId('toggle-rsvp-view-button')).toHaveCount(0);
 
     await expect(invitedCard.getByTestId('meeting-rsvp-button-yes')).toHaveCount(0);
 
@@ -172,7 +171,7 @@ test.describe('Meeting RSVP UI — pre-feature vs invite-response enabled (GH-19
     await expect(organizerCard.getByTestId('rsvp-details-card')).toBeVisible();
     await expect(organizerCard.getByTestId('rsvp-details-breakdown')).toBeVisible();
     await expect(organizerCard.getByTestId('rsvp-details-invitee-count')).toHaveCount(0);
-    await expect(organizerCard.getByTestId('toggle-rsvp-view-button')).toBeVisible();
+    await expect(organizerCard.getByTestId('meeting-rsvp-button-yes')).toBeVisible();
 
     await invitedCard.getByTestId('meeting-rsvp-button-yes').scrollIntoViewIfNeeded();
     await expect(invitedCard.getByTestId('meeting-rsvp-button-yes')).toBeVisible();

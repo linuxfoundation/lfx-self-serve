@@ -208,6 +208,7 @@ export class MailingListTableComponent {
           viewCommands: getMailingListCommands(mailingList),
           linkQueryParams: getMailingListLinkQueryParams(mailingList),
           groupsIoUrl: getMailingListGroupsIoUrl(mailingList),
+          isMember: joinedUids.has(mailingList.uid),
           canJoin: !stillLoading && !membershipUnknown && mailingList.audience_access === MailingListAudienceAccess.PUBLIC && !joinedUids.has(mailingList.uid),
           mySubscriptionLabel: myDeliveryMode ? this.deliveryModeLabels[myDeliveryMode] : 'Subscribed',
         };

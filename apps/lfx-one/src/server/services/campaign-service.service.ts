@@ -419,6 +419,29 @@ function canCreateDemandGen(): boolean {
 }
 
 /**
+ * Whether this deployment can create a Reddit campaign from an image rather than an existing post.
+ *
+ * Constant `true`, and the constant is the point: BOTH creators author the promoted post from
+ * `imageUrl` + `callToAction` now. campaign-service always did (`CreateCampaign`); the legacy
+ * vendor-direct creator gained it in #3432 (`reddit-ads.service.ts`, `createRedditPromotedPost`),
+ * which is what makes the answer independent of the cutover.
+ *
+ * It stays a derived capability rather than a literal at the two call sites because the client
+ * cannot infer it — nothing in a create request says which arm will serve, and the controls this
+ * answer gates are the difference between a campaign that can serve and one that cannot. A flag
+ * here again is what a THIRD creator, or a legacy regression, would look like.
+ *
+ * Deliberately NOT `cutoverOwnsCreate()`, which is what it was while only one arm honoured the
+ * fields: reporting that now withholds the image and CTA controls on a deployment that handles
+ * them perfectly well, which is the same working-option-hidden defect `canCreateDemandGen`
+ * documents in the mirror-image direction. `googleCreativeEnabled` keeps the cutover gate because
+ * the legacy Google creator did NOT gain the matching capability.
+ */
+function canCreateRedditCreative(): boolean {
+  return true;
+}
+
+/**
  * Whether the campaign-service create path is the one that will serve a create.
  *
  * All THREE flags, because a partial set is equivalent to "cutover off" in `createCampaigns` and
@@ -512,7 +535,7 @@ export class CampaignServiceClient {
         demandGenEnabled: canCreateDemandGen(),
         googleChannelsEnabled: canCreateGoogleChannels(),
         googleCreativeEnabled: cutoverOwnsCreate(),
-        redditCreativeEnabled: cutoverOwnsCreate(),
+        redditCreativeEnabled: canCreateRedditCreative(),
       };
     }
 
@@ -565,7 +588,7 @@ export class CampaignServiceClient {
       demandGenEnabled: canCreateDemandGen(),
       googleChannelsEnabled: canCreateGoogleChannels(),
       googleCreativeEnabled: cutoverOwnsCreate(),
-      redditCreativeEnabled: cutoverOwnsCreate(),
+      redditCreativeEnabled: canCreateRedditCreative(),
     };
   }
 

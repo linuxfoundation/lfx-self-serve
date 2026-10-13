@@ -14,10 +14,11 @@ import { TagComponent } from '@components/tag/tag.component';
 import { Committee, COMMITTEE_LABEL } from '@lfx-one/shared';
 import { CommitteeTableRowVm } from '@lfx-one/shared/interfaces';
 import { JOIN_MODE_TOOLTIPS } from '@lfx-one/shared/constants';
-import { getGroupCommands, resolveJoinModeSeverity, resolveRoleChip, resolveTypeDisplay } from '@lfx-one/shared/utils';
+import { getCommitteeMailingListLink, getGroupCommands, resolveJoinModeSeverity, resolveRoleChip, resolveTypeDisplay } from '@lfx-one/shared/utils';
 import { JoinModeLabelPipe } from '@app/shared/pipes/join-mode-label.pipe';
 import { PlatformIconPipe } from '@app/shared/pipes/platform-icon.pipe';
 import { PlatformLabelPipe } from '@app/shared/pipes/platform-label.pipe';
+import { ValidExternalUrlPipe } from '@app/shared/pipes/valid-external-url.pipe';
 import { CommitteeService } from '@services/committee.service';
 import { PersonaService } from '@services/persona.service';
 import { committeeLeaveErrorMessage } from '@shared/utils/http-error.utils';
@@ -43,6 +44,7 @@ import { CommitteeFilterBarComponent } from '../committee-filter-bar/committee-f
     JoinModeLabelPipe,
     PlatformIconPipe,
     PlatformLabelPipe,
+    ValidExternalUrlPipe,
     EmptyStateComponent,
   ],
   templateUrl: './committee-table.component.html',
@@ -109,6 +111,7 @@ export class CommitteeTableComponent {
       ...committee,
       viewCommands: getGroupCommands(committee) ?? ['/groups', committee.uid],
       editCommands: getGroupCommands(committee, 'edit') ?? ['/groups', committee.uid, 'edit'],
+      mailingListLink: getCommitteeMailingListLink(committee),
       linkQueryParams: committee.project_slug ? { project: committee.project_slug } : null,
       join_mode: committee.join_mode ?? 'invite_only',
       joinModeSeverity: resolveJoinModeSeverity(committee.join_mode ?? 'invite_only'),
@@ -155,6 +158,10 @@ export class CommitteeTableComponent {
   }
 
   protected resetFilters(): void {
+    if (this.isMeLens()) {
+      this.resetRequested.emit();
+      return;
+    }
     this.searchForm().patchValue({ search: '', votingStatus: null, joinModeFilter: null, foundationFilter: null, projectFilter: null });
     this.foundationFilterChange.emit(null);
     this.projectFilterChange.emit(null);

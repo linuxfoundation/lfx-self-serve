@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { GoogleCreativeEitherOrRule, GoogleCreativeFieldSpec } from '../interfaces/campaign.interface';
+import { GoogleCreativeEitherOrRule, GoogleCreativeFieldSpec, RedditObjective } from '../interfaces/campaign.interface';
 import {
   isCanonicalGoogleAdsResourceId,
   CAMPAIGN_ALERT_THRESHOLDS,
@@ -28,11 +28,13 @@ import {
   GOOGLE_CREATIVE_FIELD_SPECS,
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_CREATIVE_SECTION_TITLES,
+  MAX_REDDIT_HEADLINE_LENGTH,
   META_OBJECTIVE_LABELS,
   META_OBJECTIVE_PARAMS,
   META_SELECTABLE_OBJECTIVES,
   REDDIT_CALL_TO_ACTIONS,
   REDDIT_OBJECTIVE_LABELS,
+  REDDIT_OBJECTIVE_PARAMS,
   REDDIT_SELECTABLE_OBJECTIVES,
   REDDIT_VIDEO_GOALS,
   campaignToggleAction,
@@ -40,6 +42,7 @@ import {
   isMicrosoftMatchType,
   normalizeGeoTargets,
   normalizeMicrosoftGeoTargets,
+  resolveRedditOptimizationGoal,
 } from './campaign.constants';
 
 describe('campaignToggleAction', () => {
@@ -810,6 +813,15 @@ describe('Reddit promoted-post contract', () => {
   });
 
   /**
+   * The headline cap is `maxRedditHeadlineRunes` upstream, and the only failure mode that matters
+   * is refusing a headline Reddit would have accepted — so an accidental edit DOWNWARD is the one
+   * to catch. Pinned by value because the value is copied, not derived.
+   */
+  it('keeps the headline cap at the length upstream enforces', () => {
+    expect(MAX_REDDIT_HEADLINE_LENGTH).toBe(300);
+  });
+
+  /**
    * Pinned as a whole set, not by count: Reddit has no bare `VIDEO_VIEWS` goal, so a video-view
    * campaign must name one of exactly these, and upstream rejects anything else before it creates.
    */
@@ -838,5 +850,58 @@ describe('Reddit promoted-post contract', () => {
    */
   it('seeds the picker with an objective the picker offers', () => {
     expect([...REDDIT_SELECTABLE_OBJECTIVES]).toContain(DEFAULT_REDDIT_OBJECTIVE);
+  });
+});
+
+/**
+ * One case per branch of the resolution step in `Client.CreateCampaign` upstream
+ * (`lfx-v2-campaign-service`, `internal/platform/reddit/client.go`), named for the branch it pins
+ * rather than for the rule they add up to — a branch dropped in a future edit then shows up as an
+ * absent test instead of hiding inside a passing one (#3449).
+ */
+describe('resolveRedditOptimizationGoal', () => {
+  /**
+   * The three static goals, pinned by value against upstream's `redditObjectiveParams`. Pinned
+   * rather than derived: the table is a hand-maintained copy, and a test that read the same table
+   * the resolver reads would certify whatever the table happened to say.
+   */
+  it.each([
+    ['awareness', 'IMPRESSIONS'],
+    ['traffic', 'CLICKS'],
+    ['conversions', 'PURCHASE'],
+  ] as const)('sends the static goal upstream carries for %s', (objective, goal) => {
+    expect(resolveRedditOptimizationGoal(objective)).toBe(goal);
+  });
+
+  /**
+   * The bug this function exists for: `video_views` used to carry a baked-in `VIDEO_VIEWS`, which
+   * is not a goal Reddit has. The table must stay silent so the goal can only come from the
+   * request.
+   */
+  it('leaves video_views without a static goal in the table', () => {
+    expect(REDDIT_OBJECTIVE_PARAMS.video_views.optimizationGoal).toBeUndefined();
+  });
+
+  /** Upstream trims and upper-cases before testing membership, so a lowercase goal is accepted. */
+  it.each(['VIDEO_VIEW_6S', 'video_view_15s', '  VIDEO_VIEW_6S  '])('resolves video_views from the request goal %s', (videoGoal) => {
+    expect(resolveRedditOptimizationGoal('video_views', videoGoal)).toBe(videoGoal.trim().toUpperCase());
+  });
+
+  /**
+   * Empty and absent are the live cases, not exotic ones: nothing in the Implementation tab
+   * collects a video goal yet, so every `video_views` request that reaches either creator today
+   * arrives without one. Refusing is the whole point — the alternative is a PAUSED campaign
+   * orphaned by a rejection at the ad group.
+   */
+  it.each([undefined, '', '   ', 'VIDEO_VIEWS', 'VIDEO_VIEW_30S'])('refuses video_views carrying the goal %s', (videoGoal) => {
+    expect(() => resolveRedditOptimizationGoal('video_views', videoGoal)).toThrow(/must be one of VIDEO_VIEW_6S, VIDEO_VIEW_15S/);
+  });
+
+  /**
+   * Reached only after a runtime widening — `POST /api/campaigns/create` forwards `redditConfig` without
+   * validating `objective`, so the compiler's guarantee does not hold at this boundary.
+   */
+  it('refuses an objective outside the table', () => {
+    expect(() => resolveRedditOptimizationGoal('reach' as RedditObjective)).toThrow(/Unsupported Reddit objective: reach/);
   });
 });

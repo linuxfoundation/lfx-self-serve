@@ -30,9 +30,11 @@ import type { PersistedPersonaState, PersonaType } from '@lfx-one/shared/interfa
 import { LENS_COOKIE_KEY, PERSONA_COOKIE_KEY, SELECTED_PROJECT_COOKIE_KEY } from '@lfx-one/shared/constants';
 import { expect, Page, Route, test } from '@playwright/test';
 
+import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { stubMeetingsV2Flag } from './helpers/meetings-v2-flag.helper';
 
 test.setTimeout(120_000);
+test.beforeEach(async ({ page }) => suppressCookieBanner(page));
 
 const PAGE_LOAD_TIMEOUT = 20_000;
 const ELEMENT_TIMEOUT = 10_000;
@@ -89,7 +91,7 @@ function fulfillJson(route: Route, body: unknown): Promise<void> {
 
 // Gated on env vars rather than on URL sniffing so genuine auth-flow regressions (expired
 // storageState, broken Auth0 login helper) still fail loudly when creds ARE configured.
-const AUTH_CREDS_PRESENT = !!process.env.TEST_USERNAME && !!process.env.TEST_PASSWORD;
+const AUTH_CREDS_PRESENT = !!process.env['TEST_USERNAME'] && !!process.env['TEST_PASSWORD'];
 
 function skipWhenAuthMissing(): void {
   if (!AUTH_CREDS_PRESENT) {
@@ -100,8 +102,7 @@ function skipWhenAuthMissing(): void {
 /**
  * The signed-in user's LFID comes from the SSR auth context (TransferState), not an API the test
  * can stub — so the Me-lens fixtures have to be built around whoever is actually logged in. Reads
- * it back out of the serialized state the same way the app does (`username`, then the namespaced
- * claim).
+ * it back out of serialized state with canonical LFID first, then the alias-only fallback.
  */
 async function readViewerLfid(page: Page): Promise<string | null> {
   const raw = await page.locator('#ng-state').textContent();
@@ -111,7 +112,7 @@ async function readViewerLfid(page: Page): Promise<string | null> {
   try {
     const state = JSON.parse(raw) as Record<string, { user?: Record<string, string> }>;
     const user = state['auth']?.user;
-    return user?.['username'] || user?.['https://sso.linuxfoundation.org/claims/username'] || null;
+    return user?.['https://sso.linuxfoundation.org/claims/username'] || user?.['username'] || null;
   } catch {
     return null;
   }
@@ -177,6 +178,22 @@ async function gotoMyMeetings(page: Page, buildUpcoming: (viewerLfid: string) =>
 
   await page.route('**/api/user/meetings*', (route) => fulfillJson(route, buildUpcoming(viewerLfid)));
   await page.route('**/api/user/past-meetings*', (route) => fulfillJson(route, []));
+  // Conflicting synthetic display alias proves transferred ownership follows canonical LFID.
+  await page.route(
+    (url) => url.pathname === MEETINGS_URL,
+    async (route) => {
+      const response = await route.fetch();
+      const html = await response.text();
+      const body = html.replace(/(<script[^>]*id="ng-state"[^>]*>)([\s\S]*?)(<\/script>)/, (_match, open, raw, close) => {
+        const state = JSON.parse(raw) as Record<string, { user?: Record<string, string> }>;
+        if (!state['auth']?.user?.['https://sso.linuxfoundation.org/claims/username'])
+          throw new Error('Canonical LFID is required for conflicting-claim coverage');
+        state['auth'].user['username'] = 'display-alias-e2e';
+        return open + JSON.stringify(state).replace(/</g, '\\u003c') + close;
+      });
+      await route.fulfill({ response, body });
+    }
+  );
 
   await page.goto(MEETINGS_URL, { waitUntil: 'domcontentloaded' });
   await expect(page).not.toHaveURL(/auth0\.com/);
@@ -185,7 +202,7 @@ async function gotoMyMeetings(page: Page, buildUpcoming: (viewerLfid: string) =>
   }
 }
 
-const organizerPill = (page: Page) => page.getByTestId('organizer-filter-pills').getByTestId('filter-pill-organizer');
+const organizerCheckbox = (page: Page) => page.getByTestId('organized-by-me-checkbox').getByRole('checkbox');
 const card = (page: Page, id: string) => page.locator(`#meeting-${id}`);
 
 test.describe('Meeting cards — owner shown as the organizer (GH-1673)', () => {
@@ -218,7 +235,7 @@ test.describe('Meeting cards — owner shown as the organizer (GH-1673)', () => 
     await expect(card(page, 'owned-by-viewer')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
     await expect(card(page, 'transferred-away')).toBeVisible();
 
-    await organizerPill(page).click();
+    await organizerCheckbox(page).check();
 
     // Ownership drives the filter: owned-but-not-created stays, created-but-transferred drops.
     await expect(card(page, 'owned-by-viewer')).toBeVisible();

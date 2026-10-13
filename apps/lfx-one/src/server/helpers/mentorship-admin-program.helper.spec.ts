@@ -148,7 +148,7 @@ const memberRow = (overrides: Partial<MentorshipUpstreamMemberManagementRow> = {
   email: 'ada@example.com',
   username: 'ada',
   avatar_url: 'https://img.example/ada.png',
-  status: 'active',
+  status: 'approved',
   created_on: '2026-02-03T10:00:00Z',
   updated_on: '2026-02-04T10:00:00Z',
   profile_created: true,
@@ -163,7 +163,7 @@ describe('mapMentorshipAdminMentorRow', () => {
         name: 'Ada Mentor',
         email: 'ada@example.com',
         avatarUrl: 'https://img.example/ada.png',
-        status: 'active',
+        status: 'approved',
         invitedOn: '2026-02-03',
         profileCreated: true,
       },
@@ -175,15 +175,14 @@ describe('mapMentorshipAdminMentorRow', () => {
     ['requested', 'requested'],
     ['pending', 'pending'],
     ['invited', 'invited'],
-    ['active', 'active'],
-    ['approved', 'active'],
+    ['approved', 'approved'],
     ['declined', 'declined'],
     ['withdrawn', 'withdrawn'],
   ])('reads upstream status %s as %s', (status, expected) => {
     expect(mapMentorshipAdminMentorRow(memberRow({ status }))).toMatchObject({ mentor: { status: expected }, unknownStatus: false });
   });
 
-  it.each([undefined, 'mystery', 'constructor'])('reads the unknown status %s as pending and flags it', (status) => {
+  it.each([undefined, 'active', 'mystery', 'constructor'])('reads the unknown status %s as pending and flags it', (status) => {
     expect(mapMentorshipAdminMentorRow(memberRow({ status }))).toMatchObject({ mentor: { status: 'pending' }, unknownStatus: true });
   });
 

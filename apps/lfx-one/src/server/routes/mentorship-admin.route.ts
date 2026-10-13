@@ -34,6 +34,7 @@ router.get('/programs', (req, res, next) => adminController.getPrograms(req, res
 router.get('/programs/:programId', (req, res, next) => adminController.getProgram(req, res, next));
 router.get('/programs/:programId/enroll-template', (req, res, next) => adminController.getEnrollTemplate(req, res, next));
 router.get('/programs/:programId/mentees', (req, res, next) => adminController.getProgramMentees(req, res, next));
+router.get('/programs/:programId/mentees/export', (req, res, next) => adminController.exportProgramMentees(req, res, next));
 router.get('/programs/:programId/mentors', (req, res, next) => adminController.getProgramMentors(req, res, next));
 // A read, so open while impersonating; POST only so the search, which can be an email, stays out of the logged URL.
 router.post('/programs/:programId/mentor-candidates', (req, res, next) => adminController.getMentorCandidates(req, res, next));

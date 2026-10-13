@@ -78,72 +78,59 @@ export const ICP_REQUIRED_GAP_FILL_KEY = 'business_outcome';
 // ---------------------------------------------------------------------------
 
 /**
- * Structural presence gate S1 (contract §1): Paul's template skeleton, as
- * level-2 headings. Matching is heading-prefix per line with a qualifier
- * boundary, mirroring the agent's own `missingHeadings` gate (e.g.
- * "## 2. ICP Definitions (Organization-Level)" passes).
+ * Structural presence gate S1 (contract §1): the 0.4.0 template skeleton
+ * (agent 1.1.0, marketing-os-agents PR #24, the icp agent's re-pin),
+ * as level-2 headings — Cover, the two-page Review Sheet, How to Use This
+ * Document, sections 1-6, Appendix A, Appendix B. Matching is heading-prefix
+ * per line with a qualifier boundary, mirroring the agent's own
+ * `missingHeadings` gate (e.g. "## 2. ICP Definitions (Organization-Level)"
+ * and "## Review Sheet (two pages, first after the cover)" pass). Must stay in
+ * lockstep with the agent's own REQUIRED_HEADINGS — every run fails
+ * validation otherwise.
  */
 export const ICP_REQUIRED_HEADINGS = [
   '## Cover',
+  '## Review Sheet',
   '## How to Use This Document',
   '## 1. Market Segment Overview',
   '## 2. ICP Definitions',
-  '## 3. Persona Definitions',
-  '## 4. Fit & Warmth Scoring Inputs',
-  '## 5. Messaging & Content Handoff',
+  '## 3. Personas',
+  '## 4. Fit × Warmth Scoring Rules',
+  '## 5. Regional Emphasis',
   '## 6. Validation & Review',
   '## Appendix A: Document Architecture',
-  '## Appendix B: Source Intake',
+  '## Appendix B: Inputs & Interview Record',
 ] as const;
 
 /**
- * The four level-3 subsections Paul's template specifies inside section 1.
- * Section 1.4 is present in BOTH paths: with no live member data the template
- * requires the subsection to stay and carry "TBD — needs input".
+ * The seven level-3 subsections the 0.4.0 template specifies, mirroring
+ * the agent's own REQUIRED_SUBHEADINGS: the four under section 1 (§1.4 is
+ * present in BOTH paths — with no live member data the template requires the
+ * subsection to stay and carry "TBD — needs input") and the three under
+ * section 3 (selection cues, definitions, map).
  */
 export const ICP_REQUIRED_SUBHEADINGS = [
   '### 1.1 Category & Why Now',
   '### 1.2 Competitive & Peer Landscape',
   '### 1.3 Addressable Landscape',
   '### 1.4 Current Member/Adopter Segments',
+  '### 3.1 Persona selection cues',
+  '### 3.2 Persona definitions',
+  '### 3.3 Persona map',
 ] as const;
 
-/**
- * The five ICP dimensions — Velocity Engine field names, verbatim from the
- * agent's `ICP_DIMENSION_FIELDS` (structure gate G5).
- */
-export const ICP_DIMENSION_FIELDS = [
-  'ICP',
-  'Trigger Events / Compelling Moments',
-  'Who is not an ideal customer',
-  'Customer Use Cases',
-  'Customer Pain Points',
-] as const;
-
-/**
- * The twelve persona fields, verbatim from the agent's `PERSONA_FIELDS`
- * (structure gate G5).
- */
-export const ICP_PERSONA_FIELDS = [
-  'Title',
-  'Nickname',
-  'Role',
-  'Goals',
-  'Challenges',
-  'Works for',
-  'Other Roles Performed',
-  'Trusted Sources',
-  'Key Responsibilities',
-  'Statements to share with the boss',
-  'Features and Persona Benefits',
-  'Example Use Cases',
-] as const;
-
-/** Gate G1 — Paul's dual-audience default, collapsible to one ICP. */
+/** Gate G1 — the template's dual-audience default, collapsible to one ICP. */
 export const ICP_ICPS_BAND = { min: 1, max: 2 } as const;
 
-/** Gate G1 — "2-3 personas per ICP". */
-export const ICP_PERSONAS_PER_ICP_BAND = { min: 2, max: 3 } as const;
+/**
+ * Gate G1 — personas per ICP: at least one under each ICP; the per-ICP
+ * ceiling is the total ceiling (0.4.0 retired the old 2-3-per-ICP cap with
+ * the template's restructured persona section).
+ */
+export const ICP_PERSONAS_PER_ICP_BAND = { min: 1, max: 9 } as const;
+
+/** Gate G1 — the 0.4.0 template's rule: 4-9 personas IN TOTAL across all ICPs, each on the fixed eleven-field template. */
+export const ICP_PERSONAS_TOTAL_BAND = { min: 4, max: 9 } as const;
 
 /** Gate G2 — 4-6 attributes an actual contact or org can be scored against. */
 export const ICP_FIT_WARMTH_BAND = { min: 4, max: 6 } as const;
@@ -157,8 +144,19 @@ export const ICP_INFERRED_DRAFT_LABEL = 'inferred draft';
 /** Minimum document length (chars) per the contract schema. */
 export const ICP_MIN_DOCUMENT_LENGTH = 1000;
 
-/** Intake log size bounds per the contract schema (variable-length interview). */
-export const ICP_INTAKE_ANSWERS_MIN = 3;
+/**
+ * How the intake answers were collected. `prefill` is the 0.4.0 batch mode —
+ * documents and no interviewee — in which the interview log may be empty.
+ */
+export const ICP_INTAKE_MODES = ['form', 'conversational', 'prefill'] as const;
+
+/**
+ * Intake log size bounds per the contract schema (variable-length interview).
+ * The floor is 0 since 0.4.0: a prefill run, or a run grounded in attached
+ * existing documents, legitimately logs no interview answers (the validator
+ * applies the agent's cross-field guard for every other run).
+ */
+export const ICP_INTAKE_ANSWERS_MIN = 0;
 export const ICP_INTAKE_ANSWERS_MAX = 8;
 
 /** Project slug pattern (lowercase kebab-case, ≤64 chars) from the contract schema. */

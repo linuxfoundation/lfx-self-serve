@@ -2,13 +2,26 @@
 // SPDX-License-Identifier: MIT
 
 import { Clipboard } from '@angular/cdk/clipboard';
-import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ApplicationRef, makeStateKey, PLATFORM_ID, signal, TransferState } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
-import { Meeting, MeetingJoinPageState, MeetingOccurrence, MeetingRegistrant, PublicMeetingProject, User } from '@lfx-one/shared/interfaces';
+import {
+  Meeting,
+  MeetingJoinPageState,
+  MeetingOccurrence,
+  MeetingRegistrant,
+  MeetingRegistrationRemovalResult,
+  MeetingRsvp,
+  PublicMeetingProject,
+  User,
+} from '@lfx-one/shared/interfaces';
+import { MeetingRsvpDetailsComponent } from '@app/modules/meetings/components/meeting-rsvp-details/meeting-rsvp-details.component';
+import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
+import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { PlausibleService } from '@services/plausible.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -41,6 +54,7 @@ describe('MeetingJoinComponent', () => {
   let getPastMeetingTranscript: ReturnType<typeof vi.fn>;
   let getPublicMeetingOccurrences: ReturnType<typeof vi.fn>;
   let removeMyMeetingRegistration: ReturnType<typeof vi.fn>;
+  let getMeetingRsvpForCurrentUser: ReturnType<typeof vi.fn>;
   let removedIds: ReturnType<typeof signal<ReadonlySet<string>>>;
   let toastAdd: ReturnType<typeof vi.fn>;
   let paramMap$: BehaviorSubject<ParamMap>;
@@ -115,7 +129,8 @@ describe('MeetingJoinComponent', () => {
     getPastMeetingParticipants = vi.fn().mockReturnValue(of([]));
     getPastMeetingTranscript = vi.fn().mockReturnValue(of(null));
     getPublicMeetingOccurrences = vi.fn().mockReturnValue(of({ past: [], future: [] }));
-    removeMyMeetingRegistration = vi.fn().mockReturnValue(of(undefined));
+    removeMyMeetingRegistration = vi.fn().mockReturnValue(of({ removed_registrant_ids: [], remaining_registrant_ids: [] }));
+    getMeetingRsvpForCurrentUser = vi.fn().mockReturnValue(of(null));
     removedIds = signal<ReadonlySet<string>>(new Set());
     toastAdd = vi.fn();
 
@@ -153,7 +168,7 @@ describe('MeetingJoinComponent', () => {
             markRegistrationRemoved: (id: string) => removedIds.update((ids) => new Set(ids).add(id)),
             clearRemovedRegistration: vi.fn(),
             getMeetingAttachments: vi.fn().mockReturnValue(of([])),
-            getMeetingRsvpForCurrentUser: vi.fn().mockReturnValue(of(null)),
+            getMeetingRsvpForCurrentUser,
             getMeetingRegistrants: vi.fn().mockReturnValue(of([])),
             getPastMeetingSummary,
             getPastMeetingRecording,
@@ -183,8 +198,15 @@ describe('MeetingJoinComponent', () => {
             impersonating: signal(false),
             impersonator: signal(null),
             viewerUsername: signal<string | null>('me'),
+            meetingFeedIdentity: signal('synthetic-subject\0me'),
             effectiveAvatarUrl: signal(''),
             getCurrentUserProfile: vi.fn().mockReturnValue(of(null)),
+            meetingRegistrationGeneration: vi.fn(() => 0),
+            recordConfirmedMeetingRsvp: vi.fn(),
+            clearConfirmedMeetingRsvps: vi.fn(),
+            confirmedMeetingRsvps: vi.fn(() => []),
+            refreshUserMeetings: vi.fn(),
+            isMeetingRsvpCurrent: vi.fn(() => true),
           },
         },
         { provide: ProjectContextService, useValue: { setFoundation: vi.fn() } },
@@ -1065,6 +1087,9 @@ describe('MeetingJoinComponent', () => {
       const fixture = TestBed.createComponent(MeetingJoinComponent);
       await TestBed.inject(ApplicationRef).whenStable();
       fixture.detectChanges();
+      await vi.waitFor(() => expect(fixture.componentInstance.meeting()?.id).toBe(meeting.id));
+      await TestBed.inject(ApplicationRef).whenStable();
+      fixture.detectChanges();
       return fixture;
     };
 
@@ -1116,6 +1141,49 @@ describe('MeetingJoinComponent', () => {
       expect(fixture.nativeElement.querySelector(REMOVE_BUTTON)).toBeNull();
     });
 
+    it('shows an invited organizer their response controls alongside the guest overview, without a toggle', async () => {
+      const fixture = await createFixture(buildMeeting({ organizer: true, invited: true, is_invite_responses_enabled: true }));
+
+      expect(fixture.debugElement.query(By.directive(RsvpButtonGroupComponent))).not.toBeNull();
+      expect(fixture.debugElement.query(By.directive(MeetingRsvpDetailsComponent))).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="toggle-rsvp-view-button"]')).toBeNull();
+    });
+
+    const organizerAnswer = (overrides: Partial<MeetingRsvp> = {}) =>
+      ({
+        id: 'synthetic-organizer-response',
+        meeting_id: MEETING_ID,
+        registrant_id: 'synthetic-organizer-registration',
+        response_type: 'accepted',
+        scope: 'all',
+        created_at: '2026-10-12T10:00:00Z',
+        ...overrides,
+      }) as MeetingRsvp;
+
+    it('keeps a retained organizer answer in the guest overview while the date lookup is stale', async () => {
+      const retained = organizerAnswer();
+      vi.mocked(TestBed.inject(UserService).confirmedMeetingRsvps).mockReturnValue([retained]);
+      const fixture = await createFixture(buildMeeting({ organizer: true, invited: true, is_invite_responses_enabled: true }));
+
+      expect(fixture.componentInstance.currentUserRsvp()).toBeNull();
+      expect(fixture.componentInstance.overviewConfirmedRsvps()).toEqual([retained]);
+      const overview = fixture.debugElement.query(By.directive(MeetingRsvpDetailsComponent)).componentInstance as MeetingRsvpDetailsComponent;
+      expect(overview.confirmedRsvps()).toEqual([retained]);
+    });
+
+    it('refetches the organizer answer when the viewer identity changes in place', async () => {
+      const fixture = await createFixture(buildMeeting({ organizer: true, invited: true, is_invite_responses_enabled: true }));
+      const callsBefore = getMeetingRsvpForCurrentUser.mock.calls.length;
+      const swapped = organizerAnswer({ id: 'synthetic-other-viewer-response', response_type: 'maybe' });
+      getMeetingRsvpForCurrentUser.mockReturnValue(of(swapped));
+
+      (TestBed.inject(UserService).meetingFeedIdentity as ReturnType<typeof signal<string>>).set('synthetic-other\0me');
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(getMeetingRsvpForCurrentUser.mock.calls.length).toBe(callsBefore + 1);
+      expect(fixture.componentInstance.currentUserRsvp()).toEqual(swapped);
+    });
+
     it('removes the viewer once confirmed and swaps the action for registering, even while the refetched flag is stale', async () => {
       const fixture = await createFixture(buildMeeting({ organizer: false, invited: true }));
 
@@ -1138,6 +1206,205 @@ describe('MeetingJoinComponent', () => {
 
       expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: expect.stringContaining('Leave the committee instead.') }));
       expect(fixture.nativeElement.querySelector(REMOVE_BUTTON)).not.toBeNull();
+    });
+
+    const useRealUserService = (indexedMeeting: Meeting) => {
+      TestBed.overrideProvider(HttpClient, {
+        useValue: { get: vi.fn((url: string) => of(url === '/api/user/meetings' ? [indexedMeeting] : { profile: {} })) },
+      });
+      TestBed.overrideProvider(LensService, { useValue: { activeLens: signal('me') } });
+      TestBed.overrideProvider(UserService, {
+        useFactory: () => {
+          const service = new UserService();
+          service.user.set({ sub: 'synthetic-subject', username: 'synthetic-viewer', email: 'synthetic@example.com' } as User);
+          service.authenticated.set(true);
+          return service;
+        },
+      });
+    };
+
+    it.each([true, false])('keeps only live-registration page and personal-feed history after leaving (success=%s)', async (success) => {
+      const rsvp = {
+        id: 'synthetic-response',
+        meeting_id: MEETING_ID,
+        registrant_id: 'synthetic-old-registration',
+        response_type: 'accepted',
+        scope: 'all',
+        created_at: '2026-10-12T10:00:00Z',
+      } as MeetingRsvp;
+      const meeting = buildMeeting({ organizer: false, invited: true, my_rsvp: rsvp, my_registrant_ids: [rsvp.registrant_id] });
+      useRealUserService(meeting);
+      if (success) removeMyMeetingRegistration.mockReturnValue(of({ removed_registrant_ids: [rsvp.registrant_id], remaining_registrant_ids: [] }));
+      if (!success) removeMyMeetingRegistration.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+      const fixture = await createFixture(meeting);
+      const component = fixture.componentInstance;
+      const userService = TestBed.inject(UserService);
+      userService.recordConfirmedMeetingRsvp(rsvp);
+      component.onRsvpChanged(rsvp);
+      let rows: Meeting[] = [];
+      const subscription = userService.getUserMeetings().subscribe((meetings) => (rows = meetings));
+      expect(component.currentUserRsvp()).toEqual(rsvp);
+
+      await confirmAndAccept(fixture);
+
+      if (success) {
+        expect(component.currentUserRsvp()).toBeNull();
+        expect(rows[0].my_rsvp).toBeNull();
+        const registrationClose$ = new Subject<{ registered: boolean }>();
+        const dialogs = fixture.debugElement.injector.get(DialogService);
+        vi.spyOn(dialogs, 'open').mockReturnValue({ onClose: registrationClose$ } as unknown as DynamicDialogRef);
+        component.registerForMeeting();
+        registrationClose$.next({ registered: true });
+        await TestBed.inject(ApplicationRef).whenStable();
+        fixture.detectChanges();
+        expect(component.effectivelyInvited()).toBe(true);
+        component.onRsvpChanged({ ...rsvp, id: 'synthetic-late-old-acknowledgement' });
+        userService.recordConfirmedMeetingRsvp(rsvp);
+        expect(component.currentUserRsvp()).toBeNull();
+        expect(rows[0].my_rsvp).toBeNull();
+      } else {
+        expect(component.currentUserRsvp()).toEqual(rsvp);
+        expect(rows[0].my_rsvp).toEqual(rsvp);
+        expect(component.canLeaveMeeting()).toBe(true);
+      }
+      subscription.unsubscribe();
+    });
+
+    it('keeps the survivor invited and retains its answer when only another registration was removed', async () => {
+      const removed = organizerAnswer({ registrant_id: 'synthetic-removed-registration', scope: 'single', occurrence_id: '4099766400' });
+      const survivor = organizerAnswer({
+        id: 'synthetic-surviving-answer',
+        registrant_id: 'synthetic-surviving-registration',
+        scope: 'single',
+        occurrence_id: '4099766400',
+        response_type: 'maybe',
+      });
+      const meeting = buildMeeting({ organizer: false, invited: true, my_rsvp: removed, my_registrant_ids: [removed.registrant_id, survivor.registrant_id] });
+      useRealUserService(meeting);
+      removeMyMeetingRegistration.mockReturnValue(of({ removed_registrant_ids: [removed.registrant_id], remaining_registrant_ids: [survivor.registrant_id] }));
+      const fixture = await createFixture(meeting);
+      const users = TestBed.inject(UserService);
+      users.recordConfirmedMeetingRsvp(removed);
+      const savedSurvivor = users.recordConfirmedMeetingRsvp(survivor)!;
+      fixture.componentInstance.onRsvpChanged(savedSurvivor);
+
+      await confirmAndAccept(fixture);
+
+      expect(fixture.componentInstance.effectivelyInvited()).toBe(true);
+      expect(fixture.nativeElement.querySelector(REMOVE_BUTTON)).not.toBeNull();
+      expect(fixture.nativeElement.querySelector(REGISTER_BUTTON)).toBeNull();
+      expect(removedIds()).toEqual(new Set());
+      expect(users.confirmedMeetingRsvps(MEETING_ID)).toEqual([savedSurvivor]);
+      expect(fixture.componentInstance.currentUserRsvp()).toEqual(savedSurvivor);
+      expect(fixture.componentInstance.overviewConfirmedRsvps()).toContainEqual(savedSurvivor);
+      expect(fixture.componentInstance.overviewConfirmedRsvps()).not.toContainEqual(removed);
+      expect(users.isMeetingRsvpCurrent(removed, meeting)).toBe(false);
+      expect(users.isMeetingRsvpCurrent(savedSurvivor, meeting)).toBe(true);
+      expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn' }));
+      expect(toastAdd).not.toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+    });
+
+    it('recovers a fresh-load survivor answer in join controls, page status, and the active personal feed', async () => {
+      const removed = organizerAnswer({ registrant_id: 'synthetic-removed-registration', created_at: '2026-10-12T12:00:00Z' });
+      const survivor = organizerAnswer({ id: 'synthetic-survivor-answer', registrant_id: 'synthetic-survivor-registration', response_type: 'maybe' });
+      const meeting = buildMeeting({
+        organizer: false,
+        invited: true,
+        is_invite_responses_enabled: true,
+        my_rsvp: removed,
+        my_registrant_ids: [removed.registrant_id, survivor.registrant_id],
+      });
+      useRealUserService(meeting);
+      getMeetingRsvpForCurrentUser.mockReturnValue(of(removed));
+      removeMyMeetingRegistration.mockReturnValue(
+        of({ removed_registrant_ids: [removed.registrant_id], remaining_registrant_ids: [survivor.registrant_id], remaining_rsvps: [survivor] })
+      );
+      TestBed.overrideComponent(MeetingJoinComponent, {
+        set: { template: '@if (meeting(); as currentMeeting) { <lfx-rsvp-button-group [meeting]="currentMeeting" /> }', imports: [RsvpButtonGroupComponent] },
+      });
+      const fixture = await createFixture(meeting);
+      const buttons = fixture.debugElement.query(By.directive(RsvpButtonGroupComponent)).componentInstance as RsvpButtonGroupComponent;
+      const users = TestBed.inject(UserService);
+      let rows: Meeting[] = [];
+      const subscription = users.getUserMeetings().subscribe((meetings) => (rows = meetings));
+      expect(buttons.selectedResponse()).toBe('accepted');
+      expect(users.confirmedMeetingRsvps(MEETING_ID)).toEqual([]);
+
+      await confirmAndAccept(fixture);
+
+      expect(fixture.componentInstance.currentUserRsvp()).toEqual(survivor);
+      expect(fixture.componentInstance.overviewConfirmedRsvps()).toContainEqual(survivor);
+      expect(buttons.selectedResponse()).toBe('maybe');
+      expect(rows[0].my_rsvp).toEqual(survivor);
+      expect(fixture.componentInstance.effectivelyInvited()).toBe(true);
+      subscription.unsubscribe();
+    });
+
+    it('keeps a late removal attached to its dispatch subject rather than clearing the new viewer', async () => {
+      const meeting = buildMeeting({ organizer: false, invited: true });
+      useRealUserService(meeting);
+      const removal$ = new Subject<MeetingRegistrationRemovalResult>();
+      removeMyMeetingRegistration.mockReturnValue(removal$);
+      const fixture = await createFixture(meeting);
+      const userService = TestBed.inject(UserService);
+      const rsvp = {
+        id: 'synthetic-response',
+        meeting_id: MEETING_ID,
+        registrant_id: 'synthetic-registration',
+        response_type: 'accepted',
+        scope: 'all',
+        created_at: '2026-10-12T10:00:00Z',
+      } as MeetingRsvp;
+      userService.recordConfirmedMeetingRsvp(rsvp);
+      await confirmAndAccept(fixture);
+      userService.user.set({ sub: 'synthetic-other', username: 'synthetic-viewer' } as User);
+      userService.recordConfirmedMeetingRsvp({ ...rsvp, id: 'synthetic-other-response', response_type: 'maybe' });
+      let rows: Meeting[] = [];
+      const subscription = userService.getUserMeetings().subscribe((meetings) => (rows = meetings));
+
+      removal$.next({ removed_registrant_ids: [rsvp.registrant_id], remaining_registrant_ids: [] });
+
+      expect(rows[0].my_rsvp?.response_type).toBe('maybe');
+      expect(fixture.componentInstance.canLeaveMeeting()).toBe(true);
+      expect(removedIds()).toEqual(new Set());
+      subscription.unsubscribe();
+    });
+
+    it('clears a fetched-only invitee answer through leave/rejoin while the RSVP control stays mounted', async () => {
+      const rsvp = {
+        id: 'synthetic-fetched-response',
+        meeting_id: MEETING_ID,
+        registrant_id: 'synthetic-fetched-registration',
+        response_type: 'accepted',
+        scope: 'all',
+        created_at: '2026-10-12T10:00:00Z',
+      } as MeetingRsvp;
+      const meeting = buildMeeting({ organizer: false, invited: true, is_invite_responses_enabled: true });
+      removeMyMeetingRegistration.mockReturnValue(of({ removed_registrant_ids: [rsvp.registrant_id], remaining_registrant_ids: [] }));
+      useRealUserService(meeting);
+      getMeetingRsvpForCurrentUser.mockReturnValue(of(rsvp));
+      TestBed.overrideComponent(MeetingJoinComponent, {
+        set: {
+          template: '@if (meeting(); as currentMeeting) { <lfx-rsvp-button-group [meeting]="currentMeeting" /> }',
+          imports: [RsvpButtonGroupComponent],
+        },
+      });
+      const fixture = await createFixture(meeting);
+      const buttons = fixture.debugElement.query(By.directive(RsvpButtonGroupComponent)).componentInstance as RsvpButtonGroupComponent;
+      expect(buttons.selectedResponse()).toBe('accepted');
+
+      await confirmAndAccept(fixture);
+      expect(buttons.selectedResponse()).toBeNull();
+      const registrationClose$ = new Subject<{ registered: boolean }>();
+      const dialogs = fixture.debugElement.injector.get(DialogService);
+      vi.spyOn(dialogs, 'open').mockReturnValue({ onClose: registrationClose$ } as unknown as DynamicDialogRef);
+      fixture.componentInstance.registerForMeeting();
+      registrationClose$.next({ registered: true });
+      await TestBed.inject(ApplicationRef).whenStable();
+      fixture.detectChanges();
+      expect(fixture.componentInstance.effectivelyInvited()).toBe(true);
+      expect(buttons.selectedResponse()).toBeNull();
+      expect(fixture.componentInstance.currentUserRsvp()).toBeNull();
     });
   });
 });

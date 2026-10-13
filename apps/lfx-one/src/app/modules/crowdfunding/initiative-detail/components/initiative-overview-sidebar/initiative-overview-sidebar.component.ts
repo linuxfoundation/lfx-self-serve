@@ -29,7 +29,7 @@ export class InitiativeOverviewSidebarComponent {
   private initRecentDonationsWithMeta(): Signal<(CrowdfundingTransaction & { formattedAmount: string; avatarClass: string })[]> {
     const transactions = toSignal(
       toObservable(this.initiative).pipe(
-        switchMap((initiative) => this.crowdfundingService.getInitiativeTransactions(initiative.slug, { type: 'donations', size: 5 }))
+        switchMap((initiative) => this.crowdfundingService.getInitiativeTransactions(initiative.id, { type: 'donations', size: 5 }))
       ),
       { initialValue: { data: [], totalCount: 0, from: 0, size: 0 } }
     );

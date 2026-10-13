@@ -4,10 +4,10 @@
 /**
  * Admin Mentors tab — manage a program's mentors (linuxfoundation/lfx-mentorship#238).
  *
- * Accept or Decline a mentor request, Revoke an invite, Remove an active mentor. The reads are stubbed as in
+ * Approve or Decline a mentor request, Revoke an invite, Remove an approved mentor. The reads are stubbed as in
  * `mentorship-admin-program-tabs.spec.ts`; the status write is stubbed here via `page.route`, recording each request
  * so a spec asserts the body the browser sent as well as what it rendered. All data is synthetic.
- * Delete is not offered: upstream's DELETE only withdraws an active mentor, which Remove already does.
+ * Delete is not offered: upstream's DELETE only withdraws an approved mentor, which Remove already does.
  *
  * The page is reached by client-side navigation (`openMentorPage`), so the browser makes the calls and the stubs
  * answer them. The module is behind the `mentorship-enabled` client flag, pinned per test by `enableMentorshipFlag`.
@@ -88,7 +88,7 @@ test.describe('Admin Mentors tab — manage mentors', () => {
     await expect(page.locator('[data-testid^="mentorship-admin-mentors-delete-"]')).toHaveCount(0);
   });
 
-  test('accepts a mentor request after the confirmation, then reloads the rows and the tab counts', async ({ page }) => {
+  test('approves a mentor request after the confirmation, then reloads the rows and the tab counts', async ({ page }) => {
     const programReads = countProgramReads(page);
     await open(page, state);
     const mentorReadsBefore = state.reads;
@@ -96,11 +96,11 @@ test.describe('Admin Mentors tab — manage mentors', () => {
 
     await rowAction(page, 'accept', MENTOR_REQUESTED_ID).click();
     expect(state.writes).toHaveLength(0);
-    await confirm(page, 'Accept');
+    await confirm(page, 'Approve');
 
-    await expect(page.getByText('Mentor accepted.')).toBeVisible();
-    expect(state.writes).toEqual([{ id: MENTOR_REQUESTED_ID, method: 'PATCH', body: { status: 'active' } }]);
-    await expect(page.getByTestId(`mentorship-mentor-row-${MENTOR_REQUESTED_ID}`)).toContainText('Accepted');
+    await expect(page.getByText('Mentor approved.')).toBeVisible();
+    expect(state.writes).toEqual([{ id: MENTOR_REQUESTED_ID, method: 'PATCH', body: { status: 'approved' } }]);
+    await expect(page.getByTestId(`mentorship-mentor-row-${MENTOR_REQUESTED_ID}`)).toContainText('Approved');
     expect(state.reads).toBeGreaterThan(mentorReadsBefore);
     await expect.poll(() => programReads.count()).toBeGreaterThan(programReadsBefore);
   });
@@ -157,7 +157,7 @@ test.describe('Admin Mentors tab — manage mentors', () => {
     const readsBefore = state.reads;
 
     await rowAction(page, 'accept', MENTOR_REQUESTED_ID).click();
-    await confirm(page, 'Accept');
+    await confirm(page, 'Approve');
 
     await expect(page.getByText("The change couldn't be saved. Please try again.")).toBeVisible();
     expect(state.reads).toBe(readsBefore);

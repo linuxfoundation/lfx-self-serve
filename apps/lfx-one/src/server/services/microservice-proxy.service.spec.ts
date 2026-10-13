@@ -17,6 +17,7 @@ vi.mock('./api-client.service', () => ({
 
 import type { Request } from 'express';
 
+import { ServiceValidationError } from '../errors';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
 const req = { bearerToken: 'req-token' } as unknown as Request;
@@ -85,5 +86,47 @@ describe('MicroserviceProxyService.proxyStreamRequest options', () => {
 
     const [, , , , , options] = streamRequest.mock.calls[0];
     expect(options).toBeUndefined();
+  });
+});
+
+describe('MicroserviceProxyService.buildEndpoint path-traversal guard (linuxfoundation/lfx-self-serve-ops#434)', () => {
+  let service: MicroserviceProxyService;
+
+  beforeEach(() => {
+    request.mockReset();
+    request.mockResolvedValue({ data: {}, status: 200, statusText: 'OK', headers: {} });
+    service = new MicroserviceProxyService();
+  });
+
+  it.each([
+    '/projects/../secrets',
+    '/projects/./x',
+    '/a?b=1',
+    '/a#b',
+    '/projects/%2e%2e/x',
+    '/projects/%2E%2E/x',
+    '/p/.%2e/x',
+    '/p/%2e./x',
+    '/p/%2e/x',
+    '/p/..\\secrets',
+    '/surveys/id\\responses',
+    '/projects/.\t./x',
+    '/projects/.%09./x',
+    '/projects/.%0a./x',
+    '/projects/.%0d./x',
+    '/projects/.. ',
+  ])('rejects a malicious path %s before calling the API client', async (path) => {
+    await expect(service.proxyRequest(req, 'LFX_V2_SERVICE', path, 'GET')).rejects.toBeInstanceOf(ServiceValidationError);
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('does not reject a normal UUID path', async () => {
+    await service.proxyRequest(req, 'LFX_V2_SERVICE', '/projects/550e8400-e29b-41d4-a716-446655440000/settings', 'GET');
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not reject a raw unencoded path containing WHATWG-re-encoded characters (e.g. a space)', async () => {
+    await service.proxyRequest(req, 'LFX_V2_SERVICE', '/committees/abc def/invites/xyz', 'GET');
+    expect(request).toHaveBeenCalledTimes(1);
   });
 });

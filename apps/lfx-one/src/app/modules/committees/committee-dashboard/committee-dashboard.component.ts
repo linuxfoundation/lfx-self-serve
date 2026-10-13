@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser } from '@angular/common';
+import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import { afterNextRender, Component, computed, DestroyRef, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
@@ -24,6 +24,8 @@ import {
   GroupsViewMode,
   JoinMode,
   MyCommittee,
+  MyGroupsActiveFilter,
+  MyGroupsFilterKey,
   ProjectContext,
   StatCardGridColumns,
   StatCardItem,
@@ -65,6 +67,7 @@ import { MyGroupsCardGridComponent } from '../components/my-groups-card-grid/my-
   selector: 'lfx-committee-dashboard',
   imports: [
     ButtonComponent,
+    NgTemplateOutlet,
     CardComponent,
     CommitteeFilterBarComponent,
     CommitteeInvitationsComponent,
@@ -122,6 +125,7 @@ export class CommitteeDashboardComponent {
   public filteredCommittees: Signal<Committee[]>;
   public votingStatusFilter: Signal<string | null>;
   public joinModeFilter: Signal<string | null>;
+  public activeMyGroupFilters: Signal<MyGroupsActiveFilter[]>;
 
   // Foundation and project filter options (separate dropdowns)
   public foundationOptions: Signal<{ label: string; value: string | null }[]> = this.initializeFoundationOptions();
@@ -196,6 +200,7 @@ export class CommitteeDashboardComponent {
     this.joinModeOptions = this.initializeJoinModeOptions();
     this.filteredCommittees = this.initializeFilteredCommittees();
     this.filteredMyCommittees = this.initializeFilteredMyCommittees();
+    this.activeMyGroupFilters = this.initializeActiveMyGroupFilters();
     this.foundationGroups = this.initializeFoundationGroups();
     this.groupExpansionMap = this.initializeGroupExpansionMap();
 
@@ -208,7 +213,7 @@ export class CommitteeDashboardComponent {
     // Me lens statistics (derived from myCommittees)
     this.myTotalGroups = computed(() => this.myCommittees().length);
     this.myPublicGroups = computed(() => this.myCommittees().filter((c) => c.public).length);
-    this.myActiveVoting = computed(() => this.myCommittees().filter((c) => c.enable_voting).length);
+    this.myActiveVoting = computed(() => this.myCommittees().filter((c) => c.enable_voting === true).length);
 
     // Engagement rollup — fetched once the flag first turns on; failures degrade to null and never
     // block the group-count cards or the groups list below (independent HTTP call).
@@ -369,18 +374,32 @@ export class CommitteeDashboardComponent {
     this.behavioralClassFilter.set(cls);
   }
 
-  /**
-   * Full filter reset for the My Groups card view. Unlike `<lfx-committee-table>`, which owns
-   * `searchForm` and clears it internally in its own `resetFilters()` before emitting
-   * `resetRequested`, the card grid has no filter bar of its own — its "Reset filters" CTA only
-   * emits `resetRequested`, so this clears every filter that could have produced the empty state:
-   * the search term, voting status, foundation/project filters, and the behavioral-class chip.
-   */
+  /** Clears the parent-owned filters for either My Groups renderer without changing view mode. */
   public resetAllFilters(): void {
     this.searchForm.patchValue({ search: '', votingStatus: null, joinModeFilter: null, foundationFilter: null, projectFilter: null });
     this.foundationFilter.set(null);
     this.projectFilter.set(null);
     this.behavioralClassFilter.set(null);
+  }
+
+  public removeMyGroupFilter(key: MyGroupsFilterKey): void {
+    switch (key) {
+      case 'search':
+        this.searchForm.get('search')!.setValue('');
+        break;
+      case 'category':
+        this.selectBehavioralClass(null);
+        break;
+      case 'foundation':
+        this.onFoundationFilterChange(null);
+        break;
+      case 'project':
+        this.onProjectFilterChange(null);
+        break;
+      case 'voting':
+        this.searchForm.get('votingStatus')!.setValue(null);
+        break;
+    }
   }
 
   public setViewMode(mode: GroupsViewMode): void {
@@ -394,12 +413,14 @@ export class CommitteeDashboardComponent {
   }
 
   public onFoundationFilterChange(value: string | null): void {
+    this.searchForm.get('foundationFilter')!.setValue(value, { emitEvent: false });
     this.foundationFilter.set(value);
     this.projectFilter.set(null);
     this.searchForm.get('projectFilter')?.setValue(null, { emitEvent: false });
   }
 
   public onProjectFilterChange(value: string | null): void {
+    this.searchForm.get('projectFilter')!.setValue(value, { emitEvent: false });
     this.projectFilter.set(value);
   }
 
@@ -514,6 +535,32 @@ export class CommitteeDashboardComponent {
       joinModeFilter: new FormControl<string | null>(null),
       foundationFilter: new FormControl<string | null>(null),
       projectFilter: new FormControl<string | null>(null),
+    });
+  }
+
+  private initializeActiveMyGroupFilters(): Signal<MyGroupsActiveFilter[]> {
+    return computed(() => {
+      const filters: MyGroupsActiveFilter[] = [];
+      const search = this.searchTerm();
+      const category = this.behavioralClassFilter();
+      const foundation = this.foundationFilter();
+      const project = this.projectFilter();
+      const voting = this.votingStatusFilter();
+      if (search) filters.push({ key: 'search', label: `Search: ${search}` });
+      if (category) filters.push({ key: 'category', label: `Category: ${BEHAVIORAL_CLASS_CONFIG[category].label}` });
+      if (foundation) {
+        filters.push({
+          key: 'foundation',
+          label: `Foundation: ${this.foundationOptions().find((option) => option.value === foundation)?.label ?? foundation}`,
+        });
+      }
+      if (project) {
+        filters.push({ key: 'project', label: `Project: ${this.projectOptions().find((option) => option.value === project)?.label ?? project}` });
+      }
+      if (voting === 'enabled' || voting === 'disabled') {
+        filters.push({ key: 'voting', label: voting === 'enabled' ? 'Voting: Enabled' : 'Voting: Disabled' });
+      }
+      return filters;
     });
   }
 

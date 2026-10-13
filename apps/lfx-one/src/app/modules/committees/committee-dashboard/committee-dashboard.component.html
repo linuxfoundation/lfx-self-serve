@@ -31,7 +31,7 @@
             } @else {
               {{ committeeLabel.plural }} you are a member of across all foundations and projects.
               @if (showFoundationFilter() || showProjectFilter()) {
-                <span class="text-gray-400">Use the filters above to narrow the view.</span>
+                <span class="text-gray-400">Use the filters below to narrow the view.</span>
               }
             }
           } @else {
@@ -51,107 +51,144 @@
       }
 
       @let totalForChips = isMeLens() ? myCommittees().length : committees().length;
-      @if (totalForChips > 0) {
-        <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Filter groups by behavioral class" data-testid="groups-behavioral-class-chips">
-          <button
-            type="button"
-            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors"
-            [class]="behavioralClassFilter() === null ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
-            [attr.aria-pressed]="behavioralClassFilter() === null"
-            (click)="selectBehavioralClass(null)"
-            data-testid="groups-chip-all">
-            All ({{ totalForChips }})
-          </button>
-          @for (key of behavioralClassKeys; track key) {
-            @if (behavioralClassCounts()[key] > 0) {
-              <button
-                type="button"
-                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors"
-                [class]="
-                  behavioralClassFilter() === key
-                    ? 'bg-blue-600 text-white'
-                    : behavioralClassConfig[key].bgColor + ' ' + behavioralClassConfig[key].color + ' hover:opacity-80'
-                "
-                [attr.aria-pressed]="behavioralClassFilter() === key"
-                (click)="selectBehavioralClass(key)"
-                [attr.data-testid]="'groups-chip-' + key">
-                <i [class]="behavioralClassConfig[key].icon" aria-hidden="true"></i>
-                {{ behavioralClassConfig[key].label }} ({{ behavioralClassCounts()[key] }})
-              </button>
+      <ng-template #categoryControls>
+        @if (totalForChips > 0) {
+          <div
+            class="flex flex-wrap items-center gap-2"
+            role="group"
+            aria-label="Filter groups by behavioral class"
+            data-testid="groups-behavioral-class-chips">
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors"
+              [class]="behavioralClassFilter() === null ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
+              [attr.aria-pressed]="behavioralClassFilter() === null"
+              (click)="selectBehavioralClass(null)"
+              data-testid="groups-chip-all">
+              All ({{ totalForChips }})
+            </button>
+            @for (key of behavioralClassKeys; track key) {
+              @if (behavioralClassCounts()[key] > 0) {
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors"
+                  [class]="
+                    behavioralClassFilter() === key
+                      ? 'bg-blue-600 text-white'
+                      : behavioralClassConfig[key].bgColor + ' ' + behavioralClassConfig[key].color + ' hover:opacity-80'
+                  "
+                  [attr.aria-pressed]="behavioralClassFilter() === key"
+                  (click)="selectBehavioralClass(key)"
+                  [attr.data-testid]="'groups-chip-' + key">
+                  <i [class]="behavioralClassConfig[key].icon" aria-hidden="true"></i>
+                  {{ behavioralClassConfig[key].label }} ({{ behavioralClassCounts()[key] }})
+                </button>
+              }
             }
-          }
-        </div>
+          </div>
+        }
+      </ng-template>
+      @if (!isMeLens()) {
+        <ng-container [ngTemplateOutlet]="categoryControls" />
       }
 
       <!-- My Groups Table (Me lens) -->
       @if (isMeLens()) {
         <!-- Pending invitations — distinct section above the active groups table; renders nothing when empty -->
-        <lfx-committee-invitations (accepted)="reloadMyCommitteesAfterAccept($event)" data-testid="committees-me-invitations" />
+        <lfx-committee-invitations class="contents" (accepted)="reloadMyCommitteesAfterAccept($event)" data-testid="committees-me-invitations" />
 
         <!-- Pending join applications — section above the active groups table; renders nothing when empty.
              myCommitteeUids is passed so groups the user is already a member of are suppressed here. -->
-        <lfx-committee-pending-applications [myCommitteeUids]="myCommitteeUids()" data-testid="committees-me-pending-applications" />
+        <lfx-committee-pending-applications class="contents" [myCommitteeUids]="myCommitteeUids()" data-testid="committees-me-pending-applications" />
 
         @if (myCommittees().length > 0 || myCommitteesLoading()) {
-          <div class="flex items-center justify-end gap-2" role="group" aria-label="Groups view" data-testid="groups-view-toggle">
-            <lfx-button
-              label="List"
-              icon="fa-light fa-list-ul"
-              size="small"
-              [severity]="isListView() ? 'info' : 'secondary'"
-              [outlined]="!isListView()"
-              ariaLabel="List view"
-              [ariaPressed]="isListView()"
-              (onClick)="setViewMode('list')"
-              data-testid="groups-view-list-btn">
-            </lfx-button>
-            <lfx-button
-              label="Card"
-              icon="fa-light fa-grid-2"
-              size="small"
-              [severity]="isCardView() ? 'info' : 'secondary'"
-              [outlined]="!isCardView()"
-              ariaLabel="Card view"
-              [ariaPressed]="isCardView()"
-              (onClick)="setViewMode('card')"
-              data-testid="groups-view-card-btn">
-            </lfx-button>
-          </div>
+          <section class="flex flex-col gap-4 bg-white rounded-lg border border-gray-200 p-4" aria-label="My Groups filters" data-testid="groups-filter-panel">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div class="min-w-0 flex-1">
+                <ng-container [ngTemplateOutlet]="categoryControls" />
+              </div>
+              <div class="flex items-center gap-2 shrink-0" role="group" aria-label="Groups view" data-testid="groups-view-toggle">
+                <lfx-button
+                  label="List"
+                  icon="fa-light fa-list-ul"
+                  size="small"
+                  [severity]="isListView() ? 'info' : 'secondary'"
+                  [outlined]="!isListView()"
+                  ariaLabel="List view"
+                  [ariaPressed]="isListView()"
+                  (onClick)="setViewMode('list')"
+                  data-testid="groups-view-list-btn" />
+                <lfx-button
+                  label="Cards"
+                  icon="fa-light fa-grid-2"
+                  size="small"
+                  [severity]="isCardView() ? 'info' : 'secondary'"
+                  [outlined]="!isCardView()"
+                  ariaLabel="Card view"
+                  [ariaPressed]="isCardView()"
+                  (onClick)="setViewMode('card')"
+                  data-testid="groups-view-card-btn" />
+              </div>
+            </div>
+            <lfx-committee-filter-bar
+              [isMeLens]="true"
+              [searchForm]="searchForm"
+              [votingStatusOptions]="votingStatusOptions()"
+              [showFoundationFilter]="showFoundationFilter()"
+              [showProjectFilter]="showProjectFilter()"
+              [foundationOptions]="foundationOptions()"
+              [projectOptions]="projectOptions()"
+              (foundationFilterChange)="onFoundationFilterChange($event)"
+              (projectFilterChange)="onProjectFilterChange($event)" />
+            @if (activeMyGroupFilters().length > 0) {
+              <div class="flex flex-wrap items-center gap-2 border-t border-gray-100 pt-3" aria-label="Active filters" data-testid="groups-active-filters">
+                @for (chip of activeMyGroupFilters(); track chip.key) {
+                  <span
+                    class="inline-flex min-w-0 max-w-full items-center gap-1.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-full pl-3 pr-1 py-1 text-xs font-medium">
+                    <span class="min-w-0 [overflow-wrap:anywhere]">{{ chip.label }}</span>
+                    <button
+                      type="button"
+                      class="inline-flex shrink-0 items-center justify-center w-7 h-7 rounded-full hover:bg-blue-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
+                      [attr.aria-label]="'Remove ' + chip.label + ' filter'"
+                      [attr.data-testid]="'groups-remove-filter-' + chip.key"
+                      (click)="removeMyGroupFilter(chip.key)">
+                      <i class="fa-light fa-xmark" aria-hidden="true"></i>
+                    </button>
+                  </span>
+                }
+                <lfx-button
+                  label="Clear all"
+                  severity="secondary"
+                  [text]="true"
+                  size="small"
+                  (onClick)="resetAllFilters()"
+                  data-testid="groups-reset-filters" />
+              </div>
+            }
+          </section>
         }
 
+        <div role="status" aria-live="polite" aria-atomic="true">
+          @if (!myCommitteesLoading() && myCommittees().length > 0) {
+            <p class="text-sm text-gray-500" data-testid="groups-filtered-count">
+              {{ filteredMyCommittees().length }} {{ filteredMyCommittees().length === 1 ? 'group' : 'groups' }} matching your filters
+            </p>
+          }
+        </div>
         @if (myCommitteesLoading()) {
           <lfx-card styleClass="[&_.p-card-body]:!px-5">
             <div class="flex flex-col gap-4 py-2">
               @for (_ of [1, 2, 3, 4, 5]; track _) {
-                <div class="flex items-center gap-6">
-                  <p-skeleton width="18%" height="0.875rem" />
-                  <p-skeleton width="10%" height="0.875rem" />
-                  <p-skeleton width="22%" height="0.875rem" />
-                  <p-skeleton width="6%" height="0.875rem" />
-                  <p-skeleton width="6%" height="0.875rem" />
-                  <p-skeleton width="6%" height="0.875rem" />
-                  <p-skeleton width="10%" height="0.875rem" />
-                  <p-skeleton width="10%" height="0.875rem" />
+                <div class="grid grid-cols-2 md:grid-cols-8 items-center gap-4">
+                  <p-skeleton width="100%" height="0.875rem" class="col-span-2 md:col-span-1" />
+                  @for (cell of [1, 2, 3, 4, 5, 6, 7]; track cell) {
+                    <p-skeleton width="100%" height="0.875rem" />
+                  }
                 </div>
               }
             </div>
           </lfx-card>
         } @else if (isCardView()) {
-          @if (myCommittees().length > 0) {
-            <div class="mb-3">
-              <lfx-committee-filter-bar
-                [searchForm]="searchForm"
-                [votingStatusOptions]="votingStatusOptions()"
-                [showFoundationFilter]="showFoundationFilter()"
-                [showProjectFilter]="showProjectFilter()"
-                [foundationOptions]="foundationOptions()"
-                [projectOptions]="projectOptions()"
-                (foundationFilterChange)="onFoundationFilterChange($event)"
-                (projectFilterChange)="onProjectFilterChange($event)">
-              </lfx-committee-filter-bar>
-            </div>
-          }
-
           <lfx-my-groups-card-grid [committees]="filteredMyCommittees()" [hasItems]="myCommittees().length > 0" (resetRequested)="resetAllFilters()">
           </lfx-my-groups-card-grid>
         } @else {
@@ -160,6 +197,7 @@
             [hasItems]="myCommittees().length > 0"
             [myCommitteeUids]="myCommitteeUids()"
             [isMeLens]="isMeLens()"
+            [showFilterBar]="false"
             [searchForm]="searchForm"
             [votingStatusOptions]="votingStatusOptions()"
             [showFoundationFilter]="showFoundationFilter()"
@@ -168,7 +206,7 @@
             [projectOptions]="projectOptions()"
             (foundationFilterChange)="onFoundationFilterChange($event)"
             (projectFilterChange)="onProjectFilterChange($event)"
-            (resetRequested)="selectBehavioralClass(null)"
+            (resetRequested)="resetAllFilters()"
             (refresh)="refreshCommittees()"
             (left)="reloadMyCommitteesAfterLeave($event)"
             (rowClick)="onCommitteeClick($event)"

@@ -166,7 +166,7 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       name: 'getMembersRenewals',
       url: '/api/analytics/members-renewals',
       // A swallowed failure would read as a foundation with no renewals due.
-      call: () => service.getMembersRenewals({ foundationSlug: 'aaif', offset: 0, pageSize: 10 }),
+      call: () => service.getMembersRenewals({ foundationSlug: 'aaif', window: '90_days', offset: 0, pageSize: 10 }),
     },
     {
       name: 'getMembersBoardAttendance',

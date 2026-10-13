@@ -444,49 +444,25 @@
               } @else if (authenticated() && !isPastMeeting() && meeting().organizer) {
                 <!-- RSVP Section - Future Meeting (Authenticated Organizers) -->
                 <div class="w-full md:w-[296px] flex flex-col gap-2">
-                  @if (canToggleRsvpView() && showMyRsvp()) {
-                    <!-- Show RSVP Button Group when organizer toggles to set their own RSVP -->
+                  <!-- Invited organizers respond directly alongside their guest overview -->
+                  @if (canRespondAsOrganizer()) {
                     <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="currentOccurrence()?.occurrence_id" (rsvpChanged)="onRsvpChanged($event)">
                     </lfx-rsvp-button-group>
-                  } @else {
-                    <!-- Show RSVP Details for organizers (default view) -->
-                    <lfx-meeting-rsvp-details
-                      [meeting]="meeting()"
-                      [project]="project()"
-                      [currentOccurrence]="currentOccurrence()"
-                      [pastMeeting]="isPastMeeting()"
-                      [showAddButton]="!!meeting().organizer && !isPastMeeting()"
-                      [additionalRegistrantsCount]="additionalRegistrantsCount()"
-                      [initialRegistrants]="registrants()"
-                      [initialRegistrantsLoading]="registrantsLoading()"
-                      backgroundColor="bg-gray-50"
-                      borderColor="border-gray-200"
-                      (addClicked)="showRegistrants.set(true)">
-                    </lfx-meeting-rsvp-details>
                   }
-                  @if (canToggleRsvpView()) {
-                    @if (!showMyRsvp() && currentUserRsvpLabel(); as rsvpLabel) {
-                      <div
-                        class="flex items-center gap-2 px-3 py-1.5 rounded-md bg-gray-50 border border-gray-200 text-xs"
-                        data-testid="current-user-rsvp-status">
-                        @if (currentUserRsvpIcon(); as iconClass) {
-                          <i [class]="iconClass" aria-hidden="true"></i>
-                        }
-                        <span class="text-gray-600">Your RSVP:</span>
-                        <span class="font-medium text-gray-900">{{ rsvpLabel }}</span>
-                      </div>
-                    }
-                    <lfx-button
-                      class="w-full"
-                      styleClass="w-full"
-                      [icon]="showMyRsvp() ? 'fa-light fa-users' : 'fa-light fa-hand'"
-                      [label]="rsvpToggleLabel()"
-                      size="small"
-                      severity="secondary"
-                      (onClick)="onRsvpViewToggle()"
-                      data-testid="toggle-rsvp-view-button">
-                    </lfx-button>
-                  }
+                  <lfx-meeting-rsvp-details
+                    [meeting]="meeting()"
+                    [project]="project()"
+                    [currentOccurrence]="currentOccurrence()"
+                    [pastMeeting]="isPastMeeting()"
+                    [showAddButton]="!!meeting().organizer && !isPastMeeting()"
+                    [additionalRegistrantsCount]="additionalRegistrantsCount()"
+                    [initialRegistrants]="registrants()"
+                    [initialRegistrantsLoading]="registrantsLoading()"
+                    [confirmedRsvps]="overviewConfirmedRsvps()"
+                    backgroundColor="bg-gray-50"
+                    borderColor="border-gray-200"
+                    (addClicked)="showRegistrants.set(true)">
+                  </lfx-meeting-rsvp-details>
                 </div>
               } @else if (authenticated() && !isPastMeeting()) {
                 <!-- RSVP Container - Future Meeting (Authenticated Non-Organizers) -->

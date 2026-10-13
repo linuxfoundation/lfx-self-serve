@@ -20,7 +20,12 @@ import {
   MENTORSHIP_PROGRAM_UNHIDE_BLOCKED_MESSAGE,
   MENTORSHIP_PROGRAM_VISIBILITY_FAILED_MESSAGE,
 } from '@lfx-one/shared/constants';
-import { MentorshipAdminProgramPage, MentorshipProgramDetailTab, MentorshipProgramVisibilityAction } from '@lfx-one/shared/interfaces';
+import {
+  MentorshipAdminProgramPage,
+  MentorshipProgramDetailTab,
+  MentorshipProgramDetailTabSource,
+  MentorshipProgramVisibilityAction,
+} from '@lfx-one/shared/interfaces';
 import { getMentorshipProgramDetailTabs } from '@lfx-one/shared/utils';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { MessageService } from 'primeng/api';
@@ -80,7 +85,7 @@ export class ProgramDetailComponent {
   protected readonly terms = computed(() => this.page()?.terms ?? []);
   protected readonly tabCounts = computed(() => this.page()?.tabCounts ?? { currentMentees: null, pastMentees: null, mentors: null, terms: null });
   /** The loaded program and the tabs it shows: all four, or Terms only for a pending program. */
-  private readonly tabSource = computed(() => {
+  private readonly tabSource = computed<MentorshipProgramDetailTabSource>(() => {
     const page = this.page();
     return { programId: page?.program.id ?? '', tabs: getMentorshipProgramDetailTabs(page?.program.status ?? 'open').map((tab) => tab.value) };
   });
@@ -89,7 +94,7 @@ export class ProgramDetailComponent {
    * the open tab while the program still shows it, so a status change on refresh only moves the admin off a tab that is
    * gone. Another program, reached by a route change that reuses this page, opens on its own first tab.
    */
-  protected readonly activeTab = linkedSignal<{ programId: string; tabs: MentorshipProgramDetailTab[] }, MentorshipProgramDetailTab>({
+  protected readonly activeTab = linkedSignal<MentorshipProgramDetailTabSource, MentorshipProgramDetailTab>({
     source: this.tabSource,
     computation: ({ programId, tabs }, previous): MentorshipProgramDetailTab =>
       previous && previous.source.programId === programId && tabs.includes(previous.value) ? previous.value : tabs[0],

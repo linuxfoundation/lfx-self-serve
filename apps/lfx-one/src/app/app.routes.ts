@@ -695,6 +695,17 @@ export const routes: Routes = [
         title: 'My Newsletters',
         data: { lens: 'me', preload: false },
         canActivate: [authGuard],
+        loadComponent: () =>
+          import('./modules/newsletters/my-newsletter-foundations/my-newsletter-foundations.component').then((m) => m.MyNewsletterFoundationsComponent),
+      },
+      {
+        // One foundation's newsletters (#3483), and where a newsletter invite lands
+        // (`?invite=<group uid>`). Must stay ahead of the `newsletters/:projectSlug/:id`
+        // permalink, which would otherwise read `my` as a project slug.
+        path: 'newsletters/my/:foundationSlug',
+        title: 'My Newsletters',
+        data: { lens: 'me', preload: false },
+        canActivate: [authGuard],
         loadComponent: () => import('./modules/newsletters/my-newsletters/my-newsletters.component').then((m) => m.MyNewslettersComponent),
       },
       {

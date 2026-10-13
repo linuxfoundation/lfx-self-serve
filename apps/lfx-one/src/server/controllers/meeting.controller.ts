@@ -6,6 +6,8 @@ import {
   MEETING_AGENDA_MAX_LENGTH,
   MEETING_AGENDA_PROMPT_MAX_LENGTH,
   MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH,
+  MEETING_REGISTRANT_BATCH_CONCURRENCY,
+  MEETING_REGISTRANT_BATCH_MAX,
   MIN_CUSTOM_DURATION,
 } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
@@ -41,6 +43,7 @@ import {
 import { resolveCommitteeV2UidMappings, resolveCommitteeV2UidsToV1Ids } from '../helpers/committee-v1-mapping.helper';
 import { MicroserviceError, ServiceValidationError } from '../errors';
 import { addInvitedStatusToMeeting, applyOrganizerAndHostKeyResult, enrichMeetingsWithCreatedBy, stripHostKey } from '../helpers/meeting.helper';
+import { settleInBatches } from '../helpers/settle-in-batches.helper';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { AiService } from '../services/ai.service';
 import { CommitteeService } from '../services/committee.service';
@@ -503,8 +506,9 @@ export class MeetingController {
    */
   public async getMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
-    const { include_rsvp, occurrence_id, fail_on_partial, committee_uid, include_committee } = req.query;
+    const { include_rsvp, occurrence_id, fail_on_partial, committee_uid, include_committee, rsvp_scope } = req.query;
     const includeRsvp = include_rsvp === 'true';
+    const allDatesOnly = rsvp_scope === 'all';
     const includeCommittee = include_committee === 'true';
     const occurrenceId = typeof occurrence_id === 'string' && occurrence_id.length > 0 ? occurrence_id : undefined;
     const failOnPartial = fail_on_partial === 'true';
@@ -544,9 +548,9 @@ export class MeetingController {
       if (failOnPartial && committeeUid) {
         registrants = await this.meetingService.getAuthorizedRegistrantsForImport(req, uid, committeeUid);
       } else if (failOnPartial) {
-        registrants = await this.meetingService.getAuthorizedCompleteRegistrants(req, uid, includeRsvp, occurrenceId);
+        registrants = await this.meetingService.getAuthorizedCompleteRegistrants(req, uid, includeRsvp, occurrenceId, allDatesOnly);
       } else if (await this.canViewRosterOrHide(req, uid, 'get_meeting_registrants')) {
-        registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId, failOnPartial);
+        registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId, failOnPartial, undefined, undefined, allDatesOnly);
       } else {
         logger.success(req, 'get_meeting_registrants', startTime, { meeting_id: uid, roster_hidden: true, registrant_count: 0 });
         res.json([]);
@@ -607,8 +611,9 @@ export class MeetingController {
    */
   public async getMyMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
-    const { include_rsvp, occurrence_id, preview } = req.query;
+    const { include_rsvp, occurrence_id, preview, rsvp_scope } = req.query;
     const includeRsvp = include_rsvp === 'true';
+    const allDatesOnly = rsvp_scope === 'all';
     const isPreview = preview === 'true';
     const occurrenceId = typeof occurrence_id === 'string' && occurrence_id.length > 0 ? occurrence_id : undefined;
 
@@ -723,9 +728,16 @@ export class MeetingController {
       // The join page treats this roster's length as an authoritative denominator (GH-1731) —
       // a partial query-service page failure must surface as an error, not a silently truncated list.
       // A preview only draws a few faces and a "+N", so a short roster beats an empty one there.
-      const registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId, !isPreview, undefined, {
-        bearerToken: m2mToken,
-      });
+      const registrants = await this.meetingService.getMeetingRegistrants(
+        req,
+        uid,
+        includeRsvp,
+        occurrenceId,
+        !isPreview,
+        undefined,
+        { bearerToken: m2mToken },
+        allDatesOnly
+      );
 
       if (isPreview) {
         logger.success(req, 'get_my_meeting_registrants', startTime, {
@@ -835,6 +847,23 @@ export class MeetingController {
         });
 
         // Send the validation error to the next middleware
+        next(validationError);
+        return;
+      }
+
+      // Each item becomes one upstream write, so the array length is capped before anything is
+      // attempted — see MEETING_REGISTRANT_BATCH_MAX.
+      if (registrantData.length > MEETING_REGISTRANT_BATCH_MAX) {
+        const validationError = ServiceValidationError.forField(
+          'registrants',
+          `At most ${MEETING_REGISTRANT_BATCH_MAX} registrants can be processed per request`,
+          {
+            operation: 'add_meeting_registrants',
+            service: 'meeting_controller',
+            path: req.path,
+          }
+        );
+
         next(validationError);
         return;
       }
@@ -971,6 +1000,23 @@ export class MeetingController {
         return;
       }
 
+      // Each item becomes one upstream write, so the array length is capped before anything is
+      // attempted — see MEETING_REGISTRANT_BATCH_MAX.
+      if (updateData.length > MEETING_REGISTRANT_BATCH_MAX) {
+        const validationError = ServiceValidationError.forField(
+          'registrants',
+          `At most ${MEETING_REGISTRANT_BATCH_MAX} registrants can be processed per request`,
+          {
+            operation: 'update_meeting_registrants',
+            service: 'meeting_controller',
+            path: req.path,
+          }
+        );
+
+        next(validationError);
+        return;
+      }
+
       // Check if the registrant UIDs are provided
       if (updateData.some((update) => !update.uid)) {
         const validationError = ServiceValidationError.forField('registrants.uid', 'One or more registrants are missing UID', {
@@ -1073,11 +1119,15 @@ export class MeetingController {
       }
 
       const m2mToken = await generateM2MToken(req);
-      const removedCount = await this.meetingService.removeMeetingRegistrantSelf(req, uid, userEmail, username, m2mToken);
+      const result = await this.meetingService.removeMeetingRegistrantSelf(req, uid, userEmail, username, m2mToken);
 
-      logger.success(req, 'remove_my_meeting_registration', startTime, { meeting_id: uid, removed_count: removedCount });
+      logger.success(req, 'remove_my_meeting_registration', startTime, {
+        meeting_id: uid,
+        removed_count: result.removed_registrant_ids.length,
+        remaining_count: result.remaining_registrant_ids.length,
+      });
 
-      res.status(204).send();
+      res.status(200).json(result);
     } catch (error) {
       next(error);
     }
@@ -1094,7 +1144,9 @@ export class MeetingController {
     const startTime = logger.startOperation(req, 'delete_meeting_registrants', {
       meeting_id: uid,
       registrant_count: registrantsUid.length,
-      body_size: JSON.stringify(req.body).length,
+      // Read from the header rather than re-serializing a body that hasn't been validated yet — same
+      // field as the add and update batch endpoints.
+      request_content_length: MeetingController.readContentLength(req),
     });
 
     try {
@@ -1129,6 +1181,23 @@ export class MeetingController {
           service: 'meeting_controller',
           path: req.path,
         });
+
+        next(validationError);
+        return;
+      }
+
+      // Each item becomes one upstream write, so the array length is capped before anything is
+      // attempted — see MEETING_REGISTRANT_BATCH_MAX.
+      if (registrantsUid.length > MEETING_REGISTRANT_BATCH_MAX) {
+        const validationError = ServiceValidationError.forField(
+          'registrantUids',
+          `At most ${MEETING_REGISTRANT_BATCH_MAX} registrants can be processed per request`,
+          {
+            operation: 'delete_meeting_registrants',
+            service: 'meeting_controller',
+            path: req.path,
+          }
+        );
 
         next(validationError);
         return;
@@ -1293,7 +1362,7 @@ export class MeetingController {
    */
   public async getMeetingRsvpForCurrentUser(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
-    const { occurrenceId } = req.query;
+    const { occurrenceId, rsvp_scope } = req.query;
 
     const startTime = logger.startOperation(req, 'get_meeting_rsvp_for_current_user', {
       meeting_id: uid,
@@ -1311,7 +1380,7 @@ export class MeetingController {
       }
 
       // Get the user's RSVP using direct meeting service call
-      const rsvp = await this.meetingService.getMeetingRsvpForCurrentUser(req, uid, occurrenceId as string | undefined);
+      const rsvp = await this.meetingService.getMeetingRsvpForCurrentUser(req, uid, occurrenceId as string | undefined, rsvp_scope === 'all');
 
       // Log success
       logger.success(req, 'get_meeting_rsvp_for_current_user', startTime, {
@@ -1918,10 +1987,10 @@ export class MeetingController {
       // Process the first registrant
       const firstResult = await operation(inputData[0]);
 
-      // If the first registrant succeeds, process the remaining in parallel
+      // If the first registrant succeeds, process the remaining with bounded concurrency
       let results: PromiseSettledResult<R>[];
       if (inputData.length > 1) {
-        const remainingResults = await Promise.allSettled(inputData.slice(1).map((input) => operation(input)));
+        const remainingResults = await settleInBatches(inputData.slice(1), MEETING_REGISTRANT_BATCH_CONCURRENCY, operation);
         results = [{ status: 'fulfilled', value: firstResult }, ...remainingResults];
       } else {
         results = [{ status: 'fulfilled', value: firstResult }];
@@ -1960,7 +2029,7 @@ export class MeetingController {
       let results: PromiseSettledResult<R>[] = [{ status: 'rejected', reason: error }];
 
       if (inputData.length > 1) {
-        const remainingResults = await Promise.allSettled(inputData.slice(1).map((input) => operation(input)));
+        const remainingResults = await settleInBatches(inputData.slice(1), MEETING_REGISTRANT_BATCH_CONCURRENCY, operation);
         results = [...results, ...remainingResults];
       }
 

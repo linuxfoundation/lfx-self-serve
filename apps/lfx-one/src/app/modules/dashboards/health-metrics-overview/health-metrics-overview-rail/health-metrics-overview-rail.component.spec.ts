@@ -71,9 +71,9 @@ describe('HealthMetricsOverviewRailComponent', () => {
     expect(text).toContain('12 seats');
     expect(text).toContain('5 in the next 90 days');
 
-    const dataSourceTags = Array.from(fixture.nativeElement.querySelectorAll('[data-testid="health-metrics-overview-rail-data-sources"] span')).map((el) =>
-      (el as HTMLElement).textContent?.trim()
-    );
+    const dataSourceTags = Array.from<HTMLElement>(
+      fixture.nativeElement.querySelectorAll('[data-testid="health-metrics-overview-rail-data-sources"] span')
+    ).map((el) => (el.textContent ?? '').trim());
     expect(dataSourceTags).toEqual(['Membership', 'Meetings', 'Events', 'LFX Insights']);
   });
 

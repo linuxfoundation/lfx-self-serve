@@ -3,6 +3,7 @@
 
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { MENTORSHIP_MENTEE_STATUS_LABELS, MENTORSHIP_MENTEE_STATUSES } from '@lfx-one/shared/constants';
 import { MentorshipAdminMenteesQuery, MentorshipAdminMenteesResponse, MentorshipAdminTermOption, MentorshipProgramApplicant } from '@lfx-one/shared/interfaces';
@@ -11,6 +12,8 @@ import { MessageService } from 'primeng/api';
 import { Observable, of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MenteesDownloadMenuComponent } from '../../../../components/mentees-download-menu/mentees-download-menu.component';
+import { MentorshipMenteesExportService } from '../../../../services/mentorship-mentees-export.service';
 import { PastMenteesTabComponent } from './past-mentees-tab.component';
 
 describe('PastMenteesTabComponent', () => {
@@ -52,7 +55,12 @@ describe('PastMenteesTabComponent', () => {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [PastMenteesTabComponent],
-      providers: [provideNoopAnimations(), MessageService, { provide: MentorshipAdminService, useValue: { getProgramMentees } }],
+      providers: [
+        provideNoopAnimations(),
+        MessageService,
+        { provide: MentorshipAdminService, useValue: { getProgramMentees } },
+        { provide: MentorshipMenteesExportService, useValue: { download: vi.fn().mockReturnValue(of(undefined)) } },
+      ],
     });
 
     fixture = TestBed.createComponent(PastMenteesTabComponent);
@@ -69,12 +77,19 @@ describe('PastMenteesTabComponent', () => {
   const rowText = (id: string): string => (element().querySelector(`[data-testid="mentorship-past-mentee-row-${id}"]`)?.textContent ?? '').replace(/\s+/g, ' ');
   const lastQuery = (): MentorshipAdminMenteesQuery => getProgramMentees.mock.calls[getProgramMentees.mock.calls.length - 1][1];
 
-  it('renders the three read-only columns and no actions or download', () => {
+  it('renders the three read-only columns and no row actions', () => {
     const headers = Array.from(element().querySelectorAll('thead th')).map((th) => (th.textContent ?? '').trim());
 
     expect(headers).toEqual(['Mentee', 'Term', 'Status']);
-    expect(element().querySelector('[data-testid="mentorship-past-mentees-download"]')).toBeNull();
     expect(element().querySelector('table')?.getAttribute('aria-label')).toBe('Past mentees');
+  });
+
+  it('renders the download menu for Past Mentees of this program', () => {
+    const menu = fixture.debugElement.query(By.directive(MenteesDownloadMenuComponent))?.componentInstance as MenteesDownloadMenuComponent | undefined;
+
+    expect(element().querySelector('[data-testid="mentorship-past-mentees-download"]')).not.toBeNull();
+    expect(menu?.programId()).toBe('prog_1');
+    expect(menu?.tab()).toBe('past');
   });
 
   it('reads the first page of the closed-term applications for the program', () => {

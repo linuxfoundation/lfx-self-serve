@@ -485,7 +485,7 @@ export const MENTORSHIP_MENTEE_TASK_HINT_START_FIRST = 'Start the task before su
 export const MENTORSHIP_MENTEE_TASK_HINT_LOCKED = 'Submitted tasks can only be changed by your mentor.';
 
 // ---------------------------------------------------------------------------
-// Profile tab constants and mock data
+// Profile tab constants
 // ---------------------------------------------------------------------------
 
 export const MENTORSHIP_MENTEE_PROFILE_DETAILS_TITLE = 'Mentee Profile';

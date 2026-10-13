@@ -74,12 +74,13 @@ export class NewsletterService {
    * simply return empty. There is deliberately no "did I receive it" record:
    * leaving a group hides its newsletters, joining reveals past ones.
    */
-  public async getMyNewsletters(req: Request): Promise<MyNewslettersResponse> {
+  public async getMyNewsletters(req: Request, myCommitteeUids?: Set<string>): Promise<MyNewslettersResponse> {
     // getMyCommitteeUids, not getMyCommittees: this feed only needs membership
     // UIDs, and the lightweight variant skips the committee/mailing-list/project
     // enrichment fan-out AND never drops a membership whose committee resource
-    // is missing from the index (getMyCommittees does).
-    const committeeUids = [...(await this.committeeService.getMyCommitteeUids(req, undefined, { failOnPartial: true }))];
+    // is missing from the index (getMyCommittees does). Callers that already
+    // hold the set (the foundations view) pass it in.
+    const committeeUids = [...(myCommitteeUids ?? (await this.committeeService.getMyCommitteeUids(req, undefined, { failOnPartial: true })))];
     if (committeeUids.length === 0) {
       return { newsletters: [], complete: true };
     }
@@ -239,6 +240,11 @@ export class NewsletterService {
       if (!owner) return row;
       const isFoundation = computeIsFoundation(owner);
       const parent = !isFoundation && owner.parent_uid ? (owners.get(owner.parent_uid) ?? parents.get(owner.parent_uid)) : undefined;
+      // Same roll-up as the invite service: the owner when it is a foundation (or has no parent), else
+      // its parent only when that parent is a confirmed foundation. Otherwise untagged — the row then
+      // groups under its own project.
+      const confirmedParent = parent && computeIsFoundation(parent) ? parent : undefined;
+      const foundation = isFoundation || !owner.parent_uid ? owner : confirmedParent;
       return {
         ...row,
         project_name: owner.name,
@@ -246,6 +252,12 @@ export class NewsletterService {
         is_foundation: isFoundation,
         parent_project_uid: owner.parent_uid,
         ...(parent && { parent_project_name: parent.name, parent_is_foundation: computeIsFoundation(parent) }),
+        ...(foundation && {
+          foundation_uid: foundation.uid,
+          foundation_slug: foundation.slug,
+          foundation_name: foundation.name,
+          foundation_logo_url: foundation.logo_url || null,
+        }),
       };
     });
   }
