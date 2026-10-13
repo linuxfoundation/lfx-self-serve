@@ -171,15 +171,13 @@ export const MENTORSHIP_ADMIN_PROGRAM_STATUS_BY_UPSTREAM: Readonly<Record<string
 };
 
 /**
- * How an upstream program member status reads on the admin Mentors tab. Upstream keeps `active` for an accepted
- * mentor; `approved` is the older name for it and reads the same.
+ * How an upstream program member status reads on the admin Mentors tab. Upstream stores an accepted mentor as `approved`.
  */
 export const MENTORSHIP_ADMIN_MENTOR_STATUS_MAP: Readonly<Record<string, MentorshipAdminMentorStatus>> = {
   requested: 'requested',
   pending: 'pending',
   invited: 'invited',
-  active: 'active',
-  approved: 'active',
+  approved: 'approved',
   declined: 'declined',
   withdrawn: 'withdrawn',
 };
@@ -231,14 +229,13 @@ export const MENTORSHIP_MENTEE_HISTORY_STATUS_ORDER: readonly MentorshipUpstream
 /**
  * How a mentor's own program membership status reads on their request list. `requested` is the
  * mentor's own ask and `pending` an administrator's hold, so both are still waiting on the program,
- * and `approved` is an accepted mentor (`active` before upstream renamed it). `invited` is left out: an invitation is not a
+ * and `approved` is an approved mentor. `invited` is left out: an invitation is not a
  * request the mentor raised, and mentor invites are their own story, so those rows are not listed.
  */
 export const MENTORSHIP_MENTOR_REQUEST_STATUS_MAP: Readonly<Partial<Record<MentorshipUpstreamProgramMemberStatus, MentorshipMentorStatus>>> = {
   requested: 'pending',
   pending: 'pending',
-  approved: 'accepted',
-  active: 'accepted',
+  approved: 'approved',
   declined: 'declined',
   withdrawn: 'withdrawn',
 };

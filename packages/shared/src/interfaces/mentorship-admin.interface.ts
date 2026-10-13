@@ -82,7 +82,7 @@ export type MentorshipProgramDetailTab = (typeof MENTORSHIP_PROGRAM_DETAIL_TABS)
 /** One admin program-detail tab: its value, label and the count its badge reads. */
 export type MentorshipProgramDetailTabDefinition = (typeof MENTORSHIP_PROGRAM_DETAIL_TABS)[number];
 
-/** Mentor lifecycle on the admin Mentors tab; upstream's `active` mentor shows as Accepted. */
+/** Mentor lifecycle on the admin Mentors tab; upstream's `approved` mentor shows as Accepted. */
 export type MentorshipAdminMentorStatus = (typeof MENTORSHIP_ADMIN_MENTOR_STATUSES)[number];
 
 /** A status an admin may set on a mentor member. */

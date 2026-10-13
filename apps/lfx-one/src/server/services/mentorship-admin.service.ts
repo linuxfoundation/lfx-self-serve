@@ -509,7 +509,7 @@ export class MentorshipAdminService {
   }
 
   /**
-   * Moves one mentor member to `active`, `declined` or `withdrawn`. Upstream checks the caller administers the program
+   * Moves one mentor member to `approved`, `declined` or `withdrawn`. Upstream checks the caller administers the program
    * and that the move is allowed from the mentor's current status; its 403, 404 and 409 pass through.
    */
   public async updateProgramMentor(req: Request, programId: string, memberId: string, body: MentorshipAdminMentorStatusUpdate): Promise<void> {

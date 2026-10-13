@@ -99,7 +99,7 @@ test.describe('Admin Mentors tab — manage mentors', () => {
     await confirm(page, 'Accept');
 
     await expect(page.getByText('Mentor accepted.')).toBeVisible();
-    expect(state.writes).toEqual([{ id: MENTOR_REQUESTED_ID, method: 'PATCH', body: { status: 'active' } }]);
+    expect(state.writes).toEqual([{ id: MENTOR_REQUESTED_ID, method: 'PATCH', body: { status: 'approved' } }]);
     await expect(page.getByTestId(`mentorship-mentor-row-${MENTOR_REQUESTED_ID}`)).toContainText('Accepted');
     expect(state.reads).toBeGreaterThan(mentorReadsBefore);
     await expect.poll(() => programReads.count()).toBeGreaterThan(programReadsBefore);

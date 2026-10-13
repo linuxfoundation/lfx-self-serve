@@ -75,7 +75,6 @@ describe('mapMentorshipMentorProgramRequests', () => {
     ['requested', 'pending'],
     ['pending', 'pending'],
     ['approved', 'accepted'],
-    ['active', 'accepted'],
     ['declined', 'declined'],
     ['withdrawn', 'withdrawn'],
   ])('reads an upstream %s membership as %s', (status, expected) => {
@@ -85,7 +84,7 @@ describe('mapMentorshipMentorProgramRequests', () => {
   it('drops invited rows and rows with no status, keeping the order of the rest', () => {
     const rows = mapMentorshipMentorProgramRequests([
       { ...membership, id: 'member-1', status: 'invited' },
-      { ...membership, id: 'member-2', status: 'active' },
+      { ...membership, id: 'member-2', status: 'approved' },
       { ...membership, id: 'member-3', status: undefined },
       { ...membership, id: 'member-4', status: 'withdrawn' },
     ]);

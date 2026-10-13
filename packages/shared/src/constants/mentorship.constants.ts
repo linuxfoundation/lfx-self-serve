@@ -310,7 +310,7 @@ export const MENTORSHIP_PROGRAM_DETAIL_TABS = [
  * `MentorshipMentorStatus` union; declaration order is the lifecycle order. The admin Mentors
  * tab reads the wider `MENTORSHIP_ADMIN_MENTOR_STATUSES` instead.
  */
-export const MENTORSHIP_MENTOR_STATUSES = ['pending', 'accepted', 'declined', 'withdrawn'] as const;
+export const MENTORSHIP_MENTOR_STATUSES = ['pending', 'approved', 'declined', 'withdrawn'] as const;
 
 /**
  * Mentee lifecycle statuses an application holds on the wire.
@@ -322,22 +322,22 @@ export const MENTORSHIP_MENTEE_STATUSES = ['pending', 'accepted', 'declined', 'w
 
 export const MENTORSHIP_MENTOR_STATUS_LABELS: Record<MentorshipMentorStatus, string> = {
   pending: 'Invited',
-  accepted: 'Accepted',
+  approved: 'Approved',
   declined: 'Declined',
   withdrawn: 'Withdrawn',
 };
 
 /**
  * Mentor lifecycle on the admin Mentors tab, which reads every `program_members` status upstream keeps
- * (`active` is the accepted mentor). Declaration order is the status filter's option order.
+ * (`approved` is the accepted mentor). Declaration order is the status filter's option order.
  */
-export const MENTORSHIP_ADMIN_MENTOR_STATUSES = ['requested', 'pending', 'invited', 'active', 'declined', 'withdrawn'] as const;
+export const MENTORSHIP_ADMIN_MENTOR_STATUSES = ['requested', 'pending', 'invited', 'approved', 'declined', 'withdrawn'] as const;
 
 export const MENTORSHIP_ADMIN_MENTOR_STATUS_LABELS: Record<MentorshipAdminMentorStatus, string> = {
   requested: 'Requested',
   pending: 'Pending',
   invited: 'Invited',
-  active: 'Accepted',
+  approved: 'Approved',
   declined: 'Declined',
   withdrawn: 'Withdrawn',
 };
@@ -346,13 +346,13 @@ export const MENTORSHIP_ADMIN_MENTOR_STATUS_BADGE_CLASSES: Record<MentorshipAdmi
   requested: 'bg-amber-100 text-amber-700',
   pending: 'bg-amber-100 text-amber-700',
   invited: 'bg-blue-100 text-blue-700',
-  active: 'bg-emerald-100 text-emerald-700',
+  approved: 'bg-emerald-100 text-emerald-700',
   declined: 'bg-red-100 text-red-600',
   withdrawn: 'bg-gray-100 text-gray-600',
 };
 
 /** Statuses an admin may set through `PATCH …/mentors/:memberId`. Upstream allows no move out of `declined` or `withdrawn`. */
-export const MENTORSHIP_ADMIN_MENTOR_UPDATE_STATUSES = ['active', 'declined', 'withdrawn'] as const;
+export const MENTORSHIP_ADMIN_MENTOR_UPDATE_STATUSES = ['approved', 'declined', 'withdrawn'] as const;
 
 /** Shortest trimmed search `POST .../mentor-candidates` accepts; upstream answers 400 below it. */
 export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MIN_SEARCH_LENGTH = 2;
@@ -401,18 +401,18 @@ export const MENTORSHIP_ADMIN_MENTOR_INVITE_LFID_MAX_LENGTH = 100;
 /** Shown when a mentor change hits a 409: the mentor's status moved on, so the list reloads. */
 export const MENTORSHIP_ADMIN_MENTOR_CHANGED_MESSAGE = 'This mentor changed. The list has been refreshed.';
 
-/** Mentors tab row actions by the mentor's status, in display order. Upstream's DELETE only withdraws an active mentor, so Remove covers it. */
+/** Mentors tab row actions by the mentor's status, in display order. Upstream's DELETE only withdraws an approved mentor, so Remove covers it. */
 export const MENTORSHIP_ADMIN_MENTOR_ACTIONS_BY_STATUS: Record<MentorshipAdminMentorStatus, readonly MentorshipAdminMentorAction[]> = {
   requested: [
-    { key: 'accept', label: 'Accept', status: 'active' },
+    { key: 'accept', label: 'Approve', status: 'approved' },
     { key: 'decline', label: 'Decline', status: 'declined' },
   ],
   pending: [
-    { key: 'accept', label: 'Accept', status: 'active' },
+    { key: 'accept', label: 'Approve', status: 'approved' },
     { key: 'decline', label: 'Decline', status: 'declined' },
   ],
   invited: [{ key: 'revoke', label: 'Revoke invite', status: 'declined' }],
-  active: [{ key: 'remove', label: 'Remove', status: 'withdrawn' }],
+  approved: [{ key: 'remove', label: 'Remove', status: 'withdrawn' }],
   declined: [],
   withdrawn: [],
 };
@@ -449,7 +449,7 @@ export const MENTORSHIP_MENTEE_STATUS_LABELS: Record<MentorshipMenteeStatus, str
 
 export const MENTORSHIP_MENTOR_STATUS_BADGE_CLASSES: Record<MentorshipMentorStatus, string> = {
   pending: 'bg-amber-100 text-amber-700',
-  accepted: 'bg-emerald-100 text-emerald-700',
+  approved: 'bg-emerald-100 text-emerald-700',
   declined: 'bg-red-100 text-red-600',
   withdrawn: 'bg-gray-100 text-gray-600',
 };

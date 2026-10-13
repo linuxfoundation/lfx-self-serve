@@ -518,7 +518,7 @@ const memberRow = (id: string, overrides: Record<string, unknown> = {}) => ({
   user_id: `u-${id}`,
   name: 'Ada Mentor',
   email: 'ada@mentor.example',
-  status: 'active',
+  status: 'approved',
   created_on: '2026-02-03T10:00:00Z',
   updated_on: '2026-02-04T10:00:00Z',
   profile_created: true,
@@ -561,7 +561,7 @@ describe('MentorshipAdminService.getProgramMentors', () => {
 
     expect(result.total).toBe(12);
     expect(result.data.map((m) => [m.id, m.status])).toEqual([
-      ['m1', 'active'],
+      ['m1', 'approved'],
       ['m2', 'invited'],
     ]);
   });
@@ -569,10 +569,10 @@ describe('MentorshipAdminService.getProgramMentors', () => {
   it('makes one upstream call with the status, escaped search, offset and a capped limit, and no member_type', async () => {
     const spy = stubProgramReads({ [MEMBERS_PATH]: { data: [], meta: { total: 0 } } });
 
-    await service.getProgramMentors(buildReq(), PROGRAM_ID, { status: 'active', search: '  50%_off ', offset: 20, limit: 500 });
+    await service.getProgramMentors(buildReq(), PROGRAM_ID, { status: 'approved', search: '  50%_off ', offset: 20, limit: 500 });
 
     expect(spy.mock.calls).toHaveLength(1);
-    expect(spy.mock.calls[0][4]).toEqual({ status: 'active', search: String.raw`50\%\_off`, offset: 20, limit: 50 });
+    expect(spy.mock.calls[0][4]).toEqual({ status: 'approved', search: String.raw`50\%\_off`, offset: 20, limit: 50 });
   });
 
   it('defaults to offset 0 and limit 10', async () => {
@@ -855,7 +855,7 @@ describe('MentorshipAdminService.updateProgramMentor', () => {
   it.each([403, 404, 409])('passes an upstream %s on', async (status) => {
     stubProgramReads({ [MEMBER_PATH]: new MicroserviceError('upstream', status, 'UPSTREAM') });
 
-    await expect(service.updateProgramMentor(buildReq(), PROGRAM_ID, MEMBER_ID, { status: 'active' })).rejects.toMatchObject({ statusCode: status });
+    await expect(service.updateProgramMentor(buildReq(), PROGRAM_ID, MEMBER_ID, { status: 'approved' })).rejects.toMatchObject({ statusCode: status });
   });
 });
 
