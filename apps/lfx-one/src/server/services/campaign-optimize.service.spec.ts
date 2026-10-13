@@ -274,7 +274,14 @@ describe('CampaignOptimizeService.removeKeywordTargeting', () => {
   const reddit = { ...ref, keywords: [{ keyword: 'kubernetes' }, { keyword: ' Cloud ' }], revision: 'sha256:abc' };
 
   it('POSTs Reddit keywords verbatim with the revision as the BODY', async () => {
-    proxyRequest.mockResolvedValueOnce({ campaign_id: 'c-1', results: [{ outcome: 'APPLIED' }, { outcome: 'APPLIED' }], applied_count: 2 });
+    proxyRequest.mockResolvedValueOnce({
+      campaign_id: 'c-1',
+      results: [
+        { keyword: 'kubernetes', outcome: 'APPLIED' },
+        { keyword: ' Cloud ', outcome: 'APPLIED' },
+      ],
+      applied_count: 2,
+    });
 
     await new CampaignOptimizeService().removeKeywordTargeting(req, reddit);
 
@@ -292,16 +299,78 @@ describe('CampaignOptimizeService.removeKeywordTargeting', () => {
   });
 
   it('maps X criterion ids to criterion_id and sends no revision', async () => {
-    proxyRequest.mockResolvedValueOnce({ campaign_id: 'c-1', results: [{ outcome: 'APPLIED' }], applied_count: 1 });
+    proxyRequest.mockResolvedValueOnce({ campaign_id: 'c-1', results: [{ criterion_id: '2kzxf', outcome: 'APPLIED' }], applied_count: 1 });
 
     await new CampaignOptimizeService().removeKeywordTargeting(req, { ...ref, keywords: [{ criterionId: '2kzxf' }] });
 
     expect(proxyRequest.mock.calls[0][5]).toEqual({ keywords: [{ criterion_id: '2kzxf' }] });
   });
 
+  it('refuses X results whose criterion ids come back in a different order', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      campaign_id: 'c-1',
+      results: [
+        { criterion_id: 'b2', outcome: 'APPLIED' },
+        { criterion_id: 'a1', outcome: 'FAILED' },
+      ],
+      applied_count: 1,
+    });
+
+    const caught = (await new CampaignOptimizeService()
+      .removeKeywordTargeting(req, { ...ref, keywords: [{ criterionId: 'a1' }, { criterionId: 'b2' }] })
+      .catch((e: unknown) => e)) as MicroserviceError;
+
+    expect(caught.statusCode).toBe(502);
+    expect(caught.toResponse()['code']).toBe(KEYWORD_TARGETING_REMOVAL_UNCONFIRMED_CODE);
+  });
+
   it.each([
-    ['another campaign', { campaign_id: 'c-2', results: [{ outcome: 'APPLIED' }, { outcome: 'APPLIED' }], applied_count: 2 }],
-    ['a short result set', { campaign_id: 'c-1', results: [{ outcome: 'APPLIED' }], applied_count: 1 }],
+    [
+      'another campaign',
+      {
+        campaign_id: 'c-2',
+        results: [
+          { keyword: 'kubernetes', outcome: 'APPLIED' },
+          { keyword: ' Cloud ', outcome: 'APPLIED' },
+        ],
+        applied_count: 2,
+      },
+    ],
+    ['a short result set', { campaign_id: 'c-1', results: [{ keyword: 'kubernetes', outcome: 'APPLIED' }], applied_count: 1 }],
+    [
+      'a reordered result set',
+      {
+        campaign_id: 'c-1',
+        results: [
+          { keyword: ' Cloud ', outcome: 'APPLIED' },
+          { keyword: 'kubernetes', outcome: 'APPLIED' },
+        ],
+        applied_count: 2,
+      },
+    ],
+    [
+      'a substituted keyword',
+      {
+        campaign_id: 'c-1',
+        results: [
+          { keyword: 'kubernetes', outcome: 'APPLIED' },
+          { keyword: 'cloud', outcome: 'APPLIED' },
+        ],
+        applied_count: 2,
+      },
+    ],
+    ['an entry naming nothing', { campaign_id: 'c-1', results: [{ keyword: 'kubernetes', outcome: 'APPLIED' }, { outcome: 'APPLIED' }], applied_count: 2 }],
+    [
+      'an X field on a Reddit removal',
+      {
+        campaign_id: 'c-1',
+        results: [
+          { keyword: 'kubernetes', outcome: 'APPLIED' },
+          { keyword: ' Cloud ', criterion_id: '2kzxf', outcome: 'APPLIED' },
+        ],
+        applied_count: 2,
+      },
+    ],
     ['no results array', { campaign_id: 'c-1', applied_count: 0 }],
   ])('refuses a 2xx naming %s as unconfirmed', async (_label, body) => {
     proxyRequest.mockResolvedValueOnce(body);

@@ -24,6 +24,7 @@ import type {
   CampaignServiceCampaignResolution,
   CampaignServiceCampaignTarget,
   CampaignServiceKeywordTargeting,
+  CampaignServiceKeywordTargetingRemovalResult,
   CampaignServiceKeywordTargetingRemovals,
   CampaignServiceMetaAdSets,
   CampaignServiceMetaAdSetStatusChange,
@@ -257,8 +258,10 @@ export class CampaignOptimizeService {
    * No `If-Match`: upstream persists nothing for this lever. Reddit instead requires the `revision`
    * the read returned and refuses (409) when the targeting changed since. The answer is POSITIONAL
    * (`results[i]` answers `keywords[i]`); one that cannot be read that way (another campaign's id, a
-   * different number of results) is refused as unconfirmed rather than passed on, because the
-   * removals may have happened and nothing in such a body says which.
+   * different number of results, or ANY entry naming a different keyword or criterion than the one
+   * sent at its index) is refused as unconfirmed rather than passed on, because the removals may have
+   * happened and nothing in such a body says which. Checking only the count would let a reordered or
+   * substituted set show a keyword that was not removed as APPLIED.
    */
   public async removeKeywordTargeting(
     req: Request,
@@ -291,12 +294,16 @@ export class CampaignOptimizeService {
     }
 
     const readable = response?.campaign_id === params.campaignId && Array.isArray(response.results) && response.results.length === params.keywords.length;
-    if (!readable) {
+    // Every entry, not just the count. Compared exactly: campaign-service echoes each keyword and
+    // criterion id as requested (it never trims or case-folds them), so any difference is a mismatch.
+    const mismatchedIndex = readable ? response.results.findIndex((entry, i) => !answersRemovalItem(entry, params.keywords[i])) : -1;
+    if (!readable || mismatchedIndex !== -1) {
       logger.warning(req, 'remove_keyword_targeting', 'Upstream answered with a result set that cannot be read positionally', {
         campaign_id: params.campaignId,
         echoed_campaign_id: response?.campaign_id,
         requested: params.keywords.length,
         returned: Array.isArray(response?.results) ? response.results.length : null,
+        mismatched_index: mismatchedIndex === -1 ? null : mismatchedIndex,
       });
       throw new MicroserviceError('Keyword targeting removal confirmation did not match the request', 502, KEYWORD_TARGETING_REMOVAL_UNCONFIRMED_CODE, {
         operation: 'remove_keyword_targeting',
@@ -307,6 +314,20 @@ export class CampaignOptimizeService {
     }
     return response;
   }
+}
+
+/**
+ * Whether a removal result names exactly the item sent at its index: the same criterion id on X, the
+ * same keyword on Reddit, and not the other platform's field. A non-object entry names nothing.
+ */
+function answersRemovalItem(entry: CampaignServiceKeywordTargetingRemovalResult | null | undefined, sent: KeywordTargetingRemovalItem): boolean {
+  if (!entry || typeof entry !== 'object') {
+    return false;
+  }
+  if (sent.criterionId !== undefined) {
+    return entry.criterion_id === sent.criterionId && entry.keyword === undefined;
+  }
+  return entry.keyword === sent.keyword && entry.criterion_id === undefined;
 }
 
 /** `/projects/{p}/briefs/{b}/campaigns/{c}`, every segment encoded. */
