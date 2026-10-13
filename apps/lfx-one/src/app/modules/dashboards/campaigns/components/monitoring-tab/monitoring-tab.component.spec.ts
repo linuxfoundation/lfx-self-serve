@@ -384,6 +384,16 @@ describe.each(['linkedin', 'reddit', 'meta'] as const)('MonitoringTabComponent â
     expect(el(`${platform}-totals-note`)).toBeNull();
   });
 
+  it.runIf(platform === 'linkedin')('shows the creative count as "Not read" when campaign-service did not read creatives', () => {
+    render([campaign({ creativesMeasured: false })]);
+    expect(text('linkedin-campaign-creatives')).toBe('Not read');
+  });
+
+  it.runIf(platform === 'linkedin')('keeps the legacy (flag-off) creative count', () => {
+    render([campaign({ creatives: [{}, {}] })]);
+    expect(text('linkedin-campaign-creatives')).toBe('2');
+  });
+
   it('renders a measured row from campaign-service the same way', () => {
     render([campaign({ conversionsMeasured: true, pacingUnknown: false, fetchFailed: false })], { conversionsMeasured: true });
 

@@ -620,7 +620,11 @@
                         <td class="px-4 py-3 text-right text-xs text-gray-700" data-testid="linkedin-campaign-conversions">{{ camp.conversions }}</td>
                       }
                     }
-                    <td class="px-4 py-3 text-right text-xs text-gray-700">{{ camp.creatives.length }}</td>
+                    @if (camp.creativesMeasured === false) {
+                      <td class="px-4 py-3 text-right text-xs text-gray-400" data-testid="linkedin-campaign-creatives">Not read</td>
+                    } @else {
+                      <td class="px-4 py-3 text-right text-xs text-gray-700" data-testid="linkedin-campaign-creatives">{{ camp.creatives.length }}</td>
+                    }
                   </tr>
                 }
               </tbody>

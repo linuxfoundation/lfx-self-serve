@@ -2585,6 +2585,11 @@ export interface LinkedInCampaignMetrics {
   pacingUnknown?: boolean;
   fetchFailed?: boolean;
   conversionsMeasured?: boolean;
+  /**
+   * Campaign-service path only: `false` because campaign-service does not read LinkedIn creative
+   * analytics, so the empty `creatives` is not a count of zero. Absent on the legacy path.
+   */
+  creativesMeasured?: boolean;
 }
 
 export interface LinkedInAccountTotals {

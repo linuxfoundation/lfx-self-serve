@@ -104,8 +104,9 @@ export function toMetaMonitorResponse(payload: CampaignServiceAccountMonitor, ac
  *   campaign at 90.4% across the band the label already reports.
  * - `eventName` is derived from the campaign name exactly as the legacy engine derived it (the
  *   second ` | ` segment, else the whole name), because the panel shows it as the row title.
- * - `creatives` is always EMPTY: campaign-service does not read LinkedIn creative analytics, so the
- *   panel's creative count reads 0 and the legacy HIGH "no ad creatives" item is never produced.
+ * - `creatives` is always EMPTY: campaign-service does not read LinkedIn creative analytics. Each row
+ *   therefore carries `creativesMeasured: false`, so the panel shows the count as not read rather than
+ *   0, and the legacy HIGH "no ad creatives" item is never produced.
  */
 export function toLinkedInMonitorResponse(payload: CampaignServiceAccountMonitor, accountLabel: string, pulledAt: string): LinkedInMonitorResponse {
   const body = toLegacyMonitorBody(payload);
@@ -123,6 +124,7 @@ export function toLinkedInMonitorResponse(payload: CampaignServiceAccountMonitor
         eventName: campaign.campaignName.split(' | ')[1] ?? campaign.campaignName,
         pacingPct: pacingTrusted ? row.pacing_pct : 0,
         creatives: [],
+        creativesMeasured: false,
       };
     }),
   };

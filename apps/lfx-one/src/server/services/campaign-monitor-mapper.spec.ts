@@ -136,6 +136,7 @@ describe('toLinkedInMonitorResponse', () => {
     expect(result.campaigns[2].pacingLabel).toBeUndefined();
     expect(result.campaigns.map((c) => c.eventName)).toEqual(['KubeCon NA 2026', 'Brand awareness', 'OSS EU']);
     expect(result.campaigns.every((c) => c.creatives.length === 0)).toBe(true);
+    expect(result.campaigns.every((c) => c.creativesMeasured === false)).toBe(true);
     expect(result.campaigns[0].pacingLabel).toBe('constrained');
     expect(result.accountTotals.campaignCount).toBe(1);
   });
