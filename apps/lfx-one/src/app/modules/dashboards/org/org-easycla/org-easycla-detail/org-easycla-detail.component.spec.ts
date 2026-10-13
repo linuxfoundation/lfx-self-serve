@@ -275,6 +275,24 @@ describe('OrgEasyclaDetailComponent', () => {
     expect(byTestId(fixture, 'org-easycla-detail-status')?.textContent).toContain('Signed');
   });
 
+  it('shows no status pill in the header for a sanctioned agreement', async () => {
+    getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ status: 'sanctioned' })] }));
+
+    const fixture = await render();
+
+    expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Nimbus Foundation CLA');
+    expect(byTestId(fixture, 'org-easycla-detail-status')).toBeNull();
+    expect(byTestId(fixture, 'org-easycla-detail-header')?.textContent).not.toContain('Sanctioned');
+  });
+
+  it('carries no needs-a-CLA-manager indicator in the header', async () => {
+    getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ needsClaManager: true, claManagersCount: 0 })] }));
+
+    const fixture = await render();
+
+    expect(byTestId(fixture, 'org-easycla-detail-header')?.textContent).not.toContain('Needs a CLA Manager');
+  });
+
   it('states the signed date alone when the row names no signer', async () => {
     const fixture = await render();
 

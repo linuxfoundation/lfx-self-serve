@@ -1401,7 +1401,7 @@ export class OrgEasyclaDetailComponent {
 
   private initStatus(): OrgClaStatusDisplay | undefined {
     const group = this.claGroup();
-    return group ? ORG_CLA_STATUS_DISPLAY[group.status] : undefined;
+    return group ? (ORG_CLA_STATUS_DISPLAY[group.status] ?? undefined) : undefined;
   }
 
   private initCoverageChips(): OrgClaCoverageChip[] {
