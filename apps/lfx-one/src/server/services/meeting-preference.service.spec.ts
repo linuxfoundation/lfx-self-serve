@@ -104,6 +104,17 @@ describe('MeetingPreferenceService', () => {
       await expect(service.getMeetingInviteEmail(req, V1_TOKEN)).resolves.toBeNull();
     });
 
+    // A blank address matches no row, so it would silently drop the invite badge (#3559).
+    it.each([
+      ['a blank email', { email_id: 'email-1', email: '' }],
+      ['a whitespace-only email', { email_id: 'email-1', email: '  ' }],
+      ['a blank id', { email_id: '', email: ALTERNATE_EMAIL }],
+    ])('fails closed to null when the override carries %s', async (_label, body) => {
+      natsRequest.mockResolvedValue(reply(body));
+
+      await expect(service.getMeetingInviteEmail(req, V1_TOKEN)).resolves.toBeNull();
+    });
+
     // Valid JSON can still decode to null, a primitive, or `{ error: <non-string> }` — none of
     // those are a `{ error: string }` shape, so accessing `.error` or handing the value to the
     // string-only redactor must not throw past this method's fail-closed contract.

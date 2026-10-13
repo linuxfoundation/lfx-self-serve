@@ -256,6 +256,66 @@ describe('AccountSettingsComponent — meeting-invite selection & delete guard (
     expect(userServiceMock['setMeetingInviteEmail']).toHaveBeenCalledWith(ALT_EMAIL.email);
   });
 
+  describe('badge and primary-row action (#3559)', () => {
+    function rowFor(fixture: ComponentFixture<AccountSettingsComponent>, address: string) {
+      return fixture.componentInstance.emailsWithMetadata().find((e) => e.email === address)!;
+    }
+
+    function menuLabelsFor(fixture: ComponentFixture<AccountSettingsComponent>, address: string): (string | undefined)[] {
+      return (fixture.componentInstance.menuItemsMap().get(address) ?? []).map((item) => item.label);
+    }
+
+    it('badges the primary row and offers it no invite action while no override is set', async () => {
+      const fixture = await setup(makeUserServiceMock({ invite: { email_id: null, email: null } }));
+
+      expect(rowFor(fixture, PRIMARY_EMAIL.email).isMeetingInvite).toBe(true);
+      expect(rowFor(fixture, ALT_EMAIL.email).isMeetingInvite).toBe(false);
+      expect(menuLabelsFor(fixture, PRIMARY_EMAIL.email)).not.toContain('Use for Meeting Invitations');
+      expect(menuLabelsFor(fixture, ALT_EMAIL.email)).toContain('Use for Meeting Invitations');
+    });
+
+    it('badges the primary row when the override is pinned to the primary address', async () => {
+      const fixture = await setup(makeUserServiceMock({ invite: { email_id: 'id-1', email: ' PRIMARY@example.com ' } }));
+
+      expect(rowFor(fixture, PRIMARY_EMAIL.email).isMeetingInvite).toBe(true);
+      expect(menuLabelsFor(fixture, PRIMARY_EMAIL.email)).not.toContain('Use for Meeting Invitations');
+      expect(fixture.componentInstance.orphanedInviteEmail()).toBeNull();
+    });
+
+    it('moves the badge to the overriding row and offers the primary the same invite action', async () => {
+      const fixture = await setup(makeUserServiceMock({ invite: { email_id: 'id-1', email: ALT_EMAIL.email } }));
+
+      expect(rowFor(fixture, PRIMARY_EMAIL.email).isMeetingInvite).toBe(false);
+      expect(rowFor(fixture, ALT_EMAIL.email).isMeetingInvite).toBe(true);
+      expect(menuLabelsFor(fixture, PRIMARY_EMAIL.email)).toContain('Use for Meeting Invitations');
+      expect(menuLabelsFor(fixture, PRIMARY_EMAIL.email)).not.toContain('Reset to Default (Primary Email)');
+    });
+
+    it('treats re-picking the primary as a no-op while it already receives invitations', async () => {
+      const userServiceMock = makeUserServiceMock({ invite: { email_id: 'id-1', email: PRIMARY_EMAIL.email } });
+      const fixture = await setup(userServiceMock);
+
+      fixture.componentInstance.setMeetingInvite(PRIMARY_EMAIL);
+
+      expect(userServiceMock['setMeetingInviteEmail']).not.toHaveBeenCalled();
+    });
+
+    it('badges no row and flags the load failure when the invite lookup failed', async () => {
+      const fixture = await setup(makeUserServiceMock({ invite: 'error' }));
+
+      expect(fixture.componentInstance.meetingInviteLoadFailed()).toBe(true);
+      expect(fixture.componentInstance.emailsWithMetadata().some((e) => e.isMeetingInvite)).toBe(false);
+    });
+
+    it('surfaces an override that matches none of the listed addresses', async () => {
+      const fixture = await setup(makeUserServiceMock({ invite: { email_id: 'id-1', email: 'unlisted@example.com' } }));
+
+      expect(fixture.componentInstance.orphanedInviteEmail()).toBe('unlisted@example.com');
+      expect(fixture.componentInstance.emailsWithMetadata().some((e) => e.isMeetingInvite)).toBe(false);
+      expect(menuLabelsFor(fixture, PRIMARY_EMAIL.email)).toContain('Use for Meeting Invitations');
+    });
+  });
+
   it('blocks a second selection while the first write is still in flight', async () => {
     const inFlight = new Subject<MeetingInviteEmail>();
     const setMeetingInviteEmail = vi.fn(() => inFlight);

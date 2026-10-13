@@ -201,7 +201,8 @@ export class MeetingPreferenceService {
     if (email_id === null && email === null) {
       return true;
     }
-    return typeof email_id === 'string' && typeof email === 'string';
+    // A blank address can't be matched to any row, so it would silently drop the invite badge.
+    return typeof email_id === 'string' && typeof email === 'string' && email_id.trim() !== '' && email.trim() !== '';
   }
 
   // Classify the upstream error so the controller can map it to an HTTP status: validation → 4xx,
