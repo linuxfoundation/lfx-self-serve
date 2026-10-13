@@ -71,7 +71,7 @@ export class ProgramReviewComponent {
    * The in-flight Confirm POST. A link change does not cancel it, because the write may already have
    * reached upstream: the new link loads once it settles, so that view shows the program's real status.
    */
-  private submitRequest: Observable<MentorshipProgramReview> | null = null;
+  private submitRequest: Observable<MentorshipProgramReviewView> | null = null;
 
   protected readonly link: Signal<MentorshipProgramReviewLink> = this.initLink();
   private readonly loaded: Signal<MentorshipProgramReviewView> = this.initLoaded();
@@ -97,15 +97,15 @@ export class ProgramReviewComponent {
 
     const { program, decision } = confirmation;
     const link = this.link();
-    const request = this.mentorshipService
-      .submitProgramDecision(program.id, decision)
-      .pipe(takeUntilDestroyed(this.destroyRef), shareReplay({ bufferSize: 1, refCount: false }));
+    const request = this.mentorshipService.submitProgramDecision(program.id, decision).pipe(
+      map((updated): MentorshipProgramReviewView => ({ state: 'success', program: updated })),
+      catchError((error: unknown) => this.viewAfterFailedDecision(error, program, decision)),
+      takeUntilDestroyed(this.destroyRef),
+      shareReplay({ bufferSize: 1, refCount: false })
+    );
     this.submitRequest = request;
     this.submission.set({ state: 'submitting', program });
-    request.subscribe({
-      next: (updated) => this.settleSubmit(request, link, { state: 'success', program: updated }),
-      error: (error: unknown) => this.settleSubmit(request, link, { state: this.stateForError(error), program }),
-    });
+    request.subscribe((view) => this.settleSubmit(request, link, view));
   }
 
   /** After a failed Confirm, go back to the confirm card rather than reloading the page. */
@@ -192,7 +192,7 @@ export class ProgramReviewComponent {
   }
 
   /** Shows a Confirm outcome only on the link it was made from; after a link change the reload shows it instead. */
-  private settleSubmit(request: Observable<MentorshipProgramReview>, link: MentorshipProgramReviewLink, view: MentorshipProgramReviewView): void {
+  private settleSubmit(request: Observable<MentorshipProgramReviewView>, link: MentorshipProgramReviewLink, view: MentorshipProgramReviewView): void {
     if (this.submitRequest === request) {
       this.submitRequest = null;
     }
@@ -210,6 +210,31 @@ export class ProgramReviewComponent {
       return 'already-decided';
     }
     return decision === 'approve' && !program.hasLogo ? 'logo-required' : 'confirm';
+  }
+
+  /**
+   * The view after a failed Confirm. A 409 is either another reviewer deciding first or, on approve, upstream refusing a
+   * program whose logo was removed after the page loaded, so the program is read again to show which. If that read fails,
+   * the program stays as loaded.
+   */
+  private viewAfterFailedDecision(
+    error: unknown,
+    program: MentorshipProgramReview,
+    decision: MentorshipProgramReviewDecision
+  ): Observable<MentorshipProgramReviewView> {
+    const state = this.stateForError(error);
+    if (state !== 'already-decided') {
+      return of<MentorshipProgramReviewView>({ state, program });
+    }
+    return this.mentorshipService.getProgramReview(program.id).pipe(
+      map(
+        (current): MentorshipProgramReviewView => ({
+          state: this.loadedState(current, decision) === 'logo-required' ? 'logo-required' : 'already-decided',
+          program: current,
+        })
+      ),
+      catchError(() => of<MentorshipProgramReviewView>({ state, program }))
+    );
   }
 
   private stateForError(error: unknown): MentorshipProgramReviewState {

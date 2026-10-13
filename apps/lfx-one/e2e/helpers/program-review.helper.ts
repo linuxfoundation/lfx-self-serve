@@ -23,7 +23,7 @@ export const DECISION_API = `${REVIEW_API}/decision`;
 const OUTCOME_SELECTOR =
   '[data-testid="mentorship-program-review-loading"], [data-testid="mentorship-program-review-confirm"], [role="status"][data-testid^="mentorship-program-review-"]';
 
-export async function stubProgramReview(page: Page, status: number, program?: { status: string }, delayMs = 0): Promise<void> {
+export async function stubProgramReview(page: Page, status: number, program?: { status: string; hasLogo?: boolean }, delayMs = 0): Promise<void> {
   await page.route(REVIEW_API, async (route) => {
     if (delayMs > 0) {
       await new Promise((resolve) => setTimeout(resolve, delayMs));
@@ -31,7 +31,7 @@ export async function stubProgramReview(page: Page, status: number, program?: { 
     await route.fulfill({
       status,
       contentType: 'application/json',
-      body: JSON.stringify(program ? { id: PROGRAM_ID, name: 'Test Program', status: program.status, hasLogo: true } : { error: 'stubbed' }),
+      body: JSON.stringify(program ? { id: PROGRAM_ID, name: 'Test Program', status: program.status, hasLogo: program.hasLogo ?? true } : { error: 'stubbed' }),
     });
   });
 }

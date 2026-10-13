@@ -9,7 +9,7 @@
  * lives in the companion `mentorship-program-review-robust.spec.ts`.
  *
  * The BFF endpoints are stubbed per test so each outcome state (confirm, success, already decided,
- * forbidden, not found, invalid link, error) renders independently of upstream data and of whether
+ * logo required, forbidden, not found, invalid link, error) renders independently of upstream data and of whether
  * the signed-in test user is on the mentorship approver team.
  *
  * The module is behind the `mentorship-enabled` client flag; the flag is pinned via the localStorage
@@ -104,6 +104,25 @@ test.describe('Program review — outcome states', () => {
       timeout: PROGRAM_REVIEW_LOAD_TIMEOUT,
     });
     await expect(page.getByTestId('mentorship-program-review-confirm')).toHaveCount(0);
+  });
+
+  test('asks for a logo instead of offering Confirm on an approve link for a program without one', async ({ page }) => {
+    await stubProgramReview(page, 200, { status: 'submitted', hasLogo: false });
+    await openProgramReview(page);
+
+    await expect(page.getByTestId('mentorship-program-review-logo-required')).toContainText('This program needs a logo before it can be approved', {
+      timeout: PROGRAM_REVIEW_LOAD_TIMEOUT,
+    });
+    await expect(page.getByTestId('mentorship-program-review-confirm')).toHaveCount(0);
+  });
+
+  test('explains that a program left in the old pending status is not awaiting review', async ({ page }) => {
+    await stubProgramReview(page, 200, { status: 'pending' });
+    await openProgramReview(page);
+
+    await expect(page.getByTestId('mentorship-program-review-already-decided')).toContainText('This program is not awaiting review', {
+      timeout: PROGRAM_REVIEW_LOAD_TIMEOUT,
+    });
   });
 
   for (const [status, testId, copy] of [

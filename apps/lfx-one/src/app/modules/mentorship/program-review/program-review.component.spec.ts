@@ -195,8 +195,36 @@ describe('ProgramReviewComponent', () => {
     expect(byTestId(testId)).not.toBeNull();
   });
 
-  it('explains a 409 on Confirm as another reviewer deciding first', () => {
+  it('explains a 409 on Confirm as another reviewer deciding first while the program is still submitted', () => {
     build({ submit: httpError(409) });
+
+    clickConfirm();
+
+    expect(getProgramReview).toHaveBeenCalledTimes(2);
+    expect(byTestId('mentorship-program-review-already-decided')?.textContent).toContain('Another reviewer decided this program');
+  });
+
+  it('shows the status another reviewer recorded after a 409 on Confirm', () => {
+    build({ submit: httpError(409) });
+    getProgramReview.mockReturnValue(of(review('rejected')));
+
+    clickConfirm();
+
+    expect(byTestId('mentorship-program-review-already-decided')?.textContent).toContain('current status: Rejected');
+  });
+
+  it('asks for a logo when an approve 409 follows the logo being removed after the page loaded', () => {
+    build({ submit: httpError(409) });
+    getProgramReview.mockReturnValue(of(review('submitted', false)));
+
+    clickConfirm();
+
+    expect(byTestId('mentorship-program-review-logo-required')).not.toBeNull();
+  });
+
+  it('keeps the loaded program when the read after a 409 on Confirm fails', () => {
+    build({ submit: httpError(409) });
+    getProgramReview.mockReturnValue(httpError(500));
 
     clickConfirm();
 

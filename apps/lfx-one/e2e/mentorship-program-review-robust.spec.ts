@@ -55,6 +55,7 @@ test.describe('Program review — Robust Tests', () => {
   test.describe('State container suffix', () => {
     for (const [label, status, program, state] of [
       ['an already-decided program', 200, { status: 'published' }, 'already-decided'],
+      ['a submitted program without a logo', 200, { status: 'submitted', hasLogo: false }, 'logo-required'],
       ['a 403', 403, undefined, 'forbidden'],
       ['a 404', 404, undefined, 'not-found'],
       ['a 503', 503, undefined, 'error'],
