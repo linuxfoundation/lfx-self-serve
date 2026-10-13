@@ -1060,4 +1060,137 @@ describe('MeetingDetailsStateService', () => {
       expect(state.status()).toBe('loading');
     });
   });
+
+  /**
+   * #3261: V2 keeps V1's SSR invariants (meeting-join.component.spec.ts, GH-2041), re-asserted here
+   * against the V2 state service with the request held open, so a fix reverted would fail.
+   */
+  describe('V1 parity: SSR seed and hydration (GH-2041)', () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const ended = (id = MEETING_ID) =>
+      ({
+        ...buildMeeting(id),
+        start_time: new Date(Date.now() - 3 * DAY).toISOString(),
+        duration: 60,
+        occurrences: [],
+        organizer: false,
+      }) as unknown as Meeting;
+
+    it('holds a seeded error while the hydration refetch is still in flight', async () => {
+      seed = { meeting: null, loadedViaPastMeetingId: false, pastMeetingFullAccess: false, meetingLoadFailed: true };
+      const pending = new Subject<{ meeting: Meeting; project: PublicMeetingProject }>();
+      getPublicMeeting.mockReturnValue(pending.asObservable());
+      const state = create();
+
+      expect(state.status()).toBe('error');
+      await settle(); // the debounce has flushed and the refetch is pending
+      expect(getPublicMeeting).toHaveBeenCalledTimes(1);
+      expect(state.status()).toBe('error');
+
+      pending.next({ meeting: buildMeeting(), project });
+      expect(state.status()).toBe('ready');
+    });
+
+    it('keeps a seeded page, not a skeleton, while the hydration refetch is still in flight', async () => {
+      seed = { meeting: { ...buildMeeting(), project }, loadedViaPastMeetingId: false, pastMeetingFullAccess: false, meetingLoadFailed: false };
+      getPublicMeeting.mockReturnValue(new Subject().asObservable());
+      const state = create();
+
+      await settle();
+
+      expect(state.status()).toBe('ready');
+      expect(state.meeting()?.title).toBe('Weekly Sync');
+    });
+
+    it('restores a seeded past branch: ended, its tools, and the past-id flag through the refetch', async () => {
+      seed = { meeting: { ...ended(), project }, loadedViaPastMeetingId: true, pastMeetingFullAccess: true, meetingLoadFailed: false };
+      getPublicMeeting.mockReturnValue(throwError(() => ({ status: 404 })));
+      getPublicPastMeeting.mockReturnValue(of({ meeting: ended(), project, full_access: true }));
+      const state = create();
+
+      expect(state.timeState()).toBe('ended');
+      expect(state.actionSlot()).toBe('tools');
+
+      await settle();
+
+      expect(state.loadedViaPastMeetingId()).toBe(true);
+      expect(state.pastMeetingFullAccess()).toBe(true);
+      expect(state.actionSlot()).toBe('tools');
+    });
+
+    it('has the ?password= param from construction, so the first and only lookup carries it', async () => {
+      queryParamMap$.next(convertToParamMap({ password: 'secret' }));
+      const state = create();
+
+      expect(state.password()).toBe('secret');
+      await settle();
+      expect(getPublicMeeting).toHaveBeenCalledTimes(1);
+      expect(getPublicMeeting).toHaveBeenCalledWith(MEETING_ID, 'secret');
+    });
+
+    it('writes the past branch to TransferState on the server', async () => {
+      const pastId = '99152950841-1700000000000';
+      paramMap$.next(convertToParamMap({ id: pastId }));
+      getPublicPastMeeting.mockReturnValue(of({ meeting: ended(pastId), project, full_access: true }));
+      create('server');
+      await settle();
+
+      expect(TestBed.inject(TransferState).get(stateKey, null)).toMatchObject({
+        loadedViaPastMeetingId: true,
+        pastMeetingFullAccess: true,
+        meetingLoadFailed: false,
+      });
+    });
+
+    it('writes a terminal error without redirecting', async () => {
+      getPublicMeeting.mockReturnValue(throwError(() => ({ status: 500 })));
+      create('server');
+      await settle();
+
+      expect(navigate).not.toHaveBeenCalled();
+    });
+  });
+
+  /** #3261 (N-01): with RSVP tracking off, no viewer gets any RSVP surface, whatever the time. */
+  describe('RSVP tracking off', () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const meeting = (startOffsetMs: number, overrides: Partial<Meeting> = {}) =>
+      ({
+        ...buildMeeting(),
+        start_time: new Date(Date.now() + startOffsetMs).toISOString(),
+        duration: 60,
+        occurrences: [],
+        visibility: 'public',
+        restricted: false,
+        is_invite_responses_enabled: false,
+        ...overrides,
+      }) as unknown as Meeting;
+
+    it.each([
+      ['an organizer before the meeting', meeting(3 * DAY, { organizer: true, invited: true }), 'none', 'upcoming'],
+      ['an invitee before the meeting', meeting(3 * DAY, { invited: true }), 'rsvp-unavailable', 'upcoming'],
+      ['an organizer during the meeting', meeting(-5 * 60 * 1000, { organizer: true, invited: true }), 'join', 'live'],
+    ])('gives %s no RSVP surface', async (_label, payload, slot, status) => {
+      getPublicMeeting.mockReturnValue(of({ meeting: payload, project }));
+      const state = create();
+      await settle();
+
+      expect(state.actionSlot()).toBe(slot);
+      expect(state.meetingStatus()).toBe(status);
+      expect(state.visibleSections()).toMatchObject({ rsvpSummary: false, rsvpRosterFilter: false, rsvpAvatarBadges: false });
+      expect(state.myRsvpAttr()).toBeNull();
+      expect(getMyRsvp).not.toHaveBeenCalled();
+    });
+
+    it('reads an ended meeting as ended, with no RSVP surface, for its organizer', async () => {
+      const pastId = '99152950841-1700000000000';
+      paramMap$.next(convertToParamMap({ id: pastId }));
+      getPublicPastMeeting.mockReturnValue(of({ meeting: meeting(-3 * DAY, { id: pastId, organizer: true }), project, full_access: true }));
+      const state = create();
+      await settle();
+
+      expect(state.meetingStatus()).toBe('ended');
+      expect(state.visibleSections()).toMatchObject({ rsvpSummary: false, rsvpRosterFilter: false, rsvpAvatarBadges: false });
+    });
+  });
 });
