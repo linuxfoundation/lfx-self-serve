@@ -393,15 +393,15 @@ describe('MentorshipAdminController', () => {
     it('passes the trimmed search, status and paging', async () => {
       const read = vi.spyOn(MentorshipAdminService.prototype, 'getProgramMentors').mockResolvedValue(emptyPage);
 
-      await controller.getProgramMentors(buildReq({ status: 'active', search: '  ada ', offset: '10', limit: '50' }, { programId: PROGRAM_ID }), res, next);
+      await controller.getProgramMentors(buildReq({ status: 'approved', search: '  ada ', offset: '10', limit: '50' }, { programId: PROGRAM_ID }), res, next);
 
-      expect(read).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID, { status: 'active', search: 'ada', offset: 10, limit: 50 });
+      expect(read).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID, { status: 'approved', search: 'ada', offset: 10, limit: 50 });
     });
 
     it.each([
       ['a bad program id', {}, { programId: 'nope' }],
-      ['an unknown status', { status: 'approved' }, { programId: PROGRAM_ID }],
-      ['a repeated status', { status: ['active', 'invited'] }, { programId: PROGRAM_ID }],
+      ['an unknown status', { status: 'active' }, { programId: PROGRAM_ID }],
+      ['a repeated status', { status: ['approved', 'invited'] }, { programId: PROGRAM_ID }],
       ['a bad offset', { offset: '-1' }, { programId: PROGRAM_ID }],
       ['a limit above 50', { limit: '51' }, { programId: PROGRAM_ID }],
       ['a limit of 0', { limit: '0' }, { programId: PROGRAM_ID }],
@@ -738,16 +738,16 @@ describe('MentorshipAdminController', () => {
       const write = vi.spyOn(MentorshipAdminService.prototype, 'updateProgramMentor').mockResolvedValue();
       const out = writeRes();
 
-      await controller.updateProgramMentor(mentorReq({ status: 'active', extra: 1 }), out, next);
+      await controller.updateProgramMentor(mentorReq({ status: 'approved', extra: 1 }), out, next);
 
-      expect(write).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID, MEMBER_ID, { status: 'active' });
+      expect(write).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID, MEMBER_ID, { status: 'approved' });
       expect(out.status).toHaveBeenCalledWith(204);
       expect(next).not.toHaveBeenCalled();
     });
 
     it.each([
-      ['a program id that is not a UUID', { status: 'active' }, { programId: '12', memberId: MEMBER_ID }],
-      ['a member id that is not a UUID', { status: 'active' }, { programId: PROGRAM_ID, memberId: 'abc' }],
+      ['a program id that is not a UUID', { status: 'approved' }, { programId: '12', memberId: MEMBER_ID }],
+      ['a member id that is not a UUID', { status: 'approved' }, { programId: PROGRAM_ID, memberId: 'abc' }],
       ['a status the admin cannot set', { status: 'requested' }, undefined],
       ['a status that is not a string', { status: 1 }, undefined],
       ['no body', undefined, undefined],
