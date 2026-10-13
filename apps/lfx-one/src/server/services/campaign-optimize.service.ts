@@ -317,17 +317,21 @@ export class CampaignOptimizeService {
 }
 
 /**
- * Whether a removal result names exactly the item sent at its index: the same criterion id on X, the
- * same keyword on Reddit, and not the other platform's field. A non-object entry names nothing.
+ * Whether a removal result names the item sent at its index, compared on the field the REQUEST
+ * used: the same criterion id on X, the same keyword on Reddit. The other field is not required to
+ * be absent. campaign-service's `keyword-targeting-removal-result` declares both as optional and
+ * neither as exclusive; today the X adapter fills only `criterion_id` and the Reddit adapter only
+ * `keyword`, but an X result that also echoed the keyword text would still answer its criterion,
+ * and refusing it would turn every successful removal into a 502. A non-object entry names nothing.
  */
 function answersRemovalItem(entry: CampaignServiceKeywordTargetingRemovalResult | null | undefined, sent: KeywordTargetingRemovalItem): boolean {
   if (!entry || typeof entry !== 'object') {
     return false;
   }
   if (sent.criterionId !== undefined) {
-    return entry.criterion_id === sent.criterionId && entry.keyword === undefined;
+    return entry.criterion_id === sent.criterionId;
   }
-  return entry.keyword === sent.keyword && entry.criterion_id === undefined;
+  return entry.keyword === sent.keyword;
 }
 
 /** `/projects/{p}/briefs/{b}/campaigns/{c}`, every segment encoded. */
@@ -338,13 +342,18 @@ function campaignPath(ref: CampaignServiceCampaignTarget): string {
 /**
  * The error a failed lever write should surface, so the UI can branch on `code` alone.
  *
- * - 412 (stale ETag) and 428 (no ETag) get their own codes and a fixed "nothing was changed"
- *   message; `getCodeForStatus` would otherwise collapse both to `CLIENT_ERROR`.
+ * - An ANSWERED 412 (stale ETag) or 428 (no ETag) gets its own code and a fixed "nothing was
+ *   changed" message; `getCodeForStatus` would otherwise collapse both to `CLIENT_ERROR`. Only
+ *   campaign-service's own answer (its JSON error envelope, `upstreamAnswered`) proves the write was
+ *   refused before dispatch, so these are mapped inside the answered branch.
  * - An ANSWERED 503 whose message matches the lever's unconfirmed marker gets the lever's
  *   UNCONFIRMED code and message. campaign-service answers 503 for both a definite and an
  *   unconfirmed failure and tells them apart only in the message (see `campaign-keyword-actions.ts`).
  * - A failure nobody answered (transport, timeout, a gateway 5xx, 408) may have reached the platform,
- *   so it is UNCONFIRMED too. A 4xx other than 408 never dispatched and passes through.
+ *   so it is UNCONFIRMED too. So is an unanswered 412 or 428: a gateway or proxy page carrying that
+ *   status says nothing about whether campaign-service dispatched the write, and calling it a
+ *   definite no-op could invite a duplicate change. Any other unanswered 4xx never reached the
+ *   service and passes through.
  * - Every other answer, a definite 503 included, passes through with campaign-service's own fixed
  *   sentence; its service code never puts platform text in a client message.
  *
@@ -354,20 +363,21 @@ export function asLeverFailure(error: unknown, operation: string, unconfirmed: C
   if (!(error instanceof MicroserviceError)) {
     return error;
   }
-  if (error.statusCode === 412) {
-    return rewrap(error, operation, CAMPAIGN_ETAG_STALE_CODE, CAMPAIGN_ETAG_STALE_MESSAGE);
-  }
-  if (error.statusCode === 428) {
-    return rewrap(error, operation, CAMPAIGN_ETAG_REQUIRED_CODE, CAMPAIGN_ETAG_REQUIRED_MESSAGE);
-  }
   if (upstreamAnswered(error)) {
+    if (error.statusCode === 412) {
+      return rewrap(error, operation, CAMPAIGN_ETAG_STALE_CODE, CAMPAIGN_ETAG_STALE_MESSAGE);
+    }
+    if (error.statusCode === 428) {
+      return rewrap(error, operation, CAMPAIGN_ETAG_REQUIRED_CODE, CAMPAIGN_ETAG_REQUIRED_MESSAGE);
+    }
     const upstreamMessage = (error.errorBody as { message?: unknown } | undefined)?.message;
     if (error.statusCode === 503 && typeof upstreamMessage === 'string' && unconfirmed.marker.test(upstreamMessage)) {
       return rewrap(error, operation, unconfirmed.code, unconfirmed.message);
     }
     return error;
   }
-  if (error.statusCode >= 400 && error.statusCode < 500 && error.statusCode !== 408) {
+  const unansweredMayHaveDispatched = error.statusCode === 408 || error.statusCode === 412 || error.statusCode === 428;
+  if (error.statusCode >= 400 && error.statusCode < 500 && !unansweredMayHaveDispatched) {
     return error;
   }
   return rewrap(error, operation, unconfirmed.code, unconfirmed.message);

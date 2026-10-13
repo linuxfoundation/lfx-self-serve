@@ -201,6 +201,12 @@ describe('CampaignOptimizeService.updateMetaAdSetStatus', () => {
     expect(error.toResponse()).toMatchObject({ code: CAMPAIGN_ETAG_REQUIRED_CODE, error: CAMPAIGN_ETAG_REQUIRED_MESSAGE });
   });
 
+  it.each([412, 428])('reports an UNANSWERED %i (a gateway page, no campaign-service envelope) as UNCONFIRMED, not as a no-op', async (status) => {
+    const error = await failureFor(gatewayError(status));
+    expect(error.statusCode).toBe(status);
+    expect(error.toResponse()).toMatchObject({ code: META_AD_SET_STATUS_UNCONFIRMED_CODE, error: META_AD_SET_STATUS_OUTCOME_UNCONFIRMED });
+  });
+
   it('passes a 409 through with campaign-service’s own sentence', async () => {
     const message =
       "the ad set's status was changed on Meta, but this campaign was modified or deleted by another request meanwhile; read the ad sets before retrying";
@@ -306,6 +312,18 @@ describe('CampaignOptimizeService.removeKeywordTargeting', () => {
     expect(proxyRequest.mock.calls[0][5]).toEqual({ keywords: [{ criterion_id: '2kzxf' }] });
   });
 
+  it('accepts a result that also carries the other platform’s field, comparing only the field the request used', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      campaign_id: 'c-1',
+      results: [{ criterion_id: '2kzxf', keyword: 'kubernetes', outcome: 'APPLIED' }],
+      applied_count: 1,
+    });
+
+    const result = await new CampaignOptimizeService().removeKeywordTargeting(req, { ...ref, keywords: [{ criterionId: '2kzxf' }] });
+
+    expect(result.applied_count).toBe(1);
+  });
+
   it('refuses X results whose criterion ids come back in a different order', async () => {
     proxyRequest.mockResolvedValueOnce({
       campaign_id: 'c-1',
@@ -360,17 +378,6 @@ describe('CampaignOptimizeService.removeKeywordTargeting', () => {
       },
     ],
     ['an entry naming nothing', { campaign_id: 'c-1', results: [{ keyword: 'kubernetes', outcome: 'APPLIED' }, { outcome: 'APPLIED' }], applied_count: 2 }],
-    [
-      'an X field on a Reddit removal',
-      {
-        campaign_id: 'c-1',
-        results: [
-          { keyword: 'kubernetes', outcome: 'APPLIED' },
-          { keyword: ' Cloud ', criterion_id: '2kzxf', outcome: 'APPLIED' },
-        ],
-        applied_count: 2,
-      },
-    ],
     ['no results array', { campaign_id: 'c-1', applied_count: 0 }],
   ])('refuses a 2xx naming %s as unconfirmed', async (_label, body) => {
     proxyRequest.mockResolvedValueOnce(body);
