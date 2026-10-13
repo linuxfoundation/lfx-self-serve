@@ -6,12 +6,16 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ChartComponent } from '@components/chart/chart.component';
 import type { OrgLensRoiProjectRow } from '@lfx-one/shared/interfaces';
+import { formatCurrency } from '@lfx-one/shared/utils';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { OrgRoiProjectsBubbleComponent } from './org-roi-projects-bubble.component';
 
 interface BubbleChartOptionsStub {
-  scales: { x: { min?: number; max?: number }; y: { min?: number; max?: number } };
+  scales: {
+    x: { min?: number; max?: number; ticks: { callback: (value: number) => string } };
+    y: { min?: number; max?: number; ticks: { callback: (value: number) => string } };
+  };
   plugins: {
     legend: { display: boolean; labels: { filter: (item: { datasetIndex: number }) => boolean } };
     tooltip: { filter: (item: { datasetIndex: number }) => boolean };
@@ -96,6 +100,20 @@ describe('OrgRoiProjectsBubbleComponent — break-even line', () => {
 
     expect(chartLabel()).toContain('A dashed line marks break-even, where investment equals return');
     expect(note()).toContain('break-even, where investment equals return');
+  });
+
+  it('labels only the 1, 2 and 5 ticks of each decade, so axis labels cannot crowd', () => {
+    render(MIXED);
+
+    const { scales } = chart().options()!;
+    for (const axis of [scales.x, scales.y]) {
+      expect(axis.ticks.callback(1_000_000)).toBe(formatCurrency(1_000_000));
+      expect(axis.ticks.callback(200_000)).toBe(formatCurrency(200_000));
+      expect(axis.ticks.callback(50_000)).toBe(formatCurrency(50_000));
+      // The rest of the decade, and the raw pinned minimum that collided with $50K on dev.
+      expect(axis.ticks.callback(700_000)).toBe('');
+      expect(axis.ticks.callback(47_100)).toBe('');
+    }
   });
 
   it('still draws the line when every return exceeds every investment', () => {

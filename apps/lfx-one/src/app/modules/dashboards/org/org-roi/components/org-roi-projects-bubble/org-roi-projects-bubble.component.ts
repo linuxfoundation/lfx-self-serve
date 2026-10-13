@@ -163,7 +163,7 @@ export class OrgRoiProjectsBubbleComponent {
           min: segment?.from,
           max: segment?.to,
           title: { display: true, text: 'Investment', font: { size: 11 } },
-          ticks: { callback: (value) => formatCurrency(Number(value)) },
+          ticks: { callback: (value) => this.axisTickLabel(Number(value)) },
           grid: { color: lfxColors.gray[200] },
         },
         y: {
@@ -171,7 +171,7 @@ export class OrgRoiProjectsBubbleComponent {
           min: segment?.from,
           max: segment?.to,
           title: { display: true, text: 'Return', font: { size: 11 } },
-          ticks: { callback: (value) => formatCurrency(Number(value)) },
+          ticks: { callback: (value) => this.axisTickLabel(Number(value)) },
           grid: { color: lfxColors.gray[200] },
         },
       },
@@ -208,4 +208,14 @@ export class OrgRoiProjectsBubbleComponent {
       },
     };
   });
+
+  /**
+   * A log axis places a tick at every 1–9 multiple of each decade, and the pinned bounds add one at
+   * the raw minimum, so labelling them all overlaps at the top of each decade. Only the 1, 2 and 5
+   * multiples are labelled — Chart.js's own log convention — and the grid keeps the rest.
+   */
+  private axisTickLabel(value: number): string {
+    const mantissa = value / 10 ** Math.floor(Math.log10(value));
+    return [1, 2, 5].some((step) => Math.abs(mantissa - step) < 1e-9) ? formatCurrency(value) : '';
+  }
 }
