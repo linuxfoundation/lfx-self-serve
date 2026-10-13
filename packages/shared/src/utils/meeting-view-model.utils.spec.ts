@@ -9,7 +9,16 @@ import '@angular/compiler';
 import { describe, expect, it } from 'vitest';
 
 import { MeetingVisibility } from '../enums';
-import type { ActionSlotInput, ActionSlotKind, Meeting, MeetingOccurrence, MeetingPrivacyState, MeetingTimeState, MeetingViewerRole } from '../interfaces';
+import type {
+  ActionSlotInput,
+  ActionSlotKind,
+  Meeting,
+  MeetingOccurrence,
+  MeetingPrivacyState,
+  MeetingSectionVisibility,
+  MeetingTimeState,
+  MeetingViewerRole,
+} from '../interfaces';
 import {
   resolveActionSlot,
   resolveMeetingStatus,
@@ -651,4 +660,156 @@ describe('resolveMeetingStatus', () => {
   ])('resolves %o to %s', (input, expected) => {
     expect(resolveMeetingStatus(input)).toBe(expected);
   });
+});
+
+/**
+ * #3261: every legal (time, viewer, past access) cell of `resolveVisibleSections`, written from the
+ * state matrix's § Section visibility table (its V2 column) rather than read back from the resolver. RSVP flags are the
+ * F = on values; F = off and recurring are swept over every row below. Past access (D) is a real axis
+ * only on an ended meeting; before and live carry one row each, and the sentinel block proves D is ignored there.
+ */
+describe('resolveVisibleSections: the section-visibility table', () => {
+  type Cell = Omit<MeetingSectionVisibility, 'occurrences'>;
+  const none: Cell = {
+    agenda: false,
+    joinDetails: false,
+    materials: false,
+    people: false,
+    rsvpAvatarBadges: false,
+    rsvpRosterFilter: false,
+    rsvpSummary: false,
+    tools: false,
+  };
+  // Upcoming and live: content is open to whoever loaded the page; roster, join details and RSVP are for those on the meeting.
+  const open: Cell = { ...none, agenda: true, materials: true };
+  const onTheMeeting: Cell = { ...open, joinDetails: true, people: true, rsvpAvatarBadges: true, rsvpRosterFilter: true, rsvpSummary: true };
+  // Ended with access: content and tools; the past roster and its count strip for signed-in viewers (never anonymous);
+  // no join details, and no roster filter or badges (past rows carry no RSVP).
+  const endedVisitor: Cell = { ...open, tools: true }; // D-4
+  const endedSignedIn: Cell = { ...open, people: true, rsvpSummary: true, tools: true };
+
+  const TABLE: [MeetingTimeState, MeetingViewerRole, 'full' | 'none', Cell][] = [
+    ['before', 'visitor', 'none', open],
+    ['before', 'outsider', 'none', open],
+    ['before', 'registrant', 'none', onTheMeeting],
+    ['before', 'organizer', 'none', onTheMeeting],
+    ['live', 'visitor', 'none', open],
+    ['live', 'outsider', 'none', open],
+    ['live', 'registrant', 'none', onTheMeeting],
+    ['live', 'organizer', 'none', onTheMeeting],
+    ['ended', 'visitor', 'full', endedVisitor],
+    ['ended', 'visitor', 'none', none],
+    ['ended', 'outsider', 'full', endedSignedIn],
+    ['ended', 'outsider', 'none', none],
+    ['ended', 'registrant', 'full', endedSignedIn],
+    ['ended', 'registrant', 'none', none],
+    // An organizer always has `full` (FGA); organizer + `none` is an illegal input, asserted in the sentinel block.
+    ['ended', 'organizer', 'full', endedSignedIn],
+  ];
+
+  it('has exactly one row per legal cell', () => {
+    const keys = TABLE.map(([time, role, access]) => `${time}/${role}/${access}`);
+    const legal = [
+      ...(['before', 'live'] as const).flatMap((time) => VIEWER_ROLES.map((role) => `${time}/${role}/none`)),
+      ...VIEWER_ROLES.filter((role) => role !== 'organizer').flatMap((role) => [`ended/${role}/full`, `ended/${role}/none`]),
+      'ended/organizer/full',
+    ];
+    expect(keys).toHaveLength(new Set(keys).size);
+    expect(new Set(keys)).toEqual(new Set(legal));
+  });
+
+  it.each(TABLE)('%s · %s · %s access', (timeState, viewerRole, access, cell) => {
+    for (const recurring of [false, true]) {
+      const on = resolveVisibleSections({ fullAccess: access === 'full', inviteResponsesEnabled: true, recurring, timeState, viewerRole });
+      expect(on).toEqual({ ...cell, occurrences: recurring });
+
+      // F = off removes the RSVP dimension and changes nothing else.
+      const off = resolveVisibleSections({ fullAccess: access === 'full', inviteResponsesEnabled: false, recurring, timeState, viewerRole });
+      expect(off).toEqual({ ...cell, occurrences: recurring, rsvpAvatarBadges: false, rsvpRosterFilter: false, rsvpSummary: false });
+    }
+  });
+});
+
+/**
+ * #3261: illegal inputs (state-matrix.md § Other illegal combinations) resolve to their legal neighbour,
+ * the documented sentinel: the resolver ignores the axis that does not exist for that input.
+ */
+describe('illegal combinations resolve to their legal neighbour', () => {
+  it('ignores past access (axis D) on a meeting that has not ended', () => {
+    for (const timeState of ['before', 'live'] as const) {
+      for (const viewerRole of VIEWER_ROLES) {
+        for (const inviteResponsesEnabled of [true, false]) {
+          for (const recurring of [false, true]) {
+            const sections = (fullAccess: boolean) => resolveVisibleSections({ fullAccess, inviteResponsesEnabled, recurring, timeState, viewerRole });
+            expect(sections(true)).toEqual(sections(false));
+          }
+          for (const privacy of ALL_PRIVACY) {
+            const slot = (fullAccess: boolean) => resolveActionSlot({ fullAccess, inviteResponsesEnabled, privacy, timeState, viewerRole });
+            expect(slot(true)).toBe(slot(false));
+          }
+        }
+      }
+    }
+  });
+
+  // The BFF always gives an organizer `full` (state-matrix.md, organizer rows); `none` resolves like `full`.
+  it("ignores past access for an ended meeting's organizer", () => {
+    for (const inviteResponsesEnabled of [true, false]) {
+      for (const recurring of [false, true]) {
+        const sections = (fullAccess: boolean) =>
+          resolveVisibleSections({ fullAccess, inviteResponsesEnabled, recurring, timeState: 'ended', viewerRole: 'organizer' });
+        expect(sections(false)).toEqual(sections(true));
+      }
+      for (const privacy of ALL_PRIVACY) {
+        const slot = (fullAccess: boolean) => resolveActionSlot({ fullAccess, inviteResponsesEnabled, privacy, timeState: 'ended', viewerRole: 'organizer' });
+        expect(slot(false)).toBe(slot(true));
+      }
+    }
+  });
+
+  it('ignores any RSVP answer (axis F x RSVP state) when RSVP tracking is off', () => {
+    for (const myRsvp of ['accepted', 'maybe', 'declined', null, undefined] as const) {
+      expect(resolveMeetingStatus({ timeState: 'before', hasStarted: false, invited: true, inviteResponsesEnabled: false, myRsvp })).toBe('upcoming');
+    }
+  });
+});
+
+describe('resolvers: remaining edges (#3261)', () => {
+  it.each([
+    [MeetingVisibility.PUBLIC, false, 'Public', 'fa-light fa-globe'],
+    [MeetingVisibility.PUBLIC, true, 'Public (Restricted)', 'fa-light fa-lock'],
+    [MeetingVisibility.PRIVATE, false, 'Private', 'fa-light fa-shield'],
+    [MeetingVisibility.PRIVATE, true, 'Private (Restricted)', 'fa-light fa-lock'],
+  ])('labels and marks %s / restricted=%s', (visibility, restricted, label, icon) => {
+    expect(resolvePrivacy(visibility, restricted)).toMatchObject({ label, icon });
+  });
+
+  // hasMeetingEnded is strict (now > end + 40 min), so the grace period's last instant is still live.
+  it('is still "live" at the exact end of the grace period', () => {
+    expect(resolveTimeState(buildMeeting(), null, at('2026-06-01T11:40:00.000Z'))).toBe('live');
+  });
+
+  it("reads the occurrence it is handed, not the series' start", () => {
+    const series = buildMeeting({ start_time: '2026-01-01T10:00:00.000Z' });
+    expect(resolveTimeState(series, buildOccurrence(), at('2026-06-01T11:41:00.000Z'))).toBe('ended');
+    expect(resolveTimeState(series, buildOccurrence(), at('2026-06-01T10:30:00.000Z'))).toBe('live');
+  });
+
+  it('makes an organizer who is not on the invite list an organizer', () => {
+    expect(resolveViewerRole({ authenticated: true, organizer: true, invited: false })).toBe('organizer');
+  });
+
+  it.each([
+    ['ended', false, false, true, 'ended'],
+    ['ended', true, false, false, 'ended'],
+    ['live', true, false, true, 'live'],
+    ['live', false, true, false, 'starting-soon'],
+  ] as const)(
+    'resolves %s (started=%s, invited=%s, RSVP tracking=%s) to %s whatever the answer',
+    (timeState, hasStarted, invited, inviteResponsesEnabled, status) => {
+      for (const myRsvp of ['accepted', 'maybe', 'declined', null, undefined] as const) {
+        expect(resolveMeetingStatus({ timeState, hasStarted, invited, inviteResponsesEnabled, myRsvp })).toBe(status);
+      }
+    }
+  );
 });
