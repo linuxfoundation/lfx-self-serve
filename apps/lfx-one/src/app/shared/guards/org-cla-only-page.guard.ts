@@ -5,10 +5,11 @@ import { isPlatformBrowser } from '@angular/common';
 import { inject, Injector, PLATFORM_ID } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRouteSnapshot, CanActivateChildFn, Router, UrlTree } from '@angular/router';
-import { ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
-import { filter, map, Observable, take } from 'rxjs';
+import { ORG_LENS_CLA_M3_ENABLED_FLAG, ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
+import { filter, firstValueFrom } from 'rxjs';
 
 import { AccountContextService } from '../services/account-context.service';
+import { FeatureFlagService } from '../services/feature-flag.service';
 import { OrgClaOnlyAccessService } from '../services/org-cla-only-access.service';
 import { OrgRoleGrantsService } from '../services/org-role-grants.service';
 
@@ -20,13 +21,9 @@ const CLA_PAGE = 'easycla';
  * `orgPathParamGuard` has adopted the addressed organization. UX only — the BFF refuses the data of
  * every non-CLA page for this caller regardless.
  */
-export const orgClaOnlyPageGuard: CanActivateChildFn = (childRoute: ActivatedRouteSnapshot): boolean | UrlTree | Observable<boolean | UrlTree> => {
+export const orgClaOnlyPageGuard: CanActivateChildFn = async (childRoute: ActivatedRouteSnapshot): Promise<boolean | UrlTree> => {
   // Grants and LaunchDarkly are browser-only, so the browser run decides.
   if (!isPlatformBrowser(inject(PLATFORM_ID))) {
-    return true;
-  }
-  const claOnlyAccess = inject(OrgClaOnlyAccessService);
-  if (!claOnlyAccess.enabled()) {
     return true;
   }
 
@@ -35,21 +32,32 @@ export const orgClaOnlyPageGuard: CanActivateChildFn = (childRoute: ActivatedRou
     return true;
   }
 
+  // Everything is injected before the first await: the injection context does not survive it.
+  const featureFlagService = inject(FeatureFlagService);
+  const claOnlyAccess = inject(OrgClaOnlyAccessService);
   const router = inject(Router);
   const accountContext = inject(AccountContextService);
   const roleGrants = inject(OrgRoleGrantsService);
-  const segment = page.parent?.paramMap.get(ORG_SEGMENT_PARAM) ?? null;
-  const decide = (): boolean | UrlTree =>
-    segment && claOnlyAccess.isClaOnly(accountContext.selectedAccount().uid) ? router.createUrlTree(['/org', segment, CLA_PAGE]) : true;
+  const injector = inject(Injector);
 
-  if (roleGrants.loaded()) {
-    return decide();
+  // On a cold deep link the flag still reads its `false` default until LaunchDarkly is ready, which
+  // would admit the page. A timeout admits it too: no CLA-only org exists while the flag is off.
+  if (!featureFlagService.providerReady()) {
+    const ready = await featureFlagService.waitForReady({ guard: 'orgClaOnlyPageGuard', flag: ORG_LENS_CLA_M3_ENABLED_FLAG });
+    if (!ready) {
+      return true;
+    }
   }
-  return toObservable(roleGrants.loaded, { injector: inject(Injector) }).pipe(
-    filter(Boolean),
-    take(1),
-    map(() => decide())
-  );
+  if (!claOnlyAccess.enabled()) {
+    return true;
+  }
+
+  if (!roleGrants.loaded()) {
+    await firstValueFrom(toObservable(roleGrants.loaded, { injector }).pipe(filter(Boolean)));
+  }
+
+  const segment = page.parent?.paramMap.get(ORG_SEGMENT_PARAM) ?? null;
+  return segment && claOnlyAccess.isClaOnly(accountContext.selectedAccount().uid) ? router.createUrlTree(['/org', segment, CLA_PAGE]) : true;
 };
 
 /** The page route directly under `:orgSegment` that `childRoute` is, or sits beneath. */

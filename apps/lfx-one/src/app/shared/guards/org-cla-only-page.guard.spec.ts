@@ -5,6 +5,7 @@ import { PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRouteSnapshot, convertToParamMap, Router, RouterStateSnapshot, UrlTree } from '@angular/router';
 import { AccountContextService } from '@shared/services/account-context.service';
+import { FeatureFlagService } from '@shared/services/feature-flag.service';
 import { OrgClaOnlyAccessService } from '@shared/services/org-cla-only-access.service';
 import { OrgRoleGrantsService } from '@shared/services/org-role-grants.service';
 import { firstValueFrom, isObservable, Observable } from 'rxjs';
@@ -17,8 +18,10 @@ describe('orgClaOnlyPageGuard', () => {
   const enabled = signal(true);
   const loaded = signal(true);
   const selectedUid = signal<string | null>(CLA_ONLY_UID);
+  const providerReady = signal(true);
   const claOnly = new Set([CLA_ONLY_UID]);
   let createUrlTree: ReturnType<typeof vi.fn>;
+  let waitForReady: ReturnType<typeof vi.fn>;
   let platform: string;
 
   /** `/org/{segment}/{page}[/{child}]` as the router hands it to a CanActivateChild on `:orgSegment`. */
@@ -37,12 +40,15 @@ describe('orgClaOnlyPageGuard', () => {
     enabled.set(true);
     loaded.set(true);
     selectedUid.set(CLA_ONLY_UID);
+    providerReady.set(true);
     platform = 'browser';
     createUrlTree = vi.fn((commands: string[]) => ({ redirected: commands.join('/') }));
+    waitForReady = vi.fn(async () => true);
     TestBed.configureTestingModule({
       providers: [
         { provide: PLATFORM_ID, useFactory: () => platform },
         { provide: Router, useValue: { createUrlTree } },
+        { provide: FeatureFlagService, useValue: { providerReady, waitForReady } },
         { provide: OrgClaOnlyAccessService, useValue: { enabled, isClaOnly: (uid: string | null) => !!uid && enabled() && claOnly.has(uid) } },
         { provide: AccountContextService, useValue: { selectedAccount: () => ({ accountId: '', accountName: '', membershipTier: '', uid: selectedUid() }) } },
         { provide: OrgRoleGrantsService, useValue: { loaded } },
@@ -70,6 +76,24 @@ describe('orgClaOnlyPageGuard', () => {
 
   it('applies nothing while org-lens-cla-m3-enabled is off', async () => {
     enabled.set(false);
+
+    expect(await run(routeFor(CLA_ONLY_UID, 'overview'))).toBe(true);
+  });
+
+  it('waits for LaunchDarkly on a cold deep link instead of reading the flag default', async () => {
+    providerReady.set(false);
+    enabled.set(false);
+    waitForReady.mockImplementation(async () => {
+      enabled.set(true);
+      return true;
+    });
+
+    expect(await run(routeFor(CLA_ONLY_UID, 'overview'))).toEqual({ redirected: `/org/${CLA_ONLY_UID}/easycla` });
+  });
+
+  it('admits the page when LaunchDarkly never becomes ready, since no CLA-only org exists without the flag', async () => {
+    providerReady.set(false);
+    waitForReady.mockResolvedValue(false);
 
     expect(await run(routeFor(CLA_ONLY_UID, 'overview'))).toBe(true);
   });
