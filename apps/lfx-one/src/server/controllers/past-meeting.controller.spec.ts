@@ -168,24 +168,43 @@ describe('PastMeetingController.getPastMeetings — viewer attendance enrichment
     enrichAttendanceMock.mockResolvedValue(undefined);
   });
 
-  it('enriches the page with the viewer attendance when a signed-in user is present', async () => {
+  const buildListReq = (authenticated: boolean, query: Record<string, string>): any => ({ ...buildReq(authenticated), query });
+
+  it('enriches the page with the viewer attendance when the caller opts in', async () => {
     getEffectiveEmailMock.mockReturnValue('viewer@example.com');
     const res = buildRes();
 
-    await controller.getPastMeetings(buildReq(true), res, vi.fn());
+    await controller.getPastMeetings(buildListReq(true, { include_viewer_attendance: 'true' }), res, vi.fn());
 
     expect(enrichAttendanceMock).toHaveBeenCalledWith(expect.anything(), 'viewer@example.com', meetings);
     expect(res.json).toHaveBeenCalledWith({ data: meetings, page_token: 'next' });
   });
 
-  it('skips the attendance scan when there is no signed-in user', async () => {
+  it('still enriches a username-only viewer, passing an empty email so the service matches on username', async () => {
     getEffectiveEmailMock.mockReturnValue(null);
     const res = buildRes();
 
-    await controller.getPastMeetings(buildReq(false), res, vi.fn());
+    await controller.getPastMeetings(buildListReq(true, { include_viewer_attendance: 'true' }), res, vi.fn());
+
+    expect(enrichAttendanceMock).toHaveBeenCalledWith(expect.anything(), '', meetings);
+  });
+
+  it('skips the attendance scan when the caller does not opt in', async () => {
+    getEffectiveEmailMock.mockReturnValue('viewer@example.com');
+    const res = buildRes();
+
+    await controller.getPastMeetings(buildListReq(true, {}), res, vi.fn());
 
     expect(enrichAttendanceMock).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith({ data: meetings, page_token: 'next' });
+  });
+
+  it('does not forward the opt-in flag to the query service', async () => {
+    getEffectiveEmailMock.mockReturnValue('viewer@example.com');
+
+    await controller.getPastMeetings(buildListReq(true, { include_viewer_attendance: 'true', name: 'weekly' }), buildRes(), vi.fn());
+
+    expect(meetingSvc.getMeetings).toHaveBeenCalledWith(expect.anything(), { name: 'weekly' }, 'v1_past_meeting');
   });
 });
 

@@ -4,7 +4,7 @@
 import { HttpClient, HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ApplicationRef, Component, input, output, signal } from '@angular/core';
-import { DeferBlockBehavior, DeferBlockState, TestBed } from '@angular/core/testing';
+import { ComponentFixture, DeferBlockBehavior, DeferBlockState, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideRouter, Router } from '@angular/router';
 import { Meeting, MeetingOccurrence, MeetingRegistrant, MeetingRegistrationRemovalResult, MeetingRsvp, User } from '@lfx-one/shared/interfaces';
@@ -520,6 +520,7 @@ describe('MeetingCardComponent — remove myself', () => {
   let removedIds: ReturnType<typeof signal<ReadonlySet<string>>>;
   let registrationClose$: Subject<{ registered: boolean }>;
   let rsvpButtons: RsvpButtonGroupComponent | undefined;
+  let mountedFixture: ComponentFixture<MeetingCardComponent> | undefined;
 
   async function mount(
     meeting: Meeting = INVITEE,
@@ -573,6 +574,7 @@ describe('MeetingCardComponent — remove myself', () => {
     fixture.detectChanges();
     await TestBed.inject(ApplicationRef).whenStable();
     if (options.fetchedRsvp) rsvpButtons = fixture.debugElement.query(By.directive(RsvpButtonGroupComponent)).componentInstance;
+    mountedFixture = fixture;
 
     return fixture.componentInstance;
   }
@@ -671,6 +673,16 @@ describe('MeetingCardComponent — remove myself', () => {
     const component = await mount({ ...INVITEE, ...attendance } as Meeting, options);
 
     expect(component.userAttended()).toBe(expected);
+  });
+
+  it('follows a refreshed input for the same card instead of keeping its first attendance value', async () => {
+    const component = await mount({ ...INVITEE, user_attended: false } as Meeting, { past: true });
+    expect(component.userAttended()).toBe(false);
+
+    mountedFixture!.componentRef.setInput('meetingInput', { ...INVITEE, user_attended: true } as Meeting);
+    mountedFixture!.detectChanges();
+
+    expect(component.userAttended()).toBe(true);
   });
 
   it('keeps the action hidden on a card rebuilt after the list refetched a stale invited flag', async () => {
