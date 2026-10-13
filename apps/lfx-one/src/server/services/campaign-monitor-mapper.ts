@@ -49,7 +49,9 @@ function toLegacyCampaign(row: CampaignServiceAccountMonitorCampaign): RedditMon
     conversions: conversionsMeasured ? (row.conversions as number) : 0,
     // Rounded as the legacy engines rounded it; the panels print it with `toFixed(0)` anyway.
     pacingPct: pacingTrusted ? Math.round(row.pacing_pct) : 0,
-    pacingLabel: row.pacing_label,
+    // campaign-service's label on such a row is a placeholder (`normal`); passing it on would put
+    // "normal" next to a pacing figure nobody measured, so the label is left out instead.
+    pacingLabel: pacingTrusted ? row.pacing_label : undefined,
     startDate: row.start_date,
     endDate: row.end_date,
     pacingUnknown: row.pacing_unknown,

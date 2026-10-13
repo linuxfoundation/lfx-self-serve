@@ -98,6 +98,9 @@ describe('toMetaMonitorResponse / toRedditMonitorResponse', () => {
     );
 
     expect(result.campaigns.map((c) => c.pacingPct)).toEqual([0, 0]);
+    // campaign-service's placeholder label ("normal") is not passed on for either.
+    expect(result.campaigns.map((c) => c.pacingLabel)).toEqual([undefined, undefined]);
+    expect(JSON.parse(JSON.stringify(result.campaigns[0]))).not.toHaveProperty('pacingLabel');
     expect(result.campaigns[0].pacingUnknown).toBe(true);
     expect(result.campaigns[1].fetchFailed).toBe(true);
   });
