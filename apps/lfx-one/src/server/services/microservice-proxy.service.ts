@@ -5,7 +5,7 @@ import { DEFAULT_QUERY_PARAMS } from '@lfx-one/shared/constants';
 import { ApiRequestOptions, ApiResponse, MicroserviceUrls } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
-import { MicroserviceError } from '../errors';
+import { MicroserviceError, ServiceValidationError } from '../errors';
 import { ApiClientService } from './api-client.service';
 
 export class MicroserviceProxyService {
@@ -25,7 +25,7 @@ export class MicroserviceProxyService {
 
     try {
       const baseUrl = this.resolveBaseUrl(service);
-      const endpoint = `${baseUrl}${path}`;
+      const endpoint = this.buildEndpoint(baseUrl, path);
       // options.bearerToken lets callers fan out parallel requests with different identities
       // (e.g. user token for FGA checks alongside M2M for public data) without mutating the
       // shared req.bearerToken field — which would race across the parallel calls.
@@ -62,7 +62,7 @@ export class MicroserviceProxyService {
 
     try {
       const baseUrl = this.resolveBaseUrl(service);
-      const endpoint = `${baseUrl}${path}`;
+      const endpoint = this.buildEndpoint(baseUrl, path);
       // See proxyRequest above — options.bearerToken opts out of req.bearerToken for parallel-safe calls.
       const token = options?.bearerToken ?? req.bearerToken;
 
@@ -105,7 +105,7 @@ export class MicroserviceProxyService {
 
     try {
       const baseUrl = this.resolveBaseUrl(service);
-      const endpoint = `${baseUrl}${path}`;
+      const endpoint = this.buildEndpoint(baseUrl, path);
       const token = req.bearerToken;
 
       // Merge query parameters with defaults taking precedence
@@ -145,7 +145,7 @@ export class MicroserviceProxyService {
     options?: Pick<ApiRequestOptions, 'timeoutMs'>
   ): Promise<Response> {
     const baseUrl = this.resolveBaseUrl(service);
-    const endpoint = `${baseUrl}${path}`;
+    const endpoint = this.buildEndpoint(baseUrl, path);
     const token = req.bearerToken;
 
     const mergedQuery = { ...query, ...DEFAULT_QUERY_PARAMS };
@@ -153,6 +153,33 @@ export class MicroserviceProxyService {
     // ApiClientService.streamRequest already throws MicroserviceError with full context,
     // so no try/catch wrapping is needed here.
     return this.apiClient.streamRequest(method, endpoint, token, mergedQuery, customHeaders, options);
+  }
+
+  /**
+   * Defense-in-depth against path traversal: every caller here builds `path` by interpolating
+   * route params that should already be validated (e.g. as UUIDs), but a single missed call site
+   * would otherwise let a crafted param retarget the upstream request — `fetch()` collapses `..`
+   * dot-segments and a literal `?`/`#` in the string starts a new query/fragment, re-routing the
+   * call to an arbitrary upstream path (linuxfoundation/lfx-self-serve-ops#434). Reject here so
+   * that gap can't reopen even if an individual controller's own validation is incomplete.
+   */
+  private buildEndpoint(baseUrl: string, path: string): string {
+    if (path.includes('?') || path.includes('#')) {
+      throw ServiceValidationError.forField('path', 'Upstream path must not contain a query string or fragment', {
+        operation: 'proxy_build_endpoint',
+        service: 'microservice_proxy_service',
+      });
+    }
+
+    const normalizedPathname = new URL(path, baseUrl).pathname;
+    if (normalizedPathname !== path) {
+      throw ServiceValidationError.forField('path', 'Upstream path resolves outside the requested resource', {
+        operation: 'proxy_build_endpoint',
+        service: 'microservice_proxy_service',
+      });
+    }
+
+    return `${baseUrl}${path}`;
   }
 
   // Single source of truth for per-service base URLs. LFX_V2_MEMBER_SERVICE,
