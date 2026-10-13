@@ -58,7 +58,8 @@ describe('HealthMetricsNonMembersService.getOrgs', () => {
       CONTRIBUTIONS_COUNT: 1840,
       IS_NEW: true,
       SORT_RANK: 1,
-      IS_HIGH_FIT: false,
+      MEMBERSHIP_STATUS: 'Non-member',
+      FIT_BAND: 'High',
       ...overrides,
     };
   }
@@ -86,11 +87,13 @@ describe('HealthMetricsNonMembersService.getOrgs', () => {
       expect(binds).toEqual(['acme']);
       expect(sql.match(/\?/g)).toHaveLength(binds.length);
       expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.NON_MEMBER_COMPANY_PARTICIPATION p');
-      expect(sql).toContain('LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.NON_MEMBER_FIT_SCORE f');
+      expect(sql).not.toContain('NON_MEMBER_FIT_SCORE');
       for (const column of ['meetings_attended_count', 'distinct_people_count', 'contributions_count', 'is_new', 'sort_rank']) {
         expect(sql).toContain(`p.${column}_${suffix} AS ${column}`);
       }
-      expect(sql).toContain(`COALESCE(f.is_high_fit_${suffix}, FALSE) AS is_high_fit`);
+      expect(sql).toContain('p.membership_status,');
+      expect(sql).toContain('p.fit_band,');
+      expect(sql).toContain("COALESCE(p.fit_band = 'High', FALSE) AS is_high_fit");
       expect(sql).not.toMatch(/FROM scoped WHERE/);
     }
   });
@@ -138,7 +141,18 @@ describe('HealthMetricsNonMembersService.getOrgs', () => {
 
   it('maps an organization with an ISO date and keeps missing counts null', async () => {
     execute.mockResolvedValue({
-      rows: [orgRow(), orgRow({ ACCOUNT_NAME: '', MEETINGS_ATTENDED_COUNT: null, DISTINCT_PEOPLE_COUNT: null, IS_NEW: null, LAST_ENGAGED_DATE: null })],
+      rows: [
+        orgRow(),
+        orgRow({
+          ACCOUNT_NAME: '',
+          MEETINGS_ATTENDED_COUNT: null,
+          DISTINCT_PEOPLE_COUNT: null,
+          IS_NEW: null,
+          LAST_ENGAGED_DATE: null,
+          MEMBERSHIP_STATUS: '',
+          FIT_BAND: null,
+        }),
+      ],
     });
 
     const response = await new HealthMetricsNonMembersService().getOrgs(req, query);
@@ -156,6 +170,8 @@ describe('HealthMetricsNonMembersService.getOrgs', () => {
           distinctPeople: 9,
           contributions: 1840,
           isNew: true,
+          membershipStatus: 'Non-member',
+          fitBand: 'High',
         },
         {
           accountId: '0014100000AcmeAAAA',
@@ -165,6 +181,8 @@ describe('HealthMetricsNonMembersService.getOrgs', () => {
           distinctPeople: null,
           contributions: 1840,
           isNew: false,
+          membershipStatus: null,
+          fitBand: null,
         },
       ],
     });
@@ -225,6 +243,7 @@ describe('HealthMetricsNonMembersService.getPeople', () => {
       expect(sql).toContain(`p.meetings_attended_count_${suffix} AS meetings_attended_count`);
       expect(sql).toContain(`p.sort_rank_${suffix} AS sort_rank`);
       expect(sql).toContain(`AND COALESCE(p.meetings_attended_count_${suffix}, 0) > 0`);
+      expect(sql).toContain(`p.scope_individuals_count_${suffix} AS scope_individuals_count`);
       expect(sql).toContain('SELECT * FROM scoped \n');
     }
   });
@@ -251,7 +270,7 @@ describe('HealthMetricsNonMembersService.getPeople', () => {
     const scoped = sql.slice(sql.indexOf('WITH scoped AS'), sql.indexOf('matched AS'));
     expect(scoped).toContain('AND p.person_key IS NOT NULL');
     expect(scoped).toContain("AND p.person_key <> ''");
-    expect(sql).toContain('(SELECT COUNT(*) FROM scoped) AS scope_total');
+    expect(sql).toContain('(SELECT CASE WHEN COUNT(*) = 0 THEN 0 ELSE ANY_VALUE(scope_individuals_count) END FROM scoped) AS scope_total');
     expect(sql).toContain('(SELECT COUNT(*) FROM matched) AS total_records');
     expect(sql).toContain('ORDER BY sort_rank ASC NULLS LAST, person_key ASC\n        LIMIT 10 OFFSET 0');
     expect(sql).toContain('LEFT JOIN page ON TRUE');
@@ -324,6 +343,14 @@ describe('HealthMetricsNonMembersService.getPeople', () => {
 
     expect(response).toEqual({ rows: [], totalRecords: 30, scopeTotal: 214 });
   });
+
+  it('keeps an unset model total as null rather than zero', async () => {
+    execute.mockResolvedValue({ rows: [{ SCOPE_TOTAL: null, TOTAL_RECORDS: 30, IS_PAGE_ROW: null, PERSON_KEY: null }] });
+
+    const response = await new HealthMetricsNonMembersService().getPeople(req, { ...query, offset: 500 });
+
+    expect(response).toEqual({ rows: [], totalRecords: 30, scopeTotal: null });
+  });
 });
 
 describe('HealthMetricsNonMembersService.getConversion', () => {
@@ -367,7 +394,7 @@ describe('HealthMetricsNonMembersService.getConversion', () => {
       const [summarySql, summaryBinds] = readFor('NON_MEMBER_CONVERSION_OPPORTUNITY');
       expect(summarySql).toContain(`high_fit_org_count_${suffix} AS high_fit_org_count`);
       expect(summarySql).toContain(`estimated_pipeline_usd_${suffix} AS estimated_pipeline_usd`);
-      expect(summarySql).toContain('LIMIT 1');
+      expect(summarySql).toContain('ORDER BY _key ASC\n      LIMIT 1');
       expect(summaryBinds).toEqual(['acme']);
 
       const [warmSql, warmBinds] = readFor('NON_MEMBER_FIT_SCORE');
