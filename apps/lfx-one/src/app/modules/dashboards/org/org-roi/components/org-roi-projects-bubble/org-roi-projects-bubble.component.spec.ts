@@ -6,12 +6,16 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ChartComponent } from '@components/chart/chart.component';
 import type { OrgLensRoiProjectRow } from '@lfx-one/shared/interfaces';
+import { formatCurrency } from '@lfx-one/shared/utils';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { OrgRoiProjectsBubbleComponent } from './org-roi-projects-bubble.component';
 
 interface BubbleChartOptionsStub {
-  scales: { x: { min?: number; max?: number }; y: { min?: number; max?: number } };
+  scales: {
+    x: { min?: number; max?: number; ticks: { callback: (value: number, index: number, ticks: { value: number }[]) => string } };
+    y: { min?: number; max?: number; ticks: { callback: (value: number, index: number, ticks: { value: number }[]) => string } };
+  };
   plugins: {
     legend: { display: boolean; labels: { filter: (item: { datasetIndex: number }) => boolean } };
     tooltip: { filter: (item: { datasetIndex: number }) => boolean };
@@ -96,6 +100,36 @@ describe('OrgRoiProjectsBubbleComponent — break-even line', () => {
 
     expect(chartLabel()).toContain('A dashed line marks break-even, where investment equals return');
     expect(note()).toContain('break-even, where investment equals return');
+  });
+
+  it('labels only the 1, 2 and 5 ticks of each decade, so axis labels cannot crowd', () => {
+    render(MIXED);
+
+    // The raw pinned minimum plus a decade and a half of log ticks, as the dev chart drew them.
+    const ticks = [47_100, 50_000, 60_000, 70_000, 80_000, 90_000, 100_000, 200_000, 300_000, 700_000, 1_000_000].map((value) => ({ value }));
+    const { scales } = chart().options()!;
+    for (const axis of [scales.x, scales.y]) {
+      const label = (value: number): string => axis.ticks.callback(value, 0, ticks);
+      expect(label(1_000_000)).toBe(formatCurrency(1_000_000));
+      expect(label(200_000)).toBe(formatCurrency(200_000));
+      expect(label(50_000)).toBe(formatCurrency(50_000));
+      // The rest of the decade, and the raw pinned minimum that collided with $50K on dev.
+      expect(label(700_000)).toBe('');
+      expect(label(47_100)).toBe('');
+    }
+  });
+
+  it('labels an even stride of at most six ticks when the range is too narrow for two 1/2/5 steps', () => {
+    render(MIXED);
+
+    // The 15 ticks Chart.js 4.5 emits for a pinned $101K–$499K axis: 200K is its only 1/2/5 step.
+    const values = [101_000, 110_000, 120_000, 130_000, 140_000, 150_000, 160_000, 170_000, 180_000, 190_000, 200_000, 250_000, 300_000, 400_000, 499_000];
+    const ticks = values.map((value) => ({ value }));
+    const { scales } = chart().options()!;
+    for (const axis of [scales.x, scales.y]) {
+      const labelled = values.filter((value, index) => axis.ticks.callback(value, index, ticks) !== '');
+      expect(labelled).toEqual([101_000, 130_000, 160_000, 190_000, 300_000]);
+    }
   });
 
   it('still draws the line when every return exceeds every investment', () => {

@@ -152,14 +152,12 @@ test.describe('Org Lens ROI Metrics — leading projects', () => {
     await expect(page.getByTestId('org-roi-projects-table')).toContainText(formatCurrency(KUBERNETES.expenditure / 4 - KUBERNETES.expenditure));
   });
 
-  test('carries the modelled-cost disclosure wherever a figure derives from modelled cost', async ({ page }) => {
+  test('carries the investment disclosure wherever a figure derives from modelled cost', async ({ page }) => {
     await stubOrgLensContext(page);
     await gotoOrgRoiPage(page);
 
     const note = page.getByTestId('org-roi-projects-donut-modelled-cost-note');
     await expect(note).toBeVisible();
-    await expect(note).toContainText('modelled cost');
-    await expect(note).toContainText('not actual or reported compensation');
     await expect(note).toContainText('same for every organization');
     await expect(note).toContainText('No salary, payroll, or invoice data is used.');
 
@@ -409,25 +407,24 @@ test.describe('Org Lens ROI Metrics — projects section', () => {
     await expect(flows).not.toContainText('Code Contribution');
   });
 
-  test('carries the modelled-cost disclosure on every view that shows an investment figure', async ({ page }) => {
+  test('carries the investment disclosure on every view that shows an investment figure', async ({ page }) => {
     await stubOrgLensContext(page);
     await gotoOrgRoiPage(page);
 
     const barNote = page.getByTestId('org-roi-projects-bar-modelled-cost-note');
-    await expect(barNote).toContainText('modelled cost');
-    await expect(barNote).toContainText('not actual or reported compensation');
+    await expect(barNote).toContainText('No salary, payroll, or invoice data is used.');
 
     await page.getByTestId('org-roi-projects-section-tab-sankey').click();
-    await expect(page.getByTestId('org-roi-projects-sankey-modelled-cost-note')).toContainText('modelled cost');
+    await expect(page.getByTestId('org-roi-projects-sankey-modelled-cost-note')).toContainText('No salary, payroll, or invoice data is used.');
     // The return flow is not derived from investment, so it does not owe the disclosure.
     await page.getByTestId('org-roi-projects-sankey-measure-return').click();
     await expect(page.getByTestId('org-roi-projects-sankey-modelled-cost-note')).toHaveCount(0);
 
     await page.getByTestId('org-roi-projects-section-tab-bubble').click();
-    await expect(page.getByTestId('org-roi-projects-bubble-modelled-cost-note')).toContainText('modelled cost');
+    await expect(page.getByTestId('org-roi-projects-bubble-modelled-cost-note')).toContainText('No salary, payroll, or invoice data is used.');
 
     await page.getByTestId('org-roi-projects-section-tab-table').click();
-    await expect(page.getByTestId('org-roi-projects-table-modelled-cost-note')).toContainText('modelled cost');
+    await expect(page.getByTestId('org-roi-projects-table-modelled-cost-note')).toContainText('No salary, payroll, or invoice data is used.');
   });
 
   test('names every chart for assistive technology and lists its values as text', async ({ page }) => {

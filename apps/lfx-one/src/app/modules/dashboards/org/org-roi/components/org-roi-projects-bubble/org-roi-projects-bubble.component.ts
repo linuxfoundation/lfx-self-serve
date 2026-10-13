@@ -5,6 +5,7 @@ import { Component, computed, input, Signal } from '@angular/core';
 import { ChartComponent } from '@components/chart/chart.component';
 import {
   lfxColors,
+  ORG_LENS_ROI_BUBBLE_AXIS_MAX_LABELS,
   ORG_LENS_ROI_BUBBLE_FILL,
   ORG_LENS_ROI_BUBBLE_LOG_FLOOR,
   ORG_LENS_ROI_KPI_EXPLANATION,
@@ -14,7 +15,7 @@ import {
 } from '@lfx-one/shared/constants';
 import type { OrgLensRoiProjectBubblePoint, OrgLensRoiProjectRow } from '@lfx-one/shared/interfaces';
 import { formatCurrency, formatPercent } from '@lfx-one/shared/utils';
-import type { ChartData, ChartOptions } from 'chart.js';
+import type { ChartData, ChartOptions, Tick } from 'chart.js';
 
 /** Investment against return on logarithmic axes, so the efficient outliers stay visible. */
 @Component({
@@ -163,7 +164,7 @@ export class OrgRoiProjectsBubbleComponent {
           min: segment?.from,
           max: segment?.to,
           title: { display: true, text: 'Investment', font: { size: 11 } },
-          ticks: { callback: (value) => formatCurrency(Number(value)) },
+          ticks: { callback: (value, index, ticks) => this.axisTickLabel(Number(value), index, ticks) },
           grid: { color: lfxColors.gray[200] },
         },
         y: {
@@ -171,7 +172,7 @@ export class OrgRoiProjectsBubbleComponent {
           min: segment?.from,
           max: segment?.to,
           title: { display: true, text: 'Return', font: { size: 11 } },
-          ticks: { callback: (value) => formatCurrency(Number(value)) },
+          ticks: { callback: (value, index, ticks) => this.axisTickLabel(Number(value), index, ticks) },
           grid: { color: lfxColors.gray[200] },
         },
       },
@@ -208,4 +209,22 @@ export class OrgRoiProjectsBubbleComponent {
       },
     };
   });
+
+  /**
+   * A log axis places a tick at every 1–9 multiple of each decade, and the pinned bounds add one at
+   * the raw minimum, so labelling them all overlaps at the top of each decade. Only the 1, 2 and 5
+   * multiples are labelled — Chart.js's own log convention — and the grid keeps the rest. A range
+   * too narrow to hold two of them (one project at $300K/$450K, say) is ticked far more finely, so
+   * it labels an even stride of at most `ORG_LENS_ROI_BUBBLE_AXIS_MAX_LABELS` ticks instead: the
+   * axis never goes blank, and labelling every tick would crowd it again.
+   */
+  private axisTickLabel(value: number, index: number, ticks: Tick[]): string {
+    const isRoundStep = (tick: number): boolean => {
+      const mantissa = tick / 10 ** Math.floor(Math.log10(tick));
+      return [1, 2, 5].some((step) => Math.abs(mantissa - step) < 1e-9);
+    };
+    if (ticks.filter((tick) => isRoundStep(tick.value)).length >= 2) return isRoundStep(value) ? formatCurrency(value) : '';
+    const stride = Math.ceil(ticks.length / ORG_LENS_ROI_BUBBLE_AXIS_MAX_LABELS);
+    return index % stride === 0 ? formatCurrency(value) : '';
+  }
 }
