@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpErrorResponse } from '@angular/common/http';
-import { PLATFORM_ID, signal } from '@angular/core';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { ApplicationRef, DestroyRef, inject, PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRouteSnapshot, convertToParamMap, RedirectCommand, Router, RouterStateSnapshot, UrlTree } from '@angular/router';
 import { TRANSIENT_RETRY_DELAY_MS } from '@lfx-one/shared/constants';
@@ -11,7 +11,8 @@ import { PersonaService } from '@shared/services/persona.service';
 import { ProjectContextService } from '@shared/services/project-context.service';
 import { ProjectRecoveryService } from '@shared/services/project-recovery.service';
 import { ProjectService } from '@shared/services/project.service';
-import { defer, firstValueFrom, Observable, of, throwError } from 'rxjs';
+import { reconcileRouteProjectContext } from '@shared/utils/entity-project-context.util';
+import { defer, EMPTY, firstValueFrom, Observable, of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { newsletterAccessGuard } from './newsletter-access.guard';
@@ -244,6 +245,49 @@ describe('newsletterAccessGuard', () => {
     expect(getProject).not.toHaveBeenCalled();
   });
 
+  it.each(['browser', 'server'])('reuses a recovered UID lookup across stacked guards and context reconciliation on %s', async (platform) => {
+    vi.useFakeTimers();
+    const project = { uid: 'uid-a', slug: 'route-project', name: 'Route Project', writer: true, parent_uid: '', logo_url: '' };
+    const request = vi
+      .fn<() => Observable<Partial<Project>>>(() => throwError(() => new HttpErrorResponse({ status: 503 })))
+      .mockImplementationOnce(() => throwError(() => new HttpErrorResponse({ status: 503 })))
+      .mockImplementationOnce(() => of(project));
+    const routeLensKind = signal<'foundation' | 'project'>('project');
+    activeContext.set({ uid: 'uid-stale', slug: 'stale-slug', name: 'Stale Project' });
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: { get: () => defer(request) } }] });
+    TestBed.overrideProvider(PLATFORM_ID, { useValue: platform });
+    TestBed.overrideProvider(ProjectService, { useFactory: () => new ProjectService() });
+    TestBed.overrideProvider(ProjectContextService, {
+      useValue: {
+        activeContext,
+        activeRouteLensKind: routeLensKind,
+        setRouteLensKind: (kind: 'foundation' | 'project') => routeLensKind.set(kind),
+        setProject: (context: ProjectContext) => activeContext.set(context),
+        setFoundation: (context: ProjectContext) => activeContext.set(context),
+      },
+    });
+    TestBed.overrideProvider(Router, {
+      useValue: { ...router, events: EMPTY, url: '/project/newsletters/uid-a/n1/edit', parseUrl: () => ({ queryParams: {} }) },
+    });
+
+    const mountResult = runGuard(route({ childParams: { projectUid: 'uid-a' } }));
+    await vi.advanceTimersByTimeAsync(TRANSIENT_RETRY_DELAY_MS);
+    expect(await mountResult).toBe(true);
+
+    const childResult = runGuard(route({ params: { projectUid: 'uid-a' } }));
+    await vi.advanceTimersByTimeAsync(TRANSIENT_RETRY_DELAY_MS);
+    expect(await childResult).toBe(true);
+
+    TestBed.runInInjectionContext(() =>
+      reconcileRouteProjectContext(signal('uid-a'), inject(ProjectService), inject(ProjectContextService), inject(Router), inject(DestroyRef))
+    );
+    TestBed.tick();
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    expect(activeContext()).toEqual({ uid: 'uid-a', slug: 'route-project', name: 'Route Project', parent_uid: '', logoUrl: '' });
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
   it.each([0, 408, 429, 500, 503])('explains a UID HTTP %s outage without consulting or serializing a stale writable project', async (status) => {
     vi.useFakeTimers();
     activeContext.set({ uid: 'uid-stale', slug: 'stale-slug', name: 'Stale Project' });
@@ -256,7 +300,6 @@ describe('newsletterAccessGuard', () => {
 
     expect(await result).toEqual({ denied: '/project/overview', opts: { queryParams: { _notice: 'error' } } });
     expect(request).toHaveBeenCalledTimes(2);
-    expect(getProjectStrict).toHaveBeenCalledExactlyOnceWith('uid-a');
     expect(getProject).not.toHaveBeenCalled();
     expect(router.parseUrl).not.toHaveBeenCalled();
     expect(router.createUrlTree).toHaveBeenCalledExactlyOnceWith(['/project/overview'], { queryParams: { _notice: 'error' } });
@@ -277,7 +320,6 @@ describe('newsletterAccessGuard', () => {
     await vi.advanceTimersByTimeAsync(TRANSIENT_RETRY_DELAY_MS);
 
     expect(await result).toEqual({ denied: `/${lens}/overview`, opts: { queryParams: { _notice: 'error' } } });
-    expect(getProjectStrict).toHaveBeenCalledExactlyOnceWith('uid-a');
     expect(getProject).not.toHaveBeenCalled();
     expect(router.parseUrl).not.toHaveBeenCalled();
   });

@@ -6,7 +6,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { inject, PLATFORM_ID } from '@angular/core';
 import { ActivatedRouteSnapshot, CanActivateFn, RedirectCommand, Router, UrlTree } from '@angular/router';
 import { GW_EMBED_ROUTE_PREFIXES } from '@lfx-one/shared/constants';
-import { catchError, map, Observable, of } from 'rxjs';
+import { catchError, defer, map, Observable, of } from 'rxjs';
 
 import { PersonaService } from '../services/persona.service';
 import { ProjectContextService } from '../services/project-context.service';
@@ -148,7 +148,9 @@ export const newsletterAccessGuard: CanActivateFn = (route: ActivatedRouteSnapsh
     // the wrong-context authorization this guard removed (GH-1570). The lookup is
     // shareReplay-cached, so this guard's mount- and child-route invocations and
     // reconcileRouteProjectContext share the one request per deep link.
-    return projectService.getProjectStrict(projectUid).pipe(
+    // Re-enter the service on retry: the first error evicts its cache entry, so
+    // resubscribing to that old observable would leave recovery uncached.
+    return defer(() => projectService.getProjectStrict(projectUid)).pipe(
       retryTransientHttpError(),
       map((resolved): boolean | UrlTree => {
         // The uid lookup already returned the project entity, so check writer
