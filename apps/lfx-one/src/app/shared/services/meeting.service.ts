@@ -838,9 +838,9 @@ export class MeetingService {
    * Sends a registrant batch in requests of at most MEETING_REGISTRANT_CLIENT_CHUNK_SIZE items, one after
    * another, and merges the responses. A batch that fits in one request is sent as-is, so its errors reach
    * the caller exactly as before.
-   * @description Sequential so the client never multiplies the BFF's per-request concurrency bound; the
-   * chunk is smaller than the BFF's MEETING_REGISTRANT_BATCH_MAX so each request stays inside the ingress
-   * read timeout. When every item of a chunk fails the BFF answers 400 with the per-item results in the
+   * @description Sequential so the client never multiplies the BFF's per-request concurrency bound.
+   * Smaller chunks reduce serial upstream rounds and timeout risk; they do not enforce an ingress
+   * deadline. When every item of a chunk fails the BFF answers 400 with the per-item results in the
    * body, so that body is merged like any other response and the remaining chunks are still sent — as a
    * single request would have attempted them. Any other error on the first request (a 403, a validation
    * 400) rethrows, which callers already handle; on a later request it reports that chunk's items as

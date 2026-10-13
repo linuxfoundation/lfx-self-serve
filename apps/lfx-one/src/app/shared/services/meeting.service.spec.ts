@@ -239,8 +239,8 @@ describe('MeetingService removed-registration state', () => {
 
 // lfx-self-serve-ops#439: the BFF refuses a registrant batch longer than MEETING_REGISTRANT_BATCH_MAX
 // (100) and runs each one's items at bounded concurrency, so the service splits saves into sequential
-// requests of MEETING_REGISTRANT_CLIENT_CHUNK_SIZE (25) — small enough to stay inside the ingress read
-// timeout — and merges the responses.
+// requests of MEETING_REGISTRANT_CLIENT_CHUNK_SIZE (25) and merges the responses. Smaller chunks reduce
+// serial upstream rounds and timeout risk; they do not enforce an ingress deadline.
 describe('MeetingService registrant batch chunking', () => {
   let service: MeetingService;
   let post: ReturnType<typeof vi.fn>;
@@ -318,16 +318,18 @@ describe('MeetingService registrant batch chunking', () => {
     expect(post).toHaveBeenCalledTimes(2);
   });
 
-  it('keeps the landed chunk and reports the failed chunk as failures when a later request errors', async () => {
+  it('continues after an intermediate request errors and merges successes around the failed chunk', async () => {
+    const registrants = guests(60);
     post.mockImplementationOnce((_url: string, chunk: CreateMeetingRegistrantRequest[]) => of(allCreated(chunk)));
     post.mockImplementationOnce(() => throwError(() => new Error('Service unavailable')));
 
-    const response = await firstValueFrom(service.addMeetingRegistrants(MEETING_UID, guests(30)));
+    const response = await firstValueFrom(service.addMeetingRegistrants(MEETING_UID, registrants));
 
-    expect(response.summary).toEqual({ total: 30, successful: 25, failed: 5 });
-    expect(response.successes).toHaveLength(25);
-    expect(response.failures).toHaveLength(5);
-    expect(response.failures[0]).toEqual({ input: guests(30)[25], error: { message: 'Service unavailable' } });
+    expect(post).toHaveBeenCalledTimes(3);
+    expect(post.mock.calls[2][1]).toEqual(registrants.slice(50));
+    expect(response.summary).toEqual({ total: 60, successful: 35, failed: 25 });
+    expect(response.successes.map((item) => item.email)).toEqual([...registrants.slice(0, 25), ...registrants.slice(50)].map((item) => item.email));
+    expect(response.failures).toEqual(registrants.slice(25, 50).map((input) => ({ input, error: { message: 'Service unavailable' } })));
   });
 
   it('errors when the first request fails, as a single request would', async () => {
