@@ -1160,6 +1160,12 @@ describe('CampaignController.createCampaign cutover', () => {
     ['an oversized conversion-action list', { conversionActions: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `a-${i}`) }],
     ['an oversized callout list', { callouts: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `c-${i}`) }],
     ['an oversized callout, which would otherwise reach the trim', { callouts: [`x${' '.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH)}x`] }],
+    [
+      'an oversized sitelink list',
+      { sitelinks: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => ({ text: `s-${i}`, finalUrl: 'https://x.example' })) },
+    ],
+    ['an oversized sitelink field', { sitelinks: [{ text: 'x'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH + 1), finalUrl: 'https://x.example' }] }],
+    ['an oversized sitelink URL', { sitelinks: [{ text: 'Register', finalUrl: `https://x.example/${'a'.repeat(2084)}` }] }],
   ])('refuses %s before normalising or dispatching', async (_label, overrides) => {
     const createConfigEnvelope = vi.spyOn(controller as unknown as { createConfigEnvelope: (body: unknown) => unknown }, 'createConfigEnvelope');
 
@@ -2990,6 +2996,282 @@ describe('CampaignController.createCampaign cutover', () => {
     const message = refusalFrom().message;
     expect(message).toContain(`${'A'.repeat(32)}…`);
     expect(message).not.toContain('A'.repeat(33));
+  });
+
+  /**
+   * The sitelink guards, one test per branch of upstream's `validateSitelinks`
+   * (`internal/platform/googleads/assets.go`), plus the accept-cases that keep them from
+   * over-refusing. Same preflight position as the callouts above — inside `validateAssetPlan`,
+   * inside `preflightCampaignKind`, before the budget mutate — so every one of these costs the
+   * whole campaign upstream, not just the sitelink.
+   */
+  const link = (text: string, overrides: Record<string, unknown> = {}) => ({ text, finalUrl: 'https://events.example.org/register', ...overrides });
+  const SITELINKS_20 = Array.from({ length: 20 }, (_, i) => link(`Sitelink ${i + 1}`));
+
+  it('dispatches a list of 20 sitelinks, which is exactly what upstream accepts', async () => {
+    // The contrast for the cap below. Without it a controller that refused every sitelink list
+    // would pass every refusal test here.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000001a', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ sitelinks: SITELINKS_20 }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['sitelinks']).toHaveLength(20);
+  });
+
+  it('refuses a 21-sitelink list even when the 21st is a repeat, because upstream caps before it de-duplicates', async () => {
+    // `validateSitelinks` compares `len(in.Sitelinks) > maxSitelinks` on the RAW slice, before any
+    // entry is read. Judging the de-duplicated length here would accept a create Go then kills.
+    await controller.createCampaign(buildReq(googleBody({ sitelinks: [...SITELINKS_20, link('Sitelink 1')] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('sitelinks');
+    expect(error.message).toContain('21');
+  });
+
+  it('names a sitelink with no link text instead of letting Google refuse it opaquely', async () => {
+    // Upstream trims and then refuses ("sitelink %d has no link text"). Dropping the entry would
+    // create a campaign with one fewer link than the caller asked for.
+    await controller.createCampaign(
+      buildReq(googleBody({ sitelinks: [link('  ', { description1: 'a', description2: 'b' })] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('sitelinks');
+    expect(refusalFrom().message).toContain('sitelink 1 has no link text');
+  });
+
+  it('names sitelink link text over the 25-rune bound', async () => {
+    await controller.createCampaign(buildReq(googleBody({ sitelinks: [link('A'.repeat(26))] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('sitelinks');
+    expect(refusalFrom().message).toContain('25 characters');
+  });
+
+  it('dispatches 25-EMOJI sitelink text, because upstream counts runes and not UTF-16 units', async () => {
+    // `utf8.RuneCountInString` counts 25 here; JavaScript's `.length` counts 50. A guard written
+    // with `.length` would refuse this create, which Google accepts — the one failure mode these
+    // guards must not have.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000001b', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ sitelinks: [link('🎉'.repeat(25))] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).toHaveBeenCalled();
+  });
+
+  it('refuses sitelink text repeated in a different case, which upstream refuses rather than de-duplicates', async () => {
+    // `validateSitelinks` keys its seen-set on `strings.ToLower(text)` and answers "sitelink %q is
+    // listed more than once" — a refusal, not a silent de-duplication.
+    await controller.createCampaign(
+      buildReq(googleBody({ sitelinks: [link('Register Now'), link('register now')] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('sitelinks');
+    expect(refusalFrom().message).toContain('more than once');
+  });
+
+  it.each([
+    ['only the first description line', { description1: 'Seats are limited' }],
+    ['only the second description line', { description2: 'Seats are limited' }],
+  ])('refuses a sitelink carrying %s, which Google renders as a pair or not at all', async (_label, overrides) => {
+    await controller.createCampaign(buildReq(googleBody({ sitelinks: [link('Register', overrides)] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('sitelinks');
+    expect(refusalFrom().message).toContain('both description lines');
+  });
+
+  it('dispatches a sitelink with both description lines at exactly 35 runes', async () => {
+    // The bound is per LINE, not on the two lines together: `validateSitelinks` measures each with
+    // its own `utf8.RuneCountInString` against `maxSitelinkDescriptionRunes`. A guard that summed
+    // them would refuse this 70-rune pair, which upstream accepts.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000001c', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ sitelinks: [link('Register', { description1: 'A'.repeat(35), description2: 'B'.repeat(35) })] }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).toHaveBeenCalled();
+  });
+
+  it('names a description line over the 35-rune bound', async () => {
+    await controller.createCampaign(
+      buildReq(googleBody({ sitelinks: [link('Register', { description1: 'A'.repeat(35), description2: 'B'.repeat(36) })] }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('sitelinks');
+    expect(refusalFrom().message).toContain('35 characters');
+  });
+
+  it('names a sitelink with no destination, which upstream calls unservable', async () => {
+    // The `Sitelink` struct's own words: a sitelink with no destination "is not a lesser sitelink,
+    // it is an unservable one". `buildTaggedFinalURL` refuses it before any mutate.
+    await controller.createCampaign(
+      buildReq(googleBody({ sitelinks: [{ text: 'Register', finalUrl: '   ' }] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('sitelinks');
+    expect(refusalFrom().message).toContain('no destination URL');
+  });
+
+  it.each([
+    ['a scheme Google will not serve', 'ftp://events.example.org/register'],
+    ['a relative path with no host', '/register'],
+    ['embedded credentials, which Google refuses outright', 'https://user:pw@events.example.org/register'],
+    ["a semicolon in the query, which Go's `url.ParseQuery` refuses", 'https://events.example.org/register?a=1;b=2'],
+    ["a stray percent sign, which Go's `url.Parse` refuses", 'https://events.example.org/50%off'],
+    ['no `//` after the scheme, which Go reads as having no host', 'https:events.example.org/register'],
+    ['backslashes for slashes, which `new URL()` repairs and Go does not', 'https:\\\\events.example.org/register'],
+  ])('names a sitelink destination with %s', async (_label, finalUrl) => {
+    await controller.createCampaign(buildReq(googleBody({ sitelinks: [link('Register', { finalUrl })] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('sitelinks');
+    expect(refusalFrom().message).toContain('not a web address Google accepts');
+  });
+
+  it('names a destination URL over the 2084-byte limit, measured in BYTES and not characters', async () => {
+    // `maxFinalURLBytes` is compared against Go's `len()` on a UTF-8 string, so a path of 2-byte
+    // characters crosses the limit at half the character count. Counting characters here would
+    // forward a URL Google refuses.
+    const finalUrl = `https://events.example.org/${'é'.repeat(1100)}`;
+
+    await controller.createCampaign(buildReq(googleBody({ sitelinks: [link('Register', { finalUrl })] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('sitelinks');
+    expect(refusalFrom().message).toContain('2084-byte limit');
+  });
+
+  it.each([
+    ['an absent sitelink list', {}],
+    ['an empty sitelink list', { sitelinks: [] }],
+    ['a null sitelink list, which the Go decode reads as absent', { sitelinks: null }],
+  ])('omits the sitelinks key entirely for %s', async (_label, overrides) => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000001d', error: null });
+
+    await controller.createCampaign(buildReq(googleBody(overrides as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>).not.toHaveProperty('sitelinks');
+  });
+
+  it.each([
+    ['an entry with every field blank', [{ text: '  ', description1: '', description2: '', finalUrl: ' ' }], 'sitelink 1 has no link text'],
+    ['a null entry, which the Go decode reads as a blank sitelink', [link('Register'), null], 'sitelink 2 has no link text'],
+    ['a bare object', { text: 'Register' }, 'must be a list of objects'],
+    ['a non-object entry', [123], 'must be a list of objects'],
+    ['an array entry', [['Register']], 'must be a list of objects'],
+    ['a link text that is not a string', [{ text: 7, finalUrl: 'https://events.example.org/register' }], 'must be a list of objects'],
+  ])('refuses %s by name rather than dropping it', async (_label, sitelinks, expected) => {
+    // Upstream's decode refuses a malformed list, and `validateSitelinks` refuses a blank entry.
+    // Dropping either would create the campaign without what the caller asked for.
+    await controller.createCampaign(buildReq(googleBody({ sitelinks } as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('sitelinks');
+    expect(refusalFrom().message).toContain(expected);
+  });
+
+  it.each([
+    ['a sitelink', [link('Register')]],
+    ['an entry with every field blank, which upstream still counts as asked', [{ text: '', finalUrl: '' }]],
+  ])('refuses %s on a non-Search channel by name, because upstream refuses the whole create there', async (_label, sitelinks) => {
+    await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['demand-gen'], sitelinks }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('sitelinks');
+    expect(refusalFrom().message).toContain('Demand Gen');
+  });
+
+  it.each([
+    ['the language guard before the sitelink guard', { languages: ['ZU'], sitelinks: [link('')] }, 'languages', 'ZU'],
+    ['the sitelink guard before the callout guard', { sitelinks: [link('')], callouts: [''] }, 'sitelinks', 'no link text'],
+    ['the channel before the cap', { campaignTypes: ['demand-gen'], sitelinks: [...SITELINKS_20, link('Extra')] }, 'sitelinks', 'Demand Gen'],
+    ['the cap before a bad entry', { sitelinks: [...SITELINKS_20, link('')] }, 'sitelinks', '21'],
+    [
+      'the first bad entry, a repeat before a bad URL',
+      { sitelinks: [link('Register'), link('register'), link('Agenda', { finalUrl: '/x' })] },
+      'sitelinks',
+      'more than once',
+    ],
+    ['link text before the descriptions', { sitelinks: [link('A'.repeat(26), { description1: 'only one' })] }, 'sitelinks', '26'],
+  ])("refuses for %s, in upstream's own order", async (_label, overrides, field, expected) => {
+    // `validateCriteriaPlan` runs before `validateAssetPlan`, which runs `validateSitelinks` before
+    // `validateCallouts`; inside it the cap comes first, then each entry's fields in turn.
+    await controller.createCampaign(buildReq(googleBody(overrides), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(refusalFrom().field).toBe(field);
+    expect(refusalFrom().message).toContain(expected);
+  });
+
+  it.each([
+    ['a trailing U+0085, which Go trims and JS `trim` keeps', 'register\u0085'],
+    ['final sigma, which JS `toLowerCase` folds differently from Go', 'ΟΔΟΣ'],
+  ])("refuses a repeated link text hidden by %s, judging it with Go's string rules", async (_label, repeat) => {
+    const first = repeat === 'ΟΔΟΣ' ? 'οδοσ' : 'Register';
+
+    await controller.createCampaign(buildReq(googleBody({ sitelinks: [link(first), link(repeat)] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().message).toContain('more than once');
+  });
+
+  it("dispatches each sitelink trimmed with Go's rules, with an empty description pair omitted", async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000001e', error: null });
+
+    await controller.createCampaign(
+      buildReq(
+        googleBody({
+          sitelinks: [
+            { text: '\u00a0Register\u0085', description1: null, finalUrl: ' https://events.example.org/register ' },
+            link('Agenda', { description1: ' Talks ', description2: 'Workshops' }),
+          ],
+        } as never),
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['sitelinks']).toEqual([
+      { text: 'Register', finalUrl: 'https://events.example.org/register' },
+      { text: 'Agenda', description1: 'Talks', description2: 'Workshops', finalUrl: 'https://events.example.org/register' },
+    ]);
+  });
+
+  it('cuts echoed link text by code point, so an emoji at the cut is never split', async () => {
+    await controller.createCampaign(
+      buildReq(googleBody({ sitelinks: [link(`${'A'.repeat(31)}${'🎉'.repeat(5)}`)] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(refusalFrom().message).toContain(`${'A'.repeat(31)}🎉…`);
+    expect(refusalFrom().message).not.toContain('🎉🎉');
   });
 
   it.each([

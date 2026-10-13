@@ -48,6 +48,7 @@ import {
   googleAdsEchoed,
   googleAdsToLower,
   googleAdsTrimSpace,
+  googleAdsUrlGoParseFlaw,
 } from './campaign.constants';
 
 describe('campaignToggleAction', () => {
@@ -982,5 +983,19 @@ describe('Google Ads string rules', () => {
     ['ASCII', 'Free Shipping', 'free shipping'],
   ])('lower-cases %s as Go does', (_label, input, expected) => {
     expect(googleAdsToLower(input)).toBe(expected);
+  });
+
+  it.each([
+    ['a plain https URL', 'https://events.example.org/register?utm=a&b=c#top', false],
+    ['an uppercase scheme', 'HTTPS://events.example.org/', false],
+    ['a valid percent escape', 'https://events.example.org/a%20b', false],
+    ['a semicolon in the fragment, which is not the query', 'https://events.example.org/#a;b', false],
+    ['a semicolon in the query', 'https://events.example.org/?a=1;b=2', true],
+    ['a stray percent sign', 'https://events.example.org/50%off', true],
+    ['a percent sign with one hex digit', 'https://events.example.org/?q=%2', true],
+    ['no `//` after the scheme', 'https:events.example.org', true],
+    ['backslashes for slashes', 'https:\\\\events.example.org', true],
+  ])("flags %s as Go's parser would", (_label, url, expected) => {
+    expect(googleAdsUrlGoParseFlaw(url)).toBe(expected);
   });
 });

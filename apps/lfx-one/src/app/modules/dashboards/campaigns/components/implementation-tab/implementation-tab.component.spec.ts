@@ -12,6 +12,9 @@ import {
   GOOGLE_ADS_MAX_CONVERSION_ACTIONS,
   GOOGLE_ADS_MAX_GEO_TARGETS,
   GOOGLE_ADS_MAX_LANGUAGES,
+  GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES,
+  GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES,
+  GOOGLE_ADS_MAX_SITELINKS,
   GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
   GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL,
   GOOGLE_BIDDING_STRATEGY_LABELS,
@@ -28,6 +31,7 @@ import type {
   CampaignBriefPersistenceState,
   CampaignCreateResult,
   CampaignImplementationDraft,
+  CampaignSitelink,
   GoogleCreativeChannel,
   GoogleCreativeFieldSpec,
 } from '@lfx-one/shared/interfaces';
@@ -6116,6 +6120,322 @@ describe('ImplementationTabComponent google callouts', () => {
     restoreGoogleDraft(fixture, c, {});
 
     expect(c['googleCallouts']()).toEqual(['Free shipping']);
+  });
+});
+
+/**
+ * The sitelink extensions.
+ *
+ * Every bound and refusal here mirrors `validateSitelinks`
+ * (`internal/platform/googleads/assets.go`), one test per branch. The guard runs inside
+ * `validateAssetPlan`, inside `preflightCampaignKind`, BEFORE the budget mutate — so each of these
+ * costs the whole campaign upstream rather than just the sitelink.
+ */
+describe('ImplementationTabComponent google sitelinks', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  const sitelink = (text: string, overrides: Partial<CampaignSitelink> = {}): CampaignSitelink => ({
+    text,
+    description1: '',
+    description2: '',
+    finalUrl: 'https://events.example.org/register',
+    ...overrides,
+  });
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  /**
+   * Every box in the sub-form is reachable by a screen reader on its own terms: the section's
+   * `<label for>` names only the link-text box, so the other three carry an `aria-label` — a
+   * placeholder is not an accessible name and vanishes as soon as the operator types. The ids are
+   * asserted against the message elements actually rendered, so a rename on either side fails the
+   * test rather than leaving `aria-describedby` pointing at nothing.
+   */
+  it('names every box and points each at whichever of its messages is rendered', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleSitelink'](sitelink('Register now'));
+    const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+    expect(find('implementation-google-sitelink-url')?.getAttribute('aria-label')).toBe('Sitelink destination URL');
+    expect(find('implementation-google-sitelink-description1')?.getAttribute('aria-label')).toBe('Sitelink description line 1');
+    expect(find('implementation-google-sitelink-description2')?.getAttribute('aria-label')).toBe('Sitelink description line 2');
+    expect(find('implementation-google-sitelink-text')?.getAttribute('aria-describedby')).toBeNull();
+
+    c['googleSitelinkDraft'].set(sitelink('A'.repeat(GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES + 1)));
+    fixture.detectChanges();
+    expect(find('implementation-google-sitelink-text')?.getAttribute('aria-describedby')).toBe(find('implementation-google-sitelink-too-long')?.id);
+
+    c['googleSitelinkDraft'].set(sitelink('register now'));
+    fixture.detectChanges();
+    expect(find('implementation-google-sitelink-text')?.getAttribute('aria-describedby')).toBe(find('implementation-google-sitelink-duplicate')?.id);
+
+    // Both description boxes point at the ONE line describing the pair — the rule they break is
+    // about the pair, so naming it on only the box last typed in would be the wrong half.
+    c['googleSitelinkDraft'].set(sitelink('Agenda', { description1: 'Talks and workshops' }));
+    fixture.detectChanges();
+    const halfDescribed = find('implementation-google-sitelink-half-described')?.id;
+    expect(find('implementation-google-sitelink-description1')?.getAttribute('aria-describedby')).toBe(halfDescribed);
+    expect(find('implementation-google-sitelink-description2')?.getAttribute('aria-describedby')).toBe(halfDescribed);
+
+    c['googleSitelinkDraft'].set(sitelink('Agenda', { finalUrl: 'events.example.org/agenda' }));
+    fixture.detectChanges();
+    expect(find('implementation-google-sitelink-url')?.getAttribute('aria-describedby')).toBe(find('implementation-google-sitelink-url-invalid')?.id);
+  });
+
+  it('trims an added sitelink and drops the two blank description lines', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['addGoogleSitelink'](sitelink('  Register now  ', { finalUrl: '  https://events.example.org/register  ' }))).toBe(true);
+
+    // Descriptions OMITTED, not sent as empty strings: absent on both lines is one of the two
+    // legal states upstream recognises, where one line present and one empty is not.
+    expect(c['googleSitelinks']()).toEqual([{ text: 'Register now', finalUrl: 'https://events.example.org/register' }]);
+  });
+
+  it.each([
+    ['no link text', sitelink('   ')],
+    ['no destination', sitelink('Register', { finalUrl: '  ' })],
+    ['a destination with no scheme', sitelink('Register', { finalUrl: 'events.example.org/register' })],
+    ['a destination carrying embedded credentials', sitelink('Register', { finalUrl: 'https://user:pw@events.example.org/register' })],
+  ])('refuses a sitelink with %s', (_label, entry) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['addGoogleSitelink'](entry)).toBe(false);
+    expect(c['googleSitelinks']()).toEqual([]);
+  });
+
+  it('refuses a sitelink that repeats an existing link text in a different case', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleSitelink'](sitelink('Register Now'));
+
+    expect(c['addGoogleSitelink'](sitelink('register now'))).toBe(false);
+    expect(c['googleSitelinks']()).toHaveLength(1);
+  });
+
+  it('refuses an add at the cap', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    for (let i = 0; i < GOOGLE_ADS_MAX_SITELINKS; i++) c['addGoogleSitelink'](sitelink(`Sitelink ${i + 1}`));
+
+    expect(c['addGoogleSitelink'](sitelink('One more'))).toBe(false);
+    expect(c['googleSitelinks']()).toHaveLength(GOOGLE_ADS_MAX_SITELINKS);
+  });
+
+  /**
+   * Runes, not UTF-16 units — the same hazard the callouts carry. 25 astral-plane characters are
+   * link text upstream accepts; counted with `.length` they would be 50 and refused for no reason.
+   */
+  it('accepts 25-emoji link text and refuses 26 characters', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['addGoogleSitelink'](sitelink('🎉'.repeat(GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES)))).toBe(true);
+    expect(c['addGoogleSitelink'](sitelink('A'.repeat(GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES + 1)))).toBe(false);
+
+    expect(c['googleSitelinks']()).toHaveLength(1);
+  });
+
+  /** Google renders the two lines together and rejects an asset carrying only one. */
+  it.each([
+    ['only the first line', { description1: 'Seats are limited' }],
+    ['only the second line', { description2: 'Seats are limited' }],
+  ])('refuses a sitelink described on %s', (_label, overrides) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['addGoogleSitelink'](sitelink('Register', overrides))).toBe(false);
+  });
+
+  /**
+   * The 35-rune bound is PER LINE, not on the two together: upstream measures each line with its
+   * own `utf8.RuneCountInString`. Summing them would refuse this 70-rune pair, which it accepts.
+   */
+  it('accepts both description lines at exactly 35 runes and refuses a 36th on either', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const line = 'A'.repeat(GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES);
+
+    expect(c['addGoogleSitelink'](sitelink('Register', { description1: line, description2: line }))).toBe(true);
+    expect(c['addGoogleSitelink'](sitelink('Tickets', { description1: line, description2: `${line}B` }))).toBe(false);
+  });
+
+  it('warns on the sub-form in progress and withholds the add button until both required fields are filled', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleSitelink'](sitelink('Register Now'));
+
+    // An empty sub-form is not yet a mistake — withheld, not warned about.
+    expect(c['googleSitelinkUrlInvalid']()).toBe(false);
+    expect(c['googleSitelinkAddDisabled']()).toBe(true);
+
+    c['googleSitelinkDraft'].set({ text: '  register now ', description1: 'One line only', description2: '', finalUrl: 'not a url' });
+
+    expect(c['googleSitelinkDuplicate']()).toBe(true);
+    expect(c['googleSitelinkDescriptionHalfFilled']()).toBe(true);
+    expect(c['googleSitelinkUrlInvalid']()).toBe(true);
+    expect(c['googleSitelinkAddDisabled']()).toBe(true);
+
+    c['googleSitelinkDraft'].set({
+      text: '🎉'.repeat(GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES + 1),
+      description1: '',
+      description2: '',
+      finalUrl: 'https://events.example.org/x',
+    });
+
+    expect(c['googleSitelinkTextLength']()).toBe(GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES + 1);
+    expect(c['googleSitelinkTextTooLong']()).toBe(true);
+  });
+
+  /** Cleared ONLY on success, so a refused entry stays editable beside the warning that named it. */
+  it('clears the sub-form on a successful add and leaves it standing on a refusal', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    c['googleSitelinkDraft'].set(sitelink('Register'));
+    c['onGoogleSitelinkAdd']();
+    expect(c['googleSitelinkDraft']()).toEqual({ text: '', description1: '', description2: '', finalUrl: '' });
+
+    c['googleSitelinkDraft'].set(sitelink('register'));
+    c['onGoogleSitelinkAdd']();
+    expect(c['googleSitelinkDraft']().text).toBe('register');
+  });
+
+  it('removes a sitelink by index', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleSitelink'](sitelink('First'));
+    c['addGoogleSitelink'](sitelink('Second'));
+
+    c['removeGoogleSitelink'](0);
+
+    expect(c['googleSitelinks']().map((s: CampaignSitelink) => s.text)).toEqual(['Second']);
+  });
+
+  /** Search only, and WITHHELD elsewhere rather than refused — exactly as the callouts are. */
+  it('offers sitelinks on Search and withholds them on a non-Search channel', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleSitelink'](sitelink('Register'));
+
+    expect(c['googleSitelinksPayload']()).toEqual({ sitelinks: [{ text: 'Register', finalUrl: 'https://events.example.org/register' }] });
+
+    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    fixture.detectChanges();
+
+    expect(c['googleSitelinksPayload']()).toEqual({});
+    // Held, not discarded — the list is still there if Search is re-ticked.
+    expect(c['googleSitelinks']()).toHaveLength(1);
+  });
+
+  /** Omitted rather than sent empty, so the upstream default is reached by the absent-key route. */
+  it('omits the sitelinks key when nothing was added', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['googleSitelinksPayload']()).toEqual({});
+  });
+
+  it('round-trips the sitelinks through a draft', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    let emitted: CampaignImplementationDraft | undefined;
+    fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
+    c['addGoogleSitelink'](sitelink('Register'));
+
+    expect(emitted?.googleSitelinks).toEqual([{ text: 'Register', finalUrl: 'https://events.example.org/register' }]);
+
+    c['googleSitelinks'].set([]);
+    restoreGoogleDraft(fixture, c, { googleSitelinks: [{ text: 'Register', finalUrl: 'https://events.example.org/register' }] });
+
+    expect(c['googleSitelinks']()).toHaveLength(1);
+  });
+
+  /**
+   * COPIED out of the draft ENTRY BY ENTRY, not just array-spread: a sitelink is an object, so a
+   * shallow spread would still hand the draft's own entries over and let an edit here reach back
+   * into the stored draft.
+   */
+  it('does not share the restored entries with the draft', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const saved = [sitelink('Register')];
+
+    restoreGoogleDraft(fixture, c, { googleSitelinks: saved });
+    c['googleSitelinks']()[0].text = 'Edited';
+
+    expect(saved[0].text).toBe('Register');
+  });
+
+  /** A draft saved before this section shipped carries no key, and must not clear the list. */
+  it.each([
+    ['a trailing U+0085', 'Register', 'register\u0085'],
+    ['final sigma', 'ΟΔΟΣ', 'οδοσ'],
+  ])('refuses a repeated link text hidden by %s, on the add and in the live warning', (_label, first, repeat) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleSitelink'](sitelink(first));
+
+    c['googleSitelinkDraft'].set(sitelink(repeat));
+    expect(c['googleSitelinkDuplicate']()).toBe(true);
+    expect(c['addGoogleSitelink'](sitelink(repeat))).toBe(false);
+    expect(c['googleSitelinks']()).toHaveLength(1);
+  });
+
+  it.each([
+    ['a semicolon in the query', 'https://events.example.org/register?a=1;b=2'],
+    ['a stray percent sign', 'https://events.example.org/50%off'],
+    ['no `//` after the scheme', 'https:events.example.org/register'],
+  ])("refuses a destination with %s, which Go's URL parser refuses and `new URL()` accepts", (_label, finalUrl) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    c['googleSitelinkDraft'].set(sitelink('Register', { finalUrl }));
+    expect(c['googleSitelinkUrlInvalid']()).toBe(true);
+    expect(c['addGoogleSitelink'](sitelink('Register', { finalUrl }))).toBe(false);
+  });
+
+  it('says out loud that sitelinks are withheld after a switch away from Search, in the notice and its live region', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+    // Mounted, empty, before there is anything to say.
+    expect(find('implementation-google-sitelinks-withheld-live')?.textContent?.trim()).toBe('');
+
+    c['addGoogleSitelink'](sitelink('Register'));
+    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    fixture.detectChanges();
+
+    const notice = find('implementation-google-sitelinks-withheld')?.textContent ?? '';
+    expect(notice).toContain('Demand Gen campaigns do not take sitelinks');
+    expect(notice).toContain('the 1 you added');
+    expect(find('implementation-google-sitelinks-withheld-live')?.textContent?.trim()).toBe(c['googleSitelinksWithheldWarning']());
+    expect(find('implementation-google-sitelinks-withheld')?.getAttribute('role')).toBeNull();
+  });
+
+  it('shows no sitelinks notice when none were added', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+
+    expect(c['googleSitelinksWithheldWarning']()).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="implementation-google-sitelinks-withheld"]')).toBeNull();
+  });
+
+  /** Through `submit()`, so deleting the payload spread fails here and not only in a helper test. */
+  it.each([
+    ['Search', { includeSearch: true }, [{ text: 'Register', finalUrl: 'https://events.example.org/register' }]],
+    ['Demand Gen, after a switch from Search', { includeDemandGen: true }, undefined],
+  ])('sends the sitelinks on a submitted %s create only when the channel takes them', async (_label, channel, expected) => {
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleSitelink'](sitelink('Register'));
+    c['campaignForm'].patchValue({ includeSearch: false, ...channel });
+    fixture.detectChanges();
+    expect(c['canSubmit']()).toBe(true);
+
+    c['submit']();
+    await fixture.whenStable();
+
+    expect(createCampaign).toHaveBeenCalled();
+    expect((createCampaign.mock.calls[0][0] as unknown as Record<string, unknown>)['sitelinks']).toEqual(expected);
+  });
+
+  it('leaves the list alone when the draft carries no sitelinks key', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleSitelink'](sitelink('Register'));
+
+    restoreGoogleDraft(fixture, c, {});
+
+    expect(c['googleSitelinks']()).toHaveLength(1);
   });
 });
 

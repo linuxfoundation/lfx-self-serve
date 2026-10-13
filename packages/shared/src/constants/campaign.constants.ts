@@ -1136,9 +1136,9 @@ export const GOOGLE_CHANNELS_WITH_LANGUAGES = ['search', 'performance-max', 'vid
 /**
  * Upstream's own bound on a Google Ads callout list (`assets.go`'s `maxCallouts`).
  *
- * Unlike {@link GOOGLE_ADS_MAX_GEO_TARGETS} this one is checked AFTER nothing — `validateCallouts`
- * compares the raw slice length before it looks at any entry, so a list that is only over the cap
- * because it repeats a phrase is refused on the cap, not on the duplicate.
+ * Unlike {@link GOOGLE_ADS_MAX_GEO_TARGETS}, this one is checked BEFORE any entry: `validateCallouts`
+ * compares the raw slice length first, so a list that is only over the cap because it repeats a
+ * phrase is refused on the cap, not on the duplicate.
  */
 export const GOOGLE_ADS_MAX_CALLOUTS = 20;
 
@@ -1178,6 +1178,22 @@ export function googleAdsTrimSpace(text: string): string {
 }
 
 /**
+ * Whether Go's URL parser would refuse a URL that `new URL()` accepts, the gap between this app's
+ * URL checks and upstream's `validateServableURL`:
+ *
+ * - a `%` not followed by two hex digits, which `url.Parse` and `url.ParseQuery` both refuse;
+ * - a `;` in the query, which `url.ParseQuery` refuses;
+ * - a scheme not followed by `//`, which Go reads as an opaque URL with no host, where `new URL()`
+ *   repairs `https:example.com` and `https:\\example.com`.
+ */
+export function googleAdsUrlGoParseFlaw(url: string): boolean {
+  const withoutFragment = url.split('#')[0];
+  const queryStart = withoutFragment.indexOf('?');
+  const query = queryStart === -1 ? '' : withoutFragment.slice(queryStart + 1);
+  return !/^https?:\/\//i.test(url) || /%(?![0-9A-Fa-f]{2})/.test(url) || query.includes(';');
+}
+
+/**
  * Caller-supplied text cut short for an error message, by code point so an emoji is never split
  * into a lone surrogate. The text comes from an unvalidated body, so the echo is bounded.
  */
@@ -1197,6 +1213,41 @@ export function googleAdsEchoed(text: string, max = 32): string {
 export function googleAdsToLower(text: string): string {
   return [...text].map((ch) => (ch === '\u0130' ? 'i' : ch.toLowerCase())).join('');
 }
+
+/**
+ * Upstream's own bound on a Google Ads sitelink list (`assets.go`'s `maxSitelinks`), checked on the
+ * raw slice before any entry is inspected — the same shape as {@link GOOGLE_ADS_MAX_CALLOUTS}.
+ */
+export const GOOGLE_ADS_MAX_SITELINKS = 20;
+
+/**
+ * Upstream's per-sitelink link-text bound (`assets.go`'s `maxSitelinkTextRunes`), in RUNES.
+ *
+ * Count it with the spread (`[...text].length`), never `.length` — see
+ * {@link GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES} for why a UTF-16 count over-refuses here.
+ */
+export const GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES = 25;
+
+/**
+ * Upstream's per-line bound on a sitelink description (`assets.go`'s
+ * `maxSitelinkDescriptionRunes`), in RUNES, applied to each of the two lines separately rather than
+ * to their total.
+ */
+export const GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES = 35;
+
+/**
+ * Upstream's byte bound on a final URL (`adgroup_ad.go`'s `maxFinalURLBytes`).
+ *
+ * BYTES, not runes and not UTF-16 units: upstream measures `len(finalURL)` on a Go string, which is
+ * its UTF-8 byte length. Mirror it with `new TextEncoder().encode(url).length`.
+ *
+ * It is also measured on the TAGGED url — upstream appends `utm_source`, `utm_medium` and,
+ * when absent, `utm_campaign` and `utm_content` before checking. A guard here therefore cannot be
+ * exact without rebuilding that tagging, so this app checks the untagged URL only, which refuses
+ * strictly less than upstream does. A URL within this bound untagged can still be refused upstream
+ * once tagged; that is an under-refusal, and the safe direction.
+ */
+export const GOOGLE_ADS_MAX_FINAL_URL_BYTES = 2084;
 
 /**
  * Micros per whole currency unit, the denomination google-ads bills budgets in.
