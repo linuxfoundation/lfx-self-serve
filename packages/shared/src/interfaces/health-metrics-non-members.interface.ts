@@ -99,8 +99,8 @@ export interface HealthMetricsNonMembersPeople {
   rows: HealthMetricsNonMembersPerson[];
   /** Individuals matching the search. */
   totalRecords: number;
-  /** Every individual who attended in the period; the sub-nav badge and the unfiltered count. */
-  scopeTotal: number;
+  /** Every individual who attended in the period; `null` when the model leaves it unset, which is not zero. */
+  scopeTotal: number | null;
 }
 
 /** One person row as the People table renders it; a missing title has no secondary line. */

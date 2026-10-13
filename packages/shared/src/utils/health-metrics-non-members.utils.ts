@@ -63,7 +63,8 @@ export function buildHealthMetricsNonMembersPersonRows(rows: HealthMetricsNonMem
 }
 
 /** The People count line: "214 engaged individuals". */
-export function buildHealthMetricsNonMembersPeopleCountLabel(count: number): string {
+export function buildHealthMetricsNonMembersPeopleCountLabel(count: number | null): string {
+  if (count === null) return 'Engaged individuals not available';
   return `${count.toLocaleString('en-US')} engaged ${count === 1 ? 'individual' : 'individuals'}`;
 }
 

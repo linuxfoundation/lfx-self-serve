@@ -99,6 +99,8 @@ export class NonMembersPeopleComponent {
   protected readonly scopeTotal = computed(() => this.response().scopeTotal);
   protected readonly first = computed(() => (this.page() - 1) * this.size());
   protected readonly summary = computed(() => buildHealthMetricsNonMembersPeopleCountLabel(this.scopeTotal()));
+  /** An unset total is not zero, so the search line drops its "of N" rather than inventing one. */
+  protected readonly searchSuffix = computed(() => (this.scopeTotal() === null ? 'match' : `of ${this.summary()} match`));
   protected readonly totalRecordsLabel = computed(() => this.totalRecords().toLocaleString('en-US'));
 
   public constructor() {

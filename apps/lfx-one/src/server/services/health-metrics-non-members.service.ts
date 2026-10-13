@@ -219,8 +219,8 @@ export class HealthMetricsNonMembersService {
       ),
       totals AS (
         SELECT
-          -- The model's foundation-wide figure; an unset one falls back to the same attendee rows.
-          (SELECT COALESCE(ANY_VALUE(scope_individuals_count), COUNT(*)) FROM scoped) AS scope_total,
+          -- The model's foundation-wide figure; zero only for an empty scope, so an unset figure stays NULL.
+          (SELECT CASE WHEN COUNT(*) = 0 THEN 0 ELSE ANY_VALUE(scope_individuals_count) END FROM scoped) AS scope_total,
           (SELECT COUNT(*) FROM matched) AS total_records
       ),
       page AS (
@@ -247,7 +247,7 @@ export class HealthMetricsNonMembersService {
     return {
       rows: result.rows.filter((row) => row.IS_PAGE_ROW === true && !!row.PERSON_KEY).map((row, index) => mapPerson(row, offset + index + 1)),
       totalRecords: Number(first?.TOTAL_RECORDS ?? 0),
-      scopeTotal: Number(first?.SCOPE_TOTAL ?? 0),
+      scopeTotal: toNullableNumber(first?.SCOPE_TOTAL),
     };
   }
 

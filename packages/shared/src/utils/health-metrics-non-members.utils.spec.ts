@@ -161,6 +161,7 @@ describe('buildHealthMetricsNonMembersPeopleCountLabel', () => {
   it('counts the engaged individuals', () => {
     expect(buildHealthMetricsNonMembersPeopleCountLabel(1412)).toBe('1,412 engaged individuals');
     expect(buildHealthMetricsNonMembersPeopleCountLabel(1)).toBe('1 engaged individual');
+    expect(buildHealthMetricsNonMembersPeopleCountLabel(null)).toBe('Engaged individuals not available');
   });
 });
 
