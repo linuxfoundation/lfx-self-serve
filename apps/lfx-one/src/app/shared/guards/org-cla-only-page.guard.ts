@@ -6,7 +6,7 @@ import { computed, inject, Injector, PLATFORM_ID } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRouteSnapshot, CanActivateChildFn, NavigationStart, Router, UrlTree } from '@angular/router';
 import { ORG_CLA_ONLY_GRANTS_WAIT_MS, ORG_LENS_CLA_M3_ENABLED_FLAG, ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
-import { filter, firstValueFrom, of, take, takeUntil, timeout } from 'rxjs';
+import { filter, firstValueFrom, of, ReplaySubject, take, takeUntil, timeout } from 'rxjs';
 
 import { AccountContextService } from '../services/account-context.service';
 import { FeatureFlagService } from '../services/feature-flag.service';
@@ -46,6 +46,16 @@ export const orgClaOnlyPageGuard: CanActivateChildFn = async (childRoute: Activa
   const segment = page.parent?.paramMap.get(ORG_SEGMENT_PARAM) ?? null;
   const claPage = (): UrlTree | null => (segment && claOnlyAccess.isClaOnly(uid) ? router.createUrlTree(['/org', segment, CLA_PAGE]) : null);
 
+  // Watched from before the first await and replayed, so a navigation that starts during a wait still
+  // cancels the late redirect below.
+  const superseded = new ReplaySubject<void>(1);
+  router.events
+    .pipe(
+      filter((event) => event instanceof NavigationStart),
+      take(1)
+    )
+    .subscribe(() => superseded.next());
+
   // A dependency that never answers must not hold the navigation: past its wait the page is admitted,
   // and the redirect still happens if LaunchDarkly and the role grants answer before the next navigation
   // starts. The router URL is not consulted: it may still name the previous page while this navigation
@@ -55,7 +65,7 @@ export const orgClaOnlyPageGuard: CanActivateChildFn = async (childRoute: Activa
       computed(() => featureFlagService.providerReady() && roleGrants.loaded()),
       { injector }
     )
-      .pipe(filter(Boolean), take(1), takeUntil(router.events.pipe(filter((event) => event instanceof NavigationStart))))
+      .pipe(filter(Boolean), take(1), takeUntil(superseded))
       .subscribe(() => {
         const target = claPage();
         if (target) {

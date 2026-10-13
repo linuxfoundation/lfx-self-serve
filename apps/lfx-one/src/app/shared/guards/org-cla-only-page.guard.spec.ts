@@ -223,6 +223,26 @@ describe('orgClaOnlyPageGuard', () => {
       expect(navigateByUrl).not.toHaveBeenCalled();
     });
 
+    it('never redirects after the caller navigated away during the wait', async () => {
+      vi.useFakeTimers();
+      try {
+        loaded.set(false);
+        const pending = run(routeFor(LATE_UID, 'people'));
+        TestBed.tick();
+        routerEvents.next(new NavigationStart(2, `/org/${LATE_UID}/projects`));
+        await vi.advanceTimersByTimeAsync(ORG_CLA_ONLY_GRANTS_WAIT_MS);
+        expect(await pending).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
+
+      claOnly.add(LATE_UID);
+      loaded.set(true);
+      TestBed.tick();
+
+      expect(navigateByUrl).not.toHaveBeenCalled();
+    });
+
     it('redirects once LaunchDarkly turns the flag on after its wait ran out', async () => {
       providerReady.set(false);
       enabled.set(false);
