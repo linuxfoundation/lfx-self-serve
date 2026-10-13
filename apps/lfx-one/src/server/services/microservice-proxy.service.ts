@@ -172,14 +172,17 @@ export class MicroserviceProxyService {
    * per https://url.spec.whatwg.org/#double-dot-path-segment, `%2e` (any case) is equivalent to a
    * literal `.` — so `%2e%2e`, `.%2e`, `%2e.` all resolve the same as `..` — and `\` is treated as
    * `/` for special schemes (http/https), so a caller can smuggle a traversal segment past a
-   * `/`-only split. The parser also strips every ASCII tab/newline from the input and trims
-   * leading/trailing C0 controls/spaces from the whole URL *before* it ever splits into segments
-   * (https://url.spec.whatwg.org/#concept-basic-url-parser, steps 1-2) — so e.g. `.%09.` (a literal
-   * tab between the dots) or a trailing `..%20` are dot segments to `fetch()` even though neither
-   * is literally `.`/`..` once percent-decoded. Detection here mirrors that preprocessing so it
-   * can't be bypassed the same way. A literal-only, `/`-only check was flagged by multiple
-   * independent reviewers (dealako, Copilot, Cursor Bugbot, Greptile) on PR #3511 as still
-   * bypassable via these vectors.
+   * `/`-only split. The parser also strips every literal ASCII tab/newline character from the
+   * input and trims leading/trailing literal C0 control/space characters from the whole URL
+   * *before* it ever splits into segments (https://url.spec.whatwg.org/#concept-basic-url-parser,
+   * steps 1-2) — it does not decode `%09`/`%20` first, so e.g. a literal tab between the dots
+   * (`.<TAB>.`) or a trailing dot-segment padded with a literal space become real dot segments
+   * even though neither is literally `.`/`..`. Detection here mirrors that preprocessing so it
+   * can't be bypassed the same way. `isDotSegment` additionally strips `%09`/`%0a`/`%0d` text that
+   * survives Express's single route-param decode (e.g. a double-encoded `%2509`) — that's
+   * deliberate extra strictness, not something the URL parser itself does. A literal-only,
+   * `/`-only check was flagged by multiple independent reviewers (dealako, Copilot, Cursor Bugbot,
+   * Greptile) on PR #3511 as still bypassable via these vectors.
    */
   private buildEndpoint(baseUrl: string, path: string): string {
     if (path.includes('?') || path.includes('#')) {
@@ -196,11 +199,15 @@ export class MicroserviceProxyService {
 
     // Mirror the WHATWG URL parser's own preprocessing before splitting into segments: strip every
     // ASCII tab/newline anywhere, then trim leading/trailing C0 controls/space from the whole string.
+    // The trim is split into two anchored, non-global regexes rather than a single `^X+|X+$`
+    // alternation — that shape is exactly what CodeQL's polynomial-ReDoS query (js/polynomial-redos)
+    // flags, even though both halves here are otherwise unremarkable.
     const normalized = path
-       
       .replace(/[\t\n\r]/g, '')
       // eslint-disable-next-line no-control-regex
-      .replace(/^[\u0000-\u0020]+|[\u0000-\u0020]+$/g, '');
+      .replace(/^[\u0000-\u0020]+/, '')
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\u0000-\u0020]+$/, '');
 
     if (normalized.split(/[/\\]/).some(isDotSegment)) {
       throw ServiceValidationError.forField('path', 'Upstream path must not contain traversal segments', {
