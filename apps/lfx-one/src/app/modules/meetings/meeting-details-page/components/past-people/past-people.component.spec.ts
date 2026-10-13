@@ -37,6 +37,7 @@ describe('MeetingPastPeopleComponent', () => {
   let fixture: ComponentFixture<MeetingPastPeopleComponent>;
   let meeting: WritableSignal<LoadedMeeting | undefined>;
   let loadedViaPastMeetingId: WritableSignal<boolean>;
+  let matchesRoute: WritableSignal<boolean>;
   let getPublicPastMeetingRoster: ReturnType<typeof vi.fn>;
 
   const setup = async (read: () => Observable<PublicPastMeetingRoster>): Promise<void> => {
@@ -44,7 +45,10 @@ describe('MeetingPastPeopleComponent', () => {
     await TestBed.configureTestingModule({
       imports: [MeetingPastPeopleComponent],
       providers: [
-        { provide: MeetingDetailsStateService, useValue: { meeting, loadedViaPastMeetingId, signInHref: signal('/login?returnTo=x') } },
+        {
+          provide: MeetingDetailsStateService,
+          useValue: { meeting, loadedViaPastMeetingId, matchesRoute, signInHref: signal('/login?returnTo=x') },
+        },
         { provide: MeetingService, useValue: { getPublicPastMeetingRoster } },
       ],
     }).compileComponents();
@@ -55,8 +59,15 @@ describe('MeetingPastPeopleComponent', () => {
   };
 
   beforeEach(() => {
-    meeting = signal<LoadedMeeting | undefined>({ id: PAST_ID, title: 'Weekly Sync', project: {} } as unknown as LoadedMeeting);
+    // A past payload can carry the series id in `id` and the occurrence in `meeting_and_occurrence_id`.
+    meeting = signal<LoadedMeeting | undefined>({
+      id: 'meeting-1',
+      meeting_and_occurrence_id: PAST_ID,
+      title: 'Weekly Sync',
+      project: {},
+    } as unknown as LoadedMeeting);
     loadedViaPastMeetingId = signal(true);
+    matchesRoute = signal(true);
     getPublicPastMeetingRoster = vi.fn();
   });
 
@@ -70,7 +81,7 @@ describe('MeetingPastPeopleComponent', () => {
     fixture.detectChanges();
   };
 
-  it('reads the public roster by the id the page loaded the past meeting with', async () => {
+  it("reads the public roster by the occurrence's composite id", async () => {
     await setup(() => of(roster()));
 
     expect(getPublicPastMeetingRoster).toHaveBeenCalledWith(PAST_ID);
@@ -179,6 +190,14 @@ describe('MeetingPastPeopleComponent', () => {
 
     expect(getPublicPastMeetingRoster).toHaveBeenCalledTimes(2);
     expect(rowUids()).toHaveLength(3);
+  });
+
+  it('reads nothing for a meeting held over from the previous route', async () => {
+    matchesRoute.set(false);
+    await setup(() => of(roster()));
+
+    expect(getPublicPastMeetingRoster).not.toHaveBeenCalled();
+    expect(query('people-section-loading')).not.toBeNull();
   });
 
   it('reads nothing until the occurrence record is loaded', async () => {

@@ -15,7 +15,7 @@ import {
   PastRosterInvitationFilter,
   PublicPastMeetingParticipant,
 } from '@lfx-one/shared/interfaces';
-import { filterPublicPastMeetingRoster, getPastMeetingAttendanceFigures } from '@lfx-one/shared/utils';
+import { filterPublicPastMeetingRoster, getPastMeetingAttendanceFigures, getPastMeetingResourceId } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, map, Observable, of, startWith, switchMap } from 'rxjs';
@@ -93,11 +93,14 @@ export class MeetingPastPeopleComponent {
 
   private initRoster(): Signal<MeetingPastRosterState> {
     const loading: MeetingPastRosterState = { status: 'loading' };
-    // The public roster route takes the id the page loaded the past meeting with (the BFF resolves it).
+    // Only for the occurrence the route names (a held meeting from the previous route never keys a read),
+    // by its composite id, which the public route accepts whatever id the page was opened with.
     const request = computed(
       () => {
         const meeting = this.state.meeting();
-        return meeting && this.state.loadedViaPastMeetingId() ? { id: meeting.id, refresh: this.refreshCount() } : null;
+        return meeting && this.state.matchesRoute() && this.state.loadedViaPastMeetingId()
+          ? { id: getPastMeetingResourceId(meeting), refresh: this.refreshCount() }
+          : null;
       },
       { equal: (a, b) => a?.id === b?.id && a?.refresh === b?.refresh }
     );
