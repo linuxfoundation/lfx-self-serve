@@ -2,8 +2,18 @@
 // SPDX-License-Identifier: MIT
 
 import { ArtifactVisibility, MeetingType, MeetingVisibility, CancelOnCommitteeRemoval } from '../enums';
-import type { AttachmentCategory, CardSelectorOption, MeetingTypeConfig, MeetingComposerPreviewFeature, ShowMeetingAttendeesLockOptions } from '../interfaces';
+import type {
+  AttachmentCategory,
+  CardSelectorOption,
+  MeetingTypeConfig,
+  MeetingComposerPreviewFeature,
+  RsvpResponse,
+  ShowMeetingAttendeesLockOptions,
+} from '../interfaces';
 import { lfxColors } from './colors.constants';
+
+/** Every valid RSVP answer; used to reject an acknowledgement whose answer is missing or unrecognised. */
+export const RSVP_RESPONSES: readonly RsvpResponse[] = ['accepted', 'maybe', 'declined'];
 
 /**
  * Service-account usernames/emails that own `created_by` on system-created meetings
