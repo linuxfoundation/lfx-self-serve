@@ -47,12 +47,12 @@ const survey = (uid: string, committeeUids: string[], overrides: Partial<Survey>
   ...overrides,
 });
 
-describe('SurveysTableComponent — draft edit access', () => {
+describe('SurveysTableComponent — row-scoped draft edit access', () => {
   let fixture: ComponentFixture<SurveysTableComponent>;
   let http: HttpTestingController;
 
   beforeEach(async () => {
-    // Only the search debounce uses fake timers; Angular's zoneless scheduler stays real.
+    // Leave the search debounce pending so action grants must render without waiting for it.
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     await TestBed.configureTestingModule({
       imports: [SurveysTableComponent],
@@ -75,185 +75,142 @@ describe('SurveysTableComponent — draft edit access', () => {
     vi.useRealTimers();
   });
 
-  async function settle(): Promise<void> {
-    fixture.detectChanges();
-    await vi.advanceTimersByTimeAsync(300);
-    TestBed.tick();
-    fixture.detectChanges();
-  }
-
-  async function render(surveys: Survey[], options: { hasPMOAccess?: boolean; isMeLens?: boolean; committeeUid?: string } = {}): Promise<void> {
+  function render(surveys: Survey[], options: { hasPMOAccess?: boolean; isMeLens?: boolean; committeeUid?: string } = {}): void {
     fixture.componentRef.setInput('surveys', surveys);
     for (const [name, value] of Object.entries(options)) {
       fixture.componentRef.setInput(name, value);
     }
-    await settle();
+    fixture.detectChanges();
   }
 
   function action(kind: string, uid: string): HTMLElement | null {
     return fixture.nativeElement.querySelector(`[data-testid="surveys-${kind}-${uid}"]`);
   }
 
-  function resolveCommittee(uid: string, writer: boolean): void {
-    http.expectOne(`/api/committees/${uid}`).flush({ uid, writer });
-  }
+  it('renders a supplied draft grant immediately without waiting for unrelated rows or client I/O', () => {
+    render([survey('ready', ['primary', 'secondary'], { committee_writer: true }), survey('ungranted', ['unrelated'])]);
 
-  it('shows a secondary committee writer the draft Edit link but not Delete', async () => {
-    await render([survey('draft', ['primary', 'secondary', 'third'])]);
-    expect(action('edit', 'draft')).toBeNull();
-    resolveCommittee('primary', false);
-    expect(action('edit', 'draft')).toBeNull();
-    resolveCommittee('secondary', true);
-    await settle();
-
-    const link = action('edit', 'draft')?.querySelector('a');
-    expect(link?.getAttribute('href')).toBe('/project/surveys/draft/edit?project=synthetic-project&committee_uid=primary');
-    expect(action('delete', 'draft')).toBeNull();
-    http.expectNone('/api/committees/third');
+    expect(action('edit', 'ready')?.querySelector('a')?.getAttribute('href')).toBe(
+      '/project/surveys/ready/edit?project=synthetic-project&committee_uid=primary'
+    );
+    expect(action('delete', 'ready')).toBeNull();
+    expect(action('edit', 'ungranted')).toBeNull();
+    expect(action('delete', 'ungranted')).toBeNull();
+    http.expectNone(() => true);
   });
 
-  it('does not use an unrelated viewed committee to grant a survey action', async () => {
-    await render([survey('draft', ['primary', 'secondary'])], { committeeUid: 'unrelated-writer' });
-    resolveCommittee('primary', false);
-    resolveCommittee('secondary', false);
-    await settle();
+  it.each([
+    { is_foundation: true, path: '/foundation/surveys/draft/edit' },
+    { is_foundation: false, path: '/project/surveys/draft/edit' },
+    { is_foundation: undefined, path: '/surveys/draft/edit' },
+  ])('uses the survey owning tier for the edit link ($is_foundation)', ({ is_foundation: isFoundation, path }) => {
+    render([survey('draft', ['primary', 'secondary'], { committee_writer: true, is_foundation: isFoundation })], { committeeUid: 'secondary' });
 
-    http.expectNone('/api/committees/unrelated-writer');
-    expect(action('edit', 'draft')).toBeNull();
+    expect(action('edit', 'draft')?.querySelector('a')?.getAttribute('href')).toBe(`${path}?project=synthetic-project&committee_uid=secondary`);
     expect(action('delete', 'draft')).toBeNull();
   });
 
-  it('prioritizes a matching viewed committee without probing unrelated associations', async () => {
-    await render([survey('draft', ['primary', 'secondary'])], { committeeUid: 'secondary' });
-    resolveCommittee('secondary', true);
-    await settle();
+  it('ignores an unrelated viewed committee in the granted row edit destination', () => {
+    render([survey('draft', ['primary', 'secondary'], { committee_writer: true })], { committeeUid: 'unrelated' });
 
-    expect(action('edit', 'draft')?.querySelector('a')?.getAttribute('href')).toContain('committee_uid=secondary');
+    expect(action('edit', 'draft')?.querySelector('a')?.getAttribute('href')).toBe(
+      '/project/surveys/draft/edit?project=synthetic-project&committee_uid=primary'
+    );
+  });
+
+  it.each([false, undefined])('denies draft Edit and Delete when the supplied grant is %s', (committeeWriter) => {
+    render([survey('draft', ['primary'], { committee_writer: committeeWriter })]);
+
+    expect(action('edit', 'draft')).toBeNull();
     expect(action('delete', 'draft')).toBeNull();
-    http.expectNone('/api/committees/primary');
   });
 
-  it('denies empty and blank committee candidates without making detail requests', async () => {
-    await render([survey('empty', []), survey('blank', ['', '   '])], { committeeUid: '   ' });
+  it.each([{ hasPMOAccess: true }, { hasPMOAccess: true, isMeLens: true }])(
+    'preserves existing Edit and Delete precedence for the legacy grant %j',
+    (options) => {
+      render([survey('draft', ['primary', 'secondary'], { committee_writer: false })], options);
 
-    http.expectNone((request) => request.url.startsWith('/api/committees/'));
-    expect(action('edit', 'empty')).toBeNull();
-    expect(action('edit', 'blank')).toBeNull();
-    expect(action('delete', 'empty')).toBeNull();
-    expect(action('delete', 'blank')).toBeNull();
-  });
+      expect(action('edit', 'draft')?.querySelector('a')).not.toBeNull();
+      expect(action('delete', 'draft')?.querySelector('button')).not.toBeNull();
+    }
+  );
 
-  it('keeps project-granted Edit and Delete without committee requests', async () => {
-    await render([survey('draft', ['primary', 'secondary'])], { hasPMOAccess: true });
-
-    expect(action('edit', 'draft')?.querySelector('a')).not.toBeNull();
-    expect(action('delete', 'draft')?.querySelector('button')).not.toBeNull();
-    http.expectNone((request) => request.url.startsWith('/api/committees/'));
-  });
-
-  it('adds no draft actions in Me and preserves the respondent action', async () => {
-    await render(
-      [survey('draft', ['writer']), survey('open', ['writer'], { survey_status: SurveyStatus.OPEN, survey_link: 'https://example.test/synthetic-response' })],
+  it('blocks committee-only draft grants in Me while preserving Take, Update and View actions', () => {
+    render(
+      [
+        survey('draft', ['writer'], { committee_writer: true }),
+        survey('open', ['writer'], { survey_status: SurveyStatus.OPEN, committee_writer: true, survey_link: 'https://example.test/take' }),
+        survey('responded', ['writer'], {
+          survey_status: SurveyStatus.OPEN,
+          committee_writer: true,
+          response_status: 'RESPONDED',
+          survey_link: 'https://example.test/update',
+        }),
+        survey('closed', ['writer'], { survey_status: SurveyStatus.CLOSED, committee_writer: true }),
+      ],
       { isMeLens: true }
     );
 
     expect(action('edit', 'draft')).toBeNull();
     expect(action('delete', 'draft')).toBeNull();
-    expect(action('take', 'open')?.querySelector('a')?.getAttribute('href')).toBe('https://example.test/synthetic-response');
-    http.expectNone((request) => request.url.startsWith('/api/committees/'));
+    expect(action('take', 'open')?.querySelector('a')?.getAttribute('href')).toBe('https://example.test/take');
+    expect(action('update', 'responded')?.querySelector('a')?.getAttribute('href')).toBe('https://example.test/update');
+    expect(action('take', 'responded')).toBeNull();
+    expect(action('view', 'closed')?.querySelector('button')).not.toBeNull();
+    expect(action('results', 'closed')).toBeNull();
   });
 
-  it('does not probe non-draft rows and preserves their Results actions', async () => {
-    await render([
-      survey('open', ['writer'], { survey_status: SurveyStatus.OPEN }),
-      survey('closed', ['writer'], { survey_status: SurveyStatus.CLOSED }),
-      survey('scheduled', ['writer'], { survey_status: SurveyStatus.SCHEDULED }),
-      survey('response-closed', ['writer'], { response_status: 'CLOSED' }),
-    ]);
+  it.each([false, true])('never adds draft actions to nondraft rows (legacy grant=%s)', (hasPMOAccess) => {
+    render(
+      [
+        survey('open', ['writer'], { survey_status: SurveyStatus.OPEN, committee_writer: true }),
+        survey('closed', ['writer'], { survey_status: SurveyStatus.CLOSED, committee_writer: true }),
+        survey('scheduled', ['writer'], { survey_status: SurveyStatus.SCHEDULED, committee_writer: true }),
+        survey('response-closed', ['writer'], { response_status: 'CLOSED', committee_writer: true }),
+      ],
+      { hasPMOAccess }
+    );
 
-    expect(action('results', 'open')).not.toBeNull();
-    expect(action('results', 'closed')).not.toBeNull();
-    expect(action('results', 'response-closed')).not.toBeNull();
+    for (const uid of ['open', 'closed', 'response-closed']) {
+      expect(action('results', uid)?.querySelector('button')).not.toBeNull();
+    }
     for (const uid of ['open', 'closed', 'scheduled', 'response-closed']) {
       expect(action('edit', uid)).toBeNull();
       expect(action('delete', uid)).toBeNull();
     }
-    http.expectNone((request) => request.url.startsWith('/api/committees/'));
+    expect(action('results', 'scheduled')).toBeNull();
   });
 
-  it('shares committee detail requests across draft rows in the same list snapshot', async () => {
-    await render([survey('first', ['primary', 'secondary']), survey('second', ['primary', 'secondary'])]);
-    resolveCommittee('primary', false);
-    resolveCommittee('secondary', true);
-    await settle();
+  it.each([false, undefined])('removes an old grant immediately when a same-UID replacement row has flag %s', (committeeWriter) => {
+    render([survey('draft', ['writer'], { committee_writer: true })]);
+    expect(action('edit', 'draft')?.querySelector('a')).not.toBeNull();
 
-    for (const uid of ['first', 'second']) {
-      expect(action('edit', uid)?.querySelector('a')).not.toBeNull();
-      expect(action('delete', uid)).toBeNull();
-    }
-  });
-
-  it('invalidates an existing grant immediately when the same survey UID gets new associations', async () => {
-    await render([survey('draft', ['previous-writer'])]);
-    resolveCommittee('previous-writer', true);
-    await settle();
-    expect(action('edit', 'draft')).not.toBeNull();
-
-    fixture.componentRef.setInput('surveys', [survey('draft', ['new-denied'])]);
-    fixture.detectChanges();
+    render([survey('draft', ['writer'], { committee_writer: committeeWriter })]);
     expect(action('edit', 'draft')).toBeNull();
-    await settle();
-    resolveCommittee('new-denied', false);
-    await settle();
+    expect(action('delete', 'draft')).toBeNull();
 
-    expect(action('edit', 'draft')).toBeNull();
+    render([survey('draft', ['writer'], { committee_writer: true })]);
+    expect(action('edit', 'draft')?.querySelector('a')).not.toBeNull();
     expect(action('delete', 'draft')).toBeNull();
   });
 
-  it.each([false, true])('ignores a stale pending committee result (writer=%s) after the list changes', async (writer) => {
-    await render([survey('draft', ['previous-primary', 'previous-secondary'])]);
-    const previous = http.expectOne('/api/committees/previous-primary');
-
-    fixture.componentRef.setInput('surveys', [survey('draft', ['current-denied'])]);
-    await settle();
-    previous.flush({ uid: 'previous-primary', writer });
-    await settle();
-
-    expect(action('edit', 'draft')).toBeNull();
-    http.expectNone('/api/committees/previous-secondary');
-    resolveCommittee('current-denied', false);
-    await settle();
-    expect(action('edit', 'draft')).toBeNull();
-    expect(action('delete', 'draft')).toBeNull();
-  });
-
-  it('removes a committee-only Edit grant when switching to Me', async () => {
-    await render([survey('draft', ['writer'])]);
-    resolveCommittee('writer', true);
-    await settle();
-    expect(action('edit', 'draft')).not.toBeNull();
+  it('removes committee-only Edit immediately when switching to Me', () => {
+    render([survey('draft', ['writer'], { committee_writer: true })]);
+    expect(action('edit', 'draft')?.querySelector('a')).not.toBeNull();
 
     fixture.componentRef.setInput('isMeLens', true);
     fixture.detectChanges();
     expect(action('edit', 'draft')).toBeNull();
-    await settle();
     expect(action('delete', 'draft')).toBeNull();
-    http.expectNone((request) => request.url.startsWith('/api/committees/'));
   });
 
-  it('keeps Delete project-gated when the project grant is removed', async () => {
-    await render([survey('draft', ['writer'])], { hasPMOAccess: true });
-    expect(action('delete', 'draft')).not.toBeNull();
+  it('keeps committee-only Edit but removes Delete immediately when the legacy grant is removed', () => {
+    render([survey('draft', ['writer'], { committee_writer: true })], { hasPMOAccess: true });
+    expect(action('delete', 'draft')?.querySelector('button')).not.toBeNull();
 
     fixture.componentRef.setInput('hasPMOAccess', false);
     fixture.detectChanges();
-    expect(action('edit', 'draft')).toBeNull();
-    expect(action('delete', 'draft')).toBeNull();
-    await settle();
-    resolveCommittee('writer', true);
-    await settle();
-
-    expect(action('edit', 'draft')).not.toBeNull();
+    expect(action('edit', 'draft')?.querySelector('a')).not.toBeNull();
     expect(action('delete', 'draft')).toBeNull();
   });
 });

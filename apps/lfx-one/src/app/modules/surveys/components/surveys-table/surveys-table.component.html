@@ -188,7 +188,7 @@
 
               <td>
                 <div class="flex items-center justify-end gap-1">
-                  @if ((hasPMOAccess() || committeeEditAccess().has(survey.uid)) && survey.displayStatus === SurveyStatus.DRAFT) {
+                  @if ((hasPMOAccess() || (!isMeLens() && survey.committee_writer === true)) && survey.displayStatus === SurveyStatus.DRAFT) {
                     <lfx-button
                       label="Edit"
                       severity="primary"
