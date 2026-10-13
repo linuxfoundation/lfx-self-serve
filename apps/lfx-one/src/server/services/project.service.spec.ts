@@ -1201,7 +1201,7 @@ describe('ProjectService — Snowflake-backed marketing reads', () => {
 
 // IN-1252: getHealthMetricsDaily's v1→v2 column flip is covered above (in the daily-health-metrics
 // describe block); these three cover the other call sites the same fix touched — each used to read
-// (or remap through mapV1BandToV2) a v1 Snowflake column/shim and now reads HEALTH_SCORE_CATEGORY_V2
+// (or remap through a v1 band shim) a v1 Snowflake column and now reads HEALTH_SCORE_CATEGORY_V2
 // directly.
 describe('ProjectService — Health Score v2 categories', () => {
   let service: ProjectService;
@@ -1217,7 +1217,7 @@ describe('ProjectService — Health Score v2 categories', () => {
 
       const result = await service.getFoundationHealthScoreDistribution('cncf');
 
-      // fails before fix: the v1 query read HEALTH_SCORE_CATEGORY through mapV1BandToV2, so a
+      // fails before fix: the v1 query read HEALTH_SCORE_CATEGORY through a v1 band shim, so a
       // genuine v2 'fair' category would have fallen through to `unscored` instead of `fair`.
       expect(result.fair).toBe(4);
       expect(result.unscored).toBe(0);
@@ -1277,8 +1277,8 @@ describe('ProjectService — Health Score v2 categories', () => {
 
       const result = await service.getFoundationProjectsDetail('cncf');
 
-      // fails before fix: normalizeHealthScoreCategory ran the v1 mapV1BandToV2 shim over this
-      // column, so a genuine v2 'fair' category could be coerced instead of passing through as-is.
+      // fails before fix: normalizeHealthScoreCategory ran a v1 band shim over this column, so a
+      // genuine v2 'fair' category could be coerced instead of passing through as-is.
       expect(result.projects[0].healthScoreCategory).toBe('fair');
       expect(execute.mock.calls[0][0]).toContain('d.HEALTH_SCORE_CATEGORY_V2');
     });
@@ -1296,7 +1296,7 @@ describe('ProjectService — Health Score v2 categories', () => {
       const result = await service.getMultiFoundationSummary(req, ['cncf']);
 
       // fails before fix: the local HealthScoreRow type read HEALTH_SCORE_CATEGORY and remapped it
-      // via mapV1BandToV2, so a v2 'fair' category wouldn't have passed straight through.
+      // through a v1 band shim, so a v2 'fair' category wouldn't have passed straight through.
       expect(result.perFoundation['cncf'].healthScores.fair).toBe(7);
       expect(result.perFoundation['cncf'].healthScores.unscored).toBe(0);
     });

@@ -13,7 +13,6 @@ import {
   FoundationCompanyBusFactorResponse,
   FoundationContributorsMentoredResponse,
   FoundationContributorsDistributionResponse,
-  FoundationHealthScore,
   FoundationHealthScoreDistributionResponse,
   FoundationEventsAttendanceDistributionResponse,
   FoundationEventsQuarterlyResponse,
@@ -150,9 +149,8 @@ import {
   HEALTH_METRICS_NPS_DEFAULT_SUMMARY,
   HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
 } from '@lfx-one/shared/constants';
-import { mapV1BandToV2, mapV1DistributionToV2 } from '@lfx-one/shared/utils';
 import { strictHttpParams } from '@shared/utils/http-params.utils';
-import { catchError, map, Observable, of, shareReplay, throwError } from 'rxjs';
+import { catchError, Observable, of, shareReplay, throwError } from 'rxjs';
 
 /**
  * Analytics service for fetching analytics data from Snowflake
@@ -326,14 +324,6 @@ export class AnalyticsService {
       // subsequent subscribers to an empty fallback response for the session.
       // The fallback is returned for this subscription only; next subscribe re-fetches.
       const req$ = this.http.get<FoundationProjectsDetailResponse>('/api/analytics/foundation-projects-detail', { params: { foundationSlug } }).pipe(
-        // Normalizes legacy v1 band names (stable/unsteady) a rolling-deploy old BFF may still emit, so the frontend never sees them.
-        map((response) => ({
-          ...response,
-          projects: response.projects.map((project) => ({
-            ...project,
-            healthScoreCategory: (mapV1BandToV2(project.healthScoreCategory) ?? null) as FoundationHealthScore | null,
-          })),
-        })),
         catchError(() => {
           this.foundationProjectsDetailCache.delete(foundationSlug);
           return of({ projects: [], totalCount: 0 });
@@ -516,8 +506,6 @@ export class AnalyticsService {
       const req$ = this.http
         .get<FoundationHealthScoreDistributionResponse>('/api/analytics/foundation-health-score-distribution', { params: { foundationSlug } })
         .pipe(
-          // Normalizes legacy v1 band names (stable/unsteady) a rolling-deploy old BFF may still emit, so the frontend never sees them.
-          map((response) => mapV1DistributionToV2(response)),
           catchError((error) => {
             // Evict on error so the errored ReplaySubject (shareReplay has no refCount) doesn't
             // permanently poison the cache — the next subscriber re-fetches instead of re-erroring forever.
@@ -1904,16 +1892,6 @@ export class AnalyticsService {
         params: { slugs: slugs.join(',') },
       })
       .pipe(
-        // Normalizes legacy v1 band names (stable/unsteady) a rolling-deploy old BFF may still emit, so the frontend never sees them.
-        map((response) => ({
-          ...response,
-          perFoundation: Object.fromEntries(
-            Object.entries(response.perFoundation).map(([slug, analytics]) => [
-              slug,
-              { ...analytics, healthScores: mapV1DistributionToV2(analytics.healthScores) },
-            ])
-          ),
-        })),
         catchError(() => {
           return of({
             aggregated: { totalValue: 0, totalProjects: 0, totalMembers: 0 },
