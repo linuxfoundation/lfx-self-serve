@@ -18,7 +18,6 @@ import { PENDING_APPLICATION_DISCOVERY_TIMEOUT_MS } from '../../../../../package
 // wired into this app's vitest config, so runtime (non-type-only) imports need stubs.
 const {
   proxyRequest,
-  proxyRequestWithResponse,
   addAccessToResources,
   addAccessToResource,
   checkSingleAccessStrict,
@@ -31,7 +30,6 @@ const {
   getEffectiveEmail,
 } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
-  proxyRequestWithResponse: vi.fn(),
   addAccessToResources: vi.fn(),
   // getCommitteeById's single-resource variant (LFXV2-3080 tests) — distinct from the plural
   // list-oriented addAccessToResources every other describe block in this file already uses.
@@ -54,7 +52,6 @@ const {
 vi.mock('@lfx-one/shared/enums', () => ({
   CommitteeMemberRole: {},
   CommitteeMemberVisibility: { HIDDEN: 'hidden', BASIC_PROFILE: 'basic_profile' },
-  CommitteeMemberStatus: { ACTIVE: 'Active', INACTIVE: 'Inactive' },
 }));
 vi.mock('@lfx-one/shared/utils', () => ({ invitationRequiresOrganization: vi.fn() }));
 vi.mock('@lfx-one/shared/constants', async () => {
@@ -70,7 +67,6 @@ vi.mock('@lfx-one/shared/constants', async () => {
   return {
     COMMITTEE_CATEGORY_BOARD: board.COMMITTEE_CATEGORY_BOARD,
     isBoardCategory: board.isBoardCategory,
-    HTTP_HEADERS: { ETAG: 'ETag' },
     SLACK_INCOMING_WEBHOOK_URL_PATTERN: /^https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9]+\/B[A-Za-z0-9]+\/[A-Za-z0-9]+$/,
     CHAT_WEBHOOK_URL_MAX_LENGTH: 500,
     ACCESS_CHECK_BATCH_SIZE: 100,
@@ -81,7 +77,6 @@ vi.mock('@lfx-one/shared/constants', async () => {
 vi.mock('./microservice-proxy.service', () => ({
   MicroserviceProxyService: class {
     public proxyRequest = proxyRequest;
-    public proxyRequestWithResponse = proxyRequestWithResponse;
   },
 }));
 vi.mock('./access-check.service', () => ({
@@ -1666,7 +1661,6 @@ describe('CommitteeService — Board Social Listening access (lfx-self-serve-ops
 
   beforeEach(async () => {
     proxyRequest.mockReset();
-    proxyRequestWithResponse.mockReset();
     fetchWithETag.mockReset();
     updateWithETag.mockReset();
     addAccessToResource.mockReset().mockImplementation((_req: Request, committee: Committee) => Promise.resolve(committee));
@@ -1678,68 +1672,19 @@ describe('CommitteeService — Board Social Listening access (lfx-self-serve-ops
   });
 
   describe('canBoardMemberViewSocialListening', () => {
-    /** Routes upstream reads by path: membership query, base committee, settings. */
-    function upstream(
-      memberships: string[],
-      committees: Record<
-        string,
-        {
-          category?: string;
-          /** Live project of the committee; defaults to the requested foundation. */
-          projectUid?: string;
-          enabled?: boolean;
-          /** Successive settings answers, for changes between the two settings reads; the last one repeats. */
-          enabledSequence?: boolean[];
-          /** Successive settings ETags; defaults to an unchanged revision. */
-          etagSequence?: string[];
-          baseError?: Error;
-          settingsError?: Error;
-          emptyBase?: boolean;
-          emptySettings?: boolean;
-          /** Live seat as the members endpoint returns it; defaults to an Active seat of the caller. */
-          seat?: { status?: string; username?: string; committeeUid?: string } | 'deleted';
-          /** Status on the indexed membership row. */
-          indexedStatus?: string;
-        }
-      >
-    ): void {
+    /** Membership query, then one settings read per Board group. */
+    function upstream(memberships: string[], settings: Record<string, boolean | Error>): void {
       proxyRequest.mockImplementation((_req: unknown, _svc: string, path: string) => {
         if (path === '/query/resources') {
-          return Promise.resolve({
-            resources: memberships.map((uid) => ({ data: { uid: `seat-${uid}`, committee_uid: uid, status: committees[uid]?.indexedStatus } })),
-          });
+          return Promise.resolve({ resources: memberships.map((uid) => ({ data: { committee_uid: uid } })) });
         }
-        const [, , uid, sub, memberUid] = path.split('/');
-        const committee = committees[uid];
-        if (sub === 'members') {
-          if (committee.seat === 'deleted') return Promise.reject(Object.assign(new Error('not found'), { statusCode: 404 }));
-          return Promise.resolve({
-            uid: memberUid,
-            committee_uid: committee.seat?.committeeUid ?? uid,
-            username: committee.seat?.username ?? 'synthetic-user',
-            status: committee.seat?.status ?? 'Active',
-          });
-        }
-        if (sub === 'settings') {
-          if (committee.settingsError) return Promise.reject(committee.settingsError);
-          const enabled = committee.enabledSequence ? (committee.enabledSequence.shift() ?? committee.enabled) : committee.enabled;
-          if (committee.enabledSequence?.length === 0) committee.enabled = enabled;
-          return Promise.resolve(committee.emptySettings ? null : { members_can_view_social_listening: enabled });
-        }
-        if (committee.baseError) return Promise.reject(committee.baseError);
-        return Promise.resolve(committee.emptyBase ? null : { uid, category: committee.category, project_uid: committee.projectUid ?? FOUNDATION_UID });
-      });
-      // Settings are read with their ETag; route through the same table so call order stays in proxyRequest.mock.calls.
-      proxyRequestWithResponse.mockImplementation(async (...args: unknown[]) => {
-        const data = await proxyRequest(...args);
-        const uid = String(args[2]).split('/')[2];
-        const etag = committees[uid]?.etagSequence?.shift() ?? 'settings-rev-1';
-        return { data, headers: { etag }, status: 200, statusText: 'OK' };
+        const value = settings[path.split('/')[2]];
+        return value instanceof Error ? Promise.reject(value) : Promise.resolve({ members_can_view_social_listening: value });
       });
     }
 
-    it("queries only the user's Board memberships on the foundation itself, then reads each group's settings with M2M", async () => {
-      upstream(['board-1', 'board-1'], { 'board-1': { category: 'Board', enabled: true } });
+    it("queries the user's Board memberships on the foundation itself and reads each group's setting with M2M", async () => {
+      upstream(['board-1', 'board-1'], { 'board-1': true });
 
       await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(true);
 
@@ -1747,106 +1692,35 @@ describe('CommitteeService — Board Social Listening access (lfx-self-serve-ops
         type: 'committee_member',
         tags_all: ['username:synthetic-user', 'committee_category:Board', `project_uid:${FOUNDATION_UID}`],
       });
-      // Settings, then the live committee and seat, then settings again — so the reads can't mix states that never coexisted.
-      const reads = proxyRequest.mock.calls.slice(1).map((call) => call[2]);
-      expect(reads).toEqual([
-        '/committees/board-1/settings',
-        '/committees/board-1',
-        '/committees/board-1/members/seat-board-1',
-        '/committees/board-1/settings',
-      ]);
-      expect(proxyRequest.mock.calls.find((call) => call[2] === '/committees/board-1/members/seat-board-1')?.[7]).toEqual({ bearerToken: 'm2m-token' });
       const settingsCalls = proxyRequest.mock.calls.filter((call) => call[2] === '/committees/board-1/settings');
-      expect(settingsCalls.every((call) => call[7]?.bearerToken === 'm2m-token')).toBe(true);
-      // The base read stays on the user's own token.
-      expect(proxyRequest.mock.calls.find((call) => call[2] === '/committees/board-1')?.[7]).toBeUndefined();
+      expect(settingsCalls).toHaveLength(1);
+      expect(settingsCalls[0][7]).toEqual({ bearerToken: 'm2m-token' });
     });
 
-    it('denies when the Board group has not opted in, without reading its category', async () => {
-      upstream(['board-1'], { 'board-1': { category: 'Board', enabled: false } });
-
-      await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
-      expect(proxyRequest.mock.calls.some((call) => call[2] === '/committees/board-1')).toBe(false);
-    });
-
-    it('denies when the setting was rewritten between the two reads even if it reads true both times (ABA)', async () => {
-      upstream(['board-1'], { 'board-1': { category: 'Board', enabled: true, etagSequence: ['settings-rev-1', 'settings-rev-3'] } });
+    it('denies when the Board group setting is off', async () => {
+      upstream(['board-1'], { 'board-1': false });
 
       await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
     });
 
-    it.each([
-      ['an inactive live seat', { seat: { status: 'Inactive' } }],
-      ['a deleted seat the index still lists', { seat: 'deleted' as const }],
-      ['a seat now held by someone else', { seat: { username: 'someone-else' } }],
-      ['a seat moved to another committee', { seat: { committeeUid: 'other-committee' } }],
-    ])('denies %s', async (_case, seatOverrides) => {
-      upstream(['board-1'], { 'board-1': { category: 'Board', enabled: true, ...seatOverrides } });
-
-      await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
-    });
-
-    it('skips a membership row the index already marks Inactive without reading anything else', async () => {
-      upstream(['board-1'], { 'board-1': { category: 'Board', enabled: true, indexedStatus: 'Inactive' } });
-
-      await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
-      expect(proxyRequest).toHaveBeenCalledTimes(1);
-    });
-
-    it('denies a Board group that has moved to another project while the membership index still tags the foundation', async () => {
-      upstream(['board-1'], { 'board-1': { category: 'Board', enabled: true, projectUid: 'other-foundation-uid' } });
-
-      await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
-    });
-
-    it('denies when the flag is switched off between the two settings reads (e.g. a Board entry clearing a stale grant)', async () => {
-      upstream(['board-1'], { 'board-1': { category: 'Board', enabledSequence: [true, false] } });
-
-      await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
-    });
-
-    it('denies when the group was recategorised out of Board but the membership index and stored flag still say otherwise', async () => {
-      upstream(['board-1'], { 'board-1': { category: 'Technical Steering Committee', enabled: true } });
-
-      await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
-    });
-
-    it('allows when any one of several Board groups has opted in', async () => {
-      upstream(['board-1', 'board-2'], { 'board-1': { category: 'Board' }, 'board-2': { category: 'Board', enabled: true } });
+    it('allows when any one of several Board groups has the setting on', async () => {
+      upstream(['board-1', 'board-2'], { 'board-1': false, 'board-2': true });
 
       await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(true);
     });
 
-    it("still allows when another Board group's read fails", async () => {
-      upstream(['board-1', 'board-2'], {
-        'board-1': { category: 'Board', settingsError: new Error('settings read failed') },
-        'board-2': { category: 'Board', enabled: true },
-      });
-
-      await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(true);
-    });
-
-    it('surfaces a read failure when no Board group grants access, so the caller fails closed without caching', async () => {
-      const error = new Error('base read failed');
-      upstream(['board-1', 'board-2'], { 'board-1': { enabled: true, baseError: error }, 'board-2': { category: 'Board', enabled: false } });
-
-      await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).rejects.toBe(error);
-    });
-
-    it.each([
-      ['committee', { 'board-1': { category: 'Board', enabled: true, emptyBase: true } }],
-      ['settings', { 'board-1': { category: 'Board', enabled: true, emptySettings: true } }],
-    ])('treats an empty %s response as a failed lookup rather than an opt-out', async (_which, committees) => {
-      upstream(['board-1'], committees);
-
-      await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).rejects.toThrow('Empty committee or settings response');
-    });
-
-    it('denies without reading settings when the user sits on no Board group of the foundation', async () => {
+    it('denies without reading settings when the user is on no Board group of the foundation', async () => {
       upstream([], {});
 
       await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
       expect(proxyRequest).toHaveBeenCalledTimes(1);
+    });
+
+    it('surfaces a settings read failure so the caller denies without caching', async () => {
+      const error = new Error('settings read failed');
+      upstream(['board-1'], { 'board-1': error });
+
+      await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).rejects.toBe(error);
     });
 
     it('denies without any upstream call when there is no username', async () => {

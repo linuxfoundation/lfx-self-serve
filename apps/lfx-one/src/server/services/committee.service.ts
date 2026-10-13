@@ -5,13 +5,12 @@ import {
   ACCESS_CHECK_BATCH_SIZE,
   CHAT_WEBHOOK_URL_MAX_LENGTH,
   COMMITTEE_CATEGORY_BOARD,
-  HTTP_HEADERS,
   isBoardCategory,
   PENDING_APPLICATION_DISCOVERY_TIMEOUT_MS,
   SLACK_INCOMING_WEBHOOK_URL_PATTERN,
   UUID_REGEX,
 } from '@lfx-one/shared/constants';
-import { CommitteeMemberRole, CommitteeMemberStatus } from '@lfx-one/shared/enums';
+import { CommitteeMemberRole } from '@lfx-one/shared/enums';
 import {
   AcceptCommitteeInviteRequest,
   ApiRequestOptions,
@@ -1427,14 +1426,13 @@ export class CommitteeService {
   }
 
   /**
-   * Whether the current user sits on a Board group of `foundationUid` that has
-   * `members_can_view_social_listening` switched on (lfx-self-serve-ops#387).
+   * Whether the current user sits on a Board group of `foundationUid` that has the
+   * `members_can_view_social_listening` group setting on (lfx-self-serve-ops#387).
    *
-   * Membership is read with the user's own token and filtered to the foundation's own Board groups —
-   * Boards of the foundation's child projects carry a different `project_uid` and never match. The
-   * settings read uses M2M because upstream gates `/committees/{uid}/settings` on committee#writer,
-   * which Board members usually are not; only the one boolean is read and nothing is forwarded.
-   * Fails closed: any upstream error denies access.
+   * Membership is read with the user's own token; Boards of child projects carry a different
+   * `project_uid` and never match. Settings are read with M2M because upstream gates
+   * `/committees/{uid}/settings` on committee#writer, which Board members usually are not — only the
+   * one boolean is used. Any failure denies.
    */
   public async canBoardMemberViewSocialListening(req: Request, foundationUid: string): Promise<boolean> {
     const username = await getUsernameFromAuth(req);
@@ -1450,64 +1448,33 @@ export class CommitteeService {
           tags_all: [`username:${username}`, `committee_category:${COMMITTEE_CATEGORY_BOARD}`, `project_uid:${foundationUid}`],
           ...(pageToken && { page_token: pageToken }),
         }),
-      // A partial membership list must not be remembered as a definite answer.
       { failOnPartial: true }
     );
 
-    // Candidate seats per Board group. Rows the index already marks Inactive are skipped; every other
-    // seat is re-read live below, since the index and FGA converge asynchronously after a removal.
-    const seatsByCommittee = new Map<string, string[]>();
-    for (const membership of memberships) {
-      if (!membership.committee_uid || !membership.uid || membership.status === CommitteeMemberStatus.INACTIVE) {
-        continue;
-      }
-      seatsByCommittee.set(membership.committee_uid, [...(seatsByCommittee.get(membership.committee_uid) ?? []), membership.uid]);
-    }
-    const boardUids = [...seatsByCommittee.keys()];
+    const boardUids = [...new Set(memberships.map((m) => m.committee_uid).filter((uid): uid is string => Boolean(uid)))];
     if (boardUids.length === 0) {
       return false;
     }
 
     const m2mToken = await generateM2MToken(req);
-    // allSettled: one Board group's failed read must not hide another group that opted in. If none
-    // succeeds with the flag on, the caller is denied — and when a read failed, the error surfaces.
-    const results = await Promise.allSettled(
-      boardUids.map(async (uid) => {
-        // Settings and category are separate upstream records, so read them in an order that can't pair
-        // states that never coexisted: settings, then the live committee, then settings again. A grant
-        // needs the flag on with the same settings revision in both reads, so it held throughout the
-        // committee read, and that read must show Board on this foundation. The membership index's
-        // committee_category and project_uid tags lag upstream changes, so the live committee is read
-        // rather than trusted.
-        const before = await this.readSocialListeningFlag(req, uid, m2mToken);
-        if (!before.enabled) {
-          return false;
-        }
-        const committee = await this.getCommitteeBase(req, uid);
-        // An empty body is a failed lookup, not an opt-out: throwing keeps it from being cached as a denial.
-        if (!committee) {
-          throw new Error(`Empty committee or settings response for Board group ${uid}`);
-        }
-        if (committee.project_uid !== foundationUid || !isBoardCategory(committee.category)) {
-          return false;
-        }
-        if (!(await this.hasActiveSeat(req, uid, seatsByCommittee.get(uid) ?? [], username, m2mToken))) {
-          return false;
-        }
-        const after = await this.readSocialListeningFlag(req, uid, m2mToken);
-        return after.enabled && after.etag === before.etag;
-      })
+    const settings = await Promise.all(
+      boardUids.map((uid) =>
+        this.microserviceProxy.proxyRequest<CommitteeSettingsData>(
+          req,
+          'LFX_V2_SERVICE',
+          `/committees/${uid}/settings`,
+          'GET',
+          undefined,
+          undefined,
+          undefined,
+          {
+            bearerToken: m2mToken,
+          }
+        )
+      )
     );
 
-    if (results.some((result) => result.status === 'fulfilled' && result.value)) {
-      return true;
-    }
-
-    const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
-    if (failure) {
-      throw failure.reason;
-    }
-    return false;
+    return settings.some((s) => s?.members_can_view_social_listening === true);
   }
 
   // ── My Committees ─────────────────────────────────────────────────────────
@@ -2523,62 +2490,6 @@ export class CommitteeService {
       // Tie-breaker: prefer lexicographically smallest uid for stable ordering across requests.
       return (current.uid ?? '') < (best.uid ?? '') ? current : best;
     });
-  }
-
-  /**
-   * Reads a Board group's members_can_view_social_listening with M2M, with the settings ETag so two reads
-   * can prove nothing wrote the setting in between. An empty body or a missing ETag throws (failed
-   * lookup, not an opt-out).
-   */
-  private async readSocialListeningFlag(req: Request, committeeUid: string, m2mToken: string): Promise<{ enabled: boolean; etag: string }> {
-    const response = await this.microserviceProxy.proxyRequestWithResponse<CommitteeSettingsData>(
-      req,
-      'LFX_V2_SERVICE',
-      `/committees/${committeeUid}/settings`,
-      'GET',
-      undefined,
-      undefined,
-      undefined,
-      { bearerToken: m2mToken }
-    );
-    const etag = response.headers?.[HTTP_HEADERS.ETAG.toLowerCase()] ?? response.headers?.[HTTP_HEADERS.ETAG];
-    if (!response.data || !etag) {
-      throw new Error(`Empty committee or settings response for Board group ${committeeUid}`);
-    }
-    return { enabled: response.data.members_can_view_social_listening === true, etag: String(etag) };
-  }
-
-  /**
-   * Whether any of the caller's indexed seats on a Board group is still live: present on that committee,
-   * held by the same username, and Active. A deleted seat (404) simply doesn't count; any other failure
-   * throws so the caller fails closed without caching. Read with M2M, like the settings, since member
-   * reads aren't guaranteed for every seat holder.
-   */
-  private async hasActiveSeat(req: Request, committeeUid: string, memberUids: string[], username: string, m2mToken: string): Promise<boolean> {
-    for (const memberUid of memberUids) {
-      let member: CommitteeMember | null;
-      try {
-        member = await this.microserviceProxy.proxyRequest<CommitteeMember | null>(
-          req,
-          'LFX_V2_SERVICE',
-          `/committees/${committeeUid}/members/${memberUid}`,
-          'GET',
-          undefined,
-          undefined,
-          undefined,
-          { bearerToken: m2mToken }
-        );
-      } catch (error) {
-        if ((error as MicroserviceError).statusCode === 404) {
-          continue;
-        }
-        throw error;
-      }
-      if (member?.committee_uid === committeeUid && member.username === username && member.status === CommitteeMemberStatus.ACTIVE) {
-        return true;
-      }
-    }
-    return false;
   }
 
   /**
