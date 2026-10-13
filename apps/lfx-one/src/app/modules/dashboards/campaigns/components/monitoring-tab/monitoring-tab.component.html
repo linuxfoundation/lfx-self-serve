@@ -526,7 +526,7 @@
           <div class="rounded-lg border border-gray-200 bg-white p-4">
             <p class="text-xs font-medium text-gray-500">Conversions</p>
             @if (linkedInTotals()!.conversionsMeasured === false) {
-              <p class="text-lg font-semibold text-gray-400" data-testid="linkedin-kpi-conversions">Not measured</p>
+              <p class="text-lg font-semibold text-gray-500" data-testid="linkedin-kpi-conversions">Not measured</p>
             } @else {
               <p class="text-lg font-semibold text-gray-900" data-testid="linkedin-kpi-conversions">{{ formatNumber(linkedInTotals()!.conversions) }}</p>
             }
@@ -594,12 +594,12 @@
                     </td>
                     @if (camp.fetchFailed) {
                       <!-- Metrics that could not be read are not zeros: every metric cell is a dash. -->
-                      <td class="px-4 py-3 text-right text-xs text-gray-400">—</td>
-                      <td class="px-4 py-3 text-right text-xs text-gray-400" data-testid="linkedin-campaign-pacing">—</td>
-                      <td class="px-4 py-3 text-right text-xs text-gray-400">—</td>
-                      <td class="px-4 py-3 text-right text-xs text-gray-400">—</td>
-                      <td class="px-4 py-3 text-right text-xs text-gray-400">—</td>
-                      <td class="px-4 py-3 text-right text-xs text-gray-400" data-testid="linkedin-campaign-conversions">—</td>
+                      <td class="px-4 py-3 text-right text-xs text-gray-500">—</td>
+                      <td class="px-4 py-3 text-right text-xs text-gray-500" data-testid="linkedin-campaign-pacing">—</td>
+                      <td class="px-4 py-3 text-right text-xs text-gray-500">—</td>
+                      <td class="px-4 py-3 text-right text-xs text-gray-500">—</td>
+                      <td class="px-4 py-3 text-right text-xs text-gray-500">—</td>
+                      <td class="px-4 py-3 text-right text-xs text-gray-500" data-testid="linkedin-campaign-conversions">—</td>
                     } @else {
                       <td class="px-4 py-3 text-right text-xs text-gray-700">{{ formatLinkedInCurrency(camp.spend) }}</td>
                       <td class="px-4 py-3 text-right" data-testid="linkedin-campaign-pacing">
@@ -615,13 +615,13 @@
                       <td class="px-4 py-3 text-right text-xs text-gray-700">{{ formatNumber(camp.clicks) }}</td>
                       <td class="px-4 py-3 text-right text-xs text-gray-700">{{ formatLinkedInPct(camp.ctr) }}</td>
                       @if (camp.conversionsMeasured === false) {
-                        <td class="px-4 py-3 text-right text-xs text-gray-400" data-testid="linkedin-campaign-conversions">Not measured</td>
+                        <td class="px-4 py-3 text-right text-xs text-gray-500" data-testid="linkedin-campaign-conversions">Not measured</td>
                       } @else {
                         <td class="px-4 py-3 text-right text-xs text-gray-700" data-testid="linkedin-campaign-conversions">{{ camp.conversions }}</td>
                       }
                     }
                     @if (camp.creativesMeasured === false) {
-                      <td class="px-4 py-3 text-right text-xs text-gray-400" data-testid="linkedin-campaign-creatives">Not read</td>
+                      <td class="px-4 py-3 text-right text-xs text-gray-500" data-testid="linkedin-campaign-creatives">Not read</td>
                     } @else {
                       <td class="px-4 py-3 text-right text-xs text-gray-700" data-testid="linkedin-campaign-creatives">{{ camp.creatives.length }}</td>
                     }
@@ -713,7 +713,7 @@
           <div class="rounded-lg border border-gray-200 bg-white p-4">
             <p class="text-xs font-medium text-gray-500">Conversions</p>
             @if (redditTotals()!.conversionsMeasured === false) {
-              <p class="text-lg font-semibold text-gray-400" data-testid="reddit-kpi-conversions">Not measured</p>
+              <p class="text-lg font-semibold text-gray-500" data-testid="reddit-kpi-conversions">Not measured</p>
             } @else {
               <p class="text-lg font-semibold text-gray-900" data-testid="reddit-kpi-conversions">{{ formatNumber(redditTotals()!.conversions) }}</p>
             }
@@ -779,12 +779,12 @@
                     </td>
                     @if (camp.fetchFailed) {
                       <!-- Metrics that could not be read are not zeros: every metric cell is a dash. -->
-                      <td class="px-4 py-3 text-right text-xs text-gray-400">—</td>
-                      <td class="px-4 py-3 text-right text-xs text-gray-400" data-testid="reddit-campaign-pacing">—</td>
-                      <td class="px-4 py-3 text-right text-xs text-gray-400">—</td>
-                      <td class="px-4 py-3 text-right text-xs text-gray-400">—</td>
-                      <td class="px-4 py-3 text-right text-xs text-gray-400">—</td>
-                      <td class="px-4 py-3 text-right text-xs text-gray-400" data-testid="reddit-campaign-conversions">—</td>
+                      <td class="px-4 py-3 text-right text-xs text-gray-500">—</td>
+                      <td class="px-4 py-3 text-right text-xs text-gray-500" data-testid="reddit-campaign-pacing">—</td>
+                      <td class="px-4 py-3 text-right text-xs text-gray-500">—</td>
+                      <td class="px-4 py-3 text-right text-xs text-gray-500">—</td>
+                      <td class="px-4 py-3 text-right text-xs text-gray-500">—</td>
+                      <td class="px-4 py-3 text-right text-xs text-gray-500" data-testid="reddit-campaign-conversions">—</td>
                     } @else {
                       <td class="px-4 py-3 text-right text-xs text-gray-700">{{ formatCurrency(camp.spend) }}</td>
                       <td class="px-4 py-3 text-right" data-testid="reddit-campaign-pacing">
@@ -800,7 +800,7 @@
                       <td class="px-4 py-3 text-right text-xs text-gray-700">{{ formatNumber(camp.clicks) }}</td>
                       <td class="px-4 py-3 text-right text-xs text-gray-700">{{ formatPct(camp.ctr) }}</td>
                       @if (camp.conversionsMeasured === false) {
-                        <td class="px-4 py-3 text-right text-xs text-gray-400" data-testid="reddit-campaign-conversions">Not measured</td>
+                        <td class="px-4 py-3 text-right text-xs text-gray-500" data-testid="reddit-campaign-conversions">Not measured</td>
                       } @else {
                         <td class="px-4 py-3 text-right text-xs text-gray-700" data-testid="reddit-campaign-conversions">{{ camp.conversions }}</td>
                       }
@@ -894,7 +894,7 @@
             <div class="rounded-lg border border-gray-200 bg-white p-4">
               <p class="text-xs font-medium text-gray-500">Conversions</p>
               @if (totals.conversionsMeasured === false) {
-                <p class="text-lg font-semibold text-gray-400" data-testid="meta-kpi-conversions">Not measured</p>
+                <p class="text-lg font-semibold text-gray-500" data-testid="meta-kpi-conversions">Not measured</p>
               } @else {
                 <p class="text-lg font-semibold text-gray-900" data-testid="meta-kpi-conversions">{{ formatNumber(totals.conversions) }}</p>
               }
@@ -961,12 +961,12 @@
                     </td>
                     @if (camp.fetchFailed) {
                       <!-- Metrics that could not be read are not zeros: every metric cell is a dash. -->
-                      <td class="px-4 py-3 text-right text-xs text-gray-400">—</td>
-                      <td class="px-4 py-3 text-right text-xs text-gray-400" data-testid="meta-campaign-pacing">—</td>
-                      <td class="px-4 py-3 text-right text-xs text-gray-400">—</td>
-                      <td class="px-4 py-3 text-right text-xs text-gray-400">—</td>
-                      <td class="px-4 py-3 text-right text-xs text-gray-400">—</td>
-                      <td class="px-4 py-3 text-right text-xs text-gray-400" data-testid="meta-campaign-conversions">—</td>
+                      <td class="px-4 py-3 text-right text-xs text-gray-500">—</td>
+                      <td class="px-4 py-3 text-right text-xs text-gray-500" data-testid="meta-campaign-pacing">—</td>
+                      <td class="px-4 py-3 text-right text-xs text-gray-500">—</td>
+                      <td class="px-4 py-3 text-right text-xs text-gray-500">—</td>
+                      <td class="px-4 py-3 text-right text-xs text-gray-500">—</td>
+                      <td class="px-4 py-3 text-right text-xs text-gray-500" data-testid="meta-campaign-conversions">—</td>
                     } @else {
                       <td class="px-4 py-3 text-right text-xs text-gray-700">{{ formatCurrency(camp.spend) }}</td>
                       <td class="px-4 py-3 text-right" data-testid="meta-campaign-pacing">
@@ -982,7 +982,7 @@
                       <td class="px-4 py-3 text-right text-xs text-gray-700">{{ formatNumber(camp.clicks) }}</td>
                       <td class="px-4 py-3 text-right text-xs text-gray-700">{{ formatPct(camp.ctr) }}</td>
                       @if (camp.conversionsMeasured === false) {
-                        <td class="px-4 py-3 text-right text-xs text-gray-400" data-testid="meta-campaign-conversions">Not measured</td>
+                        <td class="px-4 py-3 text-right text-xs text-gray-500" data-testid="meta-campaign-conversions">Not measured</td>
                       } @else {
                         <td class="px-4 py-3 text-right text-xs text-gray-700" data-testid="meta-campaign-conversions">{{ camp.conversions }}</td>
                       }
