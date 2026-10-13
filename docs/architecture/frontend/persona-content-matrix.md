@@ -199,6 +199,10 @@ Guards enforce access at the router level — regardless of whether a sidebar li
 
 Guards are defined in `apps/lfx-one/src/app/shared/guards/`.
 
+Newsletter publisher edit/analytics routes resolve their owning `:projectUid` before checking writer access. For non-ED writer checks, HTTP-transient UID lookup failures (network/timeout/rate-limit/5xx) retry once with the shared retry delay; recovery checks the resolved project's writer permission, while exhausted retries fail closed to the lens overview with only `_notice=error`, without carrying a stale project. A resolved `writer !== true` still redirects with the resolved project slug and `_notice=access`. `AppComponent` consumes either URL-carried notice after browser navigation (including arrival after an SSR redirect), shows the existing error or Access Denied toast once, and removes only `_notice` from the address. ED fail-open and Gatewaze-only SSR deferral remain unchanged; query-slug lookups retain their separate retry/unavailable recovery, and legacy context-only list/create redirects remain notice-free.
+
+The non-ED UID retry defers the `getProjectStrict` call itself, not just its returned observable: a failed attempt evicts the service cache entry, and re-entering the service caches the recovered lookup. The mount guard, child guard, and route-project context reconciliation then reuse that recovered response without another request.
+
 ---
 
 ## Write-action gating per feature domain
