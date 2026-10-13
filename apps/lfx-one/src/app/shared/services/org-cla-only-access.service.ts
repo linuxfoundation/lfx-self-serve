@@ -37,7 +37,11 @@ export class OrgClaOnlyAccessService {
   public readonly lookupFailed: Signal<boolean> = computed(() => this.enabled() && this.orgRoleGrants.claManagerLookupFailed());
 
   public isClaOnly(uid: string | null | undefined): boolean {
-    return !!uid && (this.claOnlyOrgUids().has(uid) || (this.enabled() && this.addressedClaOnlyUids().has(uid)));
+    if (!uid) return false;
+    if (this.claOnlyOrgUids().has(uid)) return true;
+    // A grant that arrived after the address was resolved wins: the selected organization skips the
+    // resolver on later navigations, so nothing else would clear the note.
+    return this.enabled() && this.addressedClaOnlyUids().has(uid) && !this.holdsOrgLensAccess(uid);
   }
 
   /** Records the resolver's answer for an addressed organization; a later non-CLA-only answer clears it. */
@@ -51,5 +55,16 @@ export class OrgClaOnlyAccessService {
       next.delete(uid);
     }
     this.addressedClaOnlyUids.set(next);
+  }
+
+  /** The caller's current role grants open the whole lens for `uid` (direct, inherited, or company-wide team). */
+  private holdsOrgLensAccess(uid: string): boolean {
+    return (
+      this.orgRoleGrants.isStaff() ||
+      this.orgRoleGrants.writerSet().has(uid) ||
+      this.orgRoleGrants.auditorSet().has(uid) ||
+      this.orgRoleGrants.inheritedWriterSet().has(uid) ||
+      this.orgRoleGrants.inheritedAuditorSet().has(uid)
+    );
   }
 }

@@ -15,6 +15,9 @@ describe('OrgClaOnlyAccessService', () => {
   const flag = signal(false);
   const claManagerOrgSet = signal(new Set<string>());
   const claManagerLookupFailed = signal(false);
+  const writerSet = signal(new Set<string>());
+  const inheritedAuditorSet = signal(new Set<string>());
+  const isStaff = signal(false);
   const getBooleanFlag = vi.fn(() => flag);
   let service: OrgClaOnlyAccessService;
 
@@ -22,10 +25,24 @@ describe('OrgClaOnlyAccessService', () => {
     flag.set(false);
     claManagerOrgSet.set(new Set([UID]));
     claManagerLookupFailed.set(false);
+    writerSet.set(new Set());
+    inheritedAuditorSet.set(new Set());
+    isStaff.set(false);
     TestBed.configureTestingModule({
       providers: [
         { provide: FeatureFlagService, useValue: { getBooleanFlag } },
-        { provide: OrgRoleGrantsService, useValue: { claManagerOrgSet, claManagerLookupFailed } },
+        {
+          provide: OrgRoleGrantsService,
+          useValue: {
+            claManagerOrgSet,
+            claManagerLookupFailed,
+            isStaff,
+            writerSet,
+            auditorSet: signal(new Set<string>()),
+            inheritedWriterSet: signal(new Set<string>()),
+            inheritedAuditorSet,
+          },
+        },
       ],
     });
     service = TestBed.inject(OrgClaOnlyAccessService);
@@ -84,6 +101,31 @@ describe('OrgClaOnlyAccessService', () => {
       service.noteAddressed(ADDRESSED, false);
 
       expect(service.isClaOnly(ADDRESSED)).toBe(false);
+    });
+
+    // The selected organization skips the resolver on later navigations, so refreshed grants must clear it.
+    it('stops being CLA-only once refreshed role grants open the organization', () => {
+      flag.set(true);
+      service.noteAddressed(ADDRESSED, true);
+
+      writerSet.set(new Set([ADDRESSED]));
+      expect(service.isClaOnly(ADDRESSED)).toBe(false);
+
+      writerSet.set(new Set());
+      inheritedAuditorSet.set(new Set([ADDRESSED]));
+      expect(service.isClaOnly(ADDRESSED)).toBe(false);
+
+      inheritedAuditorSet.set(new Set());
+      isStaff.set(true);
+      expect(service.isClaOnly(ADDRESSED)).toBe(false);
+    });
+
+    it('stays CLA-only while the refreshed grants open only other organizations', () => {
+      flag.set(true);
+      service.noteAddressed(ADDRESSED, true);
+      writerSet.set(new Set(['0014100000OtherOrg']));
+
+      expect(service.isClaOnly(ADDRESSED)).toBe(true);
     });
   });
 });
