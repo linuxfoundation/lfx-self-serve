@@ -4,7 +4,7 @@ description: Manage your email addresses, password, two-factor authentication, a
 audience: [all]
 product_area: Account
 tags: [account, settings, email, password, developer, api-token, security, meeting-invitations]
-last_updated: 2026-09-08
+last_updated: 2026-10-13
 intercom_collection: Account
 ---
 
