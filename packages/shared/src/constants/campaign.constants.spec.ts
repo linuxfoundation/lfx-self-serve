@@ -45,6 +45,8 @@ import {
   normalizeGeoTargets,
   normalizeMicrosoftGeoTargets,
   resolveRedditOptimizationGoal,
+  googleAdsToLower,
+  googleAdsTrimSpace,
 } from './campaign.constants';
 
 describe('campaignToggleAction', () => {
@@ -942,5 +944,25 @@ describe('Google Ads language tables', () => {
    */
   it('labels exactly the codes the language map carries', () => {
     expect(Object.keys(GOOGLE_ADS_LANGUAGE_LABELS).sort()).toEqual(Object.keys(GOOGLE_ADS_LANGUAGE_MAP).sort());
+  });
+});
+
+/** Go's `strings.TrimSpace` and `strings.ToLower`, the two rules upstream's callout checks use. */
+describe('Google Ads string rules', () => {
+  it.each([
+    ['ASCII space and tabs', ' \tFree\n', 'Free'],
+    ['U+0085, which Go trims and JS `trim` keeps', '\u0085Free\u0085', 'Free'],
+    ['no-break and line separators', '\u00a0Free\u2028', 'Free'],
+    ['U+FEFF, which JS `trim` strips and Go keeps', '\ufeffFree', '\ufeffFree'],
+  ])('trims %s as Go does', (_label, input, expected) => {
+    expect(googleAdsTrimSpace(input)).toBe(expected);
+  });
+
+  it.each([
+    ['a final sigma, with no word-end rule', 'ΟΔΟΣ', 'οδοσ'],
+    ['a dotted capital I, to a plain i', 'İnfo', 'info'],
+    ['ASCII', 'Free Shipping', 'free shipping'],
+  ])('lower-cases %s as Go does', (_label, input, expected) => {
+    expect(googleAdsToLower(input)).toBe(expected);
   });
 });

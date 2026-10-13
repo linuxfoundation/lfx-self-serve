@@ -2820,6 +2820,169 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(error.message).not.toContain('ZU');
   });
 
+  /**
+   * The callout guards, one test per branch of upstream's `validateCallouts`
+   * (`internal/platform/googleads/assets.go`), plus the accept-cases that keep them from
+   * over-refusing. `validateCallouts` runs inside `validateAssetPlan`, which runs inside
+   * `preflightCampaignKind` — before the budget mutate — so each of these costs the whole campaign
+   * upstream and arrives as the orchestrator's opaque "platform campaign creation failed".
+   */
+  const CALLOUTS_20 = Array.from({ length: 20 }, (_, i) => `Callout ${i + 1}`);
+
+  it('dispatches a list of 20 callouts, which is exactly what upstream accepts', async () => {
+    // The contrast for the cap below. Without it a controller that refused every callout list
+    // would pass every refusal test here.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000b', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ callouts: CALLOUTS_20 }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['callouts']).toHaveLength(20);
+  });
+
+  it('refuses a 21-callout list even when the 21st is a repeat, because upstream caps before it de-duplicates', async () => {
+    // `validateCallouts` compares `len(callouts) > maxCallouts` on the RAW slice, before it looks
+    // at any entry — so a list that is only over the cap because it repeats a phrase is refused
+    // there on the cap. Judging the de-duplicated length here would accept a create Go then kills.
+    await controller.createCampaign(buildReq(googleBody({ callouts: [...CALLOUTS_20, 'Callout 1'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('callouts');
+    expect(error.message).toContain('21');
+  });
+
+  it('names a callout over the 25-rune bound instead of letting Google refuse it opaquely', async () => {
+    await controller.createCampaign(buildReq(googleBody({ callouts: ['Free shipping', 'A'.repeat(26)] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('callouts');
+    expect(error.message).toContain('A'.repeat(26));
+    // Only the offending callout is named — naming the valid one would send the operator editing
+    // text that is already fine.
+    expect(error.message).not.toContain('Free shipping');
+  });
+
+  it('dispatches a 25-EMOJI callout, because upstream counts runes and not UTF-16 units', async () => {
+    // The over-refusal this guard exists to avoid. `utf8.RuneCountInString` counts code points, so
+    // 25 astral-plane characters are 25 runes upstream and a create Google accepts. Counted with
+    // `.length` here they would be 50 units and this create would be refused for no reason.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000c', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ callouts: ['🎉'.repeat(25)] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['callouts']).toEqual(['🎉'.repeat(25)]);
+  });
+
+  it('refuses a callout repeated in a different case, which upstream refuses rather than de-duplicates', async () => {
+    // `validateCallouts` keys its seen-set on `strings.ToLower(text)` and answers "callout %q is
+    // listed more than once" — it does not quietly drop the repeat, so neither does this.
+    await controller.createCampaign(buildReq(googleBody({ callouts: ['Free Shipping', 'free shipping'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('callouts');
+    expect(error.message).toContain('free shipping');
+  });
+
+  it.each([
+    ['an absent callout list', {}],
+    ['an empty callout list', { callouts: [] }],
+    ['a null callout list, which the Go decode reads as absent', { callouts: null }],
+  ])('omits the callouts key entirely for %s', async (_label, overrides) => {
+    // Omitted rather than sent as `[]`, so the upstream default is reached by the absent-key route
+    // every caller predating this field takes.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000e', error: null });
+
+    await controller.createCampaign(buildReq(googleBody(overrides as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>).not.toHaveProperty('callouts');
+  });
+
+  it.each([
+    ['a blank entry beside a valid one', ['Free shipping', '  '], 'blank entry (callout 2)'],
+    ['a list holding only a blank', [''], 'blank entry (callout 1)'],
+    ['a bare string', 'Free shipping', 'must be a list'],
+    ['a list holding a number', ['Free shipping', 123], 'must be a list'],
+    ['a list holding null', [null], 'must be a list'],
+  ])('refuses %s by name rather than dropping it', async (_label, callouts, expected) => {
+    // `validateCallouts` refuses a blank ("callout %d is empty"), and the Go `[]string` decode
+    // refuses a non-list or a non-string entry. Dropping either would create the campaign without
+    // what the caller asked for and report success.
+    await controller.createCampaign(buildReq(googleBody({ callouts } as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('callouts');
+    expect(error.message).toContain(expected);
+  });
+
+  it.each([
+    ['a callout', ['Free shipping']],
+    ['a blank-only list, which upstream still counts as asked', ['  ']],
+  ])('refuses %s on a non-Search channel by name, because upstream refuses the whole create there', async (_label, callouts) => {
+    // `validateAssetPlan` counts every extension list and fails a non-Search create on any of them
+    // ("supported on Search campaigns only"), before it looks at an entry.
+    await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['demand-gen'], callouts }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.field).toBe('callouts');
+    expect(error.message).toContain('Demand Gen');
+  });
+
+  it.each([
+    ['the cap before a bad entry', { callouts: [...CALLOUTS_20, 'A'.repeat(26)] }, 'callouts', '21'],
+    ['the channel before the cap', { campaignTypes: ['demand-gen'], callouts: [...CALLOUTS_20, 'Callout 21'] }, 'callouts', 'Demand Gen'],
+    ['the first bad entry, a repeat before an over-long one', { callouts: ['Free shipping', 'free shipping', 'A'.repeat(26)] }, 'callouts', 'more than once'],
+    ['the language guard before the callout guard', { languages: ['ZU'], callouts: [''] }, 'languages', 'ZU'],
+  ])("refuses for %s, in upstream's own order", async (_label, overrides, field, expected) => {
+    // A request that breaks two rules is refused for the one upstream names: `validateCriteriaPlan`
+    // before `validateAssetPlan`, and inside `validateCallouts` the cap, then entry by entry.
+    await controller.createCampaign(buildReq(googleBody(overrides), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    const error = refusalFrom();
+    expect(error.field).toBe(field);
+    expect(error.message).toContain(expected);
+  });
+
+  it.each([
+    ['a trailing U+0085, which Go trims and JS `trim` keeps', ['Free shipping', 'free shipping\u0085']],
+    ['final sigma, which JS `toLowerCase` folds differently from Go', ['ΟΔΟΣ', 'οδοσ']],
+    ['a dotted capital I, which Go lowers to a plain i', ['İnfo', 'info']],
+  ])("refuses a repeat hidden by %s, judging it with Go's string rules", async (_label, callouts) => {
+    // Upstream trims with `strings.TrimSpace` and keys repeats on `strings.ToLower`. JS's own
+    // `trim`/`toLowerCase` would call each pair different and pass a create Go then refuses.
+    await controller.createCampaign(buildReq(googleBody({ callouts }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().message).toContain('more than once');
+  });
+
+  it("dispatches each callout trimmed with Go's rules", async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000f', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ callouts: ['\u00a0Free shipping\u0085'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['callouts']).toEqual(['Free shipping']);
+  });
+
+  it('cuts a long callout short when it echoes it, since the text comes from an unvalidated body', async () => {
+    await controller.createCampaign(buildReq(googleBody({ callouts: ['A'.repeat(40)] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    const message = refusalFrom().message;
+    expect(message).toContain(`${'A'.repeat(32)}…`);
+    expect(message).not.toContain('A'.repeat(33));
+  });
+
   it.each([
     ['a zero budget', 0],
     ['a negative budget, which no body validator on this route stops', -50],

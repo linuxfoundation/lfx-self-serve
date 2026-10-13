@@ -1134,6 +1134,52 @@ export const GOOGLE_ADS_LANGUAGE_ID_PATTERN = /^[0-9]+$/;
 export const GOOGLE_CHANNELS_WITH_LANGUAGES = ['search', 'performance-max', 'video', 'display'] as const;
 
 /**
+ * Upstream's own bound on a Google Ads callout list (`assets.go`'s `maxCallouts`).
+ *
+ * Unlike {@link GOOGLE_ADS_MAX_GEO_TARGETS} this one is checked AFTER nothing — `validateCallouts`
+ * compares the raw slice length before it looks at any entry, so a list that is only over the cap
+ * because it repeats a phrase is refused on the cap, not on the duplicate.
+ */
+export const GOOGLE_ADS_MAX_CALLOUTS = 20;
+
+/**
+ * Upstream's per-callout character bound (`assets.go`'s `maxCalloutTextRunes`), counted in RUNES.
+ *
+ * Count it with the spread (`[...text].length`), never `.length`: `utf8.RuneCountInString` counts
+ * code points, and `.length` counts UTF-16 units, so a 13-character emoji or astral-plane callout
+ * would be refused here while upstream accepts it — the over-refusal these mirrors exist to avoid.
+ *
+ * Upstream counts runes rather than the double-width WEIGHT its responsive-search-ad copy uses, and
+ * says so deliberately: Google applies CJK doubling to extension text too, so a 25-rune Japanese
+ * callout is refused upstream. That is upstream's chosen under-refusal, and mirroring the rune
+ * count keeps this app refusing exactly what it refuses and no more.
+ */
+export const GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES = 25;
+
+/**
+ * Go's `strings.TrimSpace`, which upstream applies to each callout before judging it.
+ *
+ * Not `String.prototype.trim`: the two disagree on U+0085, which Go trims and JS keeps, and on
+ * U+FEFF, which JS trims and Go keeps. A JS-trimmed callout could then pass the duplicate or rune
+ * test here and fail it upstream.
+ */
+export function googleAdsTrimSpace(text: string): string {
+  return text.replace(/^[\t\n\v\f\r\u0085\p{Z}]+|[\t\n\v\f\r\u0085\p{Z}]+$/gu, '');
+}
+
+/**
+ * Go's `strings.ToLower`, the key upstream's callout duplicate check uses.
+ *
+ * Go lower-cases rune by rune with no context. JS `toLowerCase` on a whole string applies the
+ * final-sigma rule (`Σ` → `ς` at a word end) and expands `İ` to two code points, so it would call
+ * `ΟΔΟΣ` and `οδοσ` different where upstream calls them the same. Mapping each code point alone,
+ * with `İ` sent to `i` as Go does, removes both differences.
+ */
+export function googleAdsToLower(text: string): string {
+  return [...text].map((ch) => (ch === '\u0130' ? 'i' : ch.toLowerCase())).join('');
+}
+
+/**
  * Micros per whole currency unit, the denomination google-ads bills budgets in.
  *
  * Shared rather than inlined at the guard because the guard's whole purpose is to compute the
@@ -2439,6 +2485,22 @@ export const GOOGLE_CAMPAIGN_NAME_TOKENS = {
  * only possible outcome is `ErrVideoCreateUnsupported`.
  */
 export const GOOGLE_CHANNELS_WITH_CREATIVE = ['demand-gen', 'performance-max', 'display'] as const;
+
+/**
+ * The Google channels that accept campaign ad extensions — callouts, and the six other extension
+ * types this application does not collect yet.
+ *
+ * Search and nothing else, and upstream is categorical about it: `validateAssetPlan`
+ * (`internal/platform/googleads/assets.go`) refuses the whole extension set with "supported on
+ * Search campaigns only, not on <kind>" the moment any of the seven lists is non-empty on another
+ * channel. That refusal happens at preflight, before the budget mutate, so sending a callout on a
+ * Performance Max create does not produce a campaign without callouts — it produces no campaign.
+ *
+ * This is the opposite shape from {@link GOOGLE_CHANNELS_WITH_CREATIVE}, which excludes `search`:
+ * the two together say that every Google channel carries exactly one kind of ad content, and which
+ * kind is decided by the channel.
+ */
+export const GOOGLE_CHANNELS_WITH_AD_EXTENSIONS = ['search'] as const;
 
 /**
  * What each Google channel's creative is made of — one ordered catalogue, read by the form that
