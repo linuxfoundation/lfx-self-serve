@@ -153,11 +153,12 @@ writer-guard state to decide.
 | Meeting not found (400 / 403 / 404)              | `/meetings/not-found`, matching the public page.                                                                                                                                            |
 | Lookup fails for any other reason (network, 5xx) | The `/unavailable` retry view in place, after one automatic retry for a temporary failure (network, 408, 429, 5xx). Never the admin page: the route stays closed until the lookup succeeds. |
 
-Today a View-role viewer who reaches `/details` sees the whole participants table (name, email,
-organization, job title, committee voting status, attendance, invitation) whenever the upstream read allows it, with none of the
-`full_access` checks the public page applies. The redirect closes that gap, which is why FR-054 is a
-security change: N-03 ships in its own PR (R06), and whether it waits for the V2 release or goes to
-`main` first is the project owner's call.
+Before N-03, a View-role viewer who reached `/details` saw the whole participants table (name,
+email, organization, job title, committee voting status, attendance, invitation) whenever the
+upstream read allowed it, with none of the `full_access` checks the public page applies. The redirect
+closes that gap, which is why FR-054 is a security change and N-03 shipped in its own PR (R06). On
+2026-10-05 the project owner decided it does not go to `main` first: it ships with the rest of V2,
+through the integration branch `feat/meeting-details-v2` and release PR #3249.
 
 **The guard is a navigation boundary, not the authorization boundary.** It must not weaken anything
 server-side. The write endpoints already enforce organizer in the BFF (reconcile, participant
