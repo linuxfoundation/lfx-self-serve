@@ -21,6 +21,9 @@ export class TranscriptModalComponent implements OnInit {
 
   // Inputs from dialog config (defensively read in case the dialog is opened without data)
   private readonly pastMeetingUid = this.dialogConfig.data?.pastMeetingUid as string | undefined;
+  // Set only by the V2 page for a viewer with no session (#3528): read the text through the public
+  // route, keyed by the past meeting's own uid. V1 never passes it.
+  private readonly publicPastMeetingId = this.dialogConfig.data?.publicPastMeetingId as string | undefined;
   public readonly meetingTitle = (this.dialogConfig.data?.meetingTitle as string | undefined) ?? '';
 
   // State — the transcript file (WebVTT) is fetched on open and parsed into cues
@@ -30,17 +33,19 @@ export class TranscriptModalComponent implements OnInit {
   public ngOnInit(): void {
     // The transcript fetch is a browser-only side effect — skip during SSR and
     // when the dialog was opened without a meeting id.
-    if (!this.pastMeetingUid || !isPlatformBrowser(this.platformId)) {
+    if ((!this.pastMeetingUid && !this.publicPastMeetingId) || !isPlatformBrowser(this.platformId)) {
       this.loading.set(false);
       return;
     }
 
-    this.fetchTranscript(this.pastMeetingUid);
+    this.fetchTranscript();
   }
 
-  private fetchTranscript(pastMeetingUid: string): void {
-    this.meetingService
-      .getPastMeetingTranscriptContent(pastMeetingUid)
+  private fetchTranscript(): void {
+    const content$ = this.publicPastMeetingId
+      ? this.meetingService.getPublicPastMeetingTranscriptContent(this.publicPastMeetingId)
+      : this.meetingService.getPastMeetingTranscriptContent(this.pastMeetingUid as string);
+    content$
       .pipe(
         take(1),
         catchError(() => of({ content: '' }))
