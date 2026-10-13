@@ -5,8 +5,8 @@ import { isPlatformBrowser } from '@angular/common';
 import { inject, Injector, PLATFORM_ID } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRouteSnapshot, CanActivateChildFn, Router, UrlTree } from '@angular/router';
-import { ORG_LENS_CLA_M3_ENABLED_FLAG, ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
-import { filter, firstValueFrom } from 'rxjs';
+import { ORG_CLA_ONLY_GRANTS_WAIT_MS, ORG_LENS_CLA_M3_ENABLED_FLAG, ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
+import { filter, firstValueFrom, of, timeout } from 'rxjs';
 
 import { AccountContextService } from '../services/account-context.service';
 import { FeatureFlagService } from '../services/feature-flag.service';
@@ -52,8 +52,15 @@ export const orgClaOnlyPageGuard: CanActivateChildFn = async (childRoute: Activa
     return true;
   }
 
+  // A role-grants request that never answers must not hold the navigation: past the wait the page is
+  // admitted, and its data is still refused server-side.
   if (!roleGrants.loaded()) {
-    await firstValueFrom(toObservable(roleGrants.loaded, { injector }).pipe(filter(Boolean)));
+    const loaded = await firstValueFrom(
+      toObservable(roleGrants.loaded, { injector }).pipe(filter(Boolean), timeout({ first: ORG_CLA_ONLY_GRANTS_WAIT_MS, with: () => of(false) }))
+    );
+    if (!loaded) {
+      return true;
+    }
   }
 
   const segment = page.parent?.paramMap.get(ORG_SEGMENT_PARAM) ?? null;

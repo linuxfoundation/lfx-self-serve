@@ -4,6 +4,7 @@
 import { PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRouteSnapshot, convertToParamMap, Router, RouterStateSnapshot, UrlTree } from '@angular/router';
+import { ORG_CLA_ONLY_GRANTS_WAIT_MS } from '@lfx-one/shared/constants';
 import { AccountContextService } from '@shared/services/account-context.service';
 import { FeatureFlagService } from '@shared/services/feature-flag.service';
 import { OrgClaOnlyAccessService } from '@shared/services/org-cla-only-access.service';
@@ -111,5 +112,19 @@ describe('orgClaOnlyPageGuard', () => {
     TestBed.tick();
 
     expect(await pending).toEqual({ redirected: `/org/${CLA_ONLY_UID}/easycla` });
+  });
+
+  it('admits the page when role grants do not answer within the wait, since the server still refuses the data', async () => {
+    vi.useFakeTimers();
+    try {
+      loaded.set(false);
+      const pending = run(routeFor(CLA_ONLY_UID, 'overview'));
+      TestBed.tick();
+      await vi.advanceTimersByTimeAsync(ORG_CLA_ONLY_GRANTS_WAIT_MS);
+
+      expect(await pending).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

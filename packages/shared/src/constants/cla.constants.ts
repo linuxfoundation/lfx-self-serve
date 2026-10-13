@@ -1003,3 +1003,9 @@ export const ORG_CLA_MANAGER_SCOPES_TTL_SECONDS = 60;
 
 /** Most CLA-only organizations named through EasyCLA for one selector load, so a caller holding many scopes cannot fan out unbounded upstream reads. */
 export const ORG_CLA_ONLY_ORGS_MAX = 25;
+
+/**
+ * How long the CLA-only page guard waits for the role-grants answer before admitting the page. Admitting
+ * is safe: the BFF refuses every non-CLA page's data to a CLA-only caller regardless.
+ */
+export const ORG_CLA_ONLY_GRANTS_WAIT_MS = 10_000;
