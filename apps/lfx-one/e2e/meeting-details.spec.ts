@@ -31,8 +31,6 @@ import {
 
 test.describe('Meeting details V2 — signed-in presets', () => {
   // The boot check reads the app shell's sidebar, which is hidden below lg (as in meetings-v2-flag-gate.spec.ts).
-  test.use({ viewport: { width: 1440, height: 900 } });
-
   test.beforeEach(() => skipWithoutCredentials(test.skip));
 
   test('3 · a registrant before the meeting answers the RSVP card and sees the answer confirmed', async ({ page }) => {
@@ -66,7 +64,7 @@ test.describe('Meeting details V2 — signed-in presets', () => {
     await openMeetingSignedIn(
       page,
       UPCOMING_ID,
-      { meeting: buildMeeting('before', { restricted: true }), password: INVITE_PASSWORD },
+      { meeting: buildMeeting('before', { restricted: true, password: INVITE_PASSWORD }), password: INVITE_PASSWORD },
       { password: INVITE_PASSWORD }
     );
     await waitForMeeting(page);
@@ -137,7 +135,7 @@ test.describe('Meeting details V2 — anonymous presets', () => {
     await openMeetingAnonymously(
       page,
       UPCOMING_ID,
-      { meeting: buildMeeting('live', { restricted: true }), password: INVITE_PASSWORD, joinUrlCalls },
+      { meeting: buildMeeting('live', { restricted: true, password: INVITE_PASSWORD }), password: INVITE_PASSWORD, joinUrlCalls },
       { password: INVITE_PASSWORD }
     );
     await waitForMeeting(page);

@@ -62,7 +62,7 @@ const PRESETS: Preset[] = [
   {
     name: '5 · signed-in outsider, restricted, before',
     id: UPCOMING_ID,
-    stubs: () => ({ meeting: buildMeeting('before', { restricted: true }), password: INVITE_PASSWORD }),
+    stubs: () => ({ meeting: buildMeeting('before', { restricted: true, password: INVITE_PASSWORD }), password: INVITE_PASSWORD }),
     password: INVITE_PASSWORD,
     kind: 'invitation-required',
     state: 'before',
@@ -148,8 +148,6 @@ async function assertPreset(page: Page, preset: Preset): Promise<void> {
 }
 
 test.describe('Meeting details V2 — structure and accessibility', () => {
-  test.use({ viewport: { width: 1440, height: 900 } });
-
   test.beforeEach(() => skipWithoutCredentials(test.skip));
 
   test.describe('preset contract and axe', () => {
@@ -204,7 +202,7 @@ test.describe('Meeting details V2 — structure and accessibility', () => {
 });
 
 test.describe('Meeting details V2 — anonymous structure and accessibility', () => {
-  test.use({ viewport: { width: 1440, height: 900 }, storageState: { cookies: [], origins: [] } });
+  test.use({ storageState: { cookies: [], origins: [] } });
 
   for (const preset of ANONYMOUS_PRESETS) {
     test.fixme(`${preset.name}: contract and axe (stage 5)`, async ({ page }) => {
