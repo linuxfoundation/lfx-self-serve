@@ -118,6 +118,7 @@ vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail: vi.fn(), getEffectiv
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: generateM2MTokenMock }));
 
 import { readFileSync } from 'node:fs';
+import { Writable } from 'node:stream';
 
 import { LENS_REDIRECT_RESOURCES } from '@lfx-one/shared/constants';
 import { ProjectController } from './project.controller';
@@ -1050,6 +1051,34 @@ describe('ProjectController.downloadProjectDocument uid/documentId validation', 
     expect(next).toHaveBeenCalledTimes(1);
     expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
   });
+
+  // Per @dealako on PR #3511: the rejection-only suites above wouldn't catch an
+  // over-strict validator that also rejected valid UUIDs.
+  it('passes a valid uid/documentId through to the project service', async () => {
+    const { req } = buildDocumentReqRes(PROJECT_UID, PROJECT_UID);
+    const next = vi.fn();
+    projectSvc.getProjectDocumentMetadata.mockResolvedValue({ contentType: 'application/pdf', fileName: 'report.pdf' });
+    projectSvc.getProjectDocumentStream.mockResolvedValue(new Response('file-bytes', { headers: { 'Content-Length': '10' } }));
+
+    // A writable stand-in for the Express response, so the controller's pipeline really streams into it
+    // (mirrors mentorship-task.controller.spec.ts's `streamRes` helper).
+    const chunks: Buffer[] = [];
+    const res = new Writable({
+      write(chunk, _encoding, callback) {
+        chunks.push(Buffer.from(chunk));
+        callback();
+      },
+    }) as Writable & { headersSent: boolean; setHeader: (name: string, value: string) => void };
+    res.headersSent = false;
+    res.setHeader = vi.fn();
+
+    await controller.downloadProjectDocument(req, res as any, next);
+
+    expect(projectSvc.getProjectDocumentMetadata).toHaveBeenCalledWith(req, PROJECT_UID, PROJECT_UID);
+    expect(projectSvc.getProjectDocumentStream).toHaveBeenCalledWith(req, PROJECT_UID, PROJECT_UID);
+    expect(next).not.toHaveBeenCalled();
+    expect(Buffer.concat(chunks).toString()).toBe('file-bytes');
+  });
 });
 
 describe('ProjectController.deleteProjectDocument uid/documentId validation', () => {
@@ -1090,5 +1119,18 @@ describe('ProjectController.deleteProjectDocument uid/documentId validation', ()
     expect(projectSvc.deleteProjectDocument).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledTimes(1);
     expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  // Per @dealako on PR #3511: the rejection-only suites above wouldn't catch an
+  // over-strict validator that also rejected valid UUIDs.
+  it('passes a valid uid/documentId through to the project service', async () => {
+    const { req, res, next } = buildDeleteDocumentReqRes(PROJECT_UID, PROJECT_UID);
+    projectSvc.deleteProjectDocument.mockResolvedValue(undefined);
+
+    await controller.deleteProjectDocument(req, res, next);
+
+    expect(projectSvc.deleteProjectDocument).toHaveBeenCalledWith(req, PROJECT_UID, PROJECT_UID, 'folder');
+    expect(res.status).toHaveBeenCalledWith(204);
+    expect(next).not.toHaveBeenCalled();
   });
 });

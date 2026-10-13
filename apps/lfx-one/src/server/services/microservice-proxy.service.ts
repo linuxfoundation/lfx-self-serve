@@ -172,8 +172,14 @@ export class MicroserviceProxyService {
    * per https://url.spec.whatwg.org/#double-dot-path-segment, `%2e` (any case) is equivalent to a
    * literal `.` — so `%2e%2e`, `.%2e`, `%2e.` all resolve the same as `..` — and `\` is treated as
    * `/` for special schemes (http/https), so a caller can smuggle a traversal segment past a
-   * `/`-only split. A literal-only, `/`-only check was flagged by multiple independent reviewers
-   * (dealako, Copilot, Cursor Bugbot, Greptile) on PR #3511 as still bypassable via either vector.
+   * `/`-only split. The parser also strips every ASCII tab/newline from the input and trims
+   * leading/trailing C0 controls/spaces from the whole URL *before* it ever splits into segments
+   * (https://url.spec.whatwg.org/#concept-basic-url-parser, steps 1-2) — so e.g. `.%09.` (a literal
+   * tab between the dots) or a trailing `..%20` are dot segments to `fetch()` even though neither
+   * is literally `.`/`..` once percent-decoded. Detection here mirrors that preprocessing so it
+   * can't be bypassed the same way. A literal-only, `/`-only check was flagged by multiple
+   * independent reviewers (dealako, Copilot, Cursor Bugbot, Greptile) on PR #3511 as still
+   * bypassable via these vectors.
    */
   private buildEndpoint(baseUrl: string, path: string): string {
     if (path.includes('?') || path.includes('#')) {
@@ -184,11 +190,19 @@ export class MicroserviceProxyService {
     }
 
     const isDotSegment = (segment: string): boolean => {
-      const decoded = segment.replace(/%2e/gi, '.');
+      const decoded = segment.replace(/%09|%0a|%0d/gi, '').replace(/%2e/gi, '.');
       return decoded === '.' || decoded === '..';
     };
 
-    if (path.split(/[/\\]/).some(isDotSegment)) {
+    // Mirror the WHATWG URL parser's own preprocessing before splitting into segments: strip every
+    // ASCII tab/newline anywhere, then trim leading/trailing C0 controls/space from the whole string.
+    const normalized = path
+       
+      .replace(/[\t\n\r]/g, '')
+      // eslint-disable-next-line no-control-regex
+      .replace(/^[\u0000-\u0020]+|[\u0000-\u0020]+$/g, '');
+
+    if (normalized.split(/[/\\]/).some(isDotSegment)) {
       throw ServiceValidationError.forField('path', 'Upstream path must not contain traversal segments', {
         operation: 'proxy_build_endpoint',
         service: 'microservice_proxy_service',

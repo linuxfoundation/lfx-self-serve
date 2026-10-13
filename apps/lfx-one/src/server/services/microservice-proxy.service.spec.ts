@@ -109,6 +109,11 @@ describe('MicroserviceProxyService.buildEndpoint path-traversal guard (linuxfoun
     '/p/%2e./x',
     '/p/%2e/x',
     '/p/..\\secrets',
+    '/projects/.\t./x',
+    '/projects/.%09./x',
+    '/projects/.%0a./x',
+    '/projects/.%0d./x',
+    '/projects/.. ',
   ])('rejects a malicious path %s before calling the API client', async (path) => {
     await expect(service.proxyRequest(req, 'LFX_V2_SERVICE', path, 'GET')).rejects.toBeInstanceOf(ServiceValidationError);
     expect(request).not.toHaveBeenCalled();
