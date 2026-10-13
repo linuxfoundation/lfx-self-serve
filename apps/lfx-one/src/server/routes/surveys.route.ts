@@ -4,13 +4,17 @@
 import { Router } from 'express';
 
 import { SurveyController } from '../controllers/survey.controller';
+import { blockDuringImpersonation } from '../middleware/impersonation-readonly.middleware';
 
 const router = Router();
 
 const surveyController = new SurveyController();
 
+// Survey create and delete are blocked while impersonating — upstream would record them as the
+// target. Reads stay open.
+
 // POST /surveys - create a new survey
-router.post('/', (req, res, next) => surveyController.createSurvey(req, res, next));
+router.post('/', blockDuringImpersonation, (req, res, next) => surveyController.createSurvey(req, res, next));
 
 // GET /surveys - get all surveys
 router.get('/', (req, res, next) => surveyController.getSurveys(req, res, next));
@@ -28,6 +32,6 @@ router.get('/:uid/responses', (req, res, next) => surveyController.getSurveyResp
 router.get('/:uid', (req, res, next) => surveyController.getSurveyById(req, res, next));
 
 // DELETE /surveys/:uid - delete a survey
-router.delete('/:uid', (req, res, next) => surveyController.deleteSurvey(req, res, next));
+router.delete('/:uid', blockDuringImpersonation, (req, res, next) => surveyController.deleteSurvey(req, res, next));
 
 export default router;

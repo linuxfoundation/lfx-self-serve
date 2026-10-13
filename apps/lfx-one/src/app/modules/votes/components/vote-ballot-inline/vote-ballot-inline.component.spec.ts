@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormControl } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
@@ -10,7 +11,7 @@ import { PollStatus } from '@lfx-one/shared/enums';
 import { Vote } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
 import { MessageService } from 'primeng/api';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteBallotInlineComponent } from './vote-ballot-inline.component';
@@ -138,6 +139,42 @@ describe('VoteBallotInlineComponent — comment prompts (LFXV2-2562)', () => {
       abstain: true,
       userVoteContent: undefined,
       commentResponses: undefined,
+    });
+  });
+
+  // #148: the BFF refuses ballot writes while an admin is impersonating the voter; a 403 without
+  // that code (a real permission refusal) keeps the generic message.
+  describe('impersonation read-only submit (#148)', () => {
+    async function submitAbstentionFailingWith(error: HttpErrorResponse): Promise<ReturnType<typeof vi.fn>> {
+      submitMyResponse.mockReturnValue(throwError(() => error));
+      component.abstainControl.setValue(true);
+      await fixture.whenStable();
+
+      clickSubmit();
+
+      return TestBed.inject(MessageService).add as ReturnType<typeof vi.fn>;
+    }
+
+    it('shows the impersonation toast for a 403 IMPERSONATION_READ_ONLY', async () => {
+      const add = await submitAbstentionFailingWith(new HttpErrorResponse({ status: 403, error: { code: 'IMPERSONATION_READ_ONLY' } }));
+
+      expect(add).toHaveBeenCalledWith({
+        severity: 'error',
+        summary: 'Unable to submit vote',
+        detail: 'Ballots cannot be submitted while impersonating another user.',
+        life: 5000,
+      });
+    });
+
+    it('keeps the generic toast for a 403 without the impersonation code', async () => {
+      const add = await submitAbstentionFailingWith(new HttpErrorResponse({ status: 403, error: { code: 'FORBIDDEN' } }));
+
+      expect(add).toHaveBeenCalledWith({
+        severity: 'error',
+        summary: 'Unable to submit vote',
+        detail: 'Something went wrong submitting your ballot. Please try again.',
+        life: 5000,
+      });
     });
   });
 });
