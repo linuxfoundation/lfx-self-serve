@@ -290,3 +290,134 @@ describe('MonitoringTabComponent — keyword totals completeness', () => {
     expect(unverified?.textContent).not.toContain('this project');
   });
 });
+
+/**
+ * The Reddit and Meta campaign tables, and whether a value campaign-service could not measure is
+ * shown as such.
+ *
+ * With `LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR` on, a row can carry `conversionsMeasured: false`,
+ * `pacingUnknown: true` or `fetchFailed: true`, each qualifying a 0 placeholder. Rendering those
+ * placeholders as "0" or "0% normal" states a measurement nobody took. The flag-off (legacy) rows
+ * carry none of the flags and must render exactly as before — asserted first, below.
+ */
+describe.each(['reddit', 'meta'] as const)('MonitoringTabComponent — %s unmeasured values', (platform) => {
+  let fixture: ComponentFixture<MonitoringTabComponent>;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [MonitoringTabComponent],
+      providers: [
+        provideNoopAnimations(),
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: ProjectContextService, useValue: { activeContext: signal({ slug: 'tlf' }) } },
+        {
+          provide: CampaignService,
+          useValue: {
+            getMonitorData: vi.fn().mockReturnValue(of(null)),
+            getKeywords: vi.fn().mockReturnValue(of(null)),
+            getAudience: vi.fn().mockReturnValue(of(null)),
+            getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
+            getRedditAccounts: vi.fn().mockReturnValue(of([])),
+            getMetaAccounts: vi.fn().mockReturnValue(of([])),
+          },
+        },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(MonitoringTabComponent);
+  });
+
+  function campaign(over: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      campaignId: '1',
+      campaignName: 'KubeCon NA 2026',
+      status: 'ACTIVE',
+      totalBudget: 1000,
+      dailyBudget: 0,
+      spend: 412.5,
+      impressions: 52000,
+      clicks: 610,
+      ctr: 1.17,
+      conversions: 14,
+      pacingPct: 88,
+      pacingLabel: 'normal',
+      startDate: '2026-09-01',
+      endDate: '2026-11-30',
+      ...over,
+    };
+  }
+
+  function render(campaigns: Record<string, unknown>[], totalsOver: Record<string, unknown> = {}): void {
+    fixture.detectChanges();
+    const instance = fixture.componentInstance as unknown as {
+      selectedPlatform: { set(v: string): void };
+      redditData: { set(v: unknown): void };
+      metaData: { set(v: unknown): void };
+    };
+    instance.selectedPlatform.set(platform);
+    const data = {
+      accountLabel: 'LF',
+      pulledAt: '2026-10-13T00:00:00.000Z',
+      dateRange: { mode: 'last_30_days' },
+      campaigns,
+      accountTotals: { spend: 412.5, impressions: 52000, clicks: 610, conversions: 14, campaignCount: campaigns.length, ...totalsOver },
+      actionItems: [],
+    };
+    (platform === 'reddit' ? instance.redditData : instance.metaData).set(data);
+    fixture.detectChanges();
+  }
+
+  const text = (testId: string): string => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`)?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+  const el = (testId: string): Element | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+  it('renders a legacy (flag-off) row exactly as before: measured number, pacing with its label, no note', () => {
+    render([campaign()]);
+
+    expect(text(`${platform}-campaign-conversions`)).toBe('14');
+    expect(text(`${platform}-campaign-pacing`)).toBe('88% normal');
+    expect(text(`${platform}-kpi-conversions`)).toBe('14');
+    expect(el(`${platform}-campaign-fetch-failed`)).toBeNull();
+    expect(el(`${platform}-totals-note`)).toBeNull();
+  });
+
+  it('renders a measured row from campaign-service the same way', () => {
+    render([campaign({ conversionsMeasured: true, pacingUnknown: false, fetchFailed: false })], { conversionsMeasured: true });
+
+    expect(text(`${platform}-campaign-conversions`)).toBe('14');
+    expect(text(`${platform}-campaign-pacing`)).toBe('88% normal');
+    expect(el(`${platform}-totals-note`)).toBeNull();
+  });
+
+  it('shows unmeasured conversions as "Not measured", in the row and the KPI tile', () => {
+    render([campaign({ conversions: 0, conversionsMeasured: false })], { conversions: 0, conversionsMeasured: false });
+
+    expect(text(`${platform}-campaign-conversions`)).toBe('Not measured');
+    expect(text(`${platform}-kpi-conversions`)).toBe('Not measured');
+  });
+
+  it('shows unknown pacing as "Unknown", with no percentage and no label', () => {
+    render([campaign({ pacingPct: 0, pacingLabel: undefined, pacingUnknown: true })]);
+
+    expect(text(`${platform}-campaign-pacing`)).toBe('Unknown');
+  });
+
+  it('marks a row it could not read, dashes its metrics, and notes the totals are partial', () => {
+    render([
+      campaign({ campaignId: '1', fetchFailed: true, pacingUnknown: false, pacingLabel: undefined, spend: 0, conversions: 0, conversionsMeasured: true }),
+      campaign({ campaignId: '2', conversionsMeasured: true }),
+    ]);
+
+    expect(text(`${platform}-campaign-fetch-failed`)).toBe("Couldn't read");
+    expect(text(`${platform}-campaign-conversions`)).toBe('—');
+    expect(text(`${platform}-campaign-pacing`)).toBe('—');
+    expect(text(`${platform}-totals-note`)).toBe('Totals cover 1 of 2 campaigns.');
+  });
+
+  it('notes a conversions total that covers only some campaigns', () => {
+    render([campaign({ campaignId: '1', conversionsMeasured: true }), campaign({ campaignId: '2', conversions: 0, conversionsMeasured: false })], {
+      conversionsMeasured: true,
+    });
+
+    expect(text(`${platform}-totals-note`)).toBe('conversions cover 1 of 2 campaigns.');
+  });
+});

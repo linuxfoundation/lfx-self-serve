@@ -1327,7 +1327,11 @@ export interface MetaCampaignMetrics {
   ctr: number;
   conversions: number;
   pacingPct: number;
-  pacingLabel: MetaPacingLabel;
+  /**
+   * ABSENT only on the campaign-service path, when `pacingUnknown` or `fetchFailed` is set: there
+   * is no label to show, and campaign-service's placeholder ("normal") is not passed on.
+   */
+  pacingLabel?: MetaPacingLabel;
   startDate: string;
   endDate: string;
   /**
@@ -2627,7 +2631,11 @@ export interface RedditCampaignMetrics {
   ctr: number;
   conversions: number;
   pacingPct: number;
-  pacingLabel: RedditPacingLabel;
+  /**
+   * ABSENT only on the campaign-service path, when `pacingUnknown` or `fetchFailed` is set: there
+   * is no label to show, and campaign-service's placeholder ("normal") is not passed on.
+   */
+  pacingLabel?: RedditPacingLabel;
   startDate: string;
   endDate: string;
   /**
