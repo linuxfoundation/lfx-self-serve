@@ -37,13 +37,8 @@ const TRAINING_COURSES_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.TRAINING_COURSES';
 /** The summary row that holds the foundation's totals; every other row is one delivery type. */
 const ALL_DELIVERY_TYPES = 'All';
 
-/** The comparison columns per period: YTD against the same point last year, a completed year against the one before it. */
-const BASELINE_COLUMN_SUFFIX: Readonly<Record<HealthMetricsL2Range, string | null>> = {
-  YTD: 'prev_ytd',
-  COMPLETED_YEAR: 'prev_completed_year',
-  COMPLETED_YEAR_2: '3rd_last_completed_year',
-  COMPLETED_YEAR_3: null,
-};
+/** The only period the model compares: its change columns hold YTD against the same point last year. */
+const COMPARED_RANGE: HealthMetricsL2Range = 'YTD';
 
 /** True when the Training views carry columns for the range; for a controller to check before binding. */
 export function isSupportedTrainingRange(range: string): range is HealthMetricsL2Range {
@@ -105,23 +100,21 @@ export class HealthMetricsTrainingService {
     // Every column comes from fixed maps keyed by the L2 ranges, never from the request.
     const periodColumns = HEALTH_METRICS_L2_RANGES.flatMap((range) => {
       const suffix = HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range];
-      const baseline = BASELINE_COLUMN_SUFFIX[range];
-      const baselineColumn = (prefix: string, alias: string): string => `${baseline ? `${prefix}_${baseline}` : 'NULL'} AS ${alias}_${range}`;
       return [
         `enrollment_count_${suffix} AS enrollments_${range}`,
         `certifications_earned_count_${suffix} AS certifications_${range}`,
         `revenue_usd_${suffix} AS revenue_usd_${range}`,
         `sort_rank_${suffix} AS sort_rank_${range}`,
-        baselineColumn('enrollment_count', 'baseline_enrollments'),
-        baselineColumn('certifications_earned_count', 'baseline_certifications'),
-        baselineColumn('revenue_usd', 'baseline_revenue_usd'),
       ];
     });
 
     const summarySql = `
       SELECT
         delivery_type,
-        ${periodColumns.join(',\n        ')}
+        ${periodColumns.join(',\n        ')},
+        enrollment_count_change_pct,
+        certifications_change_pct,
+        revenue_change_pct
       FROM ${TRAINING_SUMMARY_VIEW}
       WHERE foundation_slug = ?
     `;
@@ -254,9 +247,14 @@ function toPeriod(all: SummaryRow, types: SummaryRow[], range: HealthMetricsL2Ra
 
   return {
     totals: toTotals(all[`ENROLLMENTS_${range}`], all[`CERTIFICATIONS_${range}`], all[`REVENUE_USD_${range}`]),
-    baseline: BASELINE_COLUMN_SUFFIX[range]
-      ? toTotals(all[`BASELINE_ENROLLMENTS_${range}`], all[`BASELINE_CERTIFICATIONS_${range}`], all[`BASELINE_REVENUE_USD_${range}`])
-      : null,
+    change:
+      range === COMPARED_RANGE
+        ? {
+            enrollments: toNullableNumber(all['ENROLLMENT_COUNT_CHANGE_PCT']),
+            certifications: toNullableNumber(all['CERTIFICATIONS_CHANGE_PCT']),
+            revenueUsd: toNullableNumber(all['REVENUE_CHANGE_PCT']),
+          }
+        : null,
     byType,
   };
 }

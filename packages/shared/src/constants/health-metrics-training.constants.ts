@@ -70,7 +70,7 @@ export const HEALTH_METRICS_TRAINING_NOT_AVAILABLE = 'not available';
 /** A period with nothing measured. */
 export const HEALTH_METRICS_TRAINING_ENROLLMENT_PERIOD_UNMEASURED: HealthMetricsTrainingEnrollmentPeriod = {
   totals: { enrollments: null, certifications: null, revenueUsd: null },
-  baseline: null,
+  change: null,
   byType: [],
 };
 
