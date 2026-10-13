@@ -38,8 +38,8 @@ import { MeetingDetailsStateService } from '../../meeting-details-state.service'
  * meeting has no such artifact) and no access (the viewer may not open it), plus a read error.
  *
  * A signed-in viewer reads the artifacts on `/api/past-meetings` by the occurrence's composite id. An
- * anonymous viewer with artifact access reads them on the public routes (E4-04, #3528) by the past
- * meeting's own uid: each artifact the route refuses (401, not public) offers sign-in on its own, and
+ * anonymous viewer with artifact access reads them on the public routes (E4-04, #3528) by the id the
+ * page loaded the past meeting with, which the BFF resolves: each artifact the route refuses (401, not public) offers sign-in on its own, and
  * when it refuses all three the section asks the viewer to sign in, as it does for one without access.
  * An ended meeting opened by its series id, which has no occurrence record yet, says its recording
  * appears once it is ready. The recording's length (E4-02) shows on the still when the BFF could
@@ -136,7 +136,8 @@ export class MeetingRecordingComponent {
         if (!this.state.loadedViaPastMeetingId()) {
           return { kind: 'pending' as const };
         }
-        // The public routes key on the past meeting's own uid; /api/past-meetings on the composite id.
+        // The public routes take the id the page loaded the past meeting with (`/public/api/meetings/past/:id`,
+        // the BFF resolves it); /api/past-meetings takes the composite id.
         const id = anonymous ? meeting.id : getPastMeetingResourceId(meeting);
         return { kind: 'fetch' as const, id, anonymous, refresh: this.refreshCount() };
       },

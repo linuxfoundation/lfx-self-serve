@@ -41,7 +41,7 @@ describe('TranscriptModalComponent transcript source', () => {
     expect(meetingService.getPublicPastMeetingTranscriptContent).not.toHaveBeenCalled();
   });
 
-  it("reads the public route by the past meeting's uid for a viewer with no session", () => {
+  it("reads the public route by the page's past-meeting id for a viewer with no session", () => {
     open({ publicPastMeetingId: 'pm-1', meetingTitle: 'Weekly Sync' });
 
     expect(meetingService.getPublicPastMeetingTranscriptContent).toHaveBeenCalledWith('pm-1');

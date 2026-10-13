@@ -595,8 +595,8 @@ export class MeetingService {
   }
 
   /**
-   * The past meeting's artifacts on the public routes (E4-04, #3528), keyed by the past meeting's own
-   * uid. For a viewer with no session: the BFF gives only an artifact whose own level is `public`,
+   * The past meeting's artifacts on the public routes (E4-04, #3528), by the id `getPublicPastMeeting`
+   * loaded it with (the BFF resolves it, composite id included). For a viewer with no session: the BFF gives only an artifact whose own level is `public`,
    * else a 401. Not cached, unlike the signed-in recording read, since the answer depends on the session.
    */
   public getPublicPastMeetingRecording(pastMeetingId: string): Observable<PastMeetingRecording> {

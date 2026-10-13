@@ -358,7 +358,7 @@ describe('MeetingRecordingComponent', () => {
       authenticated.set(false);
     });
 
-    it("reads every artifact on the public routes, by the past meeting's own uid", async () => {
+    it('reads every artifact on the public routes, by the id the page loaded the past meeting with', async () => {
       meetingService.getPublicPastMeetingRecording.mockReturnValue(of(recording([{ share_url: 'https://zoom.example/large', total_size: 99 }])));
       meetingService.getPublicPastMeetingTranscript.mockReturnValue(of(transcript(true)));
       meetingService.getPublicPastMeetingSummary.mockReturnValue(of(summaryRecord()));

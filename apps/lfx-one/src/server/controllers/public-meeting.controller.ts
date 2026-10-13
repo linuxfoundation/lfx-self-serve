@@ -1075,7 +1075,7 @@ export class PublicMeetingController {
     if (req.oidc?.isAuthenticated() && req.bearerToken) {
       return { resourceId, options: undefined };
     }
-    const levels = await this.meetingService.getPastMeetingArtifactAccessLevels(req, id, { bearerToken: m2mToken });
+    const levels = await this.meetingService.getPastMeetingArtifactAccessLevels(req, resourceId, { bearerToken: m2mToken });
     if (!levels || !isPastMeetingArtifactPublic({ visibility: meeting.visibility, restricted: meeting.restricted, ...levels }, kind)) {
       throw new AuthenticationError(`Sign in to view this meeting's ${kind}`, { operation, service: 'public_meeting_controller' });
     }
