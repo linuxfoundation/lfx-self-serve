@@ -374,6 +374,14 @@ describe('MeetingHeaderComponent admin link', () => {
     expect(link()?.getAttribute('href')).toBe('/meetings/meeting-1-1700000000000/details?project=acme-project');
   });
 
+  // The header row is justify-between: the link must sit with Copy link, not float between the title and it.
+  it('groups the link with Copy link at the end of the row', () => {
+    const admin = fixture.nativeElement.querySelector('[data-testid="meeting-header-admin-link"]');
+    const copy = fixture.nativeElement.querySelector('[data-testid="meeting-header-copy-link"]');
+
+    expect(admin?.parentElement).toBe(copy?.parentElement);
+  });
+
   it('uses the entity-scoped route when the tier is known, as the meeting card does', () => {
     meeting.set(ended({ is_foundation: true } as Partial<Meeting>));
     fixture.detectChanges();
