@@ -1174,6 +1174,11 @@ export interface PastMeetingAttendanceFigures {
 export interface PublicPastMeetingRoster {
   participants: PublicPastMeetingParticipant[];
   unidentified_attendees: number;
+  /**
+   * The meeting's attendance counts over every participant, listed or not (`countPastMeetingAttendance`,
+   * E4-05): the figures the V2 page shows, from the same helper as the admin page.
+   */
+  attendance: PastMeetingAttendanceCounts;
 }
 
 /**
@@ -2328,3 +2333,9 @@ export interface MeetingCreateMenuRow {
  * column, where hanging the whole panel off to one side reads as belonging to something else.
  */
 export type MeetingCreateMenuAlign = 'right' | 'center';
+
+/** The past roster's invitation filter on the V2 page (E4-05). */
+export type PastRosterInvitationFilter = 'all' | 'invited' | 'not-invited';
+
+/** The past roster's attendance filter on the V2 page (E4-05). */
+export type PastRosterAttendanceFilter = 'all' | 'attended' | 'absent';

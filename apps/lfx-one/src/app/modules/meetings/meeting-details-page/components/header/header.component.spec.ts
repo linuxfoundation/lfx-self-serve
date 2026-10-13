@@ -3,7 +3,8 @@
 
 import { computed, PLATFORM_ID, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { Meeting, MeetingStatusKind, MeetingTimeState, PublicMeetingProject } from '@lfx-one/shared/interfaces';
+import { provideRouter } from '@angular/router';
+import { Meeting, MeetingStatusKind, MeetingTimeState, MeetingViewerRole, PublicMeetingProject } from '@lfx-one/shared/interfaces';
 import { environment } from '@environments/environment';
 import { resolvePrivacy } from '@lfx-one/shared/utils';
 import { ClipboardShareService } from '@services/clipboard-share.service';
@@ -23,6 +24,8 @@ describe('MeetingHeaderComponent', () => {
   let timeState: WritableSignal<MeetingTimeState | null>;
   let meetingStatus: WritableSignal<MeetingStatusKind | null>;
   let myRsvpAttr: WritableSignal<string | null>;
+  let loadedViaPastMeetingId: WritableSignal<boolean>;
+  let viewerRole: WritableSignal<MeetingViewerRole | null>;
 
   const project: PublicMeetingProject = {
     uid: 'project-1',
@@ -54,6 +57,7 @@ describe('MeetingHeaderComponent', () => {
       imports: [MeetingHeaderComponent],
       providers: [
         { provide: PLATFORM_ID, useValue: platform },
+        provideRouter([]),
         {
           provide: MeetingDetailsStateService,
           useValue: {
@@ -62,6 +66,8 @@ describe('MeetingHeaderComponent', () => {
             meetingStatus,
             selectedOccurrence: signal(null),
             myRsvpAttr,
+            loadedViaPastMeetingId,
+            viewerRole,
             privacy: computed(() => {
               const current = meeting();
               return current ? resolvePrivacy(current.visibility, current.restricted) : null;
@@ -84,6 +90,8 @@ describe('MeetingHeaderComponent', () => {
     timeState = signal<MeetingTimeState | null>('before');
     meetingStatus = signal<MeetingStatusKind | null>('upcoming');
     myRsvpAttr = signal<string | null>(null);
+    loadedViaPastMeetingId = signal(false);
+    viewerRole = signal<MeetingViewerRole | null>('visitor');
     await create();
   });
 
@@ -308,5 +316,79 @@ describe('MeetingHeaderComponent', () => {
       expect(setFoundation).not.toHaveBeenCalled();
       expect(open).not.toHaveBeenCalled();
     });
+  });
+});
+
+// E4-05 (E0-03 decision 3): the organizer's single entry point to the admin page, on ended meetings only.
+describe('MeetingHeaderComponent admin link', () => {
+  let fixture: ComponentFixture<MeetingHeaderComponent>;
+  let meeting: WritableSignal<(Meeting & { project: PublicMeetingProject }) | undefined>;
+  let timeState: WritableSignal<MeetingTimeState | null>;
+  let loadedViaPastMeetingId: WritableSignal<boolean>;
+  let viewerRole: WritableSignal<MeetingViewerRole | null>;
+
+  const ended = (overrides: Partial<Meeting> = {}) =>
+    ({
+      id: 'meeting-1-1700000000000',
+      meeting_and_occurrence_id: 'meeting-1-1700000000000',
+      title: 'Acme Weekly Sync',
+      committees: [],
+      ...overrides,
+      project: { uid: 'project-1', name: 'Acme Project', slug: 'acme-project' },
+    }) as unknown as Meeting & { project: PublicMeetingProject };
+
+  beforeEach(async () => {
+    meeting = signal(ended());
+    timeState = signal<MeetingTimeState | null>('ended');
+    loadedViaPastMeetingId = signal(true);
+    viewerRole = signal<MeetingViewerRole | null>('organizer');
+    await TestBed.configureTestingModule({
+      imports: [MeetingHeaderComponent],
+      providers: [
+        { provide: PLATFORM_ID, useValue: 'browser' },
+        provideRouter([]),
+        {
+          provide: MeetingDetailsStateService,
+          useValue: {
+            meeting,
+            timeState,
+            meetingStatus: signal<MeetingStatusKind | null>('ended'),
+            selectedOccurrence: signal(null),
+            myRsvpAttr: signal(null),
+            loadedViaPastMeetingId,
+            viewerRole,
+            privacy: signal(null),
+          },
+        },
+        { provide: ProjectContextService, useValue: { setFoundation: vi.fn() } },
+        { provide: ClipboardShareService, useValue: { copyLink: vi.fn() } },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(MeetingHeaderComponent);
+    fixture.detectChanges();
+  });
+
+  const link = (): HTMLAnchorElement | null => fixture.nativeElement.querySelector('[data-testid="meeting-header-admin-link"] a');
+
+  it("links an ended meeting's organizer to its admin page, with the project context", () => {
+    expect(link()?.getAttribute('href')).toBe('/meetings/meeting-1-1700000000000/details?project=acme-project');
+  });
+
+  it('uses the entity-scoped route when the tier is known, as the meeting card does', () => {
+    meeting.set(ended({ is_foundation: true } as Partial<Meeting>));
+    fixture.detectChanges();
+
+    expect(link()?.getAttribute('href')).toBe('/foundation/meetings/meeting-1-1700000000000/details?project=acme-project');
+  });
+
+  it.each([
+    ['a viewer who is not the organizer', () => viewerRole.set('registrant')],
+    ['a meeting that has not ended', () => timeState.set('live')],
+    ['an ended meeting opened by its series id', () => loadedViaPastMeetingId.set(false)],
+  ])('offers no link to %s', (_label, change) => {
+    change();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="meeting-header-admin-link"]')).toBeNull();
   });
 });
