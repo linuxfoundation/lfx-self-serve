@@ -5,6 +5,7 @@ import { DOCUMENT, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular
 import { afterRenderEffect, Component, computed, ElementRef, inject, PLATFORM_ID, signal, viewChild } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { ImpersonationBannerComponent } from '@components/impersonation-banner/impersonation-banner.component';
+import { MEETING_DETAILS_SCROLL_PADDING_PX } from '@lfx-one/shared/constants';
 import { UserService } from '@services/user.service';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -74,13 +75,14 @@ export class MeetingDetailsPageComponent {
     bindLfxDocumentTitle(computed(() => this.state.meeting()?.title));
     // #3260 (WCAG 2.4.11): the identity bar is sticky, so a control scrolled into view by focus must clear
     // it rather than land underneath. The scroll root's padding does that for every control on the page
-    // while it is mounted: 100px clears the 83px bar, 142px with the 42px impersonation banner above it.
+    // while it is mounted (MEETING_DETAILS_SCROLL_PADDING_PX).
     afterRenderEffect((onCleanup) => {
       if (!isPlatformBrowser(this.platformId)) {
         return;
       }
       const root = this.document.documentElement;
-      root.style.scrollPaddingTop = this.userService.impersonating() ? '142px' : '100px';
+      const padding = this.userService.impersonating() ? MEETING_DETAILS_SCROLL_PADDING_PX.impersonating : MEETING_DETAILS_SCROLL_PADDING_PX.default;
+      root.style.scrollPaddingTop = `${padding}px`;
       onCleanup(() => root.style.removeProperty('scroll-padding-top'));
     });
     // An IntersectionObserver rather than a scroll listener, re-attached whenever the header element

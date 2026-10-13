@@ -3,7 +3,7 @@
 
 import { DatePipe } from '@angular/common';
 import { Component, computed, inject, input, Signal, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { MEETING_STATUS_LABELS } from '@lfx-one/shared/constants';
@@ -33,6 +33,7 @@ import { MeetingDetailsStateService } from '../../meeting-details-state.service'
 export class MeetingIdentityBarComponent {
   protected readonly state = inject(MeetingDetailsStateService);
   protected readonly userService = inject(UserService);
+  private readonly router = inject(Router);
   private readonly lensService = inject(LensService);
 
   /** True once the page header has scrolled out of view; the bar then shows the meeting's identity. */
@@ -54,9 +55,9 @@ export class MeetingIdentityBarComponent {
   /** The state service's sign-in link, which the action slot shares (FR-013). */
   protected readonly signInHref: Signal<string> = this.state.signInHref;
 
-  /** My Meetings is a link to /meetings; its click sets the Me lens before the router follows it. */
-  protected selectMyMeetingsLens(): void {
+  protected navigateToMyMeetings(): void {
     this.lensService.setLens('me');
+    void this.router.navigate(['/meetings']);
   }
 
   private initStartTime(): Signal<string | undefined> {

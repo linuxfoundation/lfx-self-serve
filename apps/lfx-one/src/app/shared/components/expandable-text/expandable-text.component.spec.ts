@@ -47,6 +47,12 @@ describe('ExpandableTextComponent toggle', () => {
     expect(document.activeElement).toBe(button);
   });
 
+  it('points the toggle at the region it expands', () => {
+    const region = fixture.nativeElement.querySelector('[data-testid="expandable-content"]');
+    expect(region.id).toBeTruthy();
+    expect(toggle().getAttribute('aria-controls')).toBe(region.id);
+  });
+
   it('hides its chevrons from assistive tech', () => {
     expect(toggle().querySelector('i')?.getAttribute('aria-hidden')).toBe('true');
   });

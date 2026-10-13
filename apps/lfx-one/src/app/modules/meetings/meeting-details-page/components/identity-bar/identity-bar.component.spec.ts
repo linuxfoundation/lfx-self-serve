@@ -111,19 +111,14 @@ describe('MeetingIdentityBarComponent', () => {
       expect(account?.getAttribute('aria-expanded')).toBe('true');
     });
 
-    // #3260: a link (it navigates), which sets the Me lens on its way.
-    it('links My Meetings to the meetings list, under the Me lens', async () => {
+    it('sends My Meetings to the meetings list under the Me lens', async () => {
       await create();
-      const navigateByUrl = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
-      const link = query('meeting-identity-bar-my-meetings');
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
 
-      expect(link?.tagName).toBe('A');
-      expect(link?.getAttribute('href')).toBe('/meetings');
-
-      link?.click();
+      query('meeting-identity-bar-my-meetings')?.click();
 
       expect(setLens).toHaveBeenCalledWith('me');
-      expect(navigateByUrl).toHaveBeenCalled();
+      expect(navigate).toHaveBeenCalledWith(['/meetings']);
     });
   });
 
