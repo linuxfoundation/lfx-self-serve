@@ -18,10 +18,12 @@ import type {
 import {
   CAMPAIGN_ALERT_THRESHOLDS,
   DEFAULT_REDDIT_CALL_TO_ACTION,
+  DEFAULT_REDDIT_OBJECTIVE,
   MAX_REDDIT_HEADLINE_LENGTH,
   REDDIT_CALL_TO_ACTIONS,
   REDDIT_OBJECTIVE_LABELS,
   REDDIT_OBJECTIVE_PARAMS,
+  resolveRedditOptimizationGoal,
 } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 
@@ -691,6 +693,27 @@ export async function executeRedditCampaignCreation(req: Request | undefined, co
   // the first upstream call — see `resolveRedditAuthoredPost`.
   const authoredPost = resolveRedditAuthoredPost(config, validatedPostId);
 
+  // Upstream's branch is `if objective == ""`, so ONLY an absent or empty objective takes the
+  // default; everything else goes to the table lookup below. Neither operator expresses that on its
+  // own, which is why this is spelled out: `??` would pass `''` through to be refused — a create
+  // upstream accepts, refused here — and `||` would swallow `false` and `0`, which upstream rejects
+  // when it decodes `objective` into a Go string, so those have to reach the refusal rather than
+  // quietly become a budgeted `conversions` campaign. The field is declared `RedditObjective`, but
+  // `POST /api/campaigns/create` forwards `redditConfig` with no validation (see
+  // `executeRedditDispatch`), so all of those values genuinely arrive here.
+  const requestedObjective = config.objective as RedditObjective | '' | null | undefined;
+  const objective =
+    requestedObjective === '' || requestedObjective === null || requestedObjective === undefined ? DEFAULT_REDDIT_OBJECTIVE : requestedObjective;
+  const objParams = REDDIT_OBJECTIVE_PARAMS[objective];
+  // Belt-and-suspenders: TypeScript guarantees coverage but this guards against runtime widening
+  if (!objParams) {
+    throw new Error(`Unsupported Reddit objective: ${objective}`);
+  }
+  // Resolved here rather than at the campaign POST below for the same reason as the image URL: a
+  // `video_views` request carrying no usable goal must be refused before anything is created, not
+  // after a PAUSED campaign exists. Both bodies below send this one value.
+  const optimizationGoal = resolveRedditOptimizationGoal(objective, config.videoGoal);
+
   const account = REDDIT_ACCOUNTS[0];
   const accountId = account.accountId;
 
@@ -713,13 +736,6 @@ export async function executeRedditCampaignCreation(req: Request | undefined, co
   const campaignStartTime = toIsoTimestamp(config.startDate);
   const campaignEndTime = toIsoTimestamp(config.endDate);
 
-  const objective = config.objective ?? 'conversions';
-  const objParams = REDDIT_OBJECTIVE_PARAMS[objective];
-  // Belt-and-suspenders: TypeScript guarantees coverage but this guards against runtime widening
-  if (!objParams) {
-    throw new Error(`Unsupported Reddit objective: ${objective}`);
-  }
-
   const campaignBody: Record<string, unknown> = {
     data: {
       name: campaignName,
@@ -728,7 +744,7 @@ export async function executeRedditCampaignCreation(req: Request | undefined, co
       is_campaign_budget_optimization: true,
       bid_strategy: 'BIDLESS',
       bid_type: objParams.bidType,
-      optimization_goal: objParams.optimizationGoal,
+      optimization_goal: optimizationGoal,
       goal_type: 'LIFETIME_SPEND',
       goal_value: toMicrodollars(config.budgetUsd),
       start_time: campaignStartTime,
@@ -777,7 +793,7 @@ export async function executeRedditCampaignCreation(req: Request | undefined, co
       configured_status: 'PAUSED',
       bid_strategy: 'BIDLESS',
       bid_type: objParams.bidType,
-      optimization_goal: objParams.optimizationGoal,
+      optimization_goal: optimizationGoal,
       targeting,
       start_time: effectiveStart,
       end_time: campaignEndTime,

@@ -1399,7 +1399,11 @@ export const REDDIT_OBJECTIVE_PARAMS: Readonly<Record<RedditObjective, RedditObj
     optimizationGoal: 'PURCHASE',
     viewThroughConversionType: 'SEVEN_DAY_CLICKS_ONE_DAY_VIEW',
   },
-  video_views: { redditObjective: 'VIDEO_VIEWABLE_IMPRESSIONS', bidType: 'CPM', bidValue: 3_000_000, optimizationGoal: 'VIDEO_VIEWS' },
+  // `video_views` carries no `optimizationGoal`: `VIDEO_VIEWS` is not a Reddit video optimization
+  // goal, so the concrete goal is resolved from the request's `videoGoal` by
+  // `resolveRedditOptimizationGoal` rather than baked in here. Mirrors the same deliberate omission
+  // in `redditObjectiveParams` upstream (`internal/platform/reddit/client.go`).
+  video_views: { redditObjective: 'VIDEO_VIEWABLE_IMPRESSIONS', bidType: 'CPM', bidValue: 3_000_000 },
 } as const;
 
 export const REDDIT_OBJECTIVE_LABELS: Readonly<Record<RedditObjective, string>> = {
@@ -1424,11 +1428,10 @@ export const DEFAULT_REDDIT_OBJECTIVE: RedditObjective = 'conversions';
  * The objectives the picker offers, as distinct from the four `RedditObjective` admits.
  *
  * `video_views` is withheld because it cannot currently succeed. Reddit has no bare `VIDEO_VIEWS`
- * optimization goal, so a video-view campaign must name a concrete one; upstream requires a
- * `videoGoal` from `REDDIT_VIDEO_GOALS` for that objective and refuses the create without it, and
- * no control collects one yet. (The legacy creator does not refuse — it sends its own
- * `optimizationGoal: 'VIDEO_VIEWS'`, which is the value Reddit has no such goal for, so that arm
- * fails at Reddit instead of locally.) Offer it once a goal control exists on both roads.
+ * optimization goal, so a video-view campaign must name a concrete one; both creators require a
+ * `videoGoal` from `REDDIT_VIDEO_GOALS` for that objective and refuse the create without it, and no
+ * control collects one yet. Offer it once a goal control exists — the creators are ready for it,
+ * the form is not.
  *
  * `REDDIT_OBJECTIVE_LABELS` stays total over `RedditObjective` rather than being narrowed to this
  * list, so a draft holding a withheld objective still renders a name instead of `undefined` — the
@@ -1504,10 +1507,52 @@ export const MAX_REDDIT_HEADLINE_LENGTH = 300;
  * file (`validVideoGoals`).
  *
  * Required for, and only for, the `video_views` objective: Reddit has no bare `VIDEO_VIEWS` goal,
- * so a video-view campaign must name one of these, and upstream validates it before any mutating
- * call. Sending one with any other objective is pointless, not fatal.
+ * so a video-view campaign must name one of these, and both creators validate it before any
+ * mutating call — see `resolveRedditOptimizationGoal`. Sending one with any other objective is
+ * pointless, not fatal.
  */
 export const REDDIT_VIDEO_GOALS = ['VIDEO_VIEW_6S', 'VIDEO_VIEW_15S'] as const;
+
+/**
+ * The optimization goal to send for an objective — the table's own, or the campaign's video goal.
+ *
+ * Mirrors the resolution step in `Client.CreateCampaign` upstream
+ * (`lfx-v2-campaign-service`, `internal/platform/reddit/client.go`), branch for branch: an
+ * objective outside the table is refused; every objective but `video_views` carries a static goal;
+ * `video_views` takes its goal from the request, trimmed and upper-cased, and is refused when that
+ * goal is empty or outside `REDDIT_VIDEO_GOALS`.
+ *
+ * **Call this before anything is created.** Both the refusals here are for input that Reddit would
+ * reject at the campaign POST or, worse, at the ad group — after a PAUSED campaign already exists
+ * and has to be cleaned up by hand. Upstream resolves at the top of its create for that reason, and
+ * the legacy creator refuses before its first upstream call, beside the budget and date checks.
+ *
+ * `videoGoal` is typed loosely because the legacy creator reaches this from
+ * `POST /api/campaigns/create`, which forwards `redditConfig` without validating it — the declared
+ * `RedditVideoGoal` is what a caller is supposed to send, not what one always does (#3449).
+ */
+export function resolveRedditOptimizationGoal(objective: RedditObjective, videoGoal?: string): string {
+  const objParams = REDDIT_OBJECTIVE_PARAMS[objective];
+  if (!objParams) {
+    throw new Error(`Unsupported Reddit objective: ${objective}`);
+  }
+
+  if (objective !== 'video_views') {
+    // Total over the other three objectives by construction; the cast documents that the optional
+    // field is only ever absent on the branch above.
+    return objParams.optimizationGoal as string;
+  }
+
+  const requested = (videoGoal ?? '').trim();
+  const normalized = requested.toUpperCase();
+  if (!(REDDIT_VIDEO_GOALS as readonly string[]).includes(normalized)) {
+    // Echoes the trimmed request the way the call-to-action refusal does, and for the same reason:
+    // an operator who sent a near-miss needs to see which value was rejected. Safe to quote where
+    // an image URL is not — this field is a short enum, never a pasted URL carrying a signature.
+    throw new Error(`Invalid Reddit video goal "${requested}" for objective video_views: must be one of ${REDDIT_VIDEO_GOALS.join(', ')}`);
+  }
+  return normalized;
+}
 
 /**
  * Shown when a creation job can no longer be found on either polling source.
