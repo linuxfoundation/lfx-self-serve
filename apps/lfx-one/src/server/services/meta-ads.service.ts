@@ -235,10 +235,11 @@ function resolveRegion(geoTargets: string[]): string {
 function buildMetaCampaignName(config: MetaCampaignCreateRequest): string {
   const event = config.eventName.replace(/\|/g, '-');
   const region = resolveRegion(config.geoTargets);
-  // The Reddit twin of the same ordering note: a plain index into a plain object literal, with no
-  // fallback at all, so an inherited `Object.prototype` key would interpolate straight into the
-  // campaign name. Safe only because the single caller runs `metaObjectiveParamsFor` on the same
-  // `config.objective` one line earlier and throws. Keep that order (#3504).
+  // The Meta twin of the ordering note in `buildRedditCampaignName`: a plain index into a plain
+  // object literal, with no fallback at all, so an inherited `Object.prototype` key would
+  // interpolate straight into the campaign name. Safe only because the single caller runs
+  // `metaObjectiveParamsFor` on the same `config.objective ?? 'traffic'` during its request
+  // validation, before this is called, and throws. Keep that order (#3504).
   const objective = META_OBJECTIVE_LABELS[config.objective ?? 'traffic'];
   const project = (config.project || 'Linux Foundation').replace(/\|/g, '-');
   return `Events | ${event} | ${region} | ${objective} | Intent | Social | ${project} | MoFU`;
@@ -314,6 +315,14 @@ export async function executeMetaCampaignCreation(req: Request | undefined, conf
     throw new Error(`End date ${config.endDate} must be after start date ${config.startDate}`);
   }
 
+  const objective: MetaObjective = config.objective ?? 'traffic';
+  // Read through the shared accessor rather than indexing the table: the `!objParams` test this
+  // replaces passed inherited `Object.prototype` members, so `constructor` and friends reached the
+  // campaign POST below with `objective` dropped from the body instead of being refused (#3504).
+  // Resolved here with the rest of the request validation, before the Step 1 account GET, so a bad
+  // objective is refused before any upstream call at all — the same point the Reddit creator refuses.
+  const objParams = metaObjectiveParamsFor(objective);
+
   const account = META_ACCOUNTS[0];
   const accountId = account.accountId;
 
@@ -342,11 +351,6 @@ export async function executeMetaCampaignCreation(req: Request | undefined, conf
     steps.push(`Geo targets skipped (require regional compliance declaration in Meta Ads Manager): ${skippedGeos.join(', ')}`);
   }
 
-  const objective: MetaObjective = config.objective ?? 'traffic';
-  // Read through the shared accessor rather than indexing the table: the `!objParams` test this
-  // replaces passed inherited `Object.prototype` members, so `constructor` and friends reached the
-  // campaign POST below with `objective` dropped from the body instead of being refused (#3504).
-  const objParams = metaObjectiveParamsFor(objective);
   const campaignName = buildMetaCampaignName({ ...config, geoTargets: geoCountries });
 
   // Built BEFORE the first mutating call, not at the ad set where it is consumed. This throws on a

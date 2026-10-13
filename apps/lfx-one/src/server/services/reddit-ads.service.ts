@@ -479,9 +479,10 @@ function buildRedditCampaignName(config: RedditCampaignCreateRequest): string {
   const region = resolveRegion(config.geoTargets);
   // A plain index into a plain object literal, so an inherited `Object.prototype` key would resolve
   // here too — and the `?? 'Conversions'` fallback would not catch it, since those members are
-  // truthy. This is safe only by ORDERING: the single caller runs `redditObjectiveParamsFor` on the
-  // same `config.objective` first and throws, so no such value reaches this line. Keep that order
-  // if this builder ever gains a second caller (#3504).
+  // truthy. This is safe only by ORDERING: the single caller runs `redditObjectiveParamsFor` on
+  // `config.objective` first — defaulting only an absent or empty value, so any inherited key is
+  // passed through verbatim — and throws, so no such value reaches this line. Keep that order if
+  // this builder ever gains a second caller (#3504).
   const objective = REDDIT_OBJECTIVE_LABELS[(config.objective ?? 'conversions') as RedditObjective] ?? 'Conversions';
   const project = (config.project || 'Linux Foundation').replace(/\|/g, '-');
   return `Events | ${event} | ${region} | ${objective} | Intent | Social | ${project} | ToFU`;

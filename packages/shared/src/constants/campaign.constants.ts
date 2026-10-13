@@ -1612,9 +1612,10 @@ export function resolveRedditOptimizationGoal(objective: RedditObjective, videoG
     // is NOT the own-property check inside the accessor — that only proves `objective` is one of
     // the table's four own keys, and `optimizationGoal` is optional on `RedditObjectiveParams`, so
     // a fifth goal-less objective would reintroduce `undefined as string` with the check intact.
-    // The guarantor is the table itself: `video_views` is the only entry that omits the field, and
-    // `campaign.constants.spec.ts` pins the other three goals by value. Add a goal-less objective
-    // and that spec fails, which is the signal to revisit this cast.
+    // The guarantor is the table itself: `video_views` is the only entry that omits the field.
+    // `campaign.constants.spec.ts` pins the other three goals by value and walks every key of the
+    // table, requiring a goal on each one except `video_views` — so adding a goal-less objective
+    // fails that spec, which is the signal to revisit this cast.
     return objParams.optimizationGoal as string;
   }
 

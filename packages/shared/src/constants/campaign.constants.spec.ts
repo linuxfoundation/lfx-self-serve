@@ -882,6 +882,19 @@ describe('resolveRedditOptimizationGoal', () => {
     expect(REDDIT_OBJECTIVE_PARAMS.video_views.optimizationGoal).toBeUndefined();
   });
 
+  /**
+   * The tripwire for the resolver's `as string` cast. The value pins above cover only the three
+   * objectives named today; this walks the table itself, so a new objective added without a goal
+   * fails here instead of silently resolving to `undefined` through the cast (#3504).
+   */
+  it('carries a static goal on every objective except video_views', () => {
+    const goalless = Object.entries(REDDIT_OBJECTIVE_PARAMS)
+      .filter(([objective, params]) => objective !== 'video_views' && !params.optimizationGoal)
+      .map(([objective]) => objective);
+
+    expect(goalless).toEqual([]);
+  });
+
   /** Upstream trims and upper-cases before testing membership, so a lowercase goal is accepted. */
   it.each(['VIDEO_VIEW_6S', 'video_view_15s', '  VIDEO_VIEW_6S  '])('resolves video_views from the request goal %s', (videoGoal) => {
     expect(resolveRedditOptimizationGoal('video_views', videoGoal)).toBe(videoGoal.trim().toUpperCase());
