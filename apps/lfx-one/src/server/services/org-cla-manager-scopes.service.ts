@@ -10,6 +10,7 @@ import {
 } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 
+import { MicroserviceError } from '../errors';
 import { getUserServiceBaseUrl } from '../helpers/api-gateway.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
 import type { UserServiceMePermissions, UserServiceScopePermission } from '../types/cla.types';
@@ -124,6 +125,15 @@ export class OrgClaManagerScopesService {
   }
 
   private async fetch(req: Request): Promise<string[]> {
+    // Without the target's token, `gatewayFetch` would fall back to the gateway token and the answer
+    // (cached under the target's username) would be someone else's scopes.
+    if (isImpersonating(req) && !req.bearerToken) {
+      throw new MicroserviceError('Failed to read CLA manager scopes', 503, 'CLA_MANAGER_SCOPES_LOOKUP_FAILED', {
+        operation: OPERATION,
+        service: SERVICE,
+        path: '/me/permissions',
+      });
+    }
     const url = `${getUserServiceBaseUrl(OPERATION, SERVICE)}/me/permissions?role=${encodeURIComponent(ORG_CLA_MANAGER_ROLE)}`;
     const payload = await gatewayFetch<UserServiceMePermissions>(req, url, {
       operation: OPERATION,

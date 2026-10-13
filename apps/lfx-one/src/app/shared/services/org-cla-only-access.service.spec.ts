@@ -46,4 +46,34 @@ describe('OrgClaOnlyAccessService', () => {
     expect(service.isClaOnly('0014100000OtherOrg')).toBe(false);
     expect(service.isClaOnly(null)).toBe(false);
   });
+
+  describe('an organization an address resolved as CLA-only', () => {
+    const ADDRESSED = '0014100000AddressB';
+
+    beforeEach(() => {
+      claManagerOrgSet.set(new Set());
+    });
+
+    it('is CLA-only while the flag is on, without entering the selector set', () => {
+      flag.set(true);
+      service.noteAddressed(ADDRESSED, true);
+
+      expect(service.isClaOnly(ADDRESSED)).toBe(true);
+      expect(service.claOnlyOrgUids().size).toBe(0);
+    });
+
+    it('is not CLA-only while the flag is off', () => {
+      service.noteAddressed(ADDRESSED, true);
+
+      expect(service.isClaOnly(ADDRESSED)).toBe(false);
+    });
+
+    it('stops being CLA-only once a later resolve says otherwise', () => {
+      flag.set(true);
+      service.noteAddressed(ADDRESSED, true);
+      service.noteAddressed(ADDRESSED, false);
+
+      expect(service.isClaOnly(ADDRESSED)).toBe(false);
+    });
+  });
 });

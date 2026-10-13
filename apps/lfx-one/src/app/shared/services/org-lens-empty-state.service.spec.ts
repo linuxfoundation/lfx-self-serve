@@ -8,6 +8,7 @@ import { Observable, of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, Mock, vi } from 'vitest';
 
 import { AccountContextService } from './account-context.service';
+import { OrgClaOnlyAccessService } from './org-cla-only-access.service';
 import { OrgLensEmptyStateService } from './org-lens-empty-state.service';
 import { OrgNavigationService } from './org-navigation.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
@@ -31,6 +32,8 @@ interface Harness {
   inheritedAuditorSet: WritableSignal<Set<string>>;
   selectedAccount: WritableSignal<Account>;
   hasOrgSelectorAccess: WritableSignal<boolean>;
+  /** Organizations `OrgClaOnlyAccessService.isClaOnly` answers true for. */
+  claOnlyUids: WritableSignal<Set<string>>;
   refresh: Mock<(bypassCache?: boolean) => Observable<void>>;
   listLoaded: WritableSignal<boolean>;
   listLoading: WritableSignal<boolean>;
@@ -63,6 +66,7 @@ function setup(): Harness {
   const inheritedAuditorSet = signal(new Set<string>());
   const selectedAccount = signal<Account>(account(''));
   const hasOrgSelectorAccess = signal(false);
+  const claOnlyUids = signal(new Set<string>());
   const refresh: Mock<(bypassCache?: boolean) => Observable<void>> = vi.fn(() => of(undefined));
   const grantsLoading = signal(false);
   const listLoaded = signal(false);
@@ -100,6 +104,7 @@ function setup(): Harness {
         },
       },
       { provide: PersonaService, useValue: { personaLoaded } },
+      { provide: OrgClaOnlyAccessService, useValue: { isClaOnly: (uid: string | null | undefined) => !!uid && claOnlyUids().has(uid) } },
       { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess, getStoredUid: () => 'cookie-uid' } },
       {
         provide: OrgNavigationService,
@@ -122,6 +127,7 @@ function setup(): Harness {
     inheritedAuditorSet,
     selectedAccount,
     hasOrgSelectorAccess,
+    claOnlyUids,
     refresh,
     listLoaded,
     listLoading,
@@ -439,6 +445,18 @@ describe('OrgLensEmptyStateService.pageState — contractor-no-grant (#2961)', (
     h.readAnswers[0].next(false);
     expect(h.service.settled()).toBe(true);
     expect(h.service.pageState()).toBe('contractor-no-grant');
+  });
+
+  // M3 — the read gate refuses a CLA-only organization by design; the CLA routes admit it.
+  it('renders the page for an organization the contractor reaches as its CLA Manager, without asking the read gate', () => {
+    h.hasOrgSelectorAccess.set(true);
+    h.claOnlyUids.set(new Set([OTHER]));
+    h.selectedAccount.set(account(OTHER));
+    TestBed.tick();
+
+    expect(h.readCheck).not.toHaveBeenCalled();
+    expect(h.service.settled()).toBe(true);
+    expect(h.service.pageState()).toBeNull();
   });
 
   it('renders the page when the read gate admits the organization (for example a key-contact auditor)', () => {

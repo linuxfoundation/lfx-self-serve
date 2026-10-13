@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { computed, inject, Injectable, Signal } from '@angular/core';
+import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
 import { ORG_LENS_CLA_M3_ENABLED_FLAG } from '@lfx-one/shared/constants';
 
 import { FeatureFlagService } from './feature-flag.service';
@@ -23,10 +23,30 @@ export class OrgClaOnlyAccessService {
 
   public readonly enabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(ORG_LENS_CLA_M3_ENABLED_FLAG, false);
 
-  /** Empty while the flag is off, whatever the server sent. */
+  /**
+   * Organizations an address resolved as CLA-only (`OrgResolveResponse.claOnly`). Kept apart from
+   * `claOnlyOrgUids`: a caller with an Org Lens grant elsewhere reaches these by direct link only, so
+   * they shape that organization's pages but never add it to the selector.
+   */
+  private readonly addressedClaOnlyUids: WritableSignal<ReadonlySet<string>> = signal<ReadonlySet<string>>(NO_ORGS);
+
+  /** Selector entries. Empty while the flag is off, whatever the server sent. */
   public readonly claOnlyOrgUids: Signal<ReadonlySet<string>> = computed(() => (this.enabled() ? this.orgRoleGrants.claManagerOrgSet() : NO_ORGS));
 
   public isClaOnly(uid: string | null | undefined): boolean {
-    return !!uid && this.claOnlyOrgUids().has(uid);
+    return !!uid && (this.claOnlyOrgUids().has(uid) || (this.enabled() && this.addressedClaOnlyUids().has(uid)));
+  }
+
+  /** Records the resolver's answer for an addressed organization; a later non-CLA-only answer clears it. */
+  public noteAddressed(uid: string, claOnly: boolean): void {
+    const current = this.addressedClaOnlyUids();
+    if (current.has(uid) === claOnly) return;
+    const next = new Set(current);
+    if (claOnly) {
+      next.add(uid);
+    } else {
+      next.delete(uid);
+    }
+    this.addressedClaOnlyUids.set(next);
   }
 }

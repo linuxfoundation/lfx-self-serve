@@ -102,7 +102,16 @@ describe('OrgNavigationService default selection', () => {
         { provide: OrgClaOnlyAccessService, useValue: { enabled: claM3Enabled } },
         {
           provide: AccountContextService,
-          useValue: { selectedAccount, isAdoptedFromAddress, setAccount, setIndexedSlug, pinSelection, clearAccount, refreshCanonicalRecord },
+          useValue: {
+            selectedAccount,
+            isAdoptedFromAddress,
+            setAccount,
+            setIndexedSlug,
+            pinSelection,
+            clearAccount,
+            refreshCanonicalRecord,
+            getStoredUid: () => null,
+          },
         },
       ],
     });
@@ -137,6 +146,27 @@ describe('OrgNavigationService default selection', () => {
       bootstrapWith([claOnlyRow, item(UID_A, 'Acme')]);
 
       expect(service.items().map((row) => row.uid)).toEqual([UID_B, UID_A]);
+    });
+
+    // A list fetched before LaunchDarkly was ready was filtered against the flag's default.
+    it('refetches the list when the flag turns on after it was fetched', async () => {
+      await settle();
+      bootstrapWith([claOnlyRow, item(UID_A, 'Acme')]);
+      expect(service.items().map((row) => row.uid)).toEqual([UID_A]);
+
+      claM3Enabled.set(true);
+      await settle();
+
+      http.expectOne((req) => req.url === '/api/nav/org-items').flush(page([claOnlyRow, item(UID_A, 'Acme')]));
+      expect(service.items().map((row) => row.uid)).toEqual([UID_B, UID_A]);
+    });
+
+    it('does not start a list nobody requested when the flag turns on', async () => {
+      await settle();
+      claM3Enabled.set(true);
+      await settle();
+
+      http.expectNone((req) => req.url === '/api/nav/org-items');
     });
   });
 

@@ -33,7 +33,7 @@ vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername }));
 // The real predicate is pinned in org-cla-only-orgs.service.spec.ts; the service's own imports reach
 // the Angular-bearing shared barrel, so it cannot be loaded here.
 vi.mock('./org-cla-only-orgs.service', () => ({
-  claOnlyEntryApplies: (isStaff: boolean, grantedOrgCount: number) => !isStaff && grantedOrgCount === 0,
+  claOnlyEntryApplies: (isStaff: boolean, grantedOrgCount: number, rosterAnswered: boolean) => rosterAnswered && !isStaff && grantedOrgCount === 0,
   OrgClaOnlyOrgsService: class {
     public listOrgs = listClaOnlyOrgs;
   },
@@ -199,9 +199,21 @@ describe('OrgNavigationService — CLA-only organizations', () => {
     expect(response.upstream_failed).toBe(true);
   });
 
-  it('keeps an Org Lens outage reported even when the CLA lookup succeeds', async () => {
+  it.each([
+    ['the roster never loaded', { upstreamFailed: true }],
+    ['the staff check failed', { staffCheck: 'failed' }],
+  ])('lists no CLA-only organizations when %s', async (_label, overrides) => {
+    noGrants(overrides);
+    listClaOnlyOrgs.mockResolvedValue({ orgs: [{ uid: COMPANY_A, name: 'Acme Corp' }], failed: false });
+
+    const response = await new OrgNavigationService().getOrgItems(req, {});
+
+    expect(listClaOnlyOrgs).not.toHaveBeenCalled();
+    expect(response.items).toEqual([]);
+  });
+
+  it('keeps reporting a roster outage', async () => {
     noGrants({ upstreamFailed: true });
-    listClaOnlyOrgs.mockResolvedValue({ orgs: [], failed: false });
 
     const response = await new OrgNavigationService().getOrgItems(req, {});
 

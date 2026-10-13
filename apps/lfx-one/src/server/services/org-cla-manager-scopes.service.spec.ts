@@ -158,6 +158,15 @@ describe('OrgClaManagerScopesService', () => {
     expect(gatewayFetch.mock.calls[0][2]).toEqual(expect.objectContaining({ bearerToken: 'target-user-token' }));
   });
 
+  it("fails, caching nothing, while impersonating without the target's token", async () => {
+    isImpersonating.mockReturnValue(true);
+    gatewayFetch.mockResolvedValue(payload(scope('cla-manager', [PROJECT_1, COMPANY_A])));
+
+    await expect(service.getCompanySfids(req())).rejects.toMatchObject({ statusCode: 503, code: 'CLA_MANAGER_SCOPES_LOOKUP_FAILED' });
+    expect(gatewayFetch).not.toHaveBeenCalled();
+    expect(cacheStore.size).toBe(0);
+  });
+
   it('throws when user-service fails, rather than answering "manages nothing"', async () => {
     gatewayFetch.mockRejectedValue(new Error('timeout'));
 

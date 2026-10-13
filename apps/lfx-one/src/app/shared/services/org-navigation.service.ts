@@ -78,6 +78,19 @@ export class OrgNavigationService {
    */
   public readonly firstPageLandedGeneration: Signal<number> = this.firstPageLandedGenerationInternal.asReadonly();
 
+  public constructor() {
+    // M3: CLA-only rows are filtered by the flag as each page lands (`toOrgListPage`). A list fetched
+    // before LaunchDarkly was ready was filtered against the flag's default, and a caller whose
+    // selector was already enabled gets no re-bootstrap — so refetch it once the flag settles.
+    toObservable(this.orgClaOnlyAccess.enabled, { injector: this.injector })
+      .pipe(distinctUntilChanged(), skip(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        if (this.state.loaded() || this.state.loading()) {
+          this.refreshList(this.accountContextService.selectedAccount().uid || this.accountContextService.getStoredUid());
+        }
+      });
+  }
+
   public searchTerm(): WritableSignal<string> {
     return this.state.searchTerm;
   }

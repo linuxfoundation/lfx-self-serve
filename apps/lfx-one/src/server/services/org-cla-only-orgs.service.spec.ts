@@ -47,9 +47,13 @@ beforeEach(() => {
 
 describe('claOnlyEntryApplies', () => {
   it('applies only to a non-staff caller Org Lens resolved nothing for', () => {
-    expect(claOnlyEntryApplies(false, 0)).toBe(true);
-    expect(claOnlyEntryApplies(false, 1)).toBe(false);
-    expect(claOnlyEntryApplies(true, 0)).toBe(false);
+    expect(claOnlyEntryApplies(false, 0, true)).toBe(true);
+    expect(claOnlyEntryApplies(false, 1, true)).toBe(false);
+    expect(claOnlyEntryApplies(true, 0, true)).toBe(false);
+  });
+
+  it('never applies while the roster or the staff check has not answered', () => {
+    expect(claOnlyEntryApplies(false, 0, false)).toBe(false);
   });
 });
 
@@ -154,6 +158,8 @@ describe('OrgClaOnlyOrgsService.getRoleGrantOrgUids', () => {
     ['a cascading writer grant', { cascadingWriters: cascading }],
     ['a cascading auditor grant', { cascadingAuditors: cascading }],
     ['staff', { isStaff: true }],
+    ['a roster that never loaded', { lookupOutcome: 'failed' as const }],
+    ['a failed staff check', { staffCheck: 'failed' as const }],
   ])('never asks user-service for a caller with %s', async (_label, overrides) => {
     const scopes = scopesOf(COMPANY_A);
 

@@ -33,9 +33,13 @@ export interface ClaOnlyOrgList {
  * Lens resolved no organization at all and the caller is not staff. A caller with any grant is
  * answered by Org Lens alone and never costs the user-service call; a CLA Manager of a further
  * company is not listed for them, though a deep link to it still opens its EasyCLA tab.
+ *
+ * `rosterAnswered` is false when the roster never loaded or the staff check failed. Either leaves
+ * "no grant, not staff" unproven, so the caller keeps the normal outage handling instead of being
+ * classified CLA-only.
  */
-export function claOnlyEntryApplies(isStaff: boolean, grantedOrgCount: number): boolean {
-  return !isStaff && grantedOrgCount === 0;
+export function claOnlyEntryApplies(isStaff: boolean, grantedOrgCount: number, rosterAnswered: boolean): boolean {
+  return rosterAnswered && !isStaff && grantedOrgCount === 0;
 }
 
 /**
@@ -64,7 +68,8 @@ export class OrgClaOnlyOrgsService {
    */
   public async getRoleGrantOrgUids(req: Request, grants: RoleGrantsResponse): Promise<string[]> {
     const grantedOrgCount = grants.writers.length + grants.auditors.length + grants.cascadingWriters.length + grants.cascadingAuditors.length;
-    if (!claOnlyEntryApplies(grants.isStaff, grantedOrgCount)) return [];
+    const rosterAnswered = grants.lookupOutcome !== 'failed' && grants.staffCheck !== 'failed';
+    if (!claOnlyEntryApplies(grants.isStaff, grantedOrgCount, rosterAnswered)) return [];
     try {
       return await this.getOrgUids(req);
     } catch (error) {
