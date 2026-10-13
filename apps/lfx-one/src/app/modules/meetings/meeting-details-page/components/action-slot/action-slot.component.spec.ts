@@ -293,13 +293,20 @@ describe('MeetingActionSlotComponent', () => {
     });
 
     // #3260: Register leaves the slot once registered, so focus moves to the slot's new first control.
-    it('moves focus into the slot once registered, since Register is gone', async () => {
+    it.each([
+      ['its new first control', 'rsvp' as ActionSlotKind],
+      // RSVP tracking off: the new state is plain text, so the slot itself takes focus.
+      ['the slot itself when the new state has no control', 'rsvp-unavailable' as ActionSlotKind],
+    ])('moves focus to %s once registered, since Register is gone', async (_label, next) => {
+      markRegistered.mockImplementation(() => actionSlot.set(next));
       query('meeting-action-register-button')?.querySelector('button')?.click();
       dialogClose.next({ registered: true });
       fixture.detectChanges();
       await fixture.whenStable();
 
-      expect(fixture.nativeElement.contains(document.activeElement)).toBe(true);
+      expect(query('meeting-action-register-button')).toBeNull();
+      expect(document.activeElement).not.toBe(document.body);
+      expect(fixture.nativeElement.contains(document.activeElement) || document.activeElement === fixture.nativeElement).toBe(true);
     });
 
     it('keeps the open dialog when PrimeNG refuses a duplicate', () => {

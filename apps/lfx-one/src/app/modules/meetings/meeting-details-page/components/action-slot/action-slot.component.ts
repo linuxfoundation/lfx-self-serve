@@ -111,8 +111,9 @@ export class MeetingActionSlotComponent {
       if (result?.registered) {
         this.state.markRegistered(meeting.id);
         // Register is gone from the slot now, so focus has nowhere to return to: hand it to the slot's
-        // new first control once it renders (#3260, WCAG 2.4.3).
-        afterNextRender(() => this.host.nativeElement.querySelector<HTMLElement>('button, a[href]')?.focus(), { injector: this.injector });
+        // new first control once it renders, or to the slot itself when the new state has none (e.g.
+        // `rsvp-unavailable`, plain text), so it never falls to <body> (#3260, WCAG 2.4.3).
+        afterNextRender(() => this.focusSlot(), { injector: this.injector });
       }
     });
   }
@@ -143,5 +144,17 @@ export class MeetingActionSlotComponent {
       const minutes = meeting.early_join_time_minutes ?? DEFAULT_EARLY_JOIN_TIME;
       return `You can join up to ${minutes} minutes before the start time.`;
     });
+  }
+
+  /** Focuses the slot's first control, or the slot itself (made programmatically focusable) when it has none. */
+  private focusSlot(): void {
+    const host = this.host.nativeElement;
+    const control = host.querySelector<HTMLElement>('button, a[href]');
+    if (control) {
+      control.focus();
+      return;
+    }
+    host.tabIndex = -1;
+    host.focus();
   }
 }
