@@ -8,6 +8,24 @@ import type { GroupsIOMailingList } from './mailing-list.interface';
 import type { MeetingAttachment } from './meeting-attachment.interface';
 import type { UserSearchResult } from './search.interface';
 
+/** Pre-computed link target for the "Mailing list associated" Channels entry on My Groups rows/cards. */
+export interface CommitteeMailingListLink {
+  /** Router commands: the single list's detail page, or the group's page when several lists are associated. */
+  commands: string[];
+  /** `?project=` for the link — present only when the committee carries a `project_slug`. */
+  queryParams: { project: string } | null;
+  /** Where the link goes: the single list's page, or the group page when several lists are associated. */
+  target: 'list' | 'group';
+  /** Tooltip text: the list name for one list or "N mailing lists" for several; `null` when the name is unknown. */
+  label: string | null;
+}
+
+/**
+ * Minimal mailing-list reference carried on a committee so list views can link to it without a second fetch.
+ * Deliberately has no `is_foundation`: the mailing-list index never emits it, so the link takes the tier from the committee.
+ */
+export type CommitteeMailingListRef = Pick<GroupsIOMailingList, 'uid' | 'group_name'> & Partial<Pick<GroupsIOMailingList, 'title'>>;
+
 // ── v2.0 Taxonomy Types ─────────────────────────────────────────────────────
 
 /**
@@ -444,6 +462,12 @@ export interface Committee {
   // ── Communication Channels ──
   /** Whether the committee has any associated mailing lists (enriched by BFF via query-service association counts) */
   has_mailing_list?: boolean;
+  /**
+   * Mailing lists associated with the group, used to link the My Groups Channels column. Only set on
+   * `getMyCommittees` rows (the caller's own memberships) — never on list endpoints that non-members can
+   * view, because the refs carry no visibility flag and a private list's name must not leak there.
+   */
+  mailing_lists?: CommitteeMailingListRef[];
   /** Mailing list email address associated with the group (plain string from upstream). Set to null to clear. */
   mailing_list?: string | null;
   /** Chat channel URL or identifier associated with the group (plain string from upstream). Set to null to clear. */
@@ -608,6 +632,10 @@ export interface MyGroupsCardVm {
   viewCommands: string[];
   /** `?project=` for the view link — present only when the committee carries a `project_slug`. */
   viewQueryParams: { project: string } | null;
+  /** Link for the associated-mailing-list Channels entry; `null` when the lists weren't enriched onto the card. */
+  mailingListLink: CommitteeMailingListLink | null;
+  /** Pre-computed accessible name for that link (group name, plus the list name when known); `null` without a link. */
+  mailingListAriaLabel: string | null;
   /**
    * Merged type label for the single "Type" chip (replaces the former separate "Type" and "Class"
    * columns). SIGs show `"SIG | {raw category}"` to expose the sub-type; every other class shows
@@ -631,6 +659,8 @@ export interface MyGroupsCardVm {
 export interface CommitteeTableRowVm extends Committee {
   viewCommands: string[];
   editCommands: string[];
+  /** Link for the associated-mailing-list Channels entry; `null` when the lists weren't enriched onto the row. */
+  mailingListLink: CommitteeMailingListLink | null;
   /** `?project=` for the view/edit links — present only when the committee carries a `project_slug`. */
   linkQueryParams: { project: string } | null;
   /** Pre-computed tag severity for the join-mode chip. Avoids per-render method calls. */

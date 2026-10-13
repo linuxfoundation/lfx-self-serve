@@ -471,6 +471,8 @@ export interface MentorshipEnrollCreatePrerequisite {
   required: boolean;
   requireFile: boolean;
   dueDate: string | null;
+  /** `false` for a standard prerequisite, `true` for one the admin wrote. A missing flag is read as `false`. */
+  custom: boolean;
 }
 
 /**
@@ -518,12 +520,16 @@ export interface MentorshipEnrollUpdateTerm extends MentorshipEnrollCreateTerm {
  */
 export type MentorshipEnrollUpdateRequest = Omit<MentorshipEnrollCreateRequest, 'terms' | 'termsAccepted'> & { terms?: MentorshipEnrollUpdateTerm[] };
 
-/** One prerequisite as upstream stores it in a program's `task_templates`. `submitFile` is `'required'` when the mentee must attach a file. */
+/**
+ * One prerequisite as upstream stores it in a program's `task_templates`. `submitFile` is `'required'` when the mentee must attach a file,
+ * and `custom` is `true` for one the admin wrote rather than a standard one.
+ */
 export interface MentorshipUpstreamTaskTemplate {
   name: string;
   description: string;
   submitFile: 'required' | null;
   dueDate: string | null;
+  custom: boolean;
 }
 
 /** One open term in the upstream program update: RFC 3339 instants in UTC, and `id` only for a saved term. */
@@ -631,7 +637,7 @@ export interface MentorshipUpstreamEnrollTemplate {
   };
   skills?: string[] | null;
   /** The program's stored task templates, passed through as they are, so their keys are camelCase unlike `program`'s. */
-  prerequisites?: { name: string; description?: string | null; submitFile?: string | null; dueDate?: string | null }[] | null;
+  prerequisites?: { name: string; description?: string | null; submitFile?: string | null; dueDate?: string | null; custom?: boolean | null }[] | null;
 }
 
 /** Response from `GET /api/mentorship/admin/programs/:programId/enroll-template`: what the wizard copies from an existing program. */

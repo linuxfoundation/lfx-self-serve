@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { Meeting, MeetingRegistrant } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingRegistrant, MeetingRsvp } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { attachRsvpsToRegistrants } from '../../../../../server/helpers/meeting-rsvp.helper';
 import { MeetingInviteeAttendeesComponent } from './meeting-invitee-attendees.component';
 
 describe('MeetingInviteeAttendeesComponent', () => {
@@ -40,6 +41,37 @@ describe('MeetingInviteeAttendeesComponent', () => {
     expect(previewCalls(true)).toHaveLength(1);
     expect(previewCalls(false)).toHaveLength(0);
     expect(component()['drawerRegistrants']()).toEqual(preview);
+  });
+
+  it.each(['single', 'this_and_following'] as const)('retains older all preview attendance with a newer %s decline and no local overlay', async (scope) => {
+    const all = { id: 'all', registrant_id: 'r1', response_type: 'accepted', scope: 'all', modified_at: '2026-01-01T00:00:00Z' } as MeetingRsvp;
+    const scoped = {
+      ...all,
+      id: 'scoped',
+      scope,
+      response_type: 'declined',
+      occurrence_id: '4071031200000',
+      modified_at: '2026-02-01T00:00:00Z',
+    } as MeetingRsvp;
+    const scopedOnly = { ...scoped, registrant_id: 'r2' };
+    getMyMeetingRegistrants.mockImplementation((_id, _includeRsvp, occurrenceId, _preview, allDatesOnly) =>
+      of(attachRsvpsToRegistrants([...full].reverse(), [all, scoped, scopedOnly], occurrenceId, allDatesOnly))
+    );
+    fixture.componentRef.setInput('meeting', { ...meeting, is_invite_responses_enabled: true, recurrence: { type: 2, repeat_interval: 1 }, occurrences: [] });
+    await fixture.whenStable();
+
+    const current = component();
+    expect(current['previewPeople']().map((person: { key: string }) => person.key)).toEqual(['r1', 'r2']);
+    expect(current['registrants']().map((row: MeetingRegistrant) => row.rsvp)).toEqual([null, all]);
+    expect(getMyMeetingRegistrants).toHaveBeenLastCalledWith('m1', true, undefined, true, true);
+
+    component()['drawerVisible'].set(true);
+    await fixture.whenStable();
+    expect(getMyMeetingRegistrants).toHaveBeenLastCalledWith('m1', true, undefined, false, true);
+    fixture.componentRef.setInput('occurrence', { occurrence_id: '4071031200', start_time: '2099-01-02T10:00:00Z', duration: 30 });
+    await fixture.whenStable();
+    expect(getMyMeetingRegistrants.mock.calls.slice(-2).every((call) => call[4] === false)).toBe(true);
+    expect(current['registrants']().map((row: MeetingRegistrant) => row.rsvp)).toEqual([scopedOnly, scoped]);
   });
 
   it('fetches the full roster once, on the first drawer open', async () => {

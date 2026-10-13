@@ -5,6 +5,7 @@ import {
   MENTORSHIP_ADMIN_APPLICATION_CHANGED_MESSAGE,
   MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT,
   MENTORSHIP_ADMIN_MANAGEMENT_PAGE_SIZE,
+  MENTORSHIP_ADMIN_MENTEES_EXPORT_COLUMNS,
   MENTORSHIP_ADMIN_MENTEES_PAGE_SIZE,
   MENTORSHIP_ENROLL_NAME_TAKEN,
   MENTORSHIP_MAX_OPEN_TERMS,
@@ -15,6 +16,7 @@ import {
 import {
   MentorshipAdminApplicationStatusUpdate,
   MentorshipAdminDeclinePendingResponse,
+  MentorshipAdminMenteesExport,
   MentorshipAdminMenteesQuery,
   MentorshipAdminMenteesResponse,
   MentorshipAdminMentorsQuery,
@@ -28,6 +30,8 @@ import {
   MentorshipAdminTermOption,
   MentorshipAdminTermsQuery,
   MentorshipAdminTermsResponse,
+  MentorshipAdminMenteeStatusFilter,
+  MentorshipAdminMenteeTab,
   MentorshipApplicantTask,
   MentorshipEnrollCreateRequest,
   MentorshipEnrollImport,
@@ -54,7 +58,7 @@ import {
   MentorshipUpstreamTask,
   MentorshipUpstreamTermManagementRow,
 } from '@lfx-one/shared/interfaces';
-import { lastDayOfMentorshipMonth } from '@lfx-one/shared/utils';
+import { lastDayOfMentorshipMonth, rowsToCsv } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import {
@@ -74,7 +78,13 @@ import {
   mapMentorshipAdminProgram,
   mapMentorshipAdminTermRow,
 } from '../helpers/mentorship-admin-program.helper';
-import { isMentorshipNotProvisionedError, listAllMentorshipPages, proxyMentorshipRequest, withoutQueryInErrorPath } from '../helpers/mentorship-api.helper';
+import {
+  isMentorshipNotProvisionedError,
+  listAllMentorshipPages,
+  proxyMentorshipRequest,
+  readMentorshipPages,
+  withoutQueryInErrorPath,
+} from '../helpers/mentorship-api.helper';
 import { saveMentorshipApplicationNote } from '../helpers/mentorship-application-note.helper';
 import {
   toMentorshipEnrollImport,
@@ -84,7 +94,7 @@ import {
   toMentorshipUpstreamTermDates,
 } from '../helpers/mentorship-enroll.helper';
 import { escapeMentorshipSearch } from '../helpers/mentorship-params.helper';
-import { mapMentorshipAdminApplicantRow, mapMentorshipProgramTask } from '../helpers/mentorship-program-application.helper';
+import { mapMentorshipAdminApplicantRow, mapMentorshipProgramTask, toMentorshipAdminMenteesExportRow } from '../helpers/mentorship-program-application.helper';
 
 import { logger } from './logger.service';
 import { MentorshipService } from './mentorship.service';
@@ -249,6 +259,53 @@ export class MentorshipAdminService {
     const total = upstream.meta?.total ?? data.length;
     logger.debug(req, 'mentorship_admin_get_program_mentees', 'Program mentees page built', { programId, count: data.length, total });
     return { data, total };
+  }
+
+  /**
+   * Every application on one mentee tab of the program (Current or Past) with one of that tab's statuses, or all of
+   * them, as CSV: the same upstream read as the tab, page after page, with no search or term filter. The header row is
+   * always there; `count` says how many rows follow it, and `truncated` that the read stopped at the page cap with
+   * more mentees left out. A caller with no mentorship record has no mentees.
+   */
+  public async exportProgramMentees(
+    req: Request,
+    programId: string,
+    tab: MentorshipAdminMenteeTab,
+    status: MentorshipAdminMenteeStatusFilter | undefined
+  ): Promise<MentorshipAdminMenteesExport> {
+    logger.debug(req, 'mentorship_admin_export_program_mentees', 'Reading program mentees for export', { programId, type: tab, status });
+
+    let rows: MentorshipUpstreamProgramApplicationRow[];
+    let truncated = false;
+    try {
+      ({ items: rows, truncated } = await readMentorshipPages<MentorshipUpstreamProgramApplicationRow>(
+        this.microserviceProxy,
+        req,
+        `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}/applications`,
+        { type: tab, status: status ? MENTORSHIP_ADMIN_MENTEE_STATUS_FILTER_TO_UPSTREAM[status] : undefined },
+        MENTORSHIP_ADMIN_APPLICATIONS_MAX_LIMIT
+      ));
+    } catch (error) {
+      if (isMentorshipNotProvisionedError(error)) {
+        logger.warning(req, 'mentorship_admin_export_program_mentees', 'Caller has no mentorship record; exporting no mentees', { programId });
+        rows = [];
+      } else {
+        throw error;
+      }
+    }
+
+    const csv = rowsToCsv([
+      MENTORSHIP_ADMIN_MENTEES_EXPORT_COLUMNS,
+      ...rows.map((row) => toMentorshipAdminMenteesExportRow(mapMentorshipAdminApplicantRow(row), tab)),
+    ]);
+    logger.debug(req, 'mentorship_admin_export_program_mentees', 'Program mentees export built', {
+      programId,
+      type: tab,
+      status,
+      count: rows.length,
+      truncated,
+    });
+    return { csv, count: rows.length, truncated };
   }
 
   /**

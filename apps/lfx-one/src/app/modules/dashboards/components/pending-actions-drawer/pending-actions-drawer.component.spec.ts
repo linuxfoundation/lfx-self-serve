@@ -10,6 +10,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { PENDING_ACTION_FADE_OUT_MS } from '@lfx-one/shared/constants';
 import type { Meeting, PendingActionItem } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
+import { LensService } from '@services/lens.service';
 import { UserService } from '@services/user.service';
 import { HiddenActionsService } from '@shared/services/hidden-actions.service';
 import { InvitationService } from '@shared/services/invitation.service';
@@ -243,7 +244,18 @@ describe('PendingActionsDrawerComponent — section grouping', () => {
         // The inline RSVP child reads userService.user/authenticated at field-init. DialogService needs no
         // provider: the child declares its own component-level `providers: [DialogService]`, which shadows
         // any TestBed provider (the recurring-scope modal is never opened here).
-        { provide: UserService, useValue: { user: signal(null), authenticated: signal(false) } },
+        {
+          provide: UserService,
+          useValue: {
+            user: signal(null),
+            authenticated: signal(false),
+            viewerUsername: signal(null),
+            meetingRegistrationGeneration: vi.fn(() => 0),
+            recordConfirmedMeetingRsvp: vi.fn(),
+            isMeetingRsvpCurrent: vi.fn(() => true),
+          },
+        },
+        { provide: LensService, useValue: { activeLens: signal('me') } },
         MessageService,
       ],
     }).compileComponents();

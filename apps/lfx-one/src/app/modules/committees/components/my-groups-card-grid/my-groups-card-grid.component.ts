@@ -10,7 +10,14 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { TagComponent } from '@components/tag/tag.component';
 import { COMMITTEE_LABEL, GROUPS_CARD_GRID_PAGE_SIZE, JOIN_MODE_TOOLTIPS } from '@lfx-one/shared/constants';
 import { MyCommittee, MyGroupsCardVm } from '@lfx-one/shared/interfaces';
-import { formatRelativeTime, getGroupCommands, resolveGroupsCardRoleSeverity, resolveJoinModeSeverity, resolveTypeDisplay } from '@lfx-one/shared/utils';
+import {
+  formatRelativeTime,
+  getCommitteeMailingListLink,
+  getGroupCommands,
+  resolveGroupsCardRoleSeverity,
+  resolveJoinModeSeverity,
+  resolveTypeDisplay,
+} from '@lfx-one/shared/utils';
 import { JoinModeLabelPipe } from '@app/shared/pipes/join-mode-label.pipe';
 import { ValidExternalUrlPipe } from '@app/shared/pipes/valid-external-url.pipe';
 import { MessageService } from 'primeng/api';
@@ -70,6 +77,7 @@ export class MyGroupsCardGridComponent {
         const lastActivityLabel = formatRelativeTime(new Date(committee.updated_at));
         const typeDisplay = resolveTypeDisplay(committee);
         const effectiveJoinMode = committee.join_mode ?? 'invite_only';
+        const mailingListLink = getCommitteeMailingListLink(committee);
         return {
           committee,
           roleBadgeSeverity: resolveGroupsCardRoleSeverity(committee.my_role),
@@ -78,11 +86,18 @@ export class MyGroupsCardGridComponent {
           // /foundation vs /project; rows without tier data keep the flat /groups/:uid fallback.
           viewCommands: getGroupCommands(committee) ?? ['/groups', committee.uid],
           viewQueryParams: committee.project_slug ? { project: committee.project_slug } : null,
+          mailingListLink,
+          mailingListAriaLabel: mailingListLink ? this.getMailingListAriaLabel(committee.name, mailingListLink.label) : null,
           typeDisplay,
           joinModeSeverity: resolveJoinModeSeverity(effectiveJoinMode),
           joinModeTooltip: JOIN_MODE_TOOLTIPS[effectiveJoinMode],
         };
       })
     );
+  }
+
+  private getMailingListAriaLabel(groupName: string | undefined, listLabel: string | null): string {
+    const base = `Mailing list for ${groupName || 'group'}`;
+    return listLabel ? `${base}: ${listLabel}` : base;
   }
 }

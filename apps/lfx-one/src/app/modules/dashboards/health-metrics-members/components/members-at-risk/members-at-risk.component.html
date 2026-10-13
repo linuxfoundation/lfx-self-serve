@@ -99,9 +99,19 @@
       <ng-template #body let-view>
         <tr [attr.data-testid]="'members-at-risk-row-' + view.accountId">
           <td>
-            <span class="text-sm font-semibold text-gray-900" [attr.data-testid]="'members-at-risk-row-' + view.accountId + '-name'">{{
-              view.accountName
-            }}</span>
+            <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+              <span class="text-sm font-semibold text-gray-900" [attr.data-testid]="'members-at-risk-row-' + view.accountId + '-name'">{{
+                view.accountName
+              }}</span>
+              @if (view.churnRiskLabel) {
+                <span
+                  class="rounded-full px-2 py-0.5 text-[11.5px] font-medium"
+                  [class]="view.churnRiskClass"
+                  [attr.data-testid]="'members-at-risk-row-' + view.accountId + '-churn-risk'"
+                  >{{ view.churnRiskLabel }}</span
+                >
+              }
+            </div>
           </td>
           <td>
             <span
@@ -117,7 +127,10 @@
             }}</span>
           </td>
           <td class="text-right">
-            <span class="text-sm tabular-nums text-red-600" [attr.data-testid]="'members-at-risk-row-' + view.accountId + '-age'">{{ view.ageLabel }}</span>
+            <div class="flex flex-col items-end gap-0.5">
+              <span class="text-sm tabular-nums text-red-600" [attr.data-testid]="'members-at-risk-row-' + view.accountId + '-age'">{{ view.ageLabel }}</span>
+              <span class="text-[11.5px] text-gray-400" [attr.data-testid]="'members-at-risk-row-' + view.accountId + '-aging'">{{ view.agingLabel }}</span>
+            </div>
           </td>
           <td class="text-right">
             <span class="text-sm tabular-nums text-amber-700" [attr.data-testid]="'members-at-risk-row-' + view.accountId + '-last-engaged'">{{

@@ -104,3 +104,90 @@ describe('CrowdfundingController initiatives scope (#347, #348)', () => {
     expect(requestedUrls().every((url) => url.startsWith('https://cf.example/crowdfunding/me/initiatives?'))).toBe(true);
   });
 });
+
+describe('CrowdfundingController initiative writer routes (#259)', () => {
+  const INITIATIVE_ID = '00000000-0000-4000-8000-000000000002';
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  const respondWith = (status: number, body: unknown = {}) =>
+    fetchMock.mockResolvedValue({ ok: status >= 200 && status < 300, status, json: async () => body, text: async () => '' });
+  const lastCall = (): [string, RequestInit] => fetchMock.mock.calls.at(-1) as [string, RequestInit];
+
+  beforeEach(() => {
+    vi.stubEnv('CROWDFUNDING_API_BASE_URL', 'https://cf.example');
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it('reads initiative details from /manage and maps a 404 to not-found', async () => {
+    respondWith(404);
+    const res = buildRes();
+    const next = vi.fn();
+    await new CrowdfundingController().getInitiativeBySlug({ ...buildReq(), params: { slug: 'my-fund' } }, res, next);
+
+    expect(lastCall()[0]).toBe('https://cf.example/crowdfunding/initiatives/my-fund/manage');
+    expect(lastCall()[1].headers).toMatchObject({ Authorization: 'Bearer user-token' });
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('propagates a non-writer 403 from /manage instead of reporting not-found', async () => {
+    respondWith(403);
+    const res = buildRes();
+    const next = vi.fn();
+    await new CrowdfundingController().getInitiativeBySlug({ ...buildReq(), params: { slug: 'my-fund' } }, res, next);
+
+    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 403 });
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it('reads transactions from /manage/transactions', async () => {
+    respondWith(200, { data: [], total_count: 0, from: 0, size: 5 });
+    const next = vi.fn();
+    await new CrowdfundingController().getInitiativeTransactions(
+      { ...buildReq({ type: 'donations', size: '5' }), params: { slug: INITIATIVE_ID } },
+      buildRes(),
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(lastCall()[0]).toBe(`https://cf.example/crowdfunding/initiatives/${INITIATIVE_ID}/manage/transactions?type=donations&limit=5`);
+  });
+
+  it.each([
+    [
+      'updateInitiative',
+      'PATCH',
+      `/crowdfunding/initiatives/${INITIATIVE_ID}`,
+      (s: CrowdfundingService) => s.updateInitiative(buildReq(), INITIATIVE_ID, { name: 'x' }),
+    ],
+    [
+      'createAnnouncement',
+      'POST',
+      `/crowdfunding/initiatives/${INITIATIVE_ID}/announcements`,
+      (s: CrowdfundingService) => s.createAnnouncement(buildReq(), INITIATIVE_ID, { title: 't', description: 'd' }),
+    ],
+    [
+      'updateAnnouncement',
+      'PUT',
+      `/crowdfunding/initiatives/${INITIATIVE_ID}/announcements/a1`,
+      (s: CrowdfundingService) => s.updateAnnouncement(buildReq(), INITIATIVE_ID, 'a1', { title: 't', description: 'd' }),
+    ],
+    [
+      'deleteAnnouncement',
+      'DELETE',
+      `/crowdfunding/initiatives/${INITIATIVE_ID}/announcements/a1`,
+      (s: CrowdfundingService) => s.deleteAnnouncement(buildReq(), INITIATIVE_ID, 'a1'),
+    ],
+  ])('%s calls %s %s and propagates a 403', async (_name, method, path, call) => {
+    respondWith(403);
+    await expect(call(new CrowdfundingService())).rejects.toMatchObject({ statusCode: 403 });
+    expect(lastCall()[0]).toBe(`https://cf.example${path}`);
+    expect(lastCall()[1].method).toBe(method);
+  });
+});

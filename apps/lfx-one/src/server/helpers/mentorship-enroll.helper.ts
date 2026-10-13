@@ -79,6 +79,7 @@ const parsePrerequisite = (value: unknown, index: number, operation: string): Me
     required: optionalBoolean(raw, 'required', operation, `${path}.required`),
     requireFile: optionalBoolean(raw, 'requireFile', operation, `${path}.requireFile`),
     dueDate: parseTrimmedString(optionalText(raw, 'dueDate', operation, `${path}.dueDate`)) ?? null,
+    custom: optionalBoolean(raw, 'custom', operation, `${path}.custom`),
   };
 };
 
@@ -205,7 +206,7 @@ export const toMentorshipUpstreamTermDates = (
 /**
  * The update body as upstream `PATCH /programs/{id}` takes it: snake_case keys, a partial merge. Each optional text field is sent,
  * `''` when blank, so an admin can clear it. Prerequisites become `task_templates` the way upstream create converts them: only the
- * picked (`required`) ones are kept, and `submitFile` is `'required'` when the mentee must attach a file. `terms`, when present,
+ * picked (`required`) ones are kept, `submitFile` is `'required'` when the mentee must attach a file, and `custom` is kept. `terms`, when present,
  * goes as upstream's open-term set, a saved term keeping its `id`.
  */
 export const toMentorshipUpstreamProgramUpdate = (request: MentorshipEnrollUpdateRequest): MentorshipUpstreamProgramUpdate => ({
@@ -219,7 +220,13 @@ export const toMentorshipUpstreamProgramUpdate = (request: MentorshipEnrollUpdat
   skills: request.skills,
   task_templates: request.prerequisites
     .filter((item) => item.required)
-    .map((item) => ({ name: item.name, description: item.description, submitFile: item.requireFile ? 'required' : null, dueDate: item.dueDate })),
+    .map((item) => ({
+      name: item.name,
+      description: item.description,
+      submitFile: item.requireFile ? 'required' : null,
+      dueDate: item.dueDate,
+      custom: item.custom,
+    })),
   project_uid: request.projectId,
   project_slug: request.projectSlug,
   project_name: request.projectName,

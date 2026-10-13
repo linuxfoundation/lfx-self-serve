@@ -278,10 +278,14 @@ export interface OrgListState {
 
 /** Shape of `b2b_org.data` from the query-service indexed document — only fields the selector reads. */
 export interface B2bOrgIndexedDoc {
+  /** Canonical 18-char Salesforce Account id (same value as `project_membership.b2b_org_uid`). */
+  uid?: string;
   sfid?: string | null;
   name?: string;
   logo_url?: string | null;
   primary_domain?: string | null;
+  /** Additional normalized domains of the company (Salesforce `Domain_Alias__c`). */
+  domain_aliases?: string[] | null;
   is_member?: boolean;
   /** Spec 022 — true when this org has child orgs in the b2b_org index. Drives cascading-children lookup per D-004. */
   is_parent?: boolean;

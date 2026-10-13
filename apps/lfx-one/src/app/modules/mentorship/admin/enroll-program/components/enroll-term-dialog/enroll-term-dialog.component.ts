@@ -8,7 +8,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CalendarComponent } from '@components/calendar/calendar.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
-import { MENTORSHIP_TERM_NAME_MAX, MENTORSHIP_TERM_YEAR_OPTIONS, MONTH_OPTIONS } from '@lfx-one/shared/constants';
+import { MENTORSHIP_NEW_TERM_ID_PREFIX, MENTORSHIP_TERM_NAME_MAX, MENTORSHIP_TERM_YEAR_OPTIONS, MONTH_OPTIONS } from '@lfx-one/shared/constants';
 import { MentorshipProgramTerm, MentorshipTermFormDialogData } from '@lfx-one/shared/interfaces';
 import {
   getMentorshipEnrollTermDateErrors,
@@ -35,7 +35,11 @@ export class EnrollTermDialogComponent {
   protected readonly yearOptions = MENTORSHIP_TERM_YEAR_OPTIONS.map((option) => ({ ...option }));
   protected readonly nameMax = MENTORSHIP_TERM_NAME_MAX;
   protected readonly showErrors = signal(false);
+  /** The term upstream already holds, when editing one; a term the wizard added but has not saved yet is still new. */
+  private readonly savedTerm = this.data.mode === 'edit' && !this.data.term?.id.startsWith(MENTORSHIP_NEW_TERM_ID_PREFIX) ? this.data.term : undefined;
+  // A saved term may already be under way, so editing it may pick past dates.
   protected readonly minApplicationDate = computed(() => {
+    if (this.savedTerm) return null;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     return today;
@@ -98,8 +102,8 @@ export class EnrollTermDialogComponent {
     const endDate = mentorshipMonthYearToStartDate(value.endMonth, value.endYear);
     const applicationStartDate = toMentorshipDateOnly(applicationStart);
     const applicationEndDate = toMentorshipDateOnly(applicationEnd);
-    // Pass the term being edited so dates it already had in the past stay valid when left unchanged.
-    const dateErrors = getMentorshipEnrollTermDateErrors({ startDate, endDate, applicationStartDate, applicationEndDate }, new Date(), this.data.term);
+    // Pass the saved term being edited so its dates skip the not-before-today floors.
+    const dateErrors = getMentorshipEnrollTermDateErrors({ startDate, endDate, applicationStartDate, applicationEndDate }, new Date(), this.savedTerm);
     if (Object.keys(dateErrors).length) {
       this.showErrors.set(true);
       this.dateErrors.set(Object.fromEntries(Object.entries(dateErrors).map(([key, value]) => [key, value ?? ''])));
@@ -110,7 +114,7 @@ export class EnrollTermDialogComponent {
     this.dateErrors.set({});
 
     const term: MentorshipProgramTerm = {
-      id: this.data.term?.id ?? `term-new-${Date.now()}`,
+      id: this.data.term?.id ?? `${MENTORSHIP_NEW_TERM_ID_PREFIX}${Date.now()}`,
       name: value.name.trim(),
       startDate,
       endDate,

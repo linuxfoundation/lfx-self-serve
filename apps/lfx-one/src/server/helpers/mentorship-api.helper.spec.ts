@@ -17,7 +17,7 @@ vi.mock('../services/logger.service', () => ({
 
 const { MicroserviceError } = await import('../errors');
 const { logger } = await import('../services/logger.service');
-const { listAllMentorshipPages, proxyMentorshipRequest } = await import('./mentorship-api.helper');
+const { listAllMentorshipPages, proxyMentorshipRequest, readMentorshipPages } = await import('./mentorship-api.helper');
 
 type Proxy = Parameters<typeof proxyMentorshipRequest>[0];
 
@@ -198,5 +198,31 @@ describe('listAllMentorshipPages', () => {
     await expect(listAllMentorshipPages(proxy, req, path)).resolves.toHaveLength(50);
     expect(proxyRequest).toHaveBeenCalledTimes(50);
     expect(logger.warning).toHaveBeenCalledWith(req, 'mentorship_list_all_pages', expect.any(String), { path, max_pages: 50, count: 50 });
+  });
+});
+
+describe('readMentorshipPages', () => {
+  let proxyRequest: ReturnType<typeof vi.fn>;
+  let proxy: Proxy;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    proxyRequest = vi.fn();
+    proxy = { proxyRequest } as unknown as Proxy;
+  });
+
+  it('says the read is complete when it reaches the total', async () => {
+    proxyRequest.mockResolvedValueOnce({ data: [{ id: 'row-1' }], meta: { total: 1, limit: 100, offset: 0 } });
+
+    await expect(readMentorshipPages(proxy, req, path)).resolves.toEqual({ items: [{ id: 'row-1' }], truncated: false });
+  });
+
+  it('says the read is truncated when it stops at the page cap with rows still to come', async () => {
+    proxyRequest.mockResolvedValue({ data: [{ id: 'row' }], meta: { total: Number.MAX_SAFE_INTEGER, limit: 100, offset: 0 } });
+
+    const { items, truncated } = await readMentorshipPages(proxy, req, path);
+
+    expect(items).toHaveLength(50);
+    expect(truncated).toBe(true);
   });
 });

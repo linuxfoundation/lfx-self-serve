@@ -4060,7 +4060,9 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       demandGenEnabled: true,
       googleChannelsEnabled: false,
       googleCreativeEnabled: false,
-      redditCreativeEnabled: false,
+      // TRUE with every flag off, unlike its Google sibling: both creators author the promoted
+      // post since #3432, so the capability no longer tracks the cutover (`canCreateRedditCreative`).
+      redditCreativeEnabled: true,
     });
   });
 
@@ -4217,7 +4219,9 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       demandGenEnabled: true,
       googleChannelsEnabled: false,
       googleCreativeEnabled: false,
-      redditCreativeEnabled: false,
+      // TRUE with every flag off, unlike its Google sibling: both creators author the promoted
+      // post since #3432, so the capability no longer tracks the cutover (`canCreateRedditCreative`).
+      redditCreativeEnabled: true,
     });
   });
 });

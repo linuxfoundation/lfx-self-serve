@@ -39,6 +39,7 @@ import type {
   MeetingOrganizerLink,
   MeetingRecurrence,
   MeetingRegistrant,
+  MeetingRsvp,
   MeetingUserInfo,
   OccurrenceNavItem,
   PastMeeting,
@@ -1151,7 +1152,7 @@ export function isMeetingInviteResponsesEnabled(meeting: Pick<Meeting, 'is_invit
  * @description Reads the BFF-resolved `my_rsvp`, which already prefers the RSVP that applies to the
  * current/next occurrence. A `single` or `this_and_following` decline leaves other dates open, so
  * it does not count. Declining does not remove the viewer's access grant, so the meeting keeps
- * coming back from the query service; My Meetings uses this to hide it by default.
+ * coming back from the query service; My Meetings can hide it with the explicit hide-declined filter.
  */
 export function isMeetingDeclinedForAllOccurrences(meeting: Pick<Meeting, 'my_rsvp'> | null | undefined): boolean {
   const rsvp = meeting?.my_rsvp;
@@ -1159,17 +1160,28 @@ export function isMeetingDeclinedForAllOccurrences(meeting: Pick<Meeting, 'my_rs
 }
 
 /**
+ * The viewer's RSVP for the current/next meeting date. An unresolved recurring
+ * date can only be answered by an all-dates response, not aggregate selection.
+ */
+export function getApplicableMeetingRsvp(meeting: Meeting | null | undefined): MeetingRsvp | null {
+  if (!meeting?.my_rsvp) return null;
+  const occurrenceId = resolveRsvpOccurrenceId(meeting);
+  if (meeting.recurrence && !occurrenceId) {
+    return meeting.my_rsvp.scope === 'all' ? meeting.my_rsvp : null;
+  }
+  return selectApplicableRsvp(occurrenceId, [meeting.my_rsvp]);
+}
+
+/**
  * True when the viewer's RSVP for the current/next occurrence is an acceptance.
  * @description `my_rsvp` is not enough on its own: the BFF falls back to the newest series RSVP when
  * none applies to the current/next date (so Pending RSVP can tell "never answered" apart), which
  * means a series accepted only for a past date still carries `accepted` on an unanswered next date.
- * Re-resolving `my_rsvp` against that occurrence with {@link selectApplicableRsvp} drops the
- * fallback. "Maybe" and "declined" do not count. Backs the "Accepted" filter chip on My Meetings.
+ * Re-resolving `my_rsvp` with {@link getApplicableMeetingRsvp} drops the fallback,
+ * including when the recurring date is unresolved. "Maybe" and "declined" do not count.
  */
 export function isMeetingAccepted(meeting: Meeting | null | undefined): boolean {
-  if (!meeting?.my_rsvp) return false;
-  const applicable = selectApplicableRsvp(resolveRsvpOccurrenceId(meeting), [meeting.my_rsvp]);
-  return applicable?.response_type === 'accepted';
+  return getApplicableMeetingRsvp(meeting)?.response_type === 'accepted';
 }
 
 /**
@@ -1467,10 +1479,10 @@ export function isMeetingOrganizedByViewer(
 }
 
 /**
- * Whether My Meetings hides this meeting by default as declined.
+ * Whether the explicit hide-declined filter excludes this meeting.
  * @description A decline covering every date ({@link isMeetingDeclinedForAllOccurrences}) hides the
- * meeting, except when the viewer organizes it: they still run the series and must be able to find
- * it, and the "Organized by me" filter and count would otherwise silently drop it.
+ * meeting only when the user requests it, except when the viewer organizes it: they still run
+ * the series and must be able to find it.
  */
 export function isMeetingHiddenAsDeclined(
   meeting: Pick<Meeting, 'my_rsvp' | 'created_by' | 'owner'> | null | undefined,

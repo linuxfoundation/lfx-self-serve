@@ -275,6 +275,109 @@ describe('MentorshipAdminController', () => {
     });
   });
 
+  describe('exportProgramMentees', () => {
+    const exportRes = () =>
+      ({ setHeader: vi.fn(), status: vi.fn().mockReturnThis(), end: vi.fn(), send: vi.fn() }) as unknown as Response & {
+        setHeader: ReturnType<typeof vi.fn>;
+        status: ReturnType<typeof vi.fn>;
+        end: ReturnType<typeof vi.fn>;
+        send: ReturnType<typeof vi.fn>;
+      };
+
+    it('sends the CSV as a private, named attachment with a byte order mark', async () => {
+      const read = vi.spyOn(MentorshipAdminService.prototype, 'exportProgramMentees').mockResolvedValue({ csv: 'csv-body', count: 1, truncated: false });
+      const out = exportRes();
+
+      await controller.exportProgramMentees(buildReq({ type: 'current', status: 'accepted' }, { programId: PROGRAM_ID }), out, next);
+
+      expect(read).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID, 'current', 'accepted');
+      expect(out.setHeader).toHaveBeenCalledWith('Content-Type', 'text/csv; charset=utf-8');
+      expect(out.setHeader).toHaveBeenCalledWith('Content-Disposition', expect.stringContaining('filename="current-mentees-accepted.csv"'));
+      expect(out.setHeader).toHaveBeenCalledWith('Cache-Control', 'private, no-store');
+      expect(out.send).toHaveBeenCalledWith('\ufeffcsv-body');
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('exports every status as <tab>-mentees-all.csv when no status is given', async () => {
+      const read = vi.spyOn(MentorshipAdminService.prototype, 'exportProgramMentees').mockResolvedValue({ csv: 'csv-body', count: 1, truncated: false });
+      const out = exportRes();
+
+      await controller.exportProgramMentees(buildReq({ type: 'current' }, { programId: PROGRAM_ID }), out, next);
+
+      expect(read).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID, 'current', undefined);
+      expect(out.setHeader).toHaveBeenCalledWith('Content-Disposition', expect.stringContaining('filename="current-mentees-all.csv"'));
+    });
+
+    it('exports Past Mentees on their wire status as past-mentees-<status>.csv', async () => {
+      const read = vi.spyOn(MentorshipAdminService.prototype, 'exportProgramMentees').mockResolvedValue({ csv: 'csv-body', count: 1, truncated: false });
+      const out = exportRes();
+
+      await controller.exportProgramMentees(buildReq({ type: 'past', status: 'pending' }, { programId: PROGRAM_ID }), out, next);
+
+      expect(read).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID, 'past', 'pending');
+      expect(out.setHeader).toHaveBeenCalledWith('Content-Disposition', expect.stringContaining('filename="past-mentees-pending.csv"'));
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('sends a cut-short export with X-Export-Truncated set to its row count, and none when complete', async () => {
+      vi.spyOn(MentorshipAdminService.prototype, 'exportProgramMentees').mockResolvedValueOnce({ csv: 'csv-body', count: 2500, truncated: true });
+      const out = exportRes();
+
+      await controller.exportProgramMentees(buildReq({ type: 'past' }, { programId: PROGRAM_ID }), out, next);
+
+      expect(out.setHeader).toHaveBeenCalledWith('X-Export-Truncated', '2500');
+      expect(out.send).toHaveBeenCalledWith('\ufeffcsv-body');
+
+      vi.spyOn(MentorshipAdminService.prototype, 'exportProgramMentees').mockResolvedValueOnce({ csv: 'csv-body', count: 1, truncated: false });
+      const complete = exportRes();
+
+      await controller.exportProgramMentees(buildReq({ type: 'past' }, { programId: PROGRAM_ID }), complete, next);
+
+      expect(complete.setHeader).not.toHaveBeenCalledWith('X-Export-Truncated', expect.anything());
+    });
+
+    it('answers 204 with no body when no mentee matches', async () => {
+      vi.spyOn(MentorshipAdminService.prototype, 'exportProgramMentees').mockResolvedValue({ csv: 'Name', count: 0, truncated: false });
+      const out = exportRes();
+
+      await controller.exportProgramMentees(buildReq({ type: 'past', status: 'graduated' }, { programId: PROGRAM_ID }), out, next);
+
+      expect(out.status).toHaveBeenCalledWith(204);
+      expect(out.end).toHaveBeenCalled();
+      expect(out.send).not.toHaveBeenCalled();
+      expect(out.setHeader).not.toHaveBeenCalledWith('Content-Type', expect.anything());
+    });
+
+    it.each([
+      ['a missing type', {}, { programId: PROGRAM_ID }],
+      ['an unknown type', { type: 'all' }, { programId: PROGRAM_ID }],
+      ['a past-tab wire status on Current Mentees', { type: 'current', status: 'pending' }, { programId: PROGRAM_ID }],
+      ['a Current Mentees display status on Past Mentees', { type: 'past', status: 'applied' }, { programId: PROGRAM_ID }],
+      ['an unknown status', { type: 'current', status: 'bogus' }, { programId: PROGRAM_ID }],
+      ['a repeated status', { type: 'current', status: ['accepted', 'declined'] }, { programId: PROGRAM_ID }],
+      ['a program id that is not a UUID', { type: 'current' }, { programId: 'not-a-uuid' }],
+    ])('rejects %s with a 400 before reading upstream', async (_case, query, params) => {
+      const read = vi.spyOn(MentorshipAdminService.prototype, 'exportProgramMentees');
+
+      await controller.exportProgramMentees(buildReq(query, params), exportRes(), next);
+
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
+      expect(read).not.toHaveBeenCalled();
+    });
+
+    it('passes a service failure to next without sending anything', async () => {
+      const error = new Error('boom');
+      vi.spyOn(MentorshipAdminService.prototype, 'exportProgramMentees').mockRejectedValue(error);
+      const out = exportRes();
+
+      await controller.exportProgramMentees(buildReq({ type: 'current' }, { programId: PROGRAM_ID }), out, next);
+
+      expect(next).toHaveBeenCalledWith(error);
+      expect(out.send).not.toHaveBeenCalled();
+      expect(out.setHeader).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getProgramMentors', () => {
     const emptyPage = { data: [], total: 0 };
 
@@ -850,6 +953,7 @@ describe('MentorshipAdminController', () => {
       ['getProgram', 'getProgramPage', { programId: PROGRAM_ID }, {}],
       ['getEnrollTemplate', 'getEnrollTemplate', { programId: PROGRAM_ID }, {}],
       ['getProgramMentees', 'getProgramMentees', { programId: PROGRAM_ID }, { type: 'current' }],
+      ['exportProgramMentees', 'exportProgramMentees', { programId: PROGRAM_ID }, { type: 'current' }],
       ['getProgramMentors', 'getProgramMentors', { programId: PROGRAM_ID }, {}],
       ['getMentorCandidates', 'getMentorCandidates', { programId: PROGRAM_ID }, {}],
       ['getProgramTerms', 'getProgramTerms', { programId: PROGRAM_ID }, {}],

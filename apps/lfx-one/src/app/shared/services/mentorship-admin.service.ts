@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpResponse } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import {
   MENTORSHIP_ENROLL_LOGO_AUTO_RETRY_DELAY_MS,
@@ -16,6 +16,8 @@ import {
   MentorshipAdminMentorCandidatesResponse,
   MentorshipAdminMentorInviteRequest,
   MentorshipAdminMentorStatusUpdate,
+  MentorshipAdminMenteeStatusFilter,
+  MentorshipAdminMenteeTab,
   MentorshipAdminMenteesQuery,
   MentorshipAdminMenteesResponse,
   MentorshipAdminMentorsQuery,
@@ -77,6 +79,23 @@ export class MentorshipAdminService {
     return this.http
       .get<MentorshipAdminMenteesResponse>(`/api/mentorship/admin/programs/${encodeURIComponent(programId)}/mentees`, { params: httpParams })
       .pipe(this.logFailure('getProgramMentees'));
+  }
+
+  /**
+   * Every application on one mentee tab of the program with one of that tab's statuses, or all of them, as a CSV file.
+   * A 204 (no body) means no mentee matches. The file name is in `Content-Disposition`.
+   */
+  public exportProgramMentees(
+    programId: string,
+    tab: MentorshipAdminMenteeTab,
+    status: MentorshipAdminMenteeStatusFilter | null
+  ): Observable<HttpResponse<Blob>> {
+    let httpParams = strictHttpParams().set('type', tab);
+    if (status) httpParams = httpParams.set('status', status);
+
+    return this.http
+      .get(`/api/mentorship/admin/programs/${encodeURIComponent(programId)}/mentees/export`, { params: httpParams, responseType: 'blob', observe: 'response' })
+      .pipe(this.logFailure('exportProgramMentees'));
   }
 
   /** One page of a program's mentors, filtered and searched upstream. */

@@ -380,6 +380,104 @@ describe('MentorshipAdminService.getProgramMentees', () => {
   });
 });
 
+describe('MentorshipAdminService.exportProgramMentees', () => {
+  let service: InstanceType<typeof MentorshipAdminService>;
+  const header = 'Name,Email,Status,Term,Tasks Submitted,Applied On,Updated On';
+
+  beforeEach(() => {
+    service = new MentorshipAdminService();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('reads every page of current applications, 50 at a time, and writes one CSV row per application', async () => {
+    const firstPage = Array.from({ length: 50 }, (_, i) => applicationRow(`a${i}`));
+    const lastPage = [applicationRow('a50', { name: 'Grace, Hopper', status: 'accepted', tasks_submitted: 2 })];
+    const spy = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockImplementation(async (_req, _service, path: string, _method, query) => {
+      if (path !== `${PROGRAM_PATH}/applications`) throw new Error(`unexpected path ${path}`);
+      const data = (query as { offset: number }).offset === 0 ? firstPage : lastPage;
+      return { data, meta: { total: 51, limit: 50, offset: (query as { offset: number }).offset } } as never;
+    });
+
+    const result = await service.exportProgramMentees(buildReq(), PROGRAM_ID, 'current', 'accepted');
+
+    expect(spy.mock.calls.map((call) => call[4])).toEqual([
+      { type: 'current', status: 'accepted', limit: 50, offset: 0 },
+      { type: 'current', status: 'accepted', limit: 50, offset: 50 },
+    ]);
+    expect(result.count).toBe(51);
+    const lines = result.csv.split('\r\n');
+    expect(lines).toHaveLength(52);
+    expect(lines[0]).toBe(header);
+    expect(lines[1]).toBe('Ada Mentee,ada@mentee.example,Applied,Fall,1 of 2,2026-08-01,2026-08-02');
+    expect(lines[51]).toBe('"Grace, Hopper",ada@mentee.example,Accepted,Fall,2 of 2,2026-08-01,2026-08-02');
+  });
+
+  it('labels a pending application with every task in as Tasks Completed and sends that status as tasks_submitted', async () => {
+    const spy = stubProgramReads({
+      [`${PROGRAM_PATH}/applications`]: { data: [applicationRow('a1', { status: 'pending', tasks_submitted: 2 })], meta: { total: 1, limit: 50, offset: 0 } },
+    });
+
+    const result = await service.exportProgramMentees(buildReq(), PROGRAM_ID, 'current', 'tasks-completed');
+
+    expect(spy.mock.calls[0][4]).toMatchObject({ status: 'tasks_submitted' });
+    expect(result.csv.split('\r\n')[1]).toContain(',Tasks Completed,');
+  });
+
+  it('reads Past Mentees with type past and labels a pending application Pending, as that tab shows it', async () => {
+    const spy = stubProgramReads({
+      [`${PROGRAM_PATH}/applications`]: { data: [applicationRow('a1', { status: 'pending', tasks_submitted: 2 })], meta: { total: 1, limit: 50, offset: 0 } },
+    });
+
+    const result = await service.exportProgramMentees(buildReq(), PROGRAM_ID, 'past', 'pending');
+
+    expect(spy.mock.calls[0][4]).toMatchObject({ type: 'past', status: 'pending' });
+    expect(result.csv.split('\r\n')[1]).toContain(',Pending,');
+  });
+
+  it('sends no status for all, and neutralises a cell that would run as a formula', async () => {
+    const spy = stubProgramReads({
+      [`${PROGRAM_PATH}/applications`]: { data: [applicationRow('a1', { name: '=HYPERLINK("x")' })], meta: { total: 1, limit: 50, offset: 0 } },
+    });
+
+    const result = await service.exportProgramMentees(buildReq(), PROGRAM_ID, 'current', undefined);
+
+    expect(spy.mock.calls[0][4]).toMatchObject({ type: 'current', status: undefined });
+    expect(result.csv.split('\r\n')[1].startsWith(`"'=HYPERLINK(""x"")"`)).toBe(true);
+  });
+
+  it('returns only the header when nothing matches, or when the caller has no mentorship record', async () => {
+    stubProgramReads({ [`${PROGRAM_PATH}/applications`]: { data: [], meta: { total: 0, limit: 50, offset: 0 } } });
+    expect(await service.exportProgramMentees(buildReq(), PROGRAM_ID, 'past', 'graduated')).toEqual({ csv: header, count: 0, truncated: false });
+
+    vi.restoreAllMocks();
+    stubProgramReads({
+      '/mentorship/v1/me': {},
+      [`${PROGRAM_PATH}/applications`]: new MicroserviceError('Unauthorized', 401, 'UNAUTHORIZED', { errorBody: { error: 'local user is not provisioned' } }),
+    });
+    expect(await service.exportProgramMentees(buildReq(), PROGRAM_ID, 'current', undefined)).toEqual({ csv: header, count: 0, truncated: false });
+  });
+
+  it('says the export is truncated when upstream still has rows after the page cap', async () => {
+    const page = Array.from({ length: 50 }, (_, i) => applicationRow(`a${i}`));
+    vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockResolvedValue({ data: page, meta: { total: 3000, limit: 50, offset: 0 } } as never);
+
+    const result = await service.exportProgramMentees(buildReq(), PROGRAM_ID, 'past', undefined);
+
+    expect(result.count).toBe(2500);
+    expect(result.truncated).toBe(true);
+    expect(result.csv.split('\r\n')).toHaveLength(2501);
+  });
+
+  it('passes a 403 from a caller who does not manage the program on', async () => {
+    stubProgramReads({ [`${PROGRAM_PATH}/applications`]: new MicroserviceError('Forbidden', 403, 'FORBIDDEN') });
+
+    await expect(service.exportProgramMentees(buildReq(), PROGRAM_ID, 'past', undefined)).rejects.toMatchObject({ statusCode: 403 });
+  });
+});
+
 describe('MentorshipAdminService.getApplicationTasks', () => {
   afterEach(() => {
     vi.restoreAllMocks();

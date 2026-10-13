@@ -4,8 +4,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
-  createDefaultMentorshipTerm,
   MENTORSHIP_ENROLL_CURRENT_LOGO_LABEL,
+  createEmptyCustomMentorshipPrerequisite,
   createEmptyMentorshipEnrollForm,
   MENTORSHIP_ENROLL_DESCRIPTION_MAX,
   MENTORSHIP_ENROLL_LOGO_EMPTY,
@@ -176,16 +176,16 @@ describe('getMentorshipEnrollStepErrors', () => {
     expect(errors.logoFileName).toBe('Logo is required.');
   });
 
-  it('gives a new enroll form a term that still passes setup date checks', () => {
+  it('starts a new enroll form with no terms, so the admin adds one before the setup step passes', () => {
     const form = createEmptyMentorshipEnrollForm();
     form.skills = ['GO'];
 
-    expect(getMentorshipEnrollStepErrors('setup', form).terms).toBeUndefined();
+    expect(form.terms).toEqual([]);
+    expect(getMentorshipEnrollStepErrors('setup', form).terms).toBe('Add at least one program term.');
   });
 
   it('requires at least one skill, term, required prerequisite, and accepted terms', () => {
     const form = createEmptyMentorshipEnrollForm();
-    form.terms = [];
 
     expect(getMentorshipEnrollStepErrors('setup', form).skills).toBe('Add at least one skill.');
     expect(getMentorshipEnrollStepErrors('setup', form).terms).toBe('Add at least one program term.');
@@ -456,21 +456,32 @@ describe('toMentorshipEnrollCreateRequest', () => {
     });
   });
 
-  it('keeps prerequisites in order, appends the challenge URL and nulls an empty due date', () => {
+  it('keeps prerequisites in order, appends the challenge URL, nulls an empty due date and keeps the custom flag', () => {
     const request = toMentorshipEnrollCreateRequest(
       validForm({
         prerequisites: [
-          { id: 'p1', name: ' Resume ', description: ' Upload it. ', required: true, requireFile: true, dueDate: '2027-02-15' },
-          { id: 'p2', name: 'Challenge', description: 'Solve it.', required: false, challengeUrl: ' https://code.example/c ', dueDate: '' },
+          { id: 'p1', name: ' Resume ', description: ' Upload it. ', required: true, requireFile: true, custom: true, dueDate: '2027-02-15' },
+          { id: 'p2', name: 'Challenge', description: 'Solve it.', required: false, custom: false, challengeUrl: ' https://code.example/c ', dueDate: '' },
+          { id: 'p3', name: 'Essay', description: 'Why you.', required: true, dueDate: '' },
         ],
       }),
       project
     );
 
     expect(request.prerequisites).toEqual([
-      { name: 'Resume', description: 'Upload it.', required: true, requireFile: true, dueDate: '2027-02-15' },
-      { name: 'Challenge', description: 'Solve it.\n\nChallenge: https://code.example/c', required: false, requireFile: false, dueDate: null },
+      { name: 'Resume', description: 'Upload it.', required: true, requireFile: true, dueDate: '2027-02-15', custom: true },
+      { name: 'Challenge', description: 'Solve it.\n\nChallenge: https://code.example/c', required: false, requireFile: false, dueDate: null, custom: false },
+      { name: 'Essay', description: 'Why you.', required: true, requireFile: false, dueDate: null, custom: false },
     ]);
+  });
+
+  it('sends custom as false for the standard prerequisites and true for an added card', () => {
+    const standard = createEmptyMentorshipEnrollForm().prerequisites;
+    const prerequisites = [...standard, { ...createEmptyCustomMentorshipPrerequisite(), name: 'Essay', description: 'Why you.' }];
+
+    const request = toMentorshipEnrollCreateRequest(validForm({ prerequisites }), project);
+
+    expect(request.prerequisites.map((item) => [item.name, item.custom])).toEqual([...standard.map((item) => [item.name, false]), ['Essay', true]]);
   });
 
   it('never carries the logo, import or status fields', () => {
@@ -614,11 +625,10 @@ describe('formFromMentorshipEnrollImport', () => {
     expect(form.prerequisites.at(-1)).not.toBe(imported.prerequisites[1]);
   });
 
-  it('starts with one default term, no logo and the terms not accepted', () => {
+  it('starts with no terms, no logo and the terms not accepted', () => {
     const form = formFromMentorshipEnrollImport('mp_1', imported);
 
-    expect(form.terms).toHaveLength(1);
-    expect(form.terms[0]).toEqual(createDefaultMentorshipTerm());
+    expect(form.terms).toEqual([]);
     expect(form.logoFileName).toBe('');
     expect(form.logoPreviewUrl).toBe('');
     expect(form.termsAccepted).toBe(false);
@@ -706,12 +716,27 @@ describe('formFromMentorshipEnrollEdit', () => {
     expect(getMentorshipEnrollStepErrors('setup', form, { terms: [oneDay], prerequisites: [] }).terms).toBeUndefined();
   });
 
-  it('still checks a past date the admin changed', () => {
+  it('lets the admin move a saved term to a past date', () => {
     const form = formFromMentorshipEnrollEdit(data, [term]);
     const edit = { terms: [term], prerequisites: [] };
     const changed = { ...term, applicationStartDate: '2020-01-02' };
 
-    expect(getMentorshipEnrollStepErrors('setup', { ...form, terms: [changed] }, edit).terms).toBe('Application start date cannot be before today.');
+    expect(getMentorshipEnrollStepErrors('setup', { ...form, terms: [changed] }, edit).terms).toBeUndefined();
+  });
+
+  it('still checks a past date on a term the admin added', () => {
+    const form = formFromMentorshipEnrollEdit(data, [term]);
+    const edit = { terms: [term], prerequisites: [] };
+    const added = {
+      id: 'term-new-1',
+      name: 'Fall',
+      startDate: '2099-09-01',
+      endDate: '2099-11-01',
+      applicationStartDate: '2020-01-02',
+      applicationEndDate: '2099-08-01',
+    };
+
+    expect(getMentorshipEnrollStepErrors('setup', { ...form, terms: [term, added] }, edit).terms).toBe('Application start date cannot be before today.');
   });
 });
 
@@ -754,6 +779,7 @@ describe('toMentorshipEnrollUpdateRequest', () => {
       repositoryUrl: 'https://repo.example',
       skills: ['Go'],
       technologies: ['Go', 'Rust'],
+      terms: [term('term-new-1', 'Spring')],
     });
 
   it('is the create body without terms acceptance when no term is saved yet', () => {
@@ -882,6 +908,27 @@ describe('getMentorshipTermDateErrors', () => {
     expect(getMentorshipTermDateErrors(original, new Date(2026, 8, 7), original)).toEqual({});
   });
 
+  it('lets an edited saved term take past dates but keeps the ordering rules', () => {
+    const original = {
+      startDate: '2026-09-01',
+      endDate: '2026-12-01',
+      applicationStartDate: '2026-07-01',
+      applicationEndDate: '2026-08-31',
+    };
+    const today = new Date(2026, 8, 7);
+
+    expect(
+      getMentorshipTermDateErrors(
+        { ...original, startDate: '2026-08-01', applicationStartDate: '2026-06-01', applicationEndDate: '2026-07-15' },
+        today,
+        original
+      )
+    ).toEqual({});
+    expect(getMentorshipTermDateErrors({ ...original, applicationEndDate: '2026-06-15' }, today, original)).toEqual({
+      applicationEndDate: 'Application end date must be on or after the application start date.',
+    });
+  });
+
   it('rejects a past application start when no original term is supplied', () => {
     const term = {
       startDate: '2027-03-01',
@@ -893,24 +940,10 @@ describe('getMentorshipTermDateErrors', () => {
     expect(getMentorshipTermDateErrors(term, new Date(2026, 11, 2)).applicationStartDate).toBe('Application start date cannot be before today.');
   });
 
-  it('builds a default enroll term that stays valid on the given day', () => {
-    const today = new Date(2026, 8, 8);
-    const term = createDefaultMentorshipTerm(today);
-
-    expect(getMentorshipTermDateErrors(term, today)).toEqual({});
-    expect(term.startDate).toBe('2026-12-01');
-    expect(term.endDate).toBe('2027-02-01');
-    expect(term.applicationStartDate).toBe('2026-09-09');
-    expect(term.applicationEndDate).toBe('2026-11-30');
-  });
-
   it('accepts a client-local today when the host calendar is one day ahead', () => {
-    const clientToday = new Date(2026, 8, 7);
     const serverToday = new Date(2026, 8, 8);
-    const term = createDefaultMentorshipTerm(clientToday);
 
     expect(mentorshipDateOnlyFloor(serverToday)).toBe('2026-09-07');
-    expect(getMentorshipTermDateErrors(term, serverToday)).toEqual({});
     expect(
       getMentorshipTermDateErrors(
         {

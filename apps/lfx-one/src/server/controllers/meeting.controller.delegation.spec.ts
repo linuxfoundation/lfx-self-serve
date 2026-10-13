@@ -121,7 +121,7 @@ describe('MeetingController.getMeetingRegistrants — delegation', () => {
     await controller.getMeetingRegistrants(buildReq({}), res, next);
 
     expect(meetingSvc.getAuthorizedRegistrantsForImport).not.toHaveBeenCalled();
-    expect(meetingSvc.getMeetingRegistrants).toHaveBeenCalledWith(expect.anything(), MEETING_UID, false, undefined, false);
+    expect(meetingSvc.getMeetingRegistrants).toHaveBeenCalledWith(expect.anything(), MEETING_UID, false, undefined, false, undefined, undefined, false);
     expect(res.json).toHaveBeenCalledWith([]);
     expect(next).not.toHaveBeenCalled();
   });
@@ -137,7 +137,7 @@ describe('MeetingController.getMeetingRegistrants — delegation', () => {
 
     await controller.getMeetingRegistrants(buildReq({ fail_on_partial: 'true' }), res, next);
 
-    expect(meetingSvc.getAuthorizedCompleteRegistrants).toHaveBeenCalledWith(expect.anything(), MEETING_UID, false, undefined);
+    expect(meetingSvc.getAuthorizedCompleteRegistrants).toHaveBeenCalledWith(expect.anything(), MEETING_UID, false, undefined, false);
     expect(meetingSvc.getMeetingRegistrants).not.toHaveBeenCalled();
     expect(meetingSvc.getAuthorizedRegistrantsForImport).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith([{ uid: 'r1', email: 'a@example.com' }]);
@@ -152,7 +152,7 @@ describe('MeetingController.getMeetingRegistrants — delegation', () => {
 
     await controller.getMeetingRegistrants(buildReq({ fail_on_partial: 'true', include_rsvp: 'true', occurrence_id: 'occ-1' }), res, vi.fn());
 
-    expect(meetingSvc.getAuthorizedCompleteRegistrants).toHaveBeenCalledWith(expect.anything(), MEETING_UID, true, 'occ-1');
+    expect(meetingSvc.getAuthorizedCompleteRegistrants).toHaveBeenCalledWith(expect.anything(), MEETING_UID, true, 'occ-1', false);
   });
 
   it('propagates a 403 from the authorized complete-roster read via next, without responding', async () => {
@@ -315,9 +315,16 @@ describe('MeetingController.getMyMeetingRegistrants', () => {
 
     // failOnPartial=true: the join page treats this roster's length as an authoritative
     // denominator (GH-1731), so a partial page fetch must surface as an error.
-    expect(meetingSvc.getMeetingRegistrants).toHaveBeenCalledWith(expect.anything(), MEETING_UID, false, undefined, true, undefined, {
-      bearerToken: M2M_TOKEN,
-    });
+    expect(meetingSvc.getMeetingRegistrants).toHaveBeenCalledWith(
+      expect.anything(),
+      MEETING_UID,
+      false,
+      undefined,
+      true,
+      undefined,
+      { bearerToken: M2M_TOKEN },
+      false
+    );
     expect(res.json).toHaveBeenCalledWith([{ uid: 'r1' }]);
     expect(next).not.toHaveBeenCalled();
   });
@@ -386,9 +393,16 @@ describe('MeetingController.getMyMeetingRegistrants', () => {
     // The gate check ran under the M2M token, never the caller's own token.
     expect(meetingSvc.getMeetingRegistrantsForUser).toHaveBeenCalledWith(expect.anything(), MEETING_UID, 'user@example.com', undefined, M2M_TOKEN);
     // The roster fetch carried the M2M token via options, not by mutating req.bearerToken.
-    expect(meetingSvc.getMeetingRegistrants).toHaveBeenCalledWith(expect.anything(), MEETING_UID, false, undefined, true, undefined, {
-      bearerToken: M2M_TOKEN,
-    });
+    expect(meetingSvc.getMeetingRegistrants).toHaveBeenCalledWith(
+      expect.anything(),
+      MEETING_UID,
+      false,
+      undefined,
+      true,
+      undefined,
+      { bearerToken: M2M_TOKEN },
+      false
+    );
     // req.bearerToken was never swapped to the M2M token at any point the caller's own token was needed.
     expect(req.bearerToken).toBe(USER_TOKEN);
   });

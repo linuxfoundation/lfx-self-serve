@@ -99,9 +99,8 @@
           <th>Public</th>
           <th></th>
         } @else if (isMaintainer()) {
-          <!-- Maintainer View Headers (7 columns) -->
-          <th>Name</th>
-          <th>List Email</th>
+          <!-- Maintainer View Headers (6 columns) -->
+          <th>Mailing List</th>
           <th class="min-w-[300px]">Description</th>
           <th>Public</th>
           <th>Posting</th>
@@ -148,7 +147,6 @@
                     aria-label="Open on Groups.io"
                     (click)="$event.stopPropagation()"
                     [attr.data-testid]="'mailing-list-groups-io-link-' + mailingList.uid">
-                    <!-- 9px icon matches the maintainer-row external link -->
                     <i class="fa-light fa-external-link text-[9px]"></i>
                   </a>
                 }
@@ -212,38 +210,51 @@
           </td>
         } @else if (isMaintainer()) {
           <!-- Maintainer View Row -->
-          <!-- Name Column -->
+          <!-- Mailing List Column -->
           <td>
-            @if (isBoardMember()) {
-              <span class="text-sm font-medium" [attr.data-testid]="'mailing-list-title-' + mailingList.uid">
-                {{ mailingList.title || mailingList.group_name || '-' }}
+            <div class="flex flex-col gap-1">
+              <div class="flex items-center gap-2">
+                @if (isBoardMember()) {
+                  <span class="text-sm font-medium" [attr.data-testid]="'mailing-list-title-' + mailingList.uid">
+                    {{ mailingList.title || mailingList.group_name || '-' }}
+                  </span>
+                } @else {
+                  <a
+                    [routerLink]="mailingList.viewCommands"
+                    [queryParams]="mailingList.linkQueryParams"
+                    class="lfx-table-name-link text-sm"
+                    [attr.data-testid]="'mailing-list-title-' + mailingList.uid">
+                    {{ mailingList.title || mailingList.group_name || '-' }}
+                  </a>
+                }
+                @if (mailingList.isMember) {
+                  <span
+                    class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700"
+                    pTooltip="You are a member of this mailing list"
+                    tooltipPosition="top"
+                    tabindex="0"
+                    [attr.data-testid]="'mailing-list-member-badge-' + mailingList.uid">
+                    <i class="fa-solid fa-circle-check text-[9px]" aria-hidden="true"></i>
+                    Member
+                  </span>
+                }
+              </div>
+              <!-- Inline flow (not flex) so the icon hugs the last line of a wrapped email; ! modifiers beat the unlayered `td a` link colors in table.component.scss -->
+              <span class="text-xs text-gray-500">
+                {{ mailingList | groupEmail }}
+                @if (mailingList.groupsIoUrl) {
+                  <a
+                    [href]="mailingList.groupsIoUrl"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="ml-1.5 inline-block align-middle !text-gray-600 !no-underline transition-colors hover:!text-gray-900"
+                    aria-label="Open on Groups.io"
+                    (click)="$event.stopPropagation()"
+                    [attr.data-testid]="'mailing-list-groups-io-link-' + mailingList.uid">
+                    <i class="fa-light fa-external-link-alt !text-sm"></i>
+                  </a>
+                }
               </span>
-            } @else {
-              <a
-                [routerLink]="mailingList.viewCommands"
-                [queryParams]="mailingList.linkQueryParams"
-                class="lfx-table-name-link text-sm"
-                [attr.data-testid]="'mailing-list-title-' + mailingList.uid">
-                {{ mailingList.title || mailingList.group_name || '-' }}
-              </a>
-            }
-          </td>
-
-          <!-- List Email Column -->
-          <td>
-            <div class="flex items-center gap-1.5">
-              <span class="text-xs">{{ mailingList | groupEmail }}</span>
-              @if (mailingList.groupsIoUrl) {
-                <a
-                  [href]="mailingList.groupsIoUrl"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label="Open on Groups.io"
-                  (click)="$event.stopPropagation()"
-                  [attr.data-testid]="'mailing-list-groups-io-link-' + mailingList.uid">
-                  <i class="fa-light fa-external-link-alt !text-[9px]"></i>
-                </a>
-              }
             </div>
           </td>
 
@@ -300,16 +311,44 @@
           <!-- Mailing List Column -->
           <td>
             <div class="flex flex-col gap-1">
-              @if (isBoardMember()) {
-                <span class="text-sm font-medium">
-                  {{ mailingList.title || mailingList.group_name || '-' }}
-                </span>
-              } @else {
-                <a [routerLink]="mailingList.viewCommands" [queryParams]="mailingList.linkQueryParams" class="lfx-table-name-link text-sm">
-                  {{ mailingList.title || mailingList.group_name || '-' }}
-                </a>
-              }
-              <span class="text-xs text-gray-500">{{ mailingList | groupEmail }}</span>
+              <div class="flex items-center gap-2">
+                @if (isBoardMember()) {
+                  <span class="text-sm font-medium">
+                    {{ mailingList.title || mailingList.group_name || '-' }}
+                  </span>
+                } @else {
+                  <a [routerLink]="mailingList.viewCommands" [queryParams]="mailingList.linkQueryParams" class="lfx-table-name-link text-sm">
+                    {{ mailingList.title || mailingList.group_name || '-' }}
+                  </a>
+                }
+                @if (mailingList.isMember) {
+                  <span
+                    class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700"
+                    pTooltip="You are a member of this mailing list"
+                    tooltipPosition="top"
+                    tabindex="0"
+                    [attr.data-testid]="'mailing-list-member-badge-' + mailingList.uid">
+                    <i class="fa-solid fa-circle-check text-[9px]" aria-hidden="true"></i>
+                    Member
+                  </span>
+                }
+              </div>
+              <!-- Inline flow (not flex) so the icon hugs the last line of a wrapped email; ! modifiers beat the unlayered `td a` link colors in table.component.scss -->
+              <span class="text-xs text-gray-500">
+                {{ mailingList | groupEmail }}
+                @if (mailingList.groupsIoUrl) {
+                  <a
+                    [href]="mailingList.groupsIoUrl"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="ml-1.5 inline-block align-middle !text-gray-600 !no-underline transition-colors hover:!text-gray-900"
+                    aria-label="Open on Groups.io"
+                    (click)="$event.stopPropagation()"
+                    [attr.data-testid]="'mailing-list-groups-io-link-' + mailingList.uid">
+                    <i class="fa-light fa-external-link-alt !text-sm"></i>
+                  </a>
+                }
+              </span>
             </div>
           </td>
 
@@ -394,7 +433,7 @@
     <!-- Empty Message Template -->
     <ng-template #emptymessage>
       <tr>
-        <td [attr.colspan]="isMeLens() ? 5 : isMaintainer() ? 7 : isBoardMember() ? 5 : 6">
+        <td [attr.colspan]="isMeLens() ? 5 : isMaintainer() ? 6 : isBoardMember() ? 5 : 6">
           @if (isFiltered()) {
             <lfx-empty-state
               [withCard]="false"

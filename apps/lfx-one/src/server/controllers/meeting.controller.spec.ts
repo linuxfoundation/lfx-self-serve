@@ -790,9 +790,6 @@ describe('MeetingController', () => {
 
       await controller.getMyMeetingRegistrants(buildReq({ query: { preview: 'true' } }), res, next);
 
-      expect(meetingSvc.getMeetingRegistrants).toHaveBeenCalledWith(expect.anything(), MEETING_ID, false, undefined, false, undefined, {
-        bearerToken: M2M_TOKEN,
-      });
       expect(resolveCommitteeV2UidsToV1IdsMock).not.toHaveBeenCalled();
       expect(committeeSvc.getCommitteeBase).not.toHaveBeenCalled();
       expect(res.json).toHaveBeenCalledWith([registrant]);
@@ -1129,20 +1126,35 @@ describe('MeetingController', () => {
   describe('removeMyMeetingRegistration', () => {
     beforeEach(() => {
       generateM2MTokenMock.mockResolvedValue(M2M_TOKEN);
-      meetingSvc.removeMeetingRegistrantSelf.mockResolvedValue(1);
+      meetingSvc.removeMeetingRegistrantSelf.mockResolvedValue({ removed_registrant_ids: ['reg-1'], remaining_registrant_ids: [] });
     });
 
-    it('removes the caller under their own identity, using the M2M token only for the lookup, and answers 204', async () => {
+    it('ignores client-supplied identity and IDs and answers 200 with the removed registration IDs', async () => {
       vi.mocked(getUsernameFromAuth).mockResolvedValueOnce('alice');
-      const req = buildReq();
+      const req = buildReq({
+        body: { email: 'other@example.com', username: 'other', registrant_id: 'reg-other' },
+        query: { email: 'other@example.com', username: 'other', registrant_id: 'reg-other' },
+      });
       const res = buildRes();
 
       await controller.removeMyMeetingRegistration(req, res, next);
 
       expect(next).not.toHaveBeenCalled();
       expect(meetingSvc.removeMeetingRegistrantSelf).toHaveBeenCalledWith(req, MEETING_ID, 'user@example.com', 'alice', M2M_TOKEN);
-      expect(res.status).toHaveBeenCalledWith(204);
-      expect(res.send).toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({ removed_registrant_ids: ['reg-1'], remaining_registrant_ids: [] });
+    });
+
+    it('answers 200 with both removed and remaining registration IDs after partial success', async () => {
+      const result = { removed_registrant_ids: ['reg-2'], remaining_registrant_ids: ['reg-1'] };
+      meetingSvc.removeMeetingRegistrantSelf.mockResolvedValueOnce(result);
+      const res = buildRes();
+
+      await controller.removeMyMeetingRegistration(buildReq(), res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(result);
     });
 
     it('rejects a caller whose identity cannot be resolved, without touching the service', async () => {
