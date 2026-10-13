@@ -9,8 +9,8 @@ import { environment } from '@environments/environment';
 import { DEFAULT_MEETING_TYPE_CONFIG, MEETING_STATUS_LABELS, MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
 import {
-  MeetingAdminLink,
   Meeting,
+  MeetingAdminLink,
   MeetingCommitteeLink,
   MeetingPrivacyState,
   MeetingStatusKind,
