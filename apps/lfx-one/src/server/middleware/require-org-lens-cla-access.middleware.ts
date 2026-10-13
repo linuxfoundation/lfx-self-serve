@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NextFunction, Request, Response } from 'express';
+import type { NextFunction, Request, Response } from 'express';
 
 import { assertOrgLensClaRead } from '../helpers/org-lens-cla-access.helper';
 import { assertOrgUid } from '../helpers/org-uid.helper';

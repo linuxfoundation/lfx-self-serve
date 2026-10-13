@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { ORG_CLA_ONLY_ORGS_MAX } from '@lfx-one/shared/constants';
-import { OrgResolveResponse, RoleGrantsResponse } from '@lfx-one/shared/interfaces';
-import { Request } from 'express';
+import type { OrgResolveResponse, RoleGrantsResponse } from '@lfx-one/shared/interfaces';
+import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
 import { claServiceBaseUrl } from '../helpers/cla-service-url.helper';
