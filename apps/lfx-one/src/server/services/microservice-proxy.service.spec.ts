@@ -98,14 +98,20 @@ describe('MicroserviceProxyService.buildEndpoint path-traversal guard (linuxfoun
     service = new MicroserviceProxyService();
   });
 
-  it.each(['/projects/../secrets', '/projects/./x', '/a?b=1', '/a#b'])('rejects a malicious path %s before calling the API client', async (path) => {
+  it.each([
+    '/projects/../secrets',
+    '/projects/./x',
+    '/a?b=1',
+    '/a#b',
+    '/projects/%2e%2e/x',
+    '/projects/%2E%2E/x',
+    '/p/.%2e/x',
+    '/p/%2e./x',
+    '/p/%2e/x',
+    '/p/..\\secrets',
+  ])('rejects a malicious path %s before calling the API client', async (path) => {
     await expect(service.proxyRequest(req, 'LFX_V2_SERVICE', path, 'GET')).rejects.toBeInstanceOf(ServiceValidationError);
     expect(request).not.toHaveBeenCalled();
-  });
-
-  it('does not reject an encoded dot-segment, since fetch() never collapses it', async () => {
-    await service.proxyRequest(req, 'LFX_V2_SERVICE', '/projects/%2e%2e/x', 'GET');
-    expect(request).toHaveBeenCalledTimes(1);
   });
 
   it('does not reject a normal UUID path', async () => {

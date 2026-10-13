@@ -163,11 +163,17 @@ export class MicroserviceProxyService {
    * call to an arbitrary upstream path (linuxfoundation/lfx-self-serve-ops#434). Reject here so
    * that gap can't reopen even if an individual controller's own validation is incomplete.
    *
-   * Only literal `.`/`..` segments are rejected — not compared via WHATWG `URL` normalization —
-   * because several callers interpolate raw, unencoded values (e.g. `committee.service.ts`'s
-   * `inviteId`) that legitimately contain characters (spaces, non-ASCII, `^`, backtick, `{`/`}`)
-   * the URL parser re-encodes without that being an attack; comparing the full normalized pathname
-   * would reject those as a local 400 instead of letting them reach upstream as before.
+   * Dot segments are rejected only (not the full WHATWG `URL`-normalized pathname) because
+   * several callers interpolate raw, unencoded values (e.g. `committee.service.ts`'s `inviteId`)
+   * that legitimately contain characters (spaces, non-ASCII, `^`, backtick, `{`/`}`) the URL
+   * parser re-encodes without that being an attack; comparing the full normalized pathname would
+   * reject those as a local 400 instead of letting them reach upstream as before. But the segment
+   * check itself must match what `fetch()`'s WHATWG URL parser actually treats as a dot segment:
+   * per https://url.spec.whatwg.org/#double-dot-path-segment, `%2e` (any case) is equivalent to a
+   * literal `.` — so `%2e%2e`, `.%2e`, `%2e.` all resolve the same as `..` — and `\` is treated as
+   * `/` for special schemes (http/https), so a caller can smuggle a traversal segment past a
+   * `/`-only split. A literal-only, `/`-only check was flagged by multiple independent reviewers
+   * (dealako, Copilot, Cursor Bugbot, Greptile) on PR #3511 as still bypassable via either vector.
    */
   private buildEndpoint(baseUrl: string, path: string): string {
     if (path.includes('?') || path.includes('#')) {
@@ -177,7 +183,12 @@ export class MicroserviceProxyService {
       });
     }
 
-    if (path.split('/').some((segment) => segment === '.' || segment === '..')) {
+    const isDotSegment = (segment: string): boolean => {
+      const decoded = segment.replace(/%2e/gi, '.');
+      return decoded === '.' || decoded === '..';
+    };
+
+    if (path.split(/[/\\]/).some(isDotSegment)) {
       throw ServiceValidationError.forField('path', 'Upstream path must not contain traversal segments', {
         operation: 'proxy_build_endpoint',
         service: 'microservice_proxy_service',

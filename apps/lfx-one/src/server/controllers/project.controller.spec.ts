@@ -29,6 +29,9 @@ const { computeIsFoundationMock, generateM2MTokenMock, isUuidMock, meetingSvc, p
     getProjectSettings: vi.fn(),
     updateProjectStaff: vi.fn(),
     updateProjectPermissions: vi.fn(),
+    getProjectDocumentMetadata: vi.fn(),
+    getProjectDocumentStream: vi.fn(),
+    deleteProjectDocument: vi.fn(),
   },
 }));
 
@@ -1004,5 +1007,88 @@ describe('ProjectController.getProjectPermissions uid validation', () => {
     expect(projectSvc.getProjectSettings).toHaveBeenCalledWith(req, PROJECT_UID);
     expect(res.json).toHaveBeenCalledWith(settings);
     expect(next).not.toHaveBeenCalled();
+  });
+});
+
+// linuxfoundation/lfx-self-serve-ops#434 — uid and documentId are both interpolated directly
+// into the upstream request path, so a non-UUID value for either must be rejected before
+// projectService is ever called (flagged by @dealako on PR #3511 as missing coverage).
+describe('ProjectController.downloadProjectDocument uid/documentId validation', () => {
+  let controller: ProjectController;
+
+  function buildDocumentReqRes(uid: string, documentId: string) {
+    const req = { params: { uid, documentId }, path: `/projects/${uid}/documents/${documentId}` } as any;
+    const res = { setHeader: vi.fn(), headersSent: false, writableEnded: false, end: vi.fn() } as any;
+    const next = vi.fn();
+    return { req, res, next };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new ProjectController();
+    isUuidMock.mockImplementation((value: string) => value === PROJECT_UID);
+  });
+
+  it('rejects a non-UUID uid without calling the project service', async () => {
+    const { req, res, next } = buildDocumentReqRes('../committees/some-committee', PROJECT_UID);
+
+    await controller.downloadProjectDocument(req, res, next);
+
+    expect(projectSvc.getProjectDocumentMetadata).not.toHaveBeenCalled();
+    expect(projectSvc.getProjectDocumentStream).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it('rejects a non-UUID documentId without calling the project service', async () => {
+    const { req, res, next } = buildDocumentReqRes(PROJECT_UID, '../../secrets');
+
+    await controller.downloadProjectDocument(req, res, next);
+
+    expect(projectSvc.getProjectDocumentMetadata).not.toHaveBeenCalled();
+    expect(projectSvc.getProjectDocumentStream).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+});
+
+describe('ProjectController.deleteProjectDocument uid/documentId validation', () => {
+  let controller: ProjectController;
+
+  function buildDeleteDocumentReqRes(uid: string, documentId: string) {
+    const req = {
+      params: { uid, documentId },
+      query: { type: 'folder' },
+      path: `/projects/${uid}/documents/${documentId}`,
+    } as any;
+    const res = { json: vi.fn(), status: vi.fn(() => res), send: vi.fn() } as any;
+    const next = vi.fn();
+    return { req, res, next };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new ProjectController();
+    isUuidMock.mockImplementation((value: string) => value === PROJECT_UID);
+  });
+
+  it('rejects a non-UUID uid without calling the project service', async () => {
+    const { req, res, next } = buildDeleteDocumentReqRes('../committees/some-committee', PROJECT_UID);
+
+    await controller.deleteProjectDocument(req, res, next);
+
+    expect(projectSvc.deleteProjectDocument).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it('rejects a non-UUID documentId without calling the project service', async () => {
+    const { req, res, next } = buildDeleteDocumentReqRes(PROJECT_UID, '../../secrets');
+
+    await controller.deleteProjectDocument(req, res, next);
+
+    expect(projectSvc.deleteProjectDocument).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
   });
 });
