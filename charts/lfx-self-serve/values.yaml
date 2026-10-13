@@ -639,6 +639,13 @@ environment:
   GW_SUPABASE_ANON_KEY:
     value:
 
+  # Gatewaze host-session mode (#2738): LFX One gets the Gatewaze session server-side with
+  # GoTrue's id_token grant and keeps it in Valkey, so the browser holds no Gatewaze token. Off
+  # by default. Also needs LFX_GATEWAZE_EMBED_ENABLED, SESSION_STORE_ENABLED with VALKEY_URL, the
+  # GW_SUPABASE_* pair above and PCC_AUTH0_SECRET. See docs/architecture/backend/gw-host-session.md.
+  LFX_GATEWAZE_HOST_SESSION:
+    value:
+
   # Where the embed's "Sign in with LFID" button sends the user. The host appends a return_url
   # carrying a single-use nonce and adopts the returned session only if that nonce comes back.
   GW_LFID_START_URL:

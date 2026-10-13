@@ -433,6 +433,25 @@ export enum ServerFeatureFlag {
   GatewazeEmbedEnabled = 'LFX_GATEWAZE_EMBED_ENABLED',
 
   /**
+   * Gatewaze host-session mode (#2738): LFX One gets the Gatewaze (GoTrue) session server-to-server
+   * with GoTrue's `id_token` grant and keeps it in Valkey, so the browser never holds a Gatewaze
+   * token. OFF keeps the embed on the LFID bridge sign-in and `/api/gw` byte-for-byte.
+   *
+   * Requires `GatewazeEmbedEnabled`, the session store (`SESSION_STORE_ENABLED` with `VALKEY_URL`),
+   * `GW_SUPABASE_URL`, a publishable `GW_SUPABASE_ANON_KEY` and `PCC_AUTH0_SECRET`.
+   * `resolveGatewazeHostSessionConfig` (`gatewaze-session.service.ts`) checks them all together; with
+   * any missing, host-session mode is off however this flag is set.
+   *
+   * Rolling-update overlap is harmless. A page served by a flag-on pod whose calls land on a
+   * flag-off pod gets the uniform 404, which the embed reads as `unavailable` and retries. Nothing
+   * is half-written: a stored session is only ever read by a flag-on pod, and it expires on its own
+   * TTL if the flag goes off.
+   *
+   * OFF by default. Turn it on in dev first; staging and prod stay on the bridge until it is proven.
+   */
+  GatewazeHostSession = 'LFX_GATEWAZE_HOST_SESSION',
+
+  /**
    * Mint the EasyCLA corporate-signing `return_url` as `/org/{orgUid}/easycla/{claGroupId}?signed=1`
    * (`orgEasyclaReturnPath`, spec 050 address scheme, lfx-self-serve#2743) instead of the leftover
    * `/org/easycla/{claGroupId}?org={orgUid}&signed=1` (`legacyOrgEasyclaReturnPath`).

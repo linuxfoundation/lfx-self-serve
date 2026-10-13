@@ -195,7 +195,8 @@ export interface TokenRequestParams {
   clientId: string;
   clientSecret: string;
   refreshToken: string;
-  audience: string;
+  /** Omitted from the request body when absent (an OIDC-only refresh that returns an ID token). */
+  audience?: string;
   scope?: string;
 }
 
@@ -207,7 +208,8 @@ export interface RefreshTokenExchangeOptions {
   issuerBaseUrl: string;
   clientId: string;
   clientSecret: string;
-  audience: string;
+  /** Omitted from the request body when absent. */
+  audience?: string;
   /** Requested scope(s) to include in the token exchange body. */
   scope?: string;
   /**
@@ -216,6 +218,25 @@ export interface RefreshTokenExchangeOptions {
    */
   sessionKey?: string;
 }
+
+/** The refresh grant returned an ID token. */
+export interface IdTokenExchangeOk {
+  outcome: 'ok';
+  /** Never cached, logged or stored: it is handed straight to the next call. */
+  idToken: string;
+}
+
+/**
+ * The refresh grant did not return an ID token.
+ * - `ended`: the IdP refused the refresh token (`invalid_grant`, or a 400/401/403), so the LFX session is over.
+ * - `unavailable`: the answer is unknown (network error, timeout, 5xx, missing configuration, or a 200 with no `id_token`).
+ */
+export interface IdTokenExchangeFailure {
+  outcome: 'ended' | 'unavailable';
+}
+
+/** Result of `exchangeRefreshTokenForIdToken`. */
+export type IdTokenExchangeResult = IdTokenExchangeOk | IdTokenExchangeFailure;
 
 /**
  * Error response from email to username NATS lookup
