@@ -2171,6 +2171,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     emailStaging: WritableSignal<'idle' | 'staging' | 'done' | 'error'>;
     emailStagingMessage: WritableSignal<string>;
     emailStagingDraftUrl: Signal<string>;
+    emailStagingWarnings: Signal<readonly string[]>;
     canStageEmail: Signal<boolean>;
     onStageEmailSend(): Promise<void>;
     // Read-only now: the form is the source of truth and these derive from it, so a test
@@ -3630,6 +3631,66 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailStagingDraftUrl()).toBe(expected);
       const anchor = fixture.nativeElement.querySelector('[data-testid="campaigns-email-stage-draft-link"]') as HTMLAnchorElement | null;
       expect(anchor?.getAttribute('href') ?? '').toBe(expected);
+    });
+
+    it('shows a warning when the draft was created without its hero image, and keeps the staging a success', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTab.set('implementation');
+      internals().selectedEmailTemplateId.set('hs-1');
+      fixture.detectChanges();
+
+      internals().emailBriefId.set(audience.briefId);
+      internals().onAudienceComposed(audience);
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+      vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(
+        of({
+          campaigns: [],
+          errors: [],
+          platformResults: [
+            {
+              platform: 'hubspot',
+              ok: true,
+              campaignId: 'c1',
+              hubspotUrl: 'https://app.hubspot.com/email/123/edit/c1/settings',
+              warnings: ['The hero image could not be added to the email: the image could not be downloaded from the event page.'],
+            },
+          ],
+        } as unknown as CampaignJobOutcome)
+      );
+
+      await internals().onStageEmailSend();
+      fixture.detectChanges();
+
+      expect(internals().emailStaging()).toBe('done');
+      expect(internals().emailStagingWarnings()).toHaveLength(1);
+      const shown = fixture.nativeElement.querySelector('[data-testid="campaigns-email-stage-warning"]') as HTMLElement | null;
+      expect(shown?.textContent).toContain('hero image could not be added');
+    });
+
+    it('shows no warning block when the draft was created in full', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTab.set('implementation');
+      internals().selectedEmailTemplateId.set('hs-1');
+      fixture.detectChanges();
+
+      internals().emailBriefId.set(audience.briefId);
+      internals().onAudienceComposed(audience);
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+      vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(
+        of({
+          campaigns: [],
+          errors: [],
+          platformResults: [{ platform: 'hubspot', ok: true, campaignId: 'c1' }],
+        } as unknown as CampaignJobOutcome)
+      );
+
+      await internals().onStageEmailSend();
+      fixture.detectChanges();
+
+      expect(internals().emailStagingWarnings()).toEqual([]);
+      expect(fixture.nativeElement.querySelector('[data-testid="campaigns-email-stage-warnings"]')).toBeNull();
     });
 
     /** An ABSENT platformResults must still succeed — it is optional on the contract. */
