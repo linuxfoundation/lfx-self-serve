@@ -30,6 +30,17 @@
     </span>
     <div class="flex items-center gap-2 flex-wrap">
       <span class="text-base font-bold text-gray-900">{{ initiative().name }}</span>
+      <!-- Org or project the initiative is run on behalf of; personal shows nothing. Not focusable: the card itself is the button. -->
+      @if (attributionTooltip(); as tooltip) {
+        <i
+          class="text-sm text-gray-400"
+          [class]="attributionIcon()"
+          role="img"
+          [attr.aria-label]="tooltip"
+          [pTooltip]="tooltip"
+          tooltipPosition="top"
+          data-testid="initiative-card-attribution"></i>
+      }
       @switch (initiative().status) {
         @case ('published') {
           <span class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">Published</span>

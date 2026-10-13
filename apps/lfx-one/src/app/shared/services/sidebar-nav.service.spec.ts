@@ -233,8 +233,10 @@ describe('SidebarNavService', () => {
       canWrite.set(true);
       const items = service.sidebarItems();
       const itemLabels = labels(items);
-      expect(findByLink(items, `/${lens}/initiatives`)).toEqual(expect.objectContaining({ label: 'Initiatives', testId: `sidebar-${lens}-initiatives` }));
-      expect(itemLabels.indexOf('Initiatives')).toBe(itemLabels.indexOf('Documents') + 1);
+      expect(findByLink(items, `/${lens}/initiatives`)).toEqual(
+        expect.objectContaining({ label: 'Crowdfunding Initiatives', testId: `sidebar-${lens}-initiatives` })
+      );
+      expect(itemLabels.indexOf('Crowdfunding Initiatives')).toBe(itemLabels.indexOf('Documents') + 1);
     }
   });
 
@@ -503,9 +505,11 @@ describe('SidebarNavService', () => {
     orgWriterSet.set(new Set([orgUid]));
     const items = service.sidebarItems();
     const itemLabels = labels(items);
-    expect(findByLink(items, '/org/acme-inc/initiatives')).toEqual(expect.objectContaining({ label: 'Initiatives', testId: 'sidebar-org-initiatives' }));
+    expect(findByLink(items, '/org/acme-inc/initiatives')).toEqual(
+      expect.objectContaining({ label: 'Crowdfunding Initiatives', testId: 'sidebar-org-initiatives' })
+    );
     expect(itemLabels.indexOf('ROI Metrics')).toBe(itemLabels.indexOf('Projects') + 1);
-    expect(itemLabels.indexOf('Initiatives')).toBe(itemLabels.indexOf('ROI Metrics') + 1);
+    expect(itemLabels.indexOf('Crowdfunding Initiatives')).toBe(itemLabels.indexOf('ROI Metrics') + 1);
   });
 
   it('inserts Formations between Events and Mailing Lists on foundation lens for a full-access user when the flag is on', () => {
