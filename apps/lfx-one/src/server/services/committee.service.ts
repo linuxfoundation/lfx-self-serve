@@ -1478,9 +1478,13 @@ export class CommitteeService {
             }
           ),
         ]);
+        // An empty body is a failed lookup, not an opt-out: throwing keeps it from being cached as a denial.
+        if (!committee || !settings) {
+          throw new Error(`Empty committee or settings response for Board group ${uid}`);
+        }
         // The membership index's committee_category tag lags a recategorisation, and upstream keeps a
         // stored flag until the group's next settings write — so the live category must be Board too.
-        return isBoardCategory(committee?.category) && settings?.members_can_view_social_listening === true;
+        return isBoardCategory(committee.category) && settings.members_can_view_social_listening === true;
       })
     );
 

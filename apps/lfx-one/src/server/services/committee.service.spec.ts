@@ -1675,7 +1675,10 @@ describe('CommitteeService — Board Social Listening access (lfx-self-serve-ops
     /** Routes upstream reads by path: membership query, base committee, settings. */
     function upstream(
       memberships: string[],
-      committees: Record<string, { category?: string; enabled?: boolean; baseError?: Error; settingsError?: Error }>
+      committees: Record<
+        string,
+        { category?: string; enabled?: boolean; baseError?: Error; settingsError?: Error; emptyBase?: boolean; emptySettings?: boolean }
+      >
     ): void {
       proxyRequest.mockImplementation((_req: unknown, _svc: string, path: string) => {
         if (path === '/query/resources') {
@@ -1684,9 +1687,11 @@ describe('CommitteeService — Board Social Listening access (lfx-self-serve-ops
         const [, , uid, sub] = path.split('/');
         const committee = committees[uid];
         if (sub === 'settings') {
-          return committee.settingsError ? Promise.reject(committee.settingsError) : Promise.resolve({ members_can_view_social_listening: committee.enabled });
+          if (committee.settingsError) return Promise.reject(committee.settingsError);
+          return Promise.resolve(committee.emptySettings ? null : { members_can_view_social_listening: committee.enabled });
         }
-        return committee.baseError ? Promise.reject(committee.baseError) : Promise.resolve({ uid, category: committee.category });
+        if (committee.baseError) return Promise.reject(committee.baseError);
+        return Promise.resolve(committee.emptyBase ? null : { uid, category: committee.category });
       });
     }
 
@@ -1738,6 +1743,15 @@ describe('CommitteeService — Board Social Listening access (lfx-self-serve-ops
       upstream(['board-1', 'board-2'], { 'board-1': { baseError: error }, 'board-2': { category: 'Board', enabled: false } });
 
       await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).rejects.toBe(error);
+    });
+
+    it.each([
+      ['committee', { 'board-1': { category: 'Board', enabled: true, emptyBase: true } }],
+      ['settings', { 'board-1': { category: 'Board', enabled: true, emptySettings: true } }],
+    ])('treats an empty %s response as a failed lookup rather than an opt-out', async (_which, committees) => {
+      upstream(['board-1'], committees);
+
+      await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).rejects.toThrow('Empty committee or settings response');
     });
 
     it('denies without reading settings when the user sits on no Board group of the foundation', async () => {

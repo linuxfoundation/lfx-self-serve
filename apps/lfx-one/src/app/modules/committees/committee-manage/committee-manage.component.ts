@@ -107,6 +107,8 @@ export class CommitteeManageComponent {
     this.formValue();
     return this.isStepValid(this.currentStep());
   });
+  /** Selected category, so the settings step can show category-scoped toggles. */
+  public readonly selectedCategory = computed((): string | null => this.formValue().category ?? null);
   // Live Step 3 draft, passed down so Step 4's invite dialog validates against what's about to be
   // saved rather than a possibly-stale persisted committee (LFXV2-2606 review).
   public readonly organizationRequirements = computed(() => ({
