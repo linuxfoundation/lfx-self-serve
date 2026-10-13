@@ -5,6 +5,7 @@ import {
   ACCESS_CHECK_BATCH_SIZE,
   CHAT_WEBHOOK_URL_MAX_LENGTH,
   COMMITTEE_CATEGORY_BOARD,
+  HTTP_HEADERS,
   isBoardCategory,
   PENDING_APPLICATION_DISCOVERY_TIMEOUT_MS,
   SLACK_INCOMING_WEBHOOK_URL_PATTERN,
@@ -1464,10 +1465,13 @@ export class CommitteeService {
     const results = await Promise.allSettled(
       boardUids.map(async (uid) => {
         // Settings and category are separate upstream records, so read them in an order that can't pair
-        // states that never coexisted: settings, then the live category, then settings again. A grant
-        // needs the flag on in both reads and Board in between. The membership index's
-        // committee_category tag lags a recategorisation, so the live category is read rather than trusted.
-        if (!(await this.readSocialListeningFlag(req, uid, m2mToken))) {
+        // states that never coexisted: settings, then the live committee, then settings again. A grant
+        // needs the flag on with the same settings revision in both reads, so it held throughout the
+        // committee read, and that read must show Board on this foundation. The membership index's
+        // committee_category and project_uid tags lag upstream changes, so the live committee is read
+        // rather than trusted.
+        const before = await this.readSocialListeningFlag(req, uid, m2mToken);
+        if (!before.enabled) {
           return false;
         }
         const committee = await this.getCommitteeBase(req, uid);
@@ -1475,9 +1479,11 @@ export class CommitteeService {
         if (!committee) {
           throw new Error(`Empty committee or settings response for Board group ${uid}`);
         }
-        // The membership index's project_uid tag can lag a committee moving between projects, so bind the
-        // live committee to the requested foundation too.
-        return committee.project_uid === foundationUid && isBoardCategory(committee.category) && (await this.readSocialListeningFlag(req, uid, m2mToken));
+        if (committee.project_uid !== foundationUid || !isBoardCategory(committee.category)) {
+          return false;
+        }
+        const after = await this.readSocialListeningFlag(req, uid, m2mToken);
+        return after.enabled && after.etag === before.etag;
       })
     );
 
@@ -2507,9 +2513,13 @@ export class CommitteeService {
     });
   }
 
-  /** Reads a Board group's members_can_view_social_listening with M2M; an empty body throws (failed lookup, not an opt-out). */
-  private async readSocialListeningFlag(req: Request, committeeUid: string, m2mToken: string): Promise<boolean> {
-    const settings = await this.microserviceProxy.proxyRequest<CommitteeSettingsData>(
+  /**
+   * Reads a Board group's members_can_view_social_listening with M2M, with the settings ETag so two reads
+   * can prove nothing wrote the setting in between. An empty body or a missing ETag throws (failed
+   * lookup, not an opt-out).
+   */
+  private async readSocialListeningFlag(req: Request, committeeUid: string, m2mToken: string): Promise<{ enabled: boolean; etag: string }> {
+    const response = await this.microserviceProxy.proxyRequestWithResponse<CommitteeSettingsData>(
       req,
       'LFX_V2_SERVICE',
       `/committees/${committeeUid}/settings`,
@@ -2519,10 +2529,11 @@ export class CommitteeService {
       undefined,
       { bearerToken: m2mToken }
     );
-    if (!settings) {
+    const etag = response.headers?.[HTTP_HEADERS.ETAG.toLowerCase()] ?? response.headers?.[HTTP_HEADERS.ETAG];
+    if (!response.data || !etag) {
       throw new Error(`Empty committee or settings response for Board group ${committeeUid}`);
     }
-    return settings.members_can_view_social_listening === true;
+    return { enabled: response.data.members_can_view_social_listening === true, etag: String(etag) };
   }
 
   /**

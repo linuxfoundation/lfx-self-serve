@@ -18,6 +18,7 @@ import { PENDING_APPLICATION_DISCOVERY_TIMEOUT_MS } from '../../../../../package
 // wired into this app's vitest config, so runtime (non-type-only) imports need stubs.
 const {
   proxyRequest,
+  proxyRequestWithResponse,
   addAccessToResources,
   addAccessToResource,
   checkSingleAccessStrict,
@@ -30,6 +31,7 @@ const {
   getEffectiveEmail,
 } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
+  proxyRequestWithResponse: vi.fn(),
   addAccessToResources: vi.fn(),
   // getCommitteeById's single-resource variant (LFXV2-3080 tests) — distinct from the plural
   // list-oriented addAccessToResources every other describe block in this file already uses.
@@ -67,6 +69,7 @@ vi.mock('@lfx-one/shared/constants', async () => {
   return {
     COMMITTEE_CATEGORY_BOARD: board.COMMITTEE_CATEGORY_BOARD,
     isBoardCategory: board.isBoardCategory,
+    HTTP_HEADERS: { ETAG: 'ETag' },
     SLACK_INCOMING_WEBHOOK_URL_PATTERN: /^https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9]+\/B[A-Za-z0-9]+\/[A-Za-z0-9]+$/,
     CHAT_WEBHOOK_URL_MAX_LENGTH: 500,
     ACCESS_CHECK_BATCH_SIZE: 100,
@@ -77,6 +80,7 @@ vi.mock('@lfx-one/shared/constants', async () => {
 vi.mock('./microservice-proxy.service', () => ({
   MicroserviceProxyService: class {
     public proxyRequest = proxyRequest;
+    public proxyRequestWithResponse = proxyRequestWithResponse;
   },
 }));
 vi.mock('./access-check.service', () => ({
@@ -1661,6 +1665,7 @@ describe('CommitteeService — Board Social Listening access (lfx-self-serve-ops
 
   beforeEach(async () => {
     proxyRequest.mockReset();
+    proxyRequestWithResponse.mockReset();
     fetchWithETag.mockReset();
     updateWithETag.mockReset();
     addAccessToResource.mockReset().mockImplementation((_req: Request, committee: Committee) => Promise.resolve(committee));
@@ -1684,6 +1689,8 @@ describe('CommitteeService — Board Social Listening access (lfx-self-serve-ops
           enabled?: boolean;
           /** Successive settings answers, for changes between the two settings reads; the last one repeats. */
           enabledSequence?: boolean[];
+          /** Successive settings ETags; defaults to an unchanged revision. */
+          etagSequence?: string[];
           baseError?: Error;
           settingsError?: Error;
           emptyBase?: boolean;
@@ -1705,6 +1712,13 @@ describe('CommitteeService — Board Social Listening access (lfx-self-serve-ops
         }
         if (committee.baseError) return Promise.reject(committee.baseError);
         return Promise.resolve(committee.emptyBase ? null : { uid, category: committee.category, project_uid: committee.projectUid ?? FOUNDATION_UID });
+      });
+      // Settings are read with their ETag; route through the same table so call order stays in proxyRequest.mock.calls.
+      proxyRequestWithResponse.mockImplementation(async (...args: unknown[]) => {
+        const data = await proxyRequest(...args);
+        const uid = String(args[2]).split('/')[2];
+        const etag = committees[uid]?.etagSequence?.shift() ?? 'settings-rev-1';
+        return { data, headers: { etag }, status: 200, statusText: 'OK' };
       });
     }
 
@@ -1731,6 +1745,12 @@ describe('CommitteeService — Board Social Listening access (lfx-self-serve-ops
 
       await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
       expect(proxyRequest.mock.calls.some((call) => call[2] === '/committees/board-1')).toBe(false);
+    });
+
+    it('denies when the setting was rewritten between the two reads even if it reads true both times (ABA)', async () => {
+      upstream(['board-1'], { 'board-1': { category: 'Board', enabled: true, etagSequence: ['settings-rev-1', 'settings-rev-3'] } });
+
+      await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
     });
 
     it('denies a Board group that has moved to another project while the membership index still tags the foundation', async () => {
