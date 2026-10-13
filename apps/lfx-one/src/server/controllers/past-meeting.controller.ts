@@ -46,6 +46,10 @@ export class PastMeetingController {
    * enrichment. Participant counts (`participant_count`, `attended_count`,
    * `individual_registrants_count`, `committee_members_count`) are lazy-loaded per card
    * on the client via `meeting-rsvp-details` when the card enters the viewport.
+   *
+   * When a signed-in user is present, each row also gets the viewer's `user_attended` from a single
+   * scan of that user's participant records. It stays undefined for anonymous callers or when the
+   * scan fails, so the list still loads without the "Attended" label.
    */
   public async getPastMeetings(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_past_meetings', {

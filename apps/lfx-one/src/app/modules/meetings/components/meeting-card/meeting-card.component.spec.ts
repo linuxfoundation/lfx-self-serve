@@ -662,6 +662,17 @@ describe('MeetingCardComponent — remove myself', () => {
     expect(component.canLeaveMeeting()).toBe(false);
   });
 
+  it.each([
+    ['a past meeting the viewer attended', { user_attended: true }, { past: true }, true],
+    ['a past meeting the viewer did not attend', { user_attended: false }, { past: true }, false],
+    ['a past meeting with unknown attendance', {}, { past: true }, false],
+    ['an upcoming meeting', { user_attended: true }, {}, false],
+  ])('reports the attended label for %s', async (_label, attendance, options, expected) => {
+    const component = await mount({ ...INVITEE, ...attendance } as Meeting, options);
+
+    expect(component.userAttended()).toBe(expected);
+  });
+
   it('keeps the action hidden on a card rebuilt after the list refetched a stale invited flag', async () => {
     removedIds.set(new Set(['meeting-1']));
 

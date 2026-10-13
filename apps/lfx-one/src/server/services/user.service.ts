@@ -784,6 +784,12 @@ export class UserService {
     if (loaded) {
       this.applyUserAttendance(meetings, participants);
     }
+
+    logger.debug(req, 'enrich_past_meetings_attendance', 'Enriched past meetings with viewer attendance', {
+      meeting_count: meetings.length,
+      participant_count: participants.length,
+      attendance_loaded: loaded,
+    });
   }
 
   /**
