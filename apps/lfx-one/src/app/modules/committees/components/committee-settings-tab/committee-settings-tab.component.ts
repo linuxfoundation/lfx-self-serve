@@ -161,7 +161,7 @@ export class CommitteeSettingsTabComponent {
           public: c.public || false,
           sso_group_enabled: c.sso_group_enabled || false,
           show_meeting_attendees: c.show_meeting_attendees || false,
-          members_can_view_social_listening: c.members_can_view_social_listening || false,
+          members_can_view_social_listening: isBoardCategory(c.category) && !!c.members_can_view_social_listening,
           chat_channel: c.chat_channel ?? null,
           website: c.website ?? null,
           ...(preserveWebhookEdit ? {} : { chat_webhook_url: null }),

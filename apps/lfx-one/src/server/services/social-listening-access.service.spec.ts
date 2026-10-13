@@ -6,7 +6,7 @@
 import '@angular/compiler';
 
 import type { Request } from 'express';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { getPersonas, checkProjectWriter, getProjectIdBySlug, getProjectById, canBoardMemberViewSocialListening, getUsernameFromAuth, computeIsFoundation } =
   vi.hoisted(() => ({
@@ -38,6 +38,7 @@ vi.mock('@lfx-one/shared/utils', () => ({ computeIsFoundation: (...args: unknown
 vi.mock('./logger.service', () => ({ logger: { warning: vi.fn(), debug: vi.fn() } }));
 
 const { SocialListeningAccessService } = await import('./social-listening-access.service');
+const { SOCIAL_LISTENING_BOARD_ACCESS_CACHE_TTL_MS } = await import('../../../../../packages/shared/src/constants/social-listening.constants');
 
 const req = {} as Request;
 
@@ -138,6 +139,26 @@ describe('SocialListeningAccessService.getAccess', () => {
 
     await expect(service.getAccess(req, 'tlf')).resolves.toEqual({ canView: false, reason: 'none' });
     await expect(service.getAccess(req, 'tlf')).resolves.toEqual({ canView: true, reason: 'board' });
+  });
+
+  describe('cache expiry', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('asks again once the cached Board answer is older than the TTL, so a removed member loses access', async () => {
+      vi.useFakeTimers();
+      await expect(service.getAccess(req, 'tlf')).resolves.toEqual({ canView: true, reason: 'board' });
+
+      canBoardMemberViewSocialListening.mockResolvedValue(false);
+      vi.advanceTimersByTime(SOCIAL_LISTENING_BOARD_ACCESS_CACHE_TTL_MS - 1);
+      await expect(service.getAccess(req, 'tlf')).resolves.toEqual({ canView: true, reason: 'board' });
+      expect(canBoardMemberViewSocialListening).toHaveBeenCalledTimes(1);
+
+      vi.advanceTimersByTime(1);
+      await expect(service.getAccess(req, 'tlf')).resolves.toEqual({ canView: false, reason: 'none' });
+      expect(canBoardMemberViewSocialListening).toHaveBeenCalledTimes(2);
+    });
   });
 
   it('fails closed on an upstream error and does not remember the failure', async () => {
