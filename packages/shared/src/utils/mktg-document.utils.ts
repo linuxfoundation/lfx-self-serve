@@ -28,10 +28,22 @@ export function findMktgDocumentStatus(documentMarkdown: string): string {
     if (!MKTG_DOCUMENT_STATUS_LEAD_REGEX.test(line.slice(0, match.index))) {
       continue;
     }
-    return match[1]
-      .replace(/\s+/g, ' ')
-      .trim()
-      .replace(/[\s.,;:]+$/, '');
+    return stripTrailingPunctuation(match[1].replace(/\s+/g, ' ').trim());
   }
   return '';
+}
+
+/**
+ * Drops the `.`, `,`, `;`, `:` and spaces a label line may end with (the
+ * sentence-final period after an `ED-reviewed — Jane Doe, 2026-10-12.`). A
+ * character walk rather than a `/[\s.,;:]+$/` replace: that regex is not
+ * anchored at the start, so a label made of many such characters would make
+ * it backtrack quadratically (CodeQL js/polynomial-redos).
+ */
+function stripTrailingPunctuation(text: string): string {
+  let end = text.length;
+  while (end > 0 && ' .,;:'.includes(text[end - 1])) {
+    end -= 1;
+  }
+  return text.slice(0, end);
 }

@@ -266,8 +266,8 @@ describe('validateFoundationMessageEnvelope — schema + structure gates', () =>
 
   it('re-enforces the §1a hard word caps (G1) instead of trusting the agent wrapper', () => {
     const envelope = validEnvelope();
-    // 14 words × 7 = 98 words, past the §3 elevator-pitch cap of 90.
-    const overLong = 'This elevator pitch runs well past the contract hard cap of ninety words. '.repeat(7).trim();
+    // 13 words × 8 = 104 words, well past the §3 elevator-pitch cap of 90.
+    const overLong = 'This elevator pitch runs well past the contract hard cap of ninety words. '.repeat(8).trim();
     envelope['derivatives'] = { ...derivatives(), elevator_pitch: overLong };
     envelope['document_markdown'] = `${document()}\n\n${overLong}`;
 

@@ -322,11 +322,13 @@ export const MKTG_DOCUMENT_STATUS_LABEL_REGEX = /((?:Draft(?: v\d+)?|ED-reviewed
 /**
  * What may precede a status label on its line for the match to count: only
  * Markdown decoration (heading marks, blockquote, table pipe, emphasis,
- * list dash, whitespace) — or a prefix naming the status, e.g. `Status:` or
- * `| Status |`. Prose that merely contains "draft —" mid-sentence is not a
- * status line.
+ * list dash, whitespace) — or that decoration around the word `Status`
+ * itself (`Status:`, `**Status:**`, `| Status |`), with only a colon, a
+ * dash, a pipe, emphasis or whitespace between the word and the label.
+ * Prose is never a status line, whether it merely contains "draft —"
+ * mid-sentence or mentions the word "status" somewhere before it.
  */
-export const MKTG_DOCUMENT_STATUS_LEAD_REGEX = /^(?:[\s#>|*_-]*|.*\bstatus\b.*)$/i;
+export const MKTG_DOCUMENT_STATUS_LEAD_REGEX = /^(?:[\s#>|*_-]*|[\s#>|*_-]*status[\s*_:|—–-]*)$/i;
 
 /** Prefix of the reviewed label — the one status that is no longer a draft. */
 export const MKTG_DOCUMENT_STATUS_REVIEWED_PREFIX = 'ED-reviewed';

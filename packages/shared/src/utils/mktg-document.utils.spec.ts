@@ -19,6 +19,8 @@ describe('findMktgDocumentStatus — the review label read from the document', (
 
   it('keeps the reviewer and date of an ED-reviewed label and drops trailing punctuation', () => {
     expect(findMktgDocumentStatus('**Status:** ED-reviewed — Jane Doe, 2026-10-12.')).toBe('ED-reviewed — Jane Doe, 2026-10-12');
+    expect(findMktgDocumentStatus('Status: Draft — pre-filled; .')).toBe('Draft — pre-filled');
+    expect(findMktgDocumentStatus(`Status: Draft — pre-filled${'.'.repeat(5000)}`)).toBe('Draft — pre-filled');
   });
 
   it('accepts a decorated standalone label line', () => {
@@ -42,6 +44,11 @@ describe('findMktgDocumentStatus — the review label read from the document', (
 
   it('ignores a mid-sentence "draft —" in prose', () => {
     expect(findMktgDocumentStatus('This first draft — pre-filled from the LFX record — still needs the tagline lock.')).toBe('');
+  });
+
+  it('ignores prose that mentions "status" before a mid-sentence "draft —"', () => {
+    expect(findMktgDocumentStatus('The project status is that this draft — from your answers still needs a tagline lock.')).toBe('');
+    expect(findMktgDocumentStatus('Review status pending: the draft — pre-filled — goes to the ED next week.')).toBe('');
   });
 
   it('returns the first label when the document states the status more than once', () => {

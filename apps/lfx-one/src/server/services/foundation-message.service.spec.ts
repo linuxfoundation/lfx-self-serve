@@ -264,8 +264,8 @@ describe('FoundationMessageService.getResult', () => {
   });
 
   it('suppresses an envelope whose derivatives break the §1a word-count locks (never surfaced as "word-count-locked")', async () => {
-    // 14 words × 7 = 98 words, past the §3 elevator-pitch cap of 90.
-    const overLongPitch = 'This elevator pitch runs well past the contract hard cap of ninety words. '.repeat(7).trim();
+    // 13 words × 8 = 104 words, well past the §3 elevator-pitch cap of 90.
+    const overLongPitch = 'This elevator pitch runs well past the contract hard cap of ninety words. '.repeat(8).trim();
     const document = `${buildDocument()}\n${overLongPitch}\n`;
     const forged = buildEnvelope({
       document_markdown: document,
