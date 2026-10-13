@@ -128,22 +128,26 @@ writer-guard state to decide.
 1. **The card CTA** (exists, #2252). `MeetingCardComponent.initMeetingDetailUrl` links a past
    meeting to `/details` when `meeting.organizer` is true, and to `/meetings/:id` otherwise.
 2. **A guard on `/details`** (N-03, [#3265](https://github.com/linuxfoundation/lfx-self-serve/issues/3265)).
-   Today the route has no `canActivate` of its own; the parent guards (`authGuard`, plus
-   `projectQueryParamGuard` and, on the flat mount, `lensRedirectGuard`) prove a session and set
-   project context, but none checks access to this meeting. N-03 adds a `canActivate` that resolves `organizer` for the requested meeting through the
-   BFF and decides as below.
+   `pastMeetingOrganizerGuard` (`shared/guards/past-meeting-organizer.guard.ts`) runs after
+   `authGuard` on the route. The parent guards (`authGuard`, plus `projectQueryParamGuard` and, on
+   the flat mount, `lensRedirectGuard`) prove a session and set project context. Only this guard
+   checks access to the meeting: it reads `organizer` from `GET /api/past-meetings/:uid` and decides
+   as below. It retries a temporary failure once, as `projectQueryParamGuard` does. If that fails
+   too, the viewer gets the app's `/unavailable` retry view in place, and the URL is kept, so Try
+   again re-runs the guard. A non-organizer is redirected to the public page by the meeting's
+   composite id (`getPastMeetingResourceId`), the id the public page loads a past meeting by.
 3. **Not a redirect from the public page.** A Manage-role viewer may open `/meetings/:id` directly
    and gets the public page. That is a legal state (`state-matrix.md` § Not an access dimension).
 
 ### Who sees what on `/details`
 
-| Viewer                                           | Outcome                                                                                                                                                |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Anonymous                                        | Unchanged: Express classifies the path as `auth: required` and redirects to `/login?returnTo=…`; after sign-in they are a signed-in viewer below.      |
-| Signed in, `organizer` true (Manage)             | The admin page.                                                                                                                                        |
-| Signed in, `organizer` false (View role)         | **Redirect to `/meetings/:id`**, the public page, which applies its own `full_access` tiering. Not a 404 and not an empty page.                        |
-| Meeting not found (400 / 403 / 404)              | `/meetings/not-found`, matching the public page.                                                                                                       |
-| Lookup fails for any other reason (network, 5xx) | A load-error state with retry, matching the public page's `meetingLoadFailed`. Never the admin page: the route stays closed until the lookup succeeds. |
+| Viewer                                           | Outcome                                                                                                                                           |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Anonymous                                        | Unchanged: Express classifies the path as `auth: required` and redirects to `/login?returnTo=…`; after sign-in they are a signed-in viewer below. |
+| Signed in, `organizer` true (Manage)             | The admin page.                                                                                                                                   |
+| Signed in, `organizer` false (View role)         | **Redirect to `/meetings/:id`**, the public page, which applies its own `full_access` tiering. Not a 404 and not an empty page.                   |
+| Meeting not found (400 / 403 / 404)              | `/meetings/not-found`, matching the public page.                                                                                                  |
+| Lookup fails for any other reason (network, 5xx) | The `/unavailable` retry view in place, after one automatic retry. Never the admin page: the route stays closed until the lookup succeeds.        |
 
 Today a View-role viewer who reaches `/details` sees the whole participants table (name, email,
 organization, job title, committee voting status, attendance, invitation) whenever the upstream read allows it, with none of the
