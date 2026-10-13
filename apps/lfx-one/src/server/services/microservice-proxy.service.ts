@@ -199,15 +199,22 @@ export class MicroserviceProxyService {
 
     // Mirror the WHATWG URL parser's own preprocessing before splitting into segments: strip every
     // ASCII tab/newline anywhere, then trim leading/trailing C0 controls/space from the whole string.
-    // The trim is split into two anchored, non-global regexes rather than a single `^X+|X+$`
-    // alternation — that shape is exactly what CodeQL's polynomial-ReDoS query (js/polynomial-redos)
-    // flags, even though both halves here are otherwise unremarkable.
-    const normalized = path
-      .replace(/[\t\n\r]/g, '')
-      // eslint-disable-next-line no-control-regex
-      .replace(/^[\u0000-\u0020]+/, '')
-      // eslint-disable-next-line no-control-regex
-      .replace(/[\u0000-\u0020]+$/, '');
+    // Written with manual character scans rather than regexes -- CodeQL's polynomial-ReDoS query
+    // (js/polynomial-redos) flags even a plain anchored `+` quantifier over a character class
+    // (e.g. `/^[\x00-\x20]+/`) once it runs against attacker-controlled `path` input, so there is
+    // no regex shape here left for it to flag.
+    let stripped = '';
+    for (let i = 0; i < path.length; i++) {
+      const code = path.charCodeAt(i);
+      if (code !== 0x09 && code !== 0x0a && code !== 0x0d) {
+        stripped += path[i];
+      }
+    }
+    let start = 0;
+    let end = stripped.length;
+    while (start < end && stripped.charCodeAt(start) <= 0x20) start++;
+    while (end > start && stripped.charCodeAt(end - 1) <= 0x20) end--;
+    const normalized = stripped.slice(start, end);
 
     if (normalized.split(/[/\\]/).some(isDotSegment)) {
       throw ServiceValidationError.forField('path', 'Upstream path must not contain traversal segments', {
