@@ -341,6 +341,37 @@ export interface KeywordTargetingRemovalBatchOutcome {
 }
 
 /**
+ * One campaign's latest keyword-targeting removal, as `CampaignKeywordTargetingService` keeps it
+ * ACROSS the panel's lifetime: the panel can be closed or unmounted while the removal runs on, and a
+ * reopened panel reads this back.
+ */
+export interface KeywordTargetingRemovalState {
+  pending: boolean;
+  /** Per-keyword outcomes, in the order the keywords were SENT. */
+  outcomeRows: KeywordTargetingRemovalOutcomeRow[];
+  /** The removal's outcome when it produced no per-keyword results at all. */
+  batchOutcome: KeywordTargetingRemovalBatchOutcome | null;
+  /** The keywords sent, in order, so a batch outcome can name them. */
+  sent: string[];
+  /** How many removals of this campaign have settled: a change means the targeting must be read again. */
+  settleCount: number;
+}
+
+/** One removal, as the panel hands it to `CampaignKeywordTargetingService`. */
+export interface KeywordTargetingRemovalSubmission {
+  projectSlug: string;
+  briefId: string;
+  campaignId: string;
+  campaignName: string;
+  /** The READ's platform: decides the failure wording. */
+  platform: KeywordTargetingPlatform;
+  /** The request body, built by the panel (Reddit keywords with `revision`, X criterion ids without). */
+  request: KeywordTargetingRemovalsRequest;
+  /** The keyword text of each item, in request order: the outcomes are zipped onto this list. */
+  sent: string[];
+}
+
+/**
  * The Reddit `revision` the negative-keyword editor must send, read from the campaign's keyword
  * targeting. `idle` for a platform that takes none.
  */
@@ -396,6 +427,12 @@ export interface RedditKeywordMetrics {
   ctr: number;
   /** In the ad account's own currency. */
   spend: number;
+}
+
+/** A Reddit keyword row as the table draws it: the campaign column's label precomputed. */
+export interface RedditKeywordDisplayRow extends RedditKeywordMetrics {
+  /** The brief's name for the campaign, or Reddit's campaign id when the brief does not know it. */
+  campaignLabel: string;
 }
 
 /** Totals over the rows returned (a subtotal when the read was truncated). No conversions: Reddit's read has none. */

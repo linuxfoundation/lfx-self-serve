@@ -110,10 +110,20 @@ describe('classifyKeywordTargetingRemovalFailure', () => {
     [400, 'twitter-ads', KEYWORD_TARGETING_REMOVAL_ERROR_MESSAGES.refused],
     [403, 'twitter-ads', KEYWORD_TARGETING_REMOVAL_ERROR_MESSAGES.forbidden],
     [404, 'twitter-ads', KEYWORD_TARGETING_REMOVAL_ERROR_MESSAGES.notFound],
-    [503, 'twitter-ads', KEYWORD_TARGETING_REMOVAL_ERROR_MESSAGES.unavailable],
-    [500, 'twitter-ads', KEYWORD_TARGETING_REMOVAL_ERROR_MESSAGES.other],
-  ] as const)('words an enveloped %s on %s in fixed text', (status, platform, message) => {
+    [401, 'twitter-ads', KEYWORD_TARGETING_REMOVAL_ERROR_MESSAGES.forbidden],
+  ] as const)('words a documented, enveloped %s on %s as definite, in fixed text', (status, platform, message) => {
     expect(classifyKeywordTargetingRemovalFailure(httpError(status, { error: 'upstream words', code: 'X' }), platform)).toEqual({ state: 'failed', message });
+  });
+
+  // A removal is irreversible: no 5xx (not even a definite-sounding 503), timeout or rate limit says
+  // what the platform did after dispatch.
+  it.each([500, 502, 503, 504, 408, 429])('reports an enveloped %s as unconfirmed', (status) => {
+    expect(
+      classifyKeywordTargetingRemovalFailure(
+        httpError(status, { error: 'the keyword targeting could not be removed', code: 'SERVICE_UNAVAILABLE' }),
+        'reddit-ads'
+      )
+    ).toEqual({ state: 'unconfirmed', message: KEYWORD_TARGETING_REMOVAL_UNCONFIRMED_ADVICE });
   });
 });
 

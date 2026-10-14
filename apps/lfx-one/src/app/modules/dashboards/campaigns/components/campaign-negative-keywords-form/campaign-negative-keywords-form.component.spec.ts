@@ -350,6 +350,45 @@ describe('CampaignNegativeKeywordsFormComponent', () => {
       expect(submitButton().disabled).toBe(false);
     });
 
+    // An editor reopened while an earlier Reddit add is still in flight must not read the revision
+    // then: that revision goes stale the moment the add lands. It waits, and reads once it settles.
+    it('reads no revision in an editor reopened mid-request, then reads once the request settles', () => {
+      getKeywordTargeting.mockReturnValue(of(targeting('sha256:r1')));
+      const pending = new Subject<CampaignNegativeKeywordsResult>();
+      addNegativeKeywords.mockReturnValue(pending);
+      setPlatform('reddit-ads');
+      typeKeywords('free');
+      submit();
+      fixture.destroy();
+
+      getKeywordTargeting.mockClear();
+      getKeywordTargeting.mockReturnValue(of(targeting('sha256:r2')));
+      const remounted = TestBed.createComponent(CampaignNegativeKeywordsFormComponent);
+      remounted.componentRef.setInput('projectSlug', 'tlf');
+      remounted.componentRef.setInput('briefId', 'b-1');
+      remounted.componentRef.setInput('campaignId', 'c-1');
+      remounted.componentRef.setInput('campaignName', 'KubeCon EU');
+      remounted.componentRef.setInput('platform', 'reddit-ads');
+      remounted.detectChanges();
+      const root = remounted.nativeElement as HTMLElement;
+
+      expect(getKeywordTargeting).not.toHaveBeenCalled();
+      expect(root.querySelector('[data-testid="optimization-campaign-negatives-revision-loading-c-1"]')).not.toBeNull();
+
+      pending.next({ campaignId: 'c-1', appliedCount: 1, results: [{ text: 'free', matchType: 'Broad', outcome: 'APPLIED' }] });
+      pending.complete();
+      remounted.detectChanges();
+
+      expect(getKeywordTargeting).toHaveBeenCalledTimes(1);
+      addNegativeKeywords.mockReturnValue(of({ campaignId: 'c-1', appliedCount: 0, results: [] }));
+      const textarea = root.querySelector('#campaign-negatives-keywords-c-1') as HTMLTextAreaElement;
+      textarea.value = 'torrent';
+      textarea.dispatchEvent(new Event('input'));
+      root.querySelector('[data-testid="optimization-campaign-negatives-form-c-1"]')!.dispatchEvent(new Event('submit'));
+      remounted.detectChanges();
+      expect(addNegativeKeywords).toHaveBeenLastCalledWith('tlf', 'b-1', 'c-1', [{ text: 'torrent', matchType: 'Broad' }], 'sha256:r2');
+    });
+
     it('treats a Reddit read with no revision as unusable', () => {
       getKeywordTargeting.mockReturnValue(of(targeting()));
       setPlatform('reddit-ads');

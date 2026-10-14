@@ -89,7 +89,7 @@
                           <span class="text-xs text-gray-500" [attr.data-testid]="'reddit-keyword-unattributed-' + $index">Not attributed to a keyword</span>
                         }
                       </td>
-                      <td class="px-4 py-2.5 text-xs text-gray-500">{{ campaignLabel(row.campaignId) }}</td>
+                      <td class="px-4 py-2.5 text-xs text-gray-500">{{ row.campaignLabel }}</td>
                       <td class="px-4 py-2.5 text-right text-gray-700">{{ row.impressions | number }}</td>
                       <td class="px-4 py-2.5 text-right text-gray-700">{{ row.clicks | number }}</td>
                       <td class="px-4 py-2.5 text-right text-gray-700">{{ row.ctr | adsPct }}</td>

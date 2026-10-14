@@ -27,6 +27,8 @@ describe('CampaignKeywordTargetingPanelComponent', () => {
   let messageAdd: ReturnType<typeof vi.fn>;
   /** Confirmations raised, read off the REAL service (the template renders `p-confirmDialog`, which subscribes to it). */
   let confirmations: Confirmation[];
+  /** Confirmations raised on the PAGE-WIDE service, which the panel must never use. */
+  let pageConfirmations: number;
 
   const reddit = (over: Partial<CampaignServiceKeywordTargeting> = {}): CampaignServiceKeywordTargeting => ({
     campaign_id: 'c-1',
@@ -60,19 +62,26 @@ describe('CampaignKeywordTargetingPanelComponent', () => {
       imports: [CampaignKeywordTargetingPanelComponent],
       providers: [
         provideNoopAnimations(),
+        // A page-wide instance, which the panel must NOT use: its dialog has its own.
         ConfirmationService,
         { provide: CampaignService, useValue: { getKeywordTargeting, removeKeywordTargeting } },
         { provide: MessageService, useValue: { add: messageAdd } },
       ],
     }).compileComponents();
     confirmations = [];
-    TestBed.inject(ConfirmationService).requireConfirmation$.subscribe((c) => {
+    pageConfirmations = 0;
+    TestBed.inject(ConfirmationService).requireConfirmation$.subscribe(() => pageConfirmations++);
+    mount(platform);
+  }
+
+  /** (Re)creates the panel, as the row's toggle does, and records its OWN dialog's confirmations. */
+  function mount(platform: 'reddit-ads' | 'twitter-ads'): void {
+    fixture = TestBed.createComponent(CampaignKeywordTargetingPanelComponent);
+    fixture.debugElement.injector.get(ConfirmationService).requireConfirmation$.subscribe((c) => {
       if (c) {
         confirmations.push(c);
       }
     });
-
-    fixture = TestBed.createComponent(CampaignKeywordTargetingPanelComponent);
     fixture.componentRef.setInput('projectSlug', 'tlf');
     fixture.componentRef.setInput('briefId', 'b-1');
     fixture.componentRef.setInput('campaignId', 'c-1');
@@ -150,6 +159,8 @@ describe('CampaignKeywordTargetingPanelComponent', () => {
       clickRemove();
 
       expect(confirmations).toHaveLength(1);
+      // The panel's own ConfirmationService: no other dialog on the page can answer it.
+      expect(pageConfirmations).toBe(0);
       expect(confirmations[0].message).toContain('"kubernetes"');
       expect(confirmations[0].message).toContain('Reddit');
       expect(removeKeywordTargeting).not.toHaveBeenCalled();
@@ -310,6 +321,48 @@ describe('CampaignKeywordTargetingPanelComponent', () => {
       fixture.detectChanges();
       expect(q('optimization-campaign-targeting-result-0')!.textContent).toContain('Removed');
       expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', detail: '1 removed.' }));
+    });
+  });
+
+  // The row's toggle can close the panel; a tab switch or list re-read unmounts it. The removal
+  // runs on in the root service, so a reopened panel shows it running, cannot start another, and
+  // then shows its outcome with a fresh read.
+  describe('across a remount', () => {
+    it('keeps the in-flight removal and its outcome, and refuses a second removal meanwhile', async () => {
+      await create('reddit-ads', reddit());
+      const pending = new Subject<CampaignServiceKeywordTargetingRemovals>();
+      removeKeywordTargeting.mockReturnValue(pending);
+      tick('kubernetes');
+      clickRemove();
+      accept();
+      fixture.destroy();
+
+      mount('reddit-ads');
+      expect(removeButton().disabled).toBe(true);
+      expect(el().querySelector('[data-testid="optimization-campaign-targeting-select-devops"]')!.closest('fieldset')!.disabled).toBe(true);
+      expect((q('optimization-campaign-targeting-close-c-1')!.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
+      const readsBefore = getKeywordTargeting.mock.calls.length;
+
+      pending.next({ campaign_id: 'c-1', applied_count: 0, results: [{ keyword: 'kubernetes', outcome: 'UNCONFIRMED' }] });
+      pending.complete();
+      fixture.detectChanges();
+
+      expect(removeKeywordTargeting).toHaveBeenCalledTimes(1);
+      expect(q('optimization-campaign-targeting-result-0')!.querySelector('[data-outcome]')!.getAttribute('data-outcome')).toBe('UNCONFIRMED');
+      // The reopened panel re-reads once the removal settles.
+      expect(getKeywordTargeting.mock.calls.length).toBe(readsBefore + 1);
+    });
+
+    it('shows a removal that settled while the panel was closed', async () => {
+      await create('reddit-ads', reddit());
+      removeKeywordTargeting.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 504, error: 'upstream request timeout' })));
+      tick('kubernetes');
+      clickRemove();
+      accept();
+      fixture.destroy();
+
+      mount('reddit-ads');
+      expect(q('optimization-campaign-targeting-unconfirmed-c-1')!.textContent).toContain('kubernetes');
     });
   });
 });

@@ -1685,7 +1685,9 @@ export class CampaignServiceClient {
   }
 
   /**
-   * Add campaign-level negative keywords to one live campaign (Microsoft Advertising today).
+   * Add negative keywords to one live Microsoft Advertising, Reddit or X campaign: at campaign level
+   * on Microsoft, in the excluded keywords of the campaign's one ad group on Reddit, and as negated
+   * keyword targeting on its one line item on X.
    *
    * NOT ATOMIC and POSITIONAL: upstream answers one result per requested keyword, in request
    * order, each with its own outcome. The response is therefore mapped index for index and never

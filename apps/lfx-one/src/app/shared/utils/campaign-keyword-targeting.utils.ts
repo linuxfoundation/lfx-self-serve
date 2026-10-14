@@ -3,6 +3,7 @@
 
 import { HttpErrorResponse } from '@angular/common/http';
 import {
+  KEYWORD_LEVER_DEFINITE_FAILURE_STATUSES,
   KEYWORD_TARGETING_READ_ERROR_MESSAGES,
   KEYWORD_TARGETING_REMOVAL_ERROR_DETAILS,
   KEYWORD_TARGETING_REMOVAL_ERROR_MESSAGES,
@@ -96,30 +97,31 @@ export function summarizeKeywordTargetingRemovals(rows: readonly KeywordTargetin
  * Classify a removal that produced no per-keyword results, in FIXED words: no upstream text is
  * shown, whatever the body says.
  *
- * - `unconfirmed`: the BFF's `KEYWORD_TARGETING_REMOVAL_UNCONFIRMED` code (an answered "unconfirmed"
- *   503, an unreadable confirmation, or a failure nobody answered), or any response that is not the
- *   BFF's `{ error, code }` envelope (a lost connection, a proxy's timeout page). Any of the keywords
- *   may have been removed.
- * - `failed`: every other answer in the BFF's envelope, worded by status. Nothing was removed.
+ * - `failed` ONLY for a documented refusal (`KEYWORD_LEVER_DEFINITE_FAILURE_STATUSES`: 400, 401,
+ *   403, 404, 409) in the BFF's `{ error, code }` envelope, worded by status. Nothing was removed.
+ * - `unconfirmed` for everything else: the BFF's `KEYWORD_TARGETING_REMOVAL_UNCONFIRMED` code, any
+ *   5xx (a definite-sounding 503 included: a removal is irreversible, and the UI does not read
+ *   wording to decide), a timeout, a lost connection, or a body that is not the BFF's envelope.
+ *   Any of the keywords may have been removed.
  */
 export function classifyKeywordTargetingRemovalFailure(error: unknown, platform: KeywordTargetingPlatform): KeywordTargetingRemovalBatchOutcome {
   const status = error instanceof HttpErrorResponse ? error.status : 0;
   const body: unknown = error instanceof HttpErrorResponse ? error.error : undefined;
-  if (!isBffErrorEnvelope(body) || (body as { code: string }).code === KEYWORD_TARGETING_REMOVAL_UNCONFIRMED_CODE) {
+  const definite =
+    isBffErrorEnvelope(body) &&
+    (body as { code: string }).code !== KEYWORD_TARGETING_REMOVAL_UNCONFIRMED_CODE &&
+    KEYWORD_LEVER_DEFINITE_FAILURE_STATUSES.has(status);
+  if (!definite) {
     return { state: 'unconfirmed', message: KEYWORD_TARGETING_REMOVAL_UNCONFIRMED_ADVICE };
   }
   const messages = KEYWORD_TARGETING_REMOVAL_ERROR_MESSAGES;
-  let message = messages.other;
+  let message = messages.forbidden;
   if (status === 409) {
     message = messages.conflict;
   } else if (status === 400) {
     message = platform === 'reddit-ads' ? messages.refusedReddit : messages.refused;
-  } else if (status === 401 || status === 403) {
-    message = messages.forbidden;
   } else if (status === 404) {
     message = messages.notFound;
-  } else if (status === 503) {
-    message = messages.unavailable;
   }
   return { state: 'failed', message };
 }

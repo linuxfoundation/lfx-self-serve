@@ -3150,6 +3150,8 @@ export interface CampaignNegativeKeywordsRequestState {
   matchType: CampaignNegativeKeywordMatchType;
   /** The campaign's ad platform, which words its outcomes ("Reddit refused it"). */
   platform: NegativeKeywordCampaignPlatform;
+  /** How many requests of this campaign have settled: a change means Reddit's revision must be read again. */
+  settleCount: number;
 }
 
 /** One negative-keyword request, as the editor hands it to `CampaignNegativeKeywordsService`. */
@@ -3700,15 +3702,15 @@ export interface CampaignNegativeKeywordResult {
   outcome: CampaignNegativeKeywordOutcome;
   /** The platform's id for a negative keyword this request added. Absent for every other outcome. */
   negativeKeywordId?: string;
-  /** The platform's machine-readable error code for a FAILED keyword, when it named one. */
+  /** Why a keyword is FAILED: Microsoft's machine-readable code when it named one; NOT_SENT or REJECTED on Reddit and X. */
   errorCode?: string;
 }
 
 /**
  * The outcome of one negative-keywords request.
  *
- * NOT ATOMIC and POSITIONAL: Microsoft adds each negative independently, and `results[i]` answers
- * `negativeKeywords[i]` of the request. The BFF never filters or reorders `results`, so a caller
+ * NOT ATOMIC and POSITIONAL: Microsoft and X add each negative independently (Reddit's new ones share
+ * one write's outcome), and `results[i]` answers `negativeKeywords[i]` of the request. The BFF never filters or reorders `results`, so a caller
  * may zip them onto the list it sent.
  */
 export interface CampaignNegativeKeywordsResult {

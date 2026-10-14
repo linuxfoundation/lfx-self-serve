@@ -33,8 +33,10 @@ import { catchError, filter, map, of, startWith, switchMap, take } from 'rxjs';
  * What it offers follows the campaign's platform (`CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES`):
  * Microsoft Exact or Phrase, X Exact, Phrase or Broad (20 per request), Reddit Broad only. A Reddit
  * request must carry the `revision` of the ad group's targeting, so for Reddit the editor reads the
- * campaign's keyword targeting first, and again after every request it sends settles (the write
- * changes the fingerprint, and a 409 means it changed under us). Nothing is sent until that read has answered.
+ * campaign's keyword targeting first, and again whenever a request for the campaign settles (the
+ * write changes the fingerprint, and a 409 means it changed under us). While one is still in flight
+ * (an editor reopened mid-request) it does not read at all: a revision read then would go stale the
+ * moment the request lands. Nothing is sent until that read has answered.
  *
  * Unlike the budget and bid editors this one takes no ETag: the lever persists nothing on the
  * campaign row, so there is no validator to share with the row's other writes.
@@ -80,7 +82,7 @@ export class CampaignNegativeKeywordsFormComponent {
     matchType: new FormControl<CampaignNegativeKeywordMatchType>('Exact', { nonNullable: true, validators: [Validators.required] }),
   });
 
-  /** Bumped to read the Reddit revision again: after a request settles, and by Retry. */
+  /** Bumped by Retry to read the Reddit revision again. A settled request re-reads on its own. */
   private readonly revisionReload = signal(0);
 
   /** This campaign's latest request, which outlives this form. `null` before the first one. */
@@ -88,6 +90,8 @@ export class CampaignNegativeKeywordsFormComponent {
     () => this.negativeKeywordsService.requests()[campaignNegativeKeywordsKey(this.projectSlug(), this.briefId(), this.campaignId())] ?? null
   );
   protected readonly pending: Signal<boolean> = computed(() => this.request()?.pending ?? false);
+  /** Bumped by every settled request of this campaign: the targeting the revision fingerprints may have changed. */
+  private readonly settleCount: Signal<number> = computed(() => this.request()?.settleCount ?? 0);
   /** Per-keyword outcomes of the last request, in the order the keywords were SENT. */
   protected readonly outcomeRows: Signal<CampaignNegativeKeywordOutcomeRow[]> = computed(() => this.request()?.outcomeRows ?? []);
   /** The last request's outcome when it produced no per-keyword results at all. */
@@ -189,13 +193,6 @@ export class CampaignNegativeKeywordsFormComponent {
         if (!this.destroyRef.destroyed) {
           this.form.controls.keywords.reset('');
         }
-      },
-      // The write changed (or a 409 proved stale) the targeting the revision fingerprints. A form
-      // destroyed meanwhile reads a fresh one when it is drawn again.
-      () => {
-        if (!this.destroyRef.destroyed && this.rules().requiresRevision) {
-          this.revisionReload.update((n) => n + 1);
-        }
       }
     );
   }
@@ -259,6 +256,10 @@ export class CampaignNegativeKeywordsFormComponent {
    * ad group's POSITIVE keywords, not its excluded ones. A read that answers without a revision is
    * an error here, since Reddit refuses an add without one. Read errors are not retried
    * automatically; the operator retries.
+   *
+   * Keyed on the campaign's shared request: nothing is read while one is in flight (shown as
+   * loading), and every settled request (`settleCount`) reads again, so an editor reopened while an
+   * earlier add ran can never hold a revision from before it.
    */
   private initRevisionState(): Signal<NegativeKeywordsRevisionState> {
     const idle: NegativeKeywordsRevisionState = { status: 'idle', revision: null };
@@ -268,12 +269,17 @@ export class CampaignNegativeKeywordsFormComponent {
       briefId: this.briefId(),
       campaignId: this.campaignId(),
       reload: this.revisionReload(),
+      pending: this.pending(),
+      settleCount: this.settleCount(),
     }));
     return toSignal(
       toObservable(request).pipe(
-        switchMap(({ requiresRevision, projectSlug, briefId, campaignId }) => {
+        switchMap(({ requiresRevision, projectSlug, briefId, campaignId, pending }) => {
           if (!requiresRevision) {
             return of(idle);
+          }
+          if (pending) {
+            return of<NegativeKeywordsRevisionState>({ status: 'loading', revision: null });
           }
           return this.campaignService.getKeywordTargeting(projectSlug, briefId, campaignId).pipe(
             map(

@@ -7,7 +7,7 @@ import { Component, computed, inject, input, Signal, signal } from '@angular/cor
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { DEFAULT_REDDIT_KEYWORDS_WINDOW, REDDIT_KEYWORDS_ERROR_MESSAGES, REDDIT_KEYWORDS_WINDOW_OPTIONS } from '@lfx-one/shared/constants';
-import type { RedditKeywordMetrics, RedditKeywordsView, RedditKeywordsWindow } from '@lfx-one/shared/interfaces';
+import type { RedditKeywordDisplayRow, RedditKeywordsView, RedditKeywordsWindow } from '@lfx-one/shared/interfaces';
 import { AdsPctPipe } from '@pipes/campaign-optimization.pipe';
 import { CampaignService } from '@services/campaign.service';
 import { catchError, map, of, startWith, switchMap } from 'rxjs';
@@ -43,7 +43,8 @@ export class RedditKeywordsTableComponent {
   private readonly retryToken = signal(0);
 
   protected readonly view: Signal<RedditKeywordsView> = this.initView();
-  protected readonly rows: Signal<RedditKeywordMetrics[]> = computed(() => this.view().data?.keywords ?? []);
+  /** The rows with their campaign label precomputed, so the template calls no method. */
+  protected readonly rows: Signal<RedditKeywordDisplayRow[]> = this.initRows();
 
   protected selectWindow(window: RedditKeywordsWindow): void {
     this.selectedWindow.set(window);
@@ -53,9 +54,14 @@ export class RedditKeywordsTableComponent {
     this.retryToken.update((n) => n + 1);
   }
 
-  protected campaignLabel(campaignId: string): string {
-    const names = this.campaignNames();
-    return Object.hasOwn(names, campaignId) ? names[campaignId] : campaignId;
+  private initRows(): Signal<RedditKeywordDisplayRow[]> {
+    return computed(() => {
+      const names = this.campaignNames();
+      return (this.view().data?.keywords ?? []).map((row) => ({
+        ...row,
+        campaignLabel: Object.hasOwn(names, row.campaignId) ? names[row.campaignId] : row.campaignId,
+      }));
+    });
   }
 
   /** One read per (project, window, reload, retry); `switchMap` drops a read for an abandoned window. */

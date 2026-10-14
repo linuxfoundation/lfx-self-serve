@@ -1670,6 +1670,13 @@ export const CAMPAIGN_NEGATIVE_KEYWORD_OUTCOME_LABELS: Readonly<Record<CampaignN
 export const CAMPAIGN_NEGATIVE_KEYWORD_UNCONFIRMED_ADVICE =
   "This keyword may have been added. Check the campaign's negative keywords in Microsoft Advertising before retrying.";
 
+/**
+ * What a negative-keywords request that failed with no documented refusal reports (a 5xx, a timeout,
+ * a lost connection): the add may have reached the platform for any of its keywords.
+ */
+export const CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNKNOWN =
+  "The negative keywords may or may not have been added. Check the campaign's negative keywords in the ad platform before retrying.";
+
 /** Shown for a negative-keywords refusal whose response carried no readable message. */
 export const CAMPAIGN_NEGATIVE_KEYWORDS_FAILURE_FALLBACK = 'The negative keywords could not be added.';
 

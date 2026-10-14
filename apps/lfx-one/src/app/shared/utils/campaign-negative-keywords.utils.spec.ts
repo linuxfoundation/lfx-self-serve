@@ -6,6 +6,7 @@ import {
   CAMPAIGN_NEGATIVE_KEYWORD_UNCONFIRMED_ADVICE,
   CAMPAIGN_NEGATIVE_KEYWORDS_FAILURE_FALLBACK,
   CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED,
+  CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNKNOWN,
 } from '@lfx-one/shared/constants';
 import type { CampaignNegativeKeywordsResult } from '@lfx-one/shared/interfaces';
 import { describe, expect, it } from 'vitest';
@@ -126,9 +127,23 @@ describe('campaignNegativeKeywordsFailureOutcome', () => {
     });
   });
 
-  it('reports a BFF definite 503 as a failure, verbatim', () => {
-    const message = 'the negative keywords could not be added on the ad platform; the campaign was not modified';
-    expect(campaignNegativeKeywordsFailureOutcome(httpError(503, { error: message, code: 'SERVICE_UNAVAILABLE' }))).toEqual({ state: 'failed', message });
+  // The add is irreversible and was dispatched: no 5xx, timeout or rate limit says what the platform
+  // did, so none is a definite failure, whatever its wording.
+  it.each([
+    ['a definite-sounding 503', 503, 'the negative keywords could not be added on the ad platform; the campaign was not modified'],
+    ['a BFF 500', 500, 'Internal server error'],
+    ['a 502', 502, 'Bad gateway'],
+    ['a 408', 408, 'Request timeout'],
+    ['a 429', 429, 'Too many requests'],
+  ])('reports %s in the BFF envelope as unconfirmed', (_label, status, message) => {
+    expect(campaignNegativeKeywordsFailureOutcome(httpError(status, { error: message, code: 'X' }))).toEqual({
+      state: 'unconfirmed',
+      message: CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNKNOWN,
+    });
+  });
+
+  it.each([401, 403, 404, 409])('keeps a documented %s refusal definite', (status) => {
+    expect(campaignNegativeKeywordsFailureOutcome(httpError(status, { error: 'refused', code: 'X' }))).toEqual({ state: 'failed', message: 'refused' });
   });
 
   it('passes a refusal through verbatim', () => {

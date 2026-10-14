@@ -27,6 +27,7 @@ import {
   CampaignRow,
   CampaignStatusUpdateResult,
 } from '@lfx-one/shared/interfaces';
+import { CampaignKeywordTargetingService } from '@services/campaign-keyword-targeting.service';
 import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
 import { CampaignService } from '@services/campaign.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -3354,6 +3355,41 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
     q('optimization-refresh')!.click();
     fixture.detectChanges();
     expect(getRedditKeywords.mock.calls.length).toBe(reads + 1);
+  });
+
+  // Closing the panel mid-removal would hide the per-keyword outcome of an irreversible change.
+  it('holds the keyword-targeting panel open while its removal is in flight', () => {
+    const pending = new Subject<unknown>();
+    (TestBed.inject(CampaignService) as unknown as { removeKeywordTargeting: unknown }).removeKeywordTargeting = vi.fn().mockReturnValue(pending);
+    render([doc({ platform: 'reddit-ads' })]);
+    const disclosure = q('optimization-campaign-targeting-edit-c-1') as HTMLButtonElement;
+    disclosure.click();
+    fixture.detectChanges();
+
+    TestBed.inject(CampaignKeywordTargetingService).remove({
+      projectSlug: 'tlf',
+      briefId: 'b-1',
+      campaignId: 'c-1',
+      campaignName: 'KubeCon EU',
+      platform: 'reddit-ads',
+      request: { briefId: 'b-1', keywords: [{ keyword: 'kubernetes' }], revision: 'sha256:r1' },
+      sent: ['kubernetes'],
+    });
+    fixture.detectChanges();
+
+    expect(disclosure.disabled).toBe(true);
+    // The handler refuses too, not only the disabled button.
+    (fixture.componentInstance as unknown as { closeTargetingPanel(id: string): void }).closeTargetingPanel('c-1');
+    fixture.detectChanges();
+    expect(q('optimization-campaign-targeting-panel-c-1')).not.toBeNull();
+
+    pending.next({ campaign_id: 'c-1', applied_count: 1, results: [{ keyword: 'kubernetes', outcome: 'APPLIED' }] });
+    pending.complete();
+    fixture.detectChanges();
+    expect(disclosure.disabled).toBe(false);
+    disclosure.click();
+    fixture.detectChanges();
+    expect(q('optimization-campaign-targeting-panel-c-1')).toBeNull();
   });
 
   it('disables keyword targeting, saying why, for a campaign not yet created on its platform', () => {

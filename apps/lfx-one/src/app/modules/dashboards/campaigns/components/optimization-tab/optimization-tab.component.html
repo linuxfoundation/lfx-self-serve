@@ -406,7 +406,7 @@
                     <button
                       type="button"
                       (click)="toggleTargetingPanel(row)"
-                      [disabled]="!row.keywordTargetingAvailable"
+                      [disabled]="!row.keywordTargetingAvailable || (!!targetingPending()[row.campaign.id] && !!targetingPanelOpen()[row.campaign.id])"
                       [attr.aria-expanded]="row.keywordTargetingAvailable ? !!targetingPanelOpen()[row.campaign.id] : null"
                       [attr.aria-controls]="targetingPanelOpen()[row.campaign.id] ? 'campaign-targeting-panel-' + row.campaign.id : null"
                       [attr.aria-describedby]="row.keywordTargetingAvailable ? null : 'campaign-targeting-unavailable-' + row.campaign.id"

@@ -83,6 +83,7 @@ import { campaignBidFailureOutcome } from '@shared/utils/campaign-bid-error.util
 import { campaignBudgetFailureOutcome } from '@shared/utils/campaign-budget-error.utils';
 import { classifyCampaignWriteFailure } from '@shared/utils/campaign-write-error.utils';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
+import { CampaignKeywordTargetingService } from '@services/campaign-keyword-targeting.service';
 import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
 import { CampaignRemovedKeywordsService } from '@services/campaign-removed-keywords.service';
 import { campaignNegativeKeywordsKey } from '@shared/utils/campaign-negative-keywords.utils';
@@ -126,6 +127,7 @@ export class OptimizationTabComponent implements OnInit {
   // with it.
   private readonly messageService = inject(MessageService);
   private readonly negativeKeywordsService = inject(CampaignNegativeKeywordsService);
+  private readonly keywordTargetingService = inject(CampaignKeywordTargetingService);
   // Both serve the finding levers' focus hand-off: `afterNextRender` needs an injector outside the
   // constructor, and the editor it focuses is rendered by this template a tick after it opens.
   private readonly injector = inject(Injector);
@@ -236,6 +238,12 @@ export class OptimizationTabComponent implements OnInit {
   protected readonly negativesEditorOpen = signal<Record<string, boolean>>({});
   /** Which Reddit and X rows have their keyword-targeting panel open. */
   protected readonly targetingPanelOpen = signal<Record<string, boolean>>({});
+  /**
+   * Which rows' keyword-targeting removal is in flight, read from the root
+   * `CampaignKeywordTargetingService` that owns it. While one runs the row's panel is held open, so
+   * its per-keyword outcome is not hidden mid-removal.
+   */
+  protected readonly targetingPending: Signal<Record<string, boolean>> = this.initTargetingPending();
   /**
    * Which rows' negative-keyword request is in flight. Read from the root
    * `CampaignNegativeKeywordsService`, which owns the request, rather than reported by the editor:
@@ -1130,6 +1138,9 @@ export class OptimizationTabComponent implements OnInit {
   }
 
   protected closeTargetingPanel(campaignId: string): void {
+    if (this.targetingPending()[campaignId]) {
+      return;
+    }
     this.targetingPanelOpen.update((open) => this.omitKeys(open, [campaignId]));
   }
 
@@ -1242,6 +1253,7 @@ export class OptimizationTabComponent implements OnInit {
     // A refresh re-reads the platform, so settled negative-keyword results are stale; one still in
     // flight is kept by the service.
     this.negativeKeywordsService.clearSettled(this.projectSlug(), this.briefId());
+    this.keywordTargetingService.clearSettled(this.projectSlug(), this.briefId());
     this.reloadFindings();
     this.microsoftKeywordsReload.update((n) => n + 1);
     this.redditKeywordsReload.update((n) => n + 1);
@@ -1804,6 +1816,20 @@ export class OptimizationTabComponent implements OnInit {
       const flags: Record<string, boolean> = {};
       for (const [key, request] of Object.entries(this.negativeKeywordsService.requests())) {
         if (key.startsWith(prefix) && test(request)) {
+          flags[key.slice(prefix.length)] = true;
+        }
+      }
+      return flags;
+    });
+  }
+
+  /** Per campaign id of THIS (project, brief), whether its keyword-targeting removal is in flight. */
+  private initTargetingPending(): Signal<Record<string, boolean>> {
+    return computed(() => {
+      const prefix = campaignNegativeKeywordsKey(this.projectSlug(), this.briefId(), '');
+      const flags: Record<string, boolean> = {};
+      for (const [key, removal] of Object.entries(this.keywordTargetingService.removals())) {
+        if (key.startsWith(prefix) && removal.pending) {
           flags[key.slice(prefix.length)] = true;
         }
       }

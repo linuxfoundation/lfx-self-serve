@@ -256,18 +256,17 @@ export const KEYWORD_TARGETING_READ_ERROR_MESSAGES: Readonly<Record<'conflict' |
   other: "The keyword targeting couldn't be loaded. Try again.",
 };
 
-/** A removal's failures that produced no per-keyword results, in fixed words. Nothing was removed unless it says otherwise. */
-export const KEYWORD_TARGETING_REMOVAL_ERROR_MESSAGES: Readonly<
-  Record<'conflict' | 'refusedReddit' | 'refused' | 'forbidden' | 'notFound' | 'unavailable' | 'other', string>
-> = {
+/**
+ * A removal's DOCUMENTED refusals (`KEYWORD_LEVER_DEFINITE_FAILURE_STATUSES`), in fixed words.
+ * Nothing was removed. Every other failure is reported as unconfirmed.
+ */
+export const KEYWORD_TARGETING_REMOVAL_ERROR_MESSAGES: Readonly<Record<'conflict' | 'refusedReddit' | 'refused' | 'forbidden' | 'notFound', string>> = {
   conflict:
     'Nothing was removed: the keyword targeting changed since it was read, or this campaign cannot take the change right now. The targeting has been reloaded; review it and try again.',
   refusedReddit: 'Nothing was removed: the request was refused. Keyword changes on Reddit campaigns may not be switched on yet.',
   refused: 'Nothing was removed: the request was refused.',
   forbidden: "Nothing was removed: you don't have access to change this campaign.",
   notFound: 'Nothing was removed: this campaign could not be found.',
-  unavailable: 'Nothing was removed: the ad platform could not be reached. Try again.',
-  other: 'Nothing was removed. Try again.',
 };
 
 // --- Reddit keyword performance table ------------------------------------------
@@ -292,3 +291,13 @@ export const REDDIT_KEYWORDS_ERROR_MESSAGES: Readonly<Record<'notConnected' | 'd
     "Reddit keyword metrics can't be read for this foundation: it has more Reddit campaigns than one report can cover, or a campaign belongs to a different ad account.",
   other: 'Reddit keyword metrics are unavailable right now. Try again.',
 };
+
+/**
+ * The statuses a keyword lever (keyword-targeting removal, negative-keyword add) may report as a
+ * DEFINITE failure, and only when the BFF's own envelope carries them: campaign-service documents
+ * 400 (malformed batch, unsupported platform, Reddit writes off) and 409 (refused before anything
+ * changed), and 401/403/404 are refused before dispatch. Every other status, every 5xx included, and
+ * any timeout or lost connection is UNCONFIRMED: both writes are irreversible, and a failure after
+ * dispatch says nothing about what the platform did.
+ */
+export const KEYWORD_LEVER_DEFINITE_FAILURE_STATUSES: ReadonlySet<number> = new Set<number>([400, 401, 403, 404, 409]);

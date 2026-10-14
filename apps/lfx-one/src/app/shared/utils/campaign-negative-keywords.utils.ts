@@ -1,12 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import {
   CAMPAIGN_NEGATIVE_KEYWORD_OUTCOME_LABELS,
   CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES,
   CAMPAIGN_NEGATIVE_KEYWORD_UNCONFIRMED_ADVICE,
   CAMPAIGN_NEGATIVE_KEYWORDS_FAILURE_FALLBACK,
   CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED,
+  CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNKNOWN,
+  KEYWORD_LEVER_DEFINITE_FAILURE_STATUSES,
 } from '@lfx-one/shared/constants';
 import type {
   CampaignNegativeKeywordMatchType,
@@ -79,23 +82,27 @@ function negativeKeywordFailedDetail(platform: NegativeKeywordCampaignPlatform, 
 
 /**
  * Classify a failed `POST /api/campaigns/:campaignId/negative-keywords`, which carries no
- * per-keyword results, through the shared `classifyCampaignWriteFailure`. No validator is sent, so
- * there is no `conflict` state.
+ * per-keyword results. No validator is sent, so there is no `conflict` state.
  *
- * - Any **4xx** except 408 in the BFF's `{ error, code }` envelope was refused before anything was
- *   added, whatever its wording says. A 4xx without the envelope came from a proxy: `unconfirmed`.
- * - **Unconfirmed**: a message saying so (the BFF's `CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED`
- *   for a confirmation it could not read, or campaign-service's "the negative keywords are
- *   unconfirmed ..."), or any response that is not the BFF's `{ error, code }` envelope (a lost
- *   connection, a proxy's timeout text, a gateway's HTML page). Any of the keywords may have been
- *   added.
- * - Everything else is `failed`, with the server's message VERBATIM (a definite 503).
+ * - `failed` ONLY for a documented refusal (`KEYWORD_LEVER_DEFINITE_FAILURE_STATUSES`: 400, 401,
+ *   403, 404, 409) in the BFF's `{ error, code }` envelope, shown with the server's message: nothing
+ *   was added.
+ * - `unconfirmed` for everything else. The shared `classifyCampaignWriteFailure` already says so for
+ *   a body that is not the BFF's envelope and for a message saying "unconfirmed" (keeping that
+ *   message). Any OTHER failure it would call definite (a 5xx, a definite-sounding 503 included, a
+ *   408, a 429) is unconfirmed here too, with `CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNKNOWN`: the add
+ *   was dispatched, and any of the keywords may have been added.
  */
 export function campaignNegativeKeywordsFailureOutcome(error: unknown): CampaignNegativeKeywordsBatchOutcome {
-  return classifyCampaignWriteFailure(error, {
+  const outcome = classifyCampaignWriteFailure(error, {
     unconfirmed: CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED,
     failureFallback: CAMPAIGN_NEGATIVE_KEYWORDS_FAILURE_FALLBACK,
   });
+  const status = error instanceof HttpErrorResponse ? error.status : 0;
+  if (outcome.state === 'failed' && !KEYWORD_LEVER_DEFINITE_FAILURE_STATUSES.has(status)) {
+    return { state: 'unconfirmed', message: CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNKNOWN };
+  }
+  return outcome;
 }
 
 /**
