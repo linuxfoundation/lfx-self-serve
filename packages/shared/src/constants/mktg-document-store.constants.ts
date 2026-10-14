@@ -9,6 +9,7 @@
 import type { MktgArtifactIntakeMode } from '../interfaces/mktg-artifact.interface';
 import type { MktgDocumentType } from '../interfaces/mktg-document-store.interface';
 import { MKTG_AGENTS } from './mktg-os-agents.constants';
+import { MKTG_AGENT_INTAKES } from './mktg-run.constants';
 
 /** BFF base path of the Documents area: `GET ?project=`, `GET /:agentKey/:documentId`, `GET …/revisions/:revisionId`, `POST …/restore`. */
 export const MKTG_DOCUMENTS_API_PATH = '/api/mktg-agents/documents';
@@ -52,6 +53,15 @@ function catalogAgentName(catalogAgentId: string): string {
   return agent.name;
 }
 
+/** The intake's document name for a living document, so a rename in MKTG_AGENT_INTAKES reaches the Documents area. */
+function intakeDocumentName(catalogAgentId: string): string {
+  const intake = MKTG_AGENT_INTAKES[catalogAgentId];
+  if (!intake) {
+    throw new Error(`No Marketing OS intake for catalog agent: ${catalogAgentId}`);
+  }
+  return intake.documentName;
+}
+
 /**
  * Document types in the order the Documents area lists them: living
  * documents in run order (the marketplace's agent numbers), then the one-off
@@ -64,8 +74,8 @@ export const MKTG_DOCUMENT_TYPES: MktgDocumentType[] = [
     kind: 'living',
     catalogAgentId: 'brand-kit',
     agentName: catalogAgentName('brand-kit'),
-    label: 'Brand Kit',
-    itemLabel: 'Brand Kit',
+    label: intakeDocumentName('brand-kit'),
+    itemLabel: intakeDocumentName('brand-kit'),
     legacyArtifactKey: 'brand-kit',
   },
   {
@@ -73,8 +83,8 @@ export const MKTG_DOCUMENT_TYPES: MktgDocumentType[] = [
     kind: 'living',
     catalogAgentId: 'foundation-setup',
     agentName: catalogAgentName('foundation-setup'),
-    label: 'Message Foundation',
-    itemLabel: 'Message Foundation',
+    label: intakeDocumentName('foundation-setup'),
+    itemLabel: intakeDocumentName('foundation-setup'),
     legacyArtifactKey: 'foundation-message',
   },
   {
@@ -82,8 +92,8 @@ export const MKTG_DOCUMENT_TYPES: MktgDocumentType[] = [
     kind: 'living',
     catalogAgentId: 'icp',
     agentName: catalogAgentName('icp'),
-    label: 'ICP & Target Markets',
-    itemLabel: 'ICP & Target Markets',
+    label: intakeDocumentName('icp'),
+    itemLabel: intakeDocumentName('icp'),
     legacyArtifactKey: 'icp',
   },
   {
