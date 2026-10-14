@@ -86,6 +86,27 @@ export function deriveGatewazeSid(sidKey: Buffer, lfxSid: string): string {
     .digest('base64url');
 }
 
+let flagMismatchWarned = false;
+
+/**
+ * Logs once per process that only one of the embed's two server flags is on. The embed needs both,
+ * so this is the likeliest reason for its not-configured panel. Once, because this check runs on
+ * every page render and every `/api/gatewaze` request.
+ */
+function warnFlagMismatchOnce(hostSessionOn: boolean): void {
+  if (flagMismatchWarned) {
+    return;
+  }
+  flagMismatchWarned = true;
+  const [on, off] = hostSessionOn
+    ? [ServerFeatureFlag.GatewazeHostSession, ServerFeatureFlag.GatewazeEmbedEnabled]
+    : [ServerFeatureFlag.GatewazeEmbedEnabled, ServerFeatureFlag.GatewazeHostSession];
+  logger.warning(undefined, 'resolve_gatewaze_host_session_config', `${on} is on but ${off} is off; the Gatewaze embed needs both and stays off`, {
+    flag_on: on,
+    flag_off: off,
+  });
+}
+
 /**
  * Host-session configuration, or null when host-session mode is off or cannot run. Every condition
  * is checked together so the `/api/gatewaze` routes and the embed outlet (through
@@ -93,7 +114,12 @@ export function deriveGatewazeSid(sidKey: Buffer, lfxSid: string): string {
  * Environment is read per call, as `isServerFeatureEnabled` does.
  */
 export function resolveGatewazeHostSessionConfig(): GatewazeHostSessionSettings | null {
-  if (!isServerFeatureEnabled(ServerFeatureFlag.GatewazeHostSession) || !isServerFeatureEnabled(ServerFeatureFlag.GatewazeEmbedEnabled)) {
+  const hostSessionOn = isServerFeatureEnabled(ServerFeatureFlag.GatewazeHostSession);
+  const embedOn = isServerFeatureEnabled(ServerFeatureFlag.GatewazeEmbedEnabled);
+  if (!hostSessionOn || !embedOn) {
+    if (hostSessionOn !== embedOn) {
+      warnFlagMismatchOnce(hostSessionOn);
+    }
     return null;
   }
   // Without the session store, `appSession` is an encrypted cookie with no stable id to key on.

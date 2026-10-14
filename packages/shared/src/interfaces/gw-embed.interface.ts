@@ -14,19 +14,18 @@ export interface GwHostContext {
   /** Router basename the embed should mount under, e.g. `/foundation/gw`. */
   basename: string;
   /**
-   * In host-session mode `url` is LFX One's own Supabase proxy (`<origin>/api/gatewaze/supabase`),
-   * which must be absolute and on the page's origin, and `publicUrl` is the real Supabase project
-   * URL, used for saved public storage URLs. `publicUrl` is required in that mode and unused in the
-   * bridge. `anonKey` is the publishable key in both modes.
+   * `url` is LFX One's own Supabase proxy (`<origin>/api/gatewaze/supabase`), which must be absolute
+   * and on the page's origin. `publicUrl` is the real Supabase project URL, used for saved public
+   * storage URLs. `anonKey` is the publishable key.
    */
   supabase: {
     url: string;
     anonKey: string;
-    publicUrl?: string;
+    publicUrl: string;
   };
   /**
-   * Empty string defaults to `/api/gw` inside the embed. The embed calls `${apiBaseUrl}/api/...`, so
-   * host-session mode passes `/api/gatewaze` and its calls land on `/api/gatewaze/api/...`.
+   * The Gatewaze API proxy's mount. The embed calls `${apiBaseUrl}/api/...`, so LFX One passes
+   * `/api/gatewaze` and the calls land on `/api/gatewaze/api/...`.
    */
   apiBaseUrl: string;
   enabled: {
@@ -34,38 +33,14 @@ export interface GwHostContext {
     features: string[];
   };
   /**
-   * Where LFID sign-in starts, and where it should come back to.
-   *
-   * Informational. The HOST owns the sign-in round trip, and an embed-initiated one built from
-   * these two values cannot complete: adoption is bound to a single-use nonce that only the host
-   * mints, `returnUrl` deliberately carries none, and a return leg without it has its tokens
-   * discarded rather than adopted. The embed asks for sign-in by calling `navigateHost('/login')`,
-   * which the host answers by minting a nonce and starting the flow itself.
-   *
-   * The nonce is not simply added here: this value is built while the mount context is assembled,
-   * which happens BEFORE the host consumes a nonce arriving from a completed sign-in. Minting one
-   * at that point would overwrite the pending nonce and break every host-initiated return.
-   *
-   * Bridge mode only. Optional in host-session mode, and LFX One leaves it out there: a lost session
-   * then makes the embed reload the page (at most twice in 30 seconds), so LFX's own sign-in guard
-   * takes over.
+   * Host-session mode, the only mode LFX One uses: LFX One holds the Gatewaze session on the server,
+   * and the browser sees only a placeholder token, so no Gatewaze token reaches page scripts,
+   * `localStorage` or the URL. Both routes are same-origin. The loader refuses to mount a bundle whose
+   * manifest does not advertise the `host-session` capability (`gw_embed_capability_missing`).
    */
-  signIn?: {
-    /** The host's own sign-in entry point (LFID here). The embed never implements sign-in itself. */
-    startUrl: string;
-    returnUrl: string;
-  };
-  /**
-   * Host-session mode: LFX One holds the Gatewaze session on the server, and the browser sees only a
-   * placeholder token, so no Gatewaze token reaches page scripts, `localStorage` or the URL. Both
-   * routes are same-origin. The loader refuses to mount a bundle whose manifest does not advertise
-   * the `host-session` capability (`gw_embed_capability_missing`). Absent: the LFID bridge.
-   */
-  session?: GwEmbedHostSession;
+  session: GwEmbedHostSession;
   /** Where the loader fetches the embed from (`GW_EMBED_URL`) and how its stylesheet reaches the page. */
   source: GwEmbedSource;
-  /** Bridge mode only; the embed ignores it in host-session mode. */
-  storageKeySuffix?: string;
   portalContainer?: HTMLElement;
   /**
    * Host notification sink. With it set, `toast()` calls inside the embed render through the
@@ -78,13 +53,6 @@ export interface GwHostContext {
   navigateHost?: (path: string) => void;
   telemetry?: (event: { name: string; [key: string]: unknown }) => void;
 }
-
-/**
- * The part of `GwHostContext` that differs between the LFID bridge and host-session mode: where
- * Supabase and the Gatewaze API are reached, and how the session is held. The outlet builds one or
- * the other from `RuntimeConfig.gwHostSession`.
- */
-export type GwEmbedAuthContext = Pick<GwHostContext, 'supabase' | 'apiBaseUrl' | 'signIn' | 'session' | 'storageKeySuffix'>;
 
 /** `GwHostContext.session`: the routes LFX One serves for host-session mode (`gatewaze.route.ts`). */
 export interface GwEmbedHostSession {

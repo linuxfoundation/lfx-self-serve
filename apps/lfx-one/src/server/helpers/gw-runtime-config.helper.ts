@@ -12,9 +12,7 @@ import { resolvePublishableGwSupabaseKey } from './supabase-key.helper';
  * See RuntimeConfig's doc comments for each field. Empty values mean "not configured", and the
  * outlet fails closed on them.
  */
-export function buildGwRuntimeConfig(
-  req: Request
-): Pick<RuntimeConfig, 'gwSupabaseUrl' | 'gwSupabaseAnonKey' | 'gwLfidStartUrl' | 'gwEmbedUrl' | 'gwHostSession'> {
+export function buildGwRuntimeConfig(req: Request): Pick<RuntimeConfig, 'gwSupabaseUrl' | 'gwSupabaseAnonKey' | 'gwEmbedUrl' | 'gwHostSession'> {
   return {
     gwSupabaseUrl: process.env['GW_SUPABASE_URL'] || '',
     // Withheld unless it is actually publishable. This value lands in the SSR payload of every
@@ -22,10 +20,9 @@ export function buildGwRuntimeConfig(
     // anyone who views source. The outlet already fails closed on an empty key with a clear
     // "not configured" message, which is the right outcome for a misconfiguration.
     gwSupabaseAnonKey: resolvePublishableGwSupabaseKey(req),
-    gwLfidStartUrl: process.env['GW_LFID_START_URL'] || '',
     gwEmbedUrl: process.env['GW_EMBED_URL'] || '',
-    // The same check that gates /api/gatewaze, so the outlet never picks host mode on a pod whose
-    // routes would answer 404.
+    // The same check that gates /api/gatewaze, so the outlet never mounts the embed on a pod whose
+    // routes would answer 404. It shows its not-configured panel instead.
     gwHostSession: isGatewazeHostSessionEnabled(),
   };
 }

@@ -605,9 +605,9 @@ environment:
   LFX_MARKETING_OPS_FGA_ENABLED:
     value:
 
-  # Server-side kill switch for the /api/gw proxy. It does NOT gate the Angular routes — the
-  # client-side `gatewaze-embed-enabled` flag controls route matching and chunk loading, and both
-  # must be on for the pilot to work.
+  # Server-side kill switch for the /api/gatewaze routes. It does NOT gate the Angular routes — the
+  # client-side `gatewaze-embed-enabled` flag controls route matching and chunk loading. The pilot
+  # needs that flag, this one and LFX_GATEWAZE_HOST_SESSION below.
   #
   # Leave unset until GW_API_URL below is pointed at a real deployment. Once on, access is gated by
   # `requireGwEmbedAccess`: ED persona, root writer, or a writer grant on any foundation/project.
@@ -616,7 +616,7 @@ environment:
   LFX_GATEWAZE_EMBED_ENABLED:
     value:
 
-  # Optional per-environment tuning for the /api/gw proxy. Both fall back to their compiled
+  # Optional per-environment tuning for the /api/gatewaze proxies. Both fall back to their compiled
   # defaults when unset or invalid (60000ms; 104857600 bytes) rather than failing the request.
   GW_PROXY_TIMEOUT_MS:
     value:
@@ -624,8 +624,8 @@ environment:
   GW_PROXY_MAX_BODY_BYTES:
     value:
 
-  # Base URL of the Gatewaze admin API that /api/gw proxies to. https:// is enforced outside
-  # dev/local/test, and a trailing slash is rejected (the proxy resolves the request path against this base, and a trailing slash would skew the escape check).
+  # Origin of the Gatewaze admin API that /api/gatewaze/api proxies to. https:// is enforced
+  # outside dev/local/test, and it must be a bare origin: no path and no trailing slash.
   GW_API_URL:
     value:
 
@@ -639,17 +639,13 @@ environment:
   GW_SUPABASE_ANON_KEY:
     value:
 
-  # Gatewaze host-session mode (#2738): LFX One gets the Gatewaze session server-side with
-  # GoTrue's id_token grant and keeps it in Valkey, so the browser holds no Gatewaze token. Off
-  # by default. Also needs LFX_GATEWAZE_EMBED_ENABLED, SESSION_STORE_ENABLED with VALKEY_URL, the
+  # Gatewaze host-session mode (#2738), the embed's only mode: LFX One gets the Gatewaze session
+  # server-side with GoTrue's id_token grant and keeps it in Valkey, so the browser holds no
+  # Gatewaze token. Off by default; with it off the embed shows a "not configured" panel. Also needs LFX_GATEWAZE_EMBED_ENABLED, SESSION_STORE_ENABLED with VALKEY_URL, the
   # GW_SUPABASE_* pair above and PCC_AUTH0_SECRET. See docs/architecture/backend/gw-host-session.md.
   LFX_GATEWAZE_HOST_SESSION:
     value:
 
-  # Where the embed's "Sign in with LFID" button sends the user. The host appends a return_url
-  # carrying a single-use nonce and adopts the returned session only if that nonce comes back.
-  GW_LFID_START_URL:
-    value:
   # Where the Gatewaze deployment serves the embeddable admin, e.g.
   # https://admin.example.org/embed (no trailing slash). @gatewaze/admin-embed is a loader that
   # reads <url>/manifest.json and imports the current admin bundle from there, so admin changes

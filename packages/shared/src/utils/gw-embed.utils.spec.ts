@@ -9,10 +9,8 @@ import {
   GW_EMBED_SESSION_RECOVERY_KEY,
   GW_EMBED_SIGNIN_STATE_KEY,
   GW_EMBED_STORAGE_KEY_PREFIX,
-  GW_EMBED_STORAGE_KEY_SUFFIX,
 } from '../constants/gw-embed.constants';
-import { buildGwEmbedStorageSuffix, clearGwEmbedBridgeStorage, isGwEmbedAllowedForSlug, resolveGwEmbedRoutePrefix } from './gw-embed.utils';
-import { sha256Hex } from './sha256.utils';
+import { clearGwEmbedBridgeStorage, isGwEmbedAllowedForSlug, resolveGwEmbedRoutePrefix } from './gw-embed.utils';
 
 describe('resolveGwEmbedRoutePrefix', () => {
   it('resolves each mount from its own pathname', () => {
@@ -69,45 +67,6 @@ describe('isGwEmbedAllowedForSlug', () => {
   });
 });
 
-describe('buildGwEmbedStorageSuffix', () => {
-  // The key used to be a browser-wide constant, so a Gatewaze session stored for one LFX user
-  // survived LFX logout and was picked up verbatim by the next user on that browser —
-  // hasUsableStoredSession() checks only token and expiry, and the email comparison runs only for
-  // a fragment arriving from a sign-in, never for a session already in storage.
-  it('gives two identities different suffixes', () => {
-    expect(buildGwEmbedStorageSuffix('auth0|alice')).not.toBe(buildGwEmbedStorageSuffix('auth0|bob'));
-  });
-
-  it('is stable for one identity, so a reload finds its own session', () => {
-    expect(buildGwEmbedStorageSuffix('auth0|alice')).toBe(buildGwEmbedStorageSuffix('auth0|alice'));
-  });
-
-  it('keeps the shared prefix so the embed still namespaces against a standalone Gatewaze session', () => {
-    expect(buildGwEmbedStorageSuffix('auth0|alice').startsWith(GW_EMBED_STORAGE_KEY_SUFFIX)).toBe(true);
-  });
-
-  it('derives the suffix from a full SHA-256 of the subject', () => {
-    // Pinned against an independently computable digest rather than a snapshot: the guarantee being
-    // claimed is a named one, and a self-referential snapshot would pass just as happily if the
-    // derivation silently regressed to a 32-bit hash.
-    expect(buildGwEmbedStorageSuffix('auth0|alice')).toBe(`${GW_EMBED_STORAGE_KEY_SUFFIX}_${sha256Hex('auth0|alice')}`);
-    expect(buildGwEmbedStorageSuffix('auth0|alice')).toMatch(/_[0-9a-f]{64}$/);
-  });
-
-  it.each([
-    ['null', null],
-    ['undefined', undefined],
-    ['empty', ''],
-  ])('falls back to the bare constant for %s, the unauthenticated case', (_label, subject) => {
-    // No identity means no session worth protecting, and the embed still needs a usable key.
-    expect(buildGwEmbedStorageSuffix(subject)).toBe(GW_EMBED_STORAGE_KEY_SUFFIX);
-  });
-
-  it('does not put the raw subject in the key, which any script on the origin can read', () => {
-    expect(buildGwEmbedStorageSuffix('auth0|alice')).not.toContain('alice');
-  });
-});
-
 describe('clearGwEmbedBridgeStorage', () => {
   /** A Map-backed stand-in for the Web Storage API; this suite runs without a DOM. */
   const memoryStorage = (entries: Record<string, string> = {}): Storage => {
@@ -130,10 +89,11 @@ describe('clearGwEmbedBridgeStorage', () => {
   };
 
   it('removes every stored bridge session, for every user, and leaves other keys alone', () => {
+    // The key shapes the bridge wrote: the bare suffix, one per hashed LFX subject, and PKCE state.
     const local = memoryStorage({
-      [`${GW_EMBED_STORAGE_KEY_PREFIX}${GW_EMBED_STORAGE_KEY_SUFFIX}`]: 'a',
-      [`${GW_EMBED_STORAGE_KEY_PREFIX}${GW_EMBED_STORAGE_KEY_SUFFIX}_other`]: 'b',
-      [`${GW_EMBED_STORAGE_KEY_PREFIX}${GW_EMBED_STORAGE_KEY_SUFFIX}-code-verifier`]: 'c',
+      [`${GW_EMBED_STORAGE_KEY_PREFIX}lfx_embed`]: 'a',
+      [`${GW_EMBED_STORAGE_KEY_PREFIX}lfx_embed_other`]: 'b',
+      [`${GW_EMBED_STORAGE_KEY_PREFIX}lfx_embed-code-verifier`]: 'c',
       unrelated: 'kept',
     });
 

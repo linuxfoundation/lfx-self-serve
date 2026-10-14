@@ -5,8 +5,8 @@
  * Fragment keys that carry authentication material and must never reach an analytics sink or a
  * third-party query string.
  *
- * The Gatewaze embed's LFID sign-in returns to `#access_token=…&refresh_token=…`. A refresh token
- * is long-lived, so a leak does not expire on its own.
+ * An OAuth-style return such as `#access_token=…&refresh_token=…` (the shape the Gatewaze embed's
+ * retired LFID sign-in used). A refresh token is long-lived, so a leak does not expire on its own.
  *
  * Static lookup data, so it lives here rather than beside the functions that read it — the shared
  * package splits `constants/` (runtime values) from `utils/` (pure functions), and this file's

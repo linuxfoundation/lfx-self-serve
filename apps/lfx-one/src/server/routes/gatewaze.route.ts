@@ -21,10 +21,9 @@ router.use((_req, res, next) => {
 });
 
 // The uniform 404 while host-session mode is off or the request has no LFX bearer token, then the
-// same LFX authorization as /api/gw: ED, root writer or any writer grant, and a 403 while
-// impersonating. Nothing here mints a Gatewaze session for an impersonation target.
-// requireGwEmbedAccess lets a request with no bearer token through (on /api/gw the controller 404s
-// it), so requireGatewazeBearer refuses it first rather than relying on authMiddleware alone.
+// LFX authorization: ED, root writer or any writer grant, and a 403 while impersonating. Nothing
+// here mints a Gatewaze session for an impersonation target. requireGatewazeBearer refuses a
+// request with no bearer token rather than relying on authMiddleware alone.
 router.use(requireGatewazeHostSession, requireGatewazeBearer, requireGwEmbedAccess);
 
 // The proxies. Supabase services are matched by name, so GoTrue's /auth/v1 is never proxied (the
