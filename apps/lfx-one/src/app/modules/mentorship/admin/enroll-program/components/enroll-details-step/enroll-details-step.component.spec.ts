@@ -674,4 +674,13 @@ describe('EnrollDetailsStepComponent — technologies', () => {
 
     expect(form.controls['technologies'].value).toEqual(['Go', 'Rust', 'WebAssembly']);
   });
+
+  it('adds several technologies in one entry even when the whole entry is longer than one technology may be', () => {
+    const first = 'a'.repeat(200);
+    const second = 'b'.repeat(200);
+
+    add(`${first}, ${second}`);
+
+    expect(form.controls['technologies'].value).toEqual([first, second]);
+  });
 });

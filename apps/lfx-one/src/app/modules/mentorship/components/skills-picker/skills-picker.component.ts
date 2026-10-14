@@ -6,10 +6,10 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { AutocompleteComponent } from '@components/autocomplete/autocomplete.component';
 import { ButtonComponent } from '@components/button/button.component';
+import { MENTORSHIP_SKILL_MAX_LENGTH } from '@lfx-one/shared/constants';
 import { mentorshipSkillSuggestions } from '@lfx-one/shared/utils';
 import { AutoCompleteCompleteEvent } from 'primeng/autocomplete';
 import { startWith, switchMap } from 'rxjs';
-import { MENTORSHIP_SKILL_MAX_LENGTH } from '@lfx-one/shared/constants';
 
 /**
  * Skill picker shared by the mentorship forms — a text field that suggests skills from the

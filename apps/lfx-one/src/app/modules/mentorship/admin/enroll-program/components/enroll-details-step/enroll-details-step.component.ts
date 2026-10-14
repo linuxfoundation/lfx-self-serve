@@ -44,7 +44,6 @@ import {
   MENTORSHIP_PROGRAMS_MAX_LIMIT,
   mentorshipCiiBadgeImageUrl,
   mentorshipCiiProjectUrl,
-  MENTORSHIP_SKILL_MAX_LENGTH,
 } from '@lfx-one/shared/constants';
 import {
   MentorshipCiiLookupStatus,
@@ -164,7 +163,6 @@ export class EnrollDetailsStepComponent {
   protected readonly nameUnavailable = MENTORSHIP_ENROLL_NAME_UNAVAILABLE;
   protected readonly projectsUnavailable = MENTORSHIP_ENROLL_PROJECTS_UNAVAILABLE;
   protected readonly codeOfConductTemplateUrl = MENTORSHIP_CODE_OF_CONDUCT_TEMPLATE_URL;
-  protected readonly skillMaxLength = MENTORSHIP_SKILL_MAX_LENGTH;
 
   protected readonly technologySuggestions = signal<string[]>([]);
 
