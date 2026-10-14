@@ -6,6 +6,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  GOOGLE_ADS_LANGUAGE_MAP,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   MAX_BULK_KEYWORD_ACTIONS,
   MAX_GOOGLE_CREATIVE_FIELD_LENGTH,
@@ -1158,6 +1159,8 @@ describe('CampaignController.createCampaign cutover', () => {
     ['an oversized entry inside a list', { displayCreative: { headlines: ['x'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH + 1)] } }],
     ['an oversized scalar field', { displayCreative: { longHeadline: 'x'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH + 1) } }],
     ['an oversized conversion-action list', { conversionActions: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `a-${i}`) }],
+    ['an oversized callout list', { callouts: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `c-${i}`) }],
+    ['an oversized callout, which would otherwise reach the trim', { callouts: [`x${' '.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH)}x`] }],
   ])('refuses %s before normalising or dispatching', async (_label, overrides) => {
     const createConfigEnvelope = vi.spyOn(controller as unknown as { createConfigEnvelope: (body: unknown) => unknown }, 'createConfigEnvelope');
 
@@ -2603,6 +2606,391 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(error.statusCode).toBe(400);
     expect(error.field).toBe('countryCode');
     expect(error.message).toContain('31');
+  });
+
+  it('dispatches the languages the operator picked, trimmed and upper-cased', async () => {
+    // The contrast for every language refusal below: without it they would all pass on a
+    // controller that refused or dropped every language list. `resolveLanguageList` resolves an
+    // ISO 639-1 code case-insensitively, but the guard's map lookup is case-SENSITIVE, so the
+    // normalization has to happen in the builder or `de` would be refused here and accepted there.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000a', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ languages: [' en ', 'de'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['languages']).toEqual(['EN', 'DE']);
+  });
+
+  it('omits languages entirely when none were picked, which is how Google\'s "every language" default is reached', async () => {
+    // Absent, not `[]`. Upstream reads an absent list as every language; an empty array would be
+    // forwarded into `resolveLanguageList` as a narrowing the operator never asked for.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000a', error: null });
+
+    await controller.createCampaign(buildReq(googleBody(), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(envelopeFor(createCampaigns)['googleAdsConfig']).not.toHaveProperty('languages');
+  });
+
+  it('names an unsupported-but-well-formed language code instead of letting Google refuse it opaquely', async () => {
+    // `ZU` is Zulu: assigned, two letters, and absent from `languageConstants`, so
+    // `resolveLanguageList` hard-errors on it before the first mutate.
+    await controller.createCampaign(buildReq(googleBody({ languages: ['EN', 'ZU'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('languages');
+    expect(error.message).toContain('ZU');
+    // `EN` is fine, and naming it would send the operator looking at the wrong chip.
+    expect(error.message).not.toContain('EN');
+  });
+
+  it('accepts a numeric language constant id without testing it against the curated table, because upstream accepts ids outside it', async () => {
+    // The over-refusal guard for the guard itself. `resolveLanguageList` tells a code from an id by
+    // SHAPE — "an ISO 639-1 code is letters, a constant id is all digits" — and resolves an id
+    // against Google's own table rather than the curated one, so `1056` (Telugu) is a create Google
+    // takes. Testing it against `GOOGLE_ADS_LANGUAGE_MAP` would refuse it here.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000a', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ languages: ['1056'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['languages']).toEqual(['1056']);
+  });
+
+  it('refuses a 41-language list even when the 41st is a repeat, because upstream caps before it de-duplicates', async () => {
+    // `resolveLanguageList` checks `len(languages) > maxLanguages` on the RAW slice and dedupes
+    // afterwards, so a list that is only over the cap because it repeats a code is still refused
+    // there. Judging the de-duplicated length here would accept a create Go then kills.
+    const forty = Object.keys(GOOGLE_ADS_LANGUAGE_MAP).slice(0, 39);
+    await controller.createCampaign(buildReq(googleBody({ languages: [...forty, '1000', '1000'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('languages');
+    expect(error.message).toContain('41');
+  });
+
+  it('refuses languages on Demand Gen by name, the one channel upstream refuses the whole criteria set on', async () => {
+    // `validateCriteriaPlan` refuses languages, device bid modifiers, demographics and ad schedules
+    // together on Demand Gen, and upstream's contract for the field is "refused, never silently
+    // dropped". Dropping the list here instead would create a campaign serving in every language
+    // and report success. The UI never sends this; a direct caller gets a named 400, nothing sent.
+    await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['demand-gen'], languages: ['EN'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('languages');
+    expect(error.message).toContain('Demand Gen');
+  });
+
+  it('refuses a blank-only list on Demand Gen for the channel, because upstream counts blanks as asked', async () => {
+    // `validateCriteriaPlan` counts `len(in.Languages)`, so `['', '  ']` trips the Demand Gen fence
+    // before `resolveLanguageList` sees a blank. Dropping the blanks would dispatch an every-language
+    // campaign upstream refuses.
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: ['demand-gen'], languages: ['', '  '] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.field).toBe('languages');
+    expect(error.message).toContain('Demand Gen');
+  });
+
+  it('forwards languages on Performance Max, which upstream documents as taking campaign languages', async () => {
+    // The other half of the split `validateCriteriaPlan` makes: it refuses device bid modifiers and
+    // campaign-level demographic exclusions on Performance Max while ACCEPTING languages, because
+    // "Google documents LANGUAGE, LOCATION and AD_SCHEDULE as campaign criteria on Performance Max".
+    // Gating languages off here with the rest of the set would be exactly that over-refusal.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000a', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: ['performance-max'], languages: ['EN'] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['languages']).toEqual(['EN']);
+  });
+
+  it.each([
+    ['a blank entry beside a valid one', ['EN', '  '], 'blank entry'],
+    ['a list holding only a blank', [''], 'blank entry'],
+    ['a three-letter language code', ['ENG'], 'ENG'],
+    ['a zero language constant id', ['0'], 'canonical spelling'],
+    ['a zero-padded language constant id, which would send English twice', ['01000'], 'canonical spelling'],
+    ['a language constant id past int64', ['99999999999999999999'], 'canonical spelling'],
+  ])('names %s rather than letting Google refuse it opaquely', async (_label, languages, expected) => {
+    // One case per `resolveLanguageList` entry branch, each an opaque failure if it reached Go.
+    await controller.createCampaign(buildReq(googleBody({ languages }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('languages');
+    expect(error.message).toContain(expected);
+  });
+
+  it.each([
+    ['a bare string', 'EN'],
+    ['an object', { 0: 'EN' }],
+    ['a list holding a number', ['EN', 123]],
+  ])('refuses %s for languages instead of treating it as absent', async (_label, languages) => {
+    // Upstream decodes the field into a Go `[]string`, so a non-array or a non-string entry is
+    // refused by the decode, before any validator runs. Reading either as absent here would
+    // dispatch an every-language campaign.
+    await controller.createCampaign(buildReq(googleBody({ languages } as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('languages');
+    expect(error.message).toContain('must be a list');
+  });
+
+  it('reads a null language list as absent, as the Go decode does', async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000a', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ languages: null } as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(envelopeFor(createCampaigns)['googleAdsConfig']).not.toHaveProperty('languages');
+  });
+
+  it("refuses a list that breaks the cap AND carries an unknown code for the cap, in upstream's own order", async () => {
+    // `resolveLanguageList` tests the length before any entry, so a 41-entry list containing `ZU`
+    // is refused for its length there; naming `ZU` here would send the operator to the wrong fix.
+    const forty = Object.keys(GOOGLE_ADS_LANGUAGE_MAP).slice(0, 39);
+    await controller.createCampaign(buildReq(googleBody({ languages: [...forty, 'EN', 'ZU'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    const error = refusalFrom();
+    expect(error.field).toBe('languages');
+    expect(error.message).toContain('41');
+    expect(error.message).not.toContain('ZU');
+  });
+
+  it('refuses an over-cap Demand Gen list for the channel, which upstream judges before the cap', async () => {
+    const forty = Object.keys(GOOGLE_ADS_LANGUAGE_MAP).slice(0, 39);
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: ['demand-gen'], languages: [...forty, 'EN', 'DE'] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(refusalFrom().message).toContain('Demand Gen');
+  });
+
+  it('accepts the largest canonical language constant id, int64 max, which upstream parses', async () => {
+    // The accept side of the bound: `canonicalCampaignID` uses `ParseInt(s, 10, 64)`.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000a', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ languages: ['9223372036854775807'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('cuts an overlong unknown entry short in the refusal rather than echoing all of it', async () => {
+    const long = 'X'.repeat(500);
+    await controller.createCampaign(buildReq(googleBody({ languages: [long] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    const error = refusalFrom();
+    expect(error.field).toBe('languages');
+    expect(error.message).toContain(`${'X'.repeat(32)}…`);
+    expect(error.message).not.toContain('X'.repeat(33));
+  });
+
+  it('refuses a non-string entry for the decode even on Demand Gen, which upstream decodes before it fences', async () => {
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: ['demand-gen'], languages: ['EN', 123] } as never), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(refusalFrom().message).toContain('must be a list');
+  });
+
+  it('names the FIRST bad entry, as upstream refuses on the first', async () => {
+    await controller.createCampaign(buildReq(googleBody({ languages: ['EN', '0', 'ZU'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    const error = refusalFrom();
+    expect(error.message).toContain('canonical spelling');
+    expect(error.message).not.toContain('ZU');
+  });
+
+  /**
+   * The callout guards, one test per branch of upstream's `validateCallouts`
+   * (`internal/platform/googleads/assets.go`), plus the accept-cases that keep them from
+   * over-refusing. `validateCallouts` runs inside `validateAssetPlan`, which runs inside
+   * `preflightCampaignKind` — before the budget mutate — so each of these costs the whole campaign
+   * upstream and arrives as the orchestrator's opaque "platform campaign creation failed".
+   */
+  const CALLOUTS_20 = Array.from({ length: 20 }, (_, i) => `Callout ${i + 1}`);
+
+  it('dispatches a list of 20 callouts, which is exactly what upstream accepts', async () => {
+    // The contrast for the cap below. Without it a controller that refused every callout list
+    // would pass every refusal test here.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000b', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ callouts: CALLOUTS_20 }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['callouts']).toHaveLength(20);
+  });
+
+  it('refuses a 21-callout list even when the 21st is a repeat, because upstream caps before it de-duplicates', async () => {
+    // `validateCallouts` compares `len(callouts) > maxCallouts` on the RAW slice, before it looks
+    // at any entry — so a list that is only over the cap because it repeats a phrase is refused
+    // there on the cap. Judging the de-duplicated length here would accept a create Go then kills.
+    await controller.createCampaign(buildReq(googleBody({ callouts: [...CALLOUTS_20, 'Callout 1'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('callouts');
+    expect(error.message).toContain('21');
+  });
+
+  it('names a callout over the 25-rune bound instead of letting Google refuse it opaquely', async () => {
+    await controller.createCampaign(buildReq(googleBody({ callouts: ['Free shipping', 'A'.repeat(26)] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('callouts');
+    expect(error.message).toContain('A'.repeat(26));
+    // Only the offending callout is named — naming the valid one would send the operator editing
+    // text that is already fine.
+    expect(error.message).not.toContain('Free shipping');
+  });
+
+  it('dispatches a 25-EMOJI callout, because upstream counts runes and not UTF-16 units', async () => {
+    // The over-refusal this guard exists to avoid. `utf8.RuneCountInString` counts code points, so
+    // 25 astral-plane characters are 25 runes upstream and a create Google accepts. Counted with
+    // `.length` here they would be 50 units and this create would be refused for no reason.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000c', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ callouts: ['🎉'.repeat(25)] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['callouts']).toEqual(['🎉'.repeat(25)]);
+  });
+
+  it('refuses a callout repeated in a different case, which upstream refuses rather than de-duplicates', async () => {
+    // `validateCallouts` keys its seen-set on `strings.ToLower(text)` and answers "callout %q is
+    // listed more than once" — it does not quietly drop the repeat, so neither does this.
+    await controller.createCampaign(buildReq(googleBody({ callouts: ['Free Shipping', 'free shipping'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('callouts');
+    expect(error.message).toContain('free shipping');
+  });
+
+  it.each([
+    ['an absent callout list', {}],
+    ['an empty callout list', { callouts: [] }],
+    ['a null callout list, which the Go decode reads as absent', { callouts: null }],
+  ])('omits the callouts key entirely for %s', async (_label, overrides) => {
+    // Omitted rather than sent as `[]`, so the upstream default is reached by the absent-key route
+    // every caller predating this field takes.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000e', error: null });
+
+    await controller.createCampaign(buildReq(googleBody(overrides as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>).not.toHaveProperty('callouts');
+  });
+
+  it.each([
+    ['a blank entry beside a valid one', ['Free shipping', '  '], 'blank entry (callout 2)'],
+    ['a list holding only a blank', [''], 'blank entry (callout 1)'],
+    ['a bare string', 'Free shipping', 'must be a list'],
+    ['a list holding a number', ['Free shipping', 123], 'must be a list'],
+    ['a list holding null', [null], 'must be a list'],
+  ])('refuses %s by name rather than dropping it', async (_label, callouts, expected) => {
+    // `validateCallouts` refuses a blank ("callout %d is empty"), and the Go `[]string` decode
+    // refuses a non-list or a non-string entry. Dropping either would create the campaign without
+    // what the caller asked for and report success.
+    await controller.createCampaign(buildReq(googleBody({ callouts } as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('callouts');
+    expect(error.message).toContain(expected);
+  });
+
+  it.each([
+    ['a callout', ['Free shipping']],
+    ['a blank-only list, which upstream still counts as asked', ['  ']],
+  ])('refuses %s on a non-Search channel by name, because upstream refuses the whole create there', async (_label, callouts) => {
+    // `validateAssetPlan` counts every extension list and fails a non-Search create on any of them
+    // ("supported on Search campaigns only"), before it looks at an entry.
+    await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['demand-gen'], callouts }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.field).toBe('callouts');
+    expect(error.message).toContain('Demand Gen');
+  });
+
+  it.each([
+    ['the cap before a bad entry', { callouts: [...CALLOUTS_20, 'A'.repeat(26)] }, 'callouts', '21'],
+    ['the channel before the cap', { campaignTypes: ['demand-gen'], callouts: [...CALLOUTS_20, 'Callout 21'] }, 'callouts', 'Demand Gen'],
+    ['the first bad entry, a repeat before an over-long one', { callouts: ['Free shipping', 'free shipping', 'A'.repeat(26)] }, 'callouts', 'more than once'],
+    ['the language guard before the callout guard', { languages: ['ZU'], callouts: [''] }, 'languages', 'ZU'],
+  ])("refuses for %s, in upstream's own order", async (_label, overrides, field, expected) => {
+    // A request that breaks two rules is refused for the one upstream names: `validateCriteriaPlan`
+    // before `validateAssetPlan`, and inside `validateCallouts` the cap, then entry by entry.
+    await controller.createCampaign(buildReq(googleBody(overrides), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    const error = refusalFrom();
+    expect(error.field).toBe(field);
+    expect(error.message).toContain(expected);
+  });
+
+  it.each([
+    ['a trailing U+0085, which Go trims and JS `trim` keeps', ['Free shipping', 'free shipping\u0085']],
+    ['final sigma, which JS `toLowerCase` folds differently from Go', ['ΟΔΟΣ', 'οδοσ']],
+    ['a dotted capital I, which Go lowers to a plain i', ['İnfo', 'info']],
+  ])("refuses a repeat hidden by %s, judging it with Go's string rules", async (_label, callouts) => {
+    // Upstream trims with `strings.TrimSpace` and keys repeats on `strings.ToLower`. JS's own
+    // `trim`/`toLowerCase` would call each pair different and pass a create Go then refuses.
+    await controller.createCampaign(buildReq(googleBody({ callouts }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().message).toContain('more than once');
+  });
+
+  it("dispatches each callout trimmed with Go's rules", async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000f', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ callouts: ['\u00a0Free shipping\u0085'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['callouts']).toEqual(['Free shipping']);
+  });
+
+  it('cuts an echoed callout by code point, so an emoji at the cut is never split', async () => {
+    // 31 ASCII characters then emoji: a UTF-16 cut at 32 would end on half of the first emoji.
+    await controller.createCampaign(buildReq(googleBody({ callouts: [`${'A'.repeat(31)}${'🎉'.repeat(5)}`] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(refusalFrom().message).toContain(`${'A'.repeat(31)}🎉…`);
+  });
+
+  it('cuts a long callout short when it echoes it, since the text comes from an unvalidated body', async () => {
+    await controller.createCampaign(buildReq(googleBody({ callouts: ['A'.repeat(40)] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    const message = refusalFrom().message;
+    expect(message).toContain(`${'A'.repeat(32)}…`);
+    expect(message).not.toContain('A'.repeat(33));
   });
 
   it.each([

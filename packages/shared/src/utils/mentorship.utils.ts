@@ -248,10 +248,9 @@ export function getMentorshipEnrollLogoError(file: { name: string; size: number;
   return '';
 }
 
-/** Upstream create refuses a single-day application window and one that does not end before the term starts. */
-function getMentorshipEnrollTermWindowError(term: Pick<MentorshipProgramTerm, 'startDate' | 'applicationStartDate' | 'applicationEndDate'>): string {
+/** Upstream create refuses a single-day application window. The window may run into the term; the shared rules keep it within the end month. */
+function getMentorshipEnrollTermWindowError(term: Pick<MentorshipProgramTerm, 'applicationStartDate' | 'applicationEndDate'>): string {
   if (term.applicationEndDate <= term.applicationStartDate) return 'Application end date must be after the application start date.';
-  if (term.applicationEndDate >= term.startDate) return 'Application end date must be before the term start month.';
   return '';
 }
 

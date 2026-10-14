@@ -78,6 +78,7 @@ describe('SnowflakeService circuit breaker', () => {
     Promise.reject(
       Object.assign(new Error("SQL compilation error:\nInvalid row count '10000000000000000000000000' in result offset clause"), { code: '002011' })
     );
+  const valueConversion = () => Promise.reject(Object.assign(new Error("Date 'x' is not recognized"), { code: '100040' }));
   const missingObject = () => Promise.reject(new Error("SQL compilation error: Object 'ANALYTICS.PLATINUM_LFX_ONE.EXAMPLE' does not exist or not authorized."));
 
   const serviceWithPool = (use: ReturnType<typeof vi.fn>) => {
@@ -167,6 +168,40 @@ describe('SnowflakeService circuit breaker', () => {
     internals.lastFailureTime = Date.now() - SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_RESET_TIMEOUT_MS - 1;
 
     await expect(service.execute('SELECT 1')).rejects.toMatchObject({ code: 'SNOWFLAKE_QUERY_ERROR' });
+    expect(service.getCircuitStats().state).toBe(SnowflakeCircuitState.HALF_OPEN);
+
+    await expect(service.execute('SELECT 2')).resolves.toEqual({ rows: [], metadata: [] });
+    expect(service.getCircuitStats().state).toBe(SnowflakeCircuitState.CLOSED);
+  });
+
+  it('keeps the circuit closed when Snowflake cannot convert a bind value', async () => {
+    const { service } = serviceWithPool(vi.fn(valueConversion));
+
+    await expect(service.execute('SELECT CURRENT_DATE >= ?', ['x'])).rejects.toMatchObject({ statusCode: 500, code: 'SNOWFLAKE_QUERY_ERROR' });
+    await runQueries(service, SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_FAILURE_THRESHOLD * 2);
+
+    expect(service.getCircuitStats()).toMatchObject({ state: SnowflakeCircuitState.CLOSED, consecutiveFailures: 0 });
+    expect(span.setAttribute).toHaveBeenCalledWith('snowflake.value_conversion', true);
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('does not reset or increment genuine failures when a bind conversion fails', async () => {
+    const use = vi.fn().mockImplementationOnce(queryFailure).mockImplementation(valueConversion);
+    const { service } = serviceWithPool(use);
+
+    await expect(service.execute('SELECT 1')).rejects.toMatchObject({ code: 'SNOWFLAKE_QUERY_ERROR' });
+    await expect(service.execute('SELECT CURRENT_DATE >= ?', ['x'])).rejects.toMatchObject({ statusCode: 500, code: 'SNOWFLAKE_QUERY_ERROR' });
+
+    expect(service.getCircuitStats()).toMatchObject({ state: SnowflakeCircuitState.CLOSED, consecutiveFailures: 1 });
+  });
+
+  it('frees the HALF_OPEN probe slot when the probe fails a bind conversion', async () => {
+    const use = vi.fn().mockImplementationOnce(valueConversion).mockImplementation(querySuccess);
+    const { service, internals } = serviceWithPool(use);
+    internals.circuitState = SnowflakeCircuitState.OPEN;
+    internals.lastFailureTime = Date.now() - SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_RESET_TIMEOUT_MS - 1;
+
+    await expect(service.execute('SELECT CURRENT_DATE >= ?', ['x'])).rejects.toMatchObject({ statusCode: 500, code: 'SNOWFLAKE_QUERY_ERROR' });
     expect(service.getCircuitStats().state).toBe(SnowflakeCircuitState.HALF_OPEN);
 
     await expect(service.execute('SELECT 2')).resolves.toEqual({ rows: [], metadata: [] });

@@ -13,7 +13,7 @@ import '@angular/compiler';
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
 const { userPreferenceSvc, socialListeningSvc, logger } = vi.hoisted(() => ({
   userPreferenceSvc: { getPreference: vi.fn(), upsertPreference: vi.fn(), deletePreference: vi.fn() },
-  socialListeningSvc: { getMentionsFeed: vi.fn(), getMentionsTags: vi.fn() },
+  socialListeningSvc: { getMentionsFeed: vi.fn(), getMentionsCount: vi.fn(), getMentionsTags: vi.fn() },
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn(), etag: vi.fn() },
 }));
 
@@ -176,32 +176,26 @@ describe('SocialListeningController', () => {
     });
   });
 
-  describe('getMentionsFeed — endpoint wiring', () => {
-    it('forwards the parsed scope and pagination to the service', async () => {
-      socialListeningSvc.getMentionsFeed.mockResolvedValue({ mentions: [], computedAt: '2026-08-24T00:00:00Z' });
-      const res = buildRes();
-
-      await controller.getMentionsFeed(buildReq({ query: { foundationSlug: 'linuxfoundation' } }), res, next);
-
-      expect(socialListeningSvc.getMentionsFeed).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ foundationSlug: 'linuxfoundation' }));
-      expect(res.json).toHaveBeenCalled();
-      expect(next).not.toHaveBeenCalled();
-    });
-
-    it('400s via the real param helper when foundationSlug is missing', async () => {
-      await controller.getMentionsFeed(buildReq({ query: {} }), buildRes(), next);
-
+  describe.each(['getMentionsFeed', 'getMentionsCount'] as const)('%s JSON boundary', (method) => {
+    it.each([{}, { foundationSlug: 'invalid_slug' }, { foundationSlug: 42 }])('rejects invalid body scope before data access', async (body) => {
+      await controller[method](buildReq({ body, query: { foundationSlug: 'synthetic-owned' } }), buildRes(), next);
       expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
-      expect(socialListeningSvc.getMentionsFeed).not.toHaveBeenCalled();
+      expect(socialListeningSvc[method]).not.toHaveBeenCalled();
     });
 
-    it('forwards service errors to next', async () => {
+    it('rejects a missing body even when query scope is valid', async () => {
+      await controller[method](buildReq({ query: { foundationSlug: 'synthetic-owned' } }), buildRes(), next);
+      expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+      expect(socialListeningSvc[method]).not.toHaveBeenCalled();
+    });
+
+    it('forwards service failures to central error handling', async () => {
       const failure = new Error('snowflake down');
-      socialListeningSvc.getMentionsFeed.mockRejectedValue(failure);
-
-      await controller.getMentionsFeed(buildReq({ query: { foundationSlug: 'linuxfoundation' } }), buildRes(), next);
-
+      socialListeningSvc[method].mockRejectedValue(failure);
+      const res = buildRes();
+      await controller[method](buildReq({ body: { foundationSlug: 'synthetic-owned' } }), res, next);
       expect(next).toHaveBeenCalledWith(failure);
+      expect(res.json).not.toHaveBeenCalled();
     });
   });
 

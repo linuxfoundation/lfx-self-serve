@@ -1,0 +1,77 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+/** Host-session configuration read from the environment, present only when host-session mode is on and complete. */
+export interface GatewazeHostSessionSettings {
+  /** `GW_SUPABASE_URL` without a trailing slash: the GoTrue and PostgREST upstream. */
+  supabaseUrl: string;
+  /** `GW_SUPABASE_ANON_KEY`, checked to be publishable (never service-role). */
+  anonKey: string;
+  /** `VALKEY_URL`, for the store's own connection. */
+  valkeyUrl: string;
+  /** `PCC_AUTH0_SECRET`, the input to the host-session master key. */
+  authSecret: string;
+}
+
+/** `getGatewazeSession` found or minted a session. `TSession` is `@gatewaze/host-session`'s `GwSession`, which this package does not depend on. */
+export interface GatewazeSessionOk<TSession> {
+  outcome: 'ok';
+  session: TSession;
+}
+
+/**
+ * Why `getGatewazeSession` has no session. Each outcome maps to one row of the `/session/me` table in
+ * `docs/architecture/backend/gw-host-session.md`:
+ * - `host_session_unavailable`: host-session mode is off or misconfigured (flag, session store, Supabase config, cookie). Uniform 404.
+ * - `ended`: the LFX session is over (Auth0 refused the refresh token) or the Gatewaze session was signed out. 401 with `x-gw-session: expired`.
+ * - `refused`: GoTrue refused the ID token (a 4xx). A configuration fault, so 503 with an ERROR log, never 401.
+ * - `unavailable`: Valkey, Auth0 or GoTrue could not answer. 503.
+ */
+export interface GatewazeSessionFailure {
+  outcome: 'host_session_unavailable' | 'ended' | 'refused' | 'unavailable';
+}
+
+/** Result of `GatewazeSessionService.getGatewazeSession`. */
+export type GatewazeSessionResult<TSession> = GatewazeSessionOk<TSession> | GatewazeSessionFailure;
+
+/** `getGatewazeMe` found an admin session. `user` is GoTrue's `/user` body, sent to the embed as `{ user }`. */
+export interface GatewazeMeOk {
+  outcome: 'ok';
+  user: Record<string, unknown>;
+}
+
+/** The session is good but the user has no active `admin_profiles` row. 403 `{ error: 'not_admin', email }`. */
+export interface GatewazeMeNotAdmin {
+  outcome: 'not_admin';
+  email?: string;
+}
+
+/** The admin check could not be made at sign-in. 503 `{ error: 'admin_check_pending' }` with `Retry-After`. */
+export interface GatewazeMeAdminCheckPending {
+  outcome: 'admin_check_pending';
+  retryAfterSeconds: number;
+}
+
+/** Result of `GatewazeSessionService.getGatewazeMe`, one per row of the `/session/me` table. */
+export type GatewazeMeResult = GatewazeMeOk | GatewazeMeNotAdmin | GatewazeMeAdminCheckPending | GatewazeSessionFailure;
+
+/** How `endGatewazeSession` removes the record once the session is revoked. */
+export interface GatewazeSessionEndOptions {
+  /**
+   * True for LFX's `/logout`: `store.delete`, which also sets the package's 5 minute sign-out marker so
+   * a request already in flight cannot mint a new session on the same id. False for the embed's own
+   * sign-out button: `store.discard` with the revoked access token, no marker, so the next
+   * `/session/me` mints again from the still-live LFX session.
+   */
+  blockReMint: boolean;
+}
+
+/** What `endGatewazeSession` managed to do. It never throws, so the caller can always answer. */
+export interface GatewazeSessionEndResult {
+  /** A stored session was found for this LFX session. */
+  found: boolean;
+  /** GoTrue confirmed it revoked the refresh token. */
+  revoked: boolean;
+  /** The record was removed and the sign-out published. False when there was nothing to remove, or another request had already replaced it. */
+  deleted: boolean;
+}
