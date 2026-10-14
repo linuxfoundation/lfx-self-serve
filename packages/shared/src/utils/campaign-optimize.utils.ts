@@ -66,13 +66,13 @@ export function buildCampaignSettingsDrift(readback: CampaignServiceSettingsRead
  * The ONE reading of a campaign-ref answer that the act dialog and the adopt check both use.
  *
  * The answer is trusted only when it is self-consistent: `match_count` equals `matches.length`, the
- * echoed `platform_campaign_id` is the id that was asked about (compared by `canonicalCampaignId`, so a
- * numeric id that reached the UI as a number, or padded, still matches its echo), and every match names a
+ * echoed `platform_campaign_id` is the id that was asked about (`sameCampaignId`: exact after trimming,
+ * or as the same integer only where ids ARE integers), and every match names a
  * campaign and a brief. Anything else is `unexpected` and must not be acted on: not as a match (which
  * would change a campaign), not as no match (which would unlock a second adoption), and not as a
  * confirmed adoption.
  */
-export function readCampaignRefResolution(resolution: unknown, requestedId: string | number): CampaignRefVerdict {
+export function readCampaignRefResolution(resolution: unknown, requestedId: string | number, platform: string): CampaignRefVerdict {
   if (!resolution || typeof resolution !== 'object') {
     return { kind: 'unexpected' };
   }
@@ -85,8 +85,7 @@ export function readCampaignRefResolution(resolution: unknown, requestedId: stri
     matches?: unknown;
     match_count?: unknown;
   };
-  const requested = canonicalCampaignId(requestedId);
-  if (requested === null || canonicalCampaignId(echoed) !== requested || !Array.isArray(matches) || typeof count !== 'number' || count !== matches.length) {
+  if (!sameCampaignId(requestedId, echoed, platform) || !Array.isArray(matches) || typeof count !== 'number' || count !== matches.length) {
     return { kind: 'unexpected' };
   }
   if (!matches.every(isCampaignRef)) {
@@ -99,26 +98,42 @@ export function readCampaignRefResolution(resolution: unknown, requestedId: stri
 }
 
 /**
- * A platform campaign id in one canonical form for comparison: trimmed, and an all-digit id (LinkedIn,
- * Meta, Microsoft; or one that arrived as a JSON number) as its decimal string without leading zeros.
- * `null` for anything that cannot be an id, which never matches.
+ * Whether the id the UI asked about and the id campaign-service echoed name the same campaign.
+ *
+ * Compared as trimmed exact strings first. Only where an id IS an integer — LinkedIn, whose campaign
+ * ids are int64s, or either side arriving as a JSON number — are two all-digit ids also compared as
+ * integers (leading zeros ignored). Elsewhere `0123` and `123` are different ids: a Reddit or Meta id
+ * is an opaque string, and treating them as one would act on a campaign nobody named.
  */
-export function canonicalCampaignId(value: unknown): string | null {
-  let text: string;
+export function sameCampaignId(requested: unknown, echoed: unknown, platform: string): boolean {
+  const a = campaignIdText(requested);
+  const b = campaignIdText(echoed);
+  if (a === null || b === null) {
+    return false;
+  }
+  if (a === b) {
+    return true;
+  }
+  const integerIds = platform === 'linkedin-ads' || typeof requested === 'number' || typeof echoed === 'number';
+  return integerIds && ALL_DIGITS.test(a) && ALL_DIGITS.test(b) && stripLeadingZeros(a) === stripLeadingZeros(b);
+}
+
+const ALL_DIGITS = /^[0-9]+$/;
+
+/** A trimmed id; a JSON number as its exact decimal string. `null` for anything that cannot be an id. */
+function campaignIdText(value: unknown): string | null {
   if (typeof value === 'number') {
-    if (!Number.isInteger(value) || value < 0) {
-      return null;
-    }
-    text = BigInt(value).toString();
-  } else if (typeof value === 'string') {
-    text = value.trim();
-  } else {
+    return Number.isSafeInteger(value) && value >= 0 ? String(value) : null;
+  }
+  if (typeof value !== 'string') {
     return null;
   }
-  if (text === '') {
-    return null;
-  }
-  return /^[0-9]+$/.test(text) ? text.replace(/^0+(?=[0-9])/, '') : text;
+  const text = value.trim();
+  return text === '' ? null : text;
+}
+
+function stripLeadingZeros(digits: string): string {
+  return digits.replace(/^0+(?=[0-9])/, '');
 }
 
 function isCampaignRef(value: unknown): value is CampaignServiceCampaignRef {

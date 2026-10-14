@@ -14,8 +14,9 @@ import type { CampaignAdoptFailure, CampaignAdoptionInFlight } from '@lfx-one/sh
  * and so any later dialog for the same campaign reads it.
  *
  * Keyed by project, platform and platform campaign id: the same id under another project or platform
- * is another campaign. Entries are dropped only once an answer settles them (success, a definite
- * refusal, or a check); a full-page navigation (sign-out) tears the instance down.
+ * is another campaign. A success is kept as `adopted` until a dialog has shown it; every other entry
+ * is dropped once an answer settles it (a definite refusal, or a check). A full-page navigation
+ * (sign-out) tears the instance down.
  */
 @Injectable({ providedIn: 'root' })
 export class CampaignAdoptionStateService {
@@ -32,6 +33,11 @@ export class CampaignAdoptionStateService {
 
   public markPending(key: string, briefId: string): void {
     this.state.update((s) => ({ ...s, [key]: { state: 'pending', briefId, failure: null } }));
+  }
+
+  /** A success that may land after its dialog closed: kept until a dialog shows it, so none re-offers Adopt. */
+  public markAdopted(key: string, briefId: string): void {
+    this.state.update((s) => ({ ...s, [key]: { state: 'adopted', briefId, failure: null, adoptedAt: new Date().toISOString() } }));
   }
 
   public markUnconfirmed(key: string, briefId: string, failure: CampaignAdoptFailure): void {

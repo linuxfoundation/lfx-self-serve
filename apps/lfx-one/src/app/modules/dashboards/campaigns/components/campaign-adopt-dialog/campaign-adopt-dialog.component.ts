@@ -33,7 +33,7 @@ import { CampaignService } from '@services/campaign.service';
 import { campaignAdoptFailure } from '@shared/utils/campaign-optimize-error.utils';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { catchError, map, of, startWith, switchMap, take } from 'rxjs';
+import { catchError, filter, map, of, startWith, switchMap, take } from 'rxjs';
 
 /**
  * Adopt a campaign that already exists on its ad platform into one of the project's approved
@@ -101,6 +101,19 @@ export class CampaignAdoptDialogComponent {
     this.destroyRef.onDestroy(() => {
       this.closed = true;
     });
+    // Any live dialog for this campaign — the one that sent the write, or one reopened while it was in
+    // flight — shows a success as soon as the store records it, and closes. One opened after a success
+    // nobody saw closes at once the same way. Never re-offers Adopt.
+    toObservable(this.inFlight)
+      .pipe(
+        filter((entry) => entry?.state === 'adopted'),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(() => {
+        this.adoptionState.settle(this.key);
+        this.dialogRef.close(true);
+      });
   }
 
   protected retryBriefs(): void {
@@ -127,7 +140,8 @@ export class CampaignAdoptDialogComponent {
       .pipe(take(1))
       .subscribe({
         next: () => {
-          this.adoptionState.settle(key);
+          // Recorded, not cleared: a dialog reopened meanwhile must learn of it rather than re-offer Adopt.
+          this.adoptionState.markAdopted(key, briefId);
           this.announceAdopted();
         },
         error: (error: unknown) => {
@@ -171,16 +185,17 @@ export class CampaignAdoptDialogComponent {
           this.checking.set(false);
           // The act dialog's reading: a self-contradicting answer neither confirms the adoption nor
           // unlocks a second one, so the outcome stays unconfirmed.
-          const verdict = readCampaignRefResolution(resolution, this.data.platformCampaignId);
+          const verdict = readCampaignRefResolution(resolution, this.data.platformCampaignId, this.data.platform);
           if (verdict.kind === 'unexpected') {
             this.adoptionState.annotate(key, CAMPAIGN_ADOPT_VERIFY_UNEXPECTED_MESSAGE);
             return;
           }
-          this.adoptionState.settle(key);
           if (verdict.kind === 'one' && verdict.match.brief_id === entry.briefId) {
+            this.adoptionState.markAdopted(key, entry.briefId);
             this.announceAdopted();
             return;
           }
+          this.adoptionState.settle(key);
           this.localFailure.set(this.unsettledCheckFailure(verdict.kind));
         },
         error: () => {
@@ -201,6 +216,7 @@ export class CampaignAdoptDialogComponent {
     return { state: 'failed', title: 'Not changed', message: CAMPAIGN_ACT_AMBIGUOUS_MESSAGE, detail: '' };
   }
 
+  /** Announces a success; the store's `adopted` entry closes every live dialog for this campaign. */
   private announceAdopted(): void {
     this.messageService.add({
       severity: 'success',
@@ -208,7 +224,6 @@ export class CampaignAdoptDialogComponent {
       detail: 'LFX One now manages this campaign. Nothing was changed on the ad platform.',
       life: 5000,
     });
-    this.dialogRef.close(true);
   }
 
   private initBriefs(): Signal<CampaignAdoptBriefsState> {

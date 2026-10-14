@@ -31,12 +31,15 @@ function bffError(status: number, error: string): HttpErrorResponse {
 describe('CampaignAdoptDialogComponent (#3299)', () => {
   let fixture: ComponentFixture<CampaignAdoptDialogComponent>;
   let close: ReturnType<typeof vi.fn>;
+  /** Each dialog instance's OWN ref, in creation order; every one also reports to `close`. */
+  let refs: ReturnType<typeof vi.fn>[];
   let toast: ReturnType<typeof vi.fn>;
   let service: { listAdoptableBriefs: ReturnType<typeof vi.fn>; adoptCampaign: ReturnType<typeof vi.fn>; resolvePlatformCampaign: ReturnType<typeof vi.fn> };
 
   async function setup(briefs: unknown = of(BRIEFS)): Promise<void> {
     TestBed.resetTestingModule();
     close = vi.fn();
+    refs = [];
     toast = vi.fn();
     service = { listAdoptableBriefs: vi.fn(() => briefs), adoptCampaign: vi.fn(), resolvePlatformCampaign: vi.fn() };
     const data: CampaignAdoptDialogData = { projectSlug: 'tlf', platform: 'linkedin-ads', platformCampaignId: '123456', campaignName: 'KubeCon EU' };
@@ -44,12 +47,28 @@ describe('CampaignAdoptDialogComponent (#3299)', () => {
       imports: [CampaignAdoptDialogComponent],
       providers: [
         provideNoopAnimations(),
-        { provide: DynamicDialogRef, useValue: { close } },
         { provide: DynamicDialogConfig, useValue: { data } },
         { provide: CampaignService, useValue: service },
         { provide: MessageService, useValue: { add: toast } },
       ],
-    }).compileComponents();
+    })
+      // A ref per dialog instance, as DialogService gives each opening its own: a close aimed at the
+      // first dialog's ref must not pass for the reopened dialog closing.
+      .overrideComponent(CampaignAdoptDialogComponent, {
+        add: {
+          providers: [
+            {
+              provide: DynamicDialogRef,
+              useFactory: () => {
+                const own = vi.fn((result?: unknown) => close(result));
+                refs.push(own);
+                return { close: own };
+              },
+            },
+          ],
+        },
+      })
+      .compileComponents();
     fixture = TestBed.createComponent(CampaignAdoptDialogComponent);
     fixture.detectChanges();
   }
@@ -119,6 +138,7 @@ describe('CampaignAdoptDialogComponent (#3299)', () => {
 
     service.resolvePlatformCampaign.mockReturnValue(of({ platform_campaign_id: '123456', matches: [{ campaign_id: 'c-9', brief_id: 'b-1' }], match_count: 1 }));
     (q('campaign-adopt-dialog-verify')?.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
     expect(service.resolvePlatformCampaign).toHaveBeenCalledWith('tlf', 'linkedin-ads', '123456');
     expect(close).toHaveBeenCalledWith(true);
   });
@@ -178,6 +198,7 @@ describe('CampaignAdoptDialogComponent (#3299)', () => {
 
     service.resolvePlatformCampaign.mockReturnValue(of({ platform_campaign_id: '123456', matches: [{ campaign_id: 'c-9', brief_id: 'b-1' }], match_count: 1 }));
     (q('campaign-adopt-dialog-verify')?.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
     expect(close).toHaveBeenCalledWith(true);
   });
 
@@ -198,6 +219,41 @@ describe('CampaignAdoptDialogComponent (#3299)', () => {
     expect(toast).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', sticky: true }));
     expect(q('campaign-adopt-dialog-unconfirmed')).not.toBeNull();
     expect(submitDisabled()).toBe(true);
+  });
+
+  it('closes a dialog reopened while the write was in flight once that write succeeds, never re-offering Adopt', async () => {
+    await setup();
+    const reply = new Subject<{ id: string }>();
+    service.adoptCampaign.mockReturnValue(reply);
+    chooseAndSubmit();
+
+    reopen();
+    expect(submitDisabled()).toBe(true);
+
+    reply.next({ id: 'c-9' });
+    reply.complete();
+    fixture.detectChanges();
+
+    expect(toast).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Adopted KubeCon EU' }));
+    // The REOPENED dialog (the second ref) is the one that closes.
+    expect(refs[1]).toHaveBeenCalledWith(true);
+    expect(service.adoptCampaign).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes at once a dialog opened after a success that no dialog showed', async () => {
+    await setup();
+    const reply = new Subject<{ id: string }>();
+    service.adoptCampaign.mockReturnValue(reply);
+    chooseAndSubmit();
+    fixture.destroy();
+    reply.next({ id: 'c-9' });
+    close.mockClear();
+
+    fixture = TestBed.createComponent(CampaignAdoptDialogComponent);
+    fixture.detectChanges();
+
+    expect(close).toHaveBeenCalledWith(true);
+    expect(service.adoptCampaign).toHaveBeenCalledTimes(1);
   });
 
   it('reports a definite refusal that lands after the dialog closed in a sticky error toast', async () => {

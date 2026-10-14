@@ -155,7 +155,7 @@ export class CampaignActDialogComponent {
       .subscribe({
         next: (resolution) => {
           // One shared reading with the adopt check: a self-contradicting answer is never acted on.
-          const verdict = readCampaignRefResolution(resolution, this.data.platformCampaignId);
+          const verdict = readCampaignRefResolution(resolution, this.data.platformCampaignId, this.data.platform);
           switch (verdict.kind) {
             case 'unexpected':
               this.failureMessage.set(CAMPAIGN_ACT_RESOLVE_UNEXPECTED_MESSAGE);

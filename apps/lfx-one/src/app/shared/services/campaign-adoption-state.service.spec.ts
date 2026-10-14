@@ -22,6 +22,9 @@ describe('CampaignAdoptionStateService (#3299)', () => {
     store.annotate(key, 'checked, still unknown');
     expect(entry()?.failure?.detail).toBe('checked, still unknown');
 
+    store.markAdopted(key, 'b-1');
+    expect(entry()).toEqual(expect.objectContaining({ state: 'adopted', briefId: 'b-1', adoptedAt: expect.any(String) }));
+
     store.settle(key);
     expect(entry()).toBeNull();
   });
