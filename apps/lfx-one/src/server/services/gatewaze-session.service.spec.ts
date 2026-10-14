@@ -679,6 +679,18 @@ describe('GatewazeSessionService me and logout', () => {
       expect(kv.published).toHaveLength(publishedBefore);
     });
 
+    it('logs at WARN, and removes nothing, when the record cannot be read', async () => {
+      await service.getGatewazeSession(buildReq());
+      kv.failGet = true;
+
+      await expect(service.endGatewazeSession(buildReq(null), LFX_LOGOUT)).resolves.toEqual({ found: false, revoked: false, deleted: false });
+      expect(loggerMock.warning).toHaveBeenCalledWith(expect.anything(), 'end_gatewaze_session', expect.stringContaining('Could not read'), {
+        reason: 'synthetic valkey outage',
+      });
+      expect(upstreams.count(LOGOUT)).toBe(0);
+      expect(kv.data.has(SIGNED_OUT_KEY)).toBe(false);
+    });
+
     it('revokes with the stored token when GoTrue cannot refresh it first', async () => {
       upstreams.state.grantExpiresIn = 1;
       await service.getGatewazeSession(buildReq());

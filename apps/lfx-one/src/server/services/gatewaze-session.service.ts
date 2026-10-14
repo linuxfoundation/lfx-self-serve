@@ -263,7 +263,13 @@ export class GatewazeSessionService {
 
     // Read first, so a refresh GoTrue refuses outright (fresh() then discards the record and returns
     // null, with no marker) is still told apart from an id that never had a record.
-    let session: GwSession | null = await step(store.get(gwSid), 'read').catch(() => null);
+    let session: GwSession | null;
+    try {
+      session = await step(store.get(gwSid), 'read');
+    } catch (error) {
+      warn('Could not read the Gatewaze session record; it ages out on its TTL', error);
+      return result;
+    }
     if (!session) {
       // Nothing to remove. Writing the marker anyway would let an anonymous `/logout` with a made-up
       // cookie make every pod do a Valkey write and a sign-out publish. A mint still running for a
