@@ -105,6 +105,23 @@ describe('readCampaignRefResolution', () => {
   });
 
   it.each([
+    ['a LinkedIn id passed as a number', 5_123_456_789, { platform_campaign_id: '5123456789' }],
+    ['a LinkedIn id passed as a string', '5123456789', { platform_campaign_id: '5123456789' }],
+    ['an id with surrounding spaces', ' 5123456789 ', { platform_campaign_id: '5123456789' }],
+    ['an id echoed as a number', '5123456789', { platform_campaign_id: 5123456789 }],
+    ['an id with leading zeros', '005123456789', { platform_campaign_id: '5123456789' }],
+    ['a Reddit id with spaces', ' t2_abc ', { platform_campaign_id: 't2_abc' }],
+  ])('matches %s against its echo', (_label, requested, echo) => {
+    expect(readCampaignRefResolution({ ...echo, matches: [ref], match_count: 1 }, requested as string | number)).toEqual({ kind: 'one', match: ref });
+  });
+
+  it('still refuses a different number, or an id that cannot be one', () => {
+    expect(readCampaignRefResolution({ platform_campaign_id: '5123456780', matches: [ref], match_count: 1 }, 5_123_456_789)).toEqual({ kind: 'unexpected' });
+    expect(readCampaignRefResolution({ platform_campaign_id: '1.5', matches: [ref], match_count: 1 }, 1.5)).toEqual({ kind: 'unexpected' });
+    expect(readCampaignRefResolution({ platform_campaign_id: '', matches: [], match_count: 0 }, '  ')).toEqual({ kind: 'unexpected' });
+  });
+
+  it.each([
     ['a count below the list', { platform_campaign_id: '42', matches: [ref], match_count: 0 }],
     ['a count above the list', { platform_campaign_id: '42', matches: [], match_count: 1 }],
     ['a missing count', { platform_campaign_id: '42', matches: [ref] }],

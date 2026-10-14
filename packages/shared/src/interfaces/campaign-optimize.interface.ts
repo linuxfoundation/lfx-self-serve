@@ -475,3 +475,16 @@ export type CampaignRefVerdict =
   | { kind: 'one'; match: CampaignServiceCampaignRef }
   | { kind: 'several'; count: number }
   | { kind: 'unexpected' };
+
+/**
+ * An adoption whose outcome is not settled, kept per (project, platform, platform campaign id) beyond
+ * the dialog that sent it: `pending` while the write is in flight, `unconfirmed` once it ended without
+ * an answer anyone could trust. Either one locks Adopt for that campaign until a check settles it.
+ */
+export interface CampaignAdoptionInFlight {
+  state: 'pending' | 'unconfirmed';
+  /** The brief the adoption was sent for: a check confirms it only on a match bound to THIS brief. */
+  briefId: string;
+  /** For `unconfirmed`: what the dialog shows. */
+  failure: CampaignAdoptFailure | null;
+}

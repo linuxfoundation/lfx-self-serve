@@ -66,12 +66,13 @@ export function buildCampaignSettingsDrift(readback: CampaignServiceSettingsRead
  * The ONE reading of a campaign-ref answer that the act dialog and the adopt check both use.
  *
  * The answer is trusted only when it is self-consistent: `match_count` equals `matches.length`, the
- * echoed `platform_campaign_id` is exactly the id that was asked about, and every match names a
+ * echoed `platform_campaign_id` is the id that was asked about (compared by `canonicalCampaignId`, so a
+ * numeric id that reached the UI as a number, or padded, still matches its echo), and every match names a
  * campaign and a brief. Anything else is `unexpected` and must not be acted on: not as a match (which
  * would change a campaign), not as no match (which would unlock a second adoption), and not as a
  * confirmed adoption.
  */
-export function readCampaignRefResolution(resolution: unknown, requestedId: string): CampaignRefVerdict {
+export function readCampaignRefResolution(resolution: unknown, requestedId: string | number): CampaignRefVerdict {
   if (!resolution || typeof resolution !== 'object') {
     return { kind: 'unexpected' };
   }
@@ -84,7 +85,8 @@ export function readCampaignRefResolution(resolution: unknown, requestedId: stri
     matches?: unknown;
     match_count?: unknown;
   };
-  if (echoed !== requestedId || !Array.isArray(matches) || typeof count !== 'number' || count !== matches.length) {
+  const requested = canonicalCampaignId(requestedId);
+  if (requested === null || canonicalCampaignId(echoed) !== requested || !Array.isArray(matches) || typeof count !== 'number' || count !== matches.length) {
     return { kind: 'unexpected' };
   }
   if (!matches.every(isCampaignRef)) {
@@ -94,6 +96,29 @@ export function readCampaignRefResolution(resolution: unknown, requestedId: stri
     return { kind: 'none' };
   }
   return matches.length === 1 ? { kind: 'one', match: matches[0] } : { kind: 'several', count: matches.length };
+}
+
+/**
+ * A platform campaign id in one canonical form for comparison: trimmed, and an all-digit id (LinkedIn,
+ * Meta, Microsoft; or one that arrived as a JSON number) as its decimal string without leading zeros.
+ * `null` for anything that cannot be an id, which never matches.
+ */
+export function canonicalCampaignId(value: unknown): string | null {
+  let text: string;
+  if (typeof value === 'number') {
+    if (!Number.isInteger(value) || value < 0) {
+      return null;
+    }
+    text = BigInt(value).toString();
+  } else if (typeof value === 'string') {
+    text = value.trim();
+  } else {
+    return null;
+  }
+  if (text === '') {
+    return null;
+  }
+  return /^[0-9]+$/.test(text) ? text.replace(/^0+(?=[0-9])/, '') : text;
 }
 
 function isCampaignRef(value: unknown): value is CampaignServiceCampaignRef {

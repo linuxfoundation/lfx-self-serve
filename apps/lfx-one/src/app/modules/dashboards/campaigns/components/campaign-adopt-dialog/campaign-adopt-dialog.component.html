@@ -46,6 +46,13 @@
     }
   }
 
+  @if (submitting()) {
+    <p class="flex items-center gap-2 text-sm text-gray-500" role="status" data-testid="campaign-adopt-dialog-pending">
+      <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+      {{ pendingMessage }}
+    </p>
+  }
+
   @if (failure(); as f) {
     @if (f.state === 'unconfirmed') {
       <div

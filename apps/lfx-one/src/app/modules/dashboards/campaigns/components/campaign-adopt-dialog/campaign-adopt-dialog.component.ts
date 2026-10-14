@@ -13,13 +13,22 @@ import {
   CAMPAIGN_ADOPT_BRIEFS_FAILED_MESSAGE,
   CAMPAIGN_ADOPT_BRIEFS_UNAVAILABLE_MESSAGE,
   CAMPAIGN_ADOPT_EXPLAINER,
+  CAMPAIGN_ADOPT_PENDING_MESSAGE,
   CAMPAIGN_ADOPT_VERIFY_ABSENT_MESSAGE,
   CAMPAIGN_ADOPT_VERIFY_FAILED_MESSAGE,
+  CAMPAIGN_ADOPT_VERIFY_OTHER_BRIEF_MESSAGE,
   CAMPAIGN_ADOPT_VERIFY_UNEXPECTED_MESSAGE,
   CAMPAIGN_PLATFORMS,
 } from '@lfx-one/shared/constants';
-import type { CampaignAdoptBriefOption, CampaignAdoptBriefsState, CampaignAdoptDialogData, CampaignAdoptFailure } from '@lfx-one/shared/interfaces';
+import type {
+  CampaignAdoptBriefOption,
+  CampaignAdoptBriefsState,
+  CampaignAdoptDialogData,
+  CampaignAdoptFailure,
+  CampaignAdoptionInFlight,
+} from '@lfx-one/shared/interfaces';
 import { readCampaignRefResolution } from '@lfx-one/shared/utils';
+import { CampaignAdoptionStateService } from '@services/campaign-adoption-state.service';
 import { CampaignService } from '@services/campaign.service';
 import { campaignAdoptFailure } from '@shared/utils/campaign-optimize-error.utils';
 import { MessageService } from 'primeng/api';
@@ -34,7 +43,9 @@ import { catchError, map, of, startWith, switchMap, take } from 'rxjs';
  * Adoption creates nothing on the platform; campaign-service reads the campaign under the project's
  * own connection and records it. Every documented refusal is mapped to an actionable message
  * (`campaignAdoptFailure`). An outcome nobody could confirm is NOT retried: Adopt stays disabled
- * until "Check whether it was adopted" resolves the id, because the row may already exist.
+ * until "Check whether it was adopted" resolves the id, because the row may already exist. That lock,
+ * and a write still in flight, are kept in `CampaignAdoptionStateService`, so closing and reopening
+ * the dialog cannot clear them; a write that answers after the dialog closed reports in a sticky toast.
  */
 @Component({
   selector: 'lfx-campaign-adopt-dialog',
@@ -48,6 +59,7 @@ export class CampaignAdoptDialogComponent {
   private readonly campaignService = inject(CampaignService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly adoptionState = inject(CampaignAdoptionStateService);
 
   public readonly data = this.dialogConfig.data as CampaignAdoptDialogData;
 
@@ -55,24 +67,41 @@ export class CampaignAdoptDialogComponent {
     briefId: new FormControl<string | null>(null, Validators.required),
   });
 
-  protected readonly submitting = signal(false);
   protected readonly checking = signal(false);
-  protected readonly failure = signal<CampaignAdoptFailure | null>(null);
+  /** A DEFINITE outcome shown in this dialog only; an unsettled one lives in the store. */
+  private readonly localFailure = signal<CampaignAdoptFailure | null>(null);
   /** Bumped by the brief list's Retry. */
   private readonly briefsReload = signal(0);
+  /** Set when the dialog is destroyed: a write answering later reports through a sticky toast instead. */
+  private closed = false;
 
   protected readonly explainer = CAMPAIGN_ADOPT_EXPLAINER;
   protected readonly emptyMessage = CAMPAIGN_ADOPT_BRIEFS_EMPTY_MESSAGE;
+  protected readonly pendingMessage = CAMPAIGN_ADOPT_PENDING_MESSAGE;
   protected readonly platformLabel = CAMPAIGN_PLATFORMS.find((p) => p.id === this.data.platform)?.label ?? this.data.platform;
+
+  /** This campaign's unsettled adoption, from the store that outlives every dialog. */
+  private readonly key = CampaignAdoptionStateService.key(this.data.projectSlug, this.data.platform, this.data.platformCampaignId);
+  private readonly inFlight: Signal<CampaignAdoptionInFlight | null> = this.adoptionState.entry(this.key);
+  protected readonly submitting: Signal<boolean> = computed(() => this.inFlight()?.state === 'pending');
+  /** An unconfirmed adoption (from this dialog or an earlier one) first, else this dialog's definite outcome. */
+  protected readonly failure: Signal<CampaignAdoptFailure | null> = computed(() => {
+    const entry = this.inFlight();
+    return entry?.state === 'unconfirmed' ? entry.failure : this.localFailure();
+  });
 
   protected readonly briefs: Signal<CampaignAdoptBriefsState> = this.initBriefs();
   protected readonly briefOptions: Signal<CampaignAdoptBriefOption[]> = computed(() =>
     this.briefs().briefs.map((b) => ({ value: b.id, label: b.programType ? `${b.eventSlug || b.id} (${b.programType})` : b.eventSlug || b.id }))
   );
   /** Adopt waits for a brief, for no write in flight, and for an unconfirmed outcome to be checked first. */
-  protected readonly canSubmit: Signal<boolean> = computed(
-    () => this.briefs().status === 'ready' && !this.submitting() && !this.checking() && this.failure()?.state !== 'unconfirmed'
-  );
+  protected readonly canSubmit: Signal<boolean> = computed(() => this.briefs().status === 'ready' && !this.checking() && this.inFlight() === null);
+
+  public constructor() {
+    this.destroyRef.onDestroy(() => {
+      this.closed = true;
+    });
+  }
 
   protected retryBriefs(): void {
     this.briefsReload.update((n) => n + 1);
@@ -88,33 +117,51 @@ export class CampaignAdoptDialogComponent {
     if (!this.canSubmit() || !briefId) {
       return;
     }
-    this.submitting.set(true);
-    this.failure.set(null);
-    // `take(1)`: a write is never tied to the dialog's lifetime, so closing it cannot abort an adoption in flight.
+    const key = this.key;
+    this.adoptionState.markPending(key, briefId);
+    this.localFailure.set(null);
+    // `take(1)`: a write is never tied to the dialog's lifetime, so closing it cannot abort an adoption
+    // in flight. Its outcome settles the STORE, which any reopened dialog reads.
     this.campaignService
       .adoptCampaign(this.data.projectSlug, { briefId, platform: this.data.platform, platformCampaignId: this.data.platformCampaignId })
       .pipe(take(1))
       .subscribe({
         next: () => {
-          this.submitting.set(false);
+          this.adoptionState.settle(key);
           this.announceAdopted();
         },
         error: (error: unknown) => {
-          this.submitting.set(false);
-          this.failure.set(campaignAdoptFailure(error, this.platformLabel));
+          const failure = campaignAdoptFailure(error, this.platformLabel);
+          if (failure.state === 'unconfirmed') {
+            this.adoptionState.markUnconfirmed(key, briefId, failure);
+          } else {
+            this.adoptionState.settle(key);
+            this.localFailure.set(failure);
+          }
+          if (this.closed) {
+            this.messageService.add({
+              severity: failure.state === 'unconfirmed' ? 'warn' : 'error',
+              summary: `${failure.title}: ${this.data.campaignName}`,
+              detail: failure.detail ? `${failure.message} ${failure.detail}` : failure.message,
+              sticky: true,
+            });
+          }
         },
       });
   }
 
   /**
    * After an unconfirmed adoption: asks LFX One whether the campaign is now bound, through the same
-   * campaign-ref resolve the act dialog uses. One match means it was adopted; none means it was not
-   * and Adopt is offered again; several is refused as everywhere else.
+   * campaign-ref resolve the act dialog uses. Only a match on the brief the adoption was SENT for
+   * confirms it; a match on another brief means this adoption did not happen; none means it did not
+   * happen and Adopt is offered again; several is refused as everywhere else.
    */
   protected verify(): void {
-    if (this.checking()) {
+    const entry = this.inFlight();
+    if (this.checking() || entry?.state !== 'unconfirmed') {
       return;
     }
+    const key = this.key;
     this.checking.set(true);
     this.campaignService
       .resolvePlatformCampaign(this.data.projectSlug, this.data.platform, this.data.platformCampaignId)
@@ -126,25 +173,32 @@ export class CampaignAdoptDialogComponent {
           // unlocks a second one, so the outcome stays unconfirmed.
           const verdict = readCampaignRefResolution(resolution, this.data.platformCampaignId);
           if (verdict.kind === 'unexpected') {
-            this.failure.update((f) => (f ? { ...f, detail: CAMPAIGN_ADOPT_VERIFY_UNEXPECTED_MESSAGE } : f));
+            this.adoptionState.annotate(key, CAMPAIGN_ADOPT_VERIFY_UNEXPECTED_MESSAGE);
             return;
           }
-          if (verdict.kind === 'one') {
+          this.adoptionState.settle(key);
+          if (verdict.kind === 'one' && verdict.match.brief_id === entry.briefId) {
             this.announceAdopted();
             return;
           }
-          this.failure.set({
-            state: 'failed',
-            title: verdict.kind === 'none' ? 'Not adopted' : 'Not changed',
-            message: verdict.kind === 'none' ? CAMPAIGN_ADOPT_VERIFY_ABSENT_MESSAGE : CAMPAIGN_ACT_AMBIGUOUS_MESSAGE,
-            detail: '',
-          });
+          this.localFailure.set(this.unsettledCheckFailure(verdict.kind));
         },
         error: () => {
           this.checking.set(false);
-          this.failure.update((f) => (f ? { ...f, detail: CAMPAIGN_ADOPT_VERIFY_FAILED_MESSAGE } : f));
+          this.adoptionState.annotate(key, CAMPAIGN_ADOPT_VERIFY_FAILED_MESSAGE);
         },
       });
+  }
+
+  /** What a check that did not confirm THIS adoption says. */
+  private unsettledCheckFailure(kind: 'none' | 'one' | 'several'): CampaignAdoptFailure {
+    if (kind === 'one') {
+      return { state: 'failed', title: 'Not adopted: bound to a different brief', message: CAMPAIGN_ADOPT_VERIFY_OTHER_BRIEF_MESSAGE, detail: '' };
+    }
+    if (kind === 'none') {
+      return { state: 'failed', title: 'Not adopted', message: CAMPAIGN_ADOPT_VERIFY_ABSENT_MESSAGE, detail: '' };
+    }
+    return { state: 'failed', title: 'Not changed', message: CAMPAIGN_ACT_AMBIGUOUS_MESSAGE, detail: '' };
   }
 
   private announceAdopted(): void {

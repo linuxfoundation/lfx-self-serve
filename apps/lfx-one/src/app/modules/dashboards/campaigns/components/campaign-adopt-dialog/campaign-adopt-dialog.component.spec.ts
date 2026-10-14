@@ -9,13 +9,14 @@ import {
   CAMPAIGN_ADOPT_BRIEFS_UNAVAILABLE_MESSAGE,
   CAMPAIGN_ADOPT_OUTCOME_UNCONFIRMED,
   CAMPAIGN_ADOPT_VERIFY_ABSENT_MESSAGE,
+  CAMPAIGN_ADOPT_VERIFY_OTHER_BRIEF_MESSAGE,
   CAMPAIGN_ADOPT_VERIFY_UNEXPECTED_MESSAGE,
 } from '@lfx-one/shared/constants';
 import type { CampaignAdoptDialogData } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { CampaignAdoptDialogComponent } from './campaign-adopt-dialog.component';
@@ -152,6 +153,82 @@ describe('CampaignAdoptDialogComponent (#3299)', () => {
     expect(toast).not.toHaveBeenCalled();
     expect(text('campaign-adopt-dialog-unconfirmed-detail')).toContain(CAMPAIGN_ADOPT_VERIFY_UNEXPECTED_MESSAGE);
     expect((q('campaign-adopt-dialog-submit')?.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  /** A second dialog for the same campaign, in the same app (so the same root store). */
+  function reopen(): void {
+    fixture.destroy();
+    fixture = TestBed.createComponent(CampaignAdoptDialogComponent);
+    fixture.detectChanges();
+  }
+
+  const submitDisabled = (): boolean => (q('campaign-adopt-dialog-submit')?.querySelector('button') as HTMLButtonElement).disabled;
+
+  it('keeps an unconfirmed adoption locked in a reopened dialog until a check settles it', async () => {
+    await setup();
+    service.adoptCampaign.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 0 })));
+    chooseAndSubmit();
+
+    reopen();
+
+    expect(text('campaign-adopt-dialog-unconfirmed')).toContain(CAMPAIGN_ADOPT_OUTCOME_UNCONFIRMED);
+    expect(submitDisabled()).toBe(true);
+    chooseAndSubmit();
+    expect(service.adoptCampaign).toHaveBeenCalledTimes(1);
+
+    service.resolvePlatformCampaign.mockReturnValue(of({ platform_campaign_id: '123456', matches: [{ campaign_id: 'c-9', brief_id: 'b-1' }], match_count: 1 }));
+    (q('campaign-adopt-dialog-verify')?.querySelector('button') as HTMLButtonElement).click();
+    expect(close).toHaveBeenCalledWith(true);
+  });
+
+  it('keeps a write in flight locked in a reopened dialog, and reports its late outcome in a sticky toast', async () => {
+    await setup();
+    const reply = new Subject<never>();
+    service.adoptCampaign.mockReturnValue(reply);
+    chooseAndSubmit();
+
+    reopen();
+    expect(q('campaign-adopt-dialog-pending')).not.toBeNull();
+    expect(submitDisabled()).toBe(true);
+
+    reply.error(new HttpErrorResponse({ status: 0 }));
+    fixture.detectChanges();
+
+    // The first dialog is gone, so its outcome is a sticky warning; the open one shows it as unconfirmed.
+    expect(toast).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', sticky: true }));
+    expect(q('campaign-adopt-dialog-unconfirmed')).not.toBeNull();
+    expect(submitDisabled()).toBe(true);
+  });
+
+  it('reports a definite refusal that lands after the dialog closed in a sticky error toast', async () => {
+    await setup();
+    const reply = new Subject<never>();
+    service.adoptCampaign.mockReturnValue(reply);
+    chooseAndSubmit();
+    fixture.destroy();
+
+    reply.error(bffError(409, 'already bound to a different brief'));
+
+    expect(toast).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'error', sticky: true, summary: 'Not adopted: this campaign cannot be bound to this brief: KubeCon EU' })
+    );
+  });
+
+  it('never reports success when the check finds the campaign bound to a different brief', async () => {
+    await setup();
+    service.adoptCampaign.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 0 })));
+    chooseAndSubmit();
+    service.resolvePlatformCampaign.mockReturnValue(
+      of({ platform_campaign_id: '123456', matches: [{ campaign_id: 'c-9', brief_id: 'b-other' }], match_count: 1 })
+    );
+
+    (q('campaign-adopt-dialog-verify')?.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(close).not.toHaveBeenCalled();
+    expect(toast).not.toHaveBeenCalled();
+    expect(text('campaign-adopt-dialog-error-title')).toBe('Not adopted: bound to a different brief');
+    expect(text('campaign-adopt-dialog-error-message')).toContain(CAMPAIGN_ADOPT_VERIFY_OTHER_BRIEF_MESSAGE);
   });
 
   it('says adoption is unavailable when the brief list route answers 404', async () => {

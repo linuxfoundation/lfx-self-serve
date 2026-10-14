@@ -405,5 +405,12 @@ export const CAMPAIGN_ADOPT_VERIFY_ABSENT_MESSAGE = 'LFX One has no record of th
 export const CAMPAIGN_ADOPT_VERIFY_UNEXPECTED_MESSAGE =
   'LFX One got an answer it could not trust while checking the adoption, so it is still unconfirmed. Try the check again before adopting again.';
 
+/** After an unconfirmed adoption, the check found the campaign bound to a DIFFERENT brief: not this adoption. */
+export const CAMPAIGN_ADOPT_VERIFY_OTHER_BRIEF_MESSAGE =
+  'This campaign is bound to a different brief, not the one you chose, so this adoption did not happen. Change it from that brief, or remove that binding first.';
+
+/** A reopened dialog while an adoption of the same campaign is still in flight. */
+export const CAMPAIGN_ADOPT_PENDING_MESSAGE = 'An adoption of this campaign is still in progress. Wait for it to finish before trying again.';
+
 /** After an unconfirmed adoption, the check itself failed. */
 export const CAMPAIGN_ADOPT_VERIFY_FAILED_MESSAGE = 'LFX One could not check whether the adoption happened. Try the check again before adopting again.';
