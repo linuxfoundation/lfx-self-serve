@@ -14,23 +14,25 @@ import { getEffectiveEmail, getEffectiveUsername } from '../utils/auth-helper';
  * root email as the session claim, so it is included only when the session email passed the
  * `email_verified` check (`getEffectiveEmail` non-null). Unverified alternates are never used.
  *
- * Never fails: with no effective username, or when auth-service is unavailable or returns nothing usable,
- * it falls back to the single effective session email (the impersonated target while impersonating,
+ * Looks the user up by the plain LFID username, or, for a session with no LF username (an unlinked
+ * social or enterprise-SSO login), by the verified session email, which auth-service also resolves.
+ *
+ * Never fails: with neither, or when auth-service is unavailable or returns nothing usable, it falls back to the single effective session email (the impersonated target while impersonating,
  * otherwise the OIDC user).
  */
 export async function resolveVerifiedUserEmails(req: Request, emailVerificationService: EmailVerificationService): Promise<VerifiedUserEmails> {
   const effectiveEmail = getEffectiveEmail(req);
   const fallback: VerifiedUserEmails = { emails: effectiveEmail ? [effectiveEmail.trim().toLowerCase()] : [], alternates: [] };
-  // The plain LFID username, which auth-service resolves; new code names the user by username, not
-  // the prefixed `sub` (`docs/architecture/backend/authentication.md` § Migration).
-  const username = getEffectiveUsername(req);
+  // New code names the user by username, not the prefixed `sub` (`docs/architecture/backend/authentication.md`
+  // § Migration); the verified session email covers sessions that have no LF username.
+  const lookupKey = getEffectiveUsername(req) ?? effectiveEmail;
 
-  if (!username) {
-    logger.debug(req, 'resolve_user_emails', 'No effective username for user, using session email only', {});
+  if (!lookupKey) {
+    logger.debug(req, 'resolve_user_emails', 'No effective username or verified email for user, nothing to look up', {});
     return fallback;
   }
 
-  const emailData = await emailVerificationService.getUserEmails(req, username);
+  const emailData = await emailVerificationService.getUserEmails(req, lookupKey);
   if (!emailData) {
     return fallback;
   }

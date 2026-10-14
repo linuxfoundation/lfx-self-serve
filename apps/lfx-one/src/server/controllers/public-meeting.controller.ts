@@ -649,6 +649,10 @@ export class PublicMeetingController {
         return;
       }
 
+      // Captured before fetchMeetingWithM2M puts the M2M token on req.bearerToken. On this optional-auth
+      // route a refresh failure can leave isAuthenticated() true with no user token; such a session
+      // does not get its verified aliases looked up (see restrictedMeetingCheck).
+      const hasUserToken = !!req.oidc?.isAuthenticated() && req.bearerToken !== undefined;
       const meeting = await this.fetchMeetingWithM2M(req, id, 'v1_meeting');
 
       if (!meeting) {
@@ -678,12 +682,12 @@ export class PublicMeetingController {
         return;
       }
 
-      // For restricted meetings, validate the user is registered. Match by email OR username
-      // so accounts whose auth email differs from their invited registrant email still resolve.
-      // The matched registrant's stored email is then used for the upstream join_link call.
+      // For restricted meetings, validate the user is registered. Match by username or any email the
+      // caller can prove (or typed); see restrictedMeetingCheck. The matched registrant's stored email
+      // is then used for the upstream join_link call.
       let joinEmail = email;
       if (meeting.restricted) {
-        const matchedRegistrant = await this.restrictedMeetingCheck(req, email, username, id);
+        const matchedRegistrant = await this.restrictedMeetingCheck(req, email, username, id, hasUserToken);
         if (matchedRegistrant.email) {
           joinEmail = matchedRegistrant.email;
         }
@@ -1329,7 +1333,7 @@ export class PublicMeetingController {
     return now >= earliestJoinTime;
   }
 
-  private async restrictedMeetingCheck(req: Request, email: string, username: string | null, id: string): Promise<MeetingRegistrant> {
+  private async restrictedMeetingCheck(req: Request, email: string, username: string | null, id: string, hasUserToken: boolean): Promise<MeetingRegistrant> {
     const helperStartTime = logger.startOperation(req, 'restricted_meeting_check', {
       meeting_id: id,
       has_email: !!email,
@@ -1348,8 +1352,9 @@ export class PublicMeetingController {
     // auth-provider-verified identity, which survives accounts with several emails), every email
     // auth-service has verified for a signed-in caller, and the email they gave (typed, or the
     // session's). Unverified alternates are never used, and a failed auth-service lookup falls back to
-    // the session email, so this never hard-fails on it.
-    const verified = username ? await resolveVerifiedUserEmails(req, this.emailVerificationService) : { emails: [], alternates: [] };
+    // the session email, so this never hard-fails on it. The aliases are looked up only for a session
+    // that still holds a user token: a tokenless one keeps the username and the email given.
+    const verified = hasUserToken ? await resolveVerifiedUserEmails(req, this.emailVerificationService) : { emails: [], alternates: [] };
     const givenEmail = email?.trim().toLowerCase() || '';
     const candidateEmails = [...new Set([...verified.emails, givenEmail].filter(Boolean))];
     const found = await this.meetingService.getMeetingRegistrantsForUser(req, id, candidateEmails, username ?? undefined);

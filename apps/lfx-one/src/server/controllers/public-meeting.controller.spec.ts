@@ -1941,8 +1941,8 @@ describe('PublicMeetingController public past-meeting artifacts (E4-04)', () => 
 describe('PublicMeetingController.postMeetingJoinUrl restricted-meeting identity match', () => {
   let controller: PublicMeetingController;
 
-  const joinReq = (bodyEmail?: string) => {
-    const { req, res, next } = buildReqRes(true);
+  const joinReq = (bodyEmail?: string, authenticated = true, hasUserToken = true) => {
+    const { req, res, next } = buildReqRes(authenticated, hasUserToken);
     req.body = bodyEmail ? { email: bodyEmail } : {};
     // The join link always needs the meeting passcode; validatePassword is stubbed to accept it.
     req.headers = { 'x-meeting-password': 'passcode' };
@@ -2005,13 +2005,38 @@ describe('PublicMeetingController.postMeetingJoinUrl restricted-meeting identity
 
     expect(meetingSvc.getMeetingRegistrantsForUser).toHaveBeenCalledWith(req, MEETING_ID, ['user@example.com'], 'user');
     expect(meetingSvc.getMeetingJoinUrl).toHaveBeenCalledWith(req, MEETING_ID, 'user@example.com');
+    const { logger } = await import('../services/logger.service');
+    expect(logger.success).toHaveBeenCalledWith(req, 'restricted_meeting_check', expect.anything(), expect.objectContaining({ matched_by: 'primary_email' }));
+  });
+
+  it('looks up no verified aliases for a session that lost its user token', async () => {
+    meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([{ uid: 'r1', email: 'work@acme.example' }]);
+    const { req, res, next } = joinReq(undefined, true, false);
+
+    await controller.postMeetingJoinUrl(req, res, next);
+
+    expect(getUserEmailsMock).not.toHaveBeenCalled();
+    expect(meetingSvc.getMeetingRegistrantsForUser).toHaveBeenCalledWith(req, MEETING_ID, ['user@example.com'], 'user');
+    expect(meetingSvc.getMeetingJoinUrl).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'NOT_REGISTERED_FOR_MEETING' }));
+  });
+
+  it('matches on the typed email when it is the only identity a registrant shares', async () => {
+    meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([{ uid: 'r1', email: 'someone@invitee.example' }]);
+    const { req, res, next } = joinReq('someone@invitee.example');
+
+    await controller.postMeetingJoinUrl(req, res, next);
+
+    expect(meetingSvc.getMeetingJoinUrl).toHaveBeenCalledWith(req, MEETING_ID, 'someone@invitee.example');
+    const { logger } = await import('../services/logger.service');
+    expect(logger.success).toHaveBeenCalledWith(req, 'restricted_meeting_check', expect.anything(), expect.objectContaining({ matched_by: 'email' }));
   });
 
   it('checks only the typed email for a guest with no session, and asks auth-service nothing', async () => {
     getEffectiveEmailMock.mockReturnValue(null);
     getEffectiveUsernameMock.mockReturnValue(null);
     meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([{ uid: 'r1', email: 'guest@acme.example' }]);
-    const { req, res, next } = joinReq('Guest@Acme.example');
+    const { req, res, next } = joinReq('Guest@Acme.example', false, false);
 
     await controller.postMeetingJoinUrl(req, res, next);
 

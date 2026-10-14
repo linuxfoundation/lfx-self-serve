@@ -50,13 +50,23 @@ describe('resolveVerifiedUserEmails', () => {
     await expect(resolveVerifiedUserEmails(req, service)).resolves.toEqual({ emails: ['work@acme.example'], alternates: ['work@acme.example'] });
   });
 
-  it('falls back to the session email when auth-service gives nothing, and with no username asks it nothing', async () => {
+  it('falls back to the session email when auth-service gives nothing', async () => {
     getUserEmails.mockResolvedValue(null);
     await expect(resolveVerifiedUserEmails(req, service)).resolves.toEqual({ emails: ['user@example.com'], alternates: [] });
+  });
 
+  it('looks a session with no LF username up by its verified email, and asks nothing with neither', async () => {
     getEffectiveUsernameMock.mockReturnValue(null);
+    getUserEmails.mockResolvedValue({ primary_email: 'user@example.com', alternate_emails: [{ email: 'work@acme.example', verified: true }] });
+    await expect(resolveVerifiedUserEmails(req, service)).resolves.toEqual({
+      emails: ['user@example.com', 'work@acme.example'],
+      alternates: ['work@acme.example'],
+    });
+    expect(getUserEmails).toHaveBeenCalledWith(req, 'User@Example.com');
+
+    getEffectiveEmailMock.mockReturnValue(null);
     getUserEmails.mockClear();
-    await expect(resolveVerifiedUserEmails(req, service)).resolves.toEqual({ emails: ['user@example.com'], alternates: [] });
+    await expect(resolveVerifiedUserEmails(req, service)).resolves.toEqual({ emails: [], alternates: [] });
     expect(getUserEmails).not.toHaveBeenCalled();
   });
 });
