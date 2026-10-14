@@ -39,14 +39,34 @@ import { getGatewazeSessionService, resolveGatewazeHostSessionConfig } from '../
 import { logger } from '../services/logger.service';
 
 /**
- * Maps a `Location` the package has already filtered (`rewriteLocation`) onto this proxy's mount.
- * The package makes a redirect to the upstream's own origin root-relative, as if it were served at
- * the site root; here it is served under `mount`, so a root-relative value gets the mount prefixed.
- * A path-relative value already resolves under the mount in the browser, and an absolute `https:`
- * URL elsewhere (an edge function sending the browser to an OAuth provider) passes unchanged.
+ * Maps a `Location` the package has already filtered (`rewriteLocation`) onto this proxy's mount, or
+ * returns null to drop it. The package has already dropped `//host`, backslashes, control characters
+ * and schemes other than `https:` (and `http:` to localhost).
+ *
+ * - A root-relative value gets the mount prefixed. The package makes a redirect to the upstream's own
+ *   origin root-relative, as if it were served at the site root, and here it is served under `mount`.
+ * - An absolute URL passes unchanged, e.g. an edge function sending the browser to an OAuth provider.
+ * - A path-relative value is resolved against `requestPath`, the browser's path for this request,
+ *   and kept only while it stays under the mount, so `../../..` cannot walk the browser off it.
  */
-export function mountLocation(location: string, mount: string): string {
-  return location.startsWith('/') && !location.startsWith('//') ? `${mount}${location}` : location;
+export function mountLocation(location: string, mount: string, requestPath: string): string | null {
+  if (location.startsWith('//')) {
+    return null;
+  }
+  if (location.startsWith('/')) {
+    return `${mount}${location}`;
+  }
+  if (/^[a-z][a-z0-9+.-]*:/i.test(location)) {
+    return location;
+  }
+  const base = 'https://mount.invalid';
+  let resolved: URL;
+  try {
+    resolved = new URL(location, `${base}${requestPath}`);
+  } catch {
+    return null;
+  }
+  return resolved.origin === base && resolved.pathname.startsWith(`${mount}/`) ? location : null;
 }
 
 /**
@@ -249,7 +269,16 @@ export class GatewazeProxyController {
         if (!GW_HOST_SESSION_PROXY_RESPONSE_HEADERS.has(name.toLowerCase())) {
           continue;
         }
-        res.setHeader(name, name.toLowerCase() === 'location' && typeof value === 'string' ? mountLocation(value, mount) : value);
+        if (name.toLowerCase() === 'location' && typeof value === 'string') {
+          const location = mountLocation(value, mount, req.originalUrl.split('?')[0]);
+          if (location === null) {
+            logger.warning(req, OPERATION, 'Dropped an upstream redirect that leaves the proxy mount', { upstream_status: upstreamRes.status });
+          } else {
+            res.setHeader(name, location);
+          }
+          continue;
+        }
+        res.setHeader(name, value);
       }
       // After the loop, so the upstream cannot override them. Storage objects are user uploads served
       // from the LFX origin, and these keep a top-level navigation to one from running script here.

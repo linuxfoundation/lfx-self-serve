@@ -441,6 +441,22 @@ describe('GatewazeProxyController', () => {
       expect(res.headers['location']).toBe(expected);
     });
 
+    it.each([
+      ['a protocol-relative redirect', '//attacker.example/x'],
+      ['a path-relative redirect that walks off the mount', '../../../../../../settings'],
+    ])('drops %s', async (_label, location) => {
+      respond = (_req, res) => {
+        res.statusCode = 302;
+        res.setHeader('location', location);
+        res.end();
+      };
+
+      const res = await send('/api/gatewaze/supabase/storage/v1/object/media/a.png', { headers: shimHeaders });
+
+      expect(res.status).toBe(302);
+      expect(res.headers['location']).toBeUndefined();
+    });
+
     it('drops an unsafe redirect', async () => {
       respond = (_req, res) => {
         res.statusCode = 302;
@@ -466,12 +482,16 @@ describe('GatewazeProxyController', () => {
 });
 
 describe('mountLocation', () => {
+  const requestPath = '/api/gatewaze/supabase/storage/v1/object/media/a.png';
   it.each([
     ['/rest/v1/x', '/api/gatewaze/supabase/rest/v1/x'],
     ['moved?page=2', 'moved?page=2'],
+    ['../b.png', '../b.png'],
     ['https://elsewhere.example/x', 'https://elsewhere.example/x'],
-    ['//elsewhere.example/x', '//elsewhere.example/x'],
+    ['//elsewhere.example/x', null],
+    ['../../../../../../settings', null],
+    ['../../../../../x', null],
   ])('maps %s', (location, expected) => {
-    expect(mountLocation(location, '/api/gatewaze/supabase')).toBe(expected);
+    expect(mountLocation(location, '/api/gatewaze/supabase', requestPath)).toBe(expected);
   });
 });
