@@ -184,15 +184,16 @@ export class MktgDocumentsComponent {
   private initNav(kind: MktgDocumentType['kind']): Signal<MktgDocumentNavItem[]> {
     return computed(() => {
       const groups = this.documents()?.groups ?? [];
-      const listFailed = this.listFailed();
+      // Until a list read succeeds (still loading, during SSR, or failed) nothing is
+      // known about the counts: no badge rather than "Not generated yet" / "No runs yet".
+      const countsUnknown = this.listFailed() || this.loading() || !this.documents();
       const selected = this.selectedType().agentKey;
       return MKTG_DOCUMENT_TYPES.filter((type) => type.kind === kind).map((type, index) => {
         const documents = groups.find((group) => group.type.agentKey === type.agentKey)?.documents ?? [];
         return {
           type,
           position: kind === 'living' ? index + 1 : null,
-          // A failed list read knows nothing about the counts: no badge rather than "Not generated yet".
-          ...(listFailed ? { badge: '', badgeClass: '' } : this.navBadge(type, documents.length, documents[0]?.revisionCount ?? 0)),
+          ...(countsUnknown ? { badge: '', badgeClass: '' } : this.navBadge(type, documents.length, documents[0]?.revisionCount ?? 0)),
           selected: type.agentKey === selected,
         };
       });

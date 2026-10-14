@@ -10,7 +10,7 @@ import { MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
 import { MktgDocumentDetailResponse, MktgDocumentsResponse, MktgDocumentType, MktgRevisionSummary, ProjectContext } from '@lfx-one/shared/interfaces';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { of, throwError } from 'rxjs';
+import { NEVER, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgDocumentsComponent } from './mktg-documents.component';
@@ -95,6 +95,15 @@ describe('MktgDocumentsComponent', () => {
     expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('v2 · current');
     expect(query('mktg-documents-nav-foundation-message')?.textContent).toContain('Not generated yet');
     expect(query('mktg-documents-nav-linkedin-post')?.textContent).toContain('No runs yet');
+  });
+
+  it('asserts no absence in the nav while the documents list is still loading', async () => {
+    store.listDocuments.mockReturnValue(NEVER);
+    await render();
+
+    expect(query('mktg-documents-nav')?.textContent).not.toContain('Not generated yet');
+    expect(query('mktg-documents-nav')?.textContent).not.toContain('No runs yet');
+    expect(query('mktg-documents-nav')?.textContent).not.toContain('current');
   });
 
   it('shows the selected document’s Revisions table: latest first, View and Restore on older revisions', async () => {
