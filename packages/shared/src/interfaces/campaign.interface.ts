@@ -16,6 +16,7 @@ import type {
   REDDIT_SELECTABLE_OBJECTIVES,
   REDDIT_VIDEO_GOALS,
 } from '../constants/campaign.constants';
+import type { KeywordTargetingPlatform } from './campaign-optimize.interface';
 
 // ---------------------------------------------------------------------------
 // Platform & Phase
@@ -3389,12 +3390,22 @@ export interface CampaignRow {
   bidUnavailableReason: string;
   /** Why an available bid editor cannot submit RIGHT NOW (stale validator, another write in flight), or `''`. */
   bidBlockedReason: string;
-  /** Whether the row shows the negative-keyword control at all: Microsoft Advertising campaigns only. */
+  /** Whether the row shows the negative-keyword control at all: Microsoft Advertising, Reddit and X campaigns (`NEGATIVE_KEYWORD_CAMPAIGN_PLATFORMS`). */
   negativeKeywordsOffered: boolean;
   /** Whether that control can be used (the campaign exists on the platform and is not deleted). */
   negativeKeywordsAvailable: boolean;
   /** Why the negative-keyword control is disabled — set when offered but not available, empty otherwise. */
   negativeKeywordsUnavailableReason: string;
+  /** The row's platform when it is offered negative keywords, which decides what the editor offers and sends; `null` otherwise. */
+  negativeKeywordsPlatform: NegativeKeywordCampaignPlatform | null;
+  /** Whether the row shows the keyword-targeting control at all: Reddit and X campaigns (`KEYWORD_TARGETING_CAMPAIGN_PLATFORMS`). */
+  keywordTargetingOffered: boolean;
+  /** Whether that control can be used (the campaign exists on the platform and is not deleted). */
+  keywordTargetingAvailable: boolean;
+  /** Why the keyword-targeting control is disabled — set when offered but not available, empty otherwise. */
+  keywordTargetingUnavailableReason: string;
+  /** The row's platform when it is offered keyword targeting; `null` otherwise. */
+  keywordTargetingPlatform: KeywordTargetingPlatform | null;
 }
 
 /** The bid the Optimize tab's bid editor submits, or that a change confirmed. */
@@ -3475,6 +3486,10 @@ export interface CampaignNegativeKeywordsRequestState {
   sent: string[];
   /** The match type the request was sent with, restored with them. */
   matchType: CampaignNegativeKeywordMatchType;
+  /** The campaign's ad platform, which words its outcomes ("Reddit refused it"). */
+  platform: NegativeKeywordCampaignPlatform;
+  /** How many requests of this campaign have settled: a change means Reddit's revision must be read again. */
+  settleCount: number;
 }
 
 /** One negative-keyword request, as the editor hands it to `CampaignNegativeKeywordsService`. */
@@ -3483,9 +3498,37 @@ export interface CampaignNegativeKeywordsSubmission {
   briefId: string;
   campaignId: string;
   campaignName: string;
+  /** The campaign's ad platform. Decides whether `revision` is sent: Reddit only. */
+  platform: NegativeKeywordCampaignPlatform;
   /** Parsed once by the editor and sent as-is: the outcomes are zipped onto this exact list. */
   keywords: string[];
   matchType: CampaignNegativeKeywordMatchType;
+  /**
+   * Reddit's compare-and-set token, from the campaign's keyword-targeting read. Sent ONLY for a
+   * Reddit campaign: Microsoft Advertising and X refuse the field whenever it is present, even empty.
+   */
+  revision?: string;
+}
+
+/** A platform whose campaigns take negative keywords through `add-negative-keywords`. */
+export type NegativeKeywordCampaignPlatform = 'microsoft-ads' | 'reddit-ads' | 'twitter-ads';
+
+/** What the negative-keyword editor offers and sends for one platform (`CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES`). */
+export interface CampaignNegativeKeywordPlatformRules {
+  /** The platform's name in outcome text ("Reddit refused it"). */
+  label: string;
+  /** The match types the platform takes for a negative, in display order. */
+  matchTypes: readonly CampaignNegativeKeywordMatchTypeOption[];
+  /** The match type the editor opens on. */
+  defaultMatchType: CampaignNegativeKeywordMatchType;
+  /** Most keywords one request may carry on this platform. */
+  maxKeywords: number;
+  /** Whether a request must carry the keyword-targeting read's `revision` (Reddit). */
+  requiresRevision: boolean;
+  /** Where the negatives land, for the field hint. */
+  destination: string;
+  /** The match-type hint under the choice. */
+  matchTypeHint: string;
 }
 
 /** One reporting-window choice of the Microsoft keyword table. */
@@ -3940,10 +3983,11 @@ export interface CampaignBidUpdateResult {
 
 /**
  * The match types a negative keyword may carry. Mirrors `negativeKeywordMatchTypeEnum` in
- * campaign-service's `design/brief.go`. Microsoft Advertising supports only these two for a
- * negative keyword, so `Broad` is not offered.
+ * campaign-service's `design/brief.go`. Each platform takes a subset and upstream refuses the rest
+ * with 400: Microsoft Advertising Exact or Phrase, X Broad, Phrase or Exact, Reddit Broad only
+ * (Reddit's excluded keywords carry no match type).
  */
-export type CampaignNegativeKeywordMatchType = 'Exact' | 'Phrase';
+export type CampaignNegativeKeywordMatchType = 'Exact' | 'Phrase' | 'Broad';
 
 /**
  * One negative keyword's outcome. Mirrors `negativeKeywordOutcomeEnum`.
@@ -3969,8 +4013,14 @@ export interface CampaignNegativeKeywordInput {
  */
 export interface CampaignNegativeKeywordsRequest {
   briefId: string;
-  /** 1 to 60 entries. `results[i]` in the response answers `negativeKeywords[i]`. */
+  /** 1 to 60 entries (1 to 20 on X). `results[i]` in the response answers `negativeKeywords[i]`. */
   negativeKeywords: CampaignNegativeKeywordInput[];
+  /**
+   * Reddit only, and required there: the `revision` the keyword-targeting read returned. Microsoft
+   * Advertising and X refuse the field (400) whenever it is present, even empty, so it is omitted
+   * rather than sent blank.
+   */
+  revision?: string;
 }
 
 /** Everything the server client needs to add negative keywords to one campaign. */
@@ -3979,6 +4029,8 @@ export interface CampaignNegativeKeywordsParams {
   briefId: string;
   campaignId: string;
   negativeKeywords: CampaignNegativeKeywordInput[];
+  /** Sent upstream only when defined (Reddit). */
+  revision?: string;
 }
 
 export interface CampaignNegativeKeywordResult {
@@ -3988,15 +4040,15 @@ export interface CampaignNegativeKeywordResult {
   outcome: CampaignNegativeKeywordOutcome;
   /** The platform's id for a negative keyword this request added. Absent for every other outcome. */
   negativeKeywordId?: string;
-  /** The platform's machine-readable error code for a FAILED keyword, when it named one. */
+  /** Why a keyword is FAILED: Microsoft's machine-readable code when it named one; NOT_SENT or REJECTED on Reddit and X. */
   errorCode?: string;
 }
 
 /**
  * The outcome of one negative-keywords request.
  *
- * NOT ATOMIC and POSITIONAL: Microsoft adds each negative independently, and `results[i]` answers
- * `negativeKeywords[i]` of the request. The BFF never filters or reorders `results`, so a caller
+ * NOT ATOMIC and POSITIONAL: Microsoft and X add each negative independently (Reddit's new ones share
+ * one write's outcome), and `results[i]` answers `negativeKeywords[i]` of the request. The BFF never filters or reorders `results`, so a caller
  * may zip them onto the list it sent.
  */
 export interface CampaignNegativeKeywordsResult {

@@ -69,7 +69,7 @@ async function stubRegisterFlow(page: Page, options: { saveStatus?: number; save
 }
 
 async function addSkill(page: Page, idPrefix: string, skill: string): Promise<void> {
-  await page.locator(`[data-test="${idPrefix}-skill"]`).click();
+  await page.getByTestId(`${idPrefix}-skill`).locator('input').fill(skill);
   await page.getByRole('option', { name: skill, exact: true }).click();
   await page.getByTestId(`${idPrefix}-add-skill`).click();
   await expect(page.getByTestId(`${idPrefix}-skill-list`)).toContainText(skill);

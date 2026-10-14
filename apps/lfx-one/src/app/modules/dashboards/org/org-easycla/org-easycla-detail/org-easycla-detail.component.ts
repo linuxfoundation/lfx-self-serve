@@ -51,6 +51,7 @@ import {
   orgClaCoverageChips,
   orgClaCoverageSummary,
   orgClaGroupForAddress,
+  orgClaPairFoundationSfid,
   orgClaPairProjectSfid,
   orgClaPreviewGroup,
   orgClaReviewCopyFilename,
@@ -575,6 +576,8 @@ export class OrgEasyclaDetailComponent {
 
   private readonly autoEclaProjectSfid = computed(() => this.initAutoEclaProjectSfid());
 
+  private readonly autoEclaFoundationSfid = computed(() => this.initAutoEclaFoundationSfid());
+
   private readonly autoEclaPermissionPair = computed(() => this.initAutoEclaPermissionPair());
 
   protected readonly notStartedCopy = ORG_CLA_NOT_STARTED_COPY;
@@ -781,8 +784,8 @@ export class OrgEasyclaDetailComponent {
         }),
         switchMap((pair) => {
           if (!pair) return of(false);
-          const [orgUid, projectSfid] = pair.split('::');
-          return this.claService.checkPermission(orgUid, 'auto-ecla-update', projectSfid);
+          const [orgUid, projectSfid, foundationSfid] = pair.split('::');
+          return this.claService.checkPermission(orgUid, 'auto-ecla-update', projectSfid, foundationSfid || undefined);
         }),
         takeUntilDestroyed(this.destroyRef)
       )
@@ -1587,12 +1590,18 @@ export class OrgEasyclaDetailComponent {
     return group ? (orgClaPairProjectSfid(group) ?? '') : '';
   }
 
+  private initAutoEclaFoundationSfid(): string {
+    const group = this.claGroup();
+    return group ? (orgClaPairFoundationSfid(group) ?? '') : '';
+  }
+
   private initAutoEclaPermissionPair(): string {
     const group = this.claGroup();
     if (!group?.signed || this.showingPreview()) return '';
     const orgUid = this.selectedOrgUid();
     const projectSfid = this.autoEclaProjectSfid();
-    return orgUid && projectSfid ? `${orgUid}::${projectSfid}` : '';
+    const foundationSfid = this.autoEclaFoundationSfid();
+    return orgUid && projectSfid ? `${orgUid}::${projectSfid}::${foundationSfid}` : '';
   }
 
   private initDesigneePair(): string | null {

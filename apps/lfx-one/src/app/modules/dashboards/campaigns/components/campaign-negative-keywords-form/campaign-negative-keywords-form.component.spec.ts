@@ -4,8 +4,12 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED, MAX_NEGATIVE_KEYWORDS_PER_REQUEST } from '@lfx-one/shared/constants';
-import { CampaignNegativeKeywordsResult } from '@lfx-one/shared/interfaces';
+import {
+  CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED,
+  MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
+  MAX_X_NEGATIVE_KEYWORDS_PER_REQUEST,
+} from '@lfx-one/shared/constants';
+import { CampaignNegativeKeywordsResult, CampaignServiceKeywordTargeting } from '@lfx-one/shared/interfaces';
 import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
 import { CampaignService } from '@services/campaign.service';
 import { MessageService } from 'primeng/api';
@@ -17,16 +21,18 @@ import { CampaignNegativeKeywordsFormComponent } from './campaign-negative-keywo
 describe('CampaignNegativeKeywordsFormComponent', () => {
   let fixture: ComponentFixture<CampaignNegativeKeywordsFormComponent>;
   let addNegativeKeywords: ReturnType<typeof vi.fn>;
+  let getKeywordTargeting: ReturnType<typeof vi.fn>;
   let messageAdd: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     addNegativeKeywords = vi.fn();
+    getKeywordTargeting = vi.fn();
     messageAdd = vi.fn();
     await TestBed.configureTestingModule({
       imports: [CampaignNegativeKeywordsFormComponent],
       providers: [
         provideNoopAnimations(),
-        { provide: CampaignService, useValue: { addNegativeKeywords } },
+        { provide: CampaignService, useValue: { addNegativeKeywords, getKeywordTargeting } },
         { provide: MessageService, useValue: { add: messageAdd } },
       ],
     }).compileComponents();
@@ -68,10 +74,18 @@ describe('CampaignNegativeKeywordsFormComponent', () => {
     fixture.detectChanges();
     submit();
 
-    expect(addNegativeKeywords).toHaveBeenCalledWith('tlf', 'b-1', 'c-1', [
-      { text: 'free download', matchType: 'Phrase' },
-      { text: 'cheap tickets', matchType: 'Phrase' },
-    ]);
+    expect(addNegativeKeywords).toHaveBeenCalledWith(
+      'tlf',
+      'b-1',
+      'c-1',
+      [
+        { text: 'free download', matchType: 'Phrase' },
+        { text: 'cheap tickets', matchType: 'Phrase' },
+      ],
+      undefined
+    );
+    // Microsoft takes no revision, so the targeting is never read for one.
+    expect(getKeywordTargeting).not.toHaveBeenCalled();
   });
 
   it('refuses an empty submit and says why', () => {
@@ -275,5 +289,153 @@ describe('CampaignNegativeKeywordsFormComponent', () => {
     remounted.detectChanges();
 
     expect(remounted.componentInstance.form.controls.keywords.value).toBe('');
+  });
+
+  describe('on Reddit and X', () => {
+    const targeting = (revision?: string): CampaignServiceKeywordTargeting => ({
+      campaign_id: 'c-1',
+      platform: 'reddit-ads',
+      targeting_entity_id: 'ag-1',
+      keywords: [{ keyword: 'kubernetes' }],
+      ...(revision !== undefined && { revision }),
+    });
+
+    function setPlatform(platform: 'reddit-ads' | 'twitter-ads'): void {
+      fixture.componentRef.setInput('platform', platform);
+      fixture.detectChanges();
+    }
+
+    const submitButton = (): HTMLButtonElement => el().querySelector('[data-testid="optimization-campaign-negatives-submit-c-1"] button') as HTMLButtonElement;
+
+    it('offers Reddit Broad only, reads the revision, and sends it with the keywords', () => {
+      getKeywordTargeting.mockReturnValue(of(targeting('sha256:r1')));
+      addNegativeKeywords.mockReturnValue(of({ campaignId: 'c-1', appliedCount: 1, results: [{ text: 'free', matchType: 'Broad', outcome: 'APPLIED' }] }));
+      setPlatform('reddit-ads');
+
+      expect(getKeywordTargeting).toHaveBeenCalledWith('tlf', 'b-1', 'c-1');
+      expect(el().querySelector('label[for="campaign-negatives-type-c-1-Broad"]')).not.toBeNull();
+      expect(el().querySelector('label[for="campaign-negatives-type-c-1-Exact"]')).toBeNull();
+      expect(fixture.componentInstance.form.controls.matchType.value).toBe('Broad');
+      expect(q('optimization-campaign-negatives-keywords-c-1')!.closest('form')!.textContent).toContain('excluded keywords');
+
+      typeKeywords('free');
+      submit();
+
+      expect(addNegativeKeywords).toHaveBeenCalledWith('tlf', 'b-1', 'c-1', [{ text: 'free', matchType: 'Broad' }], 'sha256:r1');
+      // The write changed the fingerprint: the targeting is read again for the next request.
+      expect(getKeywordTargeting).toHaveBeenCalledTimes(2);
+    });
+
+    it('sends nothing to Reddit until the revision has been read, and offers a retry when the read fails', () => {
+      const read = new Subject<CampaignServiceKeywordTargeting>();
+      getKeywordTargeting.mockReturnValue(read);
+      setPlatform('reddit-ads');
+
+      expect(q('optimization-campaign-negatives-revision-loading-c-1')).not.toBeNull();
+      expect(submitButton().disabled).toBe(true);
+      typeKeywords('free');
+      submit();
+      expect(addNegativeKeywords).not.toHaveBeenCalled();
+
+      read.error(new HttpErrorResponse({ status: 409, error: { error: 'unprovisioned', code: 'CONFLICT' } }));
+      fixture.detectChanges();
+      expect(q('optimization-campaign-negatives-revision-error-c-1')!.textContent).toContain("couldn't be read");
+      // Upstream text is never shown.
+      expect(q('optimization-campaign-negatives-revision-error-c-1')!.textContent).not.toContain('unprovisioned');
+      expect(submitButton().disabled).toBe(true);
+
+      getKeywordTargeting.mockReturnValue(of(targeting('sha256:r2')));
+      (q('optimization-campaign-negatives-revision-retry-c-1')!.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(submitButton().disabled).toBe(false);
+    });
+
+    // An editor reopened while an earlier Reddit add is still in flight must not read the revision
+    // then: that revision goes stale the moment the add lands. It waits, and reads once it settles.
+    it('reads no revision in an editor reopened mid-request, then reads once the request settles', () => {
+      getKeywordTargeting.mockReturnValue(of(targeting('sha256:r1')));
+      const pending = new Subject<CampaignNegativeKeywordsResult>();
+      addNegativeKeywords.mockReturnValue(pending);
+      setPlatform('reddit-ads');
+      typeKeywords('free');
+      submit();
+      fixture.destroy();
+
+      getKeywordTargeting.mockClear();
+      getKeywordTargeting.mockReturnValue(of(targeting('sha256:r2')));
+      const remounted = TestBed.createComponent(CampaignNegativeKeywordsFormComponent);
+      remounted.componentRef.setInput('projectSlug', 'tlf');
+      remounted.componentRef.setInput('briefId', 'b-1');
+      remounted.componentRef.setInput('campaignId', 'c-1');
+      remounted.componentRef.setInput('campaignName', 'KubeCon EU');
+      remounted.componentRef.setInput('platform', 'reddit-ads');
+      remounted.detectChanges();
+      const root = remounted.nativeElement as HTMLElement;
+
+      expect(getKeywordTargeting).not.toHaveBeenCalled();
+      expect(root.querySelector('[data-testid="optimization-campaign-negatives-revision-loading-c-1"]')).not.toBeNull();
+
+      pending.next({ campaignId: 'c-1', appliedCount: 1, results: [{ text: 'free', matchType: 'Broad', outcome: 'APPLIED' }] });
+      pending.complete();
+      remounted.detectChanges();
+
+      expect(getKeywordTargeting).toHaveBeenCalledTimes(1);
+      addNegativeKeywords.mockReturnValue(of({ campaignId: 'c-1', appliedCount: 0, results: [] }));
+      const textarea = root.querySelector('#campaign-negatives-keywords-c-1') as HTMLTextAreaElement;
+      textarea.value = 'torrent';
+      textarea.dispatchEvent(new Event('input'));
+      root.querySelector('[data-testid="optimization-campaign-negatives-form-c-1"]')!.dispatchEvent(new Event('submit'));
+      remounted.detectChanges();
+      expect(addNegativeKeywords).toHaveBeenLastCalledWith('tlf', 'b-1', 'c-1', [{ text: 'torrent', matchType: 'Broad' }], 'sha256:r2');
+    });
+
+    it('treats a Reddit read with no revision as unusable', () => {
+      getKeywordTargeting.mockReturnValue(of(targeting()));
+      setPlatform('reddit-ads');
+
+      expect(q('optimization-campaign-negatives-revision-error-c-1')).not.toBeNull();
+      expect(submitButton().disabled).toBe(true);
+    });
+
+    // A mixed batch: ALREADY_PRESENT keeps its own result beside the new keywords' shared outcome.
+    it('keeps the ALREADY_PRESENT results of a mixed Reddit batch', () => {
+      getKeywordTargeting.mockReturnValue(of(targeting('sha256:r1')));
+      addNegativeKeywords.mockReturnValue(
+        of({
+          campaignId: 'c-1',
+          appliedCount: 1,
+          results: [
+            { text: 'free', matchType: 'Broad', outcome: 'FAILED', errorCode: 'REJECTED' },
+            { text: 'torrent', matchType: 'Broad', outcome: 'ALREADY_PRESENT' },
+          ],
+        })
+      );
+      setPlatform('reddit-ads');
+      typeKeywords('free\ntorrent');
+      submit();
+
+      const items = Array.from(el().querySelectorAll('[data-testid^="optimization-campaign-negatives-result-"]'));
+      expect(items.map((item) => item.querySelector('[data-outcome]')!.getAttribute('data-outcome'))).toEqual(['FAILED', 'ALREADY_PRESENT']);
+      expect(items[0].textContent).toContain('Reddit refused it.');
+    });
+
+    it(`offers X its three match types, caps it at ${MAX_X_NEGATIVE_KEYWORDS_PER_REQUEST}, and never reads or sends a revision`, () => {
+      addNegativeKeywords.mockReturnValue(of({ campaignId: 'c-1', appliedCount: 0, results: [] }));
+      setPlatform('twitter-ads');
+
+      for (const type of ['Exact', 'Phrase', 'Broad']) {
+        expect(el().querySelector(`label[for="campaign-negatives-type-c-1-${type}"]`)).not.toBeNull();
+      }
+      expect(getKeywordTargeting).not.toHaveBeenCalled();
+
+      typeKeywords(Array.from({ length: MAX_X_NEGATIVE_KEYWORDS_PER_REQUEST + 1 }, (_, i) => `kw ${i}`).join('\n'));
+      submit();
+      expect(addNegativeKeywords).not.toHaveBeenCalled();
+      expect(q('optimization-campaign-negatives-error-c-1')!.textContent).toContain(`at most ${MAX_X_NEGATIVE_KEYWORDS_PER_REQUEST}`);
+
+      typeKeywords('free');
+      submit();
+      expect(addNegativeKeywords).toHaveBeenCalledWith('tlf', 'b-1', 'c-1', [{ text: 'free', matchType: 'Exact' }], undefined);
+    });
   });
 });

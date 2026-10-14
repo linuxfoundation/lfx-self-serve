@@ -350,6 +350,14 @@
                       >{{ row.bidUnavailableReason }}</span
                     >
                   }
+                  @if (row.keywordTargetingOffered && !row.keywordTargetingAvailable) {
+                    <span
+                      class="text-xs text-gray-500"
+                      [id]="'campaign-targeting-unavailable-' + row.campaign.id"
+                      [attr.data-testid]="'optimization-campaign-targeting-unavailable-' + row.campaign.id"
+                      >{{ row.keywordTargetingUnavailableReason }}</span
+                    >
+                  }
                   @if (row.negativeKeywordsOffered && !row.negativeKeywordsAvailable) {
                     <span
                       class="text-xs text-gray-500"
@@ -393,7 +401,22 @@
                     [attr.data-testid]="'optimization-campaign-bid-edit-' + row.campaign.id">
                     Change bid
                   </button>
-                  <!-- Microsoft Advertising rows only: campaign-level negative keywords. -->
+                  <!-- Reddit and X rows only: the keyword targeting, which can be read and removed from (not paused). -->
+                  @if (row.keywordTargetingOffered) {
+                    <button
+                      type="button"
+                      (click)="toggleTargetingPanel(row)"
+                      [disabled]="!row.keywordTargetingAvailable || (!!targetingPending()[row.campaign.id] && !!targetingPanelOpen()[row.campaign.id])"
+                      [attr.aria-expanded]="row.keywordTargetingAvailable ? !!targetingPanelOpen()[row.campaign.id] : null"
+                      [attr.aria-controls]="targetingPanelOpen()[row.campaign.id] ? 'campaign-targeting-panel-' + row.campaign.id : null"
+                      [attr.aria-describedby]="row.keywordTargetingAvailable ? null : 'campaign-targeting-unavailable-' + row.campaign.id"
+                      [attr.aria-label]="'Keyword targeting of ' + row.campaign.campaign_name"
+                      class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                      [attr.data-testid]="'optimization-campaign-targeting-edit-' + row.campaign.id">
+                      Keyword targeting
+                    </button>
+                  }
+                  <!-- Microsoft Advertising, Reddit and X rows: negative keywords. -->
                   @if (row.negativeKeywordsOffered) {
                     <button
                       type="button"
@@ -473,14 +496,25 @@
                   (submitBid)="changeCampaignBid(row, $event)"
                   (cancelEdit)="cancelBidEditor(row.campaign.id)" />
               }
-              @if (negativesEditorOpen()[row.campaign.id]) {
+              @if (negativesEditorOpen()[row.campaign.id] && row.negativeKeywordsPlatform; as negativesPlatform) {
                 <lfx-campaign-negative-keywords-form
                   [id]="'campaign-negatives-panel-' + row.campaign.id"
                   [projectSlug]="projectSlug()"
                   [briefId]="briefId()"
                   [campaignId]="row.campaign.id"
                   [campaignName]="row.campaign.campaign_name"
+                  [platform]="negativesPlatform"
                   (cancelEdit)="closeNegativesEditor(row.campaign.id)" />
+              }
+              @if (targetingPanelOpen()[row.campaign.id] && row.keywordTargetingPlatform; as targetingPlatform) {
+                <lfx-campaign-keyword-targeting-panel
+                  [id]="'campaign-targeting-panel-' + row.campaign.id"
+                  [projectSlug]="projectSlug()"
+                  [briefId]="briefId()"
+                  [campaignId]="row.campaign.id"
+                  [campaignName]="row.campaign.campaign_name"
+                  [platform]="targetingPlatform"
+                  (closePanel)="closeTargetingPanel(row.campaign.id)" />
               }
             </li>
           }
@@ -918,6 +952,8 @@
       [actionResults]="actionResults()"
       [removedKeywords]="removedKeywords()"
       (keywordAction)="onMicrosoftKeywordAction($event)" />
+    <!-- Reddit keyword performance (campaign-service #331): read-only, its own read and window. -->
+    <lfx-reddit-keywords-table [projectSlug]="activeFoundationSlug()" [reloadToken]="redditKeywordsReload()" [campaignNames]="redditCampaignNames()" />
   }
 
   <!-- LinkedIn Optimization -->

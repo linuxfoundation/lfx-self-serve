@@ -5,8 +5,9 @@ import {
   MENTORSHIP_MENTEE_ADDITIONAL_NOTES_MAX,
   MENTORSHIP_MENTEE_DEMOGRAPHIC_GROUPS,
   MENTORSHIP_MENTEE_DEMOGRAPHIC_VALUE_MAX_LENGTH,
-  MENTORSHIP_MENTEE_PROFILE_SKILL_MAX_LENGTH,
-  MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS,
+  MENTORSHIP_SKILL_MAX_LENGTH,
+  MENTORSHIP_SKILLS_LIMIT_MESSAGE,
+  MENTORSHIP_SKILLS_MAX_ITEMS,
   MENTORSHIP_MENTEE_PROFILE_UPDATE_KEYS,
   MENTORSHIP_MENTEE_SKILL_SET_KEYS,
   MENTORSHIP_UPSTREAM_MENTEE_SKILL_SET_KEYS,
@@ -64,8 +65,8 @@ const parseCountry = (value: unknown, operation: string): string => {
 const parseSkillList = (value: unknown, field: string, operation: string): string[] => {
   if (!Array.isArray(value)) return fail(field, `${field} must be an array`, operation);
   if (value.length === 0) return fail(field, `${field} must contain at least one skill`, operation);
-  if (value.length > MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS) {
-    return fail(field, `${field} must contain at most ${MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS} skills`, operation);
+  if (value.length > MENTORSHIP_SKILLS_MAX_ITEMS) {
+    return fail(field, MENTORSHIP_SKILLS_LIMIT_MESSAGE, operation);
   }
 
   const seen = new Set<string>();
@@ -74,8 +75,8 @@ const parseSkillList = (value: unknown, field: string, operation: string): strin
     if (typeof item !== 'string') return fail(field, `${field} must only contain strings`, operation);
     const skill = item.trim();
     if (skill === '') return fail(field, `${field} must not contain blank skills`, operation);
-    if (skill.length > MENTORSHIP_MENTEE_PROFILE_SKILL_MAX_LENGTH) {
-      return fail(field, `Each skill in ${field} must be at most ${MENTORSHIP_MENTEE_PROFILE_SKILL_MAX_LENGTH} characters`, operation);
+    if (skill.length > MENTORSHIP_SKILL_MAX_LENGTH) {
+      return fail(field, MENTORSHIP_SKILLS_LIMIT_MESSAGE, operation);
     }
     const key = skill.toLowerCase();
     if (seen.has(key)) continue;

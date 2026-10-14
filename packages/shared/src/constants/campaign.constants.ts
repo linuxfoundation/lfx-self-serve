@@ -19,6 +19,7 @@ import type {
   CampaignNegativeKeywordMatchType,
   CampaignNegativeKeywordMatchTypeOption,
   CampaignNegativeKeywordOutcome,
+  CampaignNegativeKeywordPlatformRules,
   CampaignPlatform,
   CampaignPlatformOption,
   CampaignProgramTypeOption,
@@ -40,6 +41,7 @@ import type {
   MonitorConnectionPlatform,
   MonitorPlatformButtonColors,
   MonitorTabPlatform,
+  NegativeKeywordCampaignPlatform,
   ParsedCampaignName,
   RedditObjective,
   RedditObjectiveParams,
@@ -1468,10 +1470,15 @@ export const DEFAULT_CAMPAIGN_BID_TYPE: CampaignBidType = 'cpc';
 export const CAMPAIGN_BID_OUTCOME_UNCONFIRMED =
   'The bid change could not be confirmed and may already have been applied. Verify the bid in the ad platform before retrying.';
 
-/** Match types a negative keyword may carry (campaign-service's `negativeKeywordMatchTypeEnum`). */
+/**
+ * Match types a negative keyword may carry (campaign-service's `negativeKeywordMatchTypeEnum`),
+ * across the three platforms. Which of them a campaign's platform takes is upstream's to decide: it
+ * refuses any other with 400 before the platform is contacted.
+ */
 export const VALID_CAMPAIGN_NEGATIVE_KEYWORD_MATCH_TYPES: ReadonlySet<CampaignNegativeKeywordMatchType> = new Set<CampaignNegativeKeywordMatchType>([
   'Exact',
   'Phrase',
+  'Broad',
 ]);
 
 /** Per-keyword outcomes of the negative-keywords lever (campaign-service's `negativeKeywordOutcomeEnum`). */
@@ -1484,6 +1491,9 @@ export const CAMPAIGN_NEGATIVE_KEYWORD_OUTCOMES: ReadonlySet<CampaignNegativeKey
 
 /** Most negative keywords one request may carry (the upstream payload's `MaxLength(60)`). */
 export const MAX_NEGATIVE_KEYWORDS_PER_REQUEST = 60;
+
+/** Most negative keywords one request may carry on X: one write per keyword, paced at one a second, so upstream caps it at 20. */
+export const MAX_X_NEGATIVE_KEYWORDS_PER_REQUEST = 20;
 
 /** Microsoft's limit on a negative keyword's text, in characters (code points, not bytes). */
 export const MAX_NEGATIVE_KEYWORD_TEXT_LENGTH = 100;
@@ -1669,8 +1679,12 @@ export const CAMPAIGN_BID_FAILURE_FALLBACK = 'The bid could not be changed.';
  */
 export const CAMPAIGN_BID_DEFINITE_FAILURE_MARKER = 'was not modified';
 
-/** The platforms a campaign-level negative keyword can be added on (`add-negative-keywords`). */
-export const NEGATIVE_KEYWORD_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<string>(['microsoft-ads']);
+/** The platforms a negative keyword can be added on (`add-negative-keywords`). */
+export const NEGATIVE_KEYWORD_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<NegativeKeywordCampaignPlatform>([
+  'microsoft-ads',
+  'reddit-ads',
+  'twitter-ads',
+]);
 
 /** Why the negative-keyword editor is disabled for a campaign never created on its ad platform. */
 export const CAMPAIGN_NEGATIVE_KEYWORDS_UNAVAILABLE_UNPROVISIONED_REASON =
@@ -1681,6 +1695,49 @@ export const CAMPAIGN_NEGATIVE_KEYWORD_MATCH_TYPE_OPTIONS: readonly CampaignNega
   { value: 'Exact', label: 'Exact' },
   { value: 'Phrase', label: 'Phrase' },
 ] as const;
+
+/**
+ * What the negative-keyword editor offers and sends per platform, from campaign-service's
+ * `add-negative-keywords` contract:
+ * - Microsoft Advertising: Exact or Phrase, at campaign level, up to 60.
+ * - Reddit: Broad only (its excluded keywords carry no match type), on the campaign's one ad group,
+ *   up to 60, and the keyword-targeting read's `revision` is REQUIRED.
+ * - X: Broad, Phrase or Exact, as negated targeting on the campaign's one line item, up to 20.
+ */
+export const CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES: Readonly<Record<NegativeKeywordCampaignPlatform, CampaignNegativeKeywordPlatformRules>> = {
+  'microsoft-ads': {
+    label: 'Microsoft Advertising',
+    matchTypes: CAMPAIGN_NEGATIVE_KEYWORD_MATCH_TYPE_OPTIONS,
+    // Exact is the narrowest a negative can be, so it is the default that blocks the least traffic.
+    defaultMatchType: 'Exact',
+    maxKeywords: MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
+    requiresRevision: false,
+    destination: 'Added to this campaign in Microsoft Advertising.',
+    matchTypeHint: 'Applies to every keyword in this request. Microsoft supports Exact and Phrase for negatives.',
+  },
+  'reddit-ads': {
+    label: 'Reddit',
+    matchTypes: [{ value: 'Broad', label: 'Broad' }],
+    defaultMatchType: 'Broad',
+    maxKeywords: MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
+    requiresRevision: true,
+    destination: "Added to the excluded keywords of this campaign's ad group on Reddit.",
+    matchTypeHint: "Reddit's excluded keywords carry no match type, so Broad is the only choice.",
+  },
+  'twitter-ads': {
+    label: 'X',
+    matchTypes: [
+      { value: 'Exact', label: 'Exact' },
+      { value: 'Phrase', label: 'Phrase' },
+      { value: 'Broad', label: 'Broad' },
+    ],
+    defaultMatchType: 'Exact',
+    maxKeywords: MAX_X_NEGATIVE_KEYWORDS_PER_REQUEST,
+    requiresRevision: false,
+    destination: "Added as negative keyword targeting on this campaign's line item on X.",
+    matchTypeHint: 'Applies to every keyword in this request. X supports Exact, Phrase and Broad for negatives.',
+  },
+};
 
 /** Visible label of each per-keyword outcome. UNCONFIRMED is never worded as a failure. */
 export const CAMPAIGN_NEGATIVE_KEYWORD_OUTCOME_LABELS: Readonly<Record<CampaignNegativeKeywordOutcome, string>> = {
@@ -1693,6 +1750,13 @@ export const CAMPAIGN_NEGATIVE_KEYWORD_OUTCOME_LABELS: Readonly<Record<CampaignN
 /** What an UNCONFIRMED negative keyword tells the operator to do before trying it again. */
 export const CAMPAIGN_NEGATIVE_KEYWORD_UNCONFIRMED_ADVICE =
   "This keyword may have been added. Check the campaign's negative keywords in Microsoft Advertising before retrying.";
+
+/**
+ * What a negative-keywords request that failed with no documented refusal reports (a 5xx, a timeout,
+ * a lost connection): the add may have reached the platform for any of its keywords.
+ */
+export const CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNKNOWN =
+  "The negative keywords may or may not have been added. Check the campaign's negative keywords in the ad platform before retrying.";
 
 /** Shown for a negative-keywords refusal whose response carried no readable message. */
 export const CAMPAIGN_NEGATIVE_KEYWORDS_FAILURE_FALLBACK = 'The negative keywords could not be added.';

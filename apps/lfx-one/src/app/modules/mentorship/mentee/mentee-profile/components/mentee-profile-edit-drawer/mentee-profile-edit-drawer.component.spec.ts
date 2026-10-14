@@ -15,9 +15,9 @@ import {
   MENTORSHIP_MENTEE_PROFILE_SAVE_ERROR_MESSAGES,
   MENTORSHIP_MENTEE_PROFILE_SAVE_LABEL,
   MENTORSHIP_MENTEE_PROFILE_SAVE_SUCCESS_SUMMARY,
-  MENTORSHIP_MENTEE_PROFILE_SKILL_MAX_LENGTH,
-  MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE,
-  MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS,
+  MENTORSHIP_SKILL_MAX_LENGTH,
+  MENTORSHIP_SKILLS_LIMIT_MESSAGE,
+  MENTORSHIP_SKILLS_MAX_ITEMS,
   MENTORSHIP_RICH_TEXT_RAW_MAX,
   MENTORSHIP_RICH_TEXT_TOO_LARGE_MESSAGE,
 } from '@lfx-one/shared/constants';
@@ -572,27 +572,27 @@ describe('MenteeProfileEditDrawerComponent', () => {
 
   describe('skill limits', () => {
     it('marks more than the maximum number of skills invalid and shows the limit message after Save', () => {
-      comp['form'].controls.skillsHave.setValue(Array.from({ length: MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS + 1 }, (_, index) => `Skill ${index}`));
+      comp['form'].controls.skillsHave.setValue(Array.from({ length: MENTORSHIP_SKILLS_MAX_ITEMS + 1 }, (_, index) => `Skill ${index}`));
 
       comp['onSave']();
 
       expect(comp['form'].controls.skillsHave.valid).toBe(false);
-      expect(comp['skillsHaveError']()).toBe(MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE);
+      expect(comp['skillsHaveError']()).toBe(MENTORSHIP_SKILLS_LIMIT_MESSAGE);
       expect(updateMenteeProfile).not.toHaveBeenCalled();
     });
 
     it('marks a skill over the maximum length invalid', () => {
-      comp['form'].controls.skillsWant.setValue(['a'.repeat(MENTORSHIP_MENTEE_PROFILE_SKILL_MAX_LENGTH + 1)]);
+      comp['form'].controls.skillsWant.setValue(['a'.repeat(MENTORSHIP_SKILL_MAX_LENGTH + 1)]);
 
       comp['onSave']();
 
-      expect(comp['skillsWantError']()).toBe(MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE);
+      expect(comp['skillsWantError']()).toBe(MENTORSHIP_SKILLS_LIMIT_MESSAGE);
       expect(updateMenteeProfile).not.toHaveBeenCalled();
     });
 
     it('accepts the maximum number of skills at the maximum length', () => {
       comp['form'].controls.skillsHave.setValue(
-        Array.from({ length: MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS }, (_, index) => `${index}`.padEnd(MENTORSHIP_MENTEE_PROFILE_SKILL_MAX_LENGTH, 'x'))
+        Array.from({ length: MENTORSHIP_SKILLS_MAX_ITEMS }, (_, index) => `${index}`.padEnd(MENTORSHIP_SKILL_MAX_LENGTH, 'x'))
       );
 
       expect(comp['form'].controls.skillsHave.valid).toBe(true);
