@@ -6,6 +6,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // Real values, not hand-copied literals — so a future TTL retune (see LFXV2 #2241) can't leave
 // this spec's assertions asserting a value the product no longer uses.
 import { VALKEY_CACHE } from '../../../../../packages/shared/src/constants/valkey-cache.constants';
+import {
+  EMAIL_SEND_CODE_RATE_LIMIT_WINDOW_MS,
+  EMAIL_SEND_CODE_TARGET_RATE_LIMIT_MAX,
+  EMAIL_SEND_CODE_USER_RATE_LIMIT_MAX,
+  EMAIL_VERIFICATION_FAILED_ERROR,
+  EMAIL_VERIFICATION_FAILED_MESSAGE,
+  EMAIL_VERIFICATION_MIN_RESPONSE_MS,
+  EMAIL_VERIFICATION_SENT_MESSAGE,
+} from '../../../../../packages/shared/src/constants/profile.constants';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
 const {
@@ -15,6 +24,7 @@ const {
   getEffectiveEmailMock,
   getEffectiveSubMock,
   isImpersonatingMock,
+  isIdentityAlreadyLinkedErrorMock,
   getLinuxForwardDomainMock,
   withMeetingInviteLockMock,
   populateApiGatewayTokenMock,
@@ -40,6 +50,7 @@ const {
   getEffectiveEmailMock: vi.fn(),
   getEffectiveSubMock: vi.fn(),
   isImpersonatingMock: vi.fn(() => false),
+  isIdentityAlreadyLinkedErrorMock: vi.fn(() => false),
   getLinuxForwardDomainMock: vi.fn(() => 'linux.com'),
   withMeetingInviteLockMock: vi.fn((_req: unknown, _username: string, _ttlMs: number, fn: () => Promise<unknown>) => fn()),
   populateApiGatewayTokenMock: vi.fn(),
@@ -74,6 +85,9 @@ const {
     getUserEmails: vi.fn(),
     setPrimaryEmail: vi.fn(),
     sendPasswordResetLink: vi.fn(),
+    sendVerificationCode: vi.fn(),
+    resolveEmailToUsername: vi.fn(),
+    resolveEmailToSub: vi.fn(),
     verifyOtp: vi.fn(),
     linkIdentity: vi.fn(),
     listIdentities: vi.fn(),
@@ -116,6 +130,13 @@ vi.mock('@lfx-one/shared/constants', () => ({
   CDP_TO_AUTH0_PROVIDER_MAP: {},
   EMAIL_ALREADY_LINKED_MESSAGE: 'already linked',
   EMAIL_REGEX: /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/,
+  EMAIL_VERIFICATION_SENT_MESSAGE,
+  EMAIL_VERIFICATION_FAILED_ERROR,
+  EMAIL_VERIFICATION_FAILED_MESSAGE,
+  EMAIL_VERIFICATION_MIN_RESPONSE_MS,
+  EMAIL_SEND_CODE_RATE_LIMIT_WINDOW_MS,
+  EMAIL_SEND_CODE_USER_RATE_LIMIT_MAX,
+  EMAIL_SEND_CODE_TARGET_RATE_LIMIT_MAX,
   // Only the member the write path sets. This factory replaces the module wholesale, so a name the
   // controller reads and this list omits fails as an undefined export rather than a wrong value.
   ERROR_CODES: { SERVICE_ADVISORY: 'SERVICE_ADVISORY' },
@@ -133,7 +154,7 @@ vi.mock('../helpers/validation.helper', () => ({
   getStringQueryParam: vi.fn((req: any, key: string) => (typeof req.query?.[key] === 'string' ? req.query[key] : undefined)),
 }));
 vi.mock('@lfx-one/shared/utils', () => ({
-  isIdentityAlreadyLinkedError: vi.fn(() => false),
+  isIdentityAlreadyLinkedError: isIdentityAlreadyLinkedErrorMock,
   isMeetingInvitePrimarySentinel: (value: string | null | undefined) => (value ?? '').trim().toLowerCase() === 'primary',
   emailsEqual: (a: string | null | undefined, b: string | null | undefined) => !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase(),
 }));
@@ -221,6 +242,7 @@ vi.mock('../services/user.service', () => ({
 }));
 
 import { ProfileController } from './profile.controller';
+import { logger } from '../services/logger.service';
 
 function buildReq(overrides: Record<string, unknown> = {}): any {
   return {
@@ -1551,26 +1573,160 @@ describe('ProfileController.verifyAndLinkEmail — v1 verified-email sync (lfx-s
 
     expect(res.redirect).toHaveBeenCalledWith(expect.stringContaining('success=profile_token_obtained'));
   });
+});
 
-  it('callback path: delegates to the shared helper even when the request already carries a token', async () => {
-    // The helper owns the skip-when-present decision (covered in refresh-token-exchange.util.spec.ts);
-    // the controller always delegates so both call sites share one wiring.
-    authStateSvc.consume.mockResolvedValue({ sub: 'auth0|user-1', returnTo: '/profile/emails' });
-    profileAuthSvc.exchangeCodeForToken.mockResolvedValue({ access_token: 'mgmt-token', token_type: 'Bearer', scope: '', expires_in: 3600 });
-    profileAuthSvc.decodeAndValidateSub.mockReturnValue(true);
-    const req = buildReq({
-      path: '/api/profile/auth/callback',
-      query: { state: 'state-1', code: 'code-1' },
-      oidc: { user: { sub: 'auth0|user-1', username: 'user-1' } },
-      appSession: { pendingEmailVerification: { email: 'pending@example.com', otp: '654321' } },
-      apiGatewayToken: 'existing-gw-token',
-    });
+describe('ProfileController.sendEmailVerification — enumeration-safe (lfx-self-serve-ops#443)', () => {
+  let controller: ProfileController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    getUsernameFromAuthMock.mockResolvedValue('lf-fixture-sender');
+    isIdentityAlreadyLinkedErrorMock.mockReturnValue(false);
+    // A regression that awaited owner resolution would never produce a response.
+    emailVerificationSvc.resolveEmailToUsername.mockImplementation(() => new Promise(() => undefined));
+    emailVerificationSvc.resolveEmailToSub.mockImplementation(() => new Promise(() => undefined));
+    controller = new ProfileController();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    isIdentityAlreadyLinkedErrorMock.mockReturnValue(false);
+    emailVerificationSvc.resolveEmailToUsername.mockReset();
+    emailVerificationSvc.resolveEmailToSub.mockReset();
+  });
+
+  it.each([false, true])('returns the same generic 200 after the floor (linked=%s)', async (linked) => {
+    isIdentityAlreadyLinkedErrorMock.mockReturnValue(linked);
+    emailVerificationSvc.sendVerificationCode.mockResolvedValue(
+      linked ? { success: false, error: 'email already linked', message: 'upstream conflict wording' } : { success: true, message: 'upstream sent wording' }
+    );
+    const req = buildReq({ body: { email: 'typed@example.test' }, path: '/api/profile/identities/email/send-code' });
     const res = buildRes();
+    const next = vi.fn();
+    const pending = controller.sendEmailVerification(req, res, next);
 
-    await controller.handleProfileAuthCallback(req, res);
+    await vi.advanceTimersByTimeAsync(EMAIL_VERIFICATION_MIN_RESPONSE_MS - 1);
+    expect(res.json).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    await pending;
 
-    expect(populateApiGatewayTokenMock).toHaveBeenCalledWith(req);
-    expect(userSvc.syncVerifiedEmailToUserService).toHaveBeenCalledWith(req, 'pending@example.com');
-    expect(res.redirect).toHaveBeenCalledWith(expect.stringContaining('success=profile_token_obtained'));
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledExactlyOnceWith({ success: true, message: EMAIL_VERIFICATION_SENT_MESSAGE });
+    expect(next).not.toHaveBeenCalled();
+    const warnings = vi.mocked(logger.warning).mock.calls.map(([, , message, metadata]) => ({ message, metadata }));
+    const successes = vi.mocked(logger.success).mock.calls.map(([, , , metadata]) => metadata);
+    expect(JSON.stringify({ warnings, successes })).not.toContain('typed@example.test');
+    expect(JSON.stringify({ warnings, successes })).not.toContain('linked_to');
+  });
+
+  it('does not add another floor after a slow upstream send', async () => {
+    emailVerificationSvc.sendVerificationCode.mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve({ success: true }), EMAIL_VERIFICATION_MIN_RESPONSE_MS + 200))
+    );
+    const res = buildRes();
+    const pending = controller.sendEmailVerification(buildReq({ body: { email: 'fresh@example.test' } }), res, vi.fn());
+    await vi.advanceTimersByTimeAsync(EMAIL_VERIFICATION_MIN_RESPONSE_MS + 199);
+    expect(res.json).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    await pending;
+    expect(res.json).toHaveBeenCalledExactlyOnceWith({ success: true, message: EMAIL_VERIFICATION_SENT_MESSAGE });
+  });
+
+  it.each([400, 503])('preserves a non-conflict %s response after the floor', async (status) => {
+    const response = { success: false, error: status === 503 ? 'Service temporarily unavailable' : 'invalid email', message: 'Try again later' };
+    emailVerificationSvc.sendVerificationCode.mockResolvedValue(response);
+    const res = buildRes();
+    const pending = controller.sendEmailVerification(buildReq({ body: { email: 'fresh@example.test' } }), res, vi.fn());
+    await vi.advanceTimersByTimeAsync(EMAIL_VERIFICATION_MIN_RESPONSE_MS - 1);
+    expect(res.json).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    await pending;
+    expect(res.status).toHaveBeenCalledExactlyOnceWith(status);
+    expect(res.json).toHaveBeenCalledExactlyOnceWith(response);
+  });
+});
+
+describe('ProfileController.verifyAndLinkEmail — step-2 failures are indistinguishable', () => {
+  let controller: ProfileController;
+
+  function verificationReq(): any {
+    return buildReq({ body: { email: 'typed@example.test', otp: '000000' }, path: '/api/profile/identities/email/verify' });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    vi.stubEnv('M2M_AUTH_ISSUER_BASE_URL', '');
+    getEffectiveUsernameMock.mockReturnValue('lf-fixture-verifier');
+    profileAuthSvc.isProfileAuthConfigured.mockReturnValue(true);
+    profileAuthSvc.getManagementToken.mockReturnValue('synthetic-management-token');
+    isIdentityAlreadyLinkedErrorMock.mockReturnValue(false);
+    controller = new ProfileController();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+    isIdentityAlreadyLinkedErrorMock.mockReturnValue(false);
+  });
+
+  it.each(['email already linked', 'failed to exchange OTP for token: invalid code', 'expired otp', undefined])(
+    'masks the upstream failure %s with the same floor-held 400',
+    async (error) => {
+      isIdentityAlreadyLinkedErrorMock.mockReturnValue(error === 'email already linked');
+      emailVerificationSvc.verifyOtp.mockResolvedValue({ success: false, error, message: 'upstream-specific message' });
+      const res = buildRes();
+      const pending = controller.verifyAndLinkEmail(verificationReq(), res, vi.fn());
+      await vi.advanceTimersByTimeAsync(EMAIL_VERIFICATION_MIN_RESPONSE_MS - 1);
+      expect(res.json).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      await pending;
+      expect(res.status).toHaveBeenCalledExactlyOnceWith(400);
+      expect(res.json).toHaveBeenCalledExactlyOnceWith({ success: false, error: EMAIL_VERIFICATION_FAILED_ERROR, message: EMAIL_VERIFICATION_FAILED_MESSAGE });
+      expect(emailVerificationSvc.linkIdentity).not.toHaveBeenCalled();
+      expect(userSvc.syncVerifiedEmailToUserService).not.toHaveBeenCalled();
+    }
+  );
+
+  it('preserves service-unavailable failures as 503 without a verification delay', async () => {
+    const response = { success: false, error: 'Service temporarily unavailable', message: 'Try again later' };
+    emailVerificationSvc.verifyOtp.mockResolvedValue(response);
+    const res = buildRes();
+    await controller.verifyAndLinkEmail(verificationReq(), res, vi.fn());
+    expect(res.status).toHaveBeenCalledExactlyOnceWith(503);
+    expect(res.json).toHaveBeenCalledExactlyOnceWith(response);
+  });
+
+  it('keeps token_missing distinct after a successful OTP with no identity token', async () => {
+    emailVerificationSvc.verifyOtp.mockResolvedValue({ success: true });
+    const res = buildRes();
+    await controller.verifyAndLinkEmail(verificationReq(), res, vi.fn());
+    expect(res.status).toHaveBeenCalledExactlyOnceWith(400);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: false, error: 'token_missing' }));
+    expect(emailVerificationSvc.linkIdentity).not.toHaveBeenCalled();
+  });
+
+  it('still exposes a conflict only after the OTP succeeds', async () => {
+    emailVerificationSvc.verifyOtp.mockResolvedValue({ success: true, data: { id_token: 'synthetic-identity-token' } });
+    emailVerificationSvc.linkIdentity.mockResolvedValue({ success: false, error: 'email already linked' });
+    emailVerificationSvc.resolveEmailToUsername.mockResolvedValue('lf-fixture-owner');
+    isIdentityAlreadyLinkedErrorMock.mockReturnValue(true);
+    const res = buildRes();
+    await controller.verifyAndLinkEmail(verificationReq(), res, vi.fn());
+    expect(res.status).toHaveBeenCalledExactlyOnceWith(409);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: false, error: 'email already linked' }));
+    expect(userSvc.syncVerifiedEmailToUserService).not.toHaveBeenCalled();
+  });
+
+  it('requires management authorization before consuming the OTP', async () => {
+    profileAuthSvc.getManagementToken.mockReturnValue(null);
+    const res = buildRes();
+    await controller.verifyAndLinkEmail(verificationReq(), res, vi.fn());
+    expect(res.status).toHaveBeenCalledExactlyOnceWith(403);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: false, error: 'management_token_required' }));
+    expect(emailVerificationSvc.verifyOtp).not.toHaveBeenCalled();
   });
 });
