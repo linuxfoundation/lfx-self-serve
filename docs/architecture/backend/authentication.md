@@ -337,7 +337,7 @@ Public endpoints use M2M tokens for backend API calls:
 `express-openid-connect`'s `/logout` route never calls `next()`, so any cleanup that must run on logout is registered on `/logout` before `auth(authConfig)` in `server.ts`:
 
 - `clearIntercomCookies` expires the Intercom messenger cookies.
-- `endGatewazeSessionOnLogout` revokes and deletes the user's Gatewaze host session, found from the `appSession` cookie alone. Each step is bounded and it always calls `next()`, so the LFX logout never waits on or fails because of Gatewaze. See [Gatewaze Host Session](./gw-host-session.md#lfx-logout).
+- `endGatewazeSessionOnLogout` revokes and deletes the user's Gatewaze host session, found from the `appSession` cookie alone. It waits at most 3 seconds and always calls `next()`, so a Gatewaze or Valkey fault can delay the LFX logout by at most 3 seconds and never fails it. See [Gatewaze Host Session](./gw-host-session.md#lfx-logout).
 
 With the session store on, the legacy `appSession.N` chunk-cookie cleanup also runs before `auth()` for the same reason.
 

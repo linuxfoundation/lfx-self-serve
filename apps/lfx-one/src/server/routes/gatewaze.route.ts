@@ -19,7 +19,9 @@ router.use('/session', (_req, res, next) => {
 
 // The uniform 404 while host-session mode is off, then the same LFX authorization as /api/gw: ED, root
 // writer or any writer grant, and a 403 while impersonating. Nothing here mints a Gatewaze session
-// for an impersonation target.
+// for an impersonation target. requireGwEmbedAccess lets a request with no bearer token through (on
+// /api/gw the controller 404s it), so this router relies on being mounted under /api, where
+// authMiddleware has already answered 401 to any caller without one.
 router.use(requireGatewazeHostSession, requireGwEmbedAccess);
 
 router.get('/session/me', (req, res, next) => controller.me(req, res, next));

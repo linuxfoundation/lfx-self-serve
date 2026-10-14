@@ -632,9 +632,32 @@ describe('GatewazeSessionService me and logout', () => {
       expect(kv.published).toEqual([]);
     });
 
-    it('deletes without revoking when there is no stored session', async () => {
-      await expect(service.endGatewazeSession(buildReq(null), LFX_LOGOUT)).resolves.toEqual({ found: false, revoked: false, deleted: true });
+    it('writes nothing to Valkey when there is no stored session, so a made-up cookie costs only a read', async () => {
+      await expect(service.endGatewazeSession(buildReq(null), LFX_LOGOUT)).resolves.toEqual({ found: false, revoked: false, deleted: false });
       expect(upstreams.count(LOGOUT)).toBe(0);
+      expect(kv.data.has(SIGNED_OUT_KEY)).toBe(false);
+      expect(kv.published).toEqual([]);
+    });
+
+    it('revokes with the stored token when GoTrue cannot refresh it first', async () => {
+      upstreams.state.grantExpiresIn = 1;
+      await service.getGatewazeSession(buildReq());
+      upstreams.state.refreshStatus = 503;
+      let revokedWith: string | null = null;
+      const fetchMock = upstreams.fetchMock.getMockImplementation()!;
+      upstreams.fetchMock.mockImplementation(async (input: string, init?: RequestInit) => {
+        if (String(input) === LOGOUT) revokedWith = new Headers(init?.headers).get('authorization');
+        return fetchMock(input, init);
+      });
+
+      await expect(service.endGatewazeSession(buildReq(null), LFX_LOGOUT)).resolves.toEqual({ found: true, revoked: true, deleted: true });
+      expect(revokedWith).toBe('Bearer gw-access-1');
+      expect(loggerMock.warning).toHaveBeenCalledWith(
+        expect.anything(),
+        'end_gatewaze_session',
+        expect.stringContaining('Refresh before revoke failed'),
+        expect.anything()
+      );
     });
 
     it('does nothing, and never connects, when host-session mode is off', async () => {
@@ -650,8 +673,9 @@ describe('GatewazeSessionService me and logout', () => {
       vi.useFakeTimers();
 
       const pending = service.endGatewazeSession(buildReq(null), LFX_LOGOUT);
-      // refresh, the fallback read and the delete each give up after their own bound.
-      await vi.advanceTimersByTimeAsync(3 * 2_000 + 10);
+      // The refresh and the fallback read each give up after their own bound; with no session found,
+      // nothing is deleted.
+      await vi.advanceTimersByTimeAsync(2 * 2_000 + 10);
 
       await expect(pending).resolves.toEqual({ found: false, revoked: false, deleted: false });
     });

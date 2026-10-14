@@ -39,7 +39,13 @@ export const GW_HOST_SESSION_APP_SESSION_COOKIE = 'appSession';
 export const GW_HOST_SESSION_APP_SESSION_ID_PATTERN = /^[0-9a-f]{64}$/;
 
 /**
- * Bound on each step of ending a Gatewaze session (connect, refresh, revoke, delete). LFX's own
- * `/logout` waits on these steps, so a hung Valkey or GoTrue must not hold up the sign-out.
+ * Bound on each step of ending a Gatewaze session (connect, refresh, revoke, delete), so a hung
+ * Valkey or GoTrue cannot stall the rest of the steps.
  */
 export const GW_HOST_SESSION_LOGOUT_STEP_TIMEOUT_MS = 2_000;
+
+/**
+ * The longest LFX's own `/logout` waits for the Gatewaze session to end before it carries on with
+ * the LFX logout. The steps keep running after that, each under its own bound.
+ */
+export const GW_HOST_SESSION_LFX_LOGOUT_WAIT_MS = 3_000;

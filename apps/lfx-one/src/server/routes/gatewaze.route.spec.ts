@@ -14,10 +14,11 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
  * have their own specs; these protect the wiring, which a unit test of either would not notice losing.
  */
 
-const { hostSessionEnabled, isImpersonating, getPersonas, getGatewazeMe, endGatewazeSession } = vi.hoisted(() => ({
+const { hostSessionEnabled, isImpersonating, getPersonas, getWriterSummary, getGatewazeMe, endGatewazeSession } = vi.hoisted(() => ({
   hostSessionEnabled: vi.fn(() => true),
   isImpersonating: vi.fn(() => false),
   getPersonas: vi.fn(),
+  getWriterSummary: vi.fn(),
   getGatewazeMe: vi.fn(),
   endGatewazeSession: vi.fn(),
 }));
@@ -32,6 +33,7 @@ vi.mock('../utils/auth-helper', async () => ({
   isImpersonating,
 }));
 vi.mock('../utils/persona-helper', () => ({ personaDetectionService: { getPersonas } }));
+vi.mock('../services/project.service', () => ({ ProjectService: vi.fn(() => ({ getWriterSummary })) }));
 vi.mock('../services/logger.service', () => ({
   logger: {
     debug: vi.fn(),
@@ -120,6 +122,22 @@ describe('/api/gatewaze router', () => {
     expect(res.headers.get('cache-control')).toBe('no-store');
     expect(getPersonas).not.toHaveBeenCalled();
     expect(getGatewazeMe).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['me', () => me()],
+    ['logout', () => fetch(`${baseUrl}/api/gatewaze/session/logout`, { method: 'POST', headers: { apikey: 'sb_publishable_synthetic' } })],
+  ])('refuses a signed-in caller with no ED, root or writer access on %s with 403', async (_route, send) => {
+    getPersonas.mockResolvedValue({ isRootWriter: false, personas: [] });
+    getWriterSummary.mockResolvedValue({ hasWriterFoundation: false, hasWriterProject: false });
+
+    const res = await send();
+
+    expect(res.status).toBe(403);
+    expect((await res.json()).code).toBe('GW_EMBED_ACCESS_REQUIRED');
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    expect(getGatewazeMe).not.toHaveBeenCalled();
+    expect(endGatewazeSession).not.toHaveBeenCalled();
   });
 
   it('refuses an impersonating caller with 403 before any session is touched', async () => {

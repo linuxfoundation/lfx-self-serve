@@ -231,8 +231,9 @@ export class GatewazeSessionService {
    * logout authenticates with the access token), revoke it at GoTrue, then remove the record, which
    * publishes the sign-out to every pod. `blockReMint` picks how it is removed (see
    * `GatewazeSessionEndOptions`). Uses the cookie alone, so LFX's `/logout`, which runs before
-   * `express-openid-connect`, can call it. Each step is bounded and a failed step does not stop the
-   * next. Never throws. The LFX session is not touched.
+   * `express-openid-connect`, can call it. Each step is bounded. A failed refresh or revoke does not
+   * stop the steps after it; a store that cannot be reached, or no stored session, ends it early
+   * with nothing removed. Never throws. The LFX session is not touched.
    */
   public async endGatewazeSession(req: Request, options: GatewazeSessionEndOptions): Promise<GatewazeSessionEndResult> {
     const result: GatewazeSessionEndResult = { found: false, revoked: false, deleted: false };
@@ -268,11 +269,17 @@ export class GatewazeSessionService {
       }
     }
 
+    if (!session) {
+      // Nothing to remove. Writing the marker anyway would let an anonymous `/logout` with a made-up
+      // cookie make every pod do a Valkey write and a sign-out publish. A mint still running for a
+      // real session leaves a record keyed on an LFX id that is now gone, which ages out on its TTL.
+      return result;
+    }
     try {
       if (options.blockReMint) {
         await step(store.delete(gwSid), 'delete');
         result.deleted = true;
-      } else if (session) {
+      } else {
         // Only while the record still holds the token just revoked, so a session another tab has
         // minted since is left alone.
         result.deleted = await step(store.discard(gwSid, { onlyIfAccessToken: session.access_token }), 'discard');
