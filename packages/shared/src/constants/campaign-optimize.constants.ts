@@ -6,11 +6,15 @@ import type {
   CampaignAudiencePlatform,
   CampaignLeverUnconfirmedOutcome,
   CampaignRefPlatform,
+  KeywordTargetingPlatform,
+  KeywordTargetingRemovalOutcome,
   MetaAdSetStatus,
   PlatformAudienceErrorKind,
   PlatformAudiencePanelPlatform,
   PlatformAudiencePlatformOption,
   PlatformAudienceWindowOption,
+  RedditKeywordsWindow,
+  RedditKeywordsWindowOption,
 } from '../interfaces/campaign-optimize.interface';
 import { CAMPAIGN_METRICS_WINDOWS, MICROSOFT_KEYWORDS_WINDOWS } from './campaign.constants';
 
@@ -116,9 +120,9 @@ export const CAMPAIGN_REF_ID_PATTERNS: Readonly<Record<CampaignRefPlatform, RegE
 export const CAMPAIGN_REF_PLATFORMS_PENDING_UPSTREAM: ReadonlySet<CampaignRefPlatform> = new Set<CampaignRefPlatform>(['linkedin-ads']);
 
 /**
- * The reporting windows the Reddit keyword read accepts. campaign-service has no
- * `GET /projects/{p}/reddit-ads/keywords` yet; the Microsoft keyword read's set is used until it
- * publishes one, and the route is behind `LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS`.
+ * The reporting windows `get-reddit-ads-keywords` accepts (campaign-service #331): the Reddit
+ * metrics read's ranges, the same set as the Microsoft keyword read. `yesterday` and
+ * `last_14_days` are refused upstream with 400.
  */
 export const REDDIT_KEYWORDS_WINDOWS = MICROSOFT_KEYWORDS_WINDOWS;
 
@@ -391,3 +395,111 @@ export const META_AD_SET_PRE_SEND_REFUSAL_STATUSES: ReadonlySet<number> = new Se
 
 /** Why an ad set Meta reports deleted or archived, or no longer lists, offers no action. */
 export const META_AD_SET_NO_ACTION_REASON = 'This ad set cannot be paused or resumed.';
+
+// --- Keyword targeting panel (Reddit and X) ----------------------------------
+
+/** The platforms whose campaigns have keyword targeting the Optimize tab can read and remove from. */
+export const KEYWORD_TARGETING_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<KeywordTargetingPlatform>(['reddit-ads', 'twitter-ads']);
+
+/** Each keyword-targeting platform's name in the panel's text. */
+export const KEYWORD_TARGETING_PLATFORM_LABELS: Readonly<Record<KeywordTargetingPlatform, string>> = {
+  'reddit-ads': 'Reddit',
+  'twitter-ads': 'X',
+};
+
+/** X's keyword criterion types in words. Anything else is shown as read. */
+export const KEYWORD_TARGETING_X_MATCH_LABELS: Readonly<Record<string, string>> = {
+  BROAD_KEYWORD: 'Broad',
+  PHRASE_KEYWORD: 'Phrase',
+  EXACT_KEYWORD: 'Exact',
+  UNORDERED_KEYWORD: 'Unordered',
+};
+
+/** Visible label of each removal outcome. UNCONFIRMED is never worded as a failure. */
+export const KEYWORD_TARGETING_REMOVAL_OUTCOME_LABELS: Readonly<Record<KeywordTargetingRemovalOutcome, string>> = {
+  APPLIED: 'Removed',
+  FAILED: 'Not removed',
+  UNCONFIRMED: 'Not confirmed',
+};
+
+/** What an UNCONFIRMED removal tells the operator. The panel re-reads the targeting itself. */
+export const KEYWORD_TARGETING_REMOVAL_UNCONFIRMED_ADVICE =
+  'This keyword may or may not have been removed. Reload the keyword targeting to verify before retrying.';
+
+/**
+ * Why a FAILED removal was not made, per campaign-service `error_code`. Fixed sentences: the
+ * platform's own text is never shown. An unknown code falls back to `..._FAILED_FALLBACK`.
+ */
+export const KEYWORD_TARGETING_REMOVAL_ERROR_DETAILS: Readonly<Record<string, string>> = {
+  NOT_SENT: 'It was not sent, so nothing changed.',
+  NOT_FOUND: 'It is no longer in the targeting.',
+  REJECTED: 'The ad platform refused it.',
+  WOULD_EMPTY: 'It was not sent: it is now the last keyword, and removing it would leave no keyword targeting.',
+};
+
+/** Why a FAILED removal was not made when its code is not one this UI knows. */
+export const KEYWORD_TARGETING_REMOVAL_FAILED_FALLBACK = 'The ad platform did not remove it.';
+
+/** Why the keyword-targeting control is disabled for a campaign never created on its ad platform. */
+export const KEYWORD_TARGETING_UNAVAILABLE_UNPROVISIONED_REASON =
+  'This campaign has not been created on its ad platform, so it has no keyword targeting to show.';
+
+/** Why Remove is held back when every keyword is selected: upstream refuses (409) a removal that would empty the targeting. */
+export const KEYWORD_TARGETING_REMOVE_ALL_REASON =
+  'Keep at least one keyword. Removing every keyword would leave the campaign without keyword targeting, which widens where it serves.';
+
+/** The targeting read's failures, by HTTP status, in fixed words. */
+export const KEYWORD_TARGETING_READ_ERROR_MESSAGES: Readonly<Record<'conflict' | 'unavailable' | 'refused' | 'forbidden' | 'other', string>> = {
+  conflict:
+    "This campaign's keyword targeting can't be read: it may not be fully created on its ad platform, may belong to a different ad account, or may not target a keyword list.",
+  unavailable: "The ad platform couldn't be reached to read the keyword targeting. Try again.",
+  refused: 'Keyword targeting can only be read for Reddit and X campaigns.',
+  forbidden: "You don't have access to this campaign's keyword targeting.",
+  other: "The keyword targeting couldn't be loaded. Try again.",
+};
+
+/**
+ * A removal's DOCUMENTED refusals (`KEYWORD_LEVER_DEFINITE_FAILURE_STATUSES`), in fixed words.
+ * Nothing was removed. Every other failure is reported as unconfirmed.
+ */
+export const KEYWORD_TARGETING_REMOVAL_ERROR_MESSAGES: Readonly<Record<'conflict' | 'refusedReddit' | 'refused' | 'forbidden' | 'notFound', string>> = {
+  conflict:
+    'Nothing was removed: the keyword targeting changed since it was read, or this campaign cannot take the change right now. The targeting has been reloaded; review it and try again.',
+  refusedReddit: 'Nothing was removed: the request was refused. Keyword changes on Reddit campaigns may not be switched on yet.',
+  refused: 'Nothing was removed: the request was refused.',
+  forbidden: "Nothing was removed: you don't have access to change this campaign.",
+  notFound: 'Nothing was removed: this campaign could not be found.',
+};
+
+// --- Reddit keyword performance table ------------------------------------------
+
+/** The window selector of the Reddit keyword table, in display order, over `REDDIT_KEYWORDS_WINDOWS`. */
+export const REDDIT_KEYWORDS_WINDOW_OPTIONS: readonly RedditKeywordsWindowOption[] = [
+  { value: 'today', label: 'Today' },
+  { value: 'last_7_days', label: '7d' },
+  { value: 'last_30_days', label: '30d' },
+  { value: 'this_month', label: 'This month' },
+  { value: 'last_month', label: 'Last month' },
+] as const;
+
+/** The window the Reddit keyword table opens on: upstream's own default. */
+export const DEFAULT_REDDIT_KEYWORDS_WINDOW: RedditKeywordsWindow = 'last_30_days';
+
+/** The Reddit keyword read's failures, by HTTP status, in fixed words. Upstream text is never shown. */
+export const REDDIT_KEYWORDS_ERROR_MESSAGES: Readonly<Record<'notConnected' | 'disabled' | 'conflict' | 'other', string>> = {
+  notConnected: "Reddit keyword metrics aren't available for this foundation: it has no Reddit Ads connection.",
+  disabled: 'Reddit keyword metrics are not switched on in this environment.',
+  conflict:
+    "Reddit keyword metrics can't be read for this foundation: it has more Reddit campaigns than one report can cover, or a campaign belongs to a different ad account.",
+  other: 'Reddit keyword metrics are unavailable right now. Try again.',
+};
+
+/**
+ * The statuses a keyword lever (keyword-targeting removal, negative-keyword add) may report as a
+ * DEFINITE failure, and only when the BFF's own envelope carries them: campaign-service documents
+ * 400 (malformed batch, unsupported platform, Reddit writes off) and 409 (refused before anything
+ * changed), and 401/403/404 are refused before dispatch. Every other status, every 5xx included, and
+ * any timeout or lost connection is UNCONFIRMED: both writes are irreversible, and a failure after
+ * dispatch says nothing about what the platform did.
+ */
+export const KEYWORD_LEVER_DEFINITE_FAILURE_STATUSES: ReadonlySet<number> = new Set<number>([400, 401, 403, 404, 409]);

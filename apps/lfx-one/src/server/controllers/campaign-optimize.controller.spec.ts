@@ -180,37 +180,48 @@ describe('CampaignOptimizeController.resolvePlatformCampaign', () => {
 });
 
 describe('CampaignOptimizeController.getRedditKeywords', () => {
-  it('answers 404 while the flag is OFF', async () => {
-    await controller.getRedditKeywords(buildReq({}), res, next);
-
-    expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ResourceNotFoundError);
-    expect(getRedditAdsKeywords).not.toHaveBeenCalled();
-  });
-
-  it('maps the rows into the keyword table shape when the flag is ON', async () => {
-    isServerFeatureEnabled.mockReturnValue(true);
+  // campaign-service serves the read now (#331): no flag, with OPTIMIZE_READS off as the default here.
+  it('reads and maps the rows with the flag OFF', async () => {
     getRedditAdsKeywords.mockResolvedValue({
       window: 'last_7_days',
-      rows: [],
-      row_count: 0,
-      truncated: false,
-      metrics_pending: true,
-      conversions_complete: true,
-      data_incomplete: false,
+      rows: [
+        { campaign_id: 't3_a', text: 'service mesh', impressions: 1000, clicks: 50, cost_micros: 2_500_000, ctr: 0.05 },
+        { campaign_id: 't3_a', impressions: 200, clicks: 0, cost_micros: 0, ctr: 0 },
+      ],
+      row_count: 2,
+      truncated: true,
     });
 
     await controller.getRedditKeywords(buildReq({ query: { project: 'tlf', window: 'last_7_days' } }), res, next);
 
+    expect(isServerFeatureEnabled).not.toHaveBeenCalledWith(ServerFeatureFlag.CampaignServiceOptimizeReads);
     expect(getRedditAdsKeywords).toHaveBeenCalledWith(expect.anything(), 'tlf', 'last_7_days');
-    expect(vi.mocked(res.json).mock.calls[0][0]).toMatchObject({ window: 'last_7_days', totalKeywords: 0, metricsPending: true });
+    const body = vi.mocked(res.json).mock.calls[0][0];
+    expect(body).toMatchObject({ window: 'last_7_days', totalKeywords: 2, truncated: true, totals: { impressions: 1200, clicks: 50, spend: 2.5 } });
+    expect(body.keywords[0]).toMatchObject({ campaignId: 't3_a', keyword: 'service mesh', ctr: 5, spend: 2.5 });
+    // Delivery Reddit attributed to no keyword stays keyword-less, never an empty string.
+    expect(body.keywords[1].keyword).toBeNull();
+  });
+
+  it('omits the window when the caller names none', async () => {
+    getRedditAdsKeywords.mockResolvedValue({ window: 'last_30_days', rows: [], row_count: 0, truncated: false });
+
+    await controller.getRedditKeywords(buildReq({ query: { project: 'tlf' } }), res, next);
+
+    expect(getRedditAdsKeywords).toHaveBeenCalledWith(expect.anything(), 'tlf', undefined);
   });
 
   it('refuses a window Reddit does not serve', async () => {
-    isServerFeatureEnabled.mockReturnValue(true);
-
     await controller.getRedditKeywords(buildReq({ query: { project: 'tlf', window: 'last_14_days' } }), res, next);
 
     expectFieldError(next, 'window');
+    expect(getRedditAdsKeywords).not.toHaveBeenCalled();
+  });
+
+  it('refuses a request with no project', async () => {
+    await controller.getRedditKeywords(buildReq({ query: {} }), res, next);
+
+    expectFieldError(next, 'project');
   });
 });
 

@@ -1,7 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MENTORSHIP_RICH_TEXT_RAW_MAX, MENTORSHIP_RICH_TEXT_TOO_LARGE_MESSAGE } from '@lfx-one/shared/constants';
+import {
+  MENTORSHIP_RICH_TEXT_RAW_MAX,
+  MENTORSHIP_RICH_TEXT_TOO_LARGE_MESSAGE,
+  MENTORSHIP_SKILL_MAX_LENGTH,
+  MENTORSHIP_SKILLS_LIMIT_MESSAGE,
+} from '@lfx-one/shared/constants';
 import { MentorshipUpstreamUserProfile } from '@lfx-one/shared/interfaces';
 import { describe, expect, it } from 'vitest';
 
@@ -119,13 +124,21 @@ describe('parseMentorshipMenteeProfileUpdate', () => {
     it('rejects non-string, blank and over-long items', () => {
       expectRejected({ skillSet: { skillsHave: [1], skillsWant: ['Rust'] } }, 'skillSet.skillsHave');
       expectRejected({ skillSet: { skillsHave: ['Go', '  '], skillsWant: ['Rust'] } }, 'skillSet.skillsHave');
-      expectRejected({ skillSet: { skillsHave: ['x'.repeat(101)], skillsWant: ['Rust'] } }, 'skillSet.skillsHave');
-      expect(parseMentorshipMenteeProfileUpdate({ skillSet: { skillsHave: ['x'.repeat(100)], skillsWant: ['Rust'] } }, OPERATION).skillSet).toBeDefined();
+      expectRejected({ skillSet: { skillsHave: ['x'.repeat(MENTORSHIP_SKILL_MAX_LENGTH + 1)], skillsWant: ['Rust'] } }, 'skillSet.skillsHave');
+      expect(
+        validationError({ skillSet: { skillsHave: ['x'.repeat(MENTORSHIP_SKILL_MAX_LENGTH + 1)], skillsWant: ['Rust'] } }).validationErrors[0].message
+      ).toBe(MENTORSHIP_SKILLS_LIMIT_MESSAGE);
+      expect(
+        parseMentorshipMenteeProfileUpdate({ skillSet: { skillsHave: ['x'.repeat(MENTORSHIP_SKILL_MAX_LENGTH)], skillsWant: ['Rust'] } }, OPERATION).skillSet
+      ).toBeDefined();
     });
 
     it('rejects more than 100 skills and accepts exactly 100', () => {
       const skills = (count: number): string[] => Array.from({ length: count }, (_, index) => `Skill ${index}`);
       expectRejected({ skillSet: { skillsHave: skills(101), skillsWant: ['Rust'] } }, 'skillSet.skillsHave');
+      expect(validationError({ skillSet: { skillsHave: skills(101), skillsWant: ['Rust'] } }).validationErrors[0].message).toBe(
+        MENTORSHIP_SKILLS_LIMIT_MESSAGE
+      );
       expect(parseMentorshipMenteeProfileUpdate({ skillSet: { skillsHave: skills(100), skillsWant: ['Rust'] } }, OPERATION).skillSet?.skillsHave).toHaveLength(
         100
       );

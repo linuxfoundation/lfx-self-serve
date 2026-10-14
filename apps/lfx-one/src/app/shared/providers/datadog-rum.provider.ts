@@ -8,19 +8,25 @@ import { environment } from '@environments/environment';
 import { fromEvent, Observable, Subscription } from 'rxjs';
 
 import { CREDENTIAL_REDACTION_MARKER } from '@lfx-one/shared/constants';
-import { redactAuthFragment, redactInviteToken, redactMeetingPassword, redactMeetingPasswordInText } from '@lfx-one/shared/utils';
+import {
+  redactAuthFragment,
+  redactGatewazeProxyCredentials,
+  redactInviteToken,
+  redactMeetingPassword,
+  redactMeetingPasswordInText,
+} from '@lfx-one/shared/utils';
 
 import { getRuntimeConfig } from './runtime-config.provider';
 
 /**
- * Redacts every credential a URL can carry into Datadog: an auth fragment, an invite `?token=` and
- * a meeting passcode. Returns the URL unchanged when it carries none.
+ * Redacts every credential a URL can carry into Datadog: an auth fragment, an invite `?token=`, a
+ * meeting passcode, and a Storage signed-URL `token` or `access_token` on the Gatewaze proxies. Returns the URL unchanged when it carries none.
  *
  * @param url Absolute or relative URL.
  * @param origin Origin a relative URL is resolved against.
  */
 export function redactRumUrl(url: string, origin: string): string {
-  return redactMeetingPassword(redactInviteToken(redactAuthFragment(url, origin), origin), origin);
+  return redactGatewazeProxyCredentials(redactMeetingPassword(redactInviteToken(redactAuthFragment(url, origin), origin), origin), origin);
 }
 
 /**

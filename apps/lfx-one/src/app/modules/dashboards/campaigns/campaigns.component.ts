@@ -71,6 +71,7 @@ import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { EmailBodyPreviewComponent } from '@components/email-body-preview/email-body-preview.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { RichEditorComponent } from '@components/rich-editor/rich-editor.component';
+import { CampaignKeywordTargetingService } from '@services/campaign-keyword-targeting.service';
 import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
 import { CampaignRemovedKeywordsService } from '@services/campaign-removed-keywords.service';
 import { CampaignService } from '@services/campaign.service';
@@ -165,6 +166,7 @@ export class CampaignsComponent {
   // Root-provided because a negative-keyword request outlives the Optimize tab; this page, which
   // stays mounted across tabs, is what scopes its settled results (see `setScope`).
   private readonly negativeKeywordsService = inject(CampaignNegativeKeywordsService);
+  private readonly keywordTargetingService = inject(CampaignKeywordTargetingService);
   // Same scoping for the keywords a confirmed REMOVE deleted (see `CampaignRemovedKeywordsService`).
   private readonly removedKeywordsService = inject(CampaignRemovedKeywordsService);
   /** Dual-gated with `ServerFeatureFlag.MarketingOpsFga` — see LFXV2-2235/LFXV2-2236. */
@@ -2201,7 +2203,7 @@ export class CampaignsComponent {
   });
 
   public constructor() {
-    // The Optimize tab's negative-keyword results belong to this page's (project, brief): the same
+    // The Optimize tab's negative-keyword and keyword-targeting results belong to this page's (project, brief): the same
     // address the tab is given. Reported from here, not from the tab, because the tab is destroyed
     // whenever another tab is open, and a switch made there would otherwise never clear anything.
     // The brief id goes empty while a Proceed save runs (and stays empty after a failed one); the
@@ -2212,10 +2214,12 @@ export class CampaignsComponent {
       .subscribe((scope) => {
         const [projectSlug, briefId] = scope.split('\u0000');
         this.negativeKeywordsService.setScope(projectSlug, briefId);
+        this.keywordTargetingService.setScope(projectSlug, briefId);
         this.removedKeywordsService.setScope(projectSlug);
       });
     this.destroyRef.onDestroy(() => {
       this.negativeKeywordsService.releaseScope();
+      this.keywordTargetingService.releaseScope();
       this.removedKeywordsService.releaseScope();
     });
 

@@ -4,6 +4,7 @@
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, input, model, output, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { AutocompleteComponent } from '@components/autocomplete/autocomplete.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { RichEditorComponent } from '@components/rich-editor/rich-editor.component';
@@ -41,7 +42,6 @@ import {
   MENTORSHIP_MENTOR_PICKER_MAX_HEIGHT,
   MENTORSHIP_MENTOR_PICKER_SCROLLER_OPTIONS,
   MENTORSHIP_PROGRAMS_MAX_LIMIT,
-  MENTORSHIP_SKILL_OPTIONS,
   mentorshipCiiBadgeImageUrl,
   mentorshipCiiProjectUrl,
 } from '@lfx-one/shared/constants';
@@ -59,10 +59,12 @@ import {
   isMentorshipCiiProjectId,
   isMentorshipRichTextOverRawMax,
   mentorshipDescriptionLength,
+  mentorshipSkillSuggestions,
 } from '@lfx-one/shared/utils';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { MentorshipService } from '@services/mentorship.service';
 import { OverlayOptions } from 'primeng/api';
+import { AutoCompleteCompleteEvent } from 'primeng/autocomplete';
 import {
   catchError,
   debounceTime,
@@ -87,7 +89,7 @@ import {
 
 @Component({
   selector: 'lfx-mentorship-enroll-details-step',
-  imports: [ReactiveFormsModule, InputTextComponent, SelectComponent, RichEditorComponent, ButtonComponent],
+  imports: [ReactiveFormsModule, InputTextComponent, SelectComponent, AutocompleteComponent, RichEditorComponent, ButtonComponent],
   templateUrl: './enroll-details-step.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -140,7 +142,7 @@ export class EnrollDetailsStepComponent {
   private lfAutoFollows = 0;
 
   protected readonly draftTechForm = new FormGroup({
-    technology: new FormControl('', { nonNullable: true }),
+    technology: new FormControl<string | null>(''),
   });
 
   protected readonly intro = MENTORSHIP_ENROLL_DETAILS_INTRO;
@@ -162,7 +164,10 @@ export class EnrollDetailsStepComponent {
   protected readonly projectsUnavailable = MENTORSHIP_ENROLL_PROJECTS_UNAVAILABLE;
   protected readonly codeOfConductTemplateUrl = MENTORSHIP_CODE_OF_CONDUCT_TEMPLATE_URL;
 
-  protected readonly draftTechnology = toSignal(this.draftTechForm.controls.technology.valueChanges, { initialValue: '' });
+  protected readonly technologySuggestions = signal<string[]>([]);
+
+  protected readonly draftTechnology = toSignal(this.draftTechForm.controls.technology.valueChanges, { initialValue: '' as string | null });
+  protected readonly canAddTechnology = computed(() => !!this.draftTechnology()?.trim());
 
   private readonly formSnapshot = toSignal(toObservable(this.form).pipe(switchMap((group) => group.valueChanges.pipe(startWith(group.getRawValue())))), {
     initialValue: {} as Record<string, unknown>,
@@ -198,11 +203,6 @@ export class EnrollDetailsStepComponent {
       options.unshift({ id: selectedId, name: label, slug: remembered?.slug ?? '', value: selectedId, label, logoUrl: remembered?.logoUrl });
     }
     return options;
-  });
-
-  protected readonly availableTechnologies = computed(() => {
-    const selected = new Set(this.technologies().map((item) => item.toLowerCase()));
-    return MENTORSHIP_SKILL_OPTIONS.filter((tech) => !selected.has(tech.toLowerCase())).map((tech) => ({ label: tech, value: tech }));
   });
 
   private readonly ciiProjectId = computed(() => String(this.formSnapshot()['ciiProjectId'] ?? this.form().controls['ciiProjectId']?.value ?? '').trim());
@@ -410,12 +410,18 @@ export class EnrollDetailsStepComponent {
     this.lfLoadMore$.next();
   }
 
+  protected searchTechnologies(event: AutoCompleteCompleteEvent): void {
+    this.technologySuggestions.set(mentorshipSkillSuggestions(event.query ?? '', this.technologies()));
+  }
+
+  /** Upstream stores technologies as one comma-separated `industry`, so a typed comma adds separate technologies. */
   protected addTechnology(): void {
-    const value = this.draftTechForm.controls.technology.value.trim();
-    if (!value) return;
-    const current = this.technologies();
-    if (current.some((item) => item.toLowerCase() === value.toLowerCase())) return;
-    this.form().controls['technologies'].setValue([...current, value]);
+    const added = [...this.technologies()];
+    for (const part of (this.draftTechForm.controls.technology.value ?? '').split(',')) {
+      const value = part.trim();
+      if (value && !added.some((item) => item.toLowerCase() === value.toLowerCase())) added.push(value);
+    }
+    this.form().controls['technologies'].setValue(added);
     this.draftTechForm.controls.technology.setValue('');
   }
 
