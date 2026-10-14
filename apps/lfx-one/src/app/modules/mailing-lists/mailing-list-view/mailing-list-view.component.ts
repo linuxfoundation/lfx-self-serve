@@ -30,6 +30,7 @@ import { BehaviorSubject, catchError, combineLatest, of, switchMap } from 'rxjs'
 
 import { syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
+import { restoreMeLensOnBrowserBack } from '@shared/utils/restore-me-lens.util';
 
 import { MailingListMembersComponent } from '../components/mailing-list-members/mailing-list-members.component';
 
@@ -99,6 +100,7 @@ export class MailingListViewComponent {
       preferEntityKind: true,
       canonicalizeRoute: true,
     });
+    restoreMeLensOnBrowserBack(this.router, this.lensService, this.destroyRef, this.fromMeLens, '/mailing-lists');
     bindLfxDocumentTitle(computed(() => this.mailingList()?.title || this.mailingList()?.group_name));
   }
 

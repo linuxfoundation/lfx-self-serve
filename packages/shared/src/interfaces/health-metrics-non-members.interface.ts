@@ -35,6 +35,10 @@ export interface HealthMetricsNonMembersOrg {
   distinctPeople: number | null;
   contributions: number | null;
   isNew: boolean;
+  /** The model's membership status; `null` when unset. */
+  membershipStatus: string | null;
+  /** The model's fit band (`High`, `Medium` or `Low`); `null` when unscored. */
+  fitBand: string | null;
 }
 
 export interface HealthMetricsNonMembersOrgs {
@@ -62,6 +66,10 @@ export interface HealthMetricsNonMembersOrgRowView {
   peopleLabel: string;
   contributionsLabel: string;
   lastEngagedLabel: string;
+  membershipLabel: string;
+  fitLabel: string;
+  /** The fit dot's fill; `null` hides the dot for an unscored organization. */
+  fitDotClass: string | null;
 }
 
 /** `GET /api/analytics/non-members-people` — one page of the period's engaged non-member individuals. */
@@ -91,8 +99,8 @@ export interface HealthMetricsNonMembersPeople {
   rows: HealthMetricsNonMembersPerson[];
   /** Individuals matching the search. */
   totalRecords: number;
-  /** Every individual who attended in the period; the sub-nav badge and the unfiltered count. */
-  scopeTotal: number;
+  /** Every individual who attended in the period; `null` when the model leaves it unset, which is not zero. */
+  scopeTotal: number | null;
 }
 
 /** One person row as the People table renders it; a missing title has no secondary line. */
@@ -131,7 +139,7 @@ export interface HealthMetricsNonMembersConversion {
   newCount: number | null;
   /** High-fit count × entry-tier fee; `null` when the foundation has no entry-tier fee. */
   estimatedPipelineUsd: number | null;
-  /** Top high-fit organizations from the same `is_high_fit` set as the count. */
+  /** Top high-fit organizations by fit rank, from the High-band active set the count covers. */
   warmest: HealthMetricsNonMembersWarmOrg[];
 }
 

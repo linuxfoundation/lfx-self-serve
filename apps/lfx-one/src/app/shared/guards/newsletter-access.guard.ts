@@ -6,13 +6,13 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { inject, PLATFORM_ID } from '@angular/core';
 import { ActivatedRouteSnapshot, CanActivateFn, RedirectCommand, Router, UrlTree } from '@angular/router';
 import { GW_EMBED_ROUTE_PREFIXES } from '@lfx-one/shared/constants';
-import { catchError, map, Observable, of } from 'rxjs';
+import { catchError, defer, map, Observable, of } from 'rxjs';
 
 import { PersonaService } from '../services/persona.service';
 import { ProjectContextService } from '../services/project-context.service';
 import { ProjectRecoveryService } from '../services/project-recovery.service';
 import { ProjectService } from '../services/project.service';
-import { isTransientHttpError } from '../utils/http-error.utils';
+import { isTransientHttpError, retryTransientHttpError } from '../utils/http-error.utils';
 
 /**
  * Route guard for the newsletters feature.
@@ -33,8 +33,8 @@ import { isTransientHttpError } from '../utils/http-error.utils';
  *   2. The URL's `?project=<slug>` query param, then the active context's
  *      slug — the legacy chain, used by the list/create routes and as the
  *      fallback only when the uid lookup confirms the project is gone
- *      (400/404); a transient lookup failure fails closed instead of
- *      re-checking the writer bit against a possibly-stale context.
+ *      (400/404); a transient lookup failure retries once, then fails closed with
+ *      an error notice instead of checking access against a possibly-stale context.
  *
  * Redirects to the lens-appropriate overview on denial to preserve
  * the active project context without triggering a lens switch.
@@ -148,7 +148,10 @@ export const newsletterAccessGuard: CanActivateFn = (route: ActivatedRouteSnapsh
     // the wrong-context authorization this guard removed (GH-1570). The lookup is
     // shareReplay-cached, so this guard's mount- and child-route invocations and
     // reconcileRouteProjectContext share the one request per deep link.
-    return projectService.getProjectStrict(projectUid).pipe(
+    // Re-enter the service on retry: the first error evicts its cache entry, so
+    // resubscribing to that old observable would leave recovery uncached.
+    return defer(() => projectService.getProjectStrict(projectUid)).pipe(
+      retryTransientHttpError(),
       map((resolved): boolean | UrlTree => {
         // The uid lookup already returned the project entity, so check writer
         // directly on it; the resolved slug is only needed for the denial redirect.
@@ -170,9 +173,12 @@ export const newsletterAccessGuard: CanActivateFn = (route: ActivatedRouteSnapsh
           // than deny outright.
           return contextSlug ? checkWriterAccess(contextSlug) : of(router.parseUrl(overviewPath));
         }
-        // Transient/unknown failure — fail closed rather than authorize against a
-        // stale context. Plain overview redirect without `_notice: 'access'`: a blip
-        // is not a denial, and the user can retry the navigation.
+        if (isTransientHttpError(error)) {
+          // Mirror writerGuard's outage notice without serializing a stale project.
+          return of(router.createUrlTree([overviewPath], { queryParams: { _notice: 'error' } }));
+        }
+        // Other non-transient/unknown failures keep the plain, fail-closed redirect
+        // rather than authorize against a stale context or mislabel an outage.
         return of(router.parseUrl(overviewPath));
       })
     );

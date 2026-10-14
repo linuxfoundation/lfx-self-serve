@@ -1399,9 +1399,9 @@ export class OrgEasyclaDetailComponent {
     return this.showingPreview() && this.previewSelection ? orgClaPreviewGroup(this.previewSelection) : undefined;
   }
 
-  private initStatus(): OrgClaStatusDisplay | undefined {
+  private initStatus(): OrgClaStatusDisplay | null {
     const group = this.claGroup();
-    return group ? ORG_CLA_STATUS_DISPLAY[group.status] : undefined;
+    return group ? ORG_CLA_STATUS_DISPLAY[group.status] : null;
   }
 
   private initCoverageChips(): OrgClaCoverageChip[] {

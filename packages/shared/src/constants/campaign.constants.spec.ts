@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { GoogleCreativeEitherOrRule, GoogleCreativeFieldSpec } from '../interfaces/campaign.interface';
+import { GoogleCreativeEitherOrRule, GoogleCreativeFieldSpec, RedditObjective } from '../interfaces/campaign.interface';
 import {
   isCanonicalGoogleAdsResourceId,
   CAMPAIGN_ALERT_THRESHOLDS,
@@ -14,6 +14,8 @@ import {
   GOOGLE_ADS_BIDDING_BOUNDS,
   GOOGLE_ADS_CHANNEL_TYPE_ENUMS,
   GOOGLE_ADS_CONVERSION_ACTION_PATTERN,
+  GOOGLE_ADS_LANGUAGE_LABELS,
+  GOOGLE_ADS_LANGUAGE_MAP,
   GOOGLE_ADS_MAX_CONVERSION_ACTIONS,
   GOOGLE_BIDDING_CPA_STRATEGIES,
   GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
@@ -34,6 +36,7 @@ import {
   META_SELECTABLE_OBJECTIVES,
   REDDIT_CALL_TO_ACTIONS,
   REDDIT_OBJECTIVE_LABELS,
+  REDDIT_OBJECTIVE_PARAMS,
   REDDIT_SELECTABLE_OBJECTIVES,
   REDDIT_VIDEO_GOALS,
   campaignToggleAction,
@@ -41,6 +44,10 @@ import {
   isMicrosoftMatchType,
   normalizeGeoTargets,
   normalizeMicrosoftGeoTargets,
+  resolveRedditOptimizationGoal,
+  googleAdsEchoed,
+  googleAdsToLower,
+  googleAdsTrimSpace,
 } from './campaign.constants';
 
 describe('campaignToggleAction', () => {
@@ -848,5 +855,132 @@ describe('Reddit promoted-post contract', () => {
    */
   it('seeds the picker with an objective the picker offers', () => {
     expect([...REDDIT_SELECTABLE_OBJECTIVES]).toContain(DEFAULT_REDDIT_OBJECTIVE);
+  });
+});
+
+/**
+ * One case per branch of the resolution step in `Client.CreateCampaign` upstream
+ * (`lfx-v2-campaign-service`, `internal/platform/reddit/client.go`), named for the branch it pins
+ * rather than for the rule they add up to — a branch dropped in a future edit then shows up as an
+ * absent test instead of hiding inside a passing one (#3449).
+ */
+describe('resolveRedditOptimizationGoal', () => {
+  /**
+   * The three static goals, pinned by value against upstream's `redditObjectiveParams`. Pinned
+   * rather than derived: the table is a hand-maintained copy, and a test that read the same table
+   * the resolver reads would certify whatever the table happened to say.
+   */
+  it.each([
+    ['awareness', 'IMPRESSIONS'],
+    ['traffic', 'CLICKS'],
+    ['conversions', 'PURCHASE'],
+  ] as const)('sends the static goal upstream carries for %s', (objective, goal) => {
+    expect(resolveRedditOptimizationGoal(objective)).toBe(goal);
+  });
+
+  /**
+   * The bug this function exists for: `video_views` used to carry a baked-in `VIDEO_VIEWS`, which
+   * is not a goal Reddit has. The table must stay silent so the goal can only come from the
+   * request.
+   */
+  it('leaves video_views without a static goal in the table', () => {
+    expect(REDDIT_OBJECTIVE_PARAMS.video_views.optimizationGoal).toBeUndefined();
+  });
+
+  /**
+   * The tripwire for the resolver's `as string` cast. The value pins above cover only the three
+   * objectives named today; this walks the table itself, so a new objective added without a goal
+   * fails here instead of silently resolving to `undefined` through the cast (#3504).
+   */
+  it('carries a static goal on every objective except video_views', () => {
+    const goalless = Object.entries(REDDIT_OBJECTIVE_PARAMS)
+      .filter(([objective, params]) => objective !== 'video_views' && !params.optimizationGoal)
+      .map(([objective]) => objective);
+
+    expect(goalless).toEqual([]);
+  });
+
+  /** Upstream trims and upper-cases before testing membership, so a lowercase goal is accepted. */
+  it.each(['VIDEO_VIEW_6S', 'video_view_15s', '  VIDEO_VIEW_6S  '])('resolves video_views from the request goal %s', (videoGoal) => {
+    expect(resolveRedditOptimizationGoal('video_views', videoGoal)).toBe(videoGoal.trim().toUpperCase());
+  });
+
+  /**
+   * Empty and absent are the live cases, not exotic ones: nothing in the Implementation tab
+   * collects a video goal yet, so every `video_views` request that reaches either creator today
+   * arrives without one. Refusing is the whole point — the alternative is a PAUSED campaign
+   * orphaned by a rejection at the ad group.
+   */
+  it.each([undefined, '', '   ', 'VIDEO_VIEWS', 'VIDEO_VIEW_30S'])('refuses video_views carrying the goal %s', (videoGoal) => {
+    expect(() => resolveRedditOptimizationGoal('video_views', videoGoal)).toThrow(/must be one of VIDEO_VIEW_6S, VIDEO_VIEW_15S/);
+  });
+
+  /**
+   * Reached only after a runtime widening — `POST /api/campaigns/create` forwards `redditConfig` without
+   * validating `objective`, so the compiler's guarantee does not hold at this boundary.
+   */
+  it('refuses an objective outside the table', () => {
+    expect(() => resolveRedditOptimizationGoal('reach' as RedditObjective)).toThrow(/Unsupported Reddit objective: reach/);
+  });
+
+  /**
+   * The table is a plain object literal, so these five resolve to inherited `Object.prototype`
+   * members — every one truthy, which is exactly what the previous `!objParams` test asked for.
+   * Each then carried no `optimizationGoal`, so the resolver returned `undefined` through its cast
+   * and the caller sent a campaign POST missing `objective`, `bid_type` and `optimization_goal`
+   * rather than refusing before the call. Pinned by name because the guard that fixes it,
+   * `Object.hasOwn`, is easy to "simplify" back into a truthiness test (#3504).
+   */
+  it.each(['constructor', 'toString', 'valueOf', 'hasOwnProperty', '__proto__'])('refuses the inherited prototype key %s', (objective) => {
+    expect(() => resolveRedditOptimizationGoal(objective as RedditObjective)).toThrow(`Unsupported Reddit objective: ${objective}`);
+  });
+});
+
+describe('Google Ads language tables', () => {
+  /**
+   * The two maps share no type-level key constraint — `GOOGLE_ADS_LANGUAGE_MAP` is a plain
+   * `Record<string, string>` so it stays a line-for-line mirror of upstream's `languageConstants` —
+   * so this is what ties them. A code in the map and not the labels would be a language upstream
+   * accepts that the picker never offers; the reverse would offer one with no constant id behind it.
+   */
+  it('labels exactly the codes the language map carries', () => {
+    expect(Object.keys(GOOGLE_ADS_LANGUAGE_LABELS).sort()).toEqual(Object.keys(GOOGLE_ADS_LANGUAGE_MAP).sort());
+  });
+});
+
+/** Go's `strings.TrimSpace` and `strings.ToLower`, the two rules upstream's callout checks use. */
+describe('Google Ads string rules', () => {
+  it.each([
+    ['ASCII space and tabs', ' \tFree\n', 'Free'],
+    ['U+0085, which Go trims and JS `trim` keeps', '\u0085Free\u0085', 'Free'],
+    ['no-break and line separators', '\u00a0Free\u2028', 'Free'],
+    ['U+FEFF, which JS `trim` strips and Go keeps', '\ufeffFree', '\ufeffFree'],
+  ])('trims %s as Go does', (_label, input, expected) => {
+    expect(googleAdsTrimSpace(input)).toBe(expected);
+  });
+
+  it('trims a long interior whitespace run in linear time', () => {
+    // A `[ws]+$` regex backtracks quadratically here: 40,000 spaces took about 2.5 s.
+    const text = `x${' '.repeat(1_000_000)}x`;
+    const started = Date.now();
+
+    expect(googleAdsTrimSpace(` ${text} `)).toBe(text);
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  it.each([
+    ['short text, unchanged', 'Free shipping', 'Free shipping'],
+    ['long text, cut at 32 code points', 'A'.repeat(40), `${'A'.repeat(32)}…`],
+    ['an emoji at the cut, kept whole', `${'A'.repeat(31)}🎉🎉`, `${'A'.repeat(31)}🎉…`],
+  ])('echoes %s', (_label, input, expected) => {
+    expect(googleAdsEchoed(input)).toBe(expected);
+  });
+
+  it.each([
+    ['a final sigma, with no word-end rule', 'ΟΔΟΣ', 'οδοσ'],
+    ['a dotted capital I, to a plain i', 'İnfo', 'info'],
+    ['ASCII', 'Free Shipping', 'free shipping'],
+  ])('lower-cases %s as Go does', (_label, input, expected) => {
+    expect(googleAdsToLower(input)).toBe(expected);
   });
 });

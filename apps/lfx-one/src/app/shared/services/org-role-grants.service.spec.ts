@@ -86,3 +86,58 @@ describe('OrgRoleGrantsService.editCheck', () => {
     expect(await unavailable).toBe(false);
   });
 });
+
+// M3 — the CLA-only org set is carried as the server sent it; absent (an older server) and a transport failure both mean none.
+describe('OrgRoleGrantsService.claManagerOrgSet', () => {
+  let service: OrgRoleGrantsService;
+  let http: HttpTestingController;
+  const grants = { writers: [], auditors: [], isStaff: false };
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting()] });
+    service = TestBed.inject(OrgRoleGrantsService);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => http.verify());
+
+  it('carries the claManagerOrgs the server returned', async () => {
+    const done = firstValueFrom(service.refresh());
+    http.expectOne('/api/orgs/me/role-grants').flush({ ...grants, claManagerOrgs: [UID] });
+    await done;
+
+    expect([...service.claManagerOrgSet()]).toEqual([UID]);
+  });
+
+  it('is empty when the server omits the field', async () => {
+    const done = firstValueFrom(service.refresh());
+    http.expectOne('/api/orgs/me/role-grants').flush(grants);
+    await done;
+
+    expect(service.claManagerOrgSet().size).toBe(0);
+  });
+
+  it('carries a failed CLA-manager lookup, and clears it on the next answer', async () => {
+    const failed = firstValueFrom(service.refresh());
+    http.expectOne('/api/orgs/me/role-grants').flush({ ...grants, claManagerOrgs: [], claManagerLookup: 'failed' });
+    await failed;
+    expect(service.claManagerLookupFailed()).toBe(true);
+
+    const ok = firstValueFrom(service.refresh());
+    http.expectOne('/api/orgs/me/role-grants').flush({ ...grants, claManagerOrgs: [UID], claManagerLookup: 'ok' });
+    await ok;
+    expect(service.claManagerLookupFailed()).toBe(false);
+  });
+
+  it('is cleared on a transport failure', async () => {
+    const first = firstValueFrom(service.refresh());
+    http.expectOne('/api/orgs/me/role-grants').flush({ ...grants, claManagerOrgs: [UID] });
+    await first;
+
+    const second = firstValueFrom(service.refresh());
+    http.expectOne('/api/orgs/me/role-grants').error(new ProgressEvent('error'));
+    await second;
+
+    expect(service.claManagerOrgSet().size).toBe(0);
+  });
+});

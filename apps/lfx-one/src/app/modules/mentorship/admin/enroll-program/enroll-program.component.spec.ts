@@ -115,7 +115,17 @@ describe('EnrollProgramComponent', () => {
       repositoryUrl: 'https://github.com/lfenergy/gridflow',
       logoFileName: 'logo.png',
       skills: ['Go'],
-      terms: defaults.terms,
+      // A new program starts with no terms, so the admin adds one.
+      terms: [
+        {
+          id: 'term-new-1',
+          name: 'Term 1 - 2099',
+          startDate: '2099-06-01',
+          endDate: '2099-08-01',
+          applicationStartDate: '2099-03-01',
+          applicationEndDate: '2099-05-01',
+        },
+      ],
       prerequisites,
       termsAccepted: true,
     });

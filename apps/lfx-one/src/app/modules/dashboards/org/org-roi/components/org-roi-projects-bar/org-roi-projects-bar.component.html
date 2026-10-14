@@ -18,6 +18,30 @@
       </p>
     }
 
+    <div
+      class="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-gray-700"
+      role="group"
+      aria-label="Bars drawn"
+      data-testid="org-roi-projects-bar-series">
+      <lfx-checkbox
+        [form]="seriesForm"
+        control="investment"
+        inputId="org-roi-projects-bar-series-investment-input"
+        label="Investment"
+        labelClass="cursor-pointer text-sm text-gray-700"
+        data-testid="org-roi-projects-bar-series-investment" />
+      <lfx-checkbox
+        [form]="seriesForm"
+        control="return"
+        inputId="org-roi-projects-bar-series-return-input"
+        label="Return"
+        labelClass="cursor-pointer text-sm text-gray-700"
+        data-testid="org-roi-projects-bar-series-return" />
+      @if (!showInvestment() || !showReturn()) {
+        <span class="text-xs text-gray-500" data-testid="org-roi-projects-bar-series-hint">At least one stays selected.</span>
+      }
+    </div>
+
     <div class="w-full" [style.height]="chartHeight()" role="img" [attr.aria-label]="chartSummaryLabel()" data-testid="org-roi-projects-bar-chart">
       <lfx-chart type="bar" [data]="chartData()" [options]="chartOptions()" height="100%" />
     </div>

@@ -120,35 +120,61 @@
                   <span class="text-sm text-gray-700">{{ committee.total_members ?? 0 | number }}</span>
                 </td>
                 <td data-label="Channels">
-                  <div class="flex flex-wrap items-center gap-2 text-xs">
+                  <div class="flex flex-wrap items-center gap-2">
                     @if (committee.mailing_list) {
                       <a
                         [href]="'mailto:' + committee.mailing_list"
+                        class="inline-flex min-h-8 min-w-8 items-center justify-center text-gray-500 hover:text-blue-600 no-underline"
+                        [pTooltip]="committee.mailing_list"
+                        tooltipPosition="top"
                         aria-label="Mailing list"
-                        class="inline-flex min-h-8 items-center gap-1 text-blue-600"
                         (click)="$event.stopPropagation()">
-                        <i class="fa-light fa-envelope" aria-hidden="true"></i>Mailing list
+                        <i class="fa-light fa-envelope w-4 h-4" aria-hidden="true"></i>
+                      </a>
+                    } @else if (committee.mailingListLink; as mlLink) {
+                      <a
+                        [routerLink]="mlLink.commands"
+                        [queryParams]="mlLink.queryParams"
+                        [state]="mlLink.target === 'group' ? { backLabel: 'My Groups', fromMeLens: true } : undefined"
+                        class="inline-flex min-h-8 min-w-8 items-center justify-center text-gray-500 hover:text-blue-600 no-underline"
+                        [pTooltip]="mlLink.label ?? undefined"
+                        tooltipPosition="top"
+                        [attr.aria-label]="mlLink.label ? 'Mailing list: ' + mlLink.label : 'Mailing list'"
+                        [attr.data-testid]="'committee-table-mailing-list-link-' + committee.uid"
+                        (click)="$event.stopPropagation()">
+                        <i class="fa-light fa-envelope w-4 h-4" aria-hidden="true"></i>
                       </a>
                     } @else if (committee.has_mailing_list) {
-                      <span class="text-gray-500">Mailing list associated</span>
+                      <span
+                        class="inline-flex min-h-8 min-w-8 items-center justify-center text-gray-500 cursor-default"
+                        role="img"
+                        aria-label="Mailing list associated">
+                        <i class="fa-light fa-envelope w-4 h-4" aria-hidden="true"></i>
+                      </span>
                     }
                     @if (committee.chat_channel | validExternalUrl; as chatUrl) {
                       <a
                         [href]="chatUrl"
                         target="_blank"
                         rel="noopener"
-                        class="inline-flex min-h-8 items-center gap-1 text-blue-600"
+                        class="inline-flex min-h-8 min-w-8 items-center justify-center text-gray-500 hover:text-blue-600 no-underline"
                         [attr.aria-label]="committee.chat_channel | platformLabel"
                         (click)="$event.stopPropagation()">
-                        <i [class]="committee.chat_channel | platformIcon" aria-hidden="true"></i>{{ committee.chat_channel | platformLabel }}
+                        <i [class]="(committee.chat_channel | platformIcon) + ' w-4 h-4'" aria-hidden="true"></i>
                       </a>
                     } @else if (committee.chat_channel) {
-                      <span class="inline-flex items-center gap-1 text-gray-500">
-                        <i class="fa-light fa-comments" aria-hidden="true"></i>{{ committee.chat_channel }}
+                      <span
+                        class="inline-flex min-h-8 min-w-8 items-center justify-center text-gray-500 cursor-default"
+                        role="img"
+                        tabindex="0"
+                        [pTooltip]="committee.chat_channel"
+                        tooltipPosition="top"
+                        [attr.aria-label]="committee.chat_channel">
+                        <i class="fa-light fa-comments w-4 h-4" aria-hidden="true"></i>
                       </span>
                     }
                     @if (!committee.mailing_list && !committee.has_mailing_list && !committee.chat_channel) {
-                      <span class="text-gray-500">No channels</span>
+                      <span class="text-xs text-gray-500">No channels</span>
                     }
                   </div>
                 </td>

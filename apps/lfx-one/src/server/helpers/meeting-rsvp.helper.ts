@@ -34,14 +34,17 @@ export function filterRsvpsToActiveRegistrants(rsvps: MeetingRsvp[], registrants
  * @param registrants - Registrants to enrich (not mutated; new objects returned)
  * @param rsvps - RSVPs already filtered to active registrants (see {@link filterRsvpsToActiveRegistrants})
  * @param occurrenceId - Optional occurrence id (seconds or ms) to resolve each registrant's RSVP against
+ * @param allDatesOnly - Without an occurrence, select only series-wide (`all`) responses before choosing the newest
  */
 export function attachRsvpsToRegistrants<T extends MeetingRegistrant>(
   registrants: T[],
   rsvps: MeetingRsvp[],
-  occurrenceId?: string
+  occurrenceId?: string,
+  allDatesOnly: boolean = false
 ): (T & { rsvp: MeetingRsvp | null })[] {
   const rsvpsByRegistrant = new Map<string, MeetingRsvp[]>();
   for (const rsvp of rsvps) {
+    if (allDatesOnly && !occurrenceId && rsvp.scope !== 'all') continue;
     const key = rsvp.registrant_id;
     if (!rsvpsByRegistrant.has(key)) {
       rsvpsByRegistrant.set(key, []);

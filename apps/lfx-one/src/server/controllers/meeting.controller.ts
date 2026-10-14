@@ -6,6 +6,8 @@ import {
   MEETING_AGENDA_MAX_LENGTH,
   MEETING_AGENDA_PROMPT_MAX_LENGTH,
   MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH,
+  MEETING_REGISTRANT_BATCH_CONCURRENCY,
+  MEETING_REGISTRANT_BATCH_MAX,
   MIN_CUSTOM_DURATION,
 } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
@@ -21,6 +23,7 @@ import {
   CreateMeetingRsvpRequest,
   GenerateAgendaResponse,
   Meeting,
+  MeetingCalendarScope,
   MeetingCommittee,
   MeetingRegistrant,
   PresignAttachmentRequest,
@@ -29,7 +32,7 @@ import {
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
 } from '@lfx-one/shared/interfaces';
-import { codePointLength, isMeetingAttendeeListShared, isWithinHostKeyWindow, truncateToUtf16Units } from '@lfx-one/shared/utils';
+import { codePointLength, isMeetingAttendeeListShared, isSameOccurrenceId, isWithinHostKeyWindow, truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import {
@@ -40,7 +43,9 @@ import {
 } from '../constants';
 import { resolveCommitteeV2UidMappings, resolveCommitteeV2UidsToV1Ids } from '../helpers/committee-v1-mapping.helper';
 import { MicroserviceError, ServiceValidationError } from '../errors';
+import { buildMeetingCalendarEvents, buildVCalendar } from '../helpers/ics.helper';
 import { addInvitedStatusToMeeting, applyOrganizerAndHostKeyResult, enrichMeetingsWithCreatedBy, stripHostKey } from '../helpers/meeting.helper';
+import { settleInBatches } from '../helpers/settle-in-batches.helper';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { AiService } from '../services/ai.service';
 import { CommitteeService } from '../services/committee.service';
@@ -48,7 +53,7 @@ import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
 import { NatsService } from '../services/nats.service';
 import { UserService } from '../services/user.service';
-import { getEffectiveEmail, getUsernameFromAuth } from '../utils/auth-helper';
+import { getEffectiveEmail, getEffectiveUsername, getUsernameFromAuth } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
 
 /**
@@ -210,6 +215,104 @@ export class MeetingController {
       res.json(enrichedMeeting);
     } catch (error) {
       // Send the error to the next middleware
+      next(error);
+    }
+  }
+
+  /**
+   * GET /meetings/:uid/calendar.ics
+   * Downloads a single meeting (or its recurring series) as an .ics file (GH-3505).
+   * Visibility of the meeting itself is enforced upstream by the proxied `GET /itx/meetings/:uid`
+   * call inside getMeetingById — not by the `{ access: true }` flag, which only annotates the
+   * `organizer` field and is unused by this handler. Resolving the actual join link is a separate,
+   * stricter gate: `findRestrictedMeetingRegistrant` below mirrors `PublicMeetingController`'s own
+   * registrant check (used by `postMeetingJoinUrl`) so a viewer who isn't an invited registrant of a
+   * restricted meeting can't get a real join link out of the .ics download that the Join button
+   * itself would deny them.
+   */
+  public async getMeetingCalendarIcs(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const occurrenceId = typeof req.query['occurrenceId'] === 'string' ? req.query['occurrenceId'] : undefined;
+    const scope: MeetingCalendarScope = req.query['scope'] === 'series' ? 'series' : 'occurrence';
+    const startTime = logger.startOperation(req, 'get_meeting_calendar_ics', { meeting_id: uid, scope, occurrence_id: occurrenceId });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'get_meeting_calendar_ics',
+          service: 'meeting_controller',
+        })
+      ) {
+        return;
+      }
+
+      const meeting = await this.meetingService.getMeetingById(req, uid, 'v1_meeting', { access: false });
+
+      // A recurring meeting has no single "start time" of its own — silently falling back to the
+      // series' original start would download the wrong occurrence rather than the one the caller
+      // was looking at, so a missing/stale occurrenceId is a 400, not a best-effort guess (GH-3505).
+      if (scope === 'occurrence' && meeting.recurrence) {
+        const activeOccurrences = meeting.occurrences?.filter((occ) => occ.status !== 'cancel') ?? [];
+        const matchedOccurrence = occurrenceId ? activeOccurrences.find((occ) => isSameOccurrenceId(occ.occurrence_id, occurrenceId)) : undefined;
+
+        if (!matchedOccurrence) {
+          const validationError = ServiceValidationError.forField(
+            'occurrenceId',
+            'A valid occurrenceId is required for a single occurrence of a recurring meeting',
+            {
+              operation: 'get_meeting_calendar_ics',
+              service: 'meeting_controller',
+              path: req.path,
+            }
+          );
+          next(validationError);
+          return;
+        }
+      }
+
+      // Window/password checks in postMeetingJoinUrl don't apply here — a calendar invite is
+      // generated well before join time, and an authenticated viewer who can load the meeting
+      // already sees the real meeting.password field directly in the payload. A restricted
+      // meeting still requires a matching registrant, same as the Join button. Any failure
+      // degrades to an event with no join link rather than failing the whole download.
+      let joinUrl: Awaited<ReturnType<MeetingService['getMeetingJoinUrl']>> | null = null;
+      try {
+        let joinEmail: string | undefined;
+
+        if (meeting.restricted) {
+          const email = getEffectiveEmail(req) || '';
+          const username = getEffectiveUsername(req);
+          const matchedRegistrant = await this.findRestrictedMeetingRegistrant(req, uid, email, username);
+          joinEmail = matchedRegistrant?.email;
+
+          if (!joinEmail) {
+            logger.warning(req, 'get_meeting_calendar_ics', 'Caller is not a registered invitee of this restricted meeting, continuing without a join link', {
+              meeting_id: uid,
+            });
+          }
+        }
+
+        if (!meeting.restricted || joinEmail) {
+          joinUrl = await this.meetingService.getMeetingJoinUrl(req, uid, joinEmail);
+        }
+      } catch (error) {
+        logger.warning(req, 'get_meeting_calendar_ics', 'Failed to resolve join URL, continuing without one', {
+          meeting_id: uid,
+          err: error,
+        });
+      }
+
+      const events = buildMeetingCalendarEvents(meeting, { scope, occurrenceId, joinUrl: joinUrl?.link });
+      const ics = buildVCalendar(events, '-//LFX//Meeting Calendar//EN', meeting.title);
+
+      logger.success(req, 'get_meeting_calendar_ics', startTime, { meeting_id: uid, scope, event_count: events.length });
+
+      res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="meeting-${uid}.ics"`);
+      // Personalized (embeds the caller's own access-gated join link) — never cache or share this response.
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.send(ics);
+    } catch (error) {
       next(error);
     }
   }
@@ -503,8 +606,9 @@ export class MeetingController {
    */
   public async getMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
-    const { include_rsvp, occurrence_id, fail_on_partial, committee_uid, include_committee } = req.query;
+    const { include_rsvp, occurrence_id, fail_on_partial, committee_uid, include_committee, rsvp_scope } = req.query;
     const includeRsvp = include_rsvp === 'true';
+    const allDatesOnly = rsvp_scope === 'all';
     const includeCommittee = include_committee === 'true';
     const occurrenceId = typeof occurrence_id === 'string' && occurrence_id.length > 0 ? occurrence_id : undefined;
     const failOnPartial = fail_on_partial === 'true';
@@ -544,9 +648,9 @@ export class MeetingController {
       if (failOnPartial && committeeUid) {
         registrants = await this.meetingService.getAuthorizedRegistrantsForImport(req, uid, committeeUid);
       } else if (failOnPartial) {
-        registrants = await this.meetingService.getAuthorizedCompleteRegistrants(req, uid, includeRsvp, occurrenceId);
+        registrants = await this.meetingService.getAuthorizedCompleteRegistrants(req, uid, includeRsvp, occurrenceId, allDatesOnly);
       } else if (await this.canViewRosterOrHide(req, uid, 'get_meeting_registrants')) {
-        registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId, failOnPartial);
+        registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId, failOnPartial, undefined, undefined, allDatesOnly);
       } else {
         logger.success(req, 'get_meeting_registrants', startTime, { meeting_id: uid, roster_hidden: true, registrant_count: 0 });
         res.json([]);
@@ -607,8 +711,9 @@ export class MeetingController {
    */
   public async getMyMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
-    const { include_rsvp, occurrence_id, preview } = req.query;
+    const { include_rsvp, occurrence_id, preview, rsvp_scope } = req.query;
     const includeRsvp = include_rsvp === 'true';
+    const allDatesOnly = rsvp_scope === 'all';
     const isPreview = preview === 'true';
     const occurrenceId = typeof occurrence_id === 'string' && occurrence_id.length > 0 ? occurrence_id : undefined;
 
@@ -723,9 +828,16 @@ export class MeetingController {
       // The join page treats this roster's length as an authoritative denominator (GH-1731) —
       // a partial query-service page failure must surface as an error, not a silently truncated list.
       // A preview only draws a few faces and a "+N", so a short roster beats an empty one there.
-      const registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId, !isPreview, undefined, {
-        bearerToken: m2mToken,
-      });
+      const registrants = await this.meetingService.getMeetingRegistrants(
+        req,
+        uid,
+        includeRsvp,
+        occurrenceId,
+        !isPreview,
+        undefined,
+        { bearerToken: m2mToken },
+        allDatesOnly
+      );
 
       if (isPreview) {
         logger.success(req, 'get_my_meeting_registrants', startTime, {
@@ -835,6 +947,23 @@ export class MeetingController {
         });
 
         // Send the validation error to the next middleware
+        next(validationError);
+        return;
+      }
+
+      // Each item becomes one upstream write, so the array length is capped before anything is
+      // attempted — see MEETING_REGISTRANT_BATCH_MAX.
+      if (registrantData.length > MEETING_REGISTRANT_BATCH_MAX) {
+        const validationError = ServiceValidationError.forField(
+          'registrants',
+          `At most ${MEETING_REGISTRANT_BATCH_MAX} registrants can be processed per request`,
+          {
+            operation: 'add_meeting_registrants',
+            service: 'meeting_controller',
+            path: req.path,
+          }
+        );
+
         next(validationError);
         return;
       }
@@ -971,6 +1100,23 @@ export class MeetingController {
         return;
       }
 
+      // Each item becomes one upstream write, so the array length is capped before anything is
+      // attempted — see MEETING_REGISTRANT_BATCH_MAX.
+      if (updateData.length > MEETING_REGISTRANT_BATCH_MAX) {
+        const validationError = ServiceValidationError.forField(
+          'registrants',
+          `At most ${MEETING_REGISTRANT_BATCH_MAX} registrants can be processed per request`,
+          {
+            operation: 'update_meeting_registrants',
+            service: 'meeting_controller',
+            path: req.path,
+          }
+        );
+
+        next(validationError);
+        return;
+      }
+
       // Check if the registrant UIDs are provided
       if (updateData.some((update) => !update.uid)) {
         const validationError = ServiceValidationError.forField('registrants.uid', 'One or more registrants are missing UID', {
@@ -1073,11 +1219,15 @@ export class MeetingController {
       }
 
       const m2mToken = await generateM2MToken(req);
-      const removedCount = await this.meetingService.removeMeetingRegistrantSelf(req, uid, userEmail, username, m2mToken);
+      const result = await this.meetingService.removeMeetingRegistrantSelf(req, uid, userEmail, username, m2mToken);
 
-      logger.success(req, 'remove_my_meeting_registration', startTime, { meeting_id: uid, removed_count: removedCount });
+      logger.success(req, 'remove_my_meeting_registration', startTime, {
+        meeting_id: uid,
+        removed_count: result.removed_registrant_ids.length,
+        remaining_count: result.remaining_registrant_ids.length,
+      });
 
-      res.status(204).send();
+      res.status(200).json(result);
     } catch (error) {
       next(error);
     }
@@ -1094,7 +1244,9 @@ export class MeetingController {
     const startTime = logger.startOperation(req, 'delete_meeting_registrants', {
       meeting_id: uid,
       registrant_count: registrantsUid.length,
-      body_size: JSON.stringify(req.body).length,
+      // Read from the header rather than re-serializing a body that hasn't been validated yet — same
+      // field as the add and update batch endpoints.
+      request_content_length: MeetingController.readContentLength(req),
     });
 
     try {
@@ -1129,6 +1281,23 @@ export class MeetingController {
           service: 'meeting_controller',
           path: req.path,
         });
+
+        next(validationError);
+        return;
+      }
+
+      // Each item becomes one upstream write, so the array length is capped before anything is
+      // attempted — see MEETING_REGISTRANT_BATCH_MAX.
+      if (registrantsUid.length > MEETING_REGISTRANT_BATCH_MAX) {
+        const validationError = ServiceValidationError.forField(
+          'registrantUids',
+          `At most ${MEETING_REGISTRANT_BATCH_MAX} registrants can be processed per request`,
+          {
+            operation: 'delete_meeting_registrants',
+            service: 'meeting_controller',
+            path: req.path,
+          }
+        );
 
         next(validationError);
         return;
@@ -1293,7 +1462,7 @@ export class MeetingController {
    */
   public async getMeetingRsvpForCurrentUser(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
-    const { occurrenceId } = req.query;
+    const { occurrenceId, rsvp_scope } = req.query;
 
     const startTime = logger.startOperation(req, 'get_meeting_rsvp_for_current_user', {
       meeting_id: uid,
@@ -1311,7 +1480,7 @@ export class MeetingController {
       }
 
       // Get the user's RSVP using direct meeting service call
-      const rsvp = await this.meetingService.getMeetingRsvpForCurrentUser(req, uid, occurrenceId as string | undefined);
+      const rsvp = await this.meetingService.getMeetingRsvpForCurrentUser(req, uid, occurrenceId as string | undefined, rsvp_scope === 'all');
 
       // Log success
       logger.success(req, 'get_meeting_rsvp_for_current_user', startTime, {
@@ -1918,10 +2087,10 @@ export class MeetingController {
       // Process the first registrant
       const firstResult = await operation(inputData[0]);
 
-      // If the first registrant succeeds, process the remaining in parallel
+      // If the first registrant succeeds, process the remaining with bounded concurrency
       let results: PromiseSettledResult<R>[];
       if (inputData.length > 1) {
-        const remainingResults = await Promise.allSettled(inputData.slice(1).map((input) => operation(input)));
+        const remainingResults = await settleInBatches(inputData.slice(1), MEETING_REGISTRANT_BATCH_CONCURRENCY, operation);
         results = [{ status: 'fulfilled', value: firstResult }, ...remainingResults];
       } else {
         results = [{ status: 'fulfilled', value: firstResult }];
@@ -1960,7 +2129,7 @@ export class MeetingController {
       let results: PromiseSettledResult<R>[] = [{ status: 'rejected', reason: error }];
 
       if (inputData.length > 1) {
-        const remainingResults = await Promise.allSettled(inputData.slice(1).map((input) => operation(input)));
+        const remainingResults = await settleInBatches(inputData.slice(1), MEETING_REGISTRANT_BATCH_CONCURRENCY, operation);
         results = [...results, ...remainingResults];
       }
 
@@ -2530,5 +2699,28 @@ export class MeetingController {
       offsetHour <= 23 &&
       offsetMinute <= 59
     );
+  }
+
+  /**
+   * Mirrors `PublicMeetingController.restrictedMeetingCheck`'s registrant lookup (username first,
+   * email fallback), but returns `null` instead of throwing when no registrant matches — this
+   * endpoint degrades to "no join link" rather than failing the whole .ics download (GH-3505).
+   */
+  private async findRestrictedMeetingRegistrant(req: Request, uid: string, email: string, username: string | null): Promise<MeetingRegistrant | null> {
+    if (!email && !username) {
+      return null;
+    }
+
+    let registrants: MeetingRegistrant[] = [];
+
+    if (username) {
+      registrants = await this.meetingService.getMeetingRegistrantsByUsername(req, uid, username);
+    }
+
+    if (registrants.length === 0 && email) {
+      registrants = await this.meetingService.getMeetingRegistrantsByEmail(req, uid, email);
+    }
+
+    return registrants[0] ?? null;
   }
 }

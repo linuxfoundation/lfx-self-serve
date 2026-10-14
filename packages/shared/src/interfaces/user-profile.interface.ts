@@ -47,6 +47,15 @@ export interface EmailManagementData {
   alternate_emails: UserEmail[];
 }
 
+/** Options for the BFF's verified-email lookup (`resolveVerifiedUserEmails`). */
+export interface ResolveVerifiedUserEmailsOptions {
+  /**
+   * Throw a 503 instead of falling back to the session email when auth-service cannot be read.
+   * Access decisions use this: a lookup outage must never read as "this user has no other emails".
+   */
+  strict?: boolean;
+}
+
 /**
  * Preferred meeting-invitation email from the meeting-service.
  * Both fields are null when the user has no explicit override (i.e. meeting invitations

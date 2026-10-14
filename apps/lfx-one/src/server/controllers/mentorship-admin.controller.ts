@@ -10,6 +10,8 @@ import {
   MENTORSHIP_ADMIN_MENTOR_INVITE_LFID_MAX_LENGTH,
   MENTORSHIP_ADMIN_MENTEE_STATUS_FILTERS,
   MENTORSHIP_ADMIN_MENTEE_TABS,
+  MENTORSHIP_ADMIN_MENTEES_EXPORT_FILE_PREFIXES,
+  MENTORSHIP_ADMIN_MENTEES_EXPORT_TRUNCATED_HEADER,
   MENTORSHIP_ADMIN_MENTEES_MAX_LIMIT,
   MENTORSHIP_ADMIN_MENTEES_PAGE_SIZE,
   MENTORSHIP_ADMIN_MENTOR_STATUSES,
@@ -34,6 +36,7 @@ import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, MicroserviceError, ServiceValidationError } from '../errors';
+import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
 import { parseMentorshipAdminTermInput } from '../helpers/mentorship-admin-term.helper';
 import { parseMentorshipApplicationNote } from '../helpers/mentorship-application-note.helper';
 import { parseMentorshipEnrollCreateRequest, parseMentorshipEnrollUpdateRequest } from '../helpers/mentorship-enroll.helper';
@@ -131,17 +134,7 @@ export class MentorshipAdminController {
 
       const programId = this.requireUuidParam(req, 'programId', operation);
 
-      const rawType = parseTrimmedString(getStrictStringQueryParam(req, 'type', operation));
-      if (rawType === undefined || !(MENTORSHIP_ADMIN_MENTEE_TABS as readonly string[]).includes(rawType)) {
-        throw ServiceValidationError.forField('type', `type is required and must be one of: ${MENTORSHIP_ADMIN_MENTEE_TABS.join(', ')}`, { operation });
-      }
-
-      const type = rawType as MentorshipAdminMenteeTab;
-      const statusFilters = MENTORSHIP_ADMIN_MENTEE_STATUS_FILTERS[type];
-      const rawStatus = parseTrimmedString(getStrictStringQueryParam(req, 'status', operation));
-      if (rawStatus !== undefined && !(statusFilters as readonly string[]).includes(rawStatus)) {
-        throw ServiceValidationError.forField('status', `status must be one of: ${statusFilters.join(', ')}`, { operation });
-      }
+      const { type, status } = this.parseMenteeTabAndStatus(req, operation);
 
       const termId = parseTrimmedString(getStrictStringQueryParam(req, 'termId', operation));
       if (termId !== undefined && !isUuid(termId)) {
@@ -156,11 +149,47 @@ export class MentorshipAdminController {
         operation,
       });
 
-      const status = rawStatus as MentorshipAdminMenteeStatusFilter | undefined;
       const mentees = await this.mentorshipAdminService.getProgramMentees(req, programId, { type, status, termId, search, offset, limit });
 
       logger.success(req, operation, startTime, { programId, type, status, offset, limit, result_count: mentees.data.length, total: mentees.total });
       res.json(mentees);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /api/mentorship/admin/programs/:programId/mentees/export?type&status -> text/csv attachment, or 204 when no mentee matches
+  // Auth: logged-in user required (401 otherwise). Open while impersonating, since it is a read. `type` is the tab
+  // (`current` or `past`) and `status` one of that tab's status filters, or absent for all of them, as on the read
+  // (400 otherwise). Upstream's 403 for a caller who does not manage the program passes through. An export that stopped at
+  // the page cap still sends the rows it read, with `X-Export-Truncated` set to their count so the page can warn. Only
+  // the program id, the tab, the status and the row count are logged, never a mentee.
+  public async exportProgramMentees(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'export_mentorship_admin_program_mentees';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation });
+      }
+
+      const programId = this.requireUuidParam(req, 'programId', operation);
+
+      const { type, status } = this.parseMenteeTabAndStatus(req, operation);
+      const { csv, count, truncated } = await this.mentorshipAdminService.exportProgramMentees(req, programId, type, status);
+
+      logger.success(req, operation, startTime, { programId, type, status, result_count: count, truncated });
+      res.setHeader('Cache-Control', 'private, no-store');
+      if (count === 0) {
+        res.status(204).end();
+        return;
+      }
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', contentDispositionAttachment(`${MENTORSHIP_ADMIN_MENTEES_EXPORT_FILE_PREFIXES[type]}-${status ?? 'all'}.csv`));
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      if (truncated) res.setHeader(MENTORSHIP_ADMIN_MENTEES_EXPORT_TRUNCATED_HEADER, String(count));
+      // The byte order mark lets Excel read the names as UTF-8.
+      res.send(`\ufeff${csv}`);
     } catch (error) {
       next(error);
     }
@@ -656,6 +685,23 @@ export class MentorshipAdminController {
       );
     }
     return { status, attendanceType: attendanceType as MentorshipAttendanceType };
+  }
+
+  /** The mentee tab (`type`, required) and one of its status filters (`status`, optional) of a mentee read or export. */
+  private parseMenteeTabAndStatus(req: Request, operation: string): { type: MentorshipAdminMenteeTab; status: MentorshipAdminMenteeStatusFilter | undefined } {
+    const rawType = parseTrimmedString(getStrictStringQueryParam(req, 'type', operation));
+    if (rawType === undefined || !(MENTORSHIP_ADMIN_MENTEE_TABS as readonly string[]).includes(rawType)) {
+      throw ServiceValidationError.forField('type', `type is required and must be one of: ${MENTORSHIP_ADMIN_MENTEE_TABS.join(', ')}`, { operation });
+    }
+
+    const type = rawType as MentorshipAdminMenteeTab;
+    const statusFilters = MENTORSHIP_ADMIN_MENTEE_STATUS_FILTERS[type];
+    const rawStatus = parseTrimmedString(getStrictStringQueryParam(req, 'status', operation));
+    if (rawStatus !== undefined && !(statusFilters as readonly string[]).includes(rawStatus)) {
+      throw ServiceValidationError.forField('status', `status must be one of: ${statusFilters.join(', ')}`, { operation });
+    }
+
+    return { type, status: rawStatus as MentorshipAdminMenteeStatusFilter | undefined };
   }
 
   private requireUuidParam(req: Request, name: 'programId' | 'applicationId' | 'termId' | 'memberId' | 'taskId', operation: string): string {

@@ -188,8 +188,14 @@ vi.mock('@lfx-one/shared/utils', async () => {
   const numberUtils = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/number.utils')>(
     '../../../../../packages/shared/src/utils/number.utils'
   );
+  // The real isPubliclyDiscoverableProject, not a stub: getPubliclyDiscoverableProject's tests assert the
+  // public/Confidential gate itself. project-stage.utils only imports the enum file, so deep-importing is safe.
+  const projectStageUtils = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/project-stage.utils')>(
+    '../../../../../packages/shared/src/utils/project-stage.utils'
+  );
   return {
     computeIsFoundation: actual.computeIsFoundation,
+    isPubliclyDiscoverableProject: projectStageUtils.isPubliclyDiscoverableProject,
     summarizeWriterGrants: actual.summarizeWriterGrants,
     maskEmailForLogs: emailUtils.maskEmailForLogs,
     maskIdentifierForLogs: emailUtils.maskIdentifierForLogs,
@@ -1195,7 +1201,7 @@ describe('ProjectService — Snowflake-backed marketing reads', () => {
 
 // IN-1252: getHealthMetricsDaily's v1→v2 column flip is covered above (in the daily-health-metrics
 // describe block); these three cover the other call sites the same fix touched — each used to read
-// (or remap through mapV1BandToV2) a v1 Snowflake column/shim and now reads HEALTH_SCORE_CATEGORY_V2
+// (or remap through a v1 band shim) a v1 Snowflake column and now reads HEALTH_SCORE_CATEGORY_V2
 // directly.
 describe('ProjectService — Health Score v2 categories', () => {
   let service: ProjectService;
@@ -1211,7 +1217,7 @@ describe('ProjectService — Health Score v2 categories', () => {
 
       const result = await service.getFoundationHealthScoreDistribution('cncf');
 
-      // fails before fix: the v1 query read HEALTH_SCORE_CATEGORY through mapV1BandToV2, so a
+      // fails before fix: the v1 query read HEALTH_SCORE_CATEGORY through a v1 band shim, so a
       // genuine v2 'fair' category would have fallen through to `unscored` instead of `fair`.
       expect(result.fair).toBe(4);
       expect(result.unscored).toBe(0);
@@ -1271,8 +1277,8 @@ describe('ProjectService — Health Score v2 categories', () => {
 
       const result = await service.getFoundationProjectsDetail('cncf');
 
-      // fails before fix: normalizeHealthScoreCategory ran the v1 mapV1BandToV2 shim over this
-      // column, so a genuine v2 'fair' category could be coerced instead of passing through as-is.
+      // fails before fix: normalizeHealthScoreCategory ran a v1 band shim over this column, so a
+      // genuine v2 'fair' category could be coerced instead of passing through as-is.
       expect(result.projects[0].healthScoreCategory).toBe('fair');
       expect(execute.mock.calls[0][0]).toContain('d.HEALTH_SCORE_CATEGORY_V2');
     });
@@ -1290,7 +1296,7 @@ describe('ProjectService — Health Score v2 categories', () => {
       const result = await service.getMultiFoundationSummary(req, ['cncf']);
 
       // fails before fix: the local HealthScoreRow type read HEALTH_SCORE_CATEGORY and remapped it
-      // via mapV1BandToV2, so a v2 'fair' category wouldn't have passed straight through.
+      // through a v1 band shim, so a v2 'fair' category wouldn't have passed straight through.
       expect(result.perFoundation['cncf'].healthScores.fair).toBe(7);
       expect(result.perFoundation['cncf'].healthScores.unscored).toBe(0);
     });
@@ -3450,5 +3456,64 @@ describe('ProjectService — directory lookup failure classification', () => {
       code: 'SERVICE_UNAVAILABLE',
       transportFailure: true,
     });
+  });
+});
+
+describe('ProjectService — getPubliclyDiscoverableProject', () => {
+  let service: ProjectService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    warning.mockReset();
+    debug.mockReset();
+    service = new ProjectService();
+  });
+
+  it('returns the project when it is public and Active', async () => {
+    const project = { uid: 'p1', slug: 'p1', name: 'Visible', public: true, stage: 'Active' } as Project;
+    proxyRequest.mockResolvedValueOnce(project);
+
+    await expect(service.getPubliclyDiscoverableProject(req, 'p1')).resolves.toEqual(project);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/projects/p1', 'GET');
+  });
+
+  it('returns null for a non-public project', async () => {
+    proxyRequest.mockResolvedValueOnce({ uid: 'p1', name: 'Hidden', public: false, stage: 'Active' } as Project);
+
+    await expect(service.getPubliclyDiscoverableProject(req, 'p1')).resolves.toBeNull();
+  });
+
+  it('returns null for a Formation - Confidential project even when public', async () => {
+    proxyRequest.mockResolvedValueOnce({ uid: 'p1', name: 'Secret', public: true, stage: 'Formation - Confidential' } as Project);
+
+    await expect(service.getPubliclyDiscoverableProject(req, 'p1')).resolves.toBeNull();
+  });
+
+  // Upstream rejected the identifier itself — a definitive "not found / not visible" answer, so null, logged at
+  // DEBUG because the identifier is caller-controlled on these anonymous routes.
+  it.each([400, 403, 404])('returns null and logs at DEBUG (not WARN) when upstream answers %i', async (status) => {
+    proxyRequest.mockRejectedValueOnce(new MicroserviceError('rejected', status, 'UPSTREAM'));
+
+    await expect(service.getPubliclyDiscoverableProject(req, 'p1')).resolves.toBeNull();
+    expect(debug).toHaveBeenCalledWith(req, 'get_publicly_discoverable_project', expect.any(String), { project_uid: 'p1', status_code: status });
+    expect(warning).not.toHaveBeenCalled();
+  });
+
+  it('returns null when upstream returns an empty body (getProjectById throws ResourceNotFoundError)', async () => {
+    proxyRequest.mockResolvedValueOnce(undefined);
+
+    await expect(service.getPubliclyDiscoverableProject(req, 'p1')).resolves.toBeNull();
+  });
+
+  // A transient failure says nothing about the project — rethrow so callers surface an error rather than a
+  // cacheable empty response (an empty ICS feed would be synced over subscribers' calendars).
+  it.each([
+    ['a 503', new MicroserviceError('unavailable', 503, 'SERVICE_UNAVAILABLE')],
+    ['a timeout', new MicroserviceError('timeout', 408, 'TIMEOUT')],
+    ['a non-API error', new Error('socket hang up')],
+  ])('rethrows %s instead of treating the project as hidden', async (_label, err) => {
+    proxyRequest.mockRejectedValueOnce(err);
+
+    await expect(service.getPubliclyDiscoverableProject(req, 'p1')).rejects.toBe(err);
   });
 });

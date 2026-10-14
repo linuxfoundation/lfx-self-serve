@@ -210,8 +210,16 @@ describe('NewsletterService.getMyNewsletters', () => {
       parent_is_foundation: true,
       is_foundation: false,
     });
+    expect(result.newsletters[1]).toMatchObject({
+      foundation_uid: 'foundation',
+      foundation_slug: 'foundation',
+      foundation_name: 'foundation',
+      foundation_logo_url: null,
+    });
     expect(result.newsletters[2]).toMatchObject({ parent_project_name: 'parent', parent_is_foundation: false });
+    expect(result.newsletters[2]).not.toHaveProperty('foundation_uid'); // Parent is not a foundation: grouped by its own project.
     expect(result.newsletters[3]).not.toHaveProperty('parent_is_foundation'); // ROOT excluded by ProjectService.
+    expect(result.newsletters[3]).not.toHaveProperty('foundation_uid'); // Parent unresolved: grouped by its own project.
     expect(result.newsletters[4]).not.toHaveProperty('is_foundation');
     expect(result.complete).toBe(true);
   });

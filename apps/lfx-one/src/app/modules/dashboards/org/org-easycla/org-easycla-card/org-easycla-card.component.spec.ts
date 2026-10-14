@@ -192,11 +192,11 @@ describe('OrgEasyclaCardComponent', () => {
       expect(textOf(fixture, 'org-easycla-card-status')).toContain('Signed');
     });
 
-    it('reads as sanctioned when the signing entity is flagged', async () => {
+    it('shows no status pill when the signing entity is flagged', async () => {
       const fixture = await render(claGroup({ status: 'sanctioned' }));
 
-      expect(textOf(fixture, 'org-easycla-card-status')).toContain('Sanctioned');
-      expect(textOf(fixture, 'org-easycla-card-status')).not.toContain('Signed');
+      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-card-status"]')).toBeNull();
+      expect(fixture.nativeElement.textContent).not.toContain('Sanctioned');
     });
 
     // The word matters more than the styling here: an unsigned agreement described as signed
@@ -210,24 +210,10 @@ describe('OrgEasyclaCardComponent', () => {
   });
 
   describe('needs a CLA manager', () => {
-    it('flags an agreement with no CLA manager', async () => {
+    it('carries no indicator for an agreement with no CLA manager', async () => {
       const fixture = await render(claGroup({ needsClaManager: true, claManagersCount: 0 }));
 
-      expect(textOf(fixture, 'org-easycla-card-needs-manager')).toContain('Needs a CLA Manager');
-    });
-
-    it('does not flag a managed agreement', async () => {
-      const fixture = await render(claGroup({ needsClaManager: false }));
-
-      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-card-needs-manager"]')).toBeNull();
-    });
-
-    // Rendered from the flag alone. Re-deriving it from the count here would be a second
-    // definition of the same condition, free to drift from the producer's.
-    it('follows the flag rather than the manager count', async () => {
-      const fixture = await render(claGroup({ needsClaManager: false, claManagersCount: 0 }));
-
-      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-card-needs-manager"]')).toBeNull();
+      expect(fixture.nativeElement.textContent).not.toContain('Needs a CLA Manager');
     });
   });
 

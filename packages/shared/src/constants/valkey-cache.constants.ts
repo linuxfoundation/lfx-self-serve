@@ -57,6 +57,9 @@ export const VALKEY_CACHE = {
   /** Domain + schema-version segment for the express-openid-connect session store (server-side session data keyed by opaque session id). */
   SESSION_NAMESPACE: 'session:v1',
 
+  /** Domain + schema-version segment for Gatewaze host-session records (#2738): the encrypted GoTrue session keyed by an HMAC of the LFX session id, plus the `@gatewaze/host-session` store's locks, sign-out markers and sign-out channel. A separate record rather than a field on `req.appSession`, for the same blind-overwrite reason as `AUTH_STATE_NAMESPACE`, and because GoTrue rotates refresh tokens. */
+  GATEWAZE_HOST_SESSION_NAMESPACE: 'gatewaze:v1',
+
   /** Domain + schema-version segment for Flow C's (profile Auth0 Management API) CSRF state nonce, keyed by the nonce itself rather than by user or session — see #1938. Kept out of `req.appSession` because express-openid-connect blind-overwrites the whole session on every response; a concurrent request finishing after `/auth/start` silently drops the nonce it wrote. */
   AUTH_STATE_NAMESPACE: 'auth-state:v1',
 

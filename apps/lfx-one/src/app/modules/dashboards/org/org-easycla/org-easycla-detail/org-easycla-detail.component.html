@@ -100,9 +100,6 @@
         @if (status(); as statusDisplay) {
           <lfx-tag [value]="statusDisplay.label" [severity]="statusDisplay.severity" data-testid="org-easycla-detail-status" />
         }
-        @if (group.needsClaManager) {
-          <lfx-tag value="Needs a CLA Manager" severity="warn" icon="fa-light fa-triangle-exclamation" data-testid="org-easycla-detail-needs-manager" />
-        }
       </div>
       @if (group.signingEntityName) {
         <p class="text-sm text-gray-500" data-testid="org-easycla-detail-signing-entity">{{ group.signingEntityName }}</p>

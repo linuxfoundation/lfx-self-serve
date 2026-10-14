@@ -210,7 +210,8 @@ describe('validateFoundationMessageEnvelope — schema + structure gates', () =>
     boilerplate:
       'Example Project is an open source toolkit for platform teams who need to ship reliable services without assembling their own release toolchain. It packages opinionated defaults for building, testing, and rolling out changes, and keeps every decision inspectable so teams can adapt it to their own environment. Governed in the open under the Linux Foundation, Example Project is maintained by contributors from a range of organisations who review each change in public. Adopters use it to shorten the path from a merged pull request to a production release while keeping the audit trail their compliance teams expect.',
     llms_txt: '# Example Project\n\nExample Project is an open source toolkit for platform teams.',
-    elevator_pitch_headline: 'Ship reliable services faster with Example Project',
+    elevator_pitch:
+      'Example Project gives platform teams one open source toolkit for building, testing and rolling out reliable services, governed in the open under the Linux Foundation.',
   });
 
   const document = (): string => {
@@ -240,7 +241,7 @@ describe('validateFoundationMessageEnvelope — schema + structure gates', () =>
     },
   });
 
-  it('accepts a contract-shaped envelope with all 13 headings', () => {
+  it('accepts a contract-shaped envelope with all 14 headings', () => {
     expect(validateFoundationMessageEnvelope(validEnvelope())).toEqual({ valid: true, errors: [] });
   });
 
@@ -251,10 +252,10 @@ describe('validateFoundationMessageEnvelope — schema + structure gates', () =>
 
   it('flags a document missing any required heading', () => {
     const envelope = validEnvelope();
-    envelope['document_markdown'] = (envelope['document_markdown'] as string).replace('## 6. Messaging Pillars', '## 6. Something Else');
+    envelope['document_markdown'] = (envelope['document_markdown'] as string).replace('## 5. Messaging Pillars', '## 5. Something Else');
     const result = validateFoundationMessageEnvelope(envelope);
     expect(result.valid).toBe(false);
-    expect(result.errors.join(' ')).toContain('6. Messaging Pillars');
+    expect(result.errors.join(' ')).toContain('5. Messaging Pillars');
   });
 
   it('rejects an envelope missing any of the five derivatives', () => {
@@ -265,14 +266,15 @@ describe('validateFoundationMessageEnvelope — schema + structure gates', () =>
 
   it('re-enforces the §1a hard word caps (G1) instead of trusting the agent wrapper', () => {
     const envelope = validEnvelope();
-    const overLong = 'This elevator pitch headline runs well past the contract hard cap of ten words easily';
-    envelope['derivatives'] = { ...derivatives(), elevator_pitch_headline: overLong };
+    // 13 words × 8 = 104 words, well past the §3 elevator-pitch cap of 90.
+    const overLong = 'This elevator pitch runs well past the contract hard cap of ninety words. '.repeat(8).trim();
+    envelope['derivatives'] = { ...derivatives(), elevator_pitch: overLong };
     envelope['document_markdown'] = `${document()}\n\n${overLong}`;
 
     const result = validateFoundationMessageEnvelope(envelope);
 
     expect(result.valid).toBe(false);
-    expect(result.errors.join(' ')).toContain('hard cap is 10');
+    expect(result.errors.join(' ')).toContain('hard cap is 90');
   });
 
   it('re-enforces the boilerplate word band and the llms_txt H1 shape (G2)', () => {
@@ -303,14 +305,14 @@ describe('validateFoundationMessageEnvelope — schema + structure gates', () =>
     expect(countFoundationMessageWords('')).toBe(0);
   });
 
-  it('tolerates trailing heading qualifiers like the template’s own "(when a Brand Kit exists)"', () => {
-    const withQualifier = document().replace('## 1a. Word-Count Derivatives', '## 1a. Word-Count Derivatives (when a Brand Kit exists)');
+  it('tolerates trailing heading qualifiers like the template’s own "(word-count-locked)"', () => {
+    const withQualifier = document().replace('## 3. Copy Primitives', '## 3. Copy Primitives (word-count-locked)');
     expect(findMissingFoundationMessageHeadings(withQualifier)).toEqual([]);
     // A same-prefix but different heading does NOT satisfy the gate.
-    expect(findMissingFoundationMessageHeadings(document().replace('## 10. Next Steps', '## 10. Next Stepsish'))).toEqual(['## 10. Next Steps']);
+    expect(findMissingFoundationMessageHeadings(document().replace('## 4. Voice', '## 4. Voices'))).toEqual(['## 4. Voice']);
   });
 
-  it('enforces the intake answers bounds (2–15)', () => {
+  it('enforces the intake answers bounds (2–20)', () => {
     const envelope = validEnvelope();
     (envelope['intake'] as Record<string, unknown>)['answers'] = [{ question_number: 1, question: 'Q', answer: 'A' }];
     expect(validateFoundationMessageEnvelope(envelope).valid).toBe(false);

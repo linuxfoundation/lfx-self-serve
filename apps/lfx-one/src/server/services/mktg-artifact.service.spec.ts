@@ -323,6 +323,15 @@ describe('MktgArtifactService', () => {
       expect(stored?.receipt.version).toBe(1);
     });
 
+    it('reads back the prefill intake mode the ICP agent writes for a documents-only run', async () => {
+      objectStoreMocks.listObjects.mockResolvedValue([{ key, lastModified: new Date('2026-08-15T00:00:00Z') }]);
+      objectStoreMocks.getObject.mockResolvedValue({ body: DOCUMENT, metadata: { version: '2', 'intake-mode': 'prefill' } });
+
+      const stored = await service.readLatest(req, SPEC, PROJECT_UID);
+
+      expect(stored?.receipt.intake_mode).toBe('prefill');
+    });
+
     it('defaults version/intake_mode for objects persisted before metadata was written', async () => {
       objectStoreMocks.listObjects.mockResolvedValue([{ key, lastModified: new Date('2026-08-15T00:00:00Z') }]);
       objectStoreMocks.getObject.mockResolvedValue({ body: DOCUMENT, metadata: {} });

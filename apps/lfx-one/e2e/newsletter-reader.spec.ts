@@ -5,8 +5,8 @@
  * Newsletter Reader Page — GH-1550.
  *
  * Shareable per-issue newsletter permalinks at /newsletters/:projectSlug/:id.
- * Reader page fetches the full newsletter body via the project-scoped get endpoint
- * (open to any authenticated user). Draft gating enforced in-app: non-managers see 404.
+ * Reader page fetches the issue through the reader access endpoint (#3469), which decides
+ * access server-side. Unsent issues 404 (NEWSLETTER_NOT_SENT) for non-managers.
  *
  * Prerequisites:
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -56,27 +56,43 @@ async function stubProjectApi(page: Page, project: Project | null): Promise<void
   });
 }
 
-async function stubNewsletterApi(page: Page, projectUid: string, newsletterId: string, status: string = 'sent', shouldExist: boolean = true): Promise<void> {
-  await page.route(`**/api/projects/${projectUid}/newsletters/${newsletterId}`, (route) => {
+// Stubs the reader access endpoint (#3469) the way the BFF answers it: a manager (project writer)
+// reads anything, a non-manager reads sent issues as a group member, and an unsent issue 404s with
+// NEWSLETTER_NOT_SENT for non-managers.
+async function stubNewsletterApi(
+  page: Page,
+  projectUid: string,
+  newsletterId: string,
+  status: string = 'sent',
+  shouldExist: boolean = true,
+  writer: boolean = false
+): Promise<void> {
+  await page.route(`**/api/newsletters/${projectUid}/${newsletterId}/reader`, (route) => {
     if (!shouldExist) {
-      return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ message: 'not found' }) });
+      return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'not found', code: 'NOT_FOUND' }) });
+    }
+    if (status !== 'sent' && !writer) {
+      return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'not found', code: 'NEWSLETTER_NOT_SENT' }) });
     }
     return route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        id: newsletterId,
-        subject: 'K8s Weekly #42',
-        body_html: MOCK_NEWSLETTER_BODY_HTML,
-        status,
-        sent_at: '2026-08-13T10:00:00Z',
-        project_uid: projectUid,
-        ed_reply_email: 'ed@example.com',
-        total_recipients: 12,
-        created_by: 'sender',
-        version: 1,
-        created_at: '2026-08-13T10:00:00Z',
-        updated_at: '2026-08-13T10:00:00Z',
+        access: writer ? 'manager' : 'group_member',
+        newsletter: {
+          id: newsletterId,
+          subject: 'K8s Weekly #42',
+          body_html: MOCK_NEWSLETTER_BODY_HTML,
+          status,
+          sent_at: '2026-08-13T10:00:00Z',
+          project_uid: projectUid,
+          ed_reply_email: 'ed@example.com',
+          total_recipients: 12,
+          created_by: 'sender',
+          version: 1,
+          created_at: '2026-08-13T10:00:00Z',
+          updated_at: '2026-08-13T10:00:00Z',
+        },
       }),
     });
   });
@@ -108,7 +124,7 @@ test.describe('Newsletter Reader Page', () => {
     await expect(page.getByTestId('newsletter-reader-copy-link')).toBeVisible();
 
     // Newsletter preview renders
-    await expect(page.locator('[data-e2e="newsletter-body-marker"]')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('newsletter-reader-preview').getByText('K8s Weekly #42 update.')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
   });
 
   test('renders in-place 404 for draft newsletter when user is not a writer', async ({ page }) => {
@@ -121,20 +137,20 @@ test.describe('Newsletter Reader Page', () => {
 
     // Should render in-place 404 for draft
     await expect(page.getByTestId('newsletter-not-found-card')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
-    await expect(page.getByText('Draft Newsletter')).toBeVisible();
+    await expect(page.getByTestId('error-title')).toHaveText('Draft Newsletter');
     await expect(page.getByText(/Only project managers can view draft newsletters/)).toBeVisible();
   });
 
   test('allows manager (writer) to view draft newsletter', async ({ page }) => {
     skipWhenAuthMissing();
     await stubProjectApi(page, MOCK_PROJECT_MANAGER);
-    await stubNewsletterApi(page, PROJECT_UID, 'news-draft', 'draft', true);
+    await stubNewsletterApi(page, PROJECT_UID, 'news-draft', 'draft', true, true);
 
     await page.goto(`/newsletters/${PROJECT_SLUG}/news-draft`, { waitUntil: 'domcontentloaded' });
     await expect(page).not.toHaveURL(/auth0\.com/);
 
     // Draft should render (not 404) because user is a writer
-    await expect(page.locator('[data-e2e="newsletter-body-marker"]')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('newsletter-reader-preview').getByText('K8s Weekly #42 update.')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
     await expect(page.getByRole('heading', { level: 1 })).toContainText('K8s Weekly #42');
   });
 

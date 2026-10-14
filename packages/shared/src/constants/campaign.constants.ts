@@ -593,6 +593,28 @@ export const META_DEFAULT_PLACEMENTS: Readonly<MetaPlacement> = {
 } as const;
 
 /**
+ * The `META_OBJECTIVE_PARAMS` row for an objective, or a refusal.
+ *
+ * The Meta twin of `redditObjectiveParamsFor`, and the same defect: `META_OBJECTIVE_PARAMS` is a
+ * plain object literal, so an unvalidated objective of `constructor`, `toString`, `valueOf`,
+ * `hasOwnProperty` or `__proto__` resolves to a truthy inherited `Object.prototype` member and
+ * passes a `!objParams` test. `config.objective` is spread unvalidated out of `body.metaConfig` by
+ * `executeMetaDispatch`, so those values do arrive. Past the test, `objParams.campaignObjective`
+ * is `undefined`, `JSON.stringify` drops `objective` from the body, and
+ * `POST /{accountId}/campaigns` is sent by the very block whose job is to refuse before it (#3504).
+ *
+ * Exported so both Meta call sites read the table the same way — including `buildPromotedObject`,
+ * which indexed it with no check at all and was safe only by virtue of running second.
+ */
+export function metaObjectiveParamsFor(objective: MetaObjective): MetaObjectiveParams {
+  if (!Object.hasOwn(META_OBJECTIVE_PARAMS, objective)) {
+    throw new Error(`Unknown Meta objective: '${objective}'. Valid objectives: ${Object.keys(META_OBJECTIVE_PARAMS).join(', ')}`);
+  }
+
+  return META_OBJECTIVE_PARAMS[objective];
+}
+
+/**
  * Display labels for the Meta campaign objectives.
  *
  * TOTAL over `MetaObjective` — every objective that can reach a display path has a label here,
@@ -875,6 +897,33 @@ export const MICROSOFT_MAX_CPC_BID = 1000;
 export const META_GEO_CODE_PATTERN = /^[A-Z]{2}$/;
 
 /**
+ * Account-id shapes campaign-service's report-backed account monitors accept
+ * (`monitor-microsoft-ads-account` / `monitor-twitter-ads-account` in its `design/connection.go`).
+ *
+ * Checked in the BFF so a malformed id is a named 400 here rather than a Goa pattern error from
+ * upstream. Microsoft's is a positive int64 with no leading zero; X's is the connection's own
+ * alphanumeric handle rule, at most 64 characters.
+ */
+export const MICROSOFT_ADS_MONITOR_ACCOUNT_ID_PATTERN = /^[1-9][0-9]{0,17}$/;
+export const TWITTER_ADS_MONITOR_ACCOUNT_ID_PATTERN = /^[A-Za-z0-9]{1,64}$/;
+
+/**
+ * The account monitors' trailing-days bounds, inclusive. Campaign-service REJECTS a value outside
+ * them with a 400 rather than clamping, so the BFF clamps first — the behaviour the legacy Meta and
+ * Reddit monitor routes already had.
+ */
+export const ACCOUNT_MONITOR_MIN_DAYS = 7;
+export const ACCOUNT_MONITOR_MAX_DAYS = 90;
+export const ACCOUNT_MONITOR_DEFAULT_DAYS = 30;
+
+/**
+ * The `reason` values campaign-service's X account monitor answers its 409 with — a closed enum
+ * upstream (`AccountMonitorConflictError`). The BFF forwards a reason only when it is one of these,
+ * so no other upstream text reaches the client.
+ */
+export const ACCOUNT_MONITOR_CONFLICT_REASONS = ['account_too_many_active_campaigns', 'account_timezone_unsupported'] as const;
+
+/**
  * Zero-padded `YYYY-MM-DD` shape for a campaign flight date.
  *
  * Shape only — it says nothing about whether the day named actually exists, so a caller that is
@@ -934,6 +983,220 @@ export const GOOGLE_ADS_GEO_TARGET_MAP: Record<string, string> = {
  * refused.
  */
 export const GOOGLE_ADS_MAX_GEO_TARGETS = 30;
+
+/**
+ * ISO 639-1 language code to Google Ads language constant id.
+ *
+ * The SIBLING of {@link GOOGLE_ADS_GEO_TARGET_MAP} and curated for the same reason: campaign-service
+ * holds the same table in `internal/platform/googleads/campaign_criteria.go` (`languageConstants`)
+ * and refuses anything absent from it — "language %q is neither a supported ISO 639-1 code (e.g. EN,
+ * DE, JA) nor a numeric language constant id from Google's language-constants table". These ids are
+ * Google's and are NOT derivable from the ISO code by any rule, so a wrong transcription targets the
+ * WRONG LANGUAGE while looking perfectly valid.
+ *
+ * Keep it in step with `campaign_criteria.go` — a code present here and absent there becomes an
+ * over-refusal at dispatch, which is the one failure this mirroring exists to prevent.
+ *
+ * A language the operator needs that is absent from both tables is still reachable upstream as a raw
+ * numeric constant id, exactly as a city is on the geo side; this map is what the UI offers, not the
+ * limit of what the dispatcher accepts.
+ */
+export const GOOGLE_ADS_LANGUAGE_MAP: Record<string, string> = {
+  EN: '1000',
+  DE: '1001',
+  FR: '1002',
+  ES: '1003',
+  IT: '1004',
+  JA: '1005',
+  DA: '1009',
+  NL: '1010',
+  FI: '1011',
+  KO: '1012',
+  NO: '1013',
+  PT: '1014',
+  SV: '1015',
+  AR: '1019',
+  BG: '1020',
+  CS: '1021',
+  EL: '1022',
+  HI: '1023',
+  HU: '1024',
+  ID: '1025',
+  IS: '1026',
+  HE: '1027',
+  LV: '1028',
+  LT: '1029',
+  PL: '1030',
+  RU: '1031',
+  RO: '1032',
+  SK: '1033',
+  SL: '1034',
+  SR: '1035',
+  UK: '1036',
+  TR: '1037',
+  CA: '1038',
+  HR: '1039',
+  VI: '1040',
+  UR: '1041',
+  TL: '1042',
+  ET: '1043',
+  TH: '1044',
+};
+
+/**
+ * English names for the codes in {@link GOOGLE_ADS_LANGUAGE_MAP}, for the picker's labels.
+ *
+ * A separate map rather than a `{ code, label }` object so {@link GOOGLE_ADS_LANGUAGE_MAP} keeps the
+ * exact shape its geo sibling has and stays a line-for-line mirror of `languageConstants` — the
+ * property that makes drift against campaign-service visible in a diff. That same `Record<string,
+ * string>` shape means the type system cannot tie the two maps' keys together, so
+ * `campaign.constants.spec.ts` does: a code added to one map and not the other fails there rather
+ * than leaving the picker silently short of a language upstream accepts.
+ */
+export const GOOGLE_ADS_LANGUAGE_LABELS = {
+  EN: 'English',
+  DE: 'German',
+  FR: 'French',
+  ES: 'Spanish',
+  IT: 'Italian',
+  JA: 'Japanese',
+  DA: 'Danish',
+  NL: 'Dutch',
+  FI: 'Finnish',
+  KO: 'Korean',
+  NO: 'Norwegian',
+  PT: 'Portuguese',
+  SV: 'Swedish',
+  AR: 'Arabic',
+  BG: 'Bulgarian',
+  CS: 'Czech',
+  EL: 'Greek',
+  HI: 'Hindi',
+  HU: 'Hungarian',
+  ID: 'Indonesian',
+  IS: 'Icelandic',
+  HE: 'Hebrew',
+  LV: 'Latvian',
+  LT: 'Lithuanian',
+  PL: 'Polish',
+  RU: 'Russian',
+  RO: 'Romanian',
+  SK: 'Slovak',
+  SL: 'Slovenian',
+  SR: 'Serbian',
+  UK: 'Ukrainian',
+  TR: 'Turkish',
+  CA: 'Catalan',
+  HR: 'Croatian',
+  VI: 'Vietnamese',
+  UR: 'Urdu',
+  TL: 'Filipino',
+  ET: 'Estonian',
+  TH: 'Thai',
+} as const satisfies Record<string, string>;
+
+/**
+ * Upstream's own bound on a Google Ads language list (`campaign_criteria.go`'s `maxLanguages`),
+ * checked there BEFORE de-duplication — so a list that is only over the cap because it repeats a
+ * code is still refused, exactly as {@link GOOGLE_ADS_MAX_GEO_TARGETS} is.
+ */
+export const GOOGLE_ADS_MAX_LANGUAGES = 40;
+
+/**
+ * A Google Ads language entry that is a raw language constant id rather than an ISO 639-1 code.
+ *
+ * `resolveLanguageList` tells its two accepted forms apart by SHAPE — "an ISO 639-1 code is letters,
+ * a constant id is all digits, so no input is ambiguous" — and the two are judged differently from
+ * there: a code must appear in {@link GOOGLE_ADS_LANGUAGE_MAP}, while a numeric id must NOT be tested
+ * against it — upstream accepts an id for a language the curated table does not carry, so refusing
+ * one would be an over-refusal. A numeric id must instead be the canonical spelling of a positive
+ * int64 (`0` and `01000` are refused), which {@link isCanonicalGoogleAdsResourceId} tests.
+ */
+export const GOOGLE_ADS_LANGUAGE_ID_PATTERN = /^[0-9]+$/;
+
+/**
+ * The Google channels whose campaign-level criteria accept a language list.
+ *
+ * Every channel EXCEPT Demand Gen. `validateCriteriaPlan` is the one gate: it refuses the whole
+ * non-location criteria set on the Demand Gen path only, because that channel attaches targeting at
+ * the ad group level. Performance Max narrows the set — it refuses device bid modifiers and
+ * campaign-level demographic exclusions — but takes languages, which Google documents as a PMax
+ * campaign criterion; Video and Display take the un-narrowed set. Widening the fence to every
+ * non-Search channel would refuse creates Google accepts, which is the over-refusal these guards
+ * exist to avoid.
+ *
+ * Video is listed because upstream accepts it there, not because this client can reach it — the
+ * Google Ads API has no mutate that creates a Video campaign, so the create is refused earlier.
+ *
+ * A create that carries languages on Demand Gen FAILS upstream with nothing created, so callers gate
+ * the control and the payload on this list rather than sending the value and hoping.
+ */
+export const GOOGLE_CHANNELS_WITH_LANGUAGES = ['search', 'performance-max', 'video', 'display'] as const;
+
+/**
+ * Upstream's own bound on a Google Ads callout list (`assets.go`'s `maxCallouts`).
+ *
+ * Unlike {@link GOOGLE_ADS_MAX_GEO_TARGETS} this one is checked AFTER nothing — `validateCallouts`
+ * compares the raw slice length before it looks at any entry, so a list that is only over the cap
+ * because it repeats a phrase is refused on the cap, not on the duplicate.
+ */
+export const GOOGLE_ADS_MAX_CALLOUTS = 20;
+
+/**
+ * Upstream's per-callout character bound (`assets.go`'s `maxCalloutTextRunes`), counted in RUNES.
+ *
+ * Count it with the spread (`[...text].length`), never `.length`: `utf8.RuneCountInString` counts
+ * code points, and `.length` counts UTF-16 units, so a 13-character emoji or astral-plane callout
+ * would be refused here while upstream accepts it — the over-refusal these mirrors exist to avoid.
+ *
+ * Upstream counts runes rather than the double-width WEIGHT its responsive-search-ad copy uses, and
+ * says so deliberately: Google applies CJK doubling to extension text too, so a 25-rune Japanese
+ * callout is refused upstream. That is upstream's chosen under-refusal, and mirroring the rune
+ * count keeps this app refusing exactly what it refuses and no more.
+ */
+export const GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES = 25;
+
+/** One character Go's `unicode.IsSpace` matches: ASCII space controls, U+0085, and category Z. */
+const GO_TRIMMED_SPACE = /^[\t\n\v\f\r\u0085\p{Z}]$/u;
+
+/**
+ * Go's `strings.TrimSpace`, which upstream applies to each callout before judging it.
+ *
+ * Not `String.prototype.trim`: the two disagree on U+0085, which Go trims and JS keeps, and on
+ * U+FEFF, which JS trims and Go keeps. A JS-trimmed callout could then pass the duplicate or rune
+ * test here and fail it upstream.
+ */
+export function googleAdsTrimSpace(text: string): string {
+  // An index walk, not a `[ws]+$` regex: that pattern backtracks quadratically over a long
+  // interior whitespace run, and the text comes from an unvalidated body. Every character Go
+  // trims is a single UTF-16 unit, so walking units is exact.
+  let start = 0;
+  let end = text.length;
+  while (start < end && GO_TRIMMED_SPACE.test(text[start])) start++;
+  while (end > start && GO_TRIMMED_SPACE.test(text[end - 1])) end--;
+  return text.slice(start, end);
+}
+
+/**
+ * Caller-supplied text cut short for an error message, by code point so an emoji is never split
+ * into a lone surrogate. The text comes from an unvalidated body, so the echo is bounded.
+ */
+export function googleAdsEchoed(text: string, max = 32): string {
+  const chars = [...text];
+  return chars.length > max ? `${chars.slice(0, max).join('')}…` : text;
+}
+
+/**
+ * Go's `strings.ToLower`, the key upstream's callout duplicate check uses.
+ *
+ * Go lower-cases rune by rune with no context. JS `toLowerCase` on a whole string applies the
+ * final-sigma rule (`Σ` → `ς` at a word end) and expands `İ` to two code points, so it would call
+ * `ΟΔΟΣ` and `οδοσ` different where upstream calls them the same. Mapping each code point alone,
+ * with `İ` sent to `i` as Go does, removes both differences.
+ */
+export function googleAdsToLower(text: string): string {
+  return [...text].map((ch) => (ch === '\u0130' ? 'i' : ch.toLowerCase())).join('');
+}
 
 /**
  * Micros per whole currency unit, the denomination google-ads bills budgets in.
@@ -1399,7 +1662,11 @@ export const REDDIT_OBJECTIVE_PARAMS: Readonly<Record<RedditObjective, RedditObj
     optimizationGoal: 'PURCHASE',
     viewThroughConversionType: 'SEVEN_DAY_CLICKS_ONE_DAY_VIEW',
   },
-  video_views: { redditObjective: 'VIDEO_VIEWABLE_IMPRESSIONS', bidType: 'CPM', bidValue: 3_000_000, optimizationGoal: 'VIDEO_VIEWS' },
+  // `video_views` carries no `optimizationGoal`: `VIDEO_VIEWS` is not a Reddit video optimization
+  // goal, so the concrete goal is resolved from the request's `videoGoal` by
+  // `resolveRedditOptimizationGoal` rather than baked in here. Mirrors the same deliberate omission
+  // in `redditObjectiveParams` upstream (`internal/platform/reddit/client.go`).
+  video_views: { redditObjective: 'VIDEO_VIEWABLE_IMPRESSIONS', bidType: 'CPM', bidValue: 3_000_000 },
 } as const;
 
 export const REDDIT_OBJECTIVE_LABELS: Readonly<Record<RedditObjective, string>> = {
@@ -1424,11 +1691,10 @@ export const DEFAULT_REDDIT_OBJECTIVE: RedditObjective = 'conversions';
  * The objectives the picker offers, as distinct from the four `RedditObjective` admits.
  *
  * `video_views` is withheld because it cannot currently succeed. Reddit has no bare `VIDEO_VIEWS`
- * optimization goal, so a video-view campaign must name a concrete one; upstream requires a
- * `videoGoal` from `REDDIT_VIDEO_GOALS` for that objective and refuses the create without it, and
- * no control collects one yet. (The legacy creator does not refuse — it sends its own
- * `optimizationGoal: 'VIDEO_VIEWS'`, which is the value Reddit has no such goal for, so that arm
- * fails at Reddit instead of locally.) Offer it once a goal control exists on both roads.
+ * optimization goal, so a video-view campaign must name a concrete one; both creators require a
+ * `videoGoal` from `REDDIT_VIDEO_GOALS` for that objective and refuse the create without it, and no
+ * control collects one yet. Offer it once a goal control exists — the creators are ready for it,
+ * the form is not.
  *
  * `REDDIT_OBJECTIVE_LABELS` stays total over `RedditObjective` rather than being narrowed to this
  * list, so a draft holding a withheld objective still renders a name instead of `undefined` — the
@@ -1504,10 +1770,79 @@ export const MAX_REDDIT_HEADLINE_LENGTH = 300;
  * file (`validVideoGoals`).
  *
  * Required for, and only for, the `video_views` objective: Reddit has no bare `VIDEO_VIEWS` goal,
- * so a video-view campaign must name one of these, and upstream validates it before any mutating
- * call. Sending one with any other objective is pointless, not fatal.
+ * so a video-view campaign must name one of these, and both creators validate it before any
+ * mutating call — see `resolveRedditOptimizationGoal`. Sending one with any other objective is
+ * pointless, not fatal.
  */
 export const REDDIT_VIDEO_GOALS = ['VIDEO_VIEW_6S', 'VIDEO_VIEW_15S'] as const;
+
+/**
+ * The `REDDIT_OBJECTIVE_PARAMS` row for an objective, or a refusal.
+ *
+ * The single place any caller reads that table, because reading it safely is not a plain index.
+ * `REDDIT_OBJECTIVE_PARAMS` is a plain object literal and so inherits `Object.prototype`: an
+ * unvalidated objective of `constructor`, `toString`, `valueOf`, `hasOwnProperty` or `__proto__`
+ * resolves to a truthy inherited member and sails past a `!objParams` test. In the Reddit creator
+ * that meant `resolveRedditOptimizationGoal` returning `undefined` through its cast and the caller
+ * reading `redditObjective` and `bidType` as `undefined` too, so `JSON.stringify` dropped
+ * `objective`, `bid_type` and `optimization_goal` and the campaign POST went to Reddit carrying a
+ * real budget and dates — a request made by the very block whose job is to refuse before one is.
+ *
+ * `Object.hasOwn` is the same runtime-key pattern `withheldTooltipFor` uses in
+ * `org-leaderboard-detail.utils.ts`. Exported rather than inlined at each site so the refusal and
+ * its message exist once and cannot drift between the shared resolver and the service (#3504).
+ */
+export function redditObjectiveParamsFor(objective: RedditObjective): RedditObjectiveParams {
+  if (!Object.hasOwn(REDDIT_OBJECTIVE_PARAMS, objective)) {
+    throw new Error(`Unsupported Reddit objective: ${objective}`);
+  }
+
+  return REDDIT_OBJECTIVE_PARAMS[objective];
+}
+
+/**
+ * The optimization goal to send for an objective — the table's own, or the campaign's video goal.
+ *
+ * Mirrors the resolution step in `Client.CreateCampaign` upstream
+ * (`lfx-v2-campaign-service`, `internal/platform/reddit/client.go`), branch for branch: an
+ * objective outside the table is refused; every objective but `video_views` carries a static goal;
+ * `video_views` takes its goal from the request, trimmed and upper-cased, and is refused when that
+ * goal is empty or outside `REDDIT_VIDEO_GOALS`.
+ *
+ * **Call this before anything is created.** Both the refusals here are for input that Reddit would
+ * reject at the campaign POST or, worse, at the ad group — after a PAUSED campaign already exists
+ * and has to be cleaned up by hand. Upstream resolves at the top of its create for that reason, and
+ * the legacy creator refuses before its first upstream call, beside the budget and date checks.
+ *
+ * `videoGoal` is typed loosely because the legacy creator reaches this from
+ * `POST /api/campaigns/create`, which forwards `redditConfig` without validating it — the declared
+ * `RedditVideoGoal` is what a caller is supposed to send, not what one always does (#3449).
+ */
+export function resolveRedditOptimizationGoal(objective: RedditObjective, videoGoal?: string): string {
+  const objParams = redditObjectiveParamsFor(objective);
+
+  if (objective !== 'video_views') {
+    // Total over the other three objectives by construction. What makes the cast sound at runtime
+    // is NOT the own-property check inside the accessor — that only proves `objective` is one of
+    // the table's four own keys, and `optimizationGoal` is optional on `RedditObjectiveParams`, so
+    // a fifth goal-less objective would reintroduce `undefined as string` with the check intact.
+    // The guarantor is the table itself: `video_views` is the only entry that omits the field.
+    // `campaign.constants.spec.ts` pins the other three goals by value and walks every key of the
+    // table, requiring a goal on each one except `video_views` — so adding a goal-less objective
+    // fails that spec, which is the signal to revisit this cast.
+    return objParams.optimizationGoal as string;
+  }
+
+  const requested = (videoGoal ?? '').trim();
+  const normalized = requested.toUpperCase();
+  if (!(REDDIT_VIDEO_GOALS as readonly string[]).includes(normalized)) {
+    // Echoes the trimmed request the way the call-to-action refusal does, and for the same reason:
+    // an operator who sent a near-miss needs to see which value was rejected. Safe to quote where
+    // an image URL is not — this field is a short enum, never a pasted URL carrying a signature.
+    throw new Error(`Invalid Reddit video goal "${requested}" for objective video_views: must be one of ${REDDIT_VIDEO_GOALS.join(', ')}`);
+  }
+  return normalized;
+}
 
 /**
  * Shown when a creation job can no longer be found on either polling source.
@@ -2169,6 +2504,22 @@ export const GOOGLE_CAMPAIGN_NAME_TOKENS = {
  * only possible outcome is `ErrVideoCreateUnsupported`.
  */
 export const GOOGLE_CHANNELS_WITH_CREATIVE = ['demand-gen', 'performance-max', 'display'] as const;
+
+/**
+ * The Google channels that accept campaign ad extensions — callouts, and the six other extension
+ * types this application does not collect yet.
+ *
+ * Search and nothing else, and upstream is categorical about it: `validateAssetPlan`
+ * (`internal/platform/googleads/assets.go`) refuses the whole extension set with "supported on
+ * Search campaigns only, not on <kind>" the moment any of the seven lists is non-empty on another
+ * channel. That refusal happens at preflight, before the budget mutate, so sending a callout on a
+ * Performance Max create does not produce a campaign without callouts — it produces no campaign.
+ *
+ * This is the opposite shape from {@link GOOGLE_CHANNELS_WITH_CREATIVE}, which excludes `search`:
+ * the two together say that every Google channel carries exactly one kind of ad content, and which
+ * kind is decided by the channel.
+ */
+export const GOOGLE_CHANNELS_WITH_AD_EXTENSIONS = ['search'] as const;
 
 /**
  * What each Google channel's creative is made of — one ordered catalogue, read by the form that

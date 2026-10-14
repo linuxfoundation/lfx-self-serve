@@ -24,17 +24,28 @@ import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { TooltipModule } from 'primeng/tooltip';
 import { catchError, debounceTime, distinctUntilChanged, map, of, switchMap, tap } from 'rxjs';
 
+import { MenteesDownloadMenuComponent } from '../../../../components/mentees-download-menu/mentees-download-menu.component';
 import { PersonCellComponent } from '../../../../components/person-cell/person-cell.component';
 
 /**
  * Past Mentees tab — every application in one of the program's closed terms, whatever status it was left in, one
  * server page at a time. A closed term is read-only history, so unlike the Current Mentees table this one carries no
  * tasks, row actions or reviewer note. Search, status and term filters go upstream, and any change of them, or a
- * page change, reads that page again.
+ * page change, reads that page again. Download By Status (`MenteesDownloadMenuComponent`) saves every past mentee
+ * with one status, or all of them, as CSV, whatever the filters.
  */
 @Component({
   selector: 'lfx-mentorship-past-mentees-tab',
-  imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent, PersonCellComponent, SelectComponent, TableComponent, TooltipModule],
+  imports: [
+    ReactiveFormsModule,
+    ButtonComponent,
+    InputTextComponent,
+    MenteesDownloadMenuComponent,
+    PersonCellComponent,
+    SelectComponent,
+    TableComponent,
+    TooltipModule,
+  ],
   templateUrl: './past-mentees-tab.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

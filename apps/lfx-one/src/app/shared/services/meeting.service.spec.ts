@@ -1,10 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpHeaders } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
-import type { MeetingRegistrantWithState } from '@lfx-one/shared/interfaces';
-import { firstValueFrom, of, throwError } from 'rxjs';
+import type {
+  BatchRegistrantOperationResponse,
+  CreateMeetingRegistrantRequest,
+  MeetingRegistrant,
+  MeetingRegistrantWithState,
+  UpdateMeetingRegistrantRequest,
+} from '@lfx-one/shared/interfaces';
+import { firstValueFrom, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingService } from './meeting.service';
@@ -263,5 +269,160 @@ describe('MeetingService removed-registration state', () => {
 
     service.clearRemovedRegistration('mtg-1');
     expect(service.removedRegistrationMeetingIds().has('mtg-1')).toBe(false);
+  });
+});
+
+// lfx-self-serve-ops#439: the BFF refuses a registrant batch longer than MEETING_REGISTRANT_BATCH_MAX
+// (100) and runs each one's items at bounded concurrency, so the service splits saves into sequential
+// requests of MEETING_REGISTRANT_CLIENT_CHUNK_SIZE (25) and merges the responses. Smaller chunks reduce
+// serial upstream rounds and timeout risk; they do not enforce an ingress deadline.
+describe('MeetingService registrant batch chunking', () => {
+  let service: MeetingService;
+  let post: ReturnType<typeof vi.fn>;
+  let put: ReturnType<typeof vi.fn>;
+  let del: ReturnType<typeof vi.fn>;
+
+  /** A response that reports every item of the chunk as created, echoing its emails. */
+  function allCreated(chunk: CreateMeetingRegistrantRequest[]): BatchRegistrantOperationResponse<MeetingRegistrant> {
+    return {
+      successes: chunk.map((item) => ({ email: item.email }) as MeetingRegistrant),
+      failures: [],
+      summary: { total: chunk.length, successful: chunk.length, failed: 0 },
+    };
+  }
+
+  /** The 400 the BFF answers when every item of a chunk failed upstream — the per-item results ride in the body. */
+  function allFailed(chunk: CreateMeetingRegistrantRequest[], message: string): HttpErrorResponse {
+    const body: BatchRegistrantOperationResponse<MeetingRegistrant> = {
+      successes: [],
+      failures: chunk.map((input) => ({ input, error: { message } })),
+      summary: { total: chunk.length, successful: 0, failed: chunk.length },
+    };
+    return new HttpErrorResponse({ status: 400, error: body });
+  }
+
+  function guests(count: number): CreateMeetingRegistrantRequest[] {
+    return Array.from({ length: count }, (_, i) => ({ meeting_id: MEETING_UID, email: `guest-${i}@acme-motors.example` }) as CreateMeetingRegistrantRequest);
+  }
+
+  beforeEach(() => {
+    post = vi.fn((_url: string, chunk: CreateMeetingRegistrantRequest[]) => of(allCreated(chunk)));
+    put = vi.fn((_url: string, chunk: { uid: string }[]) =>
+      of({
+        successes: chunk.map((item) => ({ uid: item.uid }) as MeetingRegistrant),
+        failures: [],
+        summary: { total: chunk.length, successful: chunk.length, failed: 0 },
+      })
+    );
+    del = vi.fn((_url: string, options: { body: string[] }) =>
+      of({ successes: options.body, failures: [], summary: { total: options.body.length, successful: options.body.length, failed: 0 } })
+    );
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: { post, put, delete: del } }] });
+    service = TestBed.inject(MeetingService);
+  });
+
+  it('sends a batch of exactly the chunk size in a single request', async () => {
+    const response = await firstValueFrom(service.addMeetingRegistrants(MEETING_UID, guests(25)));
+
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(post.mock.calls[0][1]).toHaveLength(25);
+    expect(response.summary).toEqual({ total: 25, successful: 25, failed: 0 });
+  });
+
+  it('splits a larger batch into sequential requests and merges the responses', async () => {
+    const response = await firstValueFrom(service.addMeetingRegistrants(MEETING_UID, guests(60)));
+
+    expect(post).toHaveBeenCalledTimes(3);
+    expect(post.mock.calls.map((call) => call[1].length)).toEqual([25, 25, 10]);
+    expect(post.mock.calls[1][1][0].email).toBe('guest-25@acme-motors.example');
+    expect(response.summary).toEqual({ total: 60, successful: 60, failed: 0 });
+    expect(response.successes.map((item) => item.email)).toEqual(guests(60).map((item) => item.email));
+  });
+
+  it('waits for each chunk to finish before sending the next', () => {
+    const firstChunk = new Subject<BatchRegistrantOperationResponse<MeetingRegistrant>>();
+    post.mockImplementationOnce(() => firstChunk);
+
+    service.addMeetingRegistrants(MEETING_UID, guests(30)).subscribe();
+
+    expect(post).toHaveBeenCalledTimes(1);
+    firstChunk.next(allCreated(guests(25)));
+    firstChunk.complete();
+    expect(post).toHaveBeenCalledTimes(2);
+  });
+
+  it('continues after an intermediate request errors and merges successes around the failed chunk', async () => {
+    const registrants = guests(60);
+    post.mockImplementationOnce((_url: string, chunk: CreateMeetingRegistrantRequest[]) => of(allCreated(chunk)));
+    post.mockImplementationOnce(() => throwError(() => new Error('Service unavailable')));
+
+    const response = await firstValueFrom(service.addMeetingRegistrants(MEETING_UID, registrants));
+
+    expect(post).toHaveBeenCalledTimes(3);
+    expect(post.mock.calls[2][1]).toEqual(registrants.slice(50));
+    expect(response.summary).toEqual({ total: 60, successful: 35, failed: 25 });
+    expect(response.successes.map((item) => item.email)).toEqual([...registrants.slice(0, 25), ...registrants.slice(50)].map((item) => item.email));
+    expect(response.failures).toEqual(registrants.slice(25, 50).map((input) => ({ input, error: { message: 'Service unavailable' } })));
+  });
+
+  it('errors when the first request fails, as a single request would', async () => {
+    const forbidden = new HttpErrorResponse({ status: 403, error: { message: 'Forbidden' } });
+    post.mockImplementationOnce(() => throwError(() => forbidden));
+
+    await expect(firstValueFrom(service.addMeetingRegistrants(MEETING_UID, guests(30)))).rejects.toBe(forbidden);
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  // A single request carrying all of these would have attempted every item and answered 207, so an
+  // all-failed first chunk must not stop the rest from being sent.
+  it('merges an all-failed first chunk and still sends the remaining chunks', async () => {
+    post.mockImplementationOnce((_url: string, chunk: CreateMeetingRegistrantRequest[]) => throwError(() => allFailed(chunk, 'Already registered')));
+
+    const response = await firstValueFrom(service.addMeetingRegistrants(MEETING_UID, guests(30)));
+
+    expect(post).toHaveBeenCalledTimes(2);
+    expect(response.summary).toEqual({ total: 30, successful: 5, failed: 25 });
+    expect(response.failures[0]).toEqual({ input: guests(30)[0], error: { message: 'Already registered' } });
+  });
+
+  it("keeps the BFF's per-item messages when a later chunk fails entirely", async () => {
+    post.mockImplementationOnce((_url: string, chunk: CreateMeetingRegistrantRequest[]) => of(allCreated(chunk)));
+    post.mockImplementationOnce((_url: string, chunk: CreateMeetingRegistrantRequest[]) => throwError(() => allFailed(chunk, 'Invalid email')));
+
+    const response = await firstValueFrom(service.addMeetingRegistrants(MEETING_UID, guests(30)));
+
+    expect(response.summary).toEqual({ total: 30, successful: 25, failed: 5 });
+    expect(response.failures.map((failure) => failure.error.message)).toEqual(Array(5).fill('Invalid email'));
+  });
+
+  it('still errors on an all-failed batch that fits in one request', async () => {
+    const error = allFailed(guests(3), 'Already registered');
+    post.mockImplementationOnce(() => throwError(() => error));
+
+    await expect(firstValueFrom(service.addMeetingRegistrants(MEETING_UID, guests(3)))).rejects.toBe(error);
+  });
+
+  it('chunks updates the same way', async () => {
+    const updates = Array.from({ length: 30 }, (_, i) => ({ uid: `reg-${i}`, changes: { first_name: 'Alice' } as UpdateMeetingRegistrantRequest }));
+
+    const response = await firstValueFrom(service.updateMeetingRegistrants(MEETING_UID, updates));
+
+    expect(put).toHaveBeenCalledTimes(2);
+    expect(put.mock.calls[0]).toEqual([`/api/meetings/${MEETING_UID}/registrants`, updates.slice(0, 25)]);
+    expect(put.mock.calls[1]).toEqual([`/api/meetings/${MEETING_UID}/registrants`, updates.slice(25)]);
+    expect(response.summary).toEqual({ total: 30, successful: 30, failed: 0 });
+  });
+
+  it("sends each delete chunk's uids in the request body", async () => {
+    const uids = Array.from({ length: 30 }, (_, i) => `reg-${i}`);
+
+    const response = await firstValueFrom(service.deleteMeetingRegistrants(MEETING_UID, uids));
+
+    expect(del).toHaveBeenCalledTimes(2);
+    expect(del.mock.calls[0]).toEqual([`/api/meetings/${MEETING_UID}/registrants`, { body: uids.slice(0, 25) }]);
+    expect(del.mock.calls[1]).toEqual([`/api/meetings/${MEETING_UID}/registrants`, { body: uids.slice(25) }]);
+    expect(response.summary).toEqual({ total: 30, successful: 30, failed: 0 });
   });
 });

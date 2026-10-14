@@ -104,7 +104,7 @@ export const ADMIN_PAST_APPLICATIONS: MentorshipProgramApplicant[] = [
 export const adminMentorId = (n: number): string => `8${String(n).padStart(7, '0')}-8888-4888-8888-888888888888`;
 
 export const ADMIN_MENTORS: MentorshipProgramMentor[] = [
-  { name: 'Test Mentor Active', status: 'active', profileCreated: true },
+  { name: 'Test Mentor Active', status: 'approved', profileCreated: true },
   { name: 'Test Mentor Invited', status: 'invited', profileCreated: false },
   { name: 'Test Mentor Declined', status: 'declined', profileCreated: false },
 ].map(({ name, status, profileCreated }, index) => ({

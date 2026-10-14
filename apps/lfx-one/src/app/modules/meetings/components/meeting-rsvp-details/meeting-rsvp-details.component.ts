@@ -3,7 +3,7 @@
 
 import { NgClass } from '@angular/common';
 import { Component, computed, inject, input, InputSignal, output, signal, Signal, WritableSignal } from '@angular/core';
-import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MeetingAttendeePreviewComponent } from '@app/modules/meetings/components/meeting-attendee-preview/meeting-attendee-preview.component';
 import { ButtonComponent } from '@components/button/button.component';
 import {
@@ -22,12 +22,13 @@ import {
 import {
   buildAttendeePreviewFromRegistrants,
   buildAttendeePreviewFromRsvps,
+  getCurrentOrNextOccurrence,
   isMeetingInviteResponsesEnabled,
   resolveRsvpOccurrenceId,
+  selectApplicableRsvp,
 } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
-import { UserService } from '@services/user.service';
-import { catchError, distinctUntilChanged, map, of, switchMap, tap } from 'rxjs';
+import { catchError, map, of, switchMap, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-meeting-rsvp-details',
@@ -36,7 +37,6 @@ import { catchError, distinctUntilChanged, map, of, switchMap, tap } from 'rxjs'
 })
 export class MeetingRsvpDetailsComponent {
   private readonly meetingService = inject(MeetingService);
-  private readonly userService = inject(UserService);
 
   public readonly meeting: InputSignal<Meeting | PastMeeting> = input.required<Meeting | PastMeeting>();
   public readonly project: InputSignal<Partial<Project> | null> = input<Partial<Project> | null>(null);
@@ -54,11 +54,10 @@ export class MeetingRsvpDetailsComponent {
   // avoiding a duplicate full-roster request. Null means "self-managed" (legacy behavior).
   public readonly initialRegistrants: InputSignal<MeetingRegistrant[] | null> = input<MeetingRegistrant[] | null>(null);
   public readonly initialRegistrantsLoading: InputSignal<boolean> = input<boolean>(false);
+  /** Successful local writes, retained while the roster's query index catches up. */
+  public readonly confirmedRsvps = input<MeetingRsvp[]>([]);
   public readonly addClicked = output<void>();
   public readonly viewAllClicked = output<void>();
-  // Emits whether the current user has any RSVP on this meeting, derived from the already-fetched
-  // registrants/rsvps data. Parent card uses this to flip "Set My RSVP" → "Update My RSVP".
-  public readonly currentUserHasRsvpChanged = output<boolean>();
   public readonly disabled: InputSignal<boolean> = input<boolean>(false);
   public readonly disabledMessage: InputSignal<string> = input<string>('RSVP not available for this meeting');
 
@@ -67,6 +66,9 @@ export class MeetingRsvpDetailsComponent {
   public readonly loading: Signal<boolean> = computed(() =>
     this.externallyManaged() && !this.pastMeeting() ? this.initialRegistrantsLoading() : this.internalLoading()
   );
+  private readonly resolvedOccurrenceId: Signal<string | undefined> = computed(() =>
+    resolveRsvpOccurrenceId(this.meeting(), { occurrence: this.currentOccurrence() })
+  );
   // Private source: one observable, two derived signals. Consolidates registrants + RSVPs
   // into a single HTTP call for the Me lens (where the backend doesn't populate counts),
   // and falls back to a direct RSVP fetch for the non-Me lens where counts are already populated.
@@ -74,16 +76,14 @@ export class MeetingRsvpDetailsComponent {
   public readonly pastParticipants: Signal<PastMeetingParticipant[]> = this.initializePastParticipants();
   // Prefer the parent-supplied roster (when present and not viewing past-meeting data, which
   // always self-fetches participants) so a stale in-flight internal fetch can't win.
-  public readonly registrants: Signal<MeetingRegistrant[]> = computed(() =>
-    this.externallyManaged() && !this.pastMeeting() ? (this.initialRegistrants() ?? []) : this.upcomingData().registrants
-  );
+  public readonly registrants: Signal<MeetingRegistrant[]> = this.initializeRegistrants();
   public readonly rsvps: Signal<MeetingRsvp[]> = computed(() => {
     if (this.externallyManaged() && !this.pastMeeting()) {
       return this.registrants()
         .map((r) => r.rsvp)
         .filter((r): r is MeetingRsvp => r != null);
     }
-    return this.upcomingData().rsvps;
+    return [...this.applicableConfirmedRsvps(), ...this.upcomingData().rsvps.filter((rsvp) => this.isApplicableRsvp(rsvp))];
   });
   public readonly inviteResponsesEnabled: Signal<boolean> = computed(() => isMeetingInviteResponsesEnabled(this.meeting()));
   // Registrants when the roster was fetched (Me lens); otherwise the RSVP rows the project and
@@ -93,14 +93,7 @@ export class MeetingRsvpDetailsComponent {
     if (registrants.length > 0) {
       return buildAttendeePreviewFromRegistrants(registrants, { inviteResponsesEnabled: this.inviteResponsesEnabled() });
     }
-    return buildAttendeePreviewFromRsvps(this.rsvps(), this.currentOccurrence()?.occurrence_id);
-  });
-  // Tracks across both rsvps data AND user identity; re-emits whenever either changes so the
-  // parent card's "Set My RSVP" / "Update My RSVP" label stays in sync with login/impersonation.
-  public readonly currentUserHasRsvp: Signal<boolean> = computed(() => {
-    const email = this.userService.user()?.email?.toLowerCase();
-    if (!email) return false;
-    return this.rsvps().some((r) => r.email?.toLowerCase() === email);
+    return buildAttendeePreviewFromRsvps(this.rsvps(), this.resolvedOccurrenceId());
   });
   public readonly rsvpCounts: Signal<RsvpCounts> = this.initializeRsvpCounts();
   public readonly acceptedCount: Signal<number> = computed(() => this.rsvpCounts().accepted);
@@ -115,20 +108,81 @@ export class MeetingRsvpDetailsComponent {
   public readonly headerTextClasses: Signal<string> = computed(() => (this.showPoorAttendanceWarning() ? 'text-amber-600' : 'text-gray-600'));
   public readonly summaryTextClasses: Signal<string> = computed(() => (this.showPoorAttendanceWarning() ? 'text-amber-900' : 'text-gray-900'));
 
-  public constructor() {
-    // Forward currentUserHasRsvp to the output whenever either rsvps data or user identity changes.
-    toObservable(this.currentUserHasRsvp)
-      .pipe(distinctUntilChanged(), takeUntilDestroyed())
-      .subscribe((v) => this.currentUserHasRsvpChanged.emit(v));
+  private initializeRegistrants(): Signal<MeetingRegistrant[]> {
+    return computed(() => {
+      const parentRoster = this.externallyManaged() && !this.pastMeeting();
+      const registrants = parentRoster ? (this.initialRegistrants() ?? []) : this.upcomingData().registrants;
+      const confirmed = this.applicableConfirmedRsvps();
+      if (confirmed.length === 0 && !this.meeting().recurrence) return registrants;
+      const occurrenceId = this.resolvedOccurrenceId();
+      const rows = registrants.map((registrant) => {
+        const responses = confirmed.filter((rsvp) => rsvp.registrant_id === registrant.uid);
+        if (registrant.rsvp && this.isApplicableRsvp(registrant.rsvp)) responses.push(registrant.rsvp);
+        const rsvp = selectApplicableRsvp(occurrenceId, responses);
+        return rsvp !== (registrant.rsvp ?? null) ? { ...registrant, rsvp } : registrant;
+      });
+      // Without a roster (Foundation/Project cards) the RSVP-only path already counts confirmed answers.
+      if (!parentRoster && registrants.length === 0) return rows;
+      // A confirmed answer can precede its registration's first roster row; count and preview that guest too.
+      const known = new Set(registrants.map((registrant) => registrant.uid));
+      const unindexed = new Map<string, MeetingRsvp[]>();
+      for (const rsvp of confirmed) {
+        if (!known.has(rsvp.registrant_id)) unindexed.set(rsvp.registrant_id, [...(unindexed.get(rsvp.registrant_id) ?? []), rsvp]);
+      }
+      for (const responses of unindexed.values()) {
+        const rsvp = selectApplicableRsvp(occurrenceId, responses);
+        if (rsvp) rows.push(this.toUnindexedRegistrant(rsvp));
+      }
+      return rows;
+    });
+  }
+
+  private toUnindexedRegistrant(rsvp: MeetingRsvp): MeetingRegistrant {
+    return {
+      uid: rsvp.registrant_id,
+      meeting_id: rsvp.meeting_id,
+      email: rsvp.email,
+      first_name: rsvp.name?.trim() ?? '',
+      last_name: '',
+      host: false,
+      job_title: null,
+      org_name: null,
+      occurrence_id: null,
+      org_is_member: false,
+      org_is_project_member: false,
+      avatar_url: null,
+      username: rsvp.username || null,
+      linkedin_profile: null,
+      created_at: rsvp.created_at,
+      updated_at: rsvp.updated_at ?? rsvp.created_at,
+      type: 'direct',
+      invite_accepted: null,
+      attended: null,
+      rsvp,
+    };
+  }
+
+  private applicableConfirmedRsvps(): MeetingRsvp[] {
+    if (this.pastMeeting()) return [];
+    const meeting = this.meeting();
+    return this.confirmedRsvps().filter((rsvp) => rsvp.meeting_id === meeting.id && this.isApplicableRsvp(rsvp));
+  }
+
+  private isApplicableRsvp(rsvp: MeetingRsvp): boolean {
+    const occurrenceId = this.resolvedOccurrenceId();
+    if (this.meeting().recurrence && !occurrenceId) return rsvp.scope === 'all';
+    return !!selectApplicableRsvp(occurrenceId, [rsvp]);
   }
 
   private initializeUpcomingData(): Signal<{ rsvps: MeetingRsvp[]; registrants: MeetingRegistrant[] }> {
+    // The roster carries one answer per guest for the requested date, so a date change must refetch it.
+    const source = computed(() => ({ meeting: this.meeting(), occurrenceId: this.resolvedOccurrenceId() }));
     return toSignal(
-      toObservable(this.meeting).pipe(
+      toObservable(source).pipe(
         tap(() => {
           if (!this.pastMeeting()) this.internalLoading.set(true);
         }),
-        switchMap((meeting) => {
+        switchMap(({ meeting, occurrenceId }) => {
           if (this.pastMeeting() || this.externallyManaged()) {
             return of({ rsvps: [] as MeetingRsvp[], registrants: [] as MeetingRegistrant[] });
           }
@@ -143,8 +197,8 @@ export class MeetingRsvpDetailsComponent {
             // Resolve RSVPs against the target occurrence so a `single` decline for a
             // future date doesn't overwrite the current occurrence's per-registrant
             // chip (LFXV2-2864). Skip attaching RSVPs when tracking is disabled (GH-1951).
-            const occurrenceId = resolveRsvpOccurrenceId(meeting, { occurrence: this.currentOccurrence() });
-            return this.meetingService.getMeetingRegistrants(meeting.id, inviteResponsesEnabled, occurrenceId).pipe(
+            const allDatesOnly = inviteResponsesEnabled && !!meeting.recurrence && !occurrenceId;
+            return this.meetingService.getMeetingRegistrants(meeting.id, inviteResponsesEnabled, occurrenceId, false, undefined, false, allDatesOnly).pipe(
               map((registrants) => ({
                 registrants,
                 rsvps: inviteResponsesEnabled ? registrants.map((r) => r.rsvp).filter((r): r is MeetingRsvp => r != null) : [],
@@ -220,7 +274,7 @@ export class MeetingRsvpDetailsComponent {
       // `invite_accepted` fallback is unreachable without registrants but the
       // typical detail-page case has explicit RSVPs anyway.
       const rsvps = this.rsvps();
-      const occurrence = this.currentOccurrence();
+      const occurrence = this.currentOccurrence() ?? getCurrentOrNextOccurrence(this.meeting());
       return calculateRsvpCounts(occurrence, rsvps);
     });
   }

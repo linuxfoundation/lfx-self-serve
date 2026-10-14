@@ -1,12 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CHAIR_ROLES, PUBLIC_FOUNDATION_GROUPS_UID_FAN_OUT_CAP } from '@lfx-one/shared/constants';
+import { CHAIR_ROLES, PUBLIC_FOUNDATION_GROUPS_UID_FAN_OUT_CAP, UUID_REGEX } from '@lfx-one/shared/constants';
 import { CommitteeMemberVisibility, MeetingVisibility } from '@lfx-one/shared/enums';
 import {
   Committee,
   CommitteeMember,
   GroupsIOMailingList,
+  Project,
   PublicGroupContext,
   PublicGroupDetail,
   PublicGroupDirectoryResponse,
@@ -23,7 +24,7 @@ import { buildCommitteeCadenceSummary } from '@lfx-one/shared/utils/meeting.util
 import { getGroupBehavioralClass } from '@lfx-one/shared/utils/committee.utils';
 import { NextFunction, Request, Response } from 'express';
 
-import { AuthorizationError, ResourceNotFoundError } from '../errors';
+import { AuthorizationError, isBaseApiError, ResourceNotFoundError } from '../errors';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { CommitteeService } from '../services/committee.service';
@@ -49,6 +50,9 @@ export class PublicGroupsController {
         return;
       }
 
+      // Include misses before the owning-project gate so every not-found path is non-cacheable.
+      res.setHeader('Cache-Control', 'no-store');
+
       const originalToken = req.bearerToken;
       // M2M token required: public endpoint has no user session; app credentials needed for upstream calls
       const m2mToken = await generateM2MToken(req);
@@ -61,7 +65,27 @@ export class PublicGroupsController {
         resourceType: 'Group',
       });
 
-      const committee = await this.committeeService.getCommitteeById(req, committeeUid);
+      // An unknown group UUID gets the same not-found error as an unknown group slug (which resolveCommitteeUid
+      // throws above) and as a group under a hidden project (below), so the three are indistinguishable.
+      const committee = await this.committeeService.getCommitteeById(req, committeeUid).catch((error: unknown) => {
+        if (isBaseApiError(error) && error.statusCode === 404) {
+          throw this.groupNotFoundError(id);
+        }
+        throw error;
+      });
+
+      // Gate before revealing group privacy or fetching related data. Hidden or temporarily unresolvable
+      // owning projects get the same refusal as an unknown group (lfx-self-serve-ops#437).
+      const project = await this.projectService.getPubliclyDiscoverableProject(req, committee.project_uid).catch((error: unknown) => {
+        logger.warning(req, 'get_public_group_by_id', 'Owning project lookup failed; answering group as not found', {
+          project_uid: committee.project_uid,
+          err: error,
+        });
+        return null;
+      });
+      if (!project) {
+        throw this.groupNotFoundError(id);
+      }
 
       if (!committee.public) {
         throw new AuthorizationError('This group is private', {
@@ -72,9 +96,8 @@ export class PublicGroupsController {
         });
       }
 
-      const [members, project, meetingsResponse, mailingListsResponse] = await Promise.all([
+      const [members, meetingsResponse, mailingListsResponse] = await Promise.all([
         this.committeeService.getCommitteeMembers(req, committeeUid),
-        this.projectService.getProjectById(req, committee.project_uid, false),
         this.meetingService.getMeetings(req, { tags: `committee_uid:${committeeUid}` }, 'v1_meeting', false),
         this.microserviceProxy
           .proxyRequest<QueryServiceResponse<GroupsIOMailingList>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
@@ -118,18 +141,16 @@ export class PublicGroupsController {
           })
         );
 
-      let parentProject = project;
-      if (project?.parent_uid) {
-        parentProject = await this.projectService.getProjectById(req, project.parent_uid, false);
-      }
+      // A hidden parent, or a failed lookup, leaves the project top-level.
+      const parentProject = project.parent_uid ? await this.getDiscoverableParent(req, 'get_public_group_by_id', project.parent_uid) : null;
 
       const context: PublicGroupContext = {
-        scope: project?.parent_uid ? 'project' : 'foundation',
-        foundation_uid: parentProject?.uid || project?.uid || committee.project_uid,
-        foundation_name: parentProject?.name || project?.name || '',
-        foundation_slug: parentProject?.slug || project?.slug || '',
-        foundation_logo_url: parentProject?.logo_url || project?.logo_url || undefined,
-        ...(project?.parent_uid && {
+        scope: parentProject ? 'project' : 'foundation',
+        foundation_uid: parentProject?.uid || project.uid || committee.project_uid,
+        foundation_name: parentProject?.name || project.name || '',
+        foundation_slug: parentProject?.slug || project.slug || '',
+        foundation_logo_url: parentProject?.logo_url || project.logo_url || undefined,
+        ...(parentProject && {
           project_uid: project.uid,
           project_name: project.name,
           project_slug: project.slug,
@@ -212,11 +233,28 @@ export class PublicGroupsController {
       const m2mToken = await generateM2MToken(req);
       req.bearerToken = m2mToken;
 
+      const isFoundationUid = UUID_REGEX.test(identifier);
+      if (!isFoundationUid) {
+        res.setHeader('Cache-Control', 'no-store');
+      }
+
       const foundationUid = await this.resolveProjectIdentifier(req, identifier);
-      const [foundation, childUids] = await Promise.all([
-        this.projectService.getProjectById(req, foundationUid, false),
-        this.projectService.getFoundationProjectUids(req, foundationUid),
-      ]);
+      // Slugs whose metadata is hidden or unavailable share the unknown-slug refusal. UID metadata
+      // failures still propagate (lfx-self-serve-ops#437).
+      const foundation = await this.projectService.getPubliclyDiscoverableProject(req, foundationUid).catch((error: unknown) => {
+        if (isFoundationUid) {
+          throw error;
+        }
+        logger.warning(req, 'get_public_groups_by_foundation', 'Foundation lookup failed; answering slug as not found', {
+          project_uid: foundationUid,
+          err: error,
+        });
+        return null;
+      });
+      if (!foundation) {
+        throw this.projectNotFoundError(identifier);
+      }
+      const childUids = await this.projectService.getFoundationProjectUids(req, foundationUid);
 
       // KNOWN LIMITATION: getFoundationProjectUids now resolves the full nested sub-foundation tree
       // (GH-2382), so childUids can legitimately number in the hundreds for a large umbrella
@@ -252,7 +290,11 @@ export class PublicGroupsController {
       const allCommittees = await this.fetchPublicCommitteesForProjects(req, scopedUids);
       const projects = await this.resolveContextProjects(req, allCommittees);
 
-      const groups = allCommittees.map((c) => this.buildGroupSummary(c, projects, foundation, null));
+      // Drop committees whose owning child project is hidden or unconfirmed, so a confidential child
+      // project's name can never surface as group context (lfx-self-serve-ops#437).
+      const groups = allCommittees
+        .filter((c) => c.project_uid === foundationUid || projects.get(c.project_uid))
+        .map((c) => this.buildGroupSummary(c, projects, foundation, null));
 
       const response: PublicGroupDirectoryResponse = { groups, total: groups.length, ...(truncated ? { truncated: true } : {}) };
 
@@ -276,23 +318,32 @@ export class PublicGroupsController {
       const m2mToken = await generateM2MToken(req);
       req.bearerToken = m2mToken;
 
+      const isProjectUid = UUID_REGEX.test(identifier);
+      if (!isProjectUid) {
+        res.setHeader('Cache-Control', 'no-store');
+      }
+
       const projectUid = await this.resolveProjectIdentifier(req, identifier);
-      const project = await this.projectService.getProjectById(req, projectUid, false);
+      // Slugs whose metadata is hidden or unavailable share the unknown-slug refusal. UID metadata
+      // failures still propagate (lfx-self-serve-ops#437).
+      const project = await this.projectService.getPubliclyDiscoverableProject(req, projectUid).catch((error: unknown) => {
+        if (isProjectUid) {
+          throw error;
+        }
+        logger.warning(req, 'get_public_groups_by_project', 'Project lookup failed; answering slug as not found', { project_uid: projectUid, err: error });
+        return null;
+      });
+      if (!project) {
+        throw this.projectNotFoundError(identifier);
+      }
 
       let parentFoundation = null;
       if (project.parent_uid) {
-        try {
-          const candidate = await this.projectService.getProjectById(req, project.parent_uid, false);
-          // ROOT is an administrative pseudo-project — treat its children as top-level foundations
-          if (candidate?.slug !== 'ROOT') {
-            parentFoundation = candidate;
-          }
-        } catch (error) {
-          logger.warning(req, 'get_public_groups_by_project', 'Parent foundation lookup failed, treating project as top-level', {
-            project_uid: projectUid,
-            parent_uid: project.parent_uid,
-            error: error instanceof Error ? error.message : String(error),
-          });
+        // A hidden parent, or a failed lookup, leaves the project top-level.
+        const candidate = await this.getDiscoverableParent(req, 'get_public_groups_by_project', project.parent_uid);
+        // ROOT is an administrative pseudo-project — treat its children as top-level foundations
+        if (candidate && candidate.slug !== 'ROOT') {
+          parentFoundation = candidate;
         }
       }
 
@@ -317,19 +368,42 @@ export class PublicGroupsController {
   }
 
   private async resolveProjectIdentifier(req: Request, identifier: string): Promise<string> {
-    // UUID v4 pattern — treat as UID directly
-    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier)) {
+    // Treat UUIDs as UIDs directly, using the same classification as the public error policy above.
+    if (UUID_REGEX.test(identifier)) {
       return identifier;
     }
     const result = await this.projectService.getProjectIdBySlug(req, identifier);
     if (!result.exists || !result.uid) {
-      throw new ResourceNotFoundError('Project', identifier, {
-        operation: 'resolve_project_identifier',
-        service: 'public_groups_controller',
-        path: `/projects/${identifier}`,
-      });
+      throw this.projectNotFoundError(identifier);
     }
     return result.uid;
+  }
+
+  /** The not-found error for an unknown project identifier — also thrown for a hidden one, so the two are indistinguishable. */
+  private projectNotFoundError(identifier: string): ResourceNotFoundError {
+    return new ResourceNotFoundError('Project', identifier, {
+      operation: 'resolve_project_identifier',
+      service: 'public_groups_controller',
+      path: `/projects/${identifier}`,
+    });
+  }
+
+  /** The not-found error resolveCommitteeUid throws for an unknown group slug on `/groups/:id` — reused for every other not-found case there. */
+  private groupNotFoundError(id: string): ResourceNotFoundError {
+    return new ResourceNotFoundError('Group', id, { operation: 'get_public_group_by_id', service: 'public_groups_controller', path: `/groups/${id}` });
+  }
+
+  /**
+   * A parent foundation only feeds group context, so a transient lookup failure degrades to "top-level"
+   * rather than failing the route; a hidden parent is null either way (lfx-self-serve-ops#437).
+   */
+  private async getDiscoverableParent(req: Request, operation: string, parentUid: string): Promise<Project | null> {
+    try {
+      return await this.projectService.getPubliclyDiscoverableProject(req, parentUid);
+    } catch (error) {
+      logger.warning(req, operation, 'Parent foundation lookup failed, treating project as top-level', { parent_uid: parentUid, err: error });
+      return null;
+    }
   }
 
   private async fetchPublicCommitteesForProjects(req: Request, projectUids: string[]): Promise<Committee[]> {
@@ -381,11 +455,12 @@ export class PublicGroupsController {
     for (let i = 0; i < uids.length; i += BATCH_SIZE) {
       const batch = uids.slice(i, i + BATCH_SIZE);
       const projects = await Promise.all(
+        // null for a hidden project or a failed lookup; the caller drops committees whose project is null.
         batch.map((uid) =>
-          this.projectService.getProjectById(req, uid, false).catch((error) => {
-            logger.warning(req, 'resolve_context_projects', 'getProjectById failed for project, context will be incomplete', {
+          this.projectService.getPubliclyDiscoverableProject(req, uid).catch((error) => {
+            logger.warning(req, 'resolve_context_projects', 'Project lookup failed, dropping its committees from the directory', {
               project_uid: uid,
-              error: error instanceof Error ? error.message : String(error),
+              err: error,
             });
             return null;
           })

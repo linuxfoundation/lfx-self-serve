@@ -18,10 +18,23 @@
             {{ description() }}
           </p>
 
-          <lfx-button (onClick)="goToMyNewsletters()" class="flex items-center" size="small" data-testid="back-to-newsletters-button">
-            <i class="fa-light fa-arrow-left mr-2"></i>
-            <span>Back to My Newsletters</span>
-          </lfx-button>
+          <div class="flex flex-wrap items-center justify-center gap-3">
+            @if (reason() === 'members-only' && deniedReason() !== 'no_newsletter_group') {
+              <lfx-button (onClick)="goToEmailSettings()" class="flex items-center" size="small" data-testid="add-company-email-button">
+                <i class="fa-light fa-envelope mr-2"></i>
+                <span>Add a company email</span>
+              </lfx-button>
+            }
+            <lfx-button
+              (onClick)="goToMyNewsletters()"
+              class="flex items-center"
+              size="small"
+              [severity]="reason() === 'members-only' ? 'secondary' : undefined"
+              data-testid="back-to-newsletters-button">
+              <i class="fa-light fa-arrow-left mr-2"></i>
+              <span>Back to My Newsletters</span>
+            </lfx-button>
+          </div>
         </div>
       </lfx-card>
     </div>

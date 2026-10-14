@@ -106,8 +106,8 @@
                 <button
                   type="button"
                   class="flex items-center gap-3 p-4 text-left transition-colors hover:bg-gray-50"
-                  [class.bg-blue-50]="pendingRsvpOnly()"
-                  [attr.aria-pressed]="pendingRsvpOnly()"
+                  [class.bg-blue-50]="responseFilter() === 'pending'"
+                  [attr.aria-pressed]="responseFilter() === 'pending'"
                   (click)="onPendingRsvpStatClick()"
                   data-testid="meetings-me-stat-pending-rsvp">
                   <div class="flex items-center justify-center w-11 h-11 rounded-full bg-amber-100 text-amber-600 flex-shrink-0">
@@ -119,7 +119,7 @@
                     } @else {
                       <p class="text-xl font-medium text-gray-900">{{ pendingRsvpCount() }}</p>
                     }
-                    <p class="text-sm font-normal text-gray-900">Need Your RSVP</p>
+                    <p class="text-sm font-normal text-gray-900">Needs response</p>
                     @if (!meLensStatsLoading() && earliestPendingRsvpLabel()) {
                       <p class="text-xs text-gray-400">Earliest: {{ earliestPendingRsvpLabel() }}</p>
                     }
@@ -231,8 +231,8 @@
         </div>
       }
 
-      <!-- Top Bar with Tabs, Search, and Meeting Type Filter -->
-      <div class="sticky top-0 md:top-6 z-10 bg-white rounded-lg border border-gray-200 p-4 -mx-0 mb-8">
+      <!-- Primary meeting views and controlled secondary filters -->
+      <div class="sticky top-0 md:top-6 z-10 bg-white rounded-lg border border-gray-200 mb-8">
         @if (upcomingMeetings() || pastMeetings()) {
           <lfx-meetings-top-bar
             [meetingTypeOptions]="meetingTypeOptions()"
@@ -240,29 +240,29 @@
             [projectOptions]="projectOptions()"
             [showFoundationFilter]="showFoundationFilter()"
             [showProjectFilter]="showProjectFilter()"
-            [timeFilter]="timeFilter()"
-            [pendingRsvpOnly]="pendingRsvpOnly()"
-            [showPendingRsvpFilter]="activeLens() === 'me' && timeFilter() === 'upcoming'"
-            [pendingRsvpCount]="pendingRsvpCount()"
-            [acceptedOnly]="acceptedOnly()"
-            [showAcceptedFilter]="activeLens() === 'me' && timeFilter() === 'upcoming'"
-            [acceptedCount]="acceptedCount()"
-            [organizerOnly]="organizerOnly()"
-            [showOrganizerFilter]="activeLens() === 'me'"
-            [organizerCount]="organizerCount()"
-            [showDeclined]="showDeclined()"
-            [showDeclinedFilter]="activeLens() === 'me' && timeFilter() === 'upcoming' && (declinedCount() > 0 || showDeclined())"
-            [declinedCount]="declinedCount()"
-            (showDeclinedChange)="showDeclined.set($event)"
+            [meetingView]="meetingView()"
+            [showPersonalFilters]="activeLens() === 'me' && timeFilter() === 'upcoming'"
+            [responseFilter]="responseFilter()"
+            (responseFilterChange)="responseFilter.set($event)"
+            [organizedByMe]="organizedByMe()"
+            (organizedByMeChange)="organizedByMe.set($event)"
+            [allMeetingsCount]="timeFilter() === 'upcoming' && !meLensStatsLoading() ? allMeetingsCount() : null"
+            [pendingRsvpCount]="timeFilter() === 'upcoming' && !meLensStatsLoading() ? pendingRsvpCount() : null"
+            [acceptedCount]="timeFilter() === 'upcoming' && !meLensStatsLoading() ? acceptedCount() : null"
+            [maybeCount]="timeFilter() === 'upcoming' && !meLensStatsLoading() ? maybeCount() : null"
+            [declinedCount]="timeFilter() === 'upcoming' && !meLensStatsLoading() ? declinedCount() : null"
+            [organizerCount]="timeFilter() === 'upcoming' && !meLensStatsLoading() ? organizerCount() : null"
+            [meetingTypeFilter]="meetingTypeFilter()"
+            [foundationFilter]="foundationFilter()"
+            [projectFilter]="projectFilter()"
+            [hideDeclined]="hideDeclined()"
+            (hideDeclinedChange)="hideDeclined.set($event)"
             (meetingTypeChange)="onMeetingTypeChange($event)"
             (foundationFilterChange)="onFoundationFilterChange($event)"
             (projectFilterChange)="onProjectFilterChange($event)"
             [searchQuery]="searchQuery()"
             (searchQueryChange)="searchQuery.set($event)"
-            (timeFilterChange)="onTimeFilterChange($event)"
-            (pendingRsvpOnlyChange)="pendingRsvpOnly.set($event)"
-            (acceptedOnlyChange)="acceptedOnly.set($event)"
-            (organizerOnlyChange)="organizerOnly.set($event)" />
+            (meetingViewChange)="onMeetingViewChange($event)" />
         }
       </div>
     </div>
@@ -336,16 +336,6 @@
             </div>
           }
         </div>
-      } @else if (upcomingMeetings().length === 0 && timeFilter() === 'upcoming' && !isFiltered() && activeLens() === 'me' && declinedCount() > 0) {
-        <lfx-empty-state
-          icon="fa-light fa-calendar-xmark"
-          title="No upcoming meetings you're attending"
-          [subtitle]="'You declined every date of ' + declinedCount() + (declinedCount() === 1 ? ' meeting.' : ' meetings.')"
-          ctaLabel="Show declined"
-          ctaIcon="fa-light fa-eye"
-          (ctaClick)="showDeclined.set(true)"
-          data-testid="meetings-empty-state-declined">
-        </lfx-empty-state>
       } @else if (upcomingMeetings().length === 0 && timeFilter() === 'upcoming' && !isFiltered()) {
         <lfx-empty-state
           icon="fa-light fa-calendar"
