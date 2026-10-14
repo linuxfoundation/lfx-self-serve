@@ -3592,25 +3592,26 @@ export class CampaignController {
 
   /**
    * The language list as dispatched: strings only (`createCampaign` refuses anything else first),
-   * trimmed and upper-cased as `resolveLanguageList` does. Blanks drop rather than refuse: the UI's
-   * cleared control arrives as `['']`, which names no language — upstream would refuse an empty
-   * entry, but none is ever sent, and a campaign naming no language is one upstream accepts.
+   * trimmed and upper-cased as `resolveLanguageList` does. Blanks are KEPT: upstream counts them
+   * toward the Demand Gen fence and the cap and then refuses them, so dropping one here would turn
+   * `['']` into an every-language campaign. `createCampaign` refuses them by name first.
    */
   private googleLanguageList(raw: unknown): string[] {
     if (!Array.isArray(raw)) return [];
-    return raw.filter((l): l is string => typeof l === 'string' && l.trim() !== '').map((l) => l.trim().toUpperCase());
+    return raw.filter((l): l is string => typeof l === 'string').map((l) => l.trim().toUpperCase());
   }
 
   /**
    * Why upstream would refuse one entry of a normalized language list, or `null` when it would not.
    *
-   * Mirrors `resolveLanguageList`'s per-entry branches in order. A NUMERIC entry is a raw language
-   * constant id: it must be canonical (`canonicalCampaignID` upstream,
-   * {@link isCanonicalGoogleAdsResourceId} here) but is NOT tested against
+   * Mirrors `resolveLanguageList`'s per-entry branches in order. A blank entry is refused. A
+   * NUMERIC entry is a raw language constant id: it must be canonical (`canonicalCampaignID`
+   * upstream, {@link isCanonicalGoogleAdsResourceId} here) but is NOT tested against
    * {@link GOOGLE_ADS_LANGUAGE_MAP}, since upstream accepts ids outside the curated table. Anything
    * else must be a code in the map. The echo is cut short: the entry comes from an unvalidated body.
    */
   private googleLanguageRefusal(language: string): string | null {
+    if (language === '') return 'Google Ads languages cannot include a blank entry. Remove it and create again.';
     const shown = language.length > 32 ? `${language.slice(0, 32)}…` : language;
     if (GOOGLE_ADS_LANGUAGE_ID_PATTERN.test(language)) {
       return isCanonicalGoogleAdsResourceId(language)

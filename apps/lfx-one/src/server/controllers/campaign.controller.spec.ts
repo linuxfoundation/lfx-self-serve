@@ -2683,19 +2683,20 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(error.message).toContain('Demand Gen');
   });
 
-  it('does not refuse Demand Gen for a cleared language control', async () => {
-    // A cleared control arrives as `['']`, which names no language — the same blanks the helper
-    // drops. Refusing for it would refuse a create upstream accepts.
-    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000a', error: null });
-
+  it('refuses a blank-only list on Demand Gen for the channel, because upstream counts blanks as asked', async () => {
+    // `validateCriteriaPlan` counts `len(in.Languages)`, so `['', '  ']` trips the Demand Gen fence
+    // before `resolveLanguageList` sees a blank. Dropping the blanks would dispatch an every-language
+    // campaign upstream refuses.
     await controller.createCampaign(
       buildReq(googleBody({ campaignTypes: ['demand-gen'], languages: ['', '  '] }), { project: 'tlf', brief_id: 'b-1' }),
       res,
       next
     );
 
-    expect(next).not.toHaveBeenCalled();
-    expect(envelopeFor(createCampaigns)['googleAdsConfig']).not.toHaveProperty('languages');
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.field).toBe('languages');
+    expect(error.message).toContain('Demand Gen');
   });
 
   it('forwards languages on Performance Max, which upstream documents as taking campaign languages', async () => {
@@ -2716,6 +2717,8 @@ describe('CampaignController.createCampaign cutover', () => {
   });
 
   it.each([
+    ['a blank entry beside a valid one', ['EN', '  '], 'blank entry'],
+    ['a list holding only a blank', [''], 'blank entry'],
     ['a three-letter language code', ['ENG'], 'ENG'],
     ['a zero language constant id', ['0'], 'canonical spelling'],
     ['a zero-padded language constant id, which would send English twice', ['01000'], 'canonical spelling'],
