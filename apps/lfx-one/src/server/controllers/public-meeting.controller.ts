@@ -1357,7 +1357,9 @@ export class PublicMeetingController {
     const verified = hasUserToken ? await resolveVerifiedUserEmails(req, this.emailVerificationService) : { emails: [], alternates: [] };
     const givenEmail = email?.trim().toLowerCase() || '';
     const candidateEmails = [...new Set([...verified.emails, givenEmail].filter(Boolean))];
-    const found = await this.meetingService.getMeetingRegistrantsForUser(req, id, candidateEmails, username ?? undefined);
+    // failOnPartial: the ranking below needs every matching row, so a failed later page fails the
+    // join rather than ranking a partial prefix or refusing a registrant on the missing page.
+    const found = await this.meetingService.getMeetingRegistrantsForUser(req, id, candidateEmails, username ?? undefined, undefined, true);
 
     // Only rows that match one of those identities count, re-checked here rather than trusting the
     // query's clause semantics, and the strongest kind wins: the username, then an address

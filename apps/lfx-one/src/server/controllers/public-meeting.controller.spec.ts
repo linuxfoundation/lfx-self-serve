@@ -9,6 +9,7 @@ import { PUBLIC_REGISTRATION_FIELD_MAX_LENGTH } from '@lfx-one/shared/constants'
 import { ArtifactVisibility, MeetingVisibility } from '@lfx-one/shared/enums';
 import type { Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { maskEmailForLogs } from '@lfx-one/shared/utils/email.utils';
 
 import { AuthenticationError } from '../errors/authentication.error';
 import type { ServiceValidationError } from '../errors/service-validation.error';
@@ -1975,10 +1976,14 @@ describe('PublicMeetingController.postMeetingJoinUrl restricted-meeting identity
 
     expect(getUserEmailsMock).toHaveBeenCalledWith(req, 'user');
     expect(meetingSvc.getMeetingRegistrantsForUser).toHaveBeenCalledTimes(1);
-    expect(meetingSvc.getMeetingRegistrantsForUser).toHaveBeenCalledWith(req, MEETING_ID, ['user@example.com', 'work@acme.example'], 'user');
+    expect(meetingSvc.getMeetingRegistrantsForUser).toHaveBeenCalledWith(req, MEETING_ID, ['user@example.com', 'work@acme.example'], 'user', undefined, true);
     expect(meetingSvc.getMeetingJoinUrl).toHaveBeenCalledWith(req, MEETING_ID, 'work@acme.example');
     expect(next).not.toHaveBeenCalled();
     const { logger } = await import('../services/logger.service');
+    // The INFO join log carries the address masked, never raw.
+    const joinLog = vi.mocked(logger.success).mock.calls.find(([, operation]) => operation === 'post_meeting_link');
+    expect(joinLog?.[3]).toEqual(expect.objectContaining({ email: maskEmailForLogs('work@acme.example') }));
+    expect(JSON.stringify(joinLog?.[3])).not.toContain('work@acme.example');
     expect(logger.success).toHaveBeenCalledWith(req, 'restricted_meeting_check', expect.anything(), expect.objectContaining({ matched_by: 'alternate_email' }));
   });
 
@@ -2003,7 +2008,7 @@ describe('PublicMeetingController.postMeetingJoinUrl restricted-meeting identity
 
     await controller.postMeetingJoinUrl(req, res, next);
 
-    expect(meetingSvc.getMeetingRegistrantsForUser).toHaveBeenCalledWith(req, MEETING_ID, ['user@example.com'], 'user');
+    expect(meetingSvc.getMeetingRegistrantsForUser).toHaveBeenCalledWith(req, MEETING_ID, ['user@example.com'], 'user', undefined, true);
     expect(meetingSvc.getMeetingJoinUrl).toHaveBeenCalledWith(req, MEETING_ID, 'user@example.com');
     const { logger } = await import('../services/logger.service');
     expect(logger.success).toHaveBeenCalledWith(req, 'restricted_meeting_check', expect.anything(), expect.objectContaining({ matched_by: 'primary_email' }));
@@ -2016,7 +2021,7 @@ describe('PublicMeetingController.postMeetingJoinUrl restricted-meeting identity
     await controller.postMeetingJoinUrl(req, res, next);
 
     expect(getUserEmailsMock).not.toHaveBeenCalled();
-    expect(meetingSvc.getMeetingRegistrantsForUser).toHaveBeenCalledWith(req, MEETING_ID, ['user@example.com'], 'user');
+    expect(meetingSvc.getMeetingRegistrantsForUser).toHaveBeenCalledWith(req, MEETING_ID, ['user@example.com'], 'user', undefined, true);
     expect(meetingSvc.getMeetingJoinUrl).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'NOT_REGISTERED_FOR_MEETING' }));
   });
@@ -2041,7 +2046,7 @@ describe('PublicMeetingController.postMeetingJoinUrl restricted-meeting identity
     await controller.postMeetingJoinUrl(req, res, next);
 
     expect(getUserEmailsMock).not.toHaveBeenCalled();
-    expect(meetingSvc.getMeetingRegistrantsForUser).toHaveBeenCalledWith(req, MEETING_ID, ['guest@acme.example'], undefined);
+    expect(meetingSvc.getMeetingRegistrantsForUser).toHaveBeenCalledWith(req, MEETING_ID, ['guest@acme.example'], undefined, undefined, true);
   });
 
   it("ranks the caller's verified address above an email they typed but have not proven", async () => {
