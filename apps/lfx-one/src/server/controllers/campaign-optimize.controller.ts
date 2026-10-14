@@ -8,8 +8,8 @@ import {
   CAMPAIGN_AUDIENCE_WINDOWS,
   CAMPAIGN_ETAG_HEADER_PATTERN,
   CAMPAIGN_METRICS_WINDOWS,
-  CAMPAIGN_REF_ID_PATTERNS,
   CAMPAIGN_REF_PLATFORMS_PENDING_UPSTREAM,
+  isValidCampaignRefId,
   MAX_KEYWORD_TARGETING_KEYWORD_LENGTH,
   MAX_KEYWORD_TARGETING_REMOVALS,
   MAX_KEYWORD_TARGETING_REVISION_LENGTH,
@@ -19,10 +19,12 @@ import {
   X_TARGETING_CRITERION_ID_PATTERN,
 } from '@lfx-one/shared/constants';
 import type {
+  CampaignAdoptableBriefsResponse,
   CampaignAdoptPlatform,
   CampaignAdoptRequest,
   CampaignAudiencePlatform,
   CampaignMetricsWindow,
+  CampaignRecordResult,
   CampaignRefPlatform,
   CampaignServiceCampaignTarget,
   KeywordTargetingRemovalItem,
@@ -46,10 +48,9 @@ import { logger } from '../services/logger.service';
  * route, and every call runs on the caller's own bearer token.
  *
  * These have no legacy arm, so — following the Microsoft keyword read and the budget and bid
- * levers — they are not behind a cutover flag. The exceptions are the reads whose upstream
- * endpoint is not on campaign-service `main` yet (the Reddit and LinkedIn audience reads and the
- * LinkedIn campaign-ref resolve), which answer 404 unless
- * `LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS` is on.
+ * levers — they are not behind a cutover flag. A read whose upstream endpoint is not served yet
+ * would answer 404 unless `LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS` is on; none is pending today. The
+ * adoptable-brief list needs campaign-service briefs (`LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS`).
  *
  * Inputs are checked against the upstream contract before any round trip: project slug present,
  * brief and campaign ids UUIDs (`Format(FormatUUID)` upstream), enumerations and lengths as the Goa
@@ -109,7 +110,7 @@ export class CampaignOptimizeController {
       return;
     }
     const platformCampaignId = req.query['platformCampaignId'];
-    if (typeof platformCampaignId !== 'string' || !CAMPAIGN_REF_ID_PATTERNS[platform].test(platformCampaignId)) {
+    if (typeof platformCampaignId !== 'string' || !isValidCampaignRefId(platform, platformCampaignId)) {
       next(fieldError('platformCampaignId', `platformCampaignId is not a valid ${platform} campaign id`, operation, req));
       return;
     }
@@ -175,6 +176,59 @@ export class CampaignOptimizeController {
         unknownCount: data.unknown_count,
       });
       res.json(data);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `GET /api/campaigns/:campaignId/record?project=&briefId=`: the campaign row from campaign-service
+   * with its current ETag, and whether this deployment can toggle it. Read from campaign-service, not
+   * the index, which can lag a write made a moment ago. Two callers: the Optimize tab, to recover a
+   * row's current ETag after an ad-set write whose outcome left the validator unknown, and the
+   * act-from-Monitor dialog, whose levers send that ETag as `If-Match` (including for a campaign
+   * adopted a moment ago).
+   */
+  public async getCampaignRecord(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'campaign_record_read';
+    const target = readTargetFromQuery(req, operation, next);
+    if (!target) {
+      return;
+    }
+
+    const startTime = logger.startOperation(req, operation, { campaignId: target.campaignId, briefId: target.briefId });
+    try {
+      const campaign = await this.optimizeService.getCampaign(req, target);
+      const statusToggleEnabled = isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceStatusToggle);
+      logger.success(req, operation, startTime, { campaignId: target.campaignId, platform: campaign.platform, statusToggleEnabled });
+      res.json({ campaign, statusToggleEnabled } satisfies CampaignRecordResult);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `GET /api/campaigns/briefs?project=`: the approved paid-marketing briefs a campaign can be adopted
+   * into. Behind `LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS`, like the brief load: with it off no brief lives
+   * in campaign-service, so there is nothing to adopt into and the route answers 404.
+   */
+  public async listAdoptableBriefs(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'campaign_adoptable_briefs';
+    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
+      next(new ResourceNotFoundError('Route', undefined, { operation, service: 'campaign_optimize_controller', path: req.path }));
+      return;
+    }
+    const projectSlug = readProject(req);
+    if (!projectSlug) {
+      next(fieldError('project', 'project is required', operation, req));
+      return;
+    }
+
+    const startTime = logger.startOperation(req, operation, {});
+    try {
+      const briefs = await this.optimizeService.listAdoptableBriefs(req, projectSlug);
+      logger.success(req, operation, startTime, { count: briefs.length });
+      res.json({ briefs } satisfies CampaignAdoptableBriefsResponse);
     } catch (error) {
       next(error);
     }

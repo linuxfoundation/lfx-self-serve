@@ -106,3 +106,6 @@ export * from './credential-redaction.utils';
 export * from './campaign-bidding.utils';
 export * from './campaign-event-details.utils';
 export * from './campaign.utils';
+export * from './campaign-optimize.utils';
+export * from './campaign-audience.utils';
+export * from './meta-ad-set.utils';

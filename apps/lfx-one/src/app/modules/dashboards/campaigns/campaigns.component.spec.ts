@@ -40,6 +40,7 @@ import { EVENT_TERM_GENERIC, HUBSPOT_TEMPLATE_RENDER_LIMIT, MAX_SPONSOR_NAME_LEN
 import type { HubSpotMarketingEmail } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
+import { DialogService } from 'primeng/dynamicdialog';
 import { NEVER, Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -128,6 +129,7 @@ describe('CampaignsComponent brief persistence', () => {
         provideHttpClientTesting(),
         provideRouter([]),
         { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
         // `providerReady: signal(true)` so `hasCampaignAccess` evaluates the real persona/flag
         // check instead of deferring (its SSR/pre-hydration fast path, see campaigns.component.ts)
         // — every test here runs in the browser and expects an immediate verdict. `getBooleanFlag`
@@ -2287,7 +2289,13 @@ describe('CampaignsComponent — email delivery channel', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [CampaignsComponent],
-      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([]), { provide: MessageService, useValue: { add: vi.fn() } }],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+      ],
     }).compileComponents();
     fixture = TestBed.createComponent(CampaignsComponent);
     TestBed.inject(PersonaService).currentPersona.set('executive-director');
@@ -7102,7 +7110,13 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [CampaignsComponent],
-      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([]), { provide: MessageService, useValue: { add: vi.fn() } }],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+      ],
     }).compileComponents();
     fixture = TestBed.createComponent(CampaignsComponent);
     TestBed.inject(PersonaService).currentPersona.set('executive-director');
@@ -7410,6 +7424,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       providers: [
         // The page scopes the root negative-keyword service, which injects the app-root MessageService.
         { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
         provideHttpClient(),
         provideHttpClientTesting(),
         provideRouter([]),
@@ -8999,6 +9014,7 @@ describe('CampaignsComponent — HubSpot template picker correctness', () => {
       providers: [
         // The page scopes the root negative-keyword service, which injects the app-root MessageService.
         { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
         provideHttpClient(),
         provideHttpClientTesting(),
         provideRouter([]),
@@ -9230,6 +9246,7 @@ describe('CampaignsComponent when the client flag is on and the user holds a cam
         provideHttpClientTesting(),
         provideRouter([]),
         { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(true), providerReady: signal(true) } },
       ],
     }).compileComponents();
@@ -9327,7 +9344,13 @@ describe('CampaignsComponent email monitor', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [CampaignsComponent],
-      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([]), { provide: MessageService, useValue: { add: vi.fn() } }],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+      ],
     }).compileComponents();
     fixture = TestBed.createComponent(CampaignsComponent);
     TestBed.inject(PersonaService).currentPersona.set('executive-director');

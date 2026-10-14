@@ -369,8 +369,27 @@
                       >{{ row.negativeKeywordsUnavailableReason }}</span
                     >
                   }
+                  <!-- Why a Meta row's ad-set panel cannot be opened (never created on Meta, or removed). -->
+                  @if (row.adSetsOffered && !row.adSetsAvailable) {
+                    <span
+                      class="text-xs text-gray-500"
+                      [id]="'campaign-ad-sets-unavailable-' + row.campaign.id"
+                      [attr.data-testid]="'optimization-campaign-ad-sets-unavailable-' + row.campaign.id"
+                      >{{ row.adSetsUnavailableReason }}</span
+                    >
+                  }
                 </div>
                 <div class="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                  <!-- Opens the live-settings drift drawer: a read, so it is offered for every row. -->
+                  <button
+                    type="button"
+                    (click)="openSettingsDrawer(row)"
+                    aria-haspopup="dialog"
+                    [attr.aria-label]="'Live settings for ' + row.campaign.campaign_name"
+                    class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                    [attr.data-testid]="'optimization-campaign-settings-' + row.campaign.id">
+                    Live settings
+                  </button>
                   <!--
                     Discloses the row's budget editor. A raw button like the toggle beside it, because it
                     needs `aria-controls` and `aria-describedby`, which the `lfx-button` wrapper does not
@@ -434,6 +453,22 @@
                       Negative keywords
                     </button>
                   }
+                  <!-- Meta rows only: the campaign's ad sets, each with its own pause/resume. -->
+                  @if (row.adSetsOffered) {
+                    <button
+                      type="button"
+                      (click)="toggleAdSetsPanel(row)"
+                      [id]="'campaign-ad-sets-edit-' + row.campaign.id"
+                      [disabled]="!row.adSetsAvailable || (!!adSetPending()[row.campaign.id] && !!adSetsPanelOpen()[row.campaign.id])"
+                      [attr.aria-expanded]="row.adSetsAvailable ? !!adSetsPanelOpen()[row.campaign.id] : null"
+                      [attr.aria-controls]="adSetsPanelOpen()[row.campaign.id] ? 'campaign-ad-sets-panel-' + row.campaign.id : null"
+                      [attr.aria-describedby]="row.adSetsAvailable ? null : 'campaign-ad-sets-unavailable-' + row.campaign.id"
+                      [attr.aria-label]="'Ad sets of ' + row.campaign.campaign_name"
+                      class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                      [attr.data-testid]="'optimization-campaign-ad-sets-' + row.campaign.id">
+                      Ad sets
+                    </button>
+                  }
                   <!--
                     The accessible name NAMES THE CAMPAIGN. The visible text is just "Pause", which is
                     unambiguous beside its row and useless out of context — a screen-reader user moving
@@ -451,6 +486,7 @@
                       togglePending()[row.campaign.id] ||
                       budgetPending()[row.campaign.id] ||
                       bidPending()[row.campaign.id] ||
+                      !!adSetPending()[row.campaign.id] ||
                       row.action === 'unavailable' ||
                       row.conflicted
                     "
@@ -519,12 +555,34 @@
                   [platform]="targetingPlatform"
                   (closePanel)="closeTargetingPanel(row.campaign.id)" />
               }
+              @if (adSetsPanelOpen()[row.campaign.id]) {
+                <lfx-meta-ad-sets-panel
+                  [id]="'campaign-ad-sets-panel-' + row.campaign.id"
+                  [projectSlug]="projectSlug()"
+                  [briefId]="briefId()"
+                  [campaignId]="row.campaign.id"
+                  [campaignName]="row.campaign.campaign_name"
+                  [pending]="adSetPending()[row.campaign.id] ?? null"
+                  [blockedReason]="row.adSetsBlockedReason"
+                  [outcome]="adSetOutcome()[row.campaign.id] ?? null"
+                  [reloadToken]="adSetsReload()[row.campaign.id] ?? 0"
+                  [eligibility]="row.adSetEligibility"
+                  (toggleAdSet)="changeMetaAdSetStatus(row, $event)"
+                  (closePanel)="cancelAdSetsPanel(row.campaign.id)" />
+              }
             </li>
           }
         </ul>
       }
     </section>
   }
+
+  <lfx-campaign-settings-drawer
+    [(visible)]="settingsDrawerVisible"
+    [campaign]="settingsCampaign()"
+    [projectSlug]="projectSlug()"
+    [briefId]="briefId()"
+    data-testid="optimization-settings-drawer" />
 
   @if (loading() && !monitorData()) {
     <div class="flex items-center justify-center rounded-lg border border-gray-200 bg-white p-12" data-testid="optimization-loading">
