@@ -128,7 +128,19 @@ export class PendingActionsDrawerComponent {
   }
 
   protected handleDismiss(item: DrawerActionRow): void {
-    if (item.type === 'JoinApplication') return;
+    if (item.type === 'JoinApplication') {
+      // Hides the request for this user only; it stays pending for other reviewers and on the group's applications tab.
+      if (!item.committeeUid || !item.applicationUid || !item.applicationApplicantEmail) return;
+      this.hiddenActionsService.dismissAction(item);
+      this.hiddenActionsVersion.update((v) => v + 1);
+      this.actionCompleted.emit(item);
+      this.messageService.add({
+        severity: 'info',
+        summary: 'Request Dismissed',
+        detail: `The request from ${item.applicationApplicantEmail} is hidden from your pending actions. It is still pending for other reviewers.`,
+      });
+      return;
+    }
     this.hiddenActionsService.dismissAction(item);
     // skipHide: the permanent dismiss cookie already hides the row; a 24h hideAction cookie would be redundant.
     this.startCompletion(item, true);

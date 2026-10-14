@@ -253,6 +253,52 @@ describe('PendingActionsComponent — saved-only application review', () => {
     document.body.innerHTML = '';
   });
 
+  it('dismisses one request for this reviewer without reviewing it, keeping the others', async () => {
+    const dismissed = new Set<string>();
+    const typedHidden = hiddenActions as { isActionHidden: (item: PendingActionItem) => boolean };
+    const originalIsHidden = typedHidden.isActionHidden;
+    typedHidden.isActionHidden = (item) => dismissed.has(item.committeeUid ?? '');
+    hiddenActions.dismissAction.mockImplementationOnce((item: PendingActionItem) => void dismissed.add(item.committeeUid ?? ''));
+    try {
+      fixture = await render([application('Group A'), application('Group B')]);
+      fixture.nativeElement.querySelector('[data-testid="dashboard-pending-actions-dismiss-JoinApplication"]').click();
+      await stabilize();
+
+      expect(hiddenActions.dismissAction).toHaveBeenCalledTimes(1);
+      expect(hiddenActions.hideAction).not.toHaveBeenCalled();
+      expect(reviewClient.approveApplication).not.toHaveBeenCalled();
+      expect(reviewClient.rejectApplication).not.toHaveBeenCalled();
+      const rows = fixture.nativeElement.querySelectorAll('[data-testid="dashboard-pending-actions-item-JoinApplication"]');
+      expect(rows).toHaveLength(1);
+      expect(byTestId(fixture, 'dashboard-pending-actions-application-group')?.textContent?.trim()).toBe('Group B');
+    } finally {
+      typedHidden.isActionHidden = originalIsHidden;
+    }
+  });
+
+  it('renders Reject as a danger-severity control so it reads differently from the grey Dismiss text', async () => {
+    fixture = await render([application('Group A')]);
+    expect(control('dashboard-pending-actions-application-reject').className).toContain('p-button-danger');
+  });
+
+  it('names the project in the approve confirmation when it is known', async () => {
+    fixture = await render([application('Group A', { applicationProjectName: 'Project Alpha' })]);
+    await begin('dashboard', 'approve');
+    expect(document.body.querySelector('[data-testid="dashboard-pending-actions-application-confirm-message"]')?.textContent).toContain(
+      'request to join Group A in the Project Alpha project?'
+    );
+    await finishOverlay('approve', true);
+  });
+
+  it('leaves the project out of the approve confirmation when it is unknown', async () => {
+    fixture = await render([application('Group A')]);
+    await begin('dashboard', 'approve');
+    const message = document.body.querySelector('[data-testid="dashboard-pending-actions-application-confirm-message"]')?.textContent;
+    expect(message).toContain('request to join Group A?');
+    expect(message).not.toContain('project');
+    await finishOverlay('approve', true);
+  });
+
   it.each(cases)(
     'retains both surfaces/counts until $decision from $surface saves, then removes only that address and refills',
     async ({ surface, decision }) => {
@@ -289,8 +335,6 @@ describe('PendingActionsComponent — saved-only application review', () => {
       ).toEqual(['Group B', 'Group C']);
       expect(hiddenActions.hideAction).not.toHaveBeenCalled();
       expect(hiddenActions.dismissAction).not.toHaveBeenCalled();
-      expect(document.body.querySelector('[data-testid="dashboard-pending-actions-dismiss-JoinApplication"]')).toBeNull();
-      expect(document.body.querySelector('[data-testid="pending-actions-drawer-dismiss-JoinApplication"]')).toBeNull();
       fixture.componentRef.setInput('pendingActions', applications());
       await stabilize();
       expect(document.body.querySelector('[data-testid="pending-actions-drawer-count"]')?.textContent).toContain('(4)');

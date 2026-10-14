@@ -48,6 +48,7 @@ export class HiddenActionsService {
    * @param item The pending action item to dismiss
    */
   public dismissAction(item: PendingActionItem): void {
+    if (item.type === 'JoinApplication' && (!item.committeeUid || !item.applicationUid)) return;
     const identifier = this.getActionIdentifier(item);
     const cookieName = `${this.dismissCookiePrefix}${this.hashString(identifier)}`;
     this.cookieService.set(cookieName, '1', {
@@ -68,14 +69,21 @@ export class HiddenActionsService {
    * item its assignee still owns, forever. Keyed on `type` rather than the decorated view's
    * `isFormationItem`: this runs on the wire row before decoration, and that flag also encodes
    * linkability (slug + key present), which is the wrong criterion for a cookie exemption.
-   * Join applications likewise remain visible until an authoritative review succeeds, including
-   * incomplete wire rows; stale cookies must never suppress a request awaiting a decision.
+   * Join applications stay visible until an authoritative review succeeds or the reviewer explicitly dismisses
+   * the request (a delegating admin may not want it in their own list; it stays pending for other reviewers and
+   * on the group's applications tab). Only a dismiss cookie counts, and incomplete wire rows are never hidden.
    *
    * @param item The pending action item to check
    * @returns true if the action is hidden, false otherwise
    */
   public isActionHidden(item: PendingActionItem): boolean {
-    if (item.type === 'FormationItem' || item.type === 'JoinApplication') return false;
+    if (item.type === 'FormationItem') return false;
+    if (item.type === 'JoinApplication') {
+      // Only an explicit Dismiss hides a request (never the 24h completion cookie), and only when its full address is known —
+      // an incomplete row would hash to a shared `undefined` identifier and bury every other incomplete request.
+      if (!item.committeeUid || !item.applicationUid) return false;
+      return this.cookieService.check(`${this.dismissCookiePrefix}${this.hashString(this.getActionIdentifier(item))}`);
+    }
     const identifier = this.getActionIdentifier(item);
     const hash = this.hashString(identifier);
     return this.cookieService.check(`${this.cookiePrefix}${hash}`) || this.cookieService.check(`${this.dismissCookiePrefix}${hash}`);

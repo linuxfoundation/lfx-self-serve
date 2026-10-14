@@ -1741,16 +1741,39 @@ export class CommitteeService {
       for (const [uid, committee] of batch) committees.set(uid, committee);
     }
 
-    // Project context is best-effort: a failed lookup must not hide a request the caller can still review.
+    // Project context is best-effort: a failed or slow lookup must not hide a request the caller can still review, nor push
+    // the dashboard past the discovery budget the live reads above already honour.
     let projectNames = new Map<string, string>();
-    try {
-      const enriched = await this.projectService.enrichWithProjectData(req, Array.from(committees.values()));
-      projectNames = new Map(enriched.filter((committee) => committee.project_name).map((committee) => [committee.uid, committee.project_name]));
-    } catch (error) {
-      logger.warning(req, 'get_managed_pending_applications', 'Project enrichment failed, returning applications without project names', {
-        committee_count: committees.size,
-        err: error,
-      });
+    const remainingMs = deadlineAt - Date.now();
+    if (remainingMs > 0) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const enriched = await Promise.race([
+          this.projectService.enrichWithProjectData(req, Array.from(committees.values())),
+          new Promise<null>((resolve) => {
+            timer = setTimeout(() => resolve(null), remainingMs);
+          }),
+        ]);
+        if (enriched) {
+          projectNames = new Map(enriched.filter((committee) => committee.project_name).map((committee) => [committee.uid, committee.project_name]));
+        } else {
+          logger.warning(
+            req,
+            'get_managed_pending_applications',
+            'Project enrichment exceeded the discovery budget, returning applications without project names',
+            {
+              committee_count: committees.size,
+            }
+          );
+        }
+      } catch (error) {
+        logger.warning(req, 'get_managed_pending_applications', 'Project enrichment failed, returning applications without project names', {
+          committee_count: committees.size,
+          err: error,
+        });
+      } finally {
+        clearTimeout(timer);
+      }
     }
 
     return pending.map((application) => {

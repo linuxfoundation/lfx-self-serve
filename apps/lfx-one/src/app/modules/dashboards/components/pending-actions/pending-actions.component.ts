@@ -378,7 +378,10 @@ export class PendingActionsComponent {
   }
 
   protected handleDismiss(item: DecoratedPendingAction): void {
-    if (item.type === 'JoinApplication') return;
+    if (item.type === 'JoinApplication') {
+      this.dismissApplication(item);
+      return;
+    }
     this.hiddenActionsService.dismissAction(item);
     // skipHide: the permanent dismiss cookie already hides the row; a 24h hideAction cookie would be redundant.
     this.startCompletion(item, { withSkeleton: true, skipHide: true });
@@ -644,7 +647,7 @@ export class PendingActionsComponent {
       this.swappingRowKeys().forEach((k) => pinned.add(k));
       const formationEnabled = this.formationFlagEnabled();
       return this.pendingActions().filter((item) => {
-        if (item.type === 'JoinApplication') return !resolvedApplications.has(this.getRowKey(item));
+        if (item.type === 'JoinApplication') return !resolvedApplications.has(this.getRowKey(item)) && !this.hiddenActionsService.isActionHidden(item);
         if (item.type === 'FormationItem' && !formationEnabled) {
           return false;
         }
@@ -712,6 +715,18 @@ export class PendingActionsComponent {
           inviteViewQueryParams,
         };
       });
+    });
+  }
+
+  // Dismissing only hides the request from this user's list: it stays pending for other reviewers and on the group's applications tab.
+  private dismissApplication(item: PendingActionItem): void {
+    if (!item.committeeUid || !item.applicationUid || !item.applicationApplicantEmail) return;
+    this.hiddenActionsService.dismissAction(item);
+    this.hiddenActionsVersion.update((v) => v + 1);
+    this.messageService.add({
+      severity: 'info',
+      summary: 'Request Dismissed',
+      detail: `The request from ${item.applicationApplicantEmail} is hidden from your pending actions. It is still pending for other reviewers.`,
     });
   }
 

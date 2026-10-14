@@ -63,12 +63,18 @@ describe('HiddenActionsService', () => {
     expect(check).not.toHaveBeenCalled();
   });
 
-  it.each([
-    { committeeUid: 'group-1', applicationUid: 'application-1', applicationApplicantEmail: 'applicant@example.com' },
-    { committeeUid: undefined, applicationUid: undefined, applicationApplicantEmail: undefined },
-  ])('never cookie-hides a join application, including incomplete identity: %j', (identity) => {
+  it('never cookie-hides a join application with an incomplete address, even when a cookie matches', () => {
     check.mockReturnValue(true);
-    expect(service.isActionHidden({ ...rsvpRow, type: 'JoinApplication', ...identity })).toBe(false);
+    expect(service.isActionHidden({ ...rsvpRow, type: 'JoinApplication', committeeUid: undefined, applicationUid: undefined })).toBe(false);
+    expect(service.isActionHidden({ ...rsvpRow, type: 'JoinApplication', committeeUid: 'group-1', applicationUid: undefined })).toBe(false);
     expect(check).not.toHaveBeenCalled();
+  });
+
+  it('hides a complete join application only through its dismiss cookie, not the 24h completion cookie', () => {
+    const row = { ...rsvpRow, type: 'JoinApplication' as const, committeeUid: 'group-1', applicationUid: 'application-1' };
+    check.mockImplementation((name: string) => name.startsWith('lfx_hidden_'));
+    expect(service.isActionHidden(row)).toBe(false);
+    check.mockImplementation((name: string) => name.startsWith('lfx_dismissed_'));
+    expect(service.isActionHidden(row)).toBe(true);
   });
 });
