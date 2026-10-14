@@ -679,9 +679,9 @@ export class OptimizationTabComponent implements OnInit {
         adSetsOffered,
         adSetsAvailable: adSetsOffered && adSetsUnavailableReason === '',
         adSetsUnavailableReason,
-        // Busy only while ANOTHER write is out: the panel itself shows its own pending ad set.
         // From the row's own status, not the overlay-free index: a confirmed pause leaves it `paused`, still toggleable.
         adSetEligibility: metaAdSetCampaignEligibility(status),
+        // Busy only while ANOTHER write is out: the panel itself shows its own pending ad set.
         adSetsBlockedReason: this.adSetsBlockedReasonFor(
           conflicted,
           pendingDirection !== undefined || !!budgetPending[campaign.id] || !!bidPending[campaign.id]
