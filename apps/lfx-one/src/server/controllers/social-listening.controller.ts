@@ -26,7 +26,7 @@ import type { PreferenceReadResponse, PreferenceUpsertRequest, SocialListeningAc
 
 /**
  * Social Listening HTTP boundary: feed/count JSON bodies and remaining GET query params are
- * validated before touching the service. The access gate (ED, LF Staff, opted-in Board members) lives in route middleware.
+ * validated before touching the service. The access gate (ED, LF Staff, members of opted-in groups) lives in route middleware.
  */
 export class SocialListeningController {
   private readonly socialListeningService: SocialListeningService;

@@ -8,8 +8,8 @@ import { logger } from '../services/logger.service';
 import { socialListeningAccessService } from '../services/social-listening-access.service';
 
 /**
- * Social Listening admits the executive-dashboard audience plus opted-in Board members of the
- * requested foundation (lfx-self-serve-ops#387). Board access is always scoped by `foundationSlug`;
+ * Social Listening admits the executive-dashboard audience plus members of opted-in groups of the
+ * requested foundation (lfx-self-serve-ops#387). Group access is always scoped by `foundationSlug`;
  * see `SocialListeningAccessService`.
  */
 export async function requireSocialListeningAccess(req: Request, _res: Response, next: NextFunction): Promise<void> {

@@ -11,7 +11,7 @@ import { SocialListeningService } from '../services/social-listening.service';
 
 /**
  * Route guard for the foundation Social Listening page: the executive-dashboard audience (ED, LF Staff)
- * plus Board members of the foundation when its Board group has opted in (lfx-self-serve-ops#387).
+ * plus members of the foundation's groups that have opted in (lfx-self-serve-ops#387).
  *
  * The ED fast path mirrors `dashboardAccessGuard`: it trusts the persona cookie and leaves per-foundation
  * ED scope to the API. Everyone else is checked against the foundation in `?project=` (falling back to the

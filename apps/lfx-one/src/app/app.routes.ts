@@ -326,7 +326,7 @@ export const routes: Routes = [
         canActivate: [campaignAccessGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/campaigns/campaigns.component').then((m) => m.CampaignsComponent),
       },
-      // Foundation Lens — Social Listening page (ED + LF Staff; Board members when the foundation's Board group opts in)
+      // Foundation Lens — Social Listening page (ED + LF Staff; members of the foundation's groups that opt in)
       {
         path: 'foundation/social-listening',
         title: 'Social Listening',

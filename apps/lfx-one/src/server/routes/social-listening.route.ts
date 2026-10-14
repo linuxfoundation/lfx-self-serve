@@ -15,8 +15,8 @@ const socialListeningController = new SocialListeningController();
 router.get('/access', (req, res, next) => socialListeningController.getAccess(req, res, next));
 
 /**
- * Social Listening is an executive-dashboard surface (LFXV2-3002): EDs and LF Staff, plus a foundation's
- * Board members when its Board group opts in (lfx-self-serve-ops#387). The policy wraps the whole router so
+ * Social Listening is an executive-dashboard surface (LFXV2-3002): EDs and LF Staff, plus members of a
+ * foundation's groups that opt in (lfx-self-serve-ops#387). The policy wraps the whole router so
  * every current and future endpoint is covered; rate limiting is the app-wide one.
  */
 router.use(requireSocialListeningAccess);

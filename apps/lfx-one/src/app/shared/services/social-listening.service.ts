@@ -33,7 +33,7 @@ import type {
 
 /**
  * Angular gateway over the Express endpoints from LFXV2-3015 (`/api/social-listening/*`, access-gated
- * server-side: ED, LF Staff, and opted-in foundation Board members — lfx-self-serve-ops#387). All methods return Observables; the preference store adapts them to the Promise-based `UserPreferenceTransport` contract.
+ * server-side: ED, LF Staff, and members of opted-in foundation groups — lfx-self-serve-ops#387). All methods return Observables; the preference store adapts them to the Promise-based `UserPreferenceTransport` contract.
  */
 @Injectable({
   providedIn: 'root',
@@ -141,8 +141,8 @@ export class SocialListeningService {
   }
 
   /**
-   * Preferences are per-user, but the access gate scopes Board members by foundation — send the
-   * selected foundation so a Board member's bookmarks and read state aren't 403'd.
+   * Preferences are per-user, but the access gate scopes group members by foundation — send the
+   * selected foundation so a group member's bookmarks and read state aren't 403'd.
    */
   private preferenceParams(): HttpParams {
     const foundationSlug = this.projectContextService.selectedFoundation()?.slug;

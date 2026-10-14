@@ -59,7 +59,7 @@ describe('socialListeningAccessGuard', () => {
     expect(getAccess).not.toHaveBeenCalled();
   });
 
-  it('admits a Board member the access endpoint admits for the foundation in ?project=', async () => {
+  it('admits a group member the access endpoint admits for the foundation in ?project=', async () => {
     getAccess.mockReturnValue(of({ canView: true, reason: 'group-member' }));
 
     await expect(runGuard(route({ project: 'tlf' }))).resolves.toBe(true);
