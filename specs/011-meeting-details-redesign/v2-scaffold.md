@@ -82,13 +82,16 @@ modules/meetings/
 The gate imports V2 statically but renders it inside `@defer (on immediate)`, so V2 is its own lazy
 chunk (`meeting-details-page-component`). The ~100% of visitors on V1, including every anonymous
 visitor, never download it. The gate's doc comment records the trade-off this creates for targeted
-viewers; it ends when V1 retirement removes the gate (`rollout.md` § No server-side flag decision).
+viewers; it lasts as long as the gate stands (V1 stays: `rollout.md` § V1 stays).
 
 ## Definition of done for deleting V1
 
+> Out of scope for this project (2026-10-14, #3266 closed): V1 stays. Kept as the reference for a
+> retirement planned separately later.
+
 This feeds the rollout / retirement doc (V2-03, #2875). V1 can be deleted when all of these hold:
 
-1. `MEETING_V2_ENABLED_FLAG` has served V2 to **100%** of signed-in traffic with no rollback for the
+1. `MEETING_DETAILS_V2_FLAG` has served V2 to **100%** of signed-in traffic with no rollback for the
    agreed soak period. There is no percentage ramp and no server-side flag decision (#2920 was
    declined), so signed-in viewers get the post-hydration swap throughout; `rollout.md` explains why
    that is accepted.
@@ -102,8 +105,7 @@ Then, in one PR:
 
 - delete `meeting-join-v1/` and its spec,
 - collapse `meeting-details-gate/` so the route loads `MeetingDetailsPageComponent` directly,
-- drop the gate's read of `MEETING_V2_ENABLED_FLAG`. Leave the flag itself alone: the composer
-  and other meetings surfaces read it too, and it retires only when the last of them has,
+- drop the gate's read of `MEETING_DETAILS_V2_FLAG` and delete the flag; the page is its only reader,
 - update `docs/architecture/frontend/public-meeting-join.md`, which still describes V1.
 
 Nothing in `meeting-details-page/` should need to change in that PR. If it does, V2 has taken a

@@ -24,7 +24,7 @@ import { MeetingDetailsStateService } from './meeting-details-state.service';
 
 /**
  * The meeting details v2 page (epic #1765), rendered by {@link MeetingDetailsGateComponent} only
- * for a signed-in viewer targeted by `MEETING_V2_ENABLED_FLAG`. The pre-v2 page lives in
+ * for a signed-in viewer targeted by `MEETING_DETAILS_V2_FLAG`. The pre-v2 page lives in
  * `meeting-join-v1/` and is what everyone else sees.
  *
  * This is the E1-01 shell (#1770): the three top-level branches (error, page, skeleton) and the

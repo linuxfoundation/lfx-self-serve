@@ -136,7 +136,7 @@ The attendance stats (attended, absent, rate) come from the participant rows whe
 
 **Location:** `apps/lfx-one/src/app/modules/meetings/meeting-join-v1/meeting-join.component.ts`
 
-This component is no longer the `/meetings/:id` route target itself: the route loads `meeting-details-gate/`, which renders this page by default and the v2 tree only behind `MEETING_V2_ENABLED_FLAG`. Everything below still describes the page an anonymous visitor — and anyone the flag is off for — gets, and SSR renders it either way.
+This component is no longer the `/meetings/:id` route target itself: the route loads `meeting-details-gate/`, which renders this page by default and the v2 tree only behind `MEETING_DETAILS_V2_FLAG`. Everything below still describes the page an anonymous visitor — and anyone the flag is off for — gets, and SSR renders it either way.
 
 Key signals and their gating:
 

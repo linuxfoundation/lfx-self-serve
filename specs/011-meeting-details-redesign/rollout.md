@@ -1,11 +1,11 @@
-# Meeting details V2 — rollout and retirement
+# Meeting details V2 — rollout
 
 Plan ID **V2-03** · issue [#2875](https://github.com/linuxfoundation/lfx-self-serve/issues/2875) ·
 epic [#1765](https://github.com/linuxfoundation/lfx-self-serve/issues/1765) · Meetings v2 epic
 [#1451](https://github.com/linuxfoundation/lfx-self-serve/issues/1451)
 
-How V2 of the meeting details page gets from code to every viewer, who decides each step, what has
-to be true before the next one, and how V1 and the flag gate are removed at the end.
+How V2 of the meeting details page gets from code to every viewer, who decides each step, and what
+has to be true before the next one. Retiring V1 is out of scope for this project (§ V1 stays).
 
 There are two separate controls, and they do different jobs:
 
@@ -16,7 +16,7 @@ There are two separate controls, and they do different jobs:
 
 ## Fixed rules
 
-- **The code default never changes.** `MEETING_V2_ENABLED_FLAG` defaults to `false` in code and stays
+- **The code default never changes.** `MEETING_DETAILS_V2_FLAG` defaults to `false` in code and stays
   `false`. LaunchDarkly targeting is the only switch (R04). Flipping the code default would ship V2
   to everyone at once, with no way back short of a deploy. Stage 5 is a deliberate, narrower code
   change: it moves anonymous visitors only, outside the flag, and accepts a revert as its rollback.
@@ -32,14 +32,13 @@ There are two separate controls, and they do different jobs:
   Stage 5 is the exception: anonymous visitors move by a code change, so their rollback is a revert.
 - **Dev and prod targeting are configured identically**, so what testers see in dev is what they get
   in prod.
-- The flag is shared with the meeting composer (epic #1451). Changing targeting moves **both**
-  surfaces for the targeted viewer. If the two ever need different audiences, that is the moment to
-  split the flag (an open question in the implementation plan, not one of the D-1 to D-4 decisions in
-  `state-matrix.md`); until then they move together.
+- The flag is this page's own: `meeting-details-v2` (`MEETING_DETAILS_V2_FLAG`, #3576), configured in
+  LaunchDarkly by the team. The meeting composer (epic #1451) keeps `meeting-v2-enabled`, so targeting
+  one never moves the other.
 
 ## No server-side flag decision (#2920)
 
-SSR never evaluates `MEETING_V2_ENABLED_FLAG`. The server has no flag source, so it renders V1 for
+SSR never evaluates `MEETING_DETAILS_V2_FLAG`. The server has no flag source, so it renders V1 for
 every signed-in viewer, and the gate swaps in V2 after hydration for a targeted one. Giving SSR the
 decision ([#2920](https://github.com/linuxfoundation/lfx-self-serve/issues/2920): a LaunchDarkly
 server SDK in the BFF, or a BFF-stamped cookie) was considered and **declined on 2026-10-06**:
@@ -48,13 +47,12 @@ server SDK in the BFF, or a BFF-stamped cookie) was considered and **declined on
   percentage ramp. Signed-in viewers instead move from named tester lists to everyone in one step
   (stage 4).
 - A server-side evaluation path for user context is a security change that has to ship on its own
-  (R06), for a page whose V1 is deleted shortly after.
+  (R06), and the post-hydration swap it would remove is an accepted cost while testers trial V2.
 
 What that accepts:
 
 - **The swap reaches every signed-in viewer during stages 4 to 6**: their first paint is V1, then V2
-  replaces it once the lazy chunk arrives. It ends at stage 7, when the gate is removed and V2 is
-  the route's own component, rendered on the server.
+  replaces it once the lazy chunk arrives. It lasts as long as the gate does: V1 stays (§ V1 stays).
 - **No ramp.** A V2 bug that the tester stages miss reaches every signed-in viewer at once, until
   targeting is rolled back. Stages 2 and 3 carry that weight, so do not shorten them.
 - Anonymous visitors need no flag at all, so stage 5 can render V2 for them on the server, with no
@@ -69,14 +67,13 @@ repeated with a wider audience.
 
 | #   | Stage                                  | Who sees V2                                                               | Decides                                                       | Exit criteria (all must hold)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | --- | -------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0   | **Build** on `feat/meeting-details-v2` | nobody in production; developers locally                                  | project owner                                                 | Every planned Phase 1 and Phase 2 PR merged into the integration branch. CI green on the release PR #3249. E5-04 E2E suite green and binding. Code-owner sign-off on the protected `AGENTS.md` line from #2911.                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| 0   | **Build** on `feat/meeting-details-v2` | nobody in production; developers locally                                  | project owner                                                 | Every planned Phase 1 and Phase 2 PR merged into the integration branch, including the work that waits on upstream services (E6-06, E7, E9, M-01): everything ships behind the flag together (project owner, 2026-10-14). CI green on the release PR #3249. E5-04 E2E suite green and binding. Code-owner sign-off on the protected `AGENTS.md` line from #2911.                                                                                                                                                                                                                                                                                                    |
 | 1   | **Release**: merge #3249 into `main`   | nobody: targeting is empty, V2 is dark                                    | project owner + code owners (`@linuxfoundation/lfx-platform`) | Production deploy healthy. With the flag off, V1 renders exactly as before (the V1 layout-parity check from #2910, repeated against the deployed build). No new errors in Datadog RUM for `/meetings/:id`.                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | 2   | **Internal testers**                   | a named list: the team building it                                        | project owner                                                 | One full week with no open P1/P2 bug against V2. Every legal signed-in state in `state-matrix.md` exercised by a tester at least once (visitor rows wait for stage 5). Error rate and join success on `/meetings/:id` for testers no worse than V1's for the same week.                                                                                                                                                                                                                                                                                                                                                                                             |
 | 3   | **Extended testers**                   | a named list across personas: maintainers, EDs, board members, organizers | project owner, with product                                   | Two weeks with no P1/P2. Feedback from each persona reviewed and triaged. Organizer flows checked: RSVP aggregate, occurrence edit and cancel, materials manage.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | 4   | **All signed-in users**                | every authenticated viewer, in one targeting step                         | project owner                                                 | No percentage ramp: see § No server-side flag decision. Every signed-in viewer now gets the post-hydration swap, which is accepted. Two weeks with no P1/P2 and no rollback. Error rate, join-URL success rate and RSVP submission rate within normal variance of V1's baseline; no rise in meeting-related support tickets.                                                                                                                                                                                                                                                                                                                                        |
 | 5   | **Anonymous visitors**                 | logged-out visitors on public meetings                                    | project owner + code owners                                   | A **code change**, not targeting: the gate hard-codes anonymous viewers to V1 today, and this PR sends every anonymous visitor to V2 instead. No new identifier is sent to LaunchDarkly. For the server to render V2 with no swap, the PR must also bypass the gate's `hydrated` latch for anonymous viewers and render V2 outside `@defer` for them (or give the block a `hydrate` trigger): today the server renders a `@defer` block's placeholder, which is empty here. Validated by the anonymous E2E presets (visitor rows of `state-matrix.md`) and an SSR parity check showing V2 in the server HTML. Ships in its own PR. Rollback is a revert of that PR. |
-| 6   | **Soak at 100%**                       | everyone                                                                  | project owner                                                 | The agreed soak period (suggested: two release cycles) at 100% of signed-in and anonymous traffic with no rollback. Then V1 retirement starts.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| 7   | **Retire V1**                          | everyone, with no V1 to fall back to                                      | project owner + code owners                                   | Done by [#3266](https://github.com/linuxfoundation/lfx-self-serve/issues/3266), the named V1-deletion checklist. Its preconditions are stages 0–6 above and `v2-scaffold.md` § Definition of done.                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| 6   | **Soak at 100%**                       | everyone                                                                  | project owner                                                 | The agreed soak period (suggested: two release cycles) at 100% of signed-in and anonymous traffic with no rollback. V1 stays in place afterwards: retiring it is out of scope for this project (§ V1 stays).                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 
 ### What we measure
 
@@ -93,7 +90,7 @@ regression against either baseline holds the stage.
 - **RSVP**: RSVP submissions per registrant view, on meetings with RSVP tracking on.
 - **Registration**: self-registrations per outsider view on public, unrestricted meetings.
 - **Performance**: LCP for `/meetings/:id`. V2 is a lazy chunk swapped in after hydration, so the
-  first paint for signed-in viewers is the one to watch until stage 7 removes the gate.
+  first paint for signed-in viewers is the one to watch while the gate stands.
 - **Support**: meeting-related tickets that mention the details page.
 
 ## Rolling back
@@ -104,7 +101,6 @@ regression against either baseline holds the stage.
 | A V2 bug for anonymous visitors, stages 5 and 6 | Revert the stage 5 PR in a normal PR to `main`, which sends anonymous visitors back to V1; then fix forward.                                                                                                                                    |
 | A V1 regression after stage 1                   | See below.                                                                                                                                                                                                                                      |
 | Flag provider outage                            | Before the first flag value: nothing to do, the gate fails closed to V1. After it: viewers keep the last value they had (V2 stays V2), so an outage cannot be used as a rollback; remove the audience from targeting once the provider is back. |
-| A problem after stage 7 (V1 is deleted)         | No flag fallback exists any more. Fix forward, which is why stage 6's soak comes first.                                                                                                                                                         |
 
 ### A V1 regression after the release
 
@@ -120,8 +116,9 @@ gate itself is at fault, point the route back at V1 directly. Reverting #3249's 
 last resort, and only clean before any follow-up PR has landed on `main` on top of it; after that it
 conflicts, takes the follow-ups with it, and pulls V2 from every tester.
 
-## Retiring the flag
+## V1 stays
 
-Stage 7 removes **this page's** read of `MEETING_V2_ENABLED_FLAG` and the gate component. It does not
-delete the flag: the meeting composer and other meetings v2 surfaces read it too. The flag itself is
-deleted from code and from LaunchDarkly only when the last surface that reads it has retired its V1.
+Retiring V1 is out of scope for this project (decided 2026-10-14; #3266 closed as not planned). V2 is
+tested with users behind the flag for as long as the project owner wants, and V1 and the gate stay in
+place throughout. Retiring them, and deleting the flag, would be planned separately; `v2-scaffold.md`
+§ Definition of done for deleting V1 records what that would take.

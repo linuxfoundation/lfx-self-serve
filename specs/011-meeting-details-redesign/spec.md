@@ -51,7 +51,7 @@ app's look belongs in tokens and layout, not in a parallel component library.
 | ID  | Invariant                                                                                                                 |
 | --- | ------------------------------------------------------------------------------------------------------------------------- |
 | R01 | The existing meeting details page is not deleted, rewritten, or refactored in place.                                      |
-| R02 | `MEETING_V2_ENABLED_FLAG` is UI-only. It gates no endpoint.                                                               |
+| R02 | `MEETING_DETAILS_V2_FLAG` is UI-only. It gates no endpoint.                                                               |
 | R03 | Fail closed — a provider not ready yet renders V1; a later provider error keeps the last delivered value.                 |
 | R04 | LaunchDarkly targeting is the switch. The code default is never the switch.                                               |
 | R05 | Anonymous visitors get V1 until the anonymous stage of `rollout.md` (stage 5).                                            |
