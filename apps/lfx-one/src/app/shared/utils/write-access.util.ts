@@ -17,7 +17,7 @@ export function hasMeetingWriteAccess(project: Project | null): boolean {
  * the check couldn't be confirmed (lookup failed, or the BFF omitted `meetingCoordinator` because
  * its FGA check itself failed — HTTP 200, field absent). Callers that evict on a `false` transition
  * (e.g. evictOnWriteAccessLoss) must treat `undefined` as "keep provisional access", the same
- * unknown-vs-denied distinction writerGuard already makes for the route guard (GH-500) — otherwise
+ * unknown-vs-denied distinction writerGuard already makes for the route guard (linuxfoundation/lfx-self-serve-ops#500) — otherwise
  * a transient BFF blip reads as a flat denial and silently evicts a legitimate meeting coordinator.
  */
 export function meetingWriteAccessState(project: Project | null): boolean | undefined {

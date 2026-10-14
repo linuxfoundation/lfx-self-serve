@@ -21,7 +21,7 @@ describe('meetingWriteAccessState', () => {
     expect(meetingWriteAccessState(null)).toBeUndefined();
   });
 
-  it('reports unknown (not denied) when meetingCoordinator is omitted — the BFF FGA-check-failed shape (GH-500)', () => {
+  it('reports unknown (not denied) when meetingCoordinator is omitted — the BFF FGA-check-failed shape (linuxfoundation/lfx-self-serve-ops#500)', () => {
     expect(meetingWriteAccessState({ writer: false, meetingCoordinator: undefined } as never)).toBeUndefined();
   });
 });

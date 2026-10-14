@@ -942,7 +942,7 @@ export class MeetingManageComponent {
             // (lookup failed, or the BFF's own meetingCoordinator FGA check failed — see
             // meetingWriteAccessState's doc). The computed() below treats undefined as
             // provisional, never as a denial, so a transient blip can't evict a legitimate
-            // meeting coordinator mid-form (GH-500).
+            // meeting coordinator mid-form (linuxfoundation/lfx-self-serve-ops#500).
             map((project) => meetingWriteAccessState(project)),
             catchError(() => of(undefined))
           );
