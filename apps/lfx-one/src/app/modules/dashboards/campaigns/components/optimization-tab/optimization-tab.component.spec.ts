@@ -38,6 +38,7 @@ import { CampaignBudgetFormComponent } from '../campaign-budget-form/campaign-bu
 import { CampaignKeywordTargetingPanelComponent } from '../campaign-keyword-targeting-panel/campaign-keyword-targeting-panel.component';
 import { CampaignNegativeKeywordsFormComponent } from '../campaign-negative-keywords-form/campaign-negative-keywords-form.component';
 import { MicrosoftKeywordsTableComponent } from '../microsoft-keywords-table/microsoft-keywords-table.component';
+import { RedditKeywordsTableComponent } from '../reddit-keywords-table/reddit-keywords-table.component';
 import { OptimizationTabComponent } from './optimization-tab.component';
 
 /**
@@ -94,6 +95,7 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
             getMonitorData: vi.fn().mockReturnValue(of(null)),
             getKeywords: vi.fn().mockReturnValue(of({ keywords: [] })),
             getMicrosoftKeywords: vi.fn().mockReturnValue(of(null)),
+            getRedditKeywords: vi.fn().mockReturnValue(of(null)),
             getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
             getRedditAccounts: vi.fn().mockReturnValue(of([])),
             getBriefMetrics: vi.fn().mockReturnValue(of({ brief_id: 'b-1', window: 'last_30_days', rows: [], ok_count: 0, action_items: [] })),
@@ -1982,6 +1984,7 @@ describe('OptimizationTabComponent — wasted-keyword all-clear completeness', (
             getMonitorData: vi.fn().mockReturnValue(of(null)),
             getKeywords: vi.fn().mockReturnValue(of({ keywords: [] })),
             getMicrosoftKeywords: vi.fn().mockReturnValue(of(null)),
+            getRedditKeywords: vi.fn().mockReturnValue(of(null)),
             getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
             getRedditAccounts: vi.fn().mockReturnValue(of([])),
             getBriefMetrics: vi.fn().mockReturnValue(of({ brief_id: 'b-1', window: 'last_30_days', rows: [], ok_count: 0, action_items: [] })),
@@ -2124,6 +2127,7 @@ describe('OptimizationTabComponent — keyword action outcome states', () => {
             getMonitorData: vi.fn().mockReturnValue(of(null)),
             getKeywords: vi.fn().mockReturnValue(of({ keywords: [] })),
             getMicrosoftKeywords: vi.fn().mockReturnValue(of(null)),
+            getRedditKeywords: vi.fn().mockReturnValue(of(null)),
             getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
             getRedditAccounts: vi.fn().mockReturnValue(of([])),
             getBriefMetrics: vi.fn().mockReturnValue(of({ brief_id: 'b-1', window: 'last_30_days', rows: [], ok_count: 0, action_items: [] })),
@@ -2459,6 +2463,7 @@ describe('OptimizationTabComponent — budget change (#3299)', () => {
             getMonitorData: vi.fn().mockReturnValue(of(null)),
             getKeywords: vi.fn().mockReturnValue(of({ keywords: [] })),
             getMicrosoftKeywords: vi.fn().mockReturnValue(of(null)),
+            getRedditKeywords: vi.fn().mockReturnValue(of(null)),
             getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
             getRedditAccounts: vi.fn().mockReturnValue(of([])),
             getBriefMetrics: vi.fn().mockReturnValue(of({ brief_id: 'b-1', window: 'last_30_days', rows: [], ok_count: 0, action_items: [] })),
@@ -2856,6 +2861,7 @@ describe('OptimizationTabComponent — monitor findings and their levers', () =>
             getMonitorData: vi.fn().mockReturnValue(of(null)),
             getKeywords: vi.fn().mockReturnValue(of({ keywords: [] })),
             getMicrosoftKeywords: vi.fn().mockReturnValue(of(null)),
+            getRedditKeywords: vi.fn().mockReturnValue(of(null)),
             getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
             getRedditAccounts: vi.fn().mockReturnValue(of([])),
             getMetaAccounts: vi.fn().mockReturnValue(of([])),
@@ -3151,6 +3157,7 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
             getMonitorData: vi.fn().mockReturnValue(of(null)),
             getKeywords: vi.fn().mockReturnValue(of({ keywords: [] })),
             getMicrosoftKeywords: vi.fn().mockReturnValue(of(null)),
+            getRedditKeywords: vi.fn().mockReturnValue(of(null)),
             getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
             getRedditAccounts: vi.fn().mockReturnValue(of([])),
             getBriefMetrics: vi.fn().mockReturnValue(of({ brief_id: 'b-1', window: 'last_30_days', rows: [], ok_count: 0, action_items: [] })),
@@ -3334,6 +3341,19 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
     (q('optimization-campaign-targeting-close-c-4')!.querySelector('button') as HTMLButtonElement).click();
     fixture.detectChanges();
     expect(q('optimization-campaign-targeting-panel-c-4')).toBeNull();
+  });
+
+  it("names the brief's Reddit campaigns in the Reddit keyword table and re-reads it on Refresh", () => {
+    render([doc({ platform: 'reddit-ads', platform_campaign_id: 't3_abc', campaign_name: 'Reddit one' }), doc({ id: 'c-2', platform_campaign_id: '99' })]);
+
+    const table = fixture.debugElement.query(By.directive(RedditKeywordsTableComponent)).componentInstance as RedditKeywordsTableComponent;
+    expect(table.campaignNames()).toEqual({ t3_abc: 'Reddit one' });
+    const getRedditKeywords = TestBed.inject(CampaignService).getRedditKeywords as ReturnType<typeof vi.fn>;
+    const reads = getRedditKeywords.mock.calls.length;
+
+    q('optimization-refresh')!.click();
+    fixture.detectChanges();
+    expect(getRedditKeywords.mock.calls.length).toBe(reads + 1);
   });
 
   it('disables keyword targeting, saying why, for a campaign not yet created on its platform', () => {

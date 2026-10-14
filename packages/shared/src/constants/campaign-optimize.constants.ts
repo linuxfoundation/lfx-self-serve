@@ -9,6 +9,8 @@ import type {
   KeywordTargetingPlatform,
   KeywordTargetingRemovalOutcome,
   MetaAdSetStatus,
+  RedditKeywordsWindow,
+  RedditKeywordsWindowOption,
 } from '../interfaces/campaign-optimize.interface';
 import { CAMPAIGN_METRICS_WINDOWS, MICROSOFT_KEYWORDS_WINDOWS } from './campaign.constants';
 
@@ -79,9 +81,9 @@ export const CAMPAIGN_REF_ID_PATTERNS: Readonly<Record<CampaignRefPlatform, RegE
 export const CAMPAIGN_REF_PLATFORMS_PENDING_UPSTREAM: ReadonlySet<CampaignRefPlatform> = new Set<CampaignRefPlatform>(['linkedin-ads']);
 
 /**
- * The reporting windows the Reddit keyword read accepts. campaign-service has no
- * `GET /projects/{p}/reddit-ads/keywords` yet; the Microsoft keyword read's set is used until it
- * publishes one, and the route is behind `LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS`.
+ * The reporting windows `get-reddit-ads-keywords` accepts (campaign-service #331): the Reddit
+ * metrics read's ranges, the same set as the Microsoft keyword read. `yesterday` and
+ * `last_14_days` are refused upstream with 400.
  */
 export const REDDIT_KEYWORDS_WINDOWS = MICROSOFT_KEYWORDS_WINDOWS;
 
@@ -266,4 +268,27 @@ export const KEYWORD_TARGETING_REMOVAL_ERROR_MESSAGES: Readonly<
   notFound: 'Nothing was removed: this campaign could not be found.',
   unavailable: 'Nothing was removed: the ad platform could not be reached. Try again.',
   other: 'Nothing was removed. Try again.',
+};
+
+// --- Reddit keyword performance table ------------------------------------------
+
+/** The window selector of the Reddit keyword table, in display order, over `REDDIT_KEYWORDS_WINDOWS`. */
+export const REDDIT_KEYWORDS_WINDOW_OPTIONS: readonly RedditKeywordsWindowOption[] = [
+  { value: 'today', label: 'Today' },
+  { value: 'last_7_days', label: '7d' },
+  { value: 'last_30_days', label: '30d' },
+  { value: 'this_month', label: 'This month' },
+  { value: 'last_month', label: 'Last month' },
+] as const;
+
+/** The window the Reddit keyword table opens on: upstream's own default. */
+export const DEFAULT_REDDIT_KEYWORDS_WINDOW: RedditKeywordsWindow = 'last_30_days';
+
+/** The Reddit keyword read's failures, by HTTP status, in fixed words. Upstream text is never shown. */
+export const REDDIT_KEYWORDS_ERROR_MESSAGES: Readonly<Record<'notConnected' | 'disabled' | 'conflict' | 'other', string>> = {
+  notConnected: "Reddit keyword metrics aren't available for this foundation: it has no Reddit Ads connection.",
+  disabled: 'Reddit keyword metrics are not switched on in this environment.',
+  conflict:
+    "Reddit keyword metrics can't be read for this foundation: it has more Reddit campaigns than one report can cover, or a campaign belongs to a different ad account.",
+  other: 'Reddit keyword metrics are unavailable right now. Try again.',
 };

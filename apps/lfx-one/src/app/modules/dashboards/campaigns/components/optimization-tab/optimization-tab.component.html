@@ -952,6 +952,8 @@
       [actionResults]="actionResults()"
       [removedKeywords]="removedKeywords()"
       (keywordAction)="onMicrosoftKeywordAction($event)" />
+    <!-- Reddit keyword performance (campaign-service #331): read-only, its own read and window. -->
+    <lfx-reddit-keywords-table [projectSlug]="activeFoundationSlug()" [reloadToken]="redditKeywordsReload()" [campaignNames]="redditCampaignNames()" />
   }
 
   <!-- LinkedIn Optimization -->

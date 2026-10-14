@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { TWITTER_AUDIENCE_WINDOWS } from '../constants/campaign-optimize.constants';
-import type { CampaignMetricsWindow, CampaignServiceMicrosoftKeywords, MicrosoftKeywordMetricsResponse, MicrosoftKeywordsWindow } from './campaign.interface';
+import type { CampaignMetricsWindow, MicrosoftKeywordsWindow } from './campaign.interface';
 
 // ---------------------------------------------------------------------------
 // Optimize-tab reads and levers proxied to lfx-v2-campaign-service
@@ -352,18 +352,83 @@ export interface NegativeKeywordsRevisionState {
 /** A platform whose campaign-ref resolve the BFF exposes (`linkedin-ads` is pending upstream). */
 export type CampaignRefPlatform = 'meta-ads' | 'reddit-ads' | 'twitter-ads' | 'linkedin-ads';
 
-/** The reporting windows the Reddit keyword read accepts (provisionally the Microsoft set). */
+/** The reporting windows the Reddit keyword read accepts: the Microsoft set (`yesterday` and `last_14_days` are 400 upstream). */
 export type RedditKeywordsWindow = MicrosoftKeywordsWindow;
 
 /**
- * PROVISIONAL: campaign-service has no Reddit keyword read yet. Typed on the Microsoft keyword
- * read it is meant to mirror (`get-microsoft-ads-keywords`); re-check against the published
- * design before `LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS` is turned on.
+ * One (campaign, keyword) row of campaign-service's `get-reddit-ads-keywords` (`reddit-ads-keyword`).
+ * READ-ONLY: Reddit's KEYWORD report carries no keyword id, match type or status, so a row addresses
+ * no action; Reddit keywords are acted on through the keyword-targeting levers.
  */
-export type CampaignServiceRedditKeywords = CampaignServiceMicrosoftKeywords;
+export interface CampaignServiceRedditKeywordRow {
+  /** Reddit's campaign id (map it with `/reddit-ads/campaign-ref`). */
+  campaign_id: string;
+  /** Reddit's keyword, verbatim. ABSENT when Reddit attributed the delivery to no keyword (community or interest targeting). */
+  text?: string;
+  impressions: number;
+  clicks: number;
+  /** Reddit SPEND, already micro-units, in the ad account's own currency. */
+  cost_micros: number;
+  /** A FRACTION (0.045), not a percentage. */
+  ctr: number;
+}
 
-/** Response of `GET /api/campaigns/reddit/keywords`: the Microsoft keyword table's shape. */
-export type RedditKeywordMetricsResponse = MicrosoftKeywordMetricsResponse;
+/** `reddit-ads-keywords`: the top 50 rows by impressions across the project's own Reddit campaigns, read live. */
+export interface CampaignServiceRedditKeywords {
+  window: RedditKeywordsWindow;
+  rows: CampaignServiceRedditKeywordRow[];
+  row_count: number;
+  /** True when the project's campaigns have more rows than were returned: the totals are then a subtotal. */
+  truncated: boolean;
+}
+
+/** A Reddit keyword row as the UI renders it: currency amounts and CTR as a percentage. */
+export interface RedditKeywordMetrics {
+  /** Stable within one read: the row's campaign and keyword. */
+  key: string;
+  /** Reddit's campaign id. */
+  campaignId: string;
+  /** The keyword, or `null` for delivery Reddit attributed to no keyword. */
+  keyword: string | null;
+  impressions: number;
+  clicks: number;
+  /** A percentage (4.5), not a fraction. */
+  ctr: number;
+  /** In the ad account's own currency. */
+  spend: number;
+}
+
+/** Totals over the rows returned (a subtotal when the read was truncated). No conversions: Reddit's read has none. */
+export interface RedditKeywordTotals {
+  impressions: number;
+  clicks: number;
+  spend: number;
+  avgCtr: number;
+}
+
+/** Response of `GET /api/campaigns/reddit/keywords?project=&window=`. */
+export interface RedditKeywordMetricsResponse {
+  pulledAt: string;
+  window: RedditKeywordsWindow;
+  totalKeywords: number;
+  truncated: boolean;
+  totals: RedditKeywordTotals;
+  keywords: RedditKeywordMetrics[];
+}
+
+/** What the Reddit keyword table shows: the read in flight, its rows, or why there are none. */
+export interface RedditKeywordsView {
+  state: 'idle' | 'loading' | 'loaded' | 'unavailable' | 'error';
+  data: RedditKeywordMetricsResponse | null;
+  /** A fixed sentence for `unavailable` and `error`, never upstream text. `''` otherwise. */
+  message: string;
+}
+
+/** One reporting-window choice of the Reddit keyword table. */
+export interface RedditKeywordsWindowOption {
+  value: RedditKeywordsWindow;
+  label: string;
+}
 
 /** How a lever reports an outcome it cannot confirm: its own error code and fixed client message. */
 export interface CampaignLeverUnconfirmedOutcome {

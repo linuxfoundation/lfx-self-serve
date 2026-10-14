@@ -95,6 +95,7 @@ import { CampaignBudgetFormComponent } from '../campaign-budget-form/campaign-bu
 import { CampaignKeywordTargetingPanelComponent } from '../campaign-keyword-targeting-panel/campaign-keyword-targeting-panel.component';
 import { CampaignNegativeKeywordsFormComponent } from '../campaign-negative-keywords-form/campaign-negative-keywords-form.component';
 import { MicrosoftKeywordsTableComponent } from '../microsoft-keywords-table/microsoft-keywords-table.component';
+import { RedditKeywordsTableComponent } from '../reddit-keywords-table/reddit-keywords-table.component';
 
 @Component({
   selector: 'lfx-optimization-tab',
@@ -111,6 +112,7 @@ import { MicrosoftKeywordsTableComponent } from '../microsoft-keywords-table/mic
     PacingClassPipe,
     PriorityClassPipe,
     QualityScoreClassPipe,
+    RedditKeywordsTableComponent,
   ],
   templateUrl: './optimization-tab.component.html',
   styleUrl: './optimization-tab.component.scss',
@@ -251,6 +253,10 @@ export class OptimizationTabComponent implements OnInit {
 
   /** Bumped by Refresh to re-read the Microsoft keyword table, which owns its own read. */
   protected readonly microsoftKeywordsReload = signal(0);
+  /** Bumped by Refresh to re-read the Reddit keyword table, which owns its own read. */
+  protected readonly redditKeywordsReload = signal(0);
+  /** The brief's Reddit campaign names by Reddit campaign id, for the Reddit keyword table's Campaign column. */
+  protected readonly redditCampaignNames: Signal<Record<string, string>> = this.initRedditCampaignNames();
 
   /**
    * The brief's metrics read, for its `action_items`: campaign-service's single-source rule
@@ -1238,6 +1244,7 @@ export class OptimizationTabComponent implements OnInit {
     this.negativeKeywordsService.clearSettled(this.projectSlug(), this.briefId());
     this.reloadFindings();
     this.microsoftKeywordsReload.update((n) => n + 1);
+    this.redditKeywordsReload.update((n) => n + 1);
     this.fetchData();
     this.fetchLinkedInOptimization();
     this.fetchRedditOptimization();
@@ -1801,6 +1808,18 @@ export class OptimizationTabComponent implements OnInit {
         }
       }
       return flags;
+    });
+  }
+
+  private initRedditCampaignNames(): Signal<Record<string, string>> {
+    return computed(() => {
+      const names: Record<string, string> = {};
+      for (const campaign of this.briefCampaigns() ?? []) {
+        if (campaign.platform === 'reddit-ads' && typeof campaign.platform_campaign_id === 'string' && campaign.platform_campaign_id !== '') {
+          names[campaign.platform_campaign_id] = campaign.campaign_name;
+        }
+      }
+      return names;
     });
   }
 
