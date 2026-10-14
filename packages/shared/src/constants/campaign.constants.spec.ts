@@ -45,6 +45,9 @@ import {
   normalizeGeoTargets,
   normalizeMicrosoftGeoTargets,
   resolveRedditOptimizationGoal,
+  googleAdsEchoed,
+  googleAdsToLower,
+  googleAdsTrimSpace,
 } from './campaign.constants';
 
 describe('campaignToggleAction', () => {
@@ -942,5 +945,42 @@ describe('Google Ads language tables', () => {
    */
   it('labels exactly the codes the language map carries', () => {
     expect(Object.keys(GOOGLE_ADS_LANGUAGE_LABELS).sort()).toEqual(Object.keys(GOOGLE_ADS_LANGUAGE_MAP).sort());
+  });
+});
+
+/** Go's `strings.TrimSpace` and `strings.ToLower`, the two rules upstream's callout checks use. */
+describe('Google Ads string rules', () => {
+  it.each([
+    ['ASCII space and tabs', ' \tFree\n', 'Free'],
+    ['U+0085, which Go trims and JS `trim` keeps', '\u0085Free\u0085', 'Free'],
+    ['no-break and line separators', '\u00a0Free\u2028', 'Free'],
+    ['U+FEFF, which JS `trim` strips and Go keeps', '\ufeffFree', '\ufeffFree'],
+  ])('trims %s as Go does', (_label, input, expected) => {
+    expect(googleAdsTrimSpace(input)).toBe(expected);
+  });
+
+  it('trims a long interior whitespace run in linear time', () => {
+    // A `[ws]+$` regex backtracks quadratically here: 40,000 spaces took about 2.5 s.
+    const text = `x${' '.repeat(1_000_000)}x`;
+    const started = Date.now();
+
+    expect(googleAdsTrimSpace(` ${text} `)).toBe(text);
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  it.each([
+    ['short text, unchanged', 'Free shipping', 'Free shipping'],
+    ['long text, cut at 32 code points', 'A'.repeat(40), `${'A'.repeat(32)}…`],
+    ['an emoji at the cut, kept whole', `${'A'.repeat(31)}🎉🎉`, `${'A'.repeat(31)}🎉…`],
+  ])('echoes %s', (_label, input, expected) => {
+    expect(googleAdsEchoed(input)).toBe(expected);
+  });
+
+  it.each([
+    ['a final sigma, with no word-end rule', 'ΟΔΟΣ', 'οδοσ'],
+    ['a dotted capital I, to a plain i', 'İnfo', 'info'],
+    ['ASCII', 'Free Shipping', 'free shipping'],
+  ])('lower-cases %s as Go does', (_label, input, expected) => {
+    expect(googleAdsToLower(input)).toBe(expected);
   });
 });

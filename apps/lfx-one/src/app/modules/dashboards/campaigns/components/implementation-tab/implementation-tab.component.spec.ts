@@ -7,6 +7,8 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import {
   GOOGLE_ADS_BIDDING_BOUNDS,
+  GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
+  GOOGLE_ADS_MAX_CALLOUTS,
   GOOGLE_ADS_MAX_CONVERSION_ACTIONS,
   GOOGLE_ADS_MAX_GEO_TARGETS,
   GOOGLE_ADS_MAX_LANGUAGES,
@@ -5874,6 +5876,246 @@ describe('ImplementationTabComponent google languages', () => {
     restoreGoogleDraft(fixture, c, {});
 
     expect(c['googleLanguages']()).toEqual([code]);
+  });
+});
+
+/**
+ * The Google callout chips.
+ *
+ * Free text rather than a select, so every one of upstream's `validateCallouts` branches has to be
+ * mirrored on the add path — and each test below is one of those branches, plus the accept-cases
+ * that keep the guards from refusing what upstream takes.
+ */
+describe('ImplementationTabComponent google callouts', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it('trims an added callout and refuses a blank', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['addGoogleCallout']('  Free shipping  ')).toBe(true);
+    expect(c['addGoogleCallout']('   ')).toBe(false);
+
+    expect(c['googleCallouts']()).toEqual(['Free shipping']);
+  });
+
+  /**
+   * Case-folded, because upstream keys its duplicate check on `strings.ToLower(text)` and REFUSES
+   * the whole create rather than de-duplicating. Two chips differing only in case would be one
+   * callout upstream and a campaign that never gets created.
+   */
+  it('refuses a callout that repeats an existing one in a different case', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleCallout']('Free Shipping');
+
+    expect(c['addGoogleCallout']('free shipping')).toBe(false);
+    expect(c['googleCallouts']()).toEqual(['Free Shipping']);
+  });
+
+  it('refuses an add at the cap', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    for (let i = 0; i < GOOGLE_ADS_MAX_CALLOUTS; i++) c['addGoogleCallout'](`Callout ${i + 1}`);
+
+    expect(c['addGoogleCallout']('One more')).toBe(false);
+    expect(c['googleCallouts']()).toHaveLength(GOOGLE_ADS_MAX_CALLOUTS);
+  });
+
+  /**
+   * Runes, not UTF-16 units. `utf8.RuneCountInString` counts code points, so 25 astral-plane
+   * characters are a callout upstream accepts — counted with `.length` they would be 50 and this
+   * add would be refused for no reason, which is the over-refusal these mirrors exist to avoid.
+   */
+  it('accepts a 25-emoji callout and refuses a 26-character one', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['addGoogleCallout']('🎉'.repeat(GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES))).toBe(true);
+    expect(c['addGoogleCallout']('A'.repeat(GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES + 1))).toBe(false);
+
+    expect(c['googleCallouts']()).toEqual(['🎉'.repeat(GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES)]);
+  });
+
+  /** The live warnings describe what is IN THE BOX, which is why the draft text is a signal. */
+  it('warns on the in-progress text by rune count and by case-folded repeat', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleCallout']('Free Shipping');
+
+    c['googleCalloutDraft'].set('🎉'.repeat(GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES + 1));
+    expect(c['googleCalloutDraftLength']()).toBe(GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES + 1);
+    expect(c['googleCalloutDraftTooLong']()).toBe(true);
+
+    c['googleCalloutDraft'].set('  free shipping ');
+    expect(c['googleCalloutDraftTooLong']()).toBe(false);
+    expect(c['googleCalloutDraftDuplicate']()).toBe(true);
+  });
+
+  /**
+   * `aria-invalid` says the box is wrong; only `aria-describedby` says why, and it is the half that
+   * survives focus returning to the field later — `role="alert"` fires once, as the line appears.
+   * The id is asserted against the message element actually rendered, so a renamed id on either
+   * side breaks the test rather than silently pointing `aria-describedby` at nothing.
+   */
+  it('points the callout box at whichever message is rendered, and at nothing when clean', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleCallout']('Free Shipping');
+    const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+    expect(c['googleCalloutDraftErrorId']()).toBeNull();
+
+    c['googleCalloutDraft'].set('A'.repeat(GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES + 1));
+    fixture.detectChanges();
+    expect(find('implementation-google-callout-add')?.getAttribute('aria-describedby')).toBe(find('implementation-google-callout-too-long')?.id);
+
+    c['googleCalloutDraft'].set('free shipping');
+    fixture.detectChanges();
+    expect(find('implementation-google-callout-add')?.getAttribute('aria-describedby')).toBe(find('implementation-google-callout-duplicate')?.id);
+
+    c['googleCalloutDraft'].set('Fast delivery');
+    fixture.detectChanges();
+    expect(find('implementation-google-callout-add')?.getAttribute('aria-describedby')).toBeNull();
+  });
+
+  it('removes a chip by index', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleCallout']('First');
+    c['addGoogleCallout']('Second');
+
+    c['removeGoogleCallout'](0);
+
+    expect(c['googleCallouts']()).toEqual(['Second']);
+  });
+
+  /**
+   * SEARCH ONLY, and withheld rather than refused elsewhere: `validateAssetPlan` refuses the whole
+   * extension set on any other channel at preflight, before the budget mutate, so forwarding a
+   * list typed under Search and then abandoned would cost the operator the entire campaign.
+   */
+  it('offers callouts on Search and withholds them on a non-Search channel', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    expect(c['googleCalloutsAvailable']()).toBe(true);
+    c['addGoogleCallout']('Free shipping');
+    expect(c['googleCalloutsPayload']()).toEqual({ callouts: ['Free shipping'] });
+
+    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    fixture.detectChanges();
+
+    expect(c['googleCalloutsAvailable']()).toBe(false);
+    expect(c['googleCalloutsPayload']()).toEqual({});
+    // Held, not discarded — the chips are still there if Search is re-ticked.
+    expect(c['googleCallouts']()).toEqual(['Free shipping']);
+  });
+
+  /** Omitted rather than sent empty, so the upstream default is reached by the absent-key route. */
+  it('omits the callouts key when nothing was added', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['googleCalloutsPayload']()).toEqual({});
+  });
+
+  it('round-trips the chips through a draft', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    let emitted: CampaignImplementationDraft | undefined;
+    fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
+    c['addGoogleCallout']('Free shipping');
+
+    expect(emitted?.googleCallouts).toEqual(['Free shipping']);
+
+    c['googleCallouts'].set([]);
+    restoreGoogleDraft(fixture, c, { googleCallouts: ['Free shipping'] });
+
+    expect(c['googleCallouts']()).toEqual(['Free shipping']);
+  });
+
+  /** COPIED out of the draft, so the parent's array cannot be mutated through the chips. */
+  it('does not share the restored array with the draft', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const saved = ['Free shipping'];
+
+    restoreGoogleDraft(fixture, c, { googleCallouts: saved });
+    c['addGoogleCallout']('Next day delivery');
+
+    expect(saved).toHaveLength(1);
+  });
+
+  /**
+   * Go's string rules, not JS's: upstream trims with `strings.TrimSpace` (which strips U+0085 and
+   * keeps U+FEFF) and keys repeats on `strings.ToLower` (no final-sigma rule). A chip JS calls new
+   * but Go calls a repeat would cost the whole create.
+   */
+  it.each([
+    ['a trailing U+0085', 'Free shipping', 'free shipping\u0085'],
+    ['final sigma', 'ΟΔΟΣ', 'οδοσ'],
+  ])('refuses a repeat hidden by %s, on the add and in the live warning', (_label, first, repeat) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleCallout'](first);
+
+    c['googleCalloutDraft'].set(repeat);
+    expect(c['googleCalloutDraftDuplicate']()).toBe(true);
+    expect(c['addGoogleCallout'](repeat)).toBe(false);
+    expect(c['googleCallouts']()).toEqual([first]);
+  });
+
+  it('says out loud that callouts are withheld after a switch away from Search, in the notice and its live region', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+    // The region exists, empty, BEFORE there is anything to say: an aria-live element inserted
+    // with its text already present is not reliably announced.
+    expect(find('implementation-google-callouts-withheld-live')?.textContent?.trim()).toBe('');
+
+    c['addGoogleCallout']('Free shipping');
+    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    fixture.detectChanges();
+
+    const notice = find('implementation-google-callouts-withheld')?.textContent ?? '';
+    expect(notice).toContain('Demand Gen campaigns do not take callouts');
+    expect(notice).toContain('the 1 you added');
+    expect(find('implementation-google-callouts-withheld-live')?.textContent?.trim()).toBe(c['googleCalloutsWithheldWarning']());
+    // The visible copy carries no role, or the sentence would be announced twice.
+    expect(find('implementation-google-callouts-withheld')?.getAttribute('role')).toBeNull();
+  });
+
+  it('shows no withheld notice when no callouts were added', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+
+    expect(c['googleCalloutsWithheldWarning']()).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="implementation-google-callouts-withheld"]')).toBeNull();
+  });
+
+  /**
+   * Through `submit()`, not the payload helper: deleting the payload spread would leave every
+   * helper-level test above green while every callout an operator adds is dropped.
+   */
+  it.each([
+    ['Search', { includeSearch: true }, ['Free shipping']],
+    ['Demand Gen, after a switch from Search', { includeDemandGen: true }, undefined],
+  ])('sends the callouts on a submitted %s create only when the channel takes them', async (_label, channel, expected) => {
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleCallout']('Free shipping');
+    c['campaignForm'].patchValue({ includeSearch: false, ...channel });
+    fixture.detectChanges();
+    expect(c['canSubmit']()).toBe(true);
+
+    c['submit']();
+    await fixture.whenStable();
+
+    expect(createCampaign).toHaveBeenCalled();
+    expect((createCampaign.mock.calls[0][0] as unknown as Record<string, unknown>)['callouts']).toEqual(expected);
+  });
+
+  /** A draft saved before this section shipped carries no key, and must not clear the chips. */
+  it('leaves the chips alone when the draft carries no callouts key', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleCallout']('Free shipping');
+
+    restoreGoogleDraft(fixture, c, {});
+
+    expect(c['googleCallouts']()).toEqual(['Free shipping']);
   });
 });
 

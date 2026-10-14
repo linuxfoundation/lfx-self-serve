@@ -228,6 +228,14 @@ All validators:
 - Call `next(error)` for Express error handling
 - Return `false` to signal invalid input
 
+`getValidatedIsoDateQueryParam(req, name, operation)` validates optional date filters used by both events handlers.
+It accepts `YYYY-MM-DD` and UTC timestamps (`YYYY-MM-DDTHH:mm:ssZ`, optionally with exactly three fractional digits),
+checks calendar/time validity by UTC round-trip, and returns the accepted string unchanged for the SQL bind.
+Absent, empty, and non-string query values return `undefined`, matching `getStringQueryParam` semantics. Invalid
+strings throw a field-specific `ServiceValidationError` (400); controllers catch it and pass it to `next(error)`
+before invoking the events service. The helper does not log. See [Snowflake conversion-error handling](./snowflake-integration.md#7-unrecognized-datetimestampnumeric-value)
+for the circuit-breaker defense in depth.
+
 ## Guidelines
 
 - **Use `logger` service** — never import `serverLogger` directly
