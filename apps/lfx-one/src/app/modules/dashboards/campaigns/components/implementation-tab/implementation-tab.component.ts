@@ -692,15 +692,17 @@ export class ImplementationTabComponent implements OnInit {
    * curated table and hard-errors on a miss, and {@link GOOGLE_ADS_LANGUAGE_MAP} is that same table.
    *
    * Sorted by the ENGLISH NAME rather than the code, unlike the geo select — the options render as
-   * names here, so sorting by code would put them on screen in no order the operator can see.
+   * names here, so sorting by code would put them on screen in no order the operator can see. The
+   * collation locale is pinned to `en`: left to the runtime default, the server render and the
+   * browser could order the options differently and fail hydration.
    *
    * The raw numeric constant ids upstream also accepts are deliberately NOT offered: they exist for
-   * languages outside the curated table, and the BFF guard lets them through untested, so the
-   * narrower control costs nothing an operator can reach from this screen.
+   * languages outside the curated table, and the BFF guard accepts them without testing them
+   * against that table, so the narrower control costs nothing an operator can reach from this screen.
    */
   protected readonly googleLanguageOptions = Object.entries(GOOGLE_ADS_LANGUAGE_LABELS)
     .map(([code, label]) => ({ code, label }))
-    .sort((a, b) => a.label.localeCompare(b.label));
+    .sort((a, b) => a.label.localeCompare(b.label, 'en'));
   /**
    * Code to English name, for the chips and their remove buttons, so a chip reads as the name the
    * operator picked from the select and a screen reader announces "Remove German" rather than
@@ -709,6 +711,11 @@ export class ImplementationTabComponent implements OnInit {
    * key (#3504). A code outside the table falls back to the code itself.
    */
   private readonly googleLanguageNames = new Map<string, string>(Object.entries(GOOGLE_ADS_LANGUAGE_LABELS));
+  /**
+   * The picked languages as chips — code and display name together — so the template binds data
+   * rather than calling a lookup on every change-detection pass.
+   */
+  protected readonly googleLanguageChips = computed(() => this.googleLanguages().map((code) => ({ code, name: this.googleLanguageNames.get(code) ?? code })));
   protected readonly metaVariants = signal<MetaAdVariant[]>([]);
   protected readonly metaGeoTargets = signal<string[]>([]);
   protected readonly metaBudgetUsd = signal(500);
@@ -1886,10 +1893,6 @@ export class ImplementationTabComponent implements OnInit {
   protected removeGoogleLanguage(index: number): void {
     this.googleLanguages.update((codes) => codes.filter((_, i) => i !== index));
     this.emitDraft();
-  }
-
-  protected googleLanguageName(code: string): string {
-    return this.googleLanguageNames.get(code) ?? code;
   }
 
   protected removeMicrosoftGeoTarget(index: number): void {

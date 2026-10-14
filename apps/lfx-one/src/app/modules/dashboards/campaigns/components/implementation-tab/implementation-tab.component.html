@@ -373,15 +373,15 @@
             Google Languages ({{ googleLanguages().length }}/{{ googleMaxLanguages }})
           </label>
           <div class="flex flex-wrap items-center gap-2">
-            @for (language of googleLanguages(); track language; let i = $index) {
+            @for (chip of googleLanguageChips(); track chip.code; let i = $index) {
               <span class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
-                {{ googleLanguageName(language) }}
+                {{ chip.name }}
                 <button
                   type="button"
                   (click)="removeGoogleLanguage(i)"
                   class="ml-0.5 text-blue-400 hover:text-blue-600"
-                  [attr.aria-label]="'Remove ' + googleLanguageName(language)"
-                  [attr.data-testid]="'implementation-google-language-remove-' + language">
+                  [attr.aria-label]="'Remove ' + chip.name"
+                  [attr.data-testid]="'implementation-google-language-remove-' + chip.code">
                   <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
                 </button>
               </span>

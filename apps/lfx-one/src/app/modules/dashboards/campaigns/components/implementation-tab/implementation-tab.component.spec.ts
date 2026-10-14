@@ -5696,12 +5696,18 @@ describe('ImplementationTabComponent google languages', () => {
     expect(c['googleLanguages']()).toEqual([second.code]);
   });
 
-  /** Sorted by the English NAME, because that is what the options render. */
+  /**
+   * Sorted by the English NAME, because that is what the options render, under a PINNED `en`
+   * collation — the endpoints are asserted by value so the order cannot quietly follow whichever
+   * locale runs the suite.
+   */
   it('offers the languages in name order', () => {
     const c = seedChannel(fixture, { includeSearch: true });
     const labels = c['googleLanguageOptions'].map((o: { label: string }) => o.label);
 
-    expect(labels).toEqual([...labels].sort((a: string, b: string) => a.localeCompare(b)));
+    expect(labels).toEqual([...labels].sort((a: string, b: string) => a.localeCompare(b, 'en')));
+    expect(labels[0]).toBe('Arabic');
+    expect(labels.at(-1)).toBe('Vietnamese');
   });
 
   /**
@@ -5715,8 +5721,12 @@ describe('ImplementationTabComponent google languages', () => {
     ['constructor', 'constructor'],
   ])('names the chip for %s as %s', (code, name) => {
     const c = seedChannel(fixture, { includeSearch: true });
+    c['googleLanguages'].set([code]);
+    fixture.detectChanges();
 
-    expect(c['googleLanguageName'](code)).toBe(name);
+    expect(c['googleLanguageChips']()).toEqual([{ code, name }]);
+    const remove = fixture.nativeElement.querySelector(`[data-testid="implementation-google-language-remove-${code}"]`);
+    expect(remove?.getAttribute('aria-label')).toBe(`Remove ${name}`);
   });
 
   it.each([

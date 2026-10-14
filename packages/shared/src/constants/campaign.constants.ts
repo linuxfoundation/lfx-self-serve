@@ -1103,26 +1103,14 @@ export const GOOGLE_ADS_LANGUAGE_LABELS = {
 export const GOOGLE_ADS_MAX_LANGUAGES = 40;
 
 /**
- * The two shapes a Google Ads language entry may take, as one test.
+ * A Google Ads language entry that is a raw language constant id rather than an ISO 639-1 code.
  *
  * `resolveLanguageList` tells its two accepted forms apart by SHAPE — "an ISO 639-1 code is letters,
- * a constant id is all digits, so no input is ambiguous" — and this mirrors that test and nothing
- * more. It is deliberately WIDER than {@link GOOGLE_ADS_LANGUAGE_MAP}: a numeric id names a language
- * that is not in the curated table, and refusing one here would be the over-refusal the mirroring
- * exists to prevent.
- *
- * Shape only. `0` and `01000` pass this and are refused upstream by name, because canonical-spelling
- * is a rule about the id's VALUE and lives where the id is resolved.
- */
-export const GOOGLE_ADS_LANGUAGE_CODE_PATTERN = /^(?:[A-Z]{2}|[0-9]+)$/;
-
-/**
- * The half of {@link GOOGLE_ADS_LANGUAGE_CODE_PATTERN} that is a raw language constant id.
- *
- * Separate because the two halves are judged differently once past the shape test: an ISO 639-1
- * code must appear in {@link GOOGLE_ADS_LANGUAGE_MAP}, while a numeric id must NOT be tested against
- * it — `resolveLanguageList` accepts an id for a language the curated table does not carry, so
- * refusing one would be an over-refusal.
+ * a constant id is all digits, so no input is ambiguous" — and the two are judged differently from
+ * there: a code must appear in {@link GOOGLE_ADS_LANGUAGE_MAP}, while a numeric id must NOT be tested
+ * against it — upstream accepts an id for a language the curated table does not carry, so refusing
+ * one would be an over-refusal. A numeric id must instead be the canonical spelling of a positive
+ * int64 (`0` and `01000` are refused), which {@link isCanonicalGoogleAdsResourceId} tests.
  */
 export const GOOGLE_ADS_LANGUAGE_ID_PATTERN = /^[0-9]+$/;
 
