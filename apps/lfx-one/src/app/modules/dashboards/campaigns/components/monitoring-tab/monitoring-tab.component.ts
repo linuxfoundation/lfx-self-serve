@@ -102,7 +102,7 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly linkedInTotalsNote = computed(() => this.totalsCoverageNote(this.linkedInCampaigns()));
   protected readonly linkedInPulledAt = computed(() => {
     const pulledAt = this.linkedInData()?.pulledAt;
-    return pulledAt ? new Date(pulledAt).toLocaleString() : null;
+    return pulledAt ? new Date(pulledAt).toLocaleString('en-US') : null;
   });
 
   // Reddit
@@ -115,7 +115,7 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly redditTotalsNote = computed(() => this.totalsCoverageNote(this.redditCampaigns()));
   protected readonly redditPulledAt = computed(() => {
     const pulledAt = this.redditData()?.pulledAt;
-    return pulledAt ? new Date(pulledAt).toLocaleString() : null;
+    return pulledAt ? new Date(pulledAt).toLocaleString('en-US') : null;
   });
 
   // Meta
@@ -129,12 +129,14 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly metaTotalsNote = computed(() => this.totalsCoverageNote(this.metaCampaigns()));
   protected readonly metaPulledAt = computed(() => {
     const pulledAt = this.metaData()?.pulledAt;
-    return pulledAt ? new Date(pulledAt).toLocaleString() : null;
+    return pulledAt ? new Date(pulledAt).toLocaleString('en-US') : null;
   });
 
   // campaign-service monitor cutover (#2519). Set from `/monitor/connections`: while the server's
   // flag is off it stays false, the legacy account lists fill the pickers, and nothing below renders.
   private connectionsSub: Subscription | null = null;
+  /** The in-flight legacy account-list reads; cancelled whenever the picker source changes. */
+  private legacyAccountSubs: Subscription[] = [];
   protected readonly monitorViaCampaignService = signal(false);
   protected readonly monitorConnections = signal<CampaignMonitorConnections['platforms']>({});
   protected readonly metricsDisabledPlatforms = signal<ReadonlySet<MonitorConnectionPlatform>>(new Set());
@@ -150,7 +152,7 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly reportBackedTotalsNote = computed(() => this.totalsCoverageNote(this.reportBackedCampaigns()));
   protected readonly reportBackedPulledAt = computed(() => {
     const pulledAt = this.reportBackedData()?.pulledAt;
-    return pulledAt ? new Date(pulledAt).toLocaleString() : null;
+    return pulledAt ? new Date(pulledAt).toLocaleString('en-US') : null;
   });
 
   // HubSpot email monitor: project-scoped, so no account picker.
@@ -161,7 +163,7 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly hubSpotNoticeState = signal<MonitorPanelNoticeState | null>(null);
   protected readonly hubSpotPulledAt = computed(() => {
     const pulledAt = this.hubSpotData()?.pulledAt;
-    return pulledAt ? new Date(pulledAt).toLocaleString() : null;
+    return pulledAt ? new Date(pulledAt).toLocaleString('en-US') : null;
   });
 
   protected readonly keywordsLoading = signal(false);
@@ -633,7 +635,15 @@ export class MonitoringTabComponent implements OnInit {
       const data = this.reportBackedData();
       // The report-backed rows keep the neutral status badge they always had: Microsoft's statuses are
       // not the uppercase ACTIVE the green badge keys on, and X's should not turn green by accident.
-      return data ? this.buildAccountPanelView(data.campaigns, data.accountTotals, { ...this.standardFormats, statusBadges: false }) : null;
+      // Their amounts are in the account's own currency, which campaign-service does not name, so
+      // they carry no $ (see formatAccountAmount).
+      return data
+        ? this.buildAccountPanelView(data.campaigns, data.accountTotals, {
+            currency: (n) => this.formatAccountAmount(n),
+            pct: (n) => this.formatPct(n),
+            statusBadges: false,
+          })
+        : null;
     });
   }
 
@@ -938,7 +948,7 @@ export class MonitoringTabComponent implements OnInit {
       if (data.metricsAsOf) {
         const window = data.metricsWindowStart && data.metricsWindowEnd ? `, covering ${data.metricsWindowStart} → ${data.metricsWindowEnd}` : '';
         const pending = data.metricsPending ? ' A newer report is building — refresh in a few minutes for newer figures.' : '';
-        return `Metrics as of ${new Date(data.metricsAsOf).toLocaleString()}${window}.${pending}`;
+        return `Metrics as of ${new Date(data.metricsAsOf).toLocaleString('en-US')}${window}.${pending}`;
       }
       if (data.metricsPending) {
         return 'The first report for this account is building, so its campaigns show "Couldn\'t read" until it finishes. Refresh in a few minutes.';
@@ -952,7 +962,7 @@ export class MonitoringTabComponent implements OnInit {
       const data = this.hubSpotData();
       if (!data?.metricsAsOf) return null;
       const window = data.metricsWindowStart && data.metricsWindowEnd ? ` Emails sent ${data.metricsWindowStart} → ${data.metricsWindowEnd}.` : '';
-      return `Counters as of ${new Date(data.metricsAsOf).toLocaleString()} (totals to date, not only the window).${window}`;
+      return `Counters as of ${new Date(data.metricsAsOf).toLocaleString('en-US')} (totals to date, not only the window).${window}`;
     });
   }
 
@@ -1140,6 +1150,7 @@ export class MonitoringTabComponent implements OnInit {
     // it mirrors a server-wide flag, not the foundation, so dropping it would only make the extra
     // platform buttons flicker while the new foundation's connections load.
     this.connectionsSub?.unsubscribe();
+    this.cancelLegacyAccountReads();
     this.reportBackedSub?.unsubscribe();
     this.hubSpotSub?.unsubscribe();
     this.reportBackedLoading.set(false);
@@ -1205,6 +1216,10 @@ export class MonitoringTabComponent implements OnInit {
    * will read for this project; offering any other would only ever produce a refusal.
    */
   private applyMonitorConnections(platforms: CampaignMonitorConnections['platforms']): void {
+    // A late legacy account list must not replace the connection's accounts, and figures read for
+    // the previous selection must not stay up under the new one.
+    this.cancelLegacyAccountReads();
+    this.resetAccountPanels();
     this.monitorViaCampaignService.set(true);
     this.monitorConnections.set(platforms);
 
@@ -1218,11 +1233,7 @@ export class MonitoringTabComponent implements OnInit {
     this.metaAccountOptions.set(meta ? [{ key: meta.accountId, label: meta.label }] : []);
     this.selectedMetaAccountKey.set(meta?.accountId ?? '');
 
-    // Clear what a previous read showed for an account that is no longer offered, then read the
-    // panel the user is on now that its account is known.
-    this.linkedInError.set(null);
-    this.redditError.set(null);
-    this.metaError.set(null);
+    // Read the panel the user is on now that its account is known.
     this.fetchSelectedPanel();
   }
 
@@ -1231,17 +1242,16 @@ export class MonitoringTabComponent implements OnInit {
     const wasViaCampaignService = this.monitorViaCampaignService();
     this.monitorViaCampaignService.set(false);
     if (wasViaCampaignService) {
-      // The flag went off since the last read (a rollback): the connection's accounts, and any error
-      // read for them, must not stay selected under the legacy pickers that replace them.
+      // The flag went off since the last read (a rollback): the connection's accounts, their
+      // figures, and any read still running for them must not stay up under the legacy pickers that
+      // replace them — even if those lists come back empty.
+      this.resetAccountPanels();
       this.selectedLinkedInAccountKey.set('');
       this.selectedRedditAccountKey.set('');
       this.selectedMetaAccountKey.set('');
       this.linkedInAccountOptions.set([]);
       this.redditAccountOptions.set([]);
       this.metaAccountOptions.set([]);
-      this.linkedInError.set(null);
-      this.redditError.set(null);
-      this.metaError.set(null);
       this.monitorConnections.set({});
     }
     if (this.selectedPlatform() === 'microsoft' || this.selectedPlatform() === 'twitter' || this.selectedPlatform() === 'hubspot') {
@@ -1251,75 +1261,119 @@ export class MonitoringTabComponent implements OnInit {
     this.loadLegacyAccounts(slug);
   }
 
+  /** Cancel the legacy account-list reads still in flight, so a late one cannot land after a source switch. */
+  private cancelLegacyAccountReads(): void {
+    for (const sub of this.legacyAccountSubs) {
+      sub.unsubscribe();
+    }
+    this.legacyAccountSubs = [];
+  }
+
+  /**
+   * Drop every account-scoped panel's figures and cancel its running read: LinkedIn, Reddit, Meta and
+   * the shared Microsoft/X panel. Used when the accounts those figures belong to are replaced (the
+   * picker source switching either way), so the old account's numbers never show under the new one,
+   * on the visible panel or on one the user switches to later. HubSpot is project-scoped and keeps its own.
+   */
+  private resetAccountPanels(): void {
+    this.linkedInSub?.unsubscribe();
+    this.redditSub?.unsubscribe();
+    this.metaSub?.unsubscribe();
+    this.reportBackedSub?.unsubscribe();
+    this.linkedInLoading.set(false);
+    this.redditLoading.set(false);
+    this.metaLoading.set(false);
+    this.reportBackedLoading.set(false);
+    this.linkedInData.set(null);
+    this.redditData.set(null);
+    this.metaData.set(null);
+    this.reportBackedData.set(null);
+    this.linkedInError.set(null);
+    this.redditError.set(null);
+    this.metaError.set(null);
+    this.reportBackedError.set(null);
+    this.metricsDisabledPlatforms.set(new Set());
+  }
+
   private loadLegacyAccounts(slug: string): void {
+    this.cancelLegacyAccountReads();
     // Each account-list request is stamped with the slug it was made for. A foundation switch
     // fires a new request before the previous one resolves, and `takeUntilDestroyed` alone
     // doesn't cancel it (the component survives the switch). Without this guard, a slower
     // response for the OLD foundation can arrive after a faster one for the new foundation and
     // overwrite it with the wrong account catalog.
     const linkedInSlug = slug;
-    this.campaignService
-      .getLinkedInAccounts(linkedInSlug)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (accounts) => {
-          if (linkedInSlug !== this.activeFoundationSlug()) return;
-          this.linkedInAccountOptions.set(accounts);
-          if (accounts.length > 0 && !this.selectedLinkedInAccountKey()) {
-            this.selectedLinkedInAccountKey.set(accounts[0].accountId);
-            if (this.selectedPlatform() === 'linkedin') {
-              this.fetchLinkedInData();
+    this.legacyAccountSubs.push(
+      this.campaignService
+        .getLinkedInAccounts(linkedInSlug)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          next: (accounts) => {
+            // Also refused once the connection path has taken over the pickers.
+            if (linkedInSlug !== this.activeFoundationSlug() || this.monitorViaCampaignService()) return;
+            this.linkedInAccountOptions.set(accounts);
+            if (accounts.length > 0 && !this.selectedLinkedInAccountKey()) {
+              this.selectedLinkedInAccountKey.set(accounts[0].accountId);
+              if (this.selectedPlatform() === 'linkedin') {
+                this.fetchLinkedInData();
+              }
             }
-          }
-        },
-        error: (err: unknown) => {
-          if (linkedInSlug !== this.activeFoundationSlug()) return;
-          const httpErr = err as { error?: { message?: string }; message?: string };
-          this.linkedInError.set(extractErrorMessage(httpErr, 'Failed to load LinkedIn accounts'));
-        },
-      });
+          },
+          error: (err: unknown) => {
+            if (linkedInSlug !== this.activeFoundationSlug() || this.monitorViaCampaignService()) return;
+            const httpErr = err as { error?: { message?: string }; message?: string };
+            this.linkedInError.set(extractErrorMessage(httpErr, 'Failed to load LinkedIn accounts'));
+          },
+        })
+    );
     const redditSlug = slug;
-    this.campaignService
-      .getRedditAccounts(redditSlug)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (accounts) => {
-          if (redditSlug !== this.activeFoundationSlug()) return;
-          this.redditAccountOptions.set(accounts);
-          if (accounts.length > 0 && !this.selectedRedditAccountKey()) {
-            this.selectedRedditAccountKey.set(accounts[0].key);
-            if (this.selectedPlatform() === 'reddit') {
-              this.fetchRedditData();
+    this.legacyAccountSubs.push(
+      this.campaignService
+        .getRedditAccounts(redditSlug)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          next: (accounts) => {
+            // Also refused once the connection path has taken over the pickers.
+            if (redditSlug !== this.activeFoundationSlug() || this.monitorViaCampaignService()) return;
+            this.redditAccountOptions.set(accounts);
+            if (accounts.length > 0 && !this.selectedRedditAccountKey()) {
+              this.selectedRedditAccountKey.set(accounts[0].key);
+              if (this.selectedPlatform() === 'reddit') {
+                this.fetchRedditData();
+              }
             }
-          }
-        },
-        error: (err: unknown) => {
-          if (redditSlug !== this.activeFoundationSlug()) return;
-          const httpErr = err as { error?: { message?: string }; message?: string };
-          this.redditError.set(extractErrorMessage(httpErr, 'Failed to load Reddit accounts'));
-        },
-      });
+          },
+          error: (err: unknown) => {
+            if (redditSlug !== this.activeFoundationSlug() || this.monitorViaCampaignService()) return;
+            const httpErr = err as { error?: { message?: string }; message?: string };
+            this.redditError.set(extractErrorMessage(httpErr, 'Failed to load Reddit accounts'));
+          },
+        })
+    );
     const metaSlug = slug;
-    this.campaignService
-      .getMetaAccounts(metaSlug)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (accounts) => {
-          if (metaSlug !== this.activeFoundationSlug()) return;
-          this.metaAccountOptions.set(accounts);
-          if (accounts.length > 0 && !this.selectedMetaAccountKey()) {
-            this.selectedMetaAccountKey.set(accounts[0].key);
-            if (this.selectedPlatform() === 'meta') {
-              this.fetchMetaData();
+    this.legacyAccountSubs.push(
+      this.campaignService
+        .getMetaAccounts(metaSlug)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          next: (accounts) => {
+            // Also refused once the connection path has taken over the pickers.
+            if (metaSlug !== this.activeFoundationSlug() || this.monitorViaCampaignService()) return;
+            this.metaAccountOptions.set(accounts);
+            if (accounts.length > 0 && !this.selectedMetaAccountKey()) {
+              this.selectedMetaAccountKey.set(accounts[0].key);
+              if (this.selectedPlatform() === 'meta') {
+                this.fetchMetaData();
+              }
             }
-          }
-        },
-        error: (err: unknown) => {
-          if (metaSlug !== this.activeFoundationSlug()) return;
-          const httpErr = err as { error?: { message?: string }; message?: string };
-          this.metaError.set(extractErrorMessage(httpErr, 'Failed to load Meta accounts'));
-        },
-      });
+          },
+          error: (err: unknown) => {
+            if (metaSlug !== this.activeFoundationSlug() || this.monitorViaCampaignService()) return;
+            const httpErr = err as { error?: { message?: string }; message?: string };
+            this.metaError.set(extractErrorMessage(httpErr, 'Failed to load Meta accounts'));
+          },
+        })
+    );
   }
 
   private eventLabel(campaignName: string): string {
@@ -1376,6 +1430,16 @@ export class MonitoringTabComponent implements OnInit {
 
   private formatPct(value: number): string {
     return `${formatPercent(value)}%`;
+  }
+
+  /**
+   * An amount in the ad account's OWN currency, with no symbol. campaign-service's Microsoft and X
+   * monitors report spend and budgets unconverted in the account's currency and do not say which
+   * (`account-monitor` carries no currency field), so a `$` would assert dollars nobody checked.
+   * The panel states the unit once instead. Two decimals, as `formatCurrency`.
+   */
+  private formatAccountAmount(value: number): string {
+    return value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
   private linkedInPacingClass(label: LinkedInPacingLabel): string {

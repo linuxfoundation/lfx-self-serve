@@ -828,6 +828,180 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
    * HubSpot figures of the OLD window on screen when the user switches back: those panels show
    * their loading state until the new window's read lands.
    */
+  /**
+   * The picker source or the bound account changing (#2519 review). Figures read for the previous
+   * account, and reads still running for it, must never show under the new one — on the visible
+   * panel or on one switched to later — and a late legacy account list must not replace the
+   * connection's accounts.
+   */
+  describe('source and account changes', () => {
+    function adPanel(name: string): Record<string, unknown> {
+      return {
+        accountLabel: 'LF',
+        pulledAt: '2026-10-13T00:00:00.000Z',
+        dateRange: { mode: 'last_30_days' },
+        campaigns: [
+          {
+            campaignId: name,
+            campaignName: name,
+            eventName: name,
+            creatives: [],
+            status: 'ACTIVE',
+            totalBudget: 1000,
+            dailyBudget: 0,
+            spend: 10,
+            impressions: 100,
+            clicks: 5,
+            ctr: 5,
+            conversions: 1,
+            pacingPct: 50,
+            pacingLabel: 'normal',
+            startDate: '2026-09-01',
+            endDate: '',
+          },
+        ],
+        accountTotals: { spend: 10, impressions: 100, clicks: 5, conversions: 1, campaignCount: 1 },
+        actionItems: [],
+      };
+    }
+
+    const reloadConnections = (): void => {
+      (fixture.componentInstance as unknown as { loadMonitorConnections(): void }).loadMonitorConnections();
+      fixture.detectChanges();
+    };
+
+    const rebound: CampaignMonitorConnections = {
+      ...allConnected,
+      platforms: { ...allConnected.platforms, linkedin: connected('700000002', 'CNCF LinkedIn B'), reddit: connected('t2_cncf_b') },
+    };
+
+    it("drops account A's figures when the connection is rebound to B, and shows B's loading state", async () => {
+      await setup(allConnected);
+      service['getLinkedInMonitorData'].mockReturnValue(of(adPanel('Account A campaign')));
+      select('linkedin');
+      expect(text('linkedin-campaign-row-0')).toContain('Account A campaign');
+
+      const accountB = new Subject<unknown>();
+      service['getLinkedInMonitorData'].mockReturnValue(accountB);
+      service['getMonitorConnections'].mockReturnValue(of(rebound));
+      reloadConnections();
+
+      expect(el('linkedin-campaign-row-0')).toBeNull();
+      expect(el('linkedin-loading')).not.toBeNull();
+      expect(options('linkedin-account-select')).toEqual(['700000002|CNCF LinkedIn B']);
+      expect(service['getLinkedInMonitorData']).toHaveBeenLastCalledWith('cncf', '700000002', 30, true);
+
+      accountB.next(adPanel('Account B campaign'));
+      fixture.detectChanges();
+      expect(text('linkedin-campaign-row-0')).toContain('Account B campaign');
+    });
+
+    it("ignores account A's read when it lands after the rebind to B", async () => {
+      await setup(allConnected);
+      const accountA = new Subject<unknown>();
+      service['getLinkedInMonitorData'].mockReturnValue(accountA);
+      select('linkedin');
+
+      const accountB = new Subject<unknown>();
+      service['getLinkedInMonitorData'].mockReturnValue(accountB);
+      service['getMonitorConnections'].mockReturnValue(of(rebound));
+      reloadConnections();
+      accountA.next(adPanel('Account A campaign'));
+      fixture.detectChanges();
+
+      expect(el('linkedin-campaign-row-0')).toBeNull();
+      expect(el('linkedin-loading')).not.toBeNull();
+    });
+
+    it("drops an inactive panel's old figures too, so switching to it shows loading, not account A", async () => {
+      await setup(allConnected);
+      service['getRedditMonitorData'].mockReturnValue(of(adPanel('Reddit account A campaign')));
+      select('reddit');
+      expect(text('reddit-campaign-row-0')).toContain('Reddit account A campaign');
+      select('google');
+
+      service['getMonitorConnections'].mockReturnValue(of(rebound));
+      reloadConnections();
+      service['getRedditMonitorData'].mockReturnValue(new Subject<unknown>());
+      select('reddit');
+
+      expect(el('reddit-campaign-row-0')).toBeNull();
+      expect(el('reddit-loading')).not.toBeNull();
+    });
+
+    it('clears the figures on a rollback to the legacy path, even when the legacy list is empty', async () => {
+      await setup(allConnected);
+      service['getLinkedInMonitorData'].mockReturnValue(of(adPanel('Connection account campaign')));
+      select('linkedin');
+      expect(el('linkedin-campaign-row-0')).not.toBeNull();
+
+      service['getMonitorConnections'].mockReturnValue(of({ viaCampaignService: false, platforms: {} }));
+      service['getLinkedInAccounts'].mockReturnValue(of([]));
+      reloadConnections();
+
+      expect(el('linkedin-campaign-row-0')).toBeNull();
+      expect(el('linkedin-loading')).toBeNull();
+      expect(options('linkedin-account-select')).toEqual([]);
+    });
+
+    it('ignores a legacy account list that lands after the connection path took over', async () => {
+      const lateLinkedIn = new Subject<unknown>();
+      const lateReddit = new Subject<unknown>();
+      const lateMeta = new Subject<unknown>();
+      await setup({ viaCampaignService: false, platforms: {} });
+      // The first (flag-off) load already subscribed to the stub's immediate lists; make the next
+      // load's lists slow, then switch to the connection path while they are still in flight.
+      service['getLinkedInAccounts'].mockReturnValue(lateLinkedIn);
+      service['getRedditAccounts'].mockReturnValue(lateReddit);
+      service['getMetaAccounts'].mockReturnValue(lateMeta);
+      reloadConnections();
+      service['getMonitorConnections'].mockReturnValue(of(allConnected));
+      reloadConnections();
+
+      lateLinkedIn.next([{ accountId: '512345678', label: 'LF LinkedIn (legacy)', orgId: '1' }]);
+      lateReddit.next([{ key: 't2_legacy', label: 'LF Reddit (legacy)' }]);
+      lateMeta.next([{ key: 'act_1', label: 'LF Meta (legacy)' }]);
+      fixture.detectChanges();
+
+      select('linkedin');
+      expect(options('linkedin-account-select')).toEqual(['700000001|CNCF LinkedIn']);
+      select('reddit');
+      expect(options('reddit-account-select')).toEqual(['t2_cncf|t2_cncf']);
+      select('meta');
+      expect(options('meta-account-select')).toEqual(['act_700000001|CNCF Meta']);
+    });
+  });
+
+  describe('Microsoft amounts and timestamps', () => {
+    /** campaign-service reports Microsoft/X amounts unconverted and does not name the currency. */
+    it('shows spend and budgets without a $ and says they are in the account currency', async () => {
+      await setup(allConnected);
+      select('microsoft');
+
+      expect(text('microsoft-kpi-strip')).toContain('412.50');
+      expect(text('microsoft-kpi-strip')).not.toContain('$');
+      expect(text('microsoft-campaign-row-0')).not.toContain('$');
+      expect(text('microsoft-campaign-row-0')).toContain('100.00');
+      expect(text('microsoft-currency-note')).toBe("Spend and budgets are in the ad account's own currency.");
+    });
+
+    it('formats the freshness and "Last pulled" times in en-US, whatever the browser locale', async () => {
+      const spy = vi.spyOn(Date.prototype, 'toLocaleString');
+      try {
+        await setup(allConnected);
+        select('microsoft');
+        select('hubspot');
+
+        expect(spy).toHaveBeenCalled();
+        for (const call of spy.mock.calls) {
+          expect(call[0]).toBe('en-US');
+        }
+      } finally {
+        spy.mockRestore();
+      }
+    });
+  });
+
   describe('date-range change', () => {
     it.each([
       ['hubspot', 'getHubSpotMonitorData', 'hubspot-email-table', 'hubspot-loading'],
