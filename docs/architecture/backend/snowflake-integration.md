@@ -903,8 +903,8 @@ Solution:
 ```
 
 This is a request fault, not a Snowflake outage, so it does not count toward the circuit breaker; like a full pool
-queue, it only frees the HALF_OPEN probe slot. Every other compilation error still counts — including "does not
-exist or not authorized", which can mean a revoked GRANT — unless the caller passed `expectMissingObject` (or
+queue, it only frees the HALF_OPEN probe slot. Unrecognized value-conversion errors have the same exemption (see §7).
+Every other compilation error still counts — including "does not exist or not authorized", which can mean a revoked GRANT — unless the caller passed `expectMissingObject` (or
 `expectInvalidIdentifier`). `SnowflakeService` then records a success, so that caller must alert on the error itself.
 A dashboard reading one view does both through `executeSnowflakeViewRead` (`helpers/snowflake-view-read.helper.ts`),
 which logs the missing object under its own operation key and swaps in the widget's `clientMessage`.
@@ -926,6 +926,27 @@ Solution:
 `SnowflakeService.execute` rejects such a statement before `checkCircuit`, so it never reaches Snowflake, never takes
 the HALF_OPEN probe slot, and never counts toward the circuit breaker — an oversized request cannot open the pod-wide
 breaker for every other Snowflake-backed route.
+
+#### 7. Unrecognized Date/Timestamp/Numeric Value
+
+```text
+Error: Snowflake query execution failed: Date 'x' is not recognized
+Cause: A malformed bind cannot be converted to the column's Date/Time/Timestamp/Numeric/Boolean type
+Solution:
+  1. Validate optional date filters at the HTTP layer with getValidatedIsoDateQueryParam (helpers/validation.helper.ts)
+     before invoking the events service; malformed dates receive a field-specific 400
+```
+
+Both `GET /api/events` and `GET /api/events/travel-fund-events` validate `startDateFrom` / `startDateTo` before querying.
+Accepted strings are `YYYY-MM-DD` or `YYYY-MM-DDTHH:mm:ss(.sss)?Z`, with no fraction or exactly three fractional digits;
+UTC calendar checks also reject impossible dates/times. Valid strings are passed to the existing binds unchanged.
+
+For conversion errors that still reach Snowflake, `isValueConversionError` matches the typed "is not recognized"
+message family or confirmed numeric conversion code `100038`. It does not exempt other compilation or authorization
+errors. The query still rejects with the existing 500 `SNOWFLAKE_QUERY_ERROR` and generic client message, logged once
+by `apiErrorHandler`; the span is marked erroneous with `snowflake.value_conversion`. Failure count and circuit state
+stay untouched, and the HALF_OPEN probe slot is released so another query can probe recovery. Dirty table values can
+produce the same conversion error and are also exempted: a data fault is not evidence of a Snowflake outage.
 
 ## 🎯 Best Practices
 
