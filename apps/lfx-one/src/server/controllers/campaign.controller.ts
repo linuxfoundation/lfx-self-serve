@@ -3199,16 +3199,6 @@ export class CampaignController {
     );
   }
 
-  /**
-   * The per-platform config envelope campaign-service expects, built from the legacy request.
-   *
-   * The service's `config` is an object keyed by `googleAdsConfig` / `linkedInConfig` /
-   * `redditConfig` / `metaConfig` with `hsToken` as a top-level sibling. LinkedIn and Reddit carry
-   * the service's own field names already, so those are projections; Google and Meta are
-   * translations, because the legacy request stores their inputs in a different shape (see each
-   * builder). Keys with no config are omitted rather than sent as null: the dispatcher treats an
-   * absent config as "not selected", and a null one as a malformed selection.
-   */
   /** The first lane config carrying `bidding` while this deployment cannot honour it (see `createCampaign`), or `null`. */
   private unservedBiddingField(body: CampaignCreateRequest): string | null {
     if (canCreateWithBidding()) return null;
@@ -3221,6 +3211,16 @@ export class CampaignController {
     return null;
   }
 
+  /**
+   * The per-platform config envelope campaign-service expects, built from the legacy request.
+   *
+   * The service's `config` is an object keyed by `googleAdsConfig` / `linkedInConfig` /
+   * `redditConfig` / `metaConfig` with `hsToken` as a top-level sibling. LinkedIn and Reddit carry
+   * the service's own field names already, so those are projections; Google and Meta are
+   * translations, because the legacy request stores their inputs in a different shape (see each
+   * builder). Keys with no config are omitted rather than sent as null: the dispatcher treats an
+   * absent config as "not selected", and a null one as a malformed selection.
+   */
   private createConfigEnvelope(body: CampaignCreateRequest): Record<string, unknown> {
     const envelope: Record<string, unknown> = {};
     if (body?.hsToken) envelope['hsToken'] = body.hsToken;

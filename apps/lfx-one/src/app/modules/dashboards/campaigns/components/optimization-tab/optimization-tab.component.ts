@@ -609,6 +609,7 @@ export class OptimizationTabComponent implements OnInit {
     const conflictedIds = this.conflictedCampaignIds();
     const budgetPending = this.budgetPending();
     const bidPending = this.bidPending();
+    const confirmedBids = this.confirmedBid();
     const adSetPending = this.adSetPending();
     const deploymentDisabled = !this.statusToggleEnabled();
     return rows.map((campaign) => {
@@ -669,7 +670,7 @@ export class OptimizationTabComponent implements OnInit {
         campaign,
         // The bidding campaign-service RECORDED (#3299) — what the create asked for and the last bid
         // it set, not a live read of the platform. Empty when the index records neither.
-        biddingSummary: campaignBiddingSummary(campaign.platform, campaign.bidding_strategy, campaign.max_cpc_bid),
+        biddingSummary: this.biddingSummaryFor(campaign, confirmedBids[campaign.id]),
         status,
         action,
         conflicted,
@@ -2610,6 +2611,21 @@ export class OptimizationTabComponent implements OnInit {
       delete next[key];
     }
     return next;
+  }
+
+  /**
+   * The row's recorded-bidding line. A bid this session CONFIRMED wins over the indexed
+   * `max_cpc_bid`: the index is asynchronous, so right after a bid change it still holds the old
+   * bid. A confirmed bid means manual — the bid lever succeeds only on a manual per-click strategy.
+   * `confirmedBid` lives exactly as long as the bid lever's own state: it survives list refreshes
+   * (so an index that has caught up shows the same value, and a lagging one cannot flip it back)
+   * and is cleared only when the project or brief changes.
+   */
+  private biddingSummaryFor(campaign: CampaignIndexDoc, confirmed: CampaignBidChange | undefined): string {
+    if (confirmed !== undefined) {
+      return campaignBiddingSummary(campaign.platform, 'manual', confirmed.bid);
+    }
+    return campaignBiddingSummary(campaign.platform, campaign.bidding_strategy, campaign.max_cpc_bid);
   }
 
   /**
