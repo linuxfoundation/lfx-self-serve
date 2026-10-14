@@ -150,7 +150,7 @@
           icon="fa-light fa-plus"
           severity="primary"
           size="small"
-          [disabled]="!draftTechnology()?.trim()"
+          [disabled]="!canAddTechnology()"
           (onClick)="addTechnology()"
           styleClass="whitespace-nowrap !py-2.5"
           data-testid="mentorship-enroll-add-technology" />

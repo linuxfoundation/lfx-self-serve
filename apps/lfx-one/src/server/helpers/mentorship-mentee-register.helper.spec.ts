@@ -163,6 +163,14 @@ describe('parseMentorshipMenteeRegisterRequest', () => {
     expect(request.skillsWant).toEqual(['Python']);
   });
 
+  it('trims skills, drops blanks, and rejects a list with nothing left', () => {
+    const request = parseMentorshipMenteeRegisterRequest({ ...VALID_BODY, skillsHave: ['  Java  ', 'java', '   ', 'Rust'], skillsWant: ['Python'] });
+
+    expect(request.skillsHave).toEqual(['Java', 'Rust']);
+    expect(rejectedFields({ ...VALID_BODY, skillsHave: ['   '] })).toEqual(['skillsHave']);
+    expect(rejectedFields({ ...VALID_BODY, skillsWant: ['   '] })).toEqual(['skillsWant']);
+  });
+
   it('rejects either skills list over the profile edit cap', () => {
     const overCap = MENTORSHIP_SKILL_OPTIONS.slice(0, MENTORSHIP_SKILLS_MAX_ITEMS + 1);
 

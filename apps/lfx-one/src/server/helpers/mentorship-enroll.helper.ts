@@ -130,10 +130,14 @@ const parseProgramFields = (raw: Record<string, unknown>, operation: string): Me
   const websiteUrl = parseTrimmedString(raw['websiteUrl']);
   const codeOfConductUrl = parseTrimmedString(raw['codeOfConductUrl']);
   const ciiProjectId = parseTrimmedString(raw['ciiProjectId']);
-  const industry = parseTrimmedString(raw['industry']);
-  if (industry && isMentorshipSkillListOverLimit(industry.split(','))) {
+  const technologies = (parseTrimmedString(raw['industry']) ?? '')
+    .split(',')
+    .map((technology) => technology.trim())
+    .filter(Boolean);
+  if (isMentorshipSkillListOverLimit(technologies)) {
     throw ServiceValidationError.forField('industry', MENTORSHIP_TECHNOLOGIES_LIMIT_MESSAGE, { operation });
   }
+  const industry = technologies.join(', ');
   if (projectLogoUrl) request.projectLogoUrl = projectLogoUrl;
   if (websiteUrl) request.websiteUrl = websiteUrl;
   if (codeOfConductUrl) request.codeOfConductUrl = codeOfConductUrl;

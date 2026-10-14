@@ -103,6 +103,13 @@ describe('parseMentorshipMentorRegisterRequest', () => {
 
     expect(request.skills).toEqual(['Kubernetes', 'Linux']);
   });
+
+  it('trims skills, drops blanks, and rejects a list with nothing left', () => {
+    const request = parseMentorshipMentorRegisterRequest({ ...VALID_BODY, skills: ['  Go  ', 'go', '   ', 'Linux'] });
+
+    expect(request.skills).toEqual(['Go', 'Linux']);
+    expect(rejectedFields({ ...VALID_BODY, skills: ['   '] })).toEqual(['skills']);
+  });
 });
 
 describe('buildMentorshipUpstreamMentorProfile', () => {

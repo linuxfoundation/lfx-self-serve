@@ -41,11 +41,13 @@ export class SkillsPickerComponent {
     skill: new FormControl<string | null>(''),
   });
 
-  protected readonly draftValue = toSignal(this.draftForm.controls.skill.valueChanges, { initialValue: '' as string | null });
-
-  protected readonly skills = this.initSkills();
   protected readonly suggestions = signal<string[]>([]);
   protected readonly skillMaxLength = MENTORSHIP_SKILL_MAX_LENGTH;
+
+  protected readonly draftValue = toSignal(this.draftForm.controls.skill.valueChanges, { initialValue: '' as string | null });
+  protected readonly canAddSkill = computed(() => !!this.draftValue()?.trim());
+
+  protected readonly skills = this.initSkills();
 
   protected searchSkills(event: AutoCompleteCompleteEvent): void {
     this.suggestions.set(mentorshipSkillSuggestions(event.query ?? '', this.skills()));

@@ -166,7 +166,10 @@ export class EnrollDetailsStepComponent {
   protected readonly codeOfConductTemplateUrl = MENTORSHIP_CODE_OF_CONDUCT_TEMPLATE_URL;
   protected readonly skillMaxLength = MENTORSHIP_SKILL_MAX_LENGTH;
 
+  protected readonly technologySuggestions = signal<string[]>([]);
+
   protected readonly draftTechnology = toSignal(this.draftTechForm.controls.technology.valueChanges, { initialValue: '' as string | null });
+  protected readonly canAddTechnology = computed(() => !!this.draftTechnology()?.trim());
 
   private readonly formSnapshot = toSignal(toObservable(this.form).pipe(switchMap((group) => group.valueChanges.pipe(startWith(group.getRawValue())))), {
     initialValue: {} as Record<string, unknown>,
@@ -203,8 +206,6 @@ export class EnrollDetailsStepComponent {
     }
     return options;
   });
-
-  protected readonly technologySuggestions = signal<string[]>([]);
 
   private readonly ciiProjectId = computed(() => String(this.formSnapshot()['ciiProjectId'] ?? this.form().controls['ciiProjectId']?.value ?? '').trim());
   private readonly programName = computed(() => String(this.formSnapshot()['name'] ?? this.form().controls['name']?.value ?? '').trim());

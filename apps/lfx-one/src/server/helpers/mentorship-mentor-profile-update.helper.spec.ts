@@ -72,6 +72,11 @@ describe('parseMentorshipMentorProfileUpdate', () => {
   it('drops case-insensitive repeats of a skill, keeping the first', () => {
     expect(parseMentorshipMentorProfileUpdate({ skills: ['Kubernetes', 'kubernetes', 'Angular'] }, OPERATION)).toEqual({ skills: ['Kubernetes', 'Angular'] });
   });
+
+  it('trims skills, drops blanks, and rejects a list with nothing left', () => {
+    expect(parseMentorshipMentorProfileUpdate({ skills: ['  Go  ', 'go', '   ', 'Angular'] }, OPERATION)).toEqual({ skills: ['Go', 'Angular'] });
+    expect(rejectedFields({ skills: ['   '] })).toEqual(['skills']);
+  });
 });
 
 describe('buildMentorshipUpstreamMentorProfileUpdate', () => {

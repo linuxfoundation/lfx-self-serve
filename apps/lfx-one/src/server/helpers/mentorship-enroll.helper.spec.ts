@@ -88,6 +88,16 @@ describe('parseMentorshipEnrollCreateRequest', () => {
     expect(parseMentorshipEnrollCreateRequest(validBody({ industry: 'Go, My Custom Tech' }), OPERATION).industry).toBe('Go, My Custom Tech');
   });
 
+  it('measures and sends the industry technologies trimmed, with blanks dropped', () => {
+    const paddedTooLong = `${' '.repeat(MENTORSHIP_SKILL_MAX_LENGTH)}${'a'.repeat(MENTORSHIP_SKILL_MAX_LENGTH)}`;
+
+    expect(parseMentorshipEnrollCreateRequest(validBody({ industry: ' Go ,, Rust ,  ' }), OPERATION).industry).toBe('Go, Rust');
+    expect(parseMentorshipEnrollCreateRequest(validBody({ industry: `Go, ${paddedTooLong}` }), OPERATION).industry).toBe(
+      `Go, ${'a'.repeat(MENTORSHIP_SKILL_MAX_LENGTH)}`
+    );
+    expect(parseMentorshipEnrollCreateRequest(validBody({ industry: ' , ' }), OPERATION)).not.toHaveProperty('industry');
+  });
+
   it('drops fields the create body must never carry', () => {
     const parsed = parseMentorshipEnrollCreateRequest(
       validBody({

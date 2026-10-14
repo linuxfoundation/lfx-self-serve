@@ -30,7 +30,7 @@
       icon="fa-light fa-plus"
       severity="primary"
       size="small"
-      [disabled]="!draftValue()?.trim()"
+      [disabled]="!canAddSkill()"
       (onClick)="addSkill()"
       styleClass="whitespace-nowrap !py-2.5"
       [attr.data-testid]="idPrefix() + '-add-skill'" />
