@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { GW_HOST_SESSION_PROXY_SUPABASE_MOUNT } from './gw-host-session-proxy.constants';
+
 /**
  * Constants for Gatewaze host-session mode, where LFX One holds the Gatewaze (GoTrue) session on the
  * server and the browser holds only its LFX `appSession` cookie. See
@@ -20,8 +22,11 @@ export const GW_HOST_SESSION_HKDF_INFO = 'lfx-one gatewaze host-session v1';
 /** HKDF-SHA256 `info` for the Gatewaze session id's HMAC key, so the id and the store's encryption never share a key. Changing it orphans every stored record. */
 export const GW_HOST_SESSION_SID_HKDF_INFO = 'lfx-one gatewaze host-session v1 sid';
 
-/** Fields of `@gatewaze/host-session`'s warn metadata that may be logged. Everything else, notably the GoTrue `user_id`, is dropped. */
-export const GW_HOST_SESSION_STORE_LOG_FIELDS = ['err', 'status'] as const;
+/**
+ * Fields of `@gatewaze/host-session`'s warn metadata that may be logged. Everything else, notably the
+ * GoTrue `user_id`, is dropped. `path` is the upstream path of a redirect the proxy dropped.
+ */
+export const GW_HOST_SESSION_STORE_LOG_FIELDS = ['err', 'status', 'path'] as const;
 
 /** Label HMAC'd with the LFX session id to form the Gatewaze session id, domain-separating the input. */
 export const GW_HOST_SESSION_SID_LABEL = 'sid:';
@@ -50,11 +55,8 @@ export const GW_HOST_SESSION_LOGOUT_STEP_TIMEOUT_MS = 2_000;
  */
 export const GW_HOST_SESSION_LFX_LOGOUT_WAIT_MS = 3_000;
 
-/** Where the embed's Supabase client points in host-session mode (`supabase.url` is `<origin>/api/gatewaze/supabase`). */
-export const GW_HOST_SESSION_SUPABASE_MOUNT = '/api/gatewaze/supabase';
-
 /** Path of the Realtime WebSocket that `supabase-js` opens under `supabase.url`. Every other upgrade path is refused. */
-export const GW_REALTIME_PATH = `${GW_HOST_SESSION_SUPABASE_MOUNT}/realtime/v1/websocket`;
+export const GW_REALTIME_PATH = `${GW_HOST_SESSION_PROXY_SUPABASE_MOUNT}/realtime/v1/websocket`;
 
 /** How long an upgrade may spend in the Express gates before it is refused with 503 and its socket slot freed. */
 export const GW_REALTIME_UPGRADE_TIMEOUT_MS = 30_000;

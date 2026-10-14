@@ -15,7 +15,7 @@ import {
   SESSION_HEADER,
 } from '@gatewaze/host-session';
 import {
-  GW_HOST_SESSION_SUPABASE_MOUNT,
+  GW_HOST_SESSION_PROXY_SUPABASE_MOUNT,
   GW_REALTIME_CLOSE_GOING_AWAY,
   GW_REALTIME_FORWARDED_REJECT_HEADERS,
   GW_REALTIME_MAX_PAYLOAD_BYTES,
@@ -291,7 +291,7 @@ export class GatewazeRealtimeService {
     try {
       // '/realtime/v1/websocket?...': the package checks it stays under /realtime/v1 after
       // normalisation, drops any URL-borne token and sets `apikey` to the anon key.
-      upstreamUrl = realtimeUpstreamUrl(config.supabaseUrl, req.originalUrl.slice(GW_HOST_SESSION_SUPABASE_MOUNT.length), config.anonKey);
+      upstreamUrl = realtimeUpstreamUrl(config.supabaseUrl, req.originalUrl.slice(GW_HOST_SESSION_PROXY_SUPABASE_MOUNT.length), config.anonKey);
     } catch {
       this.refuse(pending, 400, 'path left /realtime/v1');
       return;

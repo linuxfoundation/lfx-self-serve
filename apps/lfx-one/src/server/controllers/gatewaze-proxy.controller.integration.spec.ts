@@ -31,6 +31,7 @@ vi.mock('../services/gatewaze-session.service', () => ({
   }),
   resolveGatewazeHostSessionConfig: () => ({ supabaseUrl: config.supabaseUrl, anonKey: ANON_KEY, valkeyUrl: 'redis://synthetic', authSecret: 'synthetic' }),
   isGatewazeHostSessionEnabled: () => true,
+  hostSessionCoreLogger: () => ({ warn: vi.fn() }),
 }));
 vi.mock('../services/logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },

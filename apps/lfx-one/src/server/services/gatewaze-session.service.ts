@@ -128,9 +128,13 @@ function storeLogMeta(meta: Record<string, unknown>): Record<string, unknown> {
   return kept;
 }
 
-/** A `CoreLogger` for `@gatewaze/host-session` that logs under `operation` at WARN, with its metadata filtered like the store's. */
-export function hostSessionCoreLogger(operation: string): CoreLogger {
-  return { warn: (meta, message) => logger.warning(undefined, operation, message, storeLogMeta(meta)) };
+/**
+ * A `CoreLogger` for `@gatewaze/host-session` that logs under `operation` at WARN, under `req` when
+ * given, with its metadata filtered to `GW_HOST_SESSION_STORE_LOG_FIELDS`. Every use of the package
+ * logs through this, so its `user_id` never reaches LFX logs.
+ */
+export function hostSessionCoreLogger(operation: string, req?: Request): CoreLogger {
+  return { warn: (meta, message) => logger.warning(req, operation, message, storeLogMeta(meta)) };
 }
 
 /**
