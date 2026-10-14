@@ -512,11 +512,11 @@ describe('OrgEasyclaManagersComponent', () => {
   });
 
   describe('ACS write grants', () => {
-    it('asks ACS for Add and Remove as two strings, not one', async () => {
+    it('asks ACS for Add and Remove as two strings, not one, and carries the foundation pair alongside the project pair', async () => {
       await render();
 
-      expect(checkPermission).toHaveBeenCalledWith(ORG_UID, 'approval-list-update', PAIR_PROJECT);
-      expect(checkPermission).toHaveBeenCalledWith(ORG_UID, 'cla-manager-delete', PAIR_PROJECT);
+      expect(checkPermission).toHaveBeenCalledWith(ORG_UID, 'approval-list-update', PAIR_PROJECT, PROJECT);
+      expect(checkPermission).toHaveBeenCalledWith(ORG_UID, 'cla-manager-delete', PAIR_PROJECT, PROJECT);
     });
 
     it('does not ask ACS for an unsigned agreement', async () => {

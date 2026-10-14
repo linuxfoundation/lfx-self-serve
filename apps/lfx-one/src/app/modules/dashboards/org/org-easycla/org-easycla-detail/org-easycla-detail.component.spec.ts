@@ -3670,10 +3670,17 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     addMessage.mockReset();
   });
 
-  it('asks ACS for the auto-ecla-update grant with the pair project SFID', async () => {
+  it('asks ACS for the auto-ecla-update grant with the pair project SFID (no foundation on this row)', async () => {
     await render();
 
-    expect(checkPermission).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'auto-ecla-update', PAIR_PROJECT);
+    expect(checkPermission).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'auto-ecla-update', PAIR_PROJECT, undefined);
+  });
+
+  it('carries the foundation pair alongside the project pair when the CLA Group has a distinct foundation SFID', async () => {
+    const FOUNDATION = 'a09410000182dFOUND';
+    await render(row({ foundationSfid: FOUNDATION }));
+
+    expect(checkPermission).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'auto-ecla-update', PAIR_PROJECT, FOUNDATION);
   });
 
   it('renders the toggle enabled and unexplained for a CLA manager ACS allows', async () => {
