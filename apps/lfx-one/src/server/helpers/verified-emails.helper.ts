@@ -6,7 +6,7 @@ import { Request } from 'express';
 
 import { EmailVerificationService } from '../services/email-verification.service';
 import { logger } from '../services/logger.service';
-import { getEffectiveEmail, getEffectiveSub } from '../utils/auth-helper';
+import { getEffectiveEmail, getEffectiveUsername } from '../utils/auth-helper';
 
 /**
  * Resolves the caller's email addresses from auth-service via NATS: the primary email plus every
@@ -14,21 +14,23 @@ import { getEffectiveEmail, getEffectiveSub } from '../utils/auth-helper';
  * root email as the session claim, so it is included only when the session email passed the
  * `email_verified` check (`getEffectiveEmail` non-null). Unverified alternates are never used.
  *
- * Never fails: with no effective sub, or when auth-service is unavailable or returns nothing usable,
+ * Never fails: with no effective username, or when auth-service is unavailable or returns nothing usable,
  * it falls back to the single effective session email (the impersonated target while impersonating,
  * otherwise the OIDC user).
  */
 export async function resolveVerifiedUserEmails(req: Request, emailVerificationService: EmailVerificationService): Promise<VerifiedUserEmails> {
   const effectiveEmail = getEffectiveEmail(req);
   const fallback: VerifiedUserEmails = { emails: effectiveEmail ? [effectiveEmail.trim().toLowerCase()] : [], alternates: [] };
-  const userSub = getEffectiveSub(req);
+  // The plain LFID username, which auth-service resolves; new code names the user by username, not
+  // the prefixed `sub` (`docs/architecture/backend/authentication.md` § Migration).
+  const username = getEffectiveUsername(req);
 
-  if (!userSub) {
-    logger.debug(req, 'resolve_user_emails', 'No effective sub for user, using session email only', {});
+  if (!username) {
+    logger.debug(req, 'resolve_user_emails', 'No effective username for user, using session email only', {});
     return fallback;
   }
 
-  const emailData = await emailVerificationService.getUserEmails(req, userSub);
+  const emailData = await emailVerificationService.getUserEmails(req, username);
   if (!emailData) {
     return fallback;
   }

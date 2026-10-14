@@ -3,12 +3,12 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getEffectiveEmailMock, getEffectiveSubMock } = vi.hoisted(() => ({
+const { getEffectiveEmailMock, getEffectiveUsernameMock } = vi.hoisted(() => ({
   getEffectiveEmailMock: vi.fn(),
-  getEffectiveSubMock: vi.fn(),
+  getEffectiveUsernameMock: vi.fn(),
 }));
 
-vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail: getEffectiveEmailMock, getEffectiveSub: getEffectiveSubMock }));
+vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail: getEffectiveEmailMock, getEffectiveUsername: getEffectiveUsernameMock }));
 vi.mock('../services/logger.service', () => ({ logger: { debug: vi.fn() } }));
 vi.mock('../services/email-verification.service', () => ({ EmailVerificationService: class {} }));
 
@@ -24,7 +24,7 @@ describe('resolveVerifiedUserEmails', () => {
     getUserEmails = vi.fn();
     service = { getUserEmails } as unknown as EmailVerificationService;
     getEffectiveEmailMock.mockReturnValue('User@Example.com');
-    getEffectiveSubMock.mockReturnValue('auth0|user');
+    getEffectiveUsernameMock.mockReturnValue('user');
   });
 
   it('gives the primary, then the verified alternates, lowercased and de-duplicated', async () => {
@@ -50,11 +50,11 @@ describe('resolveVerifiedUserEmails', () => {
     await expect(resolveVerifiedUserEmails(req, service)).resolves.toEqual({ emails: ['work@acme.example'], alternates: ['work@acme.example'] });
   });
 
-  it('falls back to the session email when auth-service gives nothing, and with no sub asks it nothing', async () => {
+  it('falls back to the session email when auth-service gives nothing, and with no username asks it nothing', async () => {
     getUserEmails.mockResolvedValue(null);
     await expect(resolveVerifiedUserEmails(req, service)).resolves.toEqual({ emails: ['user@example.com'], alternates: [] });
 
-    getEffectiveSubMock.mockReturnValue(null);
+    getEffectiveUsernameMock.mockReturnValue(null);
     getUserEmails.mockClear();
     await expect(resolveVerifiedUserEmails(req, service)).resolves.toEqual({ emails: ['user@example.com'], alternates: [] });
     expect(getUserEmails).not.toHaveBeenCalled();
