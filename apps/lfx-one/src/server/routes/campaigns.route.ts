@@ -90,7 +90,8 @@ router.get('/linkedin/campaign-ref', (req, res, next) => optimizeController.reso
 router.get('/reddit/keywords', (req, res, next) => optimizeController.getRedditKeywords(req, res, next));
 // Binds a campaign that already exists on its platform to a brief; creates nothing upstream.
 router.post('/adopt', (req, res, next) => optimizeController.adoptCampaign(req, res, next));
-// The campaign row from campaign-service (not the index) with its current ETag, for the act-from-Monitor levers.
+// The campaign row from campaign-service (not the index) with its current ETag. Used by the Optimize tab
+// to recover a row's current ETag after an ad-set write whose outcome left the validator unknown.
 router.get('/:campaignId/record', (req, res, next) => optimizeController.getCampaignRecord(req, res, next));
 router.get('/:campaignId/settings', (req, res, next) => optimizeController.getCampaignSettings(req, res, next));
 router.get('/:campaignId/meta-ad-sets', (req, res, next) => optimizeController.listMetaAdSets(req, res, next));

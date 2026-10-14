@@ -19,6 +19,7 @@ import type {
   CampaignRow,
   CampaignToggleAction,
   CampaignToggleStatus,
+  CampaignValidatorHold,
   DateRangeOption,
   KeywordActionPlatform,
   KeywordActionType,
@@ -86,7 +87,7 @@ import {
   campaignToggleAction,
   normalizeCampaignStatus,
 } from '@lfx-one/shared/constants';
-import { campaignActionItemLever, keywordActionKey, keywordIdentityKey } from '@lfx-one/shared/utils';
+import { campaignActionItemLever, campaignEtagVersion, keywordActionKey, keywordIdentityKey } from '@lfx-one/shared/utils';
 import { AdsCurrencyPipe, AdsPctPipe, EventLabelPipe, PacingClassPipe, PriorityClassPipe, QualityScoreClassPipe } from '@pipes/campaign-optimization.pipe';
 import { metaAdSetFailureOutcome, metaAdSetWriteLeftValidatorKnown } from '@shared/utils/campaign-ad-set-error.utils';
 import { campaignBidFailureOutcome } from '@shared/utils/campaign-bid-error.utils';
@@ -506,7 +507,11 @@ export class OptimizationTabComponent implements OnInit {
    * Release adopts the etag and nothing else: `toggledStatus` (a CONFIRMED status overlay) is kept,
    * and `clearConflictStateFor` skips held rows so the generic refresh path cannot release them early.
    */
-  private readonly validatorHolds = new Map<string, { preWriteEtag: string; readStarted: boolean }>();
+  private readonly validatorHolds = new Map<string, CampaignValidatorHold>();
+  /** Mints each hold's identity, so an answer meant for an earlier hold can never touch a later one. */
+  private holdSequence = 0;
+  /** Mints each authoritative read's sequence; within one hold, only the LATEST read may release it. */
+  private recordReadSequence = 0;
 
   /** True between the parent's `null` push and the delivery that answers it. */
   private listReadInFlight = false;
@@ -2252,12 +2257,14 @@ export class OptimizationTabComponent implements OnInit {
         }
         const readWasInFlight = this.listReadInFlight;
         this.listReadInFlight = false;
-        // The index releases a hold only when its etag MOVED from the one the write was sent with,
-        // on a read that began after the hold; an unchanged etag may be the index lagging the write.
+        // The index releases a hold only when its etag is PAST the one the write was sent with, on a
+        // read that began after THIS hold was created (`readStarted` is per hold, so a read begun for
+        // an earlier, released hold never answers a newer one). An unchanged — or older — etag may be
+        // the index lagging the write.
         for (const row of rows) {
           const hold = this.validatorHolds.get(row.id);
-          if (hold?.readStarted && typeof row.etag === 'string' && row.etag !== '' && row.etag !== hold.preWriteEtag) {
-            this.releaseValidatorHold(row.id, null);
+          if (hold?.readStarted && this.indexedEtagIsPast(row.etag, hold.preWriteEtag)) {
+            this.releaseValidatorHold(row.id, hold.id, null);
           }
         }
 
@@ -2278,7 +2285,16 @@ export class OptimizationTabComponent implements OnInit {
         // Only rows whose indexed etag actually changed. An unchanged etag means the index has not
         // caught up with the write that caused the 412, so this row's cached validator is still
         // the best one available and its conflict is still live.
-        const advanced = rows.filter((row) => row.etag !== undefined && row.etag !== this.lastDeliveredEtags[row.id]).map((row) => row.id);
+        //
+        // And only when the index is not BEHIND a validator this session confirmed. A confirmed
+        // write (a pause, a budget or bid change) leaves its etag in `toggledEtag` and its status in
+        // `toggledStatus`; an index that moved since the last delivery but is still older than that
+        // etag has not caught up with it, and clearing on it would replace a confirmed "paused"
+        // with the index's older "active" and offer Pause on a paused campaign.
+        const cachedEtags = this.toggledEtag();
+        const advanced = rows
+          .filter((row) => row.etag !== undefined && row.etag !== this.lastDeliveredEtags[row.id] && !this.indexedEtagIsBehind(row.etag, cachedEtags[row.id]))
+          .map((row) => row.id);
         // MERGED over the previous baseline rather than replacing it, so a row this delivery
         // OMITTED keeps the etag it was last seen at.
         //
@@ -2804,7 +2820,7 @@ export class OptimizationTabComponent implements OnInit {
    * `preWriteEtag` is the etag the write was sent with: the index releases the hold only past it.
    */
   private holdUnknownValidator(campaignId: string, preWriteEtag: string): void {
-    this.validatorHolds.set(campaignId, { preWriteEtag, readStarted: false });
+    this.validatorHolds.set(campaignId, { id: ++this.holdSequence, preWriteEtag, readStarted: false, latestRead: 0 });
     this.conflictedCampaignIds.update((ids) => {
       const next = new Set(ids);
       next.add(campaignId);
@@ -2819,18 +2835,31 @@ export class OptimizationTabComponent implements OnInit {
    * index (past the pre-write etag) and the operator's Refresh still release it.
    */
   private confirmValidator(campaignId: string): void {
+    const hold = this.validatorHolds.get(campaignId);
+    if (hold === undefined) {
+      return;
+    }
+    // Captured at START: which hold this read is for, and its place among that hold's reads.
     const askedIn = this.contextGeneration;
+    const holdId = hold.id;
+    const readId = ++this.recordReadSequence;
+    hold.latestRead = readId;
     this.campaignService
       .getCampaignRecord(this.projectSlug(), this.briefId(), campaignId)
       .pipe(take(1))
       .subscribe({
         next: (result) => {
           const etag = result?.campaign?.etag;
-          if (askedIn !== this.contextGeneration || !this.validatorHolds.has(campaignId) || result?.campaign?.id !== campaignId) {
+          const current = this.validatorHolds.get(campaignId);
+          // Ignored unless it answers the hold it was started for, and is that hold's LATEST read: an
+          // older or overlapping read may carry an older etag, and a hold released and replaced since
+          // is a different hold with a different pre-write etag.
+          if (askedIn !== this.contextGeneration || current?.id !== holdId || current.latestRead !== readId || result?.campaign?.id !== campaignId) {
             return;
           }
           if (typeof etag === 'string' && etag !== '') {
-            this.releaseValidatorHold(campaignId, etag);
+            const status = typeof result.campaign.status === 'string' && result.campaign.status !== '' ? result.campaign.status : null;
+            this.releaseValidatorHold(campaignId, holdId, { etag, status });
           }
         },
         error: () => {
@@ -2840,14 +2869,23 @@ export class OptimizationTabComponent implements OnInit {
   }
 
   /**
-   * Release a hold. `authoritativeEtag` is campaign-service's own and becomes the row's validator;
-   * `null` means the index delivered a newer one, so the cached validator is dropped in its favour.
-   * The confirmed status overlay (`toggledStatus`) is kept either way.
+   * Release hold `holdId` (and only that hold). `authoritative` is campaign-service's own row: its
+   * etag becomes the row's validator and its status supersedes the confirmed status overlay. `null`
+   * means the index delivered an etag past the pre-write one, so the cached validator is dropped in
+   * its favour and the overlay is left to the refresh path, which drops it only once the index has
+   * caught up with it.
    */
-  private releaseValidatorHold(campaignId: string, authoritativeEtag: string | null): void {
+  private releaseValidatorHold(campaignId: string, holdId: number, authoritative: { etag: string; status: string | null } | null): void {
+    if (this.validatorHolds.get(campaignId)?.id !== holdId) {
+      return;
+    }
     this.validatorHolds.delete(campaignId);
-    if (authoritativeEtag !== null) {
-      this.toggledEtag.update((etags) => ({ ...etags, [campaignId]: authoritativeEtag }));
+    if (authoritative !== null) {
+      this.toggledEtag.update((etags) => ({ ...etags, [campaignId]: authoritative.etag }));
+      const status = authoritative.status;
+      if (status !== null) {
+        this.toggledStatus.update((statuses) => ({ ...statuses, [campaignId]: status }));
+      }
       if (this.listReadInFlight) {
         this.etagsWrittenDuringRead.add(campaignId);
       }
@@ -2862,6 +2900,26 @@ export class OptimizationTabComponent implements OnInit {
       next.delete(campaignId);
       return next;
     });
+  }
+
+  /**
+   * Whether an indexed etag is PAST `reference`: newer by version when both are campaign-service
+   * `"<version>"` etags, else merely different (the opaque fallback, as before versions were read).
+   */
+  private indexedEtagIsPast(indexed: string | undefined, reference: string): boolean {
+    if (typeof indexed !== 'string' || indexed === '' || indexed === reference) {
+      return false;
+    }
+    const indexedVersion = campaignEtagVersion(indexed);
+    const referenceVersion = campaignEtagVersion(reference);
+    return indexedVersion === null || referenceVersion === null ? true : indexedVersion > referenceVersion;
+  }
+
+  /** Whether an indexed etag is provably OLDER than a validator this session confirmed. Unorderable is not behind. */
+  private indexedEtagIsBehind(indexed: string | undefined, confirmed: string | undefined): boolean {
+    const indexedVersion = campaignEtagVersion(indexed);
+    const confirmedVersion = campaignEtagVersion(confirmed);
+    return indexedVersion !== null && confirmedVersion !== null && indexedVersion < confirmedVersion;
   }
 
   private bumpAdSetsReload(campaignId: string): void {

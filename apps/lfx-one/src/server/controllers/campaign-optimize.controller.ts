@@ -182,8 +182,9 @@ export class CampaignOptimizeController {
 
   /**
    * `GET /api/campaigns/:campaignId/record?project=&briefId=`: the campaign row from campaign-service
-   * with its current ETag, and whether this deployment can toggle it. The act-from-Monitor dialog
-   * reads this rather than the index, which can lag a campaign adopted a moment ago.
+   * with its current ETag, and whether this deployment can toggle it. Read from campaign-service, not
+   * the index, which can lag a write made a moment ago. Used by the Optimize tab to recover a row's
+   * current ETag after an ad-set write whose outcome left the validator unknown.
    */
   public async getCampaignRecord(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'campaign_record_read';

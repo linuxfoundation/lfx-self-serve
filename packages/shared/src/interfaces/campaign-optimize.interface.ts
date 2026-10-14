@@ -583,6 +583,21 @@ export interface MetaAdSetToggleRequest {
   kind: MetaAdSetActionKind;
 }
 
+/**
+ * A campaign row held on an UNKNOWN validator after an ad-set write that may have bumped its
+ * version (the Optimize tab's `validatorHolds`).
+ */
+export interface CampaignValidatorHold {
+  /** This hold's identity: an answer started for another hold (earlier, released, replaced) is ignored. */
+  id: number;
+  /** The etag the write was sent with; the index releases the hold only once it is past this. */
+  preWriteEtag: string;
+  /** Whether a campaign-list read has begun since THIS hold was created. */
+  readStarted: boolean;
+  /** The sequence of the latest authoritative row read started for this hold; only it may release the hold. */
+  latestRead: number;
+}
+
 /** The ad-set change in flight on a campaign, so the panel can mark the button that is running. */
 export interface MetaAdSetPendingChange {
   adSetId: string;

@@ -4121,6 +4121,123 @@ describe('OptimizationTabComponent — Meta ad sets (#3299)', () => {
     expect((q('optimization-campaign-toggle-c-1') as HTMLButtonElement).disabled).toBe(false);
   });
 
+  it('ignores an OLDER authoritative read that answers after a newer one released the hold', () => {
+    updateMetaAdSetStatus.mockReturnValue(throwError(() => bffError(503, META_AD_SET_STATUS_UNCONFIRMED_CODE, META_AD_SET_STATUS_OUTCOME_UNCONFIRMED)));
+    const initial = new Subject<unknown>();
+    const refresh = new Subject<unknown>();
+    getCampaignRecord.mockReturnValueOnce(initial.asObservable()).mockReturnValueOnce(refresh.asObservable());
+    render([doc()]);
+    openPanel();
+    clickToggle();
+    render(null); // Refresh: a second, overlapping record read for the same hold.
+    expect(getCampaignRecord).toHaveBeenCalledTimes(2);
+
+    refresh.next({ campaign: { id: 'c-1', etag: '"13"' }, statusToggleEnabled: true });
+    initial.next({ campaign: { id: 'c-1', etag: '"12"' }, statusToggleEnabled: true });
+    render([doc()]);
+
+    expect(q('optimization-campaigns-conflict')).toBeNull();
+    (q('optimization-campaign-toggle-c-1') as HTMLButtonElement).click();
+    expect(updateCampaignStatus.mock.calls[0][0].etag).toBe('"13"');
+  });
+
+  it('ignores an older read that answers FIRST while a newer read for the same hold is still out (last request wins)', () => {
+    updateMetaAdSetStatus.mockReturnValue(throwError(() => bffError(503, META_AD_SET_STATUS_UNCONFIRMED_CODE, META_AD_SET_STATUS_OUTCOME_UNCONFIRMED)));
+    const initial = new Subject<unknown>();
+    const refresh = new Subject<unknown>();
+    getCampaignRecord.mockReturnValueOnce(initial.asObservable()).mockReturnValueOnce(refresh.asObservable());
+    render([doc()]);
+    openPanel();
+    clickToggle();
+    render(null);
+
+    initial.next({ campaign: { id: 'c-1', etag: '"12"' }, statusToggleEnabled: true });
+    render([doc()]);
+    expect(q('optimization-campaigns-conflict')).not.toBeNull();
+
+    refresh.next({ campaign: { id: 'c-1', etag: '"13"' }, statusToggleEnabled: true });
+    fixture.detectChanges();
+    expect(q('optimization-campaigns-conflict')).toBeNull();
+    (q('optimization-campaign-toggle-c-1') as HTMLButtonElement).click();
+    expect(updateCampaignStatus.mock.calls[0][0].etag).toBe('"13"');
+  });
+
+  it("never lets a released hold's late read touch the NEW hold that replaced it", () => {
+    updateMetaAdSetStatus.mockReturnValue(throwError(() => bffError(503, META_AD_SET_STATUS_UNCONFIRMED_CODE, META_AD_SET_STATUS_OUTCOME_UNCONFIRMED)));
+    const holdARead = new Subject<unknown>();
+    getCampaignRecord.mockReturnValueOnce(holdARead.asObservable());
+    render([doc()]);
+    openPanel();
+    clickToggle();
+
+    // Hold A is released by the index moving past its pre-write etag ("3" -> "5").
+    render(null);
+    render([doc({ etag: '"5"' })]);
+    expect(q('optimization-campaigns-conflict')).toBeNull();
+
+    // Hold B: a second uncertain write, sent with "5".
+    updateMetaAdSetStatus.mockReturnValue(
+      throwError(() => bffError(409, 'CONFLICT', "the ad set's status was changed on Meta, but this campaign was modified"))
+    );
+    clickToggle();
+    expect(updateMetaAdSetStatus.mock.calls.at(-1)?.[0].etag).toBe('"5"');
+    expect(q('optimization-campaigns-conflict')).not.toBeNull();
+
+    // A's read finally answers: it must neither release B nor install its etag.
+    holdARead.next({ campaign: { id: 'c-1', etag: '"4"' }, statusToggleEnabled: true });
+    fixture.detectChanges();
+    expect(q('optimization-campaigns-conflict')).not.toBeNull();
+    expect((q('optimization-campaign-toggle-c-1') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('keeps a confirmed pause through a Refresh whose index moved but is still OLDER, while held on an unconfirmed ad-set change', () => {
+    updateMetaAdSetStatus.mockReturnValue(throwError(() => bffError(503, META_AD_SET_STATUS_UNCONFIRMED_CODE, META_AD_SET_STATUS_OUTCOME_UNCONFIRMED)));
+    render([doc({ status: 'active' })]);
+    // A confirmed campaign pause: overlay "paused", validator "9".
+    (q('optimization-campaign-toggle-c-1') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    openPanel();
+    clickToggle();
+
+    // Refresh: the index has moved ("3" -> "5") but is behind the confirmed "9", and still says active.
+    render(null);
+    render([doc({ status: 'active', etag: '"5"' })]);
+
+    expect(q('optimization-campaign-row-c-1')!.textContent).toContain('meta-ads · paused');
+    expect(q('optimization-campaign-toggle-c-1')!.textContent).toContain('Resume');
+    expect(q('optimization-campaigns-conflict')).not.toBeNull();
+  });
+
+  it('keeps a confirmed pause through a Refresh whose index is older, with no hold at all, and hands over once the index catches up', () => {
+    render([doc({ status: 'active' })]);
+    (q('optimization-campaign-toggle-c-1') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    render(null);
+    render([doc({ status: 'active', etag: '"5"' })]);
+    expect(q('optimization-campaign-row-c-1')!.textContent).toContain('meta-ads · paused');
+    expect(q('optimization-campaign-toggle-c-1')!.textContent).toContain('Resume');
+    // The next write still sends the CONFIRMED validator, not the older indexed one.
+    (q('optimization-campaign-toggle-c-1') as HTMLButtonElement).click();
+    expect(updateCampaignStatus.mock.calls.at(-1)?.[0].etag).toBe('"9"');
+  });
+
+  it('lets an authoritative record read supersede the confirmed status overlay', () => {
+    updateMetaAdSetStatus.mockReturnValue(throwError(() => bffError(503, META_AD_SET_STATUS_UNCONFIRMED_CODE, META_AD_SET_STATUS_OUTCOME_UNCONFIRMED)));
+    const record = new Subject<unknown>();
+    getCampaignRecord.mockReturnValueOnce(record.asObservable());
+    render([doc({ status: 'active' })]);
+    (q('optimization-campaign-toggle-c-1') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    openPanel();
+    clickToggle();
+
+    record.next({ campaign: { id: 'c-1', etag: '"14"', status: 'active' }, statusToggleEnabled: true });
+    fixture.detectChanges();
+    expect(q('optimization-campaigns-conflict')).toBeNull();
+    expect(q('optimization-campaign-row-c-1')!.textContent).toContain('meta-ads · active');
+  });
+
   it('does not release an unknown validator on a list read that was already in flight when the change answered', () => {
     const response = new Subject<never>();
     updateMetaAdSetStatus.mockReturnValue(response.asObservable());
