@@ -21,9 +21,9 @@ router.get('/access', (req, res, next) => socialListeningController.getAccess(re
  */
 router.use(requireSocialListeningAccess);
 
-// Mentions feed + total
-router.get('/mentions-feed', (req, res, next) => socialListeningController.getMentionsFeed(req, res, next));
-router.get('/mentions-count', (req, res, next) => socialListeningController.getMentionsCount(req, res, next));
+// Mentions feed + total — POST reads remain available during authorized impersonation.
+router.post('/mentions-feed', (req, res, next) => socialListeningController.getMentionsFeed(req, res, next));
+router.post('/mentions-count', (req, res, next) => socialListeningController.getMentionsCount(req, res, next));
 
 // Filter + scope options
 router.get('/mentions-projects', (req, res, next) => socialListeningController.getMentionsProjects(req, res, next));

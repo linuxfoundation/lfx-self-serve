@@ -985,6 +985,155 @@ export const GOOGLE_ADS_GEO_TARGET_MAP: Record<string, string> = {
 export const GOOGLE_ADS_MAX_GEO_TARGETS = 30;
 
 /**
+ * ISO 639-1 language code to Google Ads language constant id.
+ *
+ * The SIBLING of {@link GOOGLE_ADS_GEO_TARGET_MAP} and curated for the same reason: campaign-service
+ * holds the same table in `internal/platform/googleads/campaign_criteria.go` (`languageConstants`)
+ * and refuses anything absent from it — "language %q is neither a supported ISO 639-1 code (e.g. EN,
+ * DE, JA) nor a numeric language constant id from Google's language-constants table". These ids are
+ * Google's and are NOT derivable from the ISO code by any rule, so a wrong transcription targets the
+ * WRONG LANGUAGE while looking perfectly valid.
+ *
+ * Keep it in step with `campaign_criteria.go` — a code present here and absent there becomes an
+ * over-refusal at dispatch, which is the one failure this mirroring exists to prevent.
+ *
+ * A language the operator needs that is absent from both tables is still reachable upstream as a raw
+ * numeric constant id, exactly as a city is on the geo side; this map is what the UI offers, not the
+ * limit of what the dispatcher accepts.
+ */
+export const GOOGLE_ADS_LANGUAGE_MAP: Record<string, string> = {
+  EN: '1000',
+  DE: '1001',
+  FR: '1002',
+  ES: '1003',
+  IT: '1004',
+  JA: '1005',
+  DA: '1009',
+  NL: '1010',
+  FI: '1011',
+  KO: '1012',
+  NO: '1013',
+  PT: '1014',
+  SV: '1015',
+  AR: '1019',
+  BG: '1020',
+  CS: '1021',
+  EL: '1022',
+  HI: '1023',
+  HU: '1024',
+  ID: '1025',
+  IS: '1026',
+  HE: '1027',
+  LV: '1028',
+  LT: '1029',
+  PL: '1030',
+  RU: '1031',
+  RO: '1032',
+  SK: '1033',
+  SL: '1034',
+  SR: '1035',
+  UK: '1036',
+  TR: '1037',
+  CA: '1038',
+  HR: '1039',
+  VI: '1040',
+  UR: '1041',
+  TL: '1042',
+  ET: '1043',
+  TH: '1044',
+};
+
+/**
+ * English names for the codes in {@link GOOGLE_ADS_LANGUAGE_MAP}, for the picker's labels.
+ *
+ * A separate map rather than a `{ code, label }` object so {@link GOOGLE_ADS_LANGUAGE_MAP} keeps the
+ * exact shape its geo sibling has and stays a line-for-line mirror of `languageConstants` — the
+ * property that makes drift against campaign-service visible in a diff. That same `Record<string,
+ * string>` shape means the type system cannot tie the two maps' keys together, so
+ * `campaign.constants.spec.ts` does: a code added to one map and not the other fails there rather
+ * than leaving the picker silently short of a language upstream accepts.
+ */
+export const GOOGLE_ADS_LANGUAGE_LABELS = {
+  EN: 'English',
+  DE: 'German',
+  FR: 'French',
+  ES: 'Spanish',
+  IT: 'Italian',
+  JA: 'Japanese',
+  DA: 'Danish',
+  NL: 'Dutch',
+  FI: 'Finnish',
+  KO: 'Korean',
+  NO: 'Norwegian',
+  PT: 'Portuguese',
+  SV: 'Swedish',
+  AR: 'Arabic',
+  BG: 'Bulgarian',
+  CS: 'Czech',
+  EL: 'Greek',
+  HI: 'Hindi',
+  HU: 'Hungarian',
+  ID: 'Indonesian',
+  IS: 'Icelandic',
+  HE: 'Hebrew',
+  LV: 'Latvian',
+  LT: 'Lithuanian',
+  PL: 'Polish',
+  RU: 'Russian',
+  RO: 'Romanian',
+  SK: 'Slovak',
+  SL: 'Slovenian',
+  SR: 'Serbian',
+  UK: 'Ukrainian',
+  TR: 'Turkish',
+  CA: 'Catalan',
+  HR: 'Croatian',
+  VI: 'Vietnamese',
+  UR: 'Urdu',
+  TL: 'Filipino',
+  ET: 'Estonian',
+  TH: 'Thai',
+} as const satisfies Record<string, string>;
+
+/**
+ * Upstream's own bound on a Google Ads language list (`campaign_criteria.go`'s `maxLanguages`),
+ * checked there BEFORE de-duplication — so a list that is only over the cap because it repeats a
+ * code is still refused, exactly as {@link GOOGLE_ADS_MAX_GEO_TARGETS} is.
+ */
+export const GOOGLE_ADS_MAX_LANGUAGES = 40;
+
+/**
+ * A Google Ads language entry that is a raw language constant id rather than an ISO 639-1 code.
+ *
+ * `resolveLanguageList` tells its two accepted forms apart by SHAPE — "an ISO 639-1 code is letters,
+ * a constant id is all digits, so no input is ambiguous" — and the two are judged differently from
+ * there: a code must appear in {@link GOOGLE_ADS_LANGUAGE_MAP}, while a numeric id must NOT be tested
+ * against it — upstream accepts an id for a language the curated table does not carry, so refusing
+ * one would be an over-refusal. A numeric id must instead be the canonical spelling of a positive
+ * int64 (`0` and `01000` are refused), which {@link isCanonicalGoogleAdsResourceId} tests.
+ */
+export const GOOGLE_ADS_LANGUAGE_ID_PATTERN = /^[0-9]+$/;
+
+/**
+ * The Google channels whose campaign-level criteria accept a language list.
+ *
+ * Every channel EXCEPT Demand Gen. `validateCriteriaPlan` is the one gate: it refuses the whole
+ * non-location criteria set on the Demand Gen path only, because that channel attaches targeting at
+ * the ad group level. Performance Max narrows the set — it refuses device bid modifiers and
+ * campaign-level demographic exclusions — but takes languages, which Google documents as a PMax
+ * campaign criterion; Video and Display take the un-narrowed set. Widening the fence to every
+ * non-Search channel would refuse creates Google accepts, which is the over-refusal these guards
+ * exist to avoid.
+ *
+ * Video is listed because upstream accepts it there, not because this client can reach it — the
+ * Google Ads API has no mutate that creates a Video campaign, so the create is refused earlier.
+ *
+ * A create that carries languages on Demand Gen FAILS upstream with nothing created, so callers gate
+ * the control and the payload on this list rather than sending the value and hoping.
+ */
+export const GOOGLE_CHANNELS_WITH_LANGUAGES = ['search', 'performance-max', 'video', 'display'] as const;
+
+/**
  * Micros per whole currency unit, the denomination google-ads bills budgets in.
  *
  * Shared rather than inlined at the guard because the guard's whole purpose is to compute the

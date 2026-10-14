@@ -14,7 +14,8 @@ import { logger } from '../services/logger.service';
 export async function requireDashboardAccess(req: Request, _res: Response, next: NextFunction): Promise<void> {
   try {
     const result = await personaDetectionService.getPersonas(req);
-    const requestedSlug = typeof req.query['foundationSlug'] === 'string' ? req.query['foundationSlug'] : '';
+    const rawSlug = req.method === 'POST' ? req.body?.['foundationSlug'] : req.query['foundationSlug'];
+    const requestedSlug = typeof rawSlug === 'string' ? rawSlug.toLowerCase() : '';
 
     if ((await getDashboardAccessReason(req, result, requestedSlug)) !== 'none') {
       next();

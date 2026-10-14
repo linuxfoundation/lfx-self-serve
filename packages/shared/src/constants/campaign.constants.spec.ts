@@ -14,6 +14,8 @@ import {
   GOOGLE_ADS_BIDDING_BOUNDS,
   GOOGLE_ADS_CHANNEL_TYPE_ENUMS,
   GOOGLE_ADS_CONVERSION_ACTION_PATTERN,
+  GOOGLE_ADS_LANGUAGE_LABELS,
+  GOOGLE_ADS_LANGUAGE_MAP,
   GOOGLE_ADS_MAX_CONVERSION_ACTIONS,
   GOOGLE_BIDDING_CPA_STRATEGIES,
   GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
@@ -928,5 +930,17 @@ describe('resolveRedditOptimizationGoal', () => {
    */
   it.each(['constructor', 'toString', 'valueOf', 'hasOwnProperty', '__proto__'])('refuses the inherited prototype key %s', (objective) => {
     expect(() => resolveRedditOptimizationGoal(objective as RedditObjective)).toThrow(`Unsupported Reddit objective: ${objective}`);
+  });
+});
+
+describe('Google Ads language tables', () => {
+  /**
+   * The two maps share no type-level key constraint — `GOOGLE_ADS_LANGUAGE_MAP` is a plain
+   * `Record<string, string>` so it stays a line-for-line mirror of upstream's `languageConstants` —
+   * so this is what ties them. A code in the map and not the labels would be a language upstream
+   * accepts that the picker never offers; the reverse would offer one with no constant id behind it.
+   */
+  it('labels exactly the codes the language map carries', () => {
+    expect(Object.keys(GOOGLE_ADS_LANGUAGE_LABELS).sort()).toEqual(Object.keys(GOOGLE_ADS_LANGUAGE_MAP).sort());
   });
 });

@@ -48,17 +48,21 @@ import {
   GOOGLE_ADS_BIDDING_BOUNDS,
   GOOGLE_ADS_CONVERSION_ACTION_PATTERN,
   GOOGLE_ADS_GEO_TARGET_MAP,
+  GOOGLE_ADS_LANGUAGE_LABELS,
   GOOGLE_ADS_MAX_CONVERSION_ACTIONS,
   GOOGLE_ADS_MAX_GEO_TARGETS,
+  GOOGLE_ADS_MAX_LANGUAGES,
   GOOGLE_BIDDING_CPA_STRATEGIES,
   GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
   GOOGLE_BIDDING_ROAS_STRATEGIES,
   GOOGLE_BIDDING_TARGET_REQUIRED_STRATEGIES,
   GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL,
   GOOGLE_BIDDING_STRATEGY_LABELS,
+  GOOGLE_CAMPAIGN_CHANNEL_LABELS,
   GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
   GOOGLE_CAMPAIGN_NAME_TOKENS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
+  GOOGLE_CHANNELS_WITH_LANGUAGES,
   GOOGLE_CONVERSION_ACTION_CHANNELS,
   GOOGLE_CREATIVE_EITHER_OR_RULES,
   GOOGLE_CREATIVE_FIELD_SPECS,
@@ -255,10 +259,11 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * Render the cutover-only Google controls on an explicit yes. `null` (unknown) withholds them.
    *
-   * "Creative" names the capability after the first surface that needed it, but it gates BOTH
-   * cutover-only sections — the per-channel creative and the bidding plan. They share one answer
-   * because they share one cause: both ride on `googleAdsConfig`, and the legacy creator reads
-   * neither. A second flag would be a second way to say the same thing, and the two could drift.
+   * "Creative" names the capability after the first surface that needed it, but it gates EVERY
+   * cutover-only section — the per-channel creative, the bidding plan and the campaign languages.
+   * They share one answer because they share one cause: all three ride on `googleAdsConfig`, and
+   * the legacy creator reads none of them. A second flag would be a second way to say the same
+   * thing, and the two could drift.
    */
   protected readonly googleCreativeAvailable = computed<boolean>(() => this.googleCreativeEnabled() === true);
 
@@ -669,6 +674,48 @@ export class ImplementationTabComponent implements OnInit {
    * the control that cannot express it is the kinder one.
    */
   protected readonly googleGeoOptions = Object.keys(GOOGLE_ADS_GEO_TARGET_MAP).sort();
+  /**
+   * The languages the Google campaign serves in, as ISO 639-1 codes.
+   *
+   * Empty is a real and SAFE answer with no fallback behind it, which is the difference from
+   * {@link googleGeoTargets}: upstream reads an absent language list as Google's own default, which
+   * is to serve in every language. So this list only ever narrows, and leaving it alone leaves the
+   * campaign exactly as it is created today.
+   */
+  protected readonly googleLanguages = signal<string[]>([]);
+  protected readonly googleMaxLanguages = GOOGLE_ADS_MAX_LANGUAGES;
+  /**
+   * The languages Google Ads can target on this path, offered as a closed list.
+   *
+   * A select for the same reason the geo control is one: `resolveLanguageList`
+   * (`internal/platform/googleads/campaign_criteria.go`) resolves every ISO 639-1 code against a
+   * curated table and hard-errors on a miss, and {@link GOOGLE_ADS_LANGUAGE_MAP} is that same table.
+   *
+   * Sorted by the ENGLISH NAME rather than the code, unlike the geo select — the options render as
+   * names here, so sorting by code would put them on screen in no order the operator can see. The
+   * collation locale is pinned to `en`: left to the runtime default, the server render and the
+   * browser could order the options differently and fail hydration.
+   *
+   * The raw numeric constant ids upstream also accepts are deliberately NOT offered: they exist for
+   * languages outside the curated table, and the BFF guard accepts them without testing them
+   * against that table, so the narrower control costs nothing an operator can reach from this screen.
+   */
+  protected readonly googleLanguageOptions = Object.entries(GOOGLE_ADS_LANGUAGE_LABELS)
+    .map(([code, label]) => ({ code, label }))
+    .sort((a, b) => a.label.localeCompare(b.label, 'en'));
+  /**
+   * Code to English name, for the chips and their remove buttons, so a chip reads as the name the
+   * operator picked from the select and a screen reader announces "Remove German" rather than
+   * "Remove D E". A `Map` rather than the label object indexed directly: a restored draft is the
+   * other source of a code, and a plain-object index would resolve an inherited `Object.prototype`
+   * key (#3504). A code outside the table falls back to the code itself.
+   */
+  private readonly googleLanguageNames = new Map<string, string>(Object.entries(GOOGLE_ADS_LANGUAGE_LABELS));
+  /**
+   * The picked languages as chips — code and display name together — so the template binds data
+   * rather than calling a lookup on every change-detection pass.
+   */
+  protected readonly googleLanguageChips = computed(() => this.googleLanguages().map((code) => ({ code, name: this.googleLanguageNames.get(code) ?? code })));
   protected readonly metaVariants = signal<MetaAdVariant[]>([]);
   protected readonly metaGeoTargets = signal<string[]>([]);
   protected readonly metaBudgetUsd = signal(500);
@@ -1333,6 +1380,8 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleBiddingDefaultLabel: Signal<string> = this.initGoogleBiddingDefaultLabel();
   protected readonly googleTakesTargetCpa: Signal<boolean> = this.initGoogleTakesTargetCpa();
   protected readonly googleTakesTargetRoas: Signal<boolean> = this.initGoogleTakesTargetRoas();
+  protected readonly googleLanguagesChannel: Signal<GoogleCampaignChannel | null> = this.initGoogleLanguagesChannel();
+  protected readonly googleLanguagesWithheldOn: Signal<string | null> = this.initGoogleLanguagesWithheldOn();
   protected readonly googleTakesCpcBid: Signal<boolean> = this.initGoogleTakesCpcBid();
   private readonly googleStrategyNeedsTarget: Signal<boolean> = this.initGoogleStrategyNeedsTarget();
   protected readonly googleTakesConversionActions: Signal<boolean> = this.initGoogleTakesConversionActions();
@@ -1821,6 +1870,31 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
+  /**
+   * Add one Google campaign language — the geo add's twin, on the same reasoning: the select's
+   * options are {@link GOOGLE_ADS_LANGUAGE_LABELS}' own keys, so the value is already canonical and
+   * the only guards left are the cap and not adding a code twice.
+   */
+  protected addGoogleLanguage(code: string): void {
+    if (code === '') return;
+    if (this.googleLanguages().length >= GOOGLE_ADS_MAX_LANGUAGES) return;
+    if (this.googleLanguages().includes(code)) return;
+    this.googleLanguages.update((codes) => [...codes, code]);
+    this.emitDraft();
+  }
+
+  protected onGoogleLanguageAdd(event: Event): void {
+    const select = event.target as HTMLSelectElement;
+    this.addGoogleLanguage(select.value);
+    // Back to the placeholder, exactly as the geo select does.
+    select.value = '';
+  }
+
+  protected removeGoogleLanguage(index: number): void {
+    this.googleLanguages.update((codes) => codes.filter((_, i) => i !== index));
+    this.emitDraft();
+  }
+
   protected removeMicrosoftGeoTarget(index: number): void {
     this.microsoftGeoTargets.update((targets) => targets.filter((_, i) => i !== index));
     this.emitDraft();
@@ -1943,6 +2017,9 @@ export class ImplementationTabComponent implements OnInit {
       // The bidding plan, Google-gated for the same reason the creative is, and already narrowed
       // to the fields the effective strategy and channel actually take.
       ...(platforms.includes('google-ads') ? this.googleBiddingPayload() : {}),
+      // The language narrowing, Google-gated for the same reason, and already withheld unless the
+      // dispatched channel is one upstream accepts campaign languages on.
+      ...(platforms.includes('google-ads') ? this.googleLanguagesPayload() : {}),
       driveFolderUrl: this.briefDriveFolderUrl() || undefined,
       platforms,
       ...(platforms.includes('linkedin-ads')
@@ -2285,6 +2362,13 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.googleGeoTargets !== undefined) {
       this.googleGeoTargets.set([...draft.googleGeoTargets]);
     }
+    // Copied on the same rule, and restored whatever the channel selection is: the chips section
+    // and `googleLanguagesPayload` both gate on `googleLanguagesChannel`, so a list restored under
+    // a channel that takes no languages is held, not sent, and is still there if the operator
+    // switches back.
+    if (draft.googleLanguages !== undefined) {
+      this.googleLanguages.set([...draft.googleLanguages]);
+    }
     // The bidding controls, each on the same present-only rule. One `if` per field rather than a
     // single patch, because a draft saved before this section shipped carries some of these and
     // not others only as the section grows — and a blanket patch of `undefined` would clear a
@@ -2435,6 +2519,7 @@ export class ImplementationTabComponent implements OnInit {
       googleCreatives: this.googleCreativeSnapshot(),
       // Spread, not referenced, for the same reason the Meta and Microsoft geo lists below are.
       googleGeoTargets: [...this.googleGeoTargets()],
+      googleLanguages: [...this.googleLanguages()],
       // The bidding plan as TYPED, not as resolved: the raw strategy the operator picked, not the
       // channel default standing in for it, and the raw text of each number. A draft gives back
       // the form that was left, and resolving here would make a reopened draft claim a choice
@@ -2946,6 +3031,59 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
+   * The channel the language control is rendered against, or null when it should not be rendered.
+   *
+   * Resolves the channel the SAME way `buildGoogleAdsConfig` does — Search when Search is among the
+   * selection, otherwise the first selected channel — so the control can never be offered against a
+   * channel other than the one the request will carry. That resolution, and the first two gates
+   * below, are `googleBiddingChannel`'s, read from it rather than repeated, so the two sections
+   * cannot drift apart on which channel they mean.
+   *
+   * Three gates, and each withholds the control for a different reason:
+   *
+   * 1. `showGoogleSection` — no Google platform, nothing to target.
+   * 2. `googleCreativeAvailable` — the LEGACY road, on the same rule as the bidding picker and for
+   *    the same reason. Languages ride on the `googleAdsConfig` envelope and the in-process creator
+   *    reads none of it, so a language picked there would be collected, dropped, and the campaign
+   *    created serving in every language while the operator believes they narrowed it.
+   * 3. {@link GOOGLE_CHANNELS_WITH_LANGUAGES} — Demand Gen. `validateCriteriaPlan` REFUSES the whole
+   *    non-location criteria set there rather than dropping it, so offering the control on that
+   *    channel would not produce a wider campaign, it would produce a failed create.
+   *
+   * Video is in that constant and still never reaches here: `GOOGLE_VIDEO_CREATE_SUPPORTED` is
+   * false, so `selectedGoogleChannels` drops it and there is no Video create for a language to ride
+   * on. The constant is right about upstream; this signal is narrower because the screen is.
+   *
+   * Nulling in one place is what keeps the collected value and the payload from disagreeing: the
+   * template opens on this signal and `googleLanguagesPayload` opens on it too.
+   */
+  private initGoogleLanguagesChannel(): Signal<GoogleCampaignChannel | null> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      if (!channel) return null;
+      return (GOOGLE_CHANNELS_WITH_LANGUAGES as readonly string[]).includes(channel) ? channel : null;
+    });
+  }
+
+  /**
+   * The label of the channel a picked language list is being WITHHELD on, or null when nothing is.
+   *
+   * Non-null only when the Google section is live on a dispatched channel (`googleBiddingChannel`)
+   * that takes no languages, and the operator has picked some — in practice languages chosen under
+   * Search and then left behind by a switch to Demand Gen. The list is held for a switch back, not
+   * sent, so the campaign serves in every language; the template says so rather than letting the
+   * section simply vanish. Off on the legacy road and with no Google channel, where
+   * `googleBiddingChannel` is null and nothing about languages is on screen to explain.
+   */
+  private initGoogleLanguagesWithheldOn(): Signal<string | null> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      if (!channel || this.googleLanguagesChannel() || this.googleLanguages().length === 0) return null;
+      return GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel];
+    });
+  }
+
+  /**
    * The strategies the selected channel accepts, labelled for the picker.
    *
    * Straight from the shared catalogue, which reproduces campaign-service's five per-channel sets.
@@ -3315,6 +3453,21 @@ export class ImplementationTabComponent implements OnInit {
       if (actions.length > 0) payload.conversionActions = actions;
     }
     return payload;
+  }
+
+  /**
+   * The language narrowing as the request carries it, or `{}` when there is nothing to send.
+   *
+   * Gated by `googleLanguagesChannel`, the SAME computed the template's chips section opens on, so
+   * a list picked under one channel and then abandoned under another is withheld rather than
+   * forwarded into a refusal. An empty list is withheld too, by the absent-key route `geoTargets`
+   * and the flight window take: upstream reads an absent `languages` as Google's own default of
+   * every language, so sending `[]` would be a narrowing the operator never asked for.
+   */
+  private googleLanguagesPayload(): Partial<CampaignCreateRequest> {
+    if (!this.googleLanguagesChannel()) return {};
+    const languages = this.googleLanguages();
+    return languages.length > 0 ? { languages: [...languages] } : {};
   }
 
   /** One typed bidding number, or `undefined` when the field is blank or cannot be a number. */

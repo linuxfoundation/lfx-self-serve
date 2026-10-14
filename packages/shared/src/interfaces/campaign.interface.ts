@@ -753,6 +753,14 @@ export interface CampaignImplementationDraft {
    */
   googleGeoTargets?: string[];
   /**
+   * Google's campaign languages, as ISO 639-1 codes the operator picked.
+   *
+   * Empty means "every language", which is Google's own default and what this path did before the
+   * list existed — so an absent field and an empty list agree, and neither narrows anything the
+   * operator did not ask to narrow. Same rule as {@link googleGeoTargets} above.
+   */
+  googleLanguages?: string[];
+  /**
    * The Google bidding section, as RAW form text — the same choice `googleCreatives` and
    * {@link microsoftCpcBid} make, and for the same reason: a draft hands the operator back the
    * form they left, and an empty string is "they have not filled this in", which is a different
@@ -1758,6 +1766,21 @@ export interface CampaignCreateRequest {
   performanceMaxCreative?: GooglePerformanceMaxCreative;
   displayCreative?: GoogleDisplayCreative;
   geoTargets: string[];
+  /**
+   * The languages the Google campaign serves in, as ISO 639-1 codes (`EN`, `DE`, `JA`) or raw
+   * numeric Google language constant ids.
+   *
+   * Optional, and OMITTED rather than sent empty when unset — upstream reads an absent list as
+   * Google's own default, which is to serve in EVERY language. So this is a narrowing, and an empty
+   * array and an absent key mean the same thing, exactly as they do for `geoTargets`.
+   *
+   * Accepted on every Google channel except Demand Gen — see
+   * {@link GOOGLE_CHANNELS_WITH_LANGUAGES}. Bounded by {@link GOOGLE_ADS_MAX_LANGUAGES}. Upstream
+   * resolves each ISO code against its own `languageConstants` table — which
+   * {@link GOOGLE_ADS_LANGUAGE_MAP} mirrors — and refuses an unknown one rather than dropping it; a
+   * numeric id skips that table and is resolved by Google.
+   */
+  languages?: string[];
   /**
    * How the Google campaign bids, and the numbers that go with the strategy it names.
    *

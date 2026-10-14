@@ -6,6 +6,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  GOOGLE_ADS_LANGUAGE_MAP,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   MAX_BULK_KEYWORD_ACTIONS,
   MAX_GOOGLE_CREATIVE_FIELD_LENGTH,
@@ -2602,6 +2603,221 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(error.statusCode).toBe(400);
     expect(error.field).toBe('countryCode');
     expect(error.message).toContain('31');
+  });
+
+  it('dispatches the languages the operator picked, trimmed and upper-cased', async () => {
+    // The contrast for every language refusal below: without it they would all pass on a
+    // controller that refused or dropped every language list. `resolveLanguageList` resolves an
+    // ISO 639-1 code case-insensitively, but the guard's map lookup is case-SENSITIVE, so the
+    // normalization has to happen in the builder or `de` would be refused here and accepted there.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000a', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ languages: [' en ', 'de'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['languages']).toEqual(['EN', 'DE']);
+  });
+
+  it('omits languages entirely when none were picked, which is how Google\'s "every language" default is reached', async () => {
+    // Absent, not `[]`. Upstream reads an absent list as every language; an empty array would be
+    // forwarded into `resolveLanguageList` as a narrowing the operator never asked for.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000a', error: null });
+
+    await controller.createCampaign(buildReq(googleBody(), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(envelopeFor(createCampaigns)['googleAdsConfig']).not.toHaveProperty('languages');
+  });
+
+  it('names an unsupported-but-well-formed language code instead of letting Google refuse it opaquely', async () => {
+    // `ZU` is Zulu: assigned, two letters, and absent from `languageConstants`, so
+    // `resolveLanguageList` hard-errors on it before the first mutate.
+    await controller.createCampaign(buildReq(googleBody({ languages: ['EN', 'ZU'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('languages');
+    expect(error.message).toContain('ZU');
+    // `EN` is fine, and naming it would send the operator looking at the wrong chip.
+    expect(error.message).not.toContain('EN');
+  });
+
+  it('accepts a numeric language constant id without testing it against the curated table, because upstream accepts ids outside it', async () => {
+    // The over-refusal guard for the guard itself. `resolveLanguageList` tells a code from an id by
+    // SHAPE — "an ISO 639-1 code is letters, a constant id is all digits" — and resolves an id
+    // against Google's own table rather than the curated one, so `1056` (Telugu) is a create Google
+    // takes. Testing it against `GOOGLE_ADS_LANGUAGE_MAP` would refuse it here.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000a', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ languages: ['1056'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['languages']).toEqual(['1056']);
+  });
+
+  it('refuses a 41-language list even when the 41st is a repeat, because upstream caps before it de-duplicates', async () => {
+    // `resolveLanguageList` checks `len(languages) > maxLanguages` on the RAW slice and dedupes
+    // afterwards, so a list that is only over the cap because it repeats a code is still refused
+    // there. Judging the de-duplicated length here would accept a create Go then kills.
+    const forty = Object.keys(GOOGLE_ADS_LANGUAGE_MAP).slice(0, 39);
+    await controller.createCampaign(buildReq(googleBody({ languages: [...forty, '1000', '1000'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('languages');
+    expect(error.message).toContain('41');
+  });
+
+  it('refuses languages on Demand Gen by name, the one channel upstream refuses the whole criteria set on', async () => {
+    // `validateCriteriaPlan` refuses languages, device bid modifiers, demographics and ad schedules
+    // together on Demand Gen, and upstream's contract for the field is "refused, never silently
+    // dropped". Dropping the list here instead would create a campaign serving in every language
+    // and report success. The UI never sends this; a direct caller gets a named 400, nothing sent.
+    await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['demand-gen'], languages: ['EN'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('languages');
+    expect(error.message).toContain('Demand Gen');
+  });
+
+  it('refuses a blank-only list on Demand Gen for the channel, because upstream counts blanks as asked', async () => {
+    // `validateCriteriaPlan` counts `len(in.Languages)`, so `['', '  ']` trips the Demand Gen fence
+    // before `resolveLanguageList` sees a blank. Dropping the blanks would dispatch an every-language
+    // campaign upstream refuses.
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: ['demand-gen'], languages: ['', '  '] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.field).toBe('languages');
+    expect(error.message).toContain('Demand Gen');
+  });
+
+  it('forwards languages on Performance Max, which upstream documents as taking campaign languages', async () => {
+    // The other half of the split `validateCriteriaPlan` makes: it refuses device bid modifiers and
+    // campaign-level demographic exclusions on Performance Max while ACCEPTING languages, because
+    // "Google documents LANGUAGE, LOCATION and AD_SCHEDULE as campaign criteria on Performance Max".
+    // Gating languages off here with the rest of the set would be exactly that over-refusal.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000a', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: ['performance-max'], languages: ['EN'] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['languages']).toEqual(['EN']);
+  });
+
+  it.each([
+    ['a blank entry beside a valid one', ['EN', '  '], 'blank entry'],
+    ['a list holding only a blank', [''], 'blank entry'],
+    ['a three-letter language code', ['ENG'], 'ENG'],
+    ['a zero language constant id', ['0'], 'canonical spelling'],
+    ['a zero-padded language constant id, which would send English twice', ['01000'], 'canonical spelling'],
+    ['a language constant id past int64', ['99999999999999999999'], 'canonical spelling'],
+  ])('names %s rather than letting Google refuse it opaquely', async (_label, languages, expected) => {
+    // One case per `resolveLanguageList` entry branch, each an opaque failure if it reached Go.
+    await controller.createCampaign(buildReq(googleBody({ languages }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('languages');
+    expect(error.message).toContain(expected);
+  });
+
+  it.each([
+    ['a bare string', 'EN'],
+    ['an object', { 0: 'EN' }],
+    ['a list holding a number', ['EN', 123]],
+  ])('refuses %s for languages instead of treating it as absent', async (_label, languages) => {
+    // Upstream decodes the field into a Go `[]string`, so a non-array or a non-string entry is
+    // refused by the decode, before any validator runs. Reading either as absent here would
+    // dispatch an every-language campaign.
+    await controller.createCampaign(buildReq(googleBody({ languages } as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('languages');
+    expect(error.message).toContain('must be a list');
+  });
+
+  it('reads a null language list as absent, as the Go decode does', async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000a', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ languages: null } as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(envelopeFor(createCampaigns)['googleAdsConfig']).not.toHaveProperty('languages');
+  });
+
+  it("refuses a list that breaks the cap AND carries an unknown code for the cap, in upstream's own order", async () => {
+    // `resolveLanguageList` tests the length before any entry, so a 41-entry list containing `ZU`
+    // is refused for its length there; naming `ZU` here would send the operator to the wrong fix.
+    const forty = Object.keys(GOOGLE_ADS_LANGUAGE_MAP).slice(0, 39);
+    await controller.createCampaign(buildReq(googleBody({ languages: [...forty, 'EN', 'ZU'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    const error = refusalFrom();
+    expect(error.field).toBe('languages');
+    expect(error.message).toContain('41');
+    expect(error.message).not.toContain('ZU');
+  });
+
+  it('refuses an over-cap Demand Gen list for the channel, which upstream judges before the cap', async () => {
+    const forty = Object.keys(GOOGLE_ADS_LANGUAGE_MAP).slice(0, 39);
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: ['demand-gen'], languages: [...forty, 'EN', 'DE'] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(refusalFrom().message).toContain('Demand Gen');
+  });
+
+  it('accepts the largest canonical language constant id, int64 max, which upstream parses', async () => {
+    // The accept side of the bound: `canonicalCampaignID` uses `ParseInt(s, 10, 64)`.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000a', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ languages: ['9223372036854775807'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('cuts an overlong unknown entry short in the refusal rather than echoing all of it', async () => {
+    const long = 'X'.repeat(500);
+    await controller.createCampaign(buildReq(googleBody({ languages: [long] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    const error = refusalFrom();
+    expect(error.field).toBe('languages');
+    expect(error.message).toContain(`${'X'.repeat(32)}…`);
+    expect(error.message).not.toContain('X'.repeat(33));
+  });
+
+  it('refuses a non-string entry for the decode even on Demand Gen, which upstream decodes before it fences', async () => {
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: ['demand-gen'], languages: ['EN', 123] } as never), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(refusalFrom().message).toContain('must be a list');
+  });
+
+  it('names the FIRST bad entry, as upstream refuses on the first', async () => {
+    await controller.createCampaign(buildReq(googleBody({ languages: ['EN', '0', 'ZU'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    const error = refusalFrom();
+    expect(error.message).toContain('canonical spelling');
+    expect(error.message).not.toContain('ZU');
   });
 
   it.each([

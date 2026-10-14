@@ -14,7 +14,9 @@ import { socialListeningAccessService } from '../services/social-listening-acces
  */
 export async function requireSocialListeningAccess(req: Request, _res: Response, next: NextFunction): Promise<void> {
   try {
-    const requestedSlug = typeof req.query['foundationSlug'] === 'string' ? req.query['foundationSlug'] : '';
+    // Feed and count are POSTs carrying foundationSlug in the body; every other route sends it as a query param.
+    const rawSlug = req.method === 'POST' ? req.body?.['foundationSlug'] : req.query['foundationSlug'];
+    const requestedSlug = typeof rawSlug === 'string' ? rawSlug : '';
     const access = await socialListeningAccessService.getAccess(req, requestedSlug);
 
     if (access.canView) {

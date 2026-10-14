@@ -129,7 +129,7 @@ export interface SocialListeningTopProject {
 }
 
 // ---------------------------------------------------------------------------
-// Server query params (controller parses + validates into these)
+// Validated server params (controller parses JSON bodies or remaining GET queries)
 // ---------------------------------------------------------------------------
 
 /** Resolved scope: foundation slug + explicit MENTION_TS range (`resolvePeriodRange` output). */
@@ -211,7 +211,7 @@ export interface SocialListeningOptionsParams {
 export type SocialListeningAnalyticsParams = SocialListeningScopeParams & SocialListeningReadBlindFilterParams & { limit?: number };
 
 // ---------------------------------------------------------------------------
-// Client request params (Angular service → REST query string; period token, not dates)
+// Client requests (feed/count POST JSON; options/analytics GET query strings)
 // ---------------------------------------------------------------------------
 
 /** Client-side filter fragment: camelCase values already stripped of `'all'`/empty sentinels by `buildMentionFilters`. */
@@ -235,9 +235,10 @@ export interface MentionFilters {
   readBeforeTs?: string;
 }
 
+/** Complete feed JSON body, including scope, filters and pagination. */
 export interface SocialListeningFeedRequest extends MentionFilters {
   foundationSlug: string;
-  /** Marketing-impact period token (`ytd`, `last-3`, `YYYY-MM`); server resolves via `getValidatedPeriod`. */
+  /** Marketing-impact period token (`ytd`, `last-3`, `last-6`, `YYYY-MM`); server resolves via `resolvePeriodRange`. */
   period?: string;
   /** Mark-all-as-read newest lookup only: skip the date window so the cutoff is foundation-global across every period. */
   allTime?: boolean;
@@ -247,6 +248,7 @@ export interface SocialListeningFeedRequest extends MentionFilters {
   page_token?: string;
 }
 
+/** Complete count JSON body, sharing the feed scope and filters. */
 export interface SocialListeningCountRequest extends MentionFilters {
   foundationSlug: string;
   period?: string;
