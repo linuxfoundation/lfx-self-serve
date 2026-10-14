@@ -38,6 +38,8 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   // The real classifier: the participant merge keeps the better-identified record by its tier (N-02).
   getPastMeetingIdentityTier: (await vi.importActual<typeof import('@lfx-one/shared/utils/past-meeting.utils')>('@lfx-one/shared/utils/past-meeting.utils'))
     .getPastMeetingIdentityTier,
+  isPastMeetingNotetakerBot: (await vi.importActual<typeof import('@lfx-one/shared/utils/past-meeting.utils')>('@lfx-one/shared/utils/past-meeting.utils'))
+    .isPastMeetingNotetakerBot,
   getPastMeetingTranscriptUrl: vi.fn(),
   // The real measurement, so the recording response is checked with the duration it actually carries.
   getRecordingDurationSeconds: (await vi.importActual<typeof import('@lfx-one/shared/utils/past-meeting.utils')>('@lfx-one/shared/utils/past-meeting.utils'))
@@ -1366,6 +1368,20 @@ describe('MeetingService.getPastMeetingParticipants', () => {
     expect(merged.is_invited).toBe(true);
     // The Zoom name only the other record had survives the merge.
     expect(merged.zoom_user_name).toBe('Jane (iPhone)');
+  });
+
+  it("never borrows a notetaker bot's Zoom name onto a person it merges with", async () => {
+    proxyRequest.mockResolvedValueOnce({
+      resources: [
+        participantRecord('a', { email: 'jane@example.com', is_attended: true, is_verified: true }),
+        participantRecord('b', { email: 'jane@example.com', is_attended: true, zoom_user_name: "Jane's Notetaker (Otter.ai)" }),
+      ],
+    });
+
+    const [merged] = await service.getPastMeetingParticipants(req, 'meeting-1-occ-1');
+
+    expect(merged.is_verified).toBe(true);
+    expect(merged.zoom_user_name).toBeUndefined();
   });
 
   it('does not merge two records with the same email but different usernames', async () => {

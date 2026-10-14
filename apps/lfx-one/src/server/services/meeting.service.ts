@@ -48,6 +48,7 @@ import {
   getPastMeetingIdentityTier,
   getPastMeetingTranscriptUrl,
   getRecordingDurationSeconds,
+  isPastMeetingNotetakerBot,
   isMeetingAttendeeListShared,
   isShowMeetingAttendeesLocked,
   isUnresolvableParticipantName,
@@ -2697,8 +2698,11 @@ export class MeetingService {
         org_name: this.pickNonBlank(preferred.org_name, other.org_name),
         username: this.pickNonBlank(preferred.username, other.username),
         email: this.pickNonBlank(preferred.email, other.email),
-        // N-02: the names behind an attendee row survive the merge, whichever record supplied them.
-        zoom_user_name: this.pickNonBlank(preferred.zoom_user_name, other.zoom_user_name),
+        // N-02: the names behind an attendee row survive the merge, whichever record supplied them,
+        // except a bot's Zoom name: borrowed onto a person, it would make them read as a bot.
+        zoom_user_name: isPastMeetingNotetakerBot({ zoom_user_name: other.zoom_user_name })
+          ? preferred.zoom_user_name
+          : this.pickNonBlank(preferred.zoom_user_name, other.zoom_user_name),
         mapped_invitee_name: this.pickNonBlank(preferred.mapped_invitee_name, other.mapped_invitee_name),
       };
     });

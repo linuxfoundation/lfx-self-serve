@@ -1234,7 +1234,7 @@ export interface EnrichedPastMeetingParticipant extends PastMeetingParticipant {
  * (`toPastMeetingParticipantRow`).
  */
 export interface PastMeetingParticipantRow extends EnrichedPastMeetingParticipant {
-  /** Null for someone who did not attend, and for a notetaker bot nobody matched. */
+  /** Null for someone who did not attend, and for every attending notetaker bot, matched or not. */
   identity_tier: PastMeetingIdentityTier | null;
   identity_label: string | null;
   identity_names: PastMeetingIdentityNames;
