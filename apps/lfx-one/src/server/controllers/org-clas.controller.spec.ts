@@ -1186,6 +1186,32 @@ describe('OrgClasController.checkPermission', () => {
     expect(checkAcs).toHaveBeenCalledWith(expect.anything(), ORG, 'auto-ecla-update', PROJECT);
     expect(res.json).toHaveBeenCalledWith({ allowed: true });
   });
+
+  it('passes the trimmed foundation id through for the foundation pair', async () => {
+    checkAcs.mockResolvedValue(true);
+    const res = buildRes();
+
+    await new OrgClasController().checkPermission(
+      req({ action: 'approval-list-update', projectSfid: PROJECT, foundationSfid: ' a09410000182dFOUND ' }),
+      res,
+      vi.fn()
+    );
+
+    expect(checkAcs).toHaveBeenCalledWith(expect.anything(), ORG, 'approval-list-update', PROJECT, 'a09410000182dFOUND');
+  });
+
+  it('drops a foundation id that is not a string', async () => {
+    checkAcs.mockResolvedValue(false);
+    const res = buildRes();
+
+    await new OrgClasController().checkPermission(
+      req({ action: 'approval-list-update', projectSfid: PROJECT, foundationSfid: ['a09410000182dFOUND'] }),
+      res,
+      vi.fn()
+    );
+
+    expect(checkAcs).toHaveBeenCalledWith(expect.anything(), ORG, 'approval-list-update', PROJECT, undefined);
+  });
 });
 
 describe('OrgClasController — CLA manager path parameters', () => {
