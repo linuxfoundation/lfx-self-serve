@@ -25,9 +25,14 @@ import {
   GW_EMBED_SESSION_RECOVERY_COOLDOWN_MS,
   GW_EMBED_STORAGE_KEY_PREFIX,
   GW_EMBED_STYLESHEET_ROUTE,
+  GW_EMBED_CAPABILITY_MISSING_CODE,
+  GW_EMBED_HOST_SESSION_LOGOUT_URL,
+  GW_EMBED_HOST_SESSION_ME_URL,
+  GW_EMBED_HOST_SESSION_MOUNT,
+  GW_EMBED_HOST_SESSION_SUPABASE_PATH,
 } from '@lfx-one/shared/constants';
 import { buildGwEmbedStorageSuffix, hasAuthFragment, resolveGwEmbedRoutePrefix } from '@lfx-one/shared/utils';
-import { GwEmbedFatalError, GwEmbedMountHandle, GwEmbedNotification, GwHostContext } from '@lfx-one/shared/interfaces';
+import { GwEmbedAuthContext, GwEmbedFatalError, GwEmbedMountHandle, GwEmbedNotification, GwHostContext, RuntimeConfig } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
 
@@ -234,12 +239,9 @@ export class GwModuleOutletComponent {
 
       const ctx: GwHostContext = {
         basename: this.routePrefix,
-        supabase: {
-          url: runtimeConfig.gwSupabaseUrl,
-          anonKey: runtimeConfig.gwSupabaseAnonKey,
-        },
-        // Empty string tells the embed to default to same-origin `/api/gw` (see gw-embed.interface.ts).
-        apiBaseUrl: '',
+        // Where Supabase and the Gatewaze API are reached, and who holds the session. One flag picks
+        // the mode, and the server computes it with the same check its /api/gatewaze routes use.
+        ...(runtimeConfig.gwHostSession ? this.buildHostSessionAuth(runtimeConfig) : this.buildBridgeAuth(runtimeConfig)),
         enabled: {
           // The embed intersects these with Gatewaze's own DB-backed enablement — the overlay only
           // ever narrows. Empty arrays would disable every module and feature, so the pilot set is
@@ -247,25 +249,25 @@ export class GwModuleOutletComponent {
           moduleIds: [...GW_EMBED_ENABLED_MODULE_IDS],
           features: [...GW_EMBED_ENABLED_FEATURES],
         },
-        signIn: {
-          startUrl: runtimeConfig.gwLfidStartUrl,
-          returnUrl: this.buildEmbedReturnUrl(),
-        },
         source: {
           baseUrl: runtimeConfig.gwEmbedUrl,
           // The bundle's stylesheet is unscoped; the server scopes and caches it by hashed name
           // (gw-embed-stylesheet.service.ts), so only the file name crosses over.
           resolveStylesheetUrl: (url) => `${GW_EMBED_STYLESHEET_ROUTE}/${resolveGwEmbedStylesheetName(url)}`,
         },
-        storageKeySuffix: buildGwEmbedStorageSuffix(this.userService.user()?.sub),
         portalContainer: this.embedPortals().nativeElement,
         notify: (notification) => this.showHostToast(notification),
         onFatal: (err) => this.onFatal(err),
         navigateHost: (path) => this.handleHostNavigation(path),
       };
 
-      // Consume the LFID auth fragment before the embed mounts (see adoptAuthFragment).
-      await this.adoptAuthFragment(ctx.supabase.url, ctx.supabase.anonKey);
+      if (runtimeConfig.gwHostSession) {
+        // Nothing to adopt: the server holds the session. Only remove what the bridge left behind.
+        this.clearBridgeSession();
+      } else {
+        // Consume the LFID auth fragment before the embed mounts (see adoptAuthFragment).
+        await this.adoptAuthFragment(ctx.supabase.url, ctx.supabase.anonKey);
+      }
       if (this.destroyed) {
         return;
       }
@@ -309,6 +311,77 @@ export class GwModuleOutletComponent {
       });
     } finally {
       this.mounting.set(false);
+    }
+  }
+
+  /**
+   * The LFID bridge: the embed talks to Supabase directly with a session it keeps in `localStorage`,
+   * and the host runs the LFID round trip when it has none. Unchanged from before host-session mode.
+   */
+  private buildBridgeAuth(runtimeConfig: RuntimeConfig): GwEmbedAuthContext {
+    return {
+      supabase: {
+        url: runtimeConfig.gwSupabaseUrl,
+        anonKey: runtimeConfig.gwSupabaseAnonKey,
+      },
+      // Empty string tells the embed to default to same-origin `/api/gw` (see gw-embed.interface.ts).
+      apiBaseUrl: '',
+      signIn: {
+        startUrl: runtimeConfig.gwLfidStartUrl,
+        returnUrl: this.buildEmbedReturnUrl(),
+      },
+      storageKeySuffix: buildGwEmbedStorageSuffix(this.userService.user()?.sub),
+    };
+  }
+
+  /**
+   * Host-session mode: LFX One holds the Gatewaze session on the server, keyed off the LFX session
+   * cookie, and proxies Supabase and the Gatewaze API under `/api/gatewaze`. The embed sends a
+   * placeholder token there, so no Gatewaze token reaches this page.
+   *
+   * - `supabase.url` is the proxy, absolute on this origin as the embed requires. `publicUrl` is the
+   *   real project URL, so saved image URLs never point at LFX.
+   * - `anonKey` stays the publishable key; the proxy checks it on writes.
+   * - No `signIn` and no `storageKeySuffix`. When the session is lost the embed reloads the page
+   *   once, and LFX's own auth guard handles a dead LFX session from there.
+   */
+  private buildHostSessionAuth(runtimeConfig: RuntimeConfig): GwEmbedAuthContext {
+    return {
+      supabase: {
+        url: `${window.location.origin}${GW_EMBED_HOST_SESSION_SUPABASE_PATH}`,
+        anonKey: runtimeConfig.gwSupabaseAnonKey,
+        publicUrl: runtimeConfig.gwSupabaseUrl,
+      },
+      apiBaseUrl: GW_EMBED_HOST_SESSION_MOUNT,
+      session: {
+        mode: 'host',
+        meUrl: GW_EMBED_HOST_SESSION_ME_URL,
+        logoutUrl: GW_EMBED_HOST_SESSION_LOGOUT_URL,
+      },
+    };
+  }
+
+  /**
+   * Removes what the LFID bridge left in this browser before host-session mode was on: stored
+   * Gatewaze sessions, and tokens on the URL from a bridge return leg.
+   *
+   * Every stored session goes, not just this user's. Each one holds a live refresh token, and in
+   * host-session mode nothing on this origin will ever read them again. A plain `#section` anchor is
+   * left alone; only a fragment carrying credential keys is cleared.
+   */
+  private clearBridgeSession(): void {
+    if (hasAuthFragment(window.location.hash)) {
+      this.clearAuthFragment();
+    }
+
+    try {
+      const storage = window.localStorage;
+      const keys = Array.from({ length: storage.length }, (_, index) => storage.key(index)).filter(
+        (key): key is string => key !== null && key.startsWith(GW_EMBED_STORAGE_KEY_PREFIX)
+      );
+      keys.forEach((key) => storage.removeItem(key));
+    } catch {
+      // Storage unavailable (private mode, blocked site data): then nothing was stored there either.
     }
   }
 
@@ -759,6 +832,15 @@ export class GwModuleOutletComponent {
 
     const remainder = path.slice(this.routePrefix.length).split('?')[0].replace(/\/$/, '');
     if (remainder === GW_EMBED_LOGIN_PATH) {
+      // Host-session mode never starts LFID: the server holds the session, so a sign-in round trip
+      // here could not fix anything. The embed has already reloaded once for a lost session, and a
+      // dead LFX session is LFX's own auth guard's job, so arriving here is a fault to show.
+      if (getRuntimeConfig(this.transferState).gwHostSession) {
+        console.warn('[GwModuleOutlet] The embed asked for sign-in in host-session mode; not starting LFID');
+        this.showErrorPanel('Your Gatewaze session could not be started. Reload the page to try again.');
+        return;
+      }
+
       // A stored session plus a bounce to /login means the embed asked for its login page before it
       // had read that session — and /login matches no embed route, so nothing there will ever read
       // it either. Reload onto a real route so the guarded tree gets a chance to see the session.
@@ -822,6 +904,16 @@ export class GwModuleOutletComponent {
   private loadEmbedLoader = (): Promise<typeof import('@gatewaze/admin-embed')> => import('@gatewaze/admin-embed');
 
   private onFatal(err: GwEmbedFatalError): void {
+    // Host-session mode against a Gatewaze deployment whose bundle predates it. The loader has
+    // already refused to mount, because that bundle would ignore `session` and keep its own token
+    // in localStorage. Checked before `recoverable` so this always fails closed, and logged as an
+    // error because only a Gatewaze deployment (or turning LFX_GATEWAZE_HOST_SESSION off) fixes it.
+    if (err.code === GW_EMBED_CAPABILITY_MISSING_CODE) {
+      console.error('[GwModuleOutlet] The Gatewaze deployment does not support host-session mode; refusing to mount', err);
+      this.showErrorPanel('The embedded admin module needs a newer Gatewaze deployment before it can load here.');
+      return;
+    }
+
     // A recoverable fatal is one the embed handled and kept running through, so blanking it behind
     // an error panel would hide a live, working module. `hostPanelShowing` sets `display: none` on
     // the mount points, so treating every fatal as terminal made `recoverable` dead weight that

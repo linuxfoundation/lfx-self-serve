@@ -172,6 +172,33 @@ export const GW_EMBED_STYLESHEET_STALE_WHILE_REVALIDATE_S = 7 * 24 * 60 * 60;
 export const GW_EMBED_DEFAULT_API_BASE_URL = '/api/gw';
 
 /**
+ * Where LFX One serves host-session mode (`gatewaze.route.ts`, mounted in `server.ts`). It is also
+ * the embed's `apiBaseUrl` in that mode: the embed calls `${apiBaseUrl}/api/...`, which lands on
+ * the Gatewaze API proxy at `/api/gatewaze/api/...`.
+ */
+export const GW_EMBED_HOST_SESSION_MOUNT = '/api/gatewaze';
+
+/** `GwHostContext.session.meUrl`: who the Gatewaze session belongs to, or why there is none. */
+export const GW_EMBED_HOST_SESSION_ME_URL = `${GW_EMBED_HOST_SESSION_MOUNT}/session/me`;
+
+/** `GwHostContext.session.logoutUrl`: ends the Gatewaze session and leaves the LFX one alone. */
+export const GW_EMBED_HOST_SESSION_LOGOUT_URL = `${GW_EMBED_HOST_SESSION_MOUNT}/session/logout`;
+
+/**
+ * Path of LFX One's Supabase proxy. The outlet prefixes the page origin, because the embed needs an
+ * absolute same-origin `supabase.url` in host-session mode. Supabase-js appends `/rest/v1`,
+ * `/storage/v1`, `/functions/v1` and `/realtime/v1` to it.
+ */
+export const GW_EMBED_HOST_SESSION_SUPABASE_PATH = `${GW_EMBED_HOST_SESSION_MOUNT}/supabase`;
+
+/**
+ * The loader's `onFatal` code for a hosted bundle whose manifest does not advertise the
+ * `host-session` capability. The loader refuses to mount it, because a bundle that predates the
+ * mode would ignore `session` and keep its own session in `localStorage`.
+ */
+export const GW_EMBED_CAPABILITY_MISSING_CODE = 'gw_embed_capability_missing';
+
+/**
  * Route prefixes the embed can be mounted under, and the value handed to the embed as
  * `GwHostContext.basename` so both routers agree on where its subtree begins.
  *

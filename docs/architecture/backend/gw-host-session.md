@@ -261,6 +261,7 @@ Deriving the id rather than storing it means nothing is written to `appSession`,
 
 ## Related
 
+- [Gatewaze Embed Host](../frontend/gw-embed.md#host-session-mode), the context the embed outlet passes to the loader in this mode.
 - [Gatewaze Embed Proxy](./gw-proxy.md), the `/api/gw` pass-through this replaces once host-session mode is the default.
 - [Authentication](./authentication.md), for the session store and why `appSession` is never written outside `express-openid-connect`.
 - [`@gatewaze/host-session` README](https://www.npmjs.com/package/@gatewaze/host-session), the host contract.
