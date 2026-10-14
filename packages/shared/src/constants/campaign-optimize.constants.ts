@@ -393,6 +393,30 @@ export const META_AD_SET_DELIBERATE_RESUME_ADVICE =
  */
 export const META_AD_SET_PRE_SEND_REFUSAL_STATUSES: ReadonlySet<number> = new Set([400, 401, 403, 404, 422, 428]);
 
+/**
+ * Why Resume is refused on a `created_degraded` campaign: campaign-service will not switch delivery
+ * ON beneath a campaign that still needs reconciliation (409), but a PAUSE stays allowed.
+ */
+export const META_AD_SET_RESUME_BLOCKED_DEGRADED_REASON =
+  "This campaign still needs reconciliation, so its ad sets can't be resumed here. They can still be paused to stop any spend.";
+
+/**
+ * Why every ad-set change is refused on a campaign that is still provisioning or needs
+ * reconciliation (`pending`, `group_created`, `unconfirmed`, or any state campaign-service does not
+ * call toggleable): it answers 409 in both directions.
+ */
+export const META_AD_SET_CHANGE_BLOCKED_CAMPAIGN_STATE_REASON =
+  "This campaign is still provisioning or needs reconciliation, so its ad sets can't be changed here until its status is resolved.";
+
+/** The budget cell when the ad set was not listed by Meta: every descriptive field is absent. */
+export const META_AD_SET_BUDGET_NOT_REPORTED = 'Budget not reported';
+
+/** The budget cell when neither a type nor an amount is reported: possibly Campaign Budget Optimization, but not proven. */
+export const META_AD_SET_BUDGET_NONE_REPORTED = 'No ad set budget reported (it may use the campaign budget)';
+
+/** The budget cell when the type is reported but the amount is not (an unknown currency scale, for one). */
+export const META_AD_SET_BUDGET_AMOUNT_NOT_REPORTED = '{type} budget, amount not reported';
+
 /** Why an ad set Meta reports deleted or archived, or no longer lists, offers no action. */
 export const META_AD_SET_NO_ACTION_REASON = 'This ad set cannot be paused or resumed.';
 

@@ -87,7 +87,14 @@ import {
   campaignToggleAction,
   normalizeCampaignStatus,
 } from '@lfx-one/shared/constants';
-import { campaignActionItemLever, campaignEtagVersion, keywordActionKey, keywordIdentityKey } from '@lfx-one/shared/utils';
+import {
+  campaignActionItemLever,
+  campaignEtagVersion,
+  keywordActionKey,
+  keywordIdentityKey,
+  metaAdSetCampaignEligibility,
+  metaAdSetDirectionAllowed,
+} from '@lfx-one/shared/utils';
 import { AdsCurrencyPipe, AdsPctPipe, EventLabelPipe, PacingClassPipe, PriorityClassPipe, QualityScoreClassPipe } from '@pipes/campaign-optimization.pipe';
 import { metaAdSetFailureOutcome, metaAdSetWriteLeftValidatorKnown } from '@shared/utils/campaign-ad-set-error.utils';
 import { campaignBidFailureOutcome } from '@shared/utils/campaign-bid-error.utils';
@@ -673,6 +680,8 @@ export class OptimizationTabComponent implements OnInit {
         adSetsAvailable: adSetsOffered && adSetsUnavailableReason === '',
         adSetsUnavailableReason,
         // Busy only while ANOTHER write is out: the panel itself shows its own pending ad set.
+        // From the row's own status, not the overlay-free index: a confirmed pause leaves it `paused`, still toggleable.
+        adSetEligibility: metaAdSetCampaignEligibility(status),
         adSetsBlockedReason: this.adSetsBlockedReasonFor(
           conflicted,
           pendingDirection !== undefined || !!budgetPending[campaign.id] || !!bidPending[campaign.id]
@@ -1278,6 +1287,12 @@ export class OptimizationTabComponent implements OnInit {
     }
     if (row.conflicted) {
       this.adSetOutcome.update((o) => ({ ...o, [id]: outcomeOf('conflict', META_AD_SET_BLOCKED_STALE_REASON) }));
+      return;
+    }
+    // The campaign's state refuses this direction (e.g. a resume under `created_degraded`): upstream
+    // would answer 409, so nothing is sent. The panel disables such an action; this is the backstop.
+    if (!metaAdSetDirectionAllowed(row.adSetEligibility, request.status)) {
+      this.adSetOutcome.update((o) => ({ ...o, [id]: outcomeOf('failed', row.adSetEligibility.reason) }));
       return;
     }
     const etag = this.toggledEtag()[id] ?? campaign.etag ?? '';

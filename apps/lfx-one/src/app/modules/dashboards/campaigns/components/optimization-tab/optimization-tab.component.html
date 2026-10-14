@@ -553,6 +553,7 @@
                   [blockedReason]="row.adSetsBlockedReason"
                   [outcome]="adSetOutcome()[row.campaign.id] ?? null"
                   [reloadToken]="adSetsReload()[row.campaign.id] ?? 0"
+                  [eligibility]="row.adSetEligibility"
                   (toggleAdSet)="changeMetaAdSetStatus(row, $event)"
                   (closePanel)="cancelAdSetsPanel(row.campaign.id)" />
               }
