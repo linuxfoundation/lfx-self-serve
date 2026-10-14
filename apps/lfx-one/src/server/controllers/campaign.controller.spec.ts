@@ -2669,13 +2669,30 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(error.message).toContain('41');
   });
 
-  it('withholds languages on Demand Gen, the one channel upstream refuses the whole criteria set on', async () => {
+  it('refuses languages on Demand Gen by name, the one channel upstream refuses the whole criteria set on', async () => {
     // `validateCriteriaPlan` refuses languages, device bid modifiers, demographics and ad schedules
-    // together on Demand Gen, and refuses only some of them on Performance Max. Forwarding a list
-    // the operator left behind from a Search selection would turn a servable create into a refusal.
+    // together on Demand Gen, and upstream's contract for the field is "refused, never silently
+    // dropped". Dropping the list here instead would create a campaign serving in every language
+    // and report success. The UI never sends this; a direct caller gets a named 400, nothing sent.
+    await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['demand-gen'], languages: ['EN'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('languages');
+    expect(error.message).toContain('Demand Gen');
+  });
+
+  it('does not refuse Demand Gen for a cleared language control', async () => {
+    // A cleared control arrives as `['']`, which names no language — the same blanks the helper
+    // drops. Refusing for it would refuse a create upstream accepts.
     createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000a', error: null });
 
-    await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['demand-gen'], languages: ['EN'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: ['demand-gen'], languages: ['', '  '] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
 
     expect(next).not.toHaveBeenCalled();
     expect(envelopeFor(createCampaigns)['googleAdsConfig']).not.toHaveProperty('languages');

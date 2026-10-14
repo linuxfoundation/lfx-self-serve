@@ -1775,9 +1775,10 @@ export interface CampaignCreateRequest {
    * array and an absent key mean the same thing, exactly as they do for `geoTargets`.
    *
    * Accepted on every Google channel except Demand Gen — see
-   * {@link GOOGLE_CHANNELS_WITH_LANGUAGES}. Bounded by {@link GOOGLE_ADS_MAX_LANGUAGES}, and each
-   * code is resolved against {@link GOOGLE_ADS_LANGUAGE_MAP} upstream, which refuses an unknown one
-   * rather than dropping it.
+   * {@link GOOGLE_CHANNELS_WITH_LANGUAGES}. Bounded by {@link GOOGLE_ADS_MAX_LANGUAGES}. Upstream
+   * resolves each ISO code against its own `languageConstants` table — which
+   * {@link GOOGLE_ADS_LANGUAGE_MAP} mirrors — and refuses an unknown one rather than dropping it; a
+   * numeric id skips that table and is resolved by Google.
    */
   languages?: string[];
   /**

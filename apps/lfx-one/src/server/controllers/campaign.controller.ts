@@ -680,7 +680,31 @@ export class CampaignController {
         //
         // The cap is upstream's and, like the geo cap, is checked BEFORE de-duplication there, so it
         // is here too: a list over the cap only because it repeats a code is still refused.
-        const googleLanguages = (configEnvelope['googleAdsConfig'] as { languages?: unknown } | undefined)?.languages;
+        // A language list on a channel that takes none is REFUSED by name, not dropped. Upstream's
+        // contract for the field is "refused, never silently dropped" — `validateCriteriaPlan` fails
+        // the whole Demand Gen create on it — and dropping it here instead would turn an explicit
+        // narrowing into a campaign that serves in every language and reports success. The UI never
+        // sends this (its control and payload gate on the same channel list), so only a direct
+        // caller of this endpoint can reach it. Blank entries are ignored, as `googleLanguages` does.
+        const googleConfig = configEnvelope['googleAdsConfig'] as { channel?: unknown; languages?: unknown } | undefined;
+        const googleChannel = googleConfig?.channel;
+        const requestedLanguages = Array.isArray(body?.languages) ? body.languages.filter((l) => typeof l !== 'string' || l.trim() !== '') : [];
+        if (
+          typeof googleChannel === 'string' &&
+          requestedLanguages.length > 0 &&
+          !(GOOGLE_CHANNELS_WITH_LANGUAGES as readonly string[]).includes(googleChannel)
+        ) {
+          next(
+            ServiceValidationError.forField(
+              'languages',
+              `Google Ads does not accept campaign languages on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove the languages or pick a different channel, then create again.`,
+              { operation: 'campaign_create', service: 'campaign_controller' }
+            )
+          );
+          return;
+        }
+
+        const googleLanguages = googleConfig?.languages;
         if (Array.isArray(googleLanguages)) {
           const unsupported = googleLanguages.filter(
             (l): l is string => typeof l === 'string' && !GOOGLE_ADS_LANGUAGE_ID_PATTERN.test(l) && !Object.hasOwn(GOOGLE_ADS_LANGUAGE_MAP, l)
@@ -3559,11 +3583,11 @@ export class CampaignController {
    * CHANNEL-GATED, which `geoTargets` is not. `validateCriteriaPlan`
    * (`internal/platform/googleads/campaign_criteria.go`) refuses the whole non-location criteria
    * set on the Demand Gen path — that channel attaches targeting at the ad group level — so a
-   * Demand Gen create carrying languages fails upstream with nothing created. The list is therefore
-   * dropped for a channel outside {@link GOOGLE_CHANNELS_WITH_LANGUAGES} rather than sent. Dropping
-   * is safe HERE and only here because the UI does not offer the control on those channels, and
-   * because the alternative — forwarding it — is a guaranteed refusal rather than a narrower
-   * campaign.
+   * Demand Gen create carrying languages fails upstream with nothing created. So this helper never
+   * forwards a list for a channel outside {@link GOOGLE_CHANNELS_WITH_LANGUAGES}, and the `{}` it
+   * returns there is never dispatched either: `createCampaign` reads the request's own list and
+   * refuses such a create by name before anything is sent, on upstream's "refused, never silently
+   * dropped" rule for this field.
    *
    * SHAPE ONLY, like the geo sibling: an entry passes when it is two letters (an ISO 639-1 code) or
    * a run of digits (a raw language constant id) — the same two shapes `resolveLanguageList` tells

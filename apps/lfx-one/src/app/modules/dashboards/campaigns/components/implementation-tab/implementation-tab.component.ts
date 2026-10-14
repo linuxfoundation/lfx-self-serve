@@ -58,6 +58,7 @@ import {
   GOOGLE_BIDDING_TARGET_REQUIRED_STRATEGIES,
   GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL,
   GOOGLE_BIDDING_STRATEGY_LABELS,
+  GOOGLE_CAMPAIGN_CHANNEL_LABELS,
   GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
   GOOGLE_CAMPAIGN_NAME_TOKENS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
@@ -1373,6 +1374,7 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleTakesTargetCpa: Signal<boolean> = this.initGoogleTakesTargetCpa();
   protected readonly googleTakesTargetRoas: Signal<boolean> = this.initGoogleTakesTargetRoas();
   protected readonly googleLanguagesChannel: Signal<GoogleCampaignChannel | null> = this.initGoogleLanguagesChannel();
+  protected readonly googleLanguagesWithheldOn: Signal<string | null> = this.initGoogleLanguagesWithheldOn();
   protected readonly googleTakesCpcBid: Signal<boolean> = this.initGoogleTakesCpcBid();
   private readonly googleStrategyNeedsTarget: Signal<boolean> = this.initGoogleStrategyNeedsTarget();
   protected readonly googleTakesConversionActions: Signal<boolean> = this.initGoogleTakesConversionActions();
@@ -3030,7 +3032,9 @@ export class ImplementationTabComponent implements OnInit {
    *
    * Resolves the channel the SAME way `buildGoogleAdsConfig` does — Search when Search is among the
    * selection, otherwise the first selected channel — so the control can never be offered against a
-   * channel other than the one the request will carry.
+   * channel other than the one the request will carry. That resolution, and the first two gates
+   * below, are `googleBiddingChannel`'s, read from it rather than repeated, so the two sections
+   * cannot drift apart on which channel they mean.
    *
    * Three gates, and each withholds the control for a different reason:
    *
@@ -3052,13 +3056,27 @@ export class ImplementationTabComponent implements OnInit {
    */
   private initGoogleLanguagesChannel(): Signal<GoogleCampaignChannel | null> {
     return computed(() => {
-      void this.campaignFormRevision();
-      if (!this.showGoogleSection()) return null;
-      if (!this.googleCreativeAvailable()) return null;
-      const channels = this.selectedGoogleChannels();
-      if (channels.length === 0) return null;
-      const channel = channels.includes('search') ? 'search' : channels[0];
+      const channel = this.googleBiddingChannel();
+      if (!channel) return null;
       return (GOOGLE_CHANNELS_WITH_LANGUAGES as readonly string[]).includes(channel) ? channel : null;
+    });
+  }
+
+  /**
+   * The label of the channel a picked language list is being WITHHELD on, or null when nothing is.
+   *
+   * Non-null only when the Google section is live on a dispatched channel (`googleBiddingChannel`)
+   * that takes no languages, and the operator has picked some — in practice languages chosen under
+   * Search and then left behind by a switch to Demand Gen. The list is held for a switch back, not
+   * sent, so the campaign serves in every language; the template says so rather than letting the
+   * section simply vanish. Off on the legacy road and with no Google channel, where
+   * `googleBiddingChannel` is null and nothing about languages is on screen to explain.
+   */
+  private initGoogleLanguagesWithheldOn(): Signal<string | null> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      if (!channel || this.googleLanguagesChannel() || this.googleLanguages().length === 0) return null;
+      return GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel];
     });
   }
 

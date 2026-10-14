@@ -5767,6 +5767,34 @@ describe('ImplementationTabComponent google languages', () => {
   });
 
   /**
+   * Held is not silent. The section disappears on Demand Gen, so without this notice the operator
+   * would read nothing about the campaign now serving in every language; switching back clears it.
+   */
+  it('says the held list will not be sent on demand-gen, and clears the notice on a switch back', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleLanguage']('DE');
+    const notice = () => fixture.nativeElement.querySelector('[data-testid="implementation-google-languages-withheld"]');
+    fixture.detectChanges();
+    expect(notice()).toBeNull();
+
+    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    fixture.detectChanges();
+    expect(c['googleLanguagesWithheldOn']()).toBe('Demand Gen');
+    expect(notice()?.textContent).toContain('serve in every language');
+
+    c['campaignForm'].patchValue({ includeSearch: true, includeDemandGen: false });
+    fixture.detectChanges();
+    expect(notice()).toBeNull();
+    expect(c['googleLanguagesPayload']()).toEqual({ languages: ['DE'] });
+  });
+
+  it('shows no withheld notice on demand-gen when no language was picked', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+
+    expect(c['googleLanguagesWithheldOn']()).toBeNull();
+  });
+
+  /**
    * An absent key, not `[]`. Upstream reads an absent language list as Google's own default of
    * every language, so sending an empty array would be a narrowing nobody asked for.
    */
@@ -5774,6 +5802,31 @@ describe('ImplementationTabComponent google languages', () => {
     const c = seedChannel(fixture, { includeSearch: true });
 
     expect(c['googleLanguagesPayload']()).toEqual({});
+  });
+
+  /**
+   * The legacy road. The in-process creator reads nothing on `googleAdsConfig`, so a language picked
+   * there would be collected and dropped, and the campaign created serving in every language. A
+   * picked list is held, not sent, and the section is not rendered; `null` (not known yet) withholds
+   * the same way.
+   */
+  it.each([[null], [false]])('withholds the section and the payload while googleCreativeEnabled is %s', (capability) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleLanguage']('DE');
+    fixture.componentRef.setInput('googleCreativeEnabled', capability);
+    fixture.detectChanges();
+
+    expect(c['googleLanguagesChannel']()).toBeNull();
+    expect(c['googleLanguagesPayload']()).toEqual({});
+    expect(fixture.nativeElement.querySelector('[data-testid="implementation-google-languages-section"]')).toBeNull();
+    expect(c['googleLanguages']()).toEqual(['DE']);
+  });
+
+  it('renders the section once the capability is on', () => {
+    seedChannel(fixture, { includeSearch: true });
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="implementation-google-languages-section"]')).not.toBeNull();
   });
 
   it('round-trips the chips through a draft', () => {

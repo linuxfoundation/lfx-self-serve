@@ -1048,8 +1048,10 @@ export const GOOGLE_ADS_LANGUAGE_MAP: Record<string, string> = {
  *
  * A separate map rather than a `{ code, label }` object so {@link GOOGLE_ADS_LANGUAGE_MAP} keeps the
  * exact shape its geo sibling has and stays a line-for-line mirror of `languageConstants` — the
- * property that makes drift against campaign-service visible in a diff. The `satisfies` clause makes
- * a code added to one map and not the other a compile error rather than a blank label.
+ * property that makes drift against campaign-service visible in a diff. That same `Record<string,
+ * string>` shape means the type system cannot tie the two maps' keys together, so
+ * `campaign.constants.spec.ts` does: a code added to one map and not the other fails there rather
+ * than leaving the picker silently short of a language upstream accepts.
  */
 export const GOOGLE_ADS_LANGUAGE_LABELS = {
   EN: 'English',
@@ -1091,7 +1093,7 @@ export const GOOGLE_ADS_LANGUAGE_LABELS = {
   TL: 'Filipino',
   ET: 'Estonian',
   TH: 'Thai',
-} as const satisfies Record<keyof typeof GOOGLE_ADS_LANGUAGE_MAP, string>;
+} as const satisfies Record<string, string>;
 
 /**
  * Upstream's own bound on a Google Ads language list (`campaign_criteria.go`'s `maxLanguages`),
