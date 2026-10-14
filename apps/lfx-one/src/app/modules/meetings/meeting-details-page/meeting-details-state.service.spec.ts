@@ -694,7 +694,7 @@ describe('MeetingDetailsStateService', () => {
       const state = create();
       await load();
 
-      expect(getMyRsvp).toHaveBeenCalledWith(MEETING_ID, undefined);
+      expect(getMyRsvp).toHaveBeenCalledWith(MEETING_ID, undefined, false);
       expect(state.myRsvp()).toBe('accepted');
       expect(state.myRsvpAttr()).toBe('accepted');
       expect(state.meetingStatus()).toBe('going');
@@ -716,7 +716,16 @@ describe('MeetingDetailsStateService', () => {
       await load();
 
       expect(state.myRsvp()).toBeNull();
-      expect(getMyRsvp).toHaveBeenCalledWith(MEETING_ID, '1760000000');
+      expect(getMyRsvp).toHaveBeenCalledWith(MEETING_ID, '1760000000', false);
+    });
+
+    // As V1 (#3458): a series with no resolved occurrence reads only its series-wide answer.
+    it('asks for the series-wide answer only when a series has no resolved occurrence', async () => {
+      getPublicMeeting.mockReturnValue(of({ meeting: upcoming({ recurrence: { type: 2 }, occurrences: [] } as unknown as Partial<Meeting>), project }));
+      create();
+      await load();
+
+      expect(getMyRsvp).toHaveBeenCalledWith(MEETING_ID, undefined, true);
     });
 
     it('reads no answer as awaiting the RSVP', async () => {
@@ -824,7 +833,7 @@ describe('MeetingDetailsStateService', () => {
       queryParamMap$.next(convertToParamMap({ occurrence: String(second.getTime()) }));
       await load();
 
-      expect(getMyRsvp).toHaveBeenLastCalledWith(MEETING_ID, '1760600000');
+      expect(getMyRsvp).toHaveBeenLastCalledWith(MEETING_ID, '1760600000', false);
       expect(state.myRsvp()).toBeUndefined();
     });
 

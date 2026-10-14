@@ -118,7 +118,7 @@ export class MeetingDetailsStateService {
    * is retried once straight away and then on each clock tick, instead of sticking for the rest of
    * the visit.
    */
-  private readonly myRsvpRequest: Signal<{ meetingId: string; occurrenceId: string | undefined; retry: number } | null> = computed(() => {
+  private readonly myRsvpRequest: Signal<{ meetingId: string; occurrenceId: string | undefined; allDatesOnly: boolean; retry: number } | null> = computed(() => {
     const meeting = this.meeting();
     const eligible =
       !!meeting &&
@@ -131,9 +131,13 @@ export class MeetingDetailsStateService {
     if (!eligible || !meeting) {
       return null;
     }
+    const occurrenceId = resolveRsvpOccurrenceId(meeting, { occurrence: this.selectedOccurrence() });
     return {
       meetingId: meeting.id,
-      occurrenceId: resolveRsvpOccurrenceId(meeting, { occurrence: this.selectedOccurrence() }),
+      occurrenceId,
+      // As V1 (#3458): a recurring meeting with no resolved occurrence reads only its series-wide answer,
+      // so a newer single-date or this-and-following answer is never shown as the answer for the series.
+      allDatesOnly: !!meeting.recurrence && !occurrenceId,
       retry: this.myRsvpFailed() ? this.now().getTime() : 0,
     };
   });
@@ -475,7 +479,7 @@ export class MeetingDetailsStateService {
           if (!event.key) {
             return of(undefined);
           }
-          return this.meetingService.getMeetingRsvpForCurrentUserOrFail(event.key.meetingId, event.key.occurrenceId).pipe(
+          return this.meetingService.getMeetingRsvpForCurrentUserOrFail(event.key.meetingId, event.key.occurrenceId, event.key.allDatesOnly).pipe(
             map((rsvp): RsvpResponse | null | undefined => rsvp?.response_type ?? null),
             tap(() => this.myRsvpFailed.set(false)),
             // Unknown, not "not answered": the pill falls back to the time state, and the request is

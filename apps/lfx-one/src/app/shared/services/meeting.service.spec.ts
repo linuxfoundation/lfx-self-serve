@@ -220,6 +220,16 @@ describe('MeetingService own RSVP', () => {
     expect(get).toHaveBeenCalledWith(`/api/meetings/${MEETING_UID}/rsvp/me`, { params: { occurrenceId: '1760000000' } });
   });
 
+  it('asks for series-wide answers only with allDatesOnly and no occurrence, the occurrence winning otherwise', async () => {
+    get.mockReturnValue(of(null));
+
+    await firstValueFrom(service.getMeetingRsvpForCurrentUserOrFail(MEETING_UID, undefined, true));
+    expect(get).toHaveBeenLastCalledWith(`/api/meetings/${MEETING_UID}/rsvp/me`, { params: { rsvp_scope: 'all' } });
+
+    await firstValueFrom(service.getMeetingRsvpForCurrentUserOrFail(MEETING_UID, '1760000000', true));
+    expect(get).toHaveBeenLastCalledWith(`/api/meetings/${MEETING_UID}/rsvp/me`, { params: { occurrenceId: '1760000000' } });
+  });
+
   it('rethrows a failure from the strict variant', async () => {
     get.mockReturnValue(throwError(() => ({ status: 500 })));
 
