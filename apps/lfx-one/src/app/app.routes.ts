@@ -31,6 +31,7 @@ import { marketingImpactAccessGuard } from './shared/guards/marketing-impact-acc
 import { meetupsLensGuard } from './shared/guards/meetups-lens.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
 import { orgPathParamGuard } from './shared/guards/org-path-param.guard';
+import { orgClaOnlyPageGuard } from './shared/guards/org-cla-only-page.guard';
 import { socialListeningAccessGuard } from './shared/guards/social-listening-access.guard';
 import { orgSegmentMatchGuard } from './shared/guards/org-segment-match.guard';
 import { orgLensClaM3EnabledGuard } from './shared/guards/org-lens-cla-m3-enabled.guard';
@@ -400,6 +401,8 @@ export const routes: Routes = [
             path: `:${ORG_SEGMENT_PARAM}`,
             canMatch: [orgSegmentMatchGuard],
             canActivate: [orgPathParamGuard],
+            // M3: a CLA-only organization opens the EasyCLA page only; runs after the address is adopted.
+            canActivateChild: [orgClaOnlyPageGuard],
             data: { lens: 'org' },
             children: [
               {

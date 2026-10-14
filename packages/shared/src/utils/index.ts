@@ -59,7 +59,6 @@ export * from './email-domain.utils';
 export * from './invitation.utils';
 export * from './lens.utils';
 export * from './nav-default-selection.utils';
-export * from './map-v1-band-to-v2';
 export * from './crowdfunding.utils';
 export * from './mentorship.utils';
 export * from './persona.utils';

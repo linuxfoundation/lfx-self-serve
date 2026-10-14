@@ -128,4 +128,19 @@ describe('DashboardMeetingCardComponent', () => {
     expect(getPastMeetingRecording).not.toHaveBeenCalled();
     expect(fixture.componentInstance.recordingShareUrl()).toBeNull();
   });
+
+  it('shows the type chip for a recognized meeting type', async () => {
+    await render(buildMeeting({ meeting_type: 'Technical' }));
+
+    const chip = fixture.nativeElement.querySelector('[data-testid="dashboard-meeting-card-type-chip"]');
+    expect(chip).not.toBeNull();
+    expect(chip.textContent).toContain('Technical');
+  });
+
+  it.each([null, 'Unknown'])('hides the type chip when the meeting type is %s', async (meetingType) => {
+    await render(buildMeeting({ meeting_type: meetingType }));
+
+    expect(fixture.componentInstance.meetingTypeInfo()).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="dashboard-meeting-card-type-chip"]')).toBeNull();
+  });
 });

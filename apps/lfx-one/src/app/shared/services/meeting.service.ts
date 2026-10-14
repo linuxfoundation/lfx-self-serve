@@ -202,9 +202,14 @@ export class MeetingService {
     uid: string,
     pageToken?: string,
     searchName?: string,
-    filters?: string[]
+    filters?: string[],
+    includeViewerAttendance = false
   ): Observable<PaginatedResponse<PastMeeting>> {
     let params = new HttpParams().set('tags', `project_uid:${uid}`).set('sort', PAST_MEETING_SORT.NAME_DESC);
+    // Opt-in: the server scans the viewer's attendance history per request, so only the visible list asks for it.
+    if (includeViewerAttendance) {
+      params = params.set('include_viewer_attendance', 'true');
+    }
     if (pageToken) {
       params = params.set('page_token', pageToken);
     }

@@ -27,6 +27,8 @@ function org(overrides: Partial<HealthMetricsNonMembersOrg> = {}): HealthMetrics
     distinctPeople: 9,
     contributions: 1840,
     isNew: true,
+    membershipStatus: 'Non-member',
+    fitBand: 'High',
     ...overrides,
   };
 }
@@ -116,6 +118,16 @@ describe('NonMembersOrgsComponent', () => {
     expect(cell('people')).toBe('9');
     expect(cell('contributions')).toBe('1,840');
     expect(cell('last-engaged')).toBe('Mar 14, 2026');
+    expect(cell('membership')).toBe('○ Non-member');
+    expect(cell('fit')).toBe('High');
+    expect(query(`non-members-orgs-row-${ACCOUNT_ID}-fit`)?.querySelector('.bg-emerald-600')).not.toBeNull();
+  });
+
+  it('renders an unscored organization as a dash with no fit dot', async () => {
+    await render(response({ rows: [org({ fitBand: null })] }));
+
+    expect(text(`non-members-orgs-row-${ACCOUNT_ID}-fit`)).toBe('—');
+    expect(query(`non-members-orgs-row-${ACCOUNT_ID}-fit`)?.querySelector('.rounded-full')).toBeNull();
   });
 
   it('caps the search box at the length the read honours and marks Last engaged as all time', async () => {
@@ -124,6 +136,7 @@ describe('NonMembersOrgsComponent', () => {
 
     expect((fixture.nativeElement.querySelector('#non-members-orgs-search') as HTMLInputElement).maxLength).toBe(100);
     expect(headers).toContain('Last engaged (all time)');
+    expect(headers.at(-1)).toBe('Fit');
   });
 
   it('renders a contributions-only organization with dashes and only the code chip', async () => {

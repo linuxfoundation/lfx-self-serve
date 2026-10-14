@@ -21,7 +21,7 @@ function baseCommittee(overrides: Record<string, unknown> = {}): Record<string, 
   return buildBaseCommittee(COMMITTEE_UID, overrides);
 }
 
-function mockCommitteeApis(page: Page, opts: { committee: Record<string, unknown>; meetings?: unknown[] }): Promise<void> {
+function mockCommitteeApis(page: Page, opts: Parameters<typeof mockCommitteeApisHelper>[2]): Promise<void> {
   return mockCommitteeApisHelper(page, COMMITTEE_UID, opts);
 }
 
@@ -29,21 +29,32 @@ function gotoCommitteeTab(page: Page, query = '?tab=about'): Promise<void> {
   return gotoCommitteeTabHelper(page, COMMITTEE_UID, query);
 }
 
+function deepLinkRoster(): Record<string, unknown>[] {
+  return [
+    {
+      uid: 'e2e-tab-member',
+      committee_uid: COMMITTEE_UID,
+      committee_name: 'E2E About Tab Working Group',
+      first_name: 'Synthetic',
+      last_name: 'Tab Tester',
+      email: 'tab-tester@example.org',
+      username: 'synthetic-tab-tester',
+      role: { name: 'Member' },
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    },
+  ];
+}
+
 test.setTimeout(120_000);
 
 test.describe('Group About tab (LFXV2-1713)', () => {
-  test('visitor: About tab renders right after Overview (the only two tabs a visitor sees), edit affordances hidden, join CTA shown', async ({ page }) => {
+  test('visitor: About renders with edit affordances hidden and the join CTA shown', async ({ page }) => {
     await mockCommitteeApis(page, { committee: baseCommittee({ my_role: null, writer: false, join_mode: 'open' }) });
     await gotoCommitteeTab(page);
 
     const tabsStrip = page.getByTestId('committee-view-tabs');
     await expect(tabsStrip).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-    const tabButtons = tabsStrip.locator('button');
-    // Members/Votes/Meetings/Surveys/Documents/Settings are all isMemberOrAdmin()-gated, so a
-    // visitor sees exactly these two tabs — pin the count, not just what isn't at some index.
-    await expect(tabButtons).toHaveCount(2);
-    await expect(tabButtons.nth(0)).toContainText('Overview');
-    await expect(tabButtons.nth(1)).toContainText('About');
 
     await expect(page.getByTestId('committee-about')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('committee-about-edit-description-btn')).toHaveCount(0);
@@ -257,6 +268,110 @@ test.describe('Group About tab (LFXV2-1713)', () => {
     await expect(page.getByTestId('committee-overview-stats')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('committee-about')).toHaveCount(0);
   });
+
+  test('?tab=members opens the roster with its named synthetic member without a click', async ({ page }) => {
+    await mockCommitteeApis(page, { committee: baseCommittee({ my_role: 'Member', enable_voting: true }), members: deepLinkRoster() });
+    await gotoCommitteeTab(page, '?tab=members');
+
+    await expect(page.getByTestId('members-filter-chips')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByText('Synthetic Tab Tester', { exact: true })).toBeVisible();
+  });
+
+  for (const tab of ['votes', 'meetings', 'documents']) {
+    test(`?tab=${tab} opens its named panel without a click`, async ({ page }) => {
+      await mockCommitteeApis(page, { committee: baseCommittee({ my_role: 'Member', enable_voting: true }), members: deepLinkRoster() });
+      await gotoCommitteeTab(page, `?tab=${tab}`);
+
+      await expect(page.getByTestId(`committee-${tab}-tab`)).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+      await expect(page.locator('lfx-committee-overview')).toHaveCount(0);
+    });
+  }
+
+  test('missing ?tab= starts on Overview and native clicks still change panels without writing the URL', async ({ page }) => {
+    await mockCommitteeApis(page, { committee: baseCommittee({ my_role: 'Member', enable_voting: true }), members: deepLinkRoster() });
+    await gotoCommitteeTab(page, '');
+    await expect(page.getByTestId('committee-overview-stats')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    const originalUrl = page.url();
+    const tabs = page.getByTestId('committee-view-tabs');
+
+    await tabs.getByRole('button', { name: /^Members/ }).click();
+    await expect(page.getByText('Synthetic Tab Tester', { exact: true })).toBeVisible();
+    await tabs.getByRole('button', { name: /^Meetings/ }).click();
+    await expect(page.getByTestId('committee-meetings-tab')).toBeVisible();
+    await tabs.getByRole('button', { name: /^Overview/ }).click();
+    await expect(page.getByTestId('committee-overview-stats')).toBeVisible();
+    expect(page.url()).toBe(originalUrl);
+  });
+
+  for (const tab of ['members', 'votes']) {
+    test(`a delayed detail and roster still opens ${tab} once both reads settle`, async ({ page }) => {
+      let releaseDetail!: () => void;
+      let releaseMembers!: () => void;
+      const detailReady = new Promise<void>((resolve) => {
+        releaseDetail = resolve;
+      });
+      const membersReady = new Promise<void>((resolve) => {
+        releaseMembers = resolve;
+      });
+      await mockCommitteeApis(page, {
+        committee: baseCommittee({ my_role: 'Member', enable_voting: true }),
+        members: deepLinkRoster(),
+        detailReady,
+        membersReady,
+      });
+      const detailRequested = page.waitForRequest((request) => new URL(request.url()).pathname === `/api/committees/${COMMITTEE_UID}`);
+      const membersRequested = page.waitForRequest((request) => new URL(request.url()).pathname === `/api/committees/${COMMITTEE_UID}/members`);
+      await gotoCommitteeTab(page, `?tab=${tab}`);
+      await detailRequested;
+      await expect(page.getByTestId('committee-view-tabs')).toHaveCount(0);
+      releaseDetail();
+      await membersRequested;
+      await expect(page.getByTestId('committee-view-tabs')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+      await expect(page.locator('lfx-committee-overview')).toBeVisible();
+      releaseMembers();
+
+      if (tab === 'members') {
+        await expect(page.getByText('Synthetic Tab Tester', { exact: true })).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+      } else {
+        await expect(page.getByTestId('committee-votes-tab')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+      }
+      await expect(page.locator('lfx-committee-overview')).toHaveCount(0);
+    });
+  }
+
+  test('a manual Meetings choice survives late roster completion on a Members deep link', async ({ page }) => {
+    let releaseMembers!: () => void;
+    const membersReady = new Promise<void>((resolve) => {
+      releaseMembers = resolve;
+    });
+    await mockCommitteeApis(page, {
+      committee: baseCommittee({ my_role: 'Member', enable_voting: true }),
+      members: deepLinkRoster(),
+      membersReady,
+    });
+    await gotoCommitteeTab(page, '?tab=members');
+    const tabs = page.getByTestId('committee-view-tabs');
+    await expect(tabs).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await tabs.getByRole('button', { name: /^Meetings/ }).click();
+    await expect(page.getByTestId('committee-meetings-tab')).toBeVisible();
+    releaseMembers();
+    // The roster badge proves the late response has been applied, not just requested.
+    await expect(tabs.getByRole('button', { name: /^Members/ })).toContainText('1');
+    await expect(page.getByTestId('committee-meetings-tab')).toBeVisible();
+    await expect(page.getByTestId('members-filter-chips')).toHaveCount(0);
+  });
+
+  for (const tab of ['members', 'votes']) {
+    test(`a caller-unavailable ${tab} deep link falls back to Overview`, async ({ page }) => {
+      await mockCommitteeApis(page, {
+        committee: baseCommittee({ my_role: 'Member', member_visibility: 'hidden', join_mode: 'closed', enable_voting: false }),
+      });
+      await gotoCommitteeTab(page, `?tab=${tab}`);
+
+      await expect(page.getByTestId('committee-overview-stats')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+      await expect(page.getByTestId('committee-view-tabs').getByRole('button', { name: new RegExp(`^${tab}`, 'i') })).toHaveCount(0);
+    });
+  }
 
   test('Meeting Cadence: composes a weekly recurrence string with duration and platform', async ({ page }) => {
     await mockCommitteeApis(page, {

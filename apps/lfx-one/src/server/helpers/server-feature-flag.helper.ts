@@ -313,6 +313,25 @@ export enum ServerFeatureFlag {
   CampaignServiceKeywordActions = 'LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS',
 
   /**
+   * Serves the Optimize-tab reads whose campaign-service endpoint is NOT on its `main` yet:
+   * `GET /api/campaigns/reddit/audience`, `/linkedin/audience`, `/linkedin/campaign-ref` and
+   * `/reddit/keywords`. OFF answers 404, as if the route did not exist, so no deployment calls an
+   * upstream route that campaign-service does not serve. Reddit's audience read is on a
+   * campaign-service feature branch; the other three are not published, and their wire types here
+   * are provisional (built on their siblings' documented shapes).
+   *
+   * Not a cutover flag: there is no legacy arm. It gates ONLY these four routes. The other
+   * campaign-service-only Optimize routes (Meta/X/Microsoft audience, Meta/Reddit/X campaign-ref,
+   * campaign settings, Meta ad sets, keyword targeting, adopt) are ungated, following the
+   * precedent of the Microsoft keyword read and the budget/bid levers: their upstream endpoints
+   * exist, and campaign-service answers 400 itself where a platform's metrics are switched off.
+   *
+   * Turn it on only once campaign-service serves all four in the target environment. Turning it
+   * back off strands nothing: all four are reads. Same accepted values as the flags above.
+   */
+  CampaignServiceOptimizeReads = 'LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS',
+
+  /**
    * Routes the HubSpot campaign UTM lookup and create through campaign-service instead of this
    * BFF's own HubSpot calls.
    *
@@ -359,6 +378,33 @@ export enum ServerFeatureFlag {
    * tie refusal and the weak-match refusal all changed on both paths and are ungated.
    */
   CampaignServiceHubSpotUtm = 'LFX_CUTOVER_CAMPAIGN_SERVICE_HUBSPOT_UTM',
+
+  /**
+   * Serves the account monitors from campaign-service's `account-monitor` endpoints (#2519):
+   * `/api/campaigns/linkedin/monitor`, `/meta/monitor` and `/reddit/monitor` switch backend, and the campaign-service-only
+   * `/microsoft/monitor`, `/twitter/monitor` and `/hubspot/monitor` answer at all (a 404 while OFF —
+   * they have no legacy path to fall back to). Google (`/monitor`) is NOT gated by this flag.
+   *
+   * IT CHANGES WHOSE CREDENTIAL READS THE ACCOUNT. The legacy LinkedIn/Meta/Reddit paths read the LF ad
+   * account with this app's own environment credentials. Campaign-service resolves the PROJECT'S
+   * OWN connection only — never the LF system fallback — and refuses an account that connection
+   * is not bound to. So a project with no LinkedIn/Meta/Reddit connection of its own reads a 404, and one
+   * whose connection is bound to a different account than the picker offers reads a 400. Verify
+   * the foundations that use these tabs have connections before turning this on.
+   *
+   * IT ALSO CHANGES THE NUMBERS, deliberately: campaign-service fixed the rule-engine bugs the
+   * legacy LinkedIn and Reddit paths still have (#3018-#3022): MED items now sort between HIGH
+   * and LOW on LinkedIn (#3018), and Reddit totals become the sum
+   * of the rows, Reddit conversions become "not measured" instead of a fabricated 0 (still rendered
+   * as 0 — see `conversionsMeasured`), and the always-firing "not converting" item disappears.
+   * LinkedIn loses its creative breakdown and the "no ad creatives" item: campaign-service does not
+   * read LinkedIn creative analytics.
+   *
+   * Reads only, no persisted state and no id space of their own, so flipping it back strands
+   * nothing, and an overlapping rollout only means two pods may answer the same tab from
+   * different backends. Same accepted values as the flags above.
+   */
+  CampaignServiceMonitor = 'LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR',
 
   /**
    * Gates `committee.service.ts`'s `updateCommittee` (the `chat_webhook_url` write) and

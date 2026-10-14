@@ -31,6 +31,7 @@ import type {
   CampaignNegativeKeywordsRequest,
   CampaignPlatform,
   CampaignSSEEventType,
+  CampaignServiceAccountMonitor,
   CampaignStatusUpdateRequest,
   CampaignStatusUpdateResult,
   CampaignToggleStatus,
@@ -41,6 +42,9 @@ import type {
   MicrosoftKeywordsWindow,
 } from '@lfx-one/shared/interfaces';
 import {
+  ACCOUNT_MONITOR_DEFAULT_DAYS,
+  ACCOUNT_MONITOR_MAX_DAYS,
+  ACCOUNT_MONITOR_MIN_DAYS,
   CAMPAIGN_DELIVERY_TYPES,
   CAMPAIGN_EMAIL_STAGES,
   CAMPAIGN_ETAG_HEADER_PATTERN,
@@ -69,6 +73,7 @@ import {
   MAX_NEGATIVE_KEYWORD_TEXT_LENGTH,
   MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
   META_GEO_CODE_PATTERN,
+  MICROSOFT_ADS_MONITOR_ACCOUNT_ID_PATTERN,
   MICROSOFT_CONTROL_CHAR_RE,
   MICROSOFT_KEYWORDS_WINDOWS,
   MICROSOFT_MAX_BUDGET,
@@ -78,6 +83,7 @@ import {
   MICROSOFT_MAX_KEYWORD_TEXT_LENGTH,
   MICROSOFT_MIN_CPC_BID,
   NEGATIVE_KEYWORD_TEXT_PATTERN,
+  TWITTER_ADS_MONITOR_ACCOUNT_ID_PATTERN,
   VALID_CAMPAIGN_BID_TYPES,
   VALID_CAMPAIGN_BUDGET_TYPES,
   VALID_CAMPAIGN_NEGATIVE_KEYWORD_MATCH_TYPES,
@@ -87,7 +93,7 @@ import {
 } from '@lfx-one/shared/constants';
 
 import { META_ACCOUNTS, REDDIT_ACCOUNTS } from '../constants';
-import { ServiceValidationError } from '../errors';
+import { MicroserviceError, ServiceValidationError } from '../errors';
 import { CampaignMetricsService, LinkedInMetricsService, MetaMetricsService, RedditMetricsService } from '../services/campaign-metrics.service';
 import { validateScrapeUrl } from '../helpers/url-validation';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
@@ -95,6 +101,7 @@ import { getLinkedInConfig } from '../services/linkedin-ads.service';
 import { CampaignProxyService } from '../services/campaign-proxy.service';
 import { toAudienceDemographics, toKeywordMetricsResponse, toMicrosoftKeywordMetricsResponse, windowForDays } from '../services/campaign-insights-mapper';
 import { applyKeywordActionsViaCampaignService } from '../services/campaign-keyword-actions';
+import { toAccountMonitorClientError, toLinkedInMonitorResponse, toMetaMonitorResponse, toRedditMonitorResponse } from '../services/campaign-monitor-mapper';
 import { toUtmCreateResult, toUtmLookupResult } from '../services/campaign-utm-mapper';
 import { CampaignServiceClient, deriveEventSlug, isCampaignServiceJobId } from '../services/campaign-service.service';
 import { logger } from '../services/logger.service';
@@ -1771,6 +1778,21 @@ export class CampaignController {
       return;
     }
     const accountId = account.accountId;
+
+    // The configured account is resolved above on BOTH paths, exactly as before; campaign-service
+    // then also refuses one the project's own LinkedIn connection is not bound to.
+    if (isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
+      await this.serveLegacyShapedMonitor(req, res, next, {
+        operation: 'linkedin_monitor',
+        platformLabel: 'LinkedIn Ads',
+        days,
+        accountId,
+        read: (projectSlug) => this.campaignServiceClient.getLinkedInAdsAccountMonitor(req, projectSlug, accountId, days),
+        toResponse: (payload) => toLinkedInMonitorResponse(payload, account.label, new Date().toISOString()),
+      });
+      return;
+    }
+
     const startTime = logger.startOperation(req, 'linkedin_monitor', { days, accountKey: rawKey });
 
     try {
@@ -1982,6 +2004,22 @@ export class CampaignController {
       return;
     }
     const accountId = account.accountId;
+
+    // The account is still checked against the allowlist above on BOTH paths: the picker offers
+    // only those accounts, and campaign-service then also refuses one the project's own connection
+    // is not bound to.
+    if (isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
+      await this.serveLegacyShapedMonitor(req, res, next, {
+        operation: 'reddit_monitor',
+        platformLabel: 'Reddit Ads',
+        days,
+        accountId,
+        read: (projectSlug) => this.campaignServiceClient.getRedditAdsAccountMonitor(req, projectSlug, accountId, days),
+        toResponse: (payload) => toRedditMonitorResponse(payload, account.label, new Date().toISOString()),
+      });
+      return;
+    }
+
     const startTime = logger.startOperation(req, 'reddit_monitor', { days, accountKey: rawKey });
 
     try {
@@ -2016,6 +2054,20 @@ export class CampaignController {
       return;
     }
     const accountId = account.accountId;
+
+    // Allowlist kept on both paths, as on the Reddit route.
+    if (isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
+      await this.serveLegacyShapedMonitor(req, res, next, {
+        operation: 'meta_monitor',
+        platformLabel: 'Meta Ads',
+        days,
+        accountId,
+        read: (projectSlug) => this.campaignServiceClient.getMetaAdsAccountMonitor(req, projectSlug, accountId, days),
+        toResponse: (payload) => toMetaMonitorResponse(payload, account.label, new Date().toISOString()),
+      });
+      return;
+    }
+
     const startTime = logger.startOperation(req, 'meta_monitor', { days, accountKey: rawKey });
 
     try {
@@ -2025,6 +2077,71 @@ export class CampaignController {
     } catch (error) {
       logger.error(req, 'meta_monitor', startTime, error, { days, accountKey: rawKey });
       next(error);
+    }
+  }
+
+  /**
+   * Microsoft Advertising account monitor, from campaign-service only (#2519).
+   *
+   * No legacy path exists, so with `LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR` off the route answers 404
+   * as if it were not mounted. On, it returns campaign-service's `account-monitor` body UNCHANGED:
+   * there is no legacy shape to fit, and the report-backed fields (`metrics_as_of`,
+   * `metrics_pending`, `metrics_window_*`) are what a renderer needs to say how fresh the figures are.
+   *
+   * `accountKey` is the Microsoft account id itself — there is no LF allowlist for this platform —
+   * so its shape is checked here, against the same pattern upstream enforces.
+   */
+  public async getMicrosoftMonitor(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await this.serveReportBackedMonitor(req, res, next, {
+      operation: 'microsoft_monitor',
+      platformLabel: 'Microsoft Ads',
+      accountIdPattern: MICROSOFT_ADS_MONITOR_ACCOUNT_ID_PATTERN,
+      read: (projectSlug, accountId, days) => this.campaignServiceClient.getMicrosoftAdsAccountMonitor(req, projectSlug, accountId, days),
+    });
+  }
+
+  /**
+   * X (Twitter) Ads account monitor, from campaign-service only (#2519). The Microsoft route's
+   * sibling; additionally a 409 when the account cannot be monitored as it stands, with the
+   * upstream `reason` forwarded as `upstreamCode`.
+   */
+  public async getTwitterMonitor(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await this.serveReportBackedMonitor(req, res, next, {
+      operation: 'twitter_monitor',
+      platformLabel: 'X Ads',
+      accountIdPattern: TWITTER_ADS_MONITOR_ACCOUNT_ID_PATTERN,
+      read: (projectSlug, accountId, days) => this.campaignServiceClient.getTwitterAdsAccountMonitor(req, projectSlug, accountId, days),
+    });
+  }
+
+  /**
+   * HubSpot email monitor, from campaign-service only (#2519). PROJECT-scoped — there is no account
+   * to pick — so it takes only `?project=` and `?days=`. Gated, and returned unchanged, as the
+   * Microsoft route is.
+   */
+  public async getHubSpotMonitor(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'hubspot_monitor';
+    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
+      next(this.monitorDisabledError(operation));
+      return;
+    }
+    const projectSlug = this.requireMonitorProject(req, next, operation);
+    if (projectSlug === null) {
+      return;
+    }
+    const days = this.parseMonitorDays(req);
+    const startTime = logger.startOperation(req, operation, { days, viaCampaignService: true });
+
+    try {
+      const data = await this.campaignServiceClient.getHubSpotAccountMonitor(req, projectSlug, days);
+      logger.success(req, operation, startTime, {
+        emails: data.emails?.length ?? 0,
+        actionItems: data.action_items?.length ?? 0,
+        truncated: data.emails_truncated,
+      });
+      res.json(data);
+    } catch (error) {
+      next(toAccountMonitorClientError(error, 'HubSpot', operation));
     }
   }
 
@@ -2682,6 +2799,126 @@ export class CampaignController {
     } catch (error) {
       next(error);
     }
+  }
+
+  /**
+   * The campaign-service arm of the LinkedIn, Meta and Reddit monitor routes: read the account monitor and
+   * answer in the legacy shape the Monitor and Optimize panels already render.
+   */
+  private async serveLegacyShapedMonitor<T>(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+    opts: {
+      operation: string;
+      platformLabel: string;
+      days: number;
+      accountId: string;
+      read: (projectSlug: string) => Promise<CampaignServiceAccountMonitor>;
+      toResponse: (payload: CampaignServiceAccountMonitor) => T;
+    }
+  ): Promise<void> {
+    const projectSlug = this.requireMonitorProject(req, next, opts.operation);
+    if (projectSlug === null) {
+      return;
+    }
+    const startTime = logger.startOperation(req, opts.operation, { days: opts.days, accountId: opts.accountId, viaCampaignService: true });
+
+    try {
+      const payload = await opts.read(projectSlug);
+      const data = opts.toResponse(payload);
+      logger.success(req, opts.operation, startTime, {
+        viaCampaignService: true,
+        campaigns: payload.campaigns?.length ?? 0,
+        fetchFailed: (payload.campaigns ?? []).filter((c) => c.fetch_failed).length,
+      });
+      res.json(data);
+    } catch (error) {
+      next(toAccountMonitorClientError(error, opts.platformLabel, opts.operation));
+    }
+  }
+
+  /** The Microsoft and X routes: flag gate, account-id shape check, then the body unchanged. */
+  private async serveReportBackedMonitor(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+    opts: {
+      operation: string;
+      platformLabel: string;
+      accountIdPattern: RegExp;
+      read: (projectSlug: string, accountId: string, days: number) => Promise<CampaignServiceAccountMonitor>;
+    }
+  ): Promise<void> {
+    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
+      next(this.monitorDisabledError(opts.operation));
+      return;
+    }
+    const projectSlug = this.requireMonitorProject(req, next, opts.operation);
+    if (projectSlug === null) {
+      return;
+    }
+    const accountId = typeof req.query['accountKey'] === 'string' ? req.query['accountKey'].trim() : '';
+    if (!opts.accountIdPattern.test(accountId)) {
+      next(
+        ServiceValidationError.forField('accountKey', `A valid ${opts.platformLabel} account id is required`, {
+          operation: opts.operation,
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+    const days = this.parseMonitorDays(req);
+    const startTime = logger.startOperation(req, opts.operation, { days, accountId, viaCampaignService: true });
+
+    try {
+      const data = await opts.read(projectSlug, accountId, days);
+      logger.success(req, opts.operation, startTime, {
+        campaigns: data.campaigns?.length ?? 0,
+        metricsAsOf: data.metrics_as_of,
+        metricsPending: data.metrics_pending,
+      });
+      res.json(data);
+    } catch (error) {
+      next(toAccountMonitorClientError(error, opts.platformLabel, opts.operation));
+    }
+  }
+
+  /**
+   * `?days=`, clamped to the account monitors' 7–90 range rather than refused — the behaviour the
+   * Meta and Reddit routes already had. Upstream rejects an out-of-range value, so the clamp is
+   * what keeps a stray `?days=365` a read instead of a 400.
+   */
+  private parseMonitorDays(req: Request): number {
+    const rawDays = String(req.query['days'] ?? ACCOUNT_MONITOR_DEFAULT_DAYS);
+    const parsedDays = /^\d+$/.test(rawDays) ? Number(rawDays) : NaN;
+    return Number.isFinite(parsedDays) ? Math.min(Math.max(parsedDays, ACCOUNT_MONITOR_MIN_DAYS), ACCOUNT_MONITOR_MAX_DAYS) : ACCOUNT_MONITOR_DEFAULT_DAYS;
+  }
+
+  /**
+   * The project whose connection reads the account, or `null` after reporting a 400. Required, not
+   * defaulted: campaign-service resolves the credential from it, and a guessed project would read
+   * another foundation's connection.
+   */
+  private requireMonitorProject(req: Request, next: NextFunction, operation: string): string | null {
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug === '') {
+      next(
+        ServiceValidationError.forField('project', 'A project is required to read an account monitor', {
+          operation,
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return null;
+    }
+    return projectSlug;
+  }
+
+  /** A 404 for a campaign-service-only monitor route while its flag is off — as if it were not mounted. */
+  private monitorDisabledError(operation: string): MicroserviceError {
+    return new MicroserviceError('Not found', 404, 'NOT_FOUND', { operation, service: 'campaign_controller' });
   }
 
   /**

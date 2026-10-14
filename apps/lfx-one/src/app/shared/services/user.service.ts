@@ -103,7 +103,7 @@ export class UserService {
   private readonly confirmedMeetingRsvpMap = toSignal(this.confirmedMeetingRsvps$, { requireSync: true });
   private readonly endedMeetingRegistrantIds = signal(new Map<string, ReadonlySet<string>>());
   private readonly indexedMeetingRegistrantIds = new Map<string, Set<string>>();
-  // Bumped on every successful removal, so a write submitted before it cannot outlive it.
+  // Bumped on every complete removal, so a write submitted before it cannot outlive it.
   private readonly meetingRegistrationGenerations = new Map<string, number>();
   private readonly userPastMeetingsRefresh$ = new Subject<void>();
   // Shared identities refresh trigger — tab and shell each run their own getIdentities() fetch off
@@ -309,14 +309,18 @@ export class UserService {
     return this.http.get<DeveloperTokenInfo>('/api/profile/developer').pipe(take(1));
   }
 
-  /** Capture before submitting a write; a removal that succeeds in the meantime makes that write's acknowledgement stale. */
+  /**
+   * Capture before submitting a write; a complete removal in the meantime makes that write's acknowledgement stale.
+   * After partial removal, pending writes for surviving registrations remain valid.
+   */
   public meetingRegistrationGeneration(meetingId: string, subject = this.user()?.sub || this.viewerUsername() || this.user()?.email || ''): number {
     return this.meetingRegistrationGenerations.get(`${subject}\0${meetingId}`) ?? 0;
   }
 
   /**
    * Retain a successful write beyond the route that submitted it, under its captured effective subject.
-   * Pass the generation captured at submit time: an acknowledgement that arrives after a removal ends its registration instead.
+   * Pass the generation captured at submit time: a complete removal makes a late acknowledgement stale;
+   * a partial removal rejects acknowledgements only for deleted registrations.
    * Returns the retained copy, stamped to sort after earlier confirmations, or null when the write was not retained.
    */
   public recordConfirmedMeetingRsvp(

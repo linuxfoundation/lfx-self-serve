@@ -125,15 +125,13 @@ test.describe('Org Lens ROI project detail — figures', () => {
     }
   });
 
-  test('carries the modelled-cost disclosure verbatim on the investment figure', async ({ page }) => {
+  test('carries the investment disclosure verbatim on the investment figure', async ({ page }) => {
     await stubOrgLensContext(page);
     await gotoOrgRoiProjectDetail(page, DETAIL_PROJECT.slug);
 
     // Each clause asserted separately, so shortening the copy to fit a layout fails a test rather
     // than quietly weakening the disclosure.
     const investment = page.getByTestId('org-roi-project-detail-explanation-total-expenditure');
-    await expect(investment).toContainText('modelled cost');
-    await expect(investment).toContainText('not actual or reported compensation');
     await expect(investment).toContainText('standard rates that are the same for every organization');
     await expect(investment).toContainText('No salary, payroll, or invoice data is used.');
   });

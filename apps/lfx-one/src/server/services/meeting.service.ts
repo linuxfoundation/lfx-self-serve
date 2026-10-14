@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { IMPORT_REGISTRANTS_MAX, QUERY_SERVICE_MAX_PAGE_SIZE } from '@lfx-one/shared/constants';
+import { IMPORT_REGISTRANTS_MAX, QUERY_SERVICE_MAX_PAGE_SIZE, RSVP_RESPONSES } from '@lfx-one/shared/constants';
 import { QueryServiceMeetingType } from '@lfx-one/shared/enums';
 import {
   ApiRequestOptions,
@@ -1767,9 +1767,11 @@ export class MeetingService {
     );
 
     const rsvp = mapITXResponseToMeetingRsvp(result);
-    // A successful ITX acknowledgement can omit the answer. Preserve the accepted request
+    // A successful ITX acknowledgement can omit or mangle the answer. Preserve the accepted request
     // value at this boundary so polling, response filters, and confirmation use the same RSVP.
-    rsvp.response_type ||= rsvpData.response;
+    if (!RSVP_RESPONSES.includes(rsvp.response_type)) {
+      rsvp.response_type = rsvpData.response;
+    }
 
     // Poll query service until the RSVP is propagated so the UI can fetch it immediately
     await pollEndpoint({

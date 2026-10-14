@@ -21,8 +21,11 @@ export const ORG_LENS_ROI_METHOD_LABELS: Record<(typeof ORG_LENS_ROI_METHODS)[nu
   direct: 'Direct markup',
 };
 
-/** `localStorage` key the selected estimation method persists under. */
-export const ORG_LENS_ROI_METHOD_STORAGE_KEY = 'lfx-org-roi-estimation-method';
+/**
+ * `localStorage` key the selected estimation method persists under. Versioned so that choices saved
+ * before Logit was confirmed as the default reset once to it; bump again only for the same reason.
+ */
+export const ORG_LENS_ROI_METHOD_STORAGE_KEY = 'lfx-org-roi-estimation-method-v2';
 
 export const ORG_LENS_ROI_CACHE_KEY = {
   summary: 'roi-summary:v1',
@@ -102,7 +105,7 @@ export const ORG_LENS_ROI_DONUT_REMAINDER_COLOR = lfxColors.gray[400];
 
 export const ORG_LENS_ROI_KPI_EXPLANATION = {
   totalExpenditure:
-    'A modelled cost, not actual or reported compensation. We count your organization’s public contribution activity — commits, community participation, meetings, events, memberships, and training — and price it at standard rates that are the same for every organization. No salary, payroll, or invoice data is used.',
+    'We count your organization’s public contribution activity — commits, community participation, meetings, events, memberships, and training — and price it at standard rates that are the same for every organization. No salary, payroll, or invoice data is used.',
   totalReturn:
     'The modelled economic value your organization received back from the projects it contributed to, estimated from the wider project ecosystem rather than measured from your own systems.',
   profit:
@@ -203,6 +206,12 @@ export const ORG_LENS_ROI_RETURN_COLOR = lfxColors.emerald[600];
 
 /** A log axis cannot plot zero, so non-positive values are lifted to this floor and disclosed. */
 export const ORG_LENS_ROI_BUBBLE_LOG_FLOOR = 1;
+
+/**
+ * Most labels a narrow efficiency axis carries. Below two 1/2/5 steps Chart.js ticks every tenth
+ * of a decade — 15 ticks, 20px apart, on a $101K–$499K span — so labels fall back to an even stride.
+ */
+export const ORG_LENS_ROI_BUBBLE_AXIS_MAX_LABELS = 6;
 
 /**
  * Translucent fills for the efficiency plot, where bubbles overlap and an opaque one hides those
