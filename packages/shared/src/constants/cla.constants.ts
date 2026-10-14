@@ -229,8 +229,11 @@ export const ORG_CLA_REVIEW_COPY_FAILURE = {
 export const ORG_CLA_EASYCLA_ROLE_MISSING_ERROR_CODE = 'EASYCLA_ROLE_MISSING';
 
 export const ORG_CLA_EASYCLA_ROLE_MISSING_COPY = {
-  title: "You don't have an EasyCLA role at this organization",
-  subtitle: "Your access to this organization doesn't include an EasyCLA role yet, so its corporate CLAs can't be shown here.",
+  title: "We couldn't load your CLAs",
+  reason: "You don't have an EasyCLA role at this organization.",
+  supportLead: 'Please',
+  supportLabel: 'contact support',
+  supportTail: 'if you need EasyCLA assistance.',
   signClaAriaLabel: "Sign a corporate CLA — you don't have an EasyCLA role at this organization",
 } as const;
 

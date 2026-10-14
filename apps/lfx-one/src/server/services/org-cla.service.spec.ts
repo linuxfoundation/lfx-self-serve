@@ -282,7 +282,7 @@ describe('OrgClaService.listClaGroups — an EasyCLA refusal (#3631)', () => {
 
     expect(error).toBeInstanceOf(MicroserviceError);
     expect(error.errorBody).toBeUndefined();
-    expect(error.toResponse()).toMatchObject({ error: "You don't have an EasyCLA role at this organization", code: 'EASYCLA_ROLE_MISSING' });
+    expect(error.toResponse()).toMatchObject({ error: "You don't have an EasyCLA role at this organization.", code: 'EASYCLA_ROLE_MISSING' });
     expect(JSON.stringify(error.toResponse())).not.toContain('contributor@example.org');
   });
 

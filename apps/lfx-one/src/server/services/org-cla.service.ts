@@ -432,7 +432,7 @@ function asEasyClaRoleMissing(error: unknown): unknown {
     {
       operation: 'org_cla_list_cla_groups',
       service: SERVICE,
-      clientMessage: ORG_CLA_EASYCLA_ROLE_MISSING_COPY.title,
+      clientMessage: ORG_CLA_EASYCLA_ROLE_MISSING_COPY.reason,
     }
   );
 }

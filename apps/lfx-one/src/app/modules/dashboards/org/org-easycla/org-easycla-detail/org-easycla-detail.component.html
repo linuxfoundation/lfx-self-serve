@@ -40,11 +40,15 @@
       }
     </section>
   } @else if (easyclaRoleMissing()) {
-    <lfx-empty-state
-      data-testid="org-easycla-detail-role-missing-state"
-      icon="fa-light fa-lock"
-      [title]="easyclaRoleMissingCopy.title"
-      [subtitle]="easyclaRoleMissingCopy.subtitle" />
+    <lfx-empty-state data-testid="org-easycla-detail-role-missing-state" icon="fa-light fa-lock" [title]="easyclaRoleMissingCopy.title">
+      <p class="text-sm text-gray-500" data-testid="org-easycla-detail-role-missing-description">
+        {{ easyclaRoleMissingCopy.reason }} {{ easyclaRoleMissingCopy.supportLead }}
+        <button type="button" lfxOpenIntercom class="font-medium underline" data-testid="org-easycla-detail-role-missing-contact-support">
+          {{ easyclaRoleMissingCopy.supportLabel }}
+        </button>
+        {{ easyclaRoleMissingCopy.supportTail }}
+      </p>
+    </lfx-empty-state>
   } @else if (fetchError()) {
     <lfx-empty-state
       data-testid="org-easycla-detail-error-state"

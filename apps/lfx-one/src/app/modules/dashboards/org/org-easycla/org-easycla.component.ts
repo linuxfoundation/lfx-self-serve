@@ -32,6 +32,7 @@ import { OrgLensNavigationService } from '@services/org-lens-navigation.service'
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
+import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { OrgClaReturnService } from '@shared/services/org-cla-return.service';
 
 import { OrgEasyclaCardComponent } from './org-easycla-card/org-easycla-card.component';
@@ -40,7 +41,16 @@ import { OrgEasyclaGroupSelectComponent } from './org-easycla-sign/org-easycla-g
 
 @Component({
   selector: 'lfx-org-easycla',
-  imports: [ButtonComponent, EmptyStateComponent, InputTextComponent, OrgLensEmptyStateComponent, OrgEasyclaCardComponent, RouterLink, SkeletonModule],
+  imports: [
+    ButtonComponent,
+    EmptyStateComponent,
+    InputTextComponent,
+    OpenIntercomDirective,
+    OrgLensEmptyStateComponent,
+    OrgEasyclaCardComponent,
+    RouterLink,
+    SkeletonModule,
+  ],
   providers: [DialogService],
   templateUrl: './org-easycla.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

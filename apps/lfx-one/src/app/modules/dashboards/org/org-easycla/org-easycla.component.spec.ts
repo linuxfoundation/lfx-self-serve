@@ -4,12 +4,14 @@
 import '@angular/compiler';
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { ApplicationRef, computed, signal } from '@angular/core';
+import { ApplicationRef, computed, signal, TransferState } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
+import { DEFAULT_RUNTIME_CONFIG, RUNTIME_CONFIG_KEY } from '@app/shared/providers/runtime-config.provider';
 import type { Account, OrgClaGroup, OrgItem } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
+import { IntercomService } from '@services/intercom.service';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
@@ -27,7 +29,7 @@ import { OrgEasyclaComponent } from './org-easycla.component';
 function roleMissingError(): HttpErrorResponse {
   return new HttpErrorResponse({
     status: 403,
-    error: { error: "You don't have an EasyCLA role at this organization", code: 'EASYCLA_ROLE_MISSING' },
+    error: { error: "You don't have an EasyCLA role at this organization.", code: 'EASYCLA_ROLE_MISSING' },
   });
 }
 
@@ -912,11 +914,31 @@ describe('OrgEasyclaComponent', () => {
       const state = byTestId(fixture, 'org-easycla-role-missing-state');
 
       expect(state).toBeTruthy();
-      expect(state?.textContent).toContain("You don't have an EasyCLA role at this organization");
+      expect(byTestId(fixture, 'org-easycla-role-missing-state')?.querySelector('h3')?.textContent?.trim()).toBe("We couldn't load your CLAs");
+      expect(byTestId(fixture, 'org-easycla-role-missing-description')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+        "You don't have an EasyCLA role at this organization. Please contact support if you need EasyCLA assistance."
+      );
       expect(state?.textContent).not.toContain('Refresh');
       expect(byTestId(fixture, 'org-easycla-error-state')).toBeNull();
       expect(byTestId(fixture, 'org-easycla-empty-state')).toBeNull();
       expect(byTestId(fixture, 'org-easycla-toolbar')).toBeNull();
+      consoleError.mockRestore();
+    });
+
+    it('opens the Intercom messenger from the contact support link', async () => {
+      getClaGroups.mockReturnValue(throwError(() => roleMissingError()));
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const fixture = await render();
+      TestBed.inject(TransferState).set(RUNTIME_CONFIG_KEY, { ...DEFAULT_RUNTIME_CONFIG, intercomAppId: 'test-app-id' });
+      const openMessenger = vi.spyOn(TestBed.inject(IntercomService), 'openMessenger').mockImplementation(() => undefined);
+      const link = byTestId(fixture, 'org-easycla-role-missing-contact-support') as HTMLButtonElement | null;
+
+      expect(link?.tagName).toBe('BUTTON');
+      expect(link?.getAttribute('type')).toBe('button');
+      expect(link?.textContent?.trim()).toBe('contact support');
+      link?.click();
+
+      expect(openMessenger).toHaveBeenCalledWith('test-app-id', expect.any(Function));
       consoleError.mockRestore();
     });
 

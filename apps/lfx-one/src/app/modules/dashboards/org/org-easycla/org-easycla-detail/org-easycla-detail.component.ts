@@ -98,6 +98,7 @@ import { OrgLensNavigationService } from '@services/org-lens-navigation.service'
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
+import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { OrgClaAutoEclaWritesService } from '@shared/services/org-cla-auto-ecla-writes.service';
 import { OrgClaSelfRemovalsService } from '@shared/services/org-cla-self-removals.service';
 import { OrgClaReturnService } from '@shared/services/org-cla-return.service';
@@ -137,6 +138,7 @@ function designeeRefusalCopy(error: unknown): string {
     ButtonComponent,
     EmptyStateComponent,
     MessageComponent,
+    OpenIntercomDirective,
     OrgEasyclaActivityLogComponent,
     OrgEasyclaApprovalListComponent,
     OrgEasyclaContributorAcknowledgmentsComponent,
