@@ -1,4 +1,4 @@
-# Meeting details V2 — rollout and retirement
+# Meeting details V2 — rollout
 
 Plan ID **V2-03** · issue [#2875](https://github.com/linuxfoundation/lfx-self-serve/issues/2875) ·
 epic [#1765](https://github.com/linuxfoundation/lfx-self-serve/issues/1765) · Meetings v2 epic

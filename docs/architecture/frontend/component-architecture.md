@@ -26,7 +26,7 @@ apps/lfx-one/src/app/modules/
 │   ├── meeting-composer/       # v2 create/edit composer, a drawer over the current page (flag-gated)
 │   ├── meeting-details-gate/   # /meetings/:id route target — picks the tree behind MEETING_DETAILS_V2_FLAG
 │   ├── meeting-details-page/   # v2 public meeting page (flag-gated, deferred): E1-01 shell; Phase 1 sections fill it
-│   ├── meeting-join-v1/        # Pre-v2 public meeting join page — the shipping default; retires with the flag
+│   ├── meeting-join-v1/        # Pre-v2 public meeting join page — the shipping default; stays (V1 retirement out of scope, #3266)
 │   ├── meeting-not-found/      # Meeting 404 page
 │   └── components/             # Meeting-specific components
 ├── mailing-lists/              # Mailing lists

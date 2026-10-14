@@ -35,8 +35,8 @@ import { MeetingDetailsSeedService } from './meeting-details-seed.service';
  * Angular never reconciles two different trees. Making v2's *first* paint v2 requires giving SSR a
  * flag source (a LaunchDarkly server SDK, or the BFF stamping the decision into a cookie /
  * `runtimeConfig`). That was #2920, and it was declined (`rollout.md` § No server-side flag
- * decision): signed-in viewers move from tester lists to everyone in one step, and the swap ends
- * when V1 retirement removes this gate.
+ * decision): signed-in viewers move from tester lists to everyone in one step, and the swap lasts
+ * as long as this gate stands (V1 stays: `rollout.md` § V1 stays).
  *
  * Two consequences of that server-side `false` which #2874 should not have to rediscover. First,
  * the pre-v2 page is what SSR renders and what runs the public meeting lookup, including for a
@@ -61,7 +61,7 @@ import { MeetingDetailsSeedService } from './meeting-details-seed.service';
  * `v2Enabled` is forced false until `hydrated` latches in `afterNextRender` (a no-op on the
  * server). Without the latch the non-production localStorage override in `FeatureFlagService`
  * reads synchronously, ahead of `isInitialized()`, so a pre-seeded override — exactly what
- * `stubMeetingsV2Flag` does in e2e — would swap trees on the very first client render and mismatch
+ * `stubMeetingDetailsV2Flag` does in e2e — would swap trees on the very first client render and mismatch
  * the SSR-rendered v1 DOM.
  *
  * **The seed handoff (E1-01).** v1 reads the `meetingJoinState` TransferState key and removes it in

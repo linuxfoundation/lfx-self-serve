@@ -24,7 +24,8 @@
  * - `apps/lfx-one/.env` populated with TEST_USERNAME / TEST_PASSWORD
  *
  * The flag needs no LaunchDarkly targeting in either direction — both cases pin it through the
- * `FEATURE_FLAG_OVERRIDE_STORAGE_KEY` localStorage override that {@link stubMeetingsV2Flag} seeds.
+ * `FEATURE_FLAG_OVERRIDE_STORAGE_KEY` localStorage override that {@link stubMeetingsV2Flag} seeds (and,
+ * for the `/meetings/:id` gate, {@link stubMeetingDetailsV2Flag}).
  * Pinning is what makes the flag-off case meaningful: an unpinned flag is already `false`, so that
  * test would pass against a button that was never gated.
  */

@@ -201,8 +201,8 @@ export const FORMATION_ENABLED_FLAG = 'formation-enabled';
  * together and live side by side: this flag decides which one a given user renders, so the pre-v2
  * wizard stays fully functional and is what everyone sees until the flag is turned on for them.
  *
- * Scoped to meetings v2 rather than to the composer specifically — later meetings-v2 work is
- * expected to sit behind the same gate.
+ * Scoped to the composer and its entry points. The meeting details V2 page (`/meetings/:id`) has its
+ * own flag, `MEETING_DETAILS_V2_FLAG` (#3576), so the two roll out independently.
  *
  * Default false so an unevaluated flag renders the pre-v2 wizard. This is the deliberate exception
  * to "default to current behavior": the DEFAULT here *is* current behavior, because v2 is the new

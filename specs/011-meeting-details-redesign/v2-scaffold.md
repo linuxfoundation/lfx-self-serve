@@ -82,7 +82,7 @@ modules/meetings/
 The gate imports V2 statically but renders it inside `@defer (on immediate)`, so V2 is its own lazy
 chunk (`meeting-details-page-component`). The ~100% of visitors on V1, including every anonymous
 visitor, never download it. The gate's doc comment records the trade-off this creates for targeted
-viewers; it ends when V1 retirement removes the gate (`rollout.md` § No server-side flag decision).
+viewers; it lasts as long as the gate stands (V1 stays: `rollout.md` § V1 stays).
 
 ## Definition of done for deleting V1
 
