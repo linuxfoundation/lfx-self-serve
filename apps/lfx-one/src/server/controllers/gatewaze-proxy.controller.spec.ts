@@ -444,6 +444,7 @@ describe('GatewazeProxyController', () => {
     it.each([
       ['a protocol-relative redirect', '//attacker.example/x'],
       ['a path-relative redirect that walks off the mount', '../../../../../../settings'],
+      ['a root-relative redirect that walks off the mount', '/../../../logout'],
     ])('drops %s', async (_label, location) => {
       respond = (_req, res) => {
         res.statusCode = 302;
@@ -485,12 +486,15 @@ describe('mountLocation', () => {
   const requestPath = '/api/gatewaze/supabase/storage/v1/object/media/a.png';
   it.each([
     ['/rest/v1/x', '/api/gatewaze/supabase/rest/v1/x'],
-    ['moved?page=2', 'moved?page=2'],
-    ['../b.png', '../b.png'],
+    ['moved?page=2', '/api/gatewaze/supabase/storage/v1/object/media/moved?page=2'],
+    ['../b.png', '/api/gatewaze/supabase/storage/v1/object/b.png'],
     ['https://elsewhere.example/x', 'https://elsewhere.example/x'],
     ['//elsewhere.example/x', null],
     ['../../../../../../settings', null],
     ['../../../../../x', null],
+    ['/../../../logout', null],
+    ['/%2e%2e/%2e%2e/%2e%2e/logout', null],
+    ['/rest/v1/../../storage/v1/object/a', '/api/gatewaze/supabase/storage/v1/object/a'],
   ])('maps %s', (location, expected) => {
     expect(mountLocation(location, '/api/gatewaze/supabase', requestPath)).toBe(expected);
   });

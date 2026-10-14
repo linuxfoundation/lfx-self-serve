@@ -40,21 +40,20 @@ import { logger } from '../services/logger.service';
 
 /**
  * Maps a `Location` the package has already filtered (`rewriteLocation`) onto this proxy's mount, or
- * returns null to drop it. The package has already dropped `//host`, backslashes, control characters
- * and schemes other than `https:` (and `http:` to localhost).
+ * returns null to drop it. The package has already dropped backslashes, control characters and
+ * schemes other than `https:` (and `http:` to localhost).
  *
+ * - An absolute URL passes unchanged, e.g. an edge function sending the browser to an OAuth provider.
  * - A root-relative value gets the mount prefixed. The package makes a redirect to the upstream's own
  *   origin root-relative, as if it were served at the site root, and here it is served under `mount`.
- * - An absolute URL passes unchanged, e.g. an edge function sending the browser to an OAuth provider.
- * - A path-relative value is resolved against `requestPath`, the browser's path for this request,
- *   and kept only while it stays under the mount, so `../../..` cannot walk the browser off it.
+ * - A path-relative value is resolved against `requestPath`, the browser's path for this request.
+ *
+ * Either relative form is then normalised, and kept only while it stays under the mount, so dot
+ * segments (`..`, `%2e%2e`) cannot walk the browser off it. A protocol-relative `//host` is dropped.
  */
 export function mountLocation(location: string, mount: string, requestPath: string): string | null {
   if (location.startsWith('//')) {
     return null;
-  }
-  if (location.startsWith('/')) {
-    return `${mount}${location}`;
   }
   if (/^[a-z][a-z0-9+.-]*:/i.test(location)) {
     return location;
@@ -62,11 +61,14 @@ export function mountLocation(location: string, mount: string, requestPath: stri
   const base = 'https://mount.invalid';
   let resolved: URL;
   try {
-    resolved = new URL(location, `${base}${requestPath}`);
+    resolved = location.startsWith('/') ? new URL(`${base}${mount}${location}`) : new URL(location, `${base}${requestPath}`);
   } catch {
     return null;
   }
-  return resolved.origin === base && resolved.pathname.startsWith(`${mount}/`) ? location : null;
+  if (resolved.origin !== base || !resolved.pathname.startsWith(`${mount}/`)) {
+    return null;
+  }
+  return `${resolved.pathname}${resolved.search}${resolved.hash}`;
 }
 
 /**
