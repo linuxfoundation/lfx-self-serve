@@ -113,7 +113,8 @@ GoTrue's `/auth/v1` is not proxied, as in the admin BFF: the embed's shim answer
 1. Resolves the path with the package's `upstreamUrl`. A path that normalises out of its prefix (`..`, `%2e%2e`, a backslash) gets 400 `GW_BAD_PATH`, before any session is loaded.
 2. Calls `csrfDecision` with the origin of `PCC_BASE_URL`. `reject` gets 403 `{ error: 'cross_site' }`. A write needs the same origin (or none) and either `apikey` equal to the anon key or a Bearer header. A GET without proof is `anon`. A missing `PCC_BASE_URL` rejects everything that needs proof. No response ever carries `Access-Control-Allow-*`, so a cross-site page can set neither header. A GET with `Sec-Fetch-Site: same-origin` also counts as proof, so an `<img>` or link on an LFX page sends the session. Gatewaze GET endpoints must therefore have no side effects.
 3. Asks the module seam (below). A refusal is 403 `GW_MODULE_ACCESS_REQUIRED`.
-4. For `session`, calls `getGatewazeSession` and maps the outcome:
+4. For `session`, calls `getGatewazeSession` and maps the outcome as the table below shows.
+5. Forwards with the package's `proxyRequest`. Anon credentials come from `anonCredentials`: a publishable key goes in `apikey` only, and the API gets nothing.
 
 | Outcome                                     | Answer                                                                            |
 | ------------------------------------------- | --------------------------------------------------------------------------------- |
@@ -125,8 +126,6 @@ GoTrue's `/auth/v1` is not proxied, as in the admin BFF: the embed's shim answer
 | `host_session_unavailable` with placeholder | 401 with the marker: embed code that only runs after sign-in has lost its session |
 | `host_session_unavailable`, no placeholder  | Forwarded as anon                                                                 |
 | `refused` or `unavailable`                  | 503 `{ error: 'session_unavailable' }`, never the marker                          |
-
-5. Forwards with the package's `proxyRequest`. Anon credentials come from `anonCredentials`: a publishable key goes in `apikey` only, and the API gets nothing.
 
 What it shares with `/api/gw`:
 
