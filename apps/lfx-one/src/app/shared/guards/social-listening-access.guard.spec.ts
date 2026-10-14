@@ -60,7 +60,7 @@ describe('socialListeningAccessGuard', () => {
   });
 
   it('admits a Board member the access endpoint admits for the foundation in ?project=', async () => {
-    getAccess.mockReturnValue(of({ canView: true, reason: 'board' }));
+    getAccess.mockReturnValue(of({ canView: true, reason: 'group-member' }));
 
     await expect(runGuard(route({ project: 'tlf' }))).resolves.toBe(true);
     expect(getAccess).toHaveBeenCalledWith('tlf');
@@ -68,7 +68,7 @@ describe('socialListeningAccessGuard', () => {
 
   it('falls back to the selected foundation when ?project= is absent', async () => {
     selectedFoundation.set({ slug: 'cncf' });
-    getAccess.mockReturnValue(of({ canView: true, reason: 'board' }));
+    getAccess.mockReturnValue(of({ canView: true, reason: 'group-member' }));
 
     await expect(runGuard(route())).resolves.toBe(true);
     expect(getAccess).toHaveBeenCalledWith('cncf');

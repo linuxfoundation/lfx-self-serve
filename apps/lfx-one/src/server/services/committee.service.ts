@@ -4,8 +4,6 @@
 import {
   ACCESS_CHECK_BATCH_SIZE,
   CHAT_WEBHOOK_URL_MAX_LENGTH,
-  COMMITTEE_CATEGORY_BOARD,
-  isBoardCategory,
   PENDING_APPLICATION_DISCOVERY_TIMEOUT_MS,
   SLACK_INCOMING_WEBHOOK_URL_PATTERN,
   UUID_REGEX,
@@ -566,14 +564,10 @@ export class CommitteeService {
       is_audit_enabled,
       show_meeting_attendees,
       member_visibility,
-      members_can_view_social_listening: requestedSocialListening,
+      members_can_view_social_listening: membersCanViewSocialListening,
       ...committeeData
     } = data as CommitteeCreateData & { chat_webhook_url?: unknown };
     /* eslint-enable @typescript-eslint/no-unused-vars */
-
-    // Upstream rejects members_can_view_social_listening on non-Board groups, and a rejected settings
-    // write here would drop every other setting with it — so it only ever goes out on a Board group.
-    const membersCanViewSocialListening = isBoardCategory(committeeData.category) ? requestedSocialListening : undefined;
 
     // Step 1: Create committee
     // <Committee | null>, not <Committee> — matches the established convention at
@@ -652,17 +646,12 @@ export class CommitteeService {
       is_audit_enabled,
       show_meeting_attendees,
       member_visibility,
-      members_can_view_social_listening: requestedSocialListening,
+      members_can_view_social_listening: membersCanViewSocialListening,
       writers,
       auditors,
       chat_webhook_url: rawChatWebhookUrlTyped,
       ...committeeData
     } = data;
-
-    // Upstream only accepts members_can_view_social_listening on Board groups, and the settings PUT
-    // carries the current value forward — so moving a group out of Board must also switch it off, or
-    // every later settings save on that group would be rejected.
-    const membersCanViewSocialListening = committeeData.category !== undefined && !isBoardCategory(committeeData.category) ? false : requestedSocialListening;
 
     // Read as `unknown`, not trusting the declared `string | null | undefined` type: this body
     // arrives as raw JSON (the controller casts req.body to this method's parameter type via a
@@ -1426,15 +1415,15 @@ export class CommitteeService {
   }
 
   /**
-   * Whether the current user sits on a Board group of `foundationUid` that has the
+   * Whether the current user is a member of a group of `foundationUid` that has the
    * `members_can_view_social_listening` group setting on (lfx-self-serve-ops#387).
    *
-   * Membership is read with the user's own token; Boards of child projects carry a different
+   * Membership is read with the user's own token; groups of child projects carry a different
    * `project_uid` and never match. Settings are read with M2M because upstream gates
-   * `/committees/{uid}/settings` on committee#writer, which Board members usually are not — only the
+   * `/committees/{uid}/settings` on committee#writer, which members usually are not — only the
    * one boolean is used. Any failure denies.
    */
-  public async canBoardMemberViewSocialListening(req: Request, foundationUid: string): Promise<boolean> {
+  public async canGroupMemberViewSocialListening(req: Request, foundationUid: string): Promise<boolean> {
     const username = await getUsernameFromAuth(req);
     if (!username) {
       return false;
@@ -1445,21 +1434,21 @@ export class CommitteeService {
       (pageToken) =>
         this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
           type: 'committee_member',
-          tags_all: [`username:${username}`, `committee_category:${COMMITTEE_CATEGORY_BOARD}`, `project_uid:${foundationUid}`],
+          tags_all: [`username:${username}`, `project_uid:${foundationUid}`],
           ...(pageToken && { page_token: pageToken }),
         }),
       { failOnPartial: true }
     );
 
-    const boardUids = [...new Set(memberships.map((m) => m.committee_uid).filter((uid): uid is string => Boolean(uid)))];
-    if (boardUids.length === 0) {
+    const groupUids = [...new Set(memberships.map((m) => m.committee_uid).filter((uid): uid is string => Boolean(uid)))];
+    if (groupUids.length === 0) {
       return false;
     }
 
     const m2mToken = await generateM2MToken(req);
-    // allSettled: one failed read must not hide another Board group that has the setting on.
+    // allSettled: one failed read must not hide another group that has the setting on.
     const results = await Promise.allSettled(
-      boardUids.map((uid) =>
+      groupUids.map((uid) =>
         this.microserviceProxy.proxyRequest<CommitteeSettingsData>(
           req,
           'LFX_V2_SERVICE',

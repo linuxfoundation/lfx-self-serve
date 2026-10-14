@@ -31,7 +31,7 @@ The drawer updates as the list refreshes, including loading RSVP controls for ne
 
 ## Foundation lens
 
-The **Foundation** lens (`/foundation/overview`) is available to board members, executive directors, LF Staff, and users with a writer role on the foundation (including root writers). It shows foundation-level health metrics, project summaries, and governance activity. Under **Metrics** in the left navigation, executive directors and LF Staff additionally see **Health Metrics** (`/foundation/health-metrics`) and [Social Listening](../../social-listening/) (`/foundation/social-listening`). Board members also see Social Listening when the foundation's Board group has **Members Can View Social Listening** turned on.
+The **Foundation** lens (`/foundation/overview`) is available to board members, executive directors, LF Staff, and users with a writer role on the foundation (including root writers). It shows foundation-level health metrics, project summaries, and governance activity. Under **Metrics** in the left navigation, executive directors and LF Staff additionally see **Health Metrics** (`/foundation/health-metrics`) and [Social Listening](../../social-listening/) (`/foundation/social-listening`). Group members also see Social Listening when their group on the foundation has **Members Can View Social Listening** turned on.
 
 ## Project lens
 

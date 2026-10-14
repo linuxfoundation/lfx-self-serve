@@ -118,7 +118,7 @@ describe('social-listening router — access gate ordering', () => {
   });
 
   it('runs the handler when the policy admits the caller', async () => {
-    getAccess.mockResolvedValue({ canView: true, reason: 'board' });
+    getAccess.mockResolvedValue({ canView: true, reason: 'group-member' });
 
     const res = await fetch(`${baseUrl}/api/social-listening/mentions-feed`, {
       method: 'POST',

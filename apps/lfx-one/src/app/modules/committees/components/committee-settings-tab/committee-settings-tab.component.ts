@@ -9,7 +9,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { Committee, CreateMailingListRequest, GroupsIOMailingList, JoinMode, MailingListPickerDialogResult, ValidationError } from '@lfx-one/shared/interfaces';
 import { CommitteeMemberVisibility } from '@lfx-one/shared/enums';
-import { isBoardCategory, SLACK_INCOMING_WEBHOOK_URL_PATTERN, WG_WEEKLY_BRIEF_SLACK_FLAG } from '@lfx-one/shared/constants';
+import { SLACK_INCOMING_WEBHOOK_URL_PATTERN, WG_WEEKLY_BRIEF_SLACK_FLAG } from '@lfx-one/shared/constants';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
@@ -161,7 +161,7 @@ export class CommitteeSettingsTabComponent {
           public: c.public || false,
           sso_group_enabled: c.sso_group_enabled || false,
           show_meeting_attendees: c.show_meeting_attendees || false,
-          members_can_view_social_listening: isBoardCategory(c.category) && !!c.members_can_view_social_listening,
+          members_can_view_social_listening: c.members_can_view_social_listening || false,
           chat_channel: c.chat_channel ?? null,
           website: c.website ?? null,
           ...(preserveWebhookEdit ? {} : { chat_webhook_url: null }),
@@ -320,8 +320,7 @@ export class CommitteeSettingsTabComponent {
         public: values.public ?? false,
         sso_group_enabled: values.sso_group_enabled ?? false,
         show_meeting_attendees: values.show_meeting_attendees ?? false,
-        // Board-only setting — upstream rejects it on any other category.
-        ...(isBoardCategory(this.committee().category) ? { members_can_view_social_listening: values.members_can_view_social_listening ?? false } : {}),
+        members_can_view_social_listening: values.members_can_view_social_listening ?? false,
         chat_channel: values.chat_channel || null,
         website: values.website || null,
         ...(chatWebhookUrlIncludedInSave ? { chat_webhook_url: values.chat_webhook_url || null } : {}),

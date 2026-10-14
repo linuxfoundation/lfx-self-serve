@@ -8,14 +8,14 @@ import '@angular/compiler';
 import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getPersonas, checkProjectWriter, getProjectIdBySlug, getProjectById, canBoardMemberViewSocialListening, getUsernameFromAuth, computeIsFoundation } =
+const { getPersonas, checkProjectWriter, getProjectIdBySlug, getProjectById, canGroupMemberViewSocialListening, getUsernameFromAuth, computeIsFoundation } =
   vi.hoisted(() => ({
     getPersonas: vi.fn(),
     checkProjectWriter: vi.fn(),
     getProjectIdBySlug: vi.fn(),
     getProjectById: vi.fn(),
     computeIsFoundation: vi.fn(),
-    canBoardMemberViewSocialListening: vi.fn(),
+    canGroupMemberViewSocialListening: vi.fn(),
     getUsernameFromAuth: vi.fn(),
   }));
 
@@ -31,14 +31,14 @@ vi.mock('./project.service', () => ({
 }));
 vi.mock('./committee.service', () => ({
   CommitteeService: class {
-    public canBoardMemberViewSocialListening = canBoardMemberViewSocialListening;
+    public canGroupMemberViewSocialListening = canGroupMemberViewSocialListening;
   },
 }));
 vi.mock('@lfx-one/shared/utils', () => ({ computeIsFoundation: (...args: unknown[]) => computeIsFoundation(...args) }));
 vi.mock('./logger.service', () => ({ logger: { warning: vi.fn(), debug: vi.fn() } }));
 
 const { SocialListeningAccessService } = await import('./social-listening-access.service');
-const { SOCIAL_LISTENING_BOARD_ACCESS_CACHE_TTL_MS } = await import('../../../../../packages/shared/src/constants/social-listening.constants');
+const { SOCIAL_LISTENING_GROUP_ACCESS_CACHE_TTL_MS } = await import('../../../../../packages/shared/src/constants/social-listening.constants');
 
 const req = {} as Request;
 
@@ -55,7 +55,7 @@ describe('SocialListeningAccessService.getAccess', () => {
     getProjectIdBySlug.mockReset().mockResolvedValue({ uid: 'tlf-uid', slug: 'tlf', exists: true });
     getProjectById.mockReset().mockResolvedValue({ uid: 'tlf-uid', slug: 'tlf' });
     computeIsFoundation.mockReset().mockReturnValue(true);
-    canBoardMemberViewSocialListening.mockReset().mockResolvedValue(true);
+    canGroupMemberViewSocialListening.mockReset().mockResolvedValue(true);
     getUsernameFromAuth.mockReset().mockResolvedValue('board-user');
     service = new SocialListeningAccessService();
   });
@@ -64,7 +64,7 @@ describe('SocialListeningAccessService.getAccess', () => {
     getPersonas.mockResolvedValue(personas({ personas: ['contributor'], isLFStaff: true }));
 
     await expect(service.getAccess(req, 'tlf')).resolves.toEqual({ canView: true, reason: 'lf-staff' });
-    expect(canBoardMemberViewSocialListening).not.toHaveBeenCalled();
+    expect(canGroupMemberViewSocialListening).not.toHaveBeenCalled();
   });
 
   it('admits an ED of the requested foundation without a Board lookup', async () => {
@@ -73,7 +73,7 @@ describe('SocialListeningAccessService.getAccess', () => {
     );
 
     await expect(service.getAccess(req, 'tlf')).resolves.toEqual({ canView: true, reason: 'executive-director' });
-    expect(canBoardMemberViewSocialListening).not.toHaveBeenCalled();
+    expect(canGroupMemberViewSocialListening).not.toHaveBeenCalled();
   });
 
   it("falls back to the Board check for an ED outside their foundation, against that foundation's uid", async () => {
@@ -81,17 +81,17 @@ describe('SocialListeningAccessService.getAccess', () => {
       personas({ personas: ['executive-director'], personaProjects: { 'executive-director': [{ projectUid: 'u', projectSlug: 'cncf', projectName: 'CNCF' }] } })
     );
 
-    await expect(service.getAccess(req, 'tlf')).resolves.toEqual({ canView: true, reason: 'board' });
-    expect(canBoardMemberViewSocialListening).toHaveBeenCalledWith(req, 'tlf-uid');
+    await expect(service.getAccess(req, 'tlf')).resolves.toEqual({ canView: true, reason: 'group-member' });
+    expect(canGroupMemberViewSocialListening).toHaveBeenCalledWith(req, 'tlf-uid');
   });
 
   it("admits a Board member when the foundation's Board group opted in, looking the slug up as given", async () => {
-    await expect(service.getAccess(req, 'TLF')).resolves.toEqual({ canView: true, reason: 'board' });
+    await expect(service.getAccess(req, 'TLF')).resolves.toEqual({ canView: true, reason: 'group-member' });
     expect(getProjectIdBySlug).toHaveBeenCalledWith(req, 'TLF');
   });
 
   it('denies a Board member when the Board group has not opted in (the default)', async () => {
-    canBoardMemberViewSocialListening.mockResolvedValue(false);
+    canGroupMemberViewSocialListening.mockResolvedValue(false);
 
     await expect(service.getAccess(req, 'tlf')).resolves.toEqual({ canView: false, reason: 'none' });
   });
@@ -113,32 +113,32 @@ describe('SocialListeningAccessService.getAccess', () => {
 
     await expect(service.getAccess(req, 'child')).resolves.toEqual({ canView: false, reason: 'none' });
     expect(getProjectById).toHaveBeenCalledWith(req, 'child-uid', false);
-    expect(canBoardMemberViewSocialListening).not.toHaveBeenCalled();
+    expect(canGroupMemberViewSocialListening).not.toHaveBeenCalled();
   });
 
   it('denies an unknown foundation', async () => {
     getProjectIdBySlug.mockResolvedValue({ uid: '', slug: 'nope', exists: false });
 
     await expect(service.getAccess(req, 'nope')).resolves.toEqual({ canView: false, reason: 'none' });
-    expect(canBoardMemberViewSocialListening).not.toHaveBeenCalled();
+    expect(canGroupMemberViewSocialListening).not.toHaveBeenCalled();
   });
 
   it('remembers the Board answer per user and foundation, and coalesces concurrent lookups', async () => {
     await Promise.all([service.getAccess(req, 'tlf'), service.getAccess(req, 'tlf'), service.getAccess(req, 'tlf')]);
     await service.getAccess(req, 'tlf');
 
-    expect(canBoardMemberViewSocialListening).toHaveBeenCalledTimes(1);
+    expect(canGroupMemberViewSocialListening).toHaveBeenCalledTimes(1);
 
     getUsernameFromAuth.mockResolvedValue('another-user');
     await service.getAccess(req, 'tlf');
-    expect(canBoardMemberViewSocialListening).toHaveBeenCalledTimes(2);
+    expect(canGroupMemberViewSocialListening).toHaveBeenCalledTimes(2);
   });
 
   it('does not remember a slug that failed to resolve (the NATS lookup reports failures as not found)', async () => {
     getProjectIdBySlug.mockResolvedValueOnce({ uid: '', slug: 'tlf', exists: false });
 
     await expect(service.getAccess(req, 'tlf')).resolves.toEqual({ canView: false, reason: 'none' });
-    await expect(service.getAccess(req, 'tlf')).resolves.toEqual({ canView: true, reason: 'board' });
+    await expect(service.getAccess(req, 'tlf')).resolves.toEqual({ canView: true, reason: 'group-member' });
   });
 
   describe('cache expiry', () => {
@@ -148,23 +148,23 @@ describe('SocialListeningAccessService.getAccess', () => {
 
     it('asks again once the cached Board answer is older than the TTL, so a removed member loses access', async () => {
       vi.useFakeTimers();
-      await expect(service.getAccess(req, 'tlf')).resolves.toEqual({ canView: true, reason: 'board' });
+      await expect(service.getAccess(req, 'tlf')).resolves.toEqual({ canView: true, reason: 'group-member' });
 
-      canBoardMemberViewSocialListening.mockResolvedValue(false);
-      vi.advanceTimersByTime(SOCIAL_LISTENING_BOARD_ACCESS_CACHE_TTL_MS - 1);
-      await expect(service.getAccess(req, 'tlf')).resolves.toEqual({ canView: true, reason: 'board' });
-      expect(canBoardMemberViewSocialListening).toHaveBeenCalledTimes(1);
+      canGroupMemberViewSocialListening.mockResolvedValue(false);
+      vi.advanceTimersByTime(SOCIAL_LISTENING_GROUP_ACCESS_CACHE_TTL_MS - 1);
+      await expect(service.getAccess(req, 'tlf')).resolves.toEqual({ canView: true, reason: 'group-member' });
+      expect(canGroupMemberViewSocialListening).toHaveBeenCalledTimes(1);
 
       vi.advanceTimersByTime(1);
       await expect(service.getAccess(req, 'tlf')).resolves.toEqual({ canView: false, reason: 'none' });
-      expect(canBoardMemberViewSocialListening).toHaveBeenCalledTimes(2);
+      expect(canGroupMemberViewSocialListening).toHaveBeenCalledTimes(2);
     });
   });
 
   it('fails closed on an upstream error and does not remember the failure', async () => {
-    canBoardMemberViewSocialListening.mockRejectedValueOnce(new Error('query service down'));
+    canGroupMemberViewSocialListening.mockRejectedValueOnce(new Error('query service down'));
 
     await expect(service.getAccess(req, 'tlf')).resolves.toEqual({ canView: false, reason: 'none' });
-    await expect(service.getAccess(req, 'tlf')).resolves.toEqual({ canView: true, reason: 'board' });
+    await expect(service.getAccess(req, 'tlf')).resolves.toEqual({ canView: true, reason: 'group-member' });
   });
 });

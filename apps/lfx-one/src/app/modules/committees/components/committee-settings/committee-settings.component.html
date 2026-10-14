@@ -250,7 +250,7 @@
   <div class="flex flex-col gap-4">
     <h3 class="text-base font-medium text-gray-900">{{ committeeLabel }} Features</h3>
 
-    @for (feature of features(); track feature.key) {
+    @for (feature of features; track feature.key) {
       <div class="bg-white border border-gray-200 p-4 rounded-lg hover:border-primary transition-colors" [attr.data-testid]="'feature-' + feature.key">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-3">

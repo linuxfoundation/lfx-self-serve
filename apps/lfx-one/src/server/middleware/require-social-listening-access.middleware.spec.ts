@@ -23,7 +23,7 @@ describe('requireSocialListeningAccess', () => {
   });
 
   it('passes the requested foundation to the access policy and allows when it admits the caller', async () => {
-    getAccess.mockResolvedValue({ canView: true, reason: 'board' });
+    getAccess.mockResolvedValue({ canView: true, reason: 'group-member' });
     const next = vi.fn();
     const req = buildReq({ foundationSlug: 'tlf' });
 

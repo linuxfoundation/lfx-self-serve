@@ -123,11 +123,10 @@ export class SidebarNavService {
   private readonly canSeeNewsletters: Signal<boolean> = this.initCanSeeNewsletters();
 
   /**
-   * True when a Board member (not ED/LF Staff) can view Social Listening for the selected foundation
-   * because its Board group opted in (lfx-self-serve-ops#387). Only asked for foundations the user has
-   * a board-member persona on, so everyone else makes no extra request.
+   * True when a non-ED, non-LF-Staff user can view Social Listening for the selected foundation because
+   * one of their groups on it has the setting on (lfx-self-serve-ops#387).
    */
-  private readonly canBoardViewSocialListening: Signal<boolean> = this.initCanBoardViewSocialListening();
+  private readonly canGroupMemberViewSocialListening: Signal<boolean> = this.initCanGroupMemberViewSocialListening();
 
   // Lens-aware sidebar items
   public readonly sidebarItems = computed((): SidebarMenuItem[] => {
@@ -559,7 +558,7 @@ export class SidebarNavService {
       }
 
       const canViewExecutiveDashboards = this.personaService.canViewExecutiveDashboards();
-      if (canViewExecutiveDashboards || this.canBoardViewSocialListening()) {
+      if (canViewExecutiveDashboards || this.canGroupMemberViewSocialListening()) {
         const metricsItems: SidebarMenuItem[] = [];
         if (canViewExecutiveDashboards) {
           metricsItems.push({
@@ -943,19 +942,14 @@ export class SidebarNavService {
     };
   }
 
-  private initCanBoardViewSocialListening(): Signal<boolean> {
-    const boardFoundationSlug = computed((): string | null => {
-      if (this.personaService.canViewExecutiveDashboards()) {
-        return null;
-      }
-      // Match case-insensitively, but probe with the slug as stored: the server looks it up verbatim.
-      const slug = this.projectContextService.selectedFoundation()?.slug;
-      const boardSlugs = (this.personaService.personaProjects()['board-member'] ?? []).map((project) => project.projectSlug.toLowerCase());
-      return slug && boardSlugs.includes(slug.toLowerCase()) ? slug : null;
-    });
+  private initCanGroupMemberViewSocialListening(): Signal<boolean> {
+    // Probe with the slug as stored: the server looks it up verbatim.
+    const groupFoundationSlug = computed((): string | null =>
+      this.personaService.canViewExecutiveDashboards() ? null : (this.projectContextService.selectedFoundation()?.slug ?? null)
+    );
 
     return toSignal(
-      toObservable(boardFoundationSlug).pipe(
+      toObservable(groupFoundationSlug).pipe(
         switchMap((slug) =>
           slug
             ? this.socialListeningService.getAccess(slug).pipe(

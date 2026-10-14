@@ -210,23 +210,11 @@ describe('CommitteeManageComponent', () => {
     expect(navigate).toHaveBeenCalledWith([], { queryParams: { step: 1 }, queryParamsHandling: 'merge' });
   });
 
-  describe('Board-only Social Listening setting', () => {
-    it('loads a Board group’s stored value', async () => {
-      getCommittee.mockReturnValue(of({ ...enrichedCommittee(), category: 'Board', members_can_view_social_listening: true }));
-      const fixture = await createComponent();
+  it('loads the group’s stored Social Listening setting', async () => {
+    getCommittee.mockReturnValue(of({ ...enrichedCommittee(), members_can_view_social_listening: true }));
+    const fixture = await createComponent();
 
-      expect(fixture.componentInstance.form.get('members_can_view_social_listening')?.value).toBe(true);
-    });
-
-    it('drops a stale value on a non-Board group, so switching the category to Board does not silently opt members in', async () => {
-      getCommittee.mockReturnValue(of({ ...enrichedCommittee(), category: 'Technical Steering Committee', members_can_view_social_listening: true }));
-      const fixture = await createComponent();
-      const form = fixture.componentInstance.form;
-
-      expect(form.get('members_can_view_social_listening')?.value).toBe(false);
-      form.get('category')?.setValue('Board');
-      expect(form.get('members_can_view_social_listening')?.value).toBe(false);
-    });
+    expect(fixture.componentInstance.form.get('members_can_view_social_listening')?.value).toBe(true);
   });
 
   describe('category preselection from ?category=', () => {

@@ -519,7 +519,7 @@ export type SocialListeningQueryParams = Record<string, SocialListeningQueryPara
 // ---------------------------------------------------------------------------
 
 /** Why the caller can (or cannot) view Social Listening for a foundation. */
-export type SocialListeningAccessReason = 'lf-staff' | 'executive-director' | 'board' | 'none';
+export type SocialListeningAccessReason = 'lf-staff' | 'executive-director' | 'group-member' | 'none';
 
 /** `GET /api/social-listening/access` — whether the caller can view Social Listening for `foundationSlug`. */
 export interface SocialListeningAccessResponse {

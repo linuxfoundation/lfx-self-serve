@@ -771,8 +771,6 @@ export interface CommitteeSettingsFeature {
   note?: string;
   recommended?: boolean;
   color: string;
-  /** When set, the toggle is shown only for groups whose category is one of these */
-  categories?: readonly string[];
 }
 
 /**

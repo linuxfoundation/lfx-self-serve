@@ -8,7 +8,7 @@ last_updated: 2026-10-13
 intercom_collection: Social Listening
 ---
 
-This page applies to users with the **executive-director** persona and to **LF Staff**. It also applies to members of a foundation's **Board** group when that group's **Members Can View Social Listening** setting is on (it is off by default).
+This page applies to users with the **executive-director** persona and to **LF Staff**. It also applies to members of a foundation's groups when that group's **Members Can View Social Listening** setting is on (it is off by default).
 
 Social Listening tracks brand mentions and sentiment across social, forums, and podcasts for your foundation and its projects. It collects publicly available posts that mention your foundation, classifies each mention by sentiment and relevance, and presents them in a searchable, filterable feed with analytics.
 

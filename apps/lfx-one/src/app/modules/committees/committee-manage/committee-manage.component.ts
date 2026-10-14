@@ -7,14 +7,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, NavigationEnd, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
-import {
-  COMMITTEE_FORM_STEPS,
-  COMMITTEE_INVITE_CONCURRENCY,
-  COMMITTEE_LABEL,
-  COMMITTEE_STEP_TITLES,
-  COMMITTEE_TOTAL_STEPS,
-  isBoardCategory,
-} from '@lfx-one/shared/constants';
+import { COMMITTEE_FORM_STEPS, COMMITTEE_INVITE_CONCURRENCY, COMMITTEE_LABEL, COMMITTEE_STEP_TITLES, COMMITTEE_TOTAL_STEPS } from '@lfx-one/shared/constants';
 import {
   Committee,
   CommitteeMember,
@@ -114,8 +107,6 @@ export class CommitteeManageComponent {
     this.formValue();
     return this.isStepValid(this.currentStep());
   });
-  /** Selected category, so the settings step can show category-scoped toggles. */
-  public readonly selectedCategory = computed((): string | null => this.formValue().category ?? null);
   // Live Step 3 draft, passed down so Step 4's invite dialog validates against what's about to be
   // saved rather than a possibly-stale persisted committee (LFXV2-2606 review).
   public readonly organizationRequirements = computed(() => ({
@@ -582,8 +573,7 @@ export class CommitteeManageComponent {
       join_mode: committee.join_mode || 'invite_only',
       member_visibility: committee.member_visibility || 'hidden',
       show_meeting_attendees: committee.show_meeting_attendees || false,
-      // Board-only: a stale value on a non-Board group must not resurface if the category is switched to Board here.
-      members_can_view_social_listening: isBoardCategory(committee.category) && !!committee.members_can_view_social_listening,
+      members_can_view_social_listening: committee.members_can_view_social_listening || false,
     });
   }
 

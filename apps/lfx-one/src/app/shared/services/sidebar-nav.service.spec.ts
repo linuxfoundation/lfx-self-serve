@@ -58,7 +58,6 @@ describe('SidebarNavService', () => {
   const selectedProject = signal<{ slug: string } | null>(null);
   const selectedFoundation = signal<{ slug: string } | null>(null);
   const hasBoardRole = signal(false);
-  const personaProjects = signal<Record<string, { projectUid: string; projectSlug: string; projectName: string }[]>>({});
   const getSocialListeningAccess = vi.fn(() => of({ canView: false, reason: 'none' }));
 
   const labels = (items: SidebarMenuItem[]): string[] => items.map((item) => item.label);
@@ -94,7 +93,6 @@ describe('SidebarNavService', () => {
     orgWriterSet.set(new Set());
     claManagerOrgSet.set(new Set());
     hasBoardRole.set(false);
-    personaProjects.set({});
     getSocialListeningAccess.mockReset().mockReturnValue(of({ canView: false, reason: 'none' }));
 
     TestBed.configureTestingModule({
@@ -120,7 +118,6 @@ describe('SidebarNavService', () => {
           provide: PersonaService,
           useValue: {
             hasBoardRole,
-            personaProjects,
             isRootWriter: hasFullFoundationAccess,
             isLFStaff: signal(false),
             canViewExecutiveDashboards: hasFullFoundationAccess,
@@ -779,9 +776,7 @@ describe('SidebarNavService', () => {
       expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).not.toContain('Communications');
     });
   });
-  describe('foundation-lens Metrics for Board members (lfx-self-serve-ops#387)', () => {
-    const boardOf = (slug: string) => ({ 'board-member': [{ projectUid: `${slug}-uid`, projectSlug: slug, projectName: slug }] });
-
+  describe('foundation-lens Metrics for group members (lfx-self-serve-ops#387)', () => {
     beforeEach(() => {
       hasFullFoundationAccess.set(false);
       hasBoardRole.set(true);
@@ -798,9 +793,8 @@ describe('SidebarNavService', () => {
       expect(getSocialListeningAccess).not.toHaveBeenCalled();
     });
 
-    it("shows only Social Listening when the selected foundation's Board group opted in", () => {
-      personaProjects.set(boardOf('tlf'));
-      getSocialListeningAccess.mockReturnValue(of({ canView: true, reason: 'board' }));
+    it('shows only Social Listening when one of the user’s groups on the foundation has the setting on', () => {
+      getSocialListeningAccess.mockReturnValue(of({ canView: true, reason: 'group-member' }));
       const service = TestBed.inject(SidebarNavService);
       TestBed.tick();
 
@@ -808,20 +802,10 @@ describe('SidebarNavService', () => {
       expect(labels(sectionItems(service.sidebarItems(), 'Metrics'))).toEqual(['Social Listening']);
     });
 
-    it('shows no Metrics section when the Board group has not opted in', () => {
-      personaProjects.set(boardOf('tlf'));
+    it('shows no Metrics section when no group grants access', () => {
       const service = TestBed.inject(SidebarNavService);
       TestBed.tick();
 
-      expect(sectionItems(service.sidebarItems(), 'Metrics')).toEqual([]);
-    });
-
-    it('does not ask for a foundation the user is not on the board of', () => {
-      personaProjects.set(boardOf('cncf'));
-      const service = TestBed.inject(SidebarNavService);
-      TestBed.tick();
-
-      expect(getSocialListeningAccess).not.toHaveBeenCalled();
       expect(sectionItems(service.sidebarItems(), 'Metrics')).toEqual([]);
     });
   });

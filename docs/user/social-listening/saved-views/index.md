@@ -9,7 +9,7 @@ last_updated: 2026-10-13
 intercom_collection: Social Listening
 ---
 
-This article applies to users with the **executive-director** persona and to **LF Staff**. Members of a foundation's **Board** group can use it too when that group's **Members Can View Social Listening** setting is on. A saved view is a named snapshot of your current Social Listening setup that you can reapply with one click.
+This article applies to users with the **executive-director** persona and to **LF Staff**. Members of a foundation's groups can use it too when that group's **Members Can View Social Listening** setting is on. A saved view is a named snapshot of your current Social Listening setup that you can reapply with one click.
 
 ## What a view captures
 
