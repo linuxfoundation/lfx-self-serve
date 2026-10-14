@@ -20,7 +20,7 @@ Check two things:
 1. You are viewing a **Foundation** lens — switch lenses using the lens switcher.
 2. Look under **Metrics** in the left navigation sidebar — Social Listening sits alongside Health Metrics.
 
-If you still don't see it, your account doesn't have the executive-director persona or LF Staff access for that foundation, or none of your groups on that foundation has turned on **Members Can View Social Listening**. Group members see Social Listening under **Metrics** on its own, without Health Metrics.
+If you still don't see it, your account doesn't have the executive-director persona or LF Staff access for that foundation, or none of your groups on that foundation has turned on **Members Can View Social Listening**. Board members with access see Social Listening under **Metrics** on its own, without Health Metrics. Members of other groups with access don't get the Foundation lens; they open Social Listening by direct link (`/foundation/social-listening?project=<foundation-slug>`).
 
 ## Where does the data come from?
 
