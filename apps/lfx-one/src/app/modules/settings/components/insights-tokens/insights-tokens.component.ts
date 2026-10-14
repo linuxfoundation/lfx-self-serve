@@ -16,6 +16,7 @@ import {
 import { formatRelativeTime } from '@lfx-one/shared/utils';
 import { InsightsTokensService } from '@services/insights-tokens.service';
 import { UserService } from '@services/user.service';
+import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { nameDynamicDialog } from '@shared/utils/name-dynamic-dialog';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -34,7 +35,7 @@ import { InsightsTokenRevealDialogComponent } from '../insights-token-reveal-dia
  */
 @Component({
   selector: 'lfx-insights-tokens',
-  imports: [DatePipe, ButtonComponent],
+  imports: [DatePipe, ButtonComponent, OpenIntercomDirective],
   templateUrl: './insights-tokens.component.html',
 })
 export class InsightsTokensComponent {

@@ -5,7 +5,7 @@
  * LFX Insights API tokens (IN-1233) — Developer Settings group, content spec.
  *
  * Locks each branch of `lfx-insights-tokens` in place (KB: `code-truthiness/missing-e2e-for-empty-state`):
- * empty state, non-Key-Contact lock notice, failed eligibility check, list load error, and the
+ * empty state, not-enabled lock notice, failed eligibility check, list load error, and the
  * create → one-time reveal flow. The structural data-testid contract lives in
  * insights-tokens-robust.spec.ts; route stubs and fixtures in ./helpers/insights-tokens.helper.
  *
