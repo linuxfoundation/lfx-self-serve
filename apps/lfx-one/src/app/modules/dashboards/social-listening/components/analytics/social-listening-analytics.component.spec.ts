@@ -3,7 +3,6 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { ANALYTICS_TOP_PROJECTS_LIMIT } from '@lfx-one/shared/constants';
 import { SocialListeningService } from '@services/social-listening.service';
 import { MessageService } from 'primeng/api';
 import { of, Subject, throwError } from 'rxjs';
@@ -27,6 +26,7 @@ describe('SocialListeningAnalyticsComponent', () => {
     NEGATIVE_SENTIMENT_PERCENT: 20,
     POSITIVE_SENTIMENT_CHANGE_PCT: null,
     NEGATIVE_SENTIMENT_CHANGE_PCT: -4.2,
+    COMPUTED_AT: '2026-10-13 11:34:49.054 -0700',
   };
 
   let fixture: ComponentFixture<SocialListeningAnalyticsComponent>;
@@ -94,35 +94,102 @@ describe('SocialListeningAnalyticsComponent', () => {
     expect(fixture.componentInstance.panelsLoading()).toBe(false);
   });
 
-  it('fetches all six panels off the shared scope + predicate request', async () => {
-    create({ filters: { sentiment: 'negative' } });
+  it('keeps governed panels settled while content filters refresh Mentions by Tag', async () => {
+    const scope = { sourceProjectId: 'project-1', platform: 'reddit' };
+    create({ filters: { ...scope, sentiment: 'positive' } });
     await settle();
 
-    const expected = expect.objectContaining({ foundationSlug: 'cncf', period: 'ytd', sentiment: 'negative' });
-    expect(getAnalyticsOverview).toHaveBeenCalledWith(expected);
-    expect(getAnalyticsOverTime).toHaveBeenCalledWith(expected);
-    expect(getAnalyticsPlatformDistribution).toHaveBeenCalledWith(expected);
-    expect(getMentionsTags).toHaveBeenCalledWith(expected);
-    expect(getAnalyticsSentimentDistribution).toHaveBeenCalledWith(expected);
-    // Top projects is the one panel that adds its own row cap.
-    expect(getAnalyticsTopProjects).toHaveBeenCalledWith(
-      expect.objectContaining({ foundationSlug: 'cncf', period: 'ytd', limit: ANALYTICS_TOP_PROJECTS_LIMIT })
-    );
+    const governedFetches = [
+      getAnalyticsOverview,
+      getAnalyticsOverTime,
+      getAnalyticsPlatformDistribution,
+      getAnalyticsSentimentDistribution,
+      getAnalyticsTopProjects,
+    ];
+    for (const fetch of governedFetches) {
+      expect(fetch.mock.calls[0][0]).not.toHaveProperty('sentiment');
+    }
+    const filteredTags = new Subject<{ TAG: string; TOTAL_COUNT: number }[]>();
+    getMentionsTags.mockReturnValue(filteredTags.asObservable());
+    fixture.componentRef.setInput('filters', {
+      ...scope,
+      sentiment: 'negative',
+      relevance: 'high',
+      language: 'en',
+      hasTitle: 'yes',
+      keywords: ['Kubernetes'],
+      tags: ['cloud'],
+      authors: ['example-author'],
+      search: 'service mesh',
+    });
+    await settle();
+
+    for (const fetch of governedFetches) expect(fetch).toHaveBeenCalledTimes(1);
+    expect(getMentionsTags).toHaveBeenCalledTimes(2);
+    const component = fixture.componentInstance;
+    expect(component.tagsLoading()).toBe(true);
+    expect([
+      component.overviewLoading(),
+      component.overTimeLoading(),
+      component.platformLoading(),
+      component.sentimentLoading(),
+      component.topProjectsLoading(),
+    ]).toEqual([false, false, false, false, false]);
+    expect(component.statCards()[0].value).toBe('1,240');
+
+    filteredTags.next([{ TAG: 'filtered', TOTAL_COUNT: 9 }]);
+    await settle();
+    expect(component.tagRows()).toEqual([{ label: 'Filtered', count: 9, percentOfMax: 100 }]);
+    expect(component.tagsLoading()).toBe(false);
   });
 
-  it('refetches every panel when the scope or feed predicate changes', async () => {
+  it.each([
+    { input: 'period', value: '2026-07' },
+    { input: 'filters', value: { sourceProjectId: 'project-1' } },
+    { input: 'filters', value: { platform: 'reddit' } },
+    { input: 'foundationSlug', value: 'lf' },
+  ])('refreshes every panel when the governed $input scope changes to $value', async ({ input, value }) => {
+    create();
+    await settle();
+    getAnalyticsOverview.mockReturnValue(of({ ...OVERVIEW, TOTAL_MENTIONS: 4321 }));
+
+    fixture.componentRef.setInput(input, value);
+    await settle();
+
+    for (const fetch of [
+      getAnalyticsOverview,
+      getAnalyticsOverTime,
+      getAnalyticsPlatformDistribution,
+      getMentionsTags,
+      getAnalyticsSentimentDistribution,
+      getAnalyticsTopProjects,
+    ]) {
+      expect(fetch).toHaveBeenCalledTimes(2);
+    }
+    expect(fixture.componentInstance.statCards()[0].value).toBe('4,321');
+  });
+
+  it.each([
+    { timestamp: '2026-10-13 11:34:49.054 -0700', expected: '2026-10-13T18:34:49.054Z' },
+    { timestamp: '2026-08-01 15:30:00', expected: '2026-08-01T15:30:00.000Z' },
+  ])('renders freshness for the modeled instant $timestamp', async ({ timestamp, expected }) => {
+    getAnalyticsOverview.mockReturnValue(of({ ...OVERVIEW, COMPUTED_AT: timestamp }));
     create();
     await settle();
 
-    fixture.componentRef.setInput('period', '2026-07');
-    await settle();
-    expect(getAnalyticsOverview).toHaveBeenLastCalledWith(expect.objectContaining({ period: '2026-07' }));
-    expect(getAnalyticsOverview).toHaveBeenCalledTimes(2);
+    expect(fixture.componentInstance.analyticsComputedAt()?.toISOString()).toBe(expected);
+    expect(fixture.nativeElement.querySelector('[data-testid="social-listening-analytics-computed-at"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="social-listening-analytics-scope-notice"]')).not.toBeNull();
+  });
 
-    fixture.componentRef.setInput('filters', { sentiment: 'negative' });
+  it.each([null, 'invalid timestamp'])('keeps the scope notice without a timestamp for %s freshness', async (timestamp) => {
+    getAnalyticsOverview.mockReturnValue(of({ ...OVERVIEW, COMPUTED_AT: timestamp }));
+    create();
     await settle();
-    expect(getAnalyticsOverview).toHaveBeenLastCalledWith(expect.objectContaining({ sentiment: 'negative' }));
-    expect(getAnalyticsOverview).toHaveBeenCalledTimes(3);
+
+    expect(fixture.componentInstance.analyticsComputedAt()).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="social-listening-analytics-computed-at"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="social-listening-analytics-scope-notice"]')).not.toBeNull();
   });
 
   it('degrades panels independently — one failure errors only its own panel', async () => {

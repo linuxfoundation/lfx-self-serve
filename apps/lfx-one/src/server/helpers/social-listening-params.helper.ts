@@ -18,6 +18,7 @@ import { getStringQueryParam, getValidatedPeriod } from './validation.helper';
 
 import type {
   ResolvedPeriodRange,
+  SocialListeningAnalyticsParams,
   SocialListeningFeedCursor,
   SocialListeningFilterParams,
   SocialListeningPaginationParams,
@@ -113,6 +114,24 @@ export function parseSocialListeningScope(req: Request, operation: string): Soci
   };
 }
 
+/** Governed analytics scope only: content filters and feed read state are deliberately not inspected. */
+export function parseSocialListeningAnalyticsScope(req: Request, operation: string): SocialListeningAnalyticsParams {
+  const period = getValidatedPeriod(req, operation);
+  let periodKey = 'ytd';
+  if (period?.type === 'month') {
+    periodKey = period.startDate.slice(0, 7);
+  } else if (period?.type === 'trailing') {
+    periodKey = getStringQueryParam(req, 'period') as string;
+  }
+
+  return {
+    foundationSlug: parseFoundationSlug(req, operation),
+    periodKey,
+    sourceProjectId: parseTextParam(req, 'sourceProjectId', FILTER_VALUE_MAX_LENGTH, operation),
+    platform: parseTextParam(req, 'platform', FILTER_VALUE_MAX_LENGTH, operation)?.toLowerCase(),
+  };
+}
+
 /** Every feed filter. `all` and blank values normalize to `undefined` (no predicate). */
 export function parseSocialListeningFilters(req: Request, operation: string): SocialListeningFilterParams {
   return {
@@ -127,7 +146,7 @@ export function parseSocialListeningFilters(req: Request, operation: string): So
   };
 }
 
-/** Analytics + tag filters — omits `mentionIds` and the unread read-state params: bookmarks are all-time and read state is per-user view state, so non-feed/count queries stay read-blind (the page strips them too). */
+/** Tags endpoint filters — omits `mentionIds` and the unread read-state params: bookmarks are all-time and read state is per-user view state, so tags stay read-blind (the page strips them too). */
 export function parseSocialListeningAnalyticsFilters(req: Request, operation: string): SocialListeningReadBlindFilterParams {
   return {
     ...parseSocialListeningAuthorFilters(req, operation),
