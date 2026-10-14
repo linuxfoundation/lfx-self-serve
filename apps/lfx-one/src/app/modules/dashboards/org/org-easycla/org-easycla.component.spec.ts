@@ -3,6 +3,7 @@
 
 import '@angular/compiler';
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { ApplicationRef, computed, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
@@ -22,6 +23,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OrgEasyclaCoverageDialogComponent } from './org-easycla-coverage-dialog/org-easycla-coverage-dialog.component';
 import { OrgEasyclaComponent } from './org-easycla.component';
+
+function roleMissingError(): HttpErrorResponse {
+  return new HttpErrorResponse({
+    status: 403,
+    error: { error: "You don't have an EasyCLA role at this organization", code: 'EASYCLA_ROLE_MISSING' },
+  });
+}
 
 describe('OrgEasyclaComponent', () => {
   const SELECTED_ACCOUNT = { uid: '0014100000Te2ovAAB', accountName: 'Vertex Robotics' };
@@ -227,6 +235,18 @@ describe('OrgEasyclaComponent', () => {
       const button = byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button');
       expect(button?.disabled).toBe(true);
       expect(button?.getAttribute('aria-label')).toContain('could not be loaded');
+    });
+
+    it('cannot be used when EasyCLA refused the list for a missing role, and says so', async () => {
+      getClaGroups.mockReturnValue(throwError(() => roleMissingError()));
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      const fixture = await render();
+
+      const button = byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button');
+      expect(button?.disabled).toBe(true);
+      expect(button?.getAttribute('aria-label')).toBe("Sign a corporate CLA — you don't have an EasyCLA role at this organization");
+      consoleError.mockRestore();
     });
 
     // Pair grain lives on attestation Continue. A company-level inventory would hide Sign from
@@ -881,6 +901,33 @@ describe('OrgEasyclaComponent', () => {
       expect(byTestId(fixture, 'org-easycla-toolbar')).toBeNull();
       // Sign CLA is in the header rather than the toolbar, so the failure state does not take it.
       expect(byTestId(fixture, 'org-easycla-sign-cla')).toBeTruthy();
+      consoleError.mockRestore();
+    });
+
+    it('shows the missing-role state, not the load failure, when EasyCLA refuses the list', async () => {
+      getClaGroups.mockReturnValue(throwError(() => roleMissingError()));
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      const fixture = await render();
+      const state = byTestId(fixture, 'org-easycla-role-missing-state');
+
+      expect(state).toBeTruthy();
+      expect(state?.textContent).toContain("You don't have an EasyCLA role at this organization");
+      expect(state?.textContent).not.toContain('Refresh');
+      expect(byTestId(fixture, 'org-easycla-error-state')).toBeNull();
+      expect(byTestId(fixture, 'org-easycla-empty-state')).toBeNull();
+      expect(byTestId(fixture, 'org-easycla-toolbar')).toBeNull();
+      consoleError.mockRestore();
+    });
+
+    it('keeps the load failure for a 403 without the missing-role code', async () => {
+      getClaGroups.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403, error: { error: 'Forbidden', code: 'FORBIDDEN' } })));
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      const fixture = await render();
+
+      expect(byTestId(fixture, 'org-easycla-error-state')).toBeTruthy();
+      expect(byTestId(fixture, 'org-easycla-role-missing-state')).toBeNull();
       consoleError.mockRestore();
     });
   });
