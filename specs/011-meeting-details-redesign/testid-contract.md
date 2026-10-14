@@ -33,7 +33,7 @@ own namespace; the two never share a value.
 | `meeting-page-shell`                        | The V2 page container, present in every branch                                                                        |
 | `meeting-skeleton`                          | Loading state (`role="status"`)                                                                                       |
 | `meeting-content-column`                    | The content column                                                                                                    |
-| `meeting-rail`                              | The right-hand column (stacks below at ≤ 920px)                                                                       |
+| `meeting-rail`                              | The right-hand column (first, above the content, at ≤ 920px)                                                          |
 | `meeting-identity-bar`                      | The sticky identity bar (see below)                                                                                   |
 | `meeting-identity-bar-home`                 | Its LFX mark, linking home                                                                                            |
 | `meeting-identity-bar-meeting`              | Its meeting identity: date tile, title, subtitle                                                                      |
