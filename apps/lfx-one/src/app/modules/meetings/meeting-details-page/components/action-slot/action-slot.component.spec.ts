@@ -191,6 +191,14 @@ describe('MeetingActionSlotComponent', () => {
     });
   });
 
+  // #3633: the ended rail points at the artifacts without promising them.
+  it('tells a signed-in viewer of an ended meeting where its artifacts are, without promising them', () => {
+    render('tools', 'registrant');
+
+    expect(text('meeting-action-message')).toBe('This meeting has ended. Its recording, transcript and summary are on this page where available.');
+    expect(text('meeting-action-message')).not.toContain('once they are ready');
+  });
+
   describe('no-access', () => {
     it('says the details are private once the past endpoint has said so', () => {
       render('no-access', 'outsider');
