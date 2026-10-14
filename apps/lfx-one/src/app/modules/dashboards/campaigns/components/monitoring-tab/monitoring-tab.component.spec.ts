@@ -14,7 +14,7 @@ import type {
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { signal } from '@angular/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -784,6 +784,45 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
     });
   });
 
+  /**
+   * The date range lives on the Google panel. Changing it there must not leave the Microsoft/X or
+   * HubSpot figures of the OLD window on screen when the user switches back: those panels show
+   * their loading state until the new window's read lands.
+   */
+  describe('date-range change', () => {
+    it.each([
+      ['hubspot', 'getHubSpotMonitorData', 'hubspot-email-table', 'hubspot-loading'],
+      ['microsoft', 'getMicrosoftMonitorData', 'microsoft-campaign-table', 'microsoft-loading'],
+    ])('drops the old window of %s and shows its loading state instead', async (platform, method, table, loading) => {
+      await setup(allConnected);
+      select(platform);
+      expect(el(table)).not.toBeNull();
+
+      select('google');
+      (el('monitoring-range-7') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      const pending = new Subject<unknown>();
+      service[method].mockReturnValue(pending);
+      select(platform);
+
+      expect(el(table)).toBeNull();
+      expect(el(loading)).not.toBeNull();
+      expect(service[method]).toHaveBeenLastCalledWith(...(platform === 'hubspot' ? ['cncf', 7] : ['cncf', '187654321', 7]));
+    });
+  });
+
+  describe('platform buttons', () => {
+    /** White on #00A4EF / #FF7A59 is under 3:1; gray-900 on them is over 6:1 (WCAG AA needs 4.5:1). */
+    it.each(['microsoft', 'hubspot'])('selects %s with dark text, not white', async (platform) => {
+      await setup(allConnected);
+      select(platform);
+
+      const button = el(`platform-${platform}`) as HTMLElement;
+      expect(button.className).toContain('text-gray-900');
+      expect(button.className).not.toContain('text-white');
+    });
+  });
+
   describe('HubSpot email', () => {
     it('renders the counts, the rates, and an unknown rate as a dash', async () => {
       await setup(allConnected);
@@ -814,6 +853,26 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       (el('hubspot-refresh') as HTMLButtonElement).click();
       fixture.detectChanges();
       expect(text('hubspot-empty')).toBe('No HubSpot emails from this project were sent in the last 30 days.');
+    });
+
+    /**
+     * No rows does not mean no sends when some recorded emails were skipped: an unreadable email,
+     * or one beyond the 50-campaign cap, may have been sent in the window. Saying "no emails were
+     * sent" there would state a fact nobody checked — and the note that says why must still show.
+     */
+    it.each([
+      ['an unreadable email', { emailsUnattributable: 1, emailsTruncated: false }, '1 could not be read safely'],
+      ['the 50-campaign cap', { emailsUnattributable: 0, emailsTruncated: true }, 'Only the 50 most recently recorded campaigns were checked'],
+    ])('calls an empty answer incomplete, with the coverage note, after %s', async (_case, coverage, noteFragment) => {
+      await setup(allConnected);
+      service['getHubSpotMonitorData'].mockReturnValue(of(hubspot({ emails: [], actionItems: [], emailsNotSentInWindow: 0, ...coverage })));
+      select('hubspot');
+
+      expect(text('hubspot-empty')).toBe(
+        'No sends were found in the last 30 days among the emails that could be checked, but the results are incomplete — see the note above.'
+      );
+      expect(text('hubspot-empty')).not.toContain('were sent in the last');
+      expect(text('hubspot-coverage-note')).toContain(noteFragment);
     });
 
     it('says there is no HubSpot connection on a 404', async () => {

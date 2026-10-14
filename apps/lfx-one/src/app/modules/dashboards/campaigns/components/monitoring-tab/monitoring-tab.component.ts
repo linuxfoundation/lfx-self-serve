@@ -25,6 +25,7 @@ import type {
   CampaignMonitorConnections,
   CampaignMonitorResponse,
   HubSpotEmailMonitorResponse,
+  HubSpotMonitorView,
   KeywordMetrics,
   KeywordMetricsResponse,
   LinkedInAccount,
@@ -34,6 +35,7 @@ import type {
   MetaAccountOption,
   MetaCampaignMetrics,
   MetaMonitorResponse,
+  MonitorCellView,
   MonitorConnectionAccount,
   MonitorConnectionPlatform,
   MonitorDateRangeOption,
@@ -45,7 +47,10 @@ import type {
   RedditCampaignMetrics,
   RedditMonitorResponse,
   RedditPacingLabel,
+  ReportBackedCampaignRowView,
+  ReportBackedKpisView,
   ReportBackedMonitorResponse,
+  ReportBackedMonitorView,
 } from '@lfx-one/shared/interfaces';
 
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
@@ -142,7 +147,6 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly reportBackedData = signal<ReportBackedMonitorResponse | null>(null);
   protected readonly reportBackedError = signal<string | null>(null);
   protected readonly reportBackedCampaigns = computed(() => this.reportBackedData()?.campaigns ?? []);
-  protected readonly reportBackedTotals = computed(() => this.reportBackedData()?.accountTotals ?? null);
   protected readonly reportBackedTotalsNote = computed(() => this.totalsCoverageNote(this.reportBackedCampaigns()));
   protected readonly reportBackedPulledAt = computed(() => {
     const pulledAt = this.reportBackedData()?.pulledAt;
@@ -155,7 +159,6 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly hubSpotData = signal<HubSpotEmailMonitorResponse | null>(null);
   protected readonly hubSpotError = signal<string | null>(null);
   protected readonly hubSpotNoticeState = signal<MonitorPanelNoticeState | null>(null);
-  protected readonly hubSpotEmails = computed(() => this.hubSpotData()?.emails ?? []);
   protected readonly hubSpotPulledAt = computed(() => {
     const pulledAt = this.hubSpotData()?.pulledAt;
     return pulledAt ? new Date(pulledAt).toLocaleString() : null;
@@ -236,6 +239,9 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly reportBackedFreshness: Signal<string | null> = this.initReportBackedFreshness();
   protected readonly hubSpotFreshness: Signal<string | null> = this.initHubSpotFreshness();
   protected readonly hubSpotCoverageNote: Signal<string | null> = this.initHubSpotCoverageNote();
+  /** The Microsoft/X and HubSpot sections, formatted for the template (no template functions). */
+  protected readonly reportBackedView: Signal<ReportBackedMonitorView | null> = this.initReportBackedView();
+  protected readonly hubSpotView: Signal<HubSpotMonitorView | null> = this.initHubSpotView();
 
   public constructor() {
     // toObservable + skip(1) per frontend-checklist §5 ("No effect() — use toObservable() with
@@ -253,6 +259,7 @@ export class MonitoringTabComponent implements OnInit {
 
   protected setDateRange(days: MonitorDateRangeOption): void {
     this.selectedDays.set(days);
+    this.clearWindowedPanels();
     this.fetchData();
     if (this.selectedPlatform() === 'linkedin') {
       this.fetchLinkedInData();
@@ -452,17 +459,6 @@ export class MonitoringTabComponent implements OnInit {
           }
         },
       });
-  }
-
-  /** HubSpot rates are fractions; null — a rate over zero deliveries — is unknown, never 0%. */
-  protected formatRate(rate: number | null): string {
-    return rate === null ? '—' : `${formatPercent(rate * 100)}%`;
-  }
-
-  protected priorityClass(priority: string): string {
-    if (priority === 'HIGH') return 'bg-red-50 text-red-700';
-    if (priority === 'MED') return 'bg-amber-50 text-amber-700';
-    return 'bg-gray-100 text-gray-600';
   }
 
   protected setLinkedInAccount(key: string): void {
@@ -676,6 +672,141 @@ export class MonitoringTabComponent implements OnInit {
       }
       return notices;
     });
+  }
+
+  private initReportBackedView(): Signal<ReportBackedMonitorView | null> {
+    return computed(() => {
+      const data = this.reportBackedData();
+      if (!data) return null;
+      const totals = data.accountTotals;
+      const kpis: ReportBackedKpisView | null = totals
+        ? {
+            impressions: this.formatNumber(totals.impressions),
+            clicks: this.formatNumber(totals.clicks),
+            ctr: totals.impressions > 0 ? this.formatPct((totals.clicks / totals.impressions) * 100) : '—',
+            spend: this.formatCurrency(totals.spend),
+            conversions:
+              totals.conversionsMeasured === false
+                ? { text: 'Not measured', className: 'text-gray-500' }
+                : { text: this.formatNumber(totals.conversions), className: 'text-gray-900' },
+          }
+        : null;
+      const unread: MonitorCellView = { text: '—', className: 'text-gray-500' };
+      const measured = (text: string): MonitorCellView => ({ text, className: 'text-gray-700' });
+      const rows = (data.campaigns ?? []).map((camp): ReportBackedCampaignRowView => {
+        const base = {
+          campaignId: camp.campaignId,
+          campaignName: camp.campaignName,
+          status: camp.status,
+          fetchFailed: camp.fetchFailed === true,
+          flight: camp.startDate ? `${camp.startDate} → ${camp.endDate || 'Ongoing'}` : '—',
+          budget: this.formatCurrency(camp.totalBudget || camp.dailyBudget),
+        };
+        // Metrics that could not be read are not zeros: every metric cell is a dash.
+        if (camp.fetchFailed) {
+          return { ...base, spend: unread, pacing: unread, impressions: unread, clicks: unread, ctr: unread, conversions: unread };
+        }
+        const pacing: MonitorCellView =
+          camp.pacingUnknown || !camp.pacingLabel
+            ? { text: 'Unknown', className: 'text-gray-500' }
+            : { text: `${camp.pacingPct.toFixed(0)}% ${camp.pacingLabel}`, className: `font-medium ${this.redditPacingClass(camp.pacingLabel)}` };
+        return {
+          ...base,
+          spend: measured(this.formatCurrency(camp.spend)),
+          pacing,
+          impressions: measured(this.formatNumber(camp.impressions)),
+          clicks: measured(this.formatNumber(camp.clicks)),
+          ctr: measured(this.formatPct(camp.ctr)),
+          conversions: camp.conversionsMeasured === false ? { text: 'Not measured', className: 'text-gray-500' } : measured(String(camp.conversions)),
+        };
+      });
+      return { kpis, rows };
+    });
+  }
+
+  private initHubSpotView(): Signal<HubSpotMonitorView | null> {
+    return computed(() => {
+      const data = this.hubSpotData();
+      if (!data) return null;
+      const t = data.totals;
+      return {
+        emptyMessage: data.emails.length > 0 ? null : this.hubSpotEmptyMessage(data),
+        kpis: {
+          emails: this.formatNumber(t.emailCount),
+          sent: this.formatNumber(t.sent),
+          delivered: this.formatNumber(t.delivered),
+          opens: this.formatNumber(t.opens),
+          clicks: this.formatNumber(t.clicks),
+          bounces: this.formatNumber(t.bounces),
+          openRate: this.rateCell(t.openRate, 'text-gray-700'),
+          clickRate: this.rateCell(t.clickRate, 'text-gray-700'),
+          bounceRate: this.rateCell(t.bounceRate, 'text-gray-700'),
+        },
+        rows: data.emails.map((email) => ({
+          emailId: email.emailId,
+          name: email.name,
+          abVariant: email.abVariant,
+          deleted: email.deleted,
+          sent: this.formatNumber(email.sent),
+          delivered: this.formatNumber(email.delivered),
+          opens: this.formatNumber(email.opens),
+          clicks: this.formatNumber(email.clicks),
+          spamReports: this.formatNumber(email.spamReports),
+          openRate: this.rateCell(email.openRate, 'text-gray-700'),
+          clickRate: this.rateCell(email.clickRate, 'text-gray-700'),
+          bounceRate: this.rateCell(email.bounceRate, 'text-gray-700'),
+          unsubscribeRate: this.rateCell(email.unsubscribeRate, 'text-gray-700'),
+        })),
+        actionItems: data.actionItems.map((item) => ({
+          priority: item.priority,
+          priorityClass: this.priorityClass(item.priority),
+          heading: `${item.emailName || 'All emails'}: ${item.issue}`,
+          action: item.action,
+        })),
+      };
+    });
+  }
+
+  /**
+   * Why there are no rows. "Nothing was sent" is claimed only when every recorded email was
+   * checked and read: with some unreadable or beyond the 50-campaign cap, an email sent in the
+   * window may simply not be in the answer, so the result is called incomplete instead.
+   */
+  private hubSpotEmptyMessage(data: HubSpotEmailMonitorResponse): string {
+    if (data.emailsUnattributable > 0 || data.emailsTruncated) {
+      return `No sends were found in the last ${data.days} days among the emails that could be checked, but the results are incomplete — see the note above.`;
+    }
+    if (data.metricsAsOf) {
+      return `No HubSpot emails from this project were sent in the last ${data.days} days.`;
+    }
+    return 'This project has no HubSpot emails created through campaigns yet.';
+  }
+
+  /** HubSpot rates are fractions; null — a rate over zero deliveries — is unknown, never 0%. */
+  private rateCell(rate: number | null, measuredClass: string): MonitorCellView {
+    return rate === null ? { text: '—', className: 'text-gray-500' } : { text: `${formatPercent(rate * 100)}%`, className: measuredClass };
+  }
+
+  private priorityClass(priority: string): string {
+    if (priority === 'HIGH') return 'bg-red-50 text-red-700';
+    if (priority === 'MED') return 'bg-amber-50 text-amber-700';
+    return 'bg-gray-100 text-gray-600';
+  }
+
+  /**
+   * The Microsoft/X and HubSpot reads are per window. On a window change their data describes the
+   * OLD window, so it is dropped (and any in-flight read for it cancelled) rather than shown under
+   * the new one: the panel shows its loading state until the new read lands.
+   */
+  private clearWindowedPanels(): void {
+    this.reportBackedSub?.unsubscribe();
+    this.hubSpotSub?.unsubscribe();
+    this.reportBackedData.set(null);
+    this.reportBackedError.set(null);
+    this.reportBackedLoading.set(false);
+    this.hubSpotData.set(null);
+    this.hubSpotError.set(null);
+    this.hubSpotLoading.set(false);
   }
 
   private initReportBackedAccount(): Signal<MonitorConnectionAccount | null> {

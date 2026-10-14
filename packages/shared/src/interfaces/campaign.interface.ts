@@ -2632,6 +2632,94 @@ export interface HubSpotEmailMonitorResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Monitor tab view models: what the Microsoft/X and HubSpot sections render, formatted once in
+// computed signals so the template only reads fields (frontend checklist §4, no template functions).
+// ---------------------------------------------------------------------------
+
+/** One rendered value and the text class it is shown with (grey for a value nobody measured). */
+export interface MonitorCellView {
+  text: string;
+  className: string;
+}
+
+/** The report-backed panel's KPI tiles. */
+export interface ReportBackedKpisView {
+  impressions: string;
+  clicks: string;
+  ctr: string;
+  spend: string;
+  conversions: MonitorCellView;
+}
+
+/** One campaign row of the report-backed panel. Every metric cell is a dash when `fetchFailed`. */
+export interface ReportBackedCampaignRowView {
+  campaignId: string;
+  campaignName: string;
+  status: string;
+  fetchFailed: boolean;
+  flight: string;
+  budget: string;
+  spend: MonitorCellView;
+  pacing: MonitorCellView;
+  impressions: MonitorCellView;
+  clicks: MonitorCellView;
+  ctr: MonitorCellView;
+  conversions: MonitorCellView;
+}
+
+export interface ReportBackedMonitorView {
+  kpis: ReportBackedKpisView | null;
+  rows: ReportBackedCampaignRowView[];
+}
+
+/** The HubSpot section's KPI tiles; rates are `MonitorCellView`s so an unknown one renders grey. */
+export interface HubSpotKpisView {
+  emails: string;
+  sent: string;
+  delivered: string;
+  opens: string;
+  clicks: string;
+  bounces: string;
+  openRate: MonitorCellView;
+  clickRate: MonitorCellView;
+  bounceRate: MonitorCellView;
+}
+
+export interface HubSpotEmailRowView {
+  emailId: string;
+  name: string;
+  abVariant: boolean;
+  deleted: boolean;
+  sent: string;
+  delivered: string;
+  opens: string;
+  clicks: string;
+  spamReports: string;
+  openRate: MonitorCellView;
+  clickRate: MonitorCellView;
+  bounceRate: MonitorCellView;
+  unsubscribeRate: MonitorCellView;
+}
+
+export interface HubSpotActionItemView {
+  priority: CampaignServiceMonitorPriority;
+  priorityClass: string;
+  heading: string;
+  action: string;
+}
+
+/**
+ * The HubSpot section, rendered. `emptyMessage` is set exactly when there are no rows, and says
+ * "nothing was sent" only when the coverage counts show nothing was skipped.
+ */
+export interface HubSpotMonitorView {
+  emptyMessage: string | null;
+  kpis: HubSpotKpisView;
+  rows: HubSpotEmailRowView[];
+  actionItems: HubSpotActionItemView[];
+}
+
+// ---------------------------------------------------------------------------
 // Optimization Insights
 // ---------------------------------------------------------------------------
 

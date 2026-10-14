@@ -61,7 +61,9 @@
       Meta Ads
     </button>
     <!-- campaign-service-only monitors (#2519): offered only while the monitor cutover is on. X also
-         stays hidden while the app does not offer the platform (disabled in CAMPAIGN_PLATFORMS). -->
+         stays hidden while the app does not offer the platform (disabled in CAMPAIGN_PLATFORMS).
+         Selected Microsoft (#00A4EF) and HubSpot (#FF7A59) use gray-900 text: white on those is
+         2.8:1 and 2.6:1, gray-900 is 6.4:1 and 7.0:1 (WCAG AA). X keeps white on black (21:1). -->
     @if (monitorViaCampaignService()) {
       <button
         type="button"
@@ -69,7 +71,7 @@
         [attr.aria-pressed]="selectedPlatform() === 'microsoft'"
         [class]="
           selectedPlatform() === 'microsoft'
-            ? 'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-white'
+            ? 'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-gray-900'
             : 'flex items-center gap-1.5 rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-200'
         "
         [style.backgroundColor]="selectedPlatform() === 'microsoft' ? platformColors['microsoft-ads'] : null"
@@ -99,7 +101,7 @@
         [attr.aria-pressed]="selectedPlatform() === 'hubspot'"
         [class]="
           selectedPlatform() === 'hubspot'
-            ? 'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-white'
+            ? 'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-gray-900'
             : 'flex items-center gap-1.5 rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-200'
         "
         [style.backgroundColor]="selectedPlatform() === 'hubspot' ? hubSpotColor : null"
@@ -1115,11 +1117,11 @@
             Retry
           </button>
         </div>
-      } @else if (reportBackedData()) {
+      } @else if (reportBackedView(); as view) {
         @if (reportBackedFreshness(); as freshness) {
           <p class="text-xs text-gray-500" [attr.data-testid]="reportBackedPanel() + '-freshness'">{{ freshness }}</p>
         }
-        @if (reportBackedCampaigns().length === 0) {
+        @if (view.rows.length === 0) {
           <div
             class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-12"
             [attr.data-testid]="reportBackedPanel() + '-empty'">
@@ -1129,40 +1131,30 @@
             <p class="text-sm text-gray-500">No {{ reportBackedLabel() }} campaigns found for this account.</p>
           </div>
         } @else {
-          @if (reportBackedTotals(); as totals) {
+          @if (view.kpis; as kpis) {
             <!-- KPI Strip -->
             <div class="grid grid-cols-2 gap-4 md:grid-cols-5" [attr.data-testid]="reportBackedPanel() + '-kpi-strip'">
               <div class="rounded-lg border border-gray-200 bg-white p-4">
                 <p class="text-xs font-medium text-gray-500">Impressions</p>
-                <p class="text-lg font-semibold text-gray-900">{{ formatNumber(totals.impressions) }}</p>
+                <p class="text-lg font-semibold text-gray-900">{{ kpis.impressions }}</p>
               </div>
               <div class="rounded-lg border border-gray-200 bg-white p-4">
                 <p class="text-xs font-medium text-gray-500">Clicks</p>
-                <p class="text-lg font-semibold text-gray-900">{{ formatNumber(totals.clicks) }}</p>
+                <p class="text-lg font-semibold text-gray-900">{{ kpis.clicks }}</p>
               </div>
               <div class="rounded-lg border border-gray-200 bg-white p-4">
                 <p class="text-xs font-medium text-gray-500">CTR</p>
-                <p class="text-lg font-semibold text-gray-900">
-                  @if (totals.impressions > 0) {
-                    {{ formatPct((totals.clicks / totals.impressions) * 100) }}
-                  } @else {
-                    —
-                  }
-                </p>
+                <p class="text-lg font-semibold text-gray-900">{{ kpis.ctr }}</p>
               </div>
               <div class="rounded-lg border border-gray-200 bg-white p-4">
                 <p class="text-xs font-medium text-gray-500">Spend</p>
-                <p class="text-lg font-semibold text-gray-900">{{ formatCurrency(totals.spend) }}</p>
+                <p class="text-lg font-semibold text-gray-900">{{ kpis.spend }}</p>
               </div>
               <div class="rounded-lg border border-gray-200 bg-white p-4">
                 <p class="text-xs font-medium text-gray-500">Conversions</p>
-                @if (totals.conversionsMeasured === false) {
-                  <p class="text-lg font-semibold text-gray-500" [attr.data-testid]="reportBackedPanel() + '-kpi-conversions'">Not measured</p>
-                } @else {
-                  <p class="text-lg font-semibold text-gray-900" [attr.data-testid]="reportBackedPanel() + '-kpi-conversions'">
-                    {{ formatNumber(totals.conversions) }}
-                  </p>
-                }
+                <p [class]="'text-lg font-semibold ' + kpis.conversions.className" [attr.data-testid]="reportBackedPanel() + '-kpi-conversions'">
+                  {{ kpis.conversions.text }}
+                </p>
               </div>
             </div>
             @if (reportBackedTotalsNote(); as note) {
@@ -1189,12 +1181,12 @@
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-100">
-                  @for (camp of reportBackedCampaigns(); track camp.campaignId) {
+                  @for (row of view.rows; track row.campaignId) {
                     <tr class="hover:bg-gray-50" [attr.data-testid]="reportBackedPanel() + '-campaign-row-' + $index">
                       <td class="px-4 py-3">
                         <div class="flex items-center gap-2">
-                          <p class="max-w-xs truncate font-medium text-gray-900" [title]="camp.campaignName">{{ camp.campaignName }}</p>
-                          @if (camp.fetchFailed) {
+                          <p class="max-w-xs truncate font-medium text-gray-900" [title]="row.campaignName">{{ row.campaignName }}</p>
+                          @if (row.fetchFailed) {
                             <span
                               class="inline-flex shrink-0 items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600"
                               title="This campaign's metrics could not be read"
@@ -1205,50 +1197,22 @@
                         </div>
                       </td>
                       <td class="px-4 py-3">
-                        <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">{{ camp.status }}</span>
+                        <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">{{ row.status }}</span>
                       </td>
-                      <td class="px-4 py-3 text-xs text-gray-500">
-                        @if (camp.startDate) {
-                          {{ camp.startDate }} → {{ camp.endDate || 'Ongoing' }}
-                        } @else {
-                          —
-                        }
+                      <td class="px-4 py-3 text-xs text-gray-500">{{ row.flight }}</td>
+                      <td class="px-4 py-3 text-right text-xs text-gray-700">{{ row.budget }}</td>
+                      <td [class]="'px-4 py-3 text-right text-xs ' + row.spend.className">{{ row.spend.text }}</td>
+                      <td [class]="'px-4 py-3 text-right text-xs ' + row.pacing.className" [attr.data-testid]="reportBackedPanel() + '-campaign-pacing'">
+                        {{ row.pacing.text }}
                       </td>
-                      <td class="px-4 py-3 text-right text-xs text-gray-700">
-                        {{ formatCurrency(camp.totalBudget || camp.dailyBudget) }}
+                      <td [class]="'px-4 py-3 text-right text-xs ' + row.impressions.className">{{ row.impressions.text }}</td>
+                      <td [class]="'px-4 py-3 text-right text-xs ' + row.clicks.className">{{ row.clicks.text }}</td>
+                      <td [class]="'px-4 py-3 text-right text-xs ' + row.ctr.className">{{ row.ctr.text }}</td>
+                      <td
+                        [class]="'px-4 py-3 text-right text-xs ' + row.conversions.className"
+                        [attr.data-testid]="reportBackedPanel() + '-campaign-conversions'">
+                        {{ row.conversions.text }}
                       </td>
-                      @if (camp.fetchFailed) {
-                        <!-- Metrics that could not be read are not zeros: every metric cell is a dash. -->
-                        <td class="px-4 py-3 text-right text-xs text-gray-500">—</td>
-                        <td class="px-4 py-3 text-right text-xs text-gray-500" [attr.data-testid]="reportBackedPanel() + '-campaign-pacing'">—</td>
-                        <td class="px-4 py-3 text-right text-xs text-gray-500">—</td>
-                        <td class="px-4 py-3 text-right text-xs text-gray-500">—</td>
-                        <td class="px-4 py-3 text-right text-xs text-gray-500">—</td>
-                        <td class="px-4 py-3 text-right text-xs text-gray-500" [attr.data-testid]="reportBackedPanel() + '-campaign-conversions'">—</td>
-                      } @else {
-                        <td class="px-4 py-3 text-right text-xs text-gray-700">{{ formatCurrency(camp.spend) }}</td>
-                        <td class="px-4 py-3 text-right" [attr.data-testid]="reportBackedPanel() + '-campaign-pacing'">
-                          @if (camp.pacingUnknown || !camp.pacingLabel) {
-                            <span class="text-xs text-gray-500">Unknown</span>
-                          } @else {
-                            <span [class]="'text-xs font-medium ' + redditPacingClass(camp.pacingLabel)">
-                              {{ camp.pacingPct.toFixed(0) }}% {{ camp.pacingLabel }}
-                            </span>
-                          }
-                        </td>
-                        <td class="px-4 py-3 text-right text-xs text-gray-700">{{ formatNumber(camp.impressions) }}</td>
-                        <td class="px-4 py-3 text-right text-xs text-gray-700">{{ formatNumber(camp.clicks) }}</td>
-                        <td class="px-4 py-3 text-right text-xs text-gray-700">{{ formatPct(camp.ctr) }}</td>
-                        @if (camp.conversionsMeasured === false) {
-                          <td class="px-4 py-3 text-right text-xs text-gray-500" [attr.data-testid]="reportBackedPanel() + '-campaign-conversions'">
-                            Not measured
-                          </td>
-                        } @else {
-                          <td class="px-4 py-3 text-right text-xs text-gray-700" [attr.data-testid]="reportBackedPanel() + '-campaign-conversions'">
-                            {{ camp.conversions }}
-                          </td>
-                        }
-                      }
                     </tr>
                   }
                 </tbody>
@@ -1297,59 +1261,50 @@
             Retry
           </button>
         </div>
-      } @else if (hubSpotData(); as data) {
+      } @else if (hubSpotView(); as view) {
         @if (hubSpotFreshness(); as freshness) {
           <p class="text-xs text-gray-500" data-testid="hubspot-freshness">{{ freshness }}</p>
         }
-        @if (hubSpotEmails().length === 0) {
+        <!-- Outside the rows branch on purpose: with no rows it is what says the answer is incomplete. -->
+        @if (hubSpotCoverageNote(); as note) {
+          <p class="text-xs text-gray-500" data-testid="hubspot-coverage-note">{{ note }}</p>
+        }
+        @if (view.emptyMessage; as emptyMessage) {
           <div class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-12" data-testid="hubspot-empty">
             <i class="fa-brands fa-hubspot text-3xl text-gray-400" aria-hidden="true"></i>
-            @if (data.metricsAsOf) {
-              <p class="text-sm text-gray-500">No HubSpot emails from this project were sent in the last {{ data.days }} days.</p>
-            } @else {
-              <p class="text-sm text-gray-500">This project has no HubSpot emails created through campaigns yet.</p>
-            }
+            <p class="max-w-lg text-center text-sm text-gray-500">{{ emptyMessage }}</p>
           </div>
         } @else {
           <!-- KPI Strip: counts, with each rate over its own denominator. -->
           <div class="grid grid-cols-2 gap-4 md:grid-cols-6" data-testid="hubspot-kpi-strip">
             <div class="rounded-lg border border-gray-200 bg-white p-4">
               <p class="text-xs font-medium text-gray-500">Emails</p>
-              <p class="text-lg font-semibold text-gray-900" data-testid="hubspot-kpi-emails">{{ formatNumber(data.totals.emailCount) }}</p>
+              <p class="text-lg font-semibold text-gray-900" data-testid="hubspot-kpi-emails">{{ view.kpis.emails }}</p>
             </div>
             <div class="rounded-lg border border-gray-200 bg-white p-4">
               <p class="text-xs font-medium text-gray-500">Sent</p>
-              <p class="text-lg font-semibold text-gray-900" data-testid="hubspot-kpi-sent">{{ formatNumber(data.totals.sent) }}</p>
+              <p class="text-lg font-semibold text-gray-900" data-testid="hubspot-kpi-sent">{{ view.kpis.sent }}</p>
             </div>
             <div class="rounded-lg border border-gray-200 bg-white p-4">
               <p class="text-xs font-medium text-gray-500">Delivered</p>
-              <p class="text-lg font-semibold text-gray-900" data-testid="hubspot-kpi-delivered">{{ formatNumber(data.totals.delivered) }}</p>
+              <p class="text-lg font-semibold text-gray-900" data-testid="hubspot-kpi-delivered">{{ view.kpis.delivered }}</p>
             </div>
             <div class="rounded-lg border border-gray-200 bg-white p-4">
               <p class="text-xs font-medium text-gray-500">Opens</p>
-              <p class="text-lg font-semibold text-gray-900">{{ formatNumber(data.totals.opens) }}</p>
-              <p [class]="data.totals.openRate === null ? 'text-xs text-gray-500' : 'text-xs text-gray-700'" data-testid="hubspot-kpi-open-rate">
-                {{ formatRate(data.totals.openRate) }} open rate
-              </p>
+              <p class="text-lg font-semibold text-gray-900">{{ view.kpis.opens }}</p>
+              <p [class]="'text-xs ' + view.kpis.openRate.className" data-testid="hubspot-kpi-open-rate">{{ view.kpis.openRate.text }} open rate</p>
             </div>
             <div class="rounded-lg border border-gray-200 bg-white p-4">
               <p class="text-xs font-medium text-gray-500">Clicks</p>
-              <p class="text-lg font-semibold text-gray-900">{{ formatNumber(data.totals.clicks) }}</p>
-              <p [class]="data.totals.clickRate === null ? 'text-xs text-gray-500' : 'text-xs text-gray-700'" data-testid="hubspot-kpi-click-rate">
-                {{ formatRate(data.totals.clickRate) }} click rate
-              </p>
+              <p class="text-lg font-semibold text-gray-900">{{ view.kpis.clicks }}</p>
+              <p [class]="'text-xs ' + view.kpis.clickRate.className" data-testid="hubspot-kpi-click-rate">{{ view.kpis.clickRate.text }} click rate</p>
             </div>
             <div class="rounded-lg border border-gray-200 bg-white p-4">
               <p class="text-xs font-medium text-gray-500">Bounces</p>
-              <p class="text-lg font-semibold text-gray-900">{{ formatNumber(data.totals.bounces) }}</p>
-              <p [class]="data.totals.bounceRate === null ? 'text-xs text-gray-500' : 'text-xs text-gray-700'" data-testid="hubspot-kpi-bounce-rate">
-                {{ formatRate(data.totals.bounceRate) }} bounce rate
-              </p>
+              <p class="text-lg font-semibold text-gray-900">{{ view.kpis.bounces }}</p>
+              <p [class]="'text-xs ' + view.kpis.bounceRate.className" data-testid="hubspot-kpi-bounce-rate">{{ view.kpis.bounceRate.text }} bounce rate</p>
             </div>
           </div>
-          @if (hubSpotCoverageNote(); as note) {
-            <p class="text-xs text-gray-500" data-testid="hubspot-coverage-note">{{ note }}</p>
-          }
 
           <!-- Email Table -->
           <div class="overflow-hidden rounded-lg border border-gray-200 bg-white" data-testid="hubspot-email-table">
@@ -1370,7 +1325,7 @@
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-100">
-                  @for (email of hubSpotEmails(); track email.emailId) {
+                  @for (email of view.rows; track email.emailId) {
                     <tr class="hover:bg-gray-50" [attr.data-testid]="'hubspot-email-row-' + $index">
                       <td class="px-4 py-3">
                         <div class="flex items-center gap-2">
@@ -1392,26 +1347,17 @@
                           }
                         </div>
                       </td>
-                      <td class="px-4 py-3 text-right text-xs text-gray-700">{{ formatNumber(email.sent) }}</td>
-                      <td class="px-4 py-3 text-right text-xs text-gray-700">{{ formatNumber(email.delivered) }}</td>
-                      <td class="px-4 py-3 text-right text-xs text-gray-700">{{ formatNumber(email.opens) }}</td>
-                      <td
-                        [class]="email.openRate === null ? 'px-4 py-3 text-right text-xs text-gray-500' : 'px-4 py-3 text-right text-xs text-gray-700'"
-                        data-testid="hubspot-email-open-rate">
-                        {{ formatRate(email.openRate) }}
+                      <td class="px-4 py-3 text-right text-xs text-gray-700">{{ email.sent }}</td>
+                      <td class="px-4 py-3 text-right text-xs text-gray-700">{{ email.delivered }}</td>
+                      <td class="px-4 py-3 text-right text-xs text-gray-700">{{ email.opens }}</td>
+                      <td [class]="'px-4 py-3 text-right text-xs ' + email.openRate.className" data-testid="hubspot-email-open-rate">
+                        {{ email.openRate.text }}
                       </td>
-                      <td class="px-4 py-3 text-right text-xs text-gray-700">{{ formatNumber(email.clicks) }}</td>
-                      <td [class]="email.clickRate === null ? 'px-4 py-3 text-right text-xs text-gray-500' : 'px-4 py-3 text-right text-xs text-gray-700'">
-                        {{ formatRate(email.clickRate) }}
-                      </td>
-                      <td [class]="email.bounceRate === null ? 'px-4 py-3 text-right text-xs text-gray-500' : 'px-4 py-3 text-right text-xs text-gray-700'">
-                        {{ formatRate(email.bounceRate) }}
-                      </td>
-                      <td
-                        [class]="email.unsubscribeRate === null ? 'px-4 py-3 text-right text-xs text-gray-500' : 'px-4 py-3 text-right text-xs text-gray-700'">
-                        {{ formatRate(email.unsubscribeRate) }}
-                      </td>
-                      <td class="px-4 py-3 text-right text-xs text-gray-700">{{ formatNumber(email.spamReports) }}</td>
+                      <td class="px-4 py-3 text-right text-xs text-gray-700">{{ email.clicks }}</td>
+                      <td [class]="'px-4 py-3 text-right text-xs ' + email.clickRate.className">{{ email.clickRate.text }}</td>
+                      <td [class]="'px-4 py-3 text-right text-xs ' + email.bounceRate.className">{{ email.bounceRate.text }}</td>
+                      <td [class]="'px-4 py-3 text-right text-xs ' + email.unsubscribeRate.className">{{ email.unsubscribeRate.text }}</td>
+                      <td class="px-4 py-3 text-right text-xs text-gray-700">{{ email.spamReports }}</td>
                     </tr>
                   }
                 </tbody>
@@ -1419,17 +1365,17 @@
             </div>
           </div>
 
-          @if (data.actionItems.length > 0) {
+          @if (view.actionItems.length > 0) {
             <!-- Findings: HubSpot has no Optimize tab, so its rule findings are shown here. -->
             <div class="flex flex-col gap-2" data-testid="hubspot-action-items">
               <h3 class="text-sm font-semibold text-gray-900">Findings</h3>
-              @for (item of data.actionItems; track $index) {
+              @for (item of view.actionItems; track $index) {
                 <div class="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3" [attr.data-testid]="'hubspot-action-item-' + $index">
-                  <span [class]="'inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium ' + priorityClass(item.priority)">
+                  <span [class]="'inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium ' + item.priorityClass">
                     {{ item.priority }}
                   </span>
                   <div class="flex flex-col gap-0.5">
-                    <p class="text-xs font-medium text-gray-900">{{ item.emailName || 'All emails' }}: {{ item.issue }}</p>
+                    <p class="text-xs font-medium text-gray-900">{{ item.heading }}</p>
                     <p class="text-xs text-gray-500">{{ item.action }}</p>
                   </div>
                 </div>
