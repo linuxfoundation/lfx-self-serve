@@ -1385,18 +1385,22 @@ describe('MeetingService.getPastMeetingParticipants', () => {
     expect(merged.is_unknown).toBe(true);
   });
 
-  it("never borrows a notetaker bot's Zoom name onto a person it merges with", async () => {
-    proxyRequest.mockResolvedValueOnce({
-      resources: [
-        participantRecord('a', { email: 'jane@example.com', is_attended: true, is_verified: true }),
-        participantRecord('b', { email: 'jane@example.com', is_attended: true, zoom_user_name: "Jane's Notetaker (Otter.ai)" }),
-      ],
-    });
+  it.each([
+    ['person first', ['person', 'bot']],
+    ['bot first', ['bot', 'person']],
+  ])('never merges a notetaker bot with the person whose email it shares (%s)', async (_, order) => {
+    const records = {
+      person: participantRecord('a', { email: 'jane@example.com', is_attended: true, is_verified: true }),
+      bot: participantRecord('b', { email: 'jane@example.com', is_attended: true, zoom_user_name: "Jane's Notetaker (Otter.ai)" }),
+    };
+    proxyRequest.mockResolvedValueOnce({ resources: order.map((key) => records[key as keyof typeof records]) });
 
-    const [merged] = await service.getPastMeetingParticipants(req, 'meeting-1-occ-1');
+    const result = await service.getPastMeetingParticipants(req, 'meeting-1-occ-1');
 
-    expect(merged.is_verified).toBe(true);
-    expect(merged.zoom_user_name).toBeUndefined();
+    expect(result).toHaveLength(2);
+    const person = result.find((participant) => participant.uid === 'a');
+    expect(person?.is_verified).toBe(true);
+    expect(person?.zoom_user_name).toBeUndefined();
   });
 
   it('does not merge two records with the same email but different usernames', async () => {

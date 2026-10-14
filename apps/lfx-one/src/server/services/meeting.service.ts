@@ -2622,6 +2622,11 @@ export class MeetingService {
   }
 
   private isSamePerson(a: PastMeetingParticipant, b: PastMeetingParticipant): boolean {
+    // A notetaker bot is never the same person as a human, even on a shared email (N-02, #2253):
+    // merged, its Zoom name would make the person read as a bot, depending on query order.
+    if (isPastMeetingNotetakerBot(a) !== isPastMeetingNotetakerBot(b)) {
+      return false;
+    }
     if (a.username && b.username) {
       return a.username === b.username;
     }
@@ -2704,11 +2709,9 @@ export class MeetingService {
         org_name: this.pickNonBlank(preferred.org_name, other.org_name),
         username: this.pickNonBlank(preferred.username, other.username),
         email: this.pickNonBlank(preferred.email, other.email),
-        // N-02: the names behind an attendee row survive the merge, whichever record supplied them,
-        // except a bot's Zoom name: borrowed onto a person, it would make them read as a bot.
-        zoom_user_name: isPastMeetingNotetakerBot({ zoom_user_name: other.zoom_user_name })
-          ? preferred.zoom_user_name
-          : this.pickNonBlank(preferred.zoom_user_name, other.zoom_user_name),
+        // N-02: the names behind an attendee row survive the merge, whichever record supplied them.
+        // A bot is never grouped with a person (`isSamePerson`), so this never borrows a bot's name.
+        zoom_user_name: this.pickNonBlank(preferred.zoom_user_name, other.zoom_user_name),
         mapped_invitee_name: this.pickNonBlank(preferred.mapped_invitee_name, other.mapped_invitee_name),
       };
     });
