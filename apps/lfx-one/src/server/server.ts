@@ -6,7 +6,7 @@ import { REQUEST } from '@angular/core';
 import { AngularNodeAppEngine, createNodeRequestHandler, isMainModule, writeResponseToNodeResponse } from '@angular/ssr/node';
 import { GW_EMBED_ROUTE_PREFIXES, GW_EMBED_STYLESHEET_ROUTE } from '@lfx-one/shared/constants';
 import { AuthContext, RuntimeConfig, ServerRequestContext, User } from '@lfx-one/shared/interfaces';
-import { redactLoggedUrl } from '@lfx-one/shared/utils/auth-fragment.utils';
+import { redactLoggedUrl } from '@lfx-one/shared/utils/credential-redaction.utils';
 import express, { NextFunction, Request, Response } from 'express';
 import { attemptSilentLogin, auth, ConfigParams } from 'express-openid-connect';
 import { randomBytes } from 'node:crypto';

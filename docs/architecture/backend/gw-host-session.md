@@ -2,7 +2,7 @@
 
 Host-session mode is how the embedded Gatewaze admin gets its session. LFX One gets the user's Gatewaze (GoTrue) session server to server with GoTrue's `id_token` grant and keeps it in Valkey. The browser holds only its LFX `appSession` cookie and never sees a Gatewaze token. Tracking issue: #2738.
 
-It is the embed's only mode. The LFID bridge it replaced, where the embed held its own Supabase session in `localStorage` and called a `/api/gw` pass-through with it, was removed in #2738. With host-session mode off, `/api/gatewaze` answers the uniform 404 and the outlet shows its not-configured panel.
+It is the embed's only mode. With host-session mode off, `/api/gatewaze` answers the uniform 404 and the outlet shows its not-configured panel.
 
 This page covers session acquisition, the `/api/gatewaze/session` routes, logout, the Supabase and Gatewaze API proxies, their authorization and middleware exclusions, and the Realtime WebSocket proxy. The embed outlet's side of this mode is in [Gatewaze Embed Host](../frontend/gw-embed.md#session).
 

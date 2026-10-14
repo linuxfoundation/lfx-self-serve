@@ -259,13 +259,13 @@ describe('isGwProxyPath', () => {
     ['a sibling sharing the prefix', '/api/gatewazex'],
     ['a sibling under that prefix', '/api/gatewazex/upload'],
     ['an unrelated api route', '/api/meetings'],
-    ['the retired /api/gw proxy mount', '/api/gw/newsletters/123'],
+    ['a shorter path under /api', '/api/gw/newsletters/123'],
     ['the mount without its leading segment', '/gatewaze/api/x'],
     ['empty', ''],
   ])('does not match %s', (_label, path) => {
     // `/api/gatewazex` is the one that matters: a bare `startsWith('/api/gatewaze')` swallows it and
     // silently strips its body parsing, which surfaces as an empty `req.body` rather than an error.
-    // `/api/gw` is gone, so it gets the body parsers like any other unknown path and answers 404.
+    // `/api/gw` is not a proxy path, so it gets the body parsers like any other unknown path and answers 404.
     expect(isGwProxyPath(path)).toBe(false);
   });
 
