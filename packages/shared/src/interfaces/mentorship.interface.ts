@@ -453,7 +453,7 @@ export interface MentorshipRegisterFailureOptions<TFieldErrors extends object> {
 /**
  * One term in the create body. No `id` (upstream generates it) and dates are date-only `YYYY-MM-DD`, which upstream stores
  * at 00:00 UTC. Upstream needs `endDate` after `startDate`, and `applicationEndDate` strictly after `applicationStartDate`
- * (a same-day window is refused) and before `startDate`.
+ * (a same-day window is refused) and no later than the end of the `endDate` month; the window may run into the term.
  */
 export interface MentorshipEnrollCreateTerm {
   name: string;

@@ -56,12 +56,19 @@ import {
   CAMPAIGN_PLATFORMS,
   DEFAULT_CAMPAIGN_BID_TYPE,
   GOOGLE_ADS_GEO_TARGET_MAP,
+  GOOGLE_ADS_LANGUAGE_ID_PATTERN,
+  GOOGLE_ADS_LANGUAGE_MAP,
+  GOOGLE_ADS_MAX_CALLOUTS,
+  GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
   GOOGLE_ADS_MAX_GEO_TARGETS,
+  GOOGLE_ADS_MAX_LANGUAGES,
   GOOGLE_ADS_MICROS_PER_UNIT,
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
   GOOGLE_CAMPAIGN_CHANNEL_LABELS,
+  GOOGLE_CHANNELS_WITH_AD_EXTENSIONS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
+  GOOGLE_CHANNELS_WITH_LANGUAGES,
   GOOGLE_CREATIVE_FIELD_SPECS,
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
@@ -96,6 +103,9 @@ import {
   VALID_CAMPAIGN_BUDGET_TYPES,
   VALID_CAMPAIGN_NEGATIVE_KEYWORD_MATCH_TYPES,
   VALID_CAMPAIGN_TOGGLE_STATUSES,
+  googleAdsEchoed,
+  googleAdsToLower,
+  googleAdsTrimSpace,
   isCanonicalGoogleAdsResourceId,
   isMicrosoftMatchType,
 } from '@lfx-one/shared/constants';
@@ -513,8 +523,8 @@ export class CampaignController {
         }
       }
 
-      // The same bound for the other half of this handler. `googleCreative` and `googleBidding`
-      // filter, trim and re-allocate every string they are handed, and nothing upstream of them
+      // The same bound for the other half of this handler. `googleCreative`, `googleBidding` and
+      // `googleCallouts` filter, trim and re-allocate every string they are handed, and nothing upstream of them
       // bounds the count — so this runs before `createConfigEnvelope` for the reason the HubSpot
       // check above does.
       const oversizedGoogleField = this.oversizedGoogleCreativeField(body);
@@ -676,6 +686,109 @@ export class CampaignController {
               )
             );
             return;
+          }
+        }
+
+        // The language twin of the two guards above: a list that fails in Go comes back as the
+        // orchestrator's opaque "platform campaign creation failed". So every upstream refusal is
+        // made here first, by name, in UPSTREAM'S OWN ORDER — JSON decode, `validateCriteriaPlan`'s
+        // Demand Gen fence, then `resolveLanguageList`'s cap and per-entry tests — so a request that
+        // breaks two rules is refused for the one upstream would name. Judged on the dispatched list.
+        const rawLanguages = body?.languages;
+        if (rawLanguages !== undefined && rawLanguages !== null) {
+          // Upstream decodes `languages` into a Go `[]string`, so a non-array or a non-string entry
+          // is refused before any validator runs. Reading either as absent would dispatch an
+          // every-language campaign the caller never asked for.
+          if (!Array.isArray(rawLanguages) || rawLanguages.some((l) => typeof l !== 'string')) {
+            next(
+              ServiceValidationError.forField('languages', 'Google Ads languages must be a list of language codes or numeric language constant ids.', {
+                operation: 'campaign_create',
+                service: 'campaign_controller',
+              })
+            );
+            return;
+          }
+
+          const languages = this.googleLanguageList(rawLanguages);
+          const googleChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
+          if (languages.length > 0 && typeof googleChannel === 'string') {
+            // REFUSED by name, not dropped: upstream's contract for the field is "refused, never
+            // silently dropped", and `validateCriteriaPlan` fails the whole Demand Gen create on it.
+            // The UI never sends this — its control and payload gate on the same channel list.
+            if (!(GOOGLE_CHANNELS_WITH_LANGUAGES as readonly string[]).includes(googleChannel)) {
+              next(
+                ServiceValidationError.forField(
+                  'languages',
+                  `Google Ads does not accept campaign languages on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove the languages or pick a different channel, then create again.`,
+                  { operation: 'campaign_create', service: 'campaign_controller' }
+                )
+              );
+              return;
+            }
+
+            // Upstream's cap, checked BEFORE de-duplication there and so here too: a list over the
+            // cap only because it repeats a code is still refused.
+            if (languages.length > GOOGLE_ADS_MAX_LANGUAGES) {
+              next(
+                ServiceValidationError.forField(
+                  'languages',
+                  `Google Ads accepts at most ${GOOGLE_ADS_MAX_LANGUAGES} languages on one campaign, and this one has ${languages.length}. Remove some and create again.`,
+                  { operation: 'campaign_create', service: 'campaign_controller' }
+                )
+              );
+              return;
+            }
+
+            // Entry by entry, refusing on the FIRST bad one, as `resolveLanguageList` does.
+            for (const language of languages) {
+              const refusal = this.googleLanguageRefusal(language);
+              if (refusal) {
+                next(ServiceValidationError.forField('languages', refusal, { operation: 'campaign_create', service: 'campaign_controller' }));
+                return;
+              }
+            }
+          }
+        }
+      }
+
+      // The callout twin of the language guard above, in UPSTREAM'S OWN ORDER and after it, as
+      // `validateAssetPlan` runs after `validateCriteriaPlan`: JSON decode, the Search-only fence,
+      // `validateCallouts`' cap, then each entry (blank, rune bound, case-folded repeat), first bad
+      // one wins. Each would otherwise fail in Go as the opaque "platform campaign creation failed".
+      const rawCallouts = body?.callouts;
+      if (cutoverOn && platforms.includes('google-ads') && rawCallouts !== undefined && rawCallouts !== null) {
+        const refuse = (message: string): void =>
+          next(ServiceValidationError.forField('callouts', message, { operation: 'campaign_create', service: 'campaign_controller' }));
+        // Upstream decodes `callouts` into a Go `[]string`, so either fault is refused there before
+        // any validator runs. Reading it as absent would create the campaign without them.
+        if (!Array.isArray(rawCallouts) || rawCallouts.some((c) => typeof c !== 'string')) {
+          refuse('Google Ads callouts must be a list of text.');
+          return;
+        }
+        const callouts = this.googleCalloutList(rawCallouts);
+        const googleChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
+        if (callouts.length > 0 && typeof googleChannel === 'string') {
+          // REFUSED by name, not withheld: `validateAssetPlan` fails the whole create on any channel
+          // but Search. The UI never sends this — its section and payload gate on the same list.
+          if (!(GOOGLE_CHANNELS_WITH_AD_EXTENSIONS as readonly string[]).includes(googleChannel)) {
+            refuse(
+              `Google Ads only accepts callouts on Search campaigns, not on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove the callouts or pick Search, then create again.`
+            );
+            return;
+          }
+          if (callouts.length > GOOGLE_ADS_MAX_CALLOUTS) {
+            refuse(
+              `Google Ads accepts at most ${GOOGLE_ADS_MAX_CALLOUTS} callouts on one campaign, and this one has ${callouts.length}. Remove some and create again.`
+            );
+            return;
+          }
+          const seen = new Set<string>();
+          for (const [index, callout] of callouts.entries()) {
+            const refusal = this.googleCalloutRefusal(callout, index, seen);
+            if (refusal) {
+              refuse(refusal);
+              return;
+            }
           }
         }
       }
@@ -3406,12 +3519,15 @@ export class CampaignController {
       // creates a Video campaign, so `createCampaigns` refuses a `video` channel before this config
       // is ever dispatched. There is nothing for a video creative to attach to.
       const creative = this.googleCreative(body, selectedChannels[0]);
+      // Normalized only — `createCampaign` names every language refusal before this is dispatched.
+      const languages = this.googleLanguages(body, selectedChannels[0]);
       return {
         budget: body.budgetUsd ?? 0,
         channel: selectedChannels[0],
         ...this.googleFlightWindow(body),
         ...this.googleBidding(body),
         ...(cleanGeoTargets.length > 0 ? { geoTargets: cleanGeoTargets } : {}),
+        ...languages,
         ...creative,
       };
     }
@@ -3437,6 +3553,14 @@ export class CampaignController {
     // the denomination, and would make the gap harder to find. Every account in play today is USD.
     const budget = ((body.budgetUsd ?? 0) * pct) / 100;
 
+    // Search always takes languages — it is the channel upstream's own header calls the one these
+    // criteria were written for — so the channel gate inside the helper can only pass here. The call
+    // is still made through the same helper so the two branches cannot normalize differently.
+    const searchLanguages = this.googleLanguages(body, 'search');
+
+    // Normalized only — `createCampaign` names every callout refusal before this is dispatched.
+    const callouts = this.googleCallouts(body);
+
     return {
       budget,
       // Explicit rather than relying on the upstream default. Absent means Search there
@@ -3455,7 +3579,52 @@ export class CampaignController {
       // route pre-LFXV2-3283 callers take. `geoTargets: []` and no key at all mean the same thing
       // to the dispatcher today; only one of them stays true if that default is ever tightened.
       ...(cleanGeoTargets.length > 0 ? { geoTargets: cleanGeoTargets } : {}),
+      ...searchLanguages,
+      ...callouts,
     };
+  }
+
+  /**
+   * The Search campaign's callout extensions, spread-ready, or `{}` when the request names none.
+   *
+   * Search only, so only the Search branch calls it: `createCampaign` refuses callouts on any other
+   * channel by name, because `validateAssetPlan` fails the whole create there. Omitted rather than
+   * sent empty, the absent-key route every caller predating the field takes.
+   */
+  private googleCallouts(body: CampaignCreateRequest): { callouts?: string[] } {
+    const clean = this.googleCalloutList(body?.callouts);
+    return clean.length > 0 ? { callouts: clean } : {};
+  }
+
+  /**
+   * The callout list as dispatched: strings only (`createCampaign` refuses anything else first),
+   * each trimmed with Go's rules as `validateCallouts` trims it. Blanks are KEPT so they are refused
+   * by name; upstream refuses them too ("callout %d is empty").
+   */
+  private googleCalloutList(raw: unknown): string[] {
+    if (!Array.isArray(raw)) return [];
+    return raw.filter((c): c is string => typeof c === 'string').map((c) => googleAdsTrimSpace(c));
+  }
+
+  /**
+   * Why upstream would refuse one entry of a trimmed callout list, or `null` when it would not.
+   *
+   * `validateCallouts`' per-entry branches in order: blank, then the rune bound (`[...text]`, which
+   * counts code points as `utf8.RuneCountInString` does), then a repeat keyed on Go's
+   * `strings.ToLower`. `seen` carries the keys across entries. The echo is cut short: the text comes
+   * from an unvalidated body.
+   */
+  private googleCalloutRefusal(callout: string, index: number, seen: Set<string>): string | null {
+    if (callout === '') return `Google Ads callouts cannot include a blank entry (callout ${index + 1}). Remove it and create again.`;
+    const shown = googleAdsEchoed(callout);
+    const runes = [...callout].length;
+    if (runes > GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES) {
+      return `Google Ads accepts callouts of at most ${GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES} characters, and ${shown} has ${runes}. Shorten it and create again.`;
+    }
+    const key = googleAdsToLower(callout);
+    if (seen.has(key)) return `Google Ads refuses a campaign that lists the callout ${shown} more than once. Remove the repeat and create again.`;
+    seen.add(key);
+    return null;
   }
 
   /**
@@ -3473,9 +3642,10 @@ export class CampaignController {
     const raw = body as unknown as Record<string, unknown>;
     const candidates: [string, unknown][] = Object.values(GOOGLE_CREATIVE_REQUEST_KEYS).map((key) => [key, raw[key]]);
     candidates.push(['conversionActions', raw['conversionActions']]);
+    candidates.push(['callouts', raw['callouts']]);
 
     for (const [key, source] of candidates) {
-      // A creative key holds an object of fields; `conversionActions` is a bare list on the body.
+      // A creative key holds an object of fields; `conversionActions` and `callouts` are bare lists.
       const entries: [string, unknown][] = this.boundableEntries(key, source);
 
       for (const [field, value] of entries) {
@@ -3502,7 +3672,8 @@ export class CampaignController {
    * The one source above, flattened into the `[label, value]` pairs the bound is applied to.
    *
    * A creative key holds an object whose fields are each bounded under their own `key.field` label;
-   * `conversionActions` is a bare list on the body and is bounded as one value under its own key.
+   * `conversionActions` and `callouts` are bare lists on the body, each bounded as one value under
+   * its own key.
    * Anything else — absent, a scalar, a shape the normaliser will drop — yields nothing to check.
    */
   private boundableEntries(key: string, source: unknown): [string, unknown][] {
@@ -3596,6 +3767,65 @@ export class CampaignController {
     if (startDate) window['startDate'] = startDate;
     if (endDate) window['endDate'] = endDate;
     return window;
+  }
+
+  /**
+   * The campaign's language list, normalized and spread-ready, or `{}` when the request names none.
+   *
+   * Omitting the key is NOT neutral in the direction the other omissions here are. An absent list
+   * means Google's own default, which is to serve in EVERY language — so this field narrows, and
+   * leaving it out leaves the campaign exactly as wide as it is today. That is why an empty result
+   * omits rather than refuses, as `geoTargets` does.
+   *
+   * CHANNEL-GATED, which `geoTargets` is not. `validateCriteriaPlan`
+   * (`internal/platform/googleads/campaign_criteria.go`) refuses the whole non-location criteria
+   * set on the Demand Gen path — that channel attaches targeting at the ad group level — so a
+   * Demand Gen create carrying languages fails upstream with nothing created. So this helper never
+   * forwards a list for a channel outside {@link GOOGLE_CHANNELS_WITH_LANGUAGES}, and the `{}` it
+   * returns there is never dispatched either: `createCampaign` reads the request's own list and
+   * refuses such a create by name before anything is sent, on upstream's "refused, never silently
+   * dropped" rule for this field.
+   *
+   * NORMALIZES ONLY. Every refusal is made by name in `createCampaign`, in upstream's order, before
+   * this config is dispatched; judging one here too would answer it twice, and less precisely.
+   */
+  private googleLanguages(body: CampaignCreateRequest, channel: GoogleCampaignChannel): Record<string, unknown> {
+    if (!(GOOGLE_CHANNELS_WITH_LANGUAGES as readonly string[]).includes(channel)) return {};
+    const clean = this.googleLanguageList(body?.languages);
+    return clean.length > 0 ? { languages: clean } : {};
+  }
+
+  /**
+   * The language list as dispatched: strings only (`createCampaign` refuses anything else first),
+   * trimmed and upper-cased as `resolveLanguageList` does. Blanks are KEPT: upstream counts them
+   * toward the Demand Gen fence and the cap and then refuses them, so dropping one here would turn
+   * `['']` into an every-language campaign. `createCampaign` refuses them by name first.
+   */
+  private googleLanguageList(raw: unknown): string[] {
+    if (!Array.isArray(raw)) return [];
+    return raw.filter((l): l is string => typeof l === 'string').map((l) => l.trim().toUpperCase());
+  }
+
+  /**
+   * Why upstream would refuse one entry of a normalized language list, or `null` when it would not.
+   *
+   * Mirrors `resolveLanguageList`'s per-entry branches in order. A blank entry is refused. A
+   * NUMERIC entry is a raw language constant id: it must be canonical (`canonicalCampaignID`
+   * upstream, {@link isCanonicalGoogleAdsResourceId} here) but is NOT tested against
+   * {@link GOOGLE_ADS_LANGUAGE_MAP}, since upstream accepts ids outside the curated table. Anything
+   * else must be a code in the map. The echo is cut short: the entry comes from an unvalidated body.
+   */
+  private googleLanguageRefusal(language: string): string | null {
+    if (language === '') return 'Google Ads languages cannot include a blank entry. Remove it and create again.';
+    const shown = googleAdsEchoed(language);
+    if (GOOGLE_ADS_LANGUAGE_ID_PATTERN.test(language)) {
+      return isCanonicalGoogleAdsResourceId(language)
+        ? null
+        : `Google Ads language ${shown} is not the canonical spelling of a positive language constant id. Use the id with no leading zeros, or pick a language from the list, and create again.`;
+    }
+    return Object.hasOwn(GOOGLE_ADS_LANGUAGE_MAP, language)
+      ? null
+      : `Google Ads cannot target ${shown} on this path. Pick a different language and create again.`;
   }
 
   /**

@@ -84,6 +84,15 @@
   {{ redditNoAdWarning() }}
 </div>
 
+<!--
+  Google callouts withheld, announced. Top-level for the same reason as the three regions above:
+  the visible notice is created by the change that gives it its text. Polite, because the campaign
+  is still created; the visible `<p>` carries no role, or the sentence would be announced twice.
+-->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-callouts-withheld-live">
+  {{ googleCalloutsWithheldWarning() }}
+</div>
+
 <!-- Nothing renders in the 'off' state — see briefPersistence. -->
 @switch (briefPersistence().status) {
   @case ('saving') {
@@ -352,6 +361,162 @@
                 ad account allows.
               </p>
             }
+          }
+        </div>
+      }
+
+      <!--
+        Google Ads: campaign languages.
+
+        Rendered against ONE channel — `googleLanguagesChannel()`, the same one the request will
+        carry — because upstream's `validateCriteriaPlan` accepts campaign languages on Search,
+        Performance Max, Video and Display but REFUSES the whole non-location criteria set on
+        Demand Gen. Offering the control on Demand Gen would offer a refusal.
+
+        Empty means every language, which is Google's own default: this list only ever NARROWS, so
+        an untouched section changes nothing about what the campaign serves.
+      -->
+      @if (googleLanguagesChannel()) {
+        <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-google-languages-section">
+          <label class="mb-2 block text-xs font-medium text-gray-700" for="google-language-add">
+            Google Languages ({{ googleLanguages().length }}/{{ googleMaxLanguages }})
+          </label>
+          <div class="flex flex-wrap items-center gap-2">
+            @for (chip of googleLanguageChips(); track chip.code; let i = $index) {
+              <span class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
+                {{ chip.name }}
+                <button
+                  type="button"
+                  (click)="removeGoogleLanguage(i)"
+                  class="ml-0.5 text-blue-400 hover:text-blue-600"
+                  [attr.aria-label]="'Remove ' + chip.name"
+                  [attr.data-testid]="'implementation-google-language-remove-' + chip.code">
+                  <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                </button>
+              </span>
+            }
+            @if (googleLanguages().length < googleMaxLanguages) {
+              <!--
+                A select for the same reason the geo control is one: upstream resolves every code
+                against a curated map of language constants and hard-errors on a miss, so the
+                accepted set is enumerable here. Options carry the language NAME rather than the
+                code, which is why the list is sorted by name.
+              -->
+              <select
+                id="google-language-add"
+                (change)="onGoogleLanguageAdd($event)"
+                class="rounded-md border border-dashed border-blue-300 bg-white px-2 py-1 text-xs text-blue-600"
+                data-testid="implementation-google-language-add">
+                <option value="">+ Add language</option>
+                @for (option of googleLanguageOptions; track option.code) {
+                  <option [value]="option.code">{{ option.label }}</option>
+                }
+              </select>
+            } @else {
+              <span class="text-xs text-gray-500" data-testid="implementation-google-languages-full">
+                Maximum of {{ googleMaxLanguages }} languages reached.
+              </span>
+            }
+          </div>
+          @if (googleLanguages().length === 0) {
+            <span class="mt-2 block text-xs text-gray-500" data-testid="implementation-google-languages-default">
+              No languages added — this campaign serves in every language, which is Google's default.
+            </span>
+          }
+        </div>
+      }
+
+      <!--
+        Languages picked under one channel and then withheld because the dispatched channel takes
+        none. The list is held, not sent, so the campaign serves in every language — said out loud
+        here rather than left for the operator to infer from the section disappearing.
+      -->
+      @if (googleLanguagesWithheldOn(); as channelLabel) {
+        <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-languages-withheld">
+          <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ channelLabel }} campaigns do not take campaign languages, so the
+          {{ googleLanguages().length }} you picked will not be sent and this campaign will serve in every language. Switch the channel back to keep them.
+        </p>
+      }
+
+      <!-- Callouts typed under Search and withheld after a switch. Announced by the region at the top. -->
+      @if (googleCalloutsWithheldWarning(); as warning) {
+        <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-callouts-withheld">
+          <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
+        </p>
+      }
+
+      <!--
+        Google Ads: callout extensions.
+
+        SEARCH ONLY, and the gate is `googleCalloutsAvailable` rather than `showGoogleSection` —
+        upstream's `validateAssetPlan` refuses the whole extension set on any other channel at
+        preflight, BEFORE the budget mutate, so a callout sent on a Performance Max create produces
+        no campaign at all rather than a campaign without callouts. Hiding the section there is the
+        same withholding the payload makes, in the one place the operator can see it.
+      -->
+      @if (googleCalloutsAvailable()) {
+        <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-google-callouts-section">
+          <label class="mb-2 block text-xs font-medium text-gray-700" for="google-callout-add">
+            Google Callouts ({{ googleCallouts().length }}/{{ googleMaxCallouts }})
+          </label>
+          <div class="flex flex-wrap items-center gap-2">
+            @for (callout of googleCallouts(); track callout; let i = $index) {
+              <span class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
+                {{ callout }}
+                <button
+                  type="button"
+                  (click)="removeGoogleCallout(i)"
+                  class="ml-0.5 text-blue-400 hover:text-blue-600"
+                  [attr.aria-label]="'Remove ' + callout"
+                  [attr.data-testid]="'implementation-google-callout-remove-' + callout">
+                  <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                </button>
+              </span>
+            }
+            @if (!googleCalloutsFull()) {
+              <!--
+                Free text, unlike the geo select above: a callout is ad copy the operator writes,
+                so there is no set to enumerate. No maxlength either — the add trims BEFORE it
+                counts, so a browser cap would clip padded input and count what was never sent.
+                The live counter below supplies the feedback instead.
+              -->
+              <input
+                id="google-callout-add"
+                type="text"
+                placeholder="+ Add callout"
+                [value]="googleCalloutDraft()"
+                (input)="onGoogleCalloutDraftInput($event)"
+                (change)="onGoogleCalloutAdd($event)"
+                (keydown.enter)="onGoogleCalloutAdd($event); $event.preventDefault()"
+                [attr.aria-invalid]="googleCalloutDraftTooLong() || googleCalloutDraftDuplicate() ? 'true' : null"
+                [attr.aria-describedby]="googleCalloutDraftErrorId()"
+                class="rounded-md border border-dashed border-blue-300 bg-white px-3 py-1.5 text-xs text-blue-600 placeholder:text-blue-400"
+                data-testid="implementation-google-callout-add" />
+            } @else {
+              <span class="text-xs text-gray-500" data-testid="implementation-google-callouts-full">
+                Maximum of {{ googleMaxCallouts }} callouts reached — remove one to add another.
+              </span>
+            }
+          </div>
+          <!--
+            One line per upstream refusal the text in the box would hit, named while it is still
+            editable. Both are whole-create refusals at the other end: `validateCallouts` runs
+            inside the preflight, so either one costs the operator the entire campaign and arrives
+            as the orchestrator's opaque "platform campaign creation failed".
+          -->
+          @if (googleCalloutDraftTooLong()) {
+            <p id="google-callout-too-long" role="alert" class="mt-2 text-xs text-red-600" data-testid="implementation-google-callout-too-long">
+              Callout is {{ googleCalloutDraftLength() }} characters — Google's limit is {{ googleMaxCalloutRunes }}.
+            </p>
+          } @else if (googleCalloutDraftDuplicate()) {
+            <p id="google-callout-duplicate" role="alert" class="mt-2 text-xs text-red-600" data-testid="implementation-google-callout-duplicate">
+              That callout is already on the list — Google refuses a campaign that lists the same callout twice.
+            </p>
+          }
+          @if (googleCallouts().length === 0) {
+            <span class="mt-2 block text-xs text-gray-500" data-testid="implementation-google-callouts-empty">
+              No callouts added — this campaign is created without callout extensions.
+            </span>
           }
         </div>
       }

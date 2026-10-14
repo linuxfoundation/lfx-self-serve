@@ -5,6 +5,8 @@ import { MAX_EVENTS_PAGE_SIZE, MAX_SNOWFLAKE_PAGINATION_PAGE } from '@lfx-one/sh
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
+import { ServiceValidationError } from '../errors';
+
 const {
   getEffectiveEmail,
   getTravelFundEvents,
@@ -137,6 +139,46 @@ describe('EventsController.getTravelFundEvents', () => {
 
     expect(getTravelFundEvents.mock.calls[0][1]).toMatchObject({ eventId: 'evt-1', searchQuery: 'summit', country: 'China' });
     expect(res.json).toHaveBeenCalledWith({ data: [], total: 0 });
+  });
+});
+
+describe.each<[string, Mock, number, Handler]>([
+  ['getMyEvents', getMyEvents, 2, (c, req, res, next) => c.getMyEvents(req, res, next)],
+  ['getTravelFundEvents', getTravelFundEvents, 1, (c, req, res, next) => c.getTravelFundEvents(req, res, next)],
+])('EventsController.%s date filters', (_name, serviceMethod, optionsIndex, handler) => {
+  const controller = new EventsController();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    serviceMethod.mockResolvedValue({ data: [], total: 0 });
+  });
+
+  it.each([
+    ['startDateFrom', 'x'],
+    ['startDateTo', 'x'],
+    ['startDateFrom', '2026-02-31'],
+    ['startDateTo', '2026-02-31'],
+    ['startDateFrom', '2026-10-01T25:00:00Z'],
+    ['startDateTo', '2026-10-01T04:00:00+05:00'],
+  ])('rejects %s=%s before querying events', async (field, value) => {
+    const next = vi.fn();
+    const res = buildRes();
+
+    await handler(controller, buildReq({ [field]: value }), res, next);
+
+    expect(next).toHaveBeenCalledExactlyOnceWith(expect.any(ServiceValidationError));
+    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 400, validationErrors: [expect.objectContaining({ field })] });
+    expect(serviceMethod).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it.each(['2026-10-01', new Date('2026-10-01T04:00:00.000Z').toISOString()])('preserves the accepted date filter %s', async (value) => {
+    const next = vi.fn();
+
+    await handler(controller, buildReq({ startDateFrom: value, startDateTo: value }), buildRes(), next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(serviceMethod.mock.calls[0][optionsIndex]).toMatchObject({ startDateFrom: value, startDateTo: value });
   });
 });
 

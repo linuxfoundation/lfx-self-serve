@@ -1,0 +1,153 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// Same reason as clas.route.spec.ts: the import graph reaches Angular's partially-compiled packages.
+import '@angular/compiler';
+
+import express from 'express';
+import type { Server } from 'node:http';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+/**
+ * Router-level coverage for /api/gatewaze: the gates are registered, in order, ahead of the session
+ * routes, and every /session answer carries `Cache-Control: no-store`. The gates and the controller
+ * have their own specs; these protect the wiring, which a unit test of either would not notice losing.
+ */
+
+const { hostSessionEnabled, isImpersonating, getPersonas, getWriterSummary, getGatewazeMe, endGatewazeSession } = vi.hoisted(() => ({
+  hostSessionEnabled: vi.fn(() => true),
+  isImpersonating: vi.fn(() => false),
+  getPersonas: vi.fn(),
+  getWriterSummary: vi.fn(),
+  getGatewazeMe: vi.fn(),
+  endGatewazeSession: vi.fn(),
+}));
+
+vi.mock('../services/gatewaze-session.service', () => ({
+  isGatewazeHostSessionEnabled: hostSessionEnabled,
+  getGatewazeSessionService: () => ({ getGatewazeMe, endGatewazeSession }),
+  resolveGatewazeHostSessionConfig: () => ({ anonKey: 'sb_publishable_synthetic' }),
+}));
+vi.mock('../utils/auth-helper', async () => ({
+  ...(await vi.importActual<typeof import('../utils/auth-helper')>('../utils/auth-helper')),
+  isImpersonating,
+}));
+vi.mock('../utils/persona-helper', () => ({ personaDetectionService: { getPersonas } }));
+vi.mock('../services/project.service', () => ({ ProjectService: vi.fn(() => ({ getWriterSummary })) }));
+vi.mock('../services/logger.service', () => ({
+  logger: {
+    debug: vi.fn(),
+    startOperation: vi.fn(() => 0),
+    success: vi.fn(),
+    error: vi.fn(),
+    warning: vi.fn(),
+    info: vi.fn(),
+    getLastOperation: vi.fn(() => undefined),
+  },
+}));
+
+const gatewazeRouter = (await import('./gatewaze.route')).default;
+const gwProxyRouter = (await import('./gw-proxy.route')).default;
+const { apiErrorHandler } = await import('../middleware/error-handler.middleware');
+
+let server: Server;
+let baseUrl: string;
+
+beforeAll(async () => {
+  const app = express();
+  app.use(express.json());
+  // Stands in for authMiddleware: requireGwEmbedAccess checks the bearer before anything else.
+  app.use((req, _res, next) => {
+    req.bearerToken = 'synthetic-bearer';
+    next();
+  });
+  app.use('/api/gatewaze', gatewazeRouter);
+  app.use('/api/gw', gwProxyRouter);
+  app.use(apiErrorHandler);
+  await new Promise<void>((resolve) => {
+    server = app.listen(0, '127.0.0.1', resolve);
+  });
+  const address = server.address();
+  baseUrl = `http://127.0.0.1:${typeof address === 'object' && address ? address.port : 0}`;
+});
+
+afterAll(async () => {
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+});
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.stubEnv('LFX_GATEWAZE_EMBED_ENABLED', 'true');
+  vi.stubEnv('PCC_BASE_URL', 'https://app.example.test');
+  hostSessionEnabled.mockReturnValue(true);
+  isImpersonating.mockReturnValue(false);
+  getPersonas.mockResolvedValue({ isRootWriter: true, personas: [] });
+  getGatewazeMe.mockResolvedValue({ outcome: 'ok', user: { id: 'gw-user-synthetic' } });
+  endGatewazeSession.mockResolvedValue({ found: true, revoked: true, deleted: true });
+});
+
+afterEach(() => vi.unstubAllEnvs());
+
+const me = () => fetch(`${baseUrl}/api/gatewaze/session/me`);
+
+describe('/api/gatewaze router', () => {
+  it('serves /session/me to an authorized caller, with no-store', async () => {
+    const res = await me();
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ user: { id: 'gw-user-synthetic' } });
+    expect(res.headers.get('cache-control')).toBe('no-store');
+  });
+
+  it('serves /session/logout as a POST', async () => {
+    const res = await fetch(`${baseUrl}/api/gatewaze/session/logout`, { method: 'POST', headers: { apikey: 'sb_publishable_synthetic' } });
+
+    expect(res.status).toBe(204);
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    expect(endGatewazeSession).toHaveBeenCalledOnce();
+  });
+
+  it('answers the same uniform 404 as /api/gw with its flag off, before any authorization', async () => {
+    hostSessionEnabled.mockReturnValue(false);
+    const res = await me();
+    vi.stubEnv('LFX_GATEWAZE_EMBED_ENABLED', 'false');
+    const gwRes = await fetch(`${baseUrl}/api/gw/anything`);
+
+    expect(res.status).toBe(404);
+    expect(gwRes.status).toBe(404);
+    const [body, gwBody] = [await res.json(), await gwRes.json()];
+    expect(body.code).toBe('NOT_FOUND');
+    expect(Object.keys(body).sort()).toEqual(Object.keys(gwBody).sort());
+    expect(body.error).toBe(gwBody.error);
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    expect(getPersonas).not.toHaveBeenCalled();
+    expect(getGatewazeMe).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['me', () => me()],
+    ['logout', () => fetch(`${baseUrl}/api/gatewaze/session/logout`, { method: 'POST', headers: { apikey: 'sb_publishable_synthetic' } })],
+  ])('refuses a signed-in caller with no ED, root or writer access on %s with 403', async (_route, send) => {
+    getPersonas.mockResolvedValue({ isRootWriter: false, personas: [] });
+    getWriterSummary.mockResolvedValue({ hasWriterFoundation: false, hasWriterProject: false });
+
+    const res = await send();
+
+    expect(res.status).toBe(403);
+    expect((await res.json()).code).toBe('GW_EMBED_ACCESS_REQUIRED');
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    expect(getGatewazeMe).not.toHaveBeenCalled();
+    expect(endGatewazeSession).not.toHaveBeenCalled();
+  });
+
+  it('refuses an impersonating caller with 403 before any session is touched', async () => {
+    isImpersonating.mockReturnValue(true);
+
+    const res = await me();
+
+    expect(res.status).toBe(403);
+    expect((await res.json()).code).toBe('GW_EMBED_IMPERSONATION_BLOCKED');
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    expect(getGatewazeMe).not.toHaveBeenCalled();
+  });
+});

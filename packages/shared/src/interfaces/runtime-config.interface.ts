@@ -77,4 +77,12 @@ export interface RuntimeConfig {
    * closed on an empty value, like the Supabase pair above.
    */
   gwEmbedUrl: string;
+
+  /**
+   * True when Gatewaze host-session mode is on and fully configured on the server
+   * (`resolveGatewazeHostSessionConfig`): LFX One holds the Gatewaze session and serves it under
+   * `/api/gatewaze`, so the outlet mounts the embed in host mode instead of the LFID bridge. Computed
+   * from the same check the `/api/gatewaze` routes use, so the two cannot disagree.
+   */
+  gwHostSession: boolean;
 }
