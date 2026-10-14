@@ -46,8 +46,11 @@ export function shouldRecordReplay(url: string, origin: string): boolean {
  * redirect) carries a credential, and on a history traversal (`popState`) once the browser has
  * already moved to such a URL. The caller must subscribe `popState` in the capture phase before
  * RUM starts, so this runs ahead of RUM's own listener, which records the new view. Once a
- * navigation settles, recording follows the URL actually shown. A URL change made outside the
- * router leaves the state as it was until the next navigation, so replay stays stopped meanwhile.
+ * navigation settles, recording follows the URL actually shown.
+ *
+ * A URL change made outside the router, such as the Gatewaze embed's own `pushState`, is not
+ * observed. Recording keeps its current state until the next router navigation or history
+ * traversal. That is safe only while no such change adds a credential to the URL.
  *
  * @param routerEvents The router's event stream.
  * @param popState Emits on every `popstate`, after the browser has moved to the new URL.
