@@ -5,7 +5,7 @@ import { GW_WRITER_SUMMARY_CACHE_TTL_MS, GW_WRITER_SUMMARY_SWEEP_MS } from '@lfx
 import type { PersonaType, WriterSummary } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
-import { AuthorizationError } from '../errors';
+import { AuthorizationError, MicroserviceError } from '../errors';
 import { drainRequestBody, ensureGwRequestId } from '../helpers/gw-api.helper';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { logger } from '../services/logger.service';
@@ -22,7 +22,7 @@ const projectService = new ProjectService();
  * `personasCache`: same TTL, same store-the-Promise-before-awaiting so concurrent callers share
  * one round trip, same eviction of failures so a blip is not pinned for the whole window.
  *
- * Needed because `/api/gw/*` is not a page-load endpoint. The embed's newsletter and media screens
+ * Needed because `/api/gatewaze/*` is not a page-load endpoint. The embed's newsletter and media screens
  * issue many proxied calls each, and `getWriterSummary` fully paginates the caller's direct grants
  * through the query service and then batch access-checks every one of them — its own docstring
  * says it "always fully paginates and access-checks every direct grant", with no short-circuit.
@@ -99,7 +99,7 @@ async function getCachedWriterSummary(req: Request): Promise<WriterSummary> {
 }
 
 /**
- * Authorization for the `/api/gw/*` embed proxy.
+ * Authorization for the `/api/gatewaze/*` embed routes (`gatewaze.route.ts`).
  *
  * Exists because the BFF was strictly weaker than the UI it serves. Both Angular mounts are gated
  * by `newsletterAccessGuard` — ED persona, or writer on the route's foundation/project — while the
@@ -123,7 +123,7 @@ async function getCachedWriterSummary(req: Request): Promise<WriterSummary> {
  * That ordering alone is not enough, though, and an earlier version of this comment claimed it
  * was — that the enumeration stayed "off the hot path for the personas that actually use the
  * pilot". It only reached callers who are neither root nor ED, but plain writers ARE pilot users
- * (this middleware and `newsletterAccessGuard` both admit them), and `/api/gw/*` is called many
+ * (this middleware and `newsletterAccessGuard` both admit them), and `/api/gatewaze/*` is called many
  * times per screen, so those callers paid a full paginated grant sweep per request. Hence
  * `getCachedWriterSummary` above.
  */
@@ -135,20 +135,23 @@ export async function requireGwEmbedAccess(req: Request, res: Response, next: Ne
     // minting here and again in the controller produced two, and the caller saw only the last.
     ensureGwRequestId(res);
 
-    // Hand straight to the controller when the pilot is off or the caller has no bearer. The
-    // controller answers both with a uniform 404, and that is the point: a 403 here would tell an
-    // unauthorized prober that `/api/gw` exists and is merely disabled. Authorization is only
-    // meaningful once the route is live for this caller anyway.
+    // The uniform 404 when the pilot is off or the caller has no bearer, and that is the point: a
+    // 403 here would tell an unauthorized prober that the route exists and is merely disabled.
+    // `gatewaze.route.ts` runs `requireGatewazeHostSession` and `requireGatewazeBearer` first, so
+    // this never fires there today. It fails closed rather than passing the request on, so a route
+    // that mounts this middleware alone cannot be reached with the pilot off.
     if (!isServerFeatureEnabled(ServerFeatureFlag.GatewazeEmbedEnabled) || !req.bearerToken) {
-      next();
+      await drainRequestBody(req);
+      // The same body as the route's other uniform 404s (`gatewazeHostSessionNotFound`).
+      next(new MicroserviceError('Not found', 404, 'NOT_FOUND', { operation: 'require_gw_embed_access', service: 'gw', path: req.path }));
       return;
     }
 
     // Refuse while impersonating. This route's two identities diverge: the authorization below
-    // resolves the IMPERSONATED target from `req.bearerToken`, while the controller forwards the
-    // browser's own Gatewaze/Supabase `Authorization` header, which belongs to whoever signed in
-    // to Gatewaze — the real user. A write would then execute and be audited as the impersonator
-    // while every LFX-side check said it was the target.
+    // resolves the IMPERSONATED target from `req.bearerToken`, while the Gatewaze session the
+    // proxies forward with is minted from the LFX session's own sign-in — the real user. A write
+    // would then execute and be audited as the impersonator while every LFX-side check said it was
+    // the target, and nothing here mints a Gatewaze session for the target.
     //
     // The outlet also declines to mount while impersonating, but that is a convenience: it runs in
     // the browser and a direct call bypasses it. This is the boundary.

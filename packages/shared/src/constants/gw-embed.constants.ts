@@ -163,15 +163,6 @@ export const GW_EMBED_STYLESHEET_MAX_AGE_S = 300;
 export const GW_EMBED_STYLESHEET_STALE_WHILE_REVALIDATE_S = 7 * 24 * 60 * 60;
 
 /**
- * What the embed resolves an empty `apiBaseUrl` to — the same-origin BFF proxy mount.
- *
- * Duplicated from the embed's own `mount()` rather than left implicit, because the host has to
- * pre-seed the runtime-config global before the chunk evaluates and must use the identical value,
- * or the pre-seed and `mount()`'s own write would disagree for the window between them.
- */
-export const GW_EMBED_DEFAULT_API_BASE_URL = '/api/gw';
-
-/**
  * Where LFX One serves host-session mode (`gatewaze.route.ts`, mounted in `server.ts`). The
  * Supabase and API proxy mounts under it are `GW_HOST_SESSION_PROXY_SUPABASE_MOUNT` and
  * `GW_HOST_SESSION_PROXY_API_MOUNT` (`gw-host-session-proxy.constants.ts`).
@@ -212,58 +203,21 @@ export const GW_EMBED_PROJECT_ROUTE_PREFIX = GW_EMBED_ROUTE_PREFIXES[1];
  * Path (relative to the prefix) the embed navigates to when it has no authenticated user.
  *
  * The embed compiles in module routes only and has no `/login` among them, so its `FeatureGuard`'s
- * `<Navigate to="/login">` always falls through to the catch-all and comes back to the host.
+ * `<Navigate to="/login">` always falls through to the catch-all and comes back to the host. The
+ * host holds the Gatewaze session, so the outlet answers it with an error panel rather than a
+ * sign-in flow.
  */
 export const GW_EMBED_LOGIN_PATH = '/login';
 
-/**
- * Where to send the user after signing in, relative to the prefix.
- *
- * Sign-in cannot return to wherever the user happened to be, because that is usually
- * `GW_EMBED_LOGIN_PATH` — the embed sent them there precisely because they were unauthenticated,
- * and it is a path the embed has no route for. Returning there lands them back on a dead end with a
- * freshly minted session they can't use, so sign-in returns to a real module route instead.
- */
+/** The embed's landing page, relative to the prefix. The sidebar's Newsletters links point here. */
 export const GW_EMBED_LANDING_PATH = '/newsletters';
 
 /**
- * Query-param name carrying the tenant slug on embed routes. The route guards read the same
- * literal (`?project=`); this constant makes the contract explicit where the embed WRITES the
- * param — the sign-in return and recovery-reload URLs must carry it, or the guards fall back to
- * a context service that has not rehydrated on a full page load and bounce the navigation
- * (GH-3286).
- */
-export const GW_EMBED_PROJECT_QUERY_PARAM = 'project';
-
-/**
- * Suffix passed as `GwHostContext.storageKeySuffix`, isolating the embedded session from a
- * standalone Gatewaze admin session on the same origin.
- *
- * Passed explicitly rather than left to the embed's default so the host can derive the exact
- * storage key below; the embed's default would work equally well but leaves the host guessing.
- */
-export const GW_EMBED_STORAGE_KEY_SUFFIX = 'lfx_embed';
-
-/**
- * Prefix the embed's `configureEmbedSupabase` puts in front of `GW_EMBED_STORAGE_KEY_SUFFIX` when
- * it builds the supabase-js `storageKey`.
- *
- * **This couples the host to an internal detail of the embed.** It exists because the host has to
- * write the session itself (see the outlet's URL bootstrap): the embed's own `detectSessionInUrl`
- * never runs early enough, since its router's catch-all sits outside the auth boundary and hands
- * navigation back to the host before the Supabase client is ever constructed. If the embed changes
- * this prefix, the host silently writes to a key nothing reads — so this belongs in the embed's
- * public contract, and the workaround should be deleted once that lands.
+ * Prefix of the `localStorage` keys the retired LFID bridge stored Gatewaze sessions under, each with
+ * a live refresh token. Kept only so `clearGwEmbedBridgeStorage` can remove them from browsers that
+ * used the bridge.
  */
 export const GW_EMBED_STORAGE_KEY_PREFIX = 'gatewaze-admin-auth-token-';
-
-/**
- * How long before the outlet will retry reloading onto a real route to recover a stored session.
- *
- * Bounds the recovery in the outlet's `navigateHost` handler: one reload, then fall through to the
- * sign-in prompt, so a session the embed rejects for some other reason cannot reload forever.
- */
-export const GW_EMBED_SESSION_RECOVERY_COOLDOWN_MS = 30_000;
 
 /**
  * Sidebar destination for the Foundation Lens Newsletters entry, when the embed is on for this
@@ -300,52 +254,16 @@ export const GW_EMBED_NOTIFICATION_SEVERITY = {
 export const GW_EMBED_NOTIFICATION_DEFAULT_LIFE_MS = 5000;
 
 /**
- * sessionStorage key holding the single-use nonce that binds an LFID sign-in to this browser.
- *
- * Minted in `startSignIn`, required back before any token from the returned URL fragment is
- * adopted — see `GwModuleOutletComponent.consumeSignInState`.
+ * `sessionStorage` keys the retired LFID bridge wrote: its sign-in nonce, its automatic sign-in
+ * counter and its session-recovery timestamp. None is a credential. Kept only so
+ * `clearGwEmbedBridgeStorage` can remove them.
  */
 export const GW_EMBED_SIGNIN_STATE_KEY = 'lfx-gw-embed-signin-state';
-
-/** Query parameter the sign-in nonce travels on: out via `return_url`, back on the LFID return. */
-export const GW_EMBED_SIGNIN_STATE_PARAM = 'gw_state';
-
-/** sessionStorage key for the one-shot claim on reloading to recover a session. */
+export const GW_EMBED_AUTO_SIGNIN_KEY = 'lfx-gw-embed-auto-signin-attempted';
 export const GW_EMBED_SESSION_RECOVERY_KEY = 'lfx-gw-embed-session-recovery';
 
 /**
- * Marks that an automatic sign-in has already been started in this tab.
- *
- * The embed asks the host to open `/login` on EVERY unauthenticated render, so starting the LFID
- * round trip automatically needs a "we already tried" record or a failure to establish a session
- * becomes an endless redirect through the identity provider. One attempt per tab; after that the
- * user gets the manual panel, which cannot loop.
- *
- * `sessionStorage`, not `localStorage`: the guard should last as long as the tab and no longer, so
- * a genuinely new visit is free to try again.
- */
-export const GW_EMBED_AUTO_SIGNIN_KEY = 'lfx-gw-embed-auto-signin-attempted';
-
-/**
- * How many times a tab may start LFID automatically before falling back to the manual panel.
- *
- * Not one. A single attempt makes any transient failure permanent for the life of the tab — a
- * cancelled sign-in, a blip, a misconfiguration fixed a minute later — and a reload does not clear
- * it, because the record is per-tab. The user is then stuck clicking a button that says their LFX
- * session lacks access, which is both wrong and unexplained.
- *
- * Two recovers from one bad attempt without becoming a loop: the failure mode this guards against
- * is unbounded cycling through the identity provider, and a hard ceiling of two redirects is not
- * that. Beyond it the manual panel takes over permanently for the tab, which cannot loop and gives
- * the user something to act on.
- */
-export const GW_EMBED_AUTO_SIGNIN_MAX_ATTEMPTS = 2;
-
-/** Session lifetime assumed when the LFID fragment carries no usable `expires_in`, in seconds. */
-export const GW_EMBED_DEFAULT_SESSION_TTL_S = 3600;
-
-/**
- * How long one caller's writer summary is reused across proxied `/api/gw/*` calls, in ms.
+ * How long one caller's writer summary is reused across proxied `/api/gatewaze/*` calls, in ms.
  *
  * Matched to `PERSONAS_CACHE_TTL_MS` deliberately: the two lookups gate the same decision on the
  * same route, so a shorter window here would just reintroduce the paginated grant sweep this
@@ -364,7 +282,7 @@ export const SUPABASE_SERVICE_ROLE = 'service_role';
 export const SUPABASE_SECRET_KEY_PREFIX = 'sb_secret_';
 
 /**
- * Cap on how long a rejected `/api/gw/*` request is drained before answering, in ms.
+ * Cap on how long a rejected `/api/gatewaze/*` proxy request is drained before answering, in ms.
  *
  * The single definition for the whole route: the pre-stream rejections (404 / 403 / fail-closed
  * 5xx) and the controller's 413 drain protocol — which is where the technique came from — both
@@ -378,17 +296,7 @@ export const SUPABASE_SECRET_KEY_PREFIX = 'sb_secret_';
 export const GW_DRAIN_TIMEOUT_MS = 5_000;
 
 /**
- * Cap on the Supabase `/auth/v1/user` lookup during fragment adoption, in ms.
- *
- * Everything that clears the auth fragment runs after that call returns, so without a bound a hung
- * gateway leaves live access and refresh tokens in the address bar indefinitely and the outlet
- * stuck on its skeleton. Ten seconds is generous for a single identity lookup and still short
- * enough that a user sees the sign-in panel rather than an apparently frozen page.
- */
-export const GW_EMBED_ADOPTION_TIMEOUT_MS = 10_000;
-
-/**
- * Default ceiling on a proxied `/api/gw` request body, in bytes.
+ * Default ceiling on a proxied `/api/gatewaze` request body, in bytes.
  *
  * Overridable per environment via `GW_PROXY_MAX_BODY_BYTES`. Well above the body parsers' 15MB
  * because `host-media` uploads legitimately pass through this route; the point is a bound, not a
@@ -397,7 +305,7 @@ export const GW_EMBED_ADOPTION_TIMEOUT_MS = 10_000;
 export const GW_PROXY_DEFAULT_MAX_BODY_BYTES = 100 * 1024 * 1024;
 
 /**
- * Default cap on a proxied `/api/gw` upstream request, in ms.
+ * Default cap on a proxied `/api/gatewaze` upstream request, in ms.
  *
  * Overridable per environment via `GW_PROXY_TIMEOUT_MS`. Generous because the upstream owns
  * long-running work such as media processing, and the caller sees a 408 rather than a hung socket.

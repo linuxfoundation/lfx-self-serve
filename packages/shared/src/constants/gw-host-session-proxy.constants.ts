@@ -25,9 +25,9 @@ export const GW_HOST_SESSION_PROXY_API_MOUNT = '/api/gatewaze';
 
 /**
  * Client-address headers removed before forwarding, on top of the package's own drop list (cookie,
- * authorization, origin, referer, apikey, host, `x-forwarded-*`, `forwarded`, hop-by-hop). The
- * `/api/gw` sibling strips the same set: the proxy does not vouch for them. The proxy sends its own
- * `X-Forwarded-For` with the one client address LFX resolved (`req.ip`).
+ * authorization, origin, referer, apikey, host, `x-forwarded-*`, `forwarded`, hop-by-hop). The proxy
+ * does not vouch for them. It sends its own `X-Forwarded-For` with the one client address LFX
+ * resolved (`req.ip`).
  */
 export const GW_HOST_SESSION_PROXY_STRIPPED_REQUEST_HEADERS = [
   'x-real-ip',
@@ -39,8 +39,8 @@ export const GW_HOST_SESSION_PROXY_STRIPPED_REQUEST_HEADERS = [
 ] as const;
 
 /**
- * Upstream response headers returned to the browser. An allowlist, as on `/api/gw`, applied after
- * the package's own drop list (`set-cookie`, `x-gw-session`, hop-by-hop). It keeps Supabase's
+ * Upstream response headers returned to the browser. An allowlist, applied after the package's own
+ * drop list (`set-cookie`, `x-gw-session`, hop-by-hop). It keeps Supabase's
  * `Access-Control-Allow-*` headers out, because this origin never answers CORS, and leaves out
  * `www-authenticate`, so an upstream cannot raise a browser credential prompt on the LFX origin.
  *

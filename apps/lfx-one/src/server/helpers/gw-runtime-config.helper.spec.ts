@@ -26,7 +26,6 @@ describe('buildGwRuntimeConfig', () => {
     vi.stubEnv('GW_SUPABASE_URL', 'https://supabase.example.test');
     vi.stubEnv('GW_SUPABASE_ANON_KEY', 'sb_publishable_synthetic');
     vi.stubEnv('PCC_AUTH0_SECRET', 'synthetic-secret');
-    vi.stubEnv('GW_LFID_START_URL', '');
     vi.stubEnv('GW_EMBED_URL', 'https://admin.example.test/embed');
   });
 
@@ -36,7 +35,6 @@ describe('buildGwRuntimeConfig', () => {
     expect(buildGwRuntimeConfig(req)).toEqual({
       gwSupabaseUrl: 'https://supabase.example.test',
       gwSupabaseAnonKey: 'sb_publishable_synthetic',
-      gwLfidStartUrl: '',
       gwEmbedUrl: 'https://admin.example.test/embed',
       gwHostSession: true,
     });

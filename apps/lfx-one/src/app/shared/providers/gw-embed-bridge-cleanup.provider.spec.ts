@@ -13,7 +13,7 @@ import { DEFAULT_RUNTIME_CONFIG, RUNTIME_CONFIG_KEY } from './runtime-config.pro
 describe('initializeGwEmbedBridgeCleanup', () => {
   const STORED_KEY = `${GW_EMBED_STORAGE_KEY_PREFIX}lfx_embed`;
 
-  const run = (platform: 'browser' | 'server', config: Partial<RuntimeConfig>): void => {
+  const run = (platform: 'browser' | 'server', config: Partial<RuntimeConfig> = {}): void => {
     TestBed.configureTestingModule({ providers: [{ provide: PLATFORM_ID, useValue: platform }] });
     TestBed.inject(TransferState).set(RUNTIME_CONFIG_KEY, { ...DEFAULT_RUNTIME_CONFIG, ...config });
     window.localStorage.setItem(STORED_KEY, 'session');
@@ -27,22 +27,19 @@ describe('initializeGwEmbedBridgeCleanup', () => {
     window.sessionStorage.clear();
   });
 
-  it('removes stored bridge sessions and sign-in keys at app start in host-session mode', () => {
-    run('browser', { gwHostSession: true });
+  it.each([
+    ['on', true],
+    ['off', false],
+  ])('removes stored bridge sessions and sign-in keys at app start with host-session mode %s', (_label, gwHostSession) => {
+    // The bridge is gone, so its tokens are removed whatever the Gatewaze flags say.
+    run('browser', { gwHostSession });
 
     expect(window.localStorage.getItem(STORED_KEY)).toBeNull();
     expect(window.sessionStorage.getItem(GW_EMBED_SIGNIN_STATE_KEY)).toBeNull();
   });
 
-  it('leaves the bridge alone while host-session mode is off', () => {
-    run('browser', { gwHostSession: false });
-
-    expect(window.localStorage.getItem(STORED_KEY)).toBe('session');
-    expect(window.sessionStorage.getItem(GW_EMBED_SIGNIN_STATE_KEY)).toBe('nonce');
-  });
-
   it('does nothing during server rendering', () => {
-    run('server', { gwHostSession: true });
+    run('server');
 
     expect(window.localStorage.getItem(STORED_KEY)).toBe('session');
   });

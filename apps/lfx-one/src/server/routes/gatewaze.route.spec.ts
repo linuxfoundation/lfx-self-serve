@@ -53,7 +53,6 @@ vi.mock('../services/logger.service', () => ({
 }));
 
 const gatewazeRouter = (await import('./gatewaze.route')).default;
-const gwProxyRouter = (await import('./gw-proxy.route')).default;
 const { apiErrorHandler } = await import('../middleware/error-handler.middleware');
 
 let server: Server;
@@ -68,7 +67,6 @@ beforeAll(async () => {
     next();
   });
   app.use('/api/gatewaze', gatewazeRouter);
-  app.use('/api/gw', gwProxyRouter);
   app.use(apiErrorHandler);
   await new Promise<void>((resolve) => {
     server = app.listen(0, '127.0.0.1', resolve);
@@ -116,18 +114,13 @@ describe('/api/gatewaze router', () => {
     expect(endGatewazeSession).toHaveBeenCalledOnce();
   });
 
-  it('answers the same uniform 404 as /api/gw with its flag off, before any authorization', async () => {
+  it('answers the uniform 404 while host-session mode is off, before any authorization', async () => {
     hostSessionEnabled.mockReturnValue(false);
     const res = await me();
-    vi.stubEnv('LFX_GATEWAZE_EMBED_ENABLED', 'false');
-    const gwRes = await fetch(`${baseUrl}/api/gw/anything`);
 
     expect(res.status).toBe(404);
-    expect(gwRes.status).toBe(404);
-    const [body, gwBody] = [await res.json(), await gwRes.json()];
+    const body = await res.json();
     expect(body.code).toBe('NOT_FOUND');
-    expect(Object.keys(body).sort()).toEqual(Object.keys(gwBody).sort());
-    expect(body.error).toBe(gwBody.error);
     expect(res.headers.get('cache-control')).toBe('no-store');
     expect(getPersonas).not.toHaveBeenCalled();
     expect(getGatewazeMe).not.toHaveBeenCalled();

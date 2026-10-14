@@ -196,16 +196,10 @@ async function initializeDataDogRum(): Promise<void> {
     datadogRum.init({
       applicationId: dataDogRumApplicationId,
       clientToken: dataDogRumClientId,
-      // RUM's first view event captures window.location.href as it is at startup, and the
-      // Gatewaze embed's LFID sign-in returns to `#access_token=…&refresh_token=…`. The component
-      // that clears that fragment runs in afterNextRender, long after this initializer, so without
-      // redaction here a Supabase access AND refresh token reach a third-party analytics sink.
-      //
-      // Redacting here rather than clearing the address bar before init, which is the more obvious
-      // fix and is wrong: GwModuleOutletComponent.adoptAuthFragment reads window.location.hash to
-      // establish the embed session, so clearing it early would stop the tokens reaching Datadog
-      // by breaking sign-in altogether. The fragment must survive in the address bar until the
-      // outlet consumes it; what must not happen is RUM reporting it.
+      // RUM's first view event captures window.location.href as it is at startup. A URL carrying
+      // `#access_token=…&refresh_token=…` must never reach a third-party analytics sink. The
+      // Gatewaze embed's retired LFID sign-in returned to exactly that shape, and a stale or crafted
+      // link can still arrive with it, so the fragment is redacted here whatever produced it.
       //
       // Covers the referrer too, which carries the previous URL and would otherwise leak the same
       // fragment on the next view.
