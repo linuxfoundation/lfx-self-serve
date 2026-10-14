@@ -1457,7 +1457,8 @@ export class CommitteeService {
     }
 
     const m2mToken = await generateM2MToken(req);
-    const settings = await Promise.all(
+    // allSettled: one failed read must not hide another Board group that has the setting on.
+    const results = await Promise.allSettled(
       boardUids.map((uid) =>
         this.microserviceProxy.proxyRequest<CommitteeSettingsData>(
           req,
@@ -1473,8 +1474,14 @@ export class CommitteeService {
         )
       )
     );
-
-    return settings.some((s) => s?.members_can_view_social_listening === true);
+    if (results.some((r) => r.status === 'fulfilled' && r.value?.members_can_view_social_listening === true)) {
+      return true;
+    }
+    const failure = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+    if (failure) {
+      throw failure.reason;
+    }
+    return false;
   }
 
   // ── My Committees ─────────────────────────────────────────────────────────

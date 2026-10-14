@@ -1716,6 +1716,12 @@ describe('CommitteeService — Board Social Listening access (lfx-self-serve-ops
       expect(proxyRequest).toHaveBeenCalledTimes(1);
     });
 
+    it("still allows when another Board group's settings read fails", async () => {
+      upstream(['board-1', 'board-2'], { 'board-1': new Error('settings read failed'), 'board-2': true });
+
+      await expect(service.canBoardMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(true);
+    });
+
     it('surfaces a settings read failure so the caller denies without caching', async () => {
       const error = new Error('settings read failed');
       upstream(['board-1'], { 'board-1': error });

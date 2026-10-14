@@ -948,9 +948,10 @@ export class SidebarNavService {
       if (this.personaService.canViewExecutiveDashboards()) {
         return null;
       }
-      const slug = this.projectContextService.selectedFoundation()?.slug?.toLowerCase();
+      // Match case-insensitively, but probe with the slug as stored: the server looks it up verbatim.
+      const slug = this.projectContextService.selectedFoundation()?.slug;
       const boardSlugs = (this.personaService.personaProjects()['board-member'] ?? []).map((project) => project.projectSlug.toLowerCase());
-      return slug && boardSlugs.includes(slug) ? slug : null;
+      return slug && boardSlugs.includes(slug.toLowerCase()) ? slug : null;
     });
 
     return toSignal(

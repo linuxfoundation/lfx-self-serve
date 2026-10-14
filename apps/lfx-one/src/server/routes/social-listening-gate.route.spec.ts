@@ -90,15 +90,18 @@ describe('social-listening router — access gate ordering', () => {
     expect(getAccess).not.toHaveBeenCalled();
   });
 
-  it.each(['/analytics-overview', '/preferences/Social%20Listening%20Bookmarks%20x'])('403s GET %s when the policy denies, before the handler runs', async (path) => {
-    getAccess.mockResolvedValue({ canView: false, reason: 'none' });
+  it.each(['/analytics-overview', '/preferences/Social%20Listening%20Bookmarks%20x'])(
+    '403s GET %s when the policy denies, before the handler runs',
+    async (path) => {
+      getAccess.mockResolvedValue({ canView: false, reason: 'none' });
 
-    const res = await fetch(`${baseUrl}/api/social-listening${path}?foundationSlug=tlf`);
+      const res = await fetch(`${baseUrl}/api/social-listening${path}?foundationSlug=tlf`);
 
-    expect(res.status).toBe(403);
-    expect(getAccess).toHaveBeenCalledWith(expect.anything(), 'tlf');
-    expect(handled).not.toHaveBeenCalled();
-  });
+      expect(res.status).toBe(403);
+      expect(getAccess).toHaveBeenCalledWith(expect.anything(), 'tlf');
+      expect(handled).not.toHaveBeenCalled();
+    }
+  );
 
   it('403s POST /mentions-feed when the policy denies, reading foundationSlug from the body', async () => {
     getAccess.mockResolvedValue({ canView: false, reason: 'none' });
