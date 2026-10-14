@@ -2698,6 +2698,47 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(sent['excludedGeoTargets']).toHaveLength(60);
   });
 
+  it("trims an excluded code with Go's whitespace set, not JS's, so a code upstream accepts is not refused here", async () => {
+    // `strings.TrimSpace` strips U+0085 (NEL) and `String.prototype.trim` does not. Trimming with
+    // JS's set would refuse this entry as an unknown country code while `resolveGeoList` resolves
+    // it to 2840 — the over-refusal these Go mirrors exist to prevent.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000e', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ excludedGeoTargets: ['\u0085US\u0085'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['excludedGeoTargets']).toEqual(['US']);
+  });
+
+  it("trims a radius unit with Go's whitespace set, so a unit upstream accepts is not refused here", async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000f', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ proximityTargets: [{ ...SYDNEY, radiusUnit: '\u0085kilometers' }] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['proximityTargets']).toHaveLength(1);
+  });
+
+  it.each([
+    ['excludedGeoTargets', Array.from({ length: 101 }, () => 'US')],
+    ['proximityTargets', Array.from({ length: 101 }, () => ({ latitude: -33.8688, longitude: 151.2093, radius: 25, radiusUnit: 'KILOMETERS' }))],
+  ])('bounds a %s list before the envelope normalizes it, since that runs ahead of the named cap', async (field, list) => {
+    // The named caps (60 and 20) are the operator-facing refusal and still fire first for any
+    // plausible list. This ceiling only stops `createConfigEnvelope` — which runs BEFORE them and
+    // allocates per entry — from walking a 15mb body.
+    await controller.createCampaign(buildReq(googleBody({ [field]: list } as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe(field);
+    expect(error.message).toContain('100');
+  });
+
   it('excludes a numeric city id without testing it against the curated country table, because upstream accepts ids outside it', async () => {
     // The over-refusal guard for the guard itself. `resolveGeoEntry` tells a code from an id by
     // SHAPE and returns a canonical id as-is rather than resolving it against the country map, so
@@ -2838,9 +2879,9 @@ describe('CampaignController.createCampaign cutover', () => {
 
   it('dispatches two radius targets that differ below microdegree precision rather than refusing the repeat', async () => {
     // Upstream COLLAPSES an exact repeat instead of refusing it — a proximity target carries no
-    // bid modifier, so two entries rendering to the same wire tuple say the same thing. Refusing
-    // either of these here would be an over-refusal of a create that works, and these two do not
-    // even render alike.
+    // bid modifier, so two entries rendering to the same wire tuple say the same thing. These two
+    // round to the SAME microdegrees (-33868800), so upstream collapses them to one target —
+    // refusing either here would be an over-refusal of a create that works.
     createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000d', error: null });
 
     await controller.createCampaign(

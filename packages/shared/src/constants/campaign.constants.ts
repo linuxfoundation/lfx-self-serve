@@ -1067,9 +1067,10 @@ export const GOOGLE_ADS_MAX_RADIUS = { MILES: 500, KILOMETERS: 800 } as const;
 /**
  * The Google channels whose campaign criteria accept proximity (radius) targeting.
  *
- * Every channel EXCEPT Demand Gen, and the fence is narrower than the language one above even
- * though both exclude the same channel: this gate is `validateGeoPlan`'s own, not
- * `validateCriteriaPlan`'s. Demand Gen attaches location criteria at the AD GROUP level, where this
+ * Every channel EXCEPT Demand Gen — the same four as {@link GOOGLE_CHANNELS_WITH_LANGUAGES}, but
+ * gated by a DIFFERENT upstream validator: this one is `validateGeoPlan`'s own, the language fence
+ * is `validateCriteriaPlan`'s. They are two constants rather than one because upstream is free to
+ * move either fence without the other. Demand Gen attaches location criteria at the AD GROUP level, where this
  * client has not verified that a proximity criterion is accepted, so upstream refuses it on that
  * channel before any mutate rather than creating a paid campaign to find out.
  *
@@ -2605,10 +2606,11 @@ export const AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH = 2_000;
  *
  * Deliberately FAR above anything legitimate, because these are resource bounds and not content
  * rules — every width and count in `GOOGLE_CREATIVE_FIELD_SPECS` is the upstream client's preflight
- * to enforce, and this layer stays shape-only. The widest catalogue list holds 20 entries and the
- * widest text field 256 characters (`assetGroupName`), so nothing a real operator can produce comes
- * near either ceiling; refusing here can therefore never refuse a create upstream would have
- * accepted.
+ * to enforce, and this layer stays shape-only. The widest list this bounds holds 60 entries (an
+ * excluded geo plan, {@link GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS}; the widest creative list holds
+ * 20) and the widest text field 256 characters (`assetGroupName`), so nothing a real operator can
+ * produce comes near either ceiling; refusing here can therefore never refuse a create upstream
+ * would have accepted.
  */
 export const MAX_GOOGLE_CREATIVE_LIST_ENTRIES = 100;
 export const MAX_GOOGLE_CREATIVE_FIELD_LENGTH = 2048;

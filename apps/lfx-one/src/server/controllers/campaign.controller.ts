@@ -724,7 +724,7 @@ export class CampaignController {
             return;
           }
 
-          const excluded = this.googleGeoEntryList(rawExcludedGeoTargets);
+          const excluded = this.googleUpperCodeList(rawExcludedGeoTargets);
           // NO CHANNEL FENCE, and the omission is deliberate: `validateGeoPlan` applies none to the
           // exclusion list, so exclusions reach every channel including Demand Gen. Gating them the
           // way languages and proximity are gated would refuse creates upstream accepts.
@@ -756,7 +756,7 @@ export class CampaignController {
           // `2840` clash however each half is spelled. Judged on the DISPATCHED targeted list —
           // the same value the guard above judged and the builder sends.
           const excludedIds = new Set(excluded.map((entry) => this.googleResolvedGeoId(entry)).filter((id): id is string => id !== null));
-          const dispatchedGeoTargets = Array.isArray(googleGeoTargets) ? this.googleGeoEntryList(googleGeoTargets) : [];
+          const dispatchedGeoTargets = Array.isArray(googleGeoTargets) ? this.googleUpperCodeList(googleGeoTargets) : [];
           const clash = dispatchedGeoTargets.find((entry) => {
             const id = this.googleResolvedGeoId(entry);
             return id !== null && excludedIds.has(id);
@@ -839,7 +839,7 @@ export class CampaignController {
             return;
           }
 
-          const languages = this.googleLanguageList(rawLanguages);
+          const languages = this.googleUpperCodeList(rawLanguages);
           const googleChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
           if (languages.length > 0 && typeof googleChannel === 'string') {
             // REFUSED by name, not dropped: upstream's contract for the field is "refused, never
@@ -3863,6 +3863,13 @@ export class CampaignController {
     const candidates: [string, unknown][] = Object.values(GOOGLE_CREATIVE_REQUEST_KEYS).map((key) => [key, raw[key]]);
     candidates.push(['conversionActions', raw['conversionActions']]);
     candidates.push(['callouts', raw['callouts']]);
+    // Both geo lists are bounded here and not only by their own caps further down, because
+    // `createConfigEnvelope` runs BEFORE those caps and normalizes whatever it is handed —
+    // `googleProximityList` allocating a fresh object per entry as it goes. The named caps (60
+    // exclusions, 20 radius targets) still make the refusal an operator can act on; this one only
+    // stops a 15mb body from being walked before they are reached.
+    candidates.push(['excludedGeoTargets', raw['excludedGeoTargets']]);
+    candidates.push(['proximityTargets', raw['proximityTargets']]);
 
     for (const [key, source] of candidates) {
       // A creative key holds an object of fields; `conversionActions` and `callouts` are bare lists.
@@ -4047,19 +4054,26 @@ export class CampaignController {
    */
   private googleLanguages(body: CampaignCreateRequest, channel: GoogleCampaignChannel): Record<string, unknown> {
     if (!(GOOGLE_CHANNELS_WITH_LANGUAGES as readonly string[]).includes(channel)) return {};
-    const clean = this.googleLanguageList(body?.languages);
+    const clean = this.googleUpperCodeList(body?.languages);
     return clean.length > 0 ? { languages: clean } : {};
   }
 
   /**
-   * The language list as dispatched: strings only (`createCampaign` refuses anything else first),
-   * trimmed and upper-cased as `resolveLanguageList` does. Blanks are KEPT: upstream counts them
-   * toward the Demand Gen fence and the cap and then refuses them, so dropping one here would turn
-   * `['']` into an every-language campaign. `createCampaign` refuses them by name first.
+   * One list of upper-cased codes as judged and dispatched — languages, and both halves of the geo
+   * plan. `resolveLanguageList` and `resolveGeoList` normalize identically, so this is one helper
+   * rather than a copy per field; the per-field reasons live on the callers.
+   *
+   * Strings only — `createCampaign` refuses anything else first. Blanks are KEPT: upstream counts a
+   * blank toward the cap and then refuses it by name, so dropping one here would turn `['']` into
+   * an every-language campaign, or into a campaign with no exclusion at all.
+   *
+   * Trimmed with {@link googleAdsTrimSpace}, NOT `String.prototype.trim`. Go's `strings.TrimSpace`
+   * strips U+0085 and JS does not, so a code padded with one would be refused here as an unknown
+   * country or language while upstream accepts it — the over-refusal these mirrors exist to avoid.
    */
-  private googleLanguageList(raw: unknown): string[] {
+  private googleUpperCodeList(raw: unknown): string[] {
     if (!Array.isArray(raw)) return [];
-    return raw.filter((l): l is string => typeof l === 'string').map((l) => l.trim().toUpperCase());
+    return raw.filter((c): c is string => typeof c === 'string').map((c) => googleAdsTrimSpace(c).toUpperCase());
   }
 
   /**
@@ -4100,7 +4114,7 @@ export class CampaignController {
    * this config is dispatched.
    */
   private googleExcludedGeoTargets(body: CampaignCreateRequest): Record<string, unknown> {
-    const clean = this.googleGeoEntryList(body?.excludedGeoTargets);
+    const clean = this.googleUpperCodeList(body?.excludedGeoTargets);
     return clean.length > 0 ? { excludedGeoTargets: clean } : {};
   }
 
@@ -4121,17 +4135,6 @@ export class CampaignController {
     if (!(GOOGLE_CHANNELS_WITH_PROXIMITY as readonly string[]).includes(channel)) return {};
     const clean = this.googleProximityList(body?.proximityTargets);
     return clean.length > 0 ? { proximityTargets: clean } : {};
-  }
-
-  /**
-   * One geo list as judged and dispatched: strings only (`createCampaign` refuses anything else
-   * first), trimmed and upper-cased as `resolveGeoList` does. Blanks are KEPT, as they are for
-   * languages: upstream counts a blank toward the cap and then refuses it by name, so dropping one
-   * here would turn `['']` into a campaign with no exclusion at all.
-   */
-  private googleGeoEntryList(raw: unknown): string[] {
-    if (!Array.isArray(raw)) return [];
-    return raw.filter((g): g is string => typeof g === 'string').map((g) => g.trim().toUpperCase());
   }
 
   /**
@@ -4187,11 +4190,16 @@ export class CampaignController {
    *
    * An absent or null LATITUDE or LONGITUDE decodes to `0`, which is a real point in the Gulf of
    * Guinea and is refused by nothing: upstream would create a paid campaign targeting a radius
-   * around it. That is the one place this guard is deliberately STRICTER than the Go decoder, on
-   * the same reasoning that makes `radiusUnit` required upstream — a coordinate it has to invent is
-   * a coordinate the caller never chose, and silently buying the wrong hemisphere is worse than
-   * naming the malformed entry. {@link CampaignProximityTarget} declares both fields required, so
-   * no caller honouring the contract can reach this.
+   * around it. On a PARTIALLY filled entry that is refused here — the one place this guard is
+   * deliberately STRICTER than the Go decoder, on the same reasoning that makes `radiusUnit`
+   * required upstream: a coordinate it has to invent is a coordinate the caller never chose, and
+   * silently buying the wrong hemisphere is worse than naming the malformed entry.
+   * {@link CampaignProximityTarget} declares both fields required, so no caller honouring the
+   * contract can reach this.
+   *
+   * A WHOLLY null entry is the exception and returns `true`, because it needs no extra strictness:
+   * it decodes to an all-zero target whose zero RADIUS {@link googleProximityRefusal} refuses by
+   * name, in upstream's own words, before the invented coordinate can reach a mutate.
    */
   private isProximityShape(entry: unknown): boolean {
     if (entry === null) return true;
@@ -4252,7 +4260,7 @@ export class CampaignController {
     if (!Number.isFinite(target.radius) || target.radius <= 0) {
       return `The Google Ads ${shown} needs a radius greater than 0. Set one and create again.`;
     }
-    const unit = target.radiusUnit.trim().toUpperCase();
+    const unit = googleAdsTrimSpace(target.radiusUnit).toUpperCase();
     if (!(GOOGLE_ADS_RADIUS_UNITS as readonly string[]).includes(unit)) {
       // No default is invented, upstream's rule: "a radius of 50 means two very different campaigns
       // depending on the unit, and guessing one would silently buy ~2.5x the intended area".
