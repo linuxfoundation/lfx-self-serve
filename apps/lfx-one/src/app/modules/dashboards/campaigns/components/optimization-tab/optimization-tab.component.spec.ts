@@ -6,6 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { By } from '@angular/platform-browser';
 import {
+  CAMPAIGN_BUDGET_BLOCKED_AD_SET_REASON,
   CAMPAIGN_BID_CONFLICT_MESSAGE,
   CAMPAIGN_BID_OUTCOME_UNCONFIRMED,
   CAMPAIGN_BID_UNAVAILABLE_PLATFORM_REASON,
@@ -16,6 +17,15 @@ import {
   CAMPAIGN_FINDING_ALREADY_PAUSED_REASON,
   CAMPAIGN_TOGGLE_FAILURE_MESSAGES,
   CAMPAIGN_TOGGLE_UNCONFIRMED_MESSAGES,
+  META_AD_SET_BLOCKED_STALE_REASON,
+  META_AD_SET_CONFLICT_MESSAGE,
+  META_AD_SET_DELIBERATE_PAUSE_ADVICE,
+  META_AD_SET_PAUSE_RECORD_OUTCOME_UNCONFIRMED,
+  META_AD_SET_PAUSE_RECORD_UNCONFIRMED_CODE,
+  META_AD_SET_STATUS_OUTCOME_UNCONFIRMED,
+  META_AD_SET_STATUS_UNCONFIRMED_CODE,
+  META_AD_SET_UNCONFIRMED_MESSAGE,
+  META_AD_SETS_UNAVAILABLE_UNPROVISIONED_REASON,
 } from '@lfx-one/shared/constants';
 import {
   BriefMetrics,
@@ -25,6 +35,8 @@ import {
   CampaignIndexDoc,
   CampaignNegativeKeywordsResult,
   CampaignRow,
+  CampaignServiceMetaAdSet,
+  CampaignServiceMetaAdSets,
   CampaignStatusUpdateResult,
 } from '@lfx-one/shared/interfaces';
 import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
@@ -36,6 +48,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CampaignBidFormComponent } from '../campaign-bid-form/campaign-bid-form.component';
 import { CampaignBudgetFormComponent } from '../campaign-budget-form/campaign-budget-form.component';
 import { CampaignNegativeKeywordsFormComponent } from '../campaign-negative-keywords-form/campaign-negative-keywords-form.component';
+import { MetaAdSetsPanelComponent } from '../meta-ad-sets-panel/meta-ad-sets-panel.component';
 import { MicrosoftKeywordsTableComponent } from '../microsoft-keywords-table/microsoft-keywords-table.component';
 import { OptimizationTabComponent } from './optimization-tab.component';
 
@@ -3630,5 +3643,264 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
 
     const component = fixture.componentInstance as unknown as { actionResults(): Record<string, { state: string }> };
     expect(component.actionResults()['microsoft-ads:11-22'].state).toBe('failed');
+  });
+});
+
+describe('OptimizationTabComponent — Meta ad sets (#3299)', () => {
+  let fixture: ComponentFixture<OptimizationTabComponent>;
+  let updateMetaAdSetStatus: ReturnType<typeof vi.fn>;
+  let listMetaAdSets: ReturnType<typeof vi.fn>;
+  let updateCampaignStatus: ReturnType<typeof vi.fn>;
+  let messageAdd: ReturnType<typeof vi.fn>;
+
+  const doc = (over: Partial<CampaignIndexDoc> = {}): CampaignIndexDoc => ({
+    id: 'c-1',
+    project_id: 'tlf',
+    brief_id: 'b-1',
+    platform: 'meta-ads',
+    platform_campaign_id: '120210000000000555',
+    campaign_name: 'KubeCon EU',
+    status: 'created',
+    version: 3,
+    etag: '"3"',
+    ...over,
+  });
+
+  const adSet = (over: Partial<CampaignServiceMetaAdSet> = {}): CampaignServiceMetaAdSet => ({
+    id: '120210000000000888',
+    listed: true,
+    name: 'Leads — US',
+    status: 'ACTIVE',
+    effective_status: 'ACTIVE',
+    budget_type: 'daily',
+    budget_amount: '50.00',
+    impressions: 10,
+    clicks: 1,
+    cost_micros: 1,
+    ctr: 0.1,
+    recorded: true,
+    deliberately_paused: false,
+    ...over,
+  });
+
+  const adSets = (sets: CampaignServiceMetaAdSet[]): CampaignServiceMetaAdSets => ({
+    campaign_id: 'c-1',
+    platform_campaign_id: '120210000000000555',
+    window: 'last_30_days',
+    currency: 'USD',
+    read_at: '2026-10-13T09:30:00Z',
+    ad_sets: sets,
+    ad_set_count: sets.length,
+  });
+
+  /** A BFF error, in its own `{ error, code }` envelope. */
+  const bffError = (status: number, code: string, error: string): HttpErrorResponse => new HttpErrorResponse({ status, error: { error, code } });
+
+  beforeEach(async () => {
+    updateMetaAdSetStatus = vi
+      .fn()
+      .mockReturnValue(of({ campaign_id: 'c-1', ad_set_id: '120210000000000888', requested_status: 'PAUSED', outcome: 'APPLIED', etag: '"4"' }));
+    listMetaAdSets = vi.fn().mockReturnValue(of(adSets([adSet()])));
+    updateCampaignStatus = vi
+      .fn()
+      .mockReturnValue(of({ platform: 'meta-ads', campaignId: 'c-1', newStatus: 'PAUSED', success: true, serviceStatus: 'paused', etag: '"9"' }));
+    messageAdd = vi.fn();
+
+    await TestBed.configureTestingModule({
+      imports: [OptimizationTabComponent],
+      providers: [
+        provideNoopAnimations(),
+        { provide: MessageService, useValue: { add: messageAdd } },
+        {
+          provide: CampaignService,
+          useValue: {
+            updateMetaAdSetStatus,
+            listMetaAdSets,
+            updateCampaignStatus,
+            getMonitorData: vi.fn().mockReturnValue(of(null)),
+            getKeywords: vi.fn().mockReturnValue(of({ keywords: [] })),
+            getMicrosoftKeywords: vi.fn().mockReturnValue(of(null)),
+            getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
+            getRedditAccounts: vi.fn().mockReturnValue(of([])),
+            getBriefMetrics: vi.fn().mockReturnValue(of({ brief_id: 'b-1', window: 'last_30_days', rows: [], ok_count: 0, action_items: [] })),
+            getMetaAccounts: vi.fn().mockReturnValue(of([])),
+            executeKeywordActions: vi.fn().mockReturnValue(of({ results: [] })),
+          },
+        },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(OptimizationTabComponent);
+    fixture.componentRef.setInput('projectSlug', 'tlf');
+    fixture.componentRef.setInput('briefId', 'b-1');
+  });
+
+  function render(campaigns: CampaignIndexDoc[] | null): void {
+    fixture.componentRef.setInput('briefCampaigns', campaigns);
+    fixture.componentRef.setInput('statusToggleEnabled', true);
+    fixture.detectChanges();
+  }
+
+  const q = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+  function openPanel(): void {
+    (q('optimization-campaign-ad-sets-c-1') as HTMLButtonElement).click();
+    fixture.detectChanges();
+  }
+
+  function clickToggle(id = '120210000000000888'): void {
+    (q(`meta-ad-set-toggle-${id}`) as HTMLButtonElement).click();
+    fixture.detectChanges();
+  }
+
+  it('offers the ad-set panel on Meta rows only', () => {
+    render([doc(), doc({ id: 'c-2', platform: 'google-ads' })]);
+
+    expect(q('optimization-campaign-ad-sets-c-1')).not.toBeNull();
+    expect(q('optimization-campaign-ad-sets-c-2')).toBeNull();
+  });
+
+  it('withholds the panel, with its reason, for a campaign never created on Meta', () => {
+    render([doc({ platform_campaign_id: undefined })]);
+
+    expect((q('optimization-campaign-ad-sets-c-1') as HTMLButtonElement).disabled).toBe(true);
+    expect(q('optimization-campaign-ad-sets-unavailable-c-1')!.textContent).toContain(META_AD_SETS_UNAVAILABLE_UNPROVISIONED_REASON);
+  });
+
+  it('lists the ad sets with status, budget and the deliberately-paused badge', () => {
+    listMetaAdSets.mockReturnValue(of(adSets([adSet({ status: 'PAUSED', effective_status: 'PAUSED', deliberately_paused: true })])));
+    render([doc()]);
+    openPanel();
+
+    expect(listMetaAdSets).toHaveBeenCalledWith('tlf', 'b-1', 'c-1');
+    expect(q('meta-ad-set-row-120210000000000888')!.textContent).toContain('Leads — US');
+    expect(q('meta-ad-set-status-120210000000000888')!.textContent).toContain('PAUSED');
+    expect(q('meta-ad-set-budget-120210000000000888')!.textContent).toContain('50.00 USD daily');
+    expect(q('meta-ad-set-deliberately-paused-120210000000000888')).not.toBeNull();
+    expect(q('meta-ad-set-toggle-120210000000000888')!.textContent).toContain('Resume');
+  });
+
+  it('sends the row ETag as the validator and adopts the one the change returns', () => {
+    render([doc()]);
+    openPanel();
+    clickToggle();
+
+    expect(updateMetaAdSetStatus).toHaveBeenCalledTimes(1);
+    expect(updateMetaAdSetStatus).toHaveBeenCalledWith({
+      projectSlug: 'tlf',
+      briefId: 'b-1',
+      campaignId: 'c-1',
+      adSetId: '120210000000000888',
+      status: 'PAUSED',
+      etag: '"3"',
+    });
+    expect(q('meta-ad-sets-outcome-applied')!.textContent).toContain('Paused Leads — US.');
+
+    // The pause bumped the row's version: the next write on the row must send the NEW validator.
+    (q('optimization-campaign-toggle-c-1') as HTMLButtonElement).click();
+    expect(updateCampaignStatus.mock.calls[0][0].etag).toBe('"4"');
+  });
+
+  it('disables every write on the row while the change is in flight, and never sends a second one', () => {
+    const response = new Subject<never>();
+    updateMetaAdSetStatus.mockReturnValue(response.asObservable());
+    render([doc()]);
+    openPanel();
+    clickToggle();
+
+    expect((q('meta-ad-set-toggle-120210000000000888') as HTMLButtonElement).disabled).toBe(true);
+    expect((q('optimization-campaign-toggle-c-1') as HTMLButtonElement).disabled).toBe(true);
+    clickToggle();
+    expect(updateMetaAdSetStatus).toHaveBeenCalledTimes(1);
+
+    // The budget editor states why it cannot submit.
+    (q('optimization-campaign-budget-edit-c-1') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain(CAMPAIGN_BUDGET_BLOCKED_AD_SET_REASON);
+  });
+
+  it('on a 412 re-reads the ad sets, says nothing was changed, and marks the row stale', () => {
+    updateMetaAdSetStatus.mockReturnValue(throwError(() => bffError(412, 'PRECONDITION_FAILED', 'This campaign changed since it was loaded.')));
+    render([doc()]);
+    openPanel();
+    expect(listMetaAdSets).toHaveBeenCalledTimes(1);
+    clickToggle();
+
+    expect(listMetaAdSets).toHaveBeenCalledTimes(2);
+    expect(q('meta-ad-sets-outcome-conflict')!.textContent).toContain(META_AD_SET_CONFLICT_MESSAGE);
+    expect(q('meta-ad-sets-blocked')!.textContent).toContain(META_AD_SET_BLOCKED_STALE_REASON);
+    expect((q('meta-ad-set-toggle-120210000000000888') as HTMLButtonElement).disabled).toBe(true);
+    expect(q('optimization-campaigns-conflict')).not.toBeNull();
+    expect(updateMetaAdSetStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it('on an UNCONFIRMED pause says it may or may not have applied, re-reads, and prompts a deliberately-paused check', () => {
+    updateMetaAdSetStatus.mockReturnValue(throwError(() => bffError(503, META_AD_SET_STATUS_UNCONFIRMED_CODE, META_AD_SET_STATUS_OUTCOME_UNCONFIRMED)));
+    render([doc()]);
+    openPanel();
+    // The re-read shows the ad set paused but NOT recorded as deliberately paused.
+    listMetaAdSets.mockReturnValue(of(adSets([adSet({ status: 'PAUSED', deliberately_paused: false })])));
+    clickToggle();
+
+    expect(listMetaAdSets).toHaveBeenCalledTimes(2);
+    expect(q('meta-ad-sets-outcome-unconfirmed')!.textContent).toContain(META_AD_SET_UNCONFIRMED_MESSAGE);
+    expect(q('meta-ad-sets-deliberate-pause-advice')!.textContent).toContain(META_AD_SET_DELIBERATE_PAUSE_ADVICE);
+    expect(q('meta-ad-sets-deliberate-pause-missing')).not.toBeNull();
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', sticky: true }));
+    // Never retried.
+    expect(updateMetaAdSetStatus).toHaveBeenCalledTimes(1);
+    // The toggle is usable again once the re-read lands: the operator decides.
+    expect((q('meta-ad-set-toggle-120210000000000888') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("keeps the BFF's own sentence when only the pause RECORD is unconfirmed, and confirms it once the re-read shows it", () => {
+    updateMetaAdSetStatus.mockReturnValue(
+      throwError(() => bffError(503, META_AD_SET_PAUSE_RECORD_UNCONFIRMED_CODE, META_AD_SET_PAUSE_RECORD_OUTCOME_UNCONFIRMED))
+    );
+    render([doc()]);
+    openPanel();
+    listMetaAdSets.mockReturnValue(of(adSets([adSet({ status: 'PAUSED', deliberately_paused: true })])));
+    clickToggle();
+
+    expect(q('meta-ad-sets-outcome-unconfirmed')!.textContent).toContain(META_AD_SET_PAUSE_RECORD_OUTCOME_UNCONFIRMED);
+    expect(q('meta-ad-sets-deliberate-pause-shown')).not.toBeNull();
+  });
+
+  it('treats a response with no BFF envelope (lost connection) as unconfirmed, never as a failure', () => {
+    updateMetaAdSetStatus.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 0, error: new ProgressEvent('error') })));
+    render([doc()]);
+    openPanel();
+    clickToggle();
+
+    expect(q('meta-ad-sets-outcome-unconfirmed')!.textContent).toContain(META_AD_SET_UNCONFIRMED_MESSAGE);
+  });
+
+  it('shows a 409 verbatim and re-reads the ad sets', () => {
+    const message = "this campaign's ad sets cannot be activated here: the campaign records no ad set of its own";
+    updateMetaAdSetStatus.mockReturnValue(throwError(() => bffError(409, 'CONFLICT', message)));
+    render([doc()]);
+    openPanel();
+    clickToggle();
+
+    expect(q('meta-ad-sets-outcome-failed')!.textContent).toContain(message);
+    expect(listMetaAdSets).toHaveBeenCalledTimes(2);
+    expect(q('meta-ad-sets-deliberate-pause-advice')).toBeNull();
+  });
+
+  it('offers no Resume on a paused ad set this service did not create', () => {
+    listMetaAdSets.mockReturnValue(of(adSets([adSet({ status: 'PAUSED', recorded: false })])));
+    render([doc()]);
+    openPanel();
+
+    expect(q('meta-ad-set-toggle-120210000000000888')).toBeNull();
+    expect(q('meta-ad-set-no-action-120210000000000888')).not.toBeNull();
+  });
+
+  it('mounts the panel with the row it belongs to', () => {
+    render([doc()]);
+    openPanel();
+
+    const panel = fixture.debugElement.query(By.directive(MetaAdSetsPanelComponent)).componentInstance as MetaAdSetsPanelComponent;
+    expect(panel.campaignId()).toBe('c-1');
   });
 });

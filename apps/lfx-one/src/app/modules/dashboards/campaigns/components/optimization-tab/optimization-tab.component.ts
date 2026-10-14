@@ -29,6 +29,8 @@ import type {
   LinkedInMonitorResponse,
   MetaAccountOption,
   MetaActionItem,
+  MetaAdSetToggleOutcome,
+  MetaAdSetToggleRequest,
   KeywordActionOutcome,
   MetaMonitorResponse,
   MicrosoftKeywordActionRequest,
@@ -44,6 +46,7 @@ import {
   CAMPAIGN_BID_CONFLICT_MESSAGE,
   CAMPAIGN_BID_UNAVAILABLE_PLATFORM_REASON,
   CAMPAIGN_BID_UNAVAILABLE_UNPROVISIONED_REASON,
+  CAMPAIGN_BUDGET_BLOCKED_AD_SET_REASON,
   CAMPAIGN_BUDGET_BLOCKED_BID_REASON,
   CAMPAIGN_BUDGET_BLOCKED_STALE_REASON,
   CAMPAIGN_BUDGET_BLOCKED_TOGGLE_REASON,
@@ -67,6 +70,10 @@ import {
   DEFAULT_CAMPAIGN_BID_TYPE,
   KEYWORD_ACTION_OUTCOME_CLASSES,
   KEYWORD_ACTION_OUTCOME_LABELS,
+  META_AD_SET_BLOCKED_BUSY_REASON,
+  META_AD_SET_BLOCKED_STALE_REASON,
+  META_AD_SETS_CAMPAIGN_PLATFORM,
+  META_AD_SETS_UNAVAILABLE_UNPROVISIONED_REASON,
   NEGATIVE_KEYWORD_CAMPAIGN_PLATFORMS,
   PLATFORM_BRAND_COLORS,
   TOGGLEABLE_CAMPAIGN_PLATFORMS,
@@ -75,6 +82,7 @@ import {
 } from '@lfx-one/shared/constants';
 import { campaignActionItemLever, keywordActionKey, keywordIdentityKey } from '@lfx-one/shared/utils';
 import { AdsCurrencyPipe, AdsPctPipe, EventLabelPipe, PacingClassPipe, PriorityClassPipe, QualityScoreClassPipe } from '@pipes/campaign-optimization.pipe';
+import { metaAdSetFailureOutcome } from '@shared/utils/campaign-ad-set-error.utils';
 import { campaignBidFailureOutcome } from '@shared/utils/campaign-bid-error.utils';
 import { campaignBudgetFailureOutcome } from '@shared/utils/campaign-budget-error.utils';
 import { classifyCampaignWriteFailure } from '@shared/utils/campaign-write-error.utils';
@@ -89,6 +97,7 @@ import { catchError, EMPTY, map, of, skip, switchMap, take, type Subscription } 
 import { CampaignBidFormComponent } from '../campaign-bid-form/campaign-bid-form.component';
 import { CampaignBudgetFormComponent } from '../campaign-budget-form/campaign-budget-form.component';
 import { CampaignNegativeKeywordsFormComponent } from '../campaign-negative-keywords-form/campaign-negative-keywords-form.component';
+import { MetaAdSetsPanelComponent } from '../meta-ad-sets-panel/meta-ad-sets-panel.component';
 import { MicrosoftKeywordsTableComponent } from '../microsoft-keywords-table/microsoft-keywords-table.component';
 
 @Component({
@@ -101,6 +110,7 @@ import { MicrosoftKeywordsTableComponent } from '../microsoft-keywords-table/mic
     CampaignBudgetFormComponent,
     CampaignNegativeKeywordsFormComponent,
     EventLabelPipe,
+    MetaAdSetsPanelComponent,
     MicrosoftKeywordsTableComponent,
     PacingClassPipe,
     PriorityClassPipe,
@@ -241,6 +251,20 @@ export class OptimizationTabComponent implements OnInit {
     (request) => !request.pending && (request.batchOutcome?.state === 'unconfirmed' || request.outcomeRows.some((row) => row.outcome === 'UNCONFIRMED'))
   );
 
+  /**
+   * Meta ad-set state, per campaign id. The ad-set status change is the toggle's sibling write on the
+   * same row: it sends the row's freshest validator, the fresh one it returns replaces it (a pause or
+   * resume of the recorded ad set bumps the row's version), a 412 marks the row conflicted, and the
+   * row's other writes wait while it is out.
+   */
+  protected readonly adSetsPanelOpen = signal<Record<string, boolean>>({});
+  /** The ad set whose status change is in flight, per campaign id. One per campaign at a time. */
+  protected readonly adSetPending = signal<Partial<Record<string, string>>>({});
+  /** How the campaign's last ad-set change ended; replaced when a new one is dispatched. */
+  protected readonly adSetOutcome = signal<Partial<Record<string, MetaAdSetToggleOutcome>>>({});
+  /** Bumped per campaign after every ad-set change, confirmed or not, so its panel re-reads the ad sets. */
+  protected readonly adSetsReload = signal<Partial<Record<string, number>>>({});
+
   /** Bumped by Refresh to re-read the Microsoft keyword table, which owns its own read. */
   protected readonly microsoftKeywordsReload = signal(0);
 
@@ -304,6 +328,7 @@ export class OptimizationTabComponent implements OnInit {
     const pending = this.togglePending();
     const budgetPending = this.budgetPending();
     const bidPending = this.bidPending();
+    const adSetPending = this.adSetPending();
     const rows = this.campaignRows();
     if (rows === null) {
       return '';
@@ -322,6 +347,9 @@ export class OptimizationTabComponent implements OnInit {
       }
       if (bidPending[row.campaign.id]) {
         working.push(`Changing the bid of ${row.campaign.campaign_name}`);
+      }
+      if (adSetPending[row.campaign.id]) {
+        working.push(`Changing an ad set of ${row.campaign.campaign_name}`);
       }
     }
     return working.join(', ');
@@ -521,6 +549,7 @@ export class OptimizationTabComponent implements OnInit {
     const conflictedIds = this.conflictedCampaignIds();
     const budgetPending = this.budgetPending();
     const bidPending = this.bidPending();
+    const adSetPending = this.adSetPending();
     const deploymentDisabled = !this.statusToggleEnabled();
     return rows.map((campaign) => {
       // Normalized HERE, once, rather than inside each consumer. `status` feeds three of them —
@@ -571,6 +600,9 @@ export class OptimizationTabComponent implements OnInit {
       const bidUnavailableReason = this.bidUnavailableReasonFor(campaign, status);
       const negativeKeywordsOffered = typeof campaign.platform === 'string' && NEGATIVE_KEYWORD_CAMPAIGN_PLATFORMS.has(campaign.platform);
       const negativeKeywordsUnavailableReason = negativeKeywordsOffered ? this.negativeKeywordsUnavailableReasonFor(campaign, status) : '';
+      const adSetsOffered = campaign.platform === META_AD_SETS_CAMPAIGN_PLATFORM;
+      const adSetsUnavailableReason = adSetsOffered ? this.adSetsUnavailableReasonFor(campaign, status) : '';
+      const adSetBusy = adSetPending[campaign.id] !== undefined;
       return {
         campaign,
         status,
@@ -581,13 +613,21 @@ export class OptimizationTabComponent implements OnInit {
         describedBy: this.describedByFor(campaign.id, action, toggleErrors),
         budgetAvailable: budgetUnavailableReason === '',
         budgetUnavailableReason,
-        budgetBlockedReason: this.budgetBlockedReasonFor(conflicted, pendingDirection !== undefined, !!bidPending[campaign.id]),
+        budgetBlockedReason: this.budgetBlockedReasonFor(conflicted, pendingDirection !== undefined, !!bidPending[campaign.id], adSetBusy),
         bidAvailable: bidUnavailableReason === '',
         bidUnavailableReason,
-        bidBlockedReason: this.bidBlockedReasonFor(conflicted, pendingDirection !== undefined || !!budgetPending[campaign.id]),
+        bidBlockedReason: this.bidBlockedReasonFor(conflicted, pendingDirection !== undefined || !!budgetPending[campaign.id] || adSetBusy),
         negativeKeywordsOffered,
         negativeKeywordsAvailable: negativeKeywordsOffered && negativeKeywordsUnavailableReason === '',
         negativeKeywordsUnavailableReason,
+        adSetsOffered,
+        adSetsAvailable: adSetsOffered && adSetsUnavailableReason === '',
+        adSetsUnavailableReason,
+        // Busy only while ANOTHER write is out: the panel itself shows its own pending ad set.
+        adSetsBlockedReason: this.adSetsBlockedReasonFor(
+          conflicted,
+          pendingDirection !== undefined || !!budgetPending[campaign.id] || !!bidPending[campaign.id]
+        ),
       };
     });
   });
@@ -700,7 +740,7 @@ export class OptimizationTabComponent implements OnInit {
     const campaign = row.campaign;
     // A budget change in flight on this row holds the same validator; a toggle sent alongside it
     // would race it to the same `If-Match` and one of the two would 412.
-    if (this.togglePending()[campaign.id] || this.budgetPending()[campaign.id] || this.bidPending()[campaign.id]) {
+    if (this.togglePending()[campaign.id] || this.budgetPending()[campaign.id] || this.bidPending()[campaign.id] || this.adSetPending()[campaign.id]) {
       return;
     }
     // The template disables the button for these rows, so reaching here means the DOM and the
@@ -961,7 +1001,7 @@ export class OptimizationTabComponent implements OnInit {
   protected changeCampaignBudget(row: CampaignRow, change: CampaignBudgetChange): void {
     const campaign = row.campaign;
     const id = campaign.id;
-    if (this.budgetPending()[id] || this.togglePending()[id] || this.bidPending()[id]) {
+    if (this.budgetPending()[id] || this.togglePending()[id] || this.bidPending()[id] || this.adSetPending()[id]) {
       return;
     }
     // The template withholds the editor for these rows; reaching here means the DOM and the
@@ -1100,6 +1140,132 @@ export class OptimizationTabComponent implements OnInit {
     this.negativeKeywordsService.dismiss(this.projectSlug(), this.briefId(), campaignId);
   }
 
+  /** Opens or closes one Meta row's ad-set panel. A change in flight keeps it open. */
+  protected toggleAdSetsPanel(row: CampaignRow): void {
+    const id = row.campaign.id;
+    if (this.adSetsPanelOpen()[id]) {
+      this.closeAdSetsPanel(id);
+      return;
+    }
+    if (!row.adSetsAvailable) {
+      return;
+    }
+    this.adSetsPanelOpen.update((open) => ({ ...open, [id]: true }));
+  }
+
+  protected closeAdSetsPanel(campaignId: string): void {
+    if (this.adSetPending()[campaignId]) {
+      return;
+    }
+    this.adSetsPanelOpen.update((open) => this.omitKeys(open, [campaignId]));
+  }
+
+  /**
+   * Pause or resume one ad set of a Meta campaign.
+   *
+   * Built like the budget and bid changes, on the same row state: the row's freshest validator goes
+   * out as `If-Match`, the one the response returns replaces it (a change to the recorded ad set
+   * bumps the row's version), a 412 marks the row conflicted, and a response that outlives its
+   * (project, brief) writes nothing but the toast. One write per row at a time.
+   *
+   * NEVER retried. Whatever the answer, the panel re-reads the ad sets so the operator sees what
+   * Meta holds now: after a 412 (nothing was changed), after an unconfirmed outcome (it may or may
+   * not have been applied), and after a 409 that says the status WAS changed. After a PAUSE that
+   * came back unconfirmed, the panel shows campaign-service's advice to re-read
+   * `deliberately_paused`, and what the re-read shows.
+   */
+  protected changeMetaAdSetStatus(row: CampaignRow, request: MetaAdSetToggleRequest): void {
+    const campaign = row.campaign;
+    const id = campaign.id;
+    if (this.adSetPending()[id] || this.togglePending()[id] || this.budgetPending()[id] || this.bidPending()[id]) {
+      return;
+    }
+    const outcomeOf = (state: MetaAdSetToggleOutcome['state'], message: string): MetaAdSetToggleOutcome => ({
+      state,
+      message,
+      adSetId: request.adSetId,
+      adSetName: request.adSetName,
+      requestedStatus: request.status,
+    });
+    // The template disables the toggles for these rows; reaching here means the DOM and the
+    // computed disagreed, so refuse rather than send a change upstream would refuse anyway.
+    if (!row.adSetsAvailable) {
+      this.adSetOutcome.update((o) => ({ ...o, [id]: outcomeOf('failed', row.adSetsUnavailableReason) }));
+      return;
+    }
+    if (row.conflicted) {
+      this.adSetOutcome.update((o) => ({ ...o, [id]: outcomeOf('conflict', META_AD_SET_BLOCKED_STALE_REASON) }));
+      return;
+    }
+    const etag = this.toggledEtag()[id] ?? campaign.etag ?? '';
+    if (etag === '') {
+      this.adSetOutcome.update((o) => ({ ...o, [id]: outcomeOf('failed', 'This campaign cannot be changed until it is re-indexed.') }));
+      return;
+    }
+
+    this.adSetPending.update((p) => ({ ...p, [id]: request.adSetId }));
+    this.adSetOutcome.update((o) => this.omitKeys(o, [id]));
+    const dispatchedIn = this.contextGeneration;
+    const campaignName = campaign.campaign_name;
+    const verb = request.status === 'PAUSED' ? 'Paused' : 'Resumed';
+
+    // `take(1)`, not `takeUntilDestroyed`, for the toggle's reason: a tab switch destroys this
+    // component, and aborting a write on a live ad set would leave its outcome unknown with nothing
+    // shown. The toast carries the outcome past the component.
+    this.campaignService
+      .updateMetaAdSetStatus({
+        projectSlug: this.projectSlug(),
+        briefId: this.briefId(),
+        campaignId: id,
+        adSetId: request.adSetId,
+        status: request.status,
+        etag,
+      })
+      .pipe(take(1))
+      .subscribe({
+        next: (result) => {
+          const already = result.outcome === 'ALREADY_IN_STATE';
+          const message = already
+            ? `${request.adSetName} was already ${request.status === 'PAUSED' ? 'paused' : 'active'}; nothing was sent to Meta.`
+            : `${verb} ${request.adSetName}.`;
+          this.messageService.add({ severity: 'success', summary: `Ad set changed in ${campaignName}`, detail: message, life: 5000 });
+          if (dispatchedIn !== this.contextGeneration) {
+            return;
+          }
+          this.adSetPending.update((p) => this.omitKeys(p, [id]));
+          this.adSetOutcome.update((o) => ({ ...o, [id]: outcomeOf(already ? 'already' : 'applied', message) }));
+          this.bumpAdSetsReload(id);
+          // A pause or resume of the recorded ad set bumped the row's version. Without the fresh
+          // etag the next write on this row would replay a dead validator and 412.
+          if (result.etag) {
+            this.toggledEtag.update((e) => ({ ...e, [id]: result.etag as string }));
+            if (this.listReadInFlight) {
+              this.etagsWrittenDuringRead.add(id);
+            }
+          }
+        },
+        error: (err: unknown) => {
+          const failure = metaAdSetFailureOutcome(err);
+          this.announceAdSetFailure(campaignName, request.adSetName, failure.state, failure.message);
+          if (dispatchedIn !== this.contextGeneration) {
+            return;
+          }
+          this.adSetPending.update((p) => this.omitKeys(p, [id]));
+          this.adSetOutcome.update((o) => ({ ...o, [id]: outcomeOf(failure.state, failure.message) }));
+          // Re-read, never retry: the operator decides from what Meta now holds.
+          this.bumpAdSetsReload(id);
+          // Same evidence as the toggle's 412: this view's validator is dead for every control on the row.
+          if (failure.state === 'conflict') {
+            this.conflictedCampaignIds.update((ids) => {
+              const next = new Set(ids);
+              next.add(id);
+              return next;
+            });
+          }
+        },
+      });
+  }
+
   /**
    * Change one campaign's manual max CPC bid on its ad platform.
    *
@@ -1116,7 +1282,7 @@ export class OptimizationTabComponent implements OnInit {
   protected changeCampaignBid(row: CampaignRow, change: CampaignBidChange): void {
     const campaign = row.campaign;
     const id = campaign.id;
-    if (this.bidPending()[id] || this.budgetPending()[id] || this.togglePending()[id]) {
+    if (this.bidPending()[id] || this.budgetPending()[id] || this.togglePending()[id] || this.adSetPending()[id]) {
       return;
     }
     if (!row.bidAvailable) {
@@ -1922,6 +2088,10 @@ export class OptimizationTabComponent implements OnInit {
         // Negative-keyword requests are keyed by (project, brief, campaign) in the root service, and
         // the campaigns page (which stays mounted across tabs) scopes them; see `setScope`.
         this.negativesEditorOpen.set({});
+        this.adSetsPanelOpen.set({});
+        this.adSetPending.set({});
+        this.adSetOutcome.set({});
+        this.adSetsReload.set({});
         this.lastDeliveredEtags = {};
         this.hasDeliveredList = false;
         this.etagsWrittenDuringRead.clear();
@@ -2164,6 +2334,8 @@ export class OptimizationTabComponent implements OnInit {
     this.budgetOutcome.update((outcomes) => this.omitKeys(outcomes, conflictOutcomes));
     const bidConflictOutcomes = clearable.filter((id) => this.bidOutcome()[id]?.state === 'conflict');
     this.bidOutcome.update((outcomes) => this.omitKeys(outcomes, bidConflictOutcomes));
+    const adSetConflictOutcomes = clearable.filter((id) => this.adSetOutcome()[id]?.state === 'conflict');
+    this.adSetOutcome.update((outcomes) => this.omitKeys(outcomes, adSetConflictOutcomes));
   }
 
   /** Opens one row's budget editor for a finding (leaving it open if it already is) and focuses it. */
@@ -2281,7 +2453,7 @@ export class OptimizationTabComponent implements OnInit {
   }
 
   /** Why an available budget editor cannot submit right now, or `''`. Stale validator first. */
-  private budgetBlockedReasonFor(conflicted: boolean, togglePending: boolean, bidPending: boolean): string {
+  private budgetBlockedReasonFor(conflicted: boolean, togglePending: boolean, bidPending: boolean, adSetPending: boolean): string {
     if (conflicted) {
       return CAMPAIGN_BUDGET_BLOCKED_STALE_REASON;
     }
@@ -2290,6 +2462,31 @@ export class OptimizationTabComponent implements OnInit {
     }
     if (bidPending) {
       return CAMPAIGN_BUDGET_BLOCKED_BID_REASON;
+    }
+    if (adSetPending) {
+      return CAMPAIGN_BUDGET_BLOCKED_AD_SET_REASON;
+    }
+    return '';
+  }
+
+  /** Why a Meta row's ad-set panel cannot be opened, or `''`. Only asked for offered rows. */
+  private adSetsUnavailableReasonFor(campaign: CampaignIndexDoc, status: string): string {
+    if (typeof campaign.platform_campaign_id !== 'string' || campaign.platform_campaign_id.trim() === '') {
+      return META_AD_SETS_UNAVAILABLE_UNPROVISIONED_REASON;
+    }
+    if (status === 'deleted') {
+      return CAMPAIGN_UNAVAILABLE_REASONS['deleted'];
+    }
+    return '';
+  }
+
+  /** Why an open ad-set panel cannot change an ad set right now, or `''`. Stale validator first. */
+  private adSetsBlockedReasonFor(conflicted: boolean, otherWritePending: boolean): string {
+    if (conflicted) {
+      return META_AD_SET_BLOCKED_STALE_REASON;
+    }
+    if (otherWritePending) {
+      return META_AD_SET_BLOCKED_BUSY_REASON;
     }
     return '';
   }
@@ -2395,6 +2592,19 @@ export class OptimizationTabComponent implements OnInit {
       return;
     }
     this.messageService.add({ severity: 'error', summary: `Bid not changed for ${campaignName}`, detail: outcome.message, sticky: true });
+  }
+
+  /** Narrates an ad-set change that did not succeed. Sticky; UNCONFIRMED is a warning that says it may have applied. */
+  private announceAdSetFailure(campaignName: string, adSetName: string, state: MetaAdSetToggleOutcome['state'], message: string): void {
+    if (state === 'unconfirmed') {
+      this.messageService.add({ severity: 'warn', summary: `Ad set change not confirmed: ${adSetName} (${campaignName})`, detail: message, sticky: true });
+      return;
+    }
+    this.messageService.add({ severity: 'error', summary: `Ad set not changed: ${adSetName} (${campaignName})`, detail: message, sticky: true });
+  }
+
+  private bumpAdSetsReload(campaignId: string): void {
+    this.adSetsReload.update((tokens) => ({ ...tokens, [campaignId]: (tokens[campaignId] ?? 0) + 1 }));
   }
 
   /**
