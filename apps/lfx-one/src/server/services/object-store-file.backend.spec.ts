@@ -46,6 +46,8 @@ describe('FileObjectStoreBackend', () => {
       await writeFile(root, 'not a folder');
       await expect(backend.readiness()).resolves.toBe(false);
       await expect(backend.ensureBucket()).rejects.toMatchObject({ code: 'EEXIST' });
+      // A misconfigured root surfaces from a listing too, instead of reading as "nothing stored".
+      await expect(backend.listObjects('')).rejects.toMatchObject({ code: 'ENOTDIR' });
     });
   });
 

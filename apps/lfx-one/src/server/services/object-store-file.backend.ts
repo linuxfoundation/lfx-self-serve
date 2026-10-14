@@ -26,7 +26,9 @@ import { ServiceValidationError } from '../errors';
  *   so a reader — or a crash — never meets a half-written file. The sidecar
  *   lands first and the body last, and a key reports an object only once its
  *   body is a file, so a put interrupted between the two is invisible until
- *   the next put of the key lands both.
+ *   the next put of the key lands both. When the key already holds an object,
+ *   a put interrupted the same way pairs the new labels with the old body
+ *   until that next put — the same bytes, for a content-addressed key.
  * - `lastModified` is the body file's mtime, so the shared artifact layer's
  *   "latest is write time" ordering — and its metadata-refresh rewrite that
  *   advances the stamp — behave exactly as against S3.
@@ -146,7 +148,9 @@ export class FileObjectStoreBackend implements ObjectStoreBackend {
     try {
       entries = await readdir(this.root, { recursive: true, withFileTypes: true });
     } catch (error) {
-      if (isMissing(error)) {
+      // Only an absent root is an empty store. ENOTDIR means the configured root (or an
+      // ancestor) is a regular file — a configuration error, which readiness() also reports.
+      if (fsErrorCode(error) === 'ENOENT') {
         return [];
       }
       throw error;
