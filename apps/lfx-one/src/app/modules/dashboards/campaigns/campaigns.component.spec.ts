@@ -1295,6 +1295,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
+            biddingEnabled: false,
           })
         );
 
@@ -1328,6 +1329,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
+            biddingEnabled: false,
           })
         );
 
@@ -1372,6 +1374,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: true,
             googleCreativeEnabled: true,
             redditCreativeEnabled: true,
+            biddingEnabled: false,
           })
         );
 
@@ -1384,6 +1387,41 @@ describe('CampaignsComponent brief persistence', () => {
         };
         expect(c.briefCampaignsGoogleChannelsEnabled()).toBe(true);
         expect(c.briefCampaignsDemandGenEnabled()).toBe(false);
+      });
+
+      /**
+       * The Bidding capability (#3299) rides on the same read, and is asserted with every OTHER
+       * capability set the opposite way, so a component that read the wrong key would fail here.
+       * A failed read leaves it `null`, which the tab treats as off.
+       */
+      it('loads the bidding capability from its own key', async () => {
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
+          of({
+            campaigns: [],
+            possiblyStale: false,
+            statusToggleEnabled: false,
+            demandGenEnabled: false,
+            googleChannelsEnabled: false,
+            googleCreativeEnabled: false,
+            redditCreativeEnabled: false,
+            biddingEnabled: true,
+          })
+        );
+
+        await withSavedBrief();
+        await fixture.whenStable();
+
+        const c = fixture.componentInstance as unknown as { briefCampaignsBiddingEnabled(): boolean | null };
+        expect(c.briefCampaignsBiddingEnabled()).toBe(true);
+      });
+
+      it('leaves the bidding capability unknown when the capability read fails', async () => {
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(throwError(() => new Error('query service down')));
+
+        await withSavedBrief();
+        await fixture.whenStable();
+
+        expect((fixture.componentInstance as unknown as { briefCampaignsBiddingEnabled(): boolean | null }).briefCampaignsBiddingEnabled()).toBeNull();
       });
 
       /**
@@ -1430,6 +1468,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
+            biddingEnabled: false,
           })
         );
         (fixture.componentInstance as unknown as { selectTab(t: CampaignTab, owner: CampaignDeliveryType): void }).selectTab('planning', 'paid-marketing');
@@ -1473,6 +1512,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
+            biddingEnabled: false,
           })
         );
         load();
@@ -1487,6 +1527,7 @@ describe('CampaignsComponent brief persistence', () => {
           googleChannelsEnabled: false,
           googleCreativeEnabled: false,
           redditCreativeEnabled: false,
+          biddingEnabled: false,
         });
         capability.complete();
         await fixture.whenStable();
@@ -1517,6 +1558,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
+            biddingEnabled: false,
           })
         );
         (fixture.componentInstance as unknown as { loadCreateCapabilities(): void }).loadCreateCapabilities();
@@ -1548,6 +1590,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
+            biddingEnabled: false,
           })
         );
 
@@ -1574,6 +1617,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
+            biddingEnabled: false,
           })
         );
 
@@ -1613,6 +1657,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
+            biddingEnabled: false,
           })
         );
         (fixture.componentInstance as unknown as { loadCreateCapabilities(): void }).loadCreateCapabilities();
@@ -1653,6 +1698,7 @@ describe('CampaignsComponent brief persistence', () => {
           googleChannelsEnabled: false,
           googleCreativeEnabled: false,
           redditCreativeEnabled: false,
+          biddingEnabled: false,
         });
         pending.complete();
         await fixture.whenStable();
@@ -1693,6 +1739,7 @@ describe('CampaignsComponent brief persistence', () => {
           googleChannelsEnabled: false,
           googleCreativeEnabled: false,
           redditCreativeEnabled: false,
+          biddingEnabled: false,
         });
         second.complete();
         await fixture.whenStable();
@@ -1717,6 +1764,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
+            biddingEnabled: false,
           })
         );
 
@@ -1743,6 +1791,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: true,
             redditCreativeEnabled: true,
+            biddingEnabled: false,
           })
         );
         await withSavedBrief();
@@ -1759,6 +1808,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: true,
             redditCreativeEnabled: true,
+            biddingEnabled: false,
           })
         );
         selectFoundation('cncf');
@@ -1788,6 +1838,7 @@ describe('CampaignsComponent brief persistence', () => {
           googleChannelsEnabled: false,
           googleCreativeEnabled: true,
           redditCreativeEnabled: true,
+          biddingEnabled: false,
         });
         await fixture.whenStable();
 
@@ -1819,6 +1870,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: true,
             redditCreativeEnabled: true,
+            biddingEnabled: false,
           })
         );
         await withSavedBrief();
@@ -1850,6 +1902,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: true,
             redditCreativeEnabled: true,
+            biddingEnabled: false,
           })
         );
         await withSavedBrief();
@@ -1884,6 +1937,7 @@ describe('CampaignsComponent brief persistence', () => {
           googleChannelsEnabled: false,
           googleCreativeEnabled: true,
           redditCreativeEnabled: true,
+          biddingEnabled: false,
         });
         await fixture.whenStable();
         expect(optimizeText()).toContain('Brief B campaign');
@@ -1949,6 +2003,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: true,
             redditCreativeEnabled: true,
+            biddingEnabled: false,
           })
         );
         load();

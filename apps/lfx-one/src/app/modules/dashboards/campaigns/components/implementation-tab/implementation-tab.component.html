@@ -1049,6 +1049,13 @@
             </div>
           </div>
 
+          <!-- Bidding (#3299): offered only when this deployment can honour it; see `biddingAvailable`. -->
+          @if (biddingAvailable()) {
+            <div class="mb-4">
+              <lfx-campaign-bidding-control [view]="biddingViews()['linkedin-ads']" (biddingChange)="onBiddingChange('linkedin-ads', $event)" />
+            </div>
+          }
+
           <!-- Variant Preview -->
           @if (linkedInVariants().length > 0) {
             <div>
@@ -1251,6 +1258,13 @@
             </div>
           </div>
 
+          <!-- Bidding (#3299): offered only when this deployment can honour it; see `biddingAvailable`. -->
+          @if (biddingAvailable()) {
+            <div class="mb-4">
+              <lfx-campaign-bidding-control [view]="biddingViews()['meta-ads']" (biddingChange)="onBiddingChange('meta-ads', $event)" />
+            </div>
+          }
+
           <!-- Variant Preview -->
           @if (metaVariants().length > 0) {
             <div>
@@ -1314,35 +1328,45 @@
               -->
               <span class="text-xs text-gray-400">Whole units of the ad account's currency, charged daily.</span>
             </div>
-            <div class="flex flex-col gap-1">
-              <label class="text-xs font-medium text-gray-700" for="microsoft-cpc-bid">Max CPC Bid (optional)</label>
-              <input
-                id="microsoft-cpc-bid"
-                type="number"
-                [value]="microsoftCpcBid()"
-                (input)="onMicrosoftCpcBidInput($event)"
-                [min]="microsoftMinCpcBid"
-                [max]="microsoftMaxCpcBid"
-                step="0.01"
-                placeholder="Account minimum"
-                [attr.aria-invalid]="microsoftCpcBidValid() ? null : 'true'"
-                class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                data-testid="implementation-microsoft-cpc-bid" />
-              @if (microsoftCpcBidValid()) {
-                <span class="text-xs text-gray-400">Leave blank to use the account-currency minimum.</span>
-              } @else {
-                <!--
-                  Names the RANGE and the consequence rather than "invalid": Microsoft refuses an
-                  out-of-range bid during dispatch, and because creation is asynchronous that
-                  refusal arrives as a failed job rather than as an error on the click.
-                -->
-                <p role="alert" class="text-xs text-red-600" data-testid="implementation-microsoft-cpc-bid-error">
-                  Enter a bid between {{ microsoftMinCpcBid }} and {{ microsoftMaxCpcBid }}, or leave it blank — Microsoft rejects anything outside that range
-                  and the campaign would fail after submission.
-                </p>
-              }
-            </div>
+            <!-- The legacy max CPC field; the Bidding control below replaces it when offered (#3299). -->
+            @if (!biddingAvailable()) {
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-medium text-gray-700" for="microsoft-cpc-bid">Max CPC Bid (optional)</label>
+                <input
+                  id="microsoft-cpc-bid"
+                  type="number"
+                  [value]="microsoftCpcBid()"
+                  (input)="onMicrosoftCpcBidInput($event)"
+                  [min]="microsoftMinCpcBid"
+                  [max]="microsoftMaxCpcBid"
+                  step="0.01"
+                  placeholder="Account minimum"
+                  [attr.aria-invalid]="microsoftCpcBidValid() ? null : 'true'"
+                  class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  data-testid="implementation-microsoft-cpc-bid" />
+                @if (microsoftCpcBidValid()) {
+                  <span class="text-xs text-gray-400">Leave blank to use the account-currency minimum.</span>
+                } @else {
+                  <!--
+                    Names the RANGE and the consequence rather than "invalid": Microsoft refuses an
+                    out-of-range bid during dispatch, and because creation is asynchronous that
+                    refusal arrives as a failed job rather than as an error on the click.
+                  -->
+                  <p role="alert" class="text-xs text-red-600" data-testid="implementation-microsoft-cpc-bid-error">
+                    Enter a bid between {{ microsoftMinCpcBid }} and {{ microsoftMaxCpcBid }}, or leave it blank — Microsoft rejects anything outside that range
+                    and the campaign would fail after submission.
+                  </p>
+                }
+              </div>
+            }
           </div>
+
+          <!-- Bidding (#3299): offered only when this deployment can honour it; see `biddingAvailable`. -->
+          @if (biddingAvailable()) {
+            <div class="mb-4">
+              <lfx-campaign-bidding-control [view]="biddingViews()['microsoft-ads']" (biddingChange)="onBiddingChange('microsoft-ads', $event)" />
+            </div>
+          }
 
           <!-- Keywords -->
           <div class="mb-4">
@@ -1697,6 +1721,13 @@
                   <span class="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700">{{ kw }}</span>
                 }
               </div>
+            </div>
+          }
+
+          <!-- Bidding (#3299): offered only when this deployment can honour it; see `biddingAvailable`. -->
+          @if (biddingAvailable()) {
+            <div class="mb-4">
+              <lfx-campaign-bidding-control [view]="biddingViews()['reddit-ads']" (biddingChange)="onBiddingChange('reddit-ads', $event)" />
             </div>
           }
 

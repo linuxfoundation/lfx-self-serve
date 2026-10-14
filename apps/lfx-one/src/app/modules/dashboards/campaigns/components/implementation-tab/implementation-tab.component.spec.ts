@@ -6795,3 +6795,331 @@ describe('ImplementationTabComponent google bidding', () => {
     expect(c['googleBiddingPayload']().biddingStrategy).toBeUndefined();
   });
 });
+
+/**
+ * The per-platform Bidding control (#3299): Automatic or Manual max CPC bid on LinkedIn, Meta,
+ * Microsoft Ads and Reddit, behind `biddingEnabled` (`LFX_CUTOVER_CAMPAIGN_SERVICE_BIDDING`).
+ *
+ * Asserted on what `createCampaign` is CALLED with, because the guarantee that matters is the wire
+ * shape campaign-service #332 accepts: `bidding` absent while the flag is off, otherwise an explicit
+ * object with exactly `strategy` (and `bidAmount` for manual) — never `null`, never `''`.
+ */
+describe('ImplementationTabComponent bidding control', () => {
+  const LANE_CONFIGS = ['linkedInConfig', 'metaConfig', 'microsoftConfig', 'redditConfig'] as const;
+
+  let createCampaign: ReturnType<typeof vi.fn>;
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  const brief = (): CampaignBriefOutput =>
+    ({
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'US', registrationUrl: 'https://example.com/kubecon' },
+      totalBudget: 500,
+      selectedPlatforms: ['linkedin-ads', 'reddit-ads', 'meta-ads', 'microsoft-ads'],
+      structuredCopy: { google_search: { headlines: ['Attend KubeCon'], descriptions: ['Join us in September'] } },
+      linkedInCopy: {
+        variants: [{ headline: 'Brief headline', introText: 'Brief intro', destinationUrl: 'https://example.com/brief' }],
+        recommendedGeoTargets: [{ urn: 'urn:li:geo:103644278', label: 'United States' }],
+        recommendedTargetingProfile: 'cloud-native',
+      },
+      redditCopy: {
+        variants: [{ headline: 'Brief reddit headline', destinationUrl: 'https://example.com/brief' }],
+        recommendedSubreddits: ['briefsub'],
+        recommendedInterests: ['brief-interest'],
+        recommendedKeywords: ['brief-keyword'],
+        recommendedGeos: ['US'],
+      },
+      metaCopy: {
+        variants: [{ primaryText: 'Brief primary', headline: 'Brief meta headline', description: 'Brief description' }],
+        recommendedGeos: ['US'],
+      },
+      keywords: [],
+      hsUtm: null,
+      driveFolderUrl: '',
+    }) as unknown as CampaignBriefOutput;
+
+  function component(f: ComponentFixture<ImplementationTabComponent> = fixture): Record<string, any> {
+    return f.componentInstance as unknown as Record<string, any>;
+  }
+
+  function query(testId: string, f: ComponentFixture<ImplementationTabComponent> = fixture): HTMLElement | null {
+    return f.nativeElement.querySelector(`[data-testid="${testId}"]`);
+  }
+
+  async function mount(
+    bidding: boolean | null | undefined,
+    draft: CampaignImplementationDraft | null = null
+  ): Promise<ComponentFixture<ImplementationTabComponent>> {
+    const f = TestBed.createComponent(ImplementationTabComponent);
+    if (draft) f.componentRef.setInput('draft', draft);
+    if (bidding !== undefined) f.componentRef.setInput('biddingEnabled', bidding);
+    f.componentRef.setInput('briefData', brief());
+    f.detectChanges();
+    await f.whenStable();
+    const c = component(f);
+    c['selectedPlatforms'].set(['linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads']);
+    c['campaignForm'].controls['eventName'].setValue('KubeCon EU 2026');
+    c['campaignForm'].controls['registrationUrl'].setValue('https://example.com/kubecon');
+    c['campaignForm'].controls['startDate'].setValue('2026-09-01');
+    c['campaignForm'].controls['endDate'].setValue('2026-09-30');
+    c['addMicrosoftKeyword']('service mesh');
+    f.detectChanges();
+    await f.whenStable();
+    return f;
+  }
+
+  /** Pick a strategy through the control's own form, so the change travels the real `(biddingChange)` binding. */
+  async function pickStrategy(platform: string, strategy: 'automatic' | 'manual', f: ComponentFixture<ImplementationTabComponent> = fixture): Promise<void> {
+    const host = query(`implementation-bidding-${platform}`, f)?.closest('lfx-campaign-bidding-control');
+    expect(host).not.toBeNull();
+    const control = f.debugElement.queryAll((el) => el.nativeElement === host)[0].componentInstance;
+    control.form.controls.strategy.setValue(strategy);
+    f.detectChanges();
+    await f.whenStable();
+  }
+
+  /** Type a bid into the rendered amount input, as an operator would. */
+  async function typeBid(platform: string, value: string, f: ComponentFixture<ImplementationTabComponent> = fixture): Promise<void> {
+    const input = query(`implementation-bidding-${platform}-amount`, f)?.querySelector('input') as HTMLInputElement | null;
+    expect(input).not.toBeNull();
+    (input as HTMLInputElement).value = value;
+    (input as HTMLInputElement).dispatchEvent(new Event('input'));
+    f.detectChanges();
+    await f.whenStable();
+  }
+
+  async function submitted(f: ComponentFixture<ImplementationTabComponent> = fixture): Promise<Record<string, Record<string, unknown>>> {
+    expect(component(f)['canSubmit']()).toBe(true);
+    component(f)['submit']();
+    await f.whenStable();
+    expect(createCampaign).toHaveBeenCalled();
+    return createCampaign.mock.calls[createCampaign.mock.calls.length - 1][0];
+  }
+
+  beforeEach(async () => {
+    createCampaign = vi.fn().mockReturnValue(of({ result: { campaigns: [], errors: [] } }));
+
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        {
+          provide: CampaignService,
+          useValue: {
+            createCampaign,
+            getLinkedInAccounts: () => of([{ accountId: 'urn:li:sponsoredAccount:1', name: 'LF Account', status: 'ACTIVE' }]),
+          },
+        },
+      ],
+    }).compileComponents();
+  });
+
+  describe('with the flag off', () => {
+    it.each([
+      ['unanswered', undefined],
+      ['null', null],
+      ['false', false],
+    ])('hides the control when the capability is %s', async (_label, bidding) => {
+      fixture = await mount(bidding);
+
+      for (const platform of ['linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads']) {
+        expect(query(`implementation-bidding-${platform}`)).toBeNull();
+      }
+      // The legacy Microsoft max CPC field stays exactly as it was.
+      expect(query('implementation-microsoft-cpc-bid')).not.toBeNull();
+    });
+
+    it('sends no bidding key on any config, so the create is unchanged', async () => {
+      fixture = await mount(false);
+      component()['microsoftCpcBid'].set('2.5');
+
+      const request = await submitted();
+
+      for (const key of LANE_CONFIGS) {
+        expect(request[key]).toBeDefined();
+        expect(Object.keys(request[key])).not.toContain('bidding');
+      }
+      // The legacy field still travels while the control is not offered.
+      expect(request['microsoftConfig']['cpcBid']).toBe(2.5);
+    });
+  });
+
+  describe('with the flag on', () => {
+    beforeEach(async () => {
+      fixture = await mount(true);
+    });
+
+    it('renders a control per supported platform, defaulting to Automatic', () => {
+      for (const platform of ['linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads']) {
+        expect(query(`implementation-bidding-${platform}`)).not.toBeNull();
+        // Automatic is the default, so the bid input is not shown.
+        expect(query(`implementation-bidding-${platform}-amount`)).toBeNull();
+        expect(component()['biddingViews']()[platform].value).toEqual({ strategy: 'automatic', bidAmount: null });
+      }
+      expect(query('implementation-bidding-google-ads')).toBeNull();
+    });
+
+    it('labels the strategy group and names the currency per platform', async () => {
+      expect(query('implementation-bidding-linkedin-ads')?.querySelector('legend')?.textContent?.trim()).toBe('Bidding');
+
+      await pickStrategy('linkedin-ads', 'manual');
+      await pickStrategy('meta-ads', 'manual');
+
+      expect(query('implementation-bidding-linkedin-ads-currency')?.textContent).toContain('USD');
+      expect(query('implementation-bidding-meta-ads-currency')?.textContent).toContain("ad account's currency");
+      expect(query('implementation-bidding-meta-ads-limit')?.textContent).toContain('5×');
+      const label = fixture.nativeElement.querySelector('label[for="campaign-bidding-linkedin-ads-amount"]') as HTMLLabelElement | null;
+      expect(label?.textContent).toContain('USD');
+    });
+
+    it('hides the legacy Microsoft max CPC field and never sends cpcBid beside bidding', async () => {
+      expect(query('implementation-microsoft-cpc-bid')).toBeNull();
+      // A stale legacy value (a restored draft) neither blocks the create nor reaches the wire.
+      component()['microsoftCpcBid'].set('5000');
+      fixture.detectChanges();
+
+      const request = await submitted();
+
+      expect(Object.keys(request['microsoftConfig'])).not.toContain('cpcBid');
+    });
+
+    it('sends an explicit automatic strategy, and nothing else, on every config by default', async () => {
+      const request = await submitted();
+
+      for (const key of LANE_CONFIGS) {
+        expect(request[key]['bidding']).toEqual({ strategy: 'automatic' });
+        expect(Object.keys(request[key]['bidding'] as object)).toEqual(['strategy']);
+      }
+      expect(request['googleAdsConfig']).toBeUndefined();
+    });
+
+    it('sends a manual bid exactly as typed', async () => {
+      await pickStrategy('linkedin-ads', 'manual');
+      await typeBid('linkedin-ads', '2.5');
+
+      const request = await submitted();
+
+      expect(request['linkedInConfig']['bidding']).toEqual({ strategy: 'manual', bidAmount: 2.5 });
+      expect(request['metaConfig']['bidding']).toEqual({ strategy: 'automatic' });
+    });
+
+    it('never puts null or an empty string on the wire', async () => {
+      await pickStrategy('microsoft-ads', 'manual');
+      await typeBid('microsoft-ads', '1.25');
+      await pickStrategy('reddit-ads', 'manual');
+      component()['redditObjective'].set('traffic');
+      await typeBid('reddit-ads', '0.75');
+      // Picked and then put back: the typed amount must not travel with automatic.
+      await pickStrategy('meta-ads', 'manual');
+      await typeBid('meta-ads', '1');
+      await pickStrategy('meta-ads', 'automatic');
+
+      const request = await submitted();
+
+      for (const key of LANE_CONFIGS) {
+        const bidding = request[key]['bidding'] as Record<string, unknown>;
+        expect(bidding).not.toBeNull();
+        for (const [field, value] of Object.entries(bidding)) {
+          expect(['strategy', 'bidAmount']).toContain(field);
+          expect(value).not.toBeNull();
+          expect(value).not.toBe('');
+        }
+      }
+      expect(request['metaConfig']['bidding']).toEqual({ strategy: 'automatic' });
+      expect(request['microsoftConfig']['bidding']).toEqual({ strategy: 'manual', bidAmount: 1.25 });
+      expect(request['redditConfig']['bidding']).toEqual({ strategy: 'manual', bidAmount: 0.75 });
+    });
+
+    it('blocks the create while a manual choice has no bid, and says why', async () => {
+      await pickStrategy('linkedin-ads', 'manual');
+
+      expect(component()['canSubmit']()).toBe(false);
+      expect(query('implementation-bidding-linkedin-ads-error')?.textContent).toContain('Enter a max CPC bid');
+      const input = query('implementation-bidding-linkedin-ads-amount')?.querySelector('input');
+      expect(input?.getAttribute('aria-invalid')).toBe('true');
+      expect(input?.getAttribute('aria-describedby')).toContain('campaign-bidding-linkedin-ads-error');
+
+      await typeBid('linkedin-ads', '3');
+
+      expect(component()['canSubmit']()).toBe(true);
+      expect(query('implementation-bidding-linkedin-ads-error')).toBeNull();
+    });
+
+    it.each([
+      ['linkedin-ads', '2.345', 'two decimal places'],
+      ['linkedin-ads', '0', 'greater than zero'],
+      ['microsoft-ads', '1000.01', 'at most 1,000'],
+      ['microsoft-ads', '0.001', 'at least 0.01'],
+      ['meta-ads', '0.125', 'two decimal places'],
+    ])('refuses a %s bid of %s', async (platform, bid, message) => {
+      await pickStrategy(platform, 'manual');
+      await typeBid(platform, bid);
+
+      expect(component()['canSubmit']()).toBe(false);
+      expect(query(`implementation-bidding-${platform}-error`)?.textContent).toContain(message);
+    });
+
+    it('refuses manual Meta under an objective without link clicks, and accepts it under traffic', async () => {
+      await pickStrategy('meta-ads', 'manual');
+      await typeBid('meta-ads', '1');
+      component()['metaObjective'].set('awareness');
+      fixture.detectChanges();
+
+      expect(component()['canSubmit']()).toBe(false);
+      expect(query('implementation-bidding-meta-ads-error')?.textContent).toContain('Traffic or Leads');
+
+      component()['metaObjective'].set('traffic');
+      fixture.detectChanges();
+
+      expect(component()['canSubmit']()).toBe(true);
+    });
+
+    it('refuses a Meta bid above a fifth of the daily budget, but not under a lifetime budget', async () => {
+      component()['metaBudgetUsd'].set(10);
+      await pickStrategy('meta-ads', 'manual');
+      await typeBid('meta-ads', '2.01');
+
+      expect(component()['canSubmit']()).toBe(false);
+      expect(query('implementation-bidding-meta-ads-error')?.textContent).toContain('at least 5× the bid');
+
+      component()['metaLifetimeBudget'].set(true);
+      fixture.detectChanges();
+
+      expect(component()['canSubmit']()).toBe(true);
+    });
+
+    it('refuses manual Reddit under the default conversions objective, and accepts it under traffic', async () => {
+      await pickStrategy('reddit-ads', 'manual');
+      await typeBid('reddit-ads', '0.5');
+
+      expect(component()['canSubmit']()).toBe(false);
+      expect(query('implementation-bidding-reddit-ads-error')?.textContent).toContain('needs the Traffic objective');
+
+      component()['redditObjective'].set('traffic');
+      fixture.detectChanges();
+
+      expect(component()['canSubmit']()).toBe(true);
+    });
+
+    it('keeps the choice through a tab round-trip and sends it from the remount', async () => {
+      let draft: CampaignImplementationDraft | null = null;
+      fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (draft = d));
+      await pickStrategy('linkedin-ads', 'manual');
+      await typeBid('linkedin-ads', '3.5');
+      fixture.destroy();
+
+      expect(draft).not.toBeNull();
+      expect((draft as unknown as CampaignImplementationDraft).bidding?.['linkedin-ads']).toEqual({ strategy: 'manual', bidAmount: 3.5 });
+
+      const restored = await mount(true, draft);
+
+      // The remounted control shows the restored choice, not the default.
+      expect(query('implementation-bidding-linkedin-ads-amount', restored)?.querySelector('input')?.value).toBe('3.5');
+      const request = await submitted(restored);
+      expect(request['linkedInConfig']['bidding']).toEqual({ strategy: 'manual', bidAmount: 3.5 });
+    });
+  });
+});

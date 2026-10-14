@@ -188,6 +188,28 @@ export enum ServerFeatureFlag {
   CampaignServiceGoogleChannels = 'LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_CHANNELS',
 
   /**
+   * Gates the per-platform Bidding control in the create flow (#3299): Automatic or Manual with a
+   * max CPC bid, sent as `bidding` on `linkedInConfig`, `metaConfig`, `microsoftConfig` and
+   * `redditConfig`. Not Google Ads, which has its own bidding plan.
+   *
+   * A CAPABILITY flag, like `CampaignServiceDemandGen`: it says the DEPLOYED campaign-service
+   * understands `bidding` (linuxfoundation/lfx-v2-campaign-service#332). An older one drops the
+   * unknown key — Go's decoder ignores it — and creates every campaign on automatic bidding, so a
+   * Manual choice would be silently lost and the job would report success. Turn it on only once
+   * #332 is deployed in the target environment.
+   *
+   * Only meaningful while the create cutover is on (`cutoverOwnsCreate`): the legacy creator does
+   * not read `bidding` either, which is why the capability the client sees
+   * (`CampaignListResult.biddingEnabled`) needs both. With it off the control is hidden and the
+   * create route refuses a request that carries `bidding` rather than dropping it.
+   *
+   * Turning it back off strands nothing: campaigns already created keep the bidding they were
+   * created with, and new creates are automatic again. OFF by default. Same accepted values as the
+   * flags above.
+   */
+  CampaignServiceBidding = 'LFX_CUTOVER_CAMPAIGN_SERVICE_BIDDING',
+
+  /**
    * Serve `PATCH /api/campaigns/:campaignId/status` from lfx-v2-campaign-service instead of the
    * per-platform SDK calls in `campaign-proxy.service.ts`. OFF keeps the current behaviour
    * byte-for-byte.

@@ -135,6 +135,27 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-controls"]')).toBeNull();
   });
 
+  /**
+   * The bidding campaign-service RECORDED (#3299), read-only on the row. Absent fields render
+   * nothing — an unrecorded strategy is never shown as automatic — and only the two documented
+   * strategies are echoed.
+   */
+  it('shows the recorded bidding read-only, and nothing when none is recorded', () => {
+    render([
+      doc({ id: 'c-1', platform: 'linkedin-ads', bidding_strategy: 'manual', max_cpc_bid: 2.5 }),
+      doc({ id: 'c-2', platform: 'meta-ads', bidding_strategy: 'automatic' }),
+      doc({ id: 'c-3', platform: 'reddit-ads' }),
+      doc({ id: 'c-4', platform: 'meta-ads', bidding_strategy: 'Manual' }),
+    ]);
+
+    const bidding = (id: string): string | null =>
+      (fixture.nativeElement.querySelector(`[data-testid="optimization-campaign-bidding-${id}"]`) as HTMLElement | null)?.textContent?.trim() ?? null;
+    expect(bidding('c-1')).toBe('Bidding: manual · max CPC bid 2.5 USD');
+    expect(bidding('c-2')).toBe('Bidding: automatic');
+    expect(bidding('c-3')).toBeNull();
+    expect(bidding('c-4')).toBeNull();
+  });
+
   it('renders an empty state only when the read succeeded and returned nothing', () => {
     render([]);
 

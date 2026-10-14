@@ -3,6 +3,8 @@
 
 import type {
   ACCOUNT_MONITOR_CONFLICT_REASONS,
+  CAMPAIGN_BIDDING_PLATFORMS,
+  CAMPAIGN_BIDDING_STRATEGIES,
   CAMPAIGN_EMAIL_SEGMENTS,
   CAMPAIGN_EMAIL_STAGES,
   CAMPAIGN_EMAIL_VARIANTS,
@@ -733,6 +735,13 @@ export interface CampaignImplementationDraft {
   /** Empty string records "unset", which is the serve-capable default — see `cpcBid`. */
   microsoftCpcBid?: string;
   /**
+   * The per-platform Bidding choice (#3299), keyed by platform. Absent for a draft written before
+   * the control shipped, and absent per platform until the operator touches that platform's
+   * control — both mean "the default, automatic". Restored only when present, like every field
+   * here, so an older draft cannot overwrite a choice with nothing.
+   */
+  bidding?: CampaignBiddingDrafts;
+  /**
    * The per-channel Google creative sections, as RAW form text rather than the wire shape: keyed
    * by the creative's request key, then by field, with list fields still one entry per line.
    *
@@ -1061,6 +1070,8 @@ export interface LinkedInCampaignCreateRequest {
   project?: string;
   driveFolderUrl?: string;
   adAccountId?: string;
+  /** Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means automatic. */
+  bidding?: CampaignBiddingConfig;
 }
 
 export interface LinkedInCampaignCreateResult {
@@ -1167,6 +1178,8 @@ export interface RedditCampaignCreateRequest {
    * offering that objective with no way to set this field would offer a create both arms refuse.
    */
   videoGoal?: RedditVideoGoal;
+  /** Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means automatic. */
+  bidding?: CampaignBiddingConfig;
 }
 
 export interface RedditCampaignCreateResult {
@@ -1244,6 +1257,8 @@ export interface MetaCampaignCreateRequest {
   objective?: MetaObjective;
   placements?: Partial<MetaPlacement>;
   pixelId?: string;
+  /** Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means automatic. */
+  bidding?: CampaignBiddingConfig;
 }
 
 export interface MetaCampaignCreateResult {
@@ -1331,6 +1346,12 @@ export interface MicrosoftCampaignCreateRequest {
    * requires it on Add; the client supplies its default when empty.
    */
   timeZone?: string;
+  /**
+   * Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. When it is sent,
+   * `cpcBid` is not: campaign-service refuses an automatic `bidding` beside any `cpcBid`, and a
+   * manual one beside a different `cpcBid`.
+   */
+  bidding?: CampaignBiddingConfig;
 }
 
 // ---------------------------------------------------------------------------
@@ -2993,6 +3014,20 @@ export interface CampaignIndexDoc {
    * A caller that quoted it differently would get a 412 that looks like a concurrent edit.
    */
   etag?: string;
+  /**
+   * How the campaign was CREATED to bid, as campaign-service recorded it (#3299,
+   * linuxfoundation/lfx-v2-campaign-service#332). ABSENT when not recorded — a campaign created
+   * before the field existed, an adopted one, or a Google Ads one — and never read as `automatic`.
+   * Typed `string` because it is read from the index, which this app does not control; only the
+   * two documented values are rendered.
+   */
+  bidding_strategy?: string;
+  /**
+   * The manual max cost-per-click bid campaign-service most recently set — the starting bid, then
+   * whatever the bid lever set. USD on LinkedIn; the ad account's own currency everywhere else.
+   * ABSENT when the service never set one.
+   */
+  max_cpc_bid?: number;
 }
 
 /**
@@ -3006,6 +3041,11 @@ export interface CampaignIndexDoc {
  */
 export interface CampaignRow {
   campaign: CampaignIndexDoc;
+  /**
+   * The recorded bidding (`bidding_strategy` / `max_cpc_bid`) as one read-only line, or `''` when
+   * the index records neither. Carried on the row so the template only reads it.
+   */
+  biddingSummary: string;
   /** What the row displays: this session's confirmed status, else the indexed one. */
   status: string;
   /**
@@ -3424,6 +3464,17 @@ export interface CampaignListResult {
    * answered yet still withholds the controls rather than guessing.
    */
   redditCreativeEnabled: boolean;
+  /**
+   * Whether the create flow may offer the per-platform Bidding control (#3299).
+   *
+   * True only when the campaign-service create path serves the create AND the
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_BIDDING` flag says the deployed campaign-service understands
+   * `bidding` (linuxfoundation/lfx-v2-campaign-service#332). An older service ignores the unknown
+   * key and creates every campaign on automatic bidding, and the legacy creator never reads it — so
+   * either way a Manual choice would be silently dropped. Modelled on the client like the
+   * capabilities above (`boolean | null`, `null` for unanswered), which withholds the control.
+   */
+  biddingEnabled: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -3527,6 +3578,86 @@ export interface CampaignStatusUpdateResult {
    * "what was asked for". Absent on the legacy path, whose SDK calls return no row.
    */
   serviceStatus?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Campaign Bidding at create time (#3299)
+// ---------------------------------------------------------------------------
+
+/** The two bidding strategies a create may ask for, spelled exactly as campaign-service takes them. */
+export type CampaignBiddingStrategy = (typeof CAMPAIGN_BIDDING_STRATEGIES)[number];
+
+/** The platforms whose create config accepts a `bidding` object. Google Ads has its own bidding plan. */
+export type CampaignBiddingPlatform = (typeof CAMPAIGN_BIDDING_PLATFORMS)[number];
+
+/**
+ * The optional `bidding` object of a per-platform create config, mirroring
+ * linuxfoundation/lfx-v2-campaign-service#332 (`internal/dispatch/bidding.go`).
+ *
+ * camelCase, like the config envelope it sits in. Exactly these two keys: campaign-service refuses
+ * any other key, any case variant, an explicit `null` and an empty string with a 400. Omitting the
+ * whole object means automatic. `bidAmount` is present only for `manual`; an automatic object that
+ * names an amount is refused too.
+ */
+export interface CampaignBiddingConfig {
+  strategy: CampaignBiddingStrategy;
+  /** Max cost-per-click bid, in the currency the provider expects (USD on LinkedIn). Manual only. */
+  bidAmount?: number;
+}
+
+/** One platform's Bidding control as edited. `bidAmount` is `null` until a number is entered. */
+export interface CampaignBiddingDraft {
+  strategy: CampaignBiddingStrategy;
+  bidAmount: number | null;
+}
+
+/** The Bidding control's state per platform, as the implementation draft carries it. */
+export type CampaignBiddingDrafts = Partial<Record<CampaignBiddingPlatform, CampaignBiddingDraft>>;
+
+/** The rest of a platform's config that its bidding rules read. */
+export interface CampaignBiddingContext {
+  /** The config's objective, where the platform has one. Manual bidding needs particular objectives on Meta and Reddit. */
+  objective?: string;
+  /** The DAILY budget, or `null` when the budget is a lifetime one. Meta and X compare the bid with it. */
+  dailyBudget?: number | null;
+}
+
+/** What one platform accepts as a manual bid, and how the control describes it. */
+export interface CampaignBiddingPlatformRule {
+  /** The platform's display name, used in the control's accessible names. */
+  label: string;
+  /** Where the bid's currency comes from: LinkedIn takes USD, every other platform the ad account's currency. */
+  currency: 'USD' | 'account';
+  /** The bid's precision: 100 for whole cents, 1,000,000 for whole micro-units. Finer amounts are refused, never rounded. */
+  scale: number;
+  /** Lowest bid this app lets through, in the platform's currency. */
+  minBid: number;
+  /** Highest bid campaign-service sets on this platform. */
+  maxBid: number;
+  /** Objectives manual bidding needs, or `null` when any objective will do. */
+  manualObjectives: readonly string[] | null;
+  /** Objective campaign-service assumes when none is sent; `null` when the platform has no objective. */
+  defaultObjective: string | null;
+  /** Meta: the daily budget must be at least this many times the bid. `null` when there is no such rule. */
+  dailyBudgetMultiple: number | null;
+  /** X: the bid may not exceed the daily budget. */
+  bidAtMostDailyBudget: boolean;
+  /** What Automatic does on this platform. */
+  automaticDescription: string;
+  /** What Manual creates on this platform. */
+  manualDescription: string;
+  /** The currency hint shown beside the bid input. */
+  currencyHint: string;
+  /** The platform's limits, in words. */
+  limitText: string;
+}
+
+/** Everything one platform's Bidding control renders, computed once by the implementation tab. */
+export interface CampaignBiddingControlView {
+  platform: CampaignBiddingPlatform;
+  value: CampaignBiddingDraft;
+  /** Why the choice cannot be sent, or `null` when it can. Blocks the create. */
+  error: string | null;
 }
 
 // ---------------------------------------------------------------------------

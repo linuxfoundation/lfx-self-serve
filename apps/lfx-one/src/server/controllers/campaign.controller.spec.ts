@@ -20,6 +20,7 @@ import {
 import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
 
 import { MicroserviceError, ServiceValidationError } from '../errors';
+import { ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
 const {
@@ -1542,6 +1543,104 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(sent).not.toHaveProperty('budgetUsd');
     expect(sent['keywords']).toEqual([{ text: 'kubernetes', matchType: 'Exact' }]);
     expect(sent['geoTargets']).toEqual(['US']);
+  });
+
+  /**
+   * Bidding (#3299). With the capability on, every lane config's `bidding` reaches campaign-service
+   * UNTOUCHED: the service is the authority on its shape and answers a broken one with a 400 naming
+   * the field. With it off, the request is refused rather than the key dropped, because both
+   * creators that would serve it ignore `bidding` and would create the campaign automatic.
+   */
+  describe('bidding', () => {
+    const laneBody = (bidding: unknown): Record<string, unknown> => ({
+      platforms: ['linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads'],
+      linkedInConfig: { budgetUsd: 100, bidding },
+      metaConfig: { budgetUsd: 250, lifetimeBudget: false, objective: 'traffic', geoTargets: ['US'], variants: [{ primaryText: 'p', headline: 'h' }], bidding },
+      microsoftConfig: microsoftConfig({ bidding }),
+      redditConfig: { budgetUsd: 50, objective: 'traffic', bidding },
+    });
+
+    const flagsWith = (bidding: boolean, cutover: boolean): void => {
+      isServerFeatureEnabled.mockImplementation((flag: unknown) => (flag === ServerFeatureFlag.CampaignServiceBidding ? bidding : cutover));
+    };
+
+    it.each([
+      ['automatic', { strategy: 'automatic' }],
+      ['manual', { strategy: 'manual', bidAmount: 1.25 }],
+    ])('forwards a %s bidding object untouched on every lane config', async (_label, bidding) => {
+      flagsWith(true, true);
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+      await controller.createCampaign(buildReq(laneBody(bidding), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      const envelope = envelopeFor(createCampaigns);
+      for (const key of ['linkedInConfig', 'metaConfig', 'microsoftConfig', 'redditConfig']) {
+        expect((envelope[key] as Record<string, unknown>)['bidding']).toEqual(bidding);
+      }
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['the bidding flag is off', false, true],
+      ['the create cutover is dark', true, false],
+      ['both are off', false, false],
+    ])('refuses a request carrying bidding when %s, creating nothing', async (_label, biddingFlag, cutover) => {
+      flagsWith(biddingFlag, cutover);
+      createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+      legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+      await controller.createCampaign(
+        buildReq(
+          { platforms: ['meta-ads'], metaConfig: { budgetUsd: 250, bidding: { strategy: 'manual', bidAmount: 1 } } },
+          { project: 'tlf', brief_id: 'b-1' }
+        ),
+        res,
+        next
+      );
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(legacyCreate).not.toHaveBeenCalled();
+      const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      expect(error.statusCode).toBe(400);
+      expect(error.toResponse()['errors']).toEqual([
+        {
+          field: 'metaConfig.bidding',
+          message: 'bidding options are not enabled on this deployment; omit bidding to use automatic bidding',
+          code: 'FIELD_VALIDATION_ERROR',
+        },
+      ]);
+    });
+
+    it('refuses an explicit null bidding too, rather than reading it as absent', async () => {
+      flagsWith(false, true);
+
+      await controller.createCampaign(
+        buildReq({ platforms: ['reddit-ads'], redditConfig: { budgetUsd: 50, bidding: null } }, { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+      expect(error.toResponse()['errors'][0].field).toBe('redditConfig.bidding');
+    });
+
+    it('lets a request without bidding through unchanged when the flag is off', async () => {
+      flagsWith(false, true);
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+      await controller.createCampaign(
+        buildReq({ platforms: ['microsoft-ads'], microsoftConfig: microsoftConfig({ cpcBid: 2.5 }) }, { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+
+      expect(next).not.toHaveBeenCalled();
+      const sent = envelopeFor(createCampaigns)['microsoftConfig'] as Record<string, unknown>;
+      expect(sent).not.toHaveProperty('bidding');
+      expect(sent['cpcBid']).toBe(2.5);
+    });
   });
 
   it('omits cpcBid and timeZone when unset, leaving Microsoft its serve-capable defaults', async () => {

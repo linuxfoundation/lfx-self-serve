@@ -77,7 +77,7 @@ import {
   campaignToggleAction,
   normalizeCampaignStatus,
 } from '@lfx-one/shared/constants';
-import { campaignActionItemLever, keywordActionKey, keywordIdentityKey } from '@lfx-one/shared/utils';
+import { campaignActionItemLever, campaignBiddingSummary, keywordActionKey, keywordIdentityKey } from '@lfx-one/shared/utils';
 import { AdsCurrencyPipe, AdsPctPipe, EventLabelPipe, PacingClassPipe, PriorityClassPipe, QualityScoreClassPipe } from '@pipes/campaign-optimization.pipe';
 import { campaignBidFailureOutcome } from '@shared/utils/campaign-bid-error.utils';
 import { campaignBudgetFailureOutcome } from '@shared/utils/campaign-budget-error.utils';
@@ -597,6 +597,9 @@ export class OptimizationTabComponent implements OnInit {
       const keywordTargetingUnavailableReason = keywordTargetingOffered ? this.keywordTargetingUnavailableReasonFor(campaign, status) : '';
       return {
         campaign,
+        // The bidding campaign-service RECORDED (#3299) — what the create asked for and the last bid
+        // it set, not a live read of the platform. Empty when the index records neither.
+        biddingSummary: campaignBiddingSummary(campaign.platform, campaign.bidding_strategy, campaign.max_cpc_bid),
         status,
         action,
         conflicted,

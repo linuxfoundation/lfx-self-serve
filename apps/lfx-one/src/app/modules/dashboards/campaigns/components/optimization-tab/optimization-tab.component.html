@@ -253,6 +253,9 @@
                 <div class="flex min-w-0 flex-col gap-0.5">
                   <span class="whitespace-normal break-words text-sm font-medium text-gray-900">{{ row.campaign.campaign_name }}</span>
                   <span class="text-xs text-gray-500">{{ row.campaign.platform }} · {{ row.status }}</span>
+                  @if (row.biddingSummary) {
+                    <span class="text-xs text-gray-500" [attr.data-testid]="'optimization-campaign-bidding-' + row.campaign.id">{{ row.biddingSummary }}</span>
+                  }
                   <!--
                     NOT `role="alert"`. The failure is already announced by the toast, which is
                     itself a live region — a second live role here made one failure speak twice.
