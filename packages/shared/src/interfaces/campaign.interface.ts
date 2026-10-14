@@ -8,6 +8,8 @@ import type {
   CAMPAIGN_EMAIL_VARIANTS,
   CAMPAIGN_METRICS_WINDOWS,
   GOOGLE_ADS_RADIUS_UNITS,
+  GOOGLE_ADS_SCHEDULE_DAYS,
+  GOOGLE_ADS_SCHEDULE_MINUTES,
   GOOGLE_BIDDING_STRATEGIES,
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
@@ -1798,6 +1800,47 @@ export interface CampaignProximityTarget {
   radiusUnit: GoogleAdsRadiusUnit;
 }
 
+/**
+ * The day a {@link CampaignAdSchedule} runs on.
+ *
+ * Derived from {@link GOOGLE_ADS_SCHEDULE_DAYS} rather than written out again, so a day spelled
+ * differently in the constant cannot leave this type behind.
+ */
+export type GoogleAdsScheduleDay = (typeof GOOGLE_ADS_SCHEDULE_DAYS)[number];
+
+/**
+ * The minute a {@link CampaignAdSchedule} window starts or ends on.
+ *
+ * A UNION of the four values rather than `number`, because Google models minutes as an enum: `:10`
+ * is unrepresentable rather than merely unusual, and a caller honouring this type cannot write one.
+ */
+export type GoogleAdsScheduleMinute = (typeof GOOGLE_ADS_SCHEDULE_MINUTES)[number];
+
+/**
+ * One "serve during this window on this day" interval.
+ *
+ * The window is HALF-OPEN — [start, end) — which is why `endHour` admits 24 and `startHour` does
+ * not: a window running to midnight ends at hour 24, and one starting at midnight starts at hour 0.
+ * It is also what makes 09:00-12:00 and 12:00-17:00 two non-overlapping windows rather than a
+ * clash, so the ordinary split-day schedule is accepted.
+ *
+ * `bidModifier` is OPTIONAL and its absence is meaningful: an interval with no modifier restricts
+ * WHEN the campaign serves without changing what it bids, which is the ordinary case. It cannot
+ * default to 0, because 0 is the -100% opt-out — an entry written as "listed but unadjusted" would
+ * instead switch the campaign off for that window while reporting a successful create. Upstream
+ * carries the field as a pointer for exactly this reason, so an absent modifier must be OMITTED on
+ * the wire rather than sent as a zero. Any other value must be between
+ * {@link GOOGLE_ADS_MIN_BID_MODIFIER} and {@link GOOGLE_ADS_MAX_BID_MODIFIER}.
+ */
+export interface CampaignAdSchedule {
+  dayOfWeek: GoogleAdsScheduleDay;
+  startHour: number;
+  startMinute: GoogleAdsScheduleMinute;
+  endHour: number;
+  endMinute: GoogleAdsScheduleMinute;
+  bidModifier?: number;
+}
+
 export interface CampaignCreateRequest {
   eventName: string;
   eventSlug: string;
@@ -1877,6 +1920,24 @@ export interface CampaignCreateRequest {
    * numeric id skips that table and is resolved by Google.
    */
   languages?: string[];
+  /**
+   * When the Google campaign serves, as one or more intervals per day of the week. Left unset it
+   * runs around the clock, which is Google's own default — so this list is a narrowing and an
+   * absent key means the same as an empty one, exactly as {@link languages} does.
+   *
+   * Accepted on every Google channel except Demand Gen — see
+   * {@link GOOGLE_CHANNELS_WITH_AD_SCHEDULES}. Bounded by {@link GOOGLE_ADS_MAX_AD_SCHEDULES}
+   * overall and {@link GOOGLE_ADS_MAX_AD_SCHEDULES_PER_DAY} on any one day; both are Google's own
+   * limits rather than local opinions.
+   *
+   * Two intervals that OVERLAP on the same day are refused, because Google rejects them — but
+   * touching intervals do not overlap, so a day split at noon is two ordinary entries. An exact
+   * repeat carrying the SAME bid modifier is collapsed; a repeat carrying a DIFFERENT one is
+   * refused, because Google accepts one criterion per interval and the second value would be the
+   * one silently dropped. That is the difference from {@link proximityTargets}, which has no field
+   * two spellings could disagree about.
+   */
+  adSchedules?: CampaignAdSchedule[];
   /**
    * The Google campaign's callout extensions — short claims appended to the text ad, carrying no
    * link of their own.
