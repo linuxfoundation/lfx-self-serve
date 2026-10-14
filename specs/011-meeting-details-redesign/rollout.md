@@ -47,7 +47,7 @@ server SDK in the BFF, or a BFF-stamped cookie) was considered and **declined on
   percentage ramp. Signed-in viewers instead move from named tester lists to everyone in one step
   (stage 4).
 - A server-side evaluation path for user context is a security change that has to ship on its own
-  (R06), for a page whose V1 is deleted shortly after.
+  (R06), and the post-hydration swap it would remove is an accepted cost while testers trial V2.
 
 What that accepts:
 
