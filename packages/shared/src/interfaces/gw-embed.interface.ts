@@ -13,11 +13,21 @@
 export interface GwHostContext {
   /** Router basename the embed should mount under, e.g. `/foundation/gw`. */
   basename: string;
+  /**
+   * In host-session mode `url` is LFX One's own Supabase proxy (`<origin>/api/gatewaze/supabase`),
+   * which must be absolute and on the page's origin, and `publicUrl` is the real Supabase project
+   * URL, used for saved public storage URLs. `publicUrl` is required in that mode and unused in the
+   * bridge. `anonKey` is the publishable key in both modes.
+   */
   supabase: {
     url: string;
     anonKey: string;
+    publicUrl?: string;
   };
-  /** Empty string defaults to `/api/gw` inside the embed. */
+  /**
+   * Empty string defaults to `/api/gw` inside the embed. The embed calls `${apiBaseUrl}/api/...`, so
+   * host-session mode passes `/api/gatewaze` and its calls land on `/api/gatewaze/api/...`.
+   */
   apiBaseUrl: string;
   enabled: {
     moduleIds: string[];
@@ -35,14 +45,26 @@ export interface GwHostContext {
    * The nonce is not simply added here: this value is built while the mount context is assembled,
    * which happens BEFORE the host consumes a nonce arriving from a completed sign-in. Minting one
    * at that point would overwrite the pending nonce and break every host-initiated return.
+   *
+   * Bridge mode only. Optional in host-session mode, and LFX One leaves it out there: a lost session
+   * then makes the embed reload the page (at most twice in 30 seconds), so LFX's own sign-in guard
+   * takes over.
    */
-  signIn: {
+  signIn?: {
     /** The host's own sign-in entry point (LFID here). The embed never implements sign-in itself. */
     startUrl: string;
     returnUrl: string;
   };
+  /**
+   * Host-session mode: LFX One holds the Gatewaze session on the server, and the browser sees only a
+   * placeholder token, so no Gatewaze token reaches page scripts, `localStorage` or the URL. Both
+   * routes are same-origin. The loader refuses to mount a bundle whose manifest does not advertise
+   * the `host-session` capability (`gw_embed_capability_missing`). Absent: the LFID bridge.
+   */
+  session?: GwEmbedHostSession;
   /** Where the loader fetches the embed from (`GW_EMBED_URL`) and how its stylesheet reaches the page. */
   source: GwEmbedSource;
+  /** Bridge mode only; the embed ignores it in host-session mode. */
   storageKeySuffix?: string;
   portalContainer?: HTMLElement;
   /**
@@ -58,12 +80,29 @@ export interface GwHostContext {
 }
 
 /**
+ * The part of `GwHostContext` that differs between the LFID bridge and host-session mode: where
+ * Supabase and the Gatewaze API are reached, and how the session is held. The outlet builds one or
+ * the other from `RuntimeConfig.gwHostSession`.
+ */
+export type GwEmbedAuthContext = Pick<GwHostContext, 'supabase' | 'apiBaseUrl' | 'signIn' | 'session' | 'storageKeySuffix'>;
+
+/** `GwHostContext.session`: the routes LFX One serves for host-session mode (`gatewaze.route.ts`). */
+export interface GwEmbedHostSession {
+  mode: 'host';
+  /** `GET`: the signed-in Gatewaze user, or the reason there is none (see `gw-host-session.md`). */
+  meUrl: string;
+  /** `POST`: ends the Gatewaze session. The LFX session is left alone. */
+  logoutUrl: string;
+}
+
+/**
  * The hosted embed's location, passed to the loader as `GwHostContext.source`.
  *
  * `@gatewaze/admin-embed` is a loader: the admin bundle itself is served by the Gatewaze
  * deployment under `<baseUrl>/` (a `manifest.json` naming the current content-hashed entry and
  * stylesheet, plus the files). The host picks up admin changes on the next page load with no
- * release of its own; only a change to the loader's host contract needs the package bumped.
+ * release of its own. The package is bumped only for a change to the loader's host contract, or to
+ * use a capability the loader checks for, such as `host-session`.
  */
 export interface GwEmbedSource {
   /** Absolute URL of the deployment's embed directory, e.g. `https://admin.example.org/embed`. */
@@ -135,6 +174,11 @@ export interface GwEmbedManifest {
   stylesheet: string;
   modules: string[];
   builtAt: string;
+  /**
+   * Optional features the bundle supports, e.g. `host-session`. Absent on bundles built before the
+   * field existed, which support none.
+   */
+  capabilities?: string[];
 }
 
 /**

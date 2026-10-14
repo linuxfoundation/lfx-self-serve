@@ -4,8 +4,14 @@
 import { describe, expect, it } from 'vitest';
 
 import { GW_EMBED_PROJECT_NEWSLETTERS_LINK, GW_EMBED_ROUTE_PREFIXES } from '../constants/gw-embed.constants';
-import { GW_EMBED_STORAGE_KEY_SUFFIX } from '../constants/gw-embed.constants';
-import { buildGwEmbedStorageSuffix, isGwEmbedAllowedForSlug, resolveGwEmbedRoutePrefix } from './gw-embed.utils';
+import {
+  GW_EMBED_AUTO_SIGNIN_KEY,
+  GW_EMBED_SESSION_RECOVERY_KEY,
+  GW_EMBED_SIGNIN_STATE_KEY,
+  GW_EMBED_STORAGE_KEY_PREFIX,
+  GW_EMBED_STORAGE_KEY_SUFFIX,
+} from '../constants/gw-embed.constants';
+import { buildGwEmbedStorageSuffix, clearGwEmbedBridgeStorage, isGwEmbedAllowedForSlug, resolveGwEmbedRoutePrefix } from './gw-embed.utils';
 import { sha256Hex } from './sha256.utils';
 
 describe('resolveGwEmbedRoutePrefix', () => {
@@ -99,5 +105,68 @@ describe('buildGwEmbedStorageSuffix', () => {
 
   it('does not put the raw subject in the key, which any script on the origin can read', () => {
     expect(buildGwEmbedStorageSuffix('auth0|alice')).not.toContain('alice');
+  });
+});
+
+describe('clearGwEmbedBridgeStorage', () => {
+  /** A Map-backed stand-in for the Web Storage API; this suite runs without a DOM. */
+  const memoryStorage = (entries: Record<string, string> = {}): Storage => {
+    const map = new Map(Object.entries(entries));
+    return {
+      get length() {
+        return map.size;
+      },
+      key: (index: number) => Array.from(map.keys())[index] ?? null,
+      getItem: (key: string) => map.get(key) ?? null,
+      setItem: (key: string, value: string) => void map.set(key, value),
+      removeItem: (key: string) => void map.delete(key),
+      clear: () => map.clear(),
+    };
+  };
+
+  /** Reading `window.localStorage` throws like this in a browser with blocked site data. */
+  const blockedStorage = (): Storage => {
+    throw new Error('SecurityError');
+  };
+
+  it('removes every stored bridge session, for every user, and leaves other keys alone', () => {
+    const local = memoryStorage({
+      [`${GW_EMBED_STORAGE_KEY_PREFIX}${GW_EMBED_STORAGE_KEY_SUFFIX}`]: 'a',
+      [`${GW_EMBED_STORAGE_KEY_PREFIX}${GW_EMBED_STORAGE_KEY_SUFFIX}_other`]: 'b',
+      [`${GW_EMBED_STORAGE_KEY_PREFIX}${GW_EMBED_STORAGE_KEY_SUFFIX}-code-verifier`]: 'c',
+      unrelated: 'kept',
+    });
+
+    clearGwEmbedBridgeStorage(
+      () => local,
+      () => memoryStorage()
+    );
+
+    expect(local.length).toBe(1);
+    expect(local.getItem('unrelated')).toBe('kept');
+  });
+
+  it('removes the bridge sign-in bookkeeping from session storage', () => {
+    const session = memoryStorage({
+      [GW_EMBED_SIGNIN_STATE_KEY]: 'nonce',
+      [GW_EMBED_AUTO_SIGNIN_KEY]: '1',
+      [GW_EMBED_SESSION_RECOVERY_KEY]: '123',
+      unrelated: 'kept',
+    });
+
+    clearGwEmbedBridgeStorage(
+      () => memoryStorage(),
+      () => session
+    );
+
+    expect(session.length).toBe(1);
+    expect(session.getItem('unrelated')).toBe('kept');
+  });
+
+  it('skips a store that throws and still clears the other one', () => {
+    const session = memoryStorage({ [GW_EMBED_SIGNIN_STATE_KEY]: 'nonce' });
+
+    expect(() => clearGwEmbedBridgeStorage(blockedStorage, () => session)).not.toThrow();
+    expect(session.length).toBe(0);
   });
 });

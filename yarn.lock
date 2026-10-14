@@ -4294,10 +4294,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@gatewaze/admin-embed@npm:1.0.1":
-  version: 1.0.1
-  resolution: "@gatewaze/admin-embed@npm:1.0.1"
-  checksum: 10c0/c429b95b0ee7781358784ae617c783914f95abb16f71b4d604b047282ba5590ffc53d59bf0129ccef2bedb34107a9ea5d2e3efa8fab9ede88355e01501849876
+"@gatewaze/admin-embed@npm:1.1.0":
+  version: 1.1.0
+  resolution: "@gatewaze/admin-embed@npm:1.1.0"
+  checksum: 10c0/c047a504029b9419a7144ca767463934e7d52e4b310661c0725f3ad9bca5735f07e672d82c42bf4730bd72c3b5451ef83667a6d72c3f939e2e57dae956189f31
   languageName: node
   linkType: hard
 
@@ -14513,7 +14513,7 @@ __metadata:
     "@fullcalendar/core": "npm:6.1.20"
     "@fullcalendar/daygrid": "npm:6.1.20"
     "@fullcalendar/timegrid": "npm:6.1.20"
-    "@gatewaze/admin-embed": "npm:1.0.1"
+    "@gatewaze/admin-embed": "npm:1.1.0"
     "@gatewaze/host-session": "npm:1.1.0"
     "@launchdarkly/node-server-sdk": "npm:^9.14.0"
     "@lfx-one/shared": "workspace:*"

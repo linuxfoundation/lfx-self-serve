@@ -52,7 +52,7 @@
     "@fullcalendar/core": "6.1.20",
     "@fullcalendar/daygrid": "6.1.20",
     "@fullcalendar/timegrid": "6.1.20",
-    "@gatewaze/admin-embed": "1.0.1",
+    "@gatewaze/admin-embed": "1.1.0",
     "@gatewaze/host-session": "1.1.0",
     "@launchdarkly/node-server-sdk": "^9.14.0",
     "@lfx-one/shared": "workspace:*",
