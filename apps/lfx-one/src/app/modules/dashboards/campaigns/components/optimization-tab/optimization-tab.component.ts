@@ -89,6 +89,7 @@ import { catchError, EMPTY, map, of, skip, switchMap, take, type Subscription } 
 import { CampaignBidFormComponent } from '../campaign-bid-form/campaign-bid-form.component';
 import { CampaignBudgetFormComponent } from '../campaign-budget-form/campaign-budget-form.component';
 import { CampaignNegativeKeywordsFormComponent } from '../campaign-negative-keywords-form/campaign-negative-keywords-form.component';
+import { CampaignSettingsDrawerComponent } from '../campaign-settings-drawer/campaign-settings-drawer.component';
 import { MicrosoftKeywordsTableComponent } from '../microsoft-keywords-table/microsoft-keywords-table.component';
 
 @Component({
@@ -100,6 +101,7 @@ import { MicrosoftKeywordsTableComponent } from '../microsoft-keywords-table/mic
     CampaignBidFormComponent,
     CampaignBudgetFormComponent,
     CampaignNegativeKeywordsFormComponent,
+    CampaignSettingsDrawerComponent,
     EventLabelPipe,
     MicrosoftKeywordsTableComponent,
     PacingClassPipe,
@@ -219,6 +221,9 @@ export class OptimizationTabComponent implements OnInit {
    */
   protected readonly bidEditorOpen = signal<Record<string, boolean>>({});
   protected readonly bidPending = signal<Record<string, boolean>>({});
+  /** The live-settings drawer: open or not, and the campaign it reads. A read only, so it holds no row state. */
+  protected readonly settingsDrawerVisible = signal(false);
+  protected readonly settingsCampaign = signal<CampaignIndexDoc | null>(null);
   /** The last non-success bid outcome per row; cleared when a new change is dispatched. */
   protected readonly bidOutcome = signal<Partial<Record<string, CampaignBidOutcome>>>({});
   /** The bid this session CONFIRMED per row. The index carries no bid, so this is the only one the row can show. */
@@ -872,6 +877,12 @@ export class OptimizationTabComponent implements OnInit {
           }
         },
       });
+  }
+
+  /** Opens the live-settings drift drawer for one row's campaign. */
+  protected openSettingsDrawer(row: CampaignRow): void {
+    this.settingsCampaign.set(row.campaign);
+    this.settingsDrawerVisible.set(true);
   }
 
   /** Opens or closes one row's budget editor. A change in flight keeps it open. */

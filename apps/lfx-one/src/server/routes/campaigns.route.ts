@@ -73,15 +73,14 @@ router.post('/:campaignId/negative-keywords', (req, res, next) => campaignContro
 //
 // campaign-service only, no legacy arm, so ungated like the budget and bid levers above, EXCEPT
 // the reads whose upstream endpoints are not on campaign-service main yet (Reddit and LinkedIn
-// audience, LinkedIn campaign-ref, Reddit keywords): those answer 404 unless
-// LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS is on.
+// audience, Reddit keywords): those answer 404 unless LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS is on.
 // Authorization is the `requireCampaignManager` above. Campaign and brief ids are campaign-service UUIDs.
 router.get('/meta/audience', (req, res, next) => optimizeController.getPlatformAudience(req, res, next, 'meta-ads'));
 router.get('/twitter/audience', (req, res, next) => optimizeController.getPlatformAudience(req, res, next, 'twitter-ads'));
 router.get('/microsoft/audience', (req, res, next) => optimizeController.getPlatformAudience(req, res, next, 'microsoft-ads'));
 router.get('/reddit/audience', (req, res, next) => optimizeController.getPlatformAudience(req, res, next, 'reddit-ads'));
 router.get('/linkedin/audience', (req, res, next) => optimizeController.getPlatformAudience(req, res, next, 'linkedin-ads'));
-// Platform campaign id -> campaign-service campaign + brief. LinkedIn is pending upstream (flag-gated).
+// Platform campaign id -> campaign-service campaign + brief. More than one match is reachable: refuse, never choose.
 router.get('/meta/campaign-ref', (req, res, next) => optimizeController.resolvePlatformCampaign(req, res, next, 'meta-ads'));
 router.get('/reddit/campaign-ref', (req, res, next) => optimizeController.resolvePlatformCampaign(req, res, next, 'reddit-ads'));
 router.get('/twitter/campaign-ref', (req, res, next) => optimizeController.resolvePlatformCampaign(req, res, next, 'twitter-ads'));
@@ -90,6 +89,10 @@ router.get('/linkedin/campaign-ref', (req, res, next) => optimizeController.reso
 router.get('/reddit/keywords', (req, res, next) => optimizeController.getRedditKeywords(req, res, next));
 // Binds a campaign that already exists on its platform to a brief; creates nothing upstream.
 router.post('/adopt', (req, res, next) => optimizeController.adoptCampaign(req, res, next));
+// The approved paid briefs a campaign can be adopted into (Query Service). 404 unless campaign-service briefs are on.
+router.get('/briefs', (req, res, next) => optimizeController.listAdoptableBriefs(req, res, next));
+// The campaign row from campaign-service (not the index) with its current ETag, for the act-from-Monitor levers.
+router.get('/:campaignId/record', (req, res, next) => optimizeController.getCampaignRecord(req, res, next));
 router.get('/:campaignId/settings', (req, res, next) => optimizeController.getCampaignSettings(req, res, next));
 router.get('/:campaignId/meta-ad-sets', (req, res, next) => optimizeController.listMetaAdSets(req, res, next));
 // If-Match from the body's etag. A 503 that may have reached Meta answers code META_AD_SET_STATUS_UNCONFIRMED.

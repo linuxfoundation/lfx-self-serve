@@ -404,3 +404,51 @@ describe('CampaignOptimizeService.removeKeywordTargeting', () => {
     await expect(new CampaignOptimizeService().removeKeywordTargeting(req, reddit)).rejects.toBe(definite);
   });
 });
+
+describe('CampaignOptimizeService.getCampaign', () => {
+  it('GETs the campaign row and takes the ETag from the header', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({ id: 'c-1', platform: 'reddit-ads', status: 'active', version: 4, etag: '"3"' }, { etag: '"4"' })
+    );
+
+    const result = await new CampaignOptimizeService().getCampaign(req, ref);
+
+    expect(proxyRequestWithResponse).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/briefs/b-1/campaigns/c-1', 'GET');
+    expect(result.etag).toBe('"4"');
+  });
+
+  it('falls back to the body ETag when the header is absent', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'c-1', etag: '"3"' }));
+
+    expect((await new CampaignOptimizeService().getCampaign(req, ref)).etag).toBe('"3"');
+  });
+});
+
+describe('CampaignOptimizeService.listAdoptableBriefs', () => {
+  const page = (data: unknown[]) => ({ resources: data.map((d) => ({ type: 'campaign_brief', id: 'x', data: d })) });
+
+  it('reads campaign_brief from the Query Service and keeps approved paid briefs only', async () => {
+    proxyRequest.mockResolvedValueOnce(
+      page([
+        { id: 'b-1', event_slug: 'kubecon', program_type: 'events', delivery_type: 'paid-marketing', status: 'approved', platforms: ['linkedin-ads', 7] },
+        { id: 'b-2', event_slug: 'legacy', status: 'approved' },
+        { id: 'b-3', event_slug: 'draft', delivery_type: 'paid-marketing', status: 'draft' },
+        { id: 'b-4', event_slug: 'mail', delivery_type: 'email', status: 'approved' },
+        { event_slug: 'no-id', status: 'approved' },
+      ])
+    );
+
+    const briefs = await new CampaignOptimizeService().listAdoptableBriefs(req, 'tlf');
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', { type: 'campaign_brief', parent: 'project:tlf' });
+    expect(briefs).toEqual([
+      { id: 'b-1', eventSlug: 'kubecon', programType: 'events', platforms: ['linkedin-ads'] },
+      { id: 'b-2', eventSlug: 'legacy', programType: '', platforms: [] },
+    ]);
+  });
+
+  it('refuses an empty project without calling the Query Service', async () => {
+    await expect(new CampaignOptimizeService().listAdoptableBriefs(req, '')).rejects.toBeInstanceOf(ServiceValidationError);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});

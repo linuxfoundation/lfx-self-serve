@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import type { TWITTER_AUDIENCE_WINDOWS } from '../constants/campaign-optimize.constants';
-import type { CampaignMetricsWindow, CampaignServiceMicrosoftKeywords, MicrosoftKeywordMetricsResponse, MicrosoftKeywordsWindow } from './campaign.interface';
+import type {
+  CampaignMetricsWindow,
+  CampaignServiceCampaign,
+  CampaignServiceMicrosoftKeywords,
+  MicrosoftKeywordMetricsResponse,
+  MicrosoftKeywordsWindow,
+} from './campaign.interface';
 
 // ---------------------------------------------------------------------------
 // Optimize-tab reads and levers proxied to lfx-v2-campaign-service
@@ -238,7 +244,7 @@ export interface MetaAdSetStatusParams extends MetaAdSetStatusRequest {
 }
 
 /** A platform `adopt-campaign` may be asked for through the BFF (Google Ads is excluded). */
-export type CampaignAdoptPlatform = 'microsoft-ads' | 'meta-ads' | 'reddit-ads' | 'twitter-ads';
+export type CampaignAdoptPlatform = 'microsoft-ads' | 'meta-ads' | 'reddit-ads' | 'twitter-ads' | 'linkedin-ads';
 
 /** Body of `POST /api/campaigns/adopt?project=`. */
 export interface CampaignAdoptRequest {
@@ -297,7 +303,7 @@ export interface CampaignServiceKeywordTargetingRemovals {
   applied_count: number;
 }
 
-/** A platform whose campaign-ref resolve the BFF exposes (`linkedin-ads` is pending upstream). */
+/** A platform whose campaign-ref resolve the BFF exposes. */
 export type CampaignRefPlatform = 'meta-ads' | 'reddit-ads' | 'twitter-ads' | 'linkedin-ads';
 
 /** The reporting windows the Reddit keyword read accepts (provisionally the Microsoft set). */
@@ -319,4 +325,141 @@ export interface CampaignLeverUnconfirmedOutcome {
   message: string;
   /** Matched against an ANSWERED 503's message; a match means the write may have reached the platform. */
   marker: RegExp;
+}
+
+// ---------------------------------------------------------------------------
+// Live-settings drift, act-from-monitor and adoption (lfx-self-serve#3299)
+// ---------------------------------------------------------------------------
+
+/** How the drift drawer styles a verdict; the `lfx-tag` severities it uses. */
+export type CampaignSettingsVerdictSeverity = 'success' | 'warn' | 'secondary';
+
+/**
+ * One setting as the live-settings drawer renders it: the readback's field with display-ready sides.
+ * `intended` and `live` are `null` when that side is ABSENT from the readback, never an empty string
+ * or a zero, so the drawer can say "not recorded" / "not reported" instead of inventing a value.
+ */
+export interface CampaignSettingsDriftRow {
+  field: string;
+  label: string;
+  /** What the campaign row recorded (what LFX One asked for), or `null` when it records nothing. */
+  intended: string | null;
+  /** What the platform holds now, or `null` when the platform did not report it. */
+  live: string | null;
+  comparison: CampaignSettingsComparison;
+  verdictLabel: string;
+  verdictSeverity: CampaignSettingsVerdictSeverity;
+  /** Why an `unknown` verdict is unknown; `''` for `match` and `diverged`. */
+  note: string;
+}
+
+/** The drawer's view of one readback: its rows plus the counts the header states. */
+export interface CampaignSettingsDrift {
+  platform: string;
+  readAt: string;
+  rows: CampaignSettingsDriftRow[];
+  divergedCount: number;
+  matchCount: number;
+  unknownCount: number;
+}
+
+/** A brief as the Query Service indexes it (`campaign_brief`). Only the fields the adopt picker reads. */
+export interface CampaignServiceBriefIndexDoc {
+  id: string;
+  project_id?: string;
+  program_type?: string;
+  event_slug?: string;
+  /** ABSENT on a document indexed before the field existed, which means `paid-marketing`. */
+  delivery_type?: string;
+  stage?: string;
+  url?: string;
+  status?: string;
+  version?: number;
+  platforms?: string[];
+}
+
+/** One brief a campaign can be adopted into: approved and paid-marketing. */
+export interface CampaignAdoptableBrief {
+  id: string;
+  eventSlug: string;
+  programType: string;
+  platforms: string[];
+}
+
+/** Response of `GET /api/campaigns/briefs?project=`. */
+export interface CampaignAdoptableBriefsResponse {
+  briefs: CampaignAdoptableBrief[];
+}
+
+/**
+ * Response of `GET /api/campaigns/:campaignId/record?project=&briefId=`: the campaign row read from
+ * campaign-service itself (not the asynchronous index), with its CURRENT ETag, plus whether this
+ * deployment can service a pause/resume (`CampaignListResult.statusToggleEnabled`).
+ */
+export interface CampaignRecordResult {
+  campaign: CampaignServiceCampaign;
+  statusToggleEnabled: boolean;
+}
+
+/** The platforms whose Monitor rows offer actions: each has a campaign-ref resolve and adoption. */
+export type CampaignMonitorActPlatform = 'linkedin-ads' | 'reddit-ads' | 'meta-ads';
+
+/** The lever a Monitor row action opens. */
+export type CampaignMonitorActLever = 'pause_resume' | 'budget' | 'bid';
+
+/** `DialogService` data of the act-from-monitor dialog. */
+export interface CampaignActDialogData {
+  projectSlug: string;
+  platform: CampaignMonitorActPlatform;
+  /** The platform's own campaign id, as the Monitor row carries it. */
+  platformCampaignId: string;
+  campaignName: string;
+  lever: CampaignMonitorActLever;
+}
+
+/** What the act dialog closes with: a request to adopt the unmanaged campaign, or nothing. */
+export interface CampaignActDialogResult {
+  adopt: true;
+}
+
+/** `DialogService` data of the adopt dialog. A Monitor platform: adoptable, and resolvable to check an unconfirmed adoption. */
+export interface CampaignAdoptDialogData {
+  projectSlug: string;
+  platform: CampaignMonitorActPlatform;
+  platformCampaignId: string;
+  campaignName: string;
+}
+
+/** Where the act dialog is: resolving the id, refusing, or holding the one campaign it resolved to. */
+export type CampaignActDialogState = 'resolving' | 'resolve-failed' | 'unowned' | 'ambiguous' | 'loading-record' | 'record-failed' | 'ready';
+
+/** A failed adoption, classified for the dialog. `unconfirmed` may already have been recorded. */
+export interface CampaignAdoptFailure {
+  state: 'failed' | 'unconfirmed';
+  title: string;
+  message: string;
+  /** campaign-service's own sentence, shown under the mapped message when it adds a reason. */
+  detail: string;
+}
+
+/** The live-settings drawer's read: nothing asked yet, in flight, answered, or refused. */
+export interface CampaignSettingsDrawerState {
+  status: 'idle' | 'loading' | 'ready' | 'error';
+  drift: CampaignSettingsDrift | null;
+  /** What to show for `error`; `''` otherwise. */
+  message: string;
+}
+
+/** The adopt dialog's brief picker read. */
+export interface CampaignAdoptBriefsState {
+  status: 'loading' | 'ready' | 'error';
+  briefs: CampaignAdoptableBrief[];
+  /** What to show for `error`; `''` otherwise. */
+  message: string;
+}
+
+/** One entry of the adopt dialog's brief select. */
+export interface CampaignAdoptBriefOption {
+  label: string;
+  value: string;
 }

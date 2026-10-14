@@ -19,10 +19,12 @@ import {
   X_TARGETING_CRITERION_ID_PATTERN,
 } from '@lfx-one/shared/constants';
 import type {
+  CampaignAdoptableBriefsResponse,
   CampaignAdoptPlatform,
   CampaignAdoptRequest,
   CampaignAudiencePlatform,
   CampaignMetricsWindow,
+  CampaignRecordResult,
   CampaignRefPlatform,
   CampaignServiceCampaignTarget,
   KeywordTargetingRemovalItem,
@@ -47,9 +49,9 @@ import { logger } from '../services/logger.service';
  *
  * These have no legacy arm, so — following the Microsoft keyword read and the budget and bid
  * levers — they are not behind a cutover flag. The exceptions are the reads whose upstream
- * endpoint is not on campaign-service `main` yet (the Reddit and LinkedIn audience reads, the
- * LinkedIn campaign-ref resolve and the Reddit keyword read), which answer 404 unless
- * `LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS` is on.
+ * endpoint is not on campaign-service `main` yet (the Reddit and LinkedIn audience reads and the
+ * Reddit keyword read), which answer 404 unless `LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS` is on, and the
+ * adoptable-brief list, which needs campaign-service briefs (`LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS`).
  *
  * Inputs are checked against the upstream contract before any round trip: project slug present,
  * brief and campaign ids UUIDs (`Format(FormatUUID)` upstream), enumerations and lengths as the Goa
@@ -178,6 +180,56 @@ export class CampaignOptimizeController {
         unknownCount: data.unknown_count,
       });
       res.json(data);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `GET /api/campaigns/:campaignId/record?project=&briefId=`: the campaign row from campaign-service
+   * with its current ETag, and whether this deployment can toggle it. The act-from-Monitor dialog
+   * reads this rather than the index, which can lag a campaign adopted a moment ago.
+   */
+  public async getCampaignRecord(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'campaign_record_read';
+    const target = readTargetFromQuery(req, operation, next);
+    if (!target) {
+      return;
+    }
+
+    const startTime = logger.startOperation(req, operation, { campaignId: target.campaignId, briefId: target.briefId });
+    try {
+      const campaign = await this.optimizeService.getCampaign(req, target);
+      const statusToggleEnabled = isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceStatusToggle);
+      logger.success(req, operation, startTime, { campaignId: target.campaignId, platform: campaign.platform, statusToggleEnabled });
+      res.json({ campaign, statusToggleEnabled } satisfies CampaignRecordResult);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `GET /api/campaigns/briefs?project=`: the approved paid-marketing briefs a campaign can be adopted
+   * into. Behind `LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS`, like the brief load: with it off no brief lives
+   * in campaign-service, so there is nothing to adopt into and the route answers 404.
+   */
+  public async listAdoptableBriefs(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'campaign_adoptable_briefs';
+    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
+      next(new ResourceNotFoundError('Route', undefined, { operation, service: 'campaign_optimize_controller', path: req.path }));
+      return;
+    }
+    const projectSlug = readProject(req);
+    if (!projectSlug) {
+      next(fieldError('project', 'project is required', operation, req));
+      return;
+    }
+
+    const startTime = logger.startOperation(req, operation, {});
+    try {
+      const briefs = await this.optimizeService.listAdoptableBriefs(req, projectSlug);
+      logger.success(req, operation, startTime, { count: briefs.length });
+      res.json({ briefs } satisfies CampaignAdoptableBriefsResponse);
     } catch (error) {
       next(error);
     }

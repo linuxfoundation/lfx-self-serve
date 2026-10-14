@@ -15,11 +15,13 @@ import {
   META_AD_SET_STATUS_UNCONFIRMED_OUTCOME,
 } from '@lfx-one/shared/constants';
 import type {
+  CampaignAdoptableBrief,
   CampaignAdoptPlatform,
   CampaignAudiencePlatform,
   CampaignLeverUnconfirmedOutcome,
   CampaignMetricsWindow,
   CampaignRefPlatform,
+  CampaignServiceBriefIndexDoc,
   CampaignServiceCampaign,
   CampaignServiceCampaignResolution,
   CampaignServiceCampaignTarget,
@@ -33,12 +35,14 @@ import type {
   CampaignServiceSettingsReadback,
   KeywordTargetingRemovalItem,
   MetaAdSetStatus,
+  QueryServiceResponse,
   RedditKeywordsWindow,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors/microservice.error';
 import { ServiceValidationError } from '../errors/service-validation.error';
+import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { encodePathSegment } from '../helpers/url-validation';
 import { upstreamAnswered } from './campaign-keyword-actions';
 import { asUnconfirmedWriteFailure, readEtag } from './campaign-service.service';
@@ -103,8 +107,7 @@ export class CampaignOptimizeService {
    * an empty `matches`, and MORE THAN ONE match is reachable (a re-pointed connection), so the
    * caller must check `match_count` and refuse rather than choose.
    *
-   * The id is a QUERY parameter (fifth argument) and is checked against the platform's id rule
-   * first. `linkedin-ads` has no upstream endpoint yet (see `CAMPAIGN_REF_PLATFORMS_PENDING_UPSTREAM`).
+   * The id is a QUERY parameter (fifth argument) and is checked against the platform's id rule first.
    */
   public async resolvePlatformCampaign(
     req: Request,
@@ -239,6 +242,57 @@ export class CampaignOptimizeService {
     } catch (error) {
       throw asUnconfirmedWriteFailure(error, 'adopt_campaign', CAMPAIGN_ADOPT_OUTCOME_UNCONFIRMED);
     }
+  }
+
+  /**
+   * One campaign row read from campaign-service itself, with its CURRENT ETag (header first, body
+   * second, as `adoptCampaign` takes it). Used where the asynchronous index could lag a write the
+   * caller needs to see at once: a campaign adopted a moment ago, or a validator for `If-Match`.
+   */
+  public async getCampaign(req: Request, ref: CampaignServiceCampaignTarget): Promise<CampaignServiceCampaign> {
+    logger.debug(req, 'get_campaign', 'Reading campaign row from campaign-service', { campaign_id: ref.campaignId });
+    const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceCampaign>(req, 'LFX_V2_CAMPAIGN_SERVICE', campaignPath(ref), 'GET');
+    return { ...response.data, etag: readEtag(response) ?? response.data.etag };
+  }
+
+  /**
+   * The project's briefs a campaign can be ADOPTED into: approved, paid-marketing, from the Query
+   * Service (campaign-service exposes no brief list; `campaign_brief` is indexed instead).
+   *
+   * Filtered HERE, not with a query filter: an index filter on `status` is unverified, and a filter
+   * that silently matched nothing would read as "no approved briefs". A document with no
+   * `delivery_type` was indexed before the field existed and is a paid brief (campaign-service
+   * `BriefDoc`); `adopt-campaign` itself refuses any other brief with 400, so this only narrows the picker.
+   */
+  public async listAdoptableBriefs(req: Request, projectSlug: string): Promise<CampaignAdoptableBrief[]> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A brief list requires the project it is scoped to.', {
+        operation: 'list_adoptable_briefs',
+        service: 'campaign_optimize_service',
+      });
+    }
+    const docs = await fetchAllQueryResources<CampaignServiceBriefIndexDoc>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<CampaignServiceBriefIndexDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'campaign_brief',
+          parent: `project:${projectSlug}`,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
+    );
+    const briefs = docs
+      .filter(
+        (d) => typeof d?.id === 'string' && d.id !== '' && d.status === 'approved' && (d.delivery_type === undefined || d.delivery_type === 'paid-marketing')
+      )
+      .map((d) => ({
+        id: d.id,
+        eventSlug: typeof d.event_slug === 'string' ? d.event_slug : '',
+        programType: typeof d.program_type === 'string' ? d.program_type : '',
+        platforms: Array.isArray(d.platforms) ? d.platforms.filter((p): p is string => typeof p === 'string') : [],
+      }));
+    logger.debug(req, 'list_adoptable_briefs', 'Filtered indexed briefs to approved paid briefs', { indexed: docs.length, adoptable: briefs.length });
+    return briefs;
   }
 
   /** The positive keywords of a Reddit ad group or X line item, read live. Any other platform is upstream's 400. */

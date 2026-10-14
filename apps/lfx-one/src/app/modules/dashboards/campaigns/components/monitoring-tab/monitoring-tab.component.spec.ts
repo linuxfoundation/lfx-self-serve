@@ -7,10 +7,13 @@ import type { KeywordMetricsResponse } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
-import { of } from 'rxjs';
+import { DialogService } from 'primeng/dynamicdialog';
+import { of, Subject } from 'rxjs';
 import { signal } from '@angular/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { CampaignActDialogComponent } from '../campaign-act-dialog/campaign-act-dialog.component';
+import { CampaignAdoptDialogComponent } from '../campaign-adopt-dialog/campaign-adopt-dialog.component';
 import { MonitoringTabComponent } from './monitoring-tab.component';
 
 /**
@@ -81,6 +84,7 @@ describe('MonitoringTabComponent â€” keyword totals completeness', () => {
         provideNoopAnimations(),
         { provide: MessageService, useValue: { add: vi.fn() } },
         { provide: ProjectContextService, useValue: { activeContext: signal({ slug: 'tlf' }) } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
         {
           provide: CampaignService,
           useValue: {
@@ -310,6 +314,7 @@ describe.each(['linkedin', 'reddit', 'meta'] as const)('MonitoringTabComponent â
         provideNoopAnimations(),
         { provide: MessageService, useValue: { add: vi.fn() } },
         { provide: ProjectContextService, useValue: { activeContext: signal({ slug: 'tlf' }) } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
         {
           provide: CampaignService,
           useValue: {
@@ -433,5 +438,123 @@ describe.each(['linkedin', 'reddit', 'meta'] as const)('MonitoringTabComponent â
     });
 
     expect(text(`${platform}-totals-note`)).toBe('conversions cover 1 of 2 campaigns.');
+  });
+});
+
+/**
+ * Act from Monitor (#3299): a LinkedIn, Reddit or Meta row's actions open the act dialog with the
+ * row's PLATFORM campaign id (the dialog resolves it before showing any lever), an adopt request
+ * opens the adopt dialog, and a confirmed adoption reopens the act dialog on the same lever.
+ */
+describe.each([
+  ['linkedin', 'linkedin-ads'],
+  ['reddit', 'reddit-ads'],
+  ['meta', 'meta-ads'],
+] as const)('MonitoringTabComponent â€” %s row actions', (platform, platformId) => {
+  let fixture: ComponentFixture<MonitoringTabComponent>;
+  let open: ReturnType<typeof vi.fn>;
+  let closes: Subject<unknown>[];
+
+  beforeEach(async () => {
+    closes = [];
+    open = vi.fn(() => {
+      const onClose = new Subject<unknown>();
+      closes.push(onClose);
+      return { onClose };
+    });
+    await TestBed.configureTestingModule({
+      imports: [MonitoringTabComponent],
+      providers: [
+        provideNoopAnimations(),
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: ProjectContextService, useValue: { activeContext: signal({ slug: 'tlf' }) } },
+        { provide: DialogService, useValue: { open } },
+        {
+          provide: CampaignService,
+          useValue: {
+            getMonitorData: vi.fn().mockReturnValue(of(null)),
+            getKeywords: vi.fn().mockReturnValue(of(null)),
+            getAudience: vi.fn().mockReturnValue(of(null)),
+            getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
+            getRedditAccounts: vi.fn().mockReturnValue(of([])),
+            getMetaAccounts: vi.fn().mockReturnValue(of([])),
+          },
+        },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(MonitoringTabComponent);
+    fixture.detectChanges();
+    const instance = fixture.componentInstance as unknown as Record<string, { set(v: unknown): void }>;
+    instance['selectedPlatform'].set(platform);
+    const data = {
+      accountLabel: 'LF',
+      pulledAt: '2026-10-13T00:00:00.000Z',
+      dateRange: { mode: 'last_30_days' },
+      campaigns: [
+        {
+          campaignId: '987654',
+          campaignName: 'KubeCon NA 2026',
+          eventName: 'KubeCon NA 2026',
+          creatives: [],
+          status: 'ACTIVE',
+          totalBudget: 1000,
+          dailyBudget: 0,
+          spend: 10,
+          impressions: 100,
+          clicks: 1,
+          ctr: 1,
+          conversions: 0,
+          pacingPct: 10,
+          pacingLabel: 'normal',
+          startDate: '2026-09-01',
+          endDate: '2026-11-30',
+        },
+      ],
+      accountTotals: { spend: 10, impressions: 100, clicks: 1, conversions: 0, campaignCount: 1 },
+      actionItems: [],
+    };
+    ({ linkedin: instance['linkedInData'], reddit: instance['redditData'], meta: instance['metaData'] })[platform].set(data);
+    fixture.detectChanges();
+  });
+
+  const click = (testId: string): void => {
+    (fixture.nativeElement.querySelector(`[data-testid="${testId}"] button`) as HTMLButtonElement).click();
+  };
+
+  it.each([
+    ['monitor-act-toggle-987654', 'pause_resume', 'Pause or resume: KubeCon NA 2026'],
+    ['monitor-act-budget-987654', 'budget', 'Budget: KubeCon NA 2026'],
+    ['monitor-act-bid-987654', 'bid', 'Bid: KubeCon NA 2026'],
+  ])('%s opens the act dialog with the platform campaign id', (testId, lever, header) => {
+    click(testId);
+
+    expect(open).toHaveBeenCalledWith(
+      CampaignActDialogComponent,
+      expect.objectContaining({
+        header,
+        data: { projectSlug: 'tlf', platform: platformId, platformCampaignId: '987654', campaignName: 'KubeCon NA 2026', lever },
+      })
+    );
+  });
+
+  it('opens the adopt dialog on request, and reopens the act dialog once adopted', () => {
+    click('monitor-act-bid-987654');
+    closes[0].next({ adopt: true });
+
+    expect(open).toHaveBeenLastCalledWith(
+      CampaignAdoptDialogComponent,
+      expect.objectContaining({ data: { projectSlug: 'tlf', platform: platformId, platformCampaignId: '987654', campaignName: 'KubeCon NA 2026' } })
+    );
+
+    closes[1].next(true);
+    expect(open).toHaveBeenCalledTimes(3);
+    expect(open).toHaveBeenLastCalledWith(CampaignActDialogComponent, expect.objectContaining({ data: expect.objectContaining({ lever: 'bid' }) }));
+  });
+
+  it('does nothing more when either dialog is simply closed', () => {
+    click('monitor-act-budget-987654');
+    closes[0].next(undefined);
+    expect(open).toHaveBeenCalledTimes(1);
   });
 });

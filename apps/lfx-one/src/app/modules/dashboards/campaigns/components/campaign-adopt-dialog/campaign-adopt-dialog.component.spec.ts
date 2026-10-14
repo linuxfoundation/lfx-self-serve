@@ -1,0 +1,149 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { HttpErrorResponse } from '@angular/common/http';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import {
+  CAMPAIGN_ADOPT_BRIEFS_EMPTY_MESSAGE,
+  CAMPAIGN_ADOPT_BRIEFS_UNAVAILABLE_MESSAGE,
+  CAMPAIGN_ADOPT_OUTCOME_UNCONFIRMED,
+  CAMPAIGN_ADOPT_VERIFY_ABSENT_MESSAGE,
+} from '@lfx-one/shared/constants';
+import type { CampaignAdoptDialogData } from '@lfx-one/shared/interfaces';
+import { CampaignService } from '@services/campaign.service';
+import { MessageService } from 'primeng/api';
+import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { of, throwError } from 'rxjs';
+import { describe, expect, it, vi } from 'vitest';
+
+import { CampaignAdoptDialogComponent } from './campaign-adopt-dialog.component';
+
+const BRIEFS = { briefs: [{ id: 'b-1', eventSlug: 'kubecon-eu', programType: 'events', platforms: ['linkedin-ads'] }] };
+
+/** A refusal in the BFF's own `{ error, code }` envelope, as campaign-service's answer is relayed. */
+function bffError(status: number, error: string): HttpErrorResponse {
+  return new HttpErrorResponse({ status, error: { error, code: 'CLIENT_ERROR' } });
+}
+
+describe('CampaignAdoptDialogComponent (#3299)', () => {
+  let fixture: ComponentFixture<CampaignAdoptDialogComponent>;
+  let close: ReturnType<typeof vi.fn>;
+  let toast: ReturnType<typeof vi.fn>;
+  let service: { listAdoptableBriefs: ReturnType<typeof vi.fn>; adoptCampaign: ReturnType<typeof vi.fn>; resolvePlatformCampaign: ReturnType<typeof vi.fn> };
+
+  async function setup(briefs: unknown = of(BRIEFS)): Promise<void> {
+    TestBed.resetTestingModule();
+    close = vi.fn();
+    toast = vi.fn();
+    service = { listAdoptableBriefs: vi.fn(() => briefs), adoptCampaign: vi.fn(), resolvePlatformCampaign: vi.fn() };
+    const data: CampaignAdoptDialogData = { projectSlug: 'tlf', platform: 'linkedin-ads', platformCampaignId: '123456', campaignName: 'KubeCon EU' };
+    await TestBed.configureTestingModule({
+      imports: [CampaignAdoptDialogComponent],
+      providers: [
+        provideNoopAnimations(),
+        { provide: DynamicDialogRef, useValue: { close } },
+        { provide: DynamicDialogConfig, useValue: { data } },
+        { provide: CampaignService, useValue: service },
+        { provide: MessageService, useValue: { add: toast } },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(CampaignAdoptDialogComponent);
+    fixture.detectChanges();
+  }
+
+  const q = (testId: string): HTMLElement | null => (fixture.nativeElement as HTMLElement).querySelector(`[data-testid="${testId}"]`);
+  const text = (testId: string): string => q(testId)?.textContent ?? '';
+
+  function chooseAndSubmit(): void {
+    fixture.componentInstance.form.controls.briefId.setValue('b-1');
+    q('campaign-adopt-dialog')!.dispatchEvent(new Event('submit'));
+    fixture.detectChanges();
+  }
+
+  it('adopts into the chosen approved brief and closes with true', async () => {
+    await setup();
+    service.adoptCampaign.mockReturnValue(of({ id: 'c-9' }));
+
+    chooseAndSubmit();
+
+    expect(service.listAdoptableBriefs).toHaveBeenCalledWith('tlf');
+    expect(service.adoptCampaign).toHaveBeenCalledWith('tlf', { briefId: 'b-1', platform: 'linkedin-ads', platformCampaignId: '123456' });
+    expect(toast).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Adopted KubeCon EU' }));
+    expect(close).toHaveBeenCalledWith(true);
+  });
+
+  it('sends nothing without a chosen brief', async () => {
+    await setup();
+
+    q('campaign-adopt-dialog')!.dispatchEvent(new Event('submit'));
+
+    expect(service.adoptCampaign).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [400, 'Not adopted: the request was refused', 'exactly as LinkedIn Ads shows it', 'platform_campaign_id is malformed'],
+    [404, 'Not adopted: no such campaign', 'LinkedIn Ads reports no campaign with this id', ''],
+    [409, 'Not adopted: this campaign cannot be bound to this brief', 'already belong to another brief', 'already bound to a different brief'],
+    [503, 'Not adopted: the campaign could not be verified', 'does not mean the campaign is missing', ''],
+  ])('maps a %s to an actionable message', async (status, title, message, upstream) => {
+    await setup();
+    service.adoptCampaign.mockReturnValue(throwError(() => bffError(status, upstream || 'refused')));
+
+    chooseAndSubmit();
+
+    expect(text('campaign-adopt-dialog-error-title')).toBe(title);
+    expect(text('campaign-adopt-dialog-error-message')).toContain(message);
+    if (upstream) {
+      expect(text('campaign-adopt-dialog-error-detail')).toContain(upstream);
+    } else {
+      expect(q('campaign-adopt-dialog-error-detail')).toBeNull();
+    }
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it('never retries an unconfirmed adoption: Adopt waits for a check, which can confirm it', async () => {
+    await setup();
+    service.adoptCampaign.mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 504, error: { error: CAMPAIGN_ADOPT_OUTCOME_UNCONFIRMED, code: 'GATEWAY' } }))
+    );
+
+    chooseAndSubmit();
+
+    expect(text('campaign-adopt-dialog-unconfirmed')).toContain(CAMPAIGN_ADOPT_OUTCOME_UNCONFIRMED);
+    expect((q('campaign-adopt-dialog-submit')?.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
+    chooseAndSubmit();
+    expect(service.adoptCampaign).toHaveBeenCalledTimes(1);
+
+    service.resolvePlatformCampaign.mockReturnValue(of({ platform_campaign_id: '123456', matches: [{ campaign_id: 'c-9', brief_id: 'b-1' }], match_count: 1 }));
+    (q('campaign-adopt-dialog-verify')?.querySelector('button') as HTMLButtonElement).click();
+    expect(service.resolvePlatformCampaign).toHaveBeenCalledWith('tlf', 'linkedin-ads', '123456');
+    expect(close).toHaveBeenCalledWith(true);
+  });
+
+  it('re-offers Adopt when the check finds the adoption did not happen', async () => {
+    await setup();
+    service.adoptCampaign.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 0 })));
+    chooseAndSubmit();
+    service.resolvePlatformCampaign.mockReturnValue(of({ platform_campaign_id: '123456', matches: [], match_count: 0 }));
+
+    (q('campaign-adopt-dialog-verify')?.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(text('campaign-adopt-dialog-error-message')).toContain(CAMPAIGN_ADOPT_VERIFY_ABSENT_MESSAGE);
+    expect((q('campaign-adopt-dialog-submit')?.querySelector('button') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('says adoption is unavailable when the brief list route answers 404', async () => {
+    await setup(throwError(() => new HttpErrorResponse({ status: 404 })));
+
+    expect(text('campaign-adopt-dialog-briefs-error')).toContain(CAMPAIGN_ADOPT_BRIEFS_UNAVAILABLE_MESSAGE);
+  });
+
+  it('says what to do when there is no approved brief', async () => {
+    await setup(of({ briefs: [] }));
+
+    expect(text('campaign-adopt-dialog-briefs-empty')).toContain(CAMPAIGN_ADOPT_BRIEFS_EMPTY_MESSAGE);
+    expect((q('campaign-adopt-dialog-submit')?.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
+  });
+});

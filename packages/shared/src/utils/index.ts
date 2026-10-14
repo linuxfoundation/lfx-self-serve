@@ -106,3 +106,4 @@ export * from './sha256.utils';
 export * from './auth-fragment.utils';
 export * from './campaign-event-details.utils';
 export * from './campaign.utils';
+export * from './campaign-optimize.utils';

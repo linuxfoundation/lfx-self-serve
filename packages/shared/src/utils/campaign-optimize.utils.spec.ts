@@ -1,0 +1,96 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { describe, expect, it } from 'vitest';
+
+import { CAMPAIGN_SETTINGS_UNKNOWN_NOTES } from '../constants/campaign-optimize.constants';
+import type { CampaignServiceSettingsField, CampaignServiceSettingsReadback } from '../interfaces/campaign-optimize.interface';
+import { buildCampaignSettingsDrift } from './campaign-optimize.utils';
+
+function readback(fields: CampaignServiceSettingsField[], platform = 'linkedin-ads'): CampaignServiceSettingsReadback {
+  return {
+    campaign_id: 'c-1',
+    platform_campaign_id: '123',
+    platform,
+    read_at: '2026-10-13T10:00:00Z',
+    fields,
+    diverged_count: 99,
+    unknown_count: 99,
+  };
+}
+
+describe('buildCampaignSettingsDrift', () => {
+  it('labels known fields, keeps an unrecognised field under its own name, and counts from the rows', () => {
+    const drift = buildCampaignSettingsDrift(
+      readback([
+        { field: 'budget_amount', recorded: '50.00', upstream: '75.00', comparison: 'diverged' },
+        { field: 'campaign_name', recorded: 'KubeCon', upstream: 'KubeCon', comparison: 'match' },
+        { field: 'brand_new_field', upstream: 'X', comparison: 'unknown' },
+      ])
+    );
+
+    expect(drift.rows.map((r) => r.label)).toEqual(['Budget amount', 'Campaign name', 'brand_new_field']);
+    expect(drift.rows[0]).toMatchObject({ intended: '50.00', live: '75.00', verdictLabel: 'Differs', verdictSeverity: 'warn', note: '' });
+    expect(drift.rows[1]).toMatchObject({ verdictLabel: 'Matches', verdictSeverity: 'success' });
+    // The header agrees with the table, not with the readback's own counters.
+    expect(drift).toMatchObject({ divergedCount: 1, matchCount: 1, unknownCount: 1, platform: 'linkedin-ads', readAt: '2026-10-13T10:00:00Z' });
+  });
+
+  it('keeps an absent side null and explains the unknown verdict by which side is missing', () => {
+    const drift = buildCampaignSettingsDrift(
+      readback([
+        { field: 'status', upstream: 'PAUSED', comparison: 'unknown' },
+        { field: 'start_date', recorded: '2026-11-01', comparison: 'unknown' },
+        { field: 'end_date', comparison: 'unknown' },
+        { field: 'budget_type', recorded: 'daily', upstream: 'daily', comparison: 'unknown' },
+      ])
+    );
+
+    expect(drift.rows.map((r) => [r.intended, r.live, r.note])).toEqual([
+      [null, 'PAUSED', CAMPAIGN_SETTINGS_UNKNOWN_NOTES.liveOnly],
+      ['2026-11-01', null, CAMPAIGN_SETTINGS_UNKNOWN_NOTES.notReported],
+      [null, null, CAMPAIGN_SETTINGS_UNKNOWN_NOTES.neither],
+      ['daily', 'daily', CAMPAIGN_SETTINGS_UNKNOWN_NOTES.both],
+    ]);
+    // Equal values under an `unknown` verdict are NOT promoted to a match.
+    expect(drift.rows[3].verdictLabel).toBe('Not compared');
+    expect(drift.matchCount).toBe(0);
+  });
+
+  it('treats an empty string or an unseen verdict as unknown rather than as agreement', () => {
+    const drift = buildCampaignSettingsDrift(readback([{ field: 'budget_amount', recorded: '', upstream: '', comparison: 'maybe' as unknown as 'match' }]));
+
+    expect(drift.rows[0]).toMatchObject({ intended: null, live: null, comparison: 'unknown' });
+    expect(drift.matchCount).toBe(0);
+  });
+
+  it('shows a LinkedIn bid with its currency in one row', () => {
+    const drift = buildCampaignSettingsDrift(
+      readback([
+        { field: 'cost_type', upstream: 'CPC', comparison: 'unknown' },
+        { field: 'unit_cost', upstream: '12.50', comparison: 'unknown' },
+        { field: 'unit_cost_currency', upstream: 'EUR', comparison: 'unknown' },
+      ])
+    );
+
+    expect(drift.rows.map((r) => r.field)).toEqual(['cost_type', 'unit_cost']);
+    expect(drift.rows[1]).toMatchObject({ label: 'Bid', live: '12.50 EUR' });
+  });
+
+  it('never shows a bare LinkedIn bid amount as if it had a currency', () => {
+    // campaign-service omits the amount when no currency came back; the currency row then stands alone.
+    const onlyCurrency = buildCampaignSettingsDrift(readback([{ field: 'unit_cost_currency', upstream: 'USD', comparison: 'unknown' }]));
+    expect(onlyCurrency.rows).toEqual([expect.objectContaining({ field: 'unit_cost_currency', label: 'Bid currency', live: 'USD' })]);
+
+    const noCurrency = buildCampaignSettingsDrift(readback([{ field: 'unit_cost', upstream: '3.00', comparison: 'unknown' }]));
+    expect(noCurrency.rows[0].live).toBe('3.00');
+  });
+
+  it('drops malformed entries and tolerates a missing fields array', () => {
+    const malformed = readback([null as unknown as CampaignServiceSettingsField, { comparison: 'match' } as unknown as CampaignServiceSettingsField]);
+    expect(buildCampaignSettingsDrift(malformed).rows).toEqual([]);
+
+    const missing = { ...readback([]), fields: undefined } as unknown as CampaignServiceSettingsReadback;
+    expect(buildCampaignSettingsDrift(missing)).toMatchObject({ rows: [], divergedCount: 0, matchCount: 0, unknownCount: 0 });
+  });
+});
