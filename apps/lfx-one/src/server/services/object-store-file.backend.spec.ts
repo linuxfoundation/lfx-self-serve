@@ -154,10 +154,56 @@ describe('FileObjectStoreBackend', () => {
       await expect(backend.headObject(key)).rejects.toMatchObject(refusedKey(/file-backed object store/));
     });
 
+    it('accepts a first segment that merely begins with two dots — it stays inside the folder', async () => {
+      const key = '..draft/x.md';
+      await backend.putObject(key, { body: Buffer.from('draft'), contentType: 'text/markdown', cacheControl: 'private' });
+
+      await expect(readFile(join(root, '..draft', 'x.md'), 'utf8')).resolves.toBe('draft');
+      await expect(backend.getObject(key)).resolves.toMatchObject({ body: 'draft' });
+      expect((await backend.listObjects('')).map((object) => object.key)).toEqual([key]);
+    });
+
     it('refuses a key that would collide with a sidecar', async () => {
       const put = backend.putObject('brand-kit/x.md.meta.json', { body: Buffer.from('x'), contentType: 'text/plain', cacheControl: 'private' });
       await expect(put).rejects.toBeInstanceOf(ServiceValidationError);
       await expect(put).rejects.toMatchObject(refusedKey(/not storable/));
+    });
+
+    // S3 stores `a/b` and `a/b/c` side by side; a filesystem cannot. The clash surfaces as the
+    // same typed 400 as a refused key — never a raw EEXIST/ENOTDIR/EISDIR — and a key that only
+    // names a folder of other objects reads as "no object", as it would against S3.
+    describe('nested keys (one key a path prefix of another)', () => {
+      const input = { body: Buffer.from('x'), contentType: 'text/plain', cacheControl: 'private' };
+
+      it('refuses writing under a stored object with a typed 400', async () => {
+        await backend.putObject('a/b', input);
+
+        for (const key of ['a/b/c', 'a/b/c/d']) {
+          const put = backend.putObject(key, input);
+          await expect(put).rejects.toBeInstanceOf(ServiceValidationError);
+          await expect(put).rejects.toMatchObject(refusedKey(/collides with a stored object/));
+        }
+        await expect(backend.getObject('a/b')).resolves.toEqual({ body: 'x', metadata: {} });
+      });
+
+      it('refuses writing a key that is the folder of stored objects with a typed 400', async () => {
+        await backend.putObject('a/b/c', input);
+
+        const put = backend.putObject('a/b', input);
+        await expect(put).rejects.toBeInstanceOf(ServiceValidationError);
+        await expect(put).rejects.toMatchObject(refusedKey(/collides with a stored object/));
+        await expect(backend.getObject('a/b/c')).resolves.toEqual({ body: 'x', metadata: {} });
+      });
+
+      it('reads a key that only names a folder, or sits under a stored object, as missing', async () => {
+        await backend.putObject('a/b/c', input);
+        await backend.putObject('x/y', input);
+
+        await expect(backend.headObject('a/b')).resolves.toBeNull();
+        await expect(backend.getObject('a/b')).resolves.toBeNull();
+        await expect(backend.headObject('x/y/z')).resolves.toBeNull();
+        await expect(backend.getObject('x/y/z')).resolves.toBeNull();
+      });
     });
 
     it('keeps the stored key byte-exact for the characters avatar keys carry (@, %, dots)', async () => {

@@ -26,6 +26,13 @@ import { ServiceValidationError } from '../errors';
  * - A missing folder lists as empty instead of failing: before the first
  *   write there is nothing stored, and a local run should not WARN about it.
  *
+ * Known divergence from S3: a filesystem has one namespace for files and
+ * folders, so a key that is a path prefix of another (`a/b` next to `a/b/c`)
+ * cannot be stored alongside it. Writing such a key is refused with a typed
+ * `ServiceValidationError` on `key` instead of a raw fs error, and reading a
+ * key that names a folder reports no object, as S3 would. Today's keys are
+ * content-addressed (`<kind>/<project>/<sha>.<ext>`) and never nest this way.
+ *
  * Keys are resolved and then checked to still sit inside the purpose folder,
  * so no key — however it was built — can read or write outside the store.
  */
@@ -61,7 +68,10 @@ export class FileObjectStoreBackend implements ObjectStoreBackend {
   public async headObject(key: string): Promise<Record<string, string> | null> {
     const bodyPath = this.resolveKey(key);
     try {
-      await stat(bodyPath);
+      // A folder at the key's path is a prefix of other objects, not an object itself.
+      if (!(await stat(bodyPath)).isFile()) {
+        return null;
+      }
     } catch (error) {
       if (isMissing(error)) {
         return null;
@@ -73,16 +83,25 @@ export class FileObjectStoreBackend implements ObjectStoreBackend {
 
   public async putObject(key: string, input: ObjectStorePutInput): Promise<void> {
     const bodyPath = this.resolveKey(key);
-    await mkdir(dirname(bodyPath), { recursive: true });
     const sidecar: ObjectStoreFileSidecar = {
       contentType: input.contentType,
       cacheControl: input.cacheControl,
       metadata: input.metadata ?? {},
     };
-    // Sidecar first, body last: a reader only sees the object once its body
-    // exists, and by then the labels describing it are already on disk.
-    await writeFile(`${bodyPath}${OBJECT_STORE_FILE_METADATA_SUFFIX}`, JSON.stringify(sidecar, null, 2));
-    await writeFile(bodyPath, input.body);
+    try {
+      await mkdir(dirname(bodyPath), { recursive: true });
+      // Sidecar first, body last: a reader only sees the object once its body
+      // exists, and by then the labels describing it are already on disk.
+      await writeFile(`${bodyPath}${OBJECT_STORE_FILE_METADATA_SUFFIX}`, JSON.stringify(sidecar, null, 2));
+      await writeFile(bodyPath, input.body);
+    } catch (error) {
+      if (isNestedKeyCollision(error)) {
+        throw ServiceValidationError.forField('key', `Object key collides with a stored object that is its path prefix or extension: "${key}"`, {
+          operation: 'object_store_put_object',
+        });
+      }
+      throw error;
+    }
   }
 
   public async getObject(key: string): Promise<ObjectStoreReadResult | null> {
@@ -145,7 +164,9 @@ export class FileObjectStoreBackend implements ObjectStoreBackend {
     }
     const bodyPath = resolve(this.root, ...segments);
     const inside = relative(this.root, bodyPath);
-    if (!inside || inside.startsWith('..') || isAbsolute(inside)) {
+    // `..` alone or as the first path component means outside; a first segment that merely
+    // begins with two dots (`..draft/x.md`) is a legitimate key and stays inside.
+    if (!inside || inside === '..' || inside.startsWith(`..${sep}`) || isAbsolute(inside)) {
       throw ServiceValidationError.forField('key', `Object key escapes the file-backed object store folder: "${key}"`, {
         operation: 'object_store_resolve_key',
       });
@@ -178,10 +199,28 @@ export class FileObjectStoreBackend implements ObjectStoreBackend {
   }
 }
 
-/** True for ENOENT (and ENOTDIR, when a key segment names a file) — the file-system "confirmed missing". */
+/**
+ * True for ENOENT, ENOTDIR (a key segment names a stored object) and EISDIR (the key names
+ * a folder of other objects) — every way the file system says "no object here", the same
+ * answer S3 gives for a key that is only the prefix or extension of stored keys.
+ */
 function isMissing(error: unknown): boolean {
-  const code = (error as { code?: string })?.code;
-  return code === 'ENOENT' || code === 'ENOTDIR';
+  const code = fsErrorCode(error);
+  return code === 'ENOENT' || code === 'ENOTDIR' || code === 'EISDIR';
+}
+
+/**
+ * True when a write hit the file/folder namespace clash the class doc describes: the key's
+ * parent is a stored object (EEXIST from mkdir, ENOTDIR from the write) or the key itself is
+ * a folder holding other objects (EISDIR).
+ */
+function isNestedKeyCollision(error: unknown): boolean {
+  const code = fsErrorCode(error);
+  return code === 'EEXIST' || code === 'ENOTDIR' || code === 'EISDIR';
+}
+
+function fsErrorCode(error: unknown): string | undefined {
+  return (error as { code?: string })?.code;
 }
 
 function isStringRecord(value: unknown): value is Record<string, string> {
