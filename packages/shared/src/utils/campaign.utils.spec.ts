@@ -11,7 +11,14 @@ import {
   MAX_SPONSOR_NAME_LENGTH,
 } from '../constants/campaign.constants';
 import type { BriefMetricsActionRule, CampaignOptimizeLever } from '../interfaces/campaign.interface';
-import { campaignActionItemLever, campaignActionRuleLever, keywordActionKey, normalizeSponsors, parseNegativeKeywordInput } from './campaign.utils';
+import {
+  campaignActionItemLever,
+  campaignActionRuleLever,
+  campaignEtagVersion,
+  keywordActionKey,
+  normalizeSponsors,
+  parseNegativeKeywordInput,
+} from './campaign.utils';
 
 /**
  * Sponsor entries arrive from a SCRAPED page: attacker-influenced names and logo urls that reach
@@ -240,5 +247,18 @@ describe('keywordActionKey', () => {
   it('keeps the Google key unchanged and qualifies the Microsoft one', () => {
     expect(keywordActionKey('google-ads', '11', '22')).toBe('11-22');
     expect(keywordActionKey('microsoft-ads', '11', '22')).toBe('microsoft-ads:11-22');
+  });
+});
+
+describe('campaignEtagVersion', () => {
+  it.each([
+    ['"3"', 3],
+    ['"120"', 120],
+  ])('reads the version of %s', (etag, version) => {
+    expect(campaignEtagVersion(etag)).toBe(version);
+  });
+
+  it.each([undefined, null, '', '3', 'W/"3"', '"3a"', '"-1"', '"1234567890123456"'])('refuses %s as not comparable', (etag) => {
+    expect(campaignEtagVersion(etag as string | null | undefined)).toBeNull();
   });
 });

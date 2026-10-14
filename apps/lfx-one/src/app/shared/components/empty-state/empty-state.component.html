@@ -25,6 +25,8 @@
         <p class="text-sm text-gray-500">{{ subtitle() }}</p>
       }
 
+      <ng-content />
+
       <!-- CTA -->
       @if (ctaLabel() && ctaRoute()) {
         <lfx-button [label]="ctaLabel()!" [icon]="ctaIcon()" severity="primary" [size]="ctaSize()" [routerLink]="ctaRoute()!"></lfx-button>

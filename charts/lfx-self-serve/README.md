@@ -613,35 +613,37 @@ broken UX, not a security hazard, but avoidable by sequencing the rollback.
 
 #### Gatewaze Newsletter Embed
 
-| Parameter                                | Description                                                                                                                                                                                                                   | Required | Default   |
-| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | --------- |
-| `environment.LFX_GATEWAZE_EMBED_ENABLED` | Server-side kill switch for the `/api/gw` proxy; off answers a uniform 404. Does **not** gate the Angular routes — the client-side `gatewaze-embed-enabled` flag controls those                                               | No       | off       |
-| `environment.GW_PROXY_TIMEOUT_MS`        | Upstream request timeout for `/api/gw`, in ms. Falls back to 60000 when unset or invalid                                                                                                                                      | No       | 60000     |
-| `environment.GW_PROXY_MAX_BODY_BYTES`    | Ceiling on a proxied request body, in bytes. Falls back to 104857600 (100MB) when unset or invalid                                                                                                                            | No       | 104857600 |
-| `environment.GW_API_URL`                 | Base URL of the Gatewaze admin API that `/api/gw` proxies to; https-only outside dev, no trailing slash                                                                                                                       | No       | unset     |
-| `environment.GW_SUPABASE_URL`            | Supabase project URL the embedded Gatewaze admin authenticates against; unset means the embed refuses to mount                                                                                                                | No       | unset     |
-| `environment.GW_SUPABASE_ANON_KEY`       | Supabase **anon** (publishable) key for the embed — never the service-role key; it reaches the browser                                                                                                                        | No       | unset     |
-| `environment.GW_LFID_START_URL`          | LFID sign-in entry point the embed's sign-in button redirects to                                                                                                                                                              | No       | unset     |
-| `environment.GW_EMBED_URL`               | Where the Gatewaze deployment serves the embeddable admin, e.g. `https://admin.example.org/embed`; https-only outside localhost, no trailing slash; unset means the embed refuses to mount                                    | No       | unset     |
-| `environment.LFX_GATEWAZE_HOST_SESSION`  | Host-session mode: LFX One mints and holds each user's Gatewaze session server-side so the browser never gets a Gatewaze token. Needs `LFX_GATEWAZE_EMBED_ENABLED`, the Valkey session store and the Gatewaze Supabase config | No       | off       |
+| Parameter                                | Description                                                                                                                                                                                                                                                                                            | Required | Default   |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- | --------- |
+| `environment.LFX_GATEWAZE_EMBED_ENABLED` | Server-side kill switch for the `/api/gatewaze` routes; off answers a uniform 404. Does **not** gate the Angular routes — the client-side `gatewaze-embed-enabled` flag controls those                                                                                                                 | No       | off       |
+| `environment.GW_PROXY_TIMEOUT_MS`        | Idle timeout on the `/api/gatewaze` upstream socket, in ms. Falls back to 60000 when unset or invalid                                                                                                                                                                                                  | No       | 60000     |
+| `environment.GW_PROXY_MAX_BODY_BYTES`    | Ceiling on a proxied request body, in bytes. Falls back to 104857600 (100MB) when unset or invalid                                                                                                                                                                                                     | No       | 104857600 |
+| `environment.GW_API_URL`                 | Origin of the Gatewaze admin API that `/api/gatewaze/api` proxies to; https-only outside dev, no path, no trailing slash                                                                                                                                                                               | No       | unset     |
+| `environment.GW_SUPABASE_URL`            | Supabase project URL the embedded Gatewaze admin authenticates against; unset means the embed refuses to mount                                                                                                                                                                                         | No       | unset     |
+| `environment.GW_SUPABASE_ANON_KEY`       | Supabase **anon** (publishable) key for the embed — never the service-role key; it reaches the browser                                                                                                                                                                                                 | No       | unset     |
+| `environment.GW_EMBED_URL`               | Where the Gatewaze deployment serves the embeddable admin, e.g. `https://admin.example.org/embed`; https-only outside localhost, no trailing slash; unset means the embed refuses to mount                                                                                                             | No       | unset     |
+| `environment.LFX_GATEWAZE_HOST_SESSION`  | Host-session mode, the embed's only mode: LFX One mints and holds each user's Gatewaze session server-side so the browser never gets a Gatewaze token. Needs `LFX_GATEWAZE_EMBED_ENABLED`, the Valkey session store and the Gatewaze Supabase config; off means the embed shows a not-configured panel | No       | off       |
 
 `LFX_GATEWAZE_EMBED_ENABLED` is the server half of a dark launch. The client-side
 `gatewaze-embed-enabled` OpenFeature flag hides the routes and nav, but it never runs server-side —
-on its own it would leave `/api/gw` reachable by direct call. Both must be on for the pilot to work,
-and this one is what makes the switch a real kill switch.
+on its own it would leave `/api/gatewaze` reachable by direct call. The pilot needs both, plus
+`LFX_GATEWAZE_HOST_SESSION`, and this one is what makes the switch a real kill switch.
+`LFX_GATEWAZE_HOST_SESSION` stays a separate flag so the server-held sessions can be turned off on
+their own, and so an environment that has the embed flag and Supabase config does not start
+minting sessions until someone turns it on.
 
 The UI is additionally restricted to a hard-coded tenant allowlist (currently the Agentic AI
 Foundation only), because Gatewaze has no multi-foundation scoping yet. That is a constant in the
 code, not a value here, because it is a data-presentation control rather than a rollout control.
 
 Note what it does **not** do: the allowlist runs in the browser, so it keeps the embed out of the
-wrong foundation's chrome but places no restriction on `/api/gw` itself. The proxy is bounded by
-`requireGwEmbedAccess` (the caller must hold ED, root writer, or a writer grant somewhere) and by
-the upstream's own Supabase auth — the embed authenticates the caller's own bearer, so enabling
-this flag confers no data access a caller did not already have.
+wrong foundation's chrome but places no restriction on `/api/gatewaze` itself. The routes are
+bounded by `requireGwEmbedAccess` (the caller must hold ED, root writer, or a writer grant
+somewhere) and by the upstream's own Supabase auth — the Gatewaze session is the caller's own, so
+enabling this flag confers no data access a caller did not already have.
 
-**Four of these reach the browser.** `GW_SUPABASE_URL`, `GW_SUPABASE_ANON_KEY`,
-`GW_LFID_START_URL` and `GW_EMBED_URL` are serialised into `RuntimeConfig` and served in every
+**Three of these reach the browser.** `GW_SUPABASE_URL`, `GW_SUPABASE_ANON_KEY` and
+`GW_EMBED_URL` are serialised into `RuntimeConfig` and served in every
 page response. `GW_EMBED_URL` is also what the server fetches the embed's stylesheet from
 (`/public/api/gw-embed-stylesheet/:name`) to scope it to the LFX chrome. The anon
 key is publishable and protected by RLS, so that is correct — but a **service-role key in that slot
