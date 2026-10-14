@@ -7,7 +7,13 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ORG_CLA_APPROVAL_HEADING, ORG_CLA_APPROVAL_RECEIPT } from '@lfx-one/shared/constants';
 import type { OrgClaApprovalEntry, OrgClaApprovalList, OrgClaApprovalListUpdate, OrgClaGroup } from '@lfx-one/shared/interfaces';
-import { formatClaSignedOnInstant, orgClaApprovalCriteriaLabel, orgClaApprovalEntryMatches, orgClaPairProjectSfid } from '@lfx-one/shared/utils';
+import {
+  formatClaSignedOnInstant,
+  orgClaApprovalCriteriaLabel,
+  orgClaApprovalEntryMatches,
+  orgClaPairFoundationSfid,
+  orgClaPairProjectSfid,
+} from '@lfx-one/shared/utils';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -153,8 +159,10 @@ export class OrgEasyclaApprovalListComponent {
       computed(() => {
         if (this.locked()) return '';
         const orgUid = this.accountContext.selectedAccount()?.uid;
-        const projectSfid = orgClaPairProjectSfid(this.claGroup());
-        return orgUid && projectSfid ? `${orgUid}::${projectSfid}` : '';
+        const group = this.claGroup();
+        const projectSfid = orgClaPairProjectSfid(group);
+        const foundationSfid = orgClaPairFoundationSfid(group) ?? '';
+        return orgUid && projectSfid ? `${orgUid}::${projectSfid}::${foundationSfid}` : '';
       })
     )
       .pipe(
@@ -162,8 +170,8 @@ export class OrgEasyclaApprovalListComponent {
         tap(() => this.mutateGrant.set(null)),
         switchMap((pair) => {
           if (!pair) return of(false);
-          const [orgUid, projectSfid] = pair.split('::');
-          return this.claService.checkPermission(orgUid, 'approval-list-update', projectSfid);
+          const [orgUid, projectSfid, foundationSfid] = pair.split('::');
+          return this.claService.checkPermission(orgUid, 'approval-list-update', projectSfid, foundationSfid || undefined);
         }),
         takeUntilDestroyed(this.destroyRef)
       )

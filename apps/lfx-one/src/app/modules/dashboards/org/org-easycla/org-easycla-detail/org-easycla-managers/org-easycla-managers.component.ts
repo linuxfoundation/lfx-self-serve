@@ -5,7 +5,7 @@ import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ORG_CLA_MANAGER_REFUSAL_COPY, ORG_CLA_MANAGER_REFUSALS, ORG_CLA_MANAGER_REMOVE_COPY, ORG_CLA_MANAGERS_COPY } from '@lfx-one/shared/constants';
 import type { OrgClaGroup, OrgClaManager, OrgClaManagerAddRequest, OrgClaManagerRefusal, OrgClaManagerRow } from '@lfx-one/shared/interfaces';
-import { buildMeetingOrganizerMailto, orgClaPairProjectSfid } from '@lfx-one/shared/utils';
+import { buildMeetingOrganizerMailto, orgClaPairFoundationSfid, orgClaPairProjectSfid } from '@lfx-one/shared/utils';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -81,8 +81,10 @@ export class OrgEasyclaManagersComponent implements OnInit {
       computed(() => {
         if (!this.signed()) return '';
         const orgUid = this.orgUid();
-        const projectSfid = orgClaPairProjectSfid(this.claGroup());
-        return orgUid && projectSfid ? `${orgUid}::${projectSfid}` : '';
+        const group = this.claGroup();
+        const projectSfid = orgClaPairProjectSfid(group);
+        const foundationSfid = orgClaPairFoundationSfid(group) ?? '';
+        return orgUid && projectSfid ? `${orgUid}::${projectSfid}::${foundationSfid}` : '';
       })
     )
       .pipe(
@@ -93,10 +95,11 @@ export class OrgEasyclaManagersComponent implements OnInit {
         }),
         switchMap((pair) => {
           if (!pair) return of({ add: false, remove: false });
-          const [orgUid, projectSfid] = pair.split('::');
+          const [orgUid, projectSfid, foundationSfid] = pair.split('::');
+          const foundation = foundationSfid || undefined;
           return forkJoin({
-            add: this.claService.checkPermission(orgUid, 'approval-list-update', projectSfid),
-            remove: this.claService.checkPermission(orgUid, 'cla-manager-delete', projectSfid),
+            add: this.claService.checkPermission(orgUid, 'approval-list-update', projectSfid, foundation),
+            remove: this.claService.checkPermission(orgUid, 'cla-manager-delete', projectSfid, foundation),
           });
         }),
         takeUntilDestroyed(this.destroyRef)
