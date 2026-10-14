@@ -210,10 +210,10 @@ export const EMAIL_VERIFICATION_MIN_RESPONSE_MS = 1500;
 export const EMAIL_SEND_CODE_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
 
 /** Requests one user may make per window, per pod. */
-export const EMAIL_SEND_CODE_USER_RATE_LIMIT_MAX = 10;
+export const EMAIL_SEND_CODE_USER_RATE_LIMIT_MAX = 120;
 
 /** Requests one normalized email address may receive per window, per pod. */
-export const EMAIL_SEND_CODE_TARGET_RATE_LIMIT_MAX = 3;
+export const EMAIL_SEND_CODE_TARGET_RATE_LIMIT_MAX = 20;
 
 /**
  * Path/fragment vocabulary for the Flow C `returnTo` contract and the Settings page's TOC

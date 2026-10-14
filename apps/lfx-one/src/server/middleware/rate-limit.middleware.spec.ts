@@ -235,16 +235,16 @@ describe('emailSendCodeTargetRateLimiter', () => {
     const outcomes = [200, 400, 503];
     for (let attempt = 0; attempt < EMAIL_SEND_CODE_TARGET_RATE_LIMIT_MAX; attempt++) {
       const result = await request(
-        { sub: `${testSub()}-${attempt}`, email: spellings[attempt], downstreamStatus: outcomes[attempt] },
+        { sub: `${testSub()}-${attempt}`, email: spellings[attempt % spellings.length], downstreamStatus: outcomes[attempt % outcomes.length] },
         emailSendCodeTargetRateLimiter
       );
       expect(result.allowed).toBe(true);
     }
-    const rejected = await request({ sub: `${testSub()}-fourth`, email }, emailSendCodeTargetRateLimiter);
+    const rejected = await request({ sub: `${testSub()}-over-limit`, email }, emailSendCodeTargetRateLimiter);
     expect(rejected.allowed).toBe(false);
     expect(rejected.statusCode).toBe(429);
     expect(rejected.body).toEqual({ error: 'Too many verification code requests. Please try again later.', code: 'RATE_LIMITED' });
-    expect((await request({ sub: `${testSub()}-fourth`, email: `other-${email}` }, emailSendCodeTargetRateLimiter)).allowed).toBe(true);
+    expect((await request({ sub: `${testSub()}-over-limit`, email: `other-${email}` }, emailSendCodeTargetRateLimiter)).allowed).toBe(true);
   });
 
   it.each([undefined, 42])('falls back to the user budget when email is %s', async (email) => {
