@@ -2,14 +2,15 @@
 
 Host-session mode moves the embedded Gatewaze admin off its browser sign-in. LFX One gets the user's Gatewaze (GoTrue) session server to server with GoTrue's `id_token` grant and keeps it in Valkey. The browser holds only its LFX `appSession` cookie and never sees a Gatewaze token. Tracking issue: #2738.
 
-This page covers session acquisition, the `/api/gatewaze/session` routes, logout, and the Supabase and Gatewaze API proxies. Realtime and the embed outlet change come in later PRs, and each one extends this page.
+This page covers session acquisition, the `/api/gatewaze/session` routes, logout, the Supabase and Gatewaze API proxies, and the Realtime WebSocket proxy. The embed outlet change comes in a later PR and extends this page.
 
 ## Files
 
 | File                                                                 | Role                                                                                                               |
 | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | `src/server/services/gatewaze-session.service.ts`                    | Configuration gate, key derivation, the session store, `getGatewazeSession`, `getGatewazeMe`, `endGatewazeSession` |
-| `src/server/routes/gatewaze.route.ts`                                | The `/api/gatewaze` router: `no-store`, the gates, the session routes                                              |
+| `src/server/routes/gatewaze.route.ts`                                | The `/api/gatewaze` router: `no-store`, the gates, the session routes, the Realtime route                          |
+| `src/server/services/gatewaze-realtime.service.ts`                   | The Realtime WebSocket proxy: the `upgrade` hook, socket caps, the bridge, shutdown                                |
 | `src/server/controllers/gatewaze-session.controller.ts`              | `/session/me` and `/session/logout`                                                                                |
 | `src/server/controllers/gatewaze-proxy.controller.ts`                | `proxySupabase` and `proxyApi`, the cookie-authenticated proxies                                                   |
 | `src/server/helpers/gatewaze-module.helper.ts`                       | The per-module entitlement seam: `gatewazeModuleForPath` and `authorizeGatewazeModule`                             |
@@ -58,6 +59,7 @@ The ID token `express-openid-connect` received at login carries LFX's raw `nonce
 4. `requireGwEmbedAccess`, reused as is: ED, root writer or any writer grant, and 403 `GW_EMBED_IMPERSONATION_BLOCKED` while impersonating. No Gatewaze session is ever minted for an impersonation target.
 5. The proxies, `ALL /supabase/{rest,storage,functions}/v1/*` and `ALL /api/*`.
 6. `GET /session/me` and `POST /session/logout`.
+7. `GET /supabase/realtime/v1/*`, reached only by a WebSocket upgrade (see [Realtime](#realtime)).
 
 The controller sends the answers in the tables below with `res.status().json()` rather than through the error classes and `apiErrorHandler`. The embed's shim reads these exact bodies and the `x-gw-session` header, so they are contract answers, not failures. The gates' 404 and 403 still go through `apiErrorHandler`.
 
@@ -145,6 +147,67 @@ What it shares with `/api/gw`:
 
 Logouts that skip the `/logout` route, such as the forced `res.oidc.logout()` in `authMiddleware`, leave the record behind. The LFX session id it is keyed on is destroyed, so nothing can reach it, and it expires on its 24 hour TTL. GoTrue's own inactivity limit also applies.
 
+## Realtime
+
+The embed's `supabase-js` builds its Realtime URL from `supabase.url`, which in host-session mode is `<origin>/api/gatewaze/supabase`. It opens `wss://<origin>/api/gatewaze/supabase/realtime/v1/websocket?apikey=…&vsn=1.0.0` and sends the placeholder `host-session` as its token. `realtime-js` puts the token inside Phoenix messages (`phx_join` and `access_token`), not in a header, so LFX One ends the browser's socket and opens its own to Supabase Realtime. The package's `bridgeRealtime` relays the messages and puts the real access token into every `phx_join` and `access_token` message. The browser never holds the token. This is host contract step 7.
+
+### The upgrade hook
+
+`startServer()` calls `getGatewazeRealtimeService().attach(httpServer, app)` right after `app.listen`. It adds an `upgrade` listener to the HTTP server and a shutdown hook. Under `ng serve`, Express is mounted through `createNodeRequestHandler` and upgrades go to the dev server, so Realtime works only on a built server (`yarn build`, then `node dist/lfx-one/server/server.mjs` with `PM2=true`) or on a deployed environment.
+
+Node gives the `upgrade` listener every request that carries an `Upgrade` header. Once the listener exists, Node no longer serves such a request as a normal one, so anything outside the Realtime path gets 404. Browsers send `Upgrade` only for WebSockets.
+
+### Checks on each upgrade
+
+An upgrade runs outside Express, so `req.oidc` and the middleware chain are not there. `onUpgrade` makes the cheap checks first, then runs the request through the Express app:
+
+1. The path starts with `/api/gatewaze/supabase/realtime/v1/`, or 404.
+2. The pod is not shutting down, or 503.
+3. Host-session mode is on (`isGatewazeHostSessionEnabled`), or the uniform 404. Nothing reads Valkey before this.
+4. `Origin` is exactly the origin of `PCC_BASE_URL`, or 403. A missing `Origin` is refused. `SameSite=Lax` still sends the cookie on a cross-site WebSocket, so this is the cross-site check.
+5. The pod is under its socket cap, or 503.
+6. The request runs through `app` with a `ServerResponse` that has no socket behind it. It passes the same `auth()`, `authMiddleware`, `apiRateLimiter`, `requireGatewazeHostSession` and `requireGwEmbedAccess` as every other `/api/gatewaze` request. So a caller with no LFX session gets 401, a caller without ED, root writer or a writer grant gets 403, and an impersonating admin gets 403. Whatever Express answers, its status becomes the refused handshake, with `Retry-After` and `x-gw-session` copied over. Nothing Express writes reaches the socket.
+7. The Realtime route (`handleRoute`) takes the upgrade. A plain GET to the same path, with no upgrade behind it, gets the uniform 404.
+8. The user is under the per-user cap, or 429.
+9. `openRealtimeSession(req)` loads the Gatewaze session the same way `getGatewazeSession` does: stored, refreshed, or minted from the LFX session. It starts listening for a sign-out before the load, so one that lands meanwhile is not missed.
+10. The session outcome maps as on `/session/me`: `ended` is 401 with the marker, `refused` and `unavailable` are 503, `host_session_unavailable` is 404. A non-admin gets 403, and a pending admin check gets 503 with `Retry-After`.
+11. `realtimeUpstreamUrl` builds the upstream URL from `GW_SUPABASE_URL`. It refuses a path that leaves `/realtime/v1` after normalisation (400), drops any `access_token` from the query, and sets `apikey` to the anon key.
+12. `ws` completes the handshake (`WebSocketServer` with `noServer`, messages capped at 8 MiB), and the socket is handed to `bridgeRealtime`.
+
+Browsers cannot read a refused handshake's status or headers. The embed learns a session ended from its next HTTP call, which carries the same `x-gw-session: expired` marker.
+
+Running the upgrade through Express means the gates cannot drift from the HTTP routes. It also means `express-openid-connect` loads the LFX session for the upgrade. The response never ends on success, so the session is not written back. A token that `authMiddleware` refreshed during the upgrade is not saved, and the next HTTP request refreshes it again.
+
+### Caps
+
+| Cap                       | Value | Answer | Scope                                                    |
+| ------------------------- | ----- | ------ | -------------------------------------------------------- |
+| Sockets per LFX user      | 20    | 429    | One pod, keyed on the Auth0 `sub`; the admin BFF's value |
+| Sockets per pod           | 1,000 | 503    | Open sockets plus upgrades still being checked           |
+| Channels per socket       | 100   | 1008   | The package's bridge                                     |
+| Message size from browser | 8 MiB | 1009   | `ws` `maxPayload`                                        |
+| Unsent data per socket    | 4 MiB | 1013   | The package's bridge, in each direction                  |
+
+A slot is taken before anything async runs, so concurrent upgrades cannot all pass a cap. It is freed when the upgrade is refused, when the socket closes, or when the bridge closes. The caps are per pod, not across pods.
+
+### Token refresh
+
+The bridge refreshes the session 60 seconds before the access token expires by calling `fresh`. LFX's `fresh` first checks that the LFX session is still live: present in the session store, not expired, and not impersonating. A socket outlives the request that opened it, so this is how an LFX session that ended without `/logout` (expiry, or a forced `res.oidc.logout()`) closes the socket within one token lifetime. Then it calls `store.fresh(gwSid, { expectedSub })`, which refreshes under the store's lock. When the token changed, the bridge pushes the new token to every joined channel. When `fresh` returns null, the bridge closes the socket with 4001 and `realtime-js` reconnects through all the checks above. When GoTrue is unreachable, the bridge retries every 5 seconds while the current token is still valid, then closes with 1011.
+
+A Valkey fault on the LFX session read counts as a missing session, because `SessionStoreService` is fail-soft. The socket closes and reconnects, which is fail-closed.
+
+### Sign-out
+
+`bridgeRealtime` gets `onSignedOut: (fn) => store.onDelete(gwSid, fn)`. `store.delete` and `store.discard` publish the sign-out on the store's channel, and every pod closes that session's sockets with 4001. LFX's `/logout`, the embed's sign-out button and a `/user` refusal all reach it. A sign-out that lands while the socket is still opening closes it as soon as the handshake completes.
+
+### Shutdown
+
+The shutdown hook calls `closeAll()`, which stops taking upgrades and closes every bridge with 1001 (going away). `realtime-js` reconnects, and the load balancer sends it to another pod. The hook runs during the 15 second load balancer drain window, before the HTTP server closes.
+
+### Ingress
+
+On LF dev, `app.dev.lfx.dev` goes through Cloudflare, an AWS NLB and Traefik (ingress class `traefik`, `websecure` entrypoint). All three pass WebSocket upgrades without extra annotations, and an upgrade request to this path reaches Express there today. The Phoenix heartbeat `realtime-js` sends every 25 to 30 seconds keeps the socket inside Cloudflare's 100 second and the NLB's 350 second idle timeouts. Traefik is not given custom entrypoint timeouts, so confirm on dev that a socket stays open past 60 seconds.
+
 ## Where the session lives
 
 The GoTrue session is a separate Valkey record, not a field on `req.appSession`. `express-openid-connect` reads the whole session once per request and overwrites it on every response, and GoTrue rotates refresh tokens, so two concurrent requests would undo each other's rotation. A WebSocket upgrade cannot write `appSession` at all. `AuthStateService` keeps its own record for the same reason.
@@ -176,7 +239,7 @@ This meets the package's session id rules:
 - It changes at every sign-in, because `express-openid-connect` creates a new session id on each login callback.
 - It is dropped at sign-out, when the LFX session is destroyed.
 
-Deriving the id rather than storing it means nothing is written to `appSession`, and the Realtime upgrade path and `/logout` can derive the same id from the cookie alone.
+Deriving the id rather than storing it means nothing is written to `appSession`, and `/logout` can derive the same id from the cookie alone.
 
 ## Feature flag
 

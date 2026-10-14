@@ -1,0 +1,347 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { IncomingMessage, Server, ServerResponse } from 'node:http';
+import { Duplex } from 'node:stream';
+
+import {
+  type RealtimeBridge,
+  bridgeRealtime,
+  isAdminCheckPending,
+  realtimeUpstreamUrl,
+  rejectUpgrade,
+  retryAfterSeconds,
+  SESSION_EXPIRED,
+  SESSION_HEADER,
+} from '@gatewaze/host-session';
+import {
+  GW_HOST_SESSION_SUPABASE_MOUNT,
+  GW_REALTIME_CLOSE_GOING_AWAY,
+  GW_REALTIME_MAX_PAYLOAD_BYTES,
+  GW_REALTIME_MAX_SOCKETS_PER_USER,
+  GW_REALTIME_MAX_SOCKETS_TOTAL,
+  GW_REALTIME_PATH_PREFIX,
+} from '@lfx-one/shared/constants';
+import { Request } from 'express';
+import { WebSocketServer } from 'ws';
+
+import { addShutdownHook, isShuttingDown } from '../utils/shutdown';
+import { getGatewazeSessionService, hostSessionCoreLogger, isGatewazeHostSessionEnabled, resolveGatewazeHostSessionConfig } from './gatewaze-session.service';
+import { logger } from './logger.service';
+
+/** Runs a request through the Express app. In production this is the app itself. */
+export type RequestDispatcher = (req: IncomingMessage, res: ServerResponse) => void;
+
+/** Per-pod socket caps. Injected by specs. */
+export interface GatewazeRealtimeLimits {
+  perUser: number;
+  total: number;
+}
+
+/** An upgrade that passed the checks before Express and is now running through the Express app. */
+interface PendingUpgrade {
+  socket: Duplex;
+  head: Buffer;
+  /** Set once the realtime route or the Express answer has taken the upgrade, so it is answered once. */
+  taken: boolean;
+  /** Frees every slot this upgrade holds. Idempotent. */
+  release: () => void;
+  /** Adds a release step, run with `release`. */
+  onRelease: (step: () => void) => void;
+}
+
+/** Response headers worth copying from an Express answer onto the refused handshake. */
+const FORWARDED_REJECT_HEADERS = ['retry-after', SESSION_HEADER];
+
+const STATUS_TEXT: Record<number, string> = {
+  400: 'Bad Request',
+  401: 'Unauthorized',
+  403: 'Forbidden',
+  404: 'Not Found',
+  429: 'Too Many Requests',
+  500: 'Internal Server Error',
+  503: 'Service Unavailable',
+};
+
+/** The `Origin` every Realtime upgrade must carry: LFX One's own. Null when `PCC_BASE_URL` is missing or invalid, which refuses every upgrade. */
+function siteOrigin(): string | null {
+  try {
+    return new URL(process.env['PCC_BASE_URL'] || '').origin;
+  } catch {
+    return null;
+  }
+}
+
+function pathOf(url: string | undefined): string {
+  const raw = url ?? '/';
+  const q = raw.indexOf('?');
+  return q === -1 ? raw : raw.slice(0, q);
+}
+
+/**
+ * The Realtime WebSocket proxy for Gatewaze host-session mode. `supabase-js` in the embed opens its
+ * Realtime socket at `/api/gatewaze/supabase/realtime/v1/websocket` with the placeholder token. This
+ * service ends that socket on LFX One and opens its own to Supabase Realtime, and the package's
+ * `bridgeRealtime` puts the real access token into every `phx_join` and `access_token` message.
+ *
+ * An upgrade runs outside Express, so `onUpgrade` first makes the cheap checks (path, flag, Origin,
+ * the pod's socket cap), then runs the request through the Express app with a response that never
+ * reaches the socket. The upgrade therefore passes the same `auth()`, `authMiddleware`, rate limiter,
+ * `requireGatewazeHostSession` and `requireGwEmbedAccess` as every other `/api/gatewaze` request.
+ * Whatever Express answers becomes the refused handshake's status. Only the realtime route
+ * (`handleRoute`) completes the upgrade. See `docs/architecture/backend/gw-host-session.md`.
+ */
+export class GatewazeRealtimeService {
+  private wss: WebSocketServer | null = null;
+  private readonly bridges = new Set<RealtimeBridge>();
+  private readonly pending = new WeakMap<IncomingMessage, PendingUpgrade>();
+  private readonly socketsPerUser = new Map<string, number>();
+  private totalSockets = 0;
+  private closing = false;
+
+  public constructor(private readonly limits: GatewazeRealtimeLimits = { perUser: GW_REALTIME_MAX_SOCKETS_PER_USER, total: GW_REALTIME_MAX_SOCKETS_TOTAL }) {}
+
+  /** Hooks the service onto the HTTP server and registers its shutdown hook. Called once from `startServer`. */
+  public attach(server: Server, dispatch: RequestDispatcher): void {
+    server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => this.onUpgrade(req, socket, head, dispatch));
+    addShutdownHook(() => this.closeAll());
+  }
+
+  /**
+   * The HTTP server's `upgrade` listener. Node hands it every request that carries an `Upgrade`
+   * header, so anything that is not the Realtime path is refused with 404.
+   */
+  public onUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer, dispatch: RequestDispatcher): void {
+    // First, before any reject or await: Node removes its own error listener from an upgraded
+    // socket, and ws adds one only inside handleUpgrade. A client that resets the connection in
+    // between would otherwise raise an unhandled 'error' and take the process down.
+    socket.on('error', () => socket.destroy());
+
+    if (!pathOf(req.url).startsWith(GW_REALTIME_PATH_PREFIX)) {
+      rejectUpgrade(socket, 404, STATUS_TEXT[404]);
+      return;
+    }
+    if (this.closing || isShuttingDown()) {
+      rejectUpgrade(socket, 503, STATUS_TEXT[503]);
+      return;
+    }
+    // The same uniform 404 the HTTP routes give while host-session mode is off, before any Valkey read.
+    if (!isGatewazeHostSessionEnabled()) {
+      rejectUpgrade(socket, 404, STATUS_TEXT[404]);
+      return;
+    }
+    // Exact match. A browser always sends Origin on a WebSocket, and SameSite=Lax still sends the
+    // cookie on a cross-site WebSocket, so this is the cross-site check.
+    const origin = siteOrigin();
+    if (!origin || req.headers.origin !== origin) {
+      logger.debug(undefined, 'gatewaze_realtime_upgrade', 'Refusing a Realtime upgrade from another origin', { has_origin: !!req.headers.origin });
+      rejectUpgrade(socket, 403, STATUS_TEXT[403]);
+      return;
+    }
+    if (this.totalSockets >= this.limits.total) {
+      logger.warning(undefined, 'gatewaze_realtime_upgrade', 'Refusing a Realtime upgrade: the pod is at its socket cap', { cap: this.limits.total });
+      rejectUpgrade(socket, 503, STATUS_TEXT[503]);
+      return;
+    }
+
+    // Reserve the slot now, before anything async, so concurrent upgrades cannot all pass the cap.
+    // Freed on every way the upgrade can end: a refusal, the socket closing (which covers ws aborting
+    // a malformed handshake), and the bridged socket closing.
+    this.totalSockets++;
+    const releaseSteps: (() => void)[] = [() => this.totalSockets--];
+    let released = false;
+    const pending: PendingUpgrade = {
+      socket,
+      head,
+      taken: false,
+      release: () => {
+        if (released) return;
+        released = true;
+        for (const step of releaseSteps) step();
+      },
+      onRelease: (step) => {
+        if (released) step();
+        else releaseSteps.push(step);
+      },
+    };
+    socket.once('close', pending.release);
+    this.pending.set(req, pending);
+
+    // A response with no socket: nothing Express writes reaches the client. Every way Express answers
+    // ends in `end`, so its status becomes the refused handshake. The realtime route never calls it.
+    const res = new ServerResponse(req);
+    res.end = ((): ServerResponse => {
+      if (!pending.taken) {
+        pending.taken = true;
+        const headers: Record<string, string> = {};
+        for (const name of FORWARDED_REJECT_HEADERS) {
+          const value = res.getHeader(name);
+          if (value !== undefined) headers[name] = String(value);
+        }
+        this.refuse(pending, res.statusCode >= 400 ? res.statusCode : 500, headers);
+      }
+      return res;
+    }) as ServerResponse['end'];
+
+    try {
+      dispatch(req, res);
+    } catch (error) {
+      logger.warning(undefined, 'gatewaze_realtime_upgrade', 'The Express app threw on a Realtime upgrade', { err: error });
+      if (!pending.taken) {
+        pending.taken = true;
+        this.refuse(pending, 500);
+      }
+    }
+  }
+
+  /**
+   * The realtime route, reached only after every `/api/gatewaze` gate passed. A plain HTTP GET to the
+   * same path, with no upgrade behind it, gets false and the router answers the uniform 404.
+   * Otherwise it applies the per-user cap, loads the Gatewaze session and completes the handshake.
+   */
+  public async handleRoute(req: Request): Promise<boolean> {
+    const pending = this.pending.get(req);
+    if (!pending || pending.taken) {
+      return false;
+    }
+    // From here on this route answers the upgrade, not Express.
+    pending.taken = true;
+    try {
+      await this.completeUpgrade(req, pending);
+    } catch (error) {
+      // Express can no longer answer this upgrade, so a throw here must refuse it itself.
+      logger.warning(req, 'gatewaze_realtime_upgrade', 'Realtime upgrade failed', { err: error });
+      this.refuse(pending, 500);
+    }
+    return true;
+  }
+
+  /** Closes every bridged socket with 1001 (going away), so realtime-js reconnects to another pod, and stops taking upgrades. */
+  public async closeAll(): Promise<void> {
+    this.closing = true;
+    for (const bridge of this.bridges) {
+      bridge.close(GW_REALTIME_CLOSE_GOING_AWAY, 'server shutting down');
+    }
+    this.bridges.clear();
+    const wss = this.wss;
+    this.wss = null;
+    if (wss) {
+      await new Promise<void>((resolve) => wss.close(() => resolve()));
+    }
+  }
+
+  /** Open bridged sockets on this pod. For specs and diagnostics. */
+  public openSocketCount(): number {
+    return this.bridges.size;
+  }
+
+  /** The per-user cap, the Gatewaze session, the upstream URL and the handshake. Every early return refuses the upgrade. */
+  private async completeUpgrade(req: Request, pending: PendingUpgrade): Promise<void> {
+    const { socket, head } = pending;
+
+    if (this.closing) {
+      this.refuse(pending, 503);
+      return;
+    }
+    const sub = req.oidc?.user?.['sub'];
+    if (typeof sub !== 'string' || !sub) {
+      this.refuse(pending, 401, { [SESSION_HEADER]: SESSION_EXPIRED });
+      return;
+    }
+    if ((this.socketsPerUser.get(sub) ?? 0) >= this.limits.perUser) {
+      logger.debug(req, 'gatewaze_realtime_upgrade', 'Refusing a Realtime upgrade: the user is at the per-user socket cap', { cap: this.limits.perUser });
+      this.refuse(pending, 429);
+      return;
+    }
+    this.socketsPerUser.set(sub, (this.socketsPerUser.get(sub) ?? 0) + 1);
+    pending.onRelease(() => {
+      const n = (this.socketsPerUser.get(sub) ?? 1) - 1;
+      if (n > 0) this.socketsPerUser.set(sub, n);
+      else this.socketsPerUser.delete(sub);
+    });
+
+    const result = await getGatewazeSessionService().openRealtimeSession(req);
+    if (result.outcome !== 'ok') {
+      // The marker is informational: a browser cannot read handshake headers. The embed learns the
+      // session ended from its next HTTP call, which carries the same marker.
+      const status = { host_session_unavailable: 404, ended: 401, refused: 503, unavailable: 503 }[result.outcome];
+      this.refuse(pending, status, result.outcome === 'ended' ? { [SESSION_HEADER]: SESSION_EXPIRED } : {});
+      return;
+    }
+    const realtime = result.session;
+    pending.onRelease(realtime.release);
+    const session = realtime.session;
+    if (!session.is_admin) {
+      if (isAdminCheckPending(session)) {
+        this.refuse(pending, 503, { 'retry-after': String(retryAfterSeconds(session)) });
+      } else {
+        this.refuse(pending, 403);
+      }
+      return;
+    }
+
+    const config = resolveGatewazeHostSessionConfig();
+    if (!config) {
+      this.refuse(pending, 404);
+      return;
+    }
+    let upstreamUrl: string;
+    try {
+      // '/realtime/v1/websocket?...': the package checks it stays under /realtime/v1 after
+      // normalisation, drops any URL-borne token and sets `apikey` to the anon key.
+      upstreamUrl = realtimeUpstreamUrl(config.supabaseUrl, req.originalUrl.slice(GW_HOST_SESSION_SUPABASE_MOUNT.length), config.anonKey);
+    } catch {
+      this.refuse(pending, 400);
+      return;
+    }
+    // The client went away while the session loaded.
+    if (socket.destroyed || !socket.readable || !socket.writable) {
+      this.refuse(pending, 400);
+      return;
+    }
+
+    this.getWss().handleUpgrade(req, socket, head, (client) => {
+      const bridge = bridgeRealtime(client, {
+        upstreamUrl,
+        session,
+        fresh: realtime.fresh,
+        onSignedOut: realtime.onSignedOut,
+        log: hostSessionCoreLogger('gatewaze_realtime_bridge'),
+      });
+      // The bridge now listens for the sign-out itself.
+      realtime.release();
+      client.once('close', () => {
+        this.bridges.delete(bridge);
+        pending.release();
+      });
+      if (realtime.signedOut()) {
+        bridge.close(4001, 'signed out');
+        return;
+      }
+      if (this.closing) {
+        bridge.close(GW_REALTIME_CLOSE_GOING_AWAY, 'server shutting down');
+        return;
+      }
+      this.bridges.add(bridge);
+      logger.debug(req, 'gatewaze_realtime_upgrade', 'Opened a Gatewaze Realtime socket', { open_sockets: this.bridges.size });
+    });
+  }
+
+  private refuse(pending: PendingUpgrade, status: number, headers: Record<string, string> = {}): void {
+    pending.release();
+    rejectUpgrade(pending.socket, status, STATUS_TEXT[status] ?? 'Error', headers);
+  }
+
+  private getWss(): WebSocketServer {
+    this.wss ??= new WebSocketServer({ noServer: true, maxPayload: GW_REALTIME_MAX_PAYLOAD_BYTES });
+    return this.wss;
+  }
+}
+
+let instance: GatewazeRealtimeService | null = null;
+
+/** The pod's Realtime proxy. `server.ts` attaches it to the HTTP server; the `/api/gatewaze` router hands it the upgrade. */
+export function getGatewazeRealtimeService(): GatewazeRealtimeService {
+  instance ??= new GatewazeRealtimeService();
+  return instance;
+}

@@ -75,3 +75,21 @@ export interface GatewazeSessionEndResult {
   /** The record was removed and the sign-out published. False when there was nothing to remove, or another request had already replaced it. */
   deleted: boolean;
 }
+
+/**
+ * A Gatewaze session opened for a Realtime socket, from `GatewazeSessionService.openRealtimeSession`.
+ * `TSession` is `@gatewaze/host-session`'s `GwSession`. The callbacks are the ones the package's
+ * `bridgeRealtime` takes, bound to this LFX session.
+ */
+export interface GatewazeRealtimeSession<TSession> {
+  /** The session the socket opens with. */
+  session: TSession;
+  /** The refresh the bridge runs before each token expires. Null ends the socket. */
+  fresh: () => Promise<TSession | null>;
+  /** Registers a listener for this session's sign-out on any pod; returns its removal. */
+  onSignedOut: (listener: () => void) => () => void;
+  /** True when a sign-out arrived after the session started loading, before the bridge was listening. */
+  signedOut: () => boolean;
+  /** Removes the early sign-out listener. Call once the bridge listens for itself, or when the upgrade is refused. */
+  release: () => void;
+}

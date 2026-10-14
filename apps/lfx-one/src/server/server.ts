@@ -80,6 +80,7 @@ import akritesRouter from './routes/akrites.route';
 import mktgAgentsRouter from './routes/mktg-agents.route';
 import weeklyBriefRouter from './routes/weekly-brief.route';
 import { reqSerializer, resSerializer, serverLogger } from './server-logger';
+import { getGatewazeRealtimeService } from './services/gatewaze-realtime.service';
 import { LaunchDarklyServerService } from './services/launchdarkly-server.service';
 import { logger } from './services/logger.service';
 import { NatsService } from './services/nats.service';
@@ -807,6 +808,10 @@ export function startServer() {
       boot_ms: Math.round(performance.now()),
     });
   });
+  // Gatewaze Realtime WebSocket upgrades. Hooked here because only this server sees them: under
+  // `ng serve` Express is mounted through `createNodeRequestHandler` and upgrades go to the dev
+  // server, so Realtime works only on a built server. Each upgrade runs through `app`.
+  getGatewazeRealtimeService().attach(httpServer, app);
 }
 
 const metaUrl = import.meta.url;
