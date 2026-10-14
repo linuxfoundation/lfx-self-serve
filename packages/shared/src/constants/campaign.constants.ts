@@ -1178,8 +1178,9 @@ export function googleAdsTrimSpace(text: string): string {
 }
 
 /**
- * Whether Go's URL parser would refuse a URL that `new URL()` accepts, the gap between this app's
- * URL checks and upstream's `validateServableURL`:
+ * Whether a URL fails upstream's `validateServableURL` in a way `new URL()` does not catch. Three
+ * Go parser rules, plus, deliberately, anything not starting `http(s)://` (a non-http scheme fails
+ * the scheme check there anyway):
  *
  * - a `%` not followed by two hex digits, which `url.Parse` and `url.ParseQuery` both refuse;
  * - a `;` in the query, which `url.ParseQuery` refuses;

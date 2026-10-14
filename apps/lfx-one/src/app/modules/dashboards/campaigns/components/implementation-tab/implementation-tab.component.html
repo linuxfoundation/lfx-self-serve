@@ -317,7 +317,7 @@
                 <button
                   type="button"
                   (click)="removeGoogleGeoTarget(i)"
-                  class="ml-0.5 text-blue-400 hover:text-blue-600"
+                  class="ml-0.5 text-blue-600 hover:text-blue-800"
                   [attr.aria-label]="'Remove ' + geo"
                   [attr.data-testid]="'implementation-google-geo-remove-' + geo">
                   <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
@@ -391,7 +391,7 @@
                 <button
                   type="button"
                   (click)="removeGoogleLanguage(i)"
-                  class="ml-0.5 text-blue-400 hover:text-blue-600"
+                  class="ml-0.5 text-blue-600 hover:text-blue-800"
                   [attr.aria-label]="'Remove ' + chip.name"
                   [attr.data-testid]="'implementation-google-language-remove-' + chip.code">
                   <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
@@ -474,7 +474,7 @@
                 <button
                   type="button"
                   (click)="removeGoogleCallout(i)"
-                  class="ml-0.5 text-blue-400 hover:text-blue-600"
+                  class="ml-0.5 text-blue-600 hover:text-blue-800"
                   [attr.aria-label]="'Remove ' + callout"
                   [attr.data-testid]="'implementation-google-callout-remove-' + callout">
                   <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
@@ -548,16 +548,16 @@
               @for (sitelink of googleSitelinks(); track sitelink.text; let i = $index) {
                 <div class="flex items-start justify-between gap-2 rounded-md bg-blue-50 px-3 py-2">
                   <div class="flex min-w-0 flex-col gap-0.5">
-                    <span class="truncate text-xs font-medium text-blue-700">{{ sitelink.text }}</span>
-                    <span class="truncate text-[10px] text-blue-500">{{ sitelink.finalUrl }}</span>
+                    <span class="break-words text-xs font-medium text-blue-700">{{ sitelink.text }}</span>
+                    <span class="break-all text-[10px] text-blue-700">{{ sitelink.finalUrl }}</span>
                     @if (sitelink.description1) {
-                      <span class="truncate text-[10px] text-blue-500">{{ sitelink.description1 }} · {{ sitelink.description2 }}</span>
+                      <span class="break-words text-[10px] text-blue-700">{{ sitelink.description1 }} · {{ sitelink.description2 }}</span>
                     }
                   </div>
                   <button
                     type="button"
                     (click)="removeGoogleSitelink(i)"
-                    class="text-blue-400 hover:text-blue-600"
+                    class="text-blue-600 hover:text-blue-800"
                     [attr.aria-label]="'Remove ' + sitelink.text"
                     [attr.data-testid]="'implementation-google-sitelink-remove-' + sitelink.text">
                     <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
@@ -598,8 +598,8 @@
                 aria-label="Sitelink destination URL"
                 [value]="googleSitelinkDraft().finalUrl"
                 (input)="onGoogleSitelinkDraftInput('finalUrl', $event)"
-                [attr.aria-invalid]="googleSitelinkUrlInvalid() ? 'true' : null"
-                [attr.aria-describedby]="googleSitelinkUrlInvalid() ? 'google-sitelink-url-invalid' : null"
+                [attr.aria-invalid]="googleSitelinkUrlErrorId() ? 'true' : null"
+                [attr.aria-describedby]="googleSitelinkUrlErrorId()"
                 class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
                 data-testid="implementation-google-sitelink-url" />
               <input
@@ -666,7 +666,11 @@
           }
           @if (googleSitelinkUrlInvalid()) {
             <p id="google-sitelink-url-invalid" role="alert" class="text-xs text-red-600" data-testid="implementation-google-sitelink-url-invalid">
-              Destination must be a full http:// or https:// URL with a hostname and no embedded credentials.
+              Destination must be a full http:// or https:// URL with a hostname, no embedded credentials, no semicolons in the query and no stray % signs.
+            </p>
+          } @else if (googleSitelinkUrlBytesOver() > 0) {
+            <p id="google-sitelink-url-too-long" role="alert" class="text-xs text-red-600" data-testid="implementation-google-sitelink-url-too-long">
+              Destination URL is {{ googleSitelinkUrlBytesOver() }} bytes — Google's limit is {{ googleMaxFinalUrlBytes }}.
             </p>
           }
         </div>
@@ -968,7 +972,7 @@
               @for (geo of linkedInGeoTargets(); track geo.urn; let i = $index) {
                 <span class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
                   {{ geo.label }}
-                  <button type="button" (click)="removeGeoTarget(i)" class="ml-0.5 text-blue-400 hover:text-blue-600" [attr.aria-label]="'Remove ' + geo.label">
+                  <button type="button" (click)="removeGeoTarget(i)" class="ml-0.5 text-blue-600 hover:text-blue-800" [attr.aria-label]="'Remove ' + geo.label">
                     <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
                   </button>
                 </span>
@@ -1206,7 +1210,7 @@
                   <button
                     type="button"
                     (click)="removeMetaGeoTarget(i)"
-                    class="ml-0.5 text-blue-400 hover:text-blue-600"
+                    class="ml-0.5 text-blue-600 hover:text-blue-800"
                     [attr.aria-label]="'Remove ' + geo"
                     [attr.data-testid]="'implementation-meta-geo-remove-' + geo">
                     <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
@@ -1362,7 +1366,7 @@
                   <button
                     type="button"
                     (click)="removeMicrosoftKeyword(i)"
-                    class="text-blue-400 hover:text-blue-600"
+                    class="text-blue-600 hover:text-blue-800"
                     [attr.aria-label]="'Remove ' + keyword.text"
                     [attr.data-testid]="'implementation-microsoft-keyword-remove-' + i">
                     <i class="fa-light fa-xmark text-xs" aria-hidden="true"></i>
@@ -1440,7 +1444,7 @@
                   <button
                     type="button"
                     (click)="removeMicrosoftGeoTarget(i)"
-                    class="ml-0.5 text-blue-400 hover:text-blue-600"
+                    class="ml-0.5 text-blue-600 hover:text-blue-800"
                     [attr.aria-label]="'Remove ' + geo"
                     [attr.data-testid]="'implementation-microsoft-geo-remove-' + geo">
                     <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
