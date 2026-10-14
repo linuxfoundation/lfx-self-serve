@@ -2,32 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Profile identity dialogs — "contact support" link on already-claimed errors (LFXV2-2858).
- *
- * When adding or verifying an email identity that is already claimed by another LFID
- * account, the add-account and verify-identity dialogs surface a "contact support"
- * action beside the red error. The link is gated on the error *message* (via the shared
- * isIdentityAlreadyLinkedError util, the same marker set the backend uses), NOT on the
- * HTTP status — so these tests drive the send-code error path and vary only the message:
- *   - already-linked message  → support link appears
- *   - any other error message  → support link is absent
- *
- * Both the identity list and the email verification endpoint are mocked, so the spec is
- * self-contained and does not depend on a seeded backend test user (unlike the sibling
- * profile-identities-verify spec, which reads live data).
- *
- * Prerequisites:
- *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
- *   - apps/lfx-one/.env populated with TEST_USERNAME / TEST_PASSWORD (see global-setup.ts)
+ * Profile identity dialogs — support remains reachable after enumeration-safe sends (#443).
+ * A generic send-code 200 advances both dialogs to the OTP step with a static support hint,
+ * regardless of whether a code was actually delivered. An unrelated 400 stays on the send
+ * step with a plain inline error and no support button.
+ * Identity reads and send-code writes are mocked; no real email is sent.
+ * Requires the dev server and the existing Playwright authentication setup.
  */
 
 import { expect, Page, test } from '@playwright/test';
 
-// Mirrors EMAIL_ALREADY_LINKED_MESSAGE in @lfx-one/shared/constants. Inlined rather than
-// imported because the shared constants barrel transitively pulls Angular runtime code,
-// which the Playwright Node test loader can't compile. The only invariant this spec relies
-// on is that the message contains an already-linked marker (matched by isIdentityAlreadyLinkedError).
-const EMAIL_ALREADY_LINKED_MESSAGE = 'This email is already linked to another account';
+// Mirrors EMAIL_VERIFICATION_SENT_MESSAGE; the shared constants barrel reaches Angular code
+// that Playwright's plain Node loader cannot compile.
+const EMAIL_VERIFICATION_SENT_MESSAGE = 'If this address can be added to your account, a verification code has been sent.';
 
 const IDENTITIES_ROUTE = '**/api/profile/identities';
 const SEND_CODE_ROUTE = '**/api/profile/identities/email/send-code';
@@ -54,7 +41,7 @@ async function mockIdentities(page: Page): Promise<void> {
           id: UNVERIFIED_EMAIL_ID,
           platform: 'email',
           type: 'email',
-          value: 'jdoe@company.org',
+          value: 'unverified@example.test',
           verified: false,
           verifiedBy: null,
           source: 'e2e',
@@ -102,8 +89,7 @@ function skipWhenAuthMissing(page: Page): void {
   }
 }
 
-// Stub the send-code endpoint with a chosen status + message. Later registrations win,
-// so a test can call this to override the beforeEach default.
+// Stub the send-code endpoint with the chosen success or failure envelope.
 async function mockSendCode(page: Page, status: number, message: string): Promise<void> {
   await page.route(SEND_CODE_ROUTE, (route) => {
     if (route.request().method() !== 'POST') {
@@ -112,12 +98,12 @@ async function mockSendCode(page: Page, status: number, message: string): Promis
     return route.fulfill({
       status,
       contentType: 'application/json',
-      body: JSON.stringify({ success: false, error: 'send_code_failed', message }),
+      body: JSON.stringify(status === 200 ? { success: true, message } : { success: false, error: 'send_code_failed', message }),
     });
   });
 }
 
-test.describe('Identity dialogs — already-claimed support link', () => {
+test.describe('Identity dialogs — enumeration-safe OTP support', () => {
   test.beforeEach(async ({ page }) => {
     await suppressCookieBanner(page);
     await mockIdentities(page);
@@ -136,22 +122,20 @@ test.describe('Identity dialogs — already-claimed support link', () => {
       await page.getByTestId('add-account-email').locator('input').fill('claimed@example.com');
     }
 
-    test('shows the support link when the email is already linked (409)', async ({ page }) => {
-      await mockSendCode(page, 409, EMAIL_ALREADY_LINKED_MESSAGE);
+    test('shows the OTP support hint after a generic successful send', async ({ page }) => {
+      await mockSendCode(page, 200, EMAIL_VERIFICATION_SENT_MESSAGE);
       await openEmailConnectStep(page);
       await page.getByTestId('add-account-send-code').locator('button').click();
 
-      const error = page.getByTestId('add-account-send-error');
-      await expect(error).toBeVisible({ timeout: 5000 });
-      await expect(error).toContainText(EMAIL_ALREADY_LINKED_MESSAGE);
-      await expect(error.getByRole('button', SUPPORT_BUTTON)).toBeVisible();
+      await expect(page.getByTestId('add-account-otp')).toBeVisible();
+      const hint = page.getByTestId('add-account-otp-hint');
+      await expect(hint).toBeVisible();
+      await expect(hint.getByRole('button', SUPPORT_BUTTON)).toBeVisible();
+      await expect(page.getByTestId('add-account-send-error')).toHaveCount(0);
     });
 
     test('hides the support link for an unrelated error', async ({ page }) => {
-      // Same 409 status as the positive case — only the message differs. This isolates the
-      // message as the discriminator: a status-based implementation (show for any 409) would
-      // wrongly pass here, so keeping the status constant proves message-based gating.
-      await mockSendCode(page, 409, UNRELATED_ERROR_MESSAGE);
+      await mockSendCode(page, 400, UNRELATED_ERROR_MESSAGE);
       await openEmailConnectStep(page);
       await page.getByTestId('add-account-send-code').locator('button').click();
 
@@ -170,22 +154,20 @@ test.describe('Identity dialogs — already-claimed support link', () => {
       await expect(page.getByTestId('verify-identity-dialog')).toBeVisible({ timeout: 5000 });
     }
 
-    test('shows the support link when the email is already linked (409)', async ({ page }) => {
-      await mockSendCode(page, 409, EMAIL_ALREADY_LINKED_MESSAGE);
+    test('shows the OTP support hint after a generic successful send', async ({ page }) => {
+      await mockSendCode(page, 200, EMAIL_VERIFICATION_SENT_MESSAGE);
       await openVerifyEmailDialog(page);
       await page.getByTestId('verify-send-code').locator('button').click();
 
-      const error = page.getByTestId('verify-email-error');
-      await expect(error).toBeVisible({ timeout: 5000 });
-      await expect(error).toContainText(EMAIL_ALREADY_LINKED_MESSAGE);
-      await expect(error.getByRole('button', SUPPORT_BUTTON)).toBeVisible();
+      await expect(page.getByTestId('verify-otp')).toBeVisible();
+      const hint = page.getByTestId('verify-otp-hint');
+      await expect(hint).toBeVisible();
+      await expect(hint.getByRole('button', SUPPORT_BUTTON)).toBeVisible();
+      await expect(page.getByTestId('verify-email-error')).toHaveCount(0);
     });
 
     test('hides the support link for an unrelated error', async ({ page }) => {
-      // Same 409 status as the positive case — only the message differs. This isolates the
-      // message as the discriminator: a status-based implementation (show for any 409) would
-      // wrongly pass here, so keeping the status constant proves message-based gating.
-      await mockSendCode(page, 409, UNRELATED_ERROR_MESSAGE);
+      await mockSendCode(page, 400, UNRELATED_ERROR_MESSAGE);
       await openVerifyEmailDialog(page);
       await page.getByTestId('verify-send-code').locator('button').click();
 
