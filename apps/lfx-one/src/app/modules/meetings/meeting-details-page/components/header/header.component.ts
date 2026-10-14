@@ -107,6 +107,12 @@ export class MeetingHeaderComponent {
   /** The page's time state and meeting status, from the state service so the bar shows the same. */
   protected readonly timeState: Signal<MeetingTimeState | null> = this.state.timeState;
   protected readonly status: Signal<MeetingStatusKind | null> = this.state.meetingStatus;
+  /**
+   * The Recording, Transcripts and AI Summary chips are the meeting's settings: what it will
+   * produce. Once it has ended, the recording section shows what it did produce, so the chips would
+   * only contradict it ("Recording" above "No recording for this meeting").
+   */
+  protected readonly showArtifactChips = computed(() => this.timeState() !== 'ended');
   protected readonly statusLabel = computed(() => {
     const status = this.status();
     return status ? MEETING_STATUS_LABELS[status] : '';
