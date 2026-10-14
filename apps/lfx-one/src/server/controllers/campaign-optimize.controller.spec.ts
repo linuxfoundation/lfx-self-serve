@@ -19,6 +19,7 @@ const {
   adoptCampaign,
   getKeywordTargeting,
   removeKeywordTargeting,
+  listAdoptableBriefs,
   isServerFeatureEnabled,
   logger,
 } = vi.hoisted(() => ({
@@ -32,6 +33,7 @@ const {
   adoptCampaign: vi.fn(),
   getKeywordTargeting: vi.fn(),
   removeKeywordTargeting: vi.fn(),
+  listAdoptableBriefs: vi.fn(),
   isServerFeatureEnabled: vi.fn<(flag: unknown) => boolean>(() => false),
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
@@ -48,6 +50,7 @@ vi.mock('../services/campaign-optimize.service', () => ({
     public adoptCampaign = adoptCampaign;
     public getKeywordTargeting = getKeywordTargeting;
     public removeKeywordTargeting = removeKeywordTargeting;
+    public listAdoptableBriefs = listAdoptableBriefs;
   },
 }));
 vi.mock('../helpers/server-feature-flag.helper', async (importOriginal) => {
@@ -171,10 +174,34 @@ describe('CampaignOptimizeController.resolvePlatformCampaign', () => {
     expectFieldError(next, 'platformCampaignId');
   });
 
-  it('answers 404 for LinkedIn while the flag is OFF', async () => {
-    await controller.resolvePlatformCampaign(buildReq({ query: { project: 'tlf', platformCampaignId: '123' } }), res, next, 'linkedin-ads');
+  // LinkedIn's resolve shipped upstream (campaign-service #318), so it is no longer flag-gated.
+  it('serves LinkedIn with the optimize-reads flag OFF and refuses an id outside its int64 rule', async () => {
+    resolvePlatformCampaign.mockResolvedValue({ platform_campaign_id: '123', matches: [], match_count: 0 });
 
-    expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ResourceNotFoundError);
+    await controller.resolvePlatformCampaign(buildReq({ query: { project: 'tlf', platformCampaignId: '123' } }), res, next, 'linkedin-ads');
+    expect(resolvePlatformCampaign).toHaveBeenCalledWith(expect.anything(), 'tlf', 'linkedin-ads', '123');
+    expect(next).not.toHaveBeenCalled();
+
+    await controller.resolvePlatformCampaign(buildReq({ query: { project: 'tlf', platformCampaignId: '0123' } }), res, next, 'linkedin-ads');
+    expectFieldError(next, 'platformCampaignId');
+    expect(resolvePlatformCampaign).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('CampaignOptimizeController.resolvePlatformCampaign LinkedIn int64 range', () => {
+  it('serves the int64 maximum', async () => {
+    resolvePlatformCampaign.mockResolvedValue({ platform_campaign_id: '9223372036854775807', matches: [], match_count: 0 });
+
+    await controller.resolvePlatformCampaign(buildReq({ query: { project: 'tlf', platformCampaignId: '9223372036854775807' } }), res, next, 'linkedin-ads');
+
+    expect(resolvePlatformCampaign).toHaveBeenCalledWith(expect.anything(), 'tlf', 'linkedin-ads', '9223372036854775807');
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it.each(['9223372036854775808', '9999999999999999999'])('refuses %s, past int64, with a 400', async (id) => {
+    await controller.resolvePlatformCampaign(buildReq({ query: { project: 'tlf', platformCampaignId: id } }), res, next, 'linkedin-ads');
+
+    expectFieldError(next, 'platformCampaignId');
     expect(resolvePlatformCampaign).not.toHaveBeenCalled();
   });
 });
@@ -312,6 +339,15 @@ describe('CampaignOptimizeController.adoptCampaign', () => {
     expect(res.json).toHaveBeenCalledWith({ id: CAMPAIGN, etag: '"1"' });
   });
 
+  it('accepts LinkedIn now that campaign-service adopts it', async () => {
+    adoptCampaign.mockResolvedValue({ id: CAMPAIGN });
+
+    await controller.adoptCampaign(buildReq({ body: { ...body, platform: 'linkedin-ads', platformCampaignId: '123456' } }), res, next);
+
+    expect(adoptCampaign).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ platform: 'linkedin-ads', platformCampaignId: '123456' }));
+    expect(res.status).toHaveBeenCalledWith(201);
+  });
+
   it.each([
     ['platform', { ...body, platform: 'google-ads' }],
     ['platform', { ...body, platform: 'hubspot' }],
@@ -402,5 +438,27 @@ describe('CampaignOptimizeController.getCampaignRecord', () => {
     await controller.getCampaignRecord(buildReq({ params: { campaignId: CAMPAIGN }, query: { project: 'tlf', briefId: BRIEF } }), res, next);
 
     expect(next).toHaveBeenCalledWith(failure);
+  });
+});
+
+describe('CampaignOptimizeController.listAdoptableBriefs', () => {
+  it('answers 404 while campaign-service briefs are OFF', async () => {
+    await controller.listAdoptableBriefs(buildReq({}), res, next);
+
+    expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ResourceNotFoundError);
+    expect(listAdoptableBriefs).not.toHaveBeenCalled();
+  });
+
+  it('lists the briefs once the flag is ON, and requires a project', async () => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag === ServerFeatureFlag.CampaignServiceBriefs);
+    listAdoptableBriefs.mockResolvedValue([{ id: BRIEF, eventSlug: 'kubecon', programType: 'events', platforms: [] }]);
+
+    await controller.listAdoptableBriefs(buildReq({ query: { project: ' tlf ' } }), res, next);
+    expect(listAdoptableBriefs).toHaveBeenCalledWith(expect.anything(), 'tlf');
+    expect(res.json).toHaveBeenCalledWith({ briefs: [{ id: BRIEF, eventSlug: 'kubecon', programType: 'events', platforms: [] }] });
+
+    await controller.listAdoptableBriefs(buildReq({ query: {} }), res, next);
+    expectFieldError(next, 'project');
+    expect(listAdoptableBriefs).toHaveBeenCalledTimes(1);
   });
 });

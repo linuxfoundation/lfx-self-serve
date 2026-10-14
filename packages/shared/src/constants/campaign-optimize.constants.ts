@@ -5,7 +5,11 @@ import type {
   CampaignAdoptPlatform,
   CampaignAudiencePlatform,
   CampaignLeverUnconfirmedOutcome,
+  CampaignMonitorActLever,
+  CampaignMonitorActPlatform,
   CampaignRefPlatform,
+  CampaignSettingsComparison,
+  CampaignSettingsVerdictSeverity,
   KeywordTargetingPlatform,
   KeywordTargetingRemovalOutcome,
   MetaAdSetStatus,
@@ -16,7 +20,7 @@ import type {
   RedditKeywordsWindow,
   RedditKeywordsWindowOption,
 } from '../interfaces/campaign-optimize.interface';
-import { CAMPAIGN_METRICS_WINDOWS, MICROSOFT_KEYWORDS_WINDOWS } from './campaign.constants';
+import { CAMPAIGN_METRICS_WINDOWS, isCanonicalPositiveInt64, MICROSOFT_KEYWORDS_WINDOWS } from './campaign.constants';
 
 // ---------------------------------------------------------------------------
 // Optimize-tab reads and levers proxied to lfx-v2-campaign-service
@@ -106,18 +110,37 @@ export const CAMPAIGN_AUDIENCE_FAILED_MESSAGE = 'The audience read failed. Try a
  * parameter upstream, so this refuses early what upstream would refuse with a 400.
  *
  * Google Ads and Microsoft Advertising are absent: their resolves are internal to the keyword
- * actions and have no BFF route. `linkedin-ads` has NO campaign-service endpoint yet; its rule
- * (digits, as LinkedIn campaign ids are numeric) is a placeholder until one is published.
+ * actions and have no BFF route. LinkedIn's is the decoder Pattern of `resolve-linkedin-ads-campaign`
+ * (a positive int64 with no leading zero; upstream also refuses one past int64 with 400).
  */
 export const CAMPAIGN_REF_ID_PATTERNS: Readonly<Record<CampaignRefPlatform, RegExp>> = {
   'meta-ads': /^[1-9][0-9]{0,31}$/,
   'reddit-ads': /^[A-Za-z0-9_]{1,64}$/,
   'twitter-ads': /^[A-Za-z0-9]{1,64}$/,
-  'linkedin-ads': /^[0-9]{1,64}$/,
+  'linkedin-ads': /^[1-9][0-9]{0,18}$/,
 };
 
-/** Campaign-ref resolves whose campaign-service endpoint is not on `main` yet; 404 unless `LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS` is on. */
-export const CAMPAIGN_REF_PLATFORMS_PENDING_UPSTREAM: ReadonlySet<CampaignRefPlatform> = new Set<CampaignRefPlatform>(['linkedin-ads']);
+/**
+ * Whether a platform campaign id passes the campaign-ref resolve's id rule. The pattern is the shape;
+ * LinkedIn's ids must also be within int64 (upstream refuses one past 9223372036854775807 with 400),
+ * which a regex states badly, so that range is checked arithmetically.
+ */
+export function isValidCampaignRefId(platform: CampaignRefPlatform, value: unknown): boolean {
+  if (typeof value !== 'string' || !Object.prototype.hasOwnProperty.call(CAMPAIGN_REF_ID_PATTERNS, platform)) {
+    return false;
+  }
+  if (!CAMPAIGN_REF_ID_PATTERNS[platform].test(value)) {
+    return false;
+  }
+  return platform === 'linkedin-ads' ? isCanonicalPositiveInt64(value) : true;
+}
+
+/**
+ * Campaign-ref resolves whose campaign-service endpoint is not on `main` yet; 404 unless
+ * `LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS` is on. Empty since LinkedIn's resolve shipped
+ * (campaign-service #318); kept so the next platform can be wired behind the same gate.
+ */
+export const CAMPAIGN_REF_PLATFORMS_PENDING_UPSTREAM: ReadonlySet<CampaignRefPlatform> = new Set<CampaignRefPlatform>();
 
 /**
  * The reporting windows `get-reddit-ads-keywords` accepts (campaign-service #331): the Reddit
@@ -129,13 +152,14 @@ export const REDDIT_KEYWORDS_WINDOWS = MICROSOFT_KEYWORDS_WINDOWS;
 /**
  * The platforms the BFF lets a caller ADOPT an existing campaign on. campaign-service's
  * `adopt-campaign` also accepts `google-ads`; that is left to the Google Ads owner and refused here
- * until they wire it.
+ * until they wire it. LinkedIn joined with campaign-service #318.
  */
 export const CAMPAIGN_ADOPT_PLATFORMS: ReadonlySet<CampaignAdoptPlatform> = new Set<CampaignAdoptPlatform>([
   'microsoft-ads',
   'meta-ads',
   'reddit-ads',
   'twitter-ads',
+  'linkedin-ads',
 ]);
 
 /**
@@ -252,6 +276,222 @@ export const CAMPAIGN_ETAG_REQUIRED_CODE = 'PRECONDITION_REQUIRED';
 /** What the BFF says when upstream required an ETag it did not receive. Nothing was changed. */
 export const CAMPAIGN_ETAG_REQUIRED_MESSAGE =
   'This change requires the campaign version it was made against, and nothing was changed. Reload it and try again.';
+
+// ---------------------------------------------------------------------------
+// Live-settings drift drawer (`GET /api/campaigns/:campaignId/settings`)
+// ---------------------------------------------------------------------------
+
+/**
+ * Readable names for the settings readback's field vocabulary (campaign-service `campaign-settings-field`).
+ * The vocabulary is per platform and may grow, so a field missing here is rendered under its own
+ * name rather than dropped.
+ */
+export const CAMPAIGN_SETTINGS_FIELD_LABELS: Readonly<Record<string, string>> = {
+  budget_amount: 'Budget amount',
+  budget_type: 'Budget type',
+  campaign_name: 'Campaign name',
+  advertising_channel_type: 'Channel type',
+  start_date: 'Start date',
+  end_date: 'End date',
+  status: 'Delivery status',
+  budget_delivery_method: 'Budget delivery',
+  budget_explicitly_shared: 'Shared budget',
+  bidding_strategy_type: 'Bid strategy',
+  cost_type: 'Cost type',
+  unit_cost: 'Bid',
+  unit_cost_currency: 'Bid currency',
+  objective_type: 'Objective',
+  is_campaign_budget_optimization: 'Campaign budget optimization',
+  budget_optimization: 'Budget optimization',
+};
+
+/**
+ * LinkedIn's bid amount and its currency arrive as two upstream-only fields. The drawer shows the
+ * amount WITH its currency in one row, because a LinkedIn bid without its currency is not a bid:
+ * an adopted campaign may bid in EUR, and campaign-service omits the amount when no currency came back.
+ */
+export const CAMPAIGN_SETTINGS_BID_AMOUNT_FIELD = 'unit_cost';
+export const CAMPAIGN_SETTINGS_BID_CURRENCY_FIELD = 'unit_cost_currency';
+
+/** The verdict tag's text. `unknown` is never shown as a match. */
+export const CAMPAIGN_SETTINGS_VERDICT_LABELS: Readonly<Record<CampaignSettingsComparison, string>> = {
+  match: 'Matches',
+  diverged: 'Differs',
+  unknown: 'Not compared',
+};
+
+export const CAMPAIGN_SETTINGS_VERDICT_SEVERITIES: Readonly<Record<CampaignSettingsComparison, CampaignSettingsVerdictSeverity>> = {
+  match: 'success',
+  diverged: 'warn',
+  unknown: 'secondary',
+};
+
+/** Why an `unknown` setting was not compared, by which side is missing. */
+export const CAMPAIGN_SETTINGS_UNKNOWN_NOTES = {
+  liveOnly: 'LFX One records no value for this setting, so the live value is shown but not compared.',
+  notReported: 'The platform did not report this setting, so it could not be compared.',
+  neither: 'Neither LFX One nor the platform has a value for this setting.',
+  both: 'Both values are shown, but they cannot be compared reliably (for example, a start date the platform moved forward at launch).',
+} as const;
+
+/** Under the counts: `unknown_count` has a floor on every healthy read and is not a failure count. */
+export const CAMPAIGN_SETTINGS_UNKNOWN_COUNT_NOTE =
+  'Some settings are never compared, because LFX One does not record them. "Not compared" is not a read failure.';
+
+/** What the drawer says when the readback is refused, by status. */
+export const CAMPAIGN_SETTINGS_READ_ERRORS: Readonly<Record<number, string>> = {
+  400: 'Live settings are not available for this platform.',
+  403: 'You do not have permission to read this campaign.',
+  404: 'The platform holds no such campaign (it may have been deleted there), or this project has no connection for its channel.',
+  500: 'The live settings could not be read because of a connection problem an administrator must fix.',
+  503: 'The platform could not be reached, or answered with something LFX One could not trust. Nothing was changed; try again.',
+};
+
+/** A 409's fallback when the response carried no readable reason. */
+export const CAMPAIGN_SETTINGS_READ_CONFLICT_FALLBACK =
+  'The live settings cannot be compared for this campaign: it was not created on its platform, or it belongs to a different ad account than this project now uses.';
+
+export const CAMPAIGN_SETTINGS_READ_FALLBACK = 'The live settings could not be read. Nothing was changed; try again.';
+
+// ---------------------------------------------------------------------------
+// Act from Monitor
+// ---------------------------------------------------------------------------
+
+/** The Monitor tables whose rows offer actions: LinkedIn, Reddit and Meta (Google Ads is another owner's lane). */
+export const CAMPAIGN_MONITOR_ACT_PLATFORMS: ReadonlySet<CampaignMonitorActPlatform> = new Set<CampaignMonitorActPlatform>([
+  'linkedin-ads',
+  'reddit-ads',
+  'meta-ads',
+]);
+
+/** The act dialog's header per lever, and the Monitor row button's visible text. */
+export const CAMPAIGN_MONITOR_ACT_LEVER_LABELS: Readonly<Record<CampaignMonitorActLever, string>> = {
+  pause_resume: 'Pause or resume',
+  budget: 'Budget',
+  bid: 'Bid',
+};
+
+/** The resolve route answered 404: this deployment does not serve the platform's campaign-ref yet. */
+export const CAMPAIGN_ACT_RESOLVE_UNAVAILABLE_MESSAGE = "Acting on this platform's campaigns from Monitor is not available in this deployment yet.";
+
+/** The resolve route refused the id (400). */
+export const CAMPAIGN_ACT_RESOLVE_INVALID_ID_MESSAGE = 'This campaign id is not in the format the platform uses, so LFX One cannot look it up.';
+
+/** Any other failed resolve. Nothing was written: the resolve is a read of LFX One's own records. */
+export const CAMPAIGN_ACT_RESOLVE_FAILED_MESSAGE = 'LFX One could not look up this campaign. Nothing was changed; try again.';
+
+/** The lookup answered with something that contradicts itself (count vs. list, another id echoed back). */
+export const CAMPAIGN_ACT_RESOLVE_UNEXPECTED_MESSAGE =
+  'LFX One got an answer it could not trust while looking up this campaign, so nothing was changed. Try again.';
+
+/** No match: the project owns no campaign with this platform id. */
+export const CAMPAIGN_ACT_UNOWNED_MESSAGE =
+  'LFX One does not manage this campaign, so it cannot be changed from here. Adopt it into an approved brief to manage it in LFX One.';
+
+/**
+ * More than one match: refused, never chosen. Reachable on Reddit and X, whose binding indexes
+ * (campaign-service 000045/000046) allow one live row per (id, ad account), so a connection re-pointed
+ * between accounts leaves two; Meta's and LinkedIn's global indexes keep a valid database to one, but
+ * any count above one is still refused. Picking one would change a campaign nobody named.
+ */
+export const CAMPAIGN_ACT_AMBIGUOUS_MESSAGE =
+  'This campaign id matches more than one campaign in LFX One, so no action was taken: LFX One will not guess which one you mean. Change it from the Optimize tab of the brief it belongs to, or in the ad platform.';
+
+/** The one match resolved, but its campaign record could not be read. */
+export const CAMPAIGN_ACT_RECORD_FAILED_MESSAGE = 'LFX One found this campaign but could not read its current state. Nothing was changed; try again.';
+
+/**
+ * The foundation changed while the act or adopt dialog was open, so the next dialog is not opened:
+ * it would resolve the campaign against the project now selected, not the one it came from.
+ */
+export const CAMPAIGN_ACT_FOUNDATION_CHANGED_MESSAGE =
+  'You switched foundations while this was open, so LFX One did not continue with this campaign. Switch back to that foundation to act on it.';
+
+/** Shown beside a Resume: campaign-service refuses to activate an adopted campaign on every platform. */
+export const CAMPAIGN_ACT_RESUME_ADOPTED_NOTE =
+  "A campaign adopted into LFX One cannot be resumed from here; resume it in the ad platform's own UI. Pausing always works.";
+
+/**
+ * Shown beside a Meta Resume. campaign-service keeps an ad set paused on purpose PAUSED through a
+ * campaign resume, and refuses the resume (409) when Meta reports that ad set ACTIVE.
+ */
+export const CAMPAIGN_ACT_META_RESUME_NOTE =
+  'On Meta, a resume is refused while an ad set you paused on purpose is running again. Pause or resume that ad set first, then resume the campaign.';
+
+/** The record carried no ETag, so a write would be refused (428). */
+export const CAMPAIGN_ACT_NO_ETAG_MESSAGE = "This campaign's version could not be read, so it cannot be changed safely. Reload it and try again.";
+
+// ---------------------------------------------------------------------------
+// Adopt dialog
+// ---------------------------------------------------------------------------
+
+/** The briefs route answered 404 (briefs are not served by campaign-service in this deployment). */
+export const CAMPAIGN_ADOPT_BRIEFS_UNAVAILABLE_MESSAGE = 'Adopting campaigns is not available in this deployment.';
+
+export const CAMPAIGN_ADOPT_BRIEFS_FAILED_MESSAGE = 'The approved briefs could not be loaded. Try again.';
+
+export const CAMPAIGN_ADOPT_BRIEFS_EMPTY_MESSAGE = 'This project has no approved paid-marketing brief to adopt into. Approve a brief on the Plan tab first.';
+
+/** What adopting does and does not do, stated before the operator commits. */
+export const CAMPAIGN_ADOPT_EXPLAINER =
+  'Adopting records this campaign under the brief so LFX One can read and pause it. Nothing is created or changed on the ad platform. An adopted campaign cannot be resumed or have its bid changed from LFX One.';
+
+/**
+ * Each documented `adopt-campaign` refusal mapped to an actionable message, by HTTP status.
+ * `{platform}` is replaced with the platform's label. A 400 or 409 also shows campaign-service's own
+ * sentence under the message, because each covers several reasons only that sentence tells apart.
+ * The "already bound to another brief" 409 applies on every platform since campaign-service #328
+ * added binding indexes for Meta, Microsoft, Reddit and X (Google Ads and LinkedIn already had them).
+ */
+export const CAMPAIGN_ADOPT_FAILURE_COPY: Readonly<Record<'400' | '403' | '404' | '409' | '503' | 'default', { title: string; message: string }>> = {
+  '400': {
+    title: 'Not adopted: the request was refused',
+    message: 'Check that the campaign id is exactly as {platform} shows it and that the brief is an approved paid-marketing brief. Nothing was changed.',
+  },
+  '403': {
+    title: 'Not adopted: permission denied',
+    message: 'You do not have permission to manage campaigns in this project. Nothing was changed.',
+  },
+  '404': {
+    title: 'Not adopted: no such campaign',
+    message:
+      "{platform} reports no campaign with this id in this project's ad account (a deleted, removed or archived campaign counts as absent). Check the id. Nothing was changed.",
+  },
+  '409': {
+    title: 'Not adopted: this campaign cannot be bound to this brief',
+    message:
+      "The brief may already have a live {platform} campaign, the campaign may already belong to another brief, it may sit in a different ad account than this project's connection, or this project has no usable {platform} connection of its own. Nothing was changed.",
+  },
+  '503': {
+    title: 'Not adopted: the campaign could not be verified',
+    message:
+      '{platform} could not confirm whether this campaign exists, so nothing was recorded. This does not mean the campaign is missing; try again in a few minutes.',
+  },
+  default: {
+    title: 'Not adopted',
+    message: 'The campaign could not be adopted. Nothing was changed; try again.',
+  },
+};
+
+/** An adoption whose outcome nobody could confirm: the row may already be written. */
+export const CAMPAIGN_ADOPT_UNCONFIRMED_TITLE = 'Adoption not confirmed';
+
+/** After an unconfirmed adoption, the check found no campaign bound to this id: it did not happen. */
+export const CAMPAIGN_ADOPT_VERIFY_ABSENT_MESSAGE = 'LFX One has no record of this campaign, so the adoption did not happen. You can adopt it again.';
+
+/** After an unconfirmed adoption, the check got an answer that contradicts itself: still unconfirmed. */
+export const CAMPAIGN_ADOPT_VERIFY_UNEXPECTED_MESSAGE =
+  'LFX One got an answer it could not trust while checking the adoption, so it is still unconfirmed. Try the check again before adopting again.';
+
+/** After an unconfirmed adoption, the check found the campaign bound to a DIFFERENT brief: not this adoption. */
+export const CAMPAIGN_ADOPT_VERIFY_OTHER_BRIEF_MESSAGE =
+  'This campaign is bound to a different brief, not the one you chose, so this adoption did not happen. Change it from that brief, or remove that binding first.';
+
+/** A reopened dialog while an adoption of the same campaign is still in flight. */
+export const CAMPAIGN_ADOPT_PENDING_MESSAGE = 'An adoption of this campaign is still in progress. Wait for it to finish before trying again.';
+
+/** After an unconfirmed adoption, the check itself failed. */
+export const CAMPAIGN_ADOPT_VERIFY_FAILED_MESSAGE = 'LFX One could not check whether the adoption happened. Try the check again before adopting again.';
 
 // ---------------------------------------------------------------------------
 // Optimize/Monitor UI: audience panels and the Meta ad-set panel

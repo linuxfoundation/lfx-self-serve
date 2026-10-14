@@ -769,6 +769,14 @@ export const GOOGLE_ADS_RESOURCE_ID_RE = /^[0-9]{1,19}$/;
 const MAX_INT64 = 9223372036854775807n;
 
 export function isCanonicalGoogleAdsResourceId(value: unknown): boolean {
+  return isCanonicalPositiveInt64(value);
+}
+
+/**
+ * Whether a value is a string spelling a positive int64 canonically: digits only, no leading zero,
+ * at most `math.MaxInt64`. Shared by the Google Ads resource ids above and LinkedIn campaign ids.
+ */
+export function isCanonicalPositiveInt64(value: unknown): boolean {
   // `unknown`, not `string`: the caller validates req.body, which is CAST rather than parsed, so
   // a JSON number reaches here as a number. RE.test() coerces it and passes, and the
   // startsWith() below then threw a TypeError -- turning malformed input into a 500 instead of
@@ -1636,16 +1644,17 @@ export const CAMPAIGN_OPTIMIZE_LEVER_LABELS: Readonly<Record<Exclude<CampaignOpt
 
 /**
  * The platforms whose manual max CPC bid campaign-service can change (`update-campaign-bid`):
- * Microsoft Advertising, Reddit, Meta and X. Google Ads and LinkedIn are refused upstream with 400,
- * so the Optimize tab withholds the bid editor for them rather than offering a doomed form.
+ * Microsoft Advertising, Reddit, Meta, X and LinkedIn (its campaign `unitCost`, campaign-service
+ * #318). Google Ads is refused upstream with 400, so the Optimize tab withholds the bid editor for
+ * it rather than offering a doomed form.
  *
  * Hand-listed for the reason `BUDGET_WRITABLE_CAMPAIGN_PLATFORMS` is: bid writing is wired per
  * platform upstream, and X has a bid write while it has no budget write or pause/resume here.
  */
-export const BID_WRITABLE_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<string>(['microsoft-ads', 'reddit-ads', 'meta-ads', 'twitter-ads']);
+export const BID_WRITABLE_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<string>(['microsoft-ads', 'reddit-ads', 'meta-ads', 'twitter-ads', 'linkedin-ads']);
 
 /** Why the bid editor is disabled for a platform campaign-service cannot write bids on. */
-export const CAMPAIGN_BID_UNAVAILABLE_PLATFORM_REASON = 'Bid changes are available for Microsoft Advertising, Reddit, Meta and X campaigns only.';
+export const CAMPAIGN_BID_UNAVAILABLE_PLATFORM_REASON = 'Bid changes are available for Microsoft Advertising, Reddit, Meta, X and LinkedIn campaigns only.';
 
 /** Why the bid editor is disabled for a campaign never created on its ad platform (upstream 409). */
 export const CAMPAIGN_BID_UNAVAILABLE_UNPROVISIONED_REASON = 'This campaign has not been created on its ad platform, so its bid cannot be changed.';
@@ -1655,7 +1664,7 @@ export const CAMPAIGN_BID_UNAVAILABLE_UNPROVISIONED_REASON = 'This campaign has 
  * refuses an automated or non-per-click strategy with a neutral 409 rather than switching it.
  */
 export const CAMPAIGN_BID_STRATEGY_NOTE =
-  'Applies only to campaigns on a manual per-click bid. Campaigns on automated bidding are refused, and LFX One never changes a bid strategy.';
+  'Applies only to campaigns LFX One created that are on a manual per-click bid. Campaigns on automated bidding, and adopted campaigns, are refused, and LFX One never changes a bid strategy.';
 
 /** What a bid change refused with 412 tells the operator. Nothing was changed. */
 export const CAMPAIGN_BID_CONFLICT_MESSAGE =

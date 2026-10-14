@@ -1,17 +1,30 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser } from '@angular/common';
+import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import { Component, computed, DestroyRef, inject, OnInit, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { skip, type Subscription } from 'rxjs';
-import { CAMPAIGN_PACING_THRESHOLDS, parseCampaignName, PLATFORM_BRAND_COLORS } from '@lfx-one/shared/constants';
+import { skip, take, type Subscription } from 'rxjs';
+import { ButtonComponent } from '@components/button/button.component';
+import {
+  CAMPAIGN_ACT_FOUNDATION_CHANGED_MESSAGE,
+  CAMPAIGN_MONITOR_ACT_LEVER_LABELS,
+  CAMPAIGN_MONITOR_ACT_PLATFORMS,
+  CAMPAIGN_PACING_THRESHOLDS,
+  parseCampaignName,
+  PLATFORM_BRAND_COLORS,
+} from '@lfx-one/shared/constants';
 import { formatPercent } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 
 import type {
+  CampaignActDialogData,
+  CampaignActDialogResult,
+  CampaignAdoptDialogData,
   CampaignMetrics,
+  CampaignMonitorActLever,
+  CampaignMonitorActPlatform,
   CampaignMonitorResponse,
   KeywordMetrics,
   KeywordMetricsResponse,
@@ -30,7 +43,11 @@ import type {
 
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { MetaPacingClassPipe } from '@pipes/campaign-optimization.pipe';
+import { MessageService } from 'primeng/api';
+import { DialogService } from 'primeng/dynamicdialog';
 import { AudienceDemographicsComponent } from '../audience-demographics/audience-demographics.component';
+import { CampaignActDialogComponent } from '../campaign-act-dialog/campaign-act-dialog.component';
+import { CampaignAdoptDialogComponent } from '../campaign-adopt-dialog/campaign-adopt-dialog.component';
 import { PaidAudienceInsightsComponent } from '../paid-audience-insights/paid-audience-insights.component';
 
 type DateRangeOption = 7 | 14 | 30;
@@ -40,7 +57,7 @@ const KEYWORD_PAGE_SIZE = 10;
 
 @Component({
   selector: 'lfx-monitoring-tab',
-  imports: [AudienceDemographicsComponent, MetaPacingClassPipe, PaidAudienceInsightsComponent],
+  imports: [AudienceDemographicsComponent, ButtonComponent, MetaPacingClassPipe, NgTemplateOutlet, PaidAudienceInsightsComponent],
   templateUrl: './monitoring-tab.component.html',
   styleUrl: './monitoring-tab.component.scss',
 })
@@ -49,6 +66,8 @@ export class MonitoringTabComponent implements OnInit {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly dialogService = inject(DialogService);
+  private readonly messageService = inject(MessageService);
   private monitorSub: Subscription | null = null;
   private keywordsSub: Subscription | null = null;
   private linkedInSub: Subscription | null = null;
@@ -187,6 +206,21 @@ export class MonitoringTabComponent implements OnInit {
 
   public ngOnInit(): void {
     this.loadForActiveFoundation();
+  }
+
+  /**
+   * Act on a Monitor row's campaign: opens the act dialog, which resolves the row's PLATFORM campaign
+   * id to the campaign LFX One manages before showing any lever. When LFX One does not manage it, the
+   * dialog asks to adopt it; a confirmed adoption reopens the act dialog on the same lever.
+   */
+  protected openAct(platform: CampaignMonitorActPlatform, platformCampaignId: string, campaignName: string, lever: CampaignMonitorActLever): void {
+    // The project is captured HERE, once, and carried through the adopt step and back: a foundation
+    // switch while a dialog is open must not point the flow at another project.
+    const projectSlug = this.activeFoundationSlug();
+    if (!projectSlug || !CAMPAIGN_MONITOR_ACT_PLATFORMS.has(platform) || !platformCampaignId) {
+      return;
+    }
+    this.openActDialog({ projectSlug, platform, platformCampaignId, campaignName, lever });
   }
 
   protected setDateRange(days: DateRangeOption): void {
@@ -599,5 +633,63 @@ export class MonitoringTabComponent implements OnInit {
           this.metaError.set(extractErrorMessage(httpErr, 'Failed to load Meta accounts'));
         },
       });
+  }
+
+  private openActDialog(data: CampaignActDialogData): void {
+    this.dialogService
+      .open(CampaignActDialogComponent, {
+        header: `${CAMPAIGN_MONITOR_ACT_LEVER_LABELS[data.lever]}: ${data.campaignName}`,
+        width: '36rem',
+        // The dialog preset caps nothing, so a fixed width alone runs off a phone: capped to the viewport,
+        // as the org EasyCLA dialogs do.
+        style: { maxWidth: '90vw' },
+        modal: true,
+        closable: true,
+        dismissableMask: true,
+        data,
+      })
+      // Bound to this tab as well as to the one close: a dialog closed after the tab is gone opens nothing.
+      ?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe((result: CampaignActDialogResult | undefined) => {
+        if (result?.adopt && this.stillOnProject(data.projectSlug)) {
+          this.openAdopt(data);
+        }
+      });
+  }
+
+  private openAdopt(act: CampaignActDialogData): void {
+    const data: CampaignAdoptDialogData = {
+      projectSlug: act.projectSlug,
+      platform: act.platform,
+      platformCampaignId: act.platformCampaignId,
+      campaignName: act.campaignName,
+    };
+    this.dialogService
+      .open(CampaignAdoptDialogComponent, {
+        header: `Adopt campaign: ${act.campaignName}`,
+        width: '36rem',
+        // The dialog preset caps nothing, so a fixed width alone runs off a phone: capped to the viewport,
+        // as the org EasyCLA dialogs do.
+        style: { maxWidth: '90vw' },
+        modal: true,
+        closable: true,
+        data,
+      })
+      ?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe((adopted: boolean | undefined) => {
+        if (adopted === true && this.stillOnProject(act.projectSlug)) {
+          // Reopened against the CAPTURED project, never the live selection.
+          this.openActDialog(act);
+        }
+      });
+  }
+
+  /** Whether the foundation the flow started on is still selected; when not, says why nothing follows. */
+  private stillOnProject(projectSlug: string): boolean {
+    if (this.activeFoundationSlug() === projectSlug) {
+      return true;
+    }
+    this.messageService.add({ severity: 'info', summary: 'Foundation changed', detail: CAMPAIGN_ACT_FOUNDATION_CHANGED_MESSAGE, life: 8000 });
+    return false;
   }
 }

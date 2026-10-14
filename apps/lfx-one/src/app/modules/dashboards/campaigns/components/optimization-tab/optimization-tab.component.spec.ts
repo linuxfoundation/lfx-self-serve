@@ -47,6 +47,7 @@ import { NEVER, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CampaignBidFormComponent } from '../campaign-bid-form/campaign-bid-form.component';
+import { CampaignSettingsDrawerComponent } from '../campaign-settings-drawer/campaign-settings-drawer.component';
 import { CampaignBudgetFormComponent } from '../campaign-budget-form/campaign-budget-form.component';
 import { CampaignKeywordTargetingPanelComponent } from '../campaign-keyword-targeting-panel/campaign-keyword-targeting-panel.component';
 import { CampaignNegativeKeywordsFormComponent } from '../campaign-negative-keywords-form/campaign-negative-keywords-form.component';
@@ -3165,6 +3166,11 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
             updateCampaignBudget,
             updateCampaignStatus: vi.fn().mockReturnValue(of(null)),
             addNegativeKeywords: vi.fn(),
+            getCampaignSettings: vi
+              .fn()
+              .mockReturnValue(
+                of({ campaign_id: 'c-1', platform_campaign_id: '1', platform: 'linkedin-ads', read_at: '', fields: [], diverged_count: 0, unknown_count: 0 })
+              ),
             getKeywordTargeting: vi
               .fn()
               .mockReturnValue(of({ campaign_id: 'c-1', platform: 'reddit-ads', targeting_entity_id: 'ag-1', keywords: [], revision: 'sha256:r1' })),
@@ -3211,7 +3217,8 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
     fixture.detectChanges();
   }
 
-  it.each(['microsoft-ads', 'reddit-ads', 'meta-ads', 'twitter-ads'])('offers the bid editor for %s', (platform) => {
+  // LinkedIn joined with campaign-service #318 (its campaign `unitCost`).
+  it.each(['microsoft-ads', 'reddit-ads', 'meta-ads', 'twitter-ads', 'linkedin-ads'])('offers the bid editor for %s', (platform) => {
     render([doc({ platform })]);
 
     const button = q('optimization-campaign-bid-edit-c-1') as HTMLButtonElement;
@@ -3220,14 +3227,28 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
     expect(q('optimization-campaign-bid-unavailable-c-1')).toBeNull();
   });
 
-  // Upstream refuses Google and LinkedIn bids with 400; the row says so rather than offering a doomed form.
-  it.each(['google-ads', 'linkedin-ads'])('withholds the bid editor for %s and says which platforms it supports', (platform) => {
+  // Upstream refuses Google Ads bids with 400; the row says so rather than offering a doomed form.
+  it.each(['google-ads'])('withholds the bid editor for %s and says which platforms it supports', (platform) => {
     render([doc({ platform })]);
 
     const button = q('optimization-campaign-bid-edit-c-1') as HTMLButtonElement;
     expect(button.disabled).toBe(true);
     expect(button.getAttribute('aria-describedby')).toBe('campaign-bid-unavailable-c-1');
     expect(q('optimization-campaign-bid-unavailable-c-1')!.textContent!.trim()).toBe(CAMPAIGN_BID_UNAVAILABLE_PLATFORM_REASON);
+  });
+
+  it('opens the live-settings drawer for the row it was asked from', () => {
+    render([doc({ platform: 'linkedin-ads' })]);
+
+    const button = q('optimization-campaign-settings-c-1') as HTMLButtonElement;
+    expect(button.getAttribute('aria-label')).toBe('Live settings for KubeCon EU');
+    button.click();
+    fixture.detectChanges();
+
+    const drawer = fixture.debugElement.query(By.directive(CampaignSettingsDrawerComponent)).componentInstance as CampaignSettingsDrawerComponent;
+    expect(drawer.visible()).toBe(true);
+    expect(drawer.campaign()?.id).toBe('c-1');
+    expect(drawer.briefId()).toBe('b-1');
   });
 
   it('withholds the bid editor for a campaign never created on its platform', () => {

@@ -18,7 +18,7 @@ import {
   CAMPAIGN_ETAG_REQUIRED_MESSAGE,
   CAMPAIGN_ETAG_STALE_CODE,
   CAMPAIGN_ETAG_STALE_MESSAGE,
-  CAMPAIGN_REF_ID_PATTERNS,
+  isValidCampaignRefId,
   KEYWORD_TARGETING_REMOVAL_OUTCOME_UNCONFIRMED,
   KEYWORD_TARGETING_REMOVAL_UNCONFIRMED_CODE,
   KEYWORD_TARGETING_REMOVAL_UNCONFIRMED_OUTCOME,
@@ -28,11 +28,13 @@ import {
   META_AD_SET_STATUS_UNCONFIRMED_OUTCOME,
 } from '@lfx-one/shared/constants';
 import type {
+  CampaignAdoptableBrief,
   CampaignAdoptPlatform,
   CampaignAudiencePlatform,
   CampaignLeverUnconfirmedOutcome,
   CampaignMetricsWindow,
   CampaignRefPlatform,
+  CampaignServiceBriefIndexDoc,
   CampaignServiceCampaign,
   CampaignServiceCampaignResolution,
   CampaignServiceCampaignTarget,
@@ -46,6 +48,7 @@ import type {
   CampaignServiceSettingsReadback,
   KeywordTargetingRemovalItem,
   MetaAdSetStatus,
+  QueryServiceResponse,
   RedditKeywordsWindow,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
@@ -53,6 +56,7 @@ import type { Request } from 'express';
 import { MicroserviceError } from '../errors/microservice.error';
 import { ServiceValidationError } from '../errors/service-validation.error';
 import { getCodeForStatus } from '../helpers/http-status.helper';
+import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { encodePathSegment } from '../helpers/url-validation';
 import { upstreamAnswered } from './campaign-keyword-actions';
 import { asUnconfirmedWriteFailure, readEtag } from './campaign-service.service';
@@ -138,8 +142,7 @@ export class CampaignOptimizeService {
    * an empty `matches`, and MORE THAN ONE match is reachable (a re-pointed connection), so the
    * caller must check `match_count` and refuse rather than choose.
    *
-   * The id is a QUERY parameter (fifth argument) and is checked against the platform's id rule
-   * first. `linkedin-ads` has no upstream endpoint yet (see `CAMPAIGN_REF_PLATFORMS_PENDING_UPSTREAM`).
+   * The id is a QUERY parameter (fifth argument) and is checked against the platform's id rule first.
    */
   public async resolvePlatformCampaign(
     req: Request,
@@ -147,8 +150,7 @@ export class CampaignOptimizeService {
     platform: CampaignRefPlatform,
     platformCampaignId: string
   ): Promise<CampaignServiceCampaignResolution> {
-    const pattern = Object.prototype.hasOwnProperty.call(CAMPAIGN_REF_ID_PATTERNS, platform) ? CAMPAIGN_REF_ID_PATTERNS[platform] : null;
-    if (projectSlug === '' || !pattern || !pattern.test(platformCampaignId)) {
+    if (projectSlug === '' || !isValidCampaignRefId(platform, platformCampaignId)) {
       throw ServiceValidationError.forField('platformCampaignId', 'A campaign reference lookup requires the project and a valid platform campaign id.', {
         operation: 'resolve_platform_campaign',
         service: 'campaign_optimize_service',
@@ -296,6 +298,52 @@ export class CampaignOptimizeService {
     } catch (error) {
       throw asUnconfirmedWriteFailure(error, 'adopt_campaign', CAMPAIGN_ADOPT_OUTCOME_UNCONFIRMED);
     }
+  }
+
+  /**
+   * The project's briefs a campaign can be ADOPTED into: approved, paid-marketing, from the Query
+   * Service (campaign-service exposes no brief list; `campaign_brief` is indexed instead).
+   *
+   * Filtered HERE, not with a query filter: an index filter on `status` is unverified, and a filter
+   * that silently matched nothing would read as "no approved briefs".
+   *
+   * `delivery_type` follows campaign-service's index contract (`BriefDoc`,
+   * `internal/infrastructure/indexer/contract.go`): a document indexed before the field existed keeps
+   * its old shape, and an ABSENT field means "written before the widening", which for every such row
+   * is paid-marketing with an empty stage. Email briefs exist only after the widening and always
+   * publish `delivery_type` (the field has no `omitempty`). So an absent value or `'paid-marketing'` is
+   * offered, and `'email'` or any other explicit value is not. `adopt-campaign` itself refuses a brief
+   * of the wrong channel with 400.
+   */
+  public async listAdoptableBriefs(req: Request, projectSlug: string): Promise<CampaignAdoptableBrief[]> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A brief list requires the project it is scoped to.', {
+        operation: 'list_adoptable_briefs',
+        service: 'campaign_optimize_service',
+      });
+    }
+    const docs = await fetchAllQueryResources<CampaignServiceBriefIndexDoc>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<CampaignServiceBriefIndexDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'campaign_brief',
+          parent: `project:${projectSlug}`,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
+    );
+    const briefs = docs
+      .filter(
+        (d) => typeof d?.id === 'string' && d.id !== '' && d.status === 'approved' && (d.delivery_type === undefined || d.delivery_type === 'paid-marketing')
+      )
+      .map((d) => ({
+        id: d.id,
+        eventSlug: typeof d.event_slug === 'string' ? d.event_slug : '',
+        programType: typeof d.program_type === 'string' ? d.program_type : '',
+        platforms: Array.isArray(d.platforms) ? d.platforms.filter((p): p is string => typeof p === 'string') : [],
+      }));
+    logger.debug(req, 'list_adoptable_briefs', 'Filtered indexed briefs to approved paid briefs', { indexed: docs.length, adoptable: briefs.length });
+    return briefs;
   }
 
   /** The positive keywords of a Reddit ad group or X line item, read live. Any other platform is upstream's 400. */
