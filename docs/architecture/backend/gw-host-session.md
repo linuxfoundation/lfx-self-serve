@@ -168,7 +168,7 @@ An upgrade runs outside Express, so `req.oidc` and the middleware chain are not 
 3. Host-session mode is on (`isGatewazeHostSessionEnabled`), or the uniform 404. Nothing reads Valkey before this.
 4. `Origin` is exactly the origin of `PCC_BASE_URL`, or 403. A missing `Origin` is refused. `SameSite=Lax` still sends the cookie on a cross-site WebSocket, so this is the cross-site check.
 5. The pod is under its socket cap, or 503.
-6. The request runs through `app` with a `ServerResponse` that has no socket behind it. It passes the same `auth()`, `authMiddleware`, `apiRateLimiter`, `requireGatewazeHostSession`, `requireGatewazeBearer` and `requireGwEmbedAccess` as every other `/api/gatewaze` request. `authMiddleware` sets the bearer token on the upgrade request as on any other. Because the path is under `/api/gatewaze`, it also skips the body parsers and compression, and the drain guard is a no-op on a GET. So a caller with no LFX session gets 401, a caller without ED, root writer or a writer grant gets 403, and an impersonating admin gets 403. Whatever Express answers, its status becomes the refused handshake, with `Retry-After` and `x-gw-session` copied over. A 2xx or 3xx answer, e.g. a sign-in redirect, becomes 500. Nothing Express writes reaches the socket. If nothing answers within `GW_REALTIME_UPGRADE_TIMEOUT_MS` (30 seconds), the upgrade is refused with 503 and its slot is freed.
+6. The request runs through `app` with a `ServerResponse` that has no socket behind it. It passes the same `auth()`, `authMiddleware`, `apiRateLimiter`, `requireGatewazeHostSession`, `requireGatewazeBearer` and `requireGwEmbedAccess` as every other `/api/gatewaze` request. `authMiddleware` sets the bearer token on the upgrade request as on any other. Because the path is under `/api/gatewaze`, it also skips the body parsers and compression, and the drain guard is a no-op on a GET. So a caller with no LFX session gets 401, a caller without ED, root writer or a writer grant gets 403, and an impersonating admin gets 403. Whatever Express answers, its status becomes the refused handshake, with `Retry-After` and `x-gw-session` copied over. A 2xx or 3xx answer, e.g. a sign-in redirect, becomes 500. Nothing Express writes reaches the socket. The whole upgrade, the gates here and the session load in step 9, has `GW_REALTIME_UPGRADE_TIMEOUT_MS` (45 seconds). Past that it is refused with 503 and its slots are freed, so a middleware that never answers or a hung Valkey or GoTrue call cannot hold them. A session that loads after the deadline is released, not used.
 7. The Realtime route (`handleRoute`) takes the upgrade. A plain GET to the same path, with no upgrade behind it, gets the uniform 404.
 8. The user is under the per-user cap, or 429. A client that went away while the gates ran is dropped here, before any session is loaded.
 9. `openRealtimeSession(req)` loads the Gatewaze session the same way `getGatewazeSession` does: stored, refreshed, or minted from the LFX session. It starts listening for a sign-out before the load, so one that lands meanwhile is not missed.
@@ -182,14 +182,15 @@ Running the upgrade through Express means the gates cannot drift from the HTTP r
 
 ### Caps
 
-| Cap                       | Value | Answer | Scope                                                    |
-| ------------------------- | ----- | ------ | -------------------------------------------------------- |
-| Sockets per LFX user      | 20    | 429    | One pod, keyed on the Auth0 `sub`; the admin BFF's value |
-| Sockets per pod           | 1,000 | 503    | Open sockets plus upgrades still being checked           |
-| Time in the Express gates | 30 s  | 503    | Per upgrade, so a stalled middleware cannot hold a slot  |
-| Channels per socket       | 100   | 1008   | The package's bridge                                     |
-| Message size from browser | 8 MiB | 1009   | `ws` `maxPayload`                                        |
-| Unsent data per socket    | 4 MiB | 1013   | The package's bridge, in each direction                  |
+| Cap                         | Value  | Answer | Scope                                                                 |
+| --------------------------- | ------ | ------ | --------------------------------------------------------------------- |
+| Sockets per LFX user        | 20     | 429    | One pod, keyed on the Auth0 `sub`; the admin BFF's value              |
+| Sockets per pod             | 1,000  | 503    | Open sockets plus upgrades still being checked                        |
+| Time to complete an upgrade | 45 s   | 503    | Per upgrade, so a stalled middleware or dependency cannot hold a slot |
+| Socket age                  | 15 min | 1001   | Per socket, so access is re-checked on reconnect                      |
+| Channels per socket         | 100    | 1008   | The package's bridge                                                  |
+| Message size from browser   | 8 MiB  | 1009   | `ws` `maxPayload`                                                     |
+| Unsent data per socket      | 4 MiB  | 1013   | The package's bridge, in each direction                               |
 
 A slot is taken before anything async runs, so concurrent upgrades cannot all pass a cap. It is freed when the upgrade is refused, when the socket closes, or when the bridge closes. The caps are per pod, not across pods.
 
@@ -197,7 +198,7 @@ A slot is taken before anything async runs, so concurrent upgrades cannot all pa
 
 The bridge refreshes the session 60 seconds before the access token expires by calling `fresh`. LFX's `fresh` first checks that the LFX session is still live: present in the session store, not expired, and not impersonating. A socket outlives the request that opened it, so this is how an LFX session that ended without `/logout` (expiry, or a forced `res.oidc.logout()`) closes the socket within one token lifetime. Then it calls `store.fresh(gwSid, { expectedSub })`, which refreshes under the store's lock. When the token changed, the bridge pushes the new token to every joined channel. When `fresh` returns null, the bridge closes the socket with 4001 and `realtime-js` reconnects through all the checks above. When GoTrue is unreachable, the bridge retries every 5 seconds while the current token is still valid, then closes with 1011.
 
-The LFX authorization (ED, root writer or a writer grant) is checked when the socket opens, not again during its life. A user who loses that access, or who starts impersonating, keeps an open socket until the next refresh or reconnect, so for at most one token lifetime. The socket runs as the real signed-in user throughout, never as an impersonation target.
+The token refresh re-checks the LFX session but not the LFX authorization (ED, root writer or a writer grant). So every socket is closed with 1001 after `GW_REALTIME_MAX_SOCKET_AGE_MS` (15 minutes), and `realtime-js` reconnects through every check above. A user who loses that access keeps an open socket for at most 15 minutes. One who starts impersonating keeps it until the next refresh or the 15 minute close, whichever comes first. The socket runs as the real signed-in user throughout, never as an impersonation target.
 
 A Valkey fault on the LFX session read counts as a missing session, because `SessionStoreService` is fail-soft. The socket closes and reconnects, which is fail-closed.
 

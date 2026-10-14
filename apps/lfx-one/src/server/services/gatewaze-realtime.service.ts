@@ -19,6 +19,7 @@ import {
   GW_REALTIME_CLOSE_GOING_AWAY,
   GW_REALTIME_FORWARDED_REJECT_HEADERS,
   GW_REALTIME_MAX_PAYLOAD_BYTES,
+  GW_REALTIME_MAX_SOCKET_AGE_MS,
   GW_REALTIME_MAX_SOCKETS_PER_USER,
   GW_REALTIME_MAX_SOCKETS_TOTAL,
   GW_REALTIME_PATH,
@@ -72,7 +73,8 @@ export class GatewazeRealtimeService {
 
   public constructor(
     private readonly limits: GatewazeRealtimeLimits = { perUser: GW_REALTIME_MAX_SOCKETS_PER_USER, total: GW_REALTIME_MAX_SOCKETS_TOTAL },
-    private readonly upgradeTimeoutMs: number = GW_REALTIME_UPGRADE_TIMEOUT_MS
+    private readonly upgradeTimeoutMs: number = GW_REALTIME_UPGRADE_TIMEOUT_MS,
+    private readonly maxSocketAgeMs: number = GW_REALTIME_MAX_SOCKET_AGE_MS
   ) {}
 
   /**
@@ -138,6 +140,7 @@ export class GatewazeRealtimeService {
       socket,
       head,
       taken: false,
+      settled: false,
       release: () => {
         if (released) return;
         released = true;
@@ -151,14 +154,13 @@ export class GatewazeRealtimeService {
     socket.once('close', pending.release);
     this.pending.set(req, pending);
 
-    // Bounds the time the slot is held if some middleware never answers. Cleared once anything takes the upgrade.
+    // Bounds the whole upgrade, the Express gates and the Gatewaze session load, so a middleware that
+    // never answers or a hung Valkey or GoTrue call cannot hold the slots until the client gives up.
     const deadline = setTimeout(() => {
-      if (!pending.taken) {
+      if (!pending.settled) {
         pending.taken = true;
-        logger.warning(undefined, 'gatewaze_realtime_upgrade', 'A Realtime upgrade got no answer from the Express gates in time', {
-          timeout_ms: this.upgradeTimeoutMs,
-        });
-        this.refuse(pending, 503, 'gates timed out');
+        logger.warning(undefined, 'gatewaze_realtime_upgrade', 'A Realtime upgrade did not complete in time', { timeout_ms: this.upgradeTimeoutMs });
+        this.refuse(pending, 503, 'upgrade timed out');
       }
     }, this.upgradeTimeoutMs);
     deadline.unref();
@@ -263,6 +265,11 @@ export class GatewazeRealtimeService {
     });
 
     const result = await getGatewazeSessionService().openRealtimeSession(req);
+    // The deadline refused the upgrade while the session loaded.
+    if (pending.settled) {
+      if (result.outcome === 'ok') result.session.release();
+      return;
+    }
     if (result.outcome !== 'ok') {
       // The marker is informational: a browser cannot read handshake headers. The embed learns the
       // session ended from its next HTTP call, which carries the same marker.
@@ -302,6 +309,7 @@ export class GatewazeRealtimeService {
       return;
     }
 
+    pending.settled = true;
     this.getWss().handleUpgrade(req, socket, head, (client) => {
       const bridge = bridgeRealtime(client, {
         upstreamUrl,
@@ -325,12 +333,18 @@ export class GatewazeRealtimeService {
         return;
       }
       this.bridges.add(bridge);
+      // Reconnect through every check again from time to time; the refresh does not re-check LFX access.
+      const reauthorize = setTimeout(() => bridge.close(GW_REALTIME_CLOSE_GOING_AWAY, 'reauthorize'), this.maxSocketAgeMs);
+      reauthorize.unref();
+      client.once('close', () => clearTimeout(reauthorize));
       logger.debug(req, 'gatewaze_realtime_upgrade', 'Opened a Gatewaze Realtime socket', { open_sockets: this.bridges.size });
     });
   }
 
   /** Frees the upgrade's slots, then refuses it. */
   private refuse(pending: PendingUpgrade, status: number, reason: string, headers: Record<string, string> = {}): void {
+    if (pending.settled) return;
+    pending.settled = true;
     pending.release();
     this.reject(pending.socket, status, reason, headers);
   }

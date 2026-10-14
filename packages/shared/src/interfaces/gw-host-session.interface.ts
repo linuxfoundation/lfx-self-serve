@@ -109,8 +109,10 @@ export interface GatewazeRealtimeLimits {
 export interface GatewazeRealtimePendingUpgrade<TSocket, THead> {
   socket: TSocket;
   head: THead;
-  /** Set once the Realtime route, the Express answer or the deadline has taken the upgrade, so it is answered once. */
+  /** Set once the Realtime route, the Express answer or the deadline has taken the upgrade from Express. */
   taken: boolean;
+  /** Set once the upgrade is refused or handed to the WebSocket server, so it is answered once. */
+  settled: boolean;
   /** Frees every slot this upgrade holds. Idempotent. */
   release: () => void;
   /** Adds a release step, run with `release`, or at once when already released. */

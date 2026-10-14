@@ -58,8 +58,18 @@ export const GW_HOST_SESSION_LFX_LOGOUT_WAIT_MS = 3_000;
 /** Path of the Realtime WebSocket that `supabase-js` opens under `supabase.url`. Every other upgrade path is refused. */
 export const GW_REALTIME_PATH = `${GW_HOST_SESSION_PROXY_SUPABASE_MOUNT}/realtime/v1/websocket`;
 
-/** How long an upgrade may spend in the Express gates before it is refused with 503 and its socket slot freed. */
-export const GW_REALTIME_UPGRADE_TIMEOUT_MS = 30_000;
+/**
+ * How long an upgrade may take, through the Express gates and the Gatewaze session load, before it
+ * is refused with 503 and its socket slots freed.
+ */
+export const GW_REALTIME_UPGRADE_TIMEOUT_MS = 45_000;
+
+/**
+ * How long a Realtime socket stays open before LFX One closes it with 1001 so realtime-js reconnects
+ * through every upgrade check again. This bounds how long a socket outlives a revoked LFX writer
+ * grant, which the token refresh does not re-check.
+ */
+export const GW_REALTIME_MAX_SOCKET_AGE_MS = 15 * 60 * 1000;
 
 /** Response headers copied from an Express answer onto a refused Realtime handshake. */
 export const GW_REALTIME_FORWARDED_REJECT_HEADERS = ['retry-after', 'x-gw-session'] as const;

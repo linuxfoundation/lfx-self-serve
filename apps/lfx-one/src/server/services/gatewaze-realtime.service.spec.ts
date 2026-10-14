@@ -478,6 +478,26 @@ describe('GatewazeRealtimeService upgrade over a real socket', () => {
     await opened();
   });
 
+  it('refuses with 503 when the session load outlasts the deadline, and releases it when it lands', async () => {
+    current = new GatewazeRealtimeService({ perUser: 2, total: 1 }, 100);
+    const late = sessionResult();
+    let land: (value: unknown) => void = () => undefined;
+    openRealtimeSession.mockImplementationOnce(() => new Promise((resolve) => (land = resolve)));
+
+    expect((await refusal()).status).toBe(503);
+    land(late);
+    await vi.waitFor(() => expect(late.session.release).toHaveBeenCalled());
+    expect(upstreamUrls).toHaveLength(0);
+    await opened();
+  });
+
+  it('closes a socket with 1001 after its maximum age, so it reconnects through every check', async () => {
+    current = new GatewazeRealtimeService({ perUser: 2, total: 3 }, 30_000, 100);
+    const ws = await opened();
+
+    expect(await closed(ws)).toEqual({ code: 1001, reason: 'reauthorize' });
+  });
+
   it('refuses with 503 once the pod is shutting down', async () => {
     shuttingDown.value = true;
 

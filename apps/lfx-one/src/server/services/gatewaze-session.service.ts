@@ -47,7 +47,7 @@ import Redis from 'ioredis';
 import { readAppSessionId } from '../helpers/app-session-cookie.helper';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { isPublishableSupabaseKey } from '../helpers/supabase-key.helper';
-import { hasActiveImpersonationSession } from '../utils/auth-helper';
+import { hasActiveImpersonation } from '../utils/auth-helper';
 import { exchangeRefreshTokenForIdToken } from '../utils/refresh-token-exchange.util';
 import { addShutdownHook } from '../utils/shutdown';
 import { logger } from './logger.service';
@@ -148,7 +148,7 @@ async function isLfxSessionLive(lfxSid: string): Promise<boolean> {
   if (!payload || payload.header.exp * 1000 <= Date.now()) {
     return false;
   }
-  return !hasActiveImpersonationSession({ appSession: payload.data } as unknown as Request);
+  return !hasActiveImpersonation(payload.data);
 }
 
 function toHostConfig(config: GatewazeHostSessionSettings): HostSessionConfig {
