@@ -41,6 +41,12 @@ describe('FileObjectStoreBackend', () => {
       await expect(backend.ensureBucket()).resolves.toEqual({ created: false });
       await expect(backend.readiness()).resolves.toBe(true);
     });
+
+    it('readiness is false when the configured root is a regular file — a store nothing can be written to', async () => {
+      await writeFile(root, 'not a folder');
+      await expect(backend.readiness()).resolves.toBe(false);
+      await expect(backend.ensureBucket()).rejects.toMatchObject({ code: 'EEXIST' });
+    });
   });
 
   describe('put / head / get', () => {

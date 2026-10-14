@@ -3,7 +3,7 @@
 
 import { ObjectStoreBackend, ObjectStoreFileSidecar, ObjectStoreListEntry, ObjectStorePutInput, ObjectStoreReadResult } from '@lfx-one/shared/interfaces';
 import { randomUUID } from 'node:crypto';
-import { access, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import { OBJECT_STORE_FILE_METADATA_SUFFIX, OBJECT_STORE_FILE_PARTIAL_SUFFIX } from '../constants';
@@ -55,10 +55,13 @@ export class FileObjectStoreBackend implements ObjectStoreBackend {
     return this.root;
   }
 
+  /**
+   * Ready only when the root is a folder. A regular file at that path exists, so a bare
+   * existence check would report healthy while `ensureBucket` then fails and nothing can be stored.
+   */
   public async readiness(): Promise<boolean> {
     try {
-      await access(this.root);
-      return true;
+      return (await stat(this.root)).isDirectory();
     } catch {
       return false;
     }
