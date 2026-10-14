@@ -820,7 +820,7 @@ export class OrgClasController {
       const orgUid = req.params['orgUid'];
       assertOrgUid(orgUid, 'check_org_cla_permission');
 
-      const raw = req.body as { action?: unknown; projectSfid?: unknown } | undefined;
+      const raw = req.body as { action?: unknown; projectSfid?: unknown; foundationSfid?: unknown } | undefined;
       const action = raw?.action;
       if (!isOrgClaPermissionAction(action)) {
         logger.success(req, 'check_org_cla_permission', startTime, { org_uid: orgUid, rejected: 'unknown_action' });
@@ -829,11 +829,13 @@ export class OrgClasController {
       }
 
       const projectSfid = typeof raw?.projectSfid === 'string' ? raw.projectSfid.trim() : undefined;
+      const foundationSfid = typeof raw?.foundationSfid === 'string' ? raw.foundationSfid.trim() : undefined;
       const request: OrgClaPermissionCheckRequest = {
         action,
         ...(projectSfid ? { projectSfid } : {}),
+        ...(foundationSfid ? { foundationSfid } : {}),
       };
-      const allowed = await this.orgClaPermissions.check(req, orgUid, request.action, request.projectSfid);
+      const allowed = await this.orgClaPermissions.check(req, orgUid, request.action, request.projectSfid, request.foundationSfid);
 
       logger.success(req, 'check_org_cla_permission', startTime, { org_uid: orgUid, action, allowed });
       res.setHeader('Cache-Control', 'no-store');

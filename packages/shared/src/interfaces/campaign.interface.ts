@@ -15,6 +15,7 @@ import type {
   REDDIT_SELECTABLE_OBJECTIVES,
   REDDIT_VIDEO_GOALS,
 } from '../constants/campaign.constants';
+import type { KeywordTargetingPlatform } from './campaign-optimize.interface';
 
 // ---------------------------------------------------------------------------
 // Platform & Phase
@@ -752,6 +753,31 @@ export interface CampaignImplementationDraft {
    * an absent field and an empty list agree, and neither is a silent change of target.
    */
   googleGeoTargets?: string[];
+  /**
+   * Google's campaign languages, as ISO 639-1 codes the operator picked.
+   *
+   * Empty means "every language", which is Google's own default and what this path did before the
+   * list existed — so an absent field and an empty list agree, and neither narrows anything the
+   * operator did not ask to narrow. Same rule as {@link googleGeoTargets} above.
+   */
+  googleLanguages?: string[];
+  /**
+   * Google's callout extensions, as the operator typed them — already trimmed, because a callout
+   * only becomes a chip once it has passed the add guards.
+   *
+   * Empty means "no callouts", which is what this path sent before the list existed, so an absent
+   * field and an empty list agree. Restored whatever channel the draft was saved under: the section
+   * and the payload both gate on the dispatched channel, so a list restored under Performance Max
+   * is held rather than sent, and is still there if the operator switches back to Search.
+   */
+  googleCallouts?: string[];
+  /**
+   * Google's sitelink extensions, as the operator typed them.
+   *
+   * Held and restored on exactly the same rule as {@link googleCallouts}: absent and empty agree,
+   * and a list saved under a non-Search channel is kept rather than discarded.
+   */
+  googleSitelinks?: CampaignSitelink[];
   /**
    * The Google bidding section, as RAW form text — the same choice `googleCreatives` and
    * {@link microsoftCpcBid} make, and for the same reason: a draft hands the operator back the
@@ -1726,6 +1752,23 @@ export interface GoogleDisplayCreative {
   callToActionText?: string;
 }
 
+/**
+ * One Google sitelink extension: a label, its destination, and an optional two-line description.
+ *
+ * `finalUrl` is REQUIRED. Upstream (`assets.go`'s `validateSitelinks`) treats a sitelink with no
+ * destination as unservable rather than as a lesser sitelink, and refuses the whole create.
+ *
+ * The two description lines are ALL-OR-NOTHING: Google renders them together and rejects an asset
+ * carrying only one, so upstream refuses a sitelink that has exactly one of them. They are
+ * optional together, which is why both are optional here rather than required.
+ */
+export interface CampaignSitelink {
+  text: string;
+  description1?: string;
+  description2?: string;
+  finalUrl: string;
+}
+
 export interface CampaignCreateRequest {
   eventName: string;
   eventSlug: string;
@@ -1758,6 +1801,40 @@ export interface CampaignCreateRequest {
   performanceMaxCreative?: GooglePerformanceMaxCreative;
   displayCreative?: GoogleDisplayCreative;
   geoTargets: string[];
+  /**
+   * The languages the Google campaign serves in, as ISO 639-1 codes (`EN`, `DE`, `JA`) or raw
+   * numeric Google language constant ids.
+   *
+   * Optional, and OMITTED rather than sent empty when unset — upstream reads an absent list as
+   * Google's own default, which is to serve in EVERY language. So this is a narrowing, and an empty
+   * array and an absent key mean the same thing, exactly as they do for `geoTargets`.
+   *
+   * Accepted on every Google channel except Demand Gen — see
+   * {@link GOOGLE_CHANNELS_WITH_LANGUAGES}. Bounded by {@link GOOGLE_ADS_MAX_LANGUAGES}. Upstream
+   * resolves each ISO code against its own `languageConstants` table — which
+   * {@link GOOGLE_ADS_LANGUAGE_MAP} mirrors — and refuses an unknown one rather than dropping it; a
+   * numeric id skips that table and is resolved by Google.
+   */
+  languages?: string[];
+  /**
+   * The Google campaign's callout extensions — short claims appended to the text ad, carrying no
+   * link of their own.
+   *
+   * Optional and OMITTED when empty, not sent as `[]`. Upstream treats an absent list as "this
+   * campaign has no extensions", which is what every create on this path did before the field
+   * existed, so an absent key and an empty list agree — the same rule as {@link geoTargets}.
+   *
+   * SEARCH ONLY (`GOOGLE_CHANNELS_WITH_AD_EXTENSIONS`). On any other channel upstream refuses the
+   * create outright rather than dropping the list, so the UI withholds it there and the BFF refuses
+   * it by name.
+   */
+  callouts?: string[];
+  /**
+   * The Google campaign's sitelink extensions — extra links rendered under the text ad.
+   *
+   * Omitted when empty and SEARCH ONLY, on the same rule as {@link callouts}.
+   */
+  sitelinks?: CampaignSitelink[];
   /**
    * How the Google campaign bids, and the numbers that go with the strategy it names.
    *
@@ -3005,12 +3082,22 @@ export interface CampaignRow {
   bidUnavailableReason: string;
   /** Why an available bid editor cannot submit RIGHT NOW (stale validator, another write in flight), or `''`. */
   bidBlockedReason: string;
-  /** Whether the row shows the negative-keyword control at all: Microsoft Advertising campaigns only. */
+  /** Whether the row shows the negative-keyword control at all: Microsoft Advertising, Reddit and X campaigns (`NEGATIVE_KEYWORD_CAMPAIGN_PLATFORMS`). */
   negativeKeywordsOffered: boolean;
   /** Whether that control can be used (the campaign exists on the platform and is not deleted). */
   negativeKeywordsAvailable: boolean;
   /** Why the negative-keyword control is disabled — set when offered but not available, empty otherwise. */
   negativeKeywordsUnavailableReason: string;
+  /** The row's platform when it is offered negative keywords, which decides what the editor offers and sends; `null` otherwise. */
+  negativeKeywordsPlatform: NegativeKeywordCampaignPlatform | null;
+  /** Whether the row shows the keyword-targeting control at all: Reddit and X campaigns (`KEYWORD_TARGETING_CAMPAIGN_PLATFORMS`). */
+  keywordTargetingOffered: boolean;
+  /** Whether that control can be used (the campaign exists on the platform and is not deleted). */
+  keywordTargetingAvailable: boolean;
+  /** Why the keyword-targeting control is disabled — set when offered but not available, empty otherwise. */
+  keywordTargetingUnavailableReason: string;
+  /** The row's platform when it is offered keyword targeting; `null` otherwise. */
+  keywordTargetingPlatform: KeywordTargetingPlatform | null;
 }
 
 /** The bid the Optimize tab's bid editor submits, or that a change confirmed. */
@@ -3091,6 +3178,10 @@ export interface CampaignNegativeKeywordsRequestState {
   sent: string[];
   /** The match type the request was sent with, restored with them. */
   matchType: CampaignNegativeKeywordMatchType;
+  /** The campaign's ad platform, which words its outcomes ("Reddit refused it"). */
+  platform: NegativeKeywordCampaignPlatform;
+  /** How many requests of this campaign have settled: a change means Reddit's revision must be read again. */
+  settleCount: number;
 }
 
 /** One negative-keyword request, as the editor hands it to `CampaignNegativeKeywordsService`. */
@@ -3099,9 +3190,37 @@ export interface CampaignNegativeKeywordsSubmission {
   briefId: string;
   campaignId: string;
   campaignName: string;
+  /** The campaign's ad platform. Decides whether `revision` is sent: Reddit only. */
+  platform: NegativeKeywordCampaignPlatform;
   /** Parsed once by the editor and sent as-is: the outcomes are zipped onto this exact list. */
   keywords: string[];
   matchType: CampaignNegativeKeywordMatchType;
+  /**
+   * Reddit's compare-and-set token, from the campaign's keyword-targeting read. Sent ONLY for a
+   * Reddit campaign: Microsoft Advertising and X refuse the field whenever it is present, even empty.
+   */
+  revision?: string;
+}
+
+/** A platform whose campaigns take negative keywords through `add-negative-keywords`. */
+export type NegativeKeywordCampaignPlatform = 'microsoft-ads' | 'reddit-ads' | 'twitter-ads';
+
+/** What the negative-keyword editor offers and sends for one platform (`CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES`). */
+export interface CampaignNegativeKeywordPlatformRules {
+  /** The platform's name in outcome text ("Reddit refused it"). */
+  label: string;
+  /** The match types the platform takes for a negative, in display order. */
+  matchTypes: readonly CampaignNegativeKeywordMatchTypeOption[];
+  /** The match type the editor opens on. */
+  defaultMatchType: CampaignNegativeKeywordMatchType;
+  /** Most keywords one request may carry on this platform. */
+  maxKeywords: number;
+  /** Whether a request must carry the keyword-targeting read's `revision` (Reddit). */
+  requiresRevision: boolean;
+  /** Where the negatives land, for the field hint. */
+  destination: string;
+  /** The match-type hint under the choice. */
+  matchTypeHint: string;
 }
 
 /** One reporting-window choice of the Microsoft keyword table. */
@@ -3556,10 +3675,11 @@ export interface CampaignBidUpdateResult {
 
 /**
  * The match types a negative keyword may carry. Mirrors `negativeKeywordMatchTypeEnum` in
- * campaign-service's `design/brief.go`. Microsoft Advertising supports only these two for a
- * negative keyword, so `Broad` is not offered.
+ * campaign-service's `design/brief.go`. Each platform takes a subset and upstream refuses the rest
+ * with 400: Microsoft Advertising Exact or Phrase, X Broad, Phrase or Exact, Reddit Broad only
+ * (Reddit's excluded keywords carry no match type).
  */
-export type CampaignNegativeKeywordMatchType = 'Exact' | 'Phrase';
+export type CampaignNegativeKeywordMatchType = 'Exact' | 'Phrase' | 'Broad';
 
 /**
  * One negative keyword's outcome. Mirrors `negativeKeywordOutcomeEnum`.
@@ -3585,8 +3705,14 @@ export interface CampaignNegativeKeywordInput {
  */
 export interface CampaignNegativeKeywordsRequest {
   briefId: string;
-  /** 1 to 60 entries. `results[i]` in the response answers `negativeKeywords[i]`. */
+  /** 1 to 60 entries (1 to 20 on X). `results[i]` in the response answers `negativeKeywords[i]`. */
   negativeKeywords: CampaignNegativeKeywordInput[];
+  /**
+   * Reddit only, and required there: the `revision` the keyword-targeting read returned. Microsoft
+   * Advertising and X refuse the field (400) whenever it is present, even empty, so it is omitted
+   * rather than sent blank.
+   */
+  revision?: string;
 }
 
 /** Everything the server client needs to add negative keywords to one campaign. */
@@ -3595,6 +3721,8 @@ export interface CampaignNegativeKeywordsParams {
   briefId: string;
   campaignId: string;
   negativeKeywords: CampaignNegativeKeywordInput[];
+  /** Sent upstream only when defined (Reddit). */
+  revision?: string;
 }
 
 export interface CampaignNegativeKeywordResult {
@@ -3604,15 +3732,15 @@ export interface CampaignNegativeKeywordResult {
   outcome: CampaignNegativeKeywordOutcome;
   /** The platform's id for a negative keyword this request added. Absent for every other outcome. */
   negativeKeywordId?: string;
-  /** The platform's machine-readable error code for a FAILED keyword, when it named one. */
+  /** Why a keyword is FAILED: Microsoft's machine-readable code when it named one; NOT_SENT or REJECTED on Reddit and X. */
   errorCode?: string;
 }
 
 /**
  * The outcome of one negative-keywords request.
  *
- * NOT ATOMIC and POSITIONAL: Microsoft adds each negative independently, and `results[i]` answers
- * `negativeKeywords[i]` of the request. The BFF never filters or reorders `results`, so a caller
+ * NOT ATOMIC and POSITIONAL: Microsoft and X add each negative independently (Reddit's new ones share
+ * one write's outcome), and `results[i]` answers `negativeKeywords[i]` of the request. The BFF never filters or reorders `results`, so a caller
  * may zip them onto the list it sent.
  */
 export interface CampaignNegativeKeywordsResult {

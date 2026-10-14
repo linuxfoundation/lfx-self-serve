@@ -6,6 +6,7 @@ import {
   HEALTH_METRICS_RANGES,
   MAX_SNOWFLAKE_PAGINATION_PAGE,
   MONTH_FORMAT_REGEX,
+  ISO_DATE_OR_UTC_DATETIME_REGEX,
   AKRITES_ESCALATION_PATHS,
   AKRITES_INACTIVE_REASON_OPTIONS,
   AKRITES_STEWARD_ROLE_OPTIONS,
@@ -292,6 +293,38 @@ export function getValidatedMonth(req: Request, operation: string): string | und
   }
 
   return month;
+}
+
+/** Validates an optional date query param before it is bound into Snowflake. Returns the original string or undefined; invalid dates throw ServiceValidationError. */
+export function getValidatedIsoDateQueryParam(req: Request, name: string, operation: string): string | undefined {
+  const value = getStringQueryParam(req, name);
+  if (!value) return undefined;
+
+  const match = ISO_DATE_OR_UTC_DATETIME_REGEX.exec(value);
+  if (match && match[0] === value) {
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const hour = Number(match[4] ?? 0);
+    const minute = Number(match[5] ?? 0);
+    const second = Number(match[6] ?? 0);
+    // Date.UTC remaps years 0–99 to 1900–1999; setUTCFullYear preserves the four-digit input year.
+    const date = new Date(0);
+    date.setUTCFullYear(year, month - 1, day);
+    date.setUTCHours(hour, minute, second, 0);
+    if (
+      date.getUTCFullYear() === year &&
+      date.getUTCMonth() === month - 1 &&
+      date.getUTCDate() === day &&
+      date.getUTCHours() === hour &&
+      date.getUTCMinutes() === minute &&
+      date.getUTCSeconds() === second
+    ) {
+      return value;
+    }
+  }
+
+  throw ServiceValidationError.forField(name, `Invalid ${name}. Expected YYYY-MM-DD or an ISO 8601 UTC timestamp.`, { operation });
 }
 
 /** Validates an optional `period` query param (YTD preset, trailing preset, or YYYY-MM month). Falls back to `month` param for backward compatibility. Returns a resolved date range or undefined. */

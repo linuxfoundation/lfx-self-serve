@@ -89,8 +89,9 @@ describe('parseMentorshipMentorRegisterRequest', () => {
     expect(rejectedFields({ ...VALID_BODY, [flag]: false })).toEqual([flag]);
   });
 
-  it('rejects a skill the picker does not offer', () => {
-    expect(rejectedFields({ ...VALID_BODY, skills: ['Kubernetes', 'Not A Skill'] })).toEqual(['skills']);
+  it('accepts a custom skill outside the catalog', () => {
+    const body = { ...VALID_BODY, skills: ['Kubernetes', 'Custom Skill'] };
+    expect(parseMentorshipMentorRegisterRequest(body)).toEqual(body);
   });
 
   it('rejects an introduction over the cap', () => {
@@ -101,6 +102,13 @@ describe('parseMentorshipMentorRegisterRequest', () => {
     const request = parseMentorshipMentorRegisterRequest({ ...VALID_BODY, skills: ['Kubernetes', 'kubernetes', 'Linux', 'KUBERNETES'] });
 
     expect(request.skills).toEqual(['Kubernetes', 'Linux']);
+  });
+
+  it('trims skills, drops blanks, and rejects a list with nothing left', () => {
+    const request = parseMentorshipMentorRegisterRequest({ ...VALID_BODY, skills: ['  Go  ', 'go', '   ', 'Linux'] });
+
+    expect(request.skills).toEqual(['Go', 'Linux']);
+    expect(rejectedFields({ ...VALID_BODY, skills: ['   '] })).toEqual(['skills']);
   });
 });
 

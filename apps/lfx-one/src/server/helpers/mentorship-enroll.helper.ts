@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MENTORSHIP_MAX_OPEN_TERMS } from '@lfx-one/shared/constants';
+import { MENTORSHIP_MAX_OPEN_TERMS, MENTORSHIP_SKILLS_LIMIT_MESSAGE, MENTORSHIP_TECHNOLOGIES_LIMIT_MESSAGE } from '@lfx-one/shared/constants';
 import {
   MentorshipEnrollCreatePrerequisite,
   MentorshipEnrollCreateRequest,
@@ -17,7 +17,7 @@ import {
   MentorshipUpstreamOpenTerm,
   MentorshipUpstreamProgramUpdate,
 } from '@lfx-one/shared/interfaces';
-import { isUuid, toMentorshipUtcEndOfDayInstant, toMentorshipUtcInstant } from '@lfx-one/shared/utils';
+import { isMentorshipSkillListOverLimit, isUuid, toMentorshipUtcEndOfDayInstant, toMentorshipUtcInstant } from '@lfx-one/shared/utils';
 
 import { ServiceValidationError } from '../errors';
 import { parseTrimmedString } from './mentorship-params.helper';
@@ -86,7 +86,8 @@ const parsePrerequisite = (value: unknown, index: number, operation: string): Me
 /**
  * Validates the program fields that the create and update bodies share and rebuilds them from the known fields only, so a stray
  * `logo_url`, `status` or term `id` never reaches upstream. It checks for a project, the required text fields and at least one
- * skill, trims every text field but a prerequisite description, and leaves lengths, URLs and dates to the wizard and upstream,
+ * skill, holds the skills and the comma-separated `industry` technologies to the shared skill limits, trims every text field but a
+ * prerequisite description, and leaves other lengths, URLs and dates to the wizard and upstream,
  * which both check them. A field inside a list is named by its index (`prerequisites[1].name`). The optional text fields,
  * `industry` among them, are kept only when not blank. Nothing in the body is logged.
  */
@@ -105,6 +106,9 @@ const parseProgramFields = (raw: Record<string, unknown>, operation: string): Me
   const rawSkills = raw['skills'];
   if (!Array.isArray(rawSkills) || rawSkills.length === 0 || !rawSkills.every((skill) => parseTrimmedString(skill))) {
     throw ServiceValidationError.forField('skills', 'skills must be a list of at least one skill.', { operation });
+  }
+  if (isMentorshipSkillListOverLimit(rawSkills as string[])) {
+    throw ServiceValidationError.forField('skills', MENTORSHIP_SKILLS_LIMIT_MESSAGE, { operation });
   }
 
   if (!Array.isArray(raw['prerequisites'])) {
@@ -126,7 +130,14 @@ const parseProgramFields = (raw: Record<string, unknown>, operation: string): Me
   const websiteUrl = parseTrimmedString(raw['websiteUrl']);
   const codeOfConductUrl = parseTrimmedString(raw['codeOfConductUrl']);
   const ciiProjectId = parseTrimmedString(raw['ciiProjectId']);
-  const industry = parseTrimmedString(raw['industry']);
+  const technologies = (parseTrimmedString(raw['industry']) ?? '')
+    .split(',')
+    .map((technology) => technology.trim())
+    .filter(Boolean);
+  if (isMentorshipSkillListOverLimit(technologies)) {
+    throw ServiceValidationError.forField('industry', MENTORSHIP_TECHNOLOGIES_LIMIT_MESSAGE, { operation });
+  }
+  const industry = technologies.join(', ');
   if (projectLogoUrl) request.projectLogoUrl = projectLogoUrl;
   if (websiteUrl) request.websiteUrl = websiteUrl;
   if (codeOfConductUrl) request.codeOfConductUrl = codeOfConductUrl;

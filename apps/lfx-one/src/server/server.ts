@@ -18,13 +18,14 @@ import pinoHttp from 'pino-http';
 import { ProfileController } from './controllers/profile.controller';
 import { customErrorSerializer } from './helpers/error-serializer';
 import { attachGwDrainGuard, gwMountPath, isGwProxyPath } from './helpers/gw-api.helper';
+import { buildGwRuntimeConfig } from './helpers/gw-runtime-config.helper';
 import { applySsrCacheHeaders } from './helpers/ssr-cache-headers.helper';
 import { applySsrRenderStatus } from './helpers/ssr-render-status.helper';
-import { resolvePublishableGwSupabaseKey } from './helpers/supabase-key.helper';
 import { validateAndSanitizeUrl } from './helpers/url-validation';
 import { AuthenticationError } from './errors';
 import { authMiddleware } from './middleware/auth.middleware';
 import { clearIntercomCookies } from './middleware/clear-intercom-cookies.middleware';
+import { endGatewazeSessionOnLogout } from './middleware/end-gatewaze-session-on-logout.middleware';
 import { apiErrorHandler } from './middleware/error-handler.middleware';
 import { apiRateLimiter, authRateLimiter, publicApiRateLimiter } from './middleware/rate-limit.middleware';
 import analyticsRouter from './routes/analytics.route';
@@ -39,6 +40,7 @@ import documentsRouter from './routes/documents.route';
 import enrollmentRouter from './routes/enrollment.route';
 import eventsRouter from './routes/events.route';
 import formationsRouter from './routes/formations.route';
+import gatewazeRouter from './routes/gatewaze.route';
 import projectApplicationsRouter from './routes/project-applications.route';
 import gwEmbedStylesheetRouter from './routes/gw-embed-stylesheet.route';
 import gwProxyRouter from './routes/gw-proxy.route';
@@ -78,6 +80,7 @@ import akritesRouter from './routes/akrites.route';
 import mktgAgentsRouter from './routes/mktg-agents.route';
 import weeklyBriefRouter from './routes/weekly-brief.route';
 import { reqSerializer, resSerializer, serverLogger } from './server-logger';
+import { getGatewazeRealtimeService } from './services/gatewaze-realtime.service';
 import { LaunchDarklyServerService } from './services/launchdarkly-server.service';
 import { logger } from './services/logger.service';
 import { NatsService } from './services/nats.service';
@@ -129,10 +132,12 @@ app.use(
   compression({
     level: 6,
     threshold: 1024,
-    // Exclude /api/gw: gw-proxy.controller.ts streams the upstream Gatewaze response body
-    // straight through byte-for-byte, so this middleware must never re-compress or re-wrap it.
-    // The body reaching here is already plaintext — undici decodes whatever the upstream encoded —
-    // so the exclusion is about not re-wrapping a proxied stream, not about what it arrived as.
+    // Exclude /api/gw and /api/gatewaze: gw-proxy.controller.ts and gatewaze-proxy.controller.ts
+    // stream the upstream response body straight through byte-for-byte, so this middleware must
+    // never re-compress or re-wrap it. The two arrive differently. /api/gw's body is already
+    // plaintext, because undici decodes whatever the upstream encoded. /api/gatewaze's is still
+    // encoded, because @gatewaze/host-session forwards over node:http, and its Content-Encoding is
+    // passed through with it, so compressing it again would corrupt it.
     //
     // This is the exclusion that silently did nothing, and `gwMountPath` is why it now works: the
     // filter is deferred to the first `res.write`, by which point `req.path` has been trimmed to
@@ -151,10 +156,10 @@ app.use(
   })
 );
 
-// /api/gw (gw-proxy.route.ts) is excluded from both parsers below: it forwards the request body to
-// GW_API_URL byte-for-byte and content-type-agnostically (JSON, multipart, or anything else), so it
-// needs the raw, unconsumed request stream rather than a parsed body it would have to
-// re-serialize. These two mounts run before authMiddleware (like the parsers they wrap), so
+// /api/gw (gw-proxy.route.ts) and /api/gatewaze (gatewaze.route.ts) are excluded from both parsers
+// below. Each forwards the request body upstream byte-for-byte and content-type-agnostically (JSON,
+// multipart, or anything else), so it needs the raw, unconsumed request stream rather than a parsed
+// body it would have to re-serialize. These two mounts run before authMiddleware (like the parsers they wrap), so
 // exclusion by path is used here rather than mounting gwProxyRouter "before" them — see
 // gw-proxy.route.ts's own mount below, after authMiddleware, for the auth-ordering half of this.
 const jsonBodyParser = express.json({ limit: '15mb' });
@@ -174,7 +179,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   urlencodedBodyParser(req, res, next);
 });
 
-// See `attachGwDrainGuard`: /api/gw is excluded from the body parsers above, so a middleware
+// See `attachGwDrainGuard`: /api/gw and /api/gatewaze are excluded from the body parsers above, so a middleware
 // between here and the proxy router that answers on its own (401, 429) would otherwise leave an
 // in-progress upload unread and the connection unable to close.
 app.use((req: Request, res: Response, next: NextFunction) => {
@@ -350,6 +355,9 @@ if (sessionStoreEnabled) {
 
 // Also registered before auth(authConfig), for the same /logout reason as above.
 app.use('/logout', clearIntercomCookies(authConfig.baseURL as string));
+// Same reason: revokes and deletes the user's Gatewaze host session. Bounded, and always calls
+// next(), so a Gatewaze or Valkey fault never blocks the LFX logout.
+app.use('/logout', endGatewazeSessionOnLogout);
 
 app.use(auth(authConfig));
 
@@ -457,6 +465,12 @@ app.use('/api/mktg-agents', mktgAgentsRouter);
 // above, per the spec; see the body-parser/compression exclusions above for the other half of
 // this route's isolation from global middleware.
 app.use('/api/gw', gwProxyRouter);
+// Gatewaze host-session mode: the embed's session check and sign-out, and its Supabase and API
+// proxies, answered with the session LFX One holds for the user (gw-host-session.md). A uniform 404
+// unless LFX_GATEWAZE_HOST_SESSION and its config are on, then the same authorization as /api/gw.
+// The proxies stream the raw body like /api/gw, so `isGwProxyPath` gives this mount the same
+// body-parser, compression and drain-guard exclusions above.
+app.use('/api/gatewaze', gatewazeRouter);
 
 app.use('/public/api/*', apiErrorHandler);
 app.use('/api/*', apiErrorHandler);
@@ -558,17 +572,7 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     allowedTracingUrls: [process.env['LFX_V2_SERVICE'], process.env['PCC_BASE_URL']].filter(Boolean) as string[],
     intercomAppId: process.env['INTERCOM_APP_ID'] || '',
     stripePublishableKey: process.env['STRIPE_PUBLISHABLE_KEY'] || '',
-    // Gatewaze admin embed pilot (both mounts — see GW_EMBED_ROUTE_PREFIXES) — see RuntimeConfig's doc comments for the
-    // ASSUMPTION notes: no real Supabase project or LFID start URL exist for this pilot yet, so
-    // these are empty (falsy) until the real values are provided.
-    gwSupabaseUrl: process.env['GW_SUPABASE_URL'] || '',
-    // Withheld unless it is actually publishable. This value lands in the SSR payload of every
-    // page, so a service-role key pasted here would hand full RLS-bypassing database access to
-    // anyone who views source. The outlet already fails closed on an empty key with a clear
-    // "not configured" message, which is the right outcome for a misconfiguration.
-    gwSupabaseAnonKey: resolvePublishableGwSupabaseKey(req),
-    gwLfidStartUrl: process.env['GW_LFID_START_URL'] || '',
-    gwEmbedUrl: process.env['GW_EMBED_URL'] || '',
+    ...buildGwRuntimeConfig(req),
   };
 
   logger.debug(req, 'intercom_ssr_context', 'Intercom SSR inputs resolved', {
@@ -804,6 +808,10 @@ export function startServer() {
       boot_ms: Math.round(performance.now()),
     });
   });
+  // Gatewaze Realtime WebSocket upgrades. Hooked here because only this server sees them: under
+  // `ng serve` Express is mounted through `createNodeRequestHandler` and upgrades go to the dev
+  // server, so Realtime works only on a built server. Each upgrade runs through `app`.
+  getGatewazeRealtimeService().attach(httpServer, app);
 }
 
 const metaUrl = import.meta.url;

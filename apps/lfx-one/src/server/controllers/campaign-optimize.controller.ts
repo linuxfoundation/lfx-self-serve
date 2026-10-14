@@ -35,7 +35,7 @@ import type { NextFunction, Request, Response } from 'express';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
-import { toMicrosoftKeywordMetricsResponse } from '../services/campaign-insights-mapper';
+import { toRedditKeywordMetricsResponse } from '../services/campaign-insights-mapper';
 import { CampaignOptimizeService } from '../services/campaign-optimize.service';
 import { isCampaignServiceJobId } from '../services/campaign-service.service';
 import { logger } from '../services/logger.service';
@@ -47,8 +47,8 @@ import { logger } from '../services/logger.service';
  *
  * These have no legacy arm, so — following the Microsoft keyword read and the budget and bid
  * levers — they are not behind a cutover flag. The exceptions are the reads whose upstream
- * endpoint is not on campaign-service `main` yet (the Reddit and LinkedIn audience reads, the
- * LinkedIn campaign-ref resolve and the Reddit keyword read), which answer 404 unless
+ * endpoint is not on campaign-service `main` yet (the Reddit and LinkedIn audience reads and the
+ * LinkedIn campaign-ref resolve), which answer 404 unless
  * `LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS` is on.
  *
  * Inputs are checked against the upstream contract before any round trip: project slug present,
@@ -125,15 +125,12 @@ export class CampaignOptimizeController {
   }
 
   /**
-   * `GET /api/campaigns/reddit/keywords?project=&window=`: the Microsoft keyword table's sibling,
-   * mapped the same way. Behind `LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS` until campaign-service serves it.
+   * `GET /api/campaigns/reddit/keywords?project=&window=`: Reddit keyword performance from
+   * campaign-service's `get-reddit-ads-keywords` (#331), read-only. Not flag-gated: upstream serves
+   * it, and answers 400 itself while its `REDDIT_METRICS_ENABLED` is off.
    */
   public async getRedditKeywords(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'campaign_reddit_keywords';
-    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceOptimizeReads)) {
-      next(new ResourceNotFoundError('Route', undefined, { operation, service: 'campaign_optimize_controller', path: req.path }));
-      return;
-    }
     const projectSlug = readProject(req);
     if (!projectSlug) {
       next(fieldError('project', 'A project is required to read keywords', operation, req));
@@ -152,8 +149,8 @@ export class CampaignOptimizeController {
     const startTime = logger.startOperation(req, operation, { window });
     try {
       const payload = await this.optimizeService.getRedditAdsKeywords(req, projectSlug, window);
-      const data = toMicrosoftKeywordMetricsResponse(payload, new Date().toISOString());
-      logger.success(req, operation, startTime, { keywords: data.totalKeywords, metricsPending: data.metricsPending });
+      const data = toRedditKeywordMetricsResponse(payload, new Date().toISOString());
+      logger.success(req, operation, startTime, { keywords: data.totalKeywords, truncated: data.truncated });
       res.json(data);
     } catch (error) {
       next(error);

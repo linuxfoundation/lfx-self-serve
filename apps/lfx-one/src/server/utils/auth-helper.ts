@@ -236,9 +236,17 @@ export function isImpersonating(req: Request): boolean {
 
 /** Checks live session state before auth middleware freezes the decision on the request. */
 export function hasActiveImpersonationSession(req: Request): boolean {
-  const token = req.appSession?.['impersonationToken'];
-  const expiresAt = req.appSession?.['impersonationExpiresAt'];
-  return typeof token === 'string' && !!token && typeof expiresAt === 'number' && Date.now() < expiresAt && !!req.appSession?.['impersonationUser'];
+  return hasActiveImpersonation(req.appSession);
+}
+
+/**
+ * The same check on session data alone, for code that holds a stored session rather than a request,
+ * e.g. the Gatewaze Realtime socket re-checking its LFX session before each token refresh.
+ */
+export function hasActiveImpersonation(appSession: Record<string, unknown> | undefined | null): boolean {
+  const token = appSession?.['impersonationToken'];
+  const expiresAt = appSession?.['impersonationExpiresAt'];
+  return typeof token === 'string' && !!token && typeof expiresAt === 'number' && Date.now() < expiresAt && !!appSession?.['impersonationUser'];
 }
 
 /**

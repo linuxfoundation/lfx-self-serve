@@ -49,7 +49,7 @@ A skeleton shows from the first browser render until the embed mounts or fails, 
 Two consequences:
 
 - Admin changes reach this page on the next load. Gatewaze ships them by deploying its own image; no LFX release is involved.
-- The loader is only bumped when its host contract changes. A bundle built for a different contract is refused with `gw_embed_contract_mismatch` rather than mounted, which is the signal that the dependency needs a bump.
+- The loader is bumped when its host contract changes, or to use a capability the loader checks for. A bundle built for a different contract is refused with `gw_embed_contract_mismatch` rather than mounted, which is the signal that the dependency needs a bump. The `host-session` capability is the second case: it needed loader 1.1.0 with the contract still at 1.
 
 The bundle is served by the same deployment as the API this host proxies to and the database behind it, so the embed can never run ahead of its own backend.
 
@@ -90,7 +90,37 @@ The LFX theme layer (`src/styles/gw-embed-theme.css`) is appended **after** the 
 
 ## Sign-in
 
-The embed has its own session, established through LFID. The host drives the round trip:
+The outlet mounts the embed in one of two modes. `RuntimeConfig.gwHostSession` picks the mode on each page load. The server computes it with the same check its `/api/gatewaze` routes use, so the outlet and the routes cannot disagree.
+
+### Host-session mode
+
+This mode is on when `LFX_GATEWAZE_HOST_SESSION` is set and the rest of the host-session config is in place (see [Gatewaze Host Session](../backend/gw-host-session.md)). LFX One holds the Gatewaze session on the server, keyed off the LFX session cookie. The browser holds no Gatewaze token, so nothing is stored in `localStorage` and nothing arrives on the URL.
+
+The outlet passes this context to the loader:
+
+| Field                | Value                                                                                                                                                               |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session`            | `{ mode: 'host', meUrl: '/api/gatewaze/session/me', logoutUrl: '/api/gatewaze/session/logout' }`                                                                    |
+| `supabase.url`       | `<page origin>/api/gatewaze/supabase`, the LFX proxy for REST, Storage and Functions (`gatewaze-proxy.controller.ts`) and Realtime (`gatewaze-realtime.service.ts`) |
+| `supabase.publicUrl` | `GW_SUPABASE_URL`, so saved public storage URLs point at Supabase and not at LFX                                                                                    |
+| `supabase.anonKey`   | The publishable key, as in the bridge                                                                                                                               |
+| `apiBaseUrl`         | `/api/gatewaze`. The embed calls `${apiBaseUrl}/api/...`, which lands on the `/api/gatewaze/api` proxy                                                              |
+| `signIn`             | Not set                                                                                                                                                             |
+| `storageKeySuffix`   | Not set                                                                                                                                                             |
+
+Other rules in this mode:
+
+- The outlet never starts LFID. When a proxied call reports the session expired, the embed reloads the page, at most twice in 30 seconds, and LFX's own auth guard handles a dead LFX session from there. A 401 from `/session/me`, or a session still lost after those reloads, sends the embed to `/login`, and the outlet shows the error panel there.
+- When the app starts in the browser, `provideGwEmbedBridgeCleanup` deletes every session the bridge stored under `GW_EMBED_STORAGE_KEY_PREFIX`, and the bridge's sign-in keys in `sessionStorage`. It runs on every page, so a user who never opens the embed again keeps no Gatewaze refresh token on this origin.
+- On mount, the outlet clears a bridge return leg from the URL, i.e. a token fragment or the sign-in nonce. A plain `#section` anchor stays.
+- `supabase.publicUrl` must be https, or http on `localhost`, `127.0.0.1` or `*.localhost`. The server allows a plain http `GW_SUPABASE_URL` outside production, but the embed refuses any other http host with `gw_ctx_supabase.publicUrl_invalid`, and the outlet shows the error panel. A local stack must use a `*.localhost` name (e.g. `http://supabase.aaif.localhost`) or https.
+- The loader refuses to mount a bundle whose manifest does not list the `host-session` capability, and reports `gw_embed_capability_missing`. A bundle older than the mode would ignore `session` and keep its own token in `localStorage`. The outlet treats that error as terminal whatever its `recoverable` flag says, shows the error panel and logs it with `console.error`. Only a newer Gatewaze deployment, or turning the flag off, fixes it.
+
+This mode needs `@gatewaze/admin-embed` 1.1.0 or later. The host contract is still 1, so the same loader also runs the bridge.
+
+### LFID bridge
+
+With host-session mode off, the embed has its own session, established through LFID. The host drives the round trip:
 
 1. `startSignIn()` sends the user to `GW_LFID_START_URL` with a return URL carrying a single-use nonce (`crypto.randomUUID()`, held in `sessionStorage`).
 2. On return, `adoptAuthFragment()` reads the token fragment, **requires the nonce back**, checks the returned account's email against the LFX user, clamps `expires_in`, and writes the session under an isolated storage key.

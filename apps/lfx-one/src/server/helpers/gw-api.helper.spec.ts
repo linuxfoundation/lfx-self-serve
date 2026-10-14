@@ -251,6 +251,9 @@ describe('isGwProxyPath', () => {
     ['a path under the mount', '/api/gw/newsletters/123'],
     ['an upper-cased mount, which Express routes case-insensitively', '/API/GW/newsletters'],
     ['a mixed-case mount', '/Api/Gw/media'],
+    ['the bare host-session mount', '/api/gatewaze'],
+    ['a host-session Supabase path', '/api/gatewaze/supabase/storage/v1/object/media/a.png'],
+    ['a host-session API path, upper-cased', '/API/GATEWAZE/api/modules/x'],
   ])('matches %s', (_label, path) => {
     expect(isGwProxyPath(path)).toBe(true);
   });
@@ -259,6 +262,7 @@ describe('isGwProxyPath', () => {
     ['a sibling sharing the prefix', '/api/gwidgets'],
     ['a sibling under that prefix', '/api/gwidgets/list'],
     ['an unrelated api route', '/api/meetings'],
+    ['a sibling sharing the host-session prefix', '/api/gatewazex/upload'],
     ['the mount without its leading segment', '/gw/newsletters'],
     ['empty', ''],
   ])('does not match %s', (_label, path) => {

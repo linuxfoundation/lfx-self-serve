@@ -14,6 +14,8 @@ import {
   GOOGLE_ADS_BIDDING_BOUNDS,
   GOOGLE_ADS_CHANNEL_TYPE_ENUMS,
   GOOGLE_ADS_CONVERSION_ACTION_PATTERN,
+  GOOGLE_ADS_LANGUAGE_LABELS,
+  GOOGLE_ADS_LANGUAGE_MAP,
   GOOGLE_ADS_MAX_CONVERSION_ACTIONS,
   GOOGLE_BIDDING_CPA_STRATEGIES,
   GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
@@ -43,6 +45,11 @@ import {
   normalizeGeoTargets,
   normalizeMicrosoftGeoTargets,
   resolveRedditOptimizationGoal,
+  googleAdsEchoed,
+  googleAdsToLower,
+  googleAdsTrimSpace,
+  googleAdsUrlGoParseFlaw,
+  isGoSpaceCode,
 } from './campaign.constants';
 
 describe('campaignToggleAction', () => {
@@ -928,5 +935,92 @@ describe('resolveRedditOptimizationGoal', () => {
    */
   it.each(['constructor', 'toString', 'valueOf', 'hasOwnProperty', '__proto__'])('refuses the inherited prototype key %s', (objective) => {
     expect(() => resolveRedditOptimizationGoal(objective as RedditObjective)).toThrow(`Unsupported Reddit objective: ${objective}`);
+  });
+});
+
+describe('Google Ads language tables', () => {
+  /**
+   * The two maps share no type-level key constraint — `GOOGLE_ADS_LANGUAGE_MAP` is a plain
+   * `Record<string, string>` so it stays a line-for-line mirror of upstream's `languageConstants` —
+   * so this is what ties them. A code in the map and not the labels would be a language upstream
+   * accepts that the picker never offers; the reverse would offer one with no constant id behind it.
+   */
+  it('labels exactly the codes the language map carries', () => {
+    expect(Object.keys(GOOGLE_ADS_LANGUAGE_LABELS).sort()).toEqual(Object.keys(GOOGLE_ADS_LANGUAGE_MAP).sort());
+  });
+});
+
+/** Go's `strings.TrimSpace` and `strings.ToLower`, the two rules upstream's callout checks use. */
+describe('Google Ads string rules', () => {
+  it.each([
+    ['ASCII space and tabs', ' \tFree\n', 'Free'],
+    ['U+0085, which Go trims and JS `trim` keeps', '\u0085Free\u0085', 'Free'],
+    ['no-break and line separators', '\u00a0Free\u2028', 'Free'],
+    ['U+FEFF, which JS `trim` strips and Go keeps', '\ufeffFree', '\ufeffFree'],
+  ])('trims %s as Go does', (_label, input, expected) => {
+    expect(googleAdsTrimSpace(input)).toBe(expected);
+  });
+
+  it("matches Go's `unicode.IsSpace` on every UTF-16 code unit", () => {
+    // `\t`–`\r`, U+0085 and category Z: Go's set, written as a regex only here, as the reference.
+    const goSpace = /^[\t\n\v\f\r\u0085\p{Z}]$/u;
+    const mismatches: number[] = [];
+    for (let code = 0; code <= 0xffff; code++) {
+      if (isGoSpaceCode(code) !== goSpace.test(String.fromCharCode(code))) mismatches.push(code);
+    }
+
+    expect(mismatches).toEqual([]);
+  });
+
+  it('trims a long interior whitespace run in linear time', () => {
+    // A `[ws]+$` regex backtracks quadratically here: 40,000 spaces took about 2.5 s.
+    const text = `x${' '.repeat(1_000_000)}x`;
+    const started = Date.now();
+
+    expect(googleAdsTrimSpace(` ${text} `)).toBe(text);
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  it.each([
+    ['short text, unchanged', 'Free shipping', 'Free shipping'],
+    ['long text, cut at 32 code points', 'A'.repeat(40), `${'A'.repeat(32)}…`],
+    ['an emoji at the cut, kept whole', `${'A'.repeat(31)}🎉🎉`, `${'A'.repeat(31)}🎉…`],
+  ])('echoes %s', (_label, input, expected) => {
+    expect(googleAdsEchoed(input)).toBe(expected);
+  });
+
+  it.each([
+    ['a final sigma, with no word-end rule', 'ΟΔΟΣ', 'οδοσ'],
+    ['a dotted capital I, to a plain i', 'İnfo', 'info'],
+    ['ASCII', 'Free Shipping', 'free shipping'],
+  ])('lower-cases %s as Go does', (_label, input, expected) => {
+    expect(googleAdsToLower(input)).toBe(expected);
+  });
+
+  it.each([
+    ['a plain https URL', 'https://events.example.org/register?utm=a&b=c#top', false],
+    ['an uppercase scheme', 'HTTPS://events.example.org/', false],
+    ['a valid percent escape', 'https://events.example.org/a%20b', false],
+    ['a semicolon in the fragment, which is not the query', 'https://events.example.org/#a;b', false],
+    ['a semicolon in the query', 'https://events.example.org/?a=1;b=2', true],
+    ['a stray percent sign', 'https://events.example.org/50%off', true],
+    ['a percent sign with one hex digit', 'https://events.example.org/?q=%2', true],
+    ['no `//` after the scheme', 'https:events.example.org', true],
+    ['backslashes for slashes', 'https:\\\\events.example.org', true],
+    // Found by running Go's `url.Parse` and this helper over the same generated corpus.
+    ['a newline inside the host, which `new URL()` deletes', 'https://exa\nmple.org/path', true],
+    ['a tab inside the path', 'https://events.example.org/pa\tth', true],
+    ['a C0 control in the query', 'https://events.example.org/?a=\u0001', true],
+    ['DEL in the path', 'https://events.example.org/a\u007fb', true],
+    ['a control character in the fragment, which Go cuts off before checking', 'https://events.example.org/#a\u0001b', false],
+    ['a backslash inside the authority', 'https://events.example.org\\path', true],
+    ['a backslash in the path, which both parsers accept', 'https://events.example.org/a\\b', false],
+    ['a brace in the host', 'https://{events.example.org/', true],
+    ['a backtick in the host', 'https://ev`ents.example.org/', true],
+    ['a percent escape in the host', 'https://ev%41nts.example.org/', true],
+    ['an empty userinfo, which Go still refuses', 'https://@events.example.org/', true],
+    ['an empty authority', 'https:///register', true],
+  ])("flags %s as Go's parser would", (_label, url, expected) => {
+    expect(googleAdsUrlGoParseFlaw(url)).toBe(expected);
   });
 });

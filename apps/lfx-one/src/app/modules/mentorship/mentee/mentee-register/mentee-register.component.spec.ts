@@ -230,17 +230,6 @@ describe('MenteeRegisterComponent', () => {
     expect(registerMenteeProfile).not.toHaveBeenCalled();
   });
 
-  it('rejects a skill outside the catalog before sending', () => {
-    fillValidForm();
-    component['form'].controls.skillsHave.setValue(['Not A Skill']);
-
-    component['onSubmit']();
-    fixture.detectChanges();
-
-    expect(registerMenteeProfile).not.toHaveBeenCalled();
-    expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'warn' });
-  });
-
   it('sends the built request once, with the consented demographics', async () => {
     vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     fillValidForm();

@@ -7,6 +7,8 @@ import { Router } from '@angular/router';
 import {
   GW_EMBED_AUTO_SIGNIN_KEY,
   GW_EMBED_AUTO_SIGNIN_MAX_ATTEMPTS,
+  GW_EMBED_HOST_SESSION_LOGOUT_URL,
+  GW_EMBED_HOST_SESSION_ME_URL,
   GW_EMBED_SESSION_RECOVERY_COOLDOWN_MS,
   GW_EMBED_SESSION_RECOVERY_KEY,
   GW_EMBED_SIGNIN_STATE_KEY,
@@ -14,6 +16,7 @@ import {
   GW_EMBED_STORAGE_KEY_PREFIX,
   GW_EMBED_STORAGE_KEY_SUFFIX,
   GW_EMBED_STYLESHEET_ROUTE,
+  GW_EMBED_CAPABILITY_MISSING_CODE,
 } from '@lfx-one/shared/constants';
 import { GwEmbedManifest, GwHostContext, RuntimeConfig } from '@lfx-one/shared/interfaces';
 import { EMPTY } from 'rxjs';
@@ -207,6 +210,20 @@ describe('GwModuleOutletComponent', () => {
       callPrivate('handleHostNavigation', '/foundation/gw/login');
 
       expect(component['signInRequired']()).toBe(true);
+    });
+
+    it('never starts LFID in host-session mode, and shows the error panel instead', () => {
+      // The server holds the session there, so a sign-in round trip cannot fix anything.
+      TestBed.inject(TransferState).set(RUNTIME_CONFIG_KEY, { ...DEFAULT_RUNTIME_CONFIG, gwHostSession: true });
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+      callPrivate('handleHostNavigation', '/foundation/gw/login');
+
+      expect(window.sessionStorage.getItem(GW_EMBED_AUTO_SIGNIN_KEY)).toBeNull();
+      expect(window.sessionStorage.getItem(GW_EMBED_SIGNIN_STATE_KEY)).toBeNull();
+      expect(component['signInRequired']()).toBe(false);
+      expect(component['mountError']()).toContain('Reload the page');
+      expect(warn).toHaveBeenCalled();
     });
 
     it('ignores a query string when matching the login path', () => {
@@ -619,7 +636,7 @@ describe('GwModuleOutletComponent', () => {
       expect(loaderMount).toHaveBeenCalledTimes(1);
       const ctx = loaderMount.mock.calls[0][1] as GwHostContext;
       expect(ctx.source.baseUrl).toBe(EMBED_URL);
-      expect(ctx.signIn.startUrl).toBe('https://sso.example.test/start');
+      expect(ctx.signIn?.startUrl).toBe('https://sso.example.test/start');
       expect(ctx.source.resolveStylesheetUrl?.(`${EMBED_URL}/admin-embed-def.css`)).toBe(`${GW_EMBED_STYLESHEET_ROUTE}/admin-embed-def.css`);
       resolveReady(MANIFEST);
       await pending;
@@ -654,6 +671,127 @@ describe('GwModuleOutletComponent', () => {
       resolveReady(null);
       await pending;
       expect(browserComponent['mountError']()).toBeNull();
+    });
+
+    it('mounts the LFID bridge exactly as before while host-session mode is off', async () => {
+      const pending = mount();
+      await settle();
+      const ctx = loaderMount.mock.calls[0][1] as GwHostContext;
+      expect(ctx.session).toBeUndefined();
+      expect(ctx.supabase).toEqual({ url: 'https://data.example.test', anonKey: 'anon' });
+      expect(ctx.apiBaseUrl).toBe('');
+      expect(ctx.storageKeySuffix).toBe(GW_EMBED_STORAGE_KEY_SUFFIX);
+      resolveReady(MANIFEST);
+      await pending;
+    });
+
+    describe('host-session mode', () => {
+      const STORED_KEY = `${GW_EMBED_STORAGE_KEY_PREFIX}${GW_EMBED_STORAGE_KEY_SUFFIX}`;
+
+      beforeEach(() => configure({ gwHostSession: true }));
+      afterEach(() => window.history.replaceState(window.history.state, '', window.location.pathname));
+
+      it('hands the loader the host-session context: proxies on this origin, the real URL as publicUrl', async () => {
+        const pending = mount();
+        await settle();
+        const ctx = loaderMount.mock.calls[0][1] as GwHostContext;
+        expect(ctx.session).toEqual({ mode: 'host', meUrl: GW_EMBED_HOST_SESSION_ME_URL, logoutUrl: GW_EMBED_HOST_SESSION_LOGOUT_URL });
+        expect(ctx.supabase).toEqual({
+          url: `${window.location.origin}/api/gatewaze/supabase`,
+          anonKey: 'anon',
+          publicUrl: 'https://data.example.test',
+        });
+        // The embed calls `${apiBaseUrl}/api/...`, so this lands on the /api/gatewaze/api proxy.
+        expect(ctx.apiBaseUrl).toBe('/api/gatewaze');
+        expect(ctx.source.baseUrl).toBe(EMBED_URL);
+        resolveReady(MANIFEST);
+        await pending;
+      });
+
+      it('passes no LFID sign-in and no storage key, so the embed keeps no token in the browser', async () => {
+        const pending = mount();
+        await settle();
+        const ctx = loaderMount.mock.calls[0][1] as GwHostContext;
+        expect(ctx.signIn).toBeUndefined();
+        expect(ctx.storageKeySuffix).toBeUndefined();
+        expect(JSON.stringify(ctx)).not.toContain('https://sso.example.test/start');
+        resolveReady(MANIFEST);
+        await pending;
+      });
+
+      it('clears a sign-in nonce left on the query with no fragment', async () => {
+        window.history.replaceState(window.history.state, '', `${window.location.pathname}?${GW_EMBED_SIGNIN_STATE_PARAM}=nonce-1&project=aaif`);
+
+        const pending = mount();
+        await settle();
+
+        expect(window.location.search).toBe('?project=aaif');
+        resolveReady(MANIFEST);
+        await pending;
+      });
+
+      it('clears a bridge token fragment and adopts nothing from it', async () => {
+        window.sessionStorage.setItem(GW_EMBED_SIGNIN_STATE_KEY, 'nonce-1');
+        window.history.replaceState(
+          window.history.state,
+          '',
+          `${window.location.pathname}?${GW_EMBED_SIGNIN_STATE_PARAM}=nonce-1#access_token=at&refresh_token=rt`
+        );
+        const fetchSpy = vi.spyOn(window, 'fetch');
+
+        const pending = mount();
+        await settle();
+
+        expect(window.location.hash).toBe('');
+        expect(window.location.search).toBe('');
+        expect(fetchSpy).not.toHaveBeenCalled();
+        expect(window.localStorage.getItem(STORED_KEY)).toBeNull();
+        resolveReady(MANIFEST);
+        await pending;
+      });
+
+      it('leaves a plain in-page anchor alone', async () => {
+        window.history.replaceState(window.history.state, '', `${window.location.pathname}#section`);
+
+        const pending = mount();
+        await settle();
+
+        expect(window.location.hash).toBe('#section');
+        resolveReady(MANIFEST);
+        await pending;
+      });
+
+      it('fails closed with the error panel, and logs it, when the deployment lacks the host-session capability', async () => {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const pending = mount();
+        await settle();
+        const ctx = loaderMount.mock.calls[0][1] as GwHostContext;
+        const fatal = {
+          error_type: 'import_failed' as const,
+          code: GW_EMBED_CAPABILITY_MISSING_CODE,
+          message: 'The hosted embed (1.3.100) does not support host-session mode. Upgrade the Gatewaze deployment.',
+          recoverable: false,
+        };
+        ctx.onFatal?.(fatal);
+        resolveReady(null);
+        await pending;
+
+        expect(browserComponent['mountError']()).toContain('newer Gatewaze deployment');
+        expect(browserComponent['signInRequired']()).toBe(false);
+        expect(error).toHaveBeenCalledWith(expect.stringContaining('host-session'), fatal);
+      });
+
+      it('fails closed on a capability-missing fatal even if it were marked recoverable', async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const pending = mount();
+        await settle();
+        const ctx = loaderMount.mock.calls[0][1] as GwHostContext;
+        ctx.onFatal?.({ error_type: 'import_failed', code: GW_EMBED_CAPABILITY_MISSING_CODE, message: 'missing', recoverable: true });
+        resolveReady(null);
+        await pending;
+
+        expect(browserComponent['mountError']()).toContain('newer Gatewaze deployment');
+      });
     });
 
     it('leaves a panel that onFatal already raised in place', async () => {
