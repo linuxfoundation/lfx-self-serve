@@ -2669,7 +2669,8 @@ export class MeetingService {
    * Whether `candidate` should supply a merged participant's record over `current`: an attended
    * record over one that did not attend, and between two attended records the better-identified
    * one (`PAST_MEETING_IDENTITY_TIER_RANK`, N-02), so the identity flags and names the merge keeps
-   * do not depend on the order the query returns the duplicates in. A tie keeps `current`.
+   * do not depend on the order the query returns the duplicates in. Between equals, a record an
+   * organizer left unknown wins; any other tie keeps `current`.
    */
   private isPreferredPastMeetingRecord(candidate: PastMeetingParticipant, current: PastMeetingParticipant): boolean {
     if (candidate.is_attended !== current.is_attended) {
@@ -2679,7 +2680,12 @@ export class MeetingService {
       return false;
     }
     const rank = (participant: PastMeetingParticipant): number => PAST_MEETING_IDENTITY_TIER_RANK[getPastMeetingIdentityTier(participant) ?? 'unverified'];
-    return rank(candidate) > rank(current);
+    if (rank(candidate) !== rank(current)) {
+      return rank(candidate) > rank(current);
+    }
+    // Between two unverified records, an organizer's explicit "Leave unknown" wins: reconciliation
+    // skips is_unknown, so keeping the other record would queue an attendee already reviewed.
+    return !!candidate.is_unknown && !current.is_unknown;
   }
 
   private mergePastMeetingParticipantGroup(group: PastMeetingParticipant[]): PastMeetingParticipant {

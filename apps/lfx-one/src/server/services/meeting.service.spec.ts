@@ -1370,6 +1370,21 @@ describe('MeetingService.getPastMeetingParticipants', () => {
     expect(merged.zoom_user_name).toBe('Jane (iPhone)');
   });
 
+  it.each([
+    ['needs-review first', ['review', 'unknown']],
+    ['left-unknown first', ['unknown', 'review']],
+  ])('keeps an organizer\'s explicit "Leave unknown" over a needs-review duplicate (%s)', async (_, order) => {
+    const records = {
+      review: participantRecord('a', { email: 'jane@example.com', is_attended: true }),
+      unknown: participantRecord('b', { email: 'jane@example.com', is_attended: true, is_unknown: true }),
+    };
+    proxyRequest.mockResolvedValueOnce({ resources: order.map((key) => records[key as keyof typeof records]) });
+
+    const [merged] = await service.getPastMeetingParticipants(req, 'meeting-1-occ-1');
+
+    expect(merged.is_unknown).toBe(true);
+  });
+
   it("never borrows a notetaker bot's Zoom name onto a person it merges with", async () => {
     proxyRequest.mockResolvedValueOnce({
       resources: [

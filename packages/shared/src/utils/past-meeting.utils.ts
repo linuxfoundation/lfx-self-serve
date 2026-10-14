@@ -324,10 +324,11 @@ export function isPastMeetingNotetakerBot(participant: Partial<Pick<PastMeetingP
  * match, an AI match one an organizer confirmed). Unverified attendees are only counted.
  */
 function isPublicRosterIdentity(participant: PastMeetingParticipant): boolean {
-  if (!participant.is_attended) {
-    return participant.is_invited;
+  // A bot is never named, invited or not (#2253).
+  if (isPastMeetingNotetakerBot(participant)) {
+    return false;
   }
-  return getPastMeetingIdentityTier(participant) !== 'unverified' && !isPastMeetingNotetakerBot(participant);
+  return participant.is_attended ? getPastMeetingIdentityTier(participant) !== 'unverified' : participant.is_invited;
 }
 
 /**

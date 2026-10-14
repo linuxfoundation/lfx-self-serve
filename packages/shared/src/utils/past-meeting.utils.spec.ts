@@ -623,7 +623,8 @@ describe('participant identity tiers (N-02)', () => {
     expect(toPastMeetingParticipantRow(matchedBot)).toMatchObject({ identity_tier: null, identity_label: 'Notetaker bot', is_notetaker_bot: true });
     expect(isPastMeetingUnverifiedAttendee(bot)).toBe(false);
 
-    const roster = toPublicPastMeetingRoster([bot, participant({ uid: 'unknown', is_attended: true, is_unknown: true })]);
+    const invitedBot = participant({ uid: 'invited-bot', is_invited: true, first_name: 'Fireflies.ai', last_name: 'Notetaker' });
+    const roster = toPublicPastMeetingRoster([bot, invitedBot, participant({ uid: 'unknown', is_attended: true, is_unknown: true })]);
     expect(roster.participants).toEqual([]);
     expect(roster.unidentified_attendees).toBe(1);
     expect(roster.attendance.unverified_attended_count).toBe(1);
