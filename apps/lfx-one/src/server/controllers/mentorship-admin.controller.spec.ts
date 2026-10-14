@@ -881,6 +881,7 @@ describe('MentorshipAdminController', () => {
       ['a date that is not on the calendar', { ...termBody, startDate: '2026-02-30' }],
       ['an application end before its start', { ...termBody, applicationEndDate: '2026-06-30' }],
       ['an application end after the end month', { ...termBody, applicationEndDate: '2027-01-01' }],
+      ['an application start on the term start', { ...termBody, applicationStartDate: '2026-09-01', applicationEndDate: '2026-09-15' }],
       ['an end before the start', { ...termBody, endDate: '2026-08-01' }],
       ['no body', undefined],
     ])('rejects %s with a 400 and no upstream call', async (_label, body) => {
