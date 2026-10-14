@@ -52,6 +52,7 @@ const {
 vi.mock('@lfx-one/shared/enums', () => ({
   CommitteeMemberRole: {},
   CommitteeMemberVisibility: { HIDDEN: 'hidden', BASIC_PROFILE: 'basic_profile' },
+  CommitteeMemberStatus: { ACTIVE: 'Active', INACTIVE: 'Inactive' },
 }));
 vi.mock('@lfx-one/shared/utils', () => ({ invitationRequiresOrganization: vi.fn() }));
 vi.mock('@lfx-one/shared/constants', async () => {
@@ -1668,10 +1669,10 @@ describe('CommitteeService — group Social Listening access (lfx-self-serve-ops
 
   describe('canGroupMemberViewSocialListening', () => {
     /** Membership query, then one settings read per Board group. */
-    function upstream(memberships: string[], settings: Record<string, boolean | Error>): void {
+    function upstream(memberships: string[], settings: Record<string, boolean | Error>, status = 'Active'): void {
       proxyRequest.mockImplementation((_req: unknown, _svc: string, path: string) => {
         if (path === '/query/resources') {
-          return Promise.resolve({ resources: memberships.map((uid) => ({ data: { committee_uid: uid } })) });
+          return Promise.resolve({ resources: memberships.map((uid) => ({ data: { committee_uid: uid, status } })) });
         }
         const value = settings[path.split('/')[2]];
         return value instanceof Error ? Promise.reject(value) : Promise.resolve({ members_can_view_social_listening: value });
@@ -1690,6 +1691,13 @@ describe('CommitteeService — group Social Listening access (lfx-self-serve-ops
       const settingsCalls = proxyRequest.mock.calls.filter((call) => call[2] === '/committees/board-1/settings');
       expect(settingsCalls).toHaveLength(1);
       expect(settingsCalls[0][7]).toEqual({ bearerToken: 'm2m-token' });
+    });
+
+    it('ignores an inactive seat without reading its settings', async () => {
+      upstream(['board-1'], { 'board-1': true }, 'Inactive');
+
+      await expect(service.canGroupMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
+      expect(proxyRequest).toHaveBeenCalledTimes(1);
     });
 
     it('denies when the group setting is off', async () => {

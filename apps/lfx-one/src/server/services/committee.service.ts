@@ -8,7 +8,7 @@ import {
   SLACK_INCOMING_WEBHOOK_URL_PATTERN,
   UUID_REGEX,
 } from '@lfx-one/shared/constants';
-import { CommitteeMemberRole } from '@lfx-one/shared/enums';
+import { CommitteeMemberRole, CommitteeMemberStatus } from '@lfx-one/shared/enums';
 import {
   AcceptCommitteeInviteRequest,
   ApiRequestOptions,
@@ -1440,7 +1440,15 @@ export class CommitteeService {
       { failOnPartial: true }
     );
 
-    const groupUids = [...new Set(memberships.map((m) => m.committee_uid).filter((uid): uid is string => Boolean(uid)))];
+    // Only active seats count; upstream defaults status to Active, so a missing or Inactive status denies.
+    const groupUids = [
+      ...new Set(
+        memberships
+          .filter((m) => m.status === CommitteeMemberStatus.ACTIVE)
+          .map((m) => m.committee_uid)
+          .filter((uid): uid is string => Boolean(uid))
+      ),
+    ];
     if (groupUids.length === 0) {
       return false;
     }
