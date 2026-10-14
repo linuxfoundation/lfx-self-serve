@@ -9,6 +9,7 @@ import {
   CAMPAIGN_ADOPT_BRIEFS_UNAVAILABLE_MESSAGE,
   CAMPAIGN_ADOPT_OUTCOME_UNCONFIRMED,
   CAMPAIGN_ADOPT_VERIFY_ABSENT_MESSAGE,
+  CAMPAIGN_ADOPT_VERIFY_UNEXPECTED_MESSAGE,
 } from '@lfx-one/shared/constants';
 import type { CampaignAdoptDialogData } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
@@ -132,6 +133,25 @@ describe('CampaignAdoptDialogComponent (#3299)', () => {
 
     expect(text('campaign-adopt-dialog-error-message')).toContain(CAMPAIGN_ADOPT_VERIFY_ABSENT_MESSAGE);
     expect((q('campaign-adopt-dialog-submit')?.querySelector('button') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it.each([
+    ['a count that disagrees with the list', { platform_campaign_id: '123456', matches: [{ campaign_id: 'c-9', brief_id: 'b-1' }], match_count: 0 }],
+    ['an empty list counted as one', { platform_campaign_id: '123456', matches: [], match_count: 1 }],
+    ['another id echoed back', { platform_campaign_id: '999999', matches: [{ campaign_id: 'c-9', brief_id: 'b-1' }], match_count: 1 }],
+  ])('keeps the adoption unconfirmed on %s: no success, Adopt stays locked', async (_label, answer) => {
+    await setup();
+    service.adoptCampaign.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 0 })));
+    chooseAndSubmit();
+    service.resolvePlatformCampaign.mockReturnValue(of(answer));
+
+    (q('campaign-adopt-dialog-verify')?.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(close).not.toHaveBeenCalled();
+    expect(toast).not.toHaveBeenCalled();
+    expect(text('campaign-adopt-dialog-unconfirmed-detail')).toContain(CAMPAIGN_ADOPT_VERIFY_UNEXPECTED_MESSAGE);
+    expect((q('campaign-adopt-dialog-submit')?.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('says adoption is unavailable when the brief list route answers 404', async () => {

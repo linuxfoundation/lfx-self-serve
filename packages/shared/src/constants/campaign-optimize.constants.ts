@@ -302,6 +302,10 @@ export const CAMPAIGN_ACT_RESOLVE_INVALID_ID_MESSAGE = 'This campaign id is not 
 /** Any other failed resolve. Nothing was written: the resolve is a read of LFX One's own records. */
 export const CAMPAIGN_ACT_RESOLVE_FAILED_MESSAGE = 'LFX One could not look up this campaign. Nothing was changed; try again.';
 
+/** The lookup answered with something that contradicts itself (count vs. list, another id echoed back). */
+export const CAMPAIGN_ACT_RESOLVE_UNEXPECTED_MESSAGE =
+  'LFX One got an answer it could not trust while looking up this campaign, so nothing was changed. Try again.';
+
 /** No match: the project owns no campaign with this platform id. */
 export const CAMPAIGN_ACT_UNOWNED_MESSAGE =
   'LFX One does not manage this campaign, so it cannot be changed from here. Adopt it into an approved brief to manage it in LFX One.';
@@ -317,6 +321,13 @@ export const CAMPAIGN_ACT_AMBIGUOUS_MESSAGE =
 
 /** The one match resolved, but its campaign record could not be read. */
 export const CAMPAIGN_ACT_RECORD_FAILED_MESSAGE = 'LFX One found this campaign but could not read its current state. Nothing was changed; try again.';
+
+/**
+ * The foundation changed while the act or adopt dialog was open, so the next dialog is not opened:
+ * it would resolve the campaign against the project now selected, not the one it came from.
+ */
+export const CAMPAIGN_ACT_FOUNDATION_CHANGED_MESSAGE =
+  'You switched foundations while this was open, so LFX One did not continue with this campaign. Switch back to that foundation to act on it.';
 
 /** Shown beside a Resume: campaign-service refuses to activate an adopted campaign on every platform. */
 export const CAMPAIGN_ACT_RESUME_ADOPTED_NOTE =
@@ -389,6 +400,10 @@ export const CAMPAIGN_ADOPT_UNCONFIRMED_TITLE = 'Adoption not confirmed';
 
 /** After an unconfirmed adoption, the check found no campaign bound to this id: it did not happen. */
 export const CAMPAIGN_ADOPT_VERIFY_ABSENT_MESSAGE = 'LFX One has no record of this campaign, so the adoption did not happen. You can adopt it again.';
+
+/** After an unconfirmed adoption, the check got an answer that contradicts itself: still unconfirmed. */
+export const CAMPAIGN_ADOPT_VERIFY_UNEXPECTED_MESSAGE =
+  'LFX One got an answer it could not trust while checking the adoption, so it is still unconfirmed. Try the check again before adopting again.';
 
 /** After an unconfirmed adoption, the check itself failed. */
 export const CAMPAIGN_ADOPT_VERIFY_FAILED_MESSAGE = 'LFX One could not check whether the adoption happened. Try the check again before adopting again.';

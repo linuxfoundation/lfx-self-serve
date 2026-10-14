@@ -9,7 +9,9 @@ import {
   CAMPAIGN_SETTINGS_VERDICT_LABELS,
   CAMPAIGN_SETTINGS_VERDICT_SEVERITIES,
 } from '../constants/campaign-optimize.constants';
+import type { CampaignServiceCampaignRef } from '../interfaces/campaign.interface';
 import type {
+  CampaignRefVerdict,
   CampaignServiceSettingsField,
   CampaignServiceSettingsReadback,
   CampaignSettingsComparison,
@@ -58,6 +60,48 @@ export function buildCampaignSettingsDrift(readback: CampaignServiceSettingsRead
     matchCount: rows.filter((r) => r.comparison === 'match').length,
     unknownCount: rows.filter((r) => r.comparison === 'unknown').length,
   };
+}
+
+/**
+ * The ONE reading of a campaign-ref answer that the act dialog and the adopt check both use.
+ *
+ * The answer is trusted only when it is self-consistent: `match_count` equals `matches.length`, the
+ * echoed `platform_campaign_id` is exactly the id that was asked about, and every match names a
+ * campaign and a brief. Anything else is `unexpected` and must not be acted on: not as a match (which
+ * would change a campaign), not as no match (which would unlock a second adoption), and not as a
+ * confirmed adoption.
+ */
+export function readCampaignRefResolution(resolution: unknown, requestedId: string): CampaignRefVerdict {
+  if (!resolution || typeof resolution !== 'object') {
+    return { kind: 'unexpected' };
+  }
+  const {
+    platform_campaign_id: echoed,
+    matches,
+    match_count: count,
+  } = resolution as {
+    platform_campaign_id?: unknown;
+    matches?: unknown;
+    match_count?: unknown;
+  };
+  if (echoed !== requestedId || !Array.isArray(matches) || typeof count !== 'number' || count !== matches.length) {
+    return { kind: 'unexpected' };
+  }
+  if (!matches.every(isCampaignRef)) {
+    return { kind: 'unexpected' };
+  }
+  if (matches.length === 0) {
+    return { kind: 'none' };
+  }
+  return matches.length === 1 ? { kind: 'one', match: matches[0] } : { kind: 'several', count: matches.length };
+}
+
+function isCampaignRef(value: unknown): value is CampaignServiceCampaignRef {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const { campaign_id: campaignId, brief_id: briefId } = value as { campaign_id?: unknown; brief_id?: unknown };
+  return typeof campaignId === 'string' && campaignId !== '' && typeof briefId === 'string' && briefId !== '';
 }
 
 function toDriftRow(field: CampaignServiceSettingsField, live: string | null): CampaignSettingsDriftRow {

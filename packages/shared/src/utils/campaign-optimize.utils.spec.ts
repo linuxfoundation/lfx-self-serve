@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { CAMPAIGN_SETTINGS_UNKNOWN_NOTES } from '../constants/campaign-optimize.constants';
 import type { CampaignServiceSettingsField, CampaignServiceSettingsReadback } from '../interfaces/campaign-optimize.interface';
-import { buildCampaignSettingsDrift } from './campaign-optimize.utils';
+import { buildCampaignSettingsDrift, readCampaignRefResolution } from './campaign-optimize.utils';
 
 function readback(fields: CampaignServiceSettingsField[], platform = 'linkedin-ads'): CampaignServiceSettingsReadback {
   return {
@@ -92,5 +92,28 @@ describe('buildCampaignSettingsDrift', () => {
 
     const missing = { ...readback([]), fields: undefined } as unknown as CampaignServiceSettingsReadback;
     expect(buildCampaignSettingsDrift(missing)).toMatchObject({ rows: [], divergedCount: 0, matchCount: 0, unknownCount: 0 });
+  });
+});
+
+describe('readCampaignRefResolution', () => {
+  const ref = { campaign_id: 'c-1', brief_id: 'b-1' };
+
+  it('reads a self-consistent answer as none, one or several', () => {
+    expect(readCampaignRefResolution({ platform_campaign_id: '42', matches: [], match_count: 0 }, '42')).toEqual({ kind: 'none' });
+    expect(readCampaignRefResolution({ platform_campaign_id: '42', matches: [ref], match_count: 1 }, '42')).toEqual({ kind: 'one', match: ref });
+    expect(readCampaignRefResolution({ platform_campaign_id: '42', matches: [ref, ref], match_count: 2 }, '42')).toEqual({ kind: 'several', count: 2 });
+  });
+
+  it.each([
+    ['a count below the list', { platform_campaign_id: '42', matches: [ref], match_count: 0 }],
+    ['a count above the list', { platform_campaign_id: '42', matches: [], match_count: 1 }],
+    ['a missing count', { platform_campaign_id: '42', matches: [ref] }],
+    ['another id echoed back', { platform_campaign_id: '43', matches: [ref], match_count: 1 }],
+    ['no id echoed back', { matches: [], match_count: 0 }],
+    ['a match naming no campaign', { platform_campaign_id: '42', matches: [{ brief_id: 'b-1' }], match_count: 1 }],
+    ['no matches array', { platform_campaign_id: '42', match_count: 0 }],
+    ['no answer at all', null],
+  ])('refuses %s as unexpected', (_label, answer) => {
+    expect(readCampaignRefResolution(answer, '42')).toEqual({ kind: 'unexpected' });
   });
 });

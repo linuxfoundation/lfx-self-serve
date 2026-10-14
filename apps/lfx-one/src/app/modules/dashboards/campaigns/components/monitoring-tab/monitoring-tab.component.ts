@@ -7,6 +7,7 @@ import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { skip, take, type Subscription } from 'rxjs';
 import { ButtonComponent } from '@components/button/button.component';
 import {
+  CAMPAIGN_ACT_FOUNDATION_CHANGED_MESSAGE,
   CAMPAIGN_MONITOR_ACT_LEVER_LABELS,
   CAMPAIGN_MONITOR_ACT_PLATFORMS,
   CAMPAIGN_PACING_THRESHOLDS,
@@ -42,6 +43,7 @@ import type {
 
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { MetaPacingClassPipe } from '@pipes/campaign-optimization.pipe';
+import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { AudienceDemographicsComponent } from '../audience-demographics/audience-demographics.component';
 import { CampaignActDialogComponent } from '../campaign-act-dialog/campaign-act-dialog.component';
@@ -64,6 +66,7 @@ export class MonitoringTabComponent implements OnInit {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
   private readonly dialogService = inject(DialogService);
+  private readonly messageService = inject(MessageService);
   private monitorSub: Subscription | null = null;
   private keywordsSub: Subscription | null = null;
   private linkedInSub: Subscription | null = null;
@@ -210,26 +213,13 @@ export class MonitoringTabComponent implements OnInit {
    * dialog asks to adopt it; a confirmed adoption reopens the act dialog on the same lever.
    */
   protected openAct(platform: CampaignMonitorActPlatform, platformCampaignId: string, campaignName: string, lever: CampaignMonitorActLever): void {
+    // The project is captured HERE, once, and carried through the adopt step and back: a foundation
+    // switch while a dialog is open must not point the flow at another project.
     const projectSlug = this.activeFoundationSlug();
     if (!projectSlug || !CAMPAIGN_MONITOR_ACT_PLATFORMS.has(platform) || !platformCampaignId) {
       return;
     }
-    const data: CampaignActDialogData = { projectSlug, platform, platformCampaignId, campaignName, lever };
-    this.dialogService
-      .open(CampaignActDialogComponent, {
-        header: `${CAMPAIGN_MONITOR_ACT_LEVER_LABELS[lever]}: ${campaignName}`,
-        width: '36rem',
-        modal: true,
-        closable: true,
-        dismissableMask: true,
-        data,
-      })
-      ?.onClose.pipe(take(1))
-      .subscribe((result: CampaignActDialogResult | undefined) => {
-        if (result?.adopt) {
-          this.openAdopt(data);
-        }
-      });
+    this.openActDialog({ projectSlug, platform, platformCampaignId, campaignName, lever });
   }
 
   protected setDateRange(days: DateRangeOption): void {
@@ -644,6 +634,25 @@ export class MonitoringTabComponent implements OnInit {
       });
   }
 
+  private openActDialog(data: CampaignActDialogData): void {
+    this.dialogService
+      .open(CampaignActDialogComponent, {
+        header: `${CAMPAIGN_MONITOR_ACT_LEVER_LABELS[data.lever]}: ${data.campaignName}`,
+        width: '36rem',
+        modal: true,
+        closable: true,
+        dismissableMask: true,
+        data,
+      })
+      // Bound to this tab as well as to the one close: a dialog closed after the tab is gone opens nothing.
+      ?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe((result: CampaignActDialogResult | undefined) => {
+        if (result?.adopt && this.stillOnProject(data.projectSlug)) {
+          this.openAdopt(data);
+        }
+      });
+  }
+
   private openAdopt(act: CampaignActDialogData): void {
     const data: CampaignAdoptDialogData = {
       projectSlug: act.projectSlug,
@@ -659,11 +668,21 @@ export class MonitoringTabComponent implements OnInit {
         closable: true,
         data,
       })
-      ?.onClose.pipe(take(1))
+      ?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe((adopted: boolean | undefined) => {
-        if (adopted === true) {
-          this.openAct(act.platform, act.platformCampaignId, act.campaignName, act.lever);
+        if (adopted === true && this.stillOnProject(act.projectSlug)) {
+          // Reopened against the CAPTURED project, never the live selection.
+          this.openActDialog(act);
         }
       });
+  }
+
+  /** Whether the foundation the flow started on is still selected; when not, says why nothing follows. */
+  private stillOnProject(projectSlug: string): boolean {
+    if (this.activeFoundationSlug() === projectSlug) {
+      return true;
+    }
+    this.messageService.add({ severity: 'info', summary: 'Foundation changed', detail: CAMPAIGN_ACT_FOUNDATION_CHANGED_MESSAGE, life: 8000 });
+    return false;
   }
 }

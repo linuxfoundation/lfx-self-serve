@@ -11,6 +11,7 @@ import {
   CAMPAIGN_ACT_META_RESUME_NOTE,
   CAMPAIGN_ACT_NO_ETAG_MESSAGE,
   CAMPAIGN_ACT_RECORD_FAILED_MESSAGE,
+  CAMPAIGN_ACT_RESOLVE_UNEXPECTED_MESSAGE,
   CAMPAIGN_ACT_RESUME_ADOPTED_NOTE,
   CAMPAIGN_ACT_UNOWNED_MESSAGE,
   CAMPAIGN_BID_BLOCKED_BUSY_REASON,
@@ -49,6 +50,7 @@ import type {
   CampaignServiceCampaignRef,
   CampaignToggleAction,
 } from '@lfx-one/shared/interfaces';
+import { readCampaignRefResolution } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
 import { campaignBidFailureOutcome } from '@shared/utils/campaign-bid-error.utils';
 import { campaignBudgetFailureOutcome } from '@shared/utils/campaign-budget-error.utils';
@@ -152,22 +154,27 @@ export class CampaignActDialogComponent {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (resolution) => {
-          const matches = Array.isArray(resolution?.matches) ? resolution.matches : [];
-          const reported = typeof resolution?.match_count === 'number' ? resolution.match_count : matches.length;
-          // Refuse on ANY disagreement between the count and the list: only an unambiguous single
-          // match names the campaign the operator meant.
-          const count = Math.max(reported, matches.length);
-          this.matchCount.set(count);
-          if (count === 0) {
-            this.state.set('unowned');
-            return;
+          // One shared reading with the adopt check: a self-contradicting answer is never acted on.
+          const verdict = readCampaignRefResolution(resolution, this.data.platformCampaignId);
+          switch (verdict.kind) {
+            case 'unexpected':
+              this.failureMessage.set(CAMPAIGN_ACT_RESOLVE_UNEXPECTED_MESSAGE);
+              this.state.set('resolve-failed');
+              return;
+            case 'none':
+              this.matchCount.set(0);
+              this.state.set('unowned');
+              return;
+            case 'several':
+              this.matchCount.set(verdict.count);
+              this.state.set('ambiguous');
+              return;
+            case 'one':
+              this.matchCount.set(1);
+              this.match = verdict.match;
+              this.loadRecord();
+              return;
           }
-          if (count > 1 || matches.length !== 1) {
-            this.state.set('ambiguous');
-            return;
-          }
-          this.match = matches[0];
-          this.loadRecord();
         },
         error: (error: unknown) => {
           this.failureMessage.set(campaignActResolveErrorMessage(error));

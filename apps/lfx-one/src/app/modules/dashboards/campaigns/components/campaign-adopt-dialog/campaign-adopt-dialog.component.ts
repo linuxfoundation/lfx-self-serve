@@ -15,9 +15,11 @@ import {
   CAMPAIGN_ADOPT_EXPLAINER,
   CAMPAIGN_ADOPT_VERIFY_ABSENT_MESSAGE,
   CAMPAIGN_ADOPT_VERIFY_FAILED_MESSAGE,
+  CAMPAIGN_ADOPT_VERIFY_UNEXPECTED_MESSAGE,
   CAMPAIGN_PLATFORMS,
 } from '@lfx-one/shared/constants';
 import type { CampaignAdoptBriefOption, CampaignAdoptBriefsState, CampaignAdoptDialogData, CampaignAdoptFailure } from '@lfx-one/shared/interfaces';
+import { readCampaignRefResolution } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
 import { campaignAdoptFailure } from '@shared/utils/campaign-optimize-error.utils';
 import { MessageService } from 'primeng/api';
@@ -120,15 +122,21 @@ export class CampaignAdoptDialogComponent {
       .subscribe({
         next: (resolution) => {
           this.checking.set(false);
-          const count = Array.isArray(resolution?.matches) ? resolution.matches.length : 0;
-          if (count === 1) {
+          // The act dialog's reading: a self-contradicting answer neither confirms the adoption nor
+          // unlocks a second one, so the outcome stays unconfirmed.
+          const verdict = readCampaignRefResolution(resolution, this.data.platformCampaignId);
+          if (verdict.kind === 'unexpected') {
+            this.failure.update((f) => (f ? { ...f, detail: CAMPAIGN_ADOPT_VERIFY_UNEXPECTED_MESSAGE } : f));
+            return;
+          }
+          if (verdict.kind === 'one') {
             this.announceAdopted();
             return;
           }
           this.failure.set({
             state: 'failed',
-            title: count === 0 ? 'Not adopted' : 'Not changed',
-            message: count === 0 ? CAMPAIGN_ADOPT_VERIFY_ABSENT_MESSAGE : CAMPAIGN_ACT_AMBIGUOUS_MESSAGE,
+            title: verdict.kind === 'none' ? 'Not adopted' : 'Not changed',
+            message: verdict.kind === 'none' ? CAMPAIGN_ADOPT_VERIFY_ABSENT_MESSAGE : CAMPAIGN_ACT_AMBIGUOUS_MESSAGE,
             detail: '',
           });
         },

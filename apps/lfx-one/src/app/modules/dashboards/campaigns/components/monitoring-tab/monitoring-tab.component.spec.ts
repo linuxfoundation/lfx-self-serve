@@ -4,6 +4,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import type { KeywordMetricsResponse } from '@lfx-one/shared/interfaces';
+import { CAMPAIGN_ACT_FOUNDATION_CHANGED_MESSAGE } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
@@ -454,9 +455,13 @@ describe.each([
   let fixture: ComponentFixture<MonitoringTabComponent>;
   let open: ReturnType<typeof vi.fn>;
   let closes: Subject<unknown>[];
+  let context: ReturnType<typeof signal<{ slug: string }>>;
+  let toast: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     closes = [];
+    context = signal({ slug: 'tlf' });
+    toast = vi.fn();
     open = vi.fn(() => {
       const onClose = new Subject<unknown>();
       closes.push(onClose);
@@ -466,8 +471,8 @@ describe.each([
       imports: [MonitoringTabComponent],
       providers: [
         provideNoopAnimations(),
-        { provide: MessageService, useValue: { add: vi.fn() } },
-        { provide: ProjectContextService, useValue: { activeContext: signal({ slug: 'tlf' }) } },
+        { provide: MessageService, useValue: { add: toast } },
+        { provide: ProjectContextService, useValue: { activeContext: context } },
         { provide: DialogService, useValue: { open } },
         {
           provide: CampaignService,
@@ -556,5 +561,36 @@ describe.each([
     click('monitor-act-budget-987654');
     closes[0].next(undefined);
     expect(open).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens nothing when a dialog closes after the tab is destroyed', () => {
+    click('monitor-act-bid-987654');
+    fixture.destroy();
+    closes[0].next({ adopt: true });
+
+    expect(open).toHaveBeenCalledTimes(1);
+  });
+
+  it('carries the project the flow started on, and does not reopen after a foundation switch', () => {
+    click('monitor-act-budget-987654');
+    closes[0].next({ adopt: true });
+    expect(open.mock.calls[1][1].data.projectSlug).toBe('tlf');
+
+    // Adopted under 'tlf', but the operator has since switched foundations.
+    context.set({ slug: 'cncf' });
+    closes[1].next(true);
+
+    expect(open).toHaveBeenCalledTimes(2);
+    expect(toast).toHaveBeenCalledWith(expect.objectContaining({ detail: CAMPAIGN_ACT_FOUNDATION_CHANGED_MESSAGE }));
+  });
+
+  it('reopens against the captured project when the foundation is unchanged', () => {
+    click('monitor-act-budget-987654');
+    closes[0].next({ adopt: true });
+    closes[1].next(true);
+
+    expect(open).toHaveBeenCalledTimes(3);
+    expect(open.mock.calls[2][1].data).toEqual(expect.objectContaining({ projectSlug: 'tlf', lever: 'budget' }));
+    expect(toast).not.toHaveBeenCalled();
   });
 });

@@ -5,6 +5,7 @@ import type { TWITTER_AUDIENCE_WINDOWS } from '../constants/campaign-optimize.co
 import type {
   CampaignMetricsWindow,
   CampaignServiceCampaign,
+  CampaignServiceCampaignRef,
   CampaignServiceMicrosoftKeywords,
   MicrosoftKeywordMetricsResponse,
   MicrosoftKeywordsWindow,
@@ -463,3 +464,14 @@ export interface CampaignAdoptBriefOption {
   label: string;
   value: string;
 }
+
+/**
+ * What a campaign-ref answer may be acted on as. `unexpected` is an answer that contradicts itself
+ * (a count that differs from the list, another id echoed back, a malformed match): it names no
+ * campaign the operator asked about, so nothing is done on its strength.
+ */
+export type CampaignRefVerdict =
+  | { kind: 'none' }
+  | { kind: 'one'; match: CampaignServiceCampaignRef }
+  | { kind: 'several'; count: number }
+  | { kind: 'unexpected' };
