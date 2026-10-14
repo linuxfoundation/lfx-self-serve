@@ -25,7 +25,10 @@ describe('initializeGwEmbedBridgeCleanup', () => {
     TestBed.resetTestingModule();
     window.localStorage.clear();
     window.sessionStorage.clear();
+    window.history.replaceState(null, '', '/');
   });
+
+  const at = (url: string): void => window.history.replaceState(null, '', url);
 
   it.each([
     ['on', true],
@@ -38,9 +41,37 @@ describe('initializeGwEmbedBridgeCleanup', () => {
     expect(window.sessionStorage.getItem(GW_EMBED_SIGNIN_STATE_KEY)).toBeNull();
   });
 
+  it('scrubs a token fragment from the address bar and keeps the path and query', () => {
+    at('/foundation/gw/newsletters?project=aaif#access_token=at&refresh_token=rt');
+
+    run('browser');
+
+    expect(window.location.hash).toBe('');
+    expect(`${window.location.pathname}${window.location.search}`).toBe('/foundation/gw/newsletters?project=aaif');
+  });
+
+  it.each([['#refresh_token=rt'], ['#id_token=it']])('scrubs a fragment carrying only %s', (fragment) => {
+    at(`/foundation/gw/newsletters${fragment}`);
+
+    run('browser');
+
+    expect(window.location.hash).toBe('');
+  });
+
+  it('leaves a plain in-page anchor alone', () => {
+    at('/foundation/gw/newsletters#section-two');
+
+    run('browser');
+
+    expect(window.location.hash).toBe('#section-two');
+  });
+
   it('does nothing during server rendering', () => {
+    at('/foundation/gw/newsletters#access_token=at');
+
     run('server');
 
     expect(window.localStorage.getItem(STORED_KEY)).toBe('session');
+    expect(window.location.hash).toBe('#access_token=at');
   });
 });

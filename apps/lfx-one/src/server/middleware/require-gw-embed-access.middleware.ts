@@ -5,8 +5,8 @@ import { GW_WRITER_SUMMARY_CACHE_TTL_MS, GW_WRITER_SUMMARY_SWEEP_MS } from '@lfx
 import type { PersonaType, WriterSummary } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
-import { AuthorizationError, MicroserviceError } from '../errors';
-import { drainRequestBody, ensureGwRequestId } from '../helpers/gw-api.helper';
+import { AuthorizationError } from '../errors';
+import { drainRequestBody, ensureGwRequestId, gwUniformNotFound } from '../helpers/gw-api.helper';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { logger } from '../services/logger.service';
 import { ProjectService } from '../services/project.service';
@@ -105,9 +105,9 @@ async function getCachedWriterSummary(req: Request): Promise<WriterSummary> {
  * by `newsletterAccessGuard` — ED persona, or writer on the route's foundation/project — while the
  * proxy admitted any authenticated LFX caller. A Contributor with no project role could relay
  * arbitrary methods, paths and bodies up to the proxy's 100MB ceiling to `GW_API_URL` through
- * LFX's server identity and network position. Gatewaze authenticates the caller's own Supabase
- * bearer, so this conferred no extra *data* access; what it conferred was reachability, which
- * matters while `GW_API_URL` is cluster-internal.
+ * LFX's server identity and network position. The upstream authorizes on the caller's own Gatewaze
+ * session, minted from their own LFX sign-in, so this confers no extra *data* access; what it would
+ * confer is reachability, which matters while `GW_API_URL` is cluster-internal.
  *
  * Mirrors `newsletterAccessGuard`'s predicate as closely as the route shape allows. The guard
  * checks writer on a NAMED project, taken from `:projectUid` or `?project=`. Proxied requests name
@@ -141,9 +141,11 @@ export async function requireGwEmbedAccess(req: Request, res: Response, next: Ne
     // this never fires there today. It fails closed rather than passing the request on, so a route
     // that mounts this middleware alone cannot be reached with the pilot off.
     if (!isServerFeatureEnabled(ServerFeatureFlag.GatewazeEmbedEnabled) || !req.bearerToken) {
+      logger.debug(req, 'require_gw_embed_access', 'Answering the uniform 404: the embed flag is off or there is no LFX bearer token', {
+        path: req.path,
+      });
       await drainRequestBody(req);
-      // The same body as the route's other uniform 404s (`gatewazeHostSessionNotFound`).
-      next(new MicroserviceError('Not found', 404, 'NOT_FOUND', { operation: 'require_gw_embed_access', service: 'gw', path: req.path }));
+      next(gwUniformNotFound(req, 'require_gw_embed_access'));
       return;
     }
 

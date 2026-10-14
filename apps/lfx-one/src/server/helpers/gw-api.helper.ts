@@ -11,6 +11,16 @@ import { MicroserviceError } from '../errors';
 import { logger } from '../services/logger.service';
 
 /**
+ * The uniform 404 every `/api/gatewaze` gate answers with: host-session mode off or incomplete, the
+ * embed flag off, or no LFX bearer token. One factory, so the bodies cannot drift apart and a prober
+ * cannot tell which gate it hit, and so the response names no feature. `operation` only reaches the
+ * server log; the client sees the same `NOT_FOUND` body whichever gate built it.
+ */
+export function gwUniformNotFound(req: Request, operation: string): MicroserviceError {
+  return new MicroserviceError('Not found', 404, 'NOT_FOUND', { operation, service: 'gw', path: req.path });
+}
+
+/**
  * Marks a request whose body has already had a drain attempted against it.
  *
  * A drain is bounded, so "attempted" is not the same as "fully read": against a slow client the cap

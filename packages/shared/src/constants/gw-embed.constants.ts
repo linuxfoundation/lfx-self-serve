@@ -254,12 +254,21 @@ export const GW_EMBED_NOTIFICATION_SEVERITY = {
 export const GW_EMBED_NOTIFICATION_DEFAULT_LIFE_MS = 5000;
 
 /**
- * `sessionStorage` keys the retired LFID bridge wrote: its sign-in nonce, its automatic sign-in
- * counter and its session-recovery timestamp. None is a credential. Kept only so
- * `clearGwEmbedBridgeStorage` can remove them.
+ * `sessionStorage` key where the retired LFID bridge held the single-use nonce that bound a sign-in
+ * to this browser. Not a credential. Kept only so `clearGwEmbedBridgeStorage` can remove it.
  */
 export const GW_EMBED_SIGNIN_STATE_KEY = 'lfx-gw-embed-signin-state';
+
+/**
+ * `sessionStorage` key where the retired LFID bridge counted its automatic sign-in attempts in a
+ * tab. Not a credential. Kept only so `clearGwEmbedBridgeStorage` can remove it.
+ */
 export const GW_EMBED_AUTO_SIGNIN_KEY = 'lfx-gw-embed-auto-signin-attempted';
+
+/**
+ * `sessionStorage` key where the retired LFID bridge recorded when it last reloaded to recover a
+ * stored session. Not a credential. Kept only so `clearGwEmbedBridgeStorage` can remove it.
+ */
 export const GW_EMBED_SESSION_RECOVERY_KEY = 'lfx-gw-embed-session-recovery';
 
 /**
@@ -305,10 +314,12 @@ export const GW_DRAIN_TIMEOUT_MS = 5_000;
 export const GW_PROXY_DEFAULT_MAX_BODY_BYTES = 100 * 1024 * 1024;
 
 /**
- * Default cap on a proxied `/api/gatewaze` upstream request, in ms.
+ * Default idle bound on the upstream socket of a proxied `/api/gatewaze` request, in ms.
  *
- * Overridable per environment via `GW_PROXY_TIMEOUT_MS`. Generous because the upstream owns
- * long-running work such as media processing, and the caller sees a 408 rather than a hung socket.
+ * Overridable per environment via `GW_PROXY_TIMEOUT_MS`. It limits how long the socket may sit with
+ * no data moving, not the total length of the request, so a slow upload or a long download that
+ * keeps moving is not cut off. A hung upstream is, and the caller sees a 408 rather than a hung
+ * socket if no response has started.
  */
 export const GW_PROXY_DEFAULT_TIMEOUT_MS = 60_000;
 

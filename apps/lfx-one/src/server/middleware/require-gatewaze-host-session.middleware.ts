@@ -4,16 +4,13 @@
 import { NextFunction, Request, Response } from 'express';
 
 import { MicroserviceError } from '../errors';
+import { gwUniformNotFound } from '../helpers/gw-api.helper';
 import { isGatewazeHostSessionEnabled } from '../services/gatewaze-session.service';
 import { logger } from '../services/logger.service';
 
 /** The uniform 404 for `/api/gatewaze` while host-session mode is off or the caller has no bearer token. */
 export function gatewazeHostSessionNotFound(req: Request): MicroserviceError {
-  return new MicroserviceError('Not found', 404, 'NOT_FOUND', {
-    operation: 'require_gatewaze_host_session',
-    service: 'gw',
-    path: req.path,
-  });
+  return gwUniformNotFound(req, 'require_gatewaze_host_session');
 }
 
 /**

@@ -114,6 +114,27 @@ describe('/api/gatewaze router', () => {
     expect(endGatewazeSession).toHaveBeenCalledOnce();
   });
 
+  it('answers the same 404 body from every gate, so a prober cannot tell which one it hit', async () => {
+    // Host-session mode off: requireGatewazeHostSession.
+    hostSessionEnabled.mockReturnValue(false);
+    const offRes = await me();
+    // No bearer token: requireGatewazeBearer.
+    hostSessionEnabled.mockReturnValue(true);
+    bearer.value = undefined;
+    const noBearerRes = await me();
+    // The embed flag off with the gates before it passing: requireGwEmbedAccess's own 404.
+    bearer.value = 'synthetic-bearer';
+    vi.stubEnv('LFX_GATEWAZE_EMBED_ENABLED', 'false');
+    const flagOffRes = await me();
+
+    expect([offRes.status, noBearerRes.status, flagOffRes.status]).toEqual([404, 404, 404]);
+    const [offBody, noBearerBody, flagOffBody] = [await offRes.json(), await noBearerRes.json(), await flagOffRes.json()];
+    expect(offBody.code).toBe('NOT_FOUND');
+    expect(noBearerBody).toEqual(offBody);
+    expect(flagOffBody).toEqual(offBody);
+    expect(getPersonas).not.toHaveBeenCalled();
+  });
+
   it('answers the uniform 404 while host-session mode is off, before any authorization', async () => {
     hostSessionEnabled.mockReturnValue(false);
     const res = await me();

@@ -435,6 +435,25 @@ describe('GatewazeSessionService.getGatewazeSession', () => {
     expect(upstreams.calls).toEqual([]);
   });
 
+  it('warns once per process when only one of the two flags is on, and not when both are off', async () => {
+    // A fresh module, so the once-per-process latch starts unset whatever ran before.
+    vi.resetModules();
+    const fresh = await import('./gatewaze-session.service');
+    const mismatchWarnings = (): unknown[][] => loggerMock.warning.mock.calls.filter((call) => call[1] === 'resolve_gatewaze_host_session_config');
+    loggerMock.warning.mockClear();
+
+    vi.stubEnv('LFX_GATEWAZE_HOST_SESSION', '');
+    vi.stubEnv('LFX_GATEWAZE_EMBED_ENABLED', '');
+    expect(fresh.resolveGatewazeHostSessionConfig()).toBeNull();
+    expect(mismatchWarnings()).toHaveLength(0);
+
+    vi.stubEnv('LFX_GATEWAZE_EMBED_ENABLED', 'true');
+    expect(fresh.resolveGatewazeHostSessionConfig()).toBeNull();
+    expect(fresh.resolveGatewazeHostSessionConfig()).toBeNull();
+    expect(mismatchWarnings()).toHaveLength(1);
+    expect(mismatchWarnings()[0][3]).toEqual({ flag_on: 'LFX_GATEWAZE_EMBED_ENABLED', flag_off: 'LFX_GATEWAZE_HOST_SESSION' });
+  });
+
   it.each([
     ['no appSession cookie', null],
     ['a cookie-mode (JWE) appSession', 'eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2R0NNIn0..synthetic'],

@@ -164,7 +164,7 @@ It runs before the proxies, so a denied caller cannot stream 100MB through the b
 
 ### The uniform 404
 
-Host-session mode off, the embed flag off and a missing bearer token all answer identically: same status, same envelope, same `NOT_FOUND` code, and nothing in the response names the feature. The real reason is recorded in a server-side DEBUG log line instead.
+Host-session mode off, the embed flag off and a missing bearer token all answer identically: same status, same envelope, same `NOT_FOUND` code, and nothing in the response names the feature. Every gate builds it with one factory, `gwUniformNotFound` (`gw-api.helper.ts`), and `gatewaze.route.spec.ts` checks the three bodies are equal. Each gate records the real reason in a server-side DEBUG log line instead. When only one of the two flags is on, `resolveGatewazeHostSessionConfig` also logs a WARN once per process, since that is the likeliest reason for the outlet's not-configured panel.
 
 That is the whole of the claim. The response is **not** indistinguishable from a genuinely unknown `/api/*` path: `app.use('/api/*', apiErrorHandler)` is a 4-arg Express _error_ handler, so an unmatched path falls through to the SSR catch-all and renders HTML. Closing that means an app-wide `/api/*` JSON not-found terminator, which is a larger change than this route should make on its own.
 
