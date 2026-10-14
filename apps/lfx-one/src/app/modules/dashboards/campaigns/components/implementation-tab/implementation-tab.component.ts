@@ -1965,10 +1965,10 @@ export class ImplementationTabComponent implements OnInit {
    * (`internal/platform/googleads/assets.go`), in upstream's own order, so a callout that becomes a
    * chip is one the create will accept — and none of these can over-refuse, because each mirrors a
    * rule that is already law at the other end:
-   *   - BLANK: never chipped. Upstream and the BFF both refuse an empty entry, so a blank chip
-   *     would cost the whole create.
    *   - CAP: upstream compares the RAW list length first, before looking at any entry, so the cap
    *     is the door here too.
+   *   - BLANK: never chipped. Upstream and the BFF both refuse an empty entry, so a blank chip
+   *     would cost the whole create.
    *   - RUNES: `[...trimmed].length`, matching `utf8.RuneCountInString`. `.length` counts UTF-16
    *     units and would refuse an emoji or astral-plane callout upstream accepts.
    *   - DUPLICATE: case-folded, because upstream keys on `strings.ToLower` and REFUSES the create
@@ -1982,9 +1982,9 @@ export class ImplementationTabComponent implements OnInit {
    * discard the very text the over-length warning is asking them to shorten.
    */
   protected addGoogleCallout(text: string): boolean {
+    if (this.googleCallouts().length >= GOOGLE_ADS_MAX_CALLOUTS) return false;
     const trimmed = googleAdsTrimSpace(text);
     if (!trimmed) return false;
-    if (this.googleCallouts().length >= GOOGLE_ADS_MAX_CALLOUTS) return false;
     if ([...trimmed].length > GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES) return false;
     if (this.googleCallouts().some((c) => googleAdsToLower(c) === googleAdsToLower(trimmed))) return false;
     this.googleCallouts.update((callouts) => [...callouts, trimmed]);
@@ -3212,20 +3212,6 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * Whether the campaign this form will dispatch can carry ad extensions at all.
-   *
-   * Built on {@link googleBiddingChannel} rather than re-deriving the channel, because the question
-   * is about the channel the REQUEST will carry and that signal is already exactly that — the same
-   * `buildGoogleAdsConfig` mirror, including its Search-wins asymmetry and its null on the legacy
-   * road. Re-deriving it here would be a second copy of one upstream contract, free to drift.
-   *
-   * False is a withholding, not a refusal. Upstream's `validateAssetPlan` refuses the whole
-   * extension set on any channel but Search ("supported on Search campaigns only, not on %s") at
-   * preflight, BEFORE the budget mutate — so a callout sent on a Performance Max create yields no
-   * campaign at all. The section hides and the payload holds the list rather than forwarding it;
-   * the operator's typed callouts survive in the draft and come back if they re-tick Search.
-   */
-  /**
    * The sentence saying callouts are held back, or null when none are. Set when the dispatched
    * channel is known, takes no callouts, and the operator added some — in practice callouts typed
    * under Search and left behind by a switch to another channel. Held is not silent: the section
@@ -3241,6 +3227,20 @@ export class ImplementationTabComponent implements OnInit {
     });
   }
 
+  /**
+   * Whether the campaign this form will dispatch can carry ad extensions at all.
+   *
+   * Built on {@link googleBiddingChannel} rather than re-deriving the channel, because the question
+   * is about the channel the REQUEST will carry and that signal is already exactly that — the same
+   * `buildGoogleAdsConfig` mirror, including its Search-wins asymmetry and its null on the legacy
+   * road. Re-deriving it here would be a second copy of one upstream contract, free to drift.
+   *
+   * False is a withholding, not a refusal. Upstream's `validateAssetPlan` refuses the whole
+   * extension set on any channel but Search ("supported on Search campaigns only, not on %s") at
+   * preflight, BEFORE the budget mutate — so a callout sent on a Performance Max create yields no
+   * campaign at all. The section hides and the payload holds the list rather than forwarding it;
+   * the operator's typed callouts survive in the draft and come back if they re-tick Search.
+   */
   private initGoogleCalloutsAvailable(): Signal<boolean> {
     return computed(() => {
       const channel = this.googleBiddingChannel();

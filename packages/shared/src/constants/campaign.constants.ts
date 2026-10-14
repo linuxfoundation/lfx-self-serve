@@ -1156,6 +1156,9 @@ export const GOOGLE_ADS_MAX_CALLOUTS = 20;
  */
 export const GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES = 25;
 
+/** One character Go's `unicode.IsSpace` matches: ASCII space controls, U+0085, and category Z. */
+const GO_TRIMMED_SPACE = /^[\t\n\v\f\r\u0085\p{Z}]$/u;
+
 /**
  * Go's `strings.TrimSpace`, which upstream applies to each callout before judging it.
  *
@@ -1164,7 +1167,23 @@ export const GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES = 25;
  * test here and fail it upstream.
  */
 export function googleAdsTrimSpace(text: string): string {
-  return text.replace(/^[\t\n\v\f\r\u0085\p{Z}]+|[\t\n\v\f\r\u0085\p{Z}]+$/gu, '');
+  // An index walk, not a `[ws]+$` regex: that pattern backtracks quadratically over a long
+  // interior whitespace run, and the text comes from an unvalidated body. Every character Go
+  // trims is a single UTF-16 unit, so walking units is exact.
+  let start = 0;
+  let end = text.length;
+  while (start < end && GO_TRIMMED_SPACE.test(text[start])) start++;
+  while (end > start && GO_TRIMMED_SPACE.test(text[end - 1])) end--;
+  return text.slice(start, end);
+}
+
+/**
+ * Caller-supplied text cut short for an error message, by code point so an emoji is never split
+ * into a lone surrogate. The text comes from an unvalidated body, so the echo is bounded.
+ */
+export function googleAdsEchoed(text: string, max = 32): string {
+  const chars = [...text];
+  return chars.length > max ? `${chars.slice(0, max).join('')}…` : text;
 }
 
 /**

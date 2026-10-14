@@ -95,6 +95,7 @@ import {
   VALID_CAMPAIGN_BUDGET_TYPES,
   VALID_CAMPAIGN_NEGATIVE_KEYWORD_MATCH_TYPES,
   VALID_CAMPAIGN_TOGGLE_STATUSES,
+  googleAdsEchoed,
   googleAdsToLower,
   googleAdsTrimSpace,
   isCanonicalGoogleAdsResourceId,
@@ -506,8 +507,8 @@ export class CampaignController {
         }
       }
 
-      // The same bound for the other half of this handler. `googleCreative` and `googleBidding`
-      // filter, trim and re-allocate every string they are handed, and nothing upstream of them
+      // The same bound for the other half of this handler. `googleCreative`, `googleBidding` and
+      // `googleCallouts` filter, trim and re-allocate every string they are handed, and nothing upstream of them
       // bounds the count — so this runs before `createConfigEnvelope` for the reason the HubSpot
       // check above does.
       const oversizedGoogleField = this.oversizedGoogleCreativeField(body);
@@ -3507,7 +3508,7 @@ export class CampaignController {
    */
   private googleCalloutRefusal(callout: string, index: number, seen: Set<string>): string | null {
     if (callout === '') return `Google Ads callouts cannot include a blank entry (callout ${index + 1}). Remove it and create again.`;
-    const shown = callout.length > 32 ? `${callout.slice(0, 32)}…` : callout;
+    const shown = googleAdsEchoed(callout);
     const runes = [...callout].length;
     if (runes > GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES) {
       return `Google Ads accepts callouts of at most ${GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES} characters, and ${shown} has ${runes}. Shorten it and create again.`;
@@ -3533,9 +3534,10 @@ export class CampaignController {
     const raw = body as unknown as Record<string, unknown>;
     const candidates: [string, unknown][] = Object.values(GOOGLE_CREATIVE_REQUEST_KEYS).map((key) => [key, raw[key]]);
     candidates.push(['conversionActions', raw['conversionActions']]);
+    candidates.push(['callouts', raw['callouts']]);
 
     for (const [key, source] of candidates) {
-      // A creative key holds an object of fields; `conversionActions` is a bare list on the body.
+      // A creative key holds an object of fields; `conversionActions` and `callouts` are bare lists.
       const entries: [string, unknown][] = this.boundableEntries(key, source);
 
       for (const [field, value] of entries) {
@@ -3562,7 +3564,8 @@ export class CampaignController {
    * The one source above, flattened into the `[label, value]` pairs the bound is applied to.
    *
    * A creative key holds an object whose fields are each bounded under their own `key.field` label;
-   * `conversionActions` is a bare list on the body and is bounded as one value under its own key.
+   * `conversionActions` and `callouts` are bare lists on the body, each bounded as one value under
+   * its own key.
    * Anything else — absent, a scalar, a shape the normaliser will drop — yields nothing to check.
    */
   private boundableEntries(key: string, source: unknown): [string, unknown][] {
@@ -3706,7 +3709,7 @@ export class CampaignController {
    */
   private googleLanguageRefusal(language: string): string | null {
     if (language === '') return 'Google Ads languages cannot include a blank entry. Remove it and create again.';
-    const shown = language.length > 32 ? `${language.slice(0, 32)}…` : language;
+    const shown = googleAdsEchoed(language);
     if (GOOGLE_ADS_LANGUAGE_ID_PATTERN.test(language)) {
       return isCanonicalGoogleAdsResourceId(language)
         ? null

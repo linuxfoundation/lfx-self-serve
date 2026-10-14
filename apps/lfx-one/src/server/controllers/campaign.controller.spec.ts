@@ -1158,6 +1158,8 @@ describe('CampaignController.createCampaign cutover', () => {
     ['an oversized entry inside a list', { displayCreative: { headlines: ['x'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH + 1)] } }],
     ['an oversized scalar field', { displayCreative: { longHeadline: 'x'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH + 1) } }],
     ['an oversized conversion-action list', { conversionActions: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `a-${i}`) }],
+    ['an oversized callout list', { callouts: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `c-${i}`) }],
+    ['an oversized callout, which would otherwise reach the trim', { callouts: [`x${' '.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH)}x`] }],
   ])('refuses %s before normalising or dispatching', async (_label, overrides) => {
     const createConfigEnvelope = vi.spyOn(controller as unknown as { createConfigEnvelope: (body: unknown) => unknown }, 'createConfigEnvelope');
 
@@ -2973,6 +2975,13 @@ describe('CampaignController.createCampaign cutover', () => {
 
     expect(next).not.toHaveBeenCalled();
     expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['callouts']).toEqual(['Free shipping']);
+  });
+
+  it('cuts an echoed callout by code point, so an emoji at the cut is never split', async () => {
+    // 31 ASCII characters then emoji: a UTF-16 cut at 32 would end on half of the first emoji.
+    await controller.createCampaign(buildReq(googleBody({ callouts: [`${'A'.repeat(31)}${'🎉'.repeat(5)}`] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(refusalFrom().message).toContain(`${'A'.repeat(31)}🎉…`);
   });
 
   it('cuts a long callout short when it echoes it, since the text comes from an unvalidated body', async () => {
