@@ -498,6 +498,26 @@ describe('GatewazeRealtimeService upgrade over a real socket', () => {
     expect(await closed(ws)).toEqual({ code: 1001, reason: 'reauthorize' });
   });
 
+  it('refuses with 503 and frees the slots when shutdown starts while the session loads', async () => {
+    current = new GatewazeRealtimeService({ perUser: 1, total: 1 });
+    const late = sessionResult();
+    let land: (value: unknown) => void = () => undefined;
+    openRealtimeSession.mockImplementationOnce(() => new Promise((resolve) => (land = resolve)));
+
+    const pending = refusal();
+    await vi.waitFor(() => expect(openRealtimeSession).toHaveBeenCalled());
+    await current.closeAll();
+    land(late);
+
+    expect((await pending).status).toBe(503);
+    expect(late.session.release).toHaveBeenCalled();
+    expect(upstreamUrls).toHaveLength(0);
+    expect(current.openSocketCount()).toBe(0);
+    // Both the pod slot and the per-user slot were freed.
+    expect((current as unknown as { totalSockets: number }).totalSockets).toBe(0);
+    expect((current as unknown as { socketsPerUser: Map<string, number> }).socketsPerUser.size).toBe(0);
+  });
+
   it('refuses with 503 once the pod is shutting down', async () => {
     shuttingDown.value = true;
 

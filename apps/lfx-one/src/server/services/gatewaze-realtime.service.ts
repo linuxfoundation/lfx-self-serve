@@ -279,6 +279,12 @@ export class GatewazeRealtimeService {
     }
     const realtime = result.session;
     pending.onRelease(realtime.release);
+    // Shutdown began while the gates or the session load ran. closeAll() only reaches open bridges,
+    // so an upgrade still in flight must not open a socket after it.
+    if (this.closing) {
+      this.refuse(pending, 503, 'shutting down');
+      return;
+    }
     const session = realtime.session;
     if (!session.is_admin) {
       if (isAdminCheckPending(session)) {
