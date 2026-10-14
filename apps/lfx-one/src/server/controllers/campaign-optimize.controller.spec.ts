@@ -88,7 +88,7 @@ beforeEach(() => {
 });
 
 describe('CampaignOptimizeController.getPlatformAudience', () => {
-  it.each(['meta-ads', 'twitter-ads', 'microsoft-ads', 'linkedin-ads'] as const)(
+  it.each(['meta-ads', 'twitter-ads', 'microsoft-ads', 'linkedin-ads', 'reddit-ads'] as const)(
     'serves %s with the flag OFF (its upstream endpoint exists)',
     async (platform) => {
       getPlatformAudience.mockResolvedValue({ window: 'today', buckets: [], bucket_count: 0 });
@@ -101,21 +101,22 @@ describe('CampaignOptimizeController.getPlatformAudience', () => {
     }
   );
 
-  it('answers 404 for reddit-ads while the optimize-reads flag is OFF', async () => {
-    await controller.getPlatformAudience(buildReq({}), res, next, 'reddit-ads');
-
-    expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ResourceNotFoundError);
-    expect(getPlatformAudience).not.toHaveBeenCalled();
-  });
-
-  it('serves reddit-ads once the optimize-reads flag is ON', async () => {
-    isServerFeatureEnabled.mockImplementation((flag) => flag === ServerFeatureFlag.CampaignServiceOptimizeReads);
+  it('serves reddit-ads with no window, leaving upstream its own default', async () => {
     getPlatformAudience.mockResolvedValue({ window: 'last_30_days', buckets: [], bucket_count: 0 });
 
     await controller.getPlatformAudience(buildReq({}), res, next, 'reddit-ads');
 
     expect(getPlatformAudience).toHaveBeenCalledWith(expect.anything(), 'tlf', 'reddit-ads', undefined);
     expect(next).not.toHaveBeenCalled();
+    // Ungated: the optimize-reads flag is not even consulted for an audience read.
+    expect(isServerFeatureEnabled).not.toHaveBeenCalledWith(ServerFeatureFlag.CampaignServiceOptimizeReads);
+  });
+
+  it.each(['yesterday', 'last_14_days'])('refuses a window Reddit does not serve (%s)', async (window) => {
+    await controller.getPlatformAudience(buildReq({ query: { project: 'tlf', window } }), res, next, 'reddit-ads');
+
+    expectFieldError(next, 'window');
+    expect(getPlatformAudience).not.toHaveBeenCalled();
   });
 
   it.each(['yesterday', 'last_14_days'])('refuses a window LinkedIn does not serve (%s)', async (window) => {

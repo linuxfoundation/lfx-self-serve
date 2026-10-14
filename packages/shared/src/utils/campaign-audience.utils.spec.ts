@@ -88,6 +88,23 @@ describe('toPlatformAudienceView', () => {
     expect(view.empty).toBe(true);
   });
 
+  it('splits Reddit into gender, country and community, and labels a value-less bucket Unattributed', () => {
+    const view = toPlatformAudienceView('reddit-ads', {
+      window: 'last_30_days',
+      bucket_count: 3,
+      buckets: [
+        { dimension: 'community', value: 'kubernetes', impressions: 50, clicks: 5, cost_micros: 500_000, ctr: 0.1 },
+        { dimension: 'gender', impressions: 30, clicks: 1, cost_micros: 0, ctr: 0.03 },
+        { dimension: 'country', value: 'US', impressions: 80, clicks: 8, cost_micros: 1_000_000, ctr: 0.1 },
+      ],
+    });
+
+    expect(view.sections.map((s) => s.title)).toEqual(['Gender', 'Country', 'Community (subreddit)']);
+    expect(view.sections[0].rows[0].label).toBe('Unattributed');
+    // Reddit does not report the account's currency.
+    expect(view.currency).toBeNull();
+  });
+
   it('orders LinkedIn pivots by the contract, prices them in USD and flags them approximate', () => {
     const view = toPlatformAudienceView('linkedin-ads', {
       window: 'last_30_days',

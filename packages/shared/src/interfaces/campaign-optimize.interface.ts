@@ -94,10 +94,7 @@ export interface CampaignServiceMicrosoftAdsAudience {
   data_incomplete: boolean;
 }
 
-/**
- * One Reddit audience bucket (`reddit-ads-audience-bucket`), as the campaign-service branch
- * `feat/LFXV2-2665-reddit-audience-insights` defines it — not on its `main` yet.
- */
+/** One Reddit audience bucket (`reddit-ads-audience-bucket`, campaign-service #306). No age dimension: Reddit has none. */
 export interface CampaignServiceRedditAdsAudienceBucket {
   dimension: 'gender' | 'country' | 'community';
   /** ABSENT when Reddit reported an explicit null: unattributed traffic, not a read failure. */
@@ -108,7 +105,7 @@ export interface CampaignServiceRedditAdsAudienceBucket {
   ctr: number;
 }
 
-/** `reddit-ads-audience` (pending upstream; see the bucket). */
+/** `reddit-ads-audience`: all three breakdowns, or a 503. Spend is in the account's own (unreported) currency. */
 export interface CampaignServiceRedditAdsAudience {
   window: RedditAudienceWindow;
   buckets: CampaignServiceRedditAdsAudienceBucket[];
@@ -335,8 +332,8 @@ export type RedditKeywordMetricsResponse = MicrosoftKeywordMetricsResponse;
 // Optimize/Monitor UI view models over the reads above
 // ---------------------------------------------------------------------------
 
-/** An audience platform the Monitor tab shows a panel for (Reddit is withheld until its read is published). */
-export type PlatformAudiencePanelPlatform = Exclude<CampaignAudiencePlatform, 'reddit-ads'>;
+/** An audience platform the Monitor tab shows a panel for: every one campaign-service serves. */
+export type PlatformAudiencePanelPlatform = CampaignAudiencePlatform;
 
 /** One platform choice offered by the audience insights section. */
 export interface PlatformAudiencePlatformOption {
@@ -400,9 +397,9 @@ export interface PlatformAudienceView {
 /**
  * Why an audience read failed, as the panel states it:
  * - `no-connection`: 404, the project has no connection for the platform;
- * - `account-mismatch`: 409, the connection is unusable or its account is not the campaigns' own;
+ * - `account-mismatch`: 409, a campaign was created under another account or records none;
  * - `unavailable`: 503, the platform did not confirm the read (rate-limited, unreachable, partial);
- * - `not-enabled`: 400, the read is switched off in this environment;
+ * - `not-enabled`: 400, the read is switched off here, or the connection is inactive or has no account;
  * - `failed`: anything else.
  */
 export type PlatformAudienceErrorKind = 'no-connection' | 'account-mismatch' | 'unavailable' | 'not-enabled' | 'failed';

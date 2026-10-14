@@ -124,6 +124,36 @@ describe('PlatformAudienceComponent', () => {
     expect(q('platform-audience-empty')).toBeNull();
   });
 
+  it('renders Reddit gender, country and community, with unattributed traffic labelled as such', () => {
+    getPlatformAudience.mockReturnValue(
+      of({
+        window: 'last_30_days',
+        bucket_count: 2,
+        buckets: [
+          { dimension: 'gender', impressions: 70, clicks: 7, cost_micros: 700_000, ctr: 0.1 },
+          { dimension: 'community', value: 'devops', impressions: 40, clicks: 2, cost_micros: 200_000, ctr: 0.05 },
+        ],
+      })
+    );
+    render('reddit-ads', 'Reddit');
+
+    expect(getPlatformAudience).toHaveBeenCalledWith('tlf', 'reddit-ads', 'last_30_days');
+    expect(q('platform-audience-row-gender-0')!.textContent).toContain('Unattributed');
+    expect(q('platform-audience-section-community')!.textContent).toContain('devops');
+    expect(q('platform-audience-window-yesterday')).toBeNull();
+    expect(text()).toContain('Spend (acct. currency)');
+  });
+
+  it("states Reddit's mixed-provenance 409 with both remedies", () => {
+    getPlatformAudience.mockReturnValue(throwError(() => bffError(409, CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_CODE, CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_MESSAGE)));
+    render('reddit-ads', 'Reddit');
+
+    const error = q('platform-audience-error-account-mismatch')!.textContent ?? '';
+    expect(error).toContain('Reconnect the account the campaigns run in');
+    expect(error).toContain('re-dispatch');
+    expect(q('platform-audience-retry')).not.toBeNull();
+  });
+
   it('labels LinkedIn figures as estimates', () => {
     getPlatformAudience.mockReturnValue(
       of({
@@ -147,7 +177,7 @@ describe('PlatformAudienceComponent', () => {
       CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_CODE,
       CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_MESSAGE,
       'account-mismatch',
-      "isn't the one the campaigns were created under",
+      "isn't the one every campaign was created under",
     ],
     [503, CAMPAIGN_AUDIENCE_UNAVAILABLE_CODE, CAMPAIGN_AUDIENCE_UNAVAILABLE_MESSAGE, 'unavailable', "LinkedIn didn't confirm the audience read"],
   ])('states a %i (%s) by cause, naming the platform, with a retry', (status, code, message, kind, expected) => {
@@ -169,7 +199,7 @@ describe('PlatformAudienceComponent', () => {
     getPlatformAudience.mockReturnValue(throwError(() => bffError(400, CAMPAIGN_AUDIENCE_NOT_ENABLED_CODE, CAMPAIGN_AUDIENCE_NOT_ENABLED_MESSAGE)));
     render('microsoft-ads', 'Microsoft Advertising');
 
-    expect(q('platform-audience-error-not-enabled')!.textContent).toContain("Microsoft Advertising audience insights aren't enabled");
+    expect(q('platform-audience-error-not-enabled')!.textContent).toContain("Microsoft Advertising audience insights aren't available");
     expect(q('platform-audience-retry')).toBeNull();
   });
 

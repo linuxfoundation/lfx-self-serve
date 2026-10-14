@@ -54,12 +54,13 @@ export const CAMPAIGN_AUDIENCE_WINDOWS: Readonly<Record<CampaignAudiencePlatform
 };
 
 /**
- * Audience reads whose campaign-service endpoint is not on campaign-service `main` yet: Reddit's is
- * on a feature branch (`get-reddit-ads-audience`). The BFF answers 404 for these unless
- * `LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS` is on, so no deployment calls a route upstream does not
- * serve. LinkedIn's (`get-linkedin-ads-audience`) is published and served ungated.
+ * Audience reads whose campaign-service endpoint is not on campaign-service `main` yet; the BFF
+ * answers 404 for these unless `LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS` is on, so no deployment calls a
+ * route upstream does not serve. Empty: every audience read is published (Reddit's
+ * `get-reddit-ads-audience` in campaign-service #306, LinkedIn's in #314) and served ungated. Kept so
+ * a future read can be wired before its endpoint lands.
  */
-export const CAMPAIGN_AUDIENCE_PLATFORMS_PENDING_UPSTREAM: ReadonlySet<CampaignAudiencePlatform> = new Set<CampaignAudiencePlatform>(['reddit-ads']);
+export const CAMPAIGN_AUDIENCE_PLATFORMS_PENDING_UPSTREAM: ReadonlySet<CampaignAudiencePlatform> = new Set<CampaignAudiencePlatform>([]);
 
 /**
  * The `code`s and fixed messages a failed audience read answers with. campaign-service's own
@@ -70,12 +71,13 @@ export const CAMPAIGN_AUDIENCE_NO_CONNECTION_CODE = 'CAMPAIGN_AUDIENCE_NO_CONNEC
 export const CAMPAIGN_AUDIENCE_NO_CONNECTION_MESSAGE = 'This project has no connection for this ad platform, so its audience cannot be read.';
 export const CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_CODE = 'CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH';
 export const CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_MESSAGE =
-  "This ad platform connection cannot be used for the project's campaigns: it is unusable, or its ad account is not the one the campaigns run in.";
+  "This ad platform connection cannot be used for the project's campaigns: its ad account is not the one every campaign was created under, or a campaign does not record which account it was created under. Reconnect the account the campaigns run in, or re-dispatch the campaigns that do not record one.";
 export const CAMPAIGN_AUDIENCE_UNAVAILABLE_CODE = 'CAMPAIGN_AUDIENCE_UNAVAILABLE';
 export const CAMPAIGN_AUDIENCE_UNAVAILABLE_MESSAGE =
   'The ad platform did not confirm the audience read (it may be rate-limited or unreachable), so nothing is shown rather than a partial picture. Try again in a few minutes.';
 export const CAMPAIGN_AUDIENCE_NOT_ENABLED_CODE = 'CAMPAIGN_AUDIENCE_NOT_ENABLED';
-export const CAMPAIGN_AUDIENCE_NOT_ENABLED_MESSAGE = 'Audience insights for this ad platform are not enabled in this environment.';
+export const CAMPAIGN_AUDIENCE_NOT_ENABLED_MESSAGE =
+  "Audience insights for this ad platform are not available: they are not enabled in this environment, or the project's connection is inactive or has no ad account selected.";
 /** Every other failure (an auth refusal, a server error, a read nobody answered); the code stays the status's. */
 export const CAMPAIGN_AUDIENCE_FAILED_MESSAGE = 'The audience read failed. Try again.';
 
@@ -235,11 +237,12 @@ export const CAMPAIGN_ETAG_REQUIRED_MESSAGE =
 // Optimize/Monitor UI: audience panels and the Meta ad-set panel
 // ---------------------------------------------------------------------------
 
-/** The audience panels the Monitor tab offers, in display order. Reddit is withheld until its read is published. */
+/** The audience panels the Monitor tab offers, in display order. */
 export const PLATFORM_AUDIENCE_PLATFORM_OPTIONS: readonly PlatformAudiencePlatformOption[] = [
   { value: 'meta-ads', label: 'Meta' },
   { value: 'linkedin-ads', label: 'LinkedIn' },
   { value: 'microsoft-ads', label: 'Microsoft Advertising' },
+  { value: 'reddit-ads', label: 'Reddit' },
   { value: 'twitter-ads', label: 'X' },
 ] as const;
 
@@ -259,6 +262,7 @@ export const PLATFORM_AUDIENCE_DEFAULT_WINDOWS: Readonly<Record<PlatformAudience
   'meta-ads': 'last_30_days',
   'linkedin-ads': 'last_30_days',
   'microsoft-ads': 'last_30_days',
+  'reddit-ads': 'last_30_days',
   'twitter-ads': 'last_7_days',
 };
 
@@ -267,6 +271,7 @@ export const PLATFORM_AUDIENCE_WINDOW_OPTIONS: Readonly<Record<PlatformAudienceP
   'meta-ads': CAMPAIGN_METRICS_WINDOWS.map((value) => ({ value, label: PLATFORM_AUDIENCE_WINDOW_LABELS[value] ?? value })),
   'linkedin-ads': LINKEDIN_AUDIENCE_WINDOWS.map((value) => ({ value, label: PLATFORM_AUDIENCE_WINDOW_LABELS[value] ?? value })),
   'microsoft-ads': MICROSOFT_KEYWORDS_WINDOWS.map((value) => ({ value, label: PLATFORM_AUDIENCE_WINDOW_LABELS[value] ?? value })),
+  'reddit-ads': REDDIT_AUDIENCE_WINDOWS.map((value) => ({ value, label: PLATFORM_AUDIENCE_WINDOW_LABELS[value] ?? value })),
   'twitter-ads': TWITTER_AUDIENCE_WINDOWS.map((value) => ({ value, label: PLATFORM_AUDIENCE_WINDOW_LABELS[value] ?? value })),
 };
 
@@ -275,6 +280,7 @@ export const PLATFORM_AUDIENCE_SECTION_TITLES: Readonly<Record<PlatformAudienceP
   'meta-ads': { age_gender: 'Age and gender', placement: 'Placement' },
   'linkedin-ads': { job_function: 'Job function', seniority: 'Seniority', industry: 'Industry', company_size: 'Company size', country: 'Country' },
   'microsoft-ads': { age_gender: 'Age and gender' },
+  'reddit-ads': { gender: 'Gender', country: 'Country', community: 'Community (subreddit)' },
   'twitter-ads': { age: 'Age', gender: 'Gender', platform: 'Device platform' },
 };
 
@@ -285,15 +291,19 @@ export const PLATFORM_AUDIENCE_SECTION_TITLES: Readonly<Record<PlatformAudienceP
 export const PLATFORM_AUDIENCE_ERROR_MESSAGES: Readonly<Record<PlatformAudienceErrorKind, string>> = {
   'no-connection': "This project has no {platform} connection. Connect the {platform} ad account in the project's channel connections to see its audience.",
   'account-mismatch':
-    "The {platform} connection can't be used for these campaigns: it is unusable, or its ad account isn't the one the campaigns were created under. Reconnect the account the campaigns run in, then retry.",
+    "The {platform} connection can't be used for these campaigns: its ad account isn't the one every campaign was created under, or a campaign doesn't record which account it was created under. Reconnect the account the campaigns run in, or re-dispatch the campaigns that don't record one, then retry.",
   unavailable:
     "{platform} didn't confirm the audience read — it may be rate-limited or temporarily unreachable. Nothing is shown rather than a partial picture. Try again in a few minutes.",
-  'not-enabled': "{platform} audience insights aren't enabled in this environment.",
+  'not-enabled':
+    "{platform} audience insights aren't available: they aren't enabled in this environment, or the project's {platform} connection is inactive or has no ad account selected.",
   failed: "{platform} audience insights couldn't be loaded. Try again.",
 };
 
 /** What a breakdown row is labelled when the platform reported no value for it. */
 export const PLATFORM_AUDIENCE_UNKNOWN_LABEL = 'Unknown';
+
+/** A Reddit bucket with no value: traffic Reddit did not attribute to any value (an explicit null), not a read failure. */
+export const PLATFORM_AUDIENCE_UNATTRIBUTED_LABEL = 'Unattributed';
 
 /** What a counter shows when it was not measured. Never `0`. */
 export const PLATFORM_AUDIENCE_NOT_MEASURED_LABEL = 'Not measured';

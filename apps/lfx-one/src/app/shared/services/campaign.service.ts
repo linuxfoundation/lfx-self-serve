@@ -686,8 +686,7 @@ export class CampaignService {
   // `KEYWORD_TARGETING_REMOVAL_UNCONFIRMED`), which a defaulted response would erase.
 
   /**
-   * One platform's audience demographics for the project's own campaigns. The Reddit read answers
-   * 404 until campaign-service serves it and the server flag is on. A failure carries a fixed
+   * One platform's audience demographics for the project's own campaigns. A failure carries a fixed
    * message and a `CAMPAIGN_AUDIENCE_*` code per cause; campaign-service's own text never arrives.
    */
   public getPlatformAudience<P extends CampaignAudiencePlatform>(

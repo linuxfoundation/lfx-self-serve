@@ -130,6 +130,22 @@ describe('CampaignOptimizeService.getPlatformAudience failures', () => {
     expect(JSON.stringify(body)).not.toContain(upstreamText);
   });
 
+  it("maps Reddit's 409 for mixed provenance (a foreign campaign and one recording no account) to the fixed message naming both remedies", async () => {
+    proxyRequest.mockRejectedValueOnce(
+      upstreamError(
+        409,
+        'campaign t2_abc was created under another ad account, and campaign t2_def does not record which ad account it was created under: reconnect the right account, or re-dispatch the campaign'
+      )
+    );
+    const error = (await new CampaignOptimizeService().getPlatformAudience(req, 'tlf', 'reddit-ads').catch((e: unknown) => e)) as MicroserviceError;
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/reddit-ads/audience', 'GET', undefined);
+    expect(error.toResponse()).toMatchObject({ code: CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_CODE, error: CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_MESSAGE });
+    expect(CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_MESSAGE).toContain('Reconnect');
+    expect(CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_MESSAGE).toContain('re-dispatch');
+    expect(JSON.stringify(error.toResponse())).not.toContain('t2_abc');
+  });
+
   it.each([
     ['an answered 500', upstreamError(500, 'pq: connection refused at 10.0.0.1')],
     ['an unanswered gateway 503', gatewayError(503)],

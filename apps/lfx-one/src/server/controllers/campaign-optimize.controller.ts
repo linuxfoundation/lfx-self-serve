@@ -47,9 +47,8 @@ import { logger } from '../services/logger.service';
  *
  * These have no legacy arm, so — following the Microsoft keyword read and the budget and bid
  * levers — they are not behind a cutover flag. The exceptions are the reads still gated
- * `LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS` (the Reddit audience read, whose upstream endpoint is not on
- * campaign-service `main` yet, the LinkedIn campaign-ref resolve and the Reddit keyword read), which
- * answer 404 unless it is on.
+ * `LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS` (the LinkedIn campaign-ref resolve and the Reddit keyword
+ * read), which answer 404 unless it is on.
  *
  * Inputs are checked against the upstream contract before any round trip: project slug present,
  * brief and campaign ids UUIDs (`Format(FormatUUID)` upstream), enumerations and lengths as the Goa

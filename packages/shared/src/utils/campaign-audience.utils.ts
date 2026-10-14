@@ -1,12 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { PLATFORM_AUDIENCE_SECTION_TITLES, PLATFORM_AUDIENCE_UNKNOWN_LABEL } from '../constants/campaign-optimize.constants';
+import {
+  PLATFORM_AUDIENCE_SECTION_TITLES,
+  PLATFORM_AUDIENCE_UNATTRIBUTED_LABEL,
+  PLATFORM_AUDIENCE_UNKNOWN_LABEL,
+} from '../constants/campaign-optimize.constants';
 import type {
   CampaignServiceLinkedInAdsAudience,
   CampaignServiceMetaAdsAudience,
   CampaignServiceMicrosoftAdsAudience,
   CampaignServicePlatformAudienceMap,
+  CampaignServiceRedditAdsAudience,
   CampaignServiceTwitterAdsAudience,
   PlatformAudiencePanelPlatform,
   PlatformAudienceRow,
@@ -87,6 +92,16 @@ export function toPlatformAudienceView<P extends PlatformAudiencePanelPlatform>(
       pending = bucketsOf(microsoft).map((bucket) => ({ section: 'age_gender', label: joinLabel(bucket.age_group, bucket.gender), counters: bucket }));
       break;
     }
+    case 'reddit-ads': {
+      // No currency on the read: spend is in the ad account's own, which Reddit does not report.
+      const reddit = data as CampaignServiceRedditAdsAudience;
+      pending = bucketsOf(reddit).map((bucket) => ({
+        section: String(bucket.dimension),
+        label: labelOf(bucket.value, PLATFORM_AUDIENCE_UNATTRIBUTED_LABEL),
+        counters: bucket,
+      }));
+      break;
+    }
     case 'twitter-ads': {
       const twitter = data as CampaignServiceTwitterAdsAudience;
       view.currency = readCurrency(twitter.account_currency);
@@ -139,8 +154,8 @@ function readCurrency(value: unknown): string | null {
   return typeof value === 'string' && /^[A-Z]{3}$/.test(value) ? value : null;
 }
 
-function labelOf(value: unknown): string {
-  return typeof value === 'string' && value.trim() !== '' ? value.trim() : PLATFORM_AUDIENCE_UNKNOWN_LABEL;
+function labelOf(value: unknown, missing: string = PLATFORM_AUDIENCE_UNKNOWN_LABEL): string {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : missing;
 }
 
 /** `"25-34 · female"`; a missing half is shown as Unknown rather than dropped. */

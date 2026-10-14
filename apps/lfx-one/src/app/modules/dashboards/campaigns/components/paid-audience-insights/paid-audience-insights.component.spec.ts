@@ -28,12 +28,12 @@ describe('PaidAudienceInsightsComponent', () => {
 
   const q = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
 
-  it('offers Meta, LinkedIn, Microsoft and X — not Reddit, whose read is not published — and opens on Meta only', () => {
+  it('offers Meta, LinkedIn, Microsoft, Reddit and X, and opens on Meta only', () => {
     expect(q('paid-audience-insights-platform-meta-ads')).not.toBeNull();
     expect(q('paid-audience-insights-platform-linkedin-ads')).not.toBeNull();
     expect(q('paid-audience-insights-platform-microsoft-ads')).not.toBeNull();
     expect(q('paid-audience-insights-platform-twitter-ads')).not.toBeNull();
-    expect(q('paid-audience-insights-platform-reddit-ads')).toBeNull();
+    expect(q('paid-audience-insights-platform-reddit-ads')).not.toBeNull();
 
     expect(q('platform-audience-meta-ads')).not.toBeNull();
     // One live read at a time: only the picked platform's panel is mounted.
@@ -44,6 +44,7 @@ describe('PaidAudienceInsightsComponent', () => {
   it.each([
     ['linkedin-ads', 'last_30_days'],
     ['microsoft-ads', 'last_30_days'],
+    ['reddit-ads', 'last_30_days'],
     ['twitter-ads', 'last_7_days'],
   ])('mounts the %s panel on its default window when picked', (platform, window) => {
     (q(`paid-audience-insights-platform-${platform}`) as HTMLButtonElement).click();
