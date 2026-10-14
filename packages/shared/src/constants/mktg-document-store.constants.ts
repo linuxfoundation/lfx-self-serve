@@ -8,6 +8,7 @@
 
 import type { MktgArtifactIntakeMode } from '../interfaces/mktg-artifact.interface';
 import type { MktgDocumentType } from '../interfaces/mktg-document-store.interface';
+import { MKTG_AGENTS } from './mktg-os-agents.constants';
 
 /** BFF base path of the Documents area: `GET ?project=`, `GET /:agentKey/:documentId`, `GET …/revisions/:revisionId`, `POST …/restore`. */
 export const MKTG_DOCUMENTS_API_PATH = '/api/mktg-agents/documents';
@@ -42,6 +43,15 @@ export const MKTG_LEGACY_REVISION_ID_PREFIX = 'legacy-';
 /** Shape of a revision id: `{sequence}-{sha256}` for a stored revision, `legacy-{sha256}` for a not-yet-migrated one. */
 export const MKTG_REVISION_ID_REGEX = /^([0-9]{6}-[0-9a-f]{64}|legacy-[0-9a-f]{64})$/;
 
+/** The catalog's display name for an agent, so a rename in MKTG_AGENTS reaches the Documents area. */
+function catalogAgentName(catalogAgentId: string): string {
+  const agent = MKTG_AGENTS.find((a) => a.id === catalogAgentId);
+  if (!agent) {
+    throw new Error(`Unknown Marketing OS catalog agent: ${catalogAgentId}`);
+  }
+  return agent.name;
+}
+
 /**
  * Document types in the order the Documents area lists them: living
  * documents in run order (the marketplace's agent numbers), then the one-off
@@ -53,7 +63,7 @@ export const MKTG_DOCUMENT_TYPES: MktgDocumentType[] = [
     agentKey: 'brand-kit',
     kind: 'living',
     catalogAgentId: 'brand-kit',
-    agentName: 'Brand Kit Agent',
+    agentName: catalogAgentName('brand-kit'),
     label: 'Brand Kit',
     itemLabel: 'Brand Kit',
     legacyArtifactKey: 'brand-kit',
@@ -62,7 +72,7 @@ export const MKTG_DOCUMENT_TYPES: MktgDocumentType[] = [
     agentKey: 'foundation-message',
     kind: 'living',
     catalogAgentId: 'foundation-setup',
-    agentName: 'Message Foundation Agent',
+    agentName: catalogAgentName('foundation-setup'),
     label: 'Message Foundation',
     itemLabel: 'Message Foundation',
     legacyArtifactKey: 'foundation-message',
@@ -71,7 +81,7 @@ export const MKTG_DOCUMENT_TYPES: MktgDocumentType[] = [
     agentKey: 'icp',
     kind: 'living',
     catalogAgentId: 'icp',
-    agentName: 'ICP & Target Markets Agent',
+    agentName: catalogAgentName('icp'),
     label: 'ICP & Target Markets',
     itemLabel: 'ICP & Target Markets',
     legacyArtifactKey: 'icp',
@@ -80,7 +90,7 @@ export const MKTG_DOCUMENT_TYPES: MktgDocumentType[] = [
     agentKey: 'aeo-geo',
     kind: 'run',
     catalogAgentId: 'aeo-geo',
-    agentName: 'AEO / GEO Agent',
+    agentName: catalogAgentName('aeo-geo'),
     label: 'AEO/GEO reports',
     itemLabel: 'AEO/GEO report',
   },
@@ -88,13 +98,14 @@ export const MKTG_DOCUMENT_TYPES: MktgDocumentType[] = [
     agentKey: 'linkedin-post',
     kind: 'run',
     catalogAgentId: 'linkedin-post',
-    agentName: 'LinkedIn Post Agent',
+    agentName: catalogAgentName('linkedin-post'),
     label: 'LinkedIn posts',
     itemLabel: 'LinkedIn post',
   },
   {
     agentKey: 'member-360',
     kind: 'run',
+    // Member 360 has no catalog entry yet, so its name is spelled out here.
     agentName: 'Member 360 Agent',
     label: 'Member 360',
     itemLabel: 'Member 360 run',
