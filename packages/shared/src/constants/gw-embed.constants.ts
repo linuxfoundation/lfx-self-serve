@@ -213,13 +213,6 @@ export const GW_EMBED_LOGIN_PATH = '/login';
 export const GW_EMBED_LANDING_PATH = '/newsletters';
 
 /**
- * Prefix of the `localStorage` keys the retired LFID bridge stored Gatewaze sessions under, each with
- * a live refresh token. Kept only so `clearGwEmbedBridgeStorage` can remove them from browsers that
- * used the bridge.
- */
-export const GW_EMBED_STORAGE_KEY_PREFIX = 'gatewaze-admin-auth-token-';
-
-/**
  * Sidebar destination for the Foundation Lens Newsletters entry, when the embed is on for this
  * tenant. Mirrors the project pair below; AAIF is a foundation, so this is the mount it actually
  * uses day to day.
@@ -252,24 +245,6 @@ export const GW_EMBED_NOTIFICATION_SEVERITY = {
 
 /** Fallback lifetime for an embed toast that did not ask for one, in ms. */
 export const GW_EMBED_NOTIFICATION_DEFAULT_LIFE_MS = 5000;
-
-/**
- * `sessionStorage` key where the retired LFID bridge held the single-use nonce that bound a sign-in
- * to this browser. Not a credential. Kept only so `clearGwEmbedBridgeStorage` can remove it.
- */
-export const GW_EMBED_SIGNIN_STATE_KEY = 'lfx-gw-embed-signin-state';
-
-/**
- * `sessionStorage` key where the retired LFID bridge counted its automatic sign-in attempts in a
- * tab. Not a credential. Kept only so `clearGwEmbedBridgeStorage` can remove it.
- */
-export const GW_EMBED_AUTO_SIGNIN_KEY = 'lfx-gw-embed-auto-signin-attempted';
-
-/**
- * `sessionStorage` key where the retired LFID bridge recorded when it last reloaded to recover a
- * stored session. Not a credential. Kept only so `clearGwEmbedBridgeStorage` can remove it.
- */
-export const GW_EMBED_SESSION_RECOVERY_KEY = 'lfx-gw-embed-session-recovery';
 
 /**
  * How long one caller's writer summary is reused across proxied `/api/gatewaze/*` calls, in ms.

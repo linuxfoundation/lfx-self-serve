@@ -135,8 +135,7 @@ describe('requireGwEmbedAccess', () => {
     ['the flag is off', { flag: false, bearer: 'token-1' }],
     ['the caller has no bearer', { flag: true, bearer: undefined }],
   ])('answers the uniform 404 when %s, rather than disclosing the route with a 403', async (_label, { flag, bearer }) => {
-    // It used to pass the request on to the /api/gw controller, which answered the 404. That
-    // controller is gone, so this fails closed itself rather than trusting what is mounted after it.
+    // It fails closed itself rather than trusting what is mounted after it to answer the 404.
     flagMocks.isServerFeatureEnabled.mockReturnValue(flag);
 
     await requireGwEmbedAccess(buildReq({ bearerToken: bearer } as Partial<Request>), res, next);

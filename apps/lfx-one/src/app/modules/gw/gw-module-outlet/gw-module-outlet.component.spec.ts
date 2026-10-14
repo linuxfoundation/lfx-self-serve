@@ -281,8 +281,8 @@ describe('GwModuleOutletComponent', () => {
       });
 
       it('passes no sign-in entry point and no storage key, so the embed keeps no token in the browser', async () => {
-        // The embed's bridge fields. The host must never send them: with them set, an embed would
-        // fall back to holding its own session in localStorage.
+        // The host must never send these embed fields: with them set, an embed would hold its own
+        // session in localStorage.
         const pending = mount();
         await settle();
         const ctx = loaderMount.mock.calls[0][1] as unknown as Record<string, unknown>;

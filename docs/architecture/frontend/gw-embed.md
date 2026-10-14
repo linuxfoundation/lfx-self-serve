@@ -6,19 +6,18 @@ The server half — the `/api/gatewaze` session routes and proxies, their author
 
 ## Files
 
-| File                                                           | Role                                                                                          |
-| -------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `src/app/modules/gw/gw-module-outlet/`                         | The outlet component, template and spec                                                       |
-| `src/app/modules/gw/gw.routes.ts`                              | Route definitions for both mounts                                                             |
-| `src/app/shared/guards/gatewaze-embed-enabled.guard.ts`        | `CanMatch` flag gate                                                                          |
-| `src/app/shared/guards/gw-embed-tenant.guard.ts`               | `CanActivate` tenant allowlist gate                                                           |
-| `packages/shared/src/constants/gw-embed.constants.ts`          | Mount prefixes, enabled modules/features, host-session URLs                                   |
-| `packages/shared/src/utils/gw-embed.utils.ts`                  | Route-prefix resolution, the tenant allowlist test, and clearing the retired bridge's storage |
-| `src/app/shared/providers/gw-embed-bridge-cleanup.provider.ts` | Runs that storage clean-up once at app start                                                  |
-| `packages/shared/src/interfaces/gw-embed.interface.ts`         | The `GwHostContext` mount contract                                                            |
-| `apps/lfx-one/scripts/lib/contain-gw-embed-css.mjs`            | Stylesheet containment transform                                                              |
-| `src/server/services/gw-embed-stylesheet.service.ts`           | Fetches, scopes, themes and caches the stylesheet                                             |
-| `src/server/controllers/gw-embed-stylesheet.controller.ts`     | HTTP boundary for it (`GW_EMBED_STYLESHEET_ROUTE`)                                            |
+| File                                                       | Role                                                        |
+| ---------------------------------------------------------- | ----------------------------------------------------------- |
+| `src/app/modules/gw/gw-module-outlet/`                     | The outlet component, template and spec                     |
+| `src/app/modules/gw/gw.routes.ts`                          | Route definitions for both mounts                           |
+| `src/app/shared/guards/gatewaze-embed-enabled.guard.ts`    | `CanMatch` flag gate                                        |
+| `src/app/shared/guards/gw-embed-tenant.guard.ts`           | `CanActivate` tenant allowlist gate                         |
+| `packages/shared/src/constants/gw-embed.constants.ts`      | Mount prefixes, enabled modules/features, host-session URLs |
+| `packages/shared/src/utils/gw-embed.utils.ts`              | Route-prefix resolution and the tenant allowlist test       |
+| `packages/shared/src/interfaces/gw-embed.interface.ts`     | The `GwHostContext` mount contract                          |
+| `apps/lfx-one/scripts/lib/contain-gw-embed-css.mjs`        | Stylesheet containment transform                            |
+| `src/server/services/gw-embed-stylesheet.service.ts`       | Fetches, scopes, themes and caches the stylesheet           |
+| `src/server/controllers/gw-embed-stylesheet.controller.ts` | HTTP boundary for it (`GW_EMBED_STYLESHEET_ROUTE`)          |
 
 ## Why embed rather than port
 
@@ -90,7 +89,7 @@ The LFX theme layer (`src/styles/gw-embed-theme.css`) is appended **after** the 
 
 ## Session
 
-The embed runs only in host-session mode. LFX One holds the Gatewaze session on the server, keyed off the LFX session cookie (see [Gatewaze Host Session](../backend/gw-host-session.md)). The browser holds no Gatewaze token, so nothing is stored in `localStorage` and nothing arrives on the URL. An earlier LFID bridge, where the embed kept its own Supabase session in the browser, was removed in #2738.
+The embed runs only in host-session mode. LFX One holds the Gatewaze session on the server, keyed off the LFX session cookie (see [Gatewaze Host Session](../backend/gw-host-session.md)). The browser holds no Gatewaze token, so nothing is stored in `localStorage` and nothing arrives on the URL.
 
 `RuntimeConfig.gwHostSession` says whether the mode is on and fully configured. The server computes it with the same check its `/api/gatewaze` routes use, so the outlet and the routes cannot disagree. While it is false the outlet does not mount the embed and shows its not-configured panel, because every `/api/gatewaze` call would answer the uniform 404.
 
@@ -104,15 +103,13 @@ The outlet passes this context to the loader:
 | `supabase.anonKey`   | The publishable key                                                                                                                                                 |
 | `apiBaseUrl`         | `/api/gatewaze`. The embed calls `${apiBaseUrl}/api/...`, which lands on the `/api/gatewaze/api` proxy                                                              |
 
-It never passes the embed's `signIn` or `storageKeySuffix` fields. Those were the bridge's, and with them set an embed would keep its own session in `localStorage`.
+It never passes the embed's `signIn` or `storageKeySuffix` fields. With them set, an embed would keep its own session in `localStorage`.
 
 Other rules:
 
 - The outlet never starts a sign-in. When a proxied call reports the session expired, the embed reloads the page, at most twice in 30 seconds, and LFX's own auth guard handles a dead LFX session from there. A 401 from `/session/me`, or a session still lost after those reloads, sends the embed to `/login`, and the outlet shows the error panel there.
-- When the app starts in the browser, `provideGwEmbedBridgeCleanup` deletes every session the retired bridge stored under `GW_EMBED_STORAGE_KEY_PREFIX`, and the bridge's sign-in keys in `sessionStorage`. It also removes a token fragment (`#access_token=…`) from the address bar, leaving a plain `#section` anchor alone. It runs on every page, whatever the flags say, so a browser that used the bridge on dev keeps no Gatewaze refresh token on this origin.
 - `supabase.publicUrl` must be https, or http on `localhost`, `127.0.0.1` or `*.localhost`. The server allows a plain http `GW_SUPABASE_URL` outside production, but the embed refuses any other http host with `gw_ctx_supabase.publicUrl_invalid`, and the outlet shows the error panel. A local stack must use a `*.localhost` name (e.g. `http://supabase.aaif.localhost`) or https.
 - The loader refuses to mount a bundle whose manifest does not list the `host-session` capability, and reports `gw_embed_capability_missing`. A bundle older than the mode would ignore `session` and keep its own token in `localStorage`. The outlet treats that error as terminal whatever its `recoverable` flag says, shows the error panel and logs it with `console.error`. Only a newer Gatewaze deployment fixes it.
-- Datadog RUM still redacts a credential fragment (`#access_token=…`) and other credentials from every URL it records (`redactAuthFragment`, `redactInviteToken`, `redactMeetingPassword` in RUM's `beforeSend`). The bridge returned to that fragment shape, and a stale or crafted link can still arrive with it.
 
 This mode needs `@gatewaze/admin-embed` 1.1.0 or later.
 
