@@ -4301,13 +4301,13 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@gatewaze/host-session@npm:1.0.0":
-  version: 1.0.0
-  resolution: "@gatewaze/host-session@npm:1.0.0"
+"@gatewaze/host-session@npm:1.1.0":
+  version: 1.1.0
+  resolution: "@gatewaze/host-session@npm:1.1.0"
   dependencies:
     ioredis: "npm:^5.10.1"
     ws: "npm:^8.21.1"
-  checksum: 10c0/5e2e860abed14f473203de383f0198302d99a1a1def37534af33924a79bcbe789062729fed34969ff90fc0d752b7cbd0d128c11af45fe27c2358037d4d7f079a
+  checksum: 10c0/68159303643ccab5a9a1e8f8b73167fb1ce9d6d3b6eae7b5cad80233564495dcb60d75d85b0c5986623759877d97b7f8627c4d155c8bcdcac498f6f97c7d65d4
   languageName: node
   linkType: hard
 
@@ -14514,7 +14514,7 @@ __metadata:
     "@fullcalendar/daygrid": "npm:6.1.20"
     "@fullcalendar/timegrid": "npm:6.1.20"
     "@gatewaze/admin-embed": "npm:1.0.1"
-    "@gatewaze/host-session": "npm:1.0.0"
+    "@gatewaze/host-session": "npm:1.1.0"
     "@launchdarkly/node-server-sdk": "npm:^9.14.0"
     "@lfx-one/shared": "workspace:*"
     "@linuxfoundation/lfx-ui-core": "npm:^0.2.0"

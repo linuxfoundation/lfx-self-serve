@@ -33,3 +33,45 @@ export interface GatewazeSessionFailure {
 
 /** Result of `GatewazeSessionService.getGatewazeSession`. */
 export type GatewazeSessionResult<TSession> = GatewazeSessionOk<TSession> | GatewazeSessionFailure;
+
+/** `getGatewazeMe` found an admin session. `user` is GoTrue's `/user` body, sent to the embed as `{ user }`. */
+export interface GatewazeMeOk {
+  outcome: 'ok';
+  user: Record<string, unknown>;
+}
+
+/** The session is good but the user has no active `admin_profiles` row. 403 `{ error: 'not_admin', email }`. */
+export interface GatewazeMeNotAdmin {
+  outcome: 'not_admin';
+  email?: string;
+}
+
+/** The admin check could not be made at sign-in. 503 `{ error: 'admin_check_pending' }` with `Retry-After`. */
+export interface GatewazeMeAdminCheckPending {
+  outcome: 'admin_check_pending';
+  retryAfterSeconds: number;
+}
+
+/** Result of `GatewazeSessionService.getGatewazeMe`, one per row of the `/session/me` table. */
+export type GatewazeMeResult = GatewazeMeOk | GatewazeMeNotAdmin | GatewazeMeAdminCheckPending | GatewazeSessionFailure;
+
+/** How `endGatewazeSession` removes the record once the session is revoked. */
+export interface GatewazeSessionEndOptions {
+  /**
+   * True for LFX's `/logout`: `store.delete`, which also sets the package's 5 minute sign-out marker so
+   * a request already in flight cannot mint a new session on the same id. False for the embed's own
+   * sign-out button: `store.discard` with the revoked access token, no marker, so the next
+   * `/session/me` mints again from the still-live LFX session.
+   */
+  blockReMint: boolean;
+}
+
+/** What `endGatewazeSession` managed to do. It never throws, so the caller can always answer. */
+export interface GatewazeSessionEndResult {
+  /** A stored session was found for this LFX session. */
+  found: boolean;
+  /** GoTrue confirmed it revoked the refresh token. */
+  revoked: boolean;
+  /** The record was removed and the sign-out published. False when there was nothing to remove, or another request had already replaced it. */
+  deleted: boolean;
+}
