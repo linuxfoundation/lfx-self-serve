@@ -18,13 +18,14 @@ import pinoHttp from 'pino-http';
 import { ProfileController } from './controllers/profile.controller';
 import { customErrorSerializer } from './helpers/error-serializer';
 import { attachGwDrainGuard, gwMountPath, isGwProxyPath } from './helpers/gw-api.helper';
+import { buildGwRuntimeConfig } from './helpers/gw-runtime-config.helper';
 import { applySsrCacheHeaders } from './helpers/ssr-cache-headers.helper';
 import { applySsrRenderStatus } from './helpers/ssr-render-status.helper';
-import { resolvePublishableGwSupabaseKey } from './helpers/supabase-key.helper';
 import { validateAndSanitizeUrl } from './helpers/url-validation';
 import { AuthenticationError } from './errors';
 import { authMiddleware } from './middleware/auth.middleware';
 import { clearIntercomCookies } from './middleware/clear-intercom-cookies.middleware';
+import { endGatewazeSessionOnLogout } from './middleware/end-gatewaze-session-on-logout.middleware';
 import { apiErrorHandler } from './middleware/error-handler.middleware';
 import { apiRateLimiter, authRateLimiter, publicApiRateLimiter } from './middleware/rate-limit.middleware';
 import analyticsRouter from './routes/analytics.route';
@@ -39,6 +40,7 @@ import documentsRouter from './routes/documents.route';
 import enrollmentRouter from './routes/enrollment.route';
 import eventsRouter from './routes/events.route';
 import formationsRouter from './routes/formations.route';
+import gatewazeRouter from './routes/gatewaze.route';
 import projectApplicationsRouter from './routes/project-applications.route';
 import gwEmbedStylesheetRouter from './routes/gw-embed-stylesheet.route';
 import gwProxyRouter from './routes/gw-proxy.route';
@@ -350,6 +352,9 @@ if (sessionStoreEnabled) {
 
 // Also registered before auth(authConfig), for the same /logout reason as above.
 app.use('/logout', clearIntercomCookies(authConfig.baseURL as string));
+// Same reason: revokes and deletes the user's Gatewaze host session. Bounded, and always calls
+// next(), so a Gatewaze or Valkey fault never blocks the LFX logout.
+app.use('/logout', endGatewazeSessionOnLogout);
 
 app.use(auth(authConfig));
 
@@ -457,6 +462,11 @@ app.use('/api/mktg-agents', mktgAgentsRouter);
 // above, per the spec; see the body-parser/compression exclusions above for the other half of
 // this route's isolation from global middleware.
 app.use('/api/gw', gwProxyRouter);
+// Gatewaze host-session mode: the embed's session check and sign-out, answered from the session
+// LFX One holds for the user (gw-host-session.md). A uniform 404 unless LFX_GATEWAZE_HOST_SESSION
+// and its config are on, then the same authorization as /api/gw. JSON only, so unlike /api/gw it
+// needs no body-parser or compression exclusion.
+app.use('/api/gatewaze', gatewazeRouter);
 
 app.use('/public/api/*', apiErrorHandler);
 app.use('/api/*', apiErrorHandler);
@@ -558,17 +568,7 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     allowedTracingUrls: [process.env['LFX_V2_SERVICE'], process.env['PCC_BASE_URL']].filter(Boolean) as string[],
     intercomAppId: process.env['INTERCOM_APP_ID'] || '',
     stripePublishableKey: process.env['STRIPE_PUBLISHABLE_KEY'] || '',
-    // Gatewaze admin embed pilot (both mounts — see GW_EMBED_ROUTE_PREFIXES) — see RuntimeConfig's doc comments for the
-    // ASSUMPTION notes: no real Supabase project or LFID start URL exist for this pilot yet, so
-    // these are empty (falsy) until the real values are provided.
-    gwSupabaseUrl: process.env['GW_SUPABASE_URL'] || '',
-    // Withheld unless it is actually publishable. This value lands in the SSR payload of every
-    // page, so a service-role key pasted here would hand full RLS-bypassing database access to
-    // anyone who views source. The outlet already fails closed on an empty key with a clear
-    // "not configured" message, which is the right outcome for a misconfiguration.
-    gwSupabaseAnonKey: resolvePublishableGwSupabaseKey(req),
-    gwLfidStartUrl: process.env['GW_LFID_START_URL'] || '',
-    gwEmbedUrl: process.env['GW_EMBED_URL'] || '',
+    ...buildGwRuntimeConfig(req),
   };
 
   logger.debug(req, 'intercom_ssr_context', 'Intercom SSR inputs resolved', {

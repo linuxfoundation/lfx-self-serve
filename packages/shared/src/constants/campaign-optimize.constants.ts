@@ -307,8 +307,10 @@ export const CAMPAIGN_ACT_UNOWNED_MESSAGE =
   'LFX One does not manage this campaign, so it cannot be changed from here. Adopt it into an approved brief to manage it in LFX One.';
 
 /**
- * More than one match: refused, never chosen. Reachable on Meta and Reddit when a project's connection
- * was re-pointed between ad accounts; picking one would change a campaign nobody named.
+ * More than one match: refused, never chosen. Reachable on Reddit and X, whose binding indexes
+ * (campaign-service 000045/000046) allow one live row per (id, ad account), so a connection re-pointed
+ * between accounts leaves two; Meta's and LinkedIn's global indexes keep a valid database to one, but
+ * any count above one is still refused. Picking one would change a campaign nobody named.
  */
 export const CAMPAIGN_ACT_AMBIGUOUS_MESSAGE =
   'This campaign id matches more than one campaign in LFX One, so no action was taken: LFX One will not guess which one you mean. Change it from the Optimize tab of the brief it belongs to, or in the ad platform.';
@@ -349,6 +351,8 @@ export const CAMPAIGN_ADOPT_EXPLAINER =
  * Each documented `adopt-campaign` refusal mapped to an actionable message, by HTTP status.
  * `{platform}` is replaced with the platform's label. A 400 or 409 also shows campaign-service's own
  * sentence under the message, because each covers several reasons only that sentence tells apart.
+ * The "already bound to another brief" 409 applies on every platform since campaign-service #328
+ * added binding indexes for Meta, Microsoft, Reddit and X (Google Ads and LinkedIn already had them).
  */
 export const CAMPAIGN_ADOPT_FAILURE_COPY: Readonly<Record<'400' | '403' | '404' | '409' | '503' | 'default', { title: string; message: string }>> = {
   '400': {

@@ -320,10 +320,13 @@ describe('getMentorshipEnrollStepErrors', () => {
     form.terms = [{ ...term, applicationEndDate: '2099-03-01' }];
     expect(getMentorshipEnrollStepErrors('setup', form).terms).toBe('Application end date must be after the application start date.');
 
-    form.terms = [{ ...term, applicationEndDate: '2099-06-15' }];
-    expect(getMentorshipEnrollStepErrors('setup', form).terms).toBe('Application end date must be before the term start month.');
+    form.terms = [{ ...term, applicationEndDate: '2099-09-01' }];
+    expect(getMentorshipEnrollStepErrors('setup', form).terms).toBe('Application end date must be on or before the term end month.');
 
     form.terms = [{ ...term, applicationEndDate: '2099-05-31' }];
+    expect(getMentorshipEnrollStepErrors('setup', form).terms).toBeUndefined();
+
+    form.terms = [{ ...term, applicationEndDate: '2099-06-15' }];
     expect(getMentorshipEnrollStepErrors('setup', form).terms).toBeUndefined();
   });
 
@@ -869,10 +872,15 @@ describe('getMentorshipEnrollTermDateErrors', () => {
     expect(getMentorshipEnrollTermDateErrors({ ...term, applicationEndDate: '2099-03-01' })).toEqual({
       applicationEndDate: 'Application end date must be after the application start date.',
     });
-    expect(getMentorshipEnrollTermDateErrors({ ...term, applicationEndDate: '2099-06-15' })).toEqual({
-      applicationEndDate: 'Application end date must be before the term start month.',
-    });
     expect(getMentorshipEnrollTermDateErrors({ ...term, applicationEndDate: '2099-05-31' })).toEqual({});
+  });
+
+  it('lets the application window run into the term up to the end of its end month', () => {
+    expect(getMentorshipEnrollTermDateErrors({ ...term, applicationEndDate: '2099-06-15' })).toEqual({});
+    expect(getMentorshipEnrollTermDateErrors({ ...term, applicationEndDate: '2099-08-31' })).toEqual({});
+    expect(getMentorshipEnrollTermDateErrors({ ...term, applicationEndDate: '2099-09-01' })).toEqual({
+      applicationEndDate: 'Application end date must be on or before the term end month.',
+    });
   });
 
   it('reports the shared term rules first', () => {
