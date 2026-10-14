@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -146,7 +146,7 @@ describe('FileObjectStoreBackend', () => {
       await expect(backend.listObjects('brand-kit/')).resolves.toEqual([]);
     });
 
-    it('returns only the objects under the prefix, with posix keys and the body mtime, never the sidecars', async () => {
+    it('returns only the objects under the prefix, with posix keys and the put time, never the sidecars', async () => {
       const input = { body: Buffer.from('x'), contentType: 'text/markdown', cacheControl: 'private', metadata: { version: '1' } };
       await backend.putObject('brand-kit/proj-uid-1/aaa.md', input);
       await backend.putObject('brand-kit/proj-uid-1/bbb.md', input);
@@ -159,6 +159,36 @@ describe('FileObjectStoreBackend', () => {
       for (const object of objects) {
         expect(object.lastModified).toBeInstanceOf(Date);
       }
+    });
+
+    it('stamps an object with its sidecar mtime, so a refresh that landed only the sidecar still moves it to the front', async () => {
+      const input = { body: Buffer.from('x'), contentType: 'text/plain', cacheControl: 'private', metadata: { version: '1' } };
+      await backend.putObject('brand-kit/proj-uid-1/aaa.md', input);
+      await backend.putObject('brand-kit/proj-uid-1/bbb.md', input);
+      const older = new Date('2026-01-01T00:00:00Z');
+      const newer = new Date('2026-06-01T00:00:00Z');
+      await utimes(join(root, 'brand-kit', 'proj-uid-1', 'aaa.md'), older, older);
+      await utimes(join(root, 'brand-kit', 'proj-uid-1', 'aaa.md.meta.json'), older, older);
+      await utimes(join(root, 'brand-kit', 'proj-uid-1', 'bbb.md'), newer, newer);
+      await utimes(join(root, 'brand-kit', 'proj-uid-1', 'bbb.md.meta.json'), newer, newer);
+
+      // A refresh of aaa interrupted after its sidecar landed: new labels and stamp, old body.
+      const refreshed = new Date('2026-09-01T00:00:00Z');
+      await writeFile(join(root, 'brand-kit', 'proj-uid-1', 'aaa.md.meta.json'), JSON.stringify({ metadata: { version: '2' } }));
+      await utimes(join(root, 'brand-kit', 'proj-uid-1', 'aaa.md.meta.json'), refreshed, refreshed);
+
+      const stamps = Object.fromEntries((await backend.listObjects('brand-kit/')).map((object) => [object.key, object.lastModified]));
+      expect(stamps).toEqual({ 'brand-kit/proj-uid-1/aaa.md': refreshed, 'brand-kit/proj-uid-1/bbb.md': newer });
+      await expect(backend.headObject('brand-kit/proj-uid-1/aaa.md')).resolves.toEqual({ version: '2' });
+    });
+
+    it('a body with no sidecar is stamped with its own mtime', async () => {
+      await mkdir(join(root, 'brand-kit'), { recursive: true });
+      await writeFile(join(root, 'brand-kit', 'bare.md'), '# bare');
+      const when = new Date('2026-03-01T00:00:00Z');
+      await utimes(join(root, 'brand-kit', 'bare.md'), when, when);
+
+      await expect(backend.listObjects('')).resolves.toEqual([{ key: 'brand-kit/bare.md', lastModified: when }]);
     });
 
     it('an empty prefix lists every object in the folder', async () => {

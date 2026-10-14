@@ -29,9 +29,12 @@ import { ServiceValidationError } from '../errors';
  *   the next put of the key lands both. When the key already holds an object,
  *   a put interrupted the same way pairs the new labels with the old body
  *   until that next put — the same bytes, for a content-addressed key.
- * - `lastModified` is the body file's mtime, so the shared artifact layer's
- *   "latest is write time" ordering — and its metadata-refresh rewrite that
- *   advances the stamp — behave exactly as against S3.
+ * - `lastModified` is the sidecar's mtime (the body's only for an object that
+ *   never had one). Every put rewrites the sidecar, so the stamp is the put
+ *   time, and the labels and the stamp commit in the one rename: a
+ *   metadata-refresh rewrite advances both together or neither, so the shared
+ *   artifact layer's "latest is write time" ordering — and the refresh that
+ *   moves an object to the front of it — behave exactly as against S3.
  * - A missing folder lists as empty instead of failing: before the first
  *   write there is nothing stored, and a local run should not WARN about it.
  *
@@ -107,7 +110,9 @@ export class FileObjectStoreBackend implements ObjectStoreBackend {
       // body is a regular file, so a put that stops between the two leaves nothing a reader can
       // see, and the next put of the key lands both. The reverse order would leave a readable
       // body with no labels, which the caller's version check takes for the oldest draft — so a
-      // first draft would keep its empty labels for good.
+      // first draft would keep its empty labels for good. The sidecar also carries the
+      // `lastModified` stamp, so a refresh of an existing object that stops after it has landed
+      // is complete in every observable way: new labels, new stamp, and the same body bytes.
       await writeWhole(sidecarPath, JSON.stringify(sidecar, null, 2));
       try {
         await writeWhole(bodyPath, input.body);
@@ -167,7 +172,7 @@ export class FileObjectStoreBackend implements ObjectStoreBackend {
       if (!key.startsWith(prefix)) {
         continue;
       }
-      objects.push({ key, lastModified: (await stat(bodyPath)).mtime });
+      objects.push({ key, lastModified: await lastModifiedOf(bodyPath) });
     }
     return objects;
   }
@@ -247,6 +252,21 @@ async function writeWhole(target: string, data: Uint8Array | string): Promise<vo
     await rename(partial, target);
   } catch (error) {
     await rm(partial, { force: true });
+    throw error;
+  }
+}
+
+/**
+ * The put time of an object: its sidecar's mtime, since every put rewrites the sidecar. A body
+ * with no sidecar was never written through `putObject`, so it reports its own.
+ */
+async function lastModifiedOf(bodyPath: string): Promise<Date> {
+  try {
+    return (await stat(`${bodyPath}${OBJECT_STORE_FILE_METADATA_SUFFIX}`)).mtime;
+  } catch (error) {
+    if (fsErrorCode(error) === 'ENOENT') {
+      return (await stat(bodyPath)).mtime;
+    }
     throw error;
   }
 }
