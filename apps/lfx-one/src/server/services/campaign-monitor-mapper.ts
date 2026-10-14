@@ -185,20 +185,35 @@ function toHubSpotRates(
   };
 }
 
+/** The counters `hubspot-email-monitor-totals` declares required. */
+const HUBSPOT_REQUIRED_TOTALS = ['email_count', 'sent', 'delivered', 'opens', 'clicks', 'bounces', 'unsubscribes', 'spam_reports'] as const;
+
+/**
+ * `totals` exactly as the contract requires it, or a contract error. It is REQUIRED upstream, and
+ * the tiles render it as measured counts: reading an absent or malformed one as zeros would put
+ * "0 sent" on screen for a project that sent thousands. So the read fails instead, as a 502 —
+ * campaign-service answered, but not with what it promised — which the controller reports with a
+ * fixed message.
+ */
 function toHubSpotTotals(totals: CampaignServiceHubSpotEmailMonitorTotals | undefined): HubSpotEmailMonitorTotals {
-  // `totals` is required upstream; an absent one is read as an empty sum rather than a 500, the
-  // same tolerance the arrays get below.
-  const t = totals ?? ({} as Partial<CampaignServiceHubSpotEmailMonitorTotals>);
+  const t = totals as Partial<Record<string, unknown>> | undefined;
+  if (typeof t !== 'object' || t === null || Array.isArray(t) || HUBSPOT_REQUIRED_TOTALS.some((k) => typeof t[k] !== 'number' || !Number.isFinite(t[k]))) {
+    throw new MicroserviceError('campaign-service returned a HubSpot monitor without valid totals', 502, getCodeForStatus(502), {
+      operation: 'hubspot_monitor',
+      service: 'campaign_monitor_mapper',
+    });
+  }
+  const valid = totals as CampaignServiceHubSpotEmailMonitorTotals;
   return {
-    emailCount: t.email_count ?? 0,
-    sent: t.sent ?? 0,
-    delivered: t.delivered ?? 0,
-    opens: t.opens ?? 0,
-    clicks: t.clicks ?? 0,
-    bounces: t.bounces ?? 0,
-    unsubscribes: t.unsubscribes ?? 0,
-    spamReports: t.spam_reports ?? 0,
-    ...toHubSpotRates(t as CampaignServiceHubSpotEmailMonitorTotals),
+    emailCount: valid.email_count,
+    sent: valid.sent,
+    delivered: valid.delivered,
+    opens: valid.opens,
+    clicks: valid.clicks,
+    bounces: valid.bounces,
+    unsubscribes: valid.unsubscribes,
+    spamReports: valid.spam_reports,
+    ...toHubSpotRates(valid),
   };
 }
 
@@ -274,6 +289,8 @@ function monitorErrorMessage(statusCode: number, platformLabel: string): string 
       return `This project has no ${platformLabel} connection of its own to read the account with.`;
     case 409:
       return `This ${platformLabel} account cannot be monitored as it stands.`;
+    case 502:
+      return `campaign-service returned an unreadable ${platformLabel} monitor response.`;
     case 500:
       return `campaign-service failed to read the ${platformLabel} monitor.`;
     case 503:

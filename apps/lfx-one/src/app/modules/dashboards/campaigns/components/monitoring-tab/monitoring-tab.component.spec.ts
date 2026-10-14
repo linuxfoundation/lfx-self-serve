@@ -633,7 +633,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       select('linkedin');
 
       expect(options('linkedin-account-select')).toEqual(['512345678|LF LinkedIn (legacy)']);
-      expect(service['getLinkedInMonitorData']).toHaveBeenCalledWith('cncf', '512345678', 30);
+      expect(service['getLinkedInMonitorData']).toHaveBeenCalledWith('cncf', '512345678', 30, false);
       expect(el('linkedin-connection-notice')).toBeNull();
     });
   });
@@ -647,11 +647,11 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       expect(service['getRedditAccounts']).not.toHaveBeenCalled();
       expect(service['getMetaAccounts']).not.toHaveBeenCalled();
       expect(options('linkedin-account-select')).toEqual(['700000001|CNCF LinkedIn']);
-      expect(service['getLinkedInMonitorData']).toHaveBeenCalledWith('cncf', '700000001', 30);
+      expect(service['getLinkedInMonitorData']).toHaveBeenCalledWith('cncf', '700000001', 30, true);
 
       select('meta');
       expect(options('meta-account-select')).toEqual(['act_700000001|CNCF Meta']);
-      expect(service['getMetaMonitorData']).toHaveBeenCalledWith('cncf', 'act_700000001', 30);
+      expect(service['getMetaMonitorData']).toHaveBeenCalledWith('cncf', 'act_700000001', 30, true);
     });
 
     it('offers Microsoft Ads and HubSpot, and keeps X hidden while the app disables it', async () => {
@@ -694,7 +694,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
 
       expect(service['getMonitorConnections']).toHaveBeenCalledTimes(2);
       expect(el('linkedin-connection-notice')).toBeNull();
-      expect(service['getLinkedInMonitorData']).toHaveBeenCalledWith('cncf', '700000001', 30);
+      expect(service['getLinkedInMonitorData']).toHaveBeenCalledWith('cncf', '700000001', 30, true);
     });
 
     it('shows "metrics not enabled" instead of an error for the 400 the BFF marks so', async () => {
@@ -719,6 +719,45 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
 
       expect(el('microsoft-connection-notice')).toBeNull();
       expect(text('microsoft-error')).toContain('connection is not bound to this account');
+    });
+
+    it('marks the monitor read as coming from the connection', async () => {
+      await setup(allConnected);
+      select('reddit');
+
+      expect(service['getRedditMonitorData']).toHaveBeenCalledWith('cncf', 't2_cncf', 30, true);
+    });
+
+    /**
+     * During a rolling flag change the monitor read can land on a pod with the cutover OFF, which
+     * refuses it. The panel says so, and its Retry re-checks the data source before reading again —
+     * so if the flag has gone off everywhere, the legacy pickers take over.
+     */
+    it('shows the cutover-mismatch refusal, and Retry re-checks the data source', async () => {
+      await setup(allConnected);
+      service['getLinkedInMonitorData'].mockReturnValue(
+        throwError(
+          () =>
+            new HttpErrorResponse({
+              status: 409,
+              error: { error: 'The monitor is switching data sources; refresh in a moment.', code: 'MONITOR_CUTOVER_MISMATCH' },
+            })
+        )
+      );
+      select('linkedin');
+      expect(text('linkedin-error')).toContain('The monitor is switching data sources; refresh in a moment.');
+
+      // The rollout settled with the flag OFF everywhere: the next read succeeds on the legacy path.
+      service['getMonitorConnections'].mockReturnValue(of({ viaCampaignService: false, platforms: {} }));
+      service['getLinkedInMonitorData'].mockReturnValue(of(null));
+      (el('linkedin-error')?.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      expect(service['getMonitorConnections']).toHaveBeenCalledTimes(2);
+      expect(service['getLinkedInAccounts']).toHaveBeenCalledWith('cncf');
+      expect(service['getLinkedInMonitorData']).toHaveBeenLastCalledWith('cncf', '512345678', 30, false);
+      expect(el('linkedin-error')).toBeNull();
+      expect(options('linkedin-account-select')).toEqual(['512345678|LF LinkedIn (legacy)']);
     });
 
     it('falls back to the legacy lists when the connections read fails before the flag is known', async () => {

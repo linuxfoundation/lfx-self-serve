@@ -966,6 +966,21 @@ export const MONITOR_DATE_RANGE_OPTIONS = [7, 14, 30] as const;
 /** Rows per page in the Monitor tab's Google Ads keyword table. */
 export const MONITOR_KEYWORD_PAGE_SIZE = 10;
 
+/**
+ * The query parameter, and its one value, the Monitor tab sends on a monitor read whose account (or
+ * panel) came from `/api/campaigns/monitor/connections` — i.e. from a pod with the monitor cutover
+ * ON. The flag is per pod and the two reads are separately load-balanced, so during a rolling flag
+ * change the monitor read can land on a pod with it OFF. That pod refuses the read with
+ * `MONITOR_CUTOVER_MISMATCH_CODE` rather than serve it from the legacy path, which would swap the
+ * account (LinkedIn's default) or refuse it as off the allowlist (Reddit, Meta).
+ */
+export const MONITOR_ACCOUNT_SOURCE_PARAM = 'accountSource';
+export const MONITOR_ACCOUNT_SOURCE_CONNECTION = 'connection';
+
+/** The error `code` (HTTP 409) of that refusal; retryable once the rollout settles. */
+export const MONITOR_CUTOVER_MISMATCH_CODE = 'MONITOR_CUTOVER_MISMATCH';
+export const MONITOR_CUTOVER_MISMATCH_MESSAGE = 'The monitor is switching data sources; refresh in a moment.';
+
 /** HubSpot's brand orange, for the Monitor tab's email button (HubSpot is not a `CampaignPlatform`). */
 export const HUBSPOT_BRAND_COLOR = '#FF7A59';
 

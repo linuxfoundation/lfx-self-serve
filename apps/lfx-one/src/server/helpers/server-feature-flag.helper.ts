@@ -403,9 +403,18 @@ export enum ServerFeatureFlag {
    * LinkedIn loses its creative breakdown and the "no ad creatives" item: campaign-service does not
    * read LinkedIn creative analytics.
    *
+   * A MIXED ROLLOUT IS SAFE. The flag is read per pod, and the tab's account picker
+   * (`/monitor/connections`) and its monitor read are separate, load-balanced requests, so during a
+   * rolling change the read can land on a pod whose flag differs from the one that chose the account.
+   * A read whose account came from the connection path carries `accountSource=connection`; a pod
+   * with the flag OFF refuses it with a 409 `MONITOR_CUTOVER_MISMATCH` ("The monitor is switching
+   * data sources; refresh in a moment.") instead of serving it from the legacy path — which would
+   * show LinkedIn's default account under the picked one's name, or refuse Reddit's or Meta's — and
+   * the tab's Retry re-checks the data source. An unmarked (legacy-picker) read reaching a pod with
+   * the flag ON is served as before; allowlist ids pass the shape check.
+   *
    * Reads only, no persisted state and no id space of their own, so flipping it back strands
-   * nothing, and an overlapping rollout only means two pods may answer the same tab from
-   * different backends. Same accepted values as the flags above.
+   * nothing. Same accepted values as the flags above.
    */
   CampaignServiceMonitor = 'LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR',
 

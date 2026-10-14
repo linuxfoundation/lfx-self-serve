@@ -3,7 +3,7 @@
 
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { CAMPAIGN_JOB_POLL_INTERVAL_MS, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
+import { CAMPAIGN_JOB_POLL_INTERVAL_MS, JOB_LOST_MESSAGE, MONITOR_ACCOUNT_SOURCE_CONNECTION, MONITOR_ACCOUNT_SOURCE_PARAM } from '@lfx-one/shared/constants';
 import {
   AudienceAttachExistingRequest,
   AudienceAttachExistingResult,
@@ -322,24 +322,30 @@ export class CampaignService {
     return this.http.get<LinkedInAccount[]>('/api/campaigns/linkedin/accounts', { params: { project: projectSlug } });
   }
 
-  public getLinkedInMonitorData(projectSlug: string, accountKey: string, days: number = 30): Observable<LinkedInMonitorResponse> {
-    return this.http.get<LinkedInMonitorResponse>('/api/campaigns/linkedin/monitor', { params: { project: projectSlug, days, accountKey } });
+  public getLinkedInMonitorData(projectSlug: string, accountKey: string, days: number = 30, fromConnection = false): Observable<LinkedInMonitorResponse> {
+    return this.http.get<LinkedInMonitorResponse>('/api/campaigns/linkedin/monitor', {
+      params: { project: projectSlug, days, accountKey, ...this.monitorAccountSource(fromConnection) },
+    });
   }
 
   public getRedditAccounts(projectSlug: string): Observable<RedditAccountOption[]> {
     return this.http.get<RedditAccountOption[]>('/api/campaigns/reddit/accounts', { params: { project: projectSlug } });
   }
 
-  public getRedditMonitorData(projectSlug: string, accountKey: string, days: number = 30): Observable<RedditMonitorResponse> {
-    return this.http.get<RedditMonitorResponse>('/api/campaigns/reddit/monitor', { params: { project: projectSlug, days, accountKey } });
+  public getRedditMonitorData(projectSlug: string, accountKey: string, days: number = 30, fromConnection = false): Observable<RedditMonitorResponse> {
+    return this.http.get<RedditMonitorResponse>('/api/campaigns/reddit/monitor', {
+      params: { project: projectSlug, days, accountKey, ...this.monitorAccountSource(fromConnection) },
+    });
   }
 
   public getMetaAccounts(projectSlug: string): Observable<MetaAccountOption[]> {
     return this.http.get<MetaAccountOption[]>('/api/campaigns/meta/accounts', { params: { project: projectSlug } });
   }
 
-  public getMetaMonitorData(projectSlug: string, accountKey: string, days: number = 30): Observable<MetaMonitorResponse> {
-    return this.http.get<MetaMonitorResponse>('/api/campaigns/meta/monitor', { params: { project: projectSlug, days, accountKey } });
+  public getMetaMonitorData(projectSlug: string, accountKey: string, days: number = 30, fromConnection = false): Observable<MetaMonitorResponse> {
+    return this.http.get<MetaMonitorResponse>('/api/campaigns/meta/monitor', {
+      params: { project: projectSlug, days, accountKey, ...this.monitorAccountSource(fromConnection) },
+    });
   }
 
   /**
@@ -358,17 +364,23 @@ export class CampaignService {
    * fresh the figures are, and on the first read every campaign is `fetchFailed` while the report builds.
    */
   public getMicrosoftMonitorData(projectSlug: string, accountId: string, days: number = 30): Observable<ReportBackedMonitorResponse> {
-    return this.http.get<ReportBackedMonitorResponse>('/api/campaigns/microsoft/monitor', { params: { project: projectSlug, days, accountKey: accountId } });
+    return this.http.get<ReportBackedMonitorResponse>('/api/campaigns/microsoft/monitor', {
+      params: { project: projectSlug, days, accountKey: accountId, ...this.monitorAccountSource(true) },
+    });
   }
 
   /** X (Twitter) Ads account monitor — the Microsoft one's sibling, plus a 409 for an account it cannot monitor. */
   public getTwitterMonitorData(projectSlug: string, accountId: string, days: number = 30): Observable<ReportBackedMonitorResponse> {
-    return this.http.get<ReportBackedMonitorResponse>('/api/campaigns/twitter/monitor', { params: { project: projectSlug, days, accountKey: accountId } });
+    return this.http.get<ReportBackedMonitorResponse>('/api/campaigns/twitter/monitor', {
+      params: { project: projectSlug, days, accountKey: accountId, ...this.monitorAccountSource(true) },
+    });
   }
 
   /** HubSpot email monitor: project-scoped, so no account. 404 while the server's monitor cutover flag is off. */
   public getHubSpotMonitorData(projectSlug: string, days: number = 30): Observable<HubSpotEmailMonitorResponse> {
-    return this.http.get<HubSpotEmailMonitorResponse>('/api/campaigns/hubspot/monitor', { params: { project: projectSlug, days } });
+    return this.http.get<HubSpotEmailMonitorResponse>('/api/campaigns/hubspot/monitor', {
+      params: { project: projectSlug, days, ...this.monitorAccountSource(true) },
+    });
   }
 
   public getKeywords(projectSlug: string, days: number = 30): Observable<KeywordMetricsResponse> {
@@ -818,5 +830,15 @@ export class CampaignService {
       ),
       takeWhile((status) => status.status === 'running', true)
     );
+  }
+
+  /**
+   * The marker a monitor read carries when its account (or the panel itself) came from the
+   * connection path, i.e. from a pod with the monitor cutover ON. A pod with it OFF refuses such a
+   * read with `MONITOR_CUTOVER_MISMATCH` instead of serving it from the legacy path; see
+   * `MONITOR_ACCOUNT_SOURCE_PARAM`. Absent on a legacy-picker read, which is unchanged.
+   */
+  private monitorAccountSource(fromConnection: boolean): Record<string, string> {
+    return fromConnection ? { [MONITOR_ACCOUNT_SOURCE_PARAM]: MONITOR_ACCOUNT_SOURCE_CONNECTION } : {};
   }
 }

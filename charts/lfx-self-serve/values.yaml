@@ -853,11 +853,16 @@ environment:
   # campaign-service-only /microsoft/monitor, /twitter/monitor and /hubspot/monitor answer at all
   # (404 while off). Google (/monitor) is not affected.
   #
-  # Campaign-service reads with the PROJECT'S OWN connection, never the LF system fallback: a
-  # foundation with no LinkedIn/Meta/Reddit connection of its own gets a 404 on those tabs, and one
-  # whose connection is bound to a different account than the picker offers gets a 400. The numbers
-  # also change on purpose -- campaign-service fixed the ported LinkedIn and Reddit rule-engine bugs
-  # (#3018-#3022) -- and LinkedIn loses its creative breakdown (not read by campaign-service).
+  # Campaign-service reads with the PROJECT'S OWN connection, never the LF system fallback, so with
+  # this on the Monitor tab's account pickers offer each project's connection's account rather than
+  # the configured allowlists; a project with no connection (or no account bound) sees that stated
+  # in the panel. The numbers also change on purpose -- campaign-service fixed the ported LinkedIn
+  # and Reddit rule-engine bugs (#3018-#3022) -- and LinkedIn loses its creative breakdown (not read
+  # by campaign-service).
+  #
+  # A mixed rollout (some pods on, some off) is safe: a monitor read whose account came from an "on"
+  # pod is marked, and an "off" pod refuses it with a retryable 409 MONITOR_CUTOVER_MISMATCH rather
+  # than serving a different account; the tab's Retry re-checks which source to use.
   # Reads only, so turning it back off strands nothing.
   LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR:
     value: "false"

@@ -397,6 +397,27 @@ export class MonitoringTabComponent implements OnInit {
     this.loadMonitorConnections();
   }
 
+  /**
+   * The Retry on a panel's error. With the cutover on, the data source is re-checked first: a
+   * `MONITOR_CUTOVER_MISMATCH` means a pod with the flag OFF answered, and if the flag has since
+   * gone off everywhere the tab must fall back to the legacy pickers rather than retry the
+   * connection's account. Re-reading the connections re-fetches the selected panel once they land.
+   * Flag off, it is the panel's own read, as before.
+   */
+  protected retryPanelRead(panel: 'linkedin' | 'reddit' | 'meta' | 'reportBacked' | 'hubspot'): void {
+    if (this.monitorViaCampaignService()) {
+      this.loadMonitorConnections();
+      return;
+    }
+    if (panel === 'linkedin') {
+      this.fetchLinkedInData();
+    } else if (panel === 'reddit') {
+      this.fetchRedditData();
+    } else if (panel === 'meta') {
+      this.fetchMetaData();
+    }
+  }
+
   protected fetchReportBackedData(): void {
     const platform = this.selectedPlatform();
     if (platform !== 'microsoft' && platform !== 'twitter') return;
@@ -477,7 +498,7 @@ export class MonitoringTabComponent implements OnInit {
     this.linkedInLoading.set(true);
     this.linkedInError.set(null);
     this.linkedInSub = this.campaignService
-      .getLinkedInMonitorData(this.activeFoundationSlug(), accountKey, this.selectedDays())
+      .getLinkedInMonitorData(this.activeFoundationSlug(), accountKey, this.selectedDays(), this.monitorViaCampaignService())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
@@ -529,7 +550,7 @@ export class MonitoringTabComponent implements OnInit {
     this.redditLoading.set(true);
     this.redditError.set(null);
     this.redditSub = this.campaignService
-      .getRedditMonitorData(this.activeFoundationSlug(), accountKey, this.selectedDays())
+      .getRedditMonitorData(this.activeFoundationSlug(), accountKey, this.selectedDays(), this.monitorViaCampaignService())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
@@ -573,7 +594,7 @@ export class MonitoringTabComponent implements OnInit {
     this.metaLoading.set(true);
     this.metaError.set(null);
     this.metaSub = this.campaignService
-      .getMetaMonitorData(this.activeFoundationSlug(), accountKey, this.selectedDays())
+      .getMetaMonitorData(this.activeFoundationSlug(), accountKey, this.selectedDays(), this.monitorViaCampaignService())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
@@ -1120,7 +1141,22 @@ export class MonitoringTabComponent implements OnInit {
 
   /** The cutover is off: the pickers are the legacy account lists, loaded exactly as before it existed. */
   private useLegacyAccounts(slug: string): void {
+    const wasViaCampaignService = this.monitorViaCampaignService();
     this.monitorViaCampaignService.set(false);
+    if (wasViaCampaignService) {
+      // The flag went off since the last read (a rollback): the connection's accounts, and any error
+      // read for them, must not stay selected under the legacy pickers that replace them.
+      this.selectedLinkedInAccountKey.set('');
+      this.selectedRedditAccountKey.set('');
+      this.selectedMetaAccountKey.set('');
+      this.linkedInAccountOptions.set([]);
+      this.redditAccountOptions.set([]);
+      this.metaAccountOptions.set([]);
+      this.linkedInError.set(null);
+      this.redditError.set(null);
+      this.metaError.set(null);
+      this.monitorConnections.set({});
+    }
     if (this.selectedPlatform() === 'microsoft' || this.selectedPlatform() === 'twitter' || this.selectedPlatform() === 'hubspot') {
       // Those panels exist only behind the cutover, and their buttons are gone with it.
       this.selectedPlatform.set('google');

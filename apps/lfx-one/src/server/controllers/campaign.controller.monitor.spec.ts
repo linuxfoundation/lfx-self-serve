@@ -379,7 +379,7 @@ describe('CampaignController.getHubSpotMonitor', () => {
       days: 7,
       emails: [],
       action_items: [],
-      totals: {},
+      totals: { email_count: 0, sent: 0, delivered: 0, opens: 0, clicks: 0, bounces: 0, unsubscribes: 0, spam_reports: 0 },
       emails_checked: 2,
       emails_not_sent_in_window: 2,
       emails_unattributable: 0,
@@ -411,6 +411,34 @@ describe('CampaignController.getHubSpotMonitor', () => {
 
     expect(nextError(next)).toBeInstanceOf(ServiceValidationError);
     expect(svcHubSpot).not.toHaveBeenCalled();
+  });
+
+  /** `totals` is required upstream; reading its absence as zeros would show "0 sent". */
+  it.each([
+    ['absent', undefined],
+    ['empty', {}],
+    ['malformed', { email_count: 1, sent: '5000' }],
+  ])('fails the read with a fixed 502 when totals are %s, never zeros', async (_case, totals) => {
+    flag(true);
+    svcHubSpot.mockResolvedValueOnce({
+      days: 30,
+      emails: [],
+      action_items: [],
+      totals,
+      emails_checked: 0,
+      emails_not_sent_in_window: 0,
+      emails_unattributable: 0,
+      emails_truncated: false,
+    });
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new CampaignController().getHubSpotMonitor(buildReq({ project: 'tlf' }), res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    const error = nextError(next) as MicroserviceError;
+    expect(error.statusCode).toBe(502);
+    expect(error.toResponse()['error']).toBe('campaign-service returned an unreadable HubSpot monitor response.');
   });
 
   it('maps a 503 to fixed text with the status kept', async () => {
@@ -455,7 +483,7 @@ describe('CampaignController monitor success logs tolerate null upstream arrays'
       days: 30,
       emails: null,
       action_items: null,
-      totals: {},
+      totals: { email_count: 0, sent: 0, delivered: 0, opens: 0, clicks: 0, bounces: 0, unsubscribes: 0, spam_reports: 0 },
       emails_checked: 0,
       emails_not_sent_in_window: 0,
       emails_unattributable: 0,
@@ -554,5 +582,65 @@ describe('CampaignController.getMonitorConnections', () => {
 
     expect((nextError(next) as ServiceValidationError).validationErrors[0].field).toBe('project');
     expect(svcConnection).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * A rolling flag change (#2519): `/monitor/connections` can land on a pod with the cutover ON and
+ * the follow-up monitor read on one with it OFF. That pod must refuse a read marked
+ * `accountSource=connection` with a retryable 409 — never serve LinkedIn's default account, refuse
+ * Reddit's or Meta's as off the allowlist, or answer the campaign-service-only routes with a 404.
+ */
+describe('CampaignController monitor reads during a mixed rollout', () => {
+  it.each([
+    ['getLinkedInMonitor', legacyLinkedIn, svcLinkedIn, '700000001'],
+    ['getRedditMonitor', legacyReddit, svcReddit, 't2_offlist'],
+    ['getMetaMonitor', legacyMeta, svcMeta, 'act_700000001'],
+  ] as const)('%s refuses a connection-path read on a flag-OFF pod, with no legacy fallback', async (name, legacy, svc, account) => {
+    const next = vi.fn();
+    const res = buildRes();
+
+    await new CampaignController()[name](buildReq({ accountKey: account, project: 'tlf', accountSource: 'connection' }), res, next);
+
+    const error = nextError(next) as MicroserviceError;
+    expect(error.statusCode).toBe(409);
+    expect(error.toResponse()).toMatchObject({ code: 'MONITOR_CUTOVER_MISMATCH', error: 'The monitor is switching data sources; refresh in a moment.' });
+    expect(legacy).not.toHaveBeenCalled();
+    expect(svc).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['getMicrosoftMonitor', svcMicrosoft, { accountKey: '187654321' }],
+    ['getTwitterMonitor', svcTwitter, { accountKey: '18ce54d4x5t' }],
+    ['getHubSpotMonitor', svcHubSpot, {}],
+  ] as const)('%s answers the mismatch 409, not its flag-off 404, for a marked read', async (name, svc, query) => {
+    const next = vi.fn();
+
+    await new CampaignController()[name](buildReq({ ...query, project: 'tlf', accountSource: 'connection' }), buildRes(), next);
+
+    const error = nextError(next) as MicroserviceError;
+    expect(error.statusCode).toBe(409);
+    expect(error.code).toBe('MONITOR_CUTOVER_MISMATCH');
+    expect(svc).not.toHaveBeenCalled();
+  });
+
+  it('serves a marked read normally on a flag-ON pod', async () => {
+    flag(true);
+    svcReddit.mockResolvedValueOnce(monitorPayload({ account_id: 't2_offlist' }));
+    const res = buildRes();
+
+    await new CampaignController().getRedditMonitor(buildReq({ accountKey: 't2_offlist', project: 'tlf', accountSource: 'connection' }), res, vi.fn());
+
+    expect(svcReddit).toHaveBeenCalledWith(expect.anything(), 'tlf', 't2_offlist', 30);
+    expect(res.json).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves an unmarked legacy read on a flag-OFF pod exactly as before', async () => {
+    legacyLinkedIn.mockResolvedValueOnce({ campaigns: [] });
+
+    await new CampaignController().getLinkedInMonitor(buildReq({ accountKey: 'nope', project: 'tlf' }), buildRes(), vi.fn());
+
+    expect(legacyLinkedIn).toHaveBeenCalledWith(expect.anything(), '512345678', 30);
   });
 });

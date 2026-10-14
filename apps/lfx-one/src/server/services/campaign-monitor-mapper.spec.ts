@@ -428,6 +428,24 @@ describe('toHubSpotEmailMonitorResponse', () => {
     expect(result.metricsWindowStart).toBeNull();
   });
 
+  /** `totals` is required; an absent or malformed one must fail the read, never become "0 sent". */
+  it.each([
+    ['absent', undefined],
+    ['null', null],
+    ['missing a counter', { email_count: 1, sent: 5000, delivered: 4850, opens: 1455, clicks: 194, bounces: 150, unsubscribes: 24 }],
+    ['non-numeric', { ...{ email_count: 1, sent: 5000, delivered: 4850, opens: 1455, clicks: 194, bounces: 150, unsubscribes: 24 }, spam_reports: '1' }],
+  ])('throws a 502 contract error when totals are %s', (_case, totals) => {
+    let caught: unknown;
+    try {
+      toHubSpotEmailMonitorResponse(hubspot({ totals: totals as unknown as CampaignServiceHubSpotEmailMonitor['totals'] }), PULLED_AT);
+    } catch (e) {
+      caught = e;
+    }
+
+    expect(caught).toBeInstanceOf(MicroserviceError);
+    expect((caught as MicroserviceError).statusCode).toBe(502);
+  });
+
   it('maps a project-wide finding (no email id) to a null emailId', () => {
     const result = toHubSpotEmailMonitorResponse(hubspot({ action_items: [{ priority: 'LOW', issue: 'i', action: 'a' }] }), PULLED_AT);
     expect(result.actionItems[0]).toEqual({ priority: 'LOW', emailId: null, emailName: '', issue: 'i', action: 'a' });

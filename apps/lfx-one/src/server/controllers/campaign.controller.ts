@@ -95,7 +95,11 @@ import {
   MICROSOFT_MAX_KEYWORDS,
   MICROSOFT_MAX_KEYWORD_TEXT_LENGTH,
   MICROSOFT_MIN_CPC_BID,
+  MONITOR_ACCOUNT_SOURCE_CONNECTION,
+  MONITOR_ACCOUNT_SOURCE_PARAM,
   MONITOR_CONNECTION_PROVIDERS,
+  MONITOR_CUTOVER_MISMATCH_CODE,
+  MONITOR_CUTOVER_MISMATCH_MESSAGE,
   NEGATIVE_KEYWORD_TEXT_PATTERN,
   REDDIT_ADS_MONITOR_ACCOUNT_ID_PATTERN,
   TWITTER_ADS_MONITOR_ACCOUNT_ID_PATTERN,
@@ -1917,6 +1921,12 @@ export class CampaignController {
       return;
     }
 
+    // Flag OFF here. A read whose account came from the connection path was picked on a pod with it
+    // ON; serving it from the legacy path would swap or refuse that account, so it is refused instead.
+    if (this.refuseCutoverMismatch(req, next, 'linkedin_monitor')) {
+      return;
+    }
+
     const account = config.accounts.find((a) => a.accountId === rawKey) ?? config.accounts[0];
     if (!account) {
       next(
@@ -2148,6 +2158,12 @@ export class CampaignController {
       return;
     }
 
+    // Flag OFF here. A read whose account came from the connection path was picked on a pod with it
+    // ON; serving it from the legacy path would swap or refuse that account, so it is refused instead.
+    if (this.refuseCutoverMismatch(req, next, 'reddit_monitor')) {
+      return;
+    }
+
     const account = rawKey ? REDDIT_ACCOUNTS.find((a) => a.accountId === rawKey) : REDDIT_ACCOUNTS[0];
     if (!account) {
       next(
@@ -2199,6 +2215,12 @@ export class CampaignController {
         read: (projectSlug) => this.campaignServiceClient.getMetaAdsAccountMonitor(req, projectSlug, accountId, days),
         toResponse: (payload) => toMetaMonitorResponse(payload, label, new Date().toISOString()),
       });
+      return;
+    }
+
+    // Flag OFF here. A read whose account came from the connection path was picked on a pod with it
+    // ON; serving it from the legacy path would swap or refuse that account, so it is refused instead.
+    if (this.refuseCutoverMismatch(req, next, 'meta_monitor')) {
       return;
     }
 
@@ -2308,7 +2330,9 @@ export class CampaignController {
   public async getHubSpotMonitor(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'hubspot_monitor';
     if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
-      next(this.monitorDisabledError(operation));
+      if (!this.refuseCutoverMismatch(req, next, operation)) {
+        next(this.monitorDisabledError(operation));
+      }
       return;
     }
     const projectSlug = this.requireMonitorProject(req, next, operation);
@@ -3038,7 +3062,9 @@ export class CampaignController {
     }
   ): Promise<void> {
     if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
-      next(this.monitorDisabledError(opts.operation));
+      if (!this.refuseCutoverMismatch(req, next, opts.operation)) {
+        next(this.monitorDisabledError(opts.operation));
+      }
       return;
     }
     const projectSlug = this.requireMonitorProject(req, next, opts.operation);
@@ -3135,6 +3161,26 @@ export class CampaignController {
       });
       return { state: 'unavailable', accountId: null, label: null };
     }
+  }
+
+  /**
+   * On a pod with the monitor cutover OFF: refuse, with a retryable 409, a read the client marked as
+   * coming from the connection path (`accountSource=connection`), and report whether it did.
+   *
+   * The marker means the tab learned its account — or that the panel exists at all — from a pod
+   * with the cutover ON. The flag is per pod, so during a rolling change the follow-up read can
+   * land here, where the legacy path would serve LinkedIn's DEFAULT account under the picked one's
+   * name, refuse Reddit's or Meta's as off the allowlist, or answer the campaign-service-only routes
+   * with a 404 the HubSpot panel would read as "no connection". None of that may be shown, so the
+   * read is refused with a fixed message instead, and no legacy fallback runs. Unmarked requests
+   * (a legacy picker) are untouched.
+   */
+  private refuseCutoverMismatch(req: Request, next: NextFunction, operation: string): boolean {
+    if (req.query[MONITOR_ACCOUNT_SOURCE_PARAM] !== MONITOR_ACCOUNT_SOURCE_CONNECTION) {
+      return false;
+    }
+    next(new MicroserviceError(MONITOR_CUTOVER_MISMATCH_MESSAGE, 409, MONITOR_CUTOVER_MISMATCH_CODE, { operation, service: 'campaign_controller' }));
+    return true;
   }
 
   /** A 404 for a campaign-service-only monitor route while its flag is off — as if it were not mounted. */
