@@ -22,6 +22,7 @@ import {
   CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_CODE,
   CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_MESSAGE,
   CAMPAIGN_AUDIENCE_FAILED_MESSAGE,
+  CAMPAIGN_AUDIENCE_LOGGED_UPSTREAM_MESSAGE_MAX_LENGTH,
   CAMPAIGN_AUDIENCE_NO_CONNECTION_CODE,
   CAMPAIGN_AUDIENCE_NO_CONNECTION_MESSAGE,
   CAMPAIGN_AUDIENCE_NOT_ENABLED_CODE,
@@ -156,6 +157,26 @@ describe('CampaignOptimizeService.getPlatformAudience failures', () => {
     expect(error.statusCode).toBe(raw.statusCode);
     expect(error.toResponse()['error']).toBe(CAMPAIGN_AUDIENCE_FAILED_MESSAGE);
     expect(error.toResponse()['code']).not.toBe(CAMPAIGN_AUDIENCE_UNAVAILABLE_CODE);
+  });
+
+  it('logs the upstream 400 sentence at DEBUG, bounded, while answering NOT_ENABLED', async () => {
+    const upstreamText = `connection inactive ${'x'.repeat(500)}`;
+    await failureFor(upstreamError(400, upstreamText));
+
+    const call = logger.debug.mock.calls.find((args: unknown[]) => String(args[2]).includes('400')) as unknown[] | undefined;
+    expect(call).toBeDefined();
+    const fields = call?.[3] as { platform: string; upstream_message: string };
+    expect(fields.platform).toBe('linkedin-ads');
+    expect(fields.upstream_message.startsWith('connection inactive')).toBe(true);
+    expect(fields.upstream_message).toHaveLength(CAMPAIGN_AUDIENCE_LOGGED_UPSTREAM_MESSAGE_MAX_LENGTH);
+    expect(logger.warning).not.toHaveBeenCalled();
+  });
+
+  it('does not log an upstream sentence for a 400 nobody answered, or for another status', async () => {
+    await failureFor(gatewayError(400));
+    await failureFor(upstreamError(404, 'no linkedin ads connection'));
+
+    expect(logger.debug.mock.calls.some((args: unknown[]) => String(args[2]).includes('400'))).toBe(false);
   });
 
   it('passes a non-microservice error through untouched', async () => {

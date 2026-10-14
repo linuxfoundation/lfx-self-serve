@@ -6,6 +6,7 @@ import {
   CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_CODE,
   CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_MESSAGE,
   CAMPAIGN_AUDIENCE_FAILED_MESSAGE,
+  CAMPAIGN_AUDIENCE_LOGGED_UPSTREAM_MESSAGE_MAX_LENGTH,
   CAMPAIGN_AUDIENCE_NO_CONNECTION_CODE,
   CAMPAIGN_AUDIENCE_NO_CONNECTION_MESSAGE,
   CAMPAIGN_AUDIENCE_NOT_ENABLED_CODE,
@@ -112,6 +113,18 @@ export class CampaignOptimizeService {
         window ? { window } : undefined
       );
     } catch (error) {
+      // Every answered 400 becomes NOT_ENABLED, which offers no retry. campaign-service also answers
+      // 400 for an inactive connection, a missing ad account or a window it refuses, so its own
+      // sentence is kept in the log (bounded, scrubbed like every log field, never sent to the
+      // browser) to tell those apart if the mapping ever needs to.
+      if (error instanceof MicroserviceError && error.statusCode === 400 && upstreamAnswered(error)) {
+        const upstreamMessage = (error.errorBody as { message?: unknown } | undefined)?.message;
+        logger.debug(req, 'get_platform_audience', 'campaign-service refused the audience read with 400; answering not enabled', {
+          platform,
+          window,
+          upstream_message: typeof upstreamMessage === 'string' ? upstreamMessage.slice(0, CAMPAIGN_AUDIENCE_LOGGED_UPSTREAM_MESSAGE_MAX_LENGTH) : undefined,
+        });
+      }
       throw asAudienceReadFailure(error, 'get_platform_audience');
     }
   }

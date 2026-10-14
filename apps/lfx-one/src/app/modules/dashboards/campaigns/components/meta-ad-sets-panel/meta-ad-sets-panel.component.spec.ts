@@ -147,8 +147,38 @@ describe('MetaAdSetsPanelComponent', () => {
     render({ outcome: unconfirmedPause });
 
     expect(q('meta-ad-sets-deliberate-pause-advice')!.textContent).toContain(META_AD_SET_DELIBERATE_PAUSE_ADVICE);
-    expect(q('meta-ad-sets-deliberate-pause-missing')!.textContent).toContain('Pause it here again');
+    expect(q('meta-ad-sets-deliberate-pause-missing')!.textContent).toContain('Pause again (record)');
     expect(q('meta-ad-sets-deliberate-pause-shown')).toBeNull();
+  });
+
+  it('offers Pause again (record) beside Resume when the created ad set is paused but not recorded, and asks for PAUSED', () => {
+    listMetaAdSets.mockReturnValue(of(list([adSet({ status: 'PAUSED', deliberately_paused: false })])));
+    render({ outcome: unconfirmedPause });
+
+    expect(q('meta-ad-set-toggle-111')!.textContent).toContain('Resume');
+    const record = q('meta-ad-set-record-pause-111') as HTMLButtonElement;
+    expect(record.textContent).toContain('Pause again (record)');
+    expect(record.getAttribute('aria-label')).toBe('Pause again (record) Leads — US');
+    record.click();
+    // Never ACTIVE: re-sending PAUSED records the pause and activates nothing.
+    expect(emitted).toEqual([{ adSetId: '111', adSetName: 'Leads — US', status: 'PAUSED' }]);
+
+    fixture.componentRef.setInput('pendingAdSetId', '111');
+    fixture.detectChanges();
+    (q('meta-ad-set-record-pause-111') as HTMLButtonElement).click();
+    expect((q('meta-ad-set-record-pause-111') as HTMLButtonElement).disabled).toBe(true);
+    expect(emitted).toHaveLength(1);
+  });
+
+  it.each([
+    ['already recorded as deliberately paused', { status: 'PAUSED', deliberately_paused: true }],
+    ['active', { status: 'ACTIVE' }],
+    ['not created here', { status: 'PAUSED', recorded: false }],
+  ])('offers no Pause again (record) on an ad set that is %s', (_label, over) => {
+    listMetaAdSets.mockReturnValue(of(list([adSet(over as Partial<CampaignServiceMetaAdSet>)])));
+    render();
+
+    expect(q('meta-ad-set-record-pause-111')).toBeNull();
   });
 
   it('gives no deliberate-pause advice for an ad set whose pause is never recorded', () => {

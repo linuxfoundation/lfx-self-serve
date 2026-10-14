@@ -4,14 +4,15 @@
 import { DatePipe } from '@angular/common';
 import { Component, computed, inject, input, output, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { META_AD_SET_DELIBERATE_PAUSE_ADVICE, META_AD_SET_NO_ACTION_REASON, META_AD_SET_RESUME_ELSEWHERE_REASON } from '@lfx-one/shared/constants';
+import { META_AD_SET_DELIBERATE_PAUSE_ADVICE, META_AD_SET_RECORD_PAUSE_LABEL } from '@lfx-one/shared/constants';
 import type {
-  CampaignServiceMetaAdSet,
   CampaignServiceMetaAdSets,
   MetaAdSetDisplayRow,
+  MetaAdSetStatus,
   MetaAdSetToggleOutcome,
   MetaAdSetToggleRequest,
 } from '@lfx-one/shared/interfaces';
+import { toMetaAdSetDisplayRow } from '@lfx-one/shared/utils';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { CampaignService } from '@services/campaign.service';
@@ -62,6 +63,7 @@ export class MetaAdSetsPanelComponent {
   protected readonly retryToken = signal(0);
 
   protected readonly deliberatePauseAdvice = META_AD_SET_DELIBERATE_PAUSE_ADVICE;
+  protected readonly recordPauseLabel = META_AD_SET_RECORD_PAUSE_LABEL;
 
   protected readonly rows: Signal<MetaAdSetDisplayRow[]> = this.initRows();
   /** Whether no toggle may be pressed right now. */
@@ -89,7 +91,19 @@ export class MetaAdSetsPanelComponent {
     if (this.locked() || row.action === null) {
       return;
     }
-    this.toggleAdSet.emit({ adSetId: row.adSet.id, adSetName: row.name, status: row.action });
+    this.request(row, row.action);
+  }
+
+  /**
+   * "Pause again (record)": re-sends PAUSED for the created ad set Meta already reports paused, so
+   * campaign-service records the deliberate pause (`ALREADY_IN_STATE`, nothing activated). Asked of
+   * the parent like any other change, so it carries the same If-Match, lock and no-retry rules.
+   */
+  protected recordPause(row: MetaAdSetDisplayRow): void {
+    if (this.locked() || !row.recordPause) {
+      return;
+    }
+    this.request(row, 'PAUSED');
   }
 
   protected retry(): void {
@@ -139,7 +153,7 @@ export class MetaAdSetsPanelComponent {
         return [];
       }
       const currency = typeof data.currency === 'string' ? data.currency : '';
-      return (Array.isArray(data.ad_sets) ? data.ad_sets : []).map((adSet) => toDisplayRow(adSet, currency));
+      return (Array.isArray(data.ad_sets) ? data.ad_sets : []).map((adSet) => toMetaAdSetDisplayRow(adSet, currency));
     });
   }
 
@@ -158,33 +172,8 @@ export class MetaAdSetsPanelComponent {
       return { advice: true, shown: settled ? adSet.deliberately_paused === true : null };
     });
   }
-}
 
-function toDisplayRow(adSet: CampaignServiceMetaAdSet, currency: string): MetaAdSetDisplayRow {
-  const status = typeof adSet.status === 'string' && adSet.status !== '' ? adSet.status : null;
-  const effective = typeof adSet.effective_status === 'string' && adSet.effective_status !== '' ? adSet.effective_status : null;
-  const budget =
-    typeof adSet.budget_amount === 'string' && adSet.budget_amount !== '' && adSet.budget_type
-      ? `${adSet.budget_amount} ${currency} ${adSet.budget_type}`.replace(/\s+/g, ' ')
-      : null;
-  let action: MetaAdSetDisplayRow['action'] = null;
-  let noActionReason = META_AD_SET_NO_ACTION_REASON;
-  if (adSet.listed && status === 'ACTIVE') {
-    action = 'PAUSED';
-    noActionReason = '';
-  } else if (adSet.listed && status === 'PAUSED') {
-    // campaign-service activates only the ad set it created (409 otherwise).
-    action = adSet.recorded ? 'ACTIVE' : null;
-    noActionReason = adSet.recorded ? '' : META_AD_SET_RESUME_ELSEWHERE_REASON;
+  private request(row: MetaAdSetDisplayRow, status: MetaAdSetStatus): void {
+    this.toggleAdSet.emit({ adSetId: row.adSet.id, adSetName: row.name, status });
   }
-  return {
-    adSet,
-    name: typeof adSet.name === 'string' && adSet.name !== '' ? adSet.name : adSet.id,
-    status,
-    effectiveStatus: effective !== null && effective !== status ? effective : null,
-    budget,
-    action,
-    actionLabel: action === 'PAUSED' ? 'Pause' : 'Resume',
-    noActionReason,
-  };
 }

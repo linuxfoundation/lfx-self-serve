@@ -3887,6 +3887,62 @@ describe('OptimizationTabComponent — Meta ad sets (#3299)', () => {
     expect(q('meta-ad-sets-deliberate-pause-advice')).toBeNull();
   });
 
+  it('records an unrecorded pause with PAUSED again — never ACTIVE — under the same If-Match, lock and no-retry rules', () => {
+    listMetaAdSets.mockReturnValue(of(adSets([adSet({ status: 'PAUSED', deliberately_paused: false })])));
+    const response = new Subject<{ campaign_id: string; ad_set_id: string; requested_status: 'PAUSED'; outcome: 'ALREADY_IN_STATE'; etag: string }>();
+    updateMetaAdSetStatus.mockReturnValue(response.asObservable());
+    render([doc()]);
+    openPanel();
+
+    (q('meta-ad-set-record-pause-120210000000000888') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(updateMetaAdSetStatus).toHaveBeenCalledWith({
+      projectSlug: 'tlf',
+      briefId: 'b-1',
+      campaignId: 'c-1',
+      adSetId: '120210000000000888',
+      status: 'PAUSED',
+      etag: '"3"',
+    });
+    // In flight: both of the ad set's actions and the row's own toggle are locked; a second click sends nothing.
+    expect((q('meta-ad-set-record-pause-120210000000000888') as HTMLButtonElement).disabled).toBe(true);
+    expect((q('meta-ad-set-toggle-120210000000000888') as HTMLButtonElement).disabled).toBe(true);
+    expect((q('optimization-campaign-toggle-c-1') as HTMLButtonElement).disabled).toBe(true);
+    (q('meta-ad-set-record-pause-120210000000000888') as HTMLButtonElement).click();
+    expect(updateMetaAdSetStatus).toHaveBeenCalledTimes(1);
+
+    // campaign-service answers ALREADY_IN_STATE and records the pause, bumping the row's version.
+    listMetaAdSets.mockReturnValue(of(adSets([adSet({ status: 'PAUSED', deliberately_paused: true })])));
+    response.next({ campaign_id: 'c-1', ad_set_id: '120210000000000888', requested_status: 'PAUSED', outcome: 'ALREADY_IN_STATE', etag: '"4"' });
+    response.complete();
+    fixture.detectChanges();
+
+    expect(q('meta-ad-sets-outcome-already')).not.toBeNull();
+    expect(q('meta-ad-set-deliberately-paused-120210000000000888')).not.toBeNull();
+    expect(q('meta-ad-set-record-pause-120210000000000888')).toBeNull();
+    (q('optimization-campaign-toggle-c-1') as HTMLButtonElement).click();
+    expect(updateCampaignStatus.mock.calls[0][0].etag).toBe('"4"');
+  });
+
+  it.each([
+    [
+      409,
+      'CONFLICT',
+      "the ad set's status was changed on Meta, but this campaign was modified or deleted by another request meanwhile",
+      'Ad set change needs attention',
+    ],
+    [412, 'PRECONDITION_FAILED', 'This campaign changed since it was loaded.', 'Ad set not changed'],
+    [503, META_AD_SET_STATUS_UNCONFIRMED_CODE, META_AD_SET_STATUS_OUTCOME_UNCONFIRMED, 'Ad set change not confirmed'],
+  ])('titles the toast for a %i truthfully', (status, code, message, title) => {
+    updateMetaAdSetStatus.mockReturnValue(throwError(() => bffError(status, code, message)));
+    render([doc()]);
+    openPanel();
+    clickToggle();
+
+    const toast = messageAdd.mock.calls.at(-1)?.[0] as { summary: string };
+    expect(toast.summary).toBe(`${title}: Leads — US (KubeCon EU)`);
+  });
+
   it('offers no Resume on a paused ad set this service did not create', () => {
     listMetaAdSets.mockReturnValue(of(adSets([adSet({ status: 'PAUSED', recorded: false })])));
     render([doc()]);

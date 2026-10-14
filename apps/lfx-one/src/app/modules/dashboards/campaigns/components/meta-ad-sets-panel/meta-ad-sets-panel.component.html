@@ -37,7 +37,7 @@
           </p>
         } @else if (pauseCheck().shown === false) {
           <p class="text-xs font-medium text-red-600" data-testid="meta-ad-sets-deliberate-pause-missing">
-            The re-read does not show {{ result.adSetName }} as deliberately paused. Pause it here again before resuming the campaign.
+            The re-read does not show {{ result.adSetName }} as deliberately paused. Use {{ recordPauseLabel }} before resuming the campaign.
           </p>
         }
       }
@@ -121,24 +121,42 @@
                   }
                 </td>
                 <td class="px-3 py-2 text-right">
-                  @if (row.action) {
-                    <button
-                      type="button"
-                      (click)="toggle(row)"
-                      [disabled]="locked()"
-                      [attr.aria-label]="row.actionLabel + ' ' + row.name"
-                      [attr.aria-busy]="pendingAdSetId() === row.adSet.id ? 'true' : null"
-                      [attr.aria-describedby]="blockedReason() ? 'meta-ad-sets-blocked-' + campaignId() : null"
-                      class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                      [attr.data-testid]="'meta-ad-set-toggle-' + row.adSet.id">
-                      @if (pendingAdSetId() === row.adSet.id) {
-                        <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
-                      }
-                      {{ row.actionLabel }}
-                    </button>
-                  } @else {
-                    <span class="text-xs text-gray-500" [attr.data-testid]="'meta-ad-set-no-action-' + row.adSet.id">{{ row.noActionReason }}</span>
-                  }
+                  <div class="flex flex-wrap items-center justify-end gap-2">
+                    @if (row.action) {
+                      <button
+                        type="button"
+                        (click)="toggle(row)"
+                        [disabled]="locked()"
+                        [attr.aria-label]="row.actionLabel + ' ' + row.name"
+                        [attr.aria-busy]="pendingAdSetId() === row.adSet.id ? 'true' : null"
+                        [attr.aria-describedby]="blockedReason() ? 'meta-ad-sets-blocked-' + campaignId() : null"
+                        class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                        [attr.data-testid]="'meta-ad-set-toggle-' + row.adSet.id">
+                        @if (pendingAdSetId() === row.adSet.id) {
+                          <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+                        }
+                        {{ row.actionLabel }}
+                      </button>
+                    } @else {
+                      <span class="text-xs text-gray-500" [attr.data-testid]="'meta-ad-set-no-action-' + row.adSet.id">{{ row.noActionReason }}</span>
+                    }
+                    <!--
+                      Paused on Meta but its deliberate pause is not recorded: re-sending PAUSED records it
+                      and activates nothing, so a campaign resume will leave this ad set paused.
+                    -->
+                    @if (row.recordPause) {
+                      <button
+                        type="button"
+                        (click)="recordPause(row)"
+                        [disabled]="locked()"
+                        [attr.aria-label]="recordPauseLabel + ' ' + row.name"
+                        [attr.aria-describedby]="blockedReason() ? 'meta-ad-sets-blocked-' + campaignId() : null"
+                        class="rounded-md border border-amber-300 px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-50 disabled:opacity-50"
+                        [attr.data-testid]="'meta-ad-set-record-pause-' + row.adSet.id">
+                        {{ recordPauseLabel }}
+                      </button>
+                    }
+                  </div>
                 </td>
               </tr>
             }

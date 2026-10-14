@@ -2594,13 +2594,25 @@ export class OptimizationTabComponent implements OnInit {
     this.messageService.add({ severity: 'error', summary: `Bid not changed for ${campaignName}`, detail: outcome.message, sticky: true });
   }
 
-  /** Narrates an ad-set change that did not succeed. Sticky; UNCONFIRMED is a warning that says it may have applied. */
+  /**
+   * Narrates an ad-set change that did not succeed, sticky, with a title that never claims more than
+   * the answer proves:
+   * - `unconfirmed`: "not confirmed" — it may have applied.
+   * - `conflict` (412): "not changed" — a stale validator is refused before anything is sent.
+   * - `failed`: NEUTRAL. It covers definite refusals but also campaign-service's 409s saying the
+   *   status WAS changed on Meta while the campaign row moved, so "not changed" could be false. The
+   *   detail (campaign-service's own sentence) says which.
+   */
   private announceAdSetFailure(campaignName: string, adSetName: string, state: MetaAdSetToggleOutcome['state'], message: string): void {
     if (state === 'unconfirmed') {
       this.messageService.add({ severity: 'warn', summary: `Ad set change not confirmed: ${adSetName} (${campaignName})`, detail: message, sticky: true });
       return;
     }
-    this.messageService.add({ severity: 'error', summary: `Ad set not changed: ${adSetName} (${campaignName})`, detail: message, sticky: true });
+    if (state === 'conflict') {
+      this.messageService.add({ severity: 'error', summary: `Ad set not changed: ${adSetName} (${campaignName})`, detail: message, sticky: true });
+      return;
+    }
+    this.messageService.add({ severity: 'error', summary: `Ad set change needs attention: ${adSetName} (${campaignName})`, detail: message, sticky: true });
   }
 
   private bumpAdSetsReload(campaignId: string): void {

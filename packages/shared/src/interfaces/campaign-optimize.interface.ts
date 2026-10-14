@@ -442,6 +442,13 @@ export interface MetaAdSetDisplayRow {
   actionLabel: string;
   /** Why no action is offered, or `''`. */
   noActionReason: string;
+  /**
+   * Whether to also offer "Pause again (record)": the created ad set is PAUSED on Meta but its
+   * deliberate pause is not recorded (an unconfirmed pause can leave it so), and a campaign resume
+   * would re-activate it. Sending PAUSED again activates nothing: campaign-service answers
+   * `ALREADY_IN_STATE` without contacting Meta's write and records the pause.
+   */
+  recordPause: boolean;
 }
 
 /** How a lever reports an outcome it cannot confirm: its own error code and fixed client message. */

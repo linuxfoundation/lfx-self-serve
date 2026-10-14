@@ -78,6 +78,13 @@ export const CAMPAIGN_AUDIENCE_UNAVAILABLE_MESSAGE =
 export const CAMPAIGN_AUDIENCE_NOT_ENABLED_CODE = 'CAMPAIGN_AUDIENCE_NOT_ENABLED';
 export const CAMPAIGN_AUDIENCE_NOT_ENABLED_MESSAGE =
   "Audience insights for this ad platform are not available: they are not enabled in this environment, or the project's connection is inactive or has no ad account selected.";
+/**
+ * The most characters of campaign-service's own sentence the BFF logs (at DEBUG) when it answers an
+ * upstream 400 on an audience read as `CAMPAIGN_AUDIENCE_NOT_ENABLED`. Bounded like the other
+ * upstream-text log lines; the logger's field scrubber still applies to it.
+ */
+export const CAMPAIGN_AUDIENCE_LOGGED_UPSTREAM_MESSAGE_MAX_LENGTH = 300;
+
 /** Every other failure (an auth refusal, a server error, a read nobody answered); the code stays the status's. */
 export const CAMPAIGN_AUDIENCE_FAILED_MESSAGE = 'The audience read failed. Try again.';
 
@@ -344,6 +351,9 @@ export const META_AD_SET_FAILURE_FALLBACK = "The ad set's status could not be ch
 
 /** Why a non-recorded ad set offers no Resume: campaign-service activates only the ad set it created. */
 export const META_AD_SET_RESUME_ELSEWHERE_REASON = 'Only the ad set created here can be resumed here; resume this one in Meta Ads Manager.';
+
+/** The visible word of the action that re-sends PAUSED to record a deliberate pause (see `MetaAdSetDisplayRow.recordPause`). */
+export const META_AD_SET_RECORD_PAUSE_LABEL = 'Pause again (record)';
 
 /** Why an ad set Meta reports deleted or archived, or no longer lists, offers no action. */
 export const META_AD_SET_NO_ACTION_REASON = 'This ad set cannot be paused or resumed.';
