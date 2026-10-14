@@ -65,12 +65,38 @@
   </div>
 </div>
 
-<!-- The two columns. Each placeholder stands in for a section a later Phase 1 issue builds; the
-     section replaces its placeholder, keeping this order and these gaps. Stacked at 920px and below
-     (32px apart); side by side above that (44px apart), the rail 344px wide and sticky 32px below the
-     identity bar: 115px (an 83px bar), or 157px under the 42px impersonation banner. -->
+<!-- The two columns. Each placeholder stands in for a section a later issue builds; the section
+     replaces its placeholder, keeping this order and these gaps. The rail comes first in the DOM
+     (#3577): stacked at 920px and below (32px apart) it sits right under the header, so Register /
+     Join is not at the end of the page; side by side above that (44px apart) `flex-row-reverse` puts
+     it on the right, 344px wide and sticky 32px below the identity bar: 115px (an 83px bar), or 157px
+     under the 42px impersonation banner. One DOM order, so reading and focus order reach the rail's
+     action before the content sections at every width. -->
 <ng-template #columns>
-  <div class="mt-[56px] flex flex-col gap-[32px] min-[921px]:flex-row min-[921px]:items-start min-[921px]:gap-[44px]">
+  <div class="mt-[56px] flex flex-col gap-[32px] min-[921px]:flex-row-reverse min-[921px]:items-start min-[921px]:gap-[44px]">
+    <!-- A labelled region, not <aside>: it sits inside <main>, where a complementary landmark must not
+         (#3260). Its sr-only h2, once loaded, keeps the rail's h3s from reading as part of the section above it. -->
+    <section
+      class="flex w-full flex-col gap-[20px] min-[921px]:sticky min-[921px]:w-[344px] min-[921px]:flex-none"
+      [ngClass]="railTopClass()"
+      aria-label="Meeting actions"
+      data-testid="meeting-rail">
+      @if (state.status() === 'ready') {
+        <!-- Only with the rail's content: the loading skeleton projects this template into its live
+             region, which must not read a heading out with the loading status. -->
+        <h2 class="sr-only">Meeting actions</h2>
+        <!-- The rail card: the time banner (E1-06) and the action slot (E2-01) on top, then "Organized
+             by" under a divider, as in the prototype. -->
+        <div
+          class="flex flex-col overflow-hidden rounded-[var(--md-radius-lg)] border border-[var(--md-border)] bg-[var(--md-surface-card)] shadow-[0_1px_2px_var(--md-shadow-color)]">
+          <div class="flex flex-col gap-[16px] p-[20px]">
+            <lfx-meeting-time-banner />
+            <lfx-meeting-action-slot />
+          </div>
+          <lfx-meeting-organizer class="block border-t border-[var(--md-divider)] px-[20px] py-[18px] empty:hidden" />
+        </div>
+      }
+    </section>
     <div class="flex min-w-0 flex-col gap-[64px] min-[921px]:flex-[1.7_1_0%]" data-testid="meeting-content-column">
       <p-skeleton height="109px" aria-hidden="true" data-testid="meeting-section-placeholder-occurrences" />
       <!-- E4-01: an ended meeting's recording and transcript, where the viewer has artifact access (FR-040). -->
@@ -95,28 +121,5 @@
       }
       <p-skeleton height="280px" aria-hidden="true" data-testid="meeting-section-placeholder-discover" />
     </div>
-    <!-- A labelled region, not <aside>: it sits inside <main>, where a complementary landmark must not
-         (#3260). Its sr-only h2, once loaded, keeps the rail's h3s from reading as part of the section above it. -->
-    <section
-      class="flex w-full flex-col gap-[20px] min-[921px]:sticky min-[921px]:w-[344px] min-[921px]:flex-none"
-      [ngClass]="railTopClass()"
-      aria-label="Meeting actions"
-      data-testid="meeting-rail">
-      @if (state.status() === 'ready') {
-        <!-- Only with the rail's content: the loading skeleton projects this template into its live
-             region, which must not read a heading out with the loading status. -->
-        <h2 class="sr-only">Meeting actions</h2>
-        <!-- The rail card: the time banner (E1-06) and the action slot (E2-01) on top, then "Organized
-             by" under a divider, as in the prototype. -->
-        <div
-          class="flex flex-col overflow-hidden rounded-[var(--md-radius-lg)] border border-[var(--md-border)] bg-[var(--md-surface-card)] shadow-[0_1px_2px_var(--md-shadow-color)]">
-          <div class="flex flex-col gap-[16px] p-[20px]">
-            <lfx-meeting-time-banner />
-            <lfx-meeting-action-slot />
-          </div>
-          <lfx-meeting-organizer class="block border-t border-[var(--md-divider)] px-[20px] py-[18px] empty:hidden" />
-        </div>
-      }
-    </section>
   </div>
 </ng-template>

@@ -157,6 +157,19 @@ describe('MeetingDetailsPageComponent', () => {
     expect(rail?.querySelector('h2')?.textContent?.trim()).toBe('Meeting actions');
   });
 
+  // #3577: the rail comes before the content in the DOM, so on a stacked (mobile) layout Register /
+  // Join sits right under the header, and reading and focus order reach it first; above 920px the
+  // row is reversed so it still shows on the right.
+  it('puts the action rail before the content column, reversed into the right column on wide screens', () => {
+    show('ready');
+
+    const rail = query('meeting-rail');
+    const content = query('meeting-content-column');
+    expect(rail?.compareDocumentPosition(content as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(rail?.parentElement).toBe(content?.parentElement);
+    expect(rail?.parentElement?.className).toContain('min-[921px]:flex-row-reverse');
+  });
+
   // #3260 (WCAG 2.4.11): focused controls scroll clear of the sticky identity bar, only while the page is up.
   it('pads the scroll root under the sticky bar while mounted', () => {
     show('ready');
