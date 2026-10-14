@@ -22,6 +22,7 @@ import {
   META_AD_SET_DELIBERATE_PAUSE_ADVICE,
   META_AD_SET_PAUSE_RECORD_OUTCOME_UNCONFIRMED,
   META_AD_SET_PAUSE_RECORD_UNCONFIRMED_CODE,
+  META_AD_SET_RESUME_BLOCKED_DEGRADED_REASON,
   META_AD_SET_STATUS_OUTCOME_UNCONFIRMED,
   META_AD_SET_STATUS_UNCONFIRMED_CODE,
   META_AD_SET_UNCONFIRMED_MESSAGE,
@@ -4416,6 +4417,37 @@ describe('OptimizationTabComponent — Meta ad sets (#3299)', () => {
 
     const toast = messageAdd.mock.calls.at(-1)?.[0] as { summary: string };
     expect(toast.summary).toBe(`${title}: Leads — US (KubeCon EU)`);
+  });
+
+  it("passes a created_degraded campaign's state to the panel: Pause allowed, Resume refused with the reason", () => {
+    listMetaAdSets.mockReturnValue(of(adSets([adSet({ status: 'PAUSED', deliberately_paused: true })])));
+    render([doc({ status: 'created_degraded' })]);
+    openPanel();
+
+    // The read panel stays available under a non-toggleable campaign state.
+    expect(q('meta-ad-set-row-120210000000000888')).not.toBeNull();
+    expect(q('meta-ad-sets-campaign-state')!.textContent).toContain(META_AD_SET_RESUME_BLOCKED_DEGRADED_REASON);
+    const resume = q('meta-ad-set-toggle-120210000000000888') as HTMLButtonElement;
+    expect(resume.textContent).toContain('Resume');
+    expect(resume.disabled).toBe(true);
+    resume.click();
+    expect(updateMetaAdSetStatus).not.toHaveBeenCalled();
+  });
+
+  it('refuses, without sending, a direction the campaign state forbids even if one reaches the write', () => {
+    render([doc({ status: 'created_degraded' })]);
+    const tab = fixture.componentInstance as unknown as {
+      campaignRows: () => CampaignRow[] | null;
+      changeMetaAdSetStatus(row: CampaignRow, request: { adSetId: string; adSetName: string; status: 'ACTIVE' | 'PAUSED'; kind: 'toggle' | 'record' }): void;
+    };
+    const row = tab.campaignRows()![0];
+
+    tab.changeMetaAdSetStatus(row, { adSetId: '120210000000000888', adSetName: 'Leads — US', status: 'ACTIVE', kind: 'record' });
+    expect(updateMetaAdSetStatus).not.toHaveBeenCalled();
+
+    tab.changeMetaAdSetStatus(row, { adSetId: '120210000000000888', adSetName: 'Leads — US', status: 'PAUSED', kind: 'toggle' });
+    expect(updateMetaAdSetStatus).toHaveBeenCalledTimes(1);
+    expect(updateMetaAdSetStatus.mock.calls[0][0].status).toBe('PAUSED');
   });
 
   it('offers no Resume on a paused ad set this service did not create', () => {
