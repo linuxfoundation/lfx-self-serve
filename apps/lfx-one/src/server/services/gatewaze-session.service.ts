@@ -240,7 +240,8 @@ export class GatewazeSessionService {
    * `GatewazeSessionEndOptions`). Uses the cookie alone, so LFX's `/logout`, which runs before
    * `express-openid-connect`, can call it. Each step is bounded. A failed refresh or revoke does not
    * stop the steps after it; a store that cannot be reached, or no stored session, ends it early
-   * with nothing removed. Never throws. The LFX session is not touched.
+   * with nothing removed. A record GoTrue refuses to refresh still gets the marker when `blockReMint`
+   * is set. Never throws. The LFX session is not touched.
    */
   public async endGatewazeSession(req: Request, options: GatewazeSessionEndOptions): Promise<GatewazeSessionEndResult> {
     const result: GatewazeSessionEndResult = { found: false, revoked: false, deleted: false };
@@ -260,14 +261,25 @@ export class GatewazeSessionService {
       return result;
     }
 
-    let session: GwSession | null = null;
+    // Read first, so a refresh GoTrue refuses outright (fresh() then discards the record and returns
+    // null, with no marker) is still told apart from an id that never had a record.
+    let session: GwSession | null = await step(store.get(gwSid), 'read').catch(() => null);
+    if (!session) {
+      // Nothing to remove. Writing the marker anyway would let an anonymous `/logout` with a made-up
+      // cookie make every pod do a Valkey write and a sign-out publish. A mint still running for a
+      // real session leaves a record keyed on an LFX id that is now gone, which ages out on its TTL.
+      return result;
+    }
+    result.found = true;
+    const stored = session;
     try {
       session = await step(store.fresh(gwSid), 'refresh');
     } catch (error) {
       warn('Refresh before revoke failed; revoking with the stored token', error);
-      session = await step(store.get(gwSid), 'read').catch(() => null);
+      session = stored;
     }
-    result.found = session !== null;
+    // A null session here means GoTrue refused the refresh, so the refresh token is already dead
+    // there and there is nothing to revoke.
     if (session) {
       // logout() resolves false rather than throwing when GoTrue refuses or cannot be reached.
       result.revoked = await step(logout(toHostConfig(config), session), 'revoke').catch(() => false);
@@ -276,17 +288,13 @@ export class GatewazeSessionService {
       }
     }
 
-    if (!session) {
-      // Nothing to remove. Writing the marker anyway would let an anonymous `/logout` with a made-up
-      // cookie make every pod do a Valkey write and a sign-out publish. A mint still running for a
-      // real session leaves a record keyed on an LFX id that is now gone, which ages out on its TTL.
-      return result;
-    }
     try {
       if (options.blockReMint) {
+        // Also after a refused refresh, which removed the record without the marker: the marker is
+        // what stops a mint still in flight from storing a new record after the logout.
         await step(store.delete(gwSid), 'delete');
         result.deleted = true;
-      } else {
+      } else if (session) {
         // Only while the record still holds the token just revoked, so a session another tab has
         // minted since is left alone.
         result.deleted = await step(store.discard(gwSid, { onlyIfAccessToken: session.access_token }), 'discard');

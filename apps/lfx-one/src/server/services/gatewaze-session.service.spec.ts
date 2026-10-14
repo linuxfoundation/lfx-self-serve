@@ -643,6 +643,42 @@ describe('GatewazeSessionService me and logout', () => {
       expect(kv.published).toEqual([]);
     });
 
+    it('on LFX logout, still writes the marker when GoTrue refuses the refresh outright', async () => {
+      upstreams.state.grantExpiresIn = 1;
+      await service.getGatewazeSession(buildReq());
+      upstreams.state.refreshStatus = 400;
+
+      await expect(service.endGatewazeSession(buildReq(null), LFX_LOGOUT)).resolves.toEqual({ found: true, revoked: false, deleted: true });
+      // The refused refresh token is already dead at GoTrue, so there is nothing to revoke.
+      expect(upstreams.count(LOGOUT)).toBe(0);
+      expect(kv.data.has(SESSION_KEY)).toBe(false);
+      expect(kv.data.has(SIGNED_OUT_KEY)).toBe(true);
+      // A mint after the logout is blocked, as it would be after any other LFX logout.
+      upstreams.state.refreshStatus = 200;
+      await expect(service.getGatewazeSession(buildReq())).resolves.toEqual({ outcome: 'ended' });
+      expect(upstreams.count(ID_TOKEN_GRANT)).toBe(1);
+    });
+
+    it('on the embed sign-out, writes no marker when GoTrue refuses the refresh outright', async () => {
+      upstreams.state.grantExpiresIn = 1;
+      await service.getGatewazeSession(buildReq());
+      upstreams.state.refreshStatus = 400;
+
+      await expect(service.endGatewazeSession(buildReq(null), EMBED_SIGN_OUT)).resolves.toEqual({ found: true, revoked: false, deleted: false });
+      expect(kv.data.has(SESSION_KEY)).toBe(false);
+      expect(kv.data.has(SIGNED_OUT_KEY)).toBe(false);
+    });
+
+    it('on LFX logout, writes nothing for an id with no record, even while other sessions are stored', async () => {
+      await service.getGatewazeSession(buildReq(SUB_A, OTHER_LFX_SID));
+      const before = new Map(kv.data);
+      const publishedBefore = kv.published.length;
+
+      await expect(service.endGatewazeSession(buildReq(null), LFX_LOGOUT)).resolves.toEqual({ found: false, revoked: false, deleted: false });
+      expect(kv.data).toEqual(before);
+      expect(kv.published).toHaveLength(publishedBefore);
+    });
+
     it('revokes with the stored token when GoTrue cannot refresh it first', async () => {
       upstreams.state.grantExpiresIn = 1;
       await service.getGatewazeSession(buildReq());
@@ -677,9 +713,8 @@ describe('GatewazeSessionService me and logout', () => {
       vi.useFakeTimers();
 
       const pending = service.endGatewazeSession(buildReq(null), LFX_LOGOUT);
-      // The refresh and the fallback read each give up after their own bound; with no session found,
-      // nothing is deleted.
-      await vi.advanceTimersByTimeAsync(2 * 2_000 + 10);
+      // The first read gives up after its bound; with no session found, nothing else runs.
+      await vi.advanceTimersByTimeAsync(2_000 + 10);
 
       await expect(pending).resolves.toEqual({ found: false, revoked: false, deleted: false });
     });
