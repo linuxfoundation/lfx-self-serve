@@ -16,7 +16,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, Page, Route } from '@playwright/test';
 
-import { stubMeetingsV2Flag } from './meetings-v2-flag.helper';
+import { stubMeetingDetailsV2Flag } from './meetings-v2-flag.helper';
 
 export const PAGE_LOAD_TIMEOUT = 20_000;
 export const ELEMENT_TIMEOUT = 10_000;
@@ -174,7 +174,7 @@ export async function stubMeetingDetails(page: Page, stubs: MeetingStubs): Promi
  * meeting. `zoom_redirect=false` keeps the join slot from auto-opening Zoom in a popup.
  */
 export async function openMeetingSignedIn(page: Page, meetingId: string, stubs: MeetingStubs, options: OpenMeetingOptions = {}): Promise<void> {
-  await stubMeetingsV2Flag(page, true);
+  await stubMeetingDetailsV2Flag(page, true);
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page).not.toHaveURL(/auth0\.com/);
@@ -220,7 +220,7 @@ export function skipWithoutCredentials(skip: (condition: boolean, reason: string
 
 /** Boots an anonymous browser on a public page (`/` would redirect to Auth0) and SPA-navigates to the meeting. */
 export async function openMeetingAnonymously(page: Page, meetingId: string, stubs: MeetingStubs, options: OpenMeetingOptions = {}): Promise<void> {
-  await stubMeetingsV2Flag(page, true);
+  await stubMeetingDetailsV2Flag(page, true);
 
   await page.goto('/meetings/not-found', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('meeting-not-found-card')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
