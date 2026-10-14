@@ -153,6 +153,13 @@ describe('GatewazeProxyController', () => {
       }
     });
 
+    it("sends LFX's resolved client address as X-Forwarded-For, never the browser's own chain", async () => {
+      await send('/api/gatewaze/supabase/rest/v1/newsletters', { headers: { ...shimHeaders, 'x-forwarded-for': '198.51.100.7' } });
+
+      // No `trust proxy` in this harness, so req.ip is the socket peer.
+      expect(seen?.headers['x-forwarded-for']).toMatch(/^(::ffff:)?127\.0\.0\.1$/);
+    });
+
     it('forwards a write with its body, keeping the shim headers PostgREST reads', async () => {
       const res = await send('/api/gatewaze/supabase/rest/v1/newsletters', {
         method: 'POST',
@@ -235,7 +242,18 @@ describe('GatewazeProxyController', () => {
       expect(seen?.headers['authorization']).toBeUndefined();
     });
 
-    it('never answers a preflight with CORS headers', async () => {
+    it('refuses a cross-site CORS preflight with 403', async () => {
+      const res = await send('/api/gatewaze/supabase/rest/v1/newsletters', {
+        method: 'OPTIONS',
+        headers: { origin: 'https://attacker.example', 'access-control-request-method': 'POST', 'access-control-request-headers': 'apikey' },
+      });
+
+      expect(res.status).toBe(403);
+      expect(res.headers['access-control-allow-origin']).toBeUndefined();
+      expect(seen).toBeNull();
+    });
+
+    it('never passes upstream CORS headers through', async () => {
       respond = (_req, res) => {
         res.setHeader('access-control-allow-origin', '*');
         res.end();
@@ -378,13 +396,14 @@ describe('GatewazeProxyController', () => {
   });
 
   describe('response headers', () => {
-    it('keeps the allowlist, drops cookies and the upstream session marker, and adds nosniff and the CSP sandbox', async () => {
+    it('keeps the allowlist, drops cookies, the upstream session marker and credential prompts, and adds nosniff and the CSP sandbox', async () => {
       respond = (_req, res) => {
         res.setHeader('content-type', 'text/html');
         res.setHeader('content-range', '0-0/1');
         res.setHeader('set-cookie', 'upstream=1');
         res.setHeader('x-gw-session', 'expired');
         res.setHeader('x-powered-by', 'synthetic');
+        res.setHeader('www-authenticate', 'Basic realm="synthetic"');
         res.setHeader('content-security-policy', 'default-src *');
         res.end('<script></script>');
       };
@@ -396,6 +415,7 @@ describe('GatewazeProxyController', () => {
       expect(res.headers['set-cookie']).toBeUndefined();
       expect(res.headers['x-gw-session']).toBeUndefined();
       expect(res.headers['x-powered-by']).toBeUndefined();
+      expect(res.headers['www-authenticate']).toBeUndefined();
       expect(res.headers['x-content-type-options']).toBe('nosniff');
       expect(res.headers['content-security-policy']).toBe("sandbox; default-src 'none'");
     });

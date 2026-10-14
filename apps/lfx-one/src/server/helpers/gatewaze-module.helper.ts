@@ -2,24 +2,25 @@
 // SPDX-License-Identifier: MIT
 
 import type { Upstream } from '@gatewaze/host-session';
+import { GW_HOST_SESSION_PROXY_API_MODULE_PATH } from '@lfx-one/shared/constants';
 import { Request } from 'express';
 
-/** Gatewaze API module routes: `/api/modules/<id>/...` (the API mounts each module's router there). */
-const API_MODULE_PATH = /^\/api\/modules\/([^/]+)(?:\/|$)/;
-
 /**
- * The Gatewaze module a proxied request belongs to, or null for a platform path that every embed
- * admin uses. `pathname` is the normalised upstream path from `upstreamUrl`, so dot segments are
- * already resolved.
+ * The Gatewaze module a proxied request belongs to, or null when this function cannot tell.
+ * `pathname` is the normalised upstream path from `upstreamUrl`, so dot segments are already
+ * resolved.
  *
- * Today only the Gatewaze API's `/api/modules/<id>` routes map to a module. Supabase paths (tables,
- * storage buckets, edge functions) answer null; mapping them is part of the entitlement follow-up.
+ * The mapping is incomplete, and null does NOT mean "a platform path". Only the Gatewaze API's
+ * `/api/modules/<id>` routes map to a module today. Modules also mount routes elsewhere under
+ * `/api` (e.g. `tasks` at `/api/admin/tasks`), and Supabase paths (tables, storage buckets, edge
+ * functions) are not mapped at all. The entitlement follow-up must build the mapping from the
+ * API's route registry and refuse a path it cannot map, rather than enforce on this subset.
  */
 export function gatewazeModuleForPath(upstream: Upstream, pathname: string): string | null {
   if (upstream.supabase) {
     return null;
   }
-  const match = API_MODULE_PATH.exec(pathname);
+  const match = GW_HOST_SESSION_PROXY_API_MODULE_PATH.exec(pathname);
   if (!match) {
     return null;
   }
@@ -36,8 +37,10 @@ export function gatewazeModuleForPath(upstream: Upstream, pathname: string): str
  * gates and before any Gatewaze session is loaded, for every request that `gatewazeModuleForPath`
  * maps to a module.
  *
- * It allows everything for now. A follow-up enforces LFX-permission-based module entitlements here,
- * so the proxy itself does not change when it lands. Resolves false to refuse with 403.
+ * It allows everything for now (#2738 tracks the entitlement follow-up), so it is a seam, not a gate.
+ * The follow-up enforces LFX-permission-based module entitlements here, and must also make
+ * `gatewazeModuleForPath` complete and fail closed (see its comment). Resolves false to refuse with
+ * 403.
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- the follow-up's signature, unused until it enforces entitlements
 export async function authorizeGatewazeModule(_req: Request, _moduleId: string): Promise<boolean> {

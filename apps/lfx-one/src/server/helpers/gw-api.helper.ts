@@ -166,7 +166,7 @@ export function attachGwDrainGuard(req: Request, res: Response): void {
 }
 
 /**
- * The path to test against the `/api/gw` mount, taken from the untrimmed URL.
+ * The path to test against the `/api/gw` and `/api/gatewaze` mounts, taken from the untrimmed URL.
  *
  * Every caller of `isGwProxyPath` goes through this, including the three top-level handlers where
  * `req.path` would still be correct. Correct-by-construction on purpose: the `compression` filter

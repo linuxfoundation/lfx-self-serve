@@ -9,7 +9,6 @@ import {
   carriesPlaceholder,
   type CoreLogger,
   csrfDecision,
-  forwardedFor,
   isAdminCheckPending,
   isPublicRead,
   type ProxyCredentials,
@@ -21,6 +20,14 @@ import {
   upstreamUrl,
   UpstreamPathError,
 } from '@gatewaze/host-session';
+import {
+  GW_HOST_SESSION_PROXY_API_MOUNT,
+  GW_HOST_SESSION_PROXY_OPERATION as OPERATION,
+  GW_HOST_SESSION_PROXY_RESPONSE_HEADERS,
+  GW_HOST_SESSION_PROXY_STRIPPED_REQUEST_HEADERS,
+  GW_HOST_SESSION_PROXY_SUPABASE_MOUNT,
+  GW_HOST_SESSION_PROXY_UPSTREAM_TIMED_OUT,
+} from '@lfx-one/shared/constants';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthorizationError, isBaseApiError, MicroserviceError } from '../errors';
@@ -30,55 +37,6 @@ import { getGwProxyMaxBodyBytes, getGwProxyTimeoutMs } from '../helpers/gw-proxy
 import { gatewazeHostSessionNotFound } from '../middleware/require-gatewaze-host-session.middleware';
 import { getGatewazeSessionService, resolveGatewazeHostSessionConfig } from '../services/gatewaze-session.service';
 import { logger } from '../services/logger.service';
-
-const OPERATION = 'gatewaze_proxy_request';
-
-/** Where the embed's Supabase client points: `supabase.url` is `<origin>/api/gatewaze/supabase`. */
-const SUPABASE_MOUNT = '/api/gatewaze/supabase';
-/** Where the embed's API calls land: `apiBaseUrl` is `/api/gatewaze`, and it calls `${apiBaseUrl}/api/...`. */
-const API_MOUNT = '/api/gatewaze';
-
-/**
- * Client-address headers removed before forwarding, on top of the package's own drop list (cookie,
- * authorization, origin, referer, apikey, host, `x-forwarded-*`, `forwarded`, hop-by-hop). The
- * `/api/gw` sibling strips the same set: this proxy does not vouch for them, and an upstream that
- * trusts one would take a browser-supplied address as the client's. The client chain goes upstream
- * only as the `X-Forwarded-For` the package builds.
- */
-const STRIPPED_CLIENT_ADDRESS_HEADERS = ['x-real-ip', 'cf-connecting-ip', 'true-client-ip', 'x-client-ip', 'via', 'x-forwarded-server'] as const;
-
-/**
- * Upstream response headers returned to the browser. An allowlist, as on `/api/gw`, applied after
- * the package's own drop list (`set-cookie`, `x-gw-session`, hop-by-hop). It keeps Supabase's
- * `Access-Control-Allow-*` headers out, because this origin never answers CORS.
- *
- * The body is forwarded as the upstream sent it, still encoded, so `content-encoding` and
- * `content-length` travel together. `content-range`, `range-unit` and `preference-applied` are what
- * PostgREST uses for counts and `Prefer` answers. `cache-control` and `vary` carry the package's
- * `private` and `Vary: Cookie` on a response made with the user's session.
- */
-const FORWARDED_RESPONSE_HEADERS = new Set([
-  'content-type',
-  'content-length',
-  'content-encoding',
-  'content-language',
-  'content-disposition',
-  'content-range',
-  'accept-ranges',
-  'range-unit',
-  'preference-applied',
-  'location',
-  'cache-control',
-  'etag',
-  'last-modified',
-  'expires',
-  'vary',
-  'retry-after',
-  'www-authenticate',
-]);
-
-/** The message `proxyRequest` rejects with when the upstream socket sits idle past `timeoutMs`. */
-const UPSTREAM_TIMED_OUT = 'upstream timed out';
 
 /**
  * Maps a `Location` the package has already filtered (`rewriteLocation`) onto this proxy's mount.
@@ -119,7 +77,7 @@ export class GatewazeProxyController {
     // The route matched `/supabase/<service>/v1`, so the prefix is that service's.
     const service = String(req.params[0]);
     const upstream: Upstream = { url: config.supabaseUrl, prefix: `/${service}/v1`, supabase: true };
-    await this.forward(req, res, next, upstream, req.url.slice('/supabase'.length), SUPABASE_MOUNT, config.anonKey);
+    await this.forward(req, res, next, upstream, req.url.slice('/supabase'.length), GW_HOST_SESSION_PROXY_SUPABASE_MOUNT, config.anonKey);
   }
 
   /** `ALL /api/gatewaze/api/*`, forwarded to `GW_API_URL` with the `/api` path kept. */
@@ -138,7 +96,7 @@ export class GatewazeProxyController {
       next(error);
       return;
     }
-    await this.forward(req, res, next, { url: apiOrigin, prefix: '/api', supabase: false }, req.url, API_MOUNT, config.anonKey);
+    await this.forward(req, res, next, { url: apiOrigin, prefix: '/api', supabase: false }, req.url, GW_HOST_SESSION_PROXY_API_MOUNT, config.anonKey);
   }
 
   private get maxBodyBytes(): number {
@@ -188,7 +146,7 @@ export class GatewazeProxyController {
     if (decision === 'reject') {
       // DEBUG, not WARN: any cross-site page can send this, so it must not flood the logs.
       logger.debug(req, OPERATION, 'Refusing a cross-site proxied write', { has_origin: !!req.get('origin'), site_origin_set: !!siteOrigin });
-      await this.answer(req, res, 403, { error: 'cross_site' });
+      await this.answer(req, res, startTime, 403, { error: 'cross_site' });
       return;
     }
 
@@ -227,34 +185,34 @@ export class GatewazeProxyController {
           } else if (!isPublicRead(req.method, target.pathname)) {
             if (isAdminCheckPending(session)) {
               res.setHeader('Retry-After', String(retryAfterSeconds(session)));
-              await this.answer(req, res, 503, { error: 'admin_check_pending' });
+              await this.answer(req, res, startTime, 503, { error: 'admin_check_pending' });
               return;
             }
-            await this.answer(req, res, 403, { error: 'not_admin' });
+            await this.answer(req, res, startTime, 403, { error: 'not_admin' });
             return;
           }
           // A non-admin's public read goes as anon.
           break;
         }
         case 'ended':
-          await this.answerExpired(req, res);
+          await this.answerExpired(req, res, startTime);
           return;
         case 'host_session_unavailable':
           // No store-backed LFX session id. A request carrying the placeholder comes from embed code
           // that only runs after sign-in, so its session is gone; anything else goes as anon.
           if (carriesPlaceholder(req.get('authorization'), pathAndQuery)) {
-            await this.answerExpired(req, res);
+            await this.answerExpired(req, res, startTime);
             return;
           }
           break;
         default:
           // `refused` and `unavailable`: a fault, never a sign-out. The service already logged it.
-          await this.answer(req, res, 503, { error: 'session_unavailable' });
+          await this.answer(req, res, startTime, 503, { error: 'session_unavailable' });
           return;
       }
     }
 
-    for (const name of STRIPPED_CLIENT_ADDRESS_HEADERS) {
+    for (const name of GW_HOST_SESSION_PROXY_STRIPPED_REQUEST_HEADERS) {
       delete req.headers[name];
     }
 
@@ -270,7 +228,9 @@ export class GatewazeProxyController {
       });
       const upstreamRes = await proxyRequest(req, upstream, pathAndQuery, {
         creds,
-        xff: forwardedFor(req.headers['x-forwarded-for'], req.socket.remoteAddress),
+        // Only the client address LFX resolved itself (`trust proxy` counts the ingress hop). The
+        // browser's own X-Forwarded-For chain is not forwarded, as on /api/gw.
+        xff: req.ip ?? '',
         // An idle bound on the upstream socket, so a hung upstream is cut off while a slow upload
         // or a long download that keeps moving is not.
         timeoutMs,
@@ -282,7 +242,7 @@ export class GatewazeProxyController {
 
       res.status(upstreamRes.status);
       for (const [name, value] of Object.entries(upstreamRes.headers)) {
-        if (!FORWARDED_RESPONSE_HEADERS.has(name.toLowerCase())) {
+        if (!GW_HOST_SESSION_PROXY_RESPONSE_HEADERS.has(name.toLowerCase())) {
           continue;
         }
         res.setHeader(name, name.toLowerCase() === 'location' && typeof value === 'string' ? mountLocation(value, mount) : value);
@@ -310,16 +270,19 @@ export class GatewazeProxyController {
   }
 
   /** A contract answer the embed's shim reads. Drained first, so a caller mid-upload can finish writing. */
-  private async answer(req: Request, res: Response, status: number, body: Record<string, string>): Promise<void> {
+  private async answer(req: Request, res: Response, startTime: number, status: number, body: Record<string, string>): Promise<void> {
     await drainRequestBody(req);
     res.setHeader('Cache-Control', 'no-store');
     res.status(status).json(body);
+    // Closes the operation with the answer, so a user's "not an admin" or sign-out can be found by
+    // its X-Request-Id. Not an error: the shim reads these as contract answers.
+    logger.success(req, OPERATION, startTime, { method: req.method, path: req.path, status_code: status, answer: body['error'] });
   }
 
   /** The one answer that tells the shim its session is gone (host contract step 4). */
-  private async answerExpired(req: Request, res: Response): Promise<void> {
+  private async answerExpired(req: Request, res: Response, startTime: number): Promise<void> {
     res.setHeader(SESSION_HEADER, SESSION_EXPIRED);
-    await this.answer(req, res, 401, { error: 'not_signed_in' });
+    await this.answer(req, res, startTime, 401, { error: 'not_signed_in' });
   }
 }
 
@@ -347,7 +310,7 @@ function toProxyError(req: Request, error: unknown, timeoutMs: number): unknown 
   if (error instanceof UpstreamPathError) {
     return new MicroserviceError('Proxied path leaves the upstream prefix', 400, 'GW_BAD_PATH', { operation: OPERATION, service: 'gw', path: req.path });
   }
-  if (error instanceof Error && error.message === UPSTREAM_TIMED_OUT) {
+  if (error instanceof Error && error.message === GW_HOST_SESSION_PROXY_UPSTREAM_TIMED_OUT) {
     return new MicroserviceError(`Request timeout after ${timeoutMs}ms`, 408, 'TIMEOUT', {
       operation: OPERATION,
       service: 'gw',

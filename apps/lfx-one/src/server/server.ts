@@ -133,9 +133,10 @@ app.use(
     threshold: 1024,
     // Exclude /api/gw and /api/gatewaze: gw-proxy.controller.ts and gatewaze-proxy.controller.ts
     // stream the upstream response body straight through byte-for-byte, so this middleware must
-    // never re-compress or re-wrap it.
-    // The body reaching here is already plaintext — undici decodes whatever the upstream encoded —
-    // so the exclusion is about not re-wrapping a proxied stream, not about what it arrived as.
+    // never re-compress or re-wrap it. The two arrive differently. /api/gw's body is already
+    // plaintext, because undici decodes whatever the upstream encoded. /api/gatewaze's is still
+    // encoded, because @gatewaze/host-session forwards over node:http, and its Content-Encoding is
+    // passed through with it, so compressing it again would corrupt it.
     //
     // This is the exclusion that silently did nothing, and `gwMountPath` is why it now works: the
     // filter is deferred to the first `res.write`, by which point `req.path` has been trimmed to

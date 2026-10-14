@@ -67,6 +67,7 @@ export * from './feature-flags.constants';
 export * from './auth-fragment.constants';
 export * from './gw-embed.constants';
 export * from './gw-host-session.constants';
+export * from './gw-host-session-proxy.constants';
 export * from './org-selector.constants';
 export * from './org-lens-empty-state.constants';
 export * from './org-profile.constants';
