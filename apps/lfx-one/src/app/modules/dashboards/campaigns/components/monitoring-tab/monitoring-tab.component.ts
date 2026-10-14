@@ -12,8 +12,8 @@ import {
   MONITOR_CONNECTION_PROVIDERS,
   MONITOR_DATE_RANGE_OPTIONS,
   MONITOR_KEYWORD_PAGE_SIZE,
-  parseCampaignName,
   MONITOR_PLATFORM_BUTTON_COLORS,
+  parseCampaignName,
 } from '@lfx-one/shared/constants';
 import { formatPercent } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
@@ -26,10 +26,10 @@ import type {
   CampaignMetrics,
   CampaignMonitorConnections,
   CampaignMonitorResponse,
-  HubSpotEmailMonitorResponse,
-  HubSpotMonitorView,
   GoogleMonitorCampaignRowView,
   GoogleMonitorKpisView,
+  HubSpotEmailMonitorResponse,
+  HubSpotMonitorView,
   KeywordMetrics,
   KeywordMetricsResponse,
   KeywordRowView,
@@ -631,7 +631,9 @@ export class MonitoringTabComponent implements OnInit {
   private initReportBackedView(): Signal<AccountMonitorPanelView | null> {
     return computed(() => {
       const data = this.reportBackedData();
-      return data ? this.buildAccountPanelView(data.campaigns, data.accountTotals, this.standardFormats) : null;
+      // The report-backed rows keep the neutral status badge they always had: Microsoft's statuses are
+      // not the uppercase ACTIVE the green badge keys on, and X's should not turn green by accident.
+      return data ? this.buildAccountPanelView(data.campaigns, data.accountTotals, { ...this.standardFormats, statusBadges: false }) : null;
     });
   }
 
@@ -639,39 +641,36 @@ export class MonitoringTabComponent implements OnInit {
     return computed(() => {
       const data = this.linkedInData();
       if (!data) return null;
-      const view = this.buildAccountPanelView(data.campaigns, data.accountTotals, {
-        currency: (n) => this.formatLinkedInCurrency(n),
-        pct: (n) => this.formatLinkedInPct(n),
-      });
       // LinkedIn heads each row with the event name over the full campaign name, and adds the
-      // creative count — "Not read" when campaign-service did not read creatives.
-      const campaigns = data.campaigns ?? [];
-      return {
-        ...view,
-        rows: view.rows.map((row, i) => ({
-          ...row,
-          title: campaigns[i].eventName,
-          subtitle: campaigns[i].campaignName,
+      // creative count — "Not read" when campaign-service did not read creatives. Built from the
+      // row's OWN campaign inside the builder, so no index join can pair a row with another's data.
+      return this.buildAccountPanelView(
+        data.campaigns,
+        data.accountTotals,
+        { currency: (n) => this.formatLinkedInCurrency(n), pct: (n) => this.formatLinkedInPct(n), statusBadges: true },
+        (camp: LinkedInCampaignMetrics) => ({
+          title: camp.eventName,
+          subtitle: camp.campaignName,
           creatives:
-            campaigns[i].creativesMeasured === false
+            camp.creativesMeasured === false
               ? { text: 'Not read', className: 'text-gray-500' }
-              : { text: String(campaigns[i].creatives.length), className: 'text-gray-700' },
-        })),
-      };
+              : { text: String(camp.creatives.length), className: 'text-gray-700' },
+        })
+      );
     });
   }
 
   private initRedditView(): Signal<AccountMonitorPanelView | null> {
     return computed(() => {
       const data = this.redditData();
-      return data ? this.buildAccountPanelView(data.campaigns, data.accountTotals, this.standardFormats) : null;
+      return data ? this.buildAccountPanelView(data.campaigns, data.accountTotals, { ...this.standardFormats, statusBadges: true }) : null;
     });
   }
 
   private initMetaView(): Signal<AccountMonitorPanelView | null> {
     return computed(() => {
       const data = this.metaData();
-      return data ? this.buildAccountPanelView(data.campaigns, data.accountTotals, this.standardFormats) : null;
+      return data ? this.buildAccountPanelView(data.campaigns, data.accountTotals, { ...this.standardFormats, statusBadges: true }) : null;
     });
   }
 
@@ -774,10 +773,11 @@ export class MonitoringTabComponent implements OnInit {
    * conversions. `formats` carries the one per-platform difference: LinkedIn's whole-dollar
    * currency and its own percentage formatter.
    */
-  private buildAccountPanelView(
-    campaigns: readonly (RedditCampaignMetrics | LinkedInCampaignMetrics | MetaCampaignMetrics)[] | null | undefined,
+  private buildAccountPanelView<T extends RedditCampaignMetrics | LinkedInCampaignMetrics | MetaCampaignMetrics>(
+    campaigns: readonly T[] | null | undefined,
     totals: RedditAccountTotals | null | undefined,
-    formats: { currency: (n: number) => string; pct: (n: number) => string }
+    formats: { currency: (n: number) => string; pct: (n: number) => string; statusBadges: boolean },
+    extendRow?: (camp: T) => Partial<AccountMonitorCampaignRowView>
   ): AccountMonitorPanelView {
     const kpis: AccountMonitorKpisView | null = totals
       ? {
@@ -801,7 +801,7 @@ export class MonitoringTabComponent implements OnInit {
         campaignName: camp.campaignName,
         status: camp.status,
         statusClass:
-          camp.status === 'ACTIVE'
+          formats.statusBadges && camp.status === 'ACTIVE'
             ? 'inline-flex items-center rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700'
             : 'inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600',
         fetchFailed: camp.fetchFailed === true,
@@ -810,8 +810,9 @@ export class MonitoringTabComponent implements OnInit {
         creatives: null,
       };
       // Metrics that could not be read are not zeros: every metric cell is a dash.
+      const extension = extendRow?.(camp) ?? {};
       if (camp.fetchFailed) {
-        return { ...base, spend: unread, pacing: unread, impressions: unread, clicks: unread, ctr: unread, conversions: unread };
+        return { ...base, spend: unread, pacing: unread, impressions: unread, clicks: unread, ctr: unread, conversions: unread, ...extension };
       }
       const pacing: MonitorCellView =
         camp.pacingUnknown || !camp.pacingLabel
@@ -825,6 +826,7 @@ export class MonitoringTabComponent implements OnInit {
         clicks: measured(this.formatNumber(camp.clicks)),
         ctr: measured(formats.pct(camp.ctr)),
         conversions: camp.conversionsMeasured === false ? { text: 'Not measured', className: 'text-gray-500' } : measured(String(camp.conversions)),
+        ...extension,
       };
     });
     return { kpis, rows };

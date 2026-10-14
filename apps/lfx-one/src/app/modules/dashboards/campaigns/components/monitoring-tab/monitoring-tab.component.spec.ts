@@ -961,6 +961,74 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       expect(text('keyword-totals')).toContain('$25.00');
     });
 
+    /**
+     * Each LinkedIn row's heading, subtitle and creative count come from that row's OWN campaign.
+     * The rows are built from the campaigns in one pass, so a reordered list (here a fetch-failed
+     * campaign first, then a measured one) cannot pair a row with another campaign's figures.
+     */
+    it('builds each LinkedIn row from its own campaign, in the order they arrive', async () => {
+      await setup(allConnected);
+      const base = {
+        status: 'ACTIVE',
+        totalBudget: 1000,
+        dailyBudget: 0,
+        spend: 10,
+        impressions: 100,
+        clicks: 5,
+        ctr: 5,
+        conversions: 1,
+        pacingPct: 50,
+        pacingLabel: 'normal',
+        startDate: '2026-09-01',
+        endDate: '',
+      };
+      service['getLinkedInMonitorData'].mockReturnValue(
+        of({
+          accountLabel: 'LF',
+          pulledAt: '2026-10-13T00:00:00.000Z',
+          dateRange: { mode: 'last_30_days' },
+          campaigns: [
+            {
+              ...base,
+              campaignId: '2',
+              campaignName: 'B | Event B | Retarget',
+              eventName: 'Event B',
+              creatives: [],
+              creativesMeasured: false,
+              fetchFailed: true,
+            },
+            { ...base, campaignId: '1', campaignName: 'A | Event A | Awareness', eventName: 'Event A', creatives: [{}, {}, {}] },
+          ],
+          accountTotals: { spend: 20, impressions: 200, clicks: 10, conversions: 2, campaignCount: 2 },
+          actionItems: [],
+        })
+      );
+      select('linkedin');
+
+      const first = text('linkedin-campaign-row-0');
+      const second = text('linkedin-campaign-row-1');
+      expect(first).toContain('Event B');
+      expect(first).toContain('B | Event B | Retarget');
+      expect(first).toContain('Not read');
+      expect(first).toContain("Couldn't read");
+      expect(second).toContain('Event A');
+      expect(second).toContain('A | Event A | Awareness');
+      expect(el('linkedin-campaign-row-1')?.querySelector('[data-testid="linkedin-campaign-creatives"]')?.textContent?.trim()).toBe('3');
+    });
+
+    /** The report-backed rows always had a neutral status badge; an uppercase ACTIVE must not turn it green. */
+    it('keeps the Microsoft status badge neutral, even for ACTIVE', async () => {
+      await setup(allConnected);
+      const active = reportBacked().campaigns.map((c) => ({ ...c, status: 'ACTIVE' }));
+      service['getMicrosoftMonitorData'].mockReturnValue(of(reportBacked({ campaigns: active })));
+      select('microsoft');
+
+      const badge = el('microsoft-campaign-row-0')?.querySelectorAll('td')[1]?.querySelector('span') as HTMLElement;
+      expect(badge.textContent?.trim()).toBe('ACTIVE');
+      expect(badge.className).toContain('bg-gray-100');
+      expect(badge.className).not.toContain('bg-green-50');
+    });
+
     it("keeps LinkedIn's whole-dollar currency and the other panels' two decimals", async () => {
       await setup(allConnected);
       const legacy = {
