@@ -1150,7 +1150,7 @@ describe('OrgClasController.checkPermission', () => {
 
     await new OrgClasController().checkPermission(req({ action: 'sign', projectSfid: PROJECT, companySfid: '0014100000OtherOrgAA' }), res, vi.fn());
 
-    expect(checkAcs).toHaveBeenCalledWith(expect.anything(), ORG, 'sign', PROJECT);
+    expect(checkAcs).toHaveBeenCalledWith(expect.anything(), ORG, 'sign', PROJECT, undefined);
     expect(res.json).toHaveBeenCalledWith({ allowed: true });
   });
 
@@ -1170,7 +1170,7 @@ describe('OrgClasController.checkPermission', () => {
 
     await new OrgClasController().checkPermission(req({ action: 'cla-manager-delete', projectSfid: PROJECT }), res, vi.fn());
 
-    expect(checkAcs).toHaveBeenCalledWith(expect.anything(), ORG, 'cla-manager-delete', PROJECT);
+    expect(checkAcs).toHaveBeenCalledWith(expect.anything(), ORG, 'cla-manager-delete', PROJECT, undefined);
     expect(res.json).toHaveBeenCalledWith({ allowed: true });
   });
 
@@ -1183,7 +1183,7 @@ describe('OrgClasController.checkPermission', () => {
 
     await new OrgClasController().checkPermission(req({ action: 'auto-ecla-update', projectSfid: PROJECT }), res, vi.fn());
 
-    expect(checkAcs).toHaveBeenCalledWith(expect.anything(), ORG, 'auto-ecla-update', PROJECT);
+    expect(checkAcs).toHaveBeenCalledWith(expect.anything(), ORG, 'auto-ecla-update', PROJECT, undefined);
     expect(res.json).toHaveBeenCalledWith({ allowed: true });
   });
 
