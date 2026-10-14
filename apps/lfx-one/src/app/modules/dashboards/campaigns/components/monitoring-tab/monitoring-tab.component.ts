@@ -16,11 +16,14 @@ import type {
   KeywordMetrics,
   KeywordMetricsResponse,
   LinkedInAccount,
+  LinkedInCampaignMetrics,
   LinkedInMonitorResponse,
   LinkedInPacingLabel,
   MetaAccountOption,
+  MetaCampaignMetrics,
   MetaMonitorResponse,
   RedditAccountOption,
+  RedditCampaignMetrics,
   RedditMonitorResponse,
   RedditPacingLabel,
 } from '@lfx-one/shared/interfaces';
@@ -71,6 +74,7 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly linkedInError = signal<string | null>(null);
   protected readonly linkedInCampaigns = computed(() => this.linkedInData()?.campaigns ?? []);
   protected readonly linkedInTotals = computed(() => this.linkedInData()?.accountTotals ?? null);
+  protected readonly linkedInTotalsNote = computed(() => this.totalsCoverageNote(this.linkedInCampaigns()));
   protected readonly linkedInPulledAt = computed(() => {
     const pulledAt = this.linkedInData()?.pulledAt;
     return pulledAt ? new Date(pulledAt).toLocaleString() : null;
@@ -84,6 +88,7 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly redditError = signal<string | null>(null);
   protected readonly redditCampaigns = computed(() => this.redditData()?.campaigns ?? []);
   protected readonly redditTotals = computed(() => this.redditData()?.accountTotals ?? null);
+  protected readonly redditTotalsNote = computed(() => this.totalsCoverageNote(this.redditCampaigns()));
   protected readonly redditPulledAt = computed(() => {
     const pulledAt = this.redditData()?.pulledAt;
     return pulledAt ? new Date(pulledAt).toLocaleString() : null;
@@ -98,6 +103,7 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly metaError = signal<string | null>(null);
   protected readonly metaCampaigns = computed(() => this.metaData()?.campaigns ?? []);
   protected readonly metaTotals = computed(() => this.metaData()?.accountTotals ?? null);
+  protected readonly metaTotalsNote = computed(() => this.totalsCoverageNote(this.metaCampaigns()));
   protected readonly metaPulledAt = computed(() => {
     const pulledAt = this.metaData()?.pulledAt;
     return pulledAt ? new Date(pulledAt).toLocaleString() : null;
@@ -453,6 +459,30 @@ export class MonitoringTabComponent implements OnInit {
 
   protected formatPct(value: number): string {
     return `${formatPercent(value)}%`;
+  }
+
+  /**
+   * What the LinkedIn/Reddit/Meta totals strip leaves out, or null when it covers every campaign.
+   *
+   * Only the campaign-service monitor path sets `fetchFailed` / `conversionsMeasured`; on the
+   * legacy path both are undefined, so this returns null and the strip renders exactly as before.
+   * A row whose metrics could not be read contributes zeros to the totals, and a row whose
+   * conversions were not measured contributes a 0 to the conversions total, so the strip says so
+   * rather than presenting a partial sum as the account's.
+   */
+  private totalsCoverageNote(rows: readonly (LinkedInCampaignMetrics | RedditCampaignMetrics | MetaCampaignMetrics)[]): string | null {
+    const total = rows.length;
+    const read = rows.filter((r) => !r.fetchFailed);
+    const measured = read.filter((r) => r.conversionsMeasured !== false).length;
+    const parts: string[] = [];
+    if (read.length < total) {
+      parts.push(`Totals cover ${read.length} of ${total} campaigns`);
+    }
+    // All-unmeasured is already stated by the "Not measured" conversions tile; only a PARTIAL sum needs saying.
+    if (measured > 0 && measured < read.length) {
+      parts.push(`conversions cover ${measured} of ${total} campaigns`);
+    }
+    return parts.length > 0 ? `${parts.join('; ')}.` : null;
   }
 
   private loadForActiveFoundation(): void {

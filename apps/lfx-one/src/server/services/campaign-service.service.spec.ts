@@ -4776,3 +4776,89 @@ describe('fromBriefResponse — scraped hero and sponsors survive a reload', () 
     expect(restored?.eventDetails?.sponsors).toEqual([]);
   });
 });
+
+describe('CampaignServiceClient account monitors', () => {
+  const monitor = { account_id: 'x', days: 30, campaigns: [], action_items: [], totals: { spend: 0, impressions: 0, clicks: 0, campaign_count: 0 } };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it.each([
+    ['getLinkedInAdsAccountMonitor', 'linkedin-ads', '512345678'],
+    ['getMetaAdsAccountMonitor', 'meta-ads', 'act_100000000000001'],
+    ['getRedditAdsAccountMonitor', 'reddit-ads', 't2_abc123'],
+    ['getMicrosoftAdsAccountMonitor', 'microsoft-ads', '187654321'],
+    ['getTwitterAdsAccountMonitor', 'twitter-ads', '18ce54d4x5t'],
+  ] as const)('%s GETs connection-%s/account-monitor with account_id and days as QUERY parameters', async (method, provider, accountId) => {
+    proxyRequest.mockResolvedValueOnce(monitor);
+
+    const result = await new CampaignServiceClient()[method](req, 'cncf', accountId, 14);
+
+    expect(result).toBe(monitor);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', `/projects/cncf/connection-${provider}/account-monitor`, 'GET', {
+      account_id: accountId,
+      days: 14,
+    });
+    expect(proxyRequest.mock.calls[0]).toHaveLength(5);
+  });
+
+  it('encodes the project as a path segment', async () => {
+    proxyRequest.mockResolvedValueOnce(monitor);
+
+    await new CampaignServiceClient().getRedditAdsAccountMonitor(req, 'a b/c', 't2_abc123', 30);
+
+    expect(proxyRequest.mock.calls[0][2]).toBe('/projects/a%20b%2Fc/connection-reddit-ads/account-monitor');
+  });
+
+  it('encodes the project for the LinkedIn monitor and refuses an empty account', async () => {
+    proxyRequest.mockResolvedValueOnce(monitor);
+
+    await new CampaignServiceClient().getLinkedInAdsAccountMonitor(req, 'lf/ai', '512345678', 7);
+    const caught = await new CampaignServiceClient().getLinkedInAdsAccountMonitor(req, 'tlf', '', 7).catch((e: unknown) => e);
+
+    expect(proxyRequest.mock.calls[0][2]).toBe('/projects/lf%2Fai/connection-linkedin-ads/account-monitor');
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it('refuses a path-climbing project without calling the proxy', async () => {
+    await expect(new CampaignServiceClient().getMetaAdsAccountMonitor(req, '..', 'act_1', 30)).rejects.toBeInstanceOf(ServiceValidationError);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['', 't2_abc123', 'project'],
+    ['cncf', '', 'accountKey'],
+  ])('refuses project=%j account=%j without calling the proxy', async (project, accountId, field) => {
+    const caught = await new CampaignServiceClient().getRedditAdsAccountMonitor(req, project, accountId, 30).catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect((caught as ServiceValidationError).validationErrors[0].field).toBe(field);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('GETs the project-scoped HubSpot monitor with only days, and no account', async () => {
+    const hubspot = {
+      days: 7,
+      emails: [],
+      action_items: [],
+      totals: {},
+      emails_checked: 0,
+      emails_not_sent_in_window: 0,
+      emails_unattributable: 0,
+      emails_truncated: false,
+    };
+    proxyRequest.mockResolvedValueOnce(hubspot);
+
+    const result = await new CampaignServiceClient().getHubSpotAccountMonitor(req, 'a b', 7);
+
+    expect(result).toBe(hubspot);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/a%20b/connection-hubspot/account-monitor', 'GET', { days: 7 });
+  });
+
+  it('refuses an empty project for the HubSpot monitor without calling the proxy', async () => {
+    await expect(new CampaignServiceClient().getHubSpotAccountMonitor(req, '', 30)).rejects.toBeInstanceOf(ServiceValidationError);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});

@@ -1,0 +1,47 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@switch (status()) {
+  @case ('joining') {
+    <lfx-message severity="info" icon="fa-light fa-spinner-third fa-spin" data-testid="newsletter-member-benefit-joining">
+      <ng-template #content>
+        <p class="m-0 text-sm" role="status">Adding you to {{ groupLabel() }} as a Linux Foundation member benefit…</p>
+      </ng-template>
+    </lfx-message>
+  }
+  @case ('added') {
+    <lfx-message severity="success" icon="fa-light fa-circle-check" title="You're on the list" data-testid="newsletter-member-benefit-added">
+      <ng-template #content>
+        <p class="m-0 text-sm" role="status">
+          {{ companyLabel() }} is a Linux Foundation member, so you now receive {{ groupLabel() }} as a member benefit. Future issues will be emailed to
+          <span class="font-medium" data-testid="newsletter-member-benefit-email">{{ confirmedEmail() }}</span
+          >. Every issue includes an unsubscribe link.
+        </p>
+      </ng-template>
+    </lfx-message>
+  }
+  @case ('already_member') {
+    <lfx-message severity="success" icon="fa-light fa-circle-check" data-testid="newsletter-member-benefit-already">
+      <ng-template #content>
+        <p class="m-0 text-sm" role="status">
+          @if (alreadyListedEmail()) {
+            You're already on the list — future issues are emailed to <span class="font-medium">{{ alreadyListedEmail() }}</span
+            >.
+          } @else {
+            You're already on the list for this newsletter.
+          }
+        </p>
+      </ng-template>
+    </lfx-message>
+  }
+  @case ('failed') {
+    <lfx-message severity="warn" icon="fa-light fa-triangle-exclamation" data-testid="newsletter-member-benefit-failed">
+      <ng-template #content>
+        <p class="m-0 text-sm" role="alert">
+          We couldn't add you to the mailing list for this newsletter.
+          <button type="button" class="font-medium underline" (click)="retry.emit()" data-testid="newsletter-member-benefit-retry">Try again</button>
+        </p>
+      </ng-template>
+    </lfx-message>
+  }
+}

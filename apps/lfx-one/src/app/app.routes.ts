@@ -31,6 +31,7 @@ import { marketingImpactAccessGuard } from './shared/guards/marketing-impact-acc
 import { meetupsLensGuard } from './shared/guards/meetups-lens.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
 import { orgPathParamGuard } from './shared/guards/org-path-param.guard';
+import { orgClaOnlyPageGuard } from './shared/guards/org-cla-only-page.guard';
 import { orgSegmentMatchGuard } from './shared/guards/org-segment-match.guard';
 import { orgLensClaM3EnabledGuard } from './shared/guards/org-lens-cla-m3-enabled.guard';
 import { orgLensRoiEnabledGuard } from './shared/guards/org-lens-roi-enabled.guard';
@@ -399,6 +400,8 @@ export const routes: Routes = [
             path: `:${ORG_SEGMENT_PARAM}`,
             canMatch: [orgSegmentMatchGuard],
             canActivate: [orgPathParamGuard],
+            // M3: a CLA-only organization opens the EasyCLA page only; runs after the address is adopted.
+            canActivateChild: [orgClaOnlyPageGuard],
             data: { lens: 'org' },
             children: [
               {
@@ -692,6 +695,17 @@ export const routes: Routes = [
         // Personal reader: route data restores Me on deep links from any lens.
         path: 'newsletters/my',
         pathMatch: 'full',
+        title: 'My Newsletters',
+        data: { lens: 'me', preload: false },
+        canActivate: [authGuard],
+        loadComponent: () =>
+          import('./modules/newsletters/my-newsletter-foundations/my-newsletter-foundations.component').then((m) => m.MyNewsletterFoundationsComponent),
+      },
+      {
+        // One foundation's newsletters (#3483), and where a newsletter invite lands
+        // (`?invite=<group uid>`). Must stay ahead of the `newsletters/:projectSlug/:id`
+        // permalink, which would otherwise read `my` as a project slug.
+        path: 'newsletters/my/:foundationSlug',
         title: 'My Newsletters',
         data: { lens: 'me', preload: false },
         canActivate: [authGuard],

@@ -4,7 +4,7 @@ description: How to join a project meeting via the public LFX meeting link.
 audience: [all]
 product_area: Meetings
 tags: [meetings, join, public, attendee]
-last_updated: 2026-08-10
+last_updated: 2026-10-11
 intercom_collection: Meetings
 ---
 
@@ -34,11 +34,15 @@ If a meeting is **public and not restricted**, and you haven't already been invi
 
 ## Respond to an invitation (RSVP)
 
-If you've been invited to a meeting, the join page shows **Yes**, **No**, and **Maybe** buttons so you can respond — you need to be **signed in** to see these buttons. For a recurring meeting, responding asks you to choose a scope first:
+If you've been invited to a meeting that collects RSVPs, the join page shows **Yes**, **Maybe**, and **No** buttons — you need to be **signed in** to respond. Your current response is shown as **Going**, **Maybe**, or **Not going**. Select a different answer at any time to change your response, or use **Change response** to move keyboard focus to your selected answer. The shortcut does not save a response or open the recurring-date dialog; choose an answer to do that.
 
-- **All occurrences** — applies your response to the entire series
-- **This occurrence only** — applies only to the specific meeting you're responding from
-- **This and following occurrences** — applies to this occurrence and every future one in the series
+For a recurring meeting, **This date or all dates?** asks which dates your response applies to:
+
+- **This date only** — only the specific date shown; other dates keep their responses.
+- **All dates** — the entire series.
+- **This date and all following dates** — this date and future dates; earlier dates keep their responses.
+
+The saved confirmation and current response show the date scope. Choosing No leaves the meeting findable in My Meetings under **All meetings** and, for the applicable date, **Not going**.
 
 ## Meeting materials
 

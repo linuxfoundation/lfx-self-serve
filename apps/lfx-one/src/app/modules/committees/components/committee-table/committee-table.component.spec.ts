@@ -180,19 +180,39 @@ describe('CommitteeTableComponent consumer behavior', () => {
     const linked = element('[data-testid="committee-row-linked"]');
     expect(linked.querySelector('a[href="mailto:synthetic@example.test"]')).not.toBeNull();
     expect(linked.querySelector('a[href="https://slack.com/synthetic"]')?.getAttribute('rel')).toBe('noopener');
+    // Icon-only: no visible "Mailing list" / platform text beside the icons.
+    expect(linked.querySelector('td[data-label="Channels"]')?.textContent?.trim()).toBe('');
     const associated = element('[data-testid="committee-row-associated"]');
-    expect(associated.textContent).toContain('Mailing list associated');
+    expect(associated.querySelector('[aria-label="Mailing list associated"]')).not.toBeNull();
     expect(associated.querySelector('a[href^="mailto:"]')).toBeNull();
     expect(element('[data-testid="committee-row-none"]').textContent).toContain('No channels');
   });
 
+  it('links an associated mailing list to its detail page when the list is known', async () => {
+    await showRows([
+      group({
+        uid: 'listed',
+        has_mailing_list: true,
+        is_foundation: true,
+        mailing_lists: [{ uid: 'ml-1', group_name: 'synthetic-list' }],
+      }),
+    ]);
+    const link = element('[data-testid="committee-table-mailing-list-link-listed"]');
+    expect(link.getAttribute('href')).toContain('/foundation/mailing-lists/ml-1');
+    expect(link.getAttribute('aria-label')).toBe('Mailing list: synthetic-list');
+    expect(element('[data-testid="committee-row-listed"]').querySelector('[aria-label="Mailing list associated"]')).toBeNull();
+  });
+
   it.each(['#general', 'team-chat', 'javascript:alert(1)', 'data:text/html,chat', 'vbscript:msgbox(1)', 'file:///chat', 'ftp://example.com/chat'])(
-    'shows chat channel %s as informational text without a destination',
+    'shows chat channel %s as an icon with its text as the label, without a destination',
     async (chatChannel) => {
       await showRows([group({ chat_channel: chatChannel })]);
       const channels = element('[data-testid="committee-row-synthetic-alpha"] td[data-label="Channels"]');
-      expect(channels.textContent).toContain(chatChannel);
-      expect(channels.querySelector('a, button, [tabindex]')).toBeNull();
+      const icon = channels.querySelector('[role="img"]');
+      expect(icon?.getAttribute('aria-label')).toBe(chatChannel);
+      // Keyboard-focusable so the tooltip with the channel name can be revealed without a mouse.
+      expect(icon?.getAttribute('tabindex')).toBe('0');
+      expect(channels.querySelector('a, button')).toBeNull();
       expect(channels.textContent).not.toContain('No channels');
     }
   );

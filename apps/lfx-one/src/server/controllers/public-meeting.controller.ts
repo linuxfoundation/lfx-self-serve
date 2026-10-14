@@ -49,7 +49,7 @@ import {
   stripHostKey,
 } from '../helpers/meeting.helper';
 import { validateUidParameter } from '../helpers/validation.helper';
-import { resolveVerifiedUserEmails } from '../helpers/verified-emails.helper';
+import { resolveVerifiedUserEmailSet } from '../helpers/user-emails.helper';
 import { AccessCheckService } from '../services/access-check.service';
 import { EmailVerificationService } from '../services/email-verification.service';
 import { logger } from '../services/logger.service';
@@ -1354,7 +1354,7 @@ export class PublicMeetingController {
     // session's). Unverified alternates are never used, and a failed auth-service lookup falls back to
     // the session email, so this never hard-fails on it. The aliases are looked up only for a session
     // that still holds a user token: a tokenless one keeps the username and the email given.
-    const verified = hasUserToken ? await resolveVerifiedUserEmails(req, this.emailVerificationService) : { emails: [], alternates: [] };
+    const verified = hasUserToken ? await resolveVerifiedUserEmailSet(req, this.emailVerificationService) : { emails: [], alternates: [] };
     const givenEmail = email?.trim().toLowerCase() || '';
     const candidateEmails = [...new Set([...verified.emails, givenEmail].filter(Boolean))];
     // failOnPartial: the ranking below needs every matching row, so a failed later page fails the

@@ -99,6 +99,11 @@ export class NonMembersPeopleComponent {
   protected readonly scopeTotal = computed(() => this.response().scopeTotal);
   protected readonly first = computed(() => (this.page() - 1) * this.size());
   protected readonly summary = computed(() => buildHealthMetricsNonMembersPeopleCountLabel(this.scopeTotal()));
+  /** An unset total is not zero, so the search line drops its "of N", and "match" becomes a noun that takes a plural. */
+  protected readonly searchSuffix = computed(() => {
+    if (this.scopeTotal() !== null) return `of ${this.summary()} match`;
+    return this.totalRecords() === 1 ? 'match' : 'matches';
+  });
   protected readonly totalRecordsLabel = computed(() => this.totalRecords().toLocaleString('en-US'));
 
   public constructor() {

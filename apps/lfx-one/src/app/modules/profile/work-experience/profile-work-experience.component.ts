@@ -109,7 +109,7 @@ export class ProfileWorkExperienceComponent {
         const body: WorkExperienceCreateUpdateBody = {
           organizationId: result.organizationId || item.organizationId || '',
           jobTitle: result.role,
-          source: item.cdpSource || LFX_ONE_WORK_EXPERIENCE_SOURCE,
+          source: LFX_ONE_WORK_EXPERIENCE_SOURCE,
           startDate: monthYearToIsoDate(result.startMonth, result.startYear),
           endDate: result.currentlyWorkHere ? null : monthYearToIsoDate(result.endMonth, result.endYear),
         };

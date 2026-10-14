@@ -3,7 +3,7 @@
 
 import { NextFunction, Request, Response } from 'express';
 
-import { AuthenticationError, BaseApiError, isBaseApiError } from '../errors';
+import { AuthenticationError, BaseApiError, isBaseApiError, ServiceValidationError } from '../errors';
 import { logger } from '../services/logger.service';
 
 /**
@@ -42,6 +42,13 @@ export function apiErrorHandler(error: Error | BaseApiError, req: Request, res: 
   const lastOp = logger.getLastOperation(req);
   const operation = lastOp?.operation || getOperationFromPath(req.path);
   const startTime = lastOp?.startTime || Date.now();
+  // Parser errors arrive before pino-http; use LoggerService's infrastructure mode in that case.
+  const logRequest = req.log ? req : undefined;
+
+  // Body-parser's message and body can contain submitted data; normalize without retaining either.
+  if ('type' in error && error.type === 'entity.parse.failed' && 'status' in error && error.status === 400) {
+    error = ServiceValidationError.forField('body', 'body must contain valid JSON', { operation });
+  }
 
   // Handle our structured API errors
   if (isBaseApiError(error)) {
@@ -58,11 +65,11 @@ export function apiErrorHandler(error: Error | BaseApiError, req: Request, res: 
     };
 
     if (logLevel === 'error') {
-      logger.error(req, operation, startTime, error, logContext, { skipIfLogged: true });
+      logger.error(logRequest, operation, startTime, error, logContext, { skipIfLogged: true });
     } else if (logLevel === 'warn') {
-      logger.warning(req, operation, `API error: ${error.message}`, { ...logContext, err: error });
+      logger.warning(logRequest, operation, `API error: ${error.message}`, { ...logContext, err: error });
     } else {
-      logger.debug(req, operation, `API error: ${error.message}`, { ...logContext, err: error });
+      logger.debug(logRequest, operation, `API error: ${error.message}`, { ...logContext, err: error });
     }
 
     // Send structured response
@@ -75,7 +82,7 @@ export function apiErrorHandler(error: Error | BaseApiError, req: Request, res: 
 
   // Log unhandled errors with CloudWatch-friendly structure
   logger.error(
-    req,
+    logRequest,
     operation,
     startTime,
     error,

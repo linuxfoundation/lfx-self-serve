@@ -260,6 +260,28 @@ describe('NonMembersPeopleComponent', () => {
     expect(query('non-members-people-table')).toBeNull();
   });
 
+  // NULL is not zero: an unset model total keeps the rows and says it is not available.
+  it('keeps the rows when the model leaves the total unset', async () => {
+    await render(response({ totalRecords: 1, scopeTotal: null }));
+
+    expect(query('non-members-people-empty')).toBeNull();
+    expect(text(`non-members-people-row-${ROW_KEY}-name`)).toBe('Jane Doe');
+    expect(text('non-members-people-count')).toBe('Engaged individuals not available');
+    expect(counts.at(-1)).toBeNull();
+  });
+
+  it('drops the "of" total from the search line when the total is unset', async () => {
+    await render(response({ totalRecords: 3, scopeTotal: null }), { nonPeopleSearch: 'jane' });
+
+    expect(text('non-members-people-count')).toBe('3 matches · clear');
+  });
+
+  it('keeps a single search match singular when the total is unset', async () => {
+    await render(response({ totalRecords: 1, scopeTotal: null }), { nonPeopleSearch: 'jane' });
+
+    expect(text('non-members-people-count')).toBe('1 match · clear');
+  });
+
   it('keeps the controls and names the search when it matches nothing', async () => {
     await render(response({ rows: [], totalRecords: 0, scopeTotal: 40 }), { nonPeopleSearch: 'zeta' });
 

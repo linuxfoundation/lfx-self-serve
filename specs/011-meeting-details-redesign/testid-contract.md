@@ -112,7 +112,9 @@ the shell's stand-in for a section not built yet (E1-01). Each is temporary: the
 section deletes its placeholder and its row here. A test must never assert on one.
 
 The feature badges render from the `*_enabled` flags alone, whatever the viewer's artifact access
-(FR-041). V1 names the same four `meeting-badge-*`; V2 keeps its own `meeting-header-badge-*`.
+(FR-041), until the meeting ends. Once it has ended, only `meeting-header-badge-youtube` remains: the
+recording section shows what was actually produced, so the Recording, Transcripts and AI Summary
+chips would contradict it (#3633). V1 names the same four `meeting-badge-*`; V2 keeps its own `meeting-header-badge-*`.
 
 The two occurrence controls port V1's (#3040, #3206): organizer only, on a recurring meeting, for the
 selected upcoming occurrence. V1 names them `meeting-reschedule-occurrence-button` and

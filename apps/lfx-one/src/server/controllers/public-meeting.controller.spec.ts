@@ -169,6 +169,7 @@ vi.mock('../utils/auth-helper', async () => {
 
   return {
     getEffectiveEmail: getEffectiveEmailMock,
+    getEffectiveSub: () => null,
     getEffectiveUsername: getEffectiveUsernameMock,
     getUsernameFromAuth: getUsernameFromAuthMock,
     stripAuthPrefix: actual.stripAuthPrefix,

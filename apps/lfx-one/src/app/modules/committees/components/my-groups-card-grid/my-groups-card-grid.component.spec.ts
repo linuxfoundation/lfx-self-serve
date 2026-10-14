@@ -157,6 +157,29 @@ describe('MyGroupsCardGridComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="public-group-copy-link-group-2"]')).toBeNull();
   });
 
+  it('links an associated mailing list to its detail page, or to the group when several are associated', async () => {
+    await render([
+      group({ has_mailing_list: true, is_foundation: true, mailing_lists: [{ uid: 'ml-1', group_name: 'synthetic-list' }] }),
+      group({
+        uid: 'group-2',
+        has_mailing_list: true,
+        is_foundation: true,
+        mailing_lists: [
+          { uid: 'ml-2', group_name: 'synthetic-list-a' },
+          { uid: 'ml-3', group_name: 'synthetic-list-b' },
+        ],
+      }),
+    ]);
+    expect(element('groups-card-grid-mailing-list-link-group-1').getAttribute('href')).toContain('/foundation/mailing-lists/ml-1');
+    expect(element('groups-card-grid-mailing-list-link-group-2').getAttribute('href')).toContain('/foundation/groups/group-2');
+  });
+
+  it('never announces "null" in the mailing-list link label when the list name is unknown', async () => {
+    await render([group({ is_foundation: true, mailing_lists: [{ uid: 'ml-1', group_name: '' }] })]);
+    const label = element('groups-card-grid-mailing-list-link-group-1').getAttribute('aria-label');
+    expect(label).toBe('Mailing list for Synthetic working group');
+  });
+
   it.each([undefined, null, 'true', 1])('does not infer voting capability from runtime value %s or missing owner context', async (value) => {
     const committee = group({ parent_project_uid: 'opaque-foundation-id' });
     Reflect.set(committee, 'enable_voting', value);

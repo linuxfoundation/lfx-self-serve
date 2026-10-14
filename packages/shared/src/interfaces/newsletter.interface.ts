@@ -174,6 +174,244 @@ export interface NewsletterReaderState {
   error: boolean;
   project: Project | null;
   newsletter: Newsletter | null;
+  /** Server access decision for the reader; null while loading, on error, or when nothing resolved. */
+  access: NewsletterReaderAccess | null;
+  /** The issue exists but is unsent and the reader is not a manager (draft notice, SSR 404). */
+  draftHidden?: boolean;
+}
+
+/**
+ * Why the reader may open an issue:
+ * - `manager` — project writer (drafts included)
+ * - `auditor` — project auditor (LF staff included); reads sent issues, never auto-joined
+ * - `group_member` — already in one of the issue's audience committees
+ * - `eligible` — verified email at an active Linux Foundation member company; the reader page then
+ *   adds that email to the newsletter group (the member benefit)
+ * - `denied` — none of the above; the body is withheld
+ */
+export type NewsletterReaderAccessLevel = 'manager' | 'auditor' | 'group_member' | 'eligible' | 'denied';
+
+/** Why a reader was denied: no verified company email, a company that is not an LF member, or an issue with no newsletter group to join. */
+export type NewsletterReaderDeniedReason = 'no_company_email' | 'not_member_company' | 'no_newsletter_group';
+
+/** Response of GET /api/newsletters/:projectUid/:newsletterUid/reader. */
+export interface NewsletterReaderAccess {
+  access: NewsletterReaderAccessLevel;
+  /** Present for every level except `denied`. */
+  newsletter?: Newsletter;
+  denied_reason?: NewsletterReaderDeniedReason;
+  /** `eligible` only: the verified work email that qualified and will be added. */
+  qualifying_email?: string;
+  /** `eligible` only: the matched Linux Foundation member company. */
+  company_name?: string;
+  /** `eligible` only: the newsletter group the email will be added to. */
+  committee_name?: string;
+}
+
+/** Outcome of POST /api/newsletters/:projectUid/:newsletterUid/join. */
+export type NewsletterJoinStatus = 'added' | 'already_member';
+
+/** Response of POST /api/newsletters/:projectUid/:newsletterUid/join. */
+export interface NewsletterJoinResult {
+  status: NewsletterJoinStatus;
+  email: string;
+  committee_name: string;
+  company_name: string;
+}
+
+/** Reader-page state of the automatic member-benefit group add. */
+export interface NewsletterJoinState {
+  status: 'idle' | 'joining' | NewsletterJoinStatus | 'failed';
+  result?: NewsletterJoinResult;
+}
+
+/** A verified email that qualified for the member benefit, with the member company it matched. */
+export interface NewsletterMemberBenefitMatch {
+  email: string;
+  b2b_org_uid: string;
+  company_name: string;
+}
+
+/** Result of the member-benefit eligibility check for the signed-in user. */
+export interface NewsletterMemberBenefitEligibility {
+  /** Lowercased verified emails of the user (used for the group-membership check). */
+  verified_emails: string[];
+  match: NewsletterMemberBenefitMatch | null;
+  /** Set when `match` is null. */
+  denied_reason?: Extract<NewsletterReaderDeniedReason, 'no_company_email' | 'not_member_company'>;
+}
+
+/** One active Linux Foundation member company recorded against a domain. */
+export interface MemberBenefitCompany {
+  b2b_org_uid: string;
+  company_name: string;
+}
+
+/** Index of active Linux Foundation memberships: domain → companies, plus the set of active member org uids. */
+export interface MemberBenefitDomainIndex {
+  by_domain: Map<string, MemberBenefitCompany[]>;
+  active_org_uids: Map<string, string>;
+}
+
+/** The newsletter group (Newsletter-category committee) a member is added to. */
+export interface NewsletterMemberBenefitGroup {
+  uid: string;
+  name: string;
+}
+
+/** Server-side outcome of the newsletter reader access ladder (BFF-internal; never serialized as-is). */
+export type NewsletterReaderEvaluation =
+  | { level: 'manager' | 'auditor' | 'group_member'; newsletter: Newsletter }
+  | { level: 'eligible'; newsletter: Newsletter; match: NewsletterMemberBenefitMatch; group: NewsletterMemberBenefitGroup }
+  | { level: 'denied'; newsletter: Newsletter; reason: NewsletterReaderDeniedReason };
+
+/** A foundation as shown on the My Newsletters cards and drill-down header. */
+export interface NewsletterFoundationSummary {
+  uid: string;
+  slug: string;
+  name: string;
+  logo_url: string | null;
+}
+
+/**
+ * The project whose active corporate memberships qualify a company for a newsletter's member
+ * benefit: the newsletter's own foundation when it is membership-funded, else The Linux Foundation.
+ */
+export interface NewsletterMembershipScope {
+  /** `project_membership.project_slug` to match. */
+  slug: string;
+  name: string;
+}
+
+/** Why the signed-in user cannot invite from one card. */
+export type MyNewsletterInviteDeniedReason = 'no_company_email' | 'not_member_company' | 'no_newsletter_group' | 'unavailable';
+
+/** One card of the Me-lens My Newsletters grid: a foundation the user receives newsletters from. */
+export interface MyNewsletterFoundation extends NewsletterFoundationSummary {
+  /** Sent issues the user received through their current group memberships. */
+  received_count: number;
+  last_sent_at: string | null;
+  /** The user's own Newsletter-category group of this foundation, if any — the group invites add to. */
+  newsletter_group: NewsletterMemberBenefitGroup | null;
+  /** Inviter is in this foundation's newsletter group and works at a member of {@link membership_name}. */
+  can_invite: boolean;
+  /** The organization whose member companies can be invited; null without a newsletter group. */
+  membership_name: string | null;
+  /** Set when `can_invite` is false. */
+  invite_denied_reason?: MyNewsletterInviteDeniedReason;
+}
+
+/** Whether the signed-in user may invite coworkers from at least one card (each card decides for its own foundation). */
+export interface MyNewsletterInviter {
+  eligible: boolean;
+  company_name: string | null;
+  /** Set when not eligible; `unavailable` when the check itself could not run. */
+  denied_reason?: NewsletterMemberBenefitEligibility['denied_reason'] | 'unavailable';
+}
+
+/** Response of GET /api/newsletters/my-foundations. */
+export interface MyNewsletterFoundationsResponse {
+  foundations: MyNewsletterFoundation[];
+  /** The same feed as GET /api/newsletters/my-newsletters, tagged with the owning foundation. */
+  newsletters: MyNewsletter[];
+  complete: boolean;
+  inviter: MyNewsletterInviter;
+}
+
+/** Frontend load state of the My Newsletters foundations response. */
+export interface MyNewsletterFoundationsState {
+  loading: boolean;
+  error: boolean;
+  data: MyNewsletterFoundationsResponse | null;
+}
+
+/** Body of POST /api/newsletters/foundations/:foundationUid/invites. */
+export interface NewsletterInviteRequest {
+  email: string;
+}
+
+/** Response of POST /api/newsletters/foundations/:foundationUid/invites. */
+export interface NewsletterInviteResult {
+  email: string;
+  foundation_name: string;
+}
+
+/** DynamicDialog data of the My Newsletters invite dialog. */
+export interface NewsletterInviteDialogData {
+  foundation: MyNewsletterFoundation;
+}
+
+/** Data the newsletter invite email is rendered from. */
+export interface NewsletterInviteEmailContext {
+  inviter_name: string;
+  company_name: string;
+  foundation_name: string;
+  accept_url: string;
+}
+
+/** A rendered transactional email. */
+export interface RenderedEmail {
+  subject: string;
+  html: string;
+  text: string;
+}
+
+/** Request of the lfx-v2-email-service `send_email` NATS subject (pre-rendered; one recipient). */
+export interface EmailServiceSendRequest {
+  to: string;
+  subject: string;
+  html: string;
+  text: string;
+  from_display_name?: string;
+}
+
+/** Reply of the lfx-v2-email-service `send_email` NATS subject — empty ids when sending is disabled or filtered. */
+export interface EmailServiceSendResponse {
+  email_id?: string;
+  group_id?: string;
+  error?: string;
+}
+
+/** Invite landing outcome for the signed-in user against one newsletter group. */
+export type NewsletterGroupJoinState = 'eligible' | 'already_member' | 'denied';
+
+/** Response of GET /api/newsletters/groups/:committeeUid/join-status. */
+export interface NewsletterGroupJoinStatus {
+  state: NewsletterGroupJoinState;
+  group: NewsletterMemberBenefitGroup;
+  foundation: NewsletterFoundationSummary;
+  /** The organization the invitee's company must be a member of. */
+  membership_name: string;
+  /** `denied` only. */
+  denied_reason?: NewsletterMemberBenefitEligibility['denied_reason'];
+  /** `eligible` only: the verified work email that will be added. */
+  email?: string;
+  /** `eligible` only: the matched member company. */
+  company_name?: string;
+}
+
+/** A project resolved to the foundation it rolls up to, with that foundation's membership scope (BFF-internal). */
+export interface ResolvedNewsletterFoundation {
+  foundation: NewsletterFoundationSummary;
+  membership: NewsletterMembershipScope;
+}
+
+/** A Newsletter-category group the user belongs to, with the foundation it rolls up to (BFF-internal). */
+export interface FoundationNewsletterGroup extends ResolvedNewsletterFoundation {
+  group: NewsletterMemberBenefitGroup;
+}
+
+/** Server-side outcome of the invite landing check — the match is never serialized (BFF-internal). */
+export type NewsletterGroupJoinEvaluation =
+  | { state: 'already_member'; status: NewsletterGroupJoinStatus }
+  | { state: 'denied'; status: NewsletterGroupJoinStatus }
+  | { state: 'eligible'; status: NewsletterGroupJoinStatus; match: NewsletterMemberBenefitMatch };
+
+/** Drill-down state of the invite confirmation panel. */
+export interface NewsletterInviteLandingState {
+  status: 'idle' | 'loading' | 'invalid' | 'error' | 'ready' | 'joining' | NewsletterJoinStatus | 'failed';
+  join?: NewsletterGroupJoinStatus;
+  result?: NewsletterJoinResult;
 }
 
 export interface CreateNewsletterRequest {
@@ -249,6 +487,11 @@ export interface MyNewsletter extends CommitteeNewsletter {
   parent_project_uid?: string;
   parent_project_name?: string;
   parent_is_foundation?: boolean;
+  /** The owning foundation: the owner itself when it is a foundation, else its parent. */
+  foundation_uid?: string;
+  foundation_slug?: string;
+  foundation_name?: string;
+  foundation_logo_url?: string | null;
 }
 
 /** Completeness concerns issue enumeration, not delivery or optional metadata. */

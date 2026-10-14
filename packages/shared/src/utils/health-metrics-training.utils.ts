@@ -79,30 +79,22 @@ export function buildHealthMetricsTrainingEnrollmentView(
   range: HealthMetricsL2Range,
   metric: HealthMetricsTrainingEnrollmentMetric
 ): HealthMetricsTrainingEnrollmentView {
-  const { totals, baseline, byType } = enrollment.periods[range];
+  const { totals, change, byType } = enrollment.periods[range];
   const stat = (
     key: HealthMetricsTrainingEnrollmentStatView['key'],
     label: string,
     value: string,
-    current: number | null,
-    previous: number | null
-  ): HealthMetricsTrainingEnrollmentStatView => ({ key, label, value, ...formatTrainingDelta(current, previous) });
+    fraction: number | null
+  ): HealthMetricsTrainingEnrollmentStatView => ({ key, label, value, ...formatTrainingDelta(fraction) });
 
   const partialYear = getYearForRange('YTD');
 
   return {
-    baselineLabel: formatTrainingBaseline(range, baseline !== null),
-    headline: stat('enrollments', 'Enrollments', formatHealthMetricsTrainingCount(totals.enrollments), totals.enrollments, baseline?.enrollments ?? null),
+    baselineLabel: change ? 'all against the same point last year' : 'no year-over-year comparison for this period',
+    headline: stat('enrollments', 'Enrollments', formatHealthMetricsTrainingCount(totals.enrollments), change?.enrollments ?? null),
     side: [
-      stat(
-        'certifications',
-        'Certifications earned',
-        formatHealthMetricsTrainingCount(totals.certifications),
-        totals.certifications,
-        baseline?.certifications ?? null
-      ),
-      // Refunds can net a prior window negative, which would flip the sign of the change.
-      stat('revenue', 'Revenue', formatHealthMetricsTrainingRevenue(totals.revenueUsd), totals.revenueUsd, positiveOrNull(baseline?.revenueUsd ?? null)),
+      stat('certifications', 'Certifications earned', formatHealthMetricsTrainingCount(totals.certifications), change?.certifications ?? null),
+      stat('revenue', 'Revenue', formatHealthMetricsTrainingRevenue(totals.revenueUsd), change?.revenueUsd ?? null),
     ],
     typeCountLabel: formatTrainingTypeCount(byType.filter(hasEnrollments).length),
     byType: buildTrainingTypeRows(byType, metric),
@@ -161,23 +153,11 @@ function formatTrainingTypeCount(count: number): string {
   return `${count} ${count === 1 ? 'delivery type' : 'delivery types'}`;
 }
 
-function positiveOrNull(value: number | null): number | null {
-  return value !== null && value > 0 ? value : null;
-}
+/** The model's change fraction as a whole percent; `not available` when the model has none. */
+function formatTrainingDelta(fraction: number | null): Pick<HealthMetricsTrainingEnrollmentStatView, 'delta' | 'deltaDirection'> {
+  if (fraction === null) return { delta: HEALTH_METRICS_TRAINING_NOT_AVAILABLE, deltaDirection: 'neutral' };
 
-/** Names what every delta compares against, so a change never stands without its baseline. */
-function formatTrainingBaseline(range: HealthMetricsL2Range, compared: boolean): string {
-  if (!compared) return 'no earlier year to compare against';
-  if (range === 'YTD') return 'all against the same point last year';
-
-  return `all against ${getYearForRange(range) - 1}`;
-}
-
-/** A whole-percent change; `not available` without a measured, non-zero baseline. */
-function formatTrainingDelta(current: number | null, previous: number | null): Pick<HealthMetricsTrainingEnrollmentStatView, 'delta' | 'deltaDirection'> {
-  if (current === null || previous === null || previous === 0) return { delta: HEALTH_METRICS_TRAINING_NOT_AVAILABLE, deltaDirection: 'neutral' };
-
-  const rounded = Math.round(((current - previous) / previous) * 100);
+  const rounded = Math.round(fraction * 100);
   if (rounded === 0) return { delta: '0%', deltaDirection: 'neutral' };
 
   return { delta: `${rounded > 0 ? '+' : '−'}${Math.abs(rounded)}%`, deltaDirection: rounded > 0 ? 'up' : 'down' };

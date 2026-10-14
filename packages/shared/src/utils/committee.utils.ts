@@ -3,7 +3,14 @@
 
 import { CommitteeMemberVisibility } from '../enums/committee.enum';
 import { CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import type { Committee, CommitteeFoundationGroup, CommitteeMemberPermissionInfo, GroupBehavioralClass, JoinMode } from '../interfaces/committee.interface';
+import type {
+  Committee,
+  CommitteeFoundationGroup,
+  CommitteeMailingListLink,
+  CommitteeMemberPermissionInfo,
+  GroupBehavioralClass,
+  JoinMode,
+} from '../interfaces/committee.interface';
 import type { GroupsEngagementStats } from '../interfaces/groups-engagement-stats.interface';
 import type { CommitteeMember } from '../interfaces/member.interface';
 import type { BadgeSeverity, TagSeverity } from '../interfaces/components.interface';
@@ -18,6 +25,7 @@ import {
   OTHER_GROUPS_LABEL,
 } from '../constants/committees.constants';
 import { formatRelativeTime } from './date-time.utils';
+import { getMailingListCommands } from './mailing-list.utils';
 import { getEntityCommands } from './entity-route.utils';
 import { slugify } from './string.utils';
 
@@ -89,6 +97,34 @@ export function getGroupBehavioralClass(category: string | undefined): GroupBeha
  */
 export function getGroupCommands(committee: Pick<Committee, 'uid' | 'is_foundation'>, leaf?: 'edit'): string[] | null {
   return getEntityCommands('groups', committee.uid, committee.is_foundation, leaf);
+}
+
+/**
+ * Link target for a group's associated mailing list(s). One list links straight to its detail page;
+ * several link to the group's page, where they are all listed. `null` when no lists were enriched
+ * onto the committee (e.g. only the `has_mailing_list` flag is known), so callers fall back to text.
+ */
+export function getCommitteeMailingListLink(
+  committee: Pick<Committee, 'uid' | 'is_foundation' | 'project_slug' | 'mailing_lists'>
+): CommitteeMailingListLink | null {
+  const lists = committee.mailing_lists ?? [];
+  if (lists.length === 0) {
+    return null;
+  }
+
+  const queryParams = committee.project_slug ? { project: committee.project_slug } : null;
+  if (lists.length === 1) {
+    // A group's lists belong to the group's project, and the list index never emits `is_foundation`, so use the committee's tier.
+    const [list] = lists;
+    return {
+      commands: getMailingListCommands({ uid: list.uid, is_foundation: committee.is_foundation }),
+      queryParams,
+      target: 'list',
+      label: list.title || list.group_name || null,
+    };
+  }
+
+  return { commands: getGroupCommands(committee) ?? ['/groups', committee.uid], queryParams, target: 'group', label: `${lists.length} mailing lists` };
 }
 
 /**

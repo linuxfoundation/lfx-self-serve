@@ -4,7 +4,7 @@
 // Unit tests for the Brand Kit envelope validation + extraction helpers
 // (brand-kit-output/v1, wi-brand-kit-lfx-selfserve).
 //
-// The fixture is fully synthetic: a schema-valid envelope with all 12 required
+// The fixture is fully synthetic: a schema-valid envelope with all 13 required
 // headings and a correct content_sha256 computed at test time. Never real data.
 
 import { createHash } from 'node:crypto';
@@ -94,8 +94,8 @@ describe('validateBrandKitEnvelope', () => {
     const doc = buildDocument();
     const reordered = doc
       .replace('## 2. Positioning', '## TMP')
-      .replace('## 9. Channel Quick Reference', '## 2. Positioning')
-      .replace('## TMP', '## 9. Channel Quick Reference');
+      .replace('## 3. Voice & Language', '## 2. Positioning')
+      .replace('## TMP', '## 3. Voice & Language');
     const result = validateBrandKitEnvelope(buildEnvelope({ document_markdown: reordered, content_sha256: sha256(reordered) }));
     expect(result.valid).toBe(false);
   });

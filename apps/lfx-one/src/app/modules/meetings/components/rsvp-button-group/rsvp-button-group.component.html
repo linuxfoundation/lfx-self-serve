@@ -3,6 +3,28 @@
 
 @if (inviteResponsesEnabled()) {
   @if (compact()) {
+    <div [class.sr-only]="!showHeader()" class="text-xs text-gray-700" role="status" aria-live="polite" aria-atomic="true" data-testid="meeting-rsvp-response">
+      @if (responseLabel()) {
+        <span class="font-semibold">{{ responseSaved() ? 'Response saved: ' : 'Your response: ' }}{{ responseLabel() }}</span>
+        @if (responseScopeLabel()) {
+          <span> · {{ responseScopeLabel() }}</span>
+        }
+      } @else {
+        <span>Will you attend?</span>
+      }
+    </div>
+    @if (selectedResponse()) {
+      <button
+        type="button"
+        (click)="focusSelectedResponse()"
+        [disabled]="isLoading() || disabled()"
+        class="self-start text-xs font-medium text-blue-600 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-60 disabled:cursor-not-allowed"
+        data-testid="meeting-rsvp-change-response">
+        Change response
+      </button>
+    }
+  }
+  @if (compact()) {
     <!-- Compact mode: bare outlined CTA buttons with colored icon + label per response (no surrounding container). -->
     <!--
     Selected-state Tailwind classes use the `!` important modifier to win over the always-applied base classes
@@ -11,9 +33,11 @@
   -->
     <div class="flex items-center gap-2" [attr.data-testid]="'meeting-rsvp-buttons-compact'">
       <button
+        #responseButton
         type="button"
         (click)="handleRsvpClick('accepted')"
         [disabled]="isLoading() || disabled()"
+        [attr.aria-pressed]="selectedResponse() === 'accepted'"
         class="inline-flex items-center gap-1.5 px-3 h-8 rounded-md border border-blue-300 bg-white text-blue-700 hover:bg-blue-50 hover:border-blue-500 disabled:opacity-60 disabled:cursor-not-allowed transition-colors text-xs font-medium"
         [ngClass]="{
           '!bg-blue-600': selectedResponse() === 'accepted',
@@ -25,23 +49,11 @@
         <span>Yes</span>
       </button>
       <button
-        type="button"
-        (click)="handleRsvpClick('declined')"
-        [disabled]="isLoading() || disabled()"
-        class="inline-flex items-center gap-1.5 px-3 h-8 rounded-md border border-red-300 bg-white text-red-700 hover:bg-red-50 hover:border-red-500 disabled:opacity-60 disabled:cursor-not-allowed transition-colors text-xs font-medium"
-        [ngClass]="{
-          '!bg-red-600': selectedResponse() === 'declined',
-          '!border-red-600': selectedResponse() === 'declined',
-          '!text-white': selectedResponse() === 'declined',
-        }"
-        [attr.data-testid]="'meeting-rsvp-button-no'">
-        <i class="fa-light fa-circle-xmark text-sm"></i>
-        <span>No</span>
-      </button>
-      <button
+        #responseButton
         type="button"
         (click)="handleRsvpClick('maybe')"
         [disabled]="isLoading() || disabled()"
+        [attr.aria-pressed]="selectedResponse() === 'maybe'"
         class="inline-flex items-center gap-1.5 px-3 h-8 rounded-md border border-amber-300 bg-white text-amber-700 hover:bg-amber-50 hover:border-amber-500 disabled:opacity-60 disabled:cursor-not-allowed transition-colors text-xs font-medium"
         [ngClass]="{
           '!bg-amber-500': selectedResponse() === 'maybe',
@@ -51,6 +63,22 @@
         [attr.data-testid]="'meeting-rsvp-button-maybe'">
         <i class="fa-light fa-circle-question text-sm"></i>
         <span>Maybe</span>
+      </button>
+      <button
+        #responseButton
+        type="button"
+        (click)="handleRsvpClick('declined')"
+        [disabled]="isLoading() || disabled()"
+        [attr.aria-pressed]="selectedResponse() === 'declined'"
+        class="inline-flex items-center gap-1.5 px-3 h-8 rounded-md border border-red-300 bg-white text-red-700 hover:bg-red-50 hover:border-red-500 disabled:opacity-60 disabled:cursor-not-allowed transition-colors text-xs font-medium"
+        [ngClass]="{
+          '!bg-red-600': selectedResponse() === 'declined',
+          '!border-red-600': selectedResponse() === 'declined',
+          '!text-white': selectedResponse() === 'declined',
+        }"
+        [attr.data-testid]="'meeting-rsvp-button-no'">
+        <i class="fa-light fa-circle-xmark text-sm"></i>
+        <span>No</span>
       </button>
     </div>
   } @else {
@@ -65,38 +93,64 @@
       class="rounded-[6px] p-[12px] flex flex-col gap-2 flex-1"
       [attr.data-testid]="'meeting-rsvp-container'">
       <!-- Header -->
-      <div
-        [ngClass]="{
-          'text-blue-600': selectedResponse() === null && !disabled() && !isLoading(),
-          'text-gray-400': disabled() && !isLoading(),
-          'text-blue-500': isLoading(),
-          'text-gray-500': selectedResponse() !== null && !disabled() && !isLoading(),
-        }"
-        class="flex items-center gap-[7px]"
-        [attr.data-testid]="'meeting-rsvp-header'">
-        @if (isLoading()) {
-          <i class="fa-light fa-spinner-third fa-spin text-[10.5px]"></i>
+      @if (showHeader()) {
+        <div
+          [ngClass]="{
+            'text-blue-600': selectedResponse() === null && !disabled() && !isLoading(),
+            'text-gray-400': disabled() && !isLoading(),
+            'text-blue-500': isLoading(),
+            'text-gray-500': selectedResponse() !== null && !disabled() && !isLoading(),
+          }"
+          class="flex items-center gap-[7px]"
+          [attr.data-testid]="'meeting-rsvp-header'">
+          @if (isLoading()) {
+            <i class="fa-light fa-spinner-third fa-spin text-[10.5px]"></i>
+          } @else {
+            <i class="fa-light fa-users text-[10.5px]"></i>
+          }
+          <span class="text-[10.5px] tracking-[0.0923px] leading-[14px]">{{ isLoading() ? 'Saving RSVP...' : 'RSVP' }}</span>
+          @if (disabled() && disabledMessage()) {
+            <span
+              class="inline-flex items-center gap-0.5 text-[10px] font-medium text-gray-400 bg-gray-100 border border-gray-200 px-1.5 py-0.5 rounded-full"
+              [attr.data-testid]="'meeting-rsvp-disabled-badge'">
+              <i class="fa-light fa-clock text-[8px]"></i>
+              {{ disabledMessage() }}
+            </span>
+          }
+        </div>
+      }
+      <div class="flex flex-col gap-1 text-xs text-gray-700" role="status" aria-live="polite" aria-atomic="true" data-testid="meeting-rsvp-response">
+        @if (responseLabel()) {
+          <span class="font-semibold">{{ responseSaved() ? 'Response saved: ' : 'Your response: ' }}{{ responseLabel() }}</span>
+          @if (responseScopeLabel()) {
+            <span>{{ responseScopeLabel() }}</span>
+          }
         } @else {
-          <i class="fa-light fa-users text-[10.5px]"></i>
-        }
-        <span class="text-[10.5px] tracking-[0.0923px] leading-[14px]">{{ isLoading() ? 'Saving RSVP...' : 'RSVP' }}</span>
-        @if (disabled() && disabledMessage()) {
-          <span
-            class="inline-flex items-center gap-0.5 text-[10px] font-medium text-gray-400 bg-gray-100 border border-gray-200 px-1.5 py-0.5 rounded-full"
-            [attr.data-testid]="'meeting-rsvp-disabled-badge'">
-            <i class="fa-light fa-clock text-[8px]"></i>
-            {{ disabledMessage() }}
-          </span>
+          <span class="font-semibold">Will you attend?</span>
+          @if (isRecurring() && occurrenceLabel()) {
+            <span>{{ occurrenceLabel() }}</span>
+          }
         }
       </div>
-
+      @if (selectedResponse()) {
+        <button
+          type="button"
+          (click)="focusSelectedResponse()"
+          [disabled]="isLoading() || disabled()"
+          class="self-start text-xs font-medium text-blue-600 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-60 disabled:cursor-not-allowed"
+          data-testid="meeting-rsvp-change-response">
+          Change response
+        </button>
+      }
       <!-- RSVP Buttons -->
       <div class="flex gap-[7px]" [attr.data-testid]="'meeting-rsvp-buttons'">
         <!-- Yes Button -->
         <button
+          #responseButton
           type="button"
           (click)="handleRsvpClick('accepted')"
           [disabled]="isLoading() || disabled()"
+          [attr.aria-pressed]="selectedResponse() === 'accepted'"
           [ngClass]="{
             'bg-blue-500 border-blue-500 text-white': selectedResponse() === 'accepted' && !disabled() && !isLoading(),
             'bg-white border-blue-500 text-blue-700 hover:bg-blue-50': selectedResponse() !== 'accepted' && !disabled() && !isLoading(),
@@ -109,28 +163,13 @@
           <span class="text-[10.5px] tracking-[0.0923px] leading-[14px]">Yes</span>
         </button>
 
-        <!-- No Button -->
-        <button
-          type="button"
-          (click)="handleRsvpClick('declined')"
-          [disabled]="isLoading() || disabled()"
-          [ngClass]="{
-            'bg-red-500 border-red-500 text-white': selectedResponse() === 'declined' && !disabled() && !isLoading(),
-            'bg-white border-red-500 text-red-700 hover:bg-red-50': selectedResponse() !== 'declined' && !disabled() && !isLoading(),
-            'bg-white border-gray-300 text-gray-400 cursor-not-allowed': disabled() && !isLoading(),
-            'bg-blue-100/50 border-blue-200 text-blue-300 cursor-wait animate-pulse': isLoading(),
-          }"
-          class="flex-1 inline-flex items-center justify-center gap-[3.5px] px-[7px] py-[5.25px] rounded-[3.5px] h-[28px] border transition-colors"
-          [attr.data-testid]="'meeting-rsvp-button-no'">
-          <i class="fa-light fa-circle-xmark text-[14px]"></i>
-          <span class="text-[10.5px] tracking-[0.0923px] leading-[14px]">No</span>
-        </button>
-
         <!-- Maybe Button -->
         <button
+          #responseButton
           type="button"
           (click)="handleRsvpClick('maybe')"
           [disabled]="isLoading() || disabled()"
+          [attr.aria-pressed]="selectedResponse() === 'maybe'"
           [ngClass]="{
             'bg-amber-500 border-amber-500 text-white': selectedResponse() === 'maybe' && !disabled() && !isLoading(),
             'bg-white border-amber-500 text-amber-700 hover:bg-amber-50': selectedResponse() !== 'maybe' && !disabled() && !isLoading(),
@@ -141,6 +180,24 @@
           [attr.data-testid]="'meeting-rsvp-button-maybe'">
           <i class="fa-light fa-circle-question text-[14px]"></i>
           <span class="text-[10.5px] tracking-[0.0923px] leading-[14px]">Maybe</span>
+        </button>
+        <!-- No Button -->
+        <button
+          #responseButton
+          type="button"
+          (click)="handleRsvpClick('declined')"
+          [disabled]="isLoading() || disabled()"
+          [attr.aria-pressed]="selectedResponse() === 'declined'"
+          [ngClass]="{
+            'bg-red-500 border-red-500 text-white': selectedResponse() === 'declined' && !disabled() && !isLoading(),
+            'bg-white border-red-500 text-red-700 hover:bg-red-50': selectedResponse() !== 'declined' && !disabled() && !isLoading(),
+            'bg-white border-gray-300 text-gray-400 cursor-not-allowed': disabled() && !isLoading(),
+            'bg-blue-100/50 border-blue-200 text-blue-300 cursor-wait animate-pulse': isLoading(),
+          }"
+          class="flex-1 inline-flex items-center justify-center gap-[3.5px] px-[7px] py-[5.25px] rounded-[3.5px] h-[28px] border transition-colors"
+          [attr.data-testid]="'meeting-rsvp-button-no'">
+          <i class="fa-light fa-circle-xmark text-[14px]"></i>
+          <span class="text-[10.5px] tracking-[0.0923px] leading-[14px]">No</span>
         </button>
       </div>
     </div>

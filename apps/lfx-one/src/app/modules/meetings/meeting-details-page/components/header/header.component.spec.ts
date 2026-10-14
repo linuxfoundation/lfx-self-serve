@@ -274,8 +274,8 @@ describe('MeetingHeaderComponent', () => {
     expect(fixture.nativeElement.querySelectorAll('[data-testid^="meeting-header-badge-committee-"]').length).toBe(2);
   });
 
-  // The `*_enabled` flags survive on the reduced past payload, so these show even without artifact access.
-  it('shows each feature badge from its flag alone', () => {
+  it.each(['before', 'live'] as const)('shows each feature badge from its flag alone while the meeting is %s', (state) => {
+    timeState.set(state);
     for (const id of ['recording', 'transcripts', 'youtube', 'ai-summary']) {
       expect(query(`meeting-header-badge-${id}`)).toBeNull();
     }
@@ -285,6 +285,17 @@ describe('MeetingHeaderComponent', () => {
     for (const id of ['recording', 'transcripts', 'youtube', 'ai-summary']) {
       expect(query(`meeting-header-badge-${id}`)).not.toBeNull();
     }
+  });
+
+  // Once ended, the recording section shows what the meeting produced; the setting chips would contradict it.
+  it('drops the Recording, Transcripts and AI Summary chips once the meeting has ended', () => {
+    timeState.set('ended');
+    show({ recording_enabled: true, transcript_enabled: true, youtube_upload_enabled: true, ai_summary_enabled: true });
+
+    for (const id of ['recording', 'transcripts', 'ai-summary']) {
+      expect(query(`meeting-header-badge-${id}`)).toBeNull();
+    }
+    expect(query('meeting-header-badge-youtube')).not.toBeNull();
   });
 
   it('falls back to an icon when the project has no logo', () => {

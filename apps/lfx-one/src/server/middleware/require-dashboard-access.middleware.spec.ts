@@ -40,7 +40,7 @@ function edFor(slugs: string[], overrides: Partial<PersonaResult> = {}): Persona
 }
 
 function buildReq(query: Record<string, string> = {}): Request {
-  return { path: '/api/social-listening/mentions-feed', query } as unknown as Request;
+  return { method: 'GET', path: '/api/social-listening/mentions-feed', query } as unknown as Request;
 }
 
 /** The middleware either calls next() with nothing (allow) or next(error) (deny). */
@@ -199,5 +199,35 @@ describe('requireDashboardAccess', () => {
     await requireDashboardAccess(buildReq({ foundationSlug: 'tlf' }), {} as Response, next as unknown as NextFunction);
 
     expect(verdict(next)).toBe('deny');
+  });
+
+  it.each([
+    { body: { foundationSlug: 'Synthetic-Owned' }, query: {}, allowed: true },
+    { body: { foundationSlug: 'synthetic-foreign' }, query: {}, allowed: false },
+    { body: { foundationSlug: 'synthetic-foreign' }, query: { foundationSlug: 'synthetic-owned' }, allowed: false },
+    { body: {}, query: { foundationSlug: 'synthetic-foreign' }, allowed: true },
+  ])('authorizes POST body scope without query fallback ($allowed)', async ({ body, query, allowed }) => {
+    getPersonas.mockResolvedValue(edFor(['synthetic-owned']));
+    const next = vi.fn();
+    const req = { ...buildReq(), method: 'POST', body, query } as Request;
+    await requireDashboardAccess(req, {} as Response, next);
+    expect(verdict(next)).toBe(allowed ? 'allow' : 'deny');
+  });
+
+  it('allows LF staff to read a foreign body foundation', async () => {
+    getPersonas.mockResolvedValue(edFor([], { isLFStaff: true }));
+    const next = vi.fn();
+    await requireDashboardAccess({ ...buildReq(), method: 'POST', body: { foundationSlug: 'synthetic-foreign' } } as Request, {} as Response, next);
+    expect(verdict(next)).toBe('allow');
+  });
+
+  it.each([true, false])('checks a POST root writer against the normalized body foundation (%s)', async (allowed) => {
+    getPersonas.mockResolvedValue(edFor(['synthetic-owned'], { isRootWriter: true }));
+    checkProjectWriter.mockResolvedValue(allowed);
+    const next = vi.fn();
+    const req = { ...buildReq({ foundationSlug: 'synthetic-owned' }), method: 'POST', body: { foundationSlug: 'Synthetic-Foreign' } } as Request;
+    await requireDashboardAccess(req, {} as Response, next);
+    expect(verdict(next)).toBe(allowed ? 'allow' : 'deny');
+    expect(checkProjectWriter).toHaveBeenCalledWith(req, 'synthetic-foreign');
   });
 });

@@ -6,7 +6,7 @@
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError } from '../errors';
-import { resolveVerifiedUserEmails } from '../helpers/verified-emails.helper';
+import { resolveVerifiedUserEmails } from '../helpers/user-emails.helper';
 import { CredlyService } from '../services/credly.service';
 import { EmailVerificationService } from '../services/email-verification.service';
 import { logger } from '../services/logger.service';
@@ -26,7 +26,7 @@ export class BadgesController {
     const startTime = logger.startOperation(req, 'get_badges');
 
     try {
-      const { emails } = await resolveVerifiedUserEmails(req, this.emailVerificationService);
+      const emails = await resolveVerifiedUserEmails(req, this.emailVerificationService);
 
       if (emails.length === 0) {
         return next(new AuthenticationError('User authentication required', { operation: 'get_badges' }));

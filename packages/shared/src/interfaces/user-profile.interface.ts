@@ -47,6 +47,15 @@ export interface EmailManagementData {
   alternate_emails: UserEmail[];
 }
 
+/** Options for the BFF's verified-email lookup (`resolveVerifiedUserEmails`). */
+export interface ResolveVerifiedUserEmailsOptions {
+  /**
+   * Throw a 503 instead of falling back to the session email when auth-service cannot be read.
+   * Access decisions use this: a lookup outage must never read as "this user has no other emails".
+   */
+  strict?: boolean;
+}
+
 /**
  * The caller's email addresses as the BFF resolves them for matching (`resolveVerifiedUserEmails`):
  * the primary first, then the alternates auth-service flags verified, lowercased and de-duplicated.

@@ -93,6 +93,7 @@ import {
 import { committeeJoinErrorMessage, committeeLeaveErrorMessage, getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
+import { restoreMeLensOnBrowserBack } from '@shared/utils/restore-me-lens.util';
 import { JoinApplicationDialogResult } from '@lfx-one/shared/interfaces';
 import { AcceptInviteOrganizationDialogComponent } from '@components/accept-invite-organization-dialog/accept-invite-organization-dialog.component';
 import { JoinApplicationDialogComponent } from '../components/join-application-dialog/join-application-dialog.component';
@@ -545,6 +546,7 @@ export class CommitteeViewComponent {
     }
 
     syncEntityProjectContext(this.committee, this.projectContextService, this.router, this.destroyRef);
+    restoreMeLensOnBrowserBack(this.router, this.lensService, this.destroyRef, this.fromMeLens, '/groups');
 
     bindLfxDocumentTitle(computed(() => this.committee()?.name));
 
@@ -1171,17 +1173,23 @@ export class CommitteeViewComponent {
 
   private initAutoSelectInitialTab(): void {
     const navigationKey = computed(() => ({ id: this.committeeId(), tab: this.initialTab() }));
-    // toObservable must run in an injection context; build the streams here, not inside switchMap.
-    const visibleTabs$ = toObservable(this.visibleTabs);
-    const membersLoading$ = toObservable(this.membersLoading);
+    const selectionSnapshot = computed(() => ({
+      id: this.committeeId(),
+      committeeMatches: committeeRouteIdMatches(this.committeeId(), this.committee()),
+      roleLoading: this.myRoleLoading(),
+      membersLoading: this.membersLoading(),
+      tabs: this.visibleTabs(),
+    }));
+    // Bridge one coherent snapshot in the injection context, not separately scheduled signals.
+    const selectionSnapshot$ = toObservable(selectionSnapshot);
     toObservable(navigationKey)
       .pipe(
-        switchMap(({ tab }) => {
-          if (!tab) return EMPTY;
-          return combineLatest([visibleTabs$, membersLoading$]).pipe(
-            filter(([, loading]) => !loading),
+        switchMap(({ id, tab }) => {
+          if (!id || !tab) return EMPTY;
+          return selectionSnapshot$.pipe(
+            filter((snapshot) => snapshot.id === id && snapshot.committeeMatches && !snapshot.roleLoading && !snapshot.membersLoading),
             take(1),
-            filter(([tabs]) => tabs.some((t) => t.key === tab)),
+            filter((snapshot) => snapshot.tabs.some((entry) => entry.key === tab)),
             map(() => tab)
           );
         }),

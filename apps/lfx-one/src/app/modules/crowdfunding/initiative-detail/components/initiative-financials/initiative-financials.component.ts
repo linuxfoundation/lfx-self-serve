@@ -65,7 +65,7 @@ export class InitiativeFinancialsComponent {
           concat(of(0), this.nextDonationsPage$.pipe(scan((offset) => offset + DEFAULT_CROWDFUNDING_PAGE_SIZE, 0))).pipe(
             concatMap((from) =>
               this.crowdfundingService
-                .getInitiativeTransactions(initiative.slug, {
+                .getInitiativeTransactions(initiative.id, {
                   type: 'donations',
                   size: DEFAULT_CROWDFUNDING_PAGE_SIZE,
                   from,
@@ -103,7 +103,7 @@ export class InitiativeFinancialsComponent {
           concat(of(0), this.nextExpensesPage$.pipe(scan((offset) => offset + DEFAULT_CROWDFUNDING_PAGE_SIZE, 0))).pipe(
             concatMap((from) =>
               this.crowdfundingService
-                .getInitiativeTransactions(initiative.slug, {
+                .getInitiativeTransactions(initiative.id, {
                   type: 'expenses',
                   size: DEFAULT_CROWDFUNDING_PAGE_SIZE,
                   from,

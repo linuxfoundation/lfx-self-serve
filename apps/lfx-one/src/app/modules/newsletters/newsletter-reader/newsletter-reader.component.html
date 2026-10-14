@@ -16,8 +16,14 @@
         <p class="max-w-lg text-gray-600">We couldn't load this newsletter right now. Please try again in a few minutes.</p>
       </div>
     </div>
+  } @else if (membersOnly()) {
+    <!-- Signed in, but not a manager, group member or Linux Foundation member employee -->
+    <lfx-newsletter-not-found
+      reason="members-only"
+      [deniedReason]="access()?.denied_reason ?? null"
+      data-testid="newsletter-reader-members-only"></lfx-newsletter-not-found>
   } @else if (notFound()) {
-    <!-- 404: draft hidden from non-writer OR project/newsletter not found -->
+    <!-- 404: draft hidden from non-manager (server-decided) OR project/newsletter not found -->
     <lfx-newsletter-not-found [reason]="isDraftHidden() ? 'draft' : 'not-found'" data-testid="newsletter-reader-not-found"></lfx-newsletter-not-found>
   } @else if (loading()) {
     <!-- Skeleton loader -->
@@ -49,6 +55,18 @@
         </button>
       }
     </div>
+
+    @if (access()?.access === 'eligible') {
+      <!-- Member benefit: the reader is being / has been added to the newsletter group -->
+      <div class="mb-6" data-testid="newsletter-reader-member-benefit">
+        <lfx-newsletter-member-benefit-banner
+          [joinState]="joinState()"
+          [email]="access()?.qualifying_email ?? ''"
+          [companyName]="access()?.company_name ?? ''"
+          [groupName]="access()?.committee_name ?? ''"
+          (retry)="retryJoin()"></lfx-newsletter-member-benefit-banner>
+      </div>
+    }
 
     <!-- Newsletter preview inline (not a drawer) -->
     <lfx-newsletter-preview

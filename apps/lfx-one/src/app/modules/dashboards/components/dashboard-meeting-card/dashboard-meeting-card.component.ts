@@ -10,7 +10,6 @@ import { ButtonComponent } from '@components/button/button.component';
 import {
   buildJoinUrlWithParams,
   canJoinMeeting,
-  DEFAULT_MEETING_TYPE_CONFIG,
   getUpcomingMeetingStartTime,
   resolveUpcomingMeetingDurationMinutes,
   Meeting,
@@ -66,7 +65,7 @@ export class DashboardMeetingCardComponent {
   public readonly joinUrl: Signal<string | null>;
 
   // Computed values
-  public readonly meetingTypeInfo: Signal<MeetingTypeBadge> = this.initMeetingTypeInfo();
+  public readonly meetingTypeInfo: Signal<MeetingTypeBadge | null> = this.initMeetingTypeInfo();
   public readonly meetingStartTime: Signal<string> = this.initMeetingStartTime();
   public readonly formattedTimeWithDuration: Signal<string> = this.initFormattedTimeWithDuration();
   public readonly isPrivate: Signal<boolean> = this.initIsPrivate();
@@ -118,10 +117,14 @@ export class DashboardMeetingCardComponent {
     this.joinUrl = toSignal(joinUrl$, { initialValue: null });
   }
 
-  private initMeetingTypeInfo(): Signal<MeetingTypeBadge> {
+  private initMeetingTypeInfo(): Signal<MeetingTypeBadge | null> {
     return computed(() => {
       const type = this.meeting().meeting_type?.toLowerCase();
-      const config = type ? (MEETING_TYPE_CONFIGS[type] ?? DEFAULT_MEETING_TYPE_CONFIG) : DEFAULT_MEETING_TYPE_CONFIG;
+      const config = type ? MEETING_TYPE_CONFIGS[type] : undefined;
+      // Unrecognized/untyped meetings would only get a generic "Meeting" chip, which adds no information on a meeting card
+      if (!config) {
+        return null;
+      }
 
       return {
         label: config.label,

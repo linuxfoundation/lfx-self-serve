@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ProjectStage } from '../enums/project-stage.enum';
+import type { Project } from '../interfaces/project.interface';
 
 const FORMATION_STAGE_PREFIX = 'Formation - ';
 
@@ -71,4 +72,16 @@ const POST_FORMATION_STAGES: ReadonlySet<string> = new Set([ProjectStage.Active,
  */
 export function isPostFormationStage(stage: ProjectStage | string | undefined | null): boolean {
   return typeof stage === 'string' && POST_FORMATION_STAGES.has(stage);
+}
+
+/**
+ * True when a project may be revealed on an anonymous `/public/api` surface: `public` is strictly
+ * `true` and the stage is not `Formation - Confidential`. Those public routes resolve projects with
+ * the server's M2M token, which bypasses upstream per-user FGA, so they must apply the visibility
+ * rule themselves or leak unannounced projects the lens picker already hides (GH-1955) —
+ * linuxfoundation/lfx-self-serve-ops#437. A missing `public` is treated as not discoverable, and a
+ * `null`/`undefined` project (lookup failed or absent) is never discoverable, so callers fail closed.
+ */
+export function isPubliclyDiscoverableProject(project: Pick<Project, 'public' | 'stage'> | null | undefined): boolean {
+  return !!project && project.public === true && project.stage !== ProjectStage.FormationConfidential;
 }

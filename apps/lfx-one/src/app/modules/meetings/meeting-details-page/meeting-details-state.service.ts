@@ -118,25 +118,31 @@ export class MeetingDetailsStateService {
    * is retried once straight away and then on each clock tick, instead of sticking for the rest of
    * the visit.
    */
-  private readonly myRsvpRequest: Signal<{ meetingId: string; occurrenceId: string | undefined; retry: number } | null> = computed(() => {
-    const meeting = this.meeting();
-    const eligible =
-      !!meeting &&
-      this.matchesRoute() &&
-      this.userService.authenticated() &&
-      this.isInvited(meeting) &&
-      isMeetingInviteResponsesEnabled(meeting) &&
-      !this.loadedViaPastMeetingId() &&
-      this.timeState() !== 'ended';
-    if (!eligible || !meeting) {
-      return null;
+  private readonly myRsvpRequest: Signal<{ meetingId: string; occurrenceId: string | undefined; allDatesOnly: boolean; retry: number } | null> = computed(
+    () => {
+      const meeting = this.meeting();
+      const eligible =
+        !!meeting &&
+        this.matchesRoute() &&
+        this.userService.authenticated() &&
+        this.isInvited(meeting) &&
+        isMeetingInviteResponsesEnabled(meeting) &&
+        !this.loadedViaPastMeetingId() &&
+        this.timeState() !== 'ended';
+      if (!eligible || !meeting) {
+        return null;
+      }
+      const occurrenceId = resolveRsvpOccurrenceId(meeting, { occurrence: this.selectedOccurrence() });
+      return {
+        meetingId: meeting.id,
+        occurrenceId,
+        // As V1 (#3458): a recurring meeting with no resolved occurrence reads only its series-wide answer,
+        // so a newer single-date or this-and-following answer is never shown as the answer for the series.
+        allDatesOnly: !!meeting.recurrence && !occurrenceId,
+        retry: this.myRsvpFailed() ? this.now().getTime() : 0,
+      };
     }
-    return {
-      meetingId: meeting.id,
-      occurrenceId: resolveRsvpOccurrenceId(meeting, { occurrence: this.selectedOccurrence() }),
-      retry: this.myRsvpFailed() ? this.now().getTime() : 0,
-    };
-  });
+  );
   /** Meetings this page has auto-joined, so a remounted Join control does not open them again. */
   private readonly autoJoinedMeetingIds = new Set<string>();
   /** The meeting password for lookups: `?password=`, or else the composer's navigation state. */
@@ -475,7 +481,7 @@ export class MeetingDetailsStateService {
           if (!event.key) {
             return of(undefined);
           }
-          return this.meetingService.getMeetingRsvpForCurrentUserOrFail(event.key.meetingId, event.key.occurrenceId).pipe(
+          return this.meetingService.getMeetingRsvpForCurrentUserOrFail(event.key.meetingId, event.key.occurrenceId, event.key.allDatesOnly).pipe(
             map((rsvp): RsvpResponse | null | undefined => rsvp?.response_type ?? null),
             tap(() => this.myRsvpFailed.set(false)),
             // Unknown, not "not answered": the pill falls back to the time state, and the request is

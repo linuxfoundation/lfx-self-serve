@@ -24,9 +24,12 @@ import { ICP_FORM_PREAMBLE_LINES, ICP_GAP_FILL_QUESTIONS, ICP_Q_GITHUB_URL, ICP_
  */
 const BRAND_KIT_FIELD_PRESENTATION: Record<(typeof BRAND_KIT_INTAKE_QUESTIONS)[number]['key'], Omit<MktgIntakeField, 'key' | 'question'>> = {
   project_name: { kind: 'text', prefill: 'project-name' },
-  // Q2 asks for the repo or README URL, and an account URL answers
-  // neither — refused here rather than accepted and quietly under-used.
-  github_url: { kind: 'text', prefill: 'repository-url', format: 'github-repo-url' },
+  // Q2 asks for the repo or README URL. The Brand Kit BFF passes the answer
+  // to the agent as text and fetches no README from it, so a GitHub
+  // organization URL (e.g. https://github.com/opensearch-project) is a usable
+  // answer too — accepted here (hand test, 2026-10-12); only a value that is
+  // not a GitHub URL at all is refused.
+  github_url: { kind: 'text', prefill: 'repository-url', format: 'github-url' },
   one_line_description: {
     kind: 'text',
     prefill: 'project-description',
@@ -60,18 +63,19 @@ export const BRAND_KIT_INTAKE: MktgAgentIntake = {
     ...BRAND_KIT_FIELD_PRESENTATION[question.key],
   })),
   sections: [
+    'Review Sheet',
     'How to Use This Document',
     '1. Project Definition',
     '2. Positioning',
-    '3. Brand Personality & Voice',
-    '4. Primary Audiences & Messaging',
+    '3. Voice & Language',
+    '4. Primary Audiences',
     '5. Key Brand Strengths',
     '6. Competitive Differentiation & Guardrails',
     '7. Visual Identity — Five Components',
     '8. Tagline Options (Starter Set)',
-    '9. Channel Quick Reference',
     'Appendix A: Document Architecture',
     'Appendix B: Source Intake',
+    'Appendix C: LFX Project Record & Research Sweep',
   ],
   endpoints: {
     generate: '/api/mktg-agents/brand-kit/generate',
@@ -261,15 +265,21 @@ export const MKTG_ENVELOPE_EXTRACTION_MAX_DEPTH = 16;
  * Blocking field-error copy for an intake value that fails its `format` rule.
  * Keyed by the rule and by what the value turned out to be, so the message
  * names the ACTUAL problem instead of a generic "invalid" — an account
- * URL and a typo are different mistakes with different fixes.
+ * URL and a typo are different mistakes with different fixes. A rule only
+ * lists the reasons its validator can raise: `github-url` accepts an account
+ * URL, so it has no `owner` message.
  */
-export const MKTG_INTAKE_FORMAT_ERRORS: Record<MktgIntakeFieldFormat, Record<GithubRepoUrlErrorReason, string>> = {
+export const MKTG_INTAKE_FORMAT_ERRORS: Record<MktgIntakeFieldFormat, Partial<Record<GithubRepoUrlErrorReason, string>>> = {
   'github-repo-url': {
     // Neutral about WHAT the account is: `github.com/<owner>` is an
     // organization or a personal profile and the URL cannot say which, so
     // naming it an organization would be a guess told to the user as a fact.
     owner: 'That’s a GitHub account URL, not a repository — there’s no repository README behind it. Enter a repository URL, e.g. https://github.com/org/repo.',
     unrecognized: 'That doesn’t look like a GitHub repository URL. Enter one like https://github.com/org/repo so the agent can read the repository’s README.',
+  },
+  'github-url': {
+    unrecognized:
+      'That doesn’t look like a GitHub URL. Enter the project’s repository or organization URL, e.g. https://github.com/org/repo or https://github.com/org.',
   },
 };
 
@@ -290,6 +300,38 @@ export const MKTG_README_SKIP_NOTES: Record<MktgReadmeSkipReason, string> = {
 
 /** Running-phase stage checklist labels, in order. */
 export const MKTG_RUN_STAGES = ['Submitting your intake', 'Agent drafting the document', 'Validating required sections'] as const;
+
+/**
+ * The document review-status labels, as the re-pinned agents write them
+ * inside `document_markdown` — on the cover and on the line above the Review
+ * Sheet table (the templates' newer review labels; marketing-os-agents
+ * `input-doc-mapping.md` §5): `Draft — pre-filled`, `Draft — from your
+ * documents`, `Draft — from your answers` (the Brand Kit's no-document first
+ * draft), the classic `Draft v1 — for review` (the Message Foundation's) and
+ * `ED-reviewed — [name], [date]`. The envelope carries no status field —
+ * "there is no gate; the status is information" — so the result page reads
+ * the first label out of the document itself (`findMktgDocumentStatus`).
+ *
+ * Group 1 is the label: its opening word, the separator (em/en dash, or a
+ * spaced hyphen), then the phrase up to a table cell, emphasis or code
+ * delimiter, a `·` separator, or the end of the line. Case-insensitive, so
+ * the template's own `DRAFT — pre-filled, awaiting ED review` variant also matches.
+ */
+export const MKTG_DOCUMENT_STATUS_LABEL_REGEX = /((?:Draft(?: v\d+)?|ED-reviewed)(?:\s*[—–]\s*|\s+-\s+)[^|*_`·\n]+)/i;
+
+/**
+ * What may precede a status label on its line for the match to count: only
+ * Markdown decoration (heading marks, blockquote, table pipe, emphasis,
+ * list dash, whitespace) — or that decoration around the word `Status`
+ * itself (`Status:`, `**Status:**`, `| Status |`), with only a colon, a
+ * dash, a pipe, emphasis or whitespace between the word and the label.
+ * Prose is never a status line, whether it merely contains "draft —"
+ * mid-sentence or mentions the word "status" somewhere before it.
+ */
+export const MKTG_DOCUMENT_STATUS_LEAD_REGEX = /^(?:[\s#>|*_-]*|[\s#>|*_-]*status[\s*_:|—–-]*)$/i;
+
+/** Prefix of the reviewed label — the one status that is no longer a draft. */
+export const MKTG_DOCUMENT_STATUS_REVIEWED_PREFIX = 'ED-reviewed';
 
 /** localStorage key prefix for stored runs; full key is `<prefix>:<projectUid>:<agentId>`. */
 export const MKTG_RUN_STORAGE_KEY_PREFIX = 'lfx-mktg-agent-run';
