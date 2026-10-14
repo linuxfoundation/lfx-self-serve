@@ -6,6 +6,7 @@ import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { Router, RouterLink, UrlTree } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { RejectApplicationDialogComponent } from '@app/modules/committees/components/reject-application-dialog/reject-application-dialog.component';
+import { JoinRequestSummaryComponent } from '@app/modules/dashboards/components/join-request-summary/join-request-summary.component';
 import { PendingActionsDrawerComponent } from '@app/modules/dashboards/components/pending-actions-drawer/pending-actions-drawer.component';
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
 import { VoteBallotInlineComponent } from '@app/modules/votes/components/vote-ballot-inline/vote-ballot-inline.component';
@@ -56,6 +57,7 @@ const INVITE_UNDO_TOAST_KEY = 'pending-actions-undo';
     RsvpButtonGroupComponent,
     VoteBallotInlineComponent,
     PendingActionsDrawerComponent,
+    JoinRequestSummaryComponent,
     SkeletonModule,
     ToastModule,
     RouterLink,
@@ -255,7 +257,7 @@ export class PendingActionsComponent {
     this.confirmationService.confirm({
       key: this.applicationConfirmKey,
       header: 'Approve Application',
-      message: `Approve ${applicant}'s request to join ${item.badge}?`,
+      message: `Approve ${applicant}'s request to join ${item.badge}${item.applicationProjectName ? ` in the ${item.applicationProjectName} project` : ''}?`,
       acceptLabel: 'Approve',
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-success p-button-sm',
@@ -275,7 +277,7 @@ export class PendingActionsComponent {
       width: '480px',
       modal: true,
       closable: true,
-      data: { applicantEmail: item.applicationApplicantEmail },
+      data: { applicantEmail: item.applicationApplicantEmail, groupName: item.badge, projectName: item.applicationProjectName },
     });
     dialogRef?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((notes: string | null | undefined) => {
       if (notes !== undefined) this.saveApplicationReview(item, false, notes?.trim() || undefined);

@@ -3,8 +3,14 @@
 
 <div class="flex flex-col gap-4" data-testid="reject-application-dialog">
   <p class="text-sm text-gray-600">
-    Reject the join request from <strong>{{ applicantEmail }}</strong
-    >. You may optionally include a note for the applicant.
+    Reject the join request from <strong>{{ applicantEmail }}</strong>
+    @if (groupName) {
+      to join <strong data-testid="reject-application-group">{{ groupName }}</strong>
+      @if (projectName) {
+        in the <strong data-testid="reject-application-project">{{ projectName }}</strong> project
+      }
+    }
+    . You may optionally include a note for the applicant.
   </p>
 
   <lfx-textarea

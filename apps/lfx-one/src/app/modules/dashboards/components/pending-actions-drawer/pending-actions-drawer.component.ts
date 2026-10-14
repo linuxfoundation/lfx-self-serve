@@ -4,6 +4,7 @@
 import { Component, computed, DestroyRef, inject, input, linkedSignal, model, output, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { Router, UrlTree } from '@angular/router';
+import { JoinRequestSummaryComponent } from '@app/modules/dashboards/components/join-request-summary/join-request-summary.component';
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
@@ -38,7 +39,16 @@ import type {
 
 @Component({
   selector: 'lfx-pending-actions-drawer',
-  imports: [DrawerModule, SkeletonModule, ButtonComponent, BadgeComponent, TagComponent, EmptyStateComponent, RsvpButtonGroupComponent],
+  imports: [
+    DrawerModule,
+    SkeletonModule,
+    ButtonComponent,
+    BadgeComponent,
+    TagComponent,
+    EmptyStateComponent,
+    RsvpButtonGroupComponent,
+    JoinRequestSummaryComponent,
+  ],
   templateUrl: './pending-actions-drawer.component.html',
   styleUrl: './pending-actions-drawer.component.scss',
 })

@@ -57,15 +57,7 @@
                   <!-- Middle: meeting/action name -->
                   <div class="flex-1 min-w-0" [class]="item.type === 'JoinApplication' ? 'basis-full sm:basis-0' : ''">
                     @if (item.type === 'JoinApplication') {
-                      <div class="flex flex-col gap-1 min-w-0 break-words [overflow-wrap:anywhere]">
-                        @if (item.applicationApplicantName) {
-                          <span class="text-sm font-medium text-gray-900" data-testid="pending-actions-drawer-application-name">{{
-                            item.applicationApplicantName
-                          }}</span>
-                        }
-                        <span class="text-sm text-gray-900" data-testid="pending-actions-drawer-application-email">{{ item.applicationApplicantEmail }}</span>
-                        <span class="text-xs text-gray-500" data-testid="pending-actions-drawer-application-group">{{ item.badge }}</span>
-                      </div>
+                      <lfx-join-request-summary [item]="item" testIdPrefix="pending-actions-drawer-application" />
                     } @else if (item.isFormationItem) {
                       <!-- Formation item (#2732): bold title over a gray meta line — project · due · required for Active. The
                            title wraps rather than truncating, so no hover-only `title` tooltip is needed to reach the full text. -->

@@ -1740,10 +1740,29 @@ export class CommitteeService {
       const batch = await this.getCommitteesByIds(req, pendingCommitteeUids.slice(start, start + ACCESS_CHECK_BATCH_SIZE), requestOptions);
       for (const [uid, committee] of batch) committees.set(uid, committee);
     }
-    return pending.map((application) => ({
-      ...application,
-      committee_name: committees.get(application.committee_uid)?.name ?? application.committee_uid,
-    }));
+
+    // Project context is best-effort: a failed lookup must not hide a request the caller can still review.
+    let projectNames = new Map<string, string>();
+    try {
+      const enriched = await this.projectService.enrichWithProjectData(req, Array.from(committees.values()));
+      projectNames = new Map(enriched.filter((committee) => committee.project_name).map((committee) => [committee.uid, committee.project_name]));
+    } catch (error) {
+      logger.warning(req, 'get_managed_pending_applications', 'Project enrichment failed, returning applications without project names', {
+        committee_count: committees.size,
+        err: error,
+      });
+    }
+
+    return pending.map((application) => {
+      const committee = committees.get(application.committee_uid);
+      return {
+        ...application,
+        committee_name: committee?.name ?? application.committee_uid,
+        project_name: projectNames.get(application.committee_uid),
+        committee_category: committee?.category || undefined,
+        committee_description: committee?.description || undefined,
+      };
+    });
   }
 
   /**

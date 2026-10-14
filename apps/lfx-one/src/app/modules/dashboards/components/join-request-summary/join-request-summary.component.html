@@ -1,0 +1,41 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-1 min-w-0 break-words [overflow-wrap:anywhere]" [attr.data-testid]="testIdPrefix() + '-summary'">
+  <!-- Applicant -->
+  <div class="flex flex-col gap-0.5">
+    @if (item().applicationApplicantName) {
+      <span class="text-sm font-medium text-gray-900" [attr.data-testid]="testIdPrefix() + '-name'">{{ item().applicationApplicantName }}</span>
+    }
+    <span class="text-sm text-gray-900" [attr.data-testid]="testIdPrefix() + '-email'">{{ item().applicationApplicantEmail }}</span>
+  </div>
+
+  <!-- Destination: group first, project second, so the reviewer sees exactly what they are admitting someone into. -->
+  <div class="flex flex-col gap-0.5">
+    <span class="text-xs text-gray-700" [attr.data-testid]="testIdPrefix() + '-group'">
+      <span class="text-gray-500">Requested to join </span><span class="font-medium">{{ item().badge }}</span>
+      @if (item().applicationGroupCategory) {
+        <span class="text-gray-500" [attr.data-testid]="testIdPrefix() + '-category'"> · {{ item().applicationGroupCategory }}</span>
+      }
+    </span>
+    @if (item().applicationProjectName) {
+      <span class="text-xs text-gray-500" [attr.data-testid]="testIdPrefix() + '-project'">Project: {{ item().applicationProjectName }}</span>
+    }
+    @if (item().applicationGroupDescription) {
+      <span class="text-xs text-gray-500 line-clamp-2" [attr.data-testid]="testIdPrefix() + '-description'">{{ item().applicationGroupDescription }}</span>
+    }
+  </div>
+
+  <!-- Applicant's own words are the main input to the decision; clamp so a long message can't take over the list. -->
+  @if (item().applicationMessage) {
+    <blockquote class="border-l-2 border-gray-200 pl-2 text-xs text-gray-700 italic line-clamp-3" [attr.data-testid]="testIdPrefix() + '-message'">
+      {{ item().applicationMessage }}
+    </blockquote>
+  }
+
+  @if (item().applicationSubmittedAt) {
+    <span class="text-[11px] text-gray-400" [attr.data-testid]="testIdPrefix() + '-submitted'">
+      Requested {{ item().applicationSubmittedAt | date: 'mediumDate' }}
+    </span>
+  }
+</div>

@@ -114,14 +114,8 @@
                         <i class="fa-light fa-arrow-up-right-from-square text-[11px] text-gray-400 shrink-0 no-underline" aria-hidden="true"></i>
                       </a>
                     } @else if (item.type === 'JoinApplication') {
-                      <div class="flex flex-col gap-0.5 sm:flex-1 sm:min-w-0 sm:px-4">
-                        @if (item.applicationApplicantName) {
-                          <span class="text-sm font-medium text-gray-900 break-words">{{ item.applicationApplicantName }}</span>
-                        }
-                        <span class="text-sm text-gray-900 break-all" data-testid="dashboard-pending-actions-application-email">{{
-                          item.applicationApplicantEmail
-                        }}</span>
-                        <span class="text-xs text-gray-500 break-words" data-testid="dashboard-pending-actions-application-group">{{ item.badge }}</span>
+                      <div class="sm:flex-1 sm:min-w-0 sm:px-4">
+                        <lfx-join-request-summary [item]="item" testIdPrefix="dashboard-pending-actions-application" />
                       </div>
                     } @else if (item.isInvitation) {
                       <div class="flex flex-col gap-0.5 sm:flex-1 sm:min-w-0 sm:px-4">
