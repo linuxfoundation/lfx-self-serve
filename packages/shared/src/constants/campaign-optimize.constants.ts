@@ -315,6 +315,14 @@ export const PLATFORM_AUDIENCE_ERROR_MESSAGES: Readonly<Record<PlatformAudienceE
   failed: "{platform} audience insights couldn't be loaded. Try again.",
 };
 
+/** The audience panel's failure kind for each BFF audience error code; any other code is `failed`. */
+export const PLATFORM_AUDIENCE_ERROR_KIND_BY_CODE: Readonly<Record<string, PlatformAudienceErrorKind>> = {
+  [CAMPAIGN_AUDIENCE_NO_CONNECTION_CODE]: 'no-connection',
+  [CAMPAIGN_AUDIENCE_CONFLICT_CODE]: 'conflict',
+  [CAMPAIGN_AUDIENCE_UNAVAILABLE_CODE]: 'unavailable',
+  [CAMPAIGN_AUDIENCE_NOT_ENABLED_CODE]: 'not-enabled',
+};
+
 /** What a breakdown row is labelled when the platform reported no value for it. */
 export const PLATFORM_AUDIENCE_UNKNOWN_LABEL = 'Unknown';
 
@@ -361,7 +369,7 @@ export const META_AD_SET_FAILURE_FALLBACK = "The ad set's status could not be ch
 /** Why a non-recorded ad set offers no Resume: campaign-service activates only the ad set it created. */
 export const META_AD_SET_RESUME_ELSEWHERE_REASON = 'Only the ad set created here can be resumed here; resume this one in Meta Ads Manager.';
 
-/** The visible word of the action that re-sends PAUSED to record a deliberate pause (see `MetaAdSetDisplayRow.recordPause`). */
+/** The visible word of the action that re-sends PAUSED to record a deliberate pause (see `MetaAdSetDisplayRow.recordAction`). */
 export const META_AD_SET_RECORD_PAUSE_LABEL = 'Pause again (record)';
 
 /** The visible word of the action that re-sends ACTIVE to clear a stale deliberate-pause record (see `MetaAdSetDisplayRow.recordAction`). */
@@ -373,6 +381,13 @@ export const META_AD_SET_CLEAR_RECORD_LABEL = 'Resume again (clear record)';
  */
 export const META_AD_SET_DELIBERATE_RESUME_ADVICE =
   'Re-read Deliberately paused: if this ad set is still shown as deliberately paused, resume it here again — otherwise resuming the campaign will leave it paused.';
+
+/**
+ * Statuses an ad-set write is refused with BEFORE campaign-service takes the campaign's write lock:
+ * malformed (400), not allowed (401/403), no campaign or connection (404), unprocessable (422), no
+ * validator (428). A refusal with one of these, in the BFF's envelope, leaves the row's version known.
+ */
+export const META_AD_SET_PRE_SEND_REFUSAL_STATUSES: ReadonlySet<number> = new Set([400, 401, 403, 404, 422, 428]);
 
 /** Why an ad set Meta reports deleted or archived, or no longer lists, offers no action. */
 export const META_AD_SET_NO_ACTION_REASON = 'This ad set cannot be paused or resumed.';

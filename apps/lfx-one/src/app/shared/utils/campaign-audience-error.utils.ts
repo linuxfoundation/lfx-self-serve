@@ -2,23 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import {
-  CAMPAIGN_AUDIENCE_CONFLICT_CODE,
-  CAMPAIGN_AUDIENCE_NO_CONNECTION_CODE,
-  CAMPAIGN_AUDIENCE_NOT_ENABLED_CODE,
-  CAMPAIGN_AUDIENCE_UNAVAILABLE_CODE,
-  PLATFORM_AUDIENCE_ERROR_MESSAGES,
-} from '@lfx-one/shared/constants';
+import { PLATFORM_AUDIENCE_ERROR_KIND_BY_CODE, PLATFORM_AUDIENCE_ERROR_MESSAGES } from '@lfx-one/shared/constants';
 import type { PlatformAudienceErrorKind } from '@lfx-one/shared/interfaces';
 
 import { isBffErrorEnvelope } from './campaign-write-error.utils';
-
-const KIND_BY_CODE: Readonly<Record<string, PlatformAudienceErrorKind>> = {
-  [CAMPAIGN_AUDIENCE_NO_CONNECTION_CODE]: 'no-connection',
-  [CAMPAIGN_AUDIENCE_CONFLICT_CODE]: 'conflict',
-  [CAMPAIGN_AUDIENCE_UNAVAILABLE_CODE]: 'unavailable',
-  [CAMPAIGN_AUDIENCE_NOT_ENABLED_CODE]: 'not-enabled',
-};
 
 /**
  * Why a per-platform audience read failed, decided on the BFF's `code` and never on the status
@@ -33,7 +20,7 @@ export function platformAudienceErrorKind(error: unknown): PlatformAudienceError
   const body: unknown = error instanceof HttpErrorResponse ? error.error : undefined;
   if (isBffErrorEnvelope(body)) {
     const code = (body as { code: string }).code;
-    return Object.prototype.hasOwnProperty.call(KIND_BY_CODE, code) ? KIND_BY_CODE[code] : 'failed';
+    return Object.prototype.hasOwnProperty.call(PLATFORM_AUDIENCE_ERROR_KIND_BY_CODE, code) ? PLATFORM_AUDIENCE_ERROR_KIND_BY_CODE[code] : 'failed';
   }
   return status === 0 || status === 502 || status === 503 || status === 504 ? 'unavailable' : 'failed';
 }

@@ -167,7 +167,12 @@ describe('PlatformAudienceComponent', () => {
     render('linkedin-ads', 'LinkedIn');
 
     expect(q('platform-audience-approximate')).not.toBeNull();
-    expect(q('platform-audience-row-seniority-0')!.textContent).toContain('≈');
+    // Every LinkedIn figure is an estimate, the CTR derived from them included: each cell carries the marker.
+    const cells = Array.from(q('platform-audience-row-seniority-0')!.querySelectorAll('td')).slice(1);
+    expect(cells).toHaveLength(4);
+    for (const cell of cells) {
+      expect(cell.textContent).toContain('≈');
+    }
     expect(text()).toContain('Spend (USD)');
   });
 

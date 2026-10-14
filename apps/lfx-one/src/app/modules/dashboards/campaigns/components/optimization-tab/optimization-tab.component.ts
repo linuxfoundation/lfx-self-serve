@@ -84,7 +84,7 @@ import {
 } from '@lfx-one/shared/constants';
 import { campaignActionItemLever, keywordActionKey, keywordIdentityKey } from '@lfx-one/shared/utils';
 import { AdsCurrencyPipe, AdsPctPipe, EventLabelPipe, PacingClassPipe, PriorityClassPipe, QualityScoreClassPipe } from '@pipes/campaign-optimization.pipe';
-import { metaAdSetFailureOutcome } from '@shared/utils/campaign-ad-set-error.utils';
+import { metaAdSetFailureOutcome, metaAdSetWriteLeftValidatorKnown } from '@shared/utils/campaign-ad-set-error.utils';
 import { campaignBidFailureOutcome } from '@shared/utils/campaign-bid-error.utils';
 import { campaignBudgetFailureOutcome } from '@shared/utils/campaign-budget-error.utils';
 import { classifyCampaignWriteFailure } from '@shared/utils/campaign-write-error.utils';
@@ -469,15 +469,22 @@ export class OptimizationTabComponent implements OnInit {
   private etagsWrittenDuringRead = new Set<string>();
 
   /**
-   * Rows whose validator is UNKNOWN after an unconfirmed ad-set change. Such a change may have
-   * written (or withdrawn) the deliberate-pause record and so bumped the row's version, while its
-   * error carries no ETag. The row is held conflicted — the existing banner offers Refresh and every
-   * write on the row waits — until a campaign-list read that STARTED after the change lands; that
-   * delivery's etag is then adopted whether or not it moved, because "moved" is not the question
-   * here. Ids added while a read is already in flight wait for the next one (`validatorUnknownAwaitingRead`).
+   * Rows whose validator is UNKNOWN after an ad-set write that may have bumped the row's version
+   * (any outcome but a confirmed one, a 412, or a pre-send refusal: see
+   * `metaAdSetWriteLeftValidatorKnown`), keyed by campaign id, with the etag the write was SENT with.
+   *
+   * Such a row is held conflicted — the existing banner offers Refresh and every write on it waits —
+   * until its etag is known again, from one of two sources:
+   * - AUTHORITATIVE: the row read from campaign-service itself (`getCampaignRecord`), asked for as
+   *   soon as the write answers and again on every Refresh. Its etag is adopted.
+   * - The INDEX, only once it delivers an etag that DIFFERS from the one the write was sent with, on
+   *   a list read that began after the hold. The index is asynchronous: an unchanged etag may just
+   *   be the index lagging a write that bumped the row, so it never releases the hold.
+   *
+   * Release adopts the etag and nothing else: `toggledStatus` (a CONFIRMED status overlay) is kept,
+   * and `clearConflictStateFor` skips held rows so the generic refresh path cannot release them early.
    */
-  private validatorUnknownIds = new Set<string>();
-  private validatorUnknownAwaitingRead = new Set<string>();
+  private readonly validatorHolds = new Map<string, { preWriteEtag: string; readStarted: boolean }>();
 
   /** True between the parent's `null` push and the delivery that answers it. */
   private listReadInFlight = false;
@@ -1238,7 +1245,7 @@ export class OptimizationTabComponent implements OnInit {
       this.adSetPending.update((p) => this.omitKeys(p, [id]));
       this.adSetOutcome.update((o) => ({ ...o, [id]: outcomeOf('unconfirmed', message) }));
       this.bumpAdSetsReload(id);
-      this.holdUnknownValidator(id);
+      this.holdUnknownValidator(id, etag);
     };
 
     // `take(1)`, not `takeUntilDestroyed`, for the toggle's reason: a tab switch destroys this
@@ -1308,6 +1315,10 @@ export class OptimizationTabComponent implements OnInit {
               next.add(id);
               return next;
             });
+          } else if (!metaAdSetWriteLeftValidatorKnown(err)) {
+            // A 409 that says the status WAS changed, a definite 503 that settled the record, any
+            // 5xx: each may have bumped the row's version, so its validator is unknown too.
+            this.holdUnknownValidator(id, etag);
           }
         },
       });
@@ -2139,8 +2150,7 @@ export class OptimizationTabComponent implements OnInit {
         this.adSetPending.set({});
         this.adSetOutcome.set({});
         this.adSetsReload.set({});
-        this.validatorUnknownIds.clear();
-        this.validatorUnknownAwaitingRead.clear();
+        this.validatorHolds.clear();
         this.lastDeliveredEtags = {};
         this.hasDeliveredList = false;
         this.etagsWrittenDuringRead.clear();
@@ -2154,23 +2164,23 @@ export class OptimizationTabComponent implements OnInit {
           // The parent has begun a read. Everything written from here until rows land is
           // concurrent with it.
           this.listReadInFlight = true;
-          // Unknown validators recorded before this read began are answered by its delivery.
-          for (const id of this.validatorUnknownAwaitingRead) {
-            this.validatorUnknownIds.add(id);
+          // A read that begins after a hold may answer it (if its etag moved), and a Refresh is also
+          // the operator's cue to ask campaign-service again for the authoritative row.
+          for (const [id, hold] of this.validatorHolds) {
+            hold.readStarted = true;
+            this.confirmValidator(id);
           }
-          this.validatorUnknownAwaitingRead.clear();
           return;
         }
         const readWasInFlight = this.listReadInFlight;
         this.listReadInFlight = false;
-        // A read that started after an unconfirmed ad-set change carries the row's current indexed
-        // etag: adopt it (drop the cached validator and the hold) for every such row it lists.
-        const resolvedUnknown = rows.map((row) => row.id).filter((id) => this.validatorUnknownIds.has(id));
-        if (resolvedUnknown.length > 0) {
-          for (const id of resolvedUnknown) {
-            this.validatorUnknownIds.delete(id);
+        // The index releases a hold only when its etag MOVED from the one the write was sent with,
+        // on a read that began after the hold; an unchanged etag may be the index lagging the write.
+        for (const row of rows) {
+          const hold = this.validatorHolds.get(row.id);
+          if (hold?.readStarted && typeof row.etag === 'string' && row.etag !== '' && row.etag !== hold.preWriteEtag) {
+            this.releaseValidatorHold(row.id, null);
           }
-          this.clearConflictStateFor(resolvedUnknown);
         }
 
         const delivered: Record<string, string | undefined> = {};
@@ -2255,6 +2265,12 @@ export class OptimizationTabComponent implements OnInit {
             // it on every delivery.
             return stillListed.size === ids.size ? ids : stillListed;
           });
+          // A held row that a complete list no longer carries is gone: nothing is left to hold.
+          for (const id of [...this.validatorHolds.keys()]) {
+            if (!(id in delivered)) {
+              this.validatorHolds.delete(id);
+            }
+          }
         }
       });
   }
@@ -2363,7 +2379,9 @@ export class OptimizationTabComponent implements OnInit {
    * interleaving it would catch is either empty or already covered.
    */
   private clearConflictStateFor(campaignIds: string[]): void {
-    const clearable = campaignIds;
+    // A row held on an unknown validator is released only by `releaseValidatorHold`, never by a
+    // refresh that merely saw its indexed etag move against the previous delivery.
+    const clearable = campaignIds.filter((id) => !this.validatorHolds.has(id));
     if (clearable.length === 0) {
       return;
     }
@@ -2692,22 +2710,69 @@ export class OptimizationTabComponent implements OnInit {
   }
 
   /**
-   * After an unconfirmed ad-set change the row's validator is unknown (see `validatorUnknownIds`):
-   * drop the cached one, hold the row conflicted so the banner offers Refresh and its writes wait,
-   * and let the next campaign-list read that starts after now release it.
+   * Hold a row whose validator is unknown after an ad-set write (see `validatorHolds`): conflicted,
+   * so the banner offers Refresh and its writes wait, and ask campaign-service for the row at once.
+   * `preWriteEtag` is the etag the write was sent with: the index releases the hold only past it.
    */
-  private holdUnknownValidator(campaignId: string): void {
-    this.toggledEtag.update((etags) => this.omitKeys(etags, [campaignId]));
+  private holdUnknownValidator(campaignId: string, preWriteEtag: string): void {
+    this.validatorHolds.set(campaignId, { preWriteEtag, readStarted: false });
     this.conflictedCampaignIds.update((ids) => {
       const next = new Set(ids);
       next.add(campaignId);
       return next;
     });
-    if (this.listReadInFlight) {
-      this.validatorUnknownAwaitingRead.add(campaignId);
+    this.confirmValidator(campaignId);
+  }
+
+  /**
+   * Read the held row from campaign-service itself and adopt its etag. A read, not a retry of the
+   * write. A failure, or an answer for another campaign or without an etag, keeps the hold: the
+   * index (past the pre-write etag) and the operator's Refresh still release it.
+   */
+  private confirmValidator(campaignId: string): void {
+    const askedIn = this.contextGeneration;
+    this.campaignService
+      .getCampaignRecord(this.projectSlug(), this.briefId(), campaignId)
+      .pipe(take(1))
+      .subscribe({
+        next: (result) => {
+          const etag = result?.campaign?.etag;
+          if (askedIn !== this.contextGeneration || !this.validatorHolds.has(campaignId) || result?.campaign?.id !== campaignId) {
+            return;
+          }
+          if (typeof etag === 'string' && etag !== '') {
+            this.releaseValidatorHold(campaignId, etag);
+          }
+        },
+        error: () => {
+          // Kept held; the Refresh banner remains the way out.
+        },
+      });
+  }
+
+  /**
+   * Release a hold. `authoritativeEtag` is campaign-service's own and becomes the row's validator;
+   * `null` means the index delivered a newer one, so the cached validator is dropped in its favour.
+   * The confirmed status overlay (`toggledStatus`) is kept either way.
+   */
+  private releaseValidatorHold(campaignId: string, authoritativeEtag: string | null): void {
+    this.validatorHolds.delete(campaignId);
+    if (authoritativeEtag !== null) {
+      this.toggledEtag.update((etags) => ({ ...etags, [campaignId]: authoritativeEtag }));
+      if (this.listReadInFlight) {
+        this.etagsWrittenDuringRead.add(campaignId);
+      }
     } else {
-      this.validatorUnknownIds.add(campaignId);
+      this.toggledEtag.update((etags) => this.omitKeys(etags, [campaignId]));
     }
+    this.conflictedCampaignIds.update((ids) => {
+      if (!ids.has(campaignId)) {
+        return ids;
+      }
+      const next = new Set(ids);
+      next.delete(campaignId);
+      return next;
+    });
   }
 
   private bumpAdSetsReload(campaignId: string): void {

@@ -527,3 +527,22 @@ describe('CampaignOptimizeService.removeKeywordTargeting', () => {
     await expect(new CampaignOptimizeService().removeKeywordTargeting(req, reddit)).rejects.toBe(definite);
   });
 });
+
+describe('CampaignOptimizeService.getCampaign', () => {
+  it('GETs the campaign row and takes the ETag from the header', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({ id: 'c-1', platform: 'reddit-ads', status: 'active', version: 4, etag: '"3"' }, { etag: '"4"' })
+    );
+
+    const result = await new CampaignOptimizeService().getCampaign(req, ref);
+
+    expect(proxyRequestWithResponse).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/briefs/b-1/campaigns/c-1', 'GET');
+    expect(result.etag).toBe('"4"');
+  });
+
+  it('falls back to the body ETag when the header is absent', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'c-1', etag: '"3"' }));
+
+    expect((await new CampaignOptimizeService().getCampaign(req, ref)).etag).toBe('"3"');
+  });
+});

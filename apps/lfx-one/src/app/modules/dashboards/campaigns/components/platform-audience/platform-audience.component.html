@@ -165,6 +165,9 @@
                           </td>
                           <td class="px-4 py-2 text-right text-gray-700">
                             @if (row.ctr !== null) {
+                              @if (audience.approximate) {
+                                ≈
+                              }
                               {{ row.ctr | percent: '1.2-2' }}
                             } @else {
                               <span class="text-xs text-gray-500">{{ notMeasuredLabel }}</span>

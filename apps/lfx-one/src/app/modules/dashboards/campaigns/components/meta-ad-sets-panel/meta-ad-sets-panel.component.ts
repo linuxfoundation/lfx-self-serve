@@ -195,8 +195,13 @@ export class MetaAdSetsPanelComponent {
       if (adSet.recorded !== true) {
         return null;
       }
+      // Three-valued, as `toMetaAdSetDisplayRow` reads it: only an explicit true or false is evidence.
+      const recorded: unknown = adSet.deliberately_paused;
+      if (recorded !== true && recorded !== false) {
+        return { direction, state: 'unknown', reason: null };
+      }
       const expected = direction === 'PAUSED';
-      return adSet.deliberately_paused === expected ? { direction, state: 'confirmed', reason: null } : { direction, state: 'missing', reason: 'not-shown' };
+      return recorded === expected ? { direction, state: 'confirmed', reason: null } : { direction, state: 'missing', reason: 'not-shown' };
     });
   }
 
@@ -212,6 +217,13 @@ export class MetaAdSetsPanelComponent {
       const fix = paused ? META_AD_SET_RECORD_PAUSE_LABEL : `Resume (or ${META_AD_SET_CLEAR_RECORD_LABEL})`;
       if (check.state === 'pending') {
         return { advice, text: 'Re-reading the ad sets to check Deliberately paused…', tone: 'text-gray-500' };
+      }
+      if (check.state === 'unknown') {
+        return {
+          advice,
+          text: `The re-read does not say whether ${name}'s deliberate pause is recorded. Check Deliberately paused again before resuming the campaign.`,
+          tone: 'text-gray-600',
+        };
       }
       if (check.state === 'confirmed') {
         const text = paused ? `The re-read shows ${name} as deliberately paused.` : `The re-read shows ${name}'s deliberate pause cleared.`;

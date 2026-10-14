@@ -6,6 +6,7 @@ import {
   META_AD_SET_CONFLICT_MESSAGE,
   META_AD_SET_FAILURE_FALLBACK,
   META_AD_SET_PAUSE_RECORD_UNCONFIRMED_CODE,
+  META_AD_SET_PRE_SEND_REFUSAL_STATUSES,
   META_AD_SET_UNCONFIRMED_MESSAGE,
 } from '@lfx-one/shared/constants';
 import type { CampaignBudgetOutcome } from '@lfx-one/shared/interfaces';
@@ -40,4 +41,25 @@ export function metaAdSetFailureOutcome(error: unknown): CampaignBudgetOutcome {
   const body: unknown = error instanceof HttpErrorResponse ? error.error : undefined;
   const recordOnly = isBffErrorEnvelope(body) && (body as { code: string }).code === META_AD_SET_PAUSE_RECORD_UNCONFIRMED_CODE;
   return { state: 'unconfirmed', message: recordOnly ? outcome.message : META_AD_SET_UNCONFIRMED_MESSAGE };
+}
+
+/**
+ * Whether a failed ad-set write leaves the campaign row's version KNOWN, so the validator the row
+ * already holds is still the one to send. Only two kinds of answer prove that:
+ *
+ * - a **412** in the BFF's envelope — a stale validator is refused before anything is sent;
+ * - a **pre-send refusal** in the BFF's envelope — 400 (malformed), 401/403 (not allowed), 404 (no
+ *   campaign or connection), 422 and 428 (no validator) are all answered before campaign-service
+ *   takes the write lock.
+ *
+ * Everything else may have bumped the version: an unconfirmed outcome, a **409** (one says the
+ * status WAS changed on Meta while the row moved; others settle or withdraw the deliberate-pause
+ * record), a definite **503** (some settle the record after Meta's answer), any 5xx, and any
+ * response that is not the BFF's envelope. Those leave the validator unknown.
+ */
+export function metaAdSetWriteLeftValidatorKnown(error: unknown): boolean {
+  if (!(error instanceof HttpErrorResponse) || !isBffErrorEnvelope(error.error)) {
+    return false;
+  }
+  return error.status === 412 || META_AD_SET_PRE_SEND_REFUSAL_STATUSES.has(error.status);
 }

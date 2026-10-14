@@ -186,6 +186,17 @@ export class CampaignOptimizeService {
   }
 
   /**
+   * One campaign row read from campaign-service itself, with its CURRENT ETag (header first, body
+   * second, as `adoptCampaign` takes it). Used where the asynchronous index could lag a write the
+   * caller needs to see at once: a campaign adopted a moment ago, or a validator for `If-Match`.
+   */
+  public async getCampaign(req: Request, ref: CampaignServiceCampaignTarget): Promise<CampaignServiceCampaign> {
+    logger.debug(req, 'get_campaign', 'Reading campaign row from campaign-service', { campaign_id: ref.campaignId });
+    const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceCampaign>(req, 'LFX_V2_CAMPAIGN_SERVICE', campaignPath(ref), 'GET');
+    return { ...response.data, etag: readEtag(response) ?? response.data.etag };
+  }
+
+  /**
    * The campaign's current configuration on its platform, compared field by field with what the
    * row recorded. A pure read upstream: nothing is written to the platform or the row.
    */

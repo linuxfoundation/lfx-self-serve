@@ -197,6 +197,20 @@ describe('MetaAdSetsPanelComponent', () => {
     expect(emitted).toEqual([{ adSetId: '111', adSetName: 'Leads — US', status: 'ACTIVE', kind: 'record' }]);
   });
 
+  it.each(['ACTIVE', 'PAUSED'] as const)(
+    'says it cannot tell, rather than flagging a failed record, when deliberately_paused is ABSENT after an unconfirmed %s',
+    (direction) => {
+      const raw = adSet({ status: direction });
+      delete (raw as Partial<CampaignServiceMetaAdSet>).deliberately_paused;
+      listMetaAdSets.mockReturnValue(of(list([raw])));
+      render({ outcome: { ...unconfirmedPause, requestedStatus: direction } });
+
+      expect(q('meta-ad-sets-record-check-unknown')!.textContent).toContain('does not say whether');
+      expect(q('meta-ad-sets-record-check-missing')).toBeNull();
+      expect(q('meta-ad-sets-record-check-confirmed')).toBeNull();
+    }
+  );
+
   it('confirms a cleared record after an unconfirmed resume', () => {
     listMetaAdSets.mockReturnValue(of(list([adSet({ status: 'ACTIVE', deliberately_paused: false })])));
     render({ outcome: { ...unconfirmedPause, requestedStatus: 'ACTIVE' } });

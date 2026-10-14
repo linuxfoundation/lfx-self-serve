@@ -73,6 +73,7 @@ import {
 import type {
   CampaignAdoptRequest,
   CampaignAudiencePlatform,
+  CampaignRecordResult,
   CampaignRefPlatform,
   CampaignServiceCampaign,
   CampaignServiceCampaignResolution,
@@ -756,6 +757,15 @@ export class CampaignService {
   /** Bind a campaign that already exists on its ad platform to a brief. Creates nothing upstream. */
   public adoptCampaign(projectSlug: string, request: CampaignAdoptRequest): Observable<CampaignServiceCampaign> {
     return this.http.post<CampaignServiceCampaign>('/api/campaigns/adopt', request, { params: new HttpParams().set('project', projectSlug) });
+  }
+
+  /**
+   * One campaign row read from campaign-service (not the index), with its CURRENT etag for the next
+   * write's `If-Match`, and whether this deployment can pause or resume it.
+   */
+  public getCampaignRecord(projectSlug: string, briefId: string, campaignId: string): Observable<CampaignRecordResult> {
+    const params = new HttpParams().set('project', projectSlug).set('briefId', briefId);
+    return this.http.get<CampaignRecordResult>(`/api/campaigns/${encodeURIComponent(campaignId)}/record`, { params });
   }
 
   /** A Reddit or X campaign's keyword targeting. Reddit's `revision` must be sent back with a removal. */

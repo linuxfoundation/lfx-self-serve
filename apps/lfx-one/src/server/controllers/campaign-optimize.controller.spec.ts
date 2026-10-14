@@ -10,6 +10,7 @@ import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 
 const {
   getPlatformAudience,
+  getCampaign,
   resolvePlatformCampaign,
   getRedditAdsKeywords,
   getCampaignSettings,
@@ -22,6 +23,7 @@ const {
   logger,
 } = vi.hoisted(() => ({
   getPlatformAudience: vi.fn(),
+  getCampaign: vi.fn(),
   resolvePlatformCampaign: vi.fn(),
   getRedditAdsKeywords: vi.fn(),
   getCampaignSettings: vi.fn(),
@@ -37,6 +39,7 @@ const {
 vi.mock('../services/campaign-optimize.service', () => ({
   CampaignOptimizeService: class {
     public getPlatformAudience = getPlatformAudience;
+    public getCampaign = getCampaign;
     public resolvePlatformCampaign = resolvePlatformCampaign;
     public getRedditAdsKeywords = getRedditAdsKeywords;
     public getCampaignSettings = getCampaignSettings;
@@ -356,5 +359,37 @@ describe('CampaignOptimizeController.removeKeywordTargeting', () => {
 
     expectFieldError(next, field);
     expect(removeKeywordTargeting).not.toHaveBeenCalled();
+  });
+});
+
+describe('CampaignOptimizeController.getCampaignRecord', () => {
+  it('answers the row with whether this deployment can toggle it', async () => {
+    getCampaign.mockResolvedValue({ id: CAMPAIGN, platform: 'linkedin-ads', etag: '"4"' });
+    isServerFeatureEnabled.mockImplementation((flag) => flag === ServerFeatureFlag.CampaignServiceStatusToggle);
+
+    await controller.getCampaignRecord(buildReq({ params: { campaignId: CAMPAIGN }, query: { project: 'tlf', briefId: BRIEF } }), res, next);
+
+    expect(getCampaign).toHaveBeenCalledWith(expect.anything(), { projectSlug: 'tlf', briefId: BRIEF, campaignId: CAMPAIGN });
+    expect(res.json).toHaveBeenCalledWith({ campaign: { id: CAMPAIGN, platform: 'linkedin-ads', etag: '"4"' }, statusToggleEnabled: true });
+  });
+
+  it.each([
+    ['campaignId', { campaignId: 'not-a-uuid' }, { project: 'tlf', briefId: BRIEF }],
+    ['briefId', { campaignId: CAMPAIGN }, { project: 'tlf', briefId: 'nope' }],
+    ['project', { campaignId: CAMPAIGN }, { project: ' ', briefId: BRIEF }],
+  ])('refuses a bad %s before any upstream call', async (field, params, query) => {
+    await controller.getCampaignRecord(buildReq({ params, query }), res, next);
+
+    expectFieldError(next, field);
+    expect(getCampaign).not.toHaveBeenCalled();
+  });
+
+  it('hands an upstream failure to the error middleware', async () => {
+    const failure = new Error('upstream');
+    getCampaign.mockRejectedValue(failure);
+
+    await controller.getCampaignRecord(buildReq({ params: { campaignId: CAMPAIGN }, query: { project: 'tlf', briefId: BRIEF } }), res, next);
+
+    expect(next).toHaveBeenCalledWith(failure);
   });
 });

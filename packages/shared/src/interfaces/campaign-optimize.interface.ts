@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import type { LINKEDIN_AUDIENCE_WINDOWS, TWITTER_AUDIENCE_WINDOWS } from '../constants/campaign-optimize.constants';
-import type { CampaignMetricsWindow, CampaignServiceMicrosoftKeywords, MicrosoftKeywordMetricsResponse, MicrosoftKeywordsWindow } from './campaign.interface';
+import type {
+  CampaignMetricsWindow,
+  CampaignServiceCampaign,
+  CampaignServiceMicrosoftKeywords,
+  MicrosoftKeywordMetricsResponse,
+  MicrosoftKeywordsWindow,
+} from './campaign.interface';
 
 // ---------------------------------------------------------------------------
 // Optimize-tab reads and levers proxied to lfx-v2-campaign-service
@@ -252,6 +258,16 @@ export interface MetaAdSetStatusParams extends MetaAdSetStatusRequest {
   adSetId: string;
 }
 
+/**
+ * Response of `GET /api/campaigns/:campaignId/record?project=&briefId=`: the campaign row read from
+ * campaign-service itself (not the asynchronous index), with its CURRENT ETag, plus whether this
+ * deployment can service a pause/resume (`CampaignListResult.statusToggleEnabled`).
+ */
+export interface CampaignRecordResult {
+  campaign: CampaignServiceCampaign;
+  statusToggleEnabled: boolean;
+}
+
 /** A platform `adopt-campaign` may be asked for through the BFF (Google Ads is excluded). */
 export type CampaignAdoptPlatform = 'microsoft-ads' | 'meta-ads' | 'reddit-ads' | 'twitter-ads';
 
@@ -432,11 +448,13 @@ export interface MetaAdSetPendingChange {
  * - `pending`: the re-read has not completed yet;
  * - `confirmed`: it shows the expected record;
  * - `missing`: it does not (`not-shown`), it does not list the ad set (`absent`), or it failed
- *   (`read-failed`). The last two are treated as the record being wrong, never as fine.
+ *   (`read-failed`). The last two are treated as the record being wrong, never as fine;
+ * - `unknown`: the ad set is listed but carries no `deliberately_paused` value, so the re-read can
+ *   say neither (matching `toMetaAdSetDisplayRow`, which offers no record action on it).
  */
 export interface MetaAdSetRecordCheck {
   direction: MetaAdSetStatus;
-  state: 'pending' | 'confirmed' | 'missing';
+  state: 'pending' | 'confirmed' | 'missing' | 'unknown';
   reason: 'not-shown' | 'absent' | 'read-failed' | null;
 }
 

@@ -23,6 +23,7 @@ import type {
   CampaignAdoptRequest,
   CampaignAudiencePlatform,
   CampaignMetricsWindow,
+  CampaignRecordResult,
   CampaignRefPlatform,
   CampaignServiceCampaignTarget,
   KeywordTargetingRemovalItem,
@@ -177,6 +178,29 @@ export class CampaignOptimizeController {
         unknownCount: data.unknown_count,
       });
       res.json(data);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `GET /api/campaigns/:campaignId/record?project=&briefId=`: the campaign row from campaign-service
+   * with its current ETag, and whether this deployment can toggle it. The act-from-Monitor dialog
+   * reads this rather than the index, which can lag a campaign adopted a moment ago.
+   */
+  public async getCampaignRecord(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'campaign_record_read';
+    const target = readTargetFromQuery(req, operation, next);
+    if (!target) {
+      return;
+    }
+
+    const startTime = logger.startOperation(req, operation, { campaignId: target.campaignId, briefId: target.briefId });
+    try {
+      const campaign = await this.optimizeService.getCampaign(req, target);
+      const statusToggleEnabled = isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceStatusToggle);
+      logger.success(req, operation, startTime, { campaignId: target.campaignId, platform: campaign.platform, statusToggleEnabled });
+      res.json({ campaign, statusToggleEnabled } satisfies CampaignRecordResult);
     } catch (error) {
       next(error);
     }

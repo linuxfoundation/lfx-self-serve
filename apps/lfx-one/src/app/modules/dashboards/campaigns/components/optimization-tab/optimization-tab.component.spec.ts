@@ -42,7 +42,7 @@ import {
 import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
 import { CampaignService } from '@services/campaign.service';
 import { MessageService } from 'primeng/api';
-import { of, Subject, throwError } from 'rxjs';
+import { NEVER, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CampaignBidFormComponent } from '../campaign-bid-form/campaign-bid-form.component';
@@ -3651,6 +3651,7 @@ describe('OptimizationTabComponent — Meta ad sets (#3299)', () => {
   let updateMetaAdSetStatus: ReturnType<typeof vi.fn>;
   let listMetaAdSets: ReturnType<typeof vi.fn>;
   let updateCampaignStatus: ReturnType<typeof vi.fn>;
+  let getCampaignRecord: ReturnType<typeof vi.fn>;
   let messageAdd: ReturnType<typeof vi.fn>;
 
   const doc = (over: Partial<CampaignIndexDoc> = {}): CampaignIndexDoc => ({
@@ -3701,6 +3702,9 @@ describe('OptimizationTabComponent — Meta ad sets (#3299)', () => {
       .fn()
       .mockReturnValue(of({ campaign_id: 'c-1', ad_set_id: '120210000000000888', requested_status: 'PAUSED', outcome: 'APPLIED', etag: '"4"' }));
     listMetaAdSets = vi.fn().mockReturnValue(of(adSets([adSet()])));
+    // The authoritative row read does not answer unless a test says so, so the index path is what
+    // releases a hold by default.
+    getCampaignRecord = vi.fn().mockReturnValue(NEVER);
     updateCampaignStatus = vi
       .fn()
       .mockReturnValue(of({ platform: 'meta-ads', campaignId: 'c-1', newStatus: 'PAUSED', success: true, serviceStatus: 'paused', etag: '"9"' }));
@@ -3716,6 +3720,7 @@ describe('OptimizationTabComponent — Meta ad sets (#3299)', () => {
           useValue: {
             updateMetaAdSetStatus,
             listMetaAdSets,
+            getCampaignRecord,
             updateCampaignStatus,
             getMonitorData: vi.fn().mockReturnValue(of(null)),
             getKeywords: vi.fn().mockReturnValue(of({ keywords: [] })),
@@ -3870,6 +3875,126 @@ describe('OptimizationTabComponent — Meta ad sets (#3299)', () => {
     expect(q('optimization-campaigns-conflict')).toBeNull();
     (q('optimization-campaign-toggle-c-1') as HTMLButtonElement).click();
     expect(updateCampaignStatus.mock.calls[0][0].etag).toBe('"7"');
+  });
+
+  it('keeps the hold while the index LAGS (a fresh read still carries the pre-write etag)', () => {
+    updateMetaAdSetStatus.mockReturnValue(throwError(() => bffError(503, META_AD_SET_STATUS_UNCONFIRMED_CODE, META_AD_SET_STATUS_OUTCOME_UNCONFIRMED)));
+    render([doc()]);
+    openPanel();
+    clickToggle();
+
+    render(null);
+    render([doc()]);
+    expect(q('optimization-campaigns-conflict')).not.toBeNull();
+    expect((q('optimization-campaign-toggle-c-1') as HTMLButtonElement).disabled).toBe(true);
+    expect(updateCampaignStatus).not.toHaveBeenCalled();
+  });
+
+  it('releases the hold with the AUTHORITATIVE etag read from campaign-service, without waiting for the index', () => {
+    updateMetaAdSetStatus.mockReturnValue(throwError(() => bffError(503, META_AD_SET_STATUS_UNCONFIRMED_CODE, META_AD_SET_STATUS_OUTCOME_UNCONFIRMED)));
+    getCampaignRecord.mockReturnValue(of({ campaign: { id: 'c-1', etag: '"11"' }, statusToggleEnabled: true }));
+    render([doc()]);
+    openPanel();
+    clickToggle();
+
+    expect(getCampaignRecord).toHaveBeenCalledWith('tlf', 'b-1', 'c-1');
+    expect(q('optimization-campaigns-conflict')).toBeNull();
+    (q('optimization-campaign-toggle-c-1') as HTMLButtonElement).click();
+    expect(updateCampaignStatus.mock.calls[0][0].etag).toBe('"11"');
+  });
+
+  it.each([
+    ['another campaign', { campaign: { id: 'c-2', etag: '"11"' }, statusToggleEnabled: true }],
+    ['no etag', { campaign: { id: 'c-1' }, statusToggleEnabled: true }],
+  ])('keeps the hold when the authoritative read names %s', (_label, answer) => {
+    updateMetaAdSetStatus.mockReturnValue(throwError(() => bffError(503, META_AD_SET_STATUS_UNCONFIRMED_CODE, META_AD_SET_STATUS_OUTCOME_UNCONFIRMED)));
+    getCampaignRecord.mockReturnValue(of(answer));
+    render([doc()]);
+    openPanel();
+    clickToggle();
+
+    expect(q('optimization-campaigns-conflict')).not.toBeNull();
+  });
+
+  it('asks campaign-service again on Refresh, and keeps the hold when that read fails', () => {
+    updateMetaAdSetStatus.mockReturnValue(throwError(() => bffError(503, META_AD_SET_STATUS_UNCONFIRMED_CODE, META_AD_SET_STATUS_OUTCOME_UNCONFIRMED)));
+    getCampaignRecord.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    render([doc()]);
+    openPanel();
+    clickToggle();
+    expect(getCampaignRecord).toHaveBeenCalledTimes(1);
+    expect(q('optimization-campaigns-conflict')).not.toBeNull();
+
+    getCampaignRecord.mockReturnValue(of({ campaign: { id: 'c-1', etag: '"12"' }, statusToggleEnabled: true }));
+    render(null);
+    expect(getCampaignRecord).toHaveBeenCalledTimes(2);
+    render([doc()]);
+    expect(q('optimization-campaigns-conflict')).toBeNull();
+  });
+
+  it('keeps the confirmed status overlay while the hold lasts, then hands over to the index that moved past it', () => {
+    updateMetaAdSetStatus.mockReturnValue(throwError(() => bffError(503, META_AD_SET_STATUS_UNCONFIRMED_CODE, META_AD_SET_STATUS_OUTCOME_UNCONFIRMED)));
+    render([doc({ status: 'active' })]);
+    // A confirmed campaign pause first: the row shows "paused" over the index.
+    (q('optimization-campaign-toggle-c-1') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(q('optimization-campaign-row-c-1')!.textContent).toContain('meta-ads · paused');
+    openPanel();
+    clickToggle();
+    expect(updateMetaAdSetStatus.mock.calls[0][0].etag).toBe('"9"');
+
+    // The index lags on both status and etag: the overlay stays.
+    render(null);
+    render([doc({ status: 'active', etag: '"9"' })]);
+    expect(q('optimization-campaign-row-c-1')!.textContent).toContain('meta-ads · paused');
+    expect(q('optimization-campaigns-conflict')).not.toBeNull();
+    // The index moves past the pre-write etag: released, and from here the index (now carrying the
+    // pause) is the row's status and validator, as on any refresh that advanced.
+    render(null);
+    render([doc({ status: 'paused', etag: '"10"' })]);
+    expect(q('optimization-campaigns-conflict')).toBeNull();
+    expect(q('optimization-campaign-row-c-1')!.textContent).toContain('meta-ads · paused');
+    (q('optimization-campaign-toggle-c-1') as HTMLButtonElement).click();
+    expect(updateCampaignStatus.mock.calls.at(-1)?.[0].etag).toBe('"10"');
+  });
+
+  it.each([
+    [
+      409,
+      'CONFLICT',
+      "the ad set's status was changed on Meta, but this campaign was modified or deleted by another request meanwhile; read the ad sets before retrying",
+    ],
+    [
+      503,
+      'SERVICE_UNAVAILABLE',
+      'the ad set WAS paused on Meta, but recording it on the campaign failed: a campaign resume would re-activate it; pause it here again',
+    ],
+    [500, 'INTERNAL_SERVER_ERROR', 'Internal server error'],
+  ])('holds the row on an unknown validator after a version-uncertain %i', (status, code, message) => {
+    updateMetaAdSetStatus.mockReturnValue(throwError(() => bffError(status, code, message)));
+    render([doc()]);
+    openPanel();
+    clickToggle();
+
+    expect(q('meta-ad-sets-outcome-failed')!.textContent).toContain(message);
+    expect(getCampaignRecord).toHaveBeenCalledWith('tlf', 'b-1', 'c-1');
+    expect(q('optimization-campaigns-conflict')).not.toBeNull();
+    expect((q('optimization-campaign-toggle-c-1') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it.each([
+    [400, 'VALIDATION_ERROR'],
+    [404, 'NOT_FOUND'],
+    [428, 'PRECONDITION_REQUIRED'],
+  ])('does not hold the row after a pre-send refusal (%i): the version is known', (status, code) => {
+    updateMetaAdSetStatus.mockReturnValue(throwError(() => bffError(status, code, 'refused before anything was sent')));
+    render([doc()]);
+    openPanel();
+    clickToggle();
+
+    expect(getCampaignRecord).not.toHaveBeenCalled();
+    expect(q('optimization-campaigns-conflict')).toBeNull();
+    expect((q('optimization-campaign-toggle-c-1') as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('does not release an unknown validator on a list read that was already in flight when the change answered', () => {

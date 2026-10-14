@@ -28,7 +28,7 @@ import { catchError, EMPTY, map, of, switchMap } from 'rxjs';
  * - A counter the platform did not measure is shown as "Not measured", never as `0`
  *   (`toPlatformAudienceView`); a Microsoft read with no finished report is "building", never "no
  *   audience"; LinkedIn's counters are estimates and say so.
- * - A failure is stated by cause (no connection, account mismatch, not confirmed, not enabled),
+ * - A failure is stated by cause (no connection, campaigns can't be read together, not confirmed, not enabled),
  *   decided on the BFF's code, with the platform's name in the sentence.
  */
 @Component({
