@@ -10,7 +10,7 @@
  * whatever the test account happens to be targeted for.
  */
 
-import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, MEETING_DETAILS_V2_FLAG, MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { Page } from '@playwright/test';
 
 /**
@@ -26,4 +26,24 @@ export async function stubMeetingsV2Flag(page: Page, enabled = true): Promise<vo
     FEATURE_FLAG_OVERRIDE_STORAGE_KEY,
     JSON.stringify({ [MEETING_V2_ENABLED_FLAG]: enabled }),
   ] as const);
+}
+
+/**
+ * Pins the meeting details V2 page flag (`MEETING_DETAILS_V2_FLAG`, #3576), which gates
+ * `/meetings/:id` on its own, apart from the composer's flag. Merges into the override object rather
+ * than replacing it, so a spec can pin both flags.
+ */
+export async function stubMeetingDetailsV2Flag(page: Page, enabled = true): Promise<void> {
+  await page.addInitScript(
+    ([storageKey, flagKey, value]) => {
+      let overrides: Record<string, unknown> = {};
+      try {
+        overrides = JSON.parse(window.localStorage.getItem(storageKey as string) ?? '{}') ?? {};
+      } catch {
+        overrides = {};
+      }
+      window.localStorage.setItem(storageKey as string, JSON.stringify({ ...overrides, [flagKey as string]: value }));
+    },
+    [FEATURE_FLAG_OVERRIDE_STORAGE_KEY, MEETING_DETAILS_V2_FLAG, enabled] as const
+  );
 }

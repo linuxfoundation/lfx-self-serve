@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { afterNextRender, Component, computed, inject, signal } from '@angular/core';
-import { MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import { MEETING_DETAILS_V2_FLAG } from '@lfx-one/shared/constants';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { UserService } from '@services/user.service';
 
@@ -12,7 +12,7 @@ import { MeetingDetailsSeedService } from './meeting-details-seed.service';
 
 /**
  * Route target for the public meeting page `/meetings/:id` (#2873). Renders the pre-v2 page by
- * default and swaps to the v2 tree only once `MEETING_V2_ENABLED_FLAG` resolves true for a
+ * default and swaps to the v2 tree only once `MEETING_DETAILS_V2_FLAG` resolves true for a
  * targeted, signed-in viewer — a signal-driven `@if` inside one stable route, not a router-level
  * component swap. Same shape as {@link HealthMetricsGateComponent}, for the same reasons.
  *
@@ -85,7 +85,7 @@ export class MeetingDetailsGateComponent {
   private readonly seedService = inject(MeetingDetailsSeedService);
 
   private readonly hydrated = signal(false);
-  private readonly rawV2Enabled = this.featureFlagService.getBooleanFlag(MEETING_V2_ENABLED_FLAG, false);
+  private readonly rawV2Enabled = this.featureFlagService.getBooleanFlag(MEETING_DETAILS_V2_FLAG, false);
 
   protected readonly v2Enabled = computed(() => this.hydrated() && this.userService.authenticated() && this.rawV2Enabled());
 

@@ -8,7 +8,7 @@ This directory is the in-repo spec home for the meeting details V2 redesign. Sta
 
 ## What the redesign is
 
-V2 ships **side by side** with V1. `MEETING_V2_ENABLED_FLAG` decides which tree a viewer
+V2 ships **side by side** with V1. `MEETING_DETAILS_V2_FLAG` decides which tree a viewer
 renders; the existing `meeting-join` component is not deleted, rewritten or refactored in
 place. The flag is UI-only and gates no endpoint, the code default is `false`, LaunchDarkly
 targeting is the switch, a flag provider that is not ready yet renders V1, and anonymous visitors always
@@ -36,6 +36,7 @@ release PR #3249 merges. See `rollout.md`.
 - Gate: [#2873](https://github.com/linuxfoundation/lfx-self-serve/issues/2873) ·
   Scaffold: [#2874](https://github.com/linuxfoundation/lfx-self-serve/issues/2874) ·
   Rollout/retirement doc: [#2875](https://github.com/linuxfoundation/lfx-self-serve/issues/2875) ·
-  V1 retirement: [#3266](https://github.com/linuxfoundation/lfx-self-serve/issues/3266)
+  V1 retirement: out of scope ([#3266](https://github.com/linuxfoundation/lfx-self-serve/issues/3266) closed) ·
+  Own flag: [#3576](https://github.com/linuxfoundation/lfx-self-serve/issues/3576)
 - View-model resolvers: [#2876](https://github.com/linuxfoundation/lfx-self-serve/issues/2876)
 - Testid contract: [#1768](https://github.com/linuxfoundation/lfx-self-serve/issues/1768)

@@ -4,11 +4,11 @@
 import { Component, inject, makeStateKey, Signal, signal, TransferState, WritableSignal } from '@angular/core';
 import { ComponentFixture, DeferBlockBehavior, DeferBlockState, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap } from '@angular/router';
-import { MEETING_JOIN_STATE_KEY } from '@lfx-one/shared/constants';
+import { MEETING_DETAILS_V2_FLAG, MEETING_JOIN_STATE_KEY, MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { MeetingJoinPageState } from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { UserService } from '@services/user.service';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { MeetingDetailsGateComponent } from './meeting-details-gate.component';
 import { MeetingDetailsSeedService } from './meeting-details-seed.service';
@@ -94,6 +94,17 @@ describe('MeetingDetailsGateComponent', () => {
       v2: fixture.nativeElement.querySelector('[data-testid="meeting-details-gate-v2"]') !== null,
     };
   }
+
+  // #3576: the page has its own flag, so targeting the composer's flag never moves it.
+  it('reads its own flag, meeting-details-v2, and not the composer flag', async () => {
+    const getBooleanFlag = vi.fn((key: string) => signal(key === MEETING_V2_ENABLED_FLAG));
+    await create(signal(true), getBooleanFlag);
+
+    expect(MEETING_DETAILS_V2_FLAG).toBe('meeting-details-v2');
+    expect(getBooleanFlag).toHaveBeenCalledWith(MEETING_DETAILS_V2_FLAG, false);
+    expect(getBooleanFlag).not.toHaveBeenCalledWith(MEETING_V2_ENABLED_FLAG, expect.anything());
+    expect(rendered()).toEqual({ v1: true, v2: false });
+  });
 
   it('renders v1 when the flag is off for an authenticated viewer', async () => {
     await create(signal(true), flagReadsAs(signal(false)));

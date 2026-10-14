@@ -16,7 +16,8 @@
  * branch's markup is absent, because the two buttons carry the same `data-testid` on purpose and a
  * presence-only assertion would pass against either one. Since #2873 it also pins the `/meetings/:id`
  * page gate — the only reader an anonymous visitor can reach, and the only one that swaps a whole
- * page rather than a control; its own describe block below carries the details.
+ * page rather than a control. That gate reads its own flag, `MEETING_DETAILS_V2_FLAG`, since #3576;
+ * its describe block below carries the details.
  *
  * Prerequisites:
  * - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -32,7 +33,7 @@ import { LENS_COOKIE_KEY, PERSONA_COOKIE_KEY, SELECTED_PROJECT_COOKIE_KEY } from
 import type { PersistedPersonaState, PersonaType } from '@lfx-one/shared/interfaces';
 import { expect, Locator, Page, Route, test } from '@playwright/test';
 
-import { stubMeetingsV2Flag } from './helpers/meetings-v2-flag.helper';
+import { stubMeetingDetailsV2Flag, stubMeetingsV2Flag } from './helpers/meetings-v2-flag.helper';
 
 const PAGE_LOAD_TIMEOUT = 20_000;
 const PROJECT_UID = 'p0000000-0000-0000-0000-00000000f001';
@@ -233,7 +234,8 @@ test.describe('Meetings v2 dark-launch gate — /meetings/:id', () => {
       release = resolve;
     });
 
-    await stubMeetingsV2Flag(page, flagEnabled);
+    // The page has its own flag since #3576 (`MEETING_DETAILS_V2_FLAG`), apart from the composer's.
+    await stubMeetingDetailsV2Flag(page, flagEnabled);
     await page.route('**/public/api/meetings/**', async (route) => {
       await held;
       const response =
