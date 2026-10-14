@@ -54,6 +54,10 @@ export class MktgDocumentsComponent {
   protected readonly restoringId = signal<string | null>(null);
   protected readonly notice = signal('');
   private readonly reloads = signal(0);
+  // The project whose list is shown. A read for another project must not leave
+  // this one's documents and badges on screen under the new project's name; a
+  // restore-triggered reload of the same project keeps them visible meanwhile.
+  private listedProject = '';
 
   private readonly selectedParam = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('type'))), { initialValue: null });
 
@@ -94,9 +98,15 @@ export class MktgDocumentsComponent {
       this.listRequest$
         .pipe(
           filter((request) => !!request.project),
-          tap(() => {
+          tap((request) => {
             this.errorText.set('');
             this.listFailed.set(false);
+            if (request.project !== this.listedProject) {
+              this.listedProject = request.project;
+              this.loading.set(true);
+              this.documents.set(null);
+              this.notice.set('');
+            }
           }),
           switchMap((request) =>
             this.documentStore.listDocuments(request.project).pipe(

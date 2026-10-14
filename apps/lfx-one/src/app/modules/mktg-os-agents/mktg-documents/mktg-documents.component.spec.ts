@@ -56,6 +56,7 @@ describe('MktgDocumentsComponent', () => {
   }
 
   let fixture: ComponentFixture<MktgDocumentsComponent>;
+  let activeContext: ReturnType<typeof signal<ProjectContext | null>>;
   let store: { listDocuments: ReturnType<typeof vi.fn>; getDocument: ReturnType<typeof vi.fn>; restoreRevision: ReturnType<typeof vi.fn> };
 
   function query(testId: string): HTMLElement | null {
@@ -75,7 +76,7 @@ describe('MktgDocumentsComponent', () => {
       getDocument: vi.fn(() => of(detail)),
       restoreRevision: vi.fn(() => of({ ...detail, revision: revision(3, { latest: true, origin: 'restored', restoredFromNumber: 1 }) })),
     };
-    const activeContext = signal<ProjectContext | null>(PROJECT);
+    activeContext = signal<ProjectContext | null>(PROJECT);
 
     await TestBed.configureTestingModule({
       imports: [MktgDocumentsComponent],
@@ -104,6 +105,24 @@ describe('MktgDocumentsComponent', () => {
     expect(query('mktg-documents-nav')?.textContent).not.toContain('Not generated yet');
     expect(query('mktg-documents-nav')?.textContent).not.toContain('No runs yet');
     expect(query('mktg-documents-nav')?.textContent).not.toContain('current');
+  });
+
+  it('hides the previous project’s documents and badges while the next project’s list loads', async () => {
+    await render();
+    expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('v2 · current');
+
+    store.listDocuments.mockReturnValue(NEVER);
+    activeContext.set({ uid: 'proj-2', name: 'OtherOrbit', slug: 'otherorbit' });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(store.listDocuments).toHaveBeenLastCalledWith('proj-2');
+    expect(query('mktg-documents-nav')?.textContent).not.toContain('current');
+    expect(query('mktg-documents-nav')?.textContent).not.toContain('Not generated yet');
+    expect(query('mktg-documents-nav')?.textContent).not.toContain('No runs yet');
+    expect(query('mktg-documents-loading')).not.toBeNull();
+    expect(query('mktg-documents-document-subtitle')).toBeNull();
+    expect(query('mktg-documents-revision-2')).toBeNull();
   });
 
   it('shows the selected document’s Revisions table: latest first, View and Restore on older revisions', async () => {
