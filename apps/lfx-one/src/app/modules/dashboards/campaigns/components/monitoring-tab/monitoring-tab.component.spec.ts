@@ -1,13 +1,20 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import type { KeywordMetricsResponse } from '@lfx-one/shared/interfaces';
+import type {
+  CampaignMonitorConnections,
+  HubSpotEmailMonitorResponse,
+  KeywordMetricsResponse,
+  MonitorConnectionAccount,
+  ReportBackedMonitorResponse,
+} from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { signal } from '@angular/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -95,6 +102,7 @@ describe('MonitoringTabComponent — keyword totals completeness', () => {
             getLinkedInMonitor: vi.fn().mockReturnValue(of(null)),
             getRedditMonitor: vi.fn().mockReturnValue(of(null)),
             getMetaMonitor: vi.fn().mockReturnValue(of(null)),
+            getMonitorConnections: vi.fn().mockReturnValue(of({ viaCampaignService: false, platforms: {} })),
           },
         },
       ],
@@ -319,6 +327,7 @@ describe.each(['linkedin', 'reddit', 'meta'] as const)('MonitoringTabComponent �
             getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
             getRedditAccounts: vi.fn().mockReturnValue(of([])),
             getMetaAccounts: vi.fn().mockReturnValue(of([])),
+            getMonitorConnections: vi.fn().mockReturnValue(of({ viaCampaignService: false, platforms: {} })),
           },
         },
       ],
@@ -433,5 +442,388 @@ describe.each(['linkedin', 'reddit', 'meta'] as const)('MonitoringTabComponent �
     });
 
     expect(text(`${platform}-totals-note`)).toBe('conversions cover 1 of 2 campaigns.');
+  });
+});
+
+/**
+ * The monitor cutover (#2519): which account each picker offers, the empty states when there is
+ * none, and the campaign-service-only Microsoft / X / HubSpot sections.
+ *
+ * Flag OFF is asserted first and must be the tab exactly as it was: legacy account lists, the four
+ * original buttons, no notices.
+ */
+describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
+  let fixture: ComponentFixture<MonitoringTabComponent>;
+  let service: Record<string, ReturnType<typeof vi.fn>>;
+
+  const connected = (accountId: string, label = accountId): MonitorConnectionAccount => ({ state: 'connected', accountId, label });
+  const none = (state: MonitorConnectionAccount['state']): MonitorConnectionAccount => ({ state, accountId: null, label: null });
+
+  function reportBacked(over: Partial<ReportBackedMonitorResponse> = {}): ReportBackedMonitorResponse {
+    return {
+      accountId: '187654321',
+      pulledAt: '2026-10-13T00:00:00.000Z',
+      dateRange: { mode: 'last_30_days' },
+      campaigns: [
+        {
+          campaignId: '1',
+          campaignName: 'KubeCon NA 2026 - Search',
+          status: 'Active',
+          totalBudget: 0,
+          dailyBudget: 100,
+          spend: 412.5,
+          impressions: 52000,
+          clicks: 610,
+          ctr: 1.17,
+          conversions: 0,
+          pacingPct: 88,
+          pacingLabel: 'normal',
+          startDate: '2026-09-01',
+          endDate: '',
+          pacingUnknown: false,
+          fetchFailed: false,
+          conversionsMeasured: false,
+        },
+      ],
+      accountTotals: { spend: 412.5, impressions: 52000, clicks: 610, conversions: 0, campaignCount: 1, conversionsMeasured: false },
+      actionItems: [],
+      metricsAsOf: '2026-10-12T10:00:00Z',
+      metricsWindowStart: '2026-09-13',
+      metricsWindowEnd: '2026-10-12',
+      metricsPending: false,
+      ...over,
+    };
+  }
+
+  function hubspot(over: Partial<HubSpotEmailMonitorResponse> = {}): HubSpotEmailMonitorResponse {
+    return {
+      pulledAt: '2026-10-13T00:00:00.000Z',
+      days: 30,
+      emails: [
+        {
+          campaignId: 'c1',
+          emailId: 'e1',
+          name: 'KubeCon NA 2026 — registration open',
+          abVariant: false,
+          deleted: false,
+          sent: 5000,
+          delivered: 4850,
+          opens: 1455,
+          clicks: 194,
+          bounces: 150,
+          unsubscribes: 24,
+          spamReports: 1,
+          openRate: 0.3,
+          clickRate: 0.04,
+          bounceRate: 0.03,
+          unsubscribeRate: 0.0049,
+          spamRate: 0.0002,
+        },
+        {
+          campaignId: 'c2',
+          emailId: 'e2',
+          name: 'Staged draft',
+          abVariant: true,
+          deleted: false,
+          sent: 10,
+          delivered: 0,
+          opens: 0,
+          clicks: 0,
+          bounces: 10,
+          unsubscribes: 0,
+          spamReports: 0,
+          openRate: null,
+          clickRate: null,
+          bounceRate: 1,
+          unsubscribeRate: null,
+          spamRate: null,
+        },
+      ],
+      totals: {
+        emailCount: 2,
+        sent: 5010,
+        delivered: 4850,
+        opens: 1455,
+        clicks: 194,
+        bounces: 160,
+        unsubscribes: 24,
+        spamReports: 1,
+        openRate: 0.3,
+        clickRate: 0.04,
+        bounceRate: 0.0319,
+        unsubscribeRate: 0.0049,
+        spamRate: 0.0002,
+      },
+      actionItems: [{ priority: 'HIGH', emailId: 'e2', emailName: 'Staged draft', issue: 'Sent but nothing delivered', action: 'Check the list' }],
+      metricsAsOf: '2026-10-12T10:00:00Z',
+      metricsWindowStart: '2026-09-13',
+      metricsWindowEnd: '2026-10-12',
+      emailsChecked: 3,
+      emailsNotSentInWindow: 1,
+      emailsUnattributable: 0,
+      emailsTruncated: false,
+      ...over,
+    };
+  }
+
+  async function setup(connections: CampaignMonitorConnections | Error): Promise<void> {
+    service = {
+      getMonitorData: vi.fn().mockReturnValue(of(null)),
+      getKeywords: vi.fn().mockReturnValue(of(null)),
+      getAudience: vi.fn().mockReturnValue(of(null)),
+      getLinkedInAccounts: vi.fn().mockReturnValue(of([{ accountId: '512345678', label: 'LF LinkedIn (legacy)', orgId: '1' }])),
+      getRedditAccounts: vi.fn().mockReturnValue(of([{ key: 't2_legacy', label: 'LF Reddit (legacy)' }])),
+      getMetaAccounts: vi.fn().mockReturnValue(of([{ key: 'act_1', label: 'LF Meta (legacy)' }])),
+      getLinkedInMonitorData: vi.fn().mockReturnValue(of(null)),
+      getRedditMonitorData: vi.fn().mockReturnValue(of(null)),
+      getMetaMonitorData: vi.fn().mockReturnValue(of(null)),
+      getMicrosoftMonitorData: vi.fn().mockReturnValue(of(reportBacked())),
+      getTwitterMonitorData: vi.fn().mockReturnValue(of(reportBacked())),
+      getHubSpotMonitorData: vi.fn().mockReturnValue(of(hubspot())),
+      getMonitorConnections: vi.fn().mockReturnValue(connections instanceof Error ? throwError(() => connections) : of(connections)),
+    };
+    await TestBed.configureTestingModule({
+      imports: [MonitoringTabComponent],
+      providers: [
+        provideNoopAnimations(),
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: ProjectContextService, useValue: { activeContext: signal({ slug: 'cncf' }) } },
+        { provide: CampaignService, useValue: service },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(MonitoringTabComponent);
+    fixture.detectChanges();
+  }
+
+  const el = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+  const text = (testId: string): string => el(testId)?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+  const options = (testId: string): string[] =>
+    Array.from((el(testId) as HTMLSelectElement | null)?.options ?? []).map((o) => `${o.value}|${o.textContent?.trim()}`);
+
+  function select(platform: string): void {
+    (el(`platform-${platform}`) as HTMLButtonElement).click();
+    fixture.detectChanges();
+  }
+
+  const allConnected: CampaignMonitorConnections = {
+    viaCampaignService: true,
+    platforms: {
+      linkedin: connected('700000001', 'CNCF LinkedIn'),
+      reddit: connected('t2_cncf'),
+      meta: connected('act_700000001', 'CNCF Meta'),
+      microsoft: connected('187654321', 'CNCF Microsoft'),
+      twitter: connected('18ce54d4x5t'),
+    },
+  };
+
+  describe('flag off', () => {
+    beforeEach(async () => setup({ viaCampaignService: false, platforms: {} }));
+
+    it('loads the legacy account lists and offers only the four original platforms', () => {
+      expect(service['getLinkedInAccounts']).toHaveBeenCalledWith('cncf');
+      expect(service['getRedditAccounts']).toHaveBeenCalledWith('cncf');
+      expect(service['getMetaAccounts']).toHaveBeenCalledWith('cncf');
+      expect(el('platform-microsoft')).toBeNull();
+      expect(el('platform-twitter')).toBeNull();
+      expect(el('platform-hubspot')).toBeNull();
+      expect(el('platform-meta')).not.toBeNull();
+    });
+
+    it('fills the picker from the legacy list and reads that account, with no notice', () => {
+      select('linkedin');
+
+      expect(options('linkedin-account-select')).toEqual(['512345678|LF LinkedIn (legacy)']);
+      expect(service['getLinkedInMonitorData']).toHaveBeenCalledWith('cncf', '512345678', 30);
+      expect(el('linkedin-connection-notice')).toBeNull();
+    });
+  });
+
+  describe('flag on', () => {
+    it("fills each picker with the project's connection account, never the legacy lists", async () => {
+      await setup(allConnected);
+      select('linkedin');
+
+      expect(service['getLinkedInAccounts']).not.toHaveBeenCalled();
+      expect(service['getRedditAccounts']).not.toHaveBeenCalled();
+      expect(service['getMetaAccounts']).not.toHaveBeenCalled();
+      expect(options('linkedin-account-select')).toEqual(['700000001|CNCF LinkedIn']);
+      expect(service['getLinkedInMonitorData']).toHaveBeenCalledWith('cncf', '700000001', 30);
+
+      select('meta');
+      expect(options('meta-account-select')).toEqual(['act_700000001|CNCF Meta']);
+      expect(service['getMetaMonitorData']).toHaveBeenCalledWith('cncf', 'act_700000001', 30);
+    });
+
+    it('offers Microsoft Ads and HubSpot, and keeps X hidden while the app disables it', async () => {
+      await setup(allConnected);
+
+      expect(el('platform-microsoft')).not.toBeNull();
+      expect(el('platform-hubspot')).not.toBeNull();
+      expect(el('platform-twitter')).toBeNull();
+    });
+
+    it('says the project has no connection for a platform, with no picker and no read', async () => {
+      await setup({ ...allConnected, platforms: { ...allConnected.platforms, reddit: none('no_connection') } });
+      select('reddit');
+
+      expect(el('reddit-connection-notice')?.getAttribute('data-state')).toBe('no_connection');
+      expect(text('reddit-connection-notice-title')).toBe('No Reddit Ads connection for this project');
+      expect(text('reddit-connection-notice-message')).toContain("Ask an LFX administrator to connect this project's Reddit Ads account");
+      expect(el('reddit-account-select')).toBeNull();
+      expect(service['getRedditMonitorData']).not.toHaveBeenCalled();
+    });
+
+    it('says the connection has no account bound', async () => {
+      await setup({ ...allConnected, platforms: { ...allConnected.platforms, meta: none('no_account') } });
+      select('meta');
+
+      expect(el('meta-connection-notice')?.getAttribute('data-state')).toBe('no_account');
+      expect(text('meta-connection-notice-title')).toBe('No Meta Ads ad account selected');
+      expect(text('meta-connection-notice-message')).toContain('choose the ad account on the connection');
+      expect(service['getMetaMonitorData']).not.toHaveBeenCalled();
+    });
+
+    it('re-reads the connections from the notice', async () => {
+      await setup({ ...allConnected, platforms: { ...allConnected.platforms, linkedin: none('unavailable') } });
+      select('linkedin');
+      expect(text('linkedin-connection-notice-title')).toBe("Couldn't check the LinkedIn Ads connection");
+
+      service['getMonitorConnections'].mockReturnValue(of(allConnected));
+      (el('linkedin-connection-notice-retry') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      expect(service['getMonitorConnections']).toHaveBeenCalledTimes(2);
+      expect(el('linkedin-connection-notice')).toBeNull();
+      expect(service['getLinkedInMonitorData']).toHaveBeenCalledWith('cncf', '700000001', 30);
+    });
+
+    it('shows "metrics not enabled" instead of an error for the 400 the BFF marks so', async () => {
+      await setup(allConnected);
+      service['getMicrosoftMonitorData'].mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 400, error: { error: 'not enabled', upstreamCode: 'metrics_not_enabled' } }))
+      );
+      select('microsoft');
+
+      expect(el('microsoft-connection-notice')?.getAttribute('data-state')).toBe('metrics_disabled');
+      expect(text('microsoft-connection-notice-title')).toBe('Microsoft Ads metrics are not enabled');
+      expect(text('microsoft-connection-notice-message')).toContain('Ask the LFX platform team to enable them');
+      expect(el('microsoft-error')).toBeNull();
+    });
+
+    it('shows any other 400 as an error, not as "not enabled"', async () => {
+      await setup(allConnected);
+      service['getMicrosoftMonitorData'].mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 400, error: { error: 'connection is not bound to this account' } }))
+      );
+      select('microsoft');
+
+      expect(el('microsoft-connection-notice')).toBeNull();
+      expect(text('microsoft-error')).toContain('connection is not bound to this account');
+    });
+
+    it('falls back to the legacy lists when the connections read fails before the flag is known', async () => {
+      await setup(new Error('network'));
+
+      expect(service['getLinkedInAccounts']).toHaveBeenCalledWith('cncf');
+      expect(el('platform-microsoft')).toBeNull();
+    });
+  });
+
+  describe('Microsoft Ads (report-backed)', () => {
+    it("reads the connection's account and says how fresh the figures are", async () => {
+      await setup(allConnected);
+      select('microsoft');
+
+      expect(service['getMicrosoftMonitorData']).toHaveBeenCalledWith('cncf', '187654321', 30);
+      expect(options('microsoft-account-select')).toEqual(['187654321|CNCF Microsoft']);
+      expect(text('microsoft-freshness')).toContain('Metrics as of');
+      expect(text('microsoft-freshness')).toContain('covering 2026-09-13 → 2026-10-12');
+      expect(text('microsoft-freshness')).not.toContain('newer report');
+      expect(text('microsoft-campaign-pacing')).toBe('88% normal');
+      expect(text('microsoft-campaign-conversions')).toBe('Not measured');
+      expect(text('microsoft-kpi-conversions')).toBe('Not measured');
+    });
+
+    it('says a newer report is building when one is', async () => {
+      await setup(allConnected);
+      service['getMicrosoftMonitorData'].mockReturnValue(of(reportBacked({ metricsPending: true })));
+      select('microsoft');
+
+      expect(text('microsoft-freshness')).toContain('A newer report is building');
+    });
+
+    it('explains the first report is building, and marks every row "Couldn\'t read" with dashes', async () => {
+      await setup(allConnected);
+      const unread = reportBacked().campaigns.map((c) => ({ ...c, fetchFailed: true, pacingLabel: undefined, spend: 0 }));
+      service['getMicrosoftMonitorData'].mockReturnValue(
+        of(reportBacked({ campaigns: unread, metricsAsOf: null, metricsWindowStart: null, metricsWindowEnd: null, metricsPending: true }))
+      );
+      select('microsoft');
+
+      expect(text('microsoft-freshness')).toContain('The first report for this account is building');
+      expect(text('microsoft-campaign-fetch-failed')).toBe("Couldn't read");
+      expect(text('microsoft-campaign-pacing')).toBe('—');
+      expect(text('microsoft-totals-note')).toBe('Totals cover 0 of 1 campaigns.');
+    });
+
+    it('shows "Unknown" for pacing it could not compute', async () => {
+      await setup(allConnected);
+      const unknown = reportBacked().campaigns.map((c) => ({ ...c, pacingUnknown: true, pacingLabel: undefined, pacingPct: 0 }));
+      service['getMicrosoftMonitorData'].mockReturnValue(of(reportBacked({ campaigns: unknown })));
+      select('microsoft');
+
+      expect(text('microsoft-campaign-pacing')).toBe('Unknown');
+    });
+
+    it('says when the project has no Microsoft connection, without reading', async () => {
+      await setup({ ...allConnected, platforms: { ...allConnected.platforms, microsoft: none('no_connection') } });
+      select('microsoft');
+
+      expect(text('microsoft-connection-notice-title')).toBe('No Microsoft Ads connection for this project');
+      expect(service['getMicrosoftMonitorData']).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('HubSpot email', () => {
+    it('renders the counts, the rates, and an unknown rate as a dash', async () => {
+      await setup(allConnected);
+      select('hubspot');
+
+      expect(service['getHubSpotMonitorData']).toHaveBeenCalledWith('cncf', 30);
+      expect(text('hubspot-kpi-emails')).toBe('2');
+      expect(text('hubspot-kpi-sent')).toBe('5,010');
+      expect(text('hubspot-kpi-open-rate')).toBe('30.0% open rate');
+      expect(text('hubspot-email-row-0')).toContain('KubeCon NA 2026 — registration open');
+      const rates = fixture.nativeElement.querySelectorAll('[data-testid="hubspot-email-open-rate"]') as NodeListOf<HTMLElement>;
+      expect(rates[0].textContent?.trim()).toBe('30.0%');
+      expect(rates[1].textContent?.trim()).toBe('—');
+      expect(rates[1].className).toContain('text-gray-500');
+      expect(el('hubspot-email-ab-variant')).not.toBeNull();
+      expect(text('hubspot-freshness')).toContain('Counters as of');
+      expect(text('hubspot-coverage-note')).toBe('1 of 3 recorded emails had no send in this window.');
+      expect(text('hubspot-action-item-0')).toContain('Staged draft: Sent but nothing delivered');
+    });
+
+    it('distinguishes "no emails recorded" from "none sent in the window"', async () => {
+      await setup(allConnected);
+      service['getHubSpotMonitorData'].mockReturnValue(of(hubspot({ emails: [], actionItems: [], metricsAsOf: null })));
+      select('hubspot');
+      expect(text('hubspot-empty')).toBe('This project has no HubSpot emails created through campaigns yet.');
+
+      service['getHubSpotMonitorData'].mockReturnValue(of(hubspot({ emails: [], actionItems: [] })));
+      (el('hubspot-refresh') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(text('hubspot-empty')).toBe('No HubSpot emails from this project were sent in the last 30 days.');
+    });
+
+    it('says there is no HubSpot connection on a 404', async () => {
+      await setup(allConnected);
+      service['getHubSpotMonitorData'].mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404, error: { error: 'Not found' } })));
+      select('hubspot');
+
+      expect(el('hubspot-connection-notice')?.getAttribute('data-state')).toBe('no_connection');
+      expect(text('hubspot-connection-notice-title')).toBe('No HubSpot connection');
+      expect(el('hubspot-error')).toBeNull();
+    });
   });
 });

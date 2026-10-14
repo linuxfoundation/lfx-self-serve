@@ -1,18 +1,28 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, DestroyRef, inject, OnInit, PLATFORM_ID, signal } from '@angular/core';
+import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
+import { Component, computed, DestroyRef, inject, OnInit, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { skip, type Subscription } from 'rxjs';
-import { CAMPAIGN_PACING_THRESHOLDS, parseCampaignName, PLATFORM_BRAND_COLORS } from '@lfx-one/shared/constants';
+import { skip, type Observable, type Subscription } from 'rxjs';
+import {
+  ACCOUNT_MONITOR_METRICS_DISABLED_CODE,
+  CAMPAIGN_PACING_THRESHOLDS,
+  CAMPAIGN_PLATFORMS,
+  HUBSPOT_BRAND_COLOR,
+  MONITOR_CONNECTION_PROVIDERS,
+  parseCampaignName,
+  PLATFORM_BRAND_COLORS,
+} from '@lfx-one/shared/constants';
 import { formatPercent } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 
 import type {
   CampaignMetrics,
+  CampaignMonitorConnections,
   CampaignMonitorResponse,
+  HubSpotEmailMonitorResponse,
   KeywordMetrics,
   KeywordMetricsResponse,
   LinkedInAccount,
@@ -22,10 +32,16 @@ import type {
   MetaAccountOption,
   MetaCampaignMetrics,
   MetaMonitorResponse,
+  MonitorConnectionAccount,
+  MonitorConnectionPlatform,
+  MonitorPanelKey,
+  MonitorPanelNotice,
+  MonitorPanelNoticeState,
   RedditAccountOption,
   RedditCampaignMetrics,
   RedditMonitorResponse,
   RedditPacingLabel,
+  ReportBackedMonitorResponse,
 } from '@lfx-one/shared/interfaces';
 
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
@@ -33,13 +49,13 @@ import { MetaPacingClassPipe } from '@pipes/campaign-optimization.pipe';
 import { AudienceDemographicsComponent } from '../audience-demographics/audience-demographics.component';
 
 type DateRangeOption = 7 | 14 | 30;
-type PlatformType = 'google' | 'linkedin' | 'reddit' | 'meta';
+type PlatformType = 'google' | 'linkedin' | 'reddit' | 'meta' | 'microsoft' | 'twitter' | 'hubspot';
 
 const KEYWORD_PAGE_SIZE = 10;
 
 @Component({
   selector: 'lfx-monitoring-tab',
-  imports: [AudienceDemographicsComponent, MetaPacingClassPipe],
+  imports: [AudienceDemographicsComponent, MetaPacingClassPipe, NgTemplateOutlet],
   templateUrl: './monitoring-tab.component.html',
   styleUrl: './monitoring-tab.component.scss',
 })
@@ -67,7 +83,9 @@ export class MonitoringTabComponent implements OnInit {
 
   // Platform switcher
   protected readonly selectedPlatform = signal<PlatformType>('google');
-  protected readonly linkedInAccountOptions = signal<LinkedInAccount[]>([]);
+  // Only the id and label are rendered; with the monitor cutover on, the one option is the
+  // project's connection's account, which carries no org id.
+  protected readonly linkedInAccountOptions = signal<Pick<LinkedInAccount, 'accountId' | 'label'>[]>([]);
   protected readonly selectedLinkedInAccountKey = signal<string>('');
   protected readonly linkedInLoading = signal(false);
   protected readonly linkedInData = signal<LinkedInMonitorResponse | null>(null);
@@ -106,6 +124,41 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly metaTotalsNote = computed(() => this.totalsCoverageNote(this.metaCampaigns()));
   protected readonly metaPulledAt = computed(() => {
     const pulledAt = this.metaData()?.pulledAt;
+    return pulledAt ? new Date(pulledAt).toLocaleString() : null;
+  });
+
+  // campaign-service monitor cutover (#2519). Set from `/monitor/connections`: while the server's
+  // flag is off it stays false, the legacy account lists fill the pickers, and nothing below renders.
+  private connectionsSub: Subscription | null = null;
+  protected readonly monitorViaCampaignService = signal(false);
+  protected readonly monitorConnections = signal<CampaignMonitorConnections['platforms']>({});
+  protected readonly metricsDisabledPlatforms = signal<ReadonlySet<MonitorConnectionPlatform>>(new Set());
+  /** X stays hidden while the app does not offer it (`disabled: true` in `CAMPAIGN_PLATFORMS`), whatever the flag says. */
+  protected readonly twitterOffered = !CAMPAIGN_PLATFORMS.find((p) => p.id === 'twitter-ads')?.disabled;
+  protected readonly hubSpotColor = HUBSPOT_BRAND_COLOR;
+
+  // Microsoft Ads / X: one report-backed panel, showing whichever of the two is selected.
+  private reportBackedSub: Subscription | null = null;
+  protected readonly reportBackedLoading = signal(false);
+  protected readonly reportBackedData = signal<ReportBackedMonitorResponse | null>(null);
+  protected readonly reportBackedError = signal<string | null>(null);
+  protected readonly reportBackedCampaigns = computed(() => this.reportBackedData()?.campaigns ?? []);
+  protected readonly reportBackedTotals = computed(() => this.reportBackedData()?.accountTotals ?? null);
+  protected readonly reportBackedTotalsNote = computed(() => this.totalsCoverageNote(this.reportBackedCampaigns()));
+  protected readonly reportBackedPulledAt = computed(() => {
+    const pulledAt = this.reportBackedData()?.pulledAt;
+    return pulledAt ? new Date(pulledAt).toLocaleString() : null;
+  });
+
+  // HubSpot email monitor: project-scoped, so no account picker.
+  private hubSpotSub: Subscription | null = null;
+  protected readonly hubSpotLoading = signal(false);
+  protected readonly hubSpotData = signal<HubSpotEmailMonitorResponse | null>(null);
+  protected readonly hubSpotError = signal<string | null>(null);
+  protected readonly hubSpotNoticeState = signal<MonitorPanelNoticeState | null>(null);
+  protected readonly hubSpotEmails = computed(() => this.hubSpotData()?.emails ?? []);
+  protected readonly hubSpotPulledAt = computed(() => {
+    const pulledAt = this.hubSpotData()?.pulledAt;
     return pulledAt ? new Date(pulledAt).toLocaleString() : null;
   });
 
@@ -174,6 +227,17 @@ export class MonitoringTabComponent implements OnInit {
 
   protected readonly activeFoundationSlug = computed(() => this.projectContextService.activeContext()?.slug ?? '');
 
+  /** The empty state each panel shows instead of data, keyed by panel. Always empty while the cutover is off. */
+  protected readonly panelNotices: Signal<Partial<Record<MonitorPanelKey, MonitorPanelNotice>>> = this.initPanelNotices();
+  /** The connection's account the Microsoft/X panel reads, or null when it has none (or another panel is selected). */
+  protected readonly reportBackedAccount: Signal<MonitorConnectionAccount | null> = this.initReportBackedAccount();
+  /** Which of the two report-backed platforms the shared panel is showing. */
+  protected readonly reportBackedPanel = computed<'microsoft' | 'twitter'>(() => (this.selectedPlatform() === 'twitter' ? 'twitter' : 'microsoft'));
+  protected readonly reportBackedLabel = computed(() => (this.reportBackedPanel() === 'twitter' ? 'X Ads' : 'Microsoft Ads'));
+  protected readonly reportBackedFreshness: Signal<string | null> = this.initReportBackedFreshness();
+  protected readonly hubSpotFreshness: Signal<string | null> = this.initHubSpotFreshness();
+  protected readonly hubSpotCoverageNote: Signal<string | null> = this.initHubSpotCoverageNote();
+
   public constructor() {
     // toObservable + skip(1) per frontend-checklist §5 ("No effect() — use toObservable() with
     // RxJS pipes instead"). skip(1) drops the emission toObservable fires immediately on
@@ -197,6 +261,10 @@ export class MonitoringTabComponent implements OnInit {
       this.fetchRedditData();
     } else if (this.selectedPlatform() === 'meta') {
       this.fetchMetaData();
+    } else if (this.isReportBackedPlatform(this.selectedPlatform())) {
+      this.fetchReportBackedData();
+    } else if (this.selectedPlatform() === 'hubspot') {
+      this.fetchHubSpotData();
     } else {
       this.linkedInData.set(null);
       this.redditData.set(null);
@@ -212,6 +280,10 @@ export class MonitoringTabComponent implements OnInit {
       this.fetchRedditData();
     } else if (this.selectedPlatform() === 'meta') {
       this.fetchMetaData();
+    } else if (this.isReportBackedPlatform(this.selectedPlatform())) {
+      this.fetchReportBackedData();
+    } else if (this.selectedPlatform() === 'hubspot') {
+      this.fetchHubSpotData();
     }
   }
 
@@ -289,7 +361,109 @@ export class MonitoringTabComponent implements OnInit {
       this.fetchRedditData();
     } else if (p === 'meta') {
       this.fetchMetaData();
+    } else if (this.isReportBackedPlatform(p)) {
+      // Microsoft and X share one panel's signals, so the other platform's figures must not show
+      // under this one's name while the read is in flight.
+      this.reportBackedData.set(null);
+      this.reportBackedError.set(null);
+      this.fetchReportBackedData();
+    } else if (p === 'hubspot') {
+      this.fetchHubSpotData();
     }
+  }
+
+  /**
+   * The action on a panel's empty state. A connection state is re-read (a connection may have been
+   * added or bound meanwhile), which re-fetches the selected panel once it arrives; "metrics not
+   * enabled" is cleared and the panel read again, since enabling them changes nothing on our side.
+   */
+  protected retryPanel(panel: MonitorPanelKey): void {
+    if (panel === 'hubspot') {
+      this.fetchHubSpotData();
+      return;
+    }
+    const notice = this.panelNotices()[panel];
+    this.setMetricsDisabled(panel, false);
+    if (notice?.state === 'metrics_disabled') {
+      this.fetchSelectedPanel();
+      return;
+    }
+    this.loadMonitorConnections();
+  }
+
+  protected fetchReportBackedData(): void {
+    const platform = this.selectedPlatform();
+    if (platform !== 'microsoft' && platform !== 'twitter') return;
+    this.reportBackedSub?.unsubscribe();
+    const accountId = this.reportBackedAccount()?.accountId;
+    if (!accountId) {
+      // No bound account: the panel shows the connection's empty state, and there is nothing to read.
+      this.reportBackedLoading.set(false);
+      return;
+    }
+    const label = this.reportBackedLabel();
+    this.reportBackedLoading.set(true);
+    this.reportBackedError.set(null);
+    const request: Observable<ReportBackedMonitorResponse> =
+      platform === 'microsoft'
+        ? this.campaignService.getMicrosoftMonitorData(this.activeFoundationSlug(), accountId, this.selectedDays())
+        : this.campaignService.getTwitterMonitorData(this.activeFoundationSlug(), accountId, this.selectedDays());
+    this.reportBackedSub = request.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (data) => {
+        this.setMetricsDisabled(platform, false);
+        this.reportBackedData.set(data);
+        this.reportBackedLoading.set(false);
+      },
+      error: (err: unknown) => {
+        this.reportBackedLoading.set(false);
+        if (this.isMetricsDisabledError(err)) {
+          this.reportBackedData.set(null);
+          this.setMetricsDisabled(platform, true);
+          return;
+        }
+        this.reportBackedError.set(this.reportBackedErrorMessage(err, label));
+      },
+    });
+  }
+
+  protected fetchHubSpotData(): void {
+    this.hubSpotSub?.unsubscribe();
+    this.hubSpotLoading.set(true);
+    this.hubSpotError.set(null);
+    this.hubSpotNoticeState.set(null);
+    this.hubSpotSub = this.campaignService
+      .getHubSpotMonitorData(this.activeFoundationSlug(), this.selectedDays())
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (data) => {
+          this.hubSpotData.set(data);
+          this.hubSpotLoading.set(false);
+        },
+        error: (err: unknown) => {
+          this.hubSpotLoading.set(false);
+          this.hubSpotData.set(null);
+          if (this.isMetricsDisabledError(err)) {
+            this.hubSpotNoticeState.set('metrics_disabled');
+          } else if ((err as { status?: unknown } | null)?.status === 404) {
+            // The button only shows with the cutover on, so a 404 here is campaign-service finding no
+            // HubSpot connection for the project and no LF system one to fall back to.
+            this.hubSpotNoticeState.set('no_connection');
+          } else {
+            this.hubSpotError.set(extractErrorMessage(err, 'Failed to load HubSpot email data'));
+          }
+        },
+      });
+  }
+
+  /** HubSpot rates are fractions; null — a rate over zero deliveries — is unknown, never 0%. */
+  protected formatRate(rate: number | null): string {
+    return rate === null ? '—' : `${formatPercent(rate * 100)}%`;
+  }
+
+  protected priorityClass(priority: string): string {
+    if (priority === 'HIGH') return 'bg-red-50 text-red-700';
+    if (priority === 'MED') return 'bg-amber-50 text-amber-700';
+    return 'bg-gray-100 text-gray-600';
   }
 
   protected setLinkedInAccount(key: string): void {
@@ -312,10 +486,17 @@ export class MonitoringTabComponent implements OnInit {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
+          this.setMetricsDisabled('linkedin', false);
           this.linkedInData.set(data);
           this.linkedInLoading.set(false);
         },
         error: (err: unknown) => {
+          if (this.isMetricsDisabledError(err)) {
+            this.linkedInData.set(null);
+            this.setMetricsDisabled('linkedin', true);
+            this.linkedInLoading.set(false);
+            return;
+          }
           const httpErr = err as { error?: { message?: string }; message?: string };
           this.linkedInError.set(extractErrorMessage(httpErr, 'Failed to load LinkedIn data'));
           this.linkedInLoading.set(false);
@@ -357,10 +538,17 @@ export class MonitoringTabComponent implements OnInit {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
+          this.setMetricsDisabled('reddit', false);
           this.redditData.set(data);
           this.redditLoading.set(false);
         },
         error: (err: unknown) => {
+          if (this.isMetricsDisabledError(err)) {
+            this.redditData.set(null);
+            this.setMetricsDisabled('reddit', true);
+            this.redditLoading.set(false);
+            return;
+          }
           const httpErr = err as { error?: { message?: string }; message?: string };
           this.redditError.set(extractErrorMessage(httpErr, 'Failed to load Reddit data'));
           this.redditLoading.set(false);
@@ -394,10 +582,17 @@ export class MonitoringTabComponent implements OnInit {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
+          this.setMetricsDisabled('meta', false);
           this.metaData.set(data);
           this.metaLoading.set(false);
         },
         error: (err: unknown) => {
+          if (this.isMetricsDisabledError(err)) {
+            this.metaData.set(null);
+            this.setMetricsDisabled('meta', true);
+            this.metaLoading.set(false);
+            return;
+          }
           const httpErr = err as { error?: { message?: string }; message?: string };
           this.metaError.set(extractErrorMessage(httpErr, 'Failed to load Meta data'));
           this.metaLoading.set(false);
@@ -461,6 +656,188 @@ export class MonitoringTabComponent implements OnInit {
     return `${formatPercent(value)}%`;
   }
 
+  private initPanelNotices(): Signal<Partial<Record<MonitorPanelKey, MonitorPanelNotice>>> {
+    return computed(() => {
+      const notices: Partial<Record<MonitorPanelKey, MonitorPanelNotice>> = {};
+      if (!this.monitorViaCampaignService()) return notices;
+      const connections = this.monitorConnections();
+      const disabled = this.metricsDisabledPlatforms();
+      for (const platform of Object.keys(MONITOR_CONNECTION_PROVIDERS) as MonitorConnectionPlatform[]) {
+        const state = connections[platform]?.state;
+        // No state yet means the connections are still loading: no notice, the panel just waits.
+        if (state && state !== 'connected') {
+          notices[platform] = this.noticeFor(platform, state);
+        } else if (state === 'connected' && disabled.has(platform)) {
+          notices[platform] = this.noticeFor(platform, 'metrics_disabled');
+        }
+      }
+      const hubSpotState = this.hubSpotNoticeState();
+      if (hubSpotState) {
+        notices.hubspot = this.noticeFor('hubspot', hubSpotState);
+      }
+      return notices;
+    });
+  }
+
+  private initReportBackedAccount(): Signal<MonitorConnectionAccount | null> {
+    return computed(() => {
+      const platform = this.selectedPlatform();
+      if (platform !== 'microsoft' && platform !== 'twitter') return null;
+      const connection = this.monitorConnections()[platform];
+      return connection?.state === 'connected' ? connection : null;
+    });
+  }
+
+  /**
+   * How fresh the Microsoft/X figures are, in words. These platforms serve the last FINISHED
+   * report, so the time the figures describe is not the time of this read, and an operator
+   * reconciling against the platform needs to know which.
+   */
+  private initReportBackedFreshness(): Signal<string | null> {
+    return computed(() => {
+      const data = this.reportBackedData();
+      if (!data) return null;
+      if (data.metricsAsOf) {
+        const window = data.metricsWindowStart && data.metricsWindowEnd ? `, covering ${data.metricsWindowStart} → ${data.metricsWindowEnd}` : '';
+        const pending = data.metricsPending ? ' A newer report is building — refresh in a few minutes for newer figures.' : '';
+        return `Metrics as of ${new Date(data.metricsAsOf).toLocaleString()}${window}.${pending}`;
+      }
+      if (data.metricsPending) {
+        return 'The first report for this account is building, so its campaigns show "Couldn\'t read" until it finishes. Refresh in a few minutes.';
+      }
+      return 'No report has finished for this account yet, so its campaigns show "Couldn\'t read".';
+    });
+  }
+
+  private initHubSpotFreshness(): Signal<string | null> {
+    return computed(() => {
+      const data = this.hubSpotData();
+      if (!data?.metricsAsOf) return null;
+      const window = data.metricsWindowStart && data.metricsWindowEnd ? ` Emails sent ${data.metricsWindowStart} → ${data.metricsWindowEnd}.` : '';
+      return `Counters as of ${new Date(data.metricsAsOf).toLocaleString()} (totals to date, not only the window).${window}`;
+    });
+  }
+
+  /** What the HubSpot totals leave out, or null when they cover every recorded email. */
+  private initHubSpotCoverageNote(): Signal<string | null> {
+    return computed(() => {
+      const data = this.hubSpotData();
+      if (!data) return null;
+      const parts: string[] = [];
+      if (data.emailsNotSentInWindow > 0) {
+        parts.push(`${data.emailsNotSentInWindow} of ${data.emailsChecked} recorded emails had no send in this window`);
+      }
+      if (data.emailsUnattributable > 0) {
+        parts.push(`${data.emailsUnattributable} could not be read safely (their HubSpot portal is unrecorded or has changed)`);
+      }
+      if (data.emailsTruncated) {
+        parts.push('only the 50 most recently recorded campaigns were checked, so the totals may omit older emails');
+      }
+      if (parts.length === 0) return null;
+      const sentence = parts.join('; ');
+      return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`;
+    });
+  }
+
+  /** Read the selected platform's panel (not Google's, which `fetchData` owns). */
+  private fetchSelectedPanel(): void {
+    const platform = this.selectedPlatform();
+    if (platform === 'linkedin') {
+      this.fetchLinkedInData();
+    } else if (platform === 'reddit') {
+      this.fetchRedditData();
+    } else if (platform === 'meta') {
+      this.fetchMetaData();
+    } else if (this.isReportBackedPlatform(platform)) {
+      this.fetchReportBackedData();
+    } else if (platform === 'hubspot') {
+      this.fetchHubSpotData();
+    }
+  }
+
+  private isReportBackedPlatform(platform: PlatformType): boolean {
+    return platform === 'microsoft' || platform === 'twitter';
+  }
+
+  private connectedAccount(connection: MonitorConnectionAccount | undefined): { accountId: string; label: string } | null {
+    if (connection?.state !== 'connected' || !connection.accountId) return null;
+    return { accountId: connection.accountId, label: connection.label || connection.accountId };
+  }
+
+  private setMetricsDisabled(platform: MonitorConnectionPlatform, disabled: boolean): void {
+    const current = this.metricsDisabledPlatforms();
+    // Only a real change writes, so the legacy path (which never disables anything) never touches it.
+    if (current.has(platform) === disabled) return;
+    const next = new Set(current);
+    if (disabled) {
+      next.add(platform);
+    } else {
+      next.delete(platform);
+    }
+    this.metricsDisabledPlatforms.set(next);
+  }
+
+  /** The BFF's 400 for "this platform's metrics are switched off in campaign-service", told apart by its `upstreamCode`. */
+  private isMetricsDisabledError(err: unknown): boolean {
+    return this.upstreamCode(err) === ACCOUNT_MONITOR_METRICS_DISABLED_CODE;
+  }
+
+  private upstreamCode(err: unknown): string | null {
+    const code = (err as { error?: { upstreamCode?: unknown } | null } | null)?.error?.upstreamCode;
+    return typeof code === 'string' ? code : null;
+  }
+
+  /** The X monitor's two 409 reasons get their own wording; everything else keeps the BFF's message. */
+  private reportBackedErrorMessage(err: unknown, label: string): string {
+    const code = this.upstreamCode(err);
+    if (code === 'account_too_many_active_campaigns') {
+      return `This ${label} account has more than 200 campaigns active in the window, more than one report can cover, so it cannot be monitored here.`;
+    }
+    if (code === 'account_timezone_unsupported') {
+      return `This ${label} account's time zone is not a whole hour from UTC, so its days cannot be reported exactly and it cannot be monitored here.`;
+    }
+    return extractErrorMessage(err, `Failed to load ${label} data`);
+  }
+
+  /** The empty state for one panel: what is wrong, and who can fix it. */
+  private noticeFor(panel: MonitorPanelKey, state: MonitorPanelNoticeState): MonitorPanelNotice {
+    const label = panel === 'hubspot' ? 'HubSpot' : (CAMPAIGN_PLATFORMS.find((p) => p.id === MONITOR_CONNECTION_PROVIDERS[panel])?.label ?? panel);
+    switch (state) {
+      case 'no_connection':
+        if (panel === 'hubspot') {
+          return {
+            state,
+            title: 'No HubSpot connection',
+            message:
+              'Neither this project nor the LF system account has a HubSpot connection, so there are no email metrics to read. Ask an LFX administrator to connect HubSpot for this project, then refresh.',
+          };
+        }
+        return {
+          state,
+          title: `No ${label} connection for this project`,
+          message: `Monitoring reads only this project's own ${label} connection, and it has none. Ask an LFX administrator to connect this project's ${label} account, then refresh.`,
+        };
+      case 'no_account':
+        return {
+          state,
+          title: `No ${label} ad account selected`,
+          message: `This project's ${label} connection has no ad account bound to it, so there is nothing to monitor. Ask an LFX administrator to choose the ad account on the connection, then refresh.`,
+        };
+      case 'metrics_disabled':
+        return {
+          state,
+          title: `${label} metrics are not enabled`,
+          message: `campaign-service does not read ${label} metrics in this environment yet. Ask the LFX platform team to enable them, then refresh.`,
+        };
+      default:
+        return {
+          state,
+          title: `Couldn't check the ${label} connection`,
+          message: `This project's ${label} connection could not be read just now. Refresh to try again.`,
+        };
+    }
+  }
+
   /**
    * What the LinkedIn/Reddit/Meta totals strip leaves out, or null when it covers every campaign.
    *
@@ -521,6 +898,22 @@ export class MonitoringTabComponent implements OnInit {
     this.redditData.set(null);
     this.metaData.set(null);
 
+    // The campaign-service panels, for the same reasons. `monitorViaCampaignService` is NOT reset:
+    // it mirrors a server-wide flag, not the foundation, so dropping it would only make the extra
+    // platform buttons flicker while the new foundation's connections load.
+    this.connectionsSub?.unsubscribe();
+    this.reportBackedSub?.unsubscribe();
+    this.hubSpotSub?.unsubscribe();
+    this.reportBackedLoading.set(false);
+    this.hubSpotLoading.set(false);
+    this.reportBackedData.set(null);
+    this.reportBackedError.set(null);
+    this.hubSpotData.set(null);
+    this.hubSpotError.set(null);
+    this.hubSpotNoticeState.set(null);
+    this.monitorConnections.set({});
+    this.metricsDisabledPlatforms.set(new Set());
+
     // Same reason as the per-platform signals above: the templates gate their loading placeholder
     // on `loading() && !monitorData()` (and the keywords equivalent), so leaving the aggregate data
     // from the OLD foundation in place would render it under the new foundation until the new
@@ -530,12 +923,88 @@ export class MonitoringTabComponent implements OnInit {
 
     this.fetchData();
 
+    // Which accounts the pickers offer depends on the server's monitor cutover, which only the
+    // BFF knows: with it on, each picker offers the project's OWN connection's account; with it off
+    // (or if this read fails before the flag is known), the legacy account lists, exactly as before.
+    this.loadMonitorConnections();
+  }
+
+  /** Reads the project's connections; see `loadForActiveFoundation`. Also the retry behind a panel's connection notice. */
+  private loadMonitorConnections(): void {
+    const slug = this.activeFoundationSlug();
+    this.connectionsSub?.unsubscribe();
+    this.connectionsSub = this.campaignService
+      .getMonitorConnections(slug)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (result) => {
+          if (slug !== this.activeFoundationSlug()) return;
+          if (result?.viaCampaignService === true) {
+            this.applyMonitorConnections(result.platforms ?? {});
+          } else {
+            this.useLegacyAccounts(slug);
+          }
+        },
+        error: () => {
+          if (slug !== this.activeFoundationSlug()) return;
+          if (this.monitorViaCampaignService()) {
+            // The flag is server-wide and already known to be on, so falling back to the legacy
+            // lists would offer accounts campaign-service refuses. Say the connections are unknown.
+            const unavailable: MonitorConnectionAccount = { state: 'unavailable', accountId: null, label: null };
+            this.applyMonitorConnections(
+              Object.fromEntries((Object.keys(MONITOR_CONNECTION_PROVIDERS) as MonitorConnectionPlatform[]).map((p) => [p, unavailable]))
+            );
+          } else {
+            this.useLegacyAccounts(slug);
+          }
+        },
+      });
+  }
+
+  /**
+   * Fill every connection-backed picker from the project's own connections. Each offers at most ONE
+   * account — the one its connection is bound to — because that is the only account campaign-service
+   * will read for this project; offering any other would only ever produce a refusal.
+   */
+  private applyMonitorConnections(platforms: CampaignMonitorConnections['platforms']): void {
+    this.monitorViaCampaignService.set(true);
+    this.monitorConnections.set(platforms);
+
+    const linkedIn = this.connectedAccount(platforms.linkedin);
+    this.linkedInAccountOptions.set(linkedIn ? [{ accountId: linkedIn.accountId, label: linkedIn.label }] : []);
+    this.selectedLinkedInAccountKey.set(linkedIn?.accountId ?? '');
+    const reddit = this.connectedAccount(platforms.reddit);
+    this.redditAccountOptions.set(reddit ? [{ key: reddit.accountId, label: reddit.label }] : []);
+    this.selectedRedditAccountKey.set(reddit?.accountId ?? '');
+    const meta = this.connectedAccount(platforms.meta);
+    this.metaAccountOptions.set(meta ? [{ key: meta.accountId, label: meta.label }] : []);
+    this.selectedMetaAccountKey.set(meta?.accountId ?? '');
+
+    // Clear what a previous read showed for an account that is no longer offered, then read the
+    // panel the user is on now that its account is known.
+    this.linkedInError.set(null);
+    this.redditError.set(null);
+    this.metaError.set(null);
+    this.fetchSelectedPanel();
+  }
+
+  /** The cutover is off: the pickers are the legacy account lists, loaded exactly as before it existed. */
+  private useLegacyAccounts(slug: string): void {
+    this.monitorViaCampaignService.set(false);
+    if (this.selectedPlatform() === 'microsoft' || this.selectedPlatform() === 'twitter' || this.selectedPlatform() === 'hubspot') {
+      // Those panels exist only behind the cutover, and their buttons are gone with it.
+      this.selectedPlatform.set('google');
+    }
+    this.loadLegacyAccounts(slug);
+  }
+
+  private loadLegacyAccounts(slug: string): void {
     // Each account-list request is stamped with the slug it was made for. A foundation switch
     // fires a new request before the previous one resolves, and `takeUntilDestroyed` alone
     // doesn't cancel it (the component survives the switch). Without this guard, a slower
     // response for the OLD foundation can arrive after a faster one for the new foundation and
     // overwrite it with the wrong account catalog.
-    const linkedInSlug = this.activeFoundationSlug();
+    const linkedInSlug = slug;
     this.campaignService
       .getLinkedInAccounts(linkedInSlug)
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -556,7 +1025,7 @@ export class MonitoringTabComponent implements OnInit {
           this.linkedInError.set(extractErrorMessage(httpErr, 'Failed to load LinkedIn accounts'));
         },
       });
-    const redditSlug = this.activeFoundationSlug();
+    const redditSlug = slug;
     this.campaignService
       .getRedditAccounts(redditSlug)
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -577,7 +1046,7 @@ export class MonitoringTabComponent implements OnInit {
           this.redditError.set(extractErrorMessage(httpErr, 'Failed to load Reddit accounts'));
         },
       });
-    const metaSlug = this.activeFoundationSlug();
+    const metaSlug = slug;
     this.campaignService
       .getMetaAccounts(metaSlug)
       .pipe(takeUntilDestroyed(this.destroyRef))
