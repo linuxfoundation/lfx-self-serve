@@ -1,45 +1,66 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, input, InputSignal, Signal, signal, WritableSignal } from '@angular/core';
+import { Component, computed, inject, input, InputSignal, Signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { FormBuilder, FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { MenuComponent } from '@components/menu/menu.component';
+import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { environment } from '@environments/environment';
-import { Meeting, MeetingOccurrence } from '@lfx-one/shared/interfaces';
+import { CalendarLinkEvent, Meeting, MeetingOccurrence } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
-import { buildGoogleCalendarUrl, buildOutlookCalendarUrl, CalendarLinkEvent } from '@shared/utils/calendar-link.util';
+import { buildGoogleCalendarUrl, buildOutlookCalendarUrl } from '@shared/utils/calendar-link.util';
 import { MenuItem } from 'primeng/api';
 
 @Component({
   selector: 'lfx-add-to-calendar',
-  imports: [ButtonComponent, MenuComponent],
+  imports: [ButtonComponent, MenuComponent, RadioButtonComponent],
   templateUrl: './add-to-calendar.component.html',
 })
 export class AddToCalendarComponent {
   private readonly meetingService = inject(MeetingService);
+  private readonly formBuilder = inject(FormBuilder);
 
   // Inputs
   public meeting: InputSignal<Meeting> = input.required<Meeting>();
   public currentOccurrence: InputSignal<MeetingOccurrence | null> = input<MeetingOccurrence | null>(null);
 
-  // Simple WritableSignals
+  // Forms
   /** Only meaningful when `isRecurring()` — which occurrence(s) "Add to calendar" downloads. */
-  public scope: WritableSignal<'occurrence' | 'series'> = signal('occurrence');
+  public readonly scopeForm: FormGroup = this.formBuilder.group({ scope: ['occurrence'] });
 
   // Computed values
   public readonly isRecurring: Signal<boolean> = computed(() => !!this.meeting().recurrence);
   public readonly menuItems: Signal<MenuItem[]> = this.initializeMenuItems();
 
+  private readonly scope: Signal<'occurrence' | 'series'> = this.initializeScope();
+
   protected toggleMenu(event: Event, menuComponent: MenuComponent): void {
     menuComponent.toggle(event);
   }
 
+  private initializeScope(): Signal<'occurrence' | 'series'> {
+    return toSignal(this.scopeForm.get('scope')!.valueChanges, { initialValue: this.scopeForm.get('scope')!.value });
+  }
+
   private initializeMenuItems(): Signal<MenuItem[]> {
-    return computed(() => [
-      { label: 'Google Calendar', icon: 'fa-brands fa-google', command: () => this.openExternalCalendar(buildGoogleCalendarUrl) },
-      { label: 'Outlook / Microsoft 365', icon: 'fa-brands fa-microsoft', command: () => this.openExternalCalendar(buildOutlookCalendarUrl) },
-      { label: 'Download .ics', icon: 'fa-regular fa-download', command: () => this.downloadIcs() },
-    ]);
+    return computed(() => {
+      // Google Calendar's and Outlook's deep links only ever add a single event — a "series" choice
+      // can't be represented without each provider's own recurrence syntax, so those two options are
+      // disabled rather than silently downloading just the current occurrence (GH-3505).
+      const seriesSelected = this.scope() === 'series';
+      return [
+        { label: 'Google Calendar', icon: 'fa-brands fa-google', disabled: seriesSelected, command: () => this.openExternalCalendar(buildGoogleCalendarUrl) },
+        {
+          label: 'Outlook / Microsoft 365',
+          icon: 'fa-brands fa-microsoft',
+          disabled: seriesSelected,
+          command: () => this.openExternalCalendar(buildOutlookCalendarUrl),
+        },
+        { label: 'Download .ics', icon: 'fa-regular fa-download', command: () => this.downloadIcs() },
+      ];
+    });
   }
 
   private openExternalCalendar(buildUrl: (event: CalendarLinkEvent) => string): void {
@@ -70,13 +91,13 @@ export class AddToCalendarComponent {
     };
   }
 
+  /**
+   * Links to the public meeting page with no password — unlike `handleCopyLink`'s clipboard copy,
+   * this URL is embedded in a third-party calendar event body that syncs to every device and, if the
+   * invitee forwards the event, to every other attendee. A visitor is asked for the password there
+   * instead, the same way a plain share of the meeting page already works without one (GH-3505).
+   */
   private meetingPageUrl(): string {
-    const meeting = this.meeting();
-    const params = new URLSearchParams();
-    if (meeting.password) {
-      params.set('password', meeting.password);
-    }
-    const queryString = params.toString();
-    return queryString ? `${environment.urls.home}/meetings/${meeting.id}?${queryString}` : `${environment.urls.home}/meetings/${meeting.id}`;
+    return `${environment.urls.home}/meetings/${encodeURIComponent(this.meeting().id)}`;
   }
 }

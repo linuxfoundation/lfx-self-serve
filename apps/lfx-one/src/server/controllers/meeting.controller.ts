@@ -52,7 +52,7 @@ import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
 import { NatsService } from '../services/nats.service';
 import { UserService } from '../services/user.service';
-import { getEffectiveEmail, getUsernameFromAuth } from '../utils/auth-helper';
+import { getEffectiveEmail, getEffectiveUsername, getUsernameFromAuth } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
 
 /**
@@ -221,8 +221,13 @@ export class MeetingController {
   /**
    * GET /meetings/:uid/calendar.ics
    * Downloads a single meeting (or its recurring series) as an .ics file (GH-3505).
-   * Reuses the `{ access: true }` FGA gate from getMeetingById as the sole authorization check,
-   * so private/restricted meetings 403 the same way the meeting detail page itself does.
+   * Visibility of the meeting itself is enforced upstream by the proxied `GET /itx/meetings/:uid`
+   * call inside getMeetingById — not by the `{ access: true }` flag, which only annotates the
+   * `organizer` field and is unused by this handler. Resolving the actual join link is a separate,
+   * stricter gate: `findRestrictedMeetingRegistrant` below mirrors `PublicMeetingController`'s own
+   * registrant check (used by `postMeetingJoinUrl`) so a viewer who isn't an invited registrant of a
+   * restricted meeting can't get a real join link out of the .ics download that the Join button
+   * itself would deny them.
    */
   public async getMeetingCalendarIcs(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
@@ -240,21 +245,61 @@ export class MeetingController {
         return;
       }
 
-      // access: true relies on the same FGA check the meeting detail page uses, so a caller who
-      // can't see a private/restricted meeting gets the same denial here as elsewhere (GH-3505).
-      const meeting = await this.meetingService.getMeetingById(req, uid, 'v1_meeting', { access: true });
+      const meeting = await this.meetingService.getMeetingById(req, uid, 'v1_meeting', { access: false });
 
-      // The join link must follow the same access-controlled path as the Join Meeting button.
+      // A recurring meeting has no single "start time" of its own — silently falling back to the
+      // series' original start would download the wrong occurrence rather than the one the caller
+      // was looking at, so a missing/stale occurrenceId is a 400, not a best-effort guess (GH-3505).
+      if (scope === 'occurrence' && meeting.recurrence) {
+        const activeOccurrences = meeting.occurrences?.filter((occ) => occ.status !== 'cancel') ?? [];
+        const matchedOccurrence = occurrenceId ? activeOccurrences.find((occ) => occ.occurrence_id === occurrenceId) : undefined;
+
+        if (!matchedOccurrence) {
+          const validationError = ServiceValidationError.forField(
+            'occurrenceId',
+            'A valid occurrenceId is required for a single occurrence of a recurring meeting',
+            {
+              operation: 'get_meeting_calendar_ics',
+              service: 'meeting_controller',
+              path: req.path,
+            }
+          );
+          next(validationError);
+          return;
+        }
+      }
+
       // Window/password checks in postMeetingJoinUrl don't apply here — a calendar invite is
-      // generated well before join time — so getMeetingJoinUrl is called directly. A failure
+      // generated well before join time, and an authenticated viewer who can load the meeting
+      // already sees the real meeting.password field directly in the payload. A restricted
+      // meeting still requires a matching registrant, same as the Join button. Any failure
       // degrades to an event with no join link rather than failing the whole download.
-      const joinUrl = await this.meetingService.getMeetingJoinUrl(req, uid).catch((error) => {
+      let joinUrl: Awaited<ReturnType<MeetingService['getMeetingJoinUrl']>> | null = null;
+      try {
+        let joinEmail: string | undefined;
+
+        if (meeting.restricted) {
+          const email = getEffectiveEmail(req) || '';
+          const username = getEffectiveUsername(req);
+          const matchedRegistrant = await this.findRestrictedMeetingRegistrant(req, uid, email, username);
+          joinEmail = matchedRegistrant?.email;
+
+          if (!joinEmail) {
+            logger.warning(req, 'get_meeting_calendar_ics', 'Caller is not a registered invitee of this restricted meeting, continuing without a join link', {
+              meeting_id: uid,
+            });
+          }
+        }
+
+        if (!meeting.restricted || joinEmail) {
+          joinUrl = await this.meetingService.getMeetingJoinUrl(req, uid, joinEmail);
+        }
+      } catch (error) {
         logger.warning(req, 'get_meeting_calendar_ics', 'Failed to resolve join URL, continuing without one', {
           meeting_id: uid,
           err: error,
         });
-        return null;
-      });
+      }
 
       const events = buildMeetingCalendarEvents(meeting, { scope, occurrenceId, joinUrl: joinUrl?.link });
       const ics = buildVCalendar(events, '-//LFX//Meeting Calendar//EN', meeting.title);
@@ -2653,5 +2698,28 @@ export class MeetingController {
       offsetHour <= 23 &&
       offsetMinute <= 59
     );
+  }
+
+  /**
+   * Mirrors `PublicMeetingController.restrictedMeetingCheck`'s registrant lookup (username first,
+   * email fallback), but returns `null` instead of throwing when no registrant matches — this
+   * endpoint degrades to "no join link" rather than failing the whole .ics download (GH-3505).
+   */
+  private async findRestrictedMeetingRegistrant(req: Request, uid: string, email: string, username: string | null): Promise<MeetingRegistrant | null> {
+    if (!email && !username) {
+      return null;
+    }
+
+    let registrants: MeetingRegistrant[] = [];
+
+    if (username) {
+      registrants = await this.meetingService.getMeetingRegistrantsByUsername(req, uid, username);
+    }
+
+    if (registrants.length === 0 && email) {
+      registrants = await this.meetingService.getMeetingRegistrantsByEmail(req, uid, email);
+    }
+
+    return registrants[0] ?? null;
   }
 }

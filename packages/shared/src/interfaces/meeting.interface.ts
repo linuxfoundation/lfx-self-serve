@@ -2263,3 +2263,13 @@ export interface MeetingCreateMenuRow {
  * column, where hanging the whole panel off to one side reads as belonging to something else.
  */
 export type MeetingCreateMenuAlign = 'right' | 'center';
+
+/** Common fields needed to build a calendar deep link for "Add to calendar" (GH-3505). */
+export interface CalendarLinkEvent {
+  title: string;
+  /** ISO start time. */
+  startIso: string;
+  durationMinutes: number;
+  description?: string;
+  joinUrl?: string;
+}

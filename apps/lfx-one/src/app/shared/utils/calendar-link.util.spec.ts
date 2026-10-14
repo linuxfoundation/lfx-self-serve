@@ -1,9 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { CalendarLinkEvent } from '@lfx-one/shared/interfaces';
 import { describe, expect, it } from 'vitest';
 
-import { buildGoogleCalendarUrl, buildOutlookCalendarUrl, CalendarLinkEvent } from './calendar-link.util';
+import { buildGoogleCalendarUrl, buildOutlookCalendarUrl } from './calendar-link.util';
 
 const EVENT: CalendarLinkEvent = {
   title: 'Weekly Sync',

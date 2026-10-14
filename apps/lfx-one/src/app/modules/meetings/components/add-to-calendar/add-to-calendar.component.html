@@ -3,25 +3,21 @@
 
 <div class="flex flex-col gap-2" data-testid="add-to-calendar">
   @if (isRecurring()) {
-    <div class="flex items-center gap-3 text-xs text-gray-700" role="radiogroup" aria-label="Add to calendar scope">
-      <label class="flex items-center gap-1.5">
-        <input
-          type="radio"
-          name="add-to-calendar-scope"
-          [checked]="scope() === 'occurrence'"
-          (change)="scope.set('occurrence')"
-          data-testid="add-to-calendar-scope-occurrence" />
-        This date only
-      </label>
-      <label class="flex items-center gap-1.5">
-        <input
-          type="radio"
-          name="add-to-calendar-scope"
-          [checked]="scope() === 'series'"
-          (change)="scope.set('series')"
-          data-testid="add-to-calendar-scope-series" />
-        Entire series
-      </label>
+    <div class="flex items-center gap-3" data-testid="add-to-calendar-scope">
+      <lfx-radio-button
+        [form]="scopeForm"
+        control="scope"
+        name="add-to-calendar-scope"
+        value="occurrence"
+        label="This date only"
+        inputId="add-to-calendar-scope-occurrence"></lfx-radio-button>
+      <lfx-radio-button
+        [form]="scopeForm"
+        control="scope"
+        name="add-to-calendar-scope"
+        value="series"
+        label="Entire series"
+        inputId="add-to-calendar-scope-series"></lfx-radio-button>
     </div>
   }
 
