@@ -226,6 +226,14 @@ export const ORG_CLA_REVIEW_COPY_FAILURE = {
   detail: 'Could not download a review copy of the CCLA. Please try again.',
 } as const;
 
+export const ORG_CLA_EASYCLA_ROLE_MISSING_ERROR_CODE = 'EASYCLA_ROLE_MISSING';
+
+export const ORG_CLA_EASYCLA_ROLE_MISSING_COPY = {
+  title: "You don't have an EasyCLA role at this organization",
+  subtitle: "Your access to this organization doesn't include an EasyCLA role yet, so its corporate CLAs can't be shown here.",
+  signClaAriaLabel: "Sign a corporate CLA — you don't have an EasyCLA role at this organization",
+} as const;
+
 /**
  * The leftover EasyCLA address, `/org/easycla` (#1983). Still routed for three consumers:
  * corporate-signing returns minted before lfx-self-serve#2743 deployed, returns minted by any
