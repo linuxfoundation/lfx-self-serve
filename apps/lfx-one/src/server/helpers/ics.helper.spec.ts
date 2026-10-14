@@ -15,7 +15,7 @@ vi.mock('@lfx-one/shared/utils', () => ({
 
 import { Meeting } from '@lfx-one/shared/interfaces';
 
-import { buildMeetingCalendarEvents, buildVCalendar, buildVEvent } from './ics.helper';
+import { buildMeetingCalendarEvents, buildVCalendar, buildVEvent, ICS_UID_DOMAIN } from './ics.helper';
 
 function makeMeeting(overrides: Partial<Meeting> = {}): Meeting {
   return {
@@ -85,7 +85,7 @@ describe('buildMeetingCalendarEvents', () => {
     const events = buildMeetingCalendarEvents(meeting, { scope: 'series', joinUrl: 'https://zoom.us/j/123' });
 
     expect(events).toHaveLength(1);
-    expect(events[0]).toContain('UID:meeting-1@lfx.linuxfoundation.org');
+    expect(events[0]).toContain(`UID:meeting-1@${ICS_UID_DOMAIN}`);
     expect(events[0]).toContain('URL:https://zoom.us/j/123');
   });
 
@@ -100,7 +100,7 @@ describe('buildMeetingCalendarEvents', () => {
     const events = buildMeetingCalendarEvents(meeting, { scope: 'occurrence', occurrenceId: 'occ-2' });
 
     expect(events).toHaveLength(1);
-    expect(events[0]).toContain('UID:meeting-1-occ-2@lfx.linuxfoundation.org');
+    expect(events[0]).toContain(`UID:meeting-1-occ-2@${ICS_UID_DOMAIN}`);
   });
 
   it('expands every non-cancelled occurrence when scope is "series"', () => {
@@ -116,8 +116,8 @@ describe('buildMeetingCalendarEvents', () => {
     const events = buildMeetingCalendarEvents(meeting, { scope: 'series' });
 
     expect(events).toHaveLength(2);
-    expect(events[0]).toContain('UID:meeting-1-occ-1@lfx.linuxfoundation.org');
-    expect(events[1]).toContain('UID:meeting-1-occ-3@lfx.linuxfoundation.org');
+    expect(events[0]).toContain(`UID:meeting-1-occ-1@${ICS_UID_DOMAIN}`);
+    expect(events[1]).toContain(`UID:meeting-1-occ-3@${ICS_UID_DOMAIN}`);
   });
 
   it('returns no events when every occurrence of a recurring series is cancelled, rather than falling back to the series start (GH-3505)', () => {
@@ -142,7 +142,7 @@ describe('buildMeetingCalendarEvents', () => {
     const events = buildMeetingCalendarEvents(meeting, { scope: 'occurrence', occurrenceId: 'does-not-exist' });
 
     expect(events).toHaveLength(1);
-    expect(events[0]).toContain('UID:meeting-1@lfx.linuxfoundation.org');
+    expect(events[0]).toContain(`UID:meeting-1@${ICS_UID_DOMAIN}`);
   });
 
   it('matches an occurrence whose id differs by seconds vs milliseconds units via isSameOccurrenceId (GH-3505)', () => {
@@ -153,6 +153,6 @@ describe('buildMeetingCalendarEvents', () => {
     const events = buildMeetingCalendarEvents(meeting, { scope: 'occurrence', occurrenceId: '1700000000' });
 
     expect(events).toHaveLength(1);
-    expect(events[0]).toContain('UID:meeting-1-1700000000@lfx.linuxfoundation.org');
+    expect(events[0]).toContain(`UID:meeting-1-1700000000@${ICS_UID_DOMAIN}`);
   });
 });

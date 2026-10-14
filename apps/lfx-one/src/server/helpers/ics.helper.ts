@@ -5,6 +5,9 @@ import { Meeting, MeetingCalendarScope, PaginatedResponse, VEventExtras } from '
 import { addMinutesToDate, isSameOccurrenceId } from '@lfx-one/shared/utils';
 import { logger } from '../services/logger.service';
 
+/** Host suffix for the globally-unique ICS UID per RFC 5545 §3.8.4.7 — this is LFX's own domain, not a per-meeting value. */
+export const ICS_UID_DOMAIN = 'lfx.linuxfoundation.org';
+
 /**
  * Formats an ISO date string to ICS DTSTART/DTEND format (e.g., 20230115T140000Z).
  */
@@ -74,7 +77,7 @@ export function buildVEvent(uid: string, title: string, startIso: string, durati
 
   const lines = [
     'BEGIN:VEVENT',
-    `UID:${uid}@lfx.linuxfoundation.org`,
+    `UID:${uid}@${ICS_UID_DOMAIN}`,
     `DTSTAMP:${dtstamp}`,
     `DTSTART:${dtstart}`,
     `DTEND:${dtend}`,
