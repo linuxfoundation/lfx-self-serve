@@ -167,14 +167,17 @@ export class FoundationMessageService {
   }
 
   /**
-   * Fetch the project's LATEST persisted Message Foundation document from the
-   * content-addressed partition `foundation-message/{project uid}/` — the
+   * Fetch the project's LATEST Message Foundation document — the
    * dec-agent-dependency-gating read path that lets a dependent agent (or any
    * other browser, or any other entitled user) reach a Message Foundation it
-   * did not generate. Delegated verbatim to the shared agent-artifact layer:
-   * newest by store write time, each candidate's bytes re-hashed against its
-   * content-addressed key before it can be served, and a storage failure
-   * degraded to null at WARN.
+   * did not generate — through {@link MktgDocumentStoreService.readLatest}:
+   * the latest stored revision of the project's living Message Foundation
+   * document, ordered by revision sequence, so a restored revision is what
+   * dependent agents read after a Restore. Only when the document has no
+   * revisions yet, or the revision read fails, does it fall back to the
+   * pre-revision agent-artifact read (newest by store write time under
+   * `foundation-message/{project uid}/`), which degrades a storage failure to
+   * null at WARN.
    */
   public async getStoredFoundationMessage(req: Request, project: string): Promise<FoundationMessageStoredResponse | null> {
     return this.documentStore.readLatest(req, this.artifactSpec, project);

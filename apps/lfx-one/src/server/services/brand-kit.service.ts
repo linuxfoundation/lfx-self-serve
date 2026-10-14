@@ -96,14 +96,15 @@ export class BrandKitService {
   }
 
   /**
-   * Fetch the project's LATEST persisted Brand Kit document from the
-   * content-addressed partition `brand-kit/{project uid}/` (the
-   * dec-agent-dependency-gating read path). Delegated verbatim to the shared
-   * agent-artifact layer: newest by store write time, each candidate's bytes
-   * re-hashed against its content-addressed key before it can be served, and a
-   * storage failure degraded to null at WARN — see
-   * {@link MktgArtifactService.readLatest} for why store write time, not the
-   * envelope `version`, is the ordering signal.
+   * Fetch the project's LATEST Brand Kit document (the
+   * dec-agent-dependency-gating read path) through
+   * {@link MktgDocumentStoreService.readLatest}: the latest stored revision of
+   * the project's living Brand Kit document, ordered by revision sequence, so a
+   * restored revision is what dependent agents read after a Restore. Only when
+   * the document has no revisions yet, or the revision read fails, does it fall
+   * back to the pre-revision agent-artifact read (newest by store write time
+   * under `brand-kit/{project uid}/`), which degrades a storage failure to null
+   * at WARN.
    */
   public async getStoredBrandKit(req: Request, project: string): Promise<BrandKitStoredResponse | null> {
     return this.documentStore.readLatest(req, this.artifactSpec, project);
