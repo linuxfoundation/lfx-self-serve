@@ -1178,20 +1178,40 @@ export function googleAdsTrimSpace(text: string): string {
 }
 
 /**
- * Whether a URL fails upstream's `validateServableURL` in a way `new URL()` does not catch. Three
- * Go parser rules, plus, deliberately, anything not starting `http(s)://` (a non-http scheme fails
- * the scheme check there anyway):
+ * Whether a URL fails upstream's `validateServableURL` in a way `new URL()` does not catch, so the
+ * refusal is named here instead of arriving as "platform campaign creation failed". Each rule was
+ * found by running both parsers over the same generated corpus; `new URL()` repairs or accepts all
+ * of these, Go's `url.Parse` / `url.ParseQuery` refuse them:
  *
- * - a `%` not followed by two hex digits, which `url.Parse` and `url.ParseQuery` both refuse;
- * - a `;` in the query, which `url.ParseQuery` refuses;
- * - a scheme not followed by `//`, which Go reads as an opaque URL with no host, where `new URL()`
- *   repairs `https:example.com` and `https:\\example.com`.
+ * - no `http(s)://` prefix (Go reads `https:example.com` and `https:\\example.com` as hostless;
+ *   any other scheme fails the scheme check there anyway);
+ * - a C0 control character or DEL before the fragment ("invalid control character in URL");
+ * - in the authority (between `//` and the first `/`, `?` or `#`): nothing at all, any `@` (even an
+ *   empty userinfo, which Go still refuses), any `%`, or any of `\\ { } \``;
+ * - a `%` not followed by two hex digits, anywhere;
+ * - a `;` in the query.
+ *
+ * The parsers also disagree the other way: `new URL()` refuses some hosts Go accepts (`<`, `>`, `]`,
+ * U+0085, a no-break or line separator, a lone surrogate, a port over 65535, an out-of-range IPv4
+ * address, an IPv6 zone id). No site can have those hosts and Google would refuse them anyway, so
+ * refusing them here is kept as the safer direction.
  */
 export function googleAdsUrlGoParseFlaw(url: string): boolean {
+  const prefix = /^https?:\/\//i.exec(url);
+  if (!prefix) return true;
+  // Go cuts the fragment off at the first `#` before it checks for control characters.
   const withoutFragment = url.split('#')[0];
+  for (let i = 0; i < withoutFragment.length; i++) {
+    const code = withoutFragment.charCodeAt(i);
+    if (code < 0x20 || code === 0x7f) return true;
+  }
+  const rest = url.slice(prefix[0].length);
+  const authority = rest.slice(0, rest.search(/[/?#]|$/));
+  if (authority === '' || /[@%\\{}`]/.test(authority)) return true;
+
   const queryStart = withoutFragment.indexOf('?');
   const query = queryStart === -1 ? '' : withoutFragment.slice(queryStart + 1);
-  return !/^https?:\/\//i.test(url) || /%(?![0-9A-Fa-f]{2})/.test(url) || query.includes(';');
+  return /%(?![0-9A-Fa-f]{2})/.test(url) || query.includes(';');
 }
 
 /**

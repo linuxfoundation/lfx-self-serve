@@ -6378,6 +6378,7 @@ describe('ImplementationTabComponent google sitelinks', () => {
     ['a semicolon in the query', 'https://events.example.org/register?a=1;b=2'],
     ['a stray percent sign', 'https://events.example.org/50%off'],
     ['no `//` after the scheme', 'https:events.example.org/register'],
+    ['a tab inside the path', 'https://events.example.org/reg\tister'],
   ])("refuses a destination with %s, which Go's URL parser refuses and `new URL()` accepts", (_label, finalUrl) => {
     const c = seedChannel(fixture, { includeSearch: true });
 

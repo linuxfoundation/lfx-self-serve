@@ -3144,6 +3144,8 @@ describe('CampaignController.createCampaign cutover', () => {
     ["a stray percent sign, which Go's `url.Parse` refuses", 'https://events.example.org/50%off'],
     ['no `//` after the scheme, which Go reads as having no host', 'https:events.example.org/register'],
     ['backslashes for slashes, which `new URL()` repairs and Go does not', 'https:\\\\events.example.org/register'],
+    ['a newline inside the host, which `new URL()` deletes and Go refuses', 'https://events.exa\nmple.org/register'],
+    ['a backslash inside the authority, which Go refuses as a host character', 'https://events.example.org\\register'],
   ])('names a sitelink destination with %s', async (_label, finalUrl) => {
     await controller.createCampaign(buildReq(googleBody({ sitelinks: [link('Register', { finalUrl })] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
 
