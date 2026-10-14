@@ -84,6 +84,19 @@ describe('FileObjectStoreBackend', () => {
       await expect(backend.getObject('brand-kit/proj-uid-1/zzz.md')).resolves.toBeNull();
     });
 
+    it('a sidecar left by a put interrupted before its body is invisible, and the next put of the key lands both', async () => {
+      await mkdir(join(root, 'brand-kit', 'proj-uid-1'), { recursive: true });
+      await writeFile(join(root, 'brand-kit', 'proj-uid-1', 'abc.md.meta.json'), JSON.stringify({ metadata: { version: '1' } }));
+
+      await expect(backend.headObject(key)).resolves.toBeNull();
+      await expect(backend.getObject(key)).resolves.toBeNull();
+      await expect(backend.listObjects('')).resolves.toEqual([]);
+
+      await backend.putObject(key, { body: Buffer.from('# doc'), contentType: 'text/markdown', cacheControl: 'private', metadata: { version: '1' } });
+
+      await expect(backend.getObject(key)).resolves.toEqual({ body: '# doc', metadata: { version: '1' } });
+    });
+
     it('headObject returns the stored metadata, and null for a missing object', async () => {
       await expect(backend.headObject(key)).resolves.toBeNull();
 
@@ -184,8 +197,8 @@ describe('FileObjectStoreBackend', () => {
       expect((await backend.listObjects('')).map((object) => object.key)).toEqual([key]);
     });
 
-    it.each(['brand-kit/x.md.meta.json', 'brand-kit/x.md.0f1e2d3c.partial'])(
-      'refuses a key that would collide with a sidecar or pass for a partial file: %j',
+    it.each(['brand-kit/x.md.meta.json', 'brand-kit/x.md.0f1e2d3c.partial', 'a.meta.json/x', 'brand-kit/x.partial/y.md'])(
+      'refuses a key any segment of which would collide with a sidecar or pass for a partial file: %j',
       async (key) => {
         const put = backend.putObject(key, { body: Buffer.from('x'), contentType: 'text/plain', cacheControl: 'private' });
         await expect(put).rejects.toBeInstanceOf(ServiceValidationError);
@@ -219,6 +232,16 @@ describe('FileObjectStoreBackend', () => {
         await expect(backend.getObject('a/b/c')).resolves.toEqual({ body: 'x', metadata: {} });
         // The failed rename cleaned up after itself: no .partial file next to the folder.
         await expect(readdir(join(root, 'a'))).resolves.toEqual(['b']);
+      });
+
+      it('a put whose sidecar cannot land writes nothing: a folder squatting the sidecar name', async () => {
+        await mkdir(join(root, 'a.meta.json'), { recursive: true });
+
+        const put = backend.putObject('a', input);
+        await expect(put).rejects.toBeInstanceOf(ServiceValidationError);
+        await expect(put).rejects.toMatchObject(refusedKey(/collides with a stored object/));
+        await expect(backend.headObject('a')).resolves.toBeNull();
+        await expect(readdir(root)).resolves.toEqual(['a.meta.json']);
       });
 
       it('reads a key that only names a folder, or sits under a stored object, as missing', async () => {

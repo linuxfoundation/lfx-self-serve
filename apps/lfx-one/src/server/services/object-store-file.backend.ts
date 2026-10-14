@@ -21,11 +21,12 @@ import { ServiceValidationError } from '../errors';
  *   metadata) lives in a `<key>.meta.json` sidecar next to the body. An
  *   object with no sidecar reads back with empty metadata, like an S3 object
  *   written without any.
- * - A put is all-or-nothing per file, as an S3 PUT is: body and sidecar are
- *   each written whole to a `.partial` neighbour and renamed into place, so a
- *   reader — or a crash — never meets a half-written one. The body lands
- *   first, so an interrupted put leaves at worst a complete body with stale
- *   or missing labels, which the next content-addressed put rewrites.
+ * - A put is all-or-nothing as observed, as an S3 PUT is: body and sidecar
+ *   are each written whole to a `.partial` neighbour and renamed into place,
+ *   so a reader — or a crash — never meets a half-written file. The sidecar
+ *   lands first and the body last, and a key reports an object only once its
+ *   body is a file, so a put interrupted between the two is invisible until
+ *   the next put of the key lands both.
  * - `lastModified` is the body file's mtime, so the shared artifact layer's
  *   "latest is write time" ordering — and its metadata-refresh rewrite that
  *   advances the stamp — behave exactly as against S3.
@@ -92,6 +93,7 @@ export class FileObjectStoreBackend implements ObjectStoreBackend {
 
   public async putObject(key: string, input: ObjectStorePutInput): Promise<void> {
     const bodyPath = this.resolveKey(key);
+    const sidecarPath = `${bodyPath}${OBJECT_STORE_FILE_METADATA_SUFFIX}`;
     const sidecar: ObjectStoreFileSidecar = {
       contentType: input.contentType,
       cacheControl: input.cacheControl,
@@ -99,13 +101,22 @@ export class FileObjectStoreBackend implements ObjectStoreBackend {
     };
     try {
       await mkdir(dirname(bodyPath), { recursive: true });
-      // Body first, sidecar last. Should the put stop between the two, the body is already
-      // complete and its advanced mtime plus the stale (or missing) labels make the caller's
-      // metadata check rewrite both on the next put, repairing the object. The reverse order
-      // would leave a sidecar announcing a version whose body never landed — which that same
-      // check reads as "already written", a torn object no later put repairs.
-      await writeWhole(bodyPath, input.body);
-      await writeWhole(`${bodyPath}${OBJECT_STORE_FILE_METADATA_SUFFIX}`, JSON.stringify(sidecar, null, 2));
+      // Sidecar first, body last. `headObject` and `getObject` report an object only once its
+      // body is a regular file, so a put that stops between the two leaves nothing a reader can
+      // see, and the next put of the key lands both. The reverse order would leave a readable
+      // body with no labels, which the caller's version check takes for the oldest draft — so a
+      // first draft would keep its empty labels for good.
+      await writeWhole(sidecarPath, JSON.stringify(sidecar, null, 2));
+      try {
+        await writeWhole(bodyPath, input.body);
+      } catch (error) {
+        // A sidecar with no body to describe is removed. One next to an existing body stays:
+        // the key already held an object, which the fresh labels describe.
+        if (!(await isRegularFile(bodyPath))) {
+          await rm(sidecarPath, { force: true });
+        }
+        throw error;
+      }
     } catch (error) {
       if (isNestedKeyCollision(error)) {
         throw ServiceValidationError.forField('key', `Object key collides with a stored object that is its path prefix or extension: "${key}"`, {
@@ -160,18 +171,24 @@ export class FileObjectStoreBackend implements ObjectStoreBackend {
   /**
    * The body file for a key. Refuses a key that cannot round-trip through
    * `listObjects` as the same string — an empty, `.` or `..` segment (so a
-   * leading, trailing or doubled `/`) — or that would collide with a sidecar
-   * or be mistaken for an in-flight `.partial` file, and then checks the
-   * resolved path still sits inside the purpose folder as
-   * defense in depth. A refused key is a typed 400 (`ServiceValidationError`
+   * leading, trailing or doubled `/`) — or any segment of which would collide
+   * with a sidecar or be mistaken for an in-flight `.partial` file (a folder
+   * squatting a sidecar's name would make a later put of the parent key fail
+   * halfway). It then checks the resolved path still sits inside the purpose
+   * folder as defense in depth. A refused key is a typed 400 (`ServiceValidationError`
    * on the `key` field), so a caller-built key — say a project uid carrying
    * `..` — reaches `apiErrorHandler` with structured metadata, not as an
    * untyped 500.
    */
   private resolveKey(key: string): string {
     const segments = key.split('/');
-    const reservedSuffix = key.endsWith(OBJECT_STORE_FILE_METADATA_SUFFIX) || key.endsWith(OBJECT_STORE_FILE_PARTIAL_SUFFIX);
-    if (!key || reservedSuffix || segments.some((segment) => segment === '' || segment === '.' || segment === '..')) {
+    const unstorable = (segment: string): boolean =>
+      segment === '' ||
+      segment === '.' ||
+      segment === '..' ||
+      segment.endsWith(OBJECT_STORE_FILE_METADATA_SUFFIX) ||
+      segment.endsWith(OBJECT_STORE_FILE_PARTIAL_SUFFIX);
+    if (!key || segments.some(unstorable)) {
       throw ServiceValidationError.forField('key', `Object key is not storable in the file-backed object store: "${key}"`, {
         operation: 'object_store_resolve_key',
       });
@@ -227,6 +244,14 @@ async function writeWhole(target: string, data: Uint8Array | string): Promise<vo
   } catch (error) {
     await rm(partial, { force: true });
     throw error;
+  }
+}
+
+async function isRegularFile(path: string): Promise<boolean> {
+  try {
+    return (await stat(path)).isFile();
+  } catch {
+    return false;
   }
 }
 
