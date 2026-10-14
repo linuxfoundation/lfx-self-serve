@@ -224,6 +224,19 @@ describe('redactGatewazeProxyCredentials', () => {
     expect(redactGatewazeProxyCredentials(url, 'http://localhost')).toBe(url);
   });
 
+  it('redacts a proxy URL nested in returnTo, at any depth', () => {
+    const inner = '/api/gatewaze/supabase/storage/v1/object/sign/a?token=SIGNED';
+    const once = redactGatewazeProxyCredentials(`/login?returnTo=${encodeURIComponent(inner)}`, 'http://localhost');
+    const twice = redactGatewazeProxyCredentials(
+      `/auth-error?returnTo=${encodeURIComponent(`/login?returnTo=${encodeURIComponent(inner)}`)}`,
+      'http://localhost'
+    );
+
+    expect(once).not.toContain('SIGNED');
+    expect(new URL(once, 'http://localhost').searchParams.get('returnTo')).toBe('/api/gatewaze/supabase/storage/v1/object/sign/a?token=redacted');
+    expect(twice).not.toContain('SIGNED');
+  });
+
   it('keeps an absolute URL absolute', () => {
     expect(redactGatewazeProxyCredentials('https://app.example.test/api/gatewaze/supabase/storage/v1/object/sign/a?token=S', 'https://app.example.test')).toBe(
       'https://app.example.test/api/gatewaze/supabase/storage/v1/object/sign/a?token=redacted'

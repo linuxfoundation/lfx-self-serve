@@ -186,26 +186,32 @@ export function redactMeetingPassword(url: string, base?: string): string {
 
 /**
  * Returns `url` with the credential query params of the Gatewaze host-session proxies (a Storage
- * signed-URL `token`, an `access_token`) replaced by a marker, or unchanged when the path is not
- * under `/api/gatewaze` (matched case-insensitively, like the mount) or carries none. A relative
- * `url` comes back relative.
+ * signed-URL `token`, an `access_token`) replaced by a marker, or unchanged when it carries none.
+ * They are redacted only on a path under `/api/gatewaze` (matched case-insensitively, like the
+ * mount). A param value that is itself a URL (`returnTo`, for one) is redacted the same way, at any
+ * depth. A relative `url` comes back relative.
  */
 export function redactGatewazeProxyCredentials(url: string, base?: string): string {
   try {
     const parsed = new URL(url, base);
     const path = parsed.pathname.toLowerCase();
-    if (path !== GW_HOST_SESSION_PROXY_API_MOUNT && !path.startsWith(`${GW_HOST_SESSION_PROXY_API_MOUNT}/`)) {
-      return url;
-    }
-    let redacted = false;
-    for (const key of GW_HOST_SESSION_PROXY_CREDENTIAL_QUERY_PARAMS) {
-      if (parsed.searchParams.has(key)) {
-        parsed.searchParams.set(key, CREDENTIAL_REDACTION_MARKER);
-        redacted = true;
+    const isProxyPath = path === GW_HOST_SESSION_PROXY_API_MOUNT || path.startsWith(`${GW_HOST_SESSION_PROXY_API_MOUNT}/`);
+    const updates: [string, string][] = [];
+    for (const [key, value] of parsed.searchParams) {
+      if (isProxyPath && (GW_HOST_SESSION_PROXY_CREDENTIAL_QUERY_PARAMS as readonly string[]).includes(key)) {
+        updates.push([key, CREDENTIAL_REDACTION_MARKER]);
+      } else if (isNestedUrlWithQuery(value)) {
+        const redactedValue = redactGatewazeProxyCredentials(value, parsed.origin);
+        if (redactedValue !== value) {
+          updates.push([key, redactedValue]);
+        }
       }
     }
-    if (!redacted) {
+    if (updates.length === 0) {
       return url;
+    }
+    for (const [key, value] of updates) {
+      parsed.searchParams.set(key, value);
     }
     return url.startsWith('/') ? `${parsed.pathname}${parsed.search}${parsed.hash}` : parsed.toString();
   } catch {

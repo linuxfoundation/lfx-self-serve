@@ -25,6 +25,12 @@ describe('otel.mjs invite-token redaction', () => {
     expect(redactCredentialUrl(url)).toBe(expected);
   });
 
+  it('redacts a Gatewaze proxy URL carried in returnTo', () => {
+    const redacted = redactCredentialUrl(`/login?returnTo=${encodeURIComponent('/api/gatewaze/supabase/storage/v1/object/sign/a?token=SIGNED')}`);
+
+    expect(redacted).not.toContain('SIGNED');
+  });
+
   it('redacts an invite URL carried in returnTo', () => {
     const redacted = redactCredentialUrl(`/login?returnTo=${encodeURIComponent('/mentorship/mentor/invites?token=SUPER.SECRET')}`);
 
