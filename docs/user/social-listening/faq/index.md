@@ -30,7 +30,7 @@ All mention data is provided by **Octolens** and consists exclusively of publicl
 
 The **Data as of** timestamp above the mentions feed shows when the underlying data was last refreshed. Mentions published after that time appear on the next refresh.
 
-The five analytics panels read governed models refreshed hourly. **Analytics as of** shows when those values were computed. Immediately after a UTC month or year rollover, the newest period can take up to an hour to appear. Mentions by Tag continues to follow the feed's content filters.
+The five analytics panels read governed models refreshed hourly. **Analytics as of** shows when those values were computed. Immediately after a UTC month or year rollover, the newest period may not appear until the next hourly refresh, with up to five additional minutes for cached panel results to expire. Mentions by Tag continues to follow the feed's content filters.
 
 ## Which platforms are monitored?
 

@@ -28,7 +28,7 @@ Saved views follow the same rules: their search and content-filter settings narr
 
 Changing any selector reloads all panels for the new scope.
 
-Governed analytics refresh hourly. The **Analytics as of** time above the panels shows when those values were computed.
+Governed analytics refresh hourly. The **Analytics as of** time above the panels shows when those values were computed. Cached panel results can lag the hourly model refresh by up to five minutes.
 
 ## Read the panels
 
