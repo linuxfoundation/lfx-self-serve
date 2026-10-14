@@ -944,9 +944,13 @@ export class SidebarNavService {
 
   private initCanGroupMemberViewSocialListening(): Signal<boolean> {
     // Probe with the slug as stored: the server looks it up verbatim.
-    const groupFoundationSlug = computed((): string | null =>
-      this.personaService.canViewExecutiveDashboards() ? null : (this.projectContextService.selectedFoundation()?.slug ?? null)
-    );
+    // Only probe for an authenticated user on the foundation lens (the docs shell injects this service too).
+    const groupFoundationSlug = computed((): string | null => {
+      if (!this.userService.authenticated() || this.activeLens() !== 'foundation' || this.personaService.canViewExecutiveDashboards()) {
+        return null;
+      }
+      return this.projectContextService.selectedFoundation()?.slug ?? null;
+    });
 
     return toSignal(
       toObservable(groupFoundationSlug).pipe(

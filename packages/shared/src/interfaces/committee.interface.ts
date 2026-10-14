@@ -456,7 +456,7 @@ export interface Committee {
   member_visibility?: CommitteeMemberVisibility;
   /** Whether to show meeting attendees by default */
   show_meeting_attendees?: boolean;
-  /** Board groups only: whether members can view the foundation's Social Listening */
+  /** Whether the group's members can view the foundation's Social Listening */
   members_can_view_social_listening?: boolean;
 
   // ── v2.0 Taxonomy fields ──
@@ -734,7 +734,7 @@ export interface CommitteeCreateData {
   member_visibility?: CommitteeMemberVisibility;
   /** Whether to show meeting attendees by default */
   show_meeting_attendees?: boolean;
-  /** Board groups only: whether members can view the foundation's Social Listening */
+  /** Whether the group's members can view the foundation's Social Listening */
   members_can_view_social_listening?: boolean;
 }
 
@@ -786,7 +786,7 @@ export interface CommitteeSettingsData {
   member_visibility?: CommitteeMemberVisibility;
   /** Update show meeting attendees setting */
   show_meeting_attendees?: boolean;
-  /** Board groups only: update whether members can view the foundation's Social Listening */
+  /** Update whether the group's members can view the foundation's Social Listening */
   members_can_view_social_listening?: boolean;
   /**
    * Update or clear the Slack incoming webhook URL (must match `hooks.slack.com/services/...`).

@@ -58,6 +58,7 @@ describe('SidebarNavService', () => {
   const selectedProject = signal<{ slug: string } | null>(null);
   const selectedFoundation = signal<{ slug: string } | null>(null);
   const hasBoardRole = signal(false);
+  const authenticated = signal(false);
   const getSocialListeningAccess = vi.fn(() => of({ canView: false, reason: 'none' }));
 
   const labels = (items: SidebarMenuItem[]): string[] => items.map((item) => item.label);
@@ -93,6 +94,7 @@ describe('SidebarNavService', () => {
     orgWriterSet.set(new Set());
     claManagerOrgSet.set(new Set());
     hasBoardRole.set(false);
+    authenticated.set(false);
     getSocialListeningAccess.mockReset().mockReturnValue(of({ canView: false, reason: 'none' }));
 
     TestBed.configureTestingModule({
@@ -141,7 +143,7 @@ describe('SidebarNavService', () => {
             formationOverviewAllowedSlug,
           },
         },
-        { provide: UserService, useValue: { authenticated: signal(false) } },
+        { provide: UserService, useValue: { authenticated } },
         { provide: WriterGrantsService, useValue: { hasWriterFoundation: signal(false) } },
         {
           provide: AnalyticsService,
@@ -778,6 +780,7 @@ describe('SidebarNavService', () => {
   });
   describe('foundation-lens Metrics for group members (lfx-self-serve-ops#387)', () => {
     beforeEach(() => {
+      authenticated.set(true);
       hasFullFoundationAccess.set(false);
       hasBoardRole.set(true);
       currentPersona.set('board-member');
@@ -800,6 +803,14 @@ describe('SidebarNavService', () => {
 
       expect(getSocialListeningAccess).toHaveBeenCalledWith('tlf');
       expect(labels(sectionItems(service.sidebarItems(), 'Metrics'))).toEqual(['Social Listening']);
+    });
+
+    it('does not probe for an anonymous visitor', () => {
+      authenticated.set(false);
+      TestBed.inject(SidebarNavService);
+      TestBed.tick();
+
+      expect(getSocialListeningAccess).not.toHaveBeenCalled();
     });
 
     it('shows no Metrics section when no group grants access', () => {
