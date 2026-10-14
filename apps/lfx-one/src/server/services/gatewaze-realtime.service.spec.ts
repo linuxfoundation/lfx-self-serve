@@ -7,6 +7,7 @@ import '@angular/compiler';
 import { createServer, request as httpRequest, Server } from 'node:http';
 import { AddressInfo } from 'node:net';
 
+import compression from 'compression';
 import express from 'express';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import WebSocket, { WebSocketServer } from 'ws';
@@ -120,6 +121,22 @@ beforeAll(async () => {
   upstreamOrigin = `http://127.0.0.1:${(upstream.address() as AddressInfo).port}`;
 
   const app = express();
+  // Wrap res.end the way production middleware does, so the refusal still has to come through them:
+  // compression, and an asynchronous session save like express-openid-connect's.
+  // @types/compression is typed against another @types/express, as server.ts notes.
+  app.use(compression() as unknown as express.RequestHandler);
+  app.use((_req, res, next) => {
+    const end = res.end.bind(res) as (...args: unknown[]) => typeof res;
+    res.end = ((...args: unknown[]) => {
+      setImmediate(() => end(...args));
+      return res;
+    }) as typeof res.end;
+    next();
+  });
+  // A gate that never answers, for the deadline test.
+  app.use((req, _res, next) => {
+    if (!req.headers['x-test-hang']) next();
+  });
   // Stands in for auth() and authMiddleware: a caller with the cookie is signed in, as the user the
   // test names; anyone else gets authMiddleware's 401.
   app.use((req, res, next) => {
@@ -178,11 +195,12 @@ interface Refused {
 const REALTIME_PATH = '/api/gatewaze/supabase/realtime/v1/websocket?apikey=sb_publishable_synthetic&vsn=1.0.0';
 
 /** Opens a socket the way the embed's realtime-js does, and reports either the open socket or the refusal. */
-function connect(options: { path?: string; origin?: string | null; cookie?: string | null; sub?: string } = {}): Promise<Connected | Refused> {
+function connect(options: { path?: string; origin?: string | null; cookie?: string | null; sub?: string; hang?: boolean } = {}): Promise<Connected | Refused> {
   const headers: Record<string, string> = {};
   if (options.origin !== null) headers['origin'] = options.origin ?? SITE_ORIGIN;
   if (options.cookie !== null) headers['cookie'] = options.cookie ?? `other=1; appSession=${LFX_SID}`;
   if (options.sub) headers['x-test-sub'] = options.sub;
+  if (options.hang) headers['x-test-hang'] = '1';
   const ws = new WebSocket(`${wsBase}${options.path ?? REALTIME_PATH}`, { headers });
   return new Promise((resolve, reject) => {
     ws.once('open', () => resolve({ ws }));
@@ -280,6 +298,8 @@ describe('GatewazeRealtimeService upgrade over a real socket', () => {
   it('refuses any other upgrade path with 404 before Express or Valkey', async () => {
     expect((await refusal({ path: '/api/gatewaze/session/me' })).status).toBe(404);
     expect((await refusal({ path: '/api/gw/realtime/v1/websocket' })).status).toBe(404);
+    // Only the socket realtime-js opens, not any other Realtime path.
+    expect((await refusal({ path: '/api/gatewaze/supabase/realtime/v1/api/broadcast' })).status).toBe(404);
     expect(openRealtimeSession).not.toHaveBeenCalled();
   });
 
@@ -346,13 +366,13 @@ describe('GatewazeRealtimeService upgrade over a real socket', () => {
     expect(Number(pending.headers['retry-after'])).toBeGreaterThan(0);
   });
 
-  it('refuses a path that leaves /realtime/v1 after normalisation with 400', async () => {
+  it('refuses a raw traversal path that only starts like the Realtime path with 404', async () => {
     const status = await new Promise<number>((resolve, reject) => {
       // A raw path: a URL string would be normalised by the client before it is sent.
       const req = httpRequest({
         host: '127.0.0.1',
         port: new URL(httpBase).port,
-        path: '/api/gatewaze/supabase/realtime/v1/x/%2e%2e/%2e%2e/%2e%2e/rest/v1/admin_profiles',
+        path: '/api/gatewaze/supabase/realtime/v1/websocket/%2e%2e/%2e%2e/%2e%2e/rest/v1/admin_profiles',
         headers: {
           connection: 'Upgrade',
           upgrade: 'websocket',
@@ -374,8 +394,9 @@ describe('GatewazeRealtimeService upgrade over a real socket', () => {
       req.end();
     });
 
-    expect(status).toBe(400);
+    expect(status).toBe(404);
     expect(upstreamUrls).toHaveLength(0);
+    expect(openRealtimeSession).not.toHaveBeenCalled();
   });
 
   it('answers a plain GET on the Realtime path with the uniform 404', async () => {
@@ -449,6 +470,14 @@ describe('GatewazeRealtimeService upgrade over a real socket', () => {
     expect((await refusal()).status).toBe(503);
   });
 
+  it('refuses with 503 and frees the slot when the gates never answer', async () => {
+    current = new GatewazeRealtimeService({ perUser: 2, total: 1 }, 100);
+
+    expect((await refusal({ hang: true })).status).toBe(503);
+    // The one pod slot is free again.
+    await opened();
+  });
+
   it('refuses with 503 once the pod is shutting down', async () => {
     shuttingDown.value = true;
 
@@ -460,12 +489,41 @@ describe('GatewazeRealtimeService upgrade over a real socket', () => {
     const fakeServer = { on: vi.fn() } as unknown as Server;
     shutdownHooks.length = 0;
 
-    service.attach(fakeServer, vi.fn());
+    expect(service.attach(fakeServer, vi.fn())).toBe(true);
 
     expect(fakeServer.on).toHaveBeenCalledWith('upgrade', expect.any(Function));
     expect(shutdownHooks).toHaveLength(1);
     const closeAll = vi.spyOn(service, 'closeAll');
     await shutdownHooks[0]();
     expect(closeAll).toHaveBeenCalled();
+  });
+
+  it('attaches nothing while host-session mode is off, so Node serves upgrade requests as before', async () => {
+    hostSessionEnabled.mockReturnValue(false);
+    const plain = createServer((_req, res) => res.end('ok'));
+    shutdownHooks.length = 0;
+
+    expect(new GatewazeRealtimeService().attach(plain, vi.fn())).toBe(false);
+
+    expect(plain.listenerCount('upgrade')).toBe(0);
+    expect(shutdownHooks).toHaveLength(0);
+    // Without a listener, Node answers an h2c upgrade on a normal path as a plain request.
+    await new Promise<void>((resolve) => plain.listen(0, '127.0.0.1', resolve));
+    const status = await new Promise<number>((resolve, reject) => {
+      const req = httpRequest({
+        host: '127.0.0.1',
+        port: (plain.address() as AddressInfo).port,
+        path: '/livez',
+        headers: { connection: 'Upgrade', upgrade: 'h2c' },
+      });
+      req.once('response', (res) => {
+        resolve(res.statusCode ?? 0);
+        res.resume();
+      });
+      req.once('error', reject);
+      req.end();
+    });
+    expect(status).toBe(200);
+    await new Promise<void>((resolve) => plain.close(() => resolve()));
   });
 });

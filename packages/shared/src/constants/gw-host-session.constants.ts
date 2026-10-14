@@ -53,8 +53,14 @@ export const GW_HOST_SESSION_LFX_LOGOUT_WAIT_MS = 3_000;
 /** Where the embed's Supabase client points in host-session mode (`supabase.url` is `<origin>/api/gatewaze/supabase`). */
 export const GW_HOST_SESSION_SUPABASE_MOUNT = '/api/gatewaze/supabase';
 
-/** Path prefix of the Realtime WebSocket that `supabase-js` opens under `supabase.url`. Every other upgrade is refused. */
-export const GW_REALTIME_PATH_PREFIX = `${GW_HOST_SESSION_SUPABASE_MOUNT}/realtime/v1/`;
+/** Path of the Realtime WebSocket that `supabase-js` opens under `supabase.url`. Every other upgrade path is refused. */
+export const GW_REALTIME_PATH = `${GW_HOST_SESSION_SUPABASE_MOUNT}/realtime/v1/websocket`;
+
+/** How long an upgrade may spend in the Express gates before it is refused with 503 and its socket slot freed. */
+export const GW_REALTIME_UPGRADE_TIMEOUT_MS = 30_000;
+
+/** Response headers copied from an Express answer onto a refused Realtime handshake. */
+export const GW_REALTIME_FORWARDED_REJECT_HEADERS = ['retry-after', 'x-gw-session'] as const;
 
 /** Realtime sockets one LFX user may hold open on one pod, the admin BFF's per-session cap. realtime-js opens one per client. */
 export const GW_REALTIME_MAX_SOCKETS_PER_USER = 20;

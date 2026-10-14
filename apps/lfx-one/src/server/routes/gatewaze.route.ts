@@ -5,9 +5,8 @@ import { Router } from 'express';
 
 import { GatewazeProxyController } from '../controllers/gatewaze-proxy.controller';
 import { GatewazeSessionController } from '../controllers/gatewaze-session.controller';
-import { gatewazeHostSessionNotFound, requireGatewazeBearer, requireGatewazeHostSession } from '../middleware/require-gatewaze-host-session.middleware';
+import { requireGatewazeBearer, requireGatewazeHostSession } from '../middleware/require-gatewaze-host-session.middleware';
 import { requireGwEmbedAccess } from '../middleware/require-gw-embed-access.middleware';
-import { getGatewazeRealtimeService } from '../services/gatewaze-realtime.service';
 
 const router = Router();
 const controller = new GatewazeSessionController();
@@ -39,13 +38,7 @@ router.get('/session/me', (req, res, next) => controller.me(req, res, next));
 router.post('/session/logout', (req, res, next) => controller.logout(req, res, next));
 
 // The Realtime WebSocket. An upgrade reaches this route only through GatewazeRealtimeService.onUpgrade,
-// which runs it through the whole app, so it has passed every gate above. The service then answers
-// the upgrade on the socket and nothing is written to `res`. A plain GET with no upgrade behind it
-// gets the uniform 404.
-router.get(/^\/supabase\/realtime\/v1\/./, async (req, _res, next) => {
-  if (!(await getGatewazeRealtimeService().handleRoute(req))) {
-    next(gatewazeHostSessionNotFound(req));
-  }
-});
+// which runs it through the whole app, so it has passed every gate above.
+router.get(/^\/supabase\/realtime\/v1\/websocket$/, (req, res, next) => controller.realtime(req, res, next));
 
 export default router;

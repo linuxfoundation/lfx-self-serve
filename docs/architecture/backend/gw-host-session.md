@@ -59,7 +59,7 @@ The ID token `express-openid-connect` received at login carries LFX's raw `nonce
 4. `requireGwEmbedAccess`, reused as is: ED, root writer or any writer grant, and 403 `GW_EMBED_IMPERSONATION_BLOCKED` while impersonating. No Gatewaze session is ever minted for an impersonation target.
 5. The proxies, `ALL /supabase/{rest,storage,functions}/v1/*` and `ALL /api/*`.
 6. `GET /session/me` and `POST /session/logout`.
-7. `GET /supabase/realtime/v1/*`, reached only by a WebSocket upgrade (see [Realtime](#realtime)).
+7. `GET /supabase/realtime/v1/websocket`, reached only by a WebSocket upgrade (see [Realtime](#realtime)). The controller hands it to the Realtime service.
 
 The controller sends the answers in the tables below with `res.status().json()` rather than through the error classes and `apiErrorHandler`. The embed's shim reads these exact bodies and the `x-gw-session` header, so they are contract answers, not failures. The gates' 404 and 403 still go through `apiErrorHandler`.
 
@@ -153,30 +153,32 @@ The embed's `supabase-js` builds its Realtime URL from `supabase.url`, which in 
 
 ### The upgrade hook
 
-`startServer()` calls `getGatewazeRealtimeService().attach(httpServer, app)` right after `app.listen`. It adds an `upgrade` listener to the HTTP server and a shutdown hook. Under `ng serve`, Express is mounted through `createNodeRequestHandler` and upgrades go to the dev server, so Realtime works only on a built server (`yarn build`, then `node dist/lfx-one/server/server.mjs` with `PM2=true`) or on a deployed environment.
+`startServer()` calls `getGatewazeRealtimeService().attach(httpServer, app)` right after `app.listen`. When host-session mode is on at startup, it adds an `upgrade` listener to the HTTP server and a shutdown hook. When the mode is off, it attaches nothing, so the server handles `Upgrade` requests exactly as before. Turning the flag on therefore needs a restart, as every environment flag does.
 
-Node gives the `upgrade` listener every request that carries an `Upgrade` header. Once the listener exists, Node no longer serves such a request as a normal one, so anything outside the Realtime path gets 404. Browsers send `Upgrade` only for WebSockets.
+Once the listener exists, Node gives it every request that carries an `Upgrade` header and no longer serves such a request as a normal one. So with the mode on, any upgrade outside the Realtime path gets 404, e.g. a `GET /livez` with `Upgrade: h2c`. Browsers send `Upgrade` only for WebSockets, and Cloudflare and Traefik do not send h2c.
+
+Under `ng serve`, Express is mounted through `createNodeRequestHandler` and upgrades go to the dev server, so Realtime works only on a built server (`yarn build`, then `node dist/lfx-one/server/server.mjs` with `PM2=true`) or on a deployed environment.
 
 ### Checks on each upgrade
 
 An upgrade runs outside Express, so `req.oidc` and the middleware chain are not there. `onUpgrade` makes the cheap checks first, then runs the request through the Express app:
 
-1. The path starts with `/api/gatewaze/supabase/realtime/v1/`, or 404.
+1. The path is exactly `/api/gatewaze/supabase/realtime/v1/websocket`, the socket `realtime-js` opens, or 404. No other Realtime path is proxied.
 2. The pod is not shutting down, or 503.
 3. Host-session mode is on (`isGatewazeHostSessionEnabled`), or the uniform 404. Nothing reads Valkey before this.
 4. `Origin` is exactly the origin of `PCC_BASE_URL`, or 403. A missing `Origin` is refused. `SameSite=Lax` still sends the cookie on a cross-site WebSocket, so this is the cross-site check.
 5. The pod is under its socket cap, or 503.
-6. The request runs through `app` with a `ServerResponse` that has no socket behind it. It passes the same `auth()`, `authMiddleware`, `apiRateLimiter`, `requireGatewazeHostSession` and `requireGwEmbedAccess` as every other `/api/gatewaze` request. So a caller with no LFX session gets 401, a caller without ED, root writer or a writer grant gets 403, and an impersonating admin gets 403. Whatever Express answers, its status becomes the refused handshake, with `Retry-After` and `x-gw-session` copied over. Nothing Express writes reaches the socket.
+6. The request runs through `app` with a `ServerResponse` that has no socket behind it. It passes the same `auth()`, `authMiddleware`, `apiRateLimiter`, `requireGatewazeHostSession` and `requireGwEmbedAccess` as every other `/api/gatewaze` request. So a caller with no LFX session gets 401, a caller without ED, root writer or a writer grant gets 403, and an impersonating admin gets 403. Whatever Express answers, its status becomes the refused handshake, with `Retry-After` and `x-gw-session` copied over. A 2xx or 3xx answer, e.g. a sign-in redirect, becomes 500. Nothing Express writes reaches the socket. If nothing answers within `GW_REALTIME_UPGRADE_TIMEOUT_MS` (30 seconds), the upgrade is refused with 503 and its slot is freed.
 7. The Realtime route (`handleRoute`) takes the upgrade. A plain GET to the same path, with no upgrade behind it, gets the uniform 404.
-8. The user is under the per-user cap, or 429.
+8. The user is under the per-user cap, or 429. A client that went away while the gates ran is dropped here, before any session is loaded.
 9. `openRealtimeSession(req)` loads the Gatewaze session the same way `getGatewazeSession` does: stored, refreshed, or minted from the LFX session. It starts listening for a sign-out before the load, so one that lands meanwhile is not missed.
 10. The session outcome maps as on `/session/me`: `ended` is 401 with the marker, `refused` and `unavailable` are 503, `host_session_unavailable` is 404. A non-admin gets 403, and a pending admin check gets 503 with `Retry-After`.
-11. `realtimeUpstreamUrl` builds the upstream URL from `GW_SUPABASE_URL`. It refuses a path that leaves `/realtime/v1` after normalisation (400), drops any `access_token` from the query, and sets `apikey` to the anon key.
+11. `realtimeUpstreamUrl` builds the upstream URL from `GW_SUPABASE_URL`. It refuses a path that leaves `/realtime/v1` after normalisation (400), as a second check behind step 1. It drops any `access_token` from the query, and sets `apikey` to the anon key.
 12. `ws` completes the handshake (`WebSocketServer` with `noServer`, messages capped at 8 MiB), and the socket is handed to `bridgeRealtime`.
 
-Browsers cannot read a refused handshake's status or headers. The embed learns a session ended from its next HTTP call, which carries the same `x-gw-session: expired` marker.
+Browsers cannot read a refused handshake's status or headers. The embed learns a session ended from its next HTTP call, which carries the same `x-gw-session: expired` marker. pino-http never logs an upgrade, because its response never finishes, so each refusal is logged at DEBUG with its status and a fixed reason, and never the URL or a header.
 
-Running the upgrade through Express means the gates cannot drift from the HTTP routes. It also means `express-openid-connect` loads the LFX session for the upgrade. The response never ends on success, so the session is not written back. A token that `authMiddleware` refreshed during the upgrade is not saved, and the next HTTP request refreshes it again.
+Running the upgrade through Express means the gates cannot drift from the HTTP routes. It also means `express-openid-connect` loads the LFX session for the upgrade. The response never ends on success, so the session is not written back. A token that `authMiddleware` refreshed during the upgrade is not saved, and the next HTTP request refreshes it again. That is safe only because the LFX One Auth0 client uses non-rotating refresh tokens. If it ever moves to rotating refresh tokens, an upgrade that refreshes would throw away the rotated token, and this has to change.
 
 ### Caps
 
@@ -184,6 +186,7 @@ Running the upgrade through Express means the gates cannot drift from the HTTP r
 | ------------------------- | ----- | ------ | -------------------------------------------------------- |
 | Sockets per LFX user      | 20    | 429    | One pod, keyed on the Auth0 `sub`; the admin BFF's value |
 | Sockets per pod           | 1,000 | 503    | Open sockets plus upgrades still being checked           |
+| Time in the Express gates | 30 s  | 503    | Per upgrade, so a stalled middleware cannot hold a slot  |
 | Channels per socket       | 100   | 1008   | The package's bridge                                     |
 | Message size from browser | 8 MiB | 1009   | `ws` `maxPayload`                                        |
 | Unsent data per socket    | 4 MiB | 1013   | The package's bridge, in each direction                  |
@@ -193,6 +196,8 @@ A slot is taken before anything async runs, so concurrent upgrades cannot all pa
 ### Token refresh
 
 The bridge refreshes the session 60 seconds before the access token expires by calling `fresh`. LFX's `fresh` first checks that the LFX session is still live: present in the session store, not expired, and not impersonating. A socket outlives the request that opened it, so this is how an LFX session that ended without `/logout` (expiry, or a forced `res.oidc.logout()`) closes the socket within one token lifetime. Then it calls `store.fresh(gwSid, { expectedSub })`, which refreshes under the store's lock. When the token changed, the bridge pushes the new token to every joined channel. When `fresh` returns null, the bridge closes the socket with 4001 and `realtime-js` reconnects through all the checks above. When GoTrue is unreachable, the bridge retries every 5 seconds while the current token is still valid, then closes with 1011.
+
+The LFX authorization (ED, root writer or a writer grant) is checked when the socket opens, not again during its life. A user who loses that access, or who starts impersonating, keeps an open socket until the next refresh or reconnect, so for at most one token lifetime. The socket runs as the real signed-in user throughout, never as an impersonation target.
 
 A Valkey fault on the LFX session read counts as a missing session, because `SessionStoreService` is fail-soft. The socket closes and reconnects, which is fail-closed.
 

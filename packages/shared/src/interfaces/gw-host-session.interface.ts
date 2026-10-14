@@ -93,3 +93,26 @@ export interface GatewazeRealtimeSession<TSession> {
   /** Removes the early sign-out listener. Call once the bridge listens for itself, or when the upgrade is refused. */
   release: () => void;
 }
+
+/** Per-pod Realtime socket caps for `GatewazeRealtimeService`. */
+export interface GatewazeRealtimeLimits {
+  /** Sockets one LFX user may hold on one pod. */
+  perUser: number;
+  /** Sockets, open or still being checked, that one pod accepts across all users. */
+  total: number;
+}
+
+/**
+ * A Realtime upgrade that passed the checks before Express and is now running through the Express
+ * app. `TSocket` and `THead` are Node's `Duplex` and `Buffer`, which this package does not depend on.
+ */
+export interface GatewazeRealtimePendingUpgrade<TSocket, THead> {
+  socket: TSocket;
+  head: THead;
+  /** Set once the Realtime route, the Express answer or the deadline has taken the upgrade, so it is answered once. */
+  taken: boolean;
+  /** Frees every slot this upgrade holds. Idempotent. */
+  release: () => void;
+  /** Adds a release step, run with `release`, or at once when already released. */
+  onRelease: (step: () => void) => void;
+}
