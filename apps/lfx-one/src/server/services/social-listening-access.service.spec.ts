@@ -60,14 +60,14 @@ describe('SocialListeningAccessService.getAccess', () => {
     service = new SocialListeningAccessService();
   });
 
-  it('admits LF Staff without a Board lookup', async () => {
+  it('admits LF Staff without a group lookup', async () => {
     getPersonas.mockResolvedValue(personas({ personas: ['contributor'], isLFStaff: true }));
 
     await expect(service.getAccess(req, 'tlf')).resolves.toEqual({ canView: true, reason: 'lf-staff' });
     expect(canGroupMemberViewSocialListening).not.toHaveBeenCalled();
   });
 
-  it('admits an ED of the requested foundation without a Board lookup', async () => {
+  it('admits an ED of the requested foundation without a group lookup', async () => {
     getPersonas.mockResolvedValue(
       personas({ personas: ['executive-director'], personaProjects: { 'executive-director': [{ projectUid: 'u', projectSlug: 'TLF', projectName: 'TLF' }] } })
     );
@@ -76,7 +76,7 @@ describe('SocialListeningAccessService.getAccess', () => {
     expect(canGroupMemberViewSocialListening).not.toHaveBeenCalled();
   });
 
-  it("falls back to the Board check for an ED outside their foundation, against that foundation's uid", async () => {
+  it("falls back to the group check for an ED outside their foundation, against that foundation's uid", async () => {
     getPersonas.mockResolvedValue(
       personas({ personas: ['executive-director'], personaProjects: { 'executive-director': [{ projectUid: 'u', projectSlug: 'cncf', projectName: 'CNCF' }] } })
     );
@@ -85,18 +85,18 @@ describe('SocialListeningAccessService.getAccess', () => {
     expect(canGroupMemberViewSocialListening).toHaveBeenCalledWith(req, 'tlf-uid');
   });
 
-  it("admits a Board member when the foundation's Board group opted in, looking the slug up as given", async () => {
+  it("admits a group member when the foundation's group opted in, looking the slug up as given", async () => {
     await expect(service.getAccess(req, 'TLF')).resolves.toEqual({ canView: true, reason: 'group-member' });
     expect(getProjectIdBySlug).toHaveBeenCalledWith(req, 'TLF');
   });
 
-  it('denies a Board member when the Board group has not opted in (the default)', async () => {
+  it('denies a group member when the group has not opted in (the default)', async () => {
     canGroupMemberViewSocialListening.mockResolvedValue(false);
 
     await expect(service.getAccess(req, 'tlf')).resolves.toEqual({ canView: false, reason: 'none' });
   });
 
-  it('denies a non-ED caller when no foundation is named — Board access is always foundation-scoped', async () => {
+  it('denies a non-ED caller when no foundation is named — group access is always foundation-scoped', async () => {
     await expect(service.getAccess(req, '')).resolves.toEqual({ canView: false, reason: 'none' });
     expect(getProjectIdBySlug).not.toHaveBeenCalled();
   });
@@ -106,7 +106,7 @@ describe('SocialListeningAccessService.getAccess', () => {
     expect(getProjectIdBySlug).not.toHaveBeenCalled();
   });
 
-  it("denies a child project's slug even when its Board opted in — only a foundation's own Board grants access", async () => {
+  it("denies a child project's slug even when its group opted in — only a foundation's own groups grant access", async () => {
     getProjectIdBySlug.mockResolvedValue({ uid: 'child-uid', slug: 'child', exists: true });
     getProjectById.mockResolvedValue({ uid: 'child-uid', slug: 'child', parent_uid: 'tlf-uid' });
     computeIsFoundation.mockReturnValue(false);
@@ -123,7 +123,7 @@ describe('SocialListeningAccessService.getAccess', () => {
     expect(canGroupMemberViewSocialListening).not.toHaveBeenCalled();
   });
 
-  it('remembers the Board answer per user and foundation, and coalesces concurrent lookups', async () => {
+  it('remembers the group answer per user and foundation, and coalesces concurrent lookups', async () => {
     await Promise.all([service.getAccess(req, 'tlf'), service.getAccess(req, 'tlf'), service.getAccess(req, 'tlf')]);
     await service.getAccess(req, 'tlf');
 
@@ -146,7 +146,7 @@ describe('SocialListeningAccessService.getAccess', () => {
       vi.useRealTimers();
     });
 
-    it('asks again once the cached Board answer is older than the TTL, so a removed member loses access', async () => {
+    it('asks again once the cached group answer is older than the TTL, so a removed member loses access', async () => {
       vi.useFakeTimers();
       await expect(service.getAccess(req, 'tlf')).resolves.toEqual({ canView: true, reason: 'group-member' });
 
