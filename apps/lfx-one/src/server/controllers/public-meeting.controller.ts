@@ -491,7 +491,6 @@ export class PublicMeetingController {
       // Log the success
       logger.success(req, 'post_meeting_link', startTime, {
         meeting_id: id,
-        email: joinEmail,
         project_uid: meeting.project_uid,
         title: meeting.title,
       });
