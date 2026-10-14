@@ -2,14 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { TWITTER_AUDIENCE_WINDOWS } from '../constants/campaign-optimize.constants';
-import type {
-  CampaignMetricsWindow,
-  CampaignServiceCampaign,
-  CampaignServiceCampaignRef,
-  CampaignServiceMicrosoftKeywords,
-  MicrosoftKeywordMetricsResponse,
-  MicrosoftKeywordsWindow,
-} from './campaign.interface';
+import type { CampaignMetricsWindow, CampaignServiceCampaign, CampaignServiceCampaignRef, MicrosoftKeywordsWindow } from './campaign.interface';
 
 // ---------------------------------------------------------------------------
 // Optimize-tab reads and levers proxied to lfx-v2-campaign-service
@@ -264,10 +257,13 @@ export interface CampaignServiceKeywordTargetingEntry {
   match_type?: string;
 }
 
+/** A platform whose campaigns have keyword TARGETING that can be read and removed (`get-keyword-targeting`). */
+export type KeywordTargetingPlatform = 'reddit-ads' | 'twitter-ads';
+
 /** `keyword-targeting`: the positive keywords of a Reddit ad group or X line item, read live. */
 export interface CampaignServiceKeywordTargeting {
   campaign_id: string;
-  platform: 'reddit-ads' | 'twitter-ads';
+  platform: KeywordTargetingPlatform;
   targeting_entity_id: string;
   keywords: CampaignServiceKeywordTargetingEntry[];
   /** Reddit only: a fingerprint of the whole targeting, which a removal must send back. */
@@ -304,21 +300,172 @@ export interface CampaignServiceKeywordTargetingRemovals {
   applied_count: number;
 }
 
+/** One removal's outcome. UNCONFIRMED is never worded as a failure: the keyword may already be gone. */
+export type KeywordTargetingRemovalOutcome = CampaignServiceKeywordTargetingRemovalResult['outcome'];
+
+/** One keyword of the targeting panel's list, with what a removal of it would send. */
+export interface KeywordTargetingListItem {
+  /** Stable within one read: the X criterion id, or the Reddit keyword exactly as read. */
+  key: string;
+  keyword: string;
+  /** X's match type in words ("Phrase"), or `''` on Reddit, whose keywords carry none. */
+  matchLabel: string;
+  /** What a removal names for this keyword, or `null` when the read gave it no handle (an X entry with no criterion id). */
+  removalItem: KeywordTargetingRemovalItem | null;
+}
+
+/** The targeting panel's read: the list, or why it could not be shown. */
+export interface KeywordTargetingReadState {
+  status: 'loading' | 'loaded' | 'error';
+  targeting: CampaignServiceKeywordTargeting | null;
+  /** A fixed sentence for `error`, never upstream text. `''` otherwise. */
+  message: string;
+}
+
+/** One SENT keyword joined, by POSITION, to the outcome the removal gave it. */
+export interface KeywordTargetingRemovalOutcomeRow {
+  /** The index in the request, which is also the index in `results`. */
+  index: number;
+  keyword: string;
+  outcome: KeywordTargetingRemovalOutcome;
+  label: string;
+  /** What to tell the operator beyond the label (why it was not removed, or reload-to-verify), or `''`. */
+  detail: string;
+}
+
+/** A removal that produced no per-keyword results at all. `unconfirmed`: any of them may have been removed. */
+export interface KeywordTargetingRemovalBatchOutcome {
+  state: 'failed' | 'unconfirmed';
+  /** A fixed sentence, never upstream text. */
+  message: string;
+}
+
+/**
+ * One campaign's latest keyword-targeting removal, as `CampaignKeywordTargetingService` keeps it
+ * ACROSS the panel's lifetime: the panel can be closed or unmounted while the removal runs on, and a
+ * reopened panel reads this back.
+ */
+export interface KeywordTargetingRemovalState {
+  pending: boolean;
+  /** Per-keyword outcomes, in the order the keywords were SENT. */
+  outcomeRows: KeywordTargetingRemovalOutcomeRow[];
+  /** The removal's outcome when it produced no per-keyword results at all. */
+  batchOutcome: KeywordTargetingRemovalBatchOutcome | null;
+  /** The keywords sent, in order, so a batch outcome can name them. */
+  sent: string[];
+  /** How many removals of this campaign have settled: a change means the targeting must be read again. */
+  settleCount: number;
+}
+
+/** One removal, as the panel hands it to `CampaignKeywordTargetingService`. */
+export interface KeywordTargetingRemovalSubmission {
+  projectSlug: string;
+  briefId: string;
+  campaignId: string;
+  campaignName: string;
+  /** The READ's platform: decides the failure wording. */
+  platform: KeywordTargetingPlatform;
+  /** The request body, built by the panel (Reddit keywords with `revision`, X criterion ids without). */
+  request: KeywordTargetingRemovalsRequest;
+  /** The keyword text of each item, in request order: the outcomes are zipped onto this list. */
+  sent: string[];
+}
+
+/**
+ * The Reddit `revision` the negative-keyword editor must send, read from the campaign's keyword
+ * targeting. `idle` for a platform that takes none.
+ */
+export interface NegativeKeywordsRevisionState {
+  status: 'idle' | 'loading' | 'ready' | 'error';
+  revision: string | null;
+}
+
 /** A platform whose campaign-ref resolve the BFF exposes. */
 export type CampaignRefPlatform = 'meta-ads' | 'reddit-ads' | 'twitter-ads' | 'linkedin-ads';
 
-/** The reporting windows the Reddit keyword read accepts (provisionally the Microsoft set). */
+/** The reporting windows the Reddit keyword read accepts: the Microsoft set (`yesterday` and `last_14_days` are 400 upstream). */
 export type RedditKeywordsWindow = MicrosoftKeywordsWindow;
 
 /**
- * PROVISIONAL: campaign-service has no Reddit keyword read yet. Typed on the Microsoft keyword
- * read it is meant to mirror (`get-microsoft-ads-keywords`); re-check against the published
- * design before `LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS` is turned on.
+ * One (campaign, keyword) row of campaign-service's `get-reddit-ads-keywords` (`reddit-ads-keyword`).
+ * READ-ONLY: Reddit's KEYWORD report carries no keyword id, match type or status, so a row addresses
+ * no action; Reddit keywords are acted on through the keyword-targeting levers.
  */
-export type CampaignServiceRedditKeywords = CampaignServiceMicrosoftKeywords;
+export interface CampaignServiceRedditKeywordRow {
+  /** Reddit's campaign id (map it with `/reddit-ads/campaign-ref`). */
+  campaign_id: string;
+  /** Reddit's keyword, verbatim. ABSENT when Reddit attributed the delivery to no keyword (community or interest targeting). */
+  text?: string;
+  impressions: number;
+  clicks: number;
+  /** Reddit SPEND, already micro-units, in the ad account's own currency. */
+  cost_micros: number;
+  /** A FRACTION (0.045), not a percentage. */
+  ctr: number;
+}
 
-/** Response of `GET /api/campaigns/reddit/keywords`: the Microsoft keyword table's shape. */
-export type RedditKeywordMetricsResponse = MicrosoftKeywordMetricsResponse;
+/** `reddit-ads-keywords`: the top 50 rows by impressions across the project's own Reddit campaigns, read live. */
+export interface CampaignServiceRedditKeywords {
+  window: RedditKeywordsWindow;
+  rows: CampaignServiceRedditKeywordRow[];
+  row_count: number;
+  /** True when the project's campaigns have more rows than were returned: the totals are then a subtotal. */
+  truncated: boolean;
+}
+
+/** A Reddit keyword row as the UI renders it: currency amounts and CTR as a percentage. */
+export interface RedditKeywordMetrics {
+  /** Stable within one read: the row's campaign and keyword. */
+  key: string;
+  /** Reddit's campaign id. */
+  campaignId: string;
+  /** The keyword, or `null` for delivery Reddit attributed to no keyword. */
+  keyword: string | null;
+  impressions: number;
+  clicks: number;
+  /** A percentage (4.5), not a fraction. */
+  ctr: number;
+  /** In the ad account's own currency. */
+  spend: number;
+}
+
+/** A Reddit keyword row as the table draws it: the campaign column's label precomputed. */
+export interface RedditKeywordDisplayRow extends RedditKeywordMetrics {
+  /** The brief's name for the campaign, or Reddit's campaign id when the brief does not know it. */
+  campaignLabel: string;
+}
+
+/** Totals over the rows returned (a subtotal when the read was truncated). No conversions: Reddit's read has none. */
+export interface RedditKeywordTotals {
+  impressions: number;
+  clicks: number;
+  spend: number;
+  avgCtr: number;
+}
+
+/** Response of `GET /api/campaigns/reddit/keywords?project=&window=`. */
+export interface RedditKeywordMetricsResponse {
+  pulledAt: string;
+  window: RedditKeywordsWindow;
+  totalKeywords: number;
+  truncated: boolean;
+  totals: RedditKeywordTotals;
+  keywords: RedditKeywordMetrics[];
+}
+
+/** What the Reddit keyword table shows: the read in flight, its rows, or why there are none. */
+export interface RedditKeywordsView {
+  state: 'idle' | 'loading' | 'loaded' | 'unavailable' | 'error';
+  data: RedditKeywordMetricsResponse | null;
+  /** A fixed sentence for `unavailable` and `error`, never upstream text. `''` otherwise. */
+  message: string;
+}
+
+/** One reporting-window choice of the Reddit keyword table. */
+export interface RedditKeywordsWindowOption {
+  value: RedditKeywordsWindow;
+  label: string;
+}
 
 /** How a lever reports an outcome it cannot confirm: its own error code and fixed client message. */
 export interface CampaignLeverUnconfirmedOutcome {

@@ -476,18 +476,21 @@ export class CampaignService {
   }
 
   /**
-   * Add campaign-level negative keywords to one campaign (Microsoft Advertising only).
+   * Add negative keywords to one Microsoft Advertising, Reddit or X campaign.
    *
    * NOT atomic and POSITIONAL: `results[i]` answers `negativeKeywords[i]`, each with its own outcome,
    * so the caller zips them onto the list it sent. No etag: nothing is persisted on the row.
+   * `revision` is Reddit's, from the keyword-targeting read; it is put in the body only when given,
+   * because Microsoft Advertising and X refuse the field whenever it is present.
    */
   public addNegativeKeywords(
     projectSlug: string,
     briefId: string,
     campaignId: string,
-    negativeKeywords: CampaignNegativeKeywordInput[]
+    negativeKeywords: CampaignNegativeKeywordInput[],
+    revision?: string
   ): Observable<CampaignNegativeKeywordsResult> {
-    const body: CampaignNegativeKeywordsRequest = { briefId, negativeKeywords };
+    const body: CampaignNegativeKeywordsRequest = { briefId, negativeKeywords, ...(revision !== undefined && { revision }) };
     return this.http.post<CampaignNegativeKeywordsResult>(`/api/campaigns/${encodeURIComponent(campaignId)}/negative-keywords`, body, {
       params: new HttpParams().set('project', projectSlug),
     });

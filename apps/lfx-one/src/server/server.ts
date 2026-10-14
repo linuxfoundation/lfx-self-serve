@@ -131,10 +131,12 @@ app.use(
   compression({
     level: 6,
     threshold: 1024,
-    // Exclude /api/gw: gw-proxy.controller.ts streams the upstream Gatewaze response body
-    // straight through byte-for-byte, so this middleware must never re-compress or re-wrap it.
-    // The body reaching here is already plaintext — undici decodes whatever the upstream encoded —
-    // so the exclusion is about not re-wrapping a proxied stream, not about what it arrived as.
+    // Exclude /api/gw and /api/gatewaze: gw-proxy.controller.ts and gatewaze-proxy.controller.ts
+    // stream the upstream response body straight through byte-for-byte, so this middleware must
+    // never re-compress or re-wrap it. The two arrive differently. /api/gw's body is already
+    // plaintext, because undici decodes whatever the upstream encoded. /api/gatewaze's is still
+    // encoded, because @gatewaze/host-session forwards over node:http, and its Content-Encoding is
+    // passed through with it, so compressing it again would corrupt it.
     //
     // This is the exclusion that silently did nothing, and `gwMountPath` is why it now works: the
     // filter is deferred to the first `res.write`, by which point `req.path` has been trimmed to
@@ -153,10 +155,10 @@ app.use(
   })
 );
 
-// /api/gw (gw-proxy.route.ts) is excluded from both parsers below: it forwards the request body to
-// GW_API_URL byte-for-byte and content-type-agnostically (JSON, multipart, or anything else), so it
-// needs the raw, unconsumed request stream rather than a parsed body it would have to
-// re-serialize. These two mounts run before authMiddleware (like the parsers they wrap), so
+// /api/gw (gw-proxy.route.ts) and /api/gatewaze (gatewaze.route.ts) are excluded from both parsers
+// below. Each forwards the request body upstream byte-for-byte and content-type-agnostically (JSON,
+// multipart, or anything else), so it needs the raw, unconsumed request stream rather than a parsed
+// body it would have to re-serialize. These two mounts run before authMiddleware (like the parsers they wrap), so
 // exclusion by path is used here rather than mounting gwProxyRouter "before" them — see
 // gw-proxy.route.ts's own mount below, after authMiddleware, for the auth-ordering half of this.
 const jsonBodyParser = express.json({ limit: '15mb' });
@@ -176,7 +178,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   urlencodedBodyParser(req, res, next);
 });
 
-// See `attachGwDrainGuard`: /api/gw is excluded from the body parsers above, so a middleware
+// See `attachGwDrainGuard`: /api/gw and /api/gatewaze are excluded from the body parsers above, so a middleware
 // between here and the proxy router that answers on its own (401, 429) would otherwise leave an
 // in-progress upload unread and the connection unable to close.
 app.use((req: Request, res: Response, next: NextFunction) => {
@@ -462,10 +464,11 @@ app.use('/api/mktg-agents', mktgAgentsRouter);
 // above, per the spec; see the body-parser/compression exclusions above for the other half of
 // this route's isolation from global middleware.
 app.use('/api/gw', gwProxyRouter);
-// Gatewaze host-session mode: the embed's session check and sign-out, answered from the session
-// LFX One holds for the user (gw-host-session.md). A uniform 404 unless LFX_GATEWAZE_HOST_SESSION
-// and its config are on, then the same authorization as /api/gw. JSON only, so unlike /api/gw it
-// needs no body-parser or compression exclusion.
+// Gatewaze host-session mode: the embed's session check and sign-out, and its Supabase and API
+// proxies, answered with the session LFX One holds for the user (gw-host-session.md). A uniform 404
+// unless LFX_GATEWAZE_HOST_SESSION and its config are on, then the same authorization as /api/gw.
+// The proxies stream the raw body like /api/gw, so `isGwProxyPath` gives this mount the same
+// body-parser, compression and drain-guard exclusions above.
 app.use('/api/gatewaze', gatewazeRouter);
 
 app.use('/public/api/*', apiErrorHandler);

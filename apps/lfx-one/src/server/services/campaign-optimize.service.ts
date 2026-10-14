@@ -132,10 +132,10 @@ export class CampaignOptimizeService {
   }
 
   /**
-   * Reddit keyword performance for the project's OWN campaigns: the Microsoft keyword read's
-   * sibling (`getMicrosoftAdsKeywords`), same row shape and same query-parameter window. PENDING
-   * upstream: campaign-service has no `GET /projects/{p}/reddit-ads/keywords` yet, so the wire type
-   * is provisional and the route is behind `LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS`.
+   * Reddit keyword performance for the project's OWN campaigns (`get-reddit-ads-keywords`,
+   * campaign-service #331): the top 50 (campaign, keyword) rows by impressions, read live and
+   * read-only. The window is a QUERY parameter, omitted when the caller names none so upstream
+   * applies `last_30_days`.
    */
   public async getRedditAdsKeywords(req: Request, projectSlug: string, window?: RedditKeywordsWindow): Promise<CampaignServiceRedditKeywords> {
     if (projectSlug === '') {
