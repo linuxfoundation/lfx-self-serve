@@ -20,6 +20,7 @@ import {
   buildUpdateVoteRequest,
   compareVotesByRecency,
   computeVoteParticipationStats,
+  isVoteClosingSoon,
   mapVoteToFormValue,
   matchesMyVotesQuickFilter,
 } from './vote.utils';
@@ -64,6 +65,7 @@ describe('matchesMyVotesQuickFilter', () => {
     ['invalid', false],
   ])('matches deadline %s: %s', (end_time, expected) => {
     expect(matchesMyVotesQuickFilter(vote({ end_time }), 'closing-soon', nowMs)).toBe(expected);
+    expect(isVoteClosingSoon(vote({ end_time }), nowMs)).toBe(expected);
   });
 
   it('includes responded votes only in the deadline summary', () => {
@@ -82,12 +84,14 @@ describe('matchesMyVotesQuickFilter', () => {
 
   it.each([PollStatus.DISABLED, PollStatus.ENDED, 'unknown'])('excludes inactive status %s from both summaries', (status) => {
     expect(matchesMyVotesQuickFilter(vote({ status: status as PollStatus }), 'closing-soon', nowMs)).toBe(false);
+    expect(isVoteClosingSoon(vote({ status: status as PollStatus }), nowMs)).toBe(false);
     expect(matchesMyVotesQuickFilter(vote({ status: status as PollStatus }), 'needs-vote', nowMs)).toBe(false);
   });
 
   it('normalizes mixed-case ACTIVE status', () => {
     const active = vote({ status: 'AcTiVe' as PollStatus });
     expect(matchesMyVotesQuickFilter(active, 'closing-soon', nowMs)).toBe(true);
+    expect(isVoteClosingSoon(active, nowMs)).toBe(true);
     expect(matchesMyVotesQuickFilter(active, 'needs-vote', nowMs)).toBe(true);
   });
 });

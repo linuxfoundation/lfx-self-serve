@@ -15,9 +15,11 @@ import {
   QueryServiceResponse,
   UpdateVoteRequest,
   Vote,
+  VoteListResponse,
+  VoteSummary,
   VoteResultsResponse,
 } from '@lfx-one/shared/interfaces';
-import { compareVotesByRecency, computeIsFoundation, sortCommentResponsesByRecency } from '@lfx-one/shared/utils';
+import { compareVotesByRecency, computeIsFoundation, isVoteClosingSoon, normalizePollStatus, sortCommentResponsesByRecency } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -162,14 +164,17 @@ export class VoteService {
    * `project_name`, `project_slug`, `is_foundation` and `parent_project_uid`; opt out when the
    * caller discards them.
    */
-  public async getVotes(req: Request, query: Record<string, unknown> = {}, options: { includeProject?: boolean } = {}): Promise<PaginatedResponse<Vote>> {
+  public async getVotes(req: Request, query: Record<string, unknown> = {}, options: { includeProject?: boolean } = {}): Promise<VoteListResponse> {
     const { includeProject = true } = options;
     logger.debug(req, 'get_votes', 'Starting vote fetch', {
       query_params: Object.keys(query),
     });
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { page_size: rawPageSize, page_token: rawPageToken, order: _order, ...upstreamParams } = query;
+    const { page_size: rawPageSize, page_token: rawPageToken, order: _order, closing_soon: closingSoon, ...upstreamParams } = query;
+    if (closingSoon !== undefined && closingSoon !== 'true' && closingSoon !== 'false') {
+      throw ServiceValidationError.forField('closing_soon', 'Expected a single true or false value', { operation: 'get_votes', service: 'vote_service' });
+    }
 
     // Unscoped calls drain the entire vote index and re-sort per request (GH-1558 review) — every
     // first-party caller narrows, so log the unscoped path to make a stray caller visible before it
@@ -178,21 +183,9 @@ export class VoteService {
       logger.debug(req, 'get_votes', 'Unscoped vote list request drains the full vote index');
     }
 
-    // failOnPartial (GH-1558): the offset slices assume the drained set is the whole filtered set —
-    // a later page failing must surface as an error, not a 200 with votes silently missing.
-    const drained = await fetchAllQueryResources<IndexedVote>(
-      req,
-      (pageToken) =>
-        this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVote>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          ...upstreamParams,
-          type: 'vote',
-          page_size: VoteService.voteListUpstreamPageSize,
-          ...(pageToken && { page_token: pageToken }),
-        }),
-      { failOnPartial: true }
-    );
-
-    const sorted = drained.map((vote) => this.normalizeIndexedVote(req, vote)).sort(compareVotesByRecency);
+    const scoped = await this.fetchScopedIndexedVotes(req, upstreamParams);
+    const nowMs = Date.now();
+    const sorted = (closingSoon === 'true' ? scoped.filter((vote) => isVoteClosingSoon(vote, nowMs)) : scoped).sort(compareVotesByRecency);
 
     const pageSize = this.parseVoteListPageSize(rawPageSize);
     const offset = this.parseVoteListOffset(rawPageToken);
@@ -211,7 +204,18 @@ export class VoteService {
       has_more_pages: !!pageToken,
     });
 
-    return { data: votes, page_token: pageToken };
+    return { data: votes, page_token: pageToken, ...(closingSoon === 'true' && { total_records: sorted.length }) };
+  }
+
+  /** Complete management scope; no personal participation lookup or project enrichment. */
+  public async getVotesSummary(req: Request, parent: string, group?: string): Promise<VoteSummary> {
+    const votes = await this.fetchScopedIndexedVotes(req, { parent, ...(group && { filters: [`committee_name:${group}`] }) });
+    const nowMs = Date.now();
+    return {
+      active_votes: votes.filter((vote) => normalizePollStatus(vote.status) === PollStatus.ACTIVE).length,
+      closing_soon: votes.filter((vote) => isVoteClosingSoon(vote, nowMs)).length,
+      as_of: new Date(nowMs).toISOString(),
+    };
   }
 
   /**
@@ -732,6 +736,22 @@ export class VoteService {
         parent_project_uid: project.parent_uid || vote.parent_project_uid,
       };
     });
+  }
+
+  /** Offset pages and totals must reject incomplete scans rather than silently undercount. */
+  private async fetchScopedIndexedVotes(req: Request, upstreamParams: Record<string, unknown>): Promise<Vote[]> {
+    const drained = await fetchAllQueryResources<IndexedVote>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVote>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          ...upstreamParams,
+          type: 'vote',
+          page_size: VoteService.voteListUpstreamPageSize,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
+    );
+    return drained.map((vote) => this.normalizeIndexedVote(req, vote));
   }
 
   /**

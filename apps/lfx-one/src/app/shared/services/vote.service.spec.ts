@@ -50,6 +50,45 @@ describe('VoteService', () => {
     service = TestBed.inject(VoteService);
   });
 
+  it.each([undefined, 'Synthetic Board'])('requests only parent/group summary parameters and preserves the response: %s', (group) => {
+    const result = { active_votes: 30, closing_soon: 4, as_of: '2026-10-09T12:00:00Z' };
+    http.get.mockReturnValue(of(result));
+    const next = vi.fn();
+    service.getVotesSummaryByProject('synthetic-project', group).subscribe(next);
+    const [url, options] = http.get.mock.calls[0];
+    expect(url).toBe('/api/votes/summary');
+    expect(options.params.keys().sort()).toEqual(group ? ['group', 'parent'] : ['parent']);
+    expect(options.params.get('parent')).toBe('project:synthetic-project');
+    expect(options.params.get('group')).toBe(group ?? null);
+    expect(next).toHaveBeenCalledWith(result);
+  });
+
+  it('propagates summary errors without substituting zero', () => {
+    const failure = new Error('Summary unavailable');
+    http.get.mockReturnValue(throwError(() => failure));
+    const error = vi.fn();
+    service.getVotesSummaryByProject('synthetic-project').subscribe({ error });
+    expect(error).toHaveBeenCalledWith(failure);
+  });
+
+  it.each([undefined, false, true])('adds only the optional closing flag and forwards authoritative totals: %s', (closingOnly) => {
+    const result = { data: [], total_records: 0 };
+    http.get.mockReturnValue(of(result));
+    const next = vi.fn();
+    service
+      .getVotesByProjectPaginated('synthetic-project', 25, 'offset:25', 'Board', ['status:active', 'committee_name:Synthetic Board'], closingOnly)
+      .subscribe(next);
+    const [url, options] = http.get.mock.calls[0];
+    expect(url).toBe('/api/votes');
+    expect(options.params.get('closing_soon')).toBe(closingOnly === undefined ? null : String(closingOnly));
+    expect(options.params.get('parent')).toBe('project:synthetic-project');
+    expect(options.params.get('page_size')).toBe('25');
+    expect(options.params.get('page_token')).toBe('offset:25');
+    expect(options.params.get('name')).toBe('Board');
+    expect(options.params.getAll('filters')).toEqual(['status:active', 'committee_name:Synthetic Board']);
+    expect(next).toHaveBeenCalledWith(result);
+  });
+
   it('propagates personal-feed HTTP failures instead of reporting confirmed empty success', () => {
     const failure = new Error('Personal feed unavailable');
     http.get.mockReturnValue(throwError(() => failure));

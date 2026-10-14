@@ -86,6 +86,28 @@ The `page_token` from the query service passes through unchanged.
 > only for internal consumers that need the raw upstream cursor, like committee-activity's
 > saturation walk.
 
+### Management vote summaries and closing-only lists
+
+`GET /api/votes/summary` accepts exactly one nonempty `parent=project:<uid>` and an optional
+nonempty `group` committee name. Other keys and repeated values are rejected. It drains the
+same caller-authorized indexed scope as the list, using `committee_name:<group>` when supplied,
+and returns `{ active_votes, closing_soon, as_of }`. No invitation lookup or project enrichment
+is needed. Search, status, and pagination never affect these totals; foundation scope is the
+selected foundation's project UID, not an expansion into descendants.
+
+`GET /api/votes?closing_soon=true` applies the shared active/deadline predicate to the complete
+normalized set **before** sorting and slicing. This BFF-only flag accepts a single `true` or
+`false` and is never forwarded upstream. True responses add `total_records` from the same
+snapshot as the returned page; the dashboard skips the separate count request in this mode.
+False/omitted flags preserve the ordinary response shape. Summary and list both require
+`failOnPartial: true`, so a failed scan is unavailable, never a partial total.
+
+Closing means `now < end_time <= now + 7 × 24 hours`. Active totals still include indexed-active
+votes whose deadlines are past or invalid. The summary's RFC3339 `as_of` describes its snapshot;
+list pagination takes a fresh snapshot, so counts can legitimately differ at a deadline.
+Existing cursor recovery handles shrinking sets. Refresh/re-entry reloads totals and rows,
+but cannot promise immediate convergence of the search index after mutations.
+
 ## Backend: Complete Fetch (All Pages)
 
 When the server needs all records (e.g., meeting registrants for invitation checks), use the `fetchAllQueryResources` helper:

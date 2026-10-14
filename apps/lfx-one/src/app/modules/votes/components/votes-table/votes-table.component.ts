@@ -73,6 +73,7 @@ export class VotesTableComponent {
   public readonly rowsPerPage = input<number>(10);
   public readonly first = input<number>(0);
   public readonly lazy = input<boolean>(false);
+  public readonly serverFiltersActive = input<boolean>(false);
   public readonly groupOptions = input<{ label: string; value: string | null }[]>([{ label: 'All Groups', value: null }]);
   public readonly foundationOptions = input<{ label: string; value: string | null }[]>([]);
   public readonly projectOptions = input<{ label: string; value: string | null }[]>([]);
@@ -116,7 +117,7 @@ export class VotesTableComponent {
   protected readonly statusTabOptions: Signal<FilterPillOption[]> = this.initStatusTabOptions();
   protected readonly displayedVotes: Signal<VoteTableRow[]> = this.initDisplayedVotes();
   protected readonly isFiltered = computed(() => {
-    if (this.lazy()) return false;
+    if (this.lazy()) return this.serverFiltersActive();
     const f = this.filterState();
     return this.statusTab() !== 'all' || !!f.search.trim() || !!f.group || !!this.quickFilter() || this.scopeActive();
   });

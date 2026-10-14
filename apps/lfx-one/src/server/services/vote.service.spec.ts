@@ -51,11 +51,15 @@ const {
 vi.mock('@lfx-one/shared/utils', async () => {
   // The real GH-1558 comparator — the ordering specs must exercise the service's actual sort, not
   // a stub. Deep importActual avoids the barrel's @angular/common/http graph (compiler shim above).
-  const { compareVotesByRecency } = await vi.importActual<typeof import('@lfx-one/shared/utils/vote.utils')>('@lfx-one/shared/utils/vote.utils');
+  const { compareVotesByRecency, isVoteClosingSoon } =
+    await vi.importActual<typeof import('@lfx-one/shared/utils/vote.utils')>('@lfx-one/shared/utils/vote.utils');
+  const { normalizePollStatus } = await vi.importActual<typeof import('@lfx-one/shared/utils/poll.utils')>('@lfx-one/shared/utils/poll.utils');
   const { maskIdentifierForLogs } = await vi.importActual<typeof import('@lfx-one/shared/utils/email.utils')>('@lfx-one/shared/utils/email.utils');
   return {
     computeIsFoundation,
     compareVotesByRecency,
+    isVoteClosingSoon,
+    normalizePollStatus,
     maskIdentifierForLogs,
     sortCommentResponsesByRecency: vi.fn((responses: unknown[]) => responses),
   };
@@ -962,6 +966,93 @@ describe('VoteService', () => {
           return collected;
         }
       );
+
+    it('summarizes every scoped page without enrichment or participation reads', async () => {
+      vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-09T12:00:00Z'));
+      drainPages();
+      proxyRequest
+        .mockResolvedValueOnce({
+          resources: [
+            { data: { ...indexRow, status: 'AcTiVe', end_time: '2026-10-10T12:00:00Z' } },
+            { data: { ...indexRow, vote_uid: 'overdue', end_time: '2026-10-01T12:00:00Z' } },
+            { data: { ...indexRow, vote_uid: 'draft', status: 'disabled', end_time: '2026-10-10T12:00:00Z' } },
+          ],
+          page_token: 'next',
+        })
+        .mockResolvedValueOnce({
+          resources: [
+            { data: { ...indexRow, vote_uid: 'boundary', end_time: '2026-10-16T12:00:00Z' } },
+            { data: { ...indexRow, vote_uid: 'invalid', end_time: 'invalid' } },
+            { data: { ...indexRow, vote_uid: 'ended', status: 'ended', end_time: '2026-10-10T12:00:00Z' } },
+          ],
+        });
+      try {
+        expect(await service.getVotesSummary(req, `project:${PROJECT_UID}`, 'Synthetic Board')).toEqual({
+          active_votes: 4,
+          closing_soon: 2,
+          as_of: '2026-10-09T12:00:00.000Z',
+        });
+        expect(proxyRequest).toHaveBeenNthCalledWith(2, req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          parent: `project:${PROJECT_UID}`,
+          filters: ['committee_name:Synthetic Board'],
+          type: 'vote',
+          page_size: 1000,
+          page_token: 'next',
+        });
+        expect(fetchAllQueryResources).toHaveBeenCalledWith(req, expect.any(Function), { failOnPartial: true });
+        expect(getProjectsByIds).not.toHaveBeenCalled();
+      } finally {
+        vi.restoreAllMocks();
+      }
+    });
+
+    it('returns successful zero totals, but rejects a failed later summary page', async () => {
+      drainPages();
+      proxyRequest.mockResolvedValueOnce({ resources: [] });
+      expect(await service.getVotesSummary(req, 'project:synthetic')).toMatchObject({ active_votes: 0, closing_soon: 0 });
+      proxyRequest.mockResolvedValueOnce({ resources: [{ data: indexRow }], page_token: 'next' }).mockRejectedValueOnce(new Error('later page failed'));
+      await expect(service.getVotesSummary(req, 'project:synthetic')).rejects.toThrow('later page failed');
+    });
+
+    it('filters before sorting/slicing and returns a full closing count from the same snapshot', async () => {
+      vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-09T12:00:00Z'));
+      drainPages();
+      proxyRequest.mockResolvedValue({
+        resources: [
+          { data: { ...indexRow, vote_uid: 'far', end_time: '2027-01-01T00:00:00Z' } },
+          { data: { ...indexRow, vote_uid: 'older', creation_time: '2026-10-01T00:00:00Z', end_time: '2026-10-10T00:00:00Z' } },
+          { data: { ...indexRow, vote_uid: 'newer', creation_time: '2026-10-02T00:00:00Z', end_time: '2026-10-11T00:00:00Z' } },
+        ],
+      });
+      try {
+        const query = { parent: 'project:synthetic', name: 'Board', filters: ['status:active'], closing_soon: 'true', page_size: '1' };
+        const first = await service.getVotes(req, query, { includeProject: false });
+        expect(first).toMatchObject({ total_records: 2, page_token: 'offset:1' });
+        expect(first.data.map((vote) => vote.uid)).toEqual(['newer']);
+        const second = await service.getVotes(req, { ...query, page_token: first.page_token }, { includeProject: false });
+        expect(second.data.map((vote) => vote.uid)).toEqual(['older']);
+        expect(second.total_records).toBe(2);
+        expect(second.page_token).toBeUndefined();
+        expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          parent: query.parent,
+          name: query.name,
+          filters: query.filters,
+          type: 'vote',
+          page_size: 1000,
+        });
+        const ordinary = await service.getVotes(req, { closing_soon: 'false' }, { includeProject: false });
+        expect(ordinary.data).toHaveLength(3);
+        expect(ordinary).not.toHaveProperty('total_records');
+      } finally {
+        vi.restoreAllMocks();
+      }
+    });
+
+    it.each(['yes', '', ['true'], ['true', 'false'], true, {}])('rejects malformed closing flags before any upstream work: %j', async (closingSoon) => {
+      await expect(service.getVotes(req, { closing_soon: closingSoon })).rejects.toThrow(ServiceValidationError);
+      expect(fetchAllQueryResources).not.toHaveBeenCalled();
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
 
     it('enriches an index row carrying only project_uid with the canonical project fields', async () => {
       fetchAllQueryResources.mockResolvedValue([indexRow]);
