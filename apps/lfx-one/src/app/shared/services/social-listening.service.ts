@@ -41,12 +41,12 @@ export class SocialListeningService {
 
   /** One window of mentions for a foundation, newest first. */
   public getMentionsFeed(request: SocialListeningFeedRequest): Observable<SocialListeningFeedResponse> {
-    return this.http.get<SocialListeningFeedResponse>(`${this.baseUrl}/mentions-feed`, { params: this.toParams(request) });
+    return this.http.post<SocialListeningFeedResponse>(`${this.baseUrl}/mentions-feed`, request);
   }
 
   /** Total mentions matching the same scope + filters as the feed — backs the paginator. */
   public getMentionsCount(request: SocialListeningCountRequest): Observable<SocialListeningCountResponse> {
-    return this.http.get<SocialListeningCountResponse>(`${this.baseUrl}/mentions-count`, { params: this.toParams(request) });
+    return this.http.post<SocialListeningCountResponse>(`${this.baseUrl}/mentions-count`, request);
   }
 
   /** Sub-project options for the scope select (period-independent). */
