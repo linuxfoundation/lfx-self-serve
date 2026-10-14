@@ -266,8 +266,12 @@ export class GatewazeProxyController {
 
       upstreamBody = upstreamRes.body;
       res.status(upstreamRes.status);
-      // Replaces the router's no-store default; the upstream's own Cache-Control, if any, is copied below.
-      res.removeHeader('Cache-Control');
+      // The upstream's own Cache-Control, copied below, replaces the router's no-store default. With
+      // none, no-store stays. A response made with the session always has one: the package sets
+      // `private` on it.
+      if (upstreamRes.headers['cache-control'] !== undefined) {
+        res.removeHeader('Cache-Control');
+      }
       for (const [name, value] of Object.entries(upstreamRes.headers)) {
         if (!GW_HOST_SESSION_PROXY_RESPONSE_HEADERS.has(name.toLowerCase())) {
           continue;
@@ -291,8 +295,13 @@ export class GatewazeProxyController {
       await streamBody(upstreamRes.body, res);
       logger.success(req, OPERATION, startTime, { method: req.method, path: req.path, upstream: kind, upstream_status: upstreamRes.status });
     } catch (error) {
-      const reported = toProxyError(req, error, timeoutMs);
       upstreamBody?.destroy();
+      if (error instanceof BrowserClosedError) {
+        // A closed tab or a cancelled fetch: ordinary, and nobody is left to answer.
+        logger.debug(req, OPERATION, 'The browser closed the response before it finished', { path: req.path, upstream: kind });
+        return;
+      }
+      const reported = toProxyError(req, error, timeoutMs);
       if (res.headersSent) {
         // The response is on the wire, so apiErrorHandler cannot answer. Destroyed, so the browser
         // sees a broken body, never a short one that looks complete.
@@ -331,6 +340,9 @@ export class GatewazeProxyController {
   }
 }
 
+/** The browser closed the response before it finished. */
+class BrowserClosedError extends Error {}
+
 /**
  * Pipes the upstream body to the browser and settles when the response finishes. Unlike
  * `stream.pipeline`, it does not destroy `res` on an upstream error, so a body that fails before the
@@ -338,12 +350,12 @@ export class GatewazeProxyController {
  */
 function streamBody(body: IncomingMessage, res: Response): Promise<void> {
   return new Promise<void>((resolve, reject) => {
+    // An upstream that dies mid-body raises `error` ("aborted") on the response.
     body.once('error', reject);
-    body.once('aborted', () => reject(new Error('upstream aborted the response')));
     res.once('finish', resolve);
     res.once('close', () => {
       if (!res.writableFinished) {
-        reject(new Error('the browser closed the response'));
+        reject(new BrowserClosedError('the browser closed the response'));
       }
     });
     body.pipe(res);

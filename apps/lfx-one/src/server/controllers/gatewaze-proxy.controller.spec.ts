@@ -71,6 +71,11 @@ beforeAll(async () => {
 
   const controller = new GatewazeProxyController();
   const router = express.Router();
+  // Mirrors gatewaze.route.ts: no-store on every response unless the proxy replaces it.
+  router.use((_req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store');
+    next();
+  });
   router.all(/^\/supabase\/(rest|storage|functions)\/v1(?:\/.*)?$/i, (req, res, next) => controller.proxySupabase(req, res, next));
   router.all(/^\/api(?:\/.*)?$/i, (req, res, next) => controller.proxyApi(req, res, next));
   const expressApp = express();
@@ -190,6 +195,16 @@ describe('GatewazeProxyController', () => {
       expect(seen?.url).toBe('/api/modules/newsletters/editions?limit=5');
       expect(seen?.headers['authorization']).toBe(`Bearer ${adminSession.access_token}`);
       expect(seen?.headers['apikey']).toBeUndefined();
+    });
+
+    it('keeps no-store on a response whose upstream sent no Cache-Control', async () => {
+      getGatewazeSession.mockResolvedValue({ outcome: 'ok', session: { ...adminSession, is_admin: false } });
+
+      const res = await send('/api/gatewaze/supabase/rest/v1/platform_settings', { headers: shimHeaders });
+
+      expect(res.status).toBe(200);
+      // An anon forward, so the package adds no private Cache-Control of its own.
+      expect(res.headers['cache-control']).toBe('no-store');
     });
 
     it('marks a response made with the session private and varying on Cookie', async () => {
@@ -326,7 +341,7 @@ describe('GatewazeProxyController', () => {
 
       expect(res.status).toBe(200);
       expect(seen?.headers['authorization']).toBeUndefined();
-      expect(res.headers['cache-control']).toBeUndefined();
+      expect(res.headers['cache-control']).toBe('no-store');
     });
 
     it('answers 503 with Retry-After while the admin check is pending', async () => {

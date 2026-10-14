@@ -37,6 +37,7 @@ vi.mock('../services/logger.service', () => ({
 }));
 
 const { GatewazeProxyController } = await import('./gatewaze-proxy.controller');
+const { logger } = await import('../services/logger.service');
 
 /** Small enough to reject quickly; the behaviour under test does not depend on the value. */
 const LIMIT_BYTES = 64 * 1024;
@@ -226,6 +227,47 @@ describe('GatewazeProxyController over a real socket', () => {
       // Express sets its own weak ETag on the JSON error; the upstream's is gone.
       expect(result.headers['etag']).not.toBe('"x"');
       expect(result.headers['cache-control']).toBe('no-store');
+    },
+    SOCKET_TEST_TIMEOUT_MS
+  );
+
+  it(
+    'treats a browser that closes mid-download as ordinary, not as an upstream failure',
+    async () => {
+      vi.mocked(logger.error).mockClear();
+      vi.mocked(logger.debug).mockClear();
+      let upstreamClosed!: () => void;
+      const upstreamGone = new Promise<void>((resolve) => (upstreamClosed = resolve));
+      respond = (req, res) => {
+        req.resume();
+        req.on('end', () => {
+          res.writeHead(200, { 'content-type': 'application/octet-stream' });
+          res.write(Buffer.alloc(1024));
+          // Never ends: only the browser closing finishes this response.
+          res.on('close', () => upstreamClosed());
+        });
+      };
+
+      await new Promise<void>((resolve) => {
+        const req = httpRequest({ hostname: '127.0.0.1', port: appPort, path: '/api/gatewaze/supabase/storage/v1/object/media/a.bin', headers }, (res) => {
+          res.once('data', () => {
+            req.destroy();
+            resolve();
+          });
+        });
+        req.on('error', () => undefined);
+        req.end();
+      });
+      // The proxy tears down the upstream request once the browser has gone.
+      await upstreamGone;
+
+      expect(logger.error).not.toHaveBeenCalled();
+      expect(logger.debug).toHaveBeenCalledWith(
+        expect.anything(),
+        'gatewaze_proxy_request',
+        'The browser closed the response before it finished',
+        expect.anything()
+      );
     },
     SOCKET_TEST_TIMEOUT_MS
   );

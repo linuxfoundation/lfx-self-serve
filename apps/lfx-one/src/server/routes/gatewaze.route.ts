@@ -14,7 +14,7 @@ const proxy = new GatewazeProxyController();
 
 // Session answers are per user and change at sign-out, and gate answers change with access and
 // impersonation, so nothing may cache them. Set first, so the 404 and 403 from the gates below carry
-// it too. A proxied response replaces it with the upstream's own Cache-Control.
+// it too. A proxied response replaces it with the upstream's own Cache-Control, when it sends one.
 router.use((_req, res, next) => {
   res.setHeader('Cache-Control', 'no-store');
   next();
