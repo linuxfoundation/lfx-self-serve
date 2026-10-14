@@ -8298,7 +8298,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/ws@npm:^8.5.10":
+"@types/ws@npm:8.18.1, @types/ws@npm:^8.5.10":
   version: 8.18.1
   resolution: "@types/ws@npm:8.18.1"
   dependencies:
@@ -14544,6 +14544,7 @@ __metadata:
     "@types/node": "npm:^18.18.0"
     "@types/pdfkit": "npm:^0.13.9"
     "@types/sanitize-html": "npm:^2.16.0"
+    "@types/ws": "npm:8.18.1"
     ajv: "npm:^8.17.1"
     ajv-formats: "npm:^3.0.1"
     angular-eslint: "npm:21.0.1"
@@ -14591,6 +14592,7 @@ __metadata:
     typescript: "npm:~5.9.3"
     typescript-eslint: "npm:8.46.4"
     vitest: "npm:^3.2.4"
+    ws: "npm:^8.21.1"
   languageName: unknown
   linkType: soft
 

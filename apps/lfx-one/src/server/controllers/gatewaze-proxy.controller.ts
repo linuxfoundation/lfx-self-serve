@@ -7,7 +7,6 @@ import { Transform } from 'node:stream';
 import {
   anonCredentials,
   carriesPlaceholder,
-  type CoreLogger,
   csrfDecision,
   isAdminCheckPending,
   isPublicRead,
@@ -35,7 +34,7 @@ import { authorizeGatewazeModule, gatewazeModuleForPath } from '../helpers/gatew
 import { drainRequestBody, ensureGwRequestId, getGwApiBaseUrl } from '../helpers/gw-api.helper';
 import { getGwProxyMaxBodyBytes, getGwProxyTimeoutMs } from '../helpers/gw-proxy-limits.helper';
 import { gatewazeHostSessionNotFound } from '../middleware/require-gatewaze-host-session.middleware';
-import { getGatewazeSessionService, resolveGatewazeHostSessionConfig } from '../services/gatewaze-session.service';
+import { getGatewazeSessionService, hostSessionCoreLogger, resolveGatewazeHostSessionConfig } from '../services/gatewaze-session.service';
 import { logger } from '../services/logger.service';
 
 /**
@@ -261,7 +260,7 @@ export class GatewazeProxyController {
         downstream: res,
         privateResponse,
         body: req.pipe(limiter),
-        log: proxyLogger(req),
+        log: hostSessionCoreLogger(OPERATION, req),
       });
 
       upstreamBody = upstreamRes.body;
@@ -402,11 +401,6 @@ function toProxyError(req: Request, error: unknown, timeoutMs: number): unknown 
     transportFailure: true,
     originalError: error instanceof Error ? error : undefined,
   });
-}
-
-/** The package's warnings (a dropped unsafe redirect) under this request. Its metadata is a status and a path. */
-function proxyLogger(req: Request): CoreLogger {
-  return { warn: (meta, message) => logger.warning(req, OPERATION, message, meta) };
 }
 
 /** LFX One's own origin, from `PCC_BASE_URL`, or null when it is missing or invalid (the proxy then refuses every request that needs CSRF proof). */

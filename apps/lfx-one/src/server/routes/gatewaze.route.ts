@@ -37,4 +37,8 @@ router.all(/^\/api(?:\/.*)?$/i, (req, res, next) => proxy.proxyApi(req, res, nex
 router.get('/session/me', (req, res, next) => controller.me(req, res, next));
 router.post('/session/logout', (req, res, next) => controller.logout(req, res, next));
 
+// The Realtime WebSocket. An upgrade reaches this route only through GatewazeRealtimeService.onUpgrade,
+// which runs it through the whole app, so it has passed every gate above.
+router.get(/^\/supabase\/realtime\/v1\/websocket$/, (req, res, next) => controller.realtime(req, res, next));
+
 export default router;
