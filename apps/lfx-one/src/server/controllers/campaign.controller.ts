@@ -77,6 +77,7 @@ import {
   MAX_GOOGLE_CREATIVE_FIELD_LENGTH,
   MAX_GOOGLE_CREATIVE_LIST_ENTRIES,
   MAX_HUBSPOT_BODY_HTML_LENGTH,
+  MAX_KEYWORD_TARGETING_REVISION_LENGTH,
   MAX_NEGATIVE_KEYWORD_TEXT_LENGTH,
   MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
   META_GEO_CODE_PATTERN,
@@ -2749,8 +2750,14 @@ export class CampaignController {
    * Add campaign-level negative keywords through campaign-service's `add-negative-keywords`.
    *
    * The checks below mirror the upstream payload's own rules (1-60 entries, text 1-100 characters
-   * in the allowed set, Exact or Phrase), so a malformed batch is refused before a round trip.
-   * Upstream re-validates and adds what a pattern states badly (adjacent punctuation, duplicates).
+   * in the allowed set, Exact, Phrase or Broad), so a malformed batch is refused before a round trip.
+   * Upstream re-validates and adds what a pattern states badly (adjacent punctuation, duplicates),
+   * and what depends on the campaign's platform, which only it knows: the match types that platform
+   * takes, X's cap of 20, and whether `revision` belongs (required on Reddit, refused elsewhere).
+   *
+   * `revision` is forwarded only when the body carries one, and a present one must be a non-blank
+   * string within upstream's length: an empty or blank revision is upstream's 400 on every platform,
+   * so it is refused here rather than sent.
    *
    * The response is POSITIONAL: `results[i]` answers `negativeKeywords[i]`, and is passed on
    * index for index. Nothing here filters, sorts or de-duplicates it.
@@ -2842,10 +2849,37 @@ export class CampaignController {
       negativeKeywords.push({ text, matchType: matchType as CampaignNegativeKeywordMatchType });
     }
 
-    const startTime = logger.startOperation(req, 'campaign_negative_keywords_add', { campaignId, briefId, count: negativeKeywords.length });
+    const rawRevision: unknown = body.revision;
+    if (
+      rawRevision !== undefined &&
+      (typeof rawRevision !== 'string' || rawRevision.trim() === '' || rawRevision.length > MAX_KEYWORD_TARGETING_REVISION_LENGTH)
+    ) {
+      next(
+        ServiceValidationError.forField('revision', `revision must be a non-blank string of at most ${MAX_KEYWORD_TARGETING_REVISION_LENGTH} characters`, {
+          operation: 'campaign_negative_keywords_add',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+    // Exactly as read: it is a fingerprint, compared byte for byte upstream.
+    const revision = rawRevision as string | undefined;
+
+    const startTime = logger.startOperation(req, 'campaign_negative_keywords_add', {
+      campaignId,
+      briefId,
+      count: negativeKeywords.length,
+      hasRevision: revision !== undefined,
+    });
 
     try {
-      const result = await this.campaignServiceClient.addNegativeKeywords(req, { projectSlug, briefId, campaignId, negativeKeywords });
+      const result = await this.campaignServiceClient.addNegativeKeywords(req, {
+        projectSlug,
+        briefId,
+        campaignId,
+        negativeKeywords,
+        ...(revision !== undefined && { revision }),
+      });
       logger.success(req, 'campaign_negative_keywords_add', startTime, {
         campaignId,
         requested: negativeKeywords.length,

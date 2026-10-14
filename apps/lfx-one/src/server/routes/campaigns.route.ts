@@ -66,14 +66,15 @@ router.patch('/:campaignId/status', (req, res, next) => campaignController.updat
 router.patch('/:campaignId/budget', (req, res, next) => campaignController.updateCampaignBudget(req, res, next));
 // campaign-service only, like the budget change. Manual max CPC bid, in the ad account's own currency.
 router.patch('/:campaignId/bid', (req, res, next) => campaignController.updateCampaignBid(req, res, next));
-// campaign-service only. Positional response: results[i] answers negativeKeywords[i].
+// campaign-service only: Microsoft Advertising, Reddit and X. Positional response: results[i] answers
+// negativeKeywords[i]. Reddit requires the keyword-targeting read's `revision`; the others refuse it.
 router.post('/:campaignId/negative-keywords', (req, res, next) => campaignController.addNegativeKeywords(req, res, next));
 
 // --- Optimize: campaign-service reads and levers ------------------------------
 //
 // campaign-service only, no legacy arm, so ungated like the budget and bid levers above, EXCEPT
 // the reads whose upstream endpoints are not on campaign-service main yet (Reddit and LinkedIn
-// audience, LinkedIn campaign-ref, Reddit keywords): those answer 404 unless
+// audience, LinkedIn campaign-ref): those answer 404 unless
 // LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS is on.
 // Authorization is the `requireCampaignManager` above. Campaign and brief ids are campaign-service UUIDs.
 router.get('/meta/audience', (req, res, next) => optimizeController.getPlatformAudience(req, res, next, 'meta-ads'));
@@ -86,7 +87,7 @@ router.get('/meta/campaign-ref', (req, res, next) => optimizeController.resolveP
 router.get('/reddit/campaign-ref', (req, res, next) => optimizeController.resolvePlatformCampaign(req, res, next, 'reddit-ads'));
 router.get('/twitter/campaign-ref', (req, res, next) => optimizeController.resolvePlatformCampaign(req, res, next, 'twitter-ads'));
 router.get('/linkedin/campaign-ref', (req, res, next) => optimizeController.resolvePlatformCampaign(req, res, next, 'linkedin-ads'));
-// Pending upstream (flag-gated). Takes `?window=` like the Microsoft keyword read.
+// Reddit keyword performance, read-only (campaign-service #331). Takes `?window=` like the Microsoft keyword read.
 router.get('/reddit/keywords', (req, res, next) => optimizeController.getRedditKeywords(req, res, next));
 // Binds a campaign that already exists on its platform to a brief; creates nothing upstream.
 router.post('/adopt', (req, res, next) => optimizeController.adoptCampaign(req, res, next));

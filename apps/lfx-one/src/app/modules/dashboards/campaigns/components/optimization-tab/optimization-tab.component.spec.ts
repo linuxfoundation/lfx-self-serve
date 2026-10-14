@@ -27,16 +27,19 @@ import {
   CampaignRow,
   CampaignStatusUpdateResult,
 } from '@lfx-one/shared/interfaces';
+import { CampaignKeywordTargetingService } from '@services/campaign-keyword-targeting.service';
 import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
 import { CampaignService } from '@services/campaign.service';
-import { MessageService } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
 import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CampaignBidFormComponent } from '../campaign-bid-form/campaign-bid-form.component';
 import { CampaignBudgetFormComponent } from '../campaign-budget-form/campaign-budget-form.component';
+import { CampaignKeywordTargetingPanelComponent } from '../campaign-keyword-targeting-panel/campaign-keyword-targeting-panel.component';
 import { CampaignNegativeKeywordsFormComponent } from '../campaign-negative-keywords-form/campaign-negative-keywords-form.component';
 import { MicrosoftKeywordsTableComponent } from '../microsoft-keywords-table/microsoft-keywords-table.component';
+import { RedditKeywordsTableComponent } from '../reddit-keywords-table/reddit-keywords-table.component';
 import { OptimizationTabComponent } from './optimization-tab.component';
 
 /**
@@ -93,6 +96,7 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
             getMonitorData: vi.fn().mockReturnValue(of(null)),
             getKeywords: vi.fn().mockReturnValue(of({ keywords: [] })),
             getMicrosoftKeywords: vi.fn().mockReturnValue(of(null)),
+            getRedditKeywords: vi.fn().mockReturnValue(of(null)),
             getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
             getRedditAccounts: vi.fn().mockReturnValue(of([])),
             getBriefMetrics: vi.fn().mockReturnValue(of({ brief_id: 'b-1', window: 'last_30_days', rows: [], ok_count: 0, action_items: [] })),
@@ -1981,6 +1985,7 @@ describe('OptimizationTabComponent — wasted-keyword all-clear completeness', (
             getMonitorData: vi.fn().mockReturnValue(of(null)),
             getKeywords: vi.fn().mockReturnValue(of({ keywords: [] })),
             getMicrosoftKeywords: vi.fn().mockReturnValue(of(null)),
+            getRedditKeywords: vi.fn().mockReturnValue(of(null)),
             getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
             getRedditAccounts: vi.fn().mockReturnValue(of([])),
             getBriefMetrics: vi.fn().mockReturnValue(of({ brief_id: 'b-1', window: 'last_30_days', rows: [], ok_count: 0, action_items: [] })),
@@ -2123,6 +2128,7 @@ describe('OptimizationTabComponent — keyword action outcome states', () => {
             getMonitorData: vi.fn().mockReturnValue(of(null)),
             getKeywords: vi.fn().mockReturnValue(of({ keywords: [] })),
             getMicrosoftKeywords: vi.fn().mockReturnValue(of(null)),
+            getRedditKeywords: vi.fn().mockReturnValue(of(null)),
             getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
             getRedditAccounts: vi.fn().mockReturnValue(of([])),
             getBriefMetrics: vi.fn().mockReturnValue(of({ brief_id: 'b-1', window: 'last_30_days', rows: [], ok_count: 0, action_items: [] })),
@@ -2458,6 +2464,7 @@ describe('OptimizationTabComponent — budget change (#3299)', () => {
             getMonitorData: vi.fn().mockReturnValue(of(null)),
             getKeywords: vi.fn().mockReturnValue(of({ keywords: [] })),
             getMicrosoftKeywords: vi.fn().mockReturnValue(of(null)),
+            getRedditKeywords: vi.fn().mockReturnValue(of(null)),
             getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
             getRedditAccounts: vi.fn().mockReturnValue(of([])),
             getBriefMetrics: vi.fn().mockReturnValue(of({ brief_id: 'b-1', window: 'last_30_days', rows: [], ok_count: 0, action_items: [] })),
@@ -2855,6 +2862,7 @@ describe('OptimizationTabComponent — monitor findings and their levers', () =>
             getMonitorData: vi.fn().mockReturnValue(of(null)),
             getKeywords: vi.fn().mockReturnValue(of({ keywords: [] })),
             getMicrosoftKeywords: vi.fn().mockReturnValue(of(null)),
+            getRedditKeywords: vi.fn().mockReturnValue(of(null)),
             getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
             getRedditAccounts: vi.fn().mockReturnValue(of([])),
             getMetaAccounts: vi.fn().mockReturnValue(of([])),
@@ -3136,6 +3144,7 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
       providers: [
         provideNoopAnimations(),
         { provide: MessageService, useValue: { add: messageAdd } },
+        ConfirmationService,
         {
           provide: CampaignService,
           useValue: {
@@ -3143,9 +3152,13 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
             updateCampaignBudget,
             updateCampaignStatus: vi.fn().mockReturnValue(of(null)),
             addNegativeKeywords: vi.fn(),
+            getKeywordTargeting: vi
+              .fn()
+              .mockReturnValue(of({ campaign_id: 'c-1', platform: 'reddit-ads', targeting_entity_id: 'ag-1', keywords: [], revision: 'sha256:r1' })),
             getMonitorData: vi.fn().mockReturnValue(of(null)),
             getKeywords: vi.fn().mockReturnValue(of({ keywords: [] })),
             getMicrosoftKeywords: vi.fn().mockReturnValue(of(null)),
+            getRedditKeywords: vi.fn().mockReturnValue(of(null)),
             getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
             getRedditAccounts: vi.fn().mockReturnValue(of([])),
             getBriefMetrics: vi.fn().mockReturnValue(of({ brief_id: 'b-1', window: 'last_30_days', rows: [], ok_count: 0, action_items: [] })),
@@ -3275,16 +3288,117 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
     expect((q('optimization-campaign-toggle-c-1') as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it('offers negative keywords on Microsoft rows only', () => {
-    render([doc(), doc({ id: 'c-2', platform: 'google-ads', campaign_name: 'Other' })]);
+  it('offers negative keywords on Microsoft, Reddit and X rows only', () => {
+    render([
+      doc(),
+      doc({ id: 'c-2', platform: 'google-ads', campaign_name: 'Other' }),
+      doc({ id: 'c-3', platform: 'reddit-ads', campaign_name: 'Reddit one' }),
+      doc({ id: 'c-4', platform: 'twitter-ads', campaign_name: 'X one' }),
+    ]);
 
     expect(q('optimization-campaign-negatives-edit-c-1')).not.toBeNull();
     expect(q('optimization-campaign-negatives-edit-c-2')).toBeNull();
+    expect(q('optimization-campaign-negatives-edit-c-3')).not.toBeNull();
+    expect(q('optimization-campaign-negatives-edit-c-4')).not.toBeNull();
 
     (q('optimization-campaign-negatives-edit-c-1') as HTMLButtonElement).click();
     fixture.detectChanges();
     expect(q('optimization-campaign-negatives-form-c-1')).not.toBeNull();
     expect(q('optimization-campaign-negatives-edit-c-1')!.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  // The editor offers what the row's platform takes: on Reddit, Broad only, and it reads the revision.
+  it("hands the row's platform to the negative-keyword editor", () => {
+    render([doc({ platform: 'reddit-ads' })]);
+    (q('optimization-campaign-negatives-edit-c-1') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    const form = fixture.debugElement.query(By.directive(CampaignNegativeKeywordsFormComponent)).componentInstance as CampaignNegativeKeywordsFormComponent;
+    expect(form.platform()).toBe('reddit-ads');
+    expect(form.form.controls.matchType.value).toBe('Broad');
+    expect(TestBed.inject(CampaignService).getKeywordTargeting).toHaveBeenCalledWith('tlf', 'b-1', 'c-1');
+  });
+
+  it('offers keyword targeting on Reddit and X rows only, and opens the panel for the row', () => {
+    render([
+      doc(),
+      doc({ id: 'c-3', platform: 'reddit-ads', campaign_name: 'Reddit one' }),
+      doc({ id: 'c-4', platform: 'twitter-ads', campaign_name: 'X one' }),
+    ]);
+
+    expect(q('optimization-campaign-targeting-edit-c-1')).toBeNull();
+    expect(q('optimization-campaign-targeting-edit-c-3')).not.toBeNull();
+    const disclosure = q('optimization-campaign-targeting-edit-c-4') as HTMLButtonElement;
+    expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+
+    disclosure.click();
+    fixture.detectChanges();
+    const panel = fixture.debugElement.query(By.directive(CampaignKeywordTargetingPanelComponent)).componentInstance as CampaignKeywordTargetingPanelComponent;
+    expect(panel.platform()).toBe('twitter-ads');
+    expect(panel.campaignId()).toBe('c-4');
+    expect(disclosure.getAttribute('aria-expanded')).toBe('true');
+    expect(disclosure.getAttribute('aria-controls')).toBe('campaign-targeting-panel-c-4');
+
+    (q('optimization-campaign-targeting-close-c-4')!.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(q('optimization-campaign-targeting-panel-c-4')).toBeNull();
+  });
+
+  it("names the brief's Reddit campaigns in the Reddit keyword table and re-reads it on Refresh", () => {
+    render([doc({ platform: 'reddit-ads', platform_campaign_id: 't3_abc', campaign_name: 'Reddit one' }), doc({ id: 'c-2', platform_campaign_id: '99' })]);
+
+    const table = fixture.debugElement.query(By.directive(RedditKeywordsTableComponent)).componentInstance as RedditKeywordsTableComponent;
+    expect(table.campaignNames()).toEqual({ t3_abc: 'Reddit one' });
+    const getRedditKeywords = TestBed.inject(CampaignService).getRedditKeywords as ReturnType<typeof vi.fn>;
+    const reads = getRedditKeywords.mock.calls.length;
+
+    q('optimization-refresh')!.click();
+    fixture.detectChanges();
+    expect(getRedditKeywords.mock.calls.length).toBe(reads + 1);
+  });
+
+  // Closing the panel mid-removal would hide the per-keyword outcome of an irreversible change.
+  it('holds the keyword-targeting panel open while its removal is in flight', () => {
+    const pending = new Subject<unknown>();
+    (TestBed.inject(CampaignService) as unknown as { removeKeywordTargeting: unknown }).removeKeywordTargeting = vi.fn().mockReturnValue(pending);
+    render([doc({ platform: 'reddit-ads' })]);
+    const disclosure = q('optimization-campaign-targeting-edit-c-1') as HTMLButtonElement;
+    disclosure.click();
+    fixture.detectChanges();
+
+    TestBed.inject(CampaignKeywordTargetingService).remove({
+      projectSlug: 'tlf',
+      briefId: 'b-1',
+      campaignId: 'c-1',
+      campaignName: 'KubeCon EU',
+      platform: 'reddit-ads',
+      request: { briefId: 'b-1', keywords: [{ keyword: 'kubernetes' }], revision: 'sha256:r1' },
+      sent: ['kubernetes'],
+    });
+    fixture.detectChanges();
+
+    expect(disclosure.disabled).toBe(true);
+    // The handler refuses too, not only the disabled button.
+    (fixture.componentInstance as unknown as { closeTargetingPanel(id: string): void }).closeTargetingPanel('c-1');
+    fixture.detectChanges();
+    expect(q('optimization-campaign-targeting-panel-c-1')).not.toBeNull();
+
+    pending.next({ campaign_id: 'c-1', applied_count: 1, results: [{ keyword: 'kubernetes', outcome: 'APPLIED' }] });
+    pending.complete();
+    fixture.detectChanges();
+    expect(disclosure.disabled).toBe(false);
+    disclosure.click();
+    fixture.detectChanges();
+    expect(q('optimization-campaign-targeting-panel-c-1')).toBeNull();
+  });
+
+  it('disables keyword targeting, saying why, for a campaign not yet created on its platform', () => {
+    render([doc({ platform: 'reddit-ads', platform_campaign_id: '' })]);
+
+    const disclosure = q('optimization-campaign-targeting-edit-c-1') as HTMLButtonElement;
+    expect(disclosure.disabled).toBe(true);
+    expect(disclosure.getAttribute('aria-describedby')).toBe('campaign-targeting-unavailable-c-1');
+    expect(q('optimization-campaign-targeting-unavailable-c-1')!.textContent).toContain('has not been created');
   });
 
   // Closing the editor mid-request would destroy the form and lose the per-keyword outcomes.
@@ -3419,7 +3533,15 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
     const service = TestBed.inject(CampaignNegativeKeywordsService);
     // A second campaign's request, still running.
     (TestBed.inject(CampaignService).addNegativeKeywords as ReturnType<typeof vi.fn>).mockReturnValue(new Subject());
-    service.submit({ projectSlug: 'tlf', briefId: 'b-1', campaignId: 'c-2', campaignName: 'Other', keywords: ['x'], matchType: 'Exact' });
+    service.submit({
+      projectSlug: 'tlf',
+      briefId: 'b-1',
+      campaignId: 'c-2',
+      campaignName: 'Other',
+      platform: 'microsoft-ads',
+      keywords: ['x'],
+      matchType: 'Exact',
+    });
 
     q('optimization-refresh')!.click();
     fixture.detectChanges();
