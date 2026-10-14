@@ -114,4 +114,19 @@ describe('AddToCalendarComponent', () => {
     expect(details).toContain('/meetings/meeting-1');
     expect(details).not.toContain('password');
   });
+
+  it('preserves the selected occurrence in the Google Calendar join link for a recurring meeting (GH-3505)', () => {
+    const upcomingOccurrence: MeetingOccurrence = { ...OCCURRENCE, start_time: '2099-01-22T14:00:00Z' };
+    fixture.componentRef.setInput('meeting', { ...MEETING, recurrence: { type: 1 } });
+    fixture.componentRef.setInput('currentOccurrence', upcomingOccurrence);
+    fixture.detectChanges();
+
+    googleItem().command();
+
+    const [url] = windowOpen.mock.calls[0];
+    const details = new URL(url).searchParams.get('details') ?? '';
+    expect(details).toContain('/meetings/meeting-1');
+    expect(details).toContain(`occurrence=${new Date(upcomingOccurrence.start_time).getTime()}`);
+    expect(details).not.toContain('password');
+  });
 });

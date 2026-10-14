@@ -2273,3 +2273,14 @@ export interface CalendarLinkEvent {
   description?: string;
   joinUrl?: string;
 }
+
+/** Which occurrence(s) an "Add to calendar" download/deep-link covers (GH-3505). */
+export type MeetingCalendarScope = 'occurrence' | 'series';
+
+/** Optional per-event extras for the server's ICS `buildVEvent` beyond the title/time fields every caller has. */
+export interface VEventExtras {
+  /** Agenda/body text. Falls back to the title when omitted, matching prior behavior. */
+  description?: string;
+  /** Join link, appended to DESCRIPTION and set as the ICS URL property (GH-3505). */
+  joinUrl?: string;
+}

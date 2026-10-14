@@ -8,7 +8,10 @@ vi.mock('../services/logger.service', () => ({
 }));
 // The `@lfx-one/shared/*` path alias isn't wired into the server-side vitest config, and the
 // real barrel pulls in Angular-dependent code that fails to JIT-compile outside the browser build.
-vi.mock('@lfx-one/shared/utils', () => ({ addMinutesToDate: vi.fn((iso: string) => ({ toISOString: () => iso })) }));
+vi.mock('@lfx-one/shared/utils', () => ({
+  addMinutesToDate: vi.fn((iso: string) => ({ toISOString: () => iso })),
+  isSameOccurrenceId: (a?: string | null, b?: string | null) => !!a && !!b && String(a) === String(b),
+}));
 
 import { Meeting } from '@lfx-one/shared/interfaces';
 
@@ -102,6 +105,7 @@ describe('buildMeetingCalendarEvents', () => {
 
   it('expands every non-cancelled occurrence when scope is "series"', () => {
     const meeting = makeMeeting({
+      recurrence: {} as Meeting['recurrence'],
       occurrences: [
         { occurrence_id: 'occ-1', start_time: '2026-01-15T14:00:00Z', duration: 30 },
         { occurrence_id: 'occ-2', start_time: '2026-01-22T14:00:00Z', duration: 30, status: 'cancel' },
@@ -116,6 +120,20 @@ describe('buildMeetingCalendarEvents', () => {
     expect(events[1]).toContain('UID:meeting-1-occ-3@lfx.linuxfoundation.org');
   });
 
+  it('returns no events when every occurrence of a recurring series is cancelled, rather than falling back to the series start (GH-3505)', () => {
+    const meeting = makeMeeting({
+      recurrence: {} as Meeting['recurrence'],
+      occurrences: [
+        { occurrence_id: 'occ-1', start_time: '2026-01-15T14:00:00Z', duration: 30, status: 'cancel' },
+        { occurrence_id: 'occ-2', start_time: '2026-01-22T14:00:00Z', duration: 30, status: 'cancel' },
+      ] as Meeting['occurrences'],
+    });
+
+    const events = buildMeetingCalendarEvents(meeting, { scope: 'series' });
+
+    expect(events).toHaveLength(0);
+  });
+
   it('falls back to the meeting start/duration when occurrenceId is not found', () => {
     const meeting = makeMeeting({
       occurrences: [{ occurrence_id: 'occ-1', start_time: '2026-01-15T14:00:00Z', duration: 30 }] as Meeting['occurrences'],
@@ -125,5 +143,16 @@ describe('buildMeetingCalendarEvents', () => {
 
     expect(events).toHaveLength(1);
     expect(events[0]).toContain('UID:meeting-1@lfx.linuxfoundation.org');
+  });
+
+  it('matches an occurrence whose id differs by seconds vs milliseconds units via isSameOccurrenceId (GH-3505)', () => {
+    const meeting = makeMeeting({
+      occurrences: [{ occurrence_id: '1700000000', start_time: '2026-01-15T14:00:00Z', duration: 30 }] as Meeting['occurrences'],
+    });
+
+    const events = buildMeetingCalendarEvents(meeting, { scope: 'occurrence', occurrenceId: '1700000000' });
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toContain('UID:meeting-1-1700000000@lfx.linuxfoundation.org');
   });
 });

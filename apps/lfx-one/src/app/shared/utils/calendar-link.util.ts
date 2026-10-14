@@ -3,8 +3,8 @@
 
 import { CalendarLinkEvent } from '@lfx-one/shared/interfaces';
 
-function toGoogleDate(iso: string): string {
-  return new Date(iso).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+function toGoogleDate(date: Date): string {
+  return date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
 }
 
 function buildDetails(event: CalendarLinkEvent): string {
@@ -19,7 +19,7 @@ export function buildGoogleCalendarUrl(event: CalendarLinkEvent): string {
   const params = new URLSearchParams({
     action: 'TEMPLATE',
     text: event.title,
-    dates: `${toGoogleDate(start.toISOString())}/${toGoogleDate(end.toISOString())}`,
+    dates: `${toGoogleDate(start)}/${toGoogleDate(end)}`,
     details: buildDetails(event),
   });
 

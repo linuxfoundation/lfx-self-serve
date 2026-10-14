@@ -23,6 +23,7 @@ import {
   CreateMeetingRsvpRequest,
   GenerateAgendaResponse,
   Meeting,
+  MeetingCalendarScope,
   MeetingCommittee,
   MeetingRegistrant,
   PresignAttachmentRequest,
@@ -31,7 +32,7 @@ import {
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
 } from '@lfx-one/shared/interfaces';
-import { codePointLength, isMeetingAttendeeListShared, isWithinHostKeyWindow, truncateToUtf16Units } from '@lfx-one/shared/utils';
+import { codePointLength, isMeetingAttendeeListShared, isSameOccurrenceId, isWithinHostKeyWindow, truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import {
@@ -232,7 +233,7 @@ export class MeetingController {
   public async getMeetingCalendarIcs(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
     const occurrenceId = typeof req.query['occurrenceId'] === 'string' ? req.query['occurrenceId'] : undefined;
-    const scope = req.query['scope'] === 'series' ? 'series' : 'occurrence';
+    const scope: MeetingCalendarScope = req.query['scope'] === 'series' ? 'series' : 'occurrence';
     const startTime = logger.startOperation(req, 'get_meeting_calendar_ics', { meeting_id: uid, scope, occurrence_id: occurrenceId });
 
     try {
@@ -252,7 +253,7 @@ export class MeetingController {
       // was looking at, so a missing/stale occurrenceId is a 400, not a best-effort guess (GH-3505).
       if (scope === 'occurrence' && meeting.recurrence) {
         const activeOccurrences = meeting.occurrences?.filter((occ) => occ.status !== 'cancel') ?? [];
-        const matchedOccurrence = occurrenceId ? activeOccurrences.find((occ) => occ.occurrence_id === occurrenceId) : undefined;
+        const matchedOccurrence = occurrenceId ? activeOccurrences.find((occ) => isSameOccurrenceId(occ.occurrence_id, occurrenceId)) : undefined;
 
         if (!matchedOccurrence) {
           const validationError = ServiceValidationError.forField(

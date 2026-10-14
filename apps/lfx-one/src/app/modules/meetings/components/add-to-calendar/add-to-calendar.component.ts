@@ -1,14 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, input, InputSignal, Signal } from '@angular/core';
+import { Component, computed, inject, input, InputSignal, signal, Signal, WritableSignal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { environment } from '@environments/environment';
-import { CalendarLinkEvent, Meeting, MeetingOccurrence } from '@lfx-one/shared/interfaces';
+import { CalendarLinkEvent, Meeting, MeetingCalendarScope, MeetingOccurrence } from '@lfx-one/shared/interfaces';
+import { buildMeetingOccurrenceRoute } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { buildGoogleCalendarUrl, buildOutlookCalendarUrl } from '@shared/utils/calendar-link.util';
 import { MenuItem } from 'primeng/api';
@@ -34,13 +35,15 @@ export class AddToCalendarComponent {
   public readonly isRecurring: Signal<boolean> = computed(() => !!this.meeting().recurrence);
   public readonly menuItems: Signal<MenuItem[]> = this.initializeMenuItems();
 
-  private readonly scope: Signal<'occurrence' | 'series'> = this.initializeScope();
+  protected readonly menuOpen: WritableSignal<boolean> = signal(false);
+
+  private readonly scope: Signal<MeetingCalendarScope> = this.initializeScope();
 
   protected toggleMenu(event: Event, menuComponent: MenuComponent): void {
     menuComponent.toggle(event);
   }
 
-  private initializeScope(): Signal<'occurrence' | 'series'> {
+  private initializeScope(): Signal<MeetingCalendarScope> {
     return toSignal(this.scopeForm.get('scope')!.valueChanges, { initialValue: this.scopeForm.get('scope')!.value });
   }
 
@@ -96,8 +99,21 @@ export class AddToCalendarComponent {
    * this URL is embedded in a third-party calendar event body that syncs to every device and, if the
    * invitee forwards the event, to every other attendee. A visitor is asked for the password there
    * instead, the same way a plain share of the meeting page already works without one (GH-3505).
+   * The selected occurrence is preserved via `buildMeetingOccurrenceRoute` so the link lands on the
+   * same date the user picked, not whichever occurrence the meeting page defaults to (GH-3505).
    */
   private meetingPageUrl(): string {
-    return `${environment.urls.home}/meetings/${encodeURIComponent(this.meeting().id)}`;
+    const meeting = this.meeting();
+    const occurrence = this.isRecurring() ? this.currentOccurrence() : null;
+
+    if (!occurrence) {
+      return `${environment.urls.home}/meetings/${encodeURIComponent(meeting.id)}`;
+    }
+
+    const route = buildMeetingOccurrenceRoute(meeting.id, occurrence.start_time, occurrence.duration ?? meeting.duration);
+    const path = route.path.map((segment, index) => (index === 0 ? segment : encodeURIComponent(segment))).join('/');
+    const query = route.queryParams ? `?${new URLSearchParams(route.queryParams).toString()}` : '';
+
+    return `${environment.urls.home}${path}${query}`;
   }
 }

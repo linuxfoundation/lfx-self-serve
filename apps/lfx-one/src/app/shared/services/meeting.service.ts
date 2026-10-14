@@ -27,6 +27,7 @@ import {
   ITXUpdatePastMeetingParticipantRequest,
   Meeting,
   MeetingAttachment,
+  MeetingCalendarScope,
   MeetingJoinURL,
   MeetingRegistrant,
   MeetingRegistrationRemovalResult,
@@ -325,7 +326,7 @@ export class MeetingService {
    * here) — the browser downloads the file natively via an anchor/`window.open` target, and the
    * server resolves authorization and the join link itself.
    */
-  public getMeetingCalendarIcsUrl(meetingId: string, options: { scope: 'occurrence' | 'series'; occurrenceId?: string }): string {
+  public getMeetingCalendarIcsUrl(meetingId: string, options: { scope: MeetingCalendarScope; occurrenceId?: string }): string {
     let params = new HttpParams().set('scope', options.scope);
     if (options.occurrenceId) {
       params = params.set('occurrenceId', options.occurrenceId);

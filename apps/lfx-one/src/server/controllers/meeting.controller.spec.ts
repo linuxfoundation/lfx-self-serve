@@ -87,6 +87,7 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   truncateToUtf16Units: (await import('../../../../../packages/shared/src/utils/string.utils')).truncateToUtf16Units,
   codePointLength: (await import('../../../../../packages/shared/src/utils/string.utils')).codePointLength,
   isMeetingAttendeeListShared: (await import('../../../../../packages/shared/src/utils/meeting-attendee-lock.utils')).isMeetingAttendeeListShared,
+  isSameOccurrenceId: (await import('../../../../../packages/shared/src/utils/rsvp-calculator.util')).isSameOccurrenceId,
 }));
 
 vi.mock('../helpers/validation.helper', () => ({ validateUidParameter: vi.fn(() => true) }));

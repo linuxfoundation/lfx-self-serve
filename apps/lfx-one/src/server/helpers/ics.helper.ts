@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Meeting, PaginatedResponse } from '@lfx-one/shared/interfaces';
-import { addMinutesToDate } from '@lfx-one/shared/utils';
+import { Meeting, MeetingCalendarScope, PaginatedResponse, VEventExtras } from '@lfx-one/shared/interfaces';
+import { addMinutesToDate, isSameOccurrenceId } from '@lfx-one/shared/utils';
 import { logger } from '../services/logger.service';
 
 /**
@@ -56,14 +56,6 @@ export function foldLine(line: string): string {
   return chunks.join('\r\n ');
 }
 
-/** Optional per-event extras for {@link buildVEvent} beyond the title/time fields every caller has. */
-export interface VEventExtras {
-  /** Agenda/body text. Falls back to the title when omitted, matching prior behavior. */
-  description?: string;
-  /** Join link, appended to DESCRIPTION and set as the ICS URL property (GH-3505). */
-  joinUrl?: string;
-}
-
 /**
  * Builds a single VEVENT block from meeting fields.
  * Uses nullish coalescing for duration so a valid 0-minute meeting is preserved.
@@ -109,20 +101,25 @@ export function buildVEvent(uid: string, title: string, startIso: string, durati
  * `joinUrl` is attached to every event produced — the caller is responsible for resolving it
  * through the same access-controlled path the Join Meeting button uses.
  */
-export function buildMeetingCalendarEvents(meeting: Meeting, options: { scope: 'occurrence' | 'series'; occurrenceId?: string; joinUrl?: string }): string[] {
+export function buildMeetingCalendarEvents(meeting: Meeting, options: { scope: MeetingCalendarScope; occurrenceId?: string; joinUrl?: string }): string[] {
   const { scope, occurrenceId, joinUrl } = options;
   const occurrences = meeting.occurrences?.filter((occ) => occ.status !== 'cancel') ?? [];
 
-  if (scope === 'series' && occurrences.length > 0) {
-    return occurrences.map((occ) =>
-      buildVEvent(`${meeting.id}-${occ.occurrence_id}`, occ.title || meeting.title, occ.start_time, occ.duration ?? meeting.duration, {
-        description: occ.description || meeting.description,
-        joinUrl,
-      })
-    );
+  if (scope === 'series') {
+    // A recurring meeting with every occurrence cancelled has no active date left to export — falling
+    // through to the single-event path below would put the (cancelled) series' original date back on
+    // the user's calendar. Only a non-recurring meeting has no series to expand (GH-3505).
+    if (meeting.recurrence) {
+      return occurrences.map((occ) =>
+        buildVEvent(`${meeting.id}-${occ.occurrence_id}`, occ.title || meeting.title, occ.start_time, occ.duration ?? meeting.duration, {
+          description: occ.description || meeting.description,
+          joinUrl,
+        })
+      );
+    }
   }
 
-  const occurrence = occurrenceId ? occurrences.find((occ) => occ.occurrence_id === occurrenceId) : undefined;
+  const occurrence = occurrenceId ? occurrences.find((occ) => isSameOccurrenceId(occ.occurrence_id, occurrenceId)) : undefined;
   const uid = occurrence ? `${meeting.id}-${occurrence.occurrence_id}` : meeting.id;
   const title = occurrence?.title || meeting.title;
   const startTime = occurrence?.start_time || meeting.start_time;
