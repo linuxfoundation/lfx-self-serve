@@ -56,18 +56,31 @@ export function foldLine(line: string): string {
   return chunks.join('\r\n ');
 }
 
+/** Optional per-event extras for {@link buildVEvent} beyond the title/time fields every caller has. */
+export interface VEventExtras {
+  /** Agenda/body text. Falls back to the title when omitted, matching prior behavior. */
+  description?: string;
+  /** Join link, appended to DESCRIPTION and set as the ICS URL property (GH-3505). */
+  joinUrl?: string;
+}
+
 /**
  * Builds a single VEVENT block from meeting fields.
  * Uses nullish coalescing for duration so a valid 0-minute meeting is preserved.
  * Includes SEQUENCE:0 per RFC 5545 so calendar clients can detect rescheduled events,
  * and DESCRIPTION with the meeting title for richer calendar entries.
  */
-export function buildVEvent(uid: string, title: string, startIso: string, durationMinutes: number | null | undefined): string {
+export function buildVEvent(uid: string, title: string, startIso: string, durationMinutes: number | null | undefined, extras?: VEventExtras): string {
   const dtstart = formatICSDate(startIso);
   const dtend = formatICSDate(addMinutesToDate(startIso, durationMinutes).toISOString());
   const dtstamp = formatICSDate(new Date().toISOString());
 
-  return [
+  const descriptionBody = extras?.description?.trim() || title;
+  // The join link is appended to DESCRIPTION too, not only URL: Google Calendar's event detail view
+  // surfaces DESCRIPTION far more prominently than the URL property, and some clients drop URL entirely.
+  const description = extras?.joinUrl ? `${descriptionBody}\n\nJoin: ${extras.joinUrl}` : descriptionBody;
+
+  const lines = [
     'BEGIN:VEVENT',
     `UID:${uid}@lfx.linuxfoundation.org`,
     `DTSTAMP:${dtstamp}`,
@@ -75,9 +88,48 @@ export function buildVEvent(uid: string, title: string, startIso: string, durati
     `DTEND:${dtend}`,
     'SEQUENCE:0',
     foldLine(`SUMMARY:${escapeICSText(title)}`),
-    foldLine(`DESCRIPTION:${escapeICSText(title)}`),
-    'END:VEVENT',
-  ].join('\r\n');
+    foldLine(`DESCRIPTION:${escapeICSText(description)}`),
+  ];
+
+  if (extras?.joinUrl) {
+    lines.push(foldLine(`URL:${extras.joinUrl}`));
+  }
+
+  lines.push('END:VEVENT');
+
+  return lines.join('\r\n');
+}
+
+/**
+ * Builds the VEVENT(s) for a single meeting's "Add to calendar" download (GH-3505).
+ * - `scope: 'occurrence'` (default) builds one event for `occurrenceId` (or the meeting's own
+ *   start/duration when it isn't recurring or the occurrence can't be found).
+ * - `scope: 'series'` expands every non-cancelled occurrence, matching `meetingsToVEvents`; a
+ *   non-recurring meeting still gets its single event since there is no series to expand.
+ * `joinUrl` is attached to every event produced — the caller is responsible for resolving it
+ * through the same access-controlled path the Join Meeting button uses.
+ */
+export function buildMeetingCalendarEvents(meeting: Meeting, options: { scope: 'occurrence' | 'series'; occurrenceId?: string; joinUrl?: string }): string[] {
+  const { scope, occurrenceId, joinUrl } = options;
+  const occurrences = meeting.occurrences?.filter((occ) => occ.status !== 'cancel') ?? [];
+
+  if (scope === 'series' && occurrences.length > 0) {
+    return occurrences.map((occ) =>
+      buildVEvent(`${meeting.id}-${occ.occurrence_id}`, occ.title || meeting.title, occ.start_time, occ.duration ?? meeting.duration, {
+        description: occ.description || meeting.description,
+        joinUrl,
+      })
+    );
+  }
+
+  const occurrence = occurrenceId ? occurrences.find((occ) => occ.occurrence_id === occurrenceId) : undefined;
+  const uid = occurrence ? `${meeting.id}-${occurrence.occurrence_id}` : meeting.id;
+  const title = occurrence?.title || meeting.title;
+  const startTime = occurrence?.start_time || meeting.start_time;
+  const duration = occurrence?.duration ?? meeting.duration;
+  const description = occurrence?.description || meeting.description;
+
+  return [buildVEvent(uid, title, startTime, duration, { description, joinUrl })];
 }
 
 /**

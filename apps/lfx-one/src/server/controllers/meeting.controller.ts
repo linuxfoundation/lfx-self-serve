@@ -42,6 +42,7 @@ import {
 } from '../constants';
 import { resolveCommitteeV2UidMappings, resolveCommitteeV2UidsToV1Ids } from '../helpers/committee-v1-mapping.helper';
 import { MicroserviceError, ServiceValidationError } from '../errors';
+import { buildMeetingCalendarEvents, buildVCalendar } from '../helpers/ics.helper';
 import { addInvitedStatusToMeeting, applyOrganizerAndHostKeyResult, enrichMeetingsWithCreatedBy, stripHostKey } from '../helpers/meeting.helper';
 import { settleInBatches } from '../helpers/settle-in-batches.helper';
 import { validateUidParameter } from '../helpers/validation.helper';
@@ -213,6 +214,59 @@ export class MeetingController {
       res.json(enrichedMeeting);
     } catch (error) {
       // Send the error to the next middleware
+      next(error);
+    }
+  }
+
+  /**
+   * GET /meetings/:uid/calendar.ics
+   * Downloads a single meeting (or its recurring series) as an .ics file (GH-3505).
+   * Reuses the `{ access: true }` FGA gate from getMeetingById as the sole authorization check,
+   * so private/restricted meetings 403 the same way the meeting detail page itself does.
+   */
+  public async getMeetingCalendarIcs(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const occurrenceId = typeof req.query['occurrenceId'] === 'string' ? req.query['occurrenceId'] : undefined;
+    const scope = req.query['scope'] === 'series' ? 'series' : 'occurrence';
+    const startTime = logger.startOperation(req, 'get_meeting_calendar_ics', { meeting_id: uid, scope, occurrence_id: occurrenceId });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'get_meeting_calendar_ics',
+          service: 'meeting_controller',
+        })
+      ) {
+        return;
+      }
+
+      // access: true relies on the same FGA check the meeting detail page uses, so a caller who
+      // can't see a private/restricted meeting gets the same denial here as elsewhere (GH-3505).
+      const meeting = await this.meetingService.getMeetingById(req, uid, 'v1_meeting', { access: true });
+
+      // The join link must follow the same access-controlled path as the Join Meeting button.
+      // Window/password checks in postMeetingJoinUrl don't apply here — a calendar invite is
+      // generated well before join time — so getMeetingJoinUrl is called directly. A failure
+      // degrades to an event with no join link rather than failing the whole download.
+      const joinUrl = await this.meetingService.getMeetingJoinUrl(req, uid).catch((error) => {
+        logger.warning(req, 'get_meeting_calendar_ics', 'Failed to resolve join URL, continuing without one', {
+          meeting_id: uid,
+          err: error,
+        });
+        return null;
+      });
+
+      const events = buildMeetingCalendarEvents(meeting, { scope, occurrenceId, joinUrl: joinUrl?.link });
+      const ics = buildVCalendar(events, '-//LFX//Meeting Calendar//EN', meeting.title);
+
+      logger.success(req, 'get_meeting_calendar_ics', startTime, { meeting_id: uid, scope, event_count: events.length });
+
+      res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="meeting-${uid}.ics"`);
+      // Personalized (embeds the caller's own access-gated join link) — never cache or share this response.
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.send(ics);
+    } catch (error) {
       next(error);
     }
   }
