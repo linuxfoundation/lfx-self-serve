@@ -96,8 +96,9 @@ export class GatewazeProxyController {
       next(gatewazeHostSessionNotFound(req));
       return;
     }
-    // The route matched `/supabase/<service>/v1`, so the prefix is that service's.
-    const service = String(req.params[0]);
+    // The route matched `/supabase/<service>/v1`, so the prefix is that service's. Lower-cased, so an
+    // upper-cased path fails the prefix check with a 400 instead of reaching Supabase as written.
+    const service = String(req.params[0]).toLowerCase();
     const upstream: Upstream = { url: config.supabaseUrl, prefix: `/${service}/v1`, supabase: true };
     await this.forward(req, res, next, upstream, req.url.slice('/supabase'.length), GW_HOST_SESSION_PROXY_SUPABASE_MOUNT, config.anonKey);
   }

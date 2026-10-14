@@ -229,7 +229,6 @@ describe('/api/gatewaze router', () => {
     it.each([
       ['GoTrue', '/api/gatewaze/supabase/auth/v1/user'],
       ['Realtime over plain HTTP', '/api/gatewaze/supabase/realtime/v1/websocket'],
-      ['an upper-cased service, since regex routes are case-sensitive', '/api/gatewaze/supabase/REST/v1/newsletters'],
     ])('does not proxy %s', async (_label, path) => {
       const res = await fetch(`${baseUrl}${path}`, { headers: shim });
 
@@ -237,4 +236,15 @@ describe('/api/gatewaze router', () => {
       expect(getGatewazeSession).not.toHaveBeenCalled();
     });
   });
+
+  it.each(['/api/gatewaze/supabase/REST/v1/newsletters', '/api/gatewaze/API/modules/x'])(
+    'answers 400 for the upper-cased %s, before any session is loaded',
+    async (path) => {
+      const res = await fetch(`${baseUrl}${path}`, { headers: { authorization: 'Bearer host-session', apikey: 'sb_publishable_synthetic' } });
+
+      expect(res.status).toBe(400);
+      expect((await res.json()).code).toBe('GW_BAD_PATH');
+      expect(getGatewazeSession).not.toHaveBeenCalled();
+    }
+  );
 });

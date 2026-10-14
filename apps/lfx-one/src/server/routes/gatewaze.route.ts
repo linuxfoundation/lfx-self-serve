@@ -29,9 +29,10 @@ router.use(requireGatewazeHostSession, requireGatewazeBearer, requireGwEmbedAcce
 
 // The proxies. Supabase services are matched by name, so GoTrue's /auth/v1 is never proxied (the
 // embed's shim answers auth itself from /session/me) and Realtime is left to its upgrade handler.
-// Regex routes are case-sensitive, unlike the mount.
-router.all(/^\/supabase\/(rest|storage|functions)\/v1(?:\/.*)?$/, (req, res, next) => proxy.proxySupabase(req, res, next));
-router.all(/^\/api(?:\/.*)?$/, (req, res, next) => proxy.proxyApi(req, res, next));
+// Case-insensitive like the mount, so an upper-cased path reaches the proxy and gets its 400 from the
+// prefix check rather than falling through to the SSR catch-all.
+router.all(/^\/supabase\/(rest|storage|functions)\/v1(?:\/.*)?$/i, (req, res, next) => proxy.proxySupabase(req, res, next));
+router.all(/^\/api(?:\/.*)?$/i, (req, res, next) => proxy.proxyApi(req, res, next));
 
 router.get('/session/me', (req, res, next) => controller.me(req, res, next));
 router.post('/session/logout', (req, res, next) => controller.logout(req, res, next));

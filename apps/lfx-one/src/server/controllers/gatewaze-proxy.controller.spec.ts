@@ -5,6 +5,7 @@ import { createServer, IncomingHttpHeaders, IncomingMessage, request as httpRequ
 import { AddressInfo } from 'node:net';
 
 import express, { NextFunction, Request, Response } from 'express';
+import rateLimit from 'express-rate-limit';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
@@ -70,10 +71,12 @@ beforeAll(async () => {
 
   const controller = new GatewazeProxyController();
   const router = express.Router();
-  router.all(/^\/supabase\/(rest|storage|functions)\/v1(?:\/.*)?$/, (req, res, next) => controller.proxySupabase(req, res, next));
-  router.all(/^\/api(?:\/.*)?$/, (req, res, next) => controller.proxyApi(req, res, next));
+  router.all(/^\/supabase\/(rest|storage|functions)\/v1(?:\/.*)?$/i, (req, res, next) => controller.proxySupabase(req, res, next));
+  router.all(/^\/api(?:\/.*)?$/i, (req, res, next) => controller.proxyApi(req, res, next));
   const expressApp = express();
   expressApp.disable('x-powered-by');
+  // Stands in for apiRateLimiter, which covers /api/ in server.ts; high enough never to trip here.
+  expressApp.use(rateLimit({ windowMs: 60_000, limit: 10_000 }));
   expressApp.use('/api/gatewaze', router);
   // Stands in for apiErrorHandler.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Express only treats a four-parameter function as an error handler

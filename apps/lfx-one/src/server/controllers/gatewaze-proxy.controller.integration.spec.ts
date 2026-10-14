@@ -12,6 +12,7 @@ import { createServer, IncomingMessage, request as httpRequest, Server, ServerRe
 import { AddressInfo } from 'node:net';
 
 import express, { NextFunction, Request, Response } from 'express';
+import rateLimit from 'express-rate-limit';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { attachGwDrainGuard, hasGwDrainBeenAttempted } from '../helpers/gw-api.helper';
@@ -64,12 +65,14 @@ beforeAll(async () => {
 
   const controller = new GatewazeProxyController(LIMIT_BYTES);
   const expressApp = express();
+  // Stands in for apiRateLimiter, which covers /api/ in server.ts; high enough never to trip here.
+  expressApp.use(rateLimit({ windowMs: 60_000, limit: 10_000 }));
   // Mirrors server.ts: the drain guard wraps the response before the router runs.
   expressApp.use((req, res, next) => {
     attachGwDrainGuard(req, res);
     next();
   });
-  expressApp.all(/^\/api\/gatewaze\/supabase\/(rest|storage|functions)\/v1(?:\/.*)?$/, (req, res, next) => {
+  expressApp.all(/^\/api\/gatewaze\/supabase\/(rest|storage|functions)\/v1(?:\/.*)?$/i, (req, res, next) => {
     // The router's mount strips `/api/gatewaze`; this harness has no mount, so strip it here.
     req.url = req.url.slice('/api/gatewaze'.length);
     void controller.proxySupabase(req, res, next);
