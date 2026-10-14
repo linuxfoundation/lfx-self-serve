@@ -960,6 +960,12 @@ export const LINKEDIN_ADS_MONITOR_ACCOUNT_ID_PATTERN = /^[0-9]{1,64}$/;
 export const META_ADS_MONITOR_ACCOUNT_ID_PATTERN = /^act_[0-9]{1,60}$/;
 export const REDDIT_ADS_MONITOR_ACCOUNT_ID_PATTERN = /^[A-Za-z0-9_]{1,64}$/;
 
+/** The Monitor tab's date-range buttons, in trailing days. */
+export const MONITOR_DATE_RANGE_OPTIONS = [7, 14, 30] as const;
+
+/** Rows per page in the Monitor tab's Google Ads keyword table. */
+export const MONITOR_KEYWORD_PAGE_SIZE = 10;
+
 /** HubSpot's brand orange, for the Monitor tab's email button (HubSpot is not a `CampaignPlatform`). */
 export const HUBSPOT_BRAND_COLOR = '#FF7A59';
 

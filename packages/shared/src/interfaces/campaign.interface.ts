@@ -11,6 +11,7 @@ import type {
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
   MICROSOFT_KEYWORDS_WINDOWS,
+  MONITOR_DATE_RANGE_OPTIONS,
   REDDIT_CALL_TO_ACTIONS,
   REDDIT_SELECTABLE_OBJECTIVES,
   REDDIT_VIDEO_GOALS,
@@ -2522,6 +2523,12 @@ export interface CampaignMonitorConnections {
 
 /** A Monitor panel that can show a `MonitorPanelNotice`: the connection-backed ad platforms, and the HubSpot email section. */
 export type MonitorPanelKey = MonitorConnectionPlatform | 'hubspot';
+
+/** Every panel the Monitor tab can show: Google Ads (the aggregate view) plus each `MonitorPanelKey`. */
+export type MonitorTabPlatform = 'google' | MonitorPanelKey;
+
+/** The Monitor tab's trailing-days choices; a member of `MONITOR_DATE_RANGE_OPTIONS`. */
+export type MonitorDateRangeOption = (typeof MONITOR_DATE_RANGE_OPTIONS)[number];
 
 /** Why a Monitor panel shows an empty state instead of data: a connection state, or the platform's metrics switched off upstream. */
 export type MonitorPanelNoticeState = Exclude<MonitorConnectionState, 'connected'> | 'metrics_disabled';

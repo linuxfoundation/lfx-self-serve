@@ -11,6 +11,8 @@ import {
   CAMPAIGN_PLATFORMS,
   HUBSPOT_BRAND_COLOR,
   MONITOR_CONNECTION_PROVIDERS,
+  MONITOR_DATE_RANGE_OPTIONS,
+  MONITOR_KEYWORD_PAGE_SIZE,
   parseCampaignName,
   PLATFORM_BRAND_COLORS,
 } from '@lfx-one/shared/constants';
@@ -34,9 +36,11 @@ import type {
   MetaMonitorResponse,
   MonitorConnectionAccount,
   MonitorConnectionPlatform,
+  MonitorDateRangeOption,
   MonitorPanelKey,
   MonitorPanelNotice,
   MonitorPanelNoticeState,
+  MonitorTabPlatform,
   RedditAccountOption,
   RedditCampaignMetrics,
   RedditMonitorResponse,
@@ -47,11 +51,6 @@ import type {
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { MetaPacingClassPipe } from '@pipes/campaign-optimization.pipe';
 import { AudienceDemographicsComponent } from '../audience-demographics/audience-demographics.component';
-
-type DateRangeOption = 7 | 14 | 30;
-type PlatformType = 'google' | 'linkedin' | 'reddit' | 'meta' | 'microsoft' | 'twitter' | 'hubspot';
-
-const KEYWORD_PAGE_SIZE = 10;
 
 @Component({
   selector: 'lfx-monitoring-tab',
@@ -72,17 +71,17 @@ export class MonitoringTabComponent implements OnInit {
 
   protected readonly Math = Math;
   protected readonly platformColors = PLATFORM_BRAND_COLORS;
-  protected readonly dateRangeOptions: DateRangeOption[] = [7, 14, 30];
-  protected readonly keywordPageSize = KEYWORD_PAGE_SIZE;
+  protected readonly dateRangeOptions: readonly MonitorDateRangeOption[] = MONITOR_DATE_RANGE_OPTIONS;
+  protected readonly keywordPageSize = MONITOR_KEYWORD_PAGE_SIZE;
   protected readonly copiedName = signal<string | null>(null);
 
-  protected readonly selectedDays = signal<DateRangeOption>(30);
+  protected readonly selectedDays = signal<MonitorDateRangeOption>(30);
   protected readonly loading = signal(false);
   protected readonly monitorData = signal<CampaignMonitorResponse | null>(null);
   protected readonly error = signal<string | null>(null);
 
   // Platform switcher
-  protected readonly selectedPlatform = signal<PlatformType>('google');
+  protected readonly selectedPlatform = signal<MonitorTabPlatform>('google');
   // Only the id and label are rendered; with the monitor cutover on, the one option is the
   // project's connection's account, which carries no org id.
   protected readonly linkedInAccountOptions = signal<Pick<LinkedInAccount, 'accountId' | 'label'>[]>([]);
@@ -213,14 +212,14 @@ export class MonitoringTabComponent implements OnInit {
    */
   protected readonly keywordTotalsUnverified = computed(() => this.keywordsData()?.truncated === undefined);
   protected readonly hasKeywords = computed(() => this.keywords().length > 0);
-  protected readonly keywordTotalPages = computed(() => Math.max(1, Math.ceil(this.keywords().length / KEYWORD_PAGE_SIZE)));
+  protected readonly keywordTotalPages = computed(() => Math.max(1, Math.ceil(this.keywords().length / MONITOR_KEYWORD_PAGE_SIZE)));
   protected readonly hasKeywordPrevPage = computed(() => this.keywordPage() > 1);
   protected readonly hasKeywordNextPage = computed(() => this.keywordPage() < this.keywordTotalPages());
 
   protected readonly visibleKeywords = computed<KeywordMetrics[]>(() => {
     const all = this.keywords();
-    const start = (this.keywordPage() - 1) * KEYWORD_PAGE_SIZE;
-    return all.slice(start, start + KEYWORD_PAGE_SIZE);
+    const start = (this.keywordPage() - 1) * MONITOR_KEYWORD_PAGE_SIZE;
+    return all.slice(start, start + MONITOR_KEYWORD_PAGE_SIZE);
   });
 
   protected readonly keywordPageNumbers = computed(() => Array.from({ length: this.keywordTotalPages() }, (_, i) => i + 1));
@@ -252,7 +251,7 @@ export class MonitoringTabComponent implements OnInit {
     this.loadForActiveFoundation();
   }
 
-  protected setDateRange(days: DateRangeOption): void {
+  protected setDateRange(days: MonitorDateRangeOption): void {
     this.selectedDays.set(days);
     this.fetchData();
     if (this.selectedPlatform() === 'linkedin') {
@@ -353,7 +352,7 @@ export class MonitoringTabComponent implements OnInit {
     }
   }
 
-  protected setPlatform(p: PlatformType): void {
+  protected setPlatform(p: MonitorTabPlatform): void {
     this.selectedPlatform.set(p);
     if (p === 'linkedin') {
       this.fetchLinkedInData();
@@ -755,7 +754,7 @@ export class MonitoringTabComponent implements OnInit {
     }
   }
 
-  private isReportBackedPlatform(platform: PlatformType): boolean {
+  private isReportBackedPlatform(platform: MonitorTabPlatform): boolean {
     return platform === 'microsoft' || platform === 'twitter';
   }
 
