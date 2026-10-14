@@ -47,7 +47,8 @@ export interface GwHostContext {
    * at that point would overwrite the pending nonce and break every host-initiated return.
    *
    * Bridge mode only. Optional in host-session mode, and LFX One leaves it out there: a lost session
-   * then makes the embed reload the page once, so LFX's own sign-in guard takes over.
+   * then makes the embed reload the page (at most twice in 30 seconds), so LFX's own sign-in guard
+   * takes over.
    */
   signIn?: {
     /** The host's own sign-in entry point (LFID here). The embed never implements sign-in itself. */
@@ -100,7 +101,8 @@ export interface GwEmbedHostSession {
  * `@gatewaze/admin-embed` is a loader: the admin bundle itself is served by the Gatewaze
  * deployment under `<baseUrl>/` (a `manifest.json` naming the current content-hashed entry and
  * stylesheet, plus the files). The host picks up admin changes on the next page load with no
- * release of its own; only a change to the loader's host contract needs the package bumped.
+ * release of its own. The package is bumped only for a change to the loader's host contract, or to
+ * use a capability the loader checks for, such as `host-session`.
  */
 export interface GwEmbedSource {
   /** Absolute URL of the deployment's embed directory, e.g. `https://admin.example.org/embed`. */

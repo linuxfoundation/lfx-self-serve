@@ -687,7 +687,6 @@ describe('GwModuleOutletComponent', () => {
 
     describe('host-session mode', () => {
       const STORED_KEY = `${GW_EMBED_STORAGE_KEY_PREFIX}${GW_EMBED_STORAGE_KEY_SUFFIX}`;
-      const OTHER_USER_KEY = `${GW_EMBED_STORAGE_KEY_PREFIX}other-user`;
 
       beforeEach(() => configure({ gwHostSession: true }));
       afterEach(() => window.history.replaceState(window.history.state, '', window.location.pathname));
@@ -720,17 +719,13 @@ describe('GwModuleOutletComponent', () => {
         await pending;
       });
 
-      it('removes every session the bridge stored, and nothing else', async () => {
-        window.localStorage.setItem(STORED_KEY, futureSession());
-        window.localStorage.setItem(OTHER_USER_KEY, futureSession());
-        window.localStorage.setItem('unrelated', 'kept');
+      it('clears a sign-in nonce left on the query with no fragment', async () => {
+        window.history.replaceState(window.history.state, '', `${window.location.pathname}?${GW_EMBED_SIGNIN_STATE_PARAM}=nonce-1&project=aaif`);
 
         const pending = mount();
         await settle();
 
-        expect(window.localStorage.getItem(STORED_KEY)).toBeNull();
-        expect(window.localStorage.getItem(OTHER_USER_KEY)).toBeNull();
-        expect(window.localStorage.getItem('unrelated')).toBe('kept');
+        expect(window.location.search).toBe('?project=aaif');
         resolveReady(MANIFEST);
         await pending;
       });

@@ -1,7 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { GW_EMBED_ALLOWED_PROJECT_SLUGS, GW_EMBED_ROUTE_PREFIX, GW_EMBED_ROUTE_PREFIXES, GW_EMBED_STORAGE_KEY_SUFFIX } from '../constants/gw-embed.constants';
+import {
+  GW_EMBED_ALLOWED_PROJECT_SLUGS,
+  GW_EMBED_AUTO_SIGNIN_KEY,
+  GW_EMBED_ROUTE_PREFIX,
+  GW_EMBED_ROUTE_PREFIXES,
+  GW_EMBED_SESSION_RECOVERY_KEY,
+  GW_EMBED_SIGNIN_STATE_KEY,
+  GW_EMBED_STORAGE_KEY_PREFIX,
+  GW_EMBED_STORAGE_KEY_SUFFIX,
+} from '../constants/gw-embed.constants';
 import { sha256Hex } from './sha256.utils';
 
 /**
@@ -81,4 +90,35 @@ export function buildGwEmbedStorageSuffix(subject: string | null | undefined): s
   }
 
   return `${GW_EMBED_STORAGE_KEY_SUFFIX}_${sha256Hex(subject)}`;
+}
+
+/**
+ * Removes what the LFID bridge leaves in browser storage, for host-session mode.
+ *
+ * - From local storage, every key under `GW_EMBED_STORAGE_KEY_PREFIX`: each stored Gatewaze session,
+ *   with its live refresh token, for every LFX user who signed in on this browser.
+ * - From session storage, the bridge's sign-in nonce, automatic sign-in counter and recovery timestamp.
+ *   None of these is a credential, but nothing reads them in host-session mode.
+ *
+ * Takes the two stores as getters so it has no browser globals of its own, and because reading
+ * `window.localStorage` itself throws when site data is blocked. A store that throws is skipped:
+ * nothing can have been stored there either.
+ */
+export function clearGwEmbedBridgeStorage(getLocal: () => Storage, getSession: () => Storage): void {
+  try {
+    const local = getLocal();
+    const keys = Array.from({ length: local.length }, (_, index) => local.key(index)).filter(
+      (key): key is string => key !== null && key.startsWith(GW_EMBED_STORAGE_KEY_PREFIX)
+    );
+    keys.forEach((key) => local.removeItem(key));
+  } catch {
+    // Storage unavailable; see above.
+  }
+
+  try {
+    const session = getSession();
+    [GW_EMBED_SIGNIN_STATE_KEY, GW_EMBED_AUTO_SIGNIN_KEY, GW_EMBED_SESSION_RECOVERY_KEY].forEach((key) => session.removeItem(key));
+  } catch {
+    // Storage unavailable; see above.
+  }
 }

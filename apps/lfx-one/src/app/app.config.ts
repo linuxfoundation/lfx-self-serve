@@ -18,6 +18,7 @@ import { DialogService } from 'primeng/dynamicdialog';
 import { routes } from './app.routes';
 import { provideDataDogRum } from './shared/providers/datadog-rum.provider';
 import { provideFeatureFlags } from './shared/providers/feature-flag.provider';
+import { provideGwEmbedBridgeCleanup } from './shared/providers/gw-embed-bridge-cleanup.provider';
 import { provideRuntimeConfig } from './shared/providers/runtime-config.provider';
 import { ChunkLoadErrorHandler } from './shared/utils/chunk-load-error.handler';
 import { CustomPreloadingStrategy } from './shared/strategies/custom-preloading.strategy';
@@ -63,6 +64,7 @@ export const appConfig: ApplicationConfig = {
     provideRuntimeConfig(), // Must be before other providers that depend on runtime config
     provideDataDogRum(),
     provideFeatureFlags(),
+    provideGwEmbedBridgeCleanup(),
     ConfirmationService,
     DialogService,
     MessageService,
