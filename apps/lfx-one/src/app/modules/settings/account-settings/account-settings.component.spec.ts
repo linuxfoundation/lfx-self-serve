@@ -5,8 +5,10 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute } from '@angular/router';
-import { ERROR_CODES, MEETING_INVITE_PRIMARY_SENTINEL } from '@lfx-one/shared/constants';
-import { EmailManagementData, MeetingInviteEmail, UserEmail } from '@lfx-one/shared/interfaces';
+import { EMAIL_VERIFICATION_SENT_MESSAGE, ERROR_CODES, MEETING_INVITE_PRIMARY_SENTINEL } from '@lfx-one/shared/constants';
+import { EmailManagementData, MeetingInviteEmail, SendEmailVerificationResponse, UserEmail } from '@lfx-one/shared/interfaces';
+import { FeatureFlagService } from '@services/feature-flag.service';
+import { IntercomService } from '@services/intercom.service';
 import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -500,5 +502,52 @@ describe('AccountSettingsComponent — meeting-invite selection & delete guard (
     await fixture.whenStable();
 
     expect(messageServiceMock.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Failed to delete email address' }));
+  });
+});
+
+describe('AccountSettingsComponent — email verification support', () => {
+  it('makes support reachable in the OTP step after a generic successful send', async () => {
+    const userServiceMock = {
+      impersonating: signal(false),
+      getUserEmails: vi.fn(() => of<EmailManagementData>({ primary_email: 'primary@example.test', alternate_emails: [] })),
+      getMeetingInviteEmail: vi.fn(() => of({ email_id: null, email: null })),
+      getDeveloperTokenInfo: vi.fn(() => of({ token: '' })),
+      sendEmailVerificationCode: vi.fn(() => of<SendEmailVerificationResponse>({ success: true, message: EMAIL_VERIFICATION_SENT_MESSAGE })),
+    };
+
+    TestBed.configureTestingModule({
+      imports: [AccountSettingsComponent],
+      providers: [
+        // Skip unrelated browser scroll observers while rendering the real form and template.
+        { provide: PLATFORM_ID, useValue: 'server' },
+        { provide: ActivatedRoute, useValue: { snapshot: { data: {} }, fragment: of(null) } },
+        { provide: UserService, useValue: userServiceMock },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
+        { provide: IntercomService, useValue: { openMessenger: vi.fn() } },
+      ],
+    });
+
+    const fixture = TestBed.createComponent(AccountSettingsComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+
+    expect(root.querySelector('[data-testid="otp-support-hint"]')).toBeNull();
+
+    const emailInput = root.querySelector<HTMLInputElement>('[data-testid="add-email-input"] input')!;
+    emailInput.value = 'new-address@example.test';
+    emailInput.dispatchEvent(new Event('input', { bubbles: true }));
+    fixture.detectChanges();
+    expect(root.querySelector<HTMLButtonElement>('[data-testid="send-code-button"] button')?.disabled).toBe(false);
+
+    root.querySelector<HTMLFormElement>('[data-testid="add-email-form"]')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const otpStep = root.querySelector('[data-testid="otp-step"]')!;
+    expect(otpStep.querySelector('[data-testid="otp-input"] input')).not.toBeNull();
+    const supportButton = otpStep.querySelector<HTMLButtonElement>('[data-testid="otp-support-hint"] [data-testid="otp-support-button"]');
+    expect(supportButton?.disabled).toBe(false);
+    expect(root.querySelector('[data-testid="add-email-form"]')).toBeNull();
   });
 });

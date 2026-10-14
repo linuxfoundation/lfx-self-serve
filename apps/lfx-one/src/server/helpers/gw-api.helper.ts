@@ -166,7 +166,7 @@ export function attachGwDrainGuard(req: Request, res: Response): void {
 }
 
 /**
- * The path to test against the `/api/gw` mount, taken from the untrimmed URL.
+ * The path to test against the `/api/gw` and `/api/gatewaze` mounts, taken from the untrimmed URL.
  *
  * Every caller of `isGwProxyPath` goes through this, including the three top-level handlers where
  * `req.path` would still be correct. Correct-by-construction on purpose: the `compression` filter
@@ -191,7 +191,9 @@ export function gwMountPath(req: Request): string {
 }
 
 /**
- * Whether a request path belongs to the Gatewaze proxy router mounted at `/api/gw`.
+ * Whether a request path belongs to a Gatewaze proxy router: `/api/gw`, or `/api/gatewaze`, whose
+ * Supabase and API proxies stream the raw body the same way (`gatewaze-proxy.controller.ts`). Its
+ * session routes read no body, so excluding the whole mount costs them nothing.
  *
  * Matches the mount exactly rather than by prefix. `startsWith('/api/gw')` would also swallow a
  * future `/api/gwidgets`, silently stripping its body parsing and compression — a failure that
@@ -214,7 +216,7 @@ export function isGwProxyPath(path: string): boolean {
   // and the controller then forwarded an already-ended stream as an empty body with the caller's
   // original content-type. Silent data loss, no error.
   const normalized = path.toLowerCase();
-  return normalized === '/api/gw' || normalized.startsWith('/api/gw/');
+  return ['/api/gw', '/api/gatewaze'].some((mount) => normalized === mount || normalized.startsWith(`${mount}/`));
 }
 
 /**
