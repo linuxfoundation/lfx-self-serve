@@ -13,6 +13,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import type {
   BulkKeywordActionRequest,
+  CampaignAdSchedule,
   CampaignBidType,
   CampaignBidUpdateRequest,
   CampaignBidUpdateResult,
@@ -30,7 +31,6 @@ import type {
   CampaignNegativeKeywordMatchType,
   CampaignNegativeKeywordsRequest,
   CampaignPlatform,
-  CampaignAdSchedule,
   CampaignProximityTarget,
   CampaignSitelink,
   CampaignSSEEventType,
@@ -59,6 +59,9 @@ import {
   GOOGLE_ADS_GEO_TARGET_MAP,
   GOOGLE_ADS_LANGUAGE_ID_PATTERN,
   GOOGLE_ADS_LANGUAGE_MAP,
+  GOOGLE_ADS_MAX_AD_SCHEDULES,
+  GOOGLE_ADS_MAX_AD_SCHEDULES_PER_DAY,
+  GOOGLE_ADS_MAX_BID_MODIFIER,
   GOOGLE_ADS_MAX_CALLOUTS,
   GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
   GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS,
@@ -71,16 +74,13 @@ import {
   GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES,
   GOOGLE_ADS_MAX_SITELINKS,
   GOOGLE_ADS_MICROS_PER_UNIT,
+  GOOGLE_ADS_MIN_BID_MODIFIER,
   GOOGLE_ADS_RADIUS_UNITS,
+  GOOGLE_ADS_SCHEDULE_DAYS,
+  GOOGLE_ADS_SCHEDULE_MINUTES,
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
   GOOGLE_CAMPAIGN_CHANNEL_LABELS,
-  GOOGLE_ADS_MAX_AD_SCHEDULES,
-  GOOGLE_ADS_MAX_AD_SCHEDULES_PER_DAY,
-  GOOGLE_ADS_MAX_BID_MODIFIER,
-  GOOGLE_ADS_MIN_BID_MODIFIER,
-  GOOGLE_ADS_SCHEDULE_DAYS,
-  GOOGLE_ADS_SCHEDULE_MINUTES,
   GOOGLE_CHANNELS_WITH_AD_EXTENSIONS,
   GOOGLE_CHANNELS_WITH_AD_SCHEDULES,
   GOOGLE_CHANNELS_WITH_CREATIVE,
@@ -928,8 +928,9 @@ export class CampaignController {
           const refuseAdSchedules = (message: string): void =>
             next(ServiceValidationError.forField('adSchedules', message, { operation: 'campaign_create', service: 'campaign_controller' }));
           // The Go decode into `[]googleAdsAdScheduleConfig` refuses a non-list, a non-object entry,
-          // a non-string day or a non-numeric hour, minute or bid modifier. A null entry or field
-          // decodes to a zero, which the entry checks below refuse by name.
+          // a non-string day or a non-numeric hour, minute or bid modifier. A null FIELD decodes to
+          // a zero, which the entry checks below refuse by name. A null ENTRY is refused here
+          // instead, unlike a null radius target — see {@link isAdScheduleShape} for why.
           if (!Array.isArray(rawAdSchedules) || !rawAdSchedules.every((entry) => this.isAdScheduleShape(entry))) {
             refuseAdSchedules('Google Ads ad schedules must be a list of objects with a day of week and numeric start and end hours and minutes.');
             return;
@@ -4392,18 +4393,21 @@ export class CampaignController {
    * The four time fields are decoded into Go `int`s, so `9.5` is a decode error upstream rather than
    * a near miss — refusing it here reports the same thing in the caller's own words. An absent one
    * decodes to `0`, which is a real hour and a real minute, so it is tolerated here and judged by
-   * {@link googleAdScheduleRefusal} alongside the fields the caller did write: a lone `endHour`
-   * leaves a window starting at 00:00, which that guard refuses by name as an empty window or
-   * accepts as a genuine overnight-to-morning schedule, and either answer is upstream's.
+   * {@link googleAdScheduleRefusal} alongside the fields the caller did write — and either answer
+   * is upstream's. A lone `endHour` leaves an ordinary window starting at 00:00, which that guard
+   * accepts exactly as upstream does; a MISSING `endHour` decodes to the 0 that the same guard
+   * refuses by name as an end hour outside 1 to 24.
    *
    * `bidModifier` is the one field whose ABSENCE must survive normalization rather than being read
    * as a zero — see {@link NormalizedAdSchedule}. `null` is accepted here because Go decodes it to
    * the same nil pointer an omitted key gives.
    *
-   * A null ENTRY is refused, unlike a null proximity target: that one decodes to an all-zero value
-   * whose zero radius is refused by name a moment later, whereas an all-zero schedule is a
-   * well-formed MONDAY 00:00-00:00 window that would be reported only as an empty window — naming
-   * the malformed entry is the more useful refusal.
+   * A null ENTRY is refused, unlike a null proximity target. Not because upstream would accept it:
+   * `DayOfWeek` is a Go STRING, so a null entry decodes to an empty day and `validateAdSchedules`
+   * refuses it on its very first branch. Both ends refuse it either way, and only the wording
+   * differs — so this says the entry is malformed rather than blaming a day of week the caller
+   * never wrote. The proximity sibling tolerates its null entry because there the derived refusal
+   * is the better one: a zero RADIUS is upstream's own wording for the same defect.
    */
   private isAdScheduleShape(entry: unknown): boolean {
     if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) return false;

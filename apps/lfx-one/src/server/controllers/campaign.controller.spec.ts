@@ -3067,6 +3067,11 @@ describe('CampaignController.createCampaign cutover', () => {
   it.each([
     ['a non-array schedule list', { adSchedules: {} }],
     ['a non-object schedule entry', { adSchedules: ['monday'] }],
+    // The divergence from the radius list, pinned: a null ENTRY is refused as a shape here, where
+    // a null radius target is tolerated and left to the entry checks. Not an over-refusal — a null
+    // entry decodes to an empty `DayOfWeek` that upstream refuses on its first branch — only a
+    // refusal that names the malformed entry instead of a day of week the caller never wrote.
+    ['a null schedule entry', { adSchedules: [null] }],
     ['a non-string day of week', { adSchedules: [{ ...WEEKDAY, dayOfWeek: 1 }] }],
     ['a non-integer hour', { adSchedules: [{ ...WEEKDAY, startHour: 9.5 }] }],
     ['a non-numeric bid modifier', { adSchedules: [{ ...WEEKDAY, bidModifier: '1.5' }] }],
@@ -3099,6 +3104,25 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(error.statusCode).toBe(400);
     expect(error.field).toBe('adSchedules');
     expect(error.message).toContain(expected);
+  });
+
+  it('dispatches a schedule that writes only an end hour, since the absent start is a real 00:00', async () => {
+    // The over-refusal this guard has to stay clear of. An absent hour decodes to `0` upstream,
+    // which is a real hour, so `MONDAY` with a lone `endHour` is the ordinary 00:00-17:00 window
+    // and not a malformed entry. A missing END hour is the opposite case and is refused by name
+    // as an end hour outside 1 to 24, because 0 is not a real END.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000018', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ adSchedules: [{ dayOfWeek: 'MONDAY', endHour: 17 }] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['adSchedules']).toEqual([
+      { dayOfWeek: 'MONDAY', startHour: 0, startMinute: 0, endHour: 17, endMinute: 0 },
+    ]);
   });
 
   it('dispatches a schedule running to midnight, the one place hour 24 is a valid end', async () => {
