@@ -48,9 +48,9 @@ import { logger } from '../services/logger.service';
  * route, and every call runs on the caller's own bearer token.
  *
  * These have no legacy arm, so — following the Microsoft keyword read and the budget and bid
- * levers — they are not behind a cutover flag. The exceptions are the reads whose upstream
- * endpoint is not on campaign-service `main` yet (the Reddit and LinkedIn audience reads), which answer 404 unless `LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS` is on, and the adoptable-brief
- * list, which needs campaign-service briefs (`LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS`).
+ * levers — they are not behind a cutover flag. A read whose upstream endpoint is not served yet
+ * would answer 404 unless `LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS` is on; none is pending today. The
+ * adoptable-brief list needs campaign-service briefs (`LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS`).
  *
  * Inputs are checked against the upstream contract before any round trip: project slug present,
  * brief and campaign ids UUIDs (`Format(FormatUUID)` upstream), enumerations and lengths as the Goa
@@ -183,8 +183,11 @@ export class CampaignOptimizeController {
 
   /**
    * `GET /api/campaigns/:campaignId/record?project=&briefId=`: the campaign row from campaign-service
-   * with its current ETag, and whether this deployment can toggle it. The act-from-Monitor dialog
-   * reads this rather than the index, which can lag a campaign adopted a moment ago.
+   * with its current ETag, and whether this deployment can toggle it. Read from campaign-service, not
+   * the index, which can lag a write made a moment ago. Two callers: the Optimize tab, to recover a
+   * row's current ETag after an ad-set write whose outcome left the validator unknown, and the
+   * act-from-Monitor dialog, whose levers send that ETag as `If-Match` (including for a campaign
+   * adopted a moment ago).
    */
   public async getCampaignRecord(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'campaign_record_read';

@@ -94,6 +94,7 @@ describe('MonitoringTabComponent — keyword totals completeness', () => {
             getMonitorData: vi.fn().mockReturnValue(of(null)),
             getKeywords: vi.fn().mockReturnValue(of(null)),
             getAudience: vi.fn().mockReturnValue(of(null)),
+            getPlatformAudience: vi.fn().mockReturnValue(of({ window: 'last_30_days', bucket_count: 0, buckets: [] })),
             getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
             getRedditAccounts: vi.fn().mockReturnValue(of([])),
             getMetaAccounts: vi.fn().mockReturnValue(of([])),
@@ -322,6 +323,7 @@ describe.each(['linkedin', 'reddit', 'meta'] as const)('MonitoringTabComponent �
             getMonitorData: vi.fn().mockReturnValue(of(null)),
             getKeywords: vi.fn().mockReturnValue(of(null)),
             getAudience: vi.fn().mockReturnValue(of(null)),
+            getPlatformAudience: vi.fn().mockReturnValue(of({ window: 'last_30_days', bucket_count: 0, buckets: [] })),
             getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
             getRedditAccounts: vi.fn().mockReturnValue(of([])),
             getMetaAccounts: vi.fn().mockReturnValue(of([])),
@@ -480,6 +482,7 @@ describe.each([
             getMonitorData: vi.fn().mockReturnValue(of(null)),
             getKeywords: vi.fn().mockReturnValue(of(null)),
             getAudience: vi.fn().mockReturnValue(of(null)),
+            getPlatformAudience: vi.fn().mockReturnValue(of({ window: 'last_30_days', bucket_count: 0, buckets: [] })),
             getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
             getRedditAccounts: vi.fn().mockReturnValue(of([])),
             getMetaAccounts: vi.fn().mockReturnValue(of([])),
@@ -603,4 +606,49 @@ describe.each([
     expect(open.mock.calls[2][1].data).toEqual(expect.objectContaining({ projectSlug: 'tlf', lever: 'budget' }));
     expect(toast).not.toHaveBeenCalled();
   });
+});
+
+describe('MonitoringTabComponent — campaign-service audience by platform', () => {
+  let fixture: ComponentFixture<MonitoringTabComponent>;
+  const getPlatformAudience = vi.fn();
+
+  beforeEach(async () => {
+    getPlatformAudience.mockReset();
+    getPlatformAudience.mockReturnValue(of({ window: 'last_30_days', bucket_count: 0, buckets: [] }));
+    await TestBed.configureTestingModule({
+      imports: [MonitoringTabComponent],
+      providers: [
+        provideNoopAnimations(),
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: ProjectContextService, useValue: { activeContext: signal({ slug: 'tlf' }) } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+        {
+          provide: CampaignService,
+          useValue: {
+            getMonitorData: vi.fn().mockReturnValue(of(null)),
+            getKeywords: vi.fn().mockReturnValue(of(null)),
+            getAudience: vi.fn().mockReturnValue(of(null)),
+            getPlatformAudience,
+            getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
+            getRedditAccounts: vi.fn().mockReturnValue(of([])),
+            getMetaAccounts: vi.fn().mockReturnValue(of([])),
+          },
+        },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(MonitoringTabComponent);
+  });
+
+  it.each(['google', 'linkedin', 'reddit', 'meta'] as const)(
+    'shows the section, scoped to the active project, whichever monitor platform (%s) is picked',
+    (platform) => {
+      fixture.detectChanges();
+      (fixture.componentInstance as unknown as { selectedPlatform: { set(v: string): void } }).selectedPlatform.set(platform);
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('[data-testid="monitoring-paid-audience"]')).not.toBeNull();
+      expect(getPlatformAudience).toHaveBeenCalledWith('tlf', 'meta-ads', 'last_30_days');
+    }
+  );
 });

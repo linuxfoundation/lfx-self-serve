@@ -1008,6 +1008,16 @@
       }
     </div>
   }
+
+  <!--
+    campaign-service's per-platform audience reads (Meta, LinkedIn, Microsoft Advertising, Reddit, X).
+    Outside the platform switch above on purpose, like the Microsoft keyword table on the Optimize
+    tab: each read has its own source, window and failure states, and it is project-scoped, so it
+    does not follow the monitor's selected ad account. Google's audience stays in its own panel above.
+  -->
+  @if (activeFoundationSlug()) {
+    <lfx-paid-audience-insights [projectSlug]="activeFoundationSlug()" data-testid="monitoring-paid-audience" />
+  }
 </div>
 
 <!--

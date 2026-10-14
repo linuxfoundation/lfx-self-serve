@@ -48,6 +48,7 @@ import { DialogService } from 'primeng/dynamicdialog';
 import { AudienceDemographicsComponent } from '../audience-demographics/audience-demographics.component';
 import { CampaignActDialogComponent } from '../campaign-act-dialog/campaign-act-dialog.component';
 import { CampaignAdoptDialogComponent } from '../campaign-adopt-dialog/campaign-adopt-dialog.component';
+import { PaidAudienceInsightsComponent } from '../paid-audience-insights/paid-audience-insights.component';
 
 type DateRangeOption = 7 | 14 | 30;
 type PlatformType = 'google' | 'linkedin' | 'reddit' | 'meta';
@@ -56,7 +57,7 @@ const KEYWORD_PAGE_SIZE = 10;
 
 @Component({
   selector: 'lfx-monitoring-tab',
-  imports: [AudienceDemographicsComponent, ButtonComponent, MetaPacingClassPipe, NgTemplateOutlet],
+  imports: [AudienceDemographicsComponent, ButtonComponent, MetaPacingClassPipe, NgTemplateOutlet, PaidAudienceInsightsComponent],
   templateUrl: './monitoring-tab.component.html',
   styleUrl: './monitoring-tab.component.scss',
 })

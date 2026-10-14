@@ -73,8 +73,8 @@ router.post('/:campaignId/negative-keywords', (req, res, next) => campaignContro
 // --- Optimize: campaign-service reads and levers ------------------------------
 //
 // campaign-service only, no legacy arm, so ungated like the budget and bid levers above, EXCEPT
-// the reads whose upstream endpoints are not on campaign-service main yet (Reddit and LinkedIn
-// audience): those answer 404 unless LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS is on.
+// a read whose upstream endpoint is not served yet. None is pending today (both PENDING_UPSTREAM sets
+// are empty); such a read answers 404 unless LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS is on.
 // Authorization is the `requireCampaignManager` above. Campaign and brief ids are campaign-service UUIDs.
 router.get('/meta/audience', (req, res, next) => optimizeController.getPlatformAudience(req, res, next, 'meta-ads'));
 router.get('/twitter/audience', (req, res, next) => optimizeController.getPlatformAudience(req, res, next, 'twitter-ads'));
@@ -92,7 +92,9 @@ router.get('/reddit/keywords', (req, res, next) => optimizeController.getRedditK
 router.post('/adopt', (req, res, next) => optimizeController.adoptCampaign(req, res, next));
 // The approved paid briefs a campaign can be adopted into (Query Service). 404 unless campaign-service briefs are on.
 router.get('/briefs', (req, res, next) => optimizeController.listAdoptableBriefs(req, res, next));
-// The campaign row from campaign-service (not the index) with its current ETag, for the act-from-Monitor levers.
+// The campaign row from campaign-service (not the index) with its current ETag. Two callers: the Optimize tab,
+// to recover a row's ETag after an ad-set write whose outcome left the validator unknown, and the
+// act-from-Monitor dialog, for its levers' If-Match.
 router.get('/:campaignId/record', (req, res, next) => optimizeController.getCampaignRecord(req, res, next));
 router.get('/:campaignId/settings', (req, res, next) => optimizeController.getCampaignSettings(req, res, next));
 router.get('/:campaignId/meta-ad-sets', (req, res, next) => optimizeController.listMetaAdSets(req, res, next));

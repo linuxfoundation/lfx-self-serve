@@ -313,21 +313,21 @@ export enum ServerFeatureFlag {
   CampaignServiceKeywordActions = 'LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS',
 
   /**
-   * Serves the Optimize-tab reads whose campaign-service endpoint is NOT on its `main` yet:
-   * `GET /api/campaigns/reddit/audience`, `/linkedin/audience`, `/linkedin/campaign-ref` and
-   * `/reddit/keywords`. OFF answers 404, as if the route did not exist, so no deployment calls an
-   * upstream route that campaign-service does not serve. Reddit's audience read is on a
-   * campaign-service feature branch; the other three are not published, and their wire types here
-   * are provisional (built on their siblings' documented shapes).
+   * Serves the Optimize-tab read not yet verified against a published campaign-service endpoint:
+   * `GET /api/campaigns/linkedin/campaign-ref`. OFF answers 404, as if the route did not exist, so no
+   * deployment calls an upstream route that campaign-service does not serve. LinkedIn's campaign-ref
+   * was published after it was gated here and its wire type is still to be re-checked before the
+   * flag is turned on.
    *
-   * Not a cutover flag: there is no legacy arm. It gates ONLY these four routes. The other
-   * campaign-service-only Optimize routes (Meta/X/Microsoft audience, Meta/Reddit/X campaign-ref,
-   * campaign settings, Meta ad sets, keyword targeting, adopt) are ungated, following the
-   * precedent of the Microsoft keyword read and the budget/bid levers: their upstream endpoints
-   * exist, and campaign-service answers 400 itself where a platform's metrics are switched off.
+   * Not a cutover flag: there is no legacy arm. It gates ONLY this route. The other
+   * campaign-service-only Optimize routes (Meta/X/Microsoft/LinkedIn/Reddit audience,
+   * Meta/Reddit/X campaign-ref, the Reddit keyword read, campaign settings, Meta ad sets, keyword
+   * targeting, adopt) are ungated, following the precedent of the Microsoft keyword read and the
+   * budget/bid levers: their upstream endpoints exist, and campaign-service answers 400 itself where
+   * a platform's metrics are switched off.
    *
-   * Turn it on only once campaign-service serves all four in the target environment. Turning it
-   * back off strands nothing: all four are reads. Same accepted values as the flags above.
+   * Turn it on only once campaign-service serves it in the target environment. Turning it back off
+   * strands nothing: it is a read. Same accepted values as the flags above.
    */
   CampaignServiceOptimizeReads = 'LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS',
 
@@ -449,51 +449,58 @@ export enum ServerFeatureFlag {
   MarketingOpsFga = 'LFX_MARKETING_OPS_FGA_ENABLED',
 
   /**
-   * Gates `/api/gw/*` (`gw-proxy.route.ts`), the BFF proxy in front of the embedded Gatewaze
-   * admin pilot (`GwModuleOutletComponent`, mounted under every prefix in `GW_EMBED_ROUTE_PREFIXES`). OFF answers every request under
-   * the prefix with an identical neutral 404 `not_found`, whether or not the caller is
-   * authenticated — the point is that an unauthenticated probe cannot distinguish "flag off"
-   * from "no such route" from "not authenticated".
+   * The master kill switch for the embedded Gatewaze admin pilot (`GwModuleOutletComponent`,
+   * mounted under every prefix in `GW_EMBED_ROUTE_PREFIXES`) on the server. OFF answers every
+   * `/api/gatewaze/*` request (`gatewaze.route.ts`) with an identical neutral 404 `not_found`,
+   * whether or not the caller is authenticated — the point is that an unauthenticated probe cannot
+   * distinguish "flag off" from "no such route" from "not authenticated". The embed needs this AND
+   * `GatewazeHostSession`; see that flag for why the two stay separate.
    *
    * Deliberately paired with, and independent of, the client-side `gatewaze-embed-enabled`
    * OpenFeature flag (`gatewaze-embed-enabled.guard.ts`). The Web SDK never runs server-side, so
    * the client flag hides the route and nav but leaves the BFF reachable by direct call — this
-   * flag is what makes the dark launch a real kill switch. Both must be on for the pilot to work.
+   * flag is what makes the dark launch a real kill switch.
    *
    * This is a boolean, all-or-nothing gate — it carries no cohort of its own. Tenant scoping is
    * a separate control, and it is **client-side only**: `GW_EMBED_ALLOWED_PROJECT_SLUGS` plus
    * `gwEmbedTenantGuard` keep the embed out of the wrong foundation's chrome, which is a
    * UI-correctness concern rather than a rollout cohort. It deliberately is not a flag.
    *
-   * Do not read that allowlist as a boundary on this proxy. It runs in the browser; anyone who can
-   * reach `/api/gw/*` bypasses it entirely, and `requireGwEmbedAccess` admits a writer grant on
-   * ANY foundation or project by design, because a proxied request names a Gatewaze path rather
+   * Do not read that allowlist as a boundary on the BFF. It runs in the browser; anyone who can
+   * reach `/api/gatewaze/*` bypasses it entirely, and `requireGwEmbedAccess` admits a writer grant
+   * on ANY foundation or project by design, because a proxied request names a Gatewaze path rather
    * than an LFX project. What actually bounds the data is `requireGwEmbedAccess` for reachability
-   * plus the upstream's own Supabase auth and RLS for authorization — the embed authenticates the
-   * caller's own bearer, so LFX confers no data access it did not already have.
+   * plus the upstream's own Supabase auth and RLS for authorization — the Gatewaze session is the
+   * caller's own, so LFX confers no data access it did not already have.
    *
    * OFF by default. No overlap hazard during a rolling update: every route this gates is
-   * stateless and read/write-through to the upstream Gatewaze service, so a request either
-   * reaches a flag-on pod and proxies, or a flag-off pod and 404s — never a partial write.
+   * read/write-through to the upstream Gatewaze service, so a request either reaches a flag-on pod
+   * and proxies, or a flag-off pod and 404s — never a partial write.
    */
   GatewazeEmbedEnabled = 'LFX_GATEWAZE_EMBED_ENABLED',
 
   /**
    * Gatewaze host-session mode (#2738): LFX One gets the Gatewaze (GoTrue) session server-to-server
    * with GoTrue's `id_token` grant and keeps it in Valkey, so the browser never holds a Gatewaze
-   * token. OFF keeps the embed on the LFID bridge sign-in and `/api/gw` byte-for-byte.
+   * token. It is the embed's only mode: with it off, `/api/gatewaze` answers the uniform 404 and the
+   * outlet shows its not-configured panel.
    *
    * Requires `GatewazeEmbedEnabled`, the session store (`SESSION_STORE_ENABLED` with `VALKEY_URL`),
    * `GW_SUPABASE_URL`, a publishable `GW_SUPABASE_ANON_KEY` and `PCC_AUTH0_SECRET`.
    * `resolveGatewazeHostSessionConfig` (`gatewaze-session.service.ts`) checks them all together; with
    * any missing, host-session mode is off however this flag is set.
    *
+   * Kept separate from `GatewazeEmbedEnabled` rather than folded into it plus config presence. Folding
+   * it would turn the embed on in any environment that already has the embed flag and the Supabase
+   * config but has never run host-session mode, and it would take away the switch that turns off
+   * only the server-held sessions. Two flags cost one extra env var.
+   *
    * Rolling-update overlap is harmless. A page served by a flag-on pod whose calls land on a
    * flag-off pod gets the uniform 404, which the embed reads as `unavailable` and retries. Nothing
    * is half-written: a stored session is only ever read by a flag-on pod, and it expires on its own
    * TTL if the flag goes off.
    *
-   * OFF by default. Turn it on in dev first; staging and prod stay on the bridge until it is proven.
+   * OFF by default.
    */
   GatewazeHostSession = 'LFX_GATEWAZE_HOST_SESSION',
 

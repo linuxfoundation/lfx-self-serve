@@ -21,10 +21,9 @@ router.use((_req, res, next) => {
 });
 
 // The uniform 404 while host-session mode is off or the request has no LFX bearer token, then the
-// same LFX authorization as /api/gw: ED, root writer or any writer grant, and a 403 while
-// impersonating. Nothing here mints a Gatewaze session for an impersonation target.
-// requireGwEmbedAccess lets a request with no bearer token through (on /api/gw the controller 404s
-// it), so requireGatewazeBearer refuses it first rather than relying on authMiddleware alone.
+// LFX authorization: ED, root writer or any writer grant, and a 403 while impersonating. Nothing
+// here mints a Gatewaze session for an impersonation target. requireGatewazeBearer refuses a
+// request with no bearer token rather than relying on authMiddleware alone.
 router.use(requireGatewazeHostSession, requireGatewazeBearer, requireGwEmbedAccess);
 
 // The proxies. Supabase services are matched by name, so GoTrue's /auth/v1 is never proxied (the
@@ -36,5 +35,9 @@ router.all(/^\/api(?:\/.*)?$/i, (req, res, next) => proxy.proxyApi(req, res, nex
 
 router.get('/session/me', (req, res, next) => controller.me(req, res, next));
 router.post('/session/logout', (req, res, next) => controller.logout(req, res, next));
+
+// The Realtime WebSocket. An upgrade reaches this route only through GatewazeRealtimeService.onUpgrade,
+// which runs it through the whole app, so it has passed every gate above.
+router.get(/^\/supabase\/realtime\/v1\/websocket$/, (req, res, next) => controller.realtime(req, res, next));
 
 export default router;

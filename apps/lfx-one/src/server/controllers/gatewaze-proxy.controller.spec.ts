@@ -28,6 +28,7 @@ vi.mock('../services/gatewaze-session.service', () => ({
   getGatewazeSessionService: () => ({ getGatewazeSession }),
   resolveGatewazeHostSessionConfig: () => config.value,
   isGatewazeHostSessionEnabled: () => config.value !== null,
+  hostSessionCoreLogger: () => ({ warn: vi.fn() }),
 }));
 vi.mock('../helpers/gatewaze-module.helper', async () => ({
   ...(await vi.importActual<typeof import('../helpers/gatewaze-module.helper')>('../helpers/gatewaze-module.helper')),

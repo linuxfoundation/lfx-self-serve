@@ -14,6 +14,8 @@ import {
   getEffectiveUsername,
   getRawEffectiveEmail,
   getRealEmail,
+  hasActiveImpersonation,
+  hasActiveImpersonationSession,
   isImpersonating,
   resolveAuditUserDisplayName,
   resolveRealAccessToken,
@@ -53,6 +55,24 @@ describe('isImpersonating', () => {
     } as unknown as Request;
 
     expect(isImpersonating(req)).toBe(true);
+  });
+});
+
+describe('hasActiveImpersonation', () => {
+  const live = { impersonationToken: 'imp-token', impersonationExpiresAt: Date.now() + 60_000, impersonationUser: { username: 'targetuser' } };
+
+  it('is true only for a token, a future expiry and a target user together', () => {
+    expect(hasActiveImpersonation(live)).toBe(true);
+    expect(hasActiveImpersonation({ ...live, impersonationToken: '' })).toBe(false);
+    expect(hasActiveImpersonation({ ...live, impersonationExpiresAt: Date.now() - 1 })).toBe(false);
+    expect(hasActiveImpersonation({ ...live, impersonationUser: undefined })).toBe(false);
+    expect(hasActiveImpersonation({})).toBe(false);
+    expect(hasActiveImpersonation(undefined)).toBe(false);
+  });
+
+  it('gives the request check the same answer from the session data alone', () => {
+    expect(hasActiveImpersonationSession({ appSession: live } as unknown as Request)).toBe(hasActiveImpersonation(live));
+    expect(hasActiveImpersonationSession({ appSession: {} } as unknown as Request)).toBe(false);
   });
 });
 
