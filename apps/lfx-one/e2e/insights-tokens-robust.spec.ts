@@ -70,7 +70,9 @@ test.describe('LFX Insights API tokens — Robust Tests', () => {
       });
       await openInsightsTokens(page, { tokens: EXISTING_TOKENS, eligibility: NOT_ENABLED });
 
-      await expect(page.getByTestId('insights-tokens-lock-notice')).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
+      const notice = page.getByTestId('insights-tokens-lock-notice');
+      await expect(notice).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
+      await expect(notice.getByTestId('insights-tokens-contact-support')).toHaveCount(1);
       await expect(page.getByTestId('insights-tokens-list')).toHaveCount(0);
       await expect(page.getByTestId('insights-tokens-revoke-button')).toHaveCount(0);
       await expect(page.getByTestId('insights-tokens-new-button')).toHaveCount(0);
