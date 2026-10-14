@@ -11,9 +11,9 @@ import {
   parseFoundationSlug,
   parseSocialListeningAnalyticsFilters,
   parseSocialListeningAuthorFilters,
+  parseSocialListeningCountBody,
   parseSocialListeningFeedBody,
   parseSocialListeningLimit,
-  parseSocialListeningCountBody,
   parseSocialListeningScope,
 } from '../helpers/social-listening-params.helper';
 import { logger } from '../services/logger.service';

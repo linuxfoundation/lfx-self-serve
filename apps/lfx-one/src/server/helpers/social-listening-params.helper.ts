@@ -10,8 +10,8 @@ import {
   MENTION_SENTIMENT_OPTIONS,
   MENTION_SERVER_WINDOW_SIZE,
 } from '@lfx-one/shared/constants';
-import { Request } from 'express';
 import { resolvePeriodRange } from '@lfx-one/shared/utils/marketing-impact.utils';
+import { Request } from 'express';
 
 import { ServiceValidationError } from '../errors';
 import { getStringQueryParam, getValidatedPeriod } from './validation.helper';
@@ -39,6 +39,9 @@ const FOUNDATION_SLUG_MAX_LENGTH = 64;
 
 /** Upper bound for a single filter value (a keyword, tag, author handle, language code, or id). */
 const FILTER_VALUE_MAX_LENGTH = 200;
+
+/** Bound the encoded cursor before allocating its decoded JSON; leaves room for escaped opaque keys. */
+const FEED_PAGE_TOKEN_MAX_LENGTH = 4096;
 
 /** Search terms get more room than a single-token filter but still can't be unbounded. */
 const SEARCH_MAX_LENGTH = 500;
@@ -112,6 +115,7 @@ export function parseSocialListeningScope(req: Request, operation: string): Soci
     platform: parseTextParam(req, 'platform', FILTER_VALUE_MAX_LENGTH, operation),
   };
 }
+
 /** Complete JSON read payload; query readers share the same value normalization below. */
 export function parseSocialListeningCountBody(body: unknown, operation: string): SocialListeningCountParams {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
@@ -222,6 +226,10 @@ export function encodeMentionFeedPageToken(cursor: SocialListeningFeedCursor): s
 
 /** Decodes an incoming `page_token` — malformed or tampered tokens 400, never silently restart the feed. `ts` stays verbatim (no TZ reinterpretation) so the bound value matches the issued one byte-for-byte. */
 function decodeMentionFeedPageToken(raw: string, operation: string): SocialListeningFeedCursor {
+  if (raw.length > FEED_PAGE_TOKEN_MAX_LENGTH) {
+    throw ServiceValidationError.forField('page_token', 'page_token is too long', { operation });
+  }
+
   let parsed: unknown;
   try {
     parsed = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8'));
@@ -232,7 +240,7 @@ function decodeMentionFeedPageToken(raw: string, operation: string): SocialListe
   const candidate = parsed as Partial<SocialListeningFeedCursor> | null;
   const ts = candidate?.ts;
   const tsValid = ts === null || (typeof ts === 'string' && isValidFeedTimestamp(ts));
-  if (!tsValid || typeof candidate?.key !== 'string' || candidate.key === '') {
+  if (!tsValid || typeof candidate?.key !== 'string' || candidate.key === '' || candidate.key.length > FILTER_VALUE_MAX_LENGTH) {
     throw ServiceValidationError.forField('page_token', 'page_token is malformed', { operation });
   }
 

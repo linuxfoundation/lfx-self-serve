@@ -201,6 +201,36 @@ describe('Social Listening JSON read transport', () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
+  it.each(['/mentions-feed', '/mentions-count'])('returns 400 for primitive and invalid JSON before data access on %s', async (path) => {
+    for (const body of ['null', '"synthetic-private-body"', '42', 'true', '{"synthetic-private-body":']) {
+      const response = await fetch(`${baseUrl}/api/social-listening${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+      });
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ code: 'VALIDATION_ERROR', errors: [{ field: 'body' }] });
+    }
+    expect(execute).not.toHaveBeenCalled();
+    expect(getPersonas).not.toHaveBeenCalled();
+  });
+
+  it('rejects oversized feed cursors with 400 before SQL', async () => {
+    const cursors = [
+      { ts: null, key: 'x'.repeat(201) },
+      { ts: null, key: 'synthetic-key', padding: 'x'.repeat(4000) },
+    ];
+    for (const cursor of cursors) {
+      const pageToken = Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url');
+      const response = await post('/mentions-feed', { foundationSlug: 'synthetic-owned', page_token: pageToken });
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ code: 'VALIDATION_ERROR', errors: [{ field: 'page_token' }] });
+    }
+    expect(execute).not.toHaveBeenCalled();
+  });
+
   it('preserves authorized impersonated POST reads while blocking both preference writes', async () => {
     expect((await post('/mentions-feed', { foundationSlug: 'synthetic-owned' }, true)).status).toBe(200);
     execute.mockResolvedValueOnce({ rows: [{ TOTAL: 0 }] });

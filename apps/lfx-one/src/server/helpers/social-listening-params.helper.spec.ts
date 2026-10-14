@@ -276,6 +276,22 @@ describe('parseSocialListeningPagination', () => {
     expect(feedBody({ page_token: encodeMentionFeedPageToken(cursor) }).cursor).toEqual(cursor);
   });
 
+  it.each([null, '2026-01-15 10:00:00.123'])('preserves an opaque 200-character cursor key with timestamp %s and rejects 201 characters', (ts) => {
+    const cursor = { ts, key: ' Key,+/=雪\u0000'.padEnd(199, 'x') + ' ' };
+    expect(feedBody({ page_token: encodeMentionFeedPageToken(cursor) }).cursor).toEqual(cursor);
+    expectFieldError(() => feedBody({ page_token: encodeMentionFeedPageToken({ ...cursor, key: cursor.key + 'x' }) }), 'page_token');
+  });
+
+  it('accepts a 4096-character token and rejects a decodable token one character over the limit', () => {
+    const cursor = { ts: null, key: 'synthetic-key' };
+    const json = JSON.stringify(cursor);
+    const token = Buffer.from(json + ' '.repeat(3072 - Buffer.byteLength(json)), 'utf8').toString('base64url');
+
+    expect(token).toHaveLength(4096);
+    expect(feedBody({ page_token: token }).cursor).toEqual(cursor);
+    expectFieldError(() => feedBody({ page_token: token + ' ' }), 'page_token');
+  });
+
   it.each([
     { label: 'not JSON', page_token: Buffer.from('not json at all', 'utf8').toString('base64url') },
     { label: 'JSON without a key', encoded: { ts: '2026-01-15T10:00:00Z' } },

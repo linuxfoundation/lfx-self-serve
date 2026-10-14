@@ -200,6 +200,7 @@ describe('requireDashboardAccess', () => {
 
     expect(verdict(next)).toBe('deny');
   });
+
   it.each([
     { body: { foundationSlug: 'Synthetic-Owned' }, query: {}, allowed: true },
     { body: { foundationSlug: 'synthetic-foreign' }, query: {}, allowed: false },

@@ -3,7 +3,7 @@
 
 import { NextFunction, Request, Response } from 'express';
 
-import { AuthenticationError, BaseApiError, isBaseApiError } from '../errors';
+import { AuthenticationError, BaseApiError, isBaseApiError, ServiceValidationError } from '../errors';
 import { logger } from '../services/logger.service';
 
 /**
@@ -42,6 +42,11 @@ export function apiErrorHandler(error: Error | BaseApiError, req: Request, res: 
   const lastOp = logger.getLastOperation(req);
   const operation = lastOp?.operation || getOperationFromPath(req.path);
   const startTime = lastOp?.startTime || Date.now();
+
+  // Body-parser's message and body can contain submitted data; normalize without retaining either.
+  if ('type' in error && error.type === 'entity.parse.failed' && 'status' in error && error.status === 400) {
+    error = ServiceValidationError.forField('body', 'body must contain valid JSON', { operation });
+  }
 
   // Handle our structured API errors
   if (isBaseApiError(error)) {
