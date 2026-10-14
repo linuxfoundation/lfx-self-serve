@@ -22,6 +22,7 @@ import type {
   CampaignPlatform,
   CampaignPlatformOption,
   CampaignProgramTypeOption,
+  CampaignServiceMonitorProvider,
   CampaignStatus,
   CampaignTabOption,
   CampaignToggleAction,
@@ -36,6 +37,7 @@ import type {
   MetaPlacement,
   MicrosoftKeywordsWindow,
   MicrosoftKeywordsWindowOption,
+  MonitorConnectionPlatform,
   ParsedCampaignName,
   RedditObjective,
   RedditObjectiveParams,
@@ -922,6 +924,44 @@ export const ACCOUNT_MONITOR_DEFAULT_DAYS = 30;
  * so no other upstream text reaches the client.
  */
 export const ACCOUNT_MONITOR_CONFLICT_REASONS = ['account_too_many_active_campaigns', 'account_timezone_unsupported'] as const;
+
+/**
+ * The message campaign-service's account monitors answer their 400 with when the platform's
+ * metrics are switched off in that deployment (`MICROSOFT_METRICS_ENABLED` / `TWITTER_METRICS_ENABLED`
+ * not "true") or the platform has no monitor at all: `ErrAccountMetricsUnsupported`, classified by
+ * its `classifyDiscoveryError` as `"<operation> is not supported for this platform"`. The other
+ * 400s (an unusable connection, an account the connection does not manage) carry other text, so
+ * this exact string is what tells "not enabled" apart from "misconfigured".
+ */
+export const ACCOUNT_MONITOR_UNSUPPORTED_UPSTREAM_MESSAGE = 'account monitor is not supported for this platform';
+
+/** The `upstreamCode` the BFF puts on that 400, so the Monitor tab can show "not enabled" rather than an error. */
+export const ACCOUNT_MONITOR_METRICS_DISABLED_CODE = 'metrics_not_enabled';
+
+/**
+ * The Monitor tab's connection-backed platforms, each with the campaign-service provider whose
+ * connection binds its account. Ordered as the tab's buttons are.
+ */
+export const MONITOR_CONNECTION_PROVIDERS: Readonly<Record<MonitorConnectionPlatform, CampaignServiceMonitorProvider>> = {
+  linkedin: 'linkedin-ads',
+  reddit: 'reddit-ads',
+  meta: 'meta-ads',
+  microsoft: 'microsoft-ads',
+  twitter: 'twitter-ads',
+};
+
+/**
+ * Account-id shapes campaign-service's LIVE-read account monitors accept (`monitor-linkedin-ads-account`,
+ * `monitor-meta-ads-account`, `monitor-reddit-ads-account`). With the monitor cutover on, the picker
+ * offers the connection's bound account rather than an allowlist entry, so the BFF checks the id's
+ * shape instead — the same patterns, and the same 64-character cap the connections store.
+ */
+export const LINKEDIN_ADS_MONITOR_ACCOUNT_ID_PATTERN = /^[0-9]{1,64}$/;
+export const META_ADS_MONITOR_ACCOUNT_ID_PATTERN = /^act_[0-9]{1,60}$/;
+export const REDDIT_ADS_MONITOR_ACCOUNT_ID_PATTERN = /^[A-Za-z0-9_]{1,64}$/;
+
+/** HubSpot's brand orange, for the Monitor tab's email button (HubSpot is not a `CampaignPlatform`). */
+export const HUBSPOT_BRAND_COLOR = '#FF7A59';
 
 /**
  * Zero-padded `YYYY-MM-DD` shape for a campaign flight date.

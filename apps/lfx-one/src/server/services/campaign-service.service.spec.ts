@@ -4862,3 +4862,46 @@ describe('CampaignServiceClient account monitors', () => {
     expect(proxyRequest).not.toHaveBeenCalled();
   });
 });
+
+describe('CampaignServiceClient.getConnection', () => {
+  const connection = { id: 'c1', project_id: 'cncf', account_id: '187654321', has_credentials: true, status: 'active' };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it.each(['linkedin-ads', 'meta-ads', 'reddit-ads', 'microsoft-ads', 'twitter-ads'] as const)(
+    "GETs the project's own connection-%s with no query or body",
+    async (provider) => {
+      proxyRequest.mockResolvedValueOnce(connection);
+
+      const result = await new CampaignServiceClient().getConnection(req, 'cncf', provider);
+
+      expect(result).toBe(connection);
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', `/projects/cncf/connection-${provider}`, 'GET');
+    }
+  );
+
+  it('encodes the project as a path segment', async () => {
+    proxyRequest.mockResolvedValueOnce(connection);
+
+    await new CampaignServiceClient().getConnection(req, 'lf/ai', 'meta-ads');
+
+    expect(proxyRequest.mock.calls[0][2]).toBe('/projects/lf%2Fai/connection-meta-ads');
+  });
+
+  it('refuses an empty project without calling the proxy', async () => {
+    const caught = await new CampaignServiceClient().getConnection(req, '', 'reddit-ads').catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect((caught as ServiceValidationError).validationErrors[0].field).toBe('project');
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('propagates an upstream failure for the caller to classify', async () => {
+    const upstream = new Error('404');
+    proxyRequest.mockRejectedValueOnce(upstream);
+
+    await expect(new CampaignServiceClient().getConnection(req, 'cncf', 'linkedin-ads')).rejects.toBe(upstream);
+  });
+});

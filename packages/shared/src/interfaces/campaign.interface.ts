@@ -2418,6 +2418,166 @@ export interface CampaignServiceHubSpotEmailMonitor {
   emails_truncated: boolean;
 }
 
+/**
+ * campaign-service's connection read model (`GET /projects/{id}/connection-{provider}`), reduced to
+ * the fields the Monitor tab reads. Credentials are never returned by that endpoint.
+ */
+export interface CampaignServiceConnection {
+  id: string;
+  project_id: string;
+  label?: string;
+  /**
+   * The ad account the connection is bound to. EMPTY on a connection created credentials-first
+   * (Meta allows this) whose account has not been chosen yet.
+   */
+  account_id: string;
+  has_credentials: boolean;
+  status: 'active' | 'inactive' | 'error' | 'deleted';
+}
+
+// ---------------------------------------------------------------------------
+// The Monitor tab's campaign-service shapes (#2519)
+//
+// What the BFF answers with LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR on: the account each platform's
+// picker offers (the project's OWN connection's bound account), and the Microsoft Ads / X /
+// HubSpot monitors mapped into this app's camelCase vocabulary.
+// ---------------------------------------------------------------------------
+
+/** The Monitor tab's ad platforms whose account picker comes from the project's own connection. */
+export type MonitorConnectionPlatform = 'linkedin' | 'meta' | 'reddit' | 'microsoft' | 'twitter';
+
+/**
+ * What the project's own connection says about one platform's monitor:
+ * - `connected`: a connection exists and is bound to `accountId`;
+ * - `no_connection`: campaign-service has no connection of this provider for the project;
+ * - `no_account`: a connection exists but no ad account is bound to it;
+ * - `unavailable`: the connection could not be read, so neither of the above is known.
+ */
+export type MonitorConnectionState = 'connected' | 'no_connection' | 'no_account' | 'unavailable';
+
+/** One platform's connection, as the Monitor tab's account picker consumes it. */
+export interface MonitorConnectionAccount {
+  state: MonitorConnectionState;
+  /** The bound account id. Set only when `state` is `connected`. */
+  accountId: string | null;
+  /** The connection's own label, else the account id. Set only when `state` is `connected`. */
+  label: string | null;
+}
+
+/** `GET /api/campaigns/monitor/connections`. */
+export interface CampaignMonitorConnections {
+  /**
+   * Whether the monitors are served by campaign-service (`LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR`).
+   * False means the tab keeps its legacy account lists, and `platforms` is empty.
+   */
+  viaCampaignService: boolean;
+  platforms: Partial<Record<MonitorConnectionPlatform, MonitorConnectionAccount>>;
+}
+
+/** A Monitor panel that can show a `MonitorPanelNotice`: the connection-backed ad platforms, and the HubSpot email section. */
+export type MonitorPanelKey = MonitorConnectionPlatform | 'hubspot';
+
+/** Why a Monitor panel shows an empty state instead of data: a connection state, or the platform's metrics switched off upstream. */
+export type MonitorPanelNoticeState = Exclude<MonitorConnectionState, 'connected'> | 'metrics_disabled';
+
+/** The empty state a Monitor panel renders in place of its data, with the action that resolves it. */
+export interface MonitorPanelNotice {
+  state: MonitorPanelNoticeState;
+  title: string;
+  message: string;
+}
+
+/**
+ * The Microsoft Ads / X account monitor as the Monitor tab renders it. The rows, totals and action
+ * items are the shape the Reddit/Meta panels already render; the four freshness fields are what a
+ * report-backed platform adds — its metrics come from the last finished platform report, not a
+ * live read.
+ */
+export interface ReportBackedMonitorResponse {
+  accountId: string;
+  pulledAt: string;
+  /** The REQUESTED window; the days the metrics actually cover are `metricsWindowStart`–`metricsWindowEnd`. */
+  dateRange: { mode: string };
+  campaigns: RedditCampaignMetrics[];
+  accountTotals: RedditAccountTotals;
+  actionItems: RedditActionItem[];
+  /** When the served report was requested (RFC 3339). NULL before the first report finishes, when every row is `fetchFailed`. */
+  metricsAsOf: string | null;
+  /** First/last calendar day (inclusive, `YYYY-MM-DD`) the metrics cover; null with `metricsAsOf`. */
+  metricsWindowStart: string | null;
+  metricsWindowEnd: string | null;
+  /** A newer report is building on the platform, so a later refresh returns newer (or the first) metrics. */
+  metricsPending: boolean;
+}
+
+/** One HubSpot marketing email on the Monitor tab. Rates are FRACTIONS (0.3 = 30%), NULL when their denominator is 0 — unknown, not 0. */
+export interface HubSpotEmailMonitorRow {
+  campaignId: string;
+  emailId: string;
+  name: string;
+  abVariant: boolean;
+  deleted: boolean;
+  sent: number;
+  delivered: number;
+  opens: number;
+  clicks: number;
+  bounces: number;
+  unsubscribes: number;
+  spamReports: number;
+  openRate: number | null;
+  clickRate: number | null;
+  bounceRate: number | null;
+  unsubscribeRate: number | null;
+  spamRate: number | null;
+}
+
+/** The sum of the emails, rates from the sums; same null rule as the rows. */
+export interface HubSpotEmailMonitorTotals {
+  emailCount: number;
+  sent: number;
+  delivered: number;
+  opens: number;
+  clicks: number;
+  bounces: number;
+  unsubscribes: number;
+  spamReports: number;
+  openRate: number | null;
+  clickRate: number | null;
+  bounceRate: number | null;
+  unsubscribeRate: number | null;
+  spamRate: number | null;
+}
+
+/** One finding of campaign-service's email rules. `emailId` joins it to its row; null for a project-wide finding. */
+export interface HubSpotEmailMonitorActionItem {
+  priority: CampaignServiceMonitorPriority;
+  emailId: string | null;
+  emailName: string;
+  issue: string;
+  action: string;
+}
+
+/** The HubSpot email monitor as the Monitor tab renders it. PROJECT-scoped: there is no account. */
+export interface HubSpotEmailMonitorResponse {
+  pulledAt: string;
+  days: number;
+  emails: HubSpotEmailMonitorRow[];
+  totals: HubSpotEmailMonitorTotals;
+  actionItems: HubSpotEmailMonitorActionItem[];
+  /** Upper bound on when every email's counters were read. NULL when the project has recorded no HubSpot email, so HubSpot was not called. */
+  metricsAsOf: string | null;
+  /** The send-date window (UTC days, inclusive); null with `metricsAsOf`. */
+  metricsWindowStart: string | null;
+  metricsWindowEnd: string | null;
+  emailsChecked: number;
+  /** Recorded emails HubSpot reported no send of inside the window. */
+  emailsNotSentInWindow: number;
+  /** Recorded emails not read because their HubSpot portal is unrecorded or no longer the token's. */
+  emailsUnattributable: number;
+  /** Only the 50 most recently recorded campaigns were checked, so the totals may omit an email. */
+  emailsTruncated: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Optimization Insights
 // ---------------------------------------------------------------------------

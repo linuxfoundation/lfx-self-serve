@@ -40,6 +40,9 @@ router.get('/hubspot/emails', (req, res, next) => campaignController.searchHubSp
 router.get('/hubspot/utm', (req, res, next) => campaignController.lookupHubSpotUtm(req, res, next));
 router.post('/hubspot/utm/create', (req, res, next) => campaignController.createHubSpotUtm(req, res, next));
 router.get('/monitor', (req, res, next) => campaignController.getMonitorData(req, res, next));
+// Which account each LinkedIn/Reddit/Meta/Microsoft/X Monitor panel offers: the project's OWN
+// connection's (#2519). `viaCampaignService: false` while LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR is off.
+router.get('/monitor/connections', (req, res, next) => campaignController.getMonitorConnections(req, res, next));
 router.get('/linkedin/accounts', (req, res) => campaignController.getLinkedInAccounts(req, res));
 router.get('/linkedin/monitor', (req, res, next) => campaignController.getLinkedInMonitor(req, res, next));
 router.get('/reddit/accounts', (req, res) => campaignController.getRedditAccounts(req, res));

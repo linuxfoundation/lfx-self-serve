@@ -1,14 +1,27 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ACCOUNT_MONITOR_CONFLICT_REASONS } from '@lfx-one/shared/constants';
+import {
+  ACCOUNT_MONITOR_CONFLICT_REASONS,
+  ACCOUNT_MONITOR_METRICS_DISABLED_CODE,
+  ACCOUNT_MONITOR_UNSUPPORTED_UPSTREAM_MESSAGE,
+} from '@lfx-one/shared/constants';
 import type {
   AccountMonitorConflictReason,
   CampaignServiceAccountMonitor,
   CampaignServiceAccountMonitorCampaign,
+  CampaignServiceConnection,
+  CampaignServiceHubSpotEmailMonitor,
+  CampaignServiceHubSpotEmailMonitorEmail,
+  CampaignServiceHubSpotEmailMonitorTotals,
+  HubSpotEmailMonitorResponse,
+  HubSpotEmailMonitorRow,
+  HubSpotEmailMonitorTotals,
   LinkedInMonitorResponse,
   MetaMonitorResponse,
+  MonitorConnectionAccount,
   RedditMonitorResponse,
+  ReportBackedMonitorResponse,
 } from '@lfx-one/shared/interfaces';
 
 import { MicroserviceError } from '../errors/microservice.error';
@@ -26,6 +39,10 @@ import { getCodeForStatus, getDefaultMessageForStatus } from '../helpers/http-st
 // What the legacy shape cannot carry is kept, not dropped, in optional fields the legacy path never
 // sets: `pacingUnknown`, `fetchFailed` and `conversionsMeasured`. The numbers those flags qualify
 // are 0 placeholders, because the panels render them as numbers.
+//
+// The Microsoft Ads, X and HubSpot monitors have no legacy shape; they are mapped into this app's
+// camelCase vocabulary here too (`ReportBackedMonitorResponse`, `HubSpotEmailMonitorResponse`), so
+// every Monitor panel renders a BFF shape and none renders campaign-service's wire format.
 // ---------------------------------------------------------------------------
 
 /** The rows, totals and action items of one platform's monitor, in the legacy shape both platforms share. */
@@ -130,6 +147,121 @@ export function toLinkedInMonitorResponse(payload: CampaignServiceAccountMonitor
   };
 }
 
+/**
+ * campaign-service's Microsoft Ads or X account monitor as the Monitor tab's report-backed panel
+ * renders it: the Reddit/Meta rows and totals, plus the report's freshness.
+ *
+ * The freshness fields are carried, never inferred. `metricsAsOf` absent means no report has
+ * finished yet — every row is then `fetchFailed`, which the panel already renders as "Couldn't read"
+ * — and `metricsPending` absent (a contract slip upstream) reads as "not building", since claiming
+ * a report is on its way when nobody said so would send the operator to refresh for nothing.
+ */
+export function toReportBackedMonitorResponse(payload: CampaignServiceAccountMonitor, pulledAt: string): ReportBackedMonitorResponse {
+  return {
+    accountId: payload.account_id,
+    pulledAt,
+    ...toLegacyMonitorBody(payload),
+    metricsAsOf: payload.metrics_as_of ?? null,
+    metricsWindowStart: payload.metrics_window_start ?? null,
+    metricsWindowEnd: payload.metrics_window_end ?? null,
+    metricsPending: payload.metrics_pending === true,
+  };
+}
+
+/** A rate campaign-service left out because its denominator was 0: unknown, so null — never 0. */
+function rateOrNull(rate: number | undefined): number | null {
+  return typeof rate === 'number' && Number.isFinite(rate) ? rate : null;
+}
+
+function toHubSpotRates(
+  source: CampaignServiceHubSpotEmailMonitorEmail | CampaignServiceHubSpotEmailMonitorTotals
+): Pick<HubSpotEmailMonitorRow, 'openRate' | 'clickRate' | 'bounceRate' | 'unsubscribeRate' | 'spamRate'> {
+  return {
+    openRate: rateOrNull(source.open_rate),
+    clickRate: rateOrNull(source.click_rate),
+    bounceRate: rateOrNull(source.bounce_rate),
+    unsubscribeRate: rateOrNull(source.unsubscribe_rate),
+    spamRate: rateOrNull(source.spam_rate),
+  };
+}
+
+function toHubSpotTotals(totals: CampaignServiceHubSpotEmailMonitorTotals | undefined): HubSpotEmailMonitorTotals {
+  // `totals` is required upstream; an absent one is read as an empty sum rather than a 500, the
+  // same tolerance the arrays get below.
+  const t = totals ?? ({} as Partial<CampaignServiceHubSpotEmailMonitorTotals>);
+  return {
+    emailCount: t.email_count ?? 0,
+    sent: t.sent ?? 0,
+    delivered: t.delivered ?? 0,
+    opens: t.opens ?? 0,
+    clicks: t.clicks ?? 0,
+    bounces: t.bounces ?? 0,
+    unsubscribes: t.unsubscribes ?? 0,
+    spamReports: t.spam_reports ?? 0,
+    ...toHubSpotRates(t as CampaignServiceHubSpotEmailMonitorTotals),
+  };
+}
+
+/**
+ * campaign-service's HubSpot email monitor as the Monitor tab's email section renders it.
+ *
+ * Rates stay FRACTIONS and stay ABSENT-as-null: a rate over zero deliveries is unknown, and a 0
+ * there would read as "nobody opened it". The counts behind them are passed through unchanged.
+ */
+export function toHubSpotEmailMonitorResponse(payload: CampaignServiceHubSpotEmailMonitor, pulledAt: string): HubSpotEmailMonitorResponse {
+  return {
+    pulledAt,
+    days: payload.days,
+    emails: (payload.emails ?? []).map((email) => ({
+      campaignId: email.campaign_id,
+      emailId: email.email_id,
+      name: email.name,
+      abVariant: email.ab_variant,
+      deleted: email.deleted,
+      sent: email.sent,
+      delivered: email.delivered,
+      opens: email.opens,
+      clicks: email.clicks,
+      bounces: email.bounces,
+      unsubscribes: email.unsubscribes,
+      spamReports: email.spam_reports,
+      ...toHubSpotRates(email),
+    })),
+    totals: toHubSpotTotals(payload.totals),
+    actionItems: (payload.action_items ?? []).map((item) => ({
+      priority: item.priority,
+      emailId: item.email_id || null,
+      emailName: item.campaign_name ?? '',
+      issue: item.issue,
+      action: item.action,
+    })),
+    metricsAsOf: payload.metrics_as_of ?? null,
+    metricsWindowStart: payload.metrics_window_start ?? null,
+    metricsWindowEnd: payload.metrics_window_end ?? null,
+    emailsChecked: payload.emails_checked,
+    emailsNotSentInWindow: payload.emails_not_sent_in_window,
+    emailsUnattributable: payload.emails_unattributable,
+    emailsTruncated: payload.emails_truncated === true,
+  };
+}
+
+/**
+ * The project's own connection as the Monitor tab's account picker offers it.
+ *
+ * An empty or blank `account_id` is a connection with no account bound (Meta lets a connection be
+ * created credentials-first): the picker has nothing to offer, and saying "connected" would send
+ * the panel to read an account that does not exist. The id is trimmed only to decide that — a
+ * non-blank id is offered exactly as stored, since it is what campaign-service compares against.
+ */
+export function toMonitorConnectionAccount(connection: CampaignServiceConnection): MonitorConnectionAccount {
+  const accountId = typeof connection.account_id === 'string' ? connection.account_id : '';
+  if (accountId.trim() === '') {
+    return { state: 'no_account', accountId: null, label: null };
+  }
+  const label = typeof connection.label === 'string' && connection.label.trim() !== '' ? connection.label.trim() : accountId;
+  return { state: 'connected', accountId, label };
+}
+
 function isConflictReason(value: unknown): value is AccountMonitorConflictReason {
   return typeof value === 'string' && (ACCOUNT_MONITOR_CONFLICT_REASONS as readonly string[]).includes(value);
 }
@@ -137,7 +269,7 @@ function isConflictReason(value: unknown): value is AccountMonitorConflictReason
 function monitorErrorMessage(statusCode: number, platformLabel: string): string {
   switch (statusCode) {
     case 400:
-      return `campaign-service could not read this ${platformLabel} account for this project: the project's own ${platformLabel} connection is unusable, is not bound to this account, or ${platformLabel} metrics are not enabled.`;
+      return `campaign-service could not read this ${platformLabel} account for this project: the project's own ${platformLabel} connection is unusable or is not bound to this account.`;
     case 404:
       return `This project has no ${platformLabel} connection of its own to read the account with.`;
     case 409:
@@ -169,6 +301,14 @@ export function toAccountMonitorClientError(error: unknown, platformLabel: strin
     return error;
   }
   const statusCode = error.statusCode;
+  if (statusCode === 400 && isMetricsDisabled(error.errorBody)) {
+    return new MicroserviceError(
+      `${platformLabel} metrics are not enabled in campaign-service for this environment yet.`,
+      statusCode,
+      getCodeForStatus(statusCode),
+      { operation, service: 'campaign_controller', originalError: error, errorBody: { error: ACCOUNT_MONITOR_METRICS_DISABLED_CODE } }
+    );
+  }
   const reason = statusCode === 409 ? (error.errorBody as { reason?: unknown } | undefined)?.reason : undefined;
   return new MicroserviceError(monitorErrorMessage(statusCode, platformLabel), statusCode, getCodeForStatus(statusCode), {
     operation,
@@ -176,4 +316,14 @@ export function toAccountMonitorClientError(error: unknown, platformLabel: strin
     originalError: error,
     errorBody: isConflictReason(reason) ? { error: reason } : undefined,
   });
+}
+
+/**
+ * Whether a 400 is campaign-service saying the platform's metrics are switched off, rather than
+ * that this project's connection is wrong. Matched on the EXACT upstream message: the other 400s
+ * this endpoint answers name a remedy on the connection, and folding them in would tell an operator
+ * to wait for an enablement when the fix is theirs.
+ */
+function isMetricsDisabled(errorBody: unknown): boolean {
+  return (errorBody as { message?: unknown } | undefined)?.message === ACCOUNT_MONITOR_UNSUPPORTED_UPSTREAM_MESSAGE;
 }

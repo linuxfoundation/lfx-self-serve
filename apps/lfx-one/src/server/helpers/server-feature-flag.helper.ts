@@ -388,9 +388,12 @@ export enum ServerFeatureFlag {
    * IT CHANGES WHOSE CREDENTIAL READS THE ACCOUNT. The legacy LinkedIn/Meta/Reddit paths read the LF ad
    * account with this app's own environment credentials. Campaign-service resolves the PROJECT'S
    * OWN connection only — never the LF system fallback — and refuses an account that connection
-   * is not bound to. So a project with no LinkedIn/Meta/Reddit connection of its own reads a 404, and one
-   * whose connection is bound to a different account than the picker offers reads a 400. Verify
-   * the foundations that use these tabs have connections before turning this on.
+   * is not bound to. So on, the Monitor tab's account pickers are filled from those connections
+   * (`/api/campaigns/monitor/connections`) instead of the configured allowlists, and the monitor
+   * routes check the account id's SHAPE rather than allowlist membership. A project with no
+   * connection of its own for a platform, or whose connection has no account bound, sees that
+   * stated in the panel rather than an error. Verify the foundations that use these tabs have
+   * connections before turning this on.
    *
    * IT ALSO CHANGES THE NUMBERS, deliberately: campaign-service fixed the rule-engine bugs the
    * legacy LinkedIn and Reddit paths still have (#3018-#3022): MED items now sort between HIGH
