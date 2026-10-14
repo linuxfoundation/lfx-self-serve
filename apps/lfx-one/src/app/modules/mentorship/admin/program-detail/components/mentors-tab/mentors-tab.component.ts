@@ -59,7 +59,7 @@ import { catchError, debounceTime, distinctUntilChanged, map, of, startWith, Sub
  * Mentors tab — the program's mentors and their invitation status, one server page at a time. The toolbar pairs a
  * search and status filter (both go upstream) with an invitee search that asks upstream for matching LF accounts by
  * name, LF username or full email (shown by name and LFID, never email) + an Invite button that invites the picked
- * candidate by LFID. Rows expose Accept / Decline / Revoke invite / Remove, gated by the mentor's status; each confirms, writes through
+ * candidate by LFID. Rows expose Approve / Decline / Revoke invite / Remove, gated by the mentor's status; each confirms, writes through
  * the BFF, then reloads the page and has the parent refresh the tab counts.
  */
 @Component({

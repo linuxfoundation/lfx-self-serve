@@ -3,6 +3,8 @@
 
 import { expect, Page, Route, test } from '@playwright/test';
 
+import { suppressCookieBanner } from './helpers/account-settings-email.helper';
+
 const MEETINGS_URL = '/meetings';
 const LENS_COOKIE = 'lfx-active-lens';
 
@@ -11,6 +13,7 @@ const FUTURE_START = '2099-03-04T15:00:00Z';
 const PAST_START = '2020-03-04T15:00:00Z';
 
 test.setTimeout(120_000);
+test.beforeEach(async ({ page }) => suppressCookieBanner(page));
 
 function fulfillJson(route: Route, body: unknown): Promise<void> {
   return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
@@ -34,7 +37,7 @@ async function seedMeLensCookie(page: Page): Promise<void> {
 /**
  * The signed-in user's LFID comes from the SSR auth context (TransferState), not an API the test
  * can stub — so the fixtures have to be built around whoever is actually logged in. Reads it back
- * out of the serialized state the same way the app does (`username`, then the namespaced claim).
+ * out of serialized state with canonical LFID first, then the alias-only fallback.
  */
 async function readViewerLfid(page: Page): Promise<string | null> {
   const raw = await page.locator('#ng-state').textContent();
@@ -44,7 +47,7 @@ async function readViewerLfid(page: Page): Promise<string | null> {
   try {
     const state = JSON.parse(raw) as Record<string, { user?: Record<string, string> }>;
     const user = state['auth']?.user;
-    return user?.['username'] || user?.['https://sso.linuxfoundation.org/claims/username'] || null;
+    return user?.['https://sso.linuxfoundation.org/claims/username'] || user?.['username'] || null;
   } catch {
     return null;
   }
@@ -126,6 +129,40 @@ async function gotoMyMeetings(page: Page): Promise<{ viewerLfid: string }> {
   await page.route('**/api/user/past-meetings*', (route) =>
     fulfillJson(route, [pastMeeting('link-past-1', 'Clickable Past', viewer, { organizer: true, project_slug: 'e2e-project' })])
   );
+  // The real destination guard resolves ?project= before activating details; keep that lookup
+  // and the details resource synthetic rather than sending nonexistent fixture IDs upstream.
+  await page.route(
+    (url) => ['/api/projects/e2e-project', '/api/projects/proj-e2e'].includes(url.pathname),
+    (route) =>
+      fulfillJson(route, {
+        uid: 'proj-e2e',
+        slug: 'e2e-project',
+        name: 'E2E Project',
+        description: 'Synthetic navigation project',
+        public: true,
+        parent_uid: '',
+        stage: 'Active',
+        category: 'project',
+        funding_model: [],
+        charter_url: '',
+        legal_entity_type: '',
+        legal_entity_name: '',
+        legal_parent_uid: '',
+        autojoin_enabled: false,
+        formation_date: '',
+        logo_url: '',
+        repository_url: '',
+        website_url: '',
+        created_at: '',
+        updated_at: '2020-01-01T00:00:00Z',
+        mailing_list_count: 0,
+        writer: true,
+      })
+  );
+  await page.route(
+    (url) => url.pathname === '/api/past-meetings/link-past-1',
+    (route) => fulfillJson(route, pastMeeting('link-past-1', 'Clickable Past', viewer, { organizer: true, project_slug: 'e2e-project' }))
+  );
 
   await page.goto(MEETINGS_URL, { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
@@ -137,7 +174,7 @@ async function gotoMyMeetings(page: Page): Promise<{ viewerLfid: string }> {
   return { viewerLfid };
 }
 
-const pastTab = (page: Page) => page.getByTestId('time-filter-tabs').getByTestId('filter-pill-past');
+const pastTab = (page: Page) => page.getByTestId('meeting-view-pills').getByTestId('filter-pill-past');
 const card = (page: Page, id: string) => page.locator(`#meeting-${id}`);
 
 test.describe('Meeting card — clickable title and date/time chip', () => {
@@ -196,7 +233,7 @@ test.describe('Meeting card — clickable title and date/time chip', () => {
     // (clicking both would require navigating back and re-deriving the past-tab state in between).
     // Chip's routerLink is already proven equivalent via the identical href assertion above.
     await title.click();
-    await page.waitForURL((url) => !/^\/meetings\/?$/.test(url.pathname));
+    await page.waitForURL((url) => !/^\/meetings\/?$/.test(url.pathname), { waitUntil: 'domcontentloaded' });
     expect(page.url()).toContain('/project/meetings/link-past-1/details');
     expect(page.url()).toContain('project=e2e-project');
   });

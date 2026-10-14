@@ -95,6 +95,22 @@ export class UserService {
 }
 ```
 
+Personal meeting caches key on `UserService.meetingFeedIdentity`, which combines the effective user's `sub` with `UserService.viewerUsername` (the canonical-first LFID with an alias-only fallback), so a subject swap is caught even when the LFID claim is absent or unchanged. Login/logout and impersonation changes tear down upcoming, past, and latest-past replay chains before a new consumer fetches data. The meeting dashboard and the join page's organizer RSVP lookup also reconnect on this identity and clear the previous subject's data while the replacement request is pending. `viewerUsername` alone remains the LFID used for filters, display, and organizer checks. Lens transitions clear personal rows once when leaving Me, without allowing later inactive personal emissions to erase Foundation/Project results.
+
+Uploaded-avatar resets prefer the effective user's stable `sub`, falling back to the canonical-first LFID when absent. Successful RSVP controls also record confirmations in root-scoped `UserService`, keyed by the effective subject captured when the write started and the meeting (`sub`, then LFID/email fallback). `getUserMeetings()` overlays these confirmations on indexed rows, so Foundation/Project-to-Me route destruction and a stale lazy refetch cannot discard a successful write. It checks replay ownership before reuse, keeping another subject isolated even when aliases are unchanged. Writes outside Me still defer the personal refetch; failed writes are never retained. Newer applicable indexed responses win according to the existing timestamp rules; when a newer indexed `my_rsvp` from an indexed registration fully covers a retained answer (`isRsvpSupersededBy`: the same row, an all-dates answer, or a fully covering scoped answer for the same registration), the personal-feed reconciliation retires that retained answer so a later enrichment outage cannot resurface it. A single-date answer covers only the same normalized date; a following-range answer covers a single date or following range anchored at or after its normalized anchor. Partial overlaps and scoped answers from another live registration do not retire that registration's confirmation, which the organizer overview still needs while its roster is stale. A late canonical claim still refreshes feeds and ownership comparisons without dropping the same subject's avatar or confirmations. For an unresolved recurring date, the root personal-feed overlay filters retained/indexed candidates to all-date responses before selecting the newest answer, so a newer date-scoped answer cannot hide an older all-date confirmation.
+
+Meeting cards reset their local confirmed RSVPs and optimistic post-registration state when either the meeting ID or `meetingFeedIdentity` changes. Foundation/Project rows can lack `my_registrant_ids`, so registration checks alone cannot isolate those local confirmations after login/logout or impersonation. Same-subject service-owned confirmations remain available after a canonical LFID change; local state does not reset when both the meeting ID and viewer identity are unchanged.
+
+The BFF personal feed likewise prefers all-date history before reducing an unresolved recurring meeting to `my_rsvp`. It retains the legacy aggregate fallback only when no all-date answer exists; personal response filters still reject that date-scoped fallback. The join page and RSVP controls request `rsvp_scope=all` on the existing current-user RSVP lookup when their recurring date is unresolved, so the BFF selects only the effective user's all-date responses before choosing the newest answer (or returns `null` without one). Resolved-date and default aggregate lookups keep their existing precedence.
+
+Registration lifetime also bounds retained responses. The personal-feed BFF enriches `my_registrant_ids` from its existing active-registration lookup (`[]` means no active registration; absent means enrichment unavailable). Without an active registration the RSVP write cannot resolve a registrant, so the dashboard keeps meetings with `[]` out of Needs response; absent IDs stay eligible, because a retained confirmed write during an outage already proves a live registration. `UserService` reconciles retained and indexed candidates against those IDs and records ended registration UIDs per effective subject and meeting. Fully completed card/page removals clear root confirmations under the captured subject and discard local history; RSVP controls reject supplied, fetched, retained, and late write acknowledgements for ended registrations. Re-registration can retain responses only for the new registration, while a failed removal leaves the previous response intact. A complete removal also advances a per-subject, per-meeting registration generation; RSVP controls capture it before each write, so an acknowledgement for a write submitted before the removal ends its registration even when the removal could not name that registration's ID. Answers from every live registration stay retained (`retainConfirmedRsvp`): a newer scoped answer keeps an older all-dates answer covering the other dates, and only a newer all-dates answer supersedes them. Confirmation order beats stored timestamps: an acknowledgement (scoped or all-dates) whose timestamp is not later than every retained answer is stamped just after the newest one, so it still wins when a superseded answer resurfaces from the card or roster index, and RSVP controls use that retained copy. Card and join-page organizer overviews receive the same retained answers (filtered by `isMeetingRsvpCurrent`) and apply each by date, so an occurrence switch or remount does not drop a successful write; when a roster is present, a confirmed answer whose registration has no roster row yet is added as its own guest row so counts and previews include it.
+
+`DELETE /api/meetings/:uid/registrants/self` returns `200` with `MeetingRegistrationRemovalResult`: `removed_registrant_ids` contains only successful upstream deletions and `remaining_registrant_ids` contains the caller's rows whose deletion failed. The BFF resolves those IDs from the session; the client supplies only the meeting ID. On partial removal it also reads raw RSVP history under the caller's token and returns `remaining_rsvps` restricted to the surviving IDs and meeting. An empty history is known-empty; an omitted field means history was unavailable (or removal was complete). History lookup failure cannot undo successful deletions or turn their result into a failed removal. `clearConfirmedMeetingRsvps` ends only the deleted IDs and preserves the registration generation and surviving confirmations, so a survivor's in-flight RSVP acknowledgement stays valid. It merges recovered history without stamping it as a new write and keeps the newer copy of a matching RSVP row. The active personal feed therefore immediately reselects the survivor's applicable response even after a fresh page load; the card controls and join-page status use the same retained history with their date guards. The card and join page remain invited, warn that removal is incomplete, refresh meeting data, and lazily invalidate the personal replay for its next consumer. Only a result with no remaining IDs marks the meeting registration removed.
+
+Fresh acknowledgements bridge registration-index lag too: before a newly confirmed registration first appears in indexed metadata, an older or empty registration list cannot invalidate its successful write. Once its UID has appeared, a later missing/replaced UID invalidates that registration's retained responses. Explicit successful removal always ends the registration immediately, even before its first indexed appearance.
+
+For the personal feed, `my_rsvp: null` confirms no response, whereas absent `my_rsvp` means the prerequisite lookup was unavailable. The dashboard keeps unknown rows in All meetings but excludes them from response-specific membership and counts. Otherwise-valid local confirmations still bridge an enrichment outage; an outage alone does not invalidate a registration.
+
 ## 🧩 Component Integration
 
 ### Signal Consumption
@@ -300,22 +316,26 @@ export class DashboardComponent {
 
 ## 🔧 Advanced Patterns
 
-### Signal Effects
+### Signal-to-RxJS State Bridges
+
+Use `toObservable()` with lifecycle-managed RxJS subscriptions for state-changing work. Reserve `effect()` for simple logging/debugging, as required by the [frontend review checklist](../../reviews/frontend-checklist.md#5-no-effect-should-fix).
 
 ```typescript
-export class ComponentWithEffects {
+import { inject, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { filter } from 'rxjs';
+
+export class ComponentWithFilterSync {
   private readonly filterSignal = signal<string>('');
   private readonly projectService = inject(ProjectService);
 
-  constructor() {
-    // React to filter changes
-    effect(() => {
-      const filter = this.filterSignal();
-      if (filter) {
-        // Side effect when filter changes
-        this.projectService.filterProjects(filter);
-      }
-    });
+  public constructor() {
+    toObservable(this.filterSignal)
+      .pipe(
+        filter((value) => !!value),
+        takeUntilDestroyed()
+      )
+      .subscribe((value) => this.projectService.filterProjects(value));
   }
 }
 ```

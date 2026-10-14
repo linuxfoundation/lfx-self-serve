@@ -722,24 +722,18 @@ describe('OrgEasyclaComponent', () => {
     });
 
     it('overlays the card link rather than wrapping the card in it', async () => {
-      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ needsClaManager: true, claManagersCount: 0 })] }));
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup()] }));
 
       const fixture = await render();
       const link = byTestId(fixture, 'org-easycla-card-link') as HTMLAnchorElement;
 
-      // The "Needs a CLA Manager" tag carries a tooltip and so takes `tabindex="0"`. Inside the
-      // anchor it would be a second tab stop within the link, and a click on it would be
-      // ambiguous with following the agreement.
       expect(link.querySelector('[data-testid="org-easycla-card"]')).toBeNull();
-      expect(link.querySelector('[tabindex]')).toBeNull();
+      expect(link.querySelector('button')).toBeNull();
       expect(link.getAttribute('aria-label')).toBe('Open Nimbus Foundation CLA');
 
-      // Layering per the me-selector in sidebar.component.html: the anchor sits beneath the card,
-      // the card's content has pointer events off so a click anywhere reaches the link, and the
-      // tooltip'd tag re-enables them so hovering it still opens the tooltip.
       const card = byTestId(fixture, 'org-easycla-card') as HTMLElement;
       expect(card.closest('.pointer-events-none')).not.toBeNull();
-      expect(byTestId(fixture, 'org-easycla-card-needs-manager')?.querySelector('.pointer-events-auto')).not.toBeNull();
+      expect(byTestId(fixture, 'org-easycla-card-coverage-link')?.classList.contains('pointer-events-auto')).toBe(true);
     });
 
     // The card shows the signing entity as a visible subline precisely because the CLA Group name is

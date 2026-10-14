@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { HealthMetricsL2CrossReference } from '../interfaces/health-metrics-l2.interface';
+import type { HealthMetricsL2CrossReference, HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
 import type {
   HealthMetricsTrainingCourses,
   HealthMetricsTrainingCoursesTypeOption,
@@ -67,10 +67,13 @@ export const HEALTH_METRICS_TRAINING_NO_PROGRAMME = {
 /** Rendered for a figure or a change that is not measured, so a gap never reads as zero. */
 export const HEALTH_METRICS_TRAINING_NOT_AVAILABLE = 'not available';
 
+/** The periods the model compares with the same point last year; only YTD carries change columns. */
+export const HEALTH_METRICS_TRAINING_ENROLLMENT_COMPARED_RANGES: readonly HealthMetricsL2Range[] = ['YTD'];
+
 /** A period with nothing measured. */
 export const HEALTH_METRICS_TRAINING_ENROLLMENT_PERIOD_UNMEASURED: HealthMetricsTrainingEnrollmentPeriod = {
   totals: { enrollments: null, certifications: null, revenueUsd: null },
-  baseline: null,
+  change: null,
   byType: [],
 };
 

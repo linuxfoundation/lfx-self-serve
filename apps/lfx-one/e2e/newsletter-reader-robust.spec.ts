@@ -52,27 +52,32 @@ async function stubProjectApi(page: Page, project: Project | null): Promise<void
   });
 }
 
+// Stubs the reader access endpoint (#3469): the mocked user is a project writer, so the BFF answers
+// `manager` with the issue.
 async function stubNewsletterApi(page: Page, projectUid: string, newsletterId: string, status: string = 'sent', shouldExist: boolean = true): Promise<void> {
-  await page.route(`**/api/projects/${projectUid}/newsletters/${newsletterId}`, (route) => {
+  await page.route(`**/api/newsletters/${projectUid}/${newsletterId}/reader`, (route) => {
     if (!shouldExist) {
-      return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ message: 'not found' }) });
+      return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'not found', code: 'NOT_FOUND' }) });
     }
     return route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        id: newsletterId,
-        subject: 'K8s Weekly #42',
-        body_html: MOCK_NEWSLETTER_BODY_HTML,
-        status,
-        sent_at: '2026-08-13T10:00:00Z',
-        project_uid: projectUid,
-        ed_reply_email: 'ed@example.com',
-        total_recipients: 12,
-        created_by: 'sender',
-        version: 1,
-        created_at: '2026-08-13T10:00:00Z',
-        updated_at: '2026-08-13T10:00:00Z',
+        access: 'manager',
+        newsletter: {
+          id: newsletterId,
+          subject: 'K8s Weekly #42',
+          body_html: MOCK_NEWSLETTER_BODY_HTML,
+          status,
+          sent_at: '2026-08-13T10:00:00Z',
+          project_uid: projectUid,
+          ed_reply_email: 'ed@example.com',
+          total_recipients: 12,
+          created_by: 'sender',
+          version: 1,
+          created_at: '2026-08-13T10:00:00Z',
+          updated_at: '2026-08-13T10:00:00Z',
+        },
       }),
     });
   });

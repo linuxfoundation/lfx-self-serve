@@ -11,6 +11,7 @@ import {
   Meeting,
   MeetingRegistrant,
   MeetingRsvp,
+  PastMeeting,
   ProfileVisibilitySections,
   ProfileVisibilityUpdateRequest,
   QueryServiceResponse,
@@ -664,7 +665,100 @@ describe('UserService.getUserMeetings my_rsvp enrichment', () => {
 
     expect(meetings).toHaveLength(1);
     expect(meetings[0].my_rsvp?.response_type).toBe('accepted');
+    expect(meetings[0].my_registrant_ids).toEqual(['reg-1']);
   });
+
+  it.each(['identity-rsvp', 'registrant', 'registrant-rsvp', 'empty'])(
+    'distinguishes unavailable prerequisite enrichment from a successful empty lookup (%s)',
+    async (lookup) => {
+      const meeting = { id: 'synthetic-enrichment', start_time: tomorrow, duration: 60 } satisfies Partial<Meeting>;
+      proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string; filters_or?: string[] }) => {
+        if (params?.type === 'v1_meeting') return queryPage([meeting]);
+        if (params?.type === 'v1_meeting_registrant') {
+          if (lookup === 'registrant') return Promise.reject(new Error('Synthetic registration lookup unavailable'));
+          return queryPage(lookup === 'registrant-rsvp' ? [{ uid: 'synthetic-reg', meeting_id: meeting.id }] : []);
+        }
+        if (params?.type === 'v1_meeting_rsvp') {
+          if (lookup === 'identity-rsvp' || (lookup === 'registrant-rsvp' && params.filters_or?.includes('registrant_id:synthetic-reg'))) {
+            return Promise.reject(new Error('Synthetic RSVP lookup unavailable'));
+          }
+        }
+        return queryPage([]);
+      });
+      const service = new UserService();
+      Object.assign(service, {
+        meetingService: { getMeetingProjectName: async (_req: Request, items: Meeting[]) => items },
+        accessCheckService: { addAccessToResources: async (_req: Request, items: Meeting[]) => items },
+      });
+
+      const result = await service.getUserMeetings(req);
+
+      expect(result).toHaveLength(1);
+      if (lookup === 'empty') {
+        expect(result[0].my_rsvp).toBeNull();
+        expect(result[0].my_registrant_ids).toEqual([]);
+      } else {
+        expect(result[0].my_rsvp).toBeUndefined();
+        expect(result[0].my_registrant_ids).toBeUndefined();
+      }
+    }
+  );
+
+  it.each(['single', 'this_and_following'] as const)(
+    'keeps an older all-date answer before a newer %s response when the recurring date is unresolved',
+    async (scope) => {
+      const occurrenceId = String(Math.floor(Date.parse(tomorrow) / 1000));
+      const meetings: Partial<Meeting>[] = [
+        { id: 'synthetic-series', start_time: tomorrow, duration: 60, recurrence: { type: 1, repeat_interval: 1 }, occurrences: [] },
+        { id: 'synthetic-scoped-only', start_time: tomorrow, duration: 60, recurrence: { type: 1, repeat_interval: 1 }, occurrences: [] },
+        { id: 'synthetic-one-time', start_time: tomorrow, duration: 60 },
+        {
+          id: 'synthetic-resolved',
+          start_time: tomorrow,
+          duration: 60,
+          recurrence: { type: 1, repeat_interval: 1 },
+          occurrences: [{ occurrence_id: occurrenceId, start_time: tomorrow, duration: 60 }],
+        },
+      ];
+      const registrants = meetings.map((meeting) => ({ uid: `reg-${meeting.id}`, meeting_id: meeting.id }));
+      const responses: Partial<MeetingRsvp>[] = meetings.flatMap((meeting) => {
+        const all: Partial<MeetingRsvp> = {
+          id: `all-${meeting.id}`,
+          meeting_id: meeting.id,
+          registrant_id: `reg-${meeting.id}`,
+          response_type: 'accepted',
+          scope: 'all',
+          created_at: '2026-01-01T00:00:00Z',
+        };
+        const scoped: Partial<MeetingRsvp> = {
+          ...all,
+          id: `scoped-${meeting.id}`,
+          response_type: 'declined',
+          scope,
+          occurrence_id: occurrenceId,
+          created_at: '2026-02-01T00:00:00Z',
+        };
+        return meeting.id === 'synthetic-scoped-only' ? [scoped] : [all, scoped];
+      });
+      proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) => {
+        if (params?.type === 'v1_meeting') return queryPage(meetings);
+        if (params?.type === 'v1_meeting_registrant') return queryPage(registrants);
+        if (params?.type === 'v1_meeting_rsvp') return queryPage(responses);
+        return queryPage([]);
+      });
+      const service = new UserService();
+      Object.assign(service, {
+        meetingService: { getMeetingProjectName: async (_req: Request, items: Meeting[]) => items },
+        accessCheckService: { addAccessToResources: async (_req: Request, items: Meeting[]) => items },
+      });
+
+      const result = await service.getUserMeetings(req);
+      expect(result.find((meeting) => meeting.id === 'synthetic-series')?.my_rsvp?.id).toBe('all-synthetic-series');
+      expect(result.find((meeting) => meeting.id === 'synthetic-scoped-only')?.my_rsvp?.id).toBe('scoped-synthetic-scoped-only');
+      expect(result.find((meeting) => meeting.id === 'synthetic-one-time')?.my_rsvp?.id).toBe('scoped-synthetic-one-time');
+      expect(result.find((meeting) => meeting.id === 'synthetic-resolved')?.my_rsvp?.id).toBe('scoped-synthetic-resolved');
+    }
+  );
 
   it('flags a meeting as invited through a committee only when a committee registration backs it', async () => {
     const meetings: Partial<Meeting>[] = [
@@ -695,6 +789,7 @@ describe('UserService.getUserMeetings my_rsvp enrichment', () => {
     const result = await service.getUserMeetings(req);
 
     expect(Object.fromEntries(result.map((m) => [m.id, m.invited_via_committee]))).toEqual({ 'via-committee': true, direct: false });
+    expect(Object.fromEntries(result.map((m) => [m.id, m.my_registrant_ids]))).toEqual({ 'via-committee': ['reg-c'], direct: ['reg-d'] });
   });
 });
 
@@ -1401,6 +1496,74 @@ describe('UserService.getUserMeetingRegistrations', () => {
     getUsernameFromAuth.mockResolvedValue(null);
 
     expect((await service.getUserMeetingRegistrations(req, undefined)).size).toBe(0);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe('UserService.enrichPastMeetingsWithUserAttendance', () => {
+  const req = {} as unknown as Request;
+  let service: UserService;
+
+  const participantPage = (rows: { meeting_and_occurrence_id: string; is_attended: boolean }[]) => ({
+    resources: rows.map((data, i) => ({ id: String(i), type: 'v1_past_meeting_participant', data })),
+  });
+  const buildMeeting = (id: string): PastMeeting => ({ id, meeting_and_occurrence_id: id }) as PastMeeting;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    getUsernameFromAuth.mockReset().mockResolvedValue(null);
+    service = new UserService();
+  });
+
+  it('marks meetings the user attended and the rest as not attended', async () => {
+    proxyRequest.mockResolvedValueOnce(
+      participantPage([
+        { meeting_and_occurrence_id: 'm1-o1', is_attended: true },
+        { meeting_and_occurrence_id: 'm2-o1', is_attended: false },
+      ])
+    );
+    const meetings = [buildMeeting('m1-o1'), buildMeeting('m2-o1'), buildMeeting('m3-o1')];
+
+    await service.enrichPastMeetingsWithUserAttendance(req, 'User@Example.com', meetings);
+
+    expect(meetings.map((m) => m.user_attended)).toEqual([true, false, false]);
+  });
+
+  it('treats an occurrence as attended when any participant record says so', async () => {
+    proxyRequest.mockResolvedValueOnce(
+      participantPage([
+        { meeting_and_occurrence_id: 'm1-o1', is_attended: false },
+        { meeting_and_occurrence_id: 'm1-o1', is_attended: true },
+      ])
+    );
+    const meetings = [buildMeeting('m1-o1')];
+
+    await service.enrichPastMeetingsWithUserAttendance(req, 'user@example.com', meetings);
+
+    expect(meetings[0].user_attended).toBe(true);
+  });
+
+  it('leaves user_attended undefined when the participant scan fails', async () => {
+    proxyRequest.mockRejectedValueOnce(new Error('upstream down'));
+    const meetings = [buildMeeting('m1-o1')];
+
+    await service.enrichPastMeetingsWithUserAttendance(req, 'user@example.com', meetings);
+
+    expect(meetings[0].user_attended).toBeUndefined();
+  });
+
+  it('leaves user_attended undefined and skips the scan when there is no identity', async () => {
+    const meetings = [buildMeeting('m1-o1')];
+
+    await service.enrichPastMeetingsWithUserAttendance(req, '', meetings);
+
+    expect(proxyRequest).not.toHaveBeenCalled();
+    expect(meetings[0].user_attended).toBeUndefined();
+  });
+
+  it('skips the scan for an empty meeting list', async () => {
+    await service.enrichPastMeetingsWithUserAttendance(req, 'user@example.com', []);
+
     expect(proxyRequest).not.toHaveBeenCalled();
   });
 });

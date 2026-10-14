@@ -152,6 +152,81 @@ function pageOf(committees: Partial<Committee>[], pageToken?: string): QueryServ
   return { resources: committees.map((c) => ({ id: `committee:${c.uid}`, data: c as Committee })), page_token: pageToken } as QueryServiceResponse<Committee>;
 }
 
+describe('CommitteeService — mailing_lists enrichment', () => {
+  let service: CommitteeService;
+
+  const list = (uid: string, name: string, committeeUids: string[]) => ({
+    id: `groupsio_mailing_list:${uid}`,
+    data: { uid, group_name: name, title: `${name} title`, committees: committeeUids.map((c) => ({ uid: c })) },
+  });
+
+  /** Routes the upstream calls each service method makes by their query `type`. */
+  const routeUpstream = (lists: ReturnType<typeof list>[]) =>
+    proxyRequest.mockImplementation(async (_req: unknown, _svc: string, _path: string, _method: string, params: Record<string, unknown>) => {
+      if (params['type'] === 'committee_member') {
+        return {
+          resources: ['c1', 'c2', 'c3'].map((uid) => ({ id: `m:${uid}`, data: { uid: `m-${uid}`, committee_uid: uid, role: { name: 'Member' } } })),
+        };
+      }
+      if (params['type'] === 'groupsio_mailing_list') {
+        return { resources: lists };
+      }
+      return pageOf(['c1', 'c2', 'c3'].map((uid) => ({ uid, name: uid })));
+    });
+
+  beforeEach(async () => {
+    proxyRequest.mockReset();
+    addAccessToResources.mockReset().mockImplementation(async (_req: unknown, items: unknown[]) => items);
+    vi.mocked(getUsernameFromAuth).mockReset().mockResolvedValue('synthetic-user');
+    const actual = await vi.importActual<typeof import('../helpers/query-service.helper')>('../helpers/query-service.helper');
+    vi.mocked(fetchAllQueryResources).mockReset().mockImplementation(actual.fetchAllQueryResources);
+    service = new CommitteeService();
+  });
+
+  it('getMyCommittees attaches a deduplicated list of refs per committee, and an empty array when there are none', async () => {
+    routeUpstream([
+      // Same committee referenced twice on one list, and the list also shared with c2.
+      list('ml-1', 'dev', ['c1', 'c1', 'c2']),
+      list('ml-2', 'announce', ['c1']),
+    ]);
+
+    const result = await service.getMyCommittees(req);
+    const byUid = new Map(result.map((c) => [c.uid, c]));
+
+    expect(byUid.get('c1')?.mailing_lists).toEqual([
+      { uid: 'ml-1', group_name: 'dev', title: 'dev title' },
+      { uid: 'ml-2', group_name: 'announce', title: 'announce title' },
+    ]);
+    expect(byUid.get('c1')?.has_mailing_list).toBe(true);
+    expect(byUid.get('c2')?.mailing_lists).toEqual([{ uid: 'ml-1', group_name: 'dev', title: 'dev title' }]);
+    expect(byUid.get('c3')?.mailing_lists).toEqual([]);
+    expect(byUid.get('c3')?.has_mailing_list).toBe(false);
+  });
+
+  it('getCommittees returns only the has_mailing_list flag, never list refs, so non-members cannot see a private list', async () => {
+    proxyRequest.mockImplementation(async (_req: unknown, _svc: string, _path: string, _method: string, params: Record<string, unknown>) =>
+      params['type'] === 'groupsio_mailing_list' ? { resources: [list('ml-1', 'private-list', ['c1'])] } : pageOf([{ uid: 'c1' }, { uid: 'c2' }])
+    );
+
+    const result = await service.getCommittees(req, { tags: 'project_uid:project-1' });
+
+    expect(result.map((c) => c.has_mailing_list)).toEqual([true, false]);
+    for (const committee of result) {
+      expect('mailing_lists' in committee).toBe(false);
+    }
+  });
+
+  it('getCommittees omits both the flag and the refs, and skips the lookup, when enrichment is skipped', async () => {
+    proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'c1' }]));
+
+    const result = await service.getCommittees(req, { tags: 'project_uid:project-1' }, { skipMailingListEnrichment: true });
+
+    expect(proxyRequest).toHaveBeenCalledOnce();
+    expect('has_mailing_list' in result[0]).toBe(false);
+    expect('mailing_lists' in result[0]).toBe(false);
+  });
+});
+
 describe('CommitteeService — create picker methods', () => {
   let service: CommitteeService;
 

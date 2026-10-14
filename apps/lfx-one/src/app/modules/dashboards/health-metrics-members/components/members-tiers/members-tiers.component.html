@@ -69,12 +69,15 @@
     <div class="flex flex-col gap-2" data-testid="members-tiers-matrix">
       <div class="flex flex-wrap items-baseline justify-between gap-2">
         <h4 class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Membership breakdown by tier</h4>
-        <span class="text-[12px] text-gray-400">exact counts</span>
+        <span class="text-[12px] text-gray-400" data-testid="members-tiers-matrix-unit">{{ mode() === 'members' ? 'exact counts' : 'in USD' }}</span>
       </div>
       <div class="overflow-x-auto">
         <table class="w-full text-sm" data-testid="members-tiers-table">
           <caption class="sr-only">
-            Members per tier by year, with each year's total members and revenue
+            {{
+              mode() === 'members' ? 'Members' : 'Revenue'
+            }}
+            per tier by year, with each year's total members and revenue
           </caption>
           <thead>
             <tr class="border-b border-gray-100">
@@ -105,8 +108,8 @@
                     class="px-3 py-2 text-right tabular-nums"
                     [class.bg-gray-50]="view().years[yearIndex].isCurrent"
                     [class.font-semibold]="view().years[yearIndex].isCurrent"
-                    [class.text-gray-300]="!cell.count"
-                    [class.text-gray-800]="!!cell.count"
+                    [class.text-gray-300]="!cell.value"
+                    [class.text-gray-800]="!!cell.value"
                     [attr.data-testid]="'members-tiers-cell-' + tierIndex + '-' + cell.year">
                     {{ cell.label }}
                   </td>
@@ -133,7 +136,9 @@
     <div class="flex flex-col gap-2" data-testid="members-tiers-composition">
       <div class="flex flex-wrap items-baseline justify-between gap-2">
         <h4 class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Tier composition by year</h4>
-        <span class="text-[12px] text-gray-400">the same table as shares, so a shifting mix is visible</span>
+        <span class="text-[12px] text-gray-400"
+          >each tier's share of the year's {{ mode() === 'members' ? 'members' : 'revenue' }}, so a shifting mix is visible</span
+        >
       </div>
       <!-- The matrix above carries the same figures for screen readers. -->
       <div class="h-72" aria-hidden="true" data-testid="members-tiers-chart">

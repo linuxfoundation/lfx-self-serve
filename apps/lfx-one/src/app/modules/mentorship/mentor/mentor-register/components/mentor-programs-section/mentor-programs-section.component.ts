@@ -41,7 +41,7 @@ import { catchError, debounceTime, distinctUntilChanged, map, of, startWith, Sub
 /**
  * Program picker and request list, shared by the Become a Mentor form and the mentor profile edit
  * drawer. The select acts as a one-shot action rather than a stored value: it hands the program up
- * and clears itself. A program with a pending, accepted or declined request
+ * and clears itself. A program with a pending, approved or declined request
  * (`MENTORSHIP_MENTOR_PICKER_EXCLUDED_STATUSES`), or with an open invitation (`invitedProgramIds`),
  * stays listed but disabled, with its status as a note; so does one a request found gone (404), noted
  * as no longer available. A program whose request was withdrawn stays

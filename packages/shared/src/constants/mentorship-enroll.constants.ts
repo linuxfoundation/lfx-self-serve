@@ -1,8 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { MentorshipEnrollForm, MentorshipEnrollStep, MentorshipPrerequisite, MentorshipProgramTerm } from '../interfaces/mentorship.interface';
-import { toLocalDateOnlyString } from '../utils/date-time.utils';
+import type { MentorshipEnrollForm, MentorshipEnrollStep, MentorshipPrerequisite } from '../interfaces/mentorship.interface';
 
 export const MENTORSHIP_ENROLL_STEPS_ORDER: MentorshipEnrollStep[] = ['details', 'setup', 'prerequisites'];
 
@@ -29,6 +28,8 @@ export const MENTORSHIP_RICH_TEXT_RAW_MAX = MENTORSHIP_ENROLL_DESCRIPTION_MAX * 
  */
 export const MENTORSHIP_RICH_TEXT_TOO_LARGE_MESSAGE = 'This text is too long or has too much formatting. Shorten it or remove some links or styling.';
 export const MENTORSHIP_TERM_NAME_MAX = 50;
+/** Id prefix the term dialog stamps on a term the wizard has added but upstream has not saved yet. */
+export const MENTORSHIP_NEW_TERM_ID_PREFIX = 'term-new-';
 export const MENTORSHIP_MAX_OPEN_TERMS = 4;
 export const MENTORSHIP_CUSTOM_PREREQ_NAME_MAX = 20;
 export const MENTORSHIP_CUSTOM_PREREQ_DESCRIPTION_MAX = 500;
@@ -363,33 +364,13 @@ export const MENTORSHIP_SKILL_OPTIONS: readonly string[] = [
   'XML',
 ];
 
-/**
- * A term whose application window and start month stay valid on `today` and on a
- * UTC host one civil day ahead. Application start is tomorrow so an untouched
- * default is never "already past" on the BFF.
- */
-export function createDefaultMentorshipTerm(today = new Date()): MentorshipProgramTerm {
-  const start = new Date(today.getFullYear(), today.getMonth() + 3, 1);
-  const end = new Date(today.getFullYear(), today.getMonth() + 5, 1);
-  const applicationEnd = new Date(start.getFullYear(), start.getMonth(), 0);
-  const applicationStart = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
-  const year = start.getFullYear();
-  return {
-    id: `term-1-${year}`,
-    name: `Term 1 - ${year}`,
-    startDate: toLocalDateOnlyString(start),
-    endDate: toLocalDateOnlyString(end),
-    applicationStartDate: toLocalDateOnlyString(applicationStart),
-    applicationEndDate: toLocalDateOnlyString(applicationEnd),
-  };
-}
-
 export const MENTORSHIP_DEFAULT_PREREQUISITES: MentorshipPrerequisite[] = [
   {
     id: 'prereq-resume',
     name: 'Resume',
     description: 'Upload the most recent version of your resume.',
     required: false,
+    custom: false,
     requireFile: true,
   },
   {
@@ -397,6 +378,7 @@ export const MENTORSHIP_DEFAULT_PREREQUISITES: MentorshipPrerequisite[] = [
     name: 'Cover Letter',
     description: 'A letter to the program covering the following topics:',
     required: false,
+    custom: false,
     requireFile: true,
   },
   {
@@ -404,6 +386,7 @@ export const MENTORSHIP_DEFAULT_PREREQUISITES: MentorshipPrerequisite[] = [
     name: 'School Enrollment Verification',
     description: 'Students must upload proof of enrollment (college transcript, or copy student ID, or admissions offer if graduating from high school).',
     required: false,
+    custom: false,
     requireFile: false,
   },
   {
@@ -411,6 +394,7 @@ export const MENTORSHIP_DEFAULT_PREREQUISITES: MentorshipPrerequisite[] = [
     name: 'Participation permission from school or employer',
     description: 'By submitting this task, I certify that I have permission from my school or employer to participate in this mentorship program.',
     required: false,
+    custom: false,
     requireFile: false,
   },
   {
@@ -418,6 +402,7 @@ export const MENTORSHIP_DEFAULT_PREREQUISITES: MentorshipPrerequisite[] = [
     name: 'Coding Challenge',
     description: 'Complete a code challenge',
     required: false,
+    custom: false,
     challengeUrl: '',
   },
 ];
@@ -452,7 +437,7 @@ export function createEmptyMentorshipEnrollForm(): MentorshipEnrollForm {
     logoFileName: '',
     logoPreviewUrl: '',
     skills: [],
-    terms: [createDefaultMentorshipTerm()],
+    terms: [],
     prerequisites: clonePrerequisites(),
     termsAccepted: false,
   };

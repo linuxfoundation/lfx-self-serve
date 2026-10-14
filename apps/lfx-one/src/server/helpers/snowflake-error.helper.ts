@@ -38,6 +38,18 @@ export function isInvalidRowCountError(error: unknown): boolean {
   return normalizedErrorCode === '2010' || normalizedErrorCode === '2011' || /invalid row count '[^']*' in (?:limit|result offset) clause/i.test(message);
 }
 
+/**
+ * True when Snowflake cannot recognize a Date/Time/Timestamp/Numeric/Boolean value, typically from a
+ * malformed request bind. These are value faults, not availability failures. Match only this error
+ * family (or the confirmed numeric code 100038), so unrelated compilation/auth errors still count.
+ */
+export function isValueConversionError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  const errorCode = typeof error === 'object' && error !== null && 'code' in error ? String(error.code ?? '') : '';
+  const normalizedErrorCode = errorCode.replace(/^0+/, '');
+  return normalizedErrorCode === '100038' || /\b(?:date|time|timestamp|numeric value|boolean value) '[^']*' is not recognized/i.test(message);
+}
+
 /** True when Snowflake rejects a column reference, optionally for one expected identifier. */
 export function isInvalidIdentifierError(error: unknown, expectedIdentifier?: string): boolean {
   const message = error instanceof Error ? error.message : String(error);

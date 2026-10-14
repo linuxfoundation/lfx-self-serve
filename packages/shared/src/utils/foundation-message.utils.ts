@@ -235,8 +235,8 @@ export function renderFoundationMessageFormText(input: FoundationMessageFormPayl
  * Return the required headings missing from the document. Mirrors the
  * agent's own `missingHeadings` gate: each heading must start a line and be
  * followed by end-of-line or a qualifier boundary (whitespace, `(`, `:`,
- * `—`, `-`), so "## 1a. Word-Count Derivatives (when a Brand Kit exists)"
- * passes while "## 10. Next Stepsish" does not.
+ * `—`, `-`), so "## 3. Copy Primitives (word-count-locked)" passes while
+ * "## 4. Voices" does not.
  */
 export function findMissingFoundationMessageHeadings(documentMarkdown: string): string[] {
   const lines = documentMarkdown.split(/\r?\n/);
@@ -261,7 +261,7 @@ export function countFoundationMessageWords(text: string): number {
  * values that passed the presence gate. Returns human-readable violations
  * (empty = pass), mirroring the agent wrapper's `derivativeViolations`:
  *
- * - G1 hard word caps (25 / 50 / 10);
+ * - G1 hard word caps (25 / 50 / 90);
  * - G2 sanity bands — boilerplate 50-250 words, `llms_txt` opening with an
  *   `# ` H1 line;
  * - G3 every derivative appears verbatim inside `document_markdown`, so the
@@ -321,7 +321,7 @@ export function findFoundationMessageDerivativeViolations(derivatives: Record<st
 
 /**
  * Validate a candidate Message Foundation envelope against the v1 contract's
- * schema gates, the 13-heading structural presence gate, and the derivative
+ * schema gates, the 14-heading structural presence gate, and the derivative
  * gates (presence + the §1a word-count locks G1-G3). Hash equality is the
  * caller's job — see module note.
  */

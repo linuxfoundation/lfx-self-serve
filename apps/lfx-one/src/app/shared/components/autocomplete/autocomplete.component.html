@@ -3,6 +3,7 @@
 
 <ng-container [formGroup]="form()">
   <p-autocomplete
+    #autoComplete
     [formControlName]="control()"
     [suggestions]="suggestions()"
     [placeholder]="placeholder() ?? ''"

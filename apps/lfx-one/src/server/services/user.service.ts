@@ -530,11 +530,10 @@ export class UserService {
 
     const normalizedMeetings = meetings.map((meeting) => normalizeIndexedMeetingInviteResponses(normalizeIndexedMeetingAiSummary(meeting)));
 
-    // Enrich each meeting with the current user's RSVP (null when no response). Reuses the same
-    // query-service pattern that powers `getUserPendingActions` → `transformMissingRsvpsToActions`.
-    // Wrapped in try/catch so an RSVP-lookup failure degrades gracefully: meetings still return,
-    // `my_rsvp` stays undefined per row, the dashboard doesn't 500, and the Pending RSVP filter
-    // chip just shows the unfiltered list.
+    // Enrich each meeting with the effective user's RSVP and active registration UIDs, reusing
+    // the pending-actions prerequisite queries. A successful empty lookup confirms null/[];
+    // a failed lookup leaves both fields undefined. Unknown rows stay visible under All meetings
+    // but do not enter response-specific filters unless the client retains a valid confirmed write.
     const committeeMeetingIds = new Set<string>();
     if (!options?.basic) {
       const rawUsername = await getUsernameFromAuth(req);
@@ -564,20 +563,20 @@ export class UserService {
           // used on the detail page. Non-recurring meetings resolve identically to before (no
           // occurrence_id → single `all`-scoped row wins).
           //
-          // Fall back to the newest RSVP for the series when the per-occurrence resolver returns
-          // null (e.g. the user's only RSVP is a `single`-scope row for a non-current/next
-          // occurrence). Keeps `!m.my_rsvp` a reliable "no RSVP recorded for the series at all"
-          // signal for the dashboard's Pending RSVP filter (meetings-dashboard.component.ts) and
-          // aligns it with `transformMissingRsvpsToActions`, which suppresses the Set RSVP action
-          // whenever *any* active-registrant RSVP exists.
+          // Keep the newest series response when none applies to the current/next date.
+          // The dashboard checks scope before assigning a response filter; the pending-actions
+          // aggregation separately suppresses Set RSVP when any active-registrant response exists.
           for (const meeting of normalizedMeetings) {
             if (!meeting.id) continue;
+            meeting.my_registrant_ids = activeRegistrants.uidsByMeeting.get(meeting.id) ?? [];
             const meetingRsvps = rsvpsByMeeting.get(meeting.id);
             if (!meetingRsvps || meetingRsvps.length === 0) {
               meeting.my_rsvp = null;
               continue;
             }
-            const applicable = selectApplicableRsvp(resolveRsvpOccurrenceId(meeting), meetingRsvps);
+            const occurrenceId = resolveRsvpOccurrenceId(meeting);
+            const candidates = meeting.recurrence && !occurrenceId ? meetingRsvps.filter((rsvp) => rsvp.scope === 'all') : meetingRsvps;
+            const applicable = selectApplicableRsvp(occurrenceId, candidates);
             meeting.my_rsvp = applicable ?? selectApplicableRsvp(undefined, meetingRsvps);
           }
         } catch (error) {
@@ -662,41 +661,9 @@ export class UserService {
       has_foundation_filter: !!foundationUid,
     });
 
-    const normalizedEmail = email.toLowerCase();
-    const username = await getUsernameFromAuth(req);
-
-    const filtersOr: string[] = [];
-    if (normalizedEmail) filtersOr.push(`email:${normalizedEmail}`);
-    if (username) filtersOr.push(`username:${stripAuthPrefix(username)}`);
-
     // Participant scan sources `is_attended` for `user_attended` enrichment — FGA tuples don't
-    // carry attendance, so this lookup is independent of the meeting fetch. failOnPartial: true
-    // surfaces truncated sets; outer .catch degrades gracefully so a failure here drops attendance
-    // data without 500'ing the Me lens.
-    // `loaded` distinguishes "scan succeeded, user wasn't a participant" (loaded:true → attended:false is correct)
-    // from "couldn't determine attendance" (loaded:false → attended:undefined so UI can show 'unknown').
-    const participantQuery: Promise<{ participants: PastMeetingParticipant[]; loaded: boolean }> =
-      filtersOr.length > 0
-        ? fetchAllQueryResources<PastMeetingParticipant>(
-            req,
-            (pageToken) =>
-              this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingParticipant>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-                type: 'v1_past_meeting_participant',
-                filters_or: filtersOr,
-                page_size: 500,
-                ...(pageToken && { page_token: pageToken }),
-              }),
-            { failOnPartial: true }
-          )
-            .then((participants) => ({ participants, loaded: true }))
-            .catch((error) => {
-              logger.warning(req, 'get_user_past_meetings', 'Participant query failed, continuing without attendance enrichment', {
-                stage: 'participant_query',
-                err: error,
-              });
-              return { participants: [] as PastMeetingParticipant[], loaded: false };
-            })
-        : Promise.resolve({ participants: [] as PastMeetingParticipant[], loaded: false });
+    // carry attendance, so this lookup is independent of the meeting fetch.
+    const participantQuery = this.fetchUserParticipantRecords(req, email, 'get_user_past_meetings');
 
     // .catch — same degrade-to-empty-scope pattern as getUserMeetings.
     const foundationQuery = foundationUid
@@ -789,15 +756,7 @@ export class UserService {
     // we have no user identity), leave user_attended undefined so the UI can distinguish "didn't
     // attend" from "attendance unknown".
     if (attendanceLoaded) {
-      const userAttendedByOccurrenceId = new Map<string, boolean>();
-      for (const p of participants) {
-        if (!p.meeting_and_occurrence_id) continue;
-        const prior = userAttendedByOccurrenceId.get(p.meeting_and_occurrence_id) ?? false;
-        userAttendedByOccurrenceId.set(p.meeting_and_occurrence_id, prior || !!p.is_attended);
-      }
-      for (const meeting of pastOnly) {
-        meeting.user_attended = userAttendedByOccurrenceId.get(meeting.id) ?? false;
-      }
+      this.applyUserAttendance(pastOnly, participants);
     }
 
     const enriched = await this.meetingService.getMeetingProjectName(req, pastOnly);
@@ -807,6 +766,30 @@ export class UserService {
     const withCreatedBy = await enrichMeetingsWithCreatedBy(req, enriched, (m) => m.meeting_id);
 
     return this.accessCheckService.addAccessToResources(req, withCreatedBy, 'v1_past_meeting', 'organizer');
+  }
+
+  /**
+   * Sets `user_attended` on each past meeting from the current user's participant records.
+   * Used by the project-lens past meetings list, which is not scoped to the user's own grants.
+   * Degrades gracefully: when the participant scan fails or no identity is available,
+   * `user_attended` stays undefined so no "Attended" label is shown.
+   * @param req - Express request object
+   * @param email - User's email address for participant lookup
+   * @param meetings - Past meetings to enrich in place (rows need `meeting_and_occurrence_id` or `id`)
+   */
+  public async enrichPastMeetingsWithUserAttendance(req: Request, email: string, meetings: PastMeeting[]): Promise<void> {
+    if (meetings.length === 0) return;
+
+    const { participants, loaded } = await this.fetchUserParticipantRecords(req, email, 'enrich_past_meetings_attendance');
+    if (loaded) {
+      this.applyUserAttendance(meetings, participants);
+    }
+
+    logger.debug(req, 'enrich_past_meetings_attendance', 'Enriched past meetings with viewer attendance', {
+      meeting_count: meetings.length,
+      participant_count: participants.length,
+      attendance_loaded: loaded,
+    });
   }
 
   /**
@@ -1210,6 +1193,66 @@ export class UserService {
   }
 
   /**
+   * Scans the current user's past meeting participant records (by email and username).
+   * `loaded` distinguishes "scan succeeded, user wasn't a participant" (loaded:true → attended:false is correct)
+   * from "couldn't determine attendance" (loaded:false → attended stays undefined). failOnPartial: true
+   * surfaces truncated sets; the .catch degrades so a failure drops attendance data without 500'ing the caller.
+   */
+  private async fetchUserParticipantRecords(
+    req: Request,
+    email: string,
+    operation: string
+  ): Promise<{ participants: PastMeetingParticipant[]; loaded: boolean }> {
+    const normalizedEmail = email.toLowerCase();
+    const username = await getUsernameFromAuth(req);
+
+    const filtersOr: string[] = [];
+    if (normalizedEmail) filtersOr.push(`email:${normalizedEmail}`);
+    if (username) filtersOr.push(`username:${stripAuthPrefix(username)}`);
+
+    if (filtersOr.length === 0) {
+      return { participants: [], loaded: false };
+    }
+
+    return fetchAllQueryResources<PastMeetingParticipant>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingParticipant>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'v1_past_meeting_participant',
+          filters_or: filtersOr,
+          page_size: 500,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
+    )
+      .then((participants) => ({ participants, loaded: true }))
+      .catch((error) => {
+        logger.warning(req, operation, 'Participant query failed, continuing without attendance enrichment', {
+          stage: 'participant_query',
+          err: error,
+        });
+        return { participants: [] as PastMeetingParticipant[], loaded: false };
+      });
+  }
+
+  /**
+   * Folds attendance from participant records onto meetings. OR-combines across records — a user with
+   * multiple participant rows for the same occurrence (re-joins, duplicate legacy data) is attended if
+   * ANY record has is_attended=true.
+   */
+  private applyUserAttendance(meetings: PastMeeting[], participants: PastMeetingParticipant[]): void {
+    const userAttendedByOccurrenceId = new Map<string, boolean>();
+    for (const p of participants) {
+      if (!p.meeting_and_occurrence_id) continue;
+      const prior = userAttendedByOccurrenceId.get(p.meeting_and_occurrence_id) ?? false;
+      userAttendedByOccurrenceId.set(p.meeting_and_occurrence_id, prior || !!p.is_attended);
+    }
+    for (const meeting of meetings) {
+      meeting.user_attended = userAttendedByOccurrenceId.get(meeting.meeting_and_occurrence_id ?? meeting.id) ?? false;
+    }
+  }
+
+  /**
    * Writes the section `visibility` preference: PATCH when it exists, else POST; a POST that races into
    * a 409 falls back to fetch + PATCH so the auto-saving client stays idempotent.
    */
@@ -1582,7 +1625,10 @@ export class UserService {
     req: Request,
     email: string | null,
     username: string | null
-  ): Promise<{ userRsvps: MeetingRsvp[]; activeRegistrants: { uids: Set<string>; meetingIds: Set<string>; committeeMeetingIds: Set<string> } }> {
+  ): Promise<{
+    userRsvps: MeetingRsvp[];
+    activeRegistrants: { uids: Set<string>; meetingIds: Set<string>; committeeMeetingIds: Set<string>; uidsByMeeting: Map<string, string[]> };
+  }> {
     const [identityRsvps, activeRegistrants] = await Promise.all([
       this.fetchAllUserRsvps(req, email, username),
       this.fetchUserActiveRegistrantIdentities(req, email, username),
@@ -1661,7 +1707,7 @@ export class UserService {
   }
 
   /**
-   * Fetch the active registrant identities for the current user, returning two sets:
+   * Fetch the active registrant identities for the current user:
    *  - `uids`: registrant UIDs (used to invalidate RSVP rows that point at a removed registration —
    *    same guard as `MeetingService.getMeetingRsvps`, prevents an old declined RSVP from
    *    suppressing a Set RSVP action for a still-active re-registration).
@@ -1673,16 +1719,17 @@ export class UserService {
    *    surfacing rows the user can't action.
    *  - `committeeMeetingIds`: the subset of `meetingIds` where any of the user's registrations came from a
    *    committee. Those follow committee membership, so the user cannot remove themselves from them.
+   *  - `uidsByMeeting`: the same registration UIDs grouped by meeting for personal-feed enrichment.
    */
   private async fetchUserActiveRegistrantIdentities(
     req: Request,
     email: string | null,
     username: string | null
-  ): Promise<{ uids: Set<string>; meetingIds: Set<string>; committeeMeetingIds: Set<string> }> {
+  ): Promise<{ uids: Set<string>; meetingIds: Set<string>; committeeMeetingIds: Set<string>; uidsByMeeting: Map<string, string[]> }> {
     const orClauses: string[] = [];
     if (email) orClauses.push(`email:${email.toLowerCase()}`);
     if (username) orClauses.push(`username:${username}`);
-    if (orClauses.length === 0) return { uids: new Set(), meetingIds: new Set(), committeeMeetingIds: new Set() };
+    if (orClauses.length === 0) return { uids: new Set(), meetingIds: new Set(), committeeMeetingIds: new Set(), uidsByMeeting: new Map() };
 
     // failOnPartial: a missing registrant UID here means an RSVP-guard lookup would wrongly
     // reject a still-active registrant's RSVP, which then fires a duplicate Set RSVP nag.
@@ -1700,12 +1747,18 @@ export class UserService {
     const uids = new Set<string>();
     const meetingIds = new Set<string>();
     const committeeMeetingIds = new Set<string>();
+    const uidsByMeeting = new Map<string, string[]>();
     for (const r of registrants) {
       if (r.uid) uids.add(r.uid);
       if (r.meeting_id) meetingIds.add(r.meeting_id);
+      if (r.uid && r.meeting_id) {
+        const meetingUids = uidsByMeeting.get(r.meeting_id);
+        if (meetingUids) meetingUids.push(r.uid);
+        else uidsByMeeting.set(r.meeting_id, [r.uid]);
+      }
       if (r.meeting_id && r.type === 'committee') committeeMeetingIds.add(r.meeting_id);
     }
-    return { uids, meetingIds, committeeMeetingIds };
+    return { uids, meetingIds, committeeMeetingIds, uidsByMeeting };
   }
 
   /**

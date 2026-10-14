@@ -3,7 +3,7 @@
 
 import { TestBed } from '@angular/core/testing';
 import { FormControl, FormGroup } from '@angular/forms';
-import { Meeting, MeetingOccurrence, PastMeeting, PastMeetingParticipant } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingOccurrence, MeetingRegistrant, PastMeeting, PastMeetingParticipant } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { MessageService } from 'primeng/api';
@@ -216,5 +216,104 @@ describe('MeetingRegistrantsDisplayComponent — guest invite scope', () => {
     const component = await mount(RECURRING_MEETING, null);
 
     expect(component.scopeOccurrence()).toBeNull();
+  });
+});
+
+/**
+ * Covers the organizer filter and the collapsible sections of the guests drawer.
+ * @description The organizer filter keeps only host-flagged people, on both the upcoming list
+ * (parent-supplied registrants) and the past list (self-fetched participants). The member and guest
+ * sections collapse independently so a long member list doesn't bury the guests below it.
+ */
+describe('MeetingRegistrantsDisplayComponent — organizer filter and collapsible sections', () => {
+  const registrant = (uid: string, host: boolean, type = 'direct') =>
+    ({ uid, meeting_id: 'meeting-1', email: `${uid}@acme-motors.example`, first_name: uid, last_name: 'Tester', host, type }) as unknown as MeetingRegistrant;
+
+  async function mount(options: { past?: boolean; registrants?: MeetingRegistrant[]; participants?: PastMeetingParticipant[] }) {
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: { getCommitteeMembers: vi.fn().mockReturnValue(of([])) } },
+        {
+          provide: MeetingService,
+          useValue: {
+            createRegistrantFormGroup: () => new FormGroup({}),
+            getPastMeetingParticipants: vi.fn().mockReturnValue(of(options.participants ?? [])),
+            getMeetingRegistrants: vi.fn().mockReturnValue(of([])),
+            getMyMeetingRegistrants: vi.fn().mockReturnValue(of([])),
+          },
+        },
+      ],
+    });
+    TestBed.overrideComponent(MeetingRegistrantsDisplayComponent, { set: { template: '', imports: [] } });
+    await TestBed.compileComponents();
+
+    const fixture = TestBed.createComponent(MeetingRegistrantsDisplayComponent);
+    fixture.componentRef.setInput('meeting', options.past ? PAST_MEETING : { id: 'meeting-1' });
+    fixture.componentRef.setInput('pastMeeting', !!options.past);
+    if (!options.past) {
+      fixture.componentRef.setInput('initialRegistrants', options.registrants ?? []);
+    }
+    fixture.componentRef.setInput('visible', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    return fixture.componentInstance;
+  }
+
+  it('lists everyone while the organizer filter is on "all"', async () => {
+    const component = await mount({ registrants: [registrant('ada', true), registrant('grace', false)] });
+
+    expect(component.filteredRegistrants().map((r) => r.uid)).toEqual(['ada', 'grace']);
+  });
+
+  it('keeps only organizers when the organizer filter is set', async () => {
+    const component = await mount({ registrants: [registrant('ada', true), registrant('grace', false)] });
+
+    component.organizerFilterControl.setValue('organizer');
+
+    expect(component.filteredRegistrants().map((r) => r.uid)).toEqual(['ada']);
+  });
+
+  it('applies the organizer filter to both the member and guest sections', async () => {
+    const component = await mount({
+      registrants: [registrant('ada', true, 'committee'), registrant('grace', false, 'committee'), registrant('linus', true), registrant('ken', false)],
+    });
+
+    component.organizerFilterControl.setValue('organizer');
+
+    expect(component.committeeFilteredRegistrants().map((r) => r.uid)).toEqual(['ada']);
+    expect(component.directFilteredRegistrants().map((r) => r.uid)).toEqual(['linus']);
+  });
+
+  it('keeps only organizers among past participants', async () => {
+    const participants = [
+      { ...participant('ada@acme-motors.example'), host: true },
+      { ...participant('grace@acme-motors.example'), host: false },
+    ] as PastMeetingParticipant[];
+    const component = await mount({ past: true, participants });
+
+    expect(component.filteredPastParticipants()).toHaveLength(2);
+
+    component.organizerFilterControl.setValue('organizer');
+
+    expect(component.filteredPastParticipants().map((p) => p.email)).toEqual(['ada@acme-motors.example']);
+  });
+
+  it('starts with both sections expanded and collapses each independently', async () => {
+    const component = await mount({});
+
+    expect(component.membersCollapsed()).toBe(false);
+    expect(component.guestsCollapsed()).toBe(false);
+
+    component.toggleMembersCollapsed();
+    expect(component.membersCollapsed()).toBe(true);
+    expect(component.guestsCollapsed()).toBe(false);
+
+    component.toggleGuestsCollapsed();
+    expect(component.guestsCollapsed()).toBe(true);
+
+    component.toggleMembersCollapsed();
+    expect(component.membersCollapsed()).toBe(false);
+    expect(component.guestsCollapsed()).toBe(true);
   });
 });

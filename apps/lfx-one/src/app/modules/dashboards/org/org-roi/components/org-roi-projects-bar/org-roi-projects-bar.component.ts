@@ -2,7 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, input, Signal } from '@angular/core';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { FormControl, FormGroup } from '@angular/forms';
 import { ChartComponent } from '@components/chart/chart.component';
+import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import {
   lfxColors,
   ORG_LENS_ROI_CATEGORY_COLOR,
@@ -14,16 +17,23 @@ import {
 import type { OrgLensRoiProjectBarRow, OrgLensRoiProjectBarSegment, OrgLensRoiProjectRow } from '@lfx-one/shared/interfaces';
 import { formatCurrency } from '@lfx-one/shared/utils';
 import type { ChartData, ChartOptions } from 'chart.js';
+import { map } from 'rxjs';
 
 /** Each project's investment, stacked by contribution category, against the return it is associated with. */
 @Component({
   selector: 'lfx-org-roi-projects-bar',
-  imports: [ChartComponent],
+  imports: [ChartComponent, CheckboxComponent],
   templateUrl: './org-roi-projects-bar.component.html',
 })
 export class OrgRoiProjectsBarComponent {
   /** The selected projects, in the order the picker ranked them. */
   public readonly projects = input.required<OrgLensRoiProjectRow[]>();
+
+  /** Which series are drawn. Both start on; whichever is left on alone is disabled, so the chart is never empty. */
+  protected readonly seriesForm = new FormGroup({
+    investment: new FormControl(true, { nonNullable: true }),
+    return: new FormControl(true, { nonNullable: true }),
+  });
 
   /** The same wording the KPI band uses. This chart stacks investment, so it owes the disclosure. */
   protected readonly investmentExplanation = ORG_LENS_ROI_KPI_EXPLANATION.totalExpenditure;
@@ -34,6 +44,13 @@ export class OrgRoiProjectsBarComponent {
 
   /** Everything past the ceiling is dropped from the drawing and disclosed, never silently. */
   protected readonly hiddenCount: Signal<number> = computed(() => Math.max(0, this.projects().length - this.maxRows));
+
+  // Raw value, so a series still counts as shown while its checkbox is disabled.
+  private readonly series = toSignal(this.seriesForm.valueChanges.pipe(map(() => this.seriesForm.getRawValue())), {
+    initialValue: this.seriesForm.getRawValue(),
+  });
+  protected readonly showInvestment: Signal<boolean> = computed(() => this.series().investment);
+  protected readonly showReturn: Signal<boolean> = computed(() => this.series().return);
 
   protected readonly rows: Signal<OrgLensRoiProjectBarRow[]> = computed(() =>
     this.projects()
@@ -91,10 +108,14 @@ export class OrgRoiProjectsBarComponent {
 
   protected readonly chartHeight: Signal<string> = computed(() => `${Math.max(240, this.rows().length * 44 + 80)}px`);
 
-  protected readonly chartSummaryLabel: Signal<string> = computed(
-    () =>
-      `Horizontal bar chart comparing modelled investment, stacked by contribution category, against return for ${this.rows().length} projects. The same figures are listed in the table below.`
-  );
+  protected readonly chartSummaryLabel: Signal<string> = computed(() => {
+    const count = this.rows().length;
+    if (!this.showReturn()) {
+      return `Horizontal bar chart of modelled investment, stacked by contribution category, for ${count} projects. The same figures are listed in the table below.`;
+    }
+    if (!this.showInvestment()) return `Horizontal bar chart of return for ${count} projects. The same figures are listed in the table below.`;
+    return `Horizontal bar chart comparing modelled investment, stacked by contribution category, against return for ${count} projects. The same figures are listed in the table below.`;
+  });
 
   /** Column headings for the accessible table: one per category actually drawn, in stack order. */
   protected readonly categoryColumns: Signal<{ type: string; label: string }[]> = computed(() =>
@@ -125,30 +146,36 @@ export class OrgRoiProjectsBarComponent {
 
   protected readonly chartData: Signal<ChartData<'bar'>> = computed(() => {
     const rows = this.rows();
-    const categoryDatasets = this.presentTypes().map((category) => ({
-      label: category.label,
-      // Stacked against each other, so each category contributes its own slice of the same bar.
-      stack: 'investment',
-      xAxisID: 'x',
-      backgroundColor: category.color,
-      borderWidth: 0,
-      data: rows.map((row) => row.segments.find((segment) => segment.type === category.type)?.expenditure ?? 0),
-    }));
+    const categoryDatasets = this.showInvestment()
+      ? this.presentTypes().map((category) => ({
+          label: category.label,
+          // Stacked against each other, so each category contributes its own slice of the same bar.
+          stack: 'investment',
+          xAxisID: 'x',
+          backgroundColor: category.color,
+          borderWidth: 0,
+          data: rows.map((row) => row.segments.find((segment) => segment.type === category.type)?.expenditure ?? 0),
+        }))
+      : [];
 
     return {
       labels: rows.map((row) => row.projectName),
       datasets: [
         ...categoryDatasets,
-        {
-          label: 'Return',
-          // Its own stack, so it sits beside the investment bar rather than on top of it —
-          // return is not another kind of investment.
-          stack: 'return',
-          xAxisID: 'x2',
-          backgroundColor: ORG_LENS_ROI_RETURN_COLOR,
-          borderWidth: 0,
-          data: rows.map((row) => row.totalReturn),
-        },
+        ...(this.showReturn()
+          ? [
+              {
+                label: 'Return',
+                // Its own stack, so it sits beside the investment bar rather than on top of it —
+                // return is not another kind of investment.
+                stack: 'return',
+                xAxisID: 'x2',
+                backgroundColor: ORG_LENS_ROI_RETURN_COLOR,
+                borderWidth: 0,
+                data: rows.map((row) => row.totalReturn),
+              },
+            ]
+          : []),
       ],
     };
   });
@@ -166,6 +193,7 @@ export class OrgRoiProjectsBarComponent {
       // collapse regardless. Separate linear scales keep each bar internally truthful; the
       // disclosure below states that the two are not comparable by length.
       x: {
+        display: this.showInvestment(),
         stacked: true,
         position: 'bottom',
         beginAtZero: true,
@@ -174,6 +202,7 @@ export class OrgRoiProjectsBarComponent {
         grid: { color: lfxColors.gray[200] },
       },
       x2: {
+        display: this.showReturn(),
         stacked: true,
         position: 'top',
         beginAtZero: true,
@@ -197,6 +226,24 @@ export class OrgRoiProjectsBarComponent {
       },
     },
   }));
+
+  public constructor() {
+    this.seriesForm.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => this.lockLastSeries());
+  }
+
+  private lockLastSeries(): void {
+    const { investment, return: returned } = this.seriesForm.controls;
+    if (investment.value && !returned.value) {
+      investment.disable({ emitEvent: false });
+    } else {
+      investment.enable({ emitEvent: false });
+    }
+    if (returned.value && !investment.value) {
+      returned.disable({ emitEvent: false });
+    } else {
+      returned.enable({ emitEvent: false });
+    }
+  }
 
   private toSegments(project: OrgLensRoiProjectRow): OrgLensRoiProjectBarSegment[] {
     return project.categories.map((category) => ({

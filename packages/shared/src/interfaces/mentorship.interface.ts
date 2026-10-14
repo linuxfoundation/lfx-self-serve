@@ -133,7 +133,7 @@ export type MentorshipCiiLookupStatus = 'idle' | 'loading' | 'valid' | 'invalid'
 /** Mentor lifecycle on the Mentors tab. No `graduated` (mentors don't graduate). */
 export type MentorshipMentorStatus = (typeof MENTORSHIP_MENTOR_STATUSES)[number];
 
-/** Mentee lifecycle on the Current Mentees / Past Mentees tabs. Adds `graduated`. */
+/** Mentee lifecycle on the Current Mentees / Past Mentees tabs. An accepted mentee is `accepted` (a mentor is `approved`), and only mentees reach `graduated`. */
 export type MentorshipMenteeStatus = (typeof MENTORSHIP_MENTEE_STATUSES)[number];
 
 /** Shared row fields consumed by the admin program-detail people tables. */
@@ -453,7 +453,7 @@ export interface MentorshipRegisterFailureOptions<TFieldErrors extends object> {
 /**
  * One term in the create body. No `id` (upstream generates it) and dates are date-only `YYYY-MM-DD`, which upstream stores
  * at 00:00 UTC. Upstream needs `endDate` after `startDate`, and `applicationEndDate` strictly after `applicationStartDate`
- * (a same-day window is refused) and before `startDate`.
+ * (a same-day window is refused) and no later than the end of the `endDate` month; the window may run into the term.
  */
 export interface MentorshipEnrollCreateTerm {
   name: string;
@@ -471,6 +471,8 @@ export interface MentorshipEnrollCreatePrerequisite {
   required: boolean;
   requireFile: boolean;
   dueDate: string | null;
+  /** `false` for a standard prerequisite, `true` for one the admin wrote. A missing flag is read as `false`. */
+  custom: boolean;
 }
 
 /**
@@ -518,12 +520,16 @@ export interface MentorshipEnrollUpdateTerm extends MentorshipEnrollCreateTerm {
  */
 export type MentorshipEnrollUpdateRequest = Omit<MentorshipEnrollCreateRequest, 'terms' | 'termsAccepted'> & { terms?: MentorshipEnrollUpdateTerm[] };
 
-/** One prerequisite as upstream stores it in a program's `task_templates`. `submitFile` is `'required'` when the mentee must attach a file. */
+/**
+ * One prerequisite as upstream stores it in a program's `task_templates`. `submitFile` is `'required'` when the mentee must attach a file,
+ * and `custom` is `true` for one the admin wrote rather than a standard one.
+ */
 export interface MentorshipUpstreamTaskTemplate {
   name: string;
   description: string;
   submitFile: 'required' | null;
   dueDate: string | null;
+  custom: boolean;
 }
 
 /** One open term in the upstream program update: RFC 3339 instants in UTC, and `id` only for a saved term. */
@@ -631,7 +637,7 @@ export interface MentorshipUpstreamEnrollTemplate {
   };
   skills?: string[] | null;
   /** The program's stored task templates, passed through as they are, so their keys are camelCase unlike `program`'s. */
-  prerequisites?: { name: string; description?: string | null; submitFile?: string | null; dueDate?: string | null }[] | null;
+  prerequisites?: { name: string; description?: string | null; submitFile?: string | null; dueDate?: string | null; custom?: boolean | null }[] | null;
 }
 
 /** Response from `GET /api/mentorship/admin/programs/:programId/enroll-template`: what the wizard copies from an existing program. */

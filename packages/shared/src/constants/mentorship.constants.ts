@@ -17,7 +17,6 @@ import type {
   MentorshipAdminMentorAction,
   MentorshipAdminMentorStatus,
   MentorshipAdminProgramTabCounts,
-  MentorshipProgram,
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
   MentorshipTermRowStatus,
@@ -136,6 +135,36 @@ export const MENTORSHIP_ADMIN_DECISION_DONE_MESSAGES = {
 } as const;
 export const MENTORSHIP_ADMIN_DECISION_FAILED_MESSAGE = "The change couldn't be saved. Please try again.";
 export const MENTORSHIP_ADMIN_DECISION_IN_FLIGHT_MESSAGE = 'Another change is still being saved. Try again in a moment.';
+
+/**
+ * Download by Status on Current and Past Mentees: one CSV of the tab's applications (open terms for Current, closed
+ * for Past), for one status or all. The header row, in column order; the BFF writes each row in the same order.
+ */
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_COLUMNS = ['Name', 'Email', 'Status', 'Term', 'Tasks Submitted', 'Applied On', 'Updated On'] as const;
+/** The menu entry that downloads every status. */
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_ALL_LABEL = 'All';
+/** File name stem per tab; the BFF adds the status (or `all`) and `.csv`. */
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_FILE_PREFIXES: Record<MentorshipAdminMenteeTab, string> = {
+  current: 'current-mentees',
+  past: 'past-mentees',
+};
+/** Saved under this name when the response names no file; the BFF always sends one. */
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_FALLBACK_NAME = 'mentees.csv';
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_EMPTY_SUMMARY = 'Nothing to download';
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_EMPTY_MESSAGES: Record<MentorshipAdminMenteeTab, string> = {
+  current: 'No current mentees have this status.',
+  past: 'No past mentees have this status.',
+};
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_ERROR_SUMMARY = "Couldn't download mentees";
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_ERROR_MESSAGE = 'The download failed. Please try again.';
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_FORBIDDEN_MESSAGE = "You don't have access to this program's mentees.";
+/** Set by the BFF, to the number of rows the file holds, when the export stopped at its page cap with more mentees left out. */
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_TRUNCATED_HEADER = 'X-Export-Truncated';
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_TRUNCATED_SUMMARY = 'Download incomplete';
+/** `{count}` is the number of rows the file holds. */
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_TRUNCATED_TEMPLATE =
+  'The file holds only the first {count} mentees: this program has more than one download can include.';
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_TOAST_LIFE = 5000;
 
 /** Copy of the reviewer-note save toasts on Current Mentees. */
 export const MENTORSHIP_ADMIN_NOTE_SAVE_SUCCESS_SUMMARY = 'Note saved';
@@ -281,11 +310,12 @@ export const MENTORSHIP_PROGRAM_DETAIL_TABS = [
  * `MentorshipMentorStatus` union; declaration order is the lifecycle order. The admin Mentors
  * tab reads the wider `MENTORSHIP_ADMIN_MENTOR_STATUSES` instead.
  */
-export const MENTORSHIP_MENTOR_STATUSES = ['pending', 'accepted', 'declined', 'withdrawn'] as const;
+export const MENTORSHIP_MENTOR_STATUSES = ['pending', 'approved', 'declined', 'withdrawn'] as const;
 
 /**
  * Mentee lifecycle statuses an application holds on the wire.
- * Superset of mentor statuses; mentees additionally reach `graduated`.
+ * Not a superset of mentor statuses: an accepted mentee is `accepted` where an accepted mentor is
+ * `approved`, and only mentees reach `graduated`.
  * Declaration order is the Past Mentees status filter's option order; Current Mentees
  * filters on `MENTORSHIP_APPLICANT_DISPLAY_STATUSES` instead.
  */
@@ -293,22 +323,22 @@ export const MENTORSHIP_MENTEE_STATUSES = ['pending', 'accepted', 'declined', 'w
 
 export const MENTORSHIP_MENTOR_STATUS_LABELS: Record<MentorshipMentorStatus, string> = {
   pending: 'Invited',
-  accepted: 'Accepted',
+  approved: 'Approved',
   declined: 'Declined',
   withdrawn: 'Withdrawn',
 };
 
 /**
  * Mentor lifecycle on the admin Mentors tab, which reads every `program_members` status upstream keeps
- * (`active` is the accepted mentor). Declaration order is the status filter's option order.
+ * (`approved` is the accepted mentor). Declaration order is the status filter's option order.
  */
-export const MENTORSHIP_ADMIN_MENTOR_STATUSES = ['requested', 'pending', 'invited', 'active', 'declined', 'withdrawn'] as const;
+export const MENTORSHIP_ADMIN_MENTOR_STATUSES = ['requested', 'pending', 'invited', 'approved', 'declined', 'withdrawn'] as const;
 
 export const MENTORSHIP_ADMIN_MENTOR_STATUS_LABELS: Record<MentorshipAdminMentorStatus, string> = {
   requested: 'Requested',
   pending: 'Pending',
   invited: 'Invited',
-  active: 'Accepted',
+  approved: 'Approved',
   declined: 'Declined',
   withdrawn: 'Withdrawn',
 };
@@ -317,13 +347,13 @@ export const MENTORSHIP_ADMIN_MENTOR_STATUS_BADGE_CLASSES: Record<MentorshipAdmi
   requested: 'bg-amber-100 text-amber-700',
   pending: 'bg-amber-100 text-amber-700',
   invited: 'bg-blue-100 text-blue-700',
-  active: 'bg-emerald-100 text-emerald-700',
+  approved: 'bg-emerald-100 text-emerald-700',
   declined: 'bg-red-100 text-red-600',
   withdrawn: 'bg-gray-100 text-gray-600',
 };
 
 /** Statuses an admin may set through `PATCH …/mentors/:memberId`. Upstream allows no move out of `declined` or `withdrawn`. */
-export const MENTORSHIP_ADMIN_MENTOR_UPDATE_STATUSES = ['active', 'declined', 'withdrawn'] as const;
+export const MENTORSHIP_ADMIN_MENTOR_UPDATE_STATUSES = ['approved', 'declined', 'withdrawn'] as const;
 
 /** Shortest trimmed search `POST .../mentor-candidates` accepts; upstream answers 400 below it. */
 export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MIN_SEARCH_LENGTH = 2;
@@ -372,31 +402,31 @@ export const MENTORSHIP_ADMIN_MENTOR_INVITE_LFID_MAX_LENGTH = 100;
 /** Shown when a mentor change hits a 409: the mentor's status moved on, so the list reloads. */
 export const MENTORSHIP_ADMIN_MENTOR_CHANGED_MESSAGE = 'This mentor changed. The list has been refreshed.';
 
-/** Mentors tab row actions by the mentor's status, in display order. Upstream's DELETE only withdraws an active mentor, so Remove covers it. */
+/** Mentors tab row actions by the mentor's status, in display order. Upstream's DELETE only withdraws an approved mentor, so Remove covers it. */
 export const MENTORSHIP_ADMIN_MENTOR_ACTIONS_BY_STATUS: Record<MentorshipAdminMentorStatus, readonly MentorshipAdminMentorAction[]> = {
   requested: [
-    { key: 'accept', label: 'Accept', status: 'active' },
+    { key: 'accept', label: 'Approve', status: 'approved' },
     { key: 'decline', label: 'Decline', status: 'declined' },
   ],
   pending: [
-    { key: 'accept', label: 'Accept', status: 'active' },
+    { key: 'accept', label: 'Approve', status: 'approved' },
     { key: 'decline', label: 'Decline', status: 'declined' },
   ],
   invited: [{ key: 'revoke', label: 'Revoke invite', status: 'declined' }],
-  active: [{ key: 'remove', label: 'Remove', status: 'withdrawn' }],
+  approved: [{ key: 'remove', label: 'Remove', status: 'withdrawn' }],
   declined: [],
   withdrawn: [],
 };
 
 export const MENTORSHIP_ADMIN_MENTOR_ACTION_CONFIRM_MESSAGES: Record<MentorshipAdminMentorAction['key'], string> = {
-  accept: 'Accept this mentor into the program?',
+  accept: 'Approve this mentor for the program?',
   decline: 'Decline this mentor for the program?',
   revoke: 'Revoke this invite? The mentor can no longer accept it.',
   remove: 'Remove this mentor from the program? They can request to join again later.',
 };
 
 export const MENTORSHIP_ADMIN_MENTOR_ACTION_SUCCESS_MESSAGES: Record<MentorshipAdminMentorAction['key'], string> = {
-  accept: 'Mentor accepted.',
+  accept: 'Mentor approved.',
   decline: 'Mentor declined.',
   revoke: 'Invite revoked.',
   remove: 'Mentor removed.',
@@ -420,7 +450,7 @@ export const MENTORSHIP_MENTEE_STATUS_LABELS: Record<MentorshipMenteeStatus, str
 
 export const MENTORSHIP_MENTOR_STATUS_BADGE_CLASSES: Record<MentorshipMentorStatus, string> = {
   pending: 'bg-amber-100 text-amber-700',
-  accepted: 'bg-emerald-100 text-emerald-700',
+  approved: 'bg-emerald-100 text-emerald-700',
   declined: 'bg-red-100 text-red-600',
   withdrawn: 'bg-gray-100 text-gray-600',
 };
@@ -509,6 +539,12 @@ export const MENTORSHIP_ADMIN_MENTEE_STATUS_FILTERS: Record<MentorshipAdminMente
   past: MENTORSHIP_MENTEE_STATUSES,
 };
 
+/** The label of every admin mentee status filter, as its tab's badge reads it. */
+export const MENTORSHIP_ADMIN_MENTEE_STATUS_FILTER_LABELS: Record<MentorshipAdminMenteeStatusFilter, string> = {
+  ...MENTORSHIP_MENTEE_STATUS_LABELS,
+  ...MENTORSHIP_APPLICANT_STATUS_LABELS,
+};
+
 /** The shared statuses reuse the mentee classes so the two palettes can't drift apart. */
 export const MENTORSHIP_APPLICANT_STATUS_BADGE_CLASSES: Record<MentorshipApplicantDisplayStatus, string> = {
   applied: 'bg-amber-100 text-amber-700',
@@ -583,75 +619,6 @@ export const MENTORSHIP_TERM_CANNOT_CLOSE_MESSAGE =
   'This term cannot be closed until all accepted applicants are either graduated or declined. Please ensure there are zero accepted applicants before closing the term.';
 export const MENTORSHIP_TERM_CLOSE_CONFIRM = 'Closing this term will automatically decline all pending applications. Continue?';
 export const MENTORSHIP_TERM_REOPEN_CONFIRM = 'Are you sure you want to re-open this term?';
-
-/**
- * Builds a project icon URL from a Linux Foundation artwork repo (`cncf`, `lfai`,
- * `lf-energy`), which all publish icons at the same
- * `projects/<dir>/icon/color/<name>-icon-color.svg` path. `name` defaults to `dir`
- * because a few projects break the convention — `open-policy-agent` ships
- * `opa-icon-color.svg`.
- *
- * Only feeds the mocks below; removed with them once the upstream mentorship
- * service returns real logo URLs.
- */
-export function mentorshipArtworkIconUrl(org: string, dir: string, name: string = dir): string {
-  return `https://raw.githubusercontent.com/${org}/artwork/main/projects/${dir}/icon/color/${name}-icon-color.svg`;
-}
-
-/**
- * Deterministic mock programs backing the mentorship BFF while the upstream
- * mentorship service is unavailable. Server-only import path
- * (`@lfx-one/shared/constants`) so the shape stays in one place.
- *
- * Removed once the real upstream mentorship-service endpoint is wired up in
- * `mentorship.service.ts`.
- */
-export const MOCK_MENTORSHIP_PROGRAMS: MentorshipProgram[] = [
-  {
-    id: 'mp_gridflow_fall26',
-    slug: 'gridflow-time-series-ingestion-pipeline',
-    name: 'GridFlow: Time-Series Ingestion Pipeline',
-    projectName: 'LF Energy',
-    status: 'open',
-    stats: { mentors: 4, mentees: 2, graduated: 6 },
-    logoUrl: mentorshipArtworkIconUrl('lf-energy', 'grid-exchange-fabric'),
-    createdOn: '2026-06-01T00:00:00.000Z',
-    updatedOn: '2026-08-15T00:00:00.000Z',
-  },
-  {
-    id: 'mp_apicurio_winter26',
-    slug: 'apicurio-registry-prompt-template-playground',
-    name: 'Apicurio Registry: Prompt Template Playground',
-    projectName: 'CNCF',
-    status: 'pending-review',
-    stats: { mentors: 2, mentees: 0, graduated: 0 },
-    logoUrl: mentorshipArtworkIconUrl('cncf', 'apicurio-registry'),
-    createdOn: '2026-07-10T00:00:00.000Z',
-    updatedOn: '2026-08-20T00:00:00.000Z',
-  },
-  {
-    id: 'mp_janusgraph_fall26',
-    slug: 'janusgraph-adjacency-cache-instrumentation',
-    name: 'JanusGraph: Adjacency Cache Instrumentation',
-    projectName: 'LF AI & Data',
-    status: 'open',
-    stats: { mentors: 1, mentees: 1, graduated: 2 },
-    logoUrl: mentorshipArtworkIconUrl('lfai', 'janusgraph'),
-    createdOn: '2026-05-15T00:00:00.000Z',
-    updatedOn: '2026-08-25T00:00:00.000Z',
-  },
-  {
-    id: 'mp_thanos_summer26',
-    slug: 'thanos-fan-out-query-observability',
-    name: 'Thanos: Fan-Out Query Observability',
-    projectName: 'CNCF',
-    status: 'completed',
-    stats: { mentors: 2, mentees: 0, graduated: 3 },
-    logoUrl: mentorshipArtworkIconUrl('cncf', 'thanos'),
-    createdOn: '2026-03-01T00:00:00.000Z',
-    updatedOn: '2026-07-30T00:00:00.000Z',
-  },
-];
 
 // -- Program review (approver approve/reject email link) ---------------------
 

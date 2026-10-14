@@ -70,6 +70,7 @@
           <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">People</span></th>
           <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Contributions</span></th>
           <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Last engaged (all time)</span></th>
+          <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Fit</span></th>
         </tr>
       </ng-template>
 
@@ -81,7 +82,9 @@
             }}</span>
           </td>
           <td>
-            <span class="whitespace-nowrap text-[11.5px] text-gray-400">&#9675; Non-member</span>
+            <span class="whitespace-nowrap text-[11.5px] text-gray-400" [attr.data-testid]="'non-members-orgs-row-' + view.accountId + '-membership'"
+              >&#9675; {{ view.membershipLabel }}</span
+            >
           </td>
           <td>
             <div class="flex flex-wrap gap-1" [attr.data-testid]="'non-members-orgs-row-' + view.accountId + '-channels'">
@@ -124,12 +127,24 @@
               >{{ view.lastEngagedLabel }}</span
             >
           </td>
+          <td class="text-right">
+            <span
+              class="inline-flex items-center gap-1.5 whitespace-nowrap text-sm"
+              [class.text-gray-800]="view.fitDotClass"
+              [class.text-gray-400]="!view.fitDotClass"
+              [attr.data-testid]="'non-members-orgs-row-' + view.accountId + '-fit'">
+              @if (view.fitDotClass) {
+                <span class="h-2 w-2 rounded-full" [class]="view.fitDotClass" aria-hidden="true"></span>
+              }
+              {{ view.fitLabel }}
+            </span>
+          </td>
         </tr>
       </ng-template>
 
       <ng-template #emptymessage>
         <tr>
-          <td colspan="7" class="py-6 text-center text-sm text-gray-500" data-testid="non-members-orgs-no-match">
+          <td colspan="8" class="py-6 text-center text-sm text-gray-500" data-testid="non-members-orgs-no-match">
             @if (!loading()) {
               {{ noMatchLabel() }}
             }

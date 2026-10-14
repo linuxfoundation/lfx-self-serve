@@ -4,7 +4,7 @@ description: Frequently asked questions about meetings in LFX Self Serve.
 audience: [all]
 product_area: Meetings
 tags: [meetings, faq, schedule, join]
-last_updated: 2026-08-10
+last_updated: 2026-10-11
 intercom_collection: Meetings
 ---
 
@@ -50,7 +50,7 @@ Yes, if the meeting is **public and not restricted** — but you need to be **si
 
 ## Can I RSVP to a meeting I'm invited to?
 
-Yes, if you're **signed in**. The join page shows **Yes**, **No**, and **Maybe** buttons for invited attendees. For a recurring meeting, you'll also choose whether your response applies to **all occurrences**, **this occurrence only**, or **this and following occurrences**.
+Yes, if you're **signed in** and the meeting collects RSVPs. Choose **Yes**, **Maybe**, or **No**. For a recurring meeting, choose **This date only**, **All dates**, or **This date and all following dates**. Your response and its scope are shown afterward. Select a different answer at any time to change your response. Choosing No does not remove the meeting from My Meetings: use **All meetings** or **Not going** to find it.
 
 ## Where can I find a meeting's recording, transcript, or AI summary?
 

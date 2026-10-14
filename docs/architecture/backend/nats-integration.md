@@ -91,6 +91,8 @@ export enum NatsSubjects {
 }
 ```
 
+The full list lives in `packages/shared/src/enums/nats.enum.ts`. One worth calling out: `EMAIL_SERVICE_SEND` (`lfx.email-service.send_email`) is the BFF's only direct email sender (`EmailService.sendEmail`, used by newsletter invites). lfx-v2-email-service does no templating — callers send pre-rendered HTML and text for one recipient, leaving `from`/`reply_to` to the service's allowlisted defaults. An empty reply (no `email_id`) means sending is disabled or a non-prod recipient filter skipped it; an `{error}` reply surfaces as 502 `EMAIL_SEND_FAILED`, with the reason kept in the server log only. Other email (committee invites, newsletters) is sent by the owning Go service.
+
 ### Request-Reply Pattern
 
 ```typescript

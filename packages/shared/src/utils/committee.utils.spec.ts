@@ -23,6 +23,7 @@ import {
   canManageCommitteeMembers,
   canViewCommitteeRoster,
   committeeRouteIdMatches,
+  getCommitteeMailingListLink,
   countVotingReps,
   getSelectableCommitteeCategories,
   groupCommitteesByFoundation,
@@ -634,5 +635,51 @@ describe('resolveTypeDisplay', () => {
   it('returns "Other" when classDisplay is absent', () => {
     const result = resolveTypeDisplay({ behavioralClass: 'working-group', category: 'Anything' });
     expect(result).toBe('Other');
+  });
+});
+
+describe('getCommitteeMailingListLink', () => {
+  const list = (uid: string, name: string) => ({ uid, group_name: name });
+
+  it('is null when no mailing lists were enriched onto the committee', () => {
+    expect(getCommitteeMailingListLink({ uid: 'c1', is_foundation: false })).toBeNull();
+    expect(getCommitteeMailingListLink({ uid: 'c1', is_foundation: false, mailing_lists: [] })).toBeNull();
+  });
+
+  it("links a single list to its detail page using the committee's tier and project slug", () => {
+    expect(getCommitteeMailingListLink({ uid: 'c1', is_foundation: false, project_slug: 'synthetic-proj', mailing_lists: [list('ml-1', 'dev')] })).toEqual({
+      commands: ['/', 'project', 'mailing-lists', 'ml-1'],
+      queryParams: { project: 'synthetic-proj' },
+      target: 'list',
+      label: 'dev',
+    });
+    expect(getCommitteeMailingListLink({ uid: 'c1', is_foundation: true, mailing_lists: [list('ml-1', 'dev')] })?.commands).toEqual([
+      '/',
+      'foundation',
+      'mailing-lists',
+      'ml-1',
+    ]);
+  });
+
+  it('labels with the title, then group name, and is null when the name is unknown', () => {
+    const label = (ml: { uid: string; group_name: string; title?: string }) =>
+      getCommitteeMailingListLink({ uid: 'c1', is_foundation: false, mailing_lists: [ml] })?.label;
+    expect(label({ uid: 'ml-1', group_name: 'dev', title: 'Developers' })).toBe('Developers');
+    expect(label({ uid: 'ml-1', group_name: 'dev', title: '' })).toBe('dev');
+    expect(label({ uid: 'ml-1', group_name: '' })).toBeNull();
+  });
+
+  it('links several lists to the group page', () => {
+    expect(getCommitteeMailingListLink({ uid: 'c1', is_foundation: true, mailing_lists: [list('ml-1', 'a'), list('ml-2', 'b')] })).toEqual({
+      commands: ['/', 'foundation', 'groups', 'c1'],
+      queryParams: null,
+      target: 'group',
+      label: '2 mailing lists',
+    });
+  });
+
+  it('falls back to the flat paths when the tier is unknown', () => {
+    expect(getCommitteeMailingListLink({ uid: 'c1', mailing_lists: [list('ml-1', 'dev')] })?.commands).toEqual(['/mailing-lists', 'ml-1']);
+    expect(getCommitteeMailingListLink({ uid: 'c1', mailing_lists: [list('a', 'a'), list('b', 'b')] })?.commands).toEqual(['/groups', 'c1']);
   });
 });

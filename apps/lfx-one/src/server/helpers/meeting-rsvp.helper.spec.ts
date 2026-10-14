@@ -4,27 +4,8 @@
 import type { MeetingRegistrant, MeetingRsvp } from '@lfx-one/shared/interfaces';
 import { describe, expect, it, vi } from 'vitest';
 
-// This app's vitest config resolves plain Node modules only — the `@lfx-one/shared/*` tsconfig
-// path alias isn't wired here (mirrors meeting.helper.spec.ts / meeting.service.spec.ts), and the
-// real `@lfx-one/shared/utils` barrel transitively needs @angular/compiler outside an Angular
-// bootstrap. Stub `selectApplicableRsvp` with a faithful reimplementation of the real resolver
-// (packages/shared/src/utils/rsvp-calculator.util.ts): most-recently-modified first, a `scope:
-// 'all'` entry wins over any `single`/`this_and_following` entry for an unrelated occurrence.
-// The resolver's own exhaustive behavior (unit normalization, this_and_following anchors, etc.)
-// is covered by rsvp-calculator.util.spec.ts — this stub only needs to preserve the one property
-// that attachRsvpsToRegistrants' delegation depends on (LFXV2-2864).
-vi.mock('@lfx-one/shared/utils', () => ({
-  selectApplicableRsvp: (occurrenceId: string | undefined, rsvps: MeetingRsvp[]): MeetingRsvp | null => {
-    if (rsvps.length === 0) return null;
-    const sorted = [...rsvps].sort((a, b) => new Date(b.modified_at as string).getTime() - new Date(a.modified_at as string).getTime());
-    if (!occurrenceId) return sorted[0];
-    for (const rsvp of sorted) {
-      if (rsvp.scope === 'all') return rsvp;
-      if (rsvp.scope === 'single' && rsvp.occurrence_id === occurrenceId) return rsvp;
-    }
-    return null;
-  },
-}));
+// Load only the pure resolver, avoiding the Angular-dependent shared barrel in this Node suite.
+vi.mock('@lfx-one/shared/utils', async () => vi.importActual('@lfx-one/shared/utils/rsvp-calculator.util'));
 
 import { attachRsvpsToRegistrants, filterRsvpsToActiveRegistrants } from './meeting-rsvp.helper';
 
@@ -77,6 +58,22 @@ describe('attachRsvpsToRegistrants', () => {
 
     expect(result.rsvp?.response_type).toBe('accepted');
   });
+
+  it.each(['single', 'this_and_following'] as const)(
+    'selects all before newest %s for an unresolved date without changing resolved or aggregate selection',
+    (scope) => {
+      const all = rsvp({ scope: 'all', modified_at: '2026-01-01T00:00:00Z' });
+      const scoped = rsvp({ scope, occurrence_id: '4071031200000', response_type: 'declined', modified_at: '2026-02-01T00:00:00Z' });
+      const scopedOnly = { ...scoped, registrant_id: 'r2' };
+      const roster = [registrant('r1'), registrant('r2')];
+      const history = [all, scoped, scopedOnly];
+
+      expect(attachRsvpsToRegistrants(roster, history, undefined, true).map((row) => row.rsvp)).toEqual([all, null]);
+      expect(attachRsvpsToRegistrants(roster, history).map((row) => row.rsvp)).toEqual([scoped, scopedOnly]);
+      expect(attachRsvpsToRegistrants(roster, history, '4071031200', true).map((row) => row.rsvp)).toEqual([scoped, scopedOnly]);
+      expect(attachRsvpsToRegistrants(roster, history, '4070944800').map((row) => row.rsvp)).toEqual([all, null]);
+    }
+  );
 
   it('does not mutate the input registrant objects', () => {
     const original = registrant('r1');

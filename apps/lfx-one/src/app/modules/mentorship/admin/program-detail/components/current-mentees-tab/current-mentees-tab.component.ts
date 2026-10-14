@@ -85,6 +85,7 @@ import { MentorshipTaskCreateService } from '../../../../services/mentorship-tas
 import { MentorshipTaskDialogService } from '../../../../services/mentorship-task-dialog.service';
 import { ApplicantTasksPanelComponent } from '../../../../components/applicant-tasks-panel/applicant-tasks-panel.component';
 import { MenteeNoteDialogComponent } from '../../../../components/mentee-note-dialog/mentee-note-dialog.component';
+import { MenteesDownloadMenuComponent } from '../../../../components/mentees-download-menu/mentees-download-menu.component';
 import { AcceptApplicationDialogComponent } from '../accept-application-dialog/accept-application-dialog.component';
 import { DeclineByTermDialogComponent } from '../decline-by-term-dialog/decline-by-term-dialog.component';
 import { PersonCellComponent } from '../../../../components/person-cell/person-cell.component';
@@ -102,9 +103,9 @@ import { RowActionsComponent } from '../../../../components/row-actions/row-acti
  * still have created the task; an expanded row stays expanded across the reload and re-reads its tasks once, a
  * collapsed row reads none. The form stays shut while another write is in flight, or while a create is still running
  * for the mentee, even one a tab switch outlived. Editing a task, or setting its status, saves through
- * the BFF and writes the saved task into the cached list, so no task read follows. The status export still stubs to coming
- * soon. The reviewer note saves through the BFF too and is written into its row, so the table shows it without a
- * read; a later read brings the saved note back, and a read that was already in flight when the save landed keeps
+ * the BFF and writes the saved task into the cached list, so no task read follows. Download By Status is
+ * `MenteesDownloadMenuComponent`. The reviewer note saves through the BFF too and is written into its row, so the
+ * table shows it without a read; a later read brings the saved note back, and a read that was already in flight when the save landed keeps
  * the saved note over its older answer.
  */
 @Component({
@@ -116,6 +117,7 @@ import { RowActionsComponent } from '../../../../components/row-actions/row-acti
     ButtonComponent,
     ConfirmDialogModule,
     InputTextComponent,
+    MenteesDownloadMenuComponent,
     PersonCellComponent,
     RowActionsComponent,
     SelectComponent,
@@ -230,10 +232,6 @@ export class CurrentMenteesTabComponent {
       // Not tied to the tab: the save, and its toast, finish even if the admin leaves first.
       this.noteSave.save(id, value.trim()).subscribe();
     });
-  }
-
-  protected onAction(summary: string): void {
-    this.comingSoon.notify(summary);
   }
 
   protected onDeclineByTerm(): void {

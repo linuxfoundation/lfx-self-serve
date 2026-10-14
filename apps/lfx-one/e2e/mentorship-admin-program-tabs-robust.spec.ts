@@ -64,11 +64,12 @@ test.describe('Admin program detail — structure', () => {
     }
   });
 
-  test('nests the filters, the rows and the paginator inside the Current Mentees tab', async ({ page }) => {
+  test('nests the filters, the download control, the rows and the paginator inside the Current Mentees tab', async ({ page }) => {
     const tab = page.getByTestId('mentorship-current-mentees-tab');
 
     await expect(tab.getByTestId('mentorship-current-mentees-status')).toBeVisible();
     await expect(tab.getByTestId('mentorship-current-mentees-term')).toBeVisible();
+    await expect(tab.getByTestId('mentorship-current-mentees-download')).toBeVisible();
     await expect(tab.locator('[data-test="mentorship-current-mentees-search"]')).toBeVisible();
     await expect(tab.locator('[data-testid^="mentorship-current-mentee-row-"]')).toHaveCount(10);
     await expect(tab.getByTestId(`mentorship-current-mentee-row-${FIRST_ID}`)).toBeVisible();
@@ -96,7 +97,7 @@ test.describe('Admin program detail — live tab structure', () => {
     await open(page, { mentees: [], tasks: [] });
   });
 
-  test('nests the Past Mentees filters and rows inside its tab, with no download control', async ({ page }) => {
+  test('nests the Past Mentees filters, download control and rows inside its tab', async ({ page }) => {
     await page.getByTestId('mentorship-program-detail-tab-past-mentees').click();
     const tab = page.getByTestId('mentorship-past-mentees-tab');
 
@@ -104,7 +105,7 @@ test.describe('Admin program detail — live tab structure', () => {
     await expect(tab.getByTestId('mentorship-past-mentees-term')).toBeVisible();
     await expect(tab.locator('[data-test="mentorship-past-mentees-search"]')).toBeVisible();
     await expect(tab.locator('[data-testid^="mentorship-past-mentee-row-"]')).toHaveCount(ADMIN_PAST_APPLICATIONS.length);
-    await expect(tab.getByTestId('mentorship-past-mentees-download')).toHaveCount(0);
+    await expect(tab.getByTestId('mentorship-past-mentees-download')).toBeVisible();
     await expect(page.getByTestId('mentorship-admin-past-mentees-load-error')).toHaveCount(0);
   });
 

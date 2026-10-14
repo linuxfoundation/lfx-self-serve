@@ -50,3 +50,14 @@ export interface GithubRepoUrlError {
   /** What the value turned out to be instead of a repository. */
   reason: GithubRepoUrlErrorReason;
 }
+
+/** Options for `githubRepoUrlValidator`. */
+export interface GithubRepoUrlValidatorOptions {
+  /**
+   * Also accept an account URL (`github.com/<owner>`, e.g. a GitHub
+   * organization), so only an unparsable or non-GitHub value is refused and
+   * the `owner` reason is never raised. For intakes whose answer is passed to
+   * the agent as text rather than used to fetch a repository README.
+   */
+  acceptOwner?: boolean;
+}

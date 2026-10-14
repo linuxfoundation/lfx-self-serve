@@ -29,7 +29,7 @@
       "dependsOn": ["^lint:check"]
     },
     "check-types": {
-      "dependsOn": ["^build"]
+      "dependsOn": ["^check-types"]
     },
     "start": {
       "cache": false,

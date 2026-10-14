@@ -6,8 +6,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const PAST_MEETING_UID = 'a0000000-0000-0000-0000-000000000001';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
-const { meetingSvc, reconciliationSvc, addAccessToResourceMock, validateUidParameterMock } = vi.hoisted(() => ({
+const { meetingSvc, reconciliationSvc, addAccessToResourceMock, validateUidParameterMock, enrichAttendanceMock, getEffectiveEmailMock } = vi.hoisted(() => ({
+  enrichAttendanceMock: vi.fn(),
+  getEffectiveEmailMock: vi.fn<() => string | null>(() => null),
   meetingSvc: {
+    getMeetings: vi.fn(),
     getPastMeetingById: vi.fn(),
     getPastMeetingParticipants: vi.fn(),
     canViewPastMeetingParticipants: vi.fn(),
@@ -52,8 +55,22 @@ vi.mock('../services/access-check.service', () => ({
     return { addAccessToResource: addAccessToResourceMock };
   }),
 }));
+vi.mock('../services/user.service', () => ({
+  UserService: vi.fn(function () {
+    return { enrichPastMeetingsWithUserAttendance: enrichAttendanceMock };
+  }),
+}));
+vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail: getEffectiveEmailMock }));
 vi.mock('../services/logger.service', () => ({
-  logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() },
+  logger: {
+    startOperation: vi.fn(() => 0),
+    sanitize: vi.fn((value: unknown) => value),
+    success: vi.fn(),
+    warning: vi.fn(),
+    error: vi.fn(),
+    info: vi.fn(),
+    debug: vi.fn(),
+  },
 }));
 
 import { PastMeetingController } from './past-meeting.controller';
@@ -137,6 +154,57 @@ describe('PastMeetingController.reconcilePastMeetingParticipants — organizer g
     expect(reconciliationSvc.reconcilePastMeetingParticipants).toHaveBeenCalledWith(expect.anything(), PAST_MEETING_UID, buildPastMeeting());
     expect(res.json).toHaveBeenCalledWith(result);
     expect(next).not.toHaveBeenCalled();
+  });
+});
+
+describe('PastMeetingController.getPastMeetings — viewer attendance enrichment', () => {
+  let controller: PastMeetingController;
+  const meetings = [buildPastMeeting()];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new PastMeetingController();
+    meetingSvc.getMeetings.mockResolvedValue({ data: meetings, page_token: 'next' });
+    enrichAttendanceMock.mockResolvedValue(undefined);
+  });
+
+  const buildListReq = (authenticated: boolean, query: Record<string, string>): any => ({ ...buildReq(authenticated), query });
+
+  it('enriches the page with the viewer attendance when the caller opts in', async () => {
+    getEffectiveEmailMock.mockReturnValue('viewer@example.com');
+    const res = buildRes();
+
+    await controller.getPastMeetings(buildListReq(true, { include_viewer_attendance: 'true' }), res, vi.fn());
+
+    expect(enrichAttendanceMock).toHaveBeenCalledWith(expect.anything(), 'viewer@example.com', meetings);
+    expect(res.json).toHaveBeenCalledWith({ data: meetings, page_token: 'next' });
+  });
+
+  it('still enriches a username-only viewer, passing an empty email so the service matches on username', async () => {
+    getEffectiveEmailMock.mockReturnValue(null);
+    const res = buildRes();
+
+    await controller.getPastMeetings(buildListReq(true, { include_viewer_attendance: 'true' }), res, vi.fn());
+
+    expect(enrichAttendanceMock).toHaveBeenCalledWith(expect.anything(), '', meetings);
+  });
+
+  it('skips the attendance scan when the caller does not opt in', async () => {
+    getEffectiveEmailMock.mockReturnValue('viewer@example.com');
+    const res = buildRes();
+
+    await controller.getPastMeetings(buildListReq(true, {}), res, vi.fn());
+
+    expect(enrichAttendanceMock).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ data: meetings, page_token: 'next' });
+  });
+
+  it('does not forward the opt-in flag to the query service', async () => {
+    getEffectiveEmailMock.mockReturnValue('viewer@example.com');
+
+    await controller.getPastMeetings(buildListReq(true, { include_viewer_attendance: 'true', name: 'weekly' }), buildRes(), vi.fn());
+
+    expect(meetingSvc.getMeetings).toHaveBeenCalledWith(expect.anything(), { name: 'weekly' }, 'v1_past_meeting');
   });
 });
 

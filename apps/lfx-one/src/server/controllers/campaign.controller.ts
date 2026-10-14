@@ -31,6 +31,7 @@ import type {
   CampaignNegativeKeywordsRequest,
   CampaignPlatform,
   CampaignSSEEventType,
+  CampaignServiceAccountMonitor,
   CampaignStatusUpdateRequest,
   CampaignStatusUpdateResult,
   CampaignToggleStatus,
@@ -41,6 +42,9 @@ import type {
   MicrosoftKeywordsWindow,
 } from '@lfx-one/shared/interfaces';
 import {
+  ACCOUNT_MONITOR_DEFAULT_DAYS,
+  ACCOUNT_MONITOR_MAX_DAYS,
+  ACCOUNT_MONITOR_MIN_DAYS,
   CAMPAIGN_DELIVERY_TYPES,
   CAMPAIGN_EMAIL_STAGES,
   CAMPAIGN_ETAG_HEADER_PATTERN,
@@ -48,12 +52,19 @@ import {
   CAMPAIGN_PLATFORMS,
   DEFAULT_CAMPAIGN_BID_TYPE,
   GOOGLE_ADS_GEO_TARGET_MAP,
+  GOOGLE_ADS_LANGUAGE_ID_PATTERN,
+  GOOGLE_ADS_LANGUAGE_MAP,
+  GOOGLE_ADS_MAX_CALLOUTS,
+  GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
   GOOGLE_ADS_MAX_GEO_TARGETS,
+  GOOGLE_ADS_MAX_LANGUAGES,
   GOOGLE_ADS_MICROS_PER_UNIT,
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
   GOOGLE_CAMPAIGN_CHANNEL_LABELS,
+  GOOGLE_CHANNELS_WITH_AD_EXTENSIONS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
+  GOOGLE_CHANNELS_WITH_LANGUAGES,
   GOOGLE_CREATIVE_FIELD_SPECS,
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
@@ -69,6 +80,7 @@ import {
   MAX_NEGATIVE_KEYWORD_TEXT_LENGTH,
   MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
   META_GEO_CODE_PATTERN,
+  MICROSOFT_ADS_MONITOR_ACCOUNT_ID_PATTERN,
   MICROSOFT_CONTROL_CHAR_RE,
   MICROSOFT_KEYWORDS_WINDOWS,
   MICROSOFT_MAX_BUDGET,
@@ -78,16 +90,20 @@ import {
   MICROSOFT_MAX_KEYWORD_TEXT_LENGTH,
   MICROSOFT_MIN_CPC_BID,
   NEGATIVE_KEYWORD_TEXT_PATTERN,
+  TWITTER_ADS_MONITOR_ACCOUNT_ID_PATTERN,
   VALID_CAMPAIGN_BID_TYPES,
   VALID_CAMPAIGN_BUDGET_TYPES,
   VALID_CAMPAIGN_NEGATIVE_KEYWORD_MATCH_TYPES,
   VALID_CAMPAIGN_TOGGLE_STATUSES,
+  googleAdsEchoed,
+  googleAdsToLower,
+  googleAdsTrimSpace,
   isCanonicalGoogleAdsResourceId,
   isMicrosoftMatchType,
 } from '@lfx-one/shared/constants';
 
 import { META_ACCOUNTS, REDDIT_ACCOUNTS } from '../constants';
-import { ServiceValidationError } from '../errors';
+import { MicroserviceError, ServiceValidationError } from '../errors';
 import { CampaignMetricsService, LinkedInMetricsService, MetaMetricsService, RedditMetricsService } from '../services/campaign-metrics.service';
 import { validateScrapeUrl } from '../helpers/url-validation';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
@@ -95,6 +111,7 @@ import { getLinkedInConfig } from '../services/linkedin-ads.service';
 import { CampaignProxyService } from '../services/campaign-proxy.service';
 import { toAudienceDemographics, toKeywordMetricsResponse, toMicrosoftKeywordMetricsResponse, windowForDays } from '../services/campaign-insights-mapper';
 import { applyKeywordActionsViaCampaignService } from '../services/campaign-keyword-actions';
+import { toAccountMonitorClientError, toLinkedInMonitorResponse, toMetaMonitorResponse, toRedditMonitorResponse } from '../services/campaign-monitor-mapper';
 import { toUtmCreateResult, toUtmLookupResult } from '../services/campaign-utm-mapper';
 import { CampaignServiceClient, deriveEventSlug, isCampaignServiceJobId } from '../services/campaign-service.service';
 import { logger } from '../services/logger.service';
@@ -490,8 +507,8 @@ export class CampaignController {
         }
       }
 
-      // The same bound for the other half of this handler. `googleCreative` and `googleBidding`
-      // filter, trim and re-allocate every string they are handed, and nothing upstream of them
+      // The same bound for the other half of this handler. `googleCreative`, `googleBidding` and
+      // `googleCallouts` filter, trim and re-allocate every string they are handed, and nothing upstream of them
       // bounds the count — so this runs before `createConfigEnvelope` for the reason the HubSpot
       // check above does.
       const oversizedGoogleField = this.oversizedGoogleCreativeField(body);
@@ -653,6 +670,109 @@ export class CampaignController {
               )
             );
             return;
+          }
+        }
+
+        // The language twin of the two guards above: a list that fails in Go comes back as the
+        // orchestrator's opaque "platform campaign creation failed". So every upstream refusal is
+        // made here first, by name, in UPSTREAM'S OWN ORDER — JSON decode, `validateCriteriaPlan`'s
+        // Demand Gen fence, then `resolveLanguageList`'s cap and per-entry tests — so a request that
+        // breaks two rules is refused for the one upstream would name. Judged on the dispatched list.
+        const rawLanguages = body?.languages;
+        if (rawLanguages !== undefined && rawLanguages !== null) {
+          // Upstream decodes `languages` into a Go `[]string`, so a non-array or a non-string entry
+          // is refused before any validator runs. Reading either as absent would dispatch an
+          // every-language campaign the caller never asked for.
+          if (!Array.isArray(rawLanguages) || rawLanguages.some((l) => typeof l !== 'string')) {
+            next(
+              ServiceValidationError.forField('languages', 'Google Ads languages must be a list of language codes or numeric language constant ids.', {
+                operation: 'campaign_create',
+                service: 'campaign_controller',
+              })
+            );
+            return;
+          }
+
+          const languages = this.googleLanguageList(rawLanguages);
+          const googleChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
+          if (languages.length > 0 && typeof googleChannel === 'string') {
+            // REFUSED by name, not dropped: upstream's contract for the field is "refused, never
+            // silently dropped", and `validateCriteriaPlan` fails the whole Demand Gen create on it.
+            // The UI never sends this — its control and payload gate on the same channel list.
+            if (!(GOOGLE_CHANNELS_WITH_LANGUAGES as readonly string[]).includes(googleChannel)) {
+              next(
+                ServiceValidationError.forField(
+                  'languages',
+                  `Google Ads does not accept campaign languages on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove the languages or pick a different channel, then create again.`,
+                  { operation: 'campaign_create', service: 'campaign_controller' }
+                )
+              );
+              return;
+            }
+
+            // Upstream's cap, checked BEFORE de-duplication there and so here too: a list over the
+            // cap only because it repeats a code is still refused.
+            if (languages.length > GOOGLE_ADS_MAX_LANGUAGES) {
+              next(
+                ServiceValidationError.forField(
+                  'languages',
+                  `Google Ads accepts at most ${GOOGLE_ADS_MAX_LANGUAGES} languages on one campaign, and this one has ${languages.length}. Remove some and create again.`,
+                  { operation: 'campaign_create', service: 'campaign_controller' }
+                )
+              );
+              return;
+            }
+
+            // Entry by entry, refusing on the FIRST bad one, as `resolveLanguageList` does.
+            for (const language of languages) {
+              const refusal = this.googleLanguageRefusal(language);
+              if (refusal) {
+                next(ServiceValidationError.forField('languages', refusal, { operation: 'campaign_create', service: 'campaign_controller' }));
+                return;
+              }
+            }
+          }
+        }
+      }
+
+      // The callout twin of the language guard above, in UPSTREAM'S OWN ORDER and after it, as
+      // `validateAssetPlan` runs after `validateCriteriaPlan`: JSON decode, the Search-only fence,
+      // `validateCallouts`' cap, then each entry (blank, rune bound, case-folded repeat), first bad
+      // one wins. Each would otherwise fail in Go as the opaque "platform campaign creation failed".
+      const rawCallouts = body?.callouts;
+      if (cutoverOn && platforms.includes('google-ads') && rawCallouts !== undefined && rawCallouts !== null) {
+        const refuse = (message: string): void =>
+          next(ServiceValidationError.forField('callouts', message, { operation: 'campaign_create', service: 'campaign_controller' }));
+        // Upstream decodes `callouts` into a Go `[]string`, so either fault is refused there before
+        // any validator runs. Reading it as absent would create the campaign without them.
+        if (!Array.isArray(rawCallouts) || rawCallouts.some((c) => typeof c !== 'string')) {
+          refuse('Google Ads callouts must be a list of text.');
+          return;
+        }
+        const callouts = this.googleCalloutList(rawCallouts);
+        const googleChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
+        if (callouts.length > 0 && typeof googleChannel === 'string') {
+          // REFUSED by name, not withheld: `validateAssetPlan` fails the whole create on any channel
+          // but Search. The UI never sends this — its section and payload gate on the same list.
+          if (!(GOOGLE_CHANNELS_WITH_AD_EXTENSIONS as readonly string[]).includes(googleChannel)) {
+            refuse(
+              `Google Ads only accepts callouts on Search campaigns, not on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove the callouts or pick Search, then create again.`
+            );
+            return;
+          }
+          if (callouts.length > GOOGLE_ADS_MAX_CALLOUTS) {
+            refuse(
+              `Google Ads accepts at most ${GOOGLE_ADS_MAX_CALLOUTS} callouts on one campaign, and this one has ${callouts.length}. Remove some and create again.`
+            );
+            return;
+          }
+          const seen = new Set<string>();
+          for (const [index, callout] of callouts.entries()) {
+            const refusal = this.googleCalloutRefusal(callout, index, seen);
+            if (refusal) {
+              refuse(refusal);
+              return;
+            }
           }
         }
       }
@@ -1771,6 +1891,21 @@ export class CampaignController {
       return;
     }
     const accountId = account.accountId;
+
+    // The configured account is resolved above on BOTH paths, exactly as before; campaign-service
+    // then also refuses one the project's own LinkedIn connection is not bound to.
+    if (isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
+      await this.serveLegacyShapedMonitor(req, res, next, {
+        operation: 'linkedin_monitor',
+        platformLabel: 'LinkedIn Ads',
+        days,
+        accountId,
+        read: (projectSlug) => this.campaignServiceClient.getLinkedInAdsAccountMonitor(req, projectSlug, accountId, days),
+        toResponse: (payload) => toLinkedInMonitorResponse(payload, account.label, new Date().toISOString()),
+      });
+      return;
+    }
+
     const startTime = logger.startOperation(req, 'linkedin_monitor', { days, accountKey: rawKey });
 
     try {
@@ -1982,6 +2117,22 @@ export class CampaignController {
       return;
     }
     const accountId = account.accountId;
+
+    // The account is still checked against the allowlist above on BOTH paths: the picker offers
+    // only those accounts, and campaign-service then also refuses one the project's own connection
+    // is not bound to.
+    if (isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
+      await this.serveLegacyShapedMonitor(req, res, next, {
+        operation: 'reddit_monitor',
+        platformLabel: 'Reddit Ads',
+        days,
+        accountId,
+        read: (projectSlug) => this.campaignServiceClient.getRedditAdsAccountMonitor(req, projectSlug, accountId, days),
+        toResponse: (payload) => toRedditMonitorResponse(payload, account.label, new Date().toISOString()),
+      });
+      return;
+    }
+
     const startTime = logger.startOperation(req, 'reddit_monitor', { days, accountKey: rawKey });
 
     try {
@@ -2016,6 +2167,20 @@ export class CampaignController {
       return;
     }
     const accountId = account.accountId;
+
+    // Allowlist kept on both paths, as on the Reddit route.
+    if (isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
+      await this.serveLegacyShapedMonitor(req, res, next, {
+        operation: 'meta_monitor',
+        platformLabel: 'Meta Ads',
+        days,
+        accountId,
+        read: (projectSlug) => this.campaignServiceClient.getMetaAdsAccountMonitor(req, projectSlug, accountId, days),
+        toResponse: (payload) => toMetaMonitorResponse(payload, account.label, new Date().toISOString()),
+      });
+      return;
+    }
+
     const startTime = logger.startOperation(req, 'meta_monitor', { days, accountKey: rawKey });
 
     try {
@@ -2025,6 +2190,71 @@ export class CampaignController {
     } catch (error) {
       logger.error(req, 'meta_monitor', startTime, error, { days, accountKey: rawKey });
       next(error);
+    }
+  }
+
+  /**
+   * Microsoft Advertising account monitor, from campaign-service only (#2519).
+   *
+   * No legacy path exists, so with `LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR` off the route answers 404
+   * as if it were not mounted. On, it returns campaign-service's `account-monitor` body UNCHANGED:
+   * there is no legacy shape to fit, and the report-backed fields (`metrics_as_of`,
+   * `metrics_pending`, `metrics_window_*`) are what a renderer needs to say how fresh the figures are.
+   *
+   * `accountKey` is the Microsoft account id itself — there is no LF allowlist for this platform —
+   * so its shape is checked here, against the same pattern upstream enforces.
+   */
+  public async getMicrosoftMonitor(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await this.serveReportBackedMonitor(req, res, next, {
+      operation: 'microsoft_monitor',
+      platformLabel: 'Microsoft Ads',
+      accountIdPattern: MICROSOFT_ADS_MONITOR_ACCOUNT_ID_PATTERN,
+      read: (projectSlug, accountId, days) => this.campaignServiceClient.getMicrosoftAdsAccountMonitor(req, projectSlug, accountId, days),
+    });
+  }
+
+  /**
+   * X (Twitter) Ads account monitor, from campaign-service only (#2519). The Microsoft route's
+   * sibling; additionally a 409 when the account cannot be monitored as it stands, with the
+   * upstream `reason` forwarded as `upstreamCode`.
+   */
+  public async getTwitterMonitor(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await this.serveReportBackedMonitor(req, res, next, {
+      operation: 'twitter_monitor',
+      platformLabel: 'X Ads',
+      accountIdPattern: TWITTER_ADS_MONITOR_ACCOUNT_ID_PATTERN,
+      read: (projectSlug, accountId, days) => this.campaignServiceClient.getTwitterAdsAccountMonitor(req, projectSlug, accountId, days),
+    });
+  }
+
+  /**
+   * HubSpot email monitor, from campaign-service only (#2519). PROJECT-scoped — there is no account
+   * to pick — so it takes only `?project=` and `?days=`. Gated, and returned unchanged, as the
+   * Microsoft route is.
+   */
+  public async getHubSpotMonitor(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'hubspot_monitor';
+    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
+      next(this.monitorDisabledError(operation));
+      return;
+    }
+    const projectSlug = this.requireMonitorProject(req, next, operation);
+    if (projectSlug === null) {
+      return;
+    }
+    const days = this.parseMonitorDays(req);
+    const startTime = logger.startOperation(req, operation, { days, viaCampaignService: true });
+
+    try {
+      const data = await this.campaignServiceClient.getHubSpotAccountMonitor(req, projectSlug, days);
+      logger.success(req, operation, startTime, {
+        emails: data.emails?.length ?? 0,
+        actionItems: data.action_items?.length ?? 0,
+        truncated: data.emails_truncated,
+      });
+      res.json(data);
+    } catch (error) {
+      next(toAccountMonitorClientError(error, 'HubSpot', operation));
     }
   }
 
@@ -2685,6 +2915,126 @@ export class CampaignController {
   }
 
   /**
+   * The campaign-service arm of the LinkedIn, Meta and Reddit monitor routes: read the account monitor and
+   * answer in the legacy shape the Monitor and Optimize panels already render.
+   */
+  private async serveLegacyShapedMonitor<T>(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+    opts: {
+      operation: string;
+      platformLabel: string;
+      days: number;
+      accountId: string;
+      read: (projectSlug: string) => Promise<CampaignServiceAccountMonitor>;
+      toResponse: (payload: CampaignServiceAccountMonitor) => T;
+    }
+  ): Promise<void> {
+    const projectSlug = this.requireMonitorProject(req, next, opts.operation);
+    if (projectSlug === null) {
+      return;
+    }
+    const startTime = logger.startOperation(req, opts.operation, { days: opts.days, accountId: opts.accountId, viaCampaignService: true });
+
+    try {
+      const payload = await opts.read(projectSlug);
+      const data = opts.toResponse(payload);
+      logger.success(req, opts.operation, startTime, {
+        viaCampaignService: true,
+        campaigns: payload.campaigns?.length ?? 0,
+        fetchFailed: (payload.campaigns ?? []).filter((c) => c.fetch_failed).length,
+      });
+      res.json(data);
+    } catch (error) {
+      next(toAccountMonitorClientError(error, opts.platformLabel, opts.operation));
+    }
+  }
+
+  /** The Microsoft and X routes: flag gate, account-id shape check, then the body unchanged. */
+  private async serveReportBackedMonitor(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+    opts: {
+      operation: string;
+      platformLabel: string;
+      accountIdPattern: RegExp;
+      read: (projectSlug: string, accountId: string, days: number) => Promise<CampaignServiceAccountMonitor>;
+    }
+  ): Promise<void> {
+    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
+      next(this.monitorDisabledError(opts.operation));
+      return;
+    }
+    const projectSlug = this.requireMonitorProject(req, next, opts.operation);
+    if (projectSlug === null) {
+      return;
+    }
+    const accountId = typeof req.query['accountKey'] === 'string' ? req.query['accountKey'].trim() : '';
+    if (!opts.accountIdPattern.test(accountId)) {
+      next(
+        ServiceValidationError.forField('accountKey', `A valid ${opts.platformLabel} account id is required`, {
+          operation: opts.operation,
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+    const days = this.parseMonitorDays(req);
+    const startTime = logger.startOperation(req, opts.operation, { days, accountId, viaCampaignService: true });
+
+    try {
+      const data = await opts.read(projectSlug, accountId, days);
+      logger.success(req, opts.operation, startTime, {
+        campaigns: data.campaigns?.length ?? 0,
+        metricsAsOf: data.metrics_as_of,
+        metricsPending: data.metrics_pending,
+      });
+      res.json(data);
+    } catch (error) {
+      next(toAccountMonitorClientError(error, opts.platformLabel, opts.operation));
+    }
+  }
+
+  /**
+   * `?days=`, clamped to the account monitors' 7–90 range rather than refused — the behaviour the
+   * Meta and Reddit routes already had. Upstream rejects an out-of-range value, so the clamp is
+   * what keeps a stray `?days=365` a read instead of a 400.
+   */
+  private parseMonitorDays(req: Request): number {
+    const rawDays = String(req.query['days'] ?? ACCOUNT_MONITOR_DEFAULT_DAYS);
+    const parsedDays = /^\d+$/.test(rawDays) ? Number(rawDays) : NaN;
+    return Number.isFinite(parsedDays) ? Math.min(Math.max(parsedDays, ACCOUNT_MONITOR_MIN_DAYS), ACCOUNT_MONITOR_MAX_DAYS) : ACCOUNT_MONITOR_DEFAULT_DAYS;
+  }
+
+  /**
+   * The project whose connection reads the account, or `null` after reporting a 400. Required, not
+   * defaulted: campaign-service resolves the credential from it, and a guessed project would read
+   * another foundation's connection.
+   */
+  private requireMonitorProject(req: Request, next: NextFunction, operation: string): string | null {
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug === '') {
+      next(
+        ServiceValidationError.forField('project', 'A project is required to read an account monitor', {
+          operation,
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return null;
+    }
+    return projectSlug;
+  }
+
+  /** A 404 for a campaign-service-only monitor route while its flag is off — as if it were not mounted. */
+  private monitorDisabledError(operation: string): MicroserviceError {
+    return new MicroserviceError('Not found', 404, 'NOT_FOUND', { operation, service: 'campaign_controller' });
+  }
+
+  /**
    * The row's platform as one of `CampaignPlatform`, checked against `CAMPAIGN_PLATFORMS` rather
    * than cast. campaign-service's own vocabulary is that list; a value outside it (a contract change
    * upstream, a malformed row) is logged and reported as `null`, never passed off as a known one.
@@ -3061,12 +3411,15 @@ export class CampaignController {
       // creates a Video campaign, so `createCampaigns` refuses a `video` channel before this config
       // is ever dispatched. There is nothing for a video creative to attach to.
       const creative = this.googleCreative(body, selectedChannels[0]);
+      // Normalized only — `createCampaign` names every language refusal before this is dispatched.
+      const languages = this.googleLanguages(body, selectedChannels[0]);
       return {
         budget: body.budgetUsd ?? 0,
         channel: selectedChannels[0],
         ...this.googleFlightWindow(body),
         ...this.googleBidding(body),
         ...(cleanGeoTargets.length > 0 ? { geoTargets: cleanGeoTargets } : {}),
+        ...languages,
         ...creative,
       };
     }
@@ -3092,6 +3445,14 @@ export class CampaignController {
     // the denomination, and would make the gap harder to find. Every account in play today is USD.
     const budget = ((body.budgetUsd ?? 0) * pct) / 100;
 
+    // Search always takes languages — it is the channel upstream's own header calls the one these
+    // criteria were written for — so the channel gate inside the helper can only pass here. The call
+    // is still made through the same helper so the two branches cannot normalize differently.
+    const searchLanguages = this.googleLanguages(body, 'search');
+
+    // Normalized only — `createCampaign` names every callout refusal before this is dispatched.
+    const callouts = this.googleCallouts(body);
+
     return {
       budget,
       // Explicit rather than relying on the upstream default. Absent means Search there
@@ -3110,7 +3471,52 @@ export class CampaignController {
       // route pre-LFXV2-3283 callers take. `geoTargets: []` and no key at all mean the same thing
       // to the dispatcher today; only one of them stays true if that default is ever tightened.
       ...(cleanGeoTargets.length > 0 ? { geoTargets: cleanGeoTargets } : {}),
+      ...searchLanguages,
+      ...callouts,
     };
+  }
+
+  /**
+   * The Search campaign's callout extensions, spread-ready, or `{}` when the request names none.
+   *
+   * Search only, so only the Search branch calls it: `createCampaign` refuses callouts on any other
+   * channel by name, because `validateAssetPlan` fails the whole create there. Omitted rather than
+   * sent empty, the absent-key route every caller predating the field takes.
+   */
+  private googleCallouts(body: CampaignCreateRequest): { callouts?: string[] } {
+    const clean = this.googleCalloutList(body?.callouts);
+    return clean.length > 0 ? { callouts: clean } : {};
+  }
+
+  /**
+   * The callout list as dispatched: strings only (`createCampaign` refuses anything else first),
+   * each trimmed with Go's rules as `validateCallouts` trims it. Blanks are KEPT so they are refused
+   * by name; upstream refuses them too ("callout %d is empty").
+   */
+  private googleCalloutList(raw: unknown): string[] {
+    if (!Array.isArray(raw)) return [];
+    return raw.filter((c): c is string => typeof c === 'string').map((c) => googleAdsTrimSpace(c));
+  }
+
+  /**
+   * Why upstream would refuse one entry of a trimmed callout list, or `null` when it would not.
+   *
+   * `validateCallouts`' per-entry branches in order: blank, then the rune bound (`[...text]`, which
+   * counts code points as `utf8.RuneCountInString` does), then a repeat keyed on Go's
+   * `strings.ToLower`. `seen` carries the keys across entries. The echo is cut short: the text comes
+   * from an unvalidated body.
+   */
+  private googleCalloutRefusal(callout: string, index: number, seen: Set<string>): string | null {
+    if (callout === '') return `Google Ads callouts cannot include a blank entry (callout ${index + 1}). Remove it and create again.`;
+    const shown = googleAdsEchoed(callout);
+    const runes = [...callout].length;
+    if (runes > GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES) {
+      return `Google Ads accepts callouts of at most ${GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES} characters, and ${shown} has ${runes}. Shorten it and create again.`;
+    }
+    const key = googleAdsToLower(callout);
+    if (seen.has(key)) return `Google Ads refuses a campaign that lists the callout ${shown} more than once. Remove the repeat and create again.`;
+    seen.add(key);
+    return null;
   }
 
   /**
@@ -3128,9 +3534,10 @@ export class CampaignController {
     const raw = body as unknown as Record<string, unknown>;
     const candidates: [string, unknown][] = Object.values(GOOGLE_CREATIVE_REQUEST_KEYS).map((key) => [key, raw[key]]);
     candidates.push(['conversionActions', raw['conversionActions']]);
+    candidates.push(['callouts', raw['callouts']]);
 
     for (const [key, source] of candidates) {
-      // A creative key holds an object of fields; `conversionActions` is a bare list on the body.
+      // A creative key holds an object of fields; `conversionActions` and `callouts` are bare lists.
       const entries: [string, unknown][] = this.boundableEntries(key, source);
 
       for (const [field, value] of entries) {
@@ -3157,7 +3564,8 @@ export class CampaignController {
    * The one source above, flattened into the `[label, value]` pairs the bound is applied to.
    *
    * A creative key holds an object whose fields are each bounded under their own `key.field` label;
-   * `conversionActions` is a bare list on the body and is bounded as one value under its own key.
+   * `conversionActions` and `callouts` are bare lists on the body, each bounded as one value under
+   * its own key.
    * Anything else — absent, a scalar, a shape the normaliser will drop — yields nothing to check.
    */
   private boundableEntries(key: string, source: unknown): [string, unknown][] {
@@ -3251,6 +3659,65 @@ export class CampaignController {
     if (startDate) window['startDate'] = startDate;
     if (endDate) window['endDate'] = endDate;
     return window;
+  }
+
+  /**
+   * The campaign's language list, normalized and spread-ready, or `{}` when the request names none.
+   *
+   * Omitting the key is NOT neutral in the direction the other omissions here are. An absent list
+   * means Google's own default, which is to serve in EVERY language — so this field narrows, and
+   * leaving it out leaves the campaign exactly as wide as it is today. That is why an empty result
+   * omits rather than refuses, as `geoTargets` does.
+   *
+   * CHANNEL-GATED, which `geoTargets` is not. `validateCriteriaPlan`
+   * (`internal/platform/googleads/campaign_criteria.go`) refuses the whole non-location criteria
+   * set on the Demand Gen path — that channel attaches targeting at the ad group level — so a
+   * Demand Gen create carrying languages fails upstream with nothing created. So this helper never
+   * forwards a list for a channel outside {@link GOOGLE_CHANNELS_WITH_LANGUAGES}, and the `{}` it
+   * returns there is never dispatched either: `createCampaign` reads the request's own list and
+   * refuses such a create by name before anything is sent, on upstream's "refused, never silently
+   * dropped" rule for this field.
+   *
+   * NORMALIZES ONLY. Every refusal is made by name in `createCampaign`, in upstream's order, before
+   * this config is dispatched; judging one here too would answer it twice, and less precisely.
+   */
+  private googleLanguages(body: CampaignCreateRequest, channel: GoogleCampaignChannel): Record<string, unknown> {
+    if (!(GOOGLE_CHANNELS_WITH_LANGUAGES as readonly string[]).includes(channel)) return {};
+    const clean = this.googleLanguageList(body?.languages);
+    return clean.length > 0 ? { languages: clean } : {};
+  }
+
+  /**
+   * The language list as dispatched: strings only (`createCampaign` refuses anything else first),
+   * trimmed and upper-cased as `resolveLanguageList` does. Blanks are KEPT: upstream counts them
+   * toward the Demand Gen fence and the cap and then refuses them, so dropping one here would turn
+   * `['']` into an every-language campaign. `createCampaign` refuses them by name first.
+   */
+  private googleLanguageList(raw: unknown): string[] {
+    if (!Array.isArray(raw)) return [];
+    return raw.filter((l): l is string => typeof l === 'string').map((l) => l.trim().toUpperCase());
+  }
+
+  /**
+   * Why upstream would refuse one entry of a normalized language list, or `null` when it would not.
+   *
+   * Mirrors `resolveLanguageList`'s per-entry branches in order. A blank entry is refused. A
+   * NUMERIC entry is a raw language constant id: it must be canonical (`canonicalCampaignID`
+   * upstream, {@link isCanonicalGoogleAdsResourceId} here) but is NOT tested against
+   * {@link GOOGLE_ADS_LANGUAGE_MAP}, since upstream accepts ids outside the curated table. Anything
+   * else must be a code in the map. The echo is cut short: the entry comes from an unvalidated body.
+   */
+  private googleLanguageRefusal(language: string): string | null {
+    if (language === '') return 'Google Ads languages cannot include a blank entry. Remove it and create again.';
+    const shown = googleAdsEchoed(language);
+    if (GOOGLE_ADS_LANGUAGE_ID_PATTERN.test(language)) {
+      return isCanonicalGoogleAdsResourceId(language)
+        ? null
+        : `Google Ads language ${shown} is not the canonical spelling of a positive language constant id. Use the id with no leading zeros, or pick a language from the list, and create again.`;
+    }
+    return Object.hasOwn(GOOGLE_ADS_LANGUAGE_MAP, language)
+      ? null
+      : `Google Ads cannot target ${shown} on this path. Pick a different language and create again.`;
   }
 
   /**

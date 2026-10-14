@@ -103,6 +103,13 @@ export const HEALTH_METRICS_NON_MEMBERS_ORGS_SEARCH_DEBOUNCE_MS = 200;
 export const HEALTH_METRICS_NON_MEMBERS_ORGS_PROVISIONAL_NOTE =
   "Organization matching is under validation. Treat this list as provisional and don't send it to sales unchecked.";
 
+/** Fit band dot fills, as the design colours them; an unknown band falls back to the Low gray. */
+export const HEALTH_METRICS_NON_MEMBERS_FIT_BAND_DOT_CLASS: Readonly<Record<string, string>> = {
+  High: 'bg-emerald-600',
+  Medium: 'bg-amber-500',
+  Low: 'bg-gray-400',
+};
+
 /** Read-failed / no-foundation value: no individuals, so the section renders no rows. */
 export const HEALTH_METRICS_NON_MEMBERS_PEOPLE_UNMEASURED: HealthMetricsNonMembersPeople = {
   rows: [],

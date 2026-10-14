@@ -81,4 +81,30 @@ describe('githubRepoUrlValidator', () => {
     expect(validate(null)).toBeNull();
     expect(validate(undefined)).toBeNull();
   });
+
+  /**
+   * The Brand Kit's rule (hand test, 2026-10-12): its answer reaches the agent
+   * as text and no README is fetched from it, so an organization URL such as
+   * https://github.com/opensearch-project is a usable answer.
+   * Only a value that is not a GitHub URL at all is still refused.
+   */
+  describe('with acceptOwner', () => {
+    const validateOwnerOk = (value: unknown): Record<string, unknown> | null => githubRepoUrlValidator({ acceptOwner: true })(control(value));
+
+    it('accepts an account URL, organization or person, alongside repository URLs', () => {
+      for (const value of ['https://github.com/opensearch-project', 'github.com/some-person', 'https://github.com/example-org/example-repo']) {
+        expect(validateOwnerOk(value)).toBeNull();
+      }
+    });
+
+    it('still rejects what is not a GitHub URL, and never raises the owner reason', () => {
+      for (const value of ['https://gitlab.com/example-org', 'https://github.com/orgs/aaif', 'https://github.com/bad_owner', 'not a url at all']) {
+        expect(validateOwnerOk(value)).toEqual({ githubRepoUrl: { reason: 'unrecognized' } });
+      }
+    });
+
+    it('keeps the default strict: an account URL is refused unless asked for', () => {
+      expect(githubRepoUrlValidator({})(control('https://github.com/opensearch-project'))).toEqual({ githubRepoUrl: { reason: 'owner' } });
+    });
+  });
 });

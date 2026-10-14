@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  ACCOUNT_MONITOR_CONFLICT_REASONS,
   CAMPAIGN_EMAIL_SEGMENTS,
   CAMPAIGN_EMAIL_STAGES,
   CAMPAIGN_EMAIL_VARIANTS,
@@ -103,7 +104,15 @@ export interface RedditObjectiveParams {
   readonly bidType: 'CPM' | 'CPC';
   /** Reserved for future manual-bid support; unused while campaign strategy is BIDLESS. */
   readonly bidValue: number;
-  readonly optimizationGoal: string;
+  /**
+   * The goal this objective always optimizes toward, where it has one.
+   *
+   * Optional because `video_views` does not: Reddit has no bare `VIDEO_VIEWS` goal, so the concrete
+   * goal is resolved per campaign from the request's `videoGoal` rather than baked into the table.
+   * Read it through `resolveRedditOptimizationGoal`, never directly — the direct read is what sent
+   * an unacceptable goal to Reddit (#3449).
+   */
+  readonly optimizationGoal?: string;
   readonly viewThroughConversionType?: string;
 }
 
@@ -744,6 +753,24 @@ export interface CampaignImplementationDraft {
    */
   googleGeoTargets?: string[];
   /**
+   * Google's campaign languages, as ISO 639-1 codes the operator picked.
+   *
+   * Empty means "every language", which is Google's own default and what this path did before the
+   * list existed — so an absent field and an empty list agree, and neither narrows anything the
+   * operator did not ask to narrow. Same rule as {@link googleGeoTargets} above.
+   */
+  googleLanguages?: string[];
+  /**
+   * Google's callout extensions, as the operator typed them — already trimmed, because a callout
+   * only becomes a chip once it has passed the add guards.
+   *
+   * Empty means "no callouts", which is what this path sent before the list existed, so an absent
+   * field and an empty list agree. Restored whatever channel the draft was saved under: the section
+   * and the payload both gate on the dispatched channel, so a list restored under Performance Max
+   * is held rather than sent, and is still there if the operator switches back to Search.
+   */
+  googleCallouts?: string[];
+  /**
    * The Google bidding section, as RAW form text — the same choice `googleCreatives` and
    * {@link microsoftCpcBid} make, and for the same reason: a draft hands the operator back the
    * form they left, and an empty string is "they have not filled this in", which is a different
@@ -1072,9 +1099,10 @@ export interface RedditBriefCopy {
  * capability rather than a literal because nothing in a create request tells the client which arm
  * will serve.
  *
- * `conversionPixelId` and `videoGoal` are still campaign-service only; the legacy creator reads
- * neither and sending them to it is silently dropped. Both matter only AFTER the cutover — see
- * their own notes below.
+ * `videoGoal` joined that list in #3449 — both creators now read it, and both refuse a
+ * `video_views` create without it rather than sending Reddit an optimization goal it does not have.
+ * `conversionPixelId` is still campaign-service only: the legacy creator does not read it and
+ * sending it there is silently dropped, so it matters only AFTER the cutover (#3484).
  */
 export interface RedditCampaignCreateRequest {
   eventName: string;
@@ -1123,11 +1151,12 @@ export interface RedditCampaignCreateRequest {
    */
   conversionPixelId?: string;
   /**
-   * Required by upstream for, and only for, the `video_views` objective.
+   * Required by BOTH creators for, and only for, the `video_views` objective — Reddit has no bare
+   * `VIDEO_VIEWS` goal, so a video-view campaign has to name a concrete duration goal and neither
+   * arm can invent one. Read it through `resolveRedditOptimizationGoal` (#3449).
    *
-   * Declared for the wire contract only — nothing populates it either, which is precisely why
-   * `REDDIT_SELECTABLE_OBJECTIVES` withholds `video_views`: offering that objective without this
-   * field would offer a create upstream always refuses.
+   * No control populates it, which is why `REDDIT_SELECTABLE_OBJECTIVES` withholds `video_views`:
+   * offering that objective with no way to set this field would offer a create both arms refuse.
    */
   videoGoal?: RedditVideoGoal;
 }
@@ -1316,9 +1345,24 @@ export interface MetaCampaignMetrics {
   ctr: number;
   conversions: number;
   pacingPct: number;
-  pacingLabel: MetaPacingLabel;
+  /**
+   * ABSENT only on the campaign-service path, when `pacingUnknown` or `fetchFailed` is set: there
+   * is no label to show, and campaign-service's placeholder ("normal") is not passed on.
+   */
+  pacingLabel?: MetaPacingLabel;
   startDate: string;
   endDate: string;
+  /**
+   * Set ONLY by the campaign-service monitor path (`LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR`); the
+   * legacy path never sets them. `pacingUnknown`: pacing could not be computed (no flight dates
+   * or no usable budget), so `pacingPct` is a 0 placeholder. `fetchFailed`: this row's upstream
+   * metrics could not be trusted, so its numbers are zero placeholders. `conversionsMeasured`:
+   * false when the platform did not measure conversions, so `conversions` is a 0 placeholder,
+   * not a measured zero.
+   */
+  pacingUnknown?: boolean;
+  fetchFailed?: boolean;
+  conversionsMeasured?: boolean;
 }
 
 export interface MetaAccountTotals {
@@ -1327,6 +1371,8 @@ export interface MetaAccountTotals {
   clicks: number;
   conversions: number;
   campaignCount: number;
+  /** Campaign-service path only: false when no row measured conversions, so `conversions` is a 0 placeholder. */
+  conversionsMeasured?: boolean;
 }
 
 export interface MetaActionItem {
@@ -1730,6 +1776,34 @@ export interface CampaignCreateRequest {
   performanceMaxCreative?: GooglePerformanceMaxCreative;
   displayCreative?: GoogleDisplayCreative;
   geoTargets: string[];
+  /**
+   * The languages the Google campaign serves in, as ISO 639-1 codes (`EN`, `DE`, `JA`) or raw
+   * numeric Google language constant ids.
+   *
+   * Optional, and OMITTED rather than sent empty when unset — upstream reads an absent list as
+   * Google's own default, which is to serve in EVERY language. So this is a narrowing, and an empty
+   * array and an absent key mean the same thing, exactly as they do for `geoTargets`.
+   *
+   * Accepted on every Google channel except Demand Gen — see
+   * {@link GOOGLE_CHANNELS_WITH_LANGUAGES}. Bounded by {@link GOOGLE_ADS_MAX_LANGUAGES}. Upstream
+   * resolves each ISO code against its own `languageConstants` table — which
+   * {@link GOOGLE_ADS_LANGUAGE_MAP} mirrors — and refuses an unknown one rather than dropping it; a
+   * numeric id skips that table and is resolved by Google.
+   */
+  languages?: string[];
+  /**
+   * The Google campaign's callout extensions — short claims appended to the text ad, carrying no
+   * link of their own.
+   *
+   * Optional and OMITTED when empty, not sent as `[]`. Upstream treats an absent list as "this
+   * campaign has no extensions", which is what every create on this path did before the field
+   * existed, so an absent key and an empty list agree — the same rule as {@link geoTargets}.
+   *
+   * SEARCH ONLY (`GOOGLE_CHANNELS_WITH_AD_EXTENSIONS`). On any other channel upstream refuses the
+   * create outright rather than dropping the list, so the UI withholds it there and the BFF refuses
+   * it by name.
+   */
+  callouts?: string[];
   /**
    * How the Google campaign bids, and the numbers that go with the strategy it names.
    *
@@ -2243,6 +2317,154 @@ export interface CampaignServiceAudience {
 }
 
 // ---------------------------------------------------------------------------
+// campaign-service account monitors (`GET /projects/{id}/connection-*/account-monitor`)
+//
+// campaign-service's WIRE shapes, in its vocabulary (snake_case, currency amounts in the account's
+// currency, `ctr` as a PERCENTAGE). The LinkedIn, Meta and Reddit routes map these onto the legacy
+// `LinkedInMonitorResponse` / `MetaMonitorResponse` / `RedditMonitorResponse`; the Microsoft, X and HubSpot routes have no
+// legacy shape and return these unchanged.
+// ---------------------------------------------------------------------------
+
+/** The ad platforms with an account-scoped monitor this app proxies (Google is not routed here). */
+export type CampaignServiceMonitorProvider = 'linkedin-ads' | 'meta-ads' | 'reddit-ads' | 'microsoft-ads' | 'twitter-ads';
+
+export type CampaignServiceMonitorPacingLabel = 'normal' | 'underspending' | 'constrained' | 'overspending';
+
+export type CampaignServiceMonitorPriority = 'HIGH' | 'MED' | 'LOW';
+
+/** The X monitor's 409 `reason`, forwarded to the client as `upstreamCode`. */
+export type AccountMonitorConflictReason = (typeof ACCOUNT_MONITOR_CONFLICT_REASONS)[number];
+
+/** campaign-service `account-monitor-campaign`. */
+export interface CampaignServiceAccountMonitorCampaign {
+  platform_campaign_id: string;
+  name: string;
+  /** The platform's own status string, verbatim. */
+  status: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  /** clicks / impressions * 100 — a percentage, 0 with no impressions. */
+  ctr: number;
+  /** ABSENT when the platform/row could not measure conversions — not a measured 0. */
+  conversions?: number;
+  budget_day: number;
+  total_budget: number;
+  /** `YYYY-MM-DD`, empty when the platform reported none. */
+  start_date: string;
+  end_date: string;
+  /** When true, `pacing_pct` is meaningless. */
+  pacing_unknown: boolean;
+  is_search_channel: boolean;
+  /** When true, the row's numbers are placeholders and it was excluded from the rules. */
+  fetch_failed: boolean;
+  pacing_pct: number;
+  /** A placeholder `normal` when `pacing_unknown` or `fetch_failed` is true. */
+  pacing_label: CampaignServiceMonitorPacingLabel;
+  campaign_url?: string;
+}
+
+/** campaign-service `account-monitor-action-item`, shared by the ad monitors and the HubSpot one. */
+export interface CampaignServiceAccountMonitorActionItem {
+  /** Platform campaign id on the ad monitors; campaign-service's campaign UUID on HubSpot. Empty for an account-wide item. */
+  campaign_id?: string;
+  /** HubSpot monitor only: the email the item is about. */
+  email_id?: string;
+  campaign_name?: string;
+  priority: CampaignServiceMonitorPriority;
+  issue: string;
+  action: string;
+}
+
+/** campaign-service `account-monitor-totals`: always the sum of the `campaigns` beside it. */
+export interface CampaignServiceAccountMonitorTotals {
+  spend: number;
+  impressions: number;
+  clicks: number;
+  /** ABSENT when no row measured conversions. */
+  conversions?: number;
+  campaign_count: number;
+}
+
+/** campaign-service `account-monitor`. */
+export interface CampaignServiceAccountMonitor {
+  account_id: string;
+  /** The REQUESTED window, echoed. */
+  days: number;
+  campaigns: CampaignServiceAccountMonitorCampaign[];
+  action_items: CampaignServiceAccountMonitorActionItem[];
+  totals: CampaignServiceAccountMonitorTotals;
+  /**
+   * Report-backed platforms (Microsoft Ads, X) only: when the served report was requested
+   * (RFC 3339). ABSENT before the first report finishes, when every campaign is `fetch_failed`.
+   */
+  metrics_as_of?: string;
+  /** Report-backed platforms only: first/last calendar day (inclusive) the metrics cover. */
+  metrics_window_start?: string;
+  metrics_window_end?: string;
+  /** Report-backed platforms only: a newer report is building. */
+  metrics_pending?: boolean;
+}
+
+/** campaign-service `hubspot-email-monitor-email`. Rates are FRACTIONS, absent on a zero denominator. */
+export interface CampaignServiceHubSpotEmailMonitorEmail {
+  campaign_id: string;
+  email_id: string;
+  name: string;
+  ab_variant: boolean;
+  deleted: boolean;
+  sent: number;
+  delivered: number;
+  opens: number;
+  clicks: number;
+  bounces: number;
+  unsubscribes: number;
+  spam_reports: number;
+  open_rate?: number;
+  click_rate?: number;
+  bounce_rate?: number;
+  unsubscribe_rate?: number;
+  spam_rate?: number;
+}
+
+/** campaign-service `hubspot-email-monitor-totals`: the sum of the emails, rates from the sums. */
+export interface CampaignServiceHubSpotEmailMonitorTotals {
+  email_count: number;
+  sent: number;
+  delivered: number;
+  opens: number;
+  clicks: number;
+  bounces: number;
+  unsubscribes: number;
+  spam_reports: number;
+  open_rate?: number;
+  click_rate?: number;
+  bounce_rate?: number;
+  unsubscribe_rate?: number;
+  spam_rate?: number;
+}
+
+/**
+ * campaign-service `hubspot-email-monitor`: PROJECT-scoped (no account id) — the marketing emails
+ * campaign-service itself recorded for the project and HubSpot reports as sent in the window.
+ */
+export interface CampaignServiceHubSpotEmailMonitor {
+  days: number;
+  emails: CampaignServiceHubSpotEmailMonitorEmail[];
+  action_items: CampaignServiceAccountMonitorActionItem[];
+  totals: CampaignServiceHubSpotEmailMonitorTotals;
+  /** ABSENT when HubSpot was not called because the project has recorded no HubSpot email. */
+  metrics_as_of?: string;
+  metrics_window_start?: string;
+  metrics_window_end?: string;
+  emails_checked: number;
+  emails_not_sent_in_window: number;
+  emails_unattributable: number;
+  /** True when only the 50 most recently recorded campaigns were checked. */
+  emails_truncated: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // Optimization Insights
 // ---------------------------------------------------------------------------
 
@@ -2396,10 +2618,24 @@ export interface LinkedInCampaignMetrics {
   ctr: number;
   conversions: number;
   pacingPct: number;
-  pacingLabel: LinkedInPacingLabel;
+  /** ABSENT only on the campaign-service path, when `pacingUnknown` or `fetchFailed` is set — see `RedditCampaignMetrics`. */
+  pacingLabel?: LinkedInPacingLabel;
   creatives: LinkedInCreativeMetrics[];
   startDate: string;
   endDate: string;
+  /**
+   * Set ONLY by the campaign-service monitor path (`LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR`); see
+   * `RedditCampaignMetrics` for their meaning. On that path `creatives` is always empty —
+   * campaign-service does not read LinkedIn creative analytics.
+   */
+  pacingUnknown?: boolean;
+  fetchFailed?: boolean;
+  conversionsMeasured?: boolean;
+  /**
+   * Campaign-service path only: `false` because campaign-service does not read LinkedIn creative
+   * analytics, so the empty `creatives` is not a count of zero. Absent on the legacy path.
+   */
+  creativesMeasured?: boolean;
 }
 
 export interface LinkedInAccountTotals {
@@ -2408,6 +2644,8 @@ export interface LinkedInAccountTotals {
   clicks: number;
   conversions: number;
   campaignCount: number;
+  /** Campaign-service path only: false when no row measured conversions, so `conversions` is a 0 placeholder. */
+  conversionsMeasured?: boolean;
 }
 
 export interface LinkedInActionItem {
@@ -2445,9 +2683,24 @@ export interface RedditCampaignMetrics {
   ctr: number;
   conversions: number;
   pacingPct: number;
-  pacingLabel: RedditPacingLabel;
+  /**
+   * ABSENT only on the campaign-service path, when `pacingUnknown` or `fetchFailed` is set: there
+   * is no label to show, and campaign-service's placeholder ("normal") is not passed on.
+   */
+  pacingLabel?: RedditPacingLabel;
   startDate: string;
   endDate: string;
+  /**
+   * Set ONLY by the campaign-service monitor path (`LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR`); the
+   * legacy path never sets them. `pacingUnknown`: pacing could not be computed (no flight dates
+   * or no usable budget), so `pacingPct` is a 0 placeholder. `fetchFailed`: this row's upstream
+   * metrics could not be trusted, so its numbers are zero placeholders. `conversionsMeasured`:
+   * false when the platform did not measure conversions, so `conversions` is a 0 placeholder,
+   * not a measured zero.
+   */
+  pacingUnknown?: boolean;
+  fetchFailed?: boolean;
+  conversionsMeasured?: boolean;
 }
 
 export interface RedditAccountTotals {
@@ -2456,6 +2709,8 @@ export interface RedditAccountTotals {
   clicks: number;
   conversions: number;
   campaignCount: number;
+  /** Campaign-service path only: false when no row measured conversions, so `conversions` is a 0 placeholder. */
+  conversionsMeasured?: boolean;
 }
 
 export interface RedditActionItem {

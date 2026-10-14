@@ -58,8 +58,8 @@ export const mapMentorshipMentorOpenProgram = (program: MentorshipUpstreamProgra
 
 /**
  * Maps the caller's mentor `program_members` rows to request rows. The status folds through
- * `MENTORSHIP_MENTOR_REQUEST_STATUS_MAP`; a row whose status the map leaves out (an `invited` row, or
- * one with no status) is dropped, because it is not a request the mentor made.
+ * `MENTORSHIP_MENTOR_REQUEST_STATUS_MAP`; a row whose status the map leaves out (an `invited` row, one
+ * with no status, or a legacy `active` one) is dropped, because it is not a request the mentor made.
  */
 export const mapMentorshipMentorProgramRequests = (memberships: MentorshipUpstreamProgramMembership[]): MentorshipMentorProgramRequest[] =>
   memberships.flatMap((membership) => {

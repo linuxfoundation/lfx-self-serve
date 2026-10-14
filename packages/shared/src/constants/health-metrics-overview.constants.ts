@@ -117,12 +117,12 @@ export const HEALTH_METRICS_OVERVIEW_EVENTS_LINK_TARGETS = {
 } as const satisfies Record<string, HealthMetricsOverviewEventsLinkSpec>;
 
 /**
- * `mem.*` `link_target` → the Members section that owns it. Its bucket, tier, NPS, search and page
+ * `mem.*` `link_target` → the Members section that owns it. Its bucket, window, tier, NPS, search and page
  * are cleared, so a stale cut carried over in the URL cannot hide the member a finding names.
  */
 export const HEALTH_METRICS_OVERVIEW_MEMBERS_LINK_TARGETS = {
   'mem.atrisk': { section: 'risk', queryParams: { riskBucket: null, riskPage: null } },
-  'mem.renewals': { section: 'renewals', queryParams: { renewalsPage: null } },
+  'mem.renewals': { section: 'renewals', queryParams: { renewalsWindow: null, renewalsPage: null } },
   'mem.list': { section: 'list', queryParams: { memTier: null, memNps: null, memSearch: null, memPage: null } },
   'mem.board': { section: 'board', queryParams: { boardCohort: null, boardPage: null } },
 } as const satisfies Record<string, HealthMetricsOverviewMembersLinkSpec>;

@@ -19,6 +19,7 @@ import {
   HEALTH_METRICS_MEMBERS_NPS_MAX_AUDIENCE_LENGTH,
   HEALTH_METRICS_MEMBERS_RENEWALS_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_RENEWALS_WINDOWS,
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_TIER_LENGTH,
@@ -48,6 +49,7 @@ import type {
   HealthMetricsMembersBoardCohort,
   HealthMetricsMembersMovementListType,
   HealthMetricsMembersNpsCategory,
+  HealthMetricsMembersRenewalsWindow,
   HealthMetricsNonMembersOrgsFilter,
   HealthMetricsTrainingCoursesType,
 } from '@lfx-one/shared/interfaces';
@@ -96,6 +98,9 @@ const MEMBERS_DIRECTORY_NPS_CATEGORIES: ReadonlySet<string> = new Set(HEALTH_MET
 
 /** Aging buckets the Members at-risk filter accepts, `all` included. */
 const MEMBERS_AT_RISK_FILTERS: ReadonlySet<string> = new Set(HEALTH_METRICS_MEMBERS_AT_RISK_FILTER_OPTIONS.map((option) => option.id));
+
+/** Windows the Members renewals read accepts. */
+const MEMBERS_RENEWALS_WINDOWS: ReadonlySet<string> = new Set(HEALTH_METRICS_MEMBERS_RENEWALS_WINDOWS);
 
 /** Cohorts the Members board-attendance read accepts. */
 const MEMBERS_BOARD_COHORTS: ReadonlySet<string> = new Set(HEALTH_METRICS_MEMBERS_BOARD_COHORTS);
@@ -3972,22 +3977,35 @@ export class AnalyticsController {
     }
   }
 
-  /** `GET /api/analytics/members-renewals` — the foundation's renewals in the next 90 days, one page at a time, with the window's totals. */
+  /** `GET /api/analytics/members-renewals` — the foundation's renewals in a window, one page at a time, with the window's totals. */
   public async getMembersRenewals(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_members_renewals');
 
     try {
       const foundationSlug = this.getValidatedFoundationSlug(req, 'get_members_renewals');
 
+      const window = getStringQueryParam(req, 'window') || HEALTH_METRICS_MEMBERS_RENEWALS_WINDOWS[0];
+      if (!MEMBERS_RENEWALS_WINDOWS.has(window)) {
+        throw ServiceValidationError.forField('window', `Invalid window value. Allowed: ${[...MEMBERS_RENEWALS_WINDOWS].join(', ')}`, {
+          operation: 'get_members_renewals',
+        });
+      }
+
       const { pageSize, offset } = parseOffsetPagination(req, {
         defaultPageSize: HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE,
         maxPageSize: HEALTH_METRICS_MEMBERS_RENEWALS_MAX_PAGE_SIZE,
       });
 
-      const response = await this.healthMetricsMembersService.getRenewals(req, { foundationSlug, offset, pageSize });
+      const response = await this.healthMetricsMembersService.getRenewals(req, {
+        foundationSlug,
+        window: window as HealthMetricsMembersRenewalsWindow,
+        offset,
+        pageSize,
+      });
 
       logger.success(req, 'get_members_renewals', startTime, {
         foundation_slug: foundationSlug,
+        window,
         total_records: response.totalRecords,
         without_dues_count: response.summary.withoutDuesCount,
       });

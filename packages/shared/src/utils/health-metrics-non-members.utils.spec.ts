@@ -28,6 +28,8 @@ const ORG: HealthMetricsNonMembersOrg = {
   distinctPeople: 3,
   contributions: 1840,
   isNew: false,
+  membershipStatus: 'Non-member',
+  fitBand: 'High',
 };
 
 const CONVERSION: HealthMetricsNonMembersConversion = {
@@ -85,6 +87,9 @@ describe('buildHealthMetricsNonMembersOrgRows', () => {
       peopleLabel: '3',
       contributionsLabel: '1,840',
       lastEngagedLabel: 'Mar 14, 2026',
+      membershipLabel: 'Non-member',
+      fitLabel: 'High',
+      fitDotClass: 'bg-emerald-600',
     });
   });
 
@@ -96,6 +101,22 @@ describe('buildHealthMetricsNonMembersOrgRows', () => {
     expect(row.contributionsLabel).toBe('—');
     expect(row.lastEngagedLabel).toBe('—');
     expect(row.channels).toEqual([]);
+  });
+
+  it("shows the model's membership status and colours each fit band as the design does", () => {
+    const view = (overrides: Partial<HealthMetricsNonMembersOrg>) => buildHealthMetricsNonMembersOrgRows([{ ...ORG, ...overrides }])[0];
+
+    expect(view({ membershipStatus: 'Former member' }).membershipLabel).toBe('Former member');
+    expect(view({ fitBand: 'Medium' })).toMatchObject({ fitLabel: 'Medium', fitDotClass: 'bg-amber-500' });
+    expect(view({ fitBand: 'Low' })).toMatchObject({ fitLabel: 'Low', fitDotClass: 'bg-gray-400' });
+    expect(view({ fitBand: 'Unrated' })).toMatchObject({ fitLabel: 'Unrated', fitDotClass: 'bg-gray-400' });
+    expect(view({ fitBand: 'constructor' }).fitDotClass).toBe('bg-gray-400');
+  });
+
+  it('falls back to Non-member and a dash, with no dot, when the model leaves them unset', () => {
+    const row = buildHealthMetricsNonMembersOrgRows([{ ...ORG, membershipStatus: null, fitBand: '  ' }])[0];
+
+    expect(row).toMatchObject({ membershipLabel: 'Non-member', fitLabel: '—', fitDotClass: null });
   });
 });
 
@@ -140,6 +161,7 @@ describe('buildHealthMetricsNonMembersPeopleCountLabel', () => {
   it('counts the engaged individuals', () => {
     expect(buildHealthMetricsNonMembersPeopleCountLabel(1412)).toBe('1,412 engaged individuals');
     expect(buildHealthMetricsNonMembersPeopleCountLabel(1)).toBe('1 engaged individual');
+    expect(buildHealthMetricsNonMembersPeopleCountLabel(null)).toBe('Engaged individuals not available');
   });
 });
 

@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { routes } from './app.routes';
 import { HealthMetricsTrainingComponent } from './modules/dashboards/health-metrics-training/health-metrics-training.component';
+import { MyNewsletterFoundationsComponent } from './modules/newsletters/my-newsletter-foundations/my-newsletter-foundations.component';
 import { MyNewslettersComponent } from './modules/newsletters/my-newsletters/my-newsletters.component';
 import { NEWSLETTER_ROUTES } from './modules/newsletters/newsletters.routes';
 import { authGuard } from './shared/guards/auth.guard';
@@ -54,9 +55,13 @@ describe('Personal newsletter route isolation', () => {
     const children = routes[0].children!;
     const personal = findRoute(routes, 'newsletters/my')!;
     expect(personal).toMatchObject({ pathMatch: 'full', title: 'My Newsletters', data: { lens: 'me', preload: false }, canActivate: [authGuard] });
-    expect(await personal.loadComponent!()).toBe(MyNewslettersComponent);
+    expect(await personal.loadComponent!()).toBe(MyNewsletterFoundationsComponent);
+    const foundation = findRoute(routes, 'newsletters/my/:foundationSlug')!;
+    expect(foundation).toMatchObject({ title: 'My Newsletters', data: { lens: 'me', preload: false }, canActivate: [authGuard] });
+    expect(await foundation.loadComponent!()).toBe(MyNewslettersComponent);
     for (const path of ['newsletters/:projectSlug/:id', 'newsletters']) {
       expect(children.indexOf(personal)).toBeLessThan(children.indexOf(findRoute(routes, path)!));
+      expect(children.indexOf(foundation)).toBeLessThan(children.indexOf(findRoute(routes, path)!));
     }
     expect(NEWSLETTER_ROUTES.map((route) => route.path)).toEqual(['', 'list', 'create', ':projectUid/:id/edit', ':projectUid/:id/analytics']);
   });

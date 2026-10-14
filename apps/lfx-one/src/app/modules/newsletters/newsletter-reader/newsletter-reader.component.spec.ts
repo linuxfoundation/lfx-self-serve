@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { PLATFORM_ID } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Newsletter, Project } from '@lfx-one/shared/interfaces';
@@ -8,6 +9,7 @@ import { ProjectStage } from '@lfx-one/shared/enums';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BehaviorSubject, NEVER, of, throwError } from 'rxjs';
 import { HttpErrorResponse } from '@angular/common/http';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
 
 import { NewsletterReaderComponent } from './newsletter-reader.component';
 import { ProjectService } from '@services/project.service';
@@ -74,7 +76,8 @@ describe('NewsletterReaderComponent', () => {
       getProjectStrict: vi.fn(),
     };
     const mockNewsletterService = {
-      getNewsletter: vi.fn(),
+      getReaderAccess: vi.fn(),
+      joinNewsletterGroup: vi.fn(),
     };
     const mockClipboardShareService = {
       copyLink: vi.fn(),
@@ -99,6 +102,7 @@ describe('NewsletterReaderComponent', () => {
         { provide: ClipboardShareService, useValue: mockClipboardShareService },
         { provide: LensService, useValue: { setLens: vi.fn().mockReturnValue(true) } },
         { provide: Router, useValue: { navigate: vi.fn() } },
+        provideNoopAnimations(),
       ],
     }).compileComponents();
 
@@ -108,7 +112,7 @@ describe('NewsletterReaderComponent', () => {
 
   it('should create', () => {
     vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
-    vi.mocked(newsletterService.getNewsletter).mockReturnValue(of(makeNewsletter()));
+    vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of({ access: 'group_member', newsletter: makeNewsletter() }));
 
     fixture = TestBed.createComponent(NewsletterReaderComponent);
     component = fixture.componentInstance;
@@ -117,7 +121,7 @@ describe('NewsletterReaderComponent', () => {
 
   it('should initialize with loading true', () => {
     vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
-    vi.mocked(newsletterService.getNewsletter).mockReturnValue(of(makeNewsletter()));
+    vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of({ access: 'group_member', newsletter: makeNewsletter() }));
 
     fixture = TestBed.createComponent(NewsletterReaderComponent);
     component = fixture.componentInstance;
@@ -126,7 +130,9 @@ describe('NewsletterReaderComponent', () => {
 
   it('should render draft newsletter when user is a writer', () => {
     vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject({ writer: true })));
-    vi.mocked(newsletterService.getNewsletter).mockReturnValue(of(makeNewsletter({ subject: 'Draft', body_html: '<p>Draft content</p>', status: 'draft' })));
+    vi.mocked(newsletterService.getReaderAccess).mockReturnValue(
+      of({ access: 'manager', newsletter: makeNewsletter({ subject: 'Draft', body_html: '<p>Draft content</p>', status: 'draft' }) })
+    );
 
     fixture = TestBed.createComponent(NewsletterReaderComponent);
     component = fixture.componentInstance;
@@ -141,7 +147,7 @@ describe('NewsletterReaderComponent', () => {
   it('should call getProject with slug from route params', () => {
     const getProjectSpy = vi.mocked(projectService.getProjectStrict);
     getProjectSpy.mockReturnValue(of(makeProject()));
-    vi.mocked(newsletterService.getNewsletter).mockReturnValue(of(makeNewsletter()));
+    vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of({ access: 'group_member', newsletter: makeNewsletter() }));
 
     fixture = TestBed.createComponent(NewsletterReaderComponent);
     component = fixture.componentInstance;
@@ -156,7 +162,7 @@ describe('NewsletterReaderComponent', () => {
     // change re-fires combineLatest per source signal) hangs, keeping the
     // second load in flight.
     vi.mocked(projectService.getProjectStrict).mockReturnValueOnce(of(makeProject())).mockReturnValue(NEVER);
-    vi.mocked(newsletterService.getNewsletter).mockReturnValue(of(makeNewsletter()));
+    vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of({ access: 'group_member', newsletter: makeNewsletter() }));
 
     fixture = TestBed.createComponent(NewsletterReaderComponent);
     component = fixture.componentInstance;
@@ -182,7 +188,7 @@ describe('NewsletterReaderComponent', () => {
 
   it('should map a 404 newsletter fetch to the not-found state, not error', () => {
     vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
-    vi.mocked(newsletterService.getNewsletter).mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+    vi.mocked(newsletterService.getReaderAccess).mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
 
     fixture = TestBed.createComponent(NewsletterReaderComponent);
     component = fixture.componentInstance;
@@ -195,7 +201,7 @@ describe('NewsletterReaderComponent', () => {
 
   it('should surface a 5xx newsletter fetch as error, not a permanent 404', () => {
     vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
-    vi.mocked(newsletterService.getNewsletter).mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502 })));
+    vi.mocked(newsletterService.getReaderAccess).mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502 })));
 
     fixture = TestBed.createComponent(NewsletterReaderComponent);
     component = fixture.componentInstance;
@@ -208,7 +214,7 @@ describe('NewsletterReaderComponent', () => {
 
   it('should map a 404 project lookup (bad slug) to the not-found state', () => {
     vi.mocked(projectService.getProjectStrict).mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
-    vi.mocked(newsletterService.getNewsletter).mockReturnValue(of(makeNewsletter()));
+    vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of({ access: 'group_member', newsletter: makeNewsletter() }));
 
     fixture = TestBed.createComponent(NewsletterReaderComponent);
     component = fixture.componentInstance;
@@ -221,7 +227,7 @@ describe('NewsletterReaderComponent', () => {
 
   it('should surface a project-service outage as error, not a permanent 404', () => {
     vi.mocked(projectService.getProjectStrict).mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
-    vi.mocked(newsletterService.getNewsletter).mockReturnValue(of(makeNewsletter()));
+    vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of({ access: 'group_member', newsletter: makeNewsletter() }));
 
     fixture = TestBed.createComponent(NewsletterReaderComponent);
     component = fixture.componentInstance;
@@ -236,7 +242,7 @@ describe('NewsletterReaderComponent', () => {
     // Eager Me selection updates the current tab and persisted preference;
     // route data restores Me independently of the cookie.
     vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
-    vi.mocked(newsletterService.getNewsletter).mockReturnValue(of(makeNewsletter()));
+    vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of({ access: 'group_member', newsletter: makeNewsletter() }));
 
     fixture = TestBed.createComponent(NewsletterReaderComponent);
     component = fixture.componentInstance;
@@ -256,7 +262,7 @@ describe('NewsletterReaderComponent', () => {
     // Keep native new-tab navigation: route data restores Me without the cookie.
     // Eager selection updates the current tab and persisted preference.
     vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
-    vi.mocked(newsletterService.getNewsletter).mockReturnValue(of(makeNewsletter()));
+    vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of({ access: 'group_member', newsletter: makeNewsletter() }));
 
     fixture = TestBed.createComponent(NewsletterReaderComponent);
     component = fixture.componentInstance;
@@ -273,11 +279,158 @@ describe('NewsletterReaderComponent', () => {
 
   it('should have copyLink method bound to clipboard service', () => {
     vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
-    vi.mocked(newsletterService.getNewsletter).mockReturnValue(of(makeNewsletter()));
+    vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of({ access: 'group_member', newsletter: makeNewsletter() }));
 
     fixture = TestBed.createComponent(NewsletterReaderComponent);
     component = fixture.componentInstance;
     expect(component['copyLink']).toBeDefined();
     expect(typeof component['copyLink']).toBe('function');
+  });
+
+  describe('member benefit (#3469)', () => {
+    const eligibleAccess = {
+      access: 'eligible' as const,
+      newsletter: makeNewsletter(),
+      qualifying_email: 'jane@acme-motors.example',
+      company_name: 'Acme Motors',
+      committee_name: 'LF Weekly',
+    };
+
+    it('shows the draft notice when the server 404s an unsent issue', () => {
+      vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
+      vi.mocked(newsletterService.getReaderAccess).mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 404, error: { error: 'not found', code: 'NEWSLETTER_NOT_SENT' } }))
+      );
+
+      fixture = TestBed.createComponent(NewsletterReaderComponent);
+      component = fixture.componentInstance;
+      TestBed.tick();
+
+      expect(component['notFound']()).toBe(true);
+      expect(component['isDraftHidden']()).toBe(true);
+    });
+
+    it('renders the members-only state (not a 404) when access is denied', () => {
+      vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
+      vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of({ access: 'denied', denied_reason: 'not_member_company' }));
+
+      fixture = TestBed.createComponent(NewsletterReaderComponent);
+      component = fixture.componentInstance;
+      fixture.detectChanges();
+      TestBed.tick();
+      fixture.detectChanges();
+
+      expect(component['membersOnly']()).toBe(true);
+      expect(component['notFound']()).toBe(false);
+      expect(fixture.nativeElement.querySelector('[data-testid="newsletter-reader-members-only"]')).not.toBeNull();
+      expect(newsletterService.joinNewsletterGroup).not.toHaveBeenCalled();
+    });
+
+    it('does not join when the reader is already a group member', () => {
+      vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
+      vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of({ access: 'group_member', newsletter: makeNewsletter() }));
+
+      fixture = TestBed.createComponent(NewsletterReaderComponent);
+      component = fixture.componentInstance;
+      fixture.detectChanges();
+      TestBed.tick();
+
+      expect(newsletterService.joinNewsletterGroup).not.toHaveBeenCalled();
+      expect(component['joinState']().status).toBe('idle');
+    });
+
+    it('automatically joins an eligible reader exactly once and confirms', () => {
+      vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
+      vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of(eligibleAccess));
+      vi.mocked(newsletterService.joinNewsletterGroup).mockReturnValue(
+        of({ status: 'added', email: 'jane@acme-motors.example', committee_name: 'LF Weekly', company_name: 'Acme Motors' })
+      );
+
+      fixture = TestBed.createComponent(NewsletterReaderComponent);
+      component = fixture.componentInstance;
+      fixture.detectChanges();
+      TestBed.tick();
+      fixture.detectChanges();
+
+      expect(newsletterService.joinNewsletterGroup).toHaveBeenCalledTimes(1);
+      expect(newsletterService.joinNewsletterGroup).toHaveBeenCalledWith('proj-123', 'news-123');
+      expect(component['joinState']().status).toBe('added');
+      expect(fixture.nativeElement.querySelector('[data-testid="newsletter-member-benefit-added"]')).not.toBeNull();
+      expect(fixture.nativeElement.textContent).toContain('jane@acme-motors.example');
+    });
+
+    it('shows no banner when the join is refused because an admin is impersonating', () => {
+      vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
+      vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of(eligibleAccess));
+      vi.mocked(newsletterService.joinNewsletterGroup).mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 403, error: { error: 'not available', code: 'IMPERSONATION_READ_ONLY' } }))
+      );
+
+      fixture = TestBed.createComponent(NewsletterReaderComponent);
+      component = fixture.componentInstance;
+      fixture.detectChanges();
+      TestBed.tick();
+
+      expect(component['joinState']().status).toBe('idle');
+    });
+
+    it('surfaces a failed join and retries on demand', () => {
+      vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
+      vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of(eligibleAccess));
+      vi.mocked(newsletterService.joinNewsletterGroup)
+        .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 502 })))
+        .mockReturnValueOnce(of({ status: 'already_member', email: '', committee_name: '', company_name: '' }));
+
+      fixture = TestBed.createComponent(NewsletterReaderComponent);
+      component = fixture.componentInstance;
+      fixture.detectChanges();
+      TestBed.tick();
+
+      expect(component['joinState']().status).toBe('failed');
+
+      component['retryJoin']();
+      TestBed.tick();
+
+      expect(newsletterService.joinNewsletterGroup).toHaveBeenCalledTimes(2);
+      expect(component['joinState']().status).toBe('already_member');
+    });
+  });
+
+  describe('during SSR', () => {
+    beforeEach(async () => {
+      // The outer beforeEach already instantiated the module; rebuild it on the server platform,
+      // reusing the same service mocks.
+      const providers = [
+        { provide: ProjectService, useValue: projectService },
+        { provide: NewsletterService, useValue: newsletterService },
+        { provide: ActivatedRoute, useValue: { paramMap: paramMap$ } },
+        { provide: ClipboardShareService, useValue: { copyLink: vi.fn() } },
+        { provide: LensService, useValue: { setLens: vi.fn().mockReturnValue(true) } },
+        { provide: Router, useValue: { navigate: vi.fn() } },
+        { provide: PLATFORM_ID, useValue: 'server' },
+      ];
+      TestBed.resetTestingModule();
+      await TestBed.configureTestingModule({ imports: [NewsletterReaderComponent], providers }).compileComponents();
+    });
+
+    it('never joins on the server, even for an eligible reader', () => {
+      vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
+      vi.mocked(newsletterService.getReaderAccess).mockReturnValue(
+        of({
+          access: 'eligible',
+          newsletter: makeNewsletter(),
+          qualifying_email: 'jane@acme-motors.example',
+          company_name: 'Acme Motors',
+          committee_name: 'LF Weekly',
+        })
+      );
+
+      fixture = TestBed.createComponent(NewsletterReaderComponent);
+      component = fixture.componentInstance;
+      TestBed.tick();
+
+      expect(component['access']()?.access).toBe('eligible');
+      expect(newsletterService.joinNewsletterGroup).not.toHaveBeenCalled();
+    });
   });
 });

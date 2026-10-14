@@ -592,6 +592,15 @@ function keyPrefix(): string {
   return ns ? `${VALKEY_CACHE.APP_PREFIX}:${ns}` : VALKEY_CACHE.APP_PREFIX;
 }
 
+/**
+ * Key prefix for the Gatewaze host-session store (#2738): `lfx-ui[:<namespace>]:gatewaze:v1:`. The
+ * `@gatewaze/host-session` store appends its own `session:` / `refresh-lock:` / `create-lock:` /
+ * `signed-out:` segments and an HMAC-derived id, and publishes sign-outs on `<prefix>logout`.
+ */
+export function buildGatewazeHostSessionKeyPrefix(): string {
+  return `${keyPrefix()}:${VALKEY_CACHE.GATEWAZE_HOST_SESSION_NAMESPACE}:`;
+}
+
 /** Session-store cache key for an opaque session id; null (fail-closed) when the id isn't filter-safe, so it can't corrupt the `:`-delimited key. */
 export function buildSessionCacheKey(sessionId: string): string | null {
   if (!isFilterSafeIdentifier(sessionId)) return null;
