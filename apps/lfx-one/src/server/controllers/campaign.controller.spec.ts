@@ -11,6 +11,7 @@ import {
   MAX_GOOGLE_CREATIVE_FIELD_LENGTH,
   MAX_GOOGLE_CREATIVE_LIST_ENTRIES,
   MAX_HUBSPOT_BODY_HTML_LENGTH,
+  MAX_KEYWORD_TARGETING_REVISION_LENGTH,
   MAX_NEGATIVE_KEYWORD_TEXT_LENGTH,
   MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
   MAX_SPONSORS,
@@ -3739,13 +3740,58 @@ describe('CampaignController.addNegativeKeywords', () => {
     ['text over the limit', [{ text: 'a'.repeat(MAX_NEGATIVE_KEYWORD_TEXT_LENGTH + 1), matchType: 'Exact' }]],
     ['a disallowed symbol', [{ text: 'free @ download', matchType: 'Exact' }]],
     ['quote syntax', [{ text: '"free"', matchType: 'Exact' }]],
-    ['Broad, which is not a negative match type', [{ text: 'free', matchType: 'Broad' }]],
     ['a lower-case match type', [{ text: 'free', matchType: 'exact' }]],
   ])('refuses %s', async (_label, negativeKeywords) => {
     await controller.addNegativeKeywords(negReq(UUID, { ...validBody, negativeKeywords }), res, next);
 
     expect(addNegativeKeywords).not.toHaveBeenCalled();
     expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  // Broad is X's and Reddit's (Reddit's ONLY) negative match type. Which platform takes which is
+  // upstream's to decide, because only it knows the campaign's platform.
+  it('accepts Broad, which Reddit and X take', async () => {
+    addNegativeKeywords.mockResolvedValue({ campaignId: UUID, results: [], appliedCount: 0 });
+
+    await controller.addNegativeKeywords(negReq(UUID, { ...validBody, negativeKeywords: [{ text: 'free', matchType: 'Broad' }] }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(vi.mocked(addNegativeKeywords).mock.calls[0][1].negativeKeywords).toEqual([{ text: 'free', matchType: 'Broad' }]);
+  });
+
+  // Reddit's compare-and-set token, forwarded exactly as read.
+  it('forwards a revision exactly as sent', async () => {
+    addNegativeKeywords.mockResolvedValue({ campaignId: UUID, results: [], appliedCount: 0 });
+    const revision = 'sha256:5e1b7f0c2a9d4e3b8c6a1f0e9d8c7b6a';
+
+    await controller.addNegativeKeywords(negReq(UUID, { ...validBody, revision }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(vi.mocked(addNegativeKeywords).mock.calls[0][1]).toEqual(expect.objectContaining({ revision }));
+  });
+
+  // Microsoft Advertising and X refuse a PRESENT revision, even an empty one: none may be invented.
+  it('passes no revision when the body carries none', async () => {
+    addNegativeKeywords.mockResolvedValue({ campaignId: UUID, results: [], appliedCount: 0 });
+
+    await controller.addNegativeKeywords(negReq(UUID, validBody), res, next);
+
+    expect(vi.mocked(addNegativeKeywords).mock.calls[0][1]).not.toHaveProperty('revision');
+  });
+
+  it.each([
+    ['empty', ''],
+    ['blank', '   '],
+    ['not a string', 42],
+    ['null', null],
+    ['over the length limit', 'r'.repeat(MAX_KEYWORD_TARGETING_REVISION_LENGTH + 1)],
+  ])('refuses a revision that is %s', async (_label, revision) => {
+    await controller.addNegativeKeywords(negReq(UUID, { ...validBody, revision }), res, next);
+
+    expect(addNegativeKeywords).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.validationErrors[0].field).toBe('revision');
   });
 
   it('counts characters, not UTF-16 units, against the text limit', async () => {

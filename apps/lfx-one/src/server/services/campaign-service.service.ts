@@ -1692,6 +1692,10 @@ export class CampaignServiceClient {
    * filtered, sorted or de-duplicated, because a caller zips `results[i]` onto the keyword it sent
    * at `i`, and a shifted entry would show a keyword that was not added as added.
    *
+   * `revision` (Reddit's compare-and-set token from the keyword-targeting read) goes in the body
+   * ONLY when the caller passed one: Microsoft Advertising and X refuse the field whenever it is
+   * present, even empty.
+   *
    * No `If-Match` and no ETag: upstream persists nothing for this lever. Upstream's own refusals
    * (400 malformed batch or unsupported platform, 409, 503) pass through unchanged. A transport
    * failure is left as the proxy raised it, because re-adding a negative the campaign already has
@@ -1722,7 +1726,10 @@ export class CampaignServiceClient {
       'POST',
       // The body is the SIXTH argument: a payload in the query position goes out with no body.
       undefined,
-      { negative_keywords: params.negativeKeywords.map((kw): CampaignServiceNegativeKeywordInput => ({ text: kw.text, match_type: kw.matchType })) }
+      {
+        negative_keywords: params.negativeKeywords.map((kw): CampaignServiceNegativeKeywordInput => ({ text: kw.text, match_type: kw.matchType })),
+        ...(params.revision !== undefined && { revision: params.revision }),
+      }
     );
 
     const readable =

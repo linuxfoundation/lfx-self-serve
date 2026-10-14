@@ -68,6 +68,30 @@ describe('negativeKeywordOutcomeRows', () => {
     expect(summary).toBe(`1 added, 1 already present, 1 not added, 1 not confirmed. ${CAMPAIGN_NEGATIVE_KEYWORD_UNCONFIRMED_ADVICE}`);
     expect(summarizeNegativeKeywordOutcomes([])).toBe('');
   });
+
+  // Reddit and X return only NOT_SENT or REJECTED for a FAILED keyword, never their own text; any
+  // other code is wire data with no meaning here and is not shown.
+  it.each([
+    ['reddit-ads', 'NOT_SENT', 'It was not sent to Reddit, so nothing changed.'],
+    ['reddit-ads', 'REJECTED', 'Reddit refused it.'],
+    ['twitter-ads', 'REJECTED', 'X refused it.'],
+    ['twitter-ads', 'SomethingElse', 'X did not add it.'],
+    ['twitter-ads', undefined, 'X did not add it.'],
+  ] as const)('words a FAILED %s keyword with code %s for its platform', (platform, errorCode, detail) => {
+    const rows = negativeKeywordOutcomeRows(
+      ['free'],
+      'Broad',
+      { campaignId: 'c-1', appliedCount: 0, results: [{ text: 'free', matchType: 'Broad', outcome: 'FAILED', ...(errorCode && { errorCode }) }] },
+      platform
+    );
+    expect(rows[0].detail).toBe(detail);
+  });
+
+  it('names the platform to check in the unconfirmed advice', () => {
+    const rows = negativeKeywordOutcomeRows(['free'], 'Broad', { campaignId: 'c-1', appliedCount: 0, results: [] }, 'twitter-ads');
+    expect(rows[0].detail).toContain('in X before retrying');
+    expect(summarizeNegativeKeywordOutcomes(rows, 'twitter-ads')).toContain('in X before retrying');
+  });
 });
 
 describe('campaignNegativeKeywordsFailureOutcome', () => {

@@ -257,10 +257,13 @@ export interface CampaignServiceKeywordTargetingEntry {
   match_type?: string;
 }
 
+/** A platform whose campaigns have keyword TARGETING that can be read and removed (`get-keyword-targeting`). */
+export type KeywordTargetingPlatform = 'reddit-ads' | 'twitter-ads';
+
 /** `keyword-targeting`: the positive keywords of a Reddit ad group or X line item, read live. */
 export interface CampaignServiceKeywordTargeting {
   campaign_id: string;
-  platform: 'reddit-ads' | 'twitter-ads';
+  platform: KeywordTargetingPlatform;
   targeting_entity_id: string;
   keywords: CampaignServiceKeywordTargetingEntry[];
   /** Reddit only: a fingerprint of the whole targeting, which a removal must send back. */
@@ -295,6 +298,55 @@ export interface CampaignServiceKeywordTargetingRemovals {
   campaign_id: string;
   results: CampaignServiceKeywordTargetingRemovalResult[];
   applied_count: number;
+}
+
+/** One removal's outcome. UNCONFIRMED is never worded as a failure: the keyword may already be gone. */
+export type KeywordTargetingRemovalOutcome = CampaignServiceKeywordTargetingRemovalResult['outcome'];
+
+/** One keyword of the targeting panel's list, with what a removal of it would send. */
+export interface KeywordTargetingListItem {
+  /** Stable within one read: the X criterion id, or the Reddit keyword exactly as read. */
+  key: string;
+  keyword: string;
+  /** X's match type in words ("Phrase"), or `''` on Reddit, whose keywords carry none. */
+  matchLabel: string;
+  /** What a removal names for this keyword, or `null` when the read gave it no handle (an X entry with no criterion id). */
+  removalItem: KeywordTargetingRemovalItem | null;
+}
+
+/** The targeting panel's read: the list, or why it could not be shown. */
+export interface KeywordTargetingReadState {
+  status: 'loading' | 'loaded' | 'error';
+  targeting: CampaignServiceKeywordTargeting | null;
+  /** A fixed sentence for `error`, never upstream text. `''` otherwise. */
+  message: string;
+}
+
+/** One SENT keyword joined, by POSITION, to the outcome the removal gave it. */
+export interface KeywordTargetingRemovalOutcomeRow {
+  /** The index in the request, which is also the index in `results`. */
+  index: number;
+  keyword: string;
+  outcome: KeywordTargetingRemovalOutcome;
+  label: string;
+  /** What to tell the operator beyond the label (why it was not removed, or reload-to-verify), or `''`. */
+  detail: string;
+}
+
+/** A removal that produced no per-keyword results at all. `unconfirmed`: any of them may have been removed. */
+export interface KeywordTargetingRemovalBatchOutcome {
+  state: 'failed' | 'unconfirmed';
+  /** A fixed sentence, never upstream text. */
+  message: string;
+}
+
+/**
+ * The Reddit `revision` the negative-keyword editor must send, read from the campaign's keyword
+ * targeting. `idle` for a platform that takes none.
+ */
+export interface NegativeKeywordsRevisionState {
+  status: 'idle' | 'loading' | 'ready' | 'error';
+  revision: string | null;
 }
 
 /** A platform whose campaign-ref resolve the BFF exposes (`linkedin-ads` is pending upstream). */

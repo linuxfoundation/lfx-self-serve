@@ -3,6 +3,7 @@
 
 import {
   CAMPAIGN_NEGATIVE_KEYWORD_OUTCOME_LABELS,
+  CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES,
   CAMPAIGN_NEGATIVE_KEYWORD_UNCONFIRMED_ADVICE,
   CAMPAIGN_NEGATIVE_KEYWORDS_FAILURE_FALLBACK,
   CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED,
@@ -14,6 +15,7 @@ import type {
   CampaignNegativeKeywordResult,
   CampaignNegativeKeywordsBatchOutcome,
   CampaignNegativeKeywordsResult,
+  NegativeKeywordCampaignPlatform,
 } from '@lfx-one/shared/interfaces';
 
 import { classifyCampaignWriteFailure } from './campaign-write-error.utils';
@@ -29,7 +31,8 @@ import { classifyCampaignWriteFailure } from './campaign-write-error.utils';
 export function negativeKeywordOutcomeRows(
   sent: readonly string[],
   matchType: CampaignNegativeKeywordMatchType,
-  response: CampaignNegativeKeywordsResult | null | undefined
+  response: CampaignNegativeKeywordsResult | null | undefined,
+  platform: NegativeKeywordCampaignPlatform = 'microsoft-ads'
 ): CampaignNegativeKeywordOutcomeRow[] {
   const results: unknown[] = Array.isArray(response?.results) ? response.results : [];
   return sent.map((text, index) => {
@@ -38,15 +41,40 @@ export function negativeKeywordOutcomeRows(
       typeof entry?.outcome === 'string' && Object.hasOwn(CAMPAIGN_NEGATIVE_KEYWORD_OUTCOME_LABELS, entry.outcome) ? entry.outcome : 'UNCONFIRMED';
     let detail = '';
     if (outcome === 'UNCONFIRMED') {
-      detail = CAMPAIGN_NEGATIVE_KEYWORD_UNCONFIRMED_ADVICE;
+      detail = negativeKeywordUnconfirmedAdvice(platform);
     } else if (outcome === 'FAILED') {
-      detail =
-        typeof entry?.errorCode === 'string' && entry.errorCode !== ''
-          ? `Microsoft Advertising error ${entry.errorCode}.`
-          : 'Microsoft Advertising did not add it.';
+      detail = negativeKeywordFailedDetail(platform, entry?.errorCode);
     }
     return { index, text, matchType, outcome, label: CAMPAIGN_NEGATIVE_KEYWORD_OUTCOME_LABELS[outcome], detail };
   });
+}
+
+/** What an UNCONFIRMED negative keyword tells the operator to do, naming the platform to check. */
+export function negativeKeywordUnconfirmedAdvice(platform: NegativeKeywordCampaignPlatform = 'microsoft-ads'): string {
+  if (platform === 'microsoft-ads') {
+    return CAMPAIGN_NEGATIVE_KEYWORD_UNCONFIRMED_ADVICE;
+  }
+  return `This keyword may or may not have been added. Check the campaign's negative keywords in ${CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES[platform].label} before retrying.`;
+}
+
+/**
+ * Why a FAILED negative keyword was not added. Microsoft names its own machine-readable code.
+ * Reddit and X answer only NOT_SENT or REJECTED (campaign-service never returns their text), so
+ * those are worded here; any other code is not shown, since it is wire data with no meaning here.
+ */
+function negativeKeywordFailedDetail(platform: NegativeKeywordCampaignPlatform, errorCode: unknown): string {
+  const label = CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES[platform].label;
+  const code = typeof errorCode === 'string' ? errorCode : '';
+  if (platform === 'microsoft-ads') {
+    return code !== '' ? `Microsoft Advertising error ${code}.` : 'Microsoft Advertising did not add it.';
+  }
+  if (code === 'NOT_SENT') {
+    return `It was not sent to ${label}, so nothing changed.`;
+  }
+  if (code === 'REJECTED') {
+    return `${label} refused it.`;
+  }
+  return `${label} did not add it.`;
 }
 
 /**
@@ -75,7 +103,10 @@ export function campaignNegativeKeywordsFailureOutcome(error: unknown): Campaign
  * keywords only. When any keyword is unconfirmed the verify-first advice is appended, because the
  * summary is what the toast carries past the editor.
  */
-export function summarizeNegativeKeywordOutcomes(rows: readonly CampaignNegativeKeywordOutcomeRow[]): string {
+export function summarizeNegativeKeywordOutcomes(
+  rows: readonly CampaignNegativeKeywordOutcomeRow[],
+  platform: NegativeKeywordCampaignPlatform = 'microsoft-ads'
+): string {
   const parts = (Object.keys(CAMPAIGN_NEGATIVE_KEYWORD_OUTCOME_LABELS) as CampaignNegativeKeywordOutcome[])
     .map((outcome) => ({ outcome, count: rows.filter((row) => row.outcome === outcome).length }))
     .filter(({ count }) => count > 0)
@@ -84,7 +115,7 @@ export function summarizeNegativeKeywordOutcomes(rows: readonly CampaignNegative
     return '';
   }
   const summary = parts.join(', ') + '.';
-  return rows.some((row) => row.outcome === 'UNCONFIRMED') ? `${summary} ${CAMPAIGN_NEGATIVE_KEYWORD_UNCONFIRMED_ADVICE}` : summary;
+  return rows.some((row) => row.outcome === 'UNCONFIRMED') ? `${summary} ${negativeKeywordUnconfirmedAdvice(platform)}` : summary;
 }
 
 /**

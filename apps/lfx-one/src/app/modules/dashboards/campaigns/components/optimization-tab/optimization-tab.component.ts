@@ -24,6 +24,7 @@ import type {
   KeywordActionType,
   KeywordMetrics,
   KeywordMetricsResponse,
+  KeywordTargetingPlatform,
   LinkedInAccount,
   LinkedInActionItem,
   LinkedInMonitorResponse,
@@ -32,6 +33,7 @@ import type {
   KeywordActionOutcome,
   MetaMonitorResponse,
   MicrosoftKeywordActionRequest,
+  NegativeKeywordCampaignPlatform,
   RedditAccountOption,
   RedditActionItem,
   RedditMonitorResponse,
@@ -67,6 +69,8 @@ import {
   DEFAULT_CAMPAIGN_BID_TYPE,
   KEYWORD_ACTION_OUTCOME_CLASSES,
   KEYWORD_ACTION_OUTCOME_LABELS,
+  KEYWORD_TARGETING_CAMPAIGN_PLATFORMS,
+  KEYWORD_TARGETING_UNAVAILABLE_UNPROVISIONED_REASON,
   NEGATIVE_KEYWORD_CAMPAIGN_PLATFORMS,
   PLATFORM_BRAND_COLORS,
   TOGGLEABLE_CAMPAIGN_PLATFORMS,
@@ -88,6 +92,7 @@ import { catchError, EMPTY, map, of, skip, switchMap, take, type Subscription } 
 
 import { CampaignBidFormComponent } from '../campaign-bid-form/campaign-bid-form.component';
 import { CampaignBudgetFormComponent } from '../campaign-budget-form/campaign-budget-form.component';
+import { CampaignKeywordTargetingPanelComponent } from '../campaign-keyword-targeting-panel/campaign-keyword-targeting-panel.component';
 import { CampaignNegativeKeywordsFormComponent } from '../campaign-negative-keywords-form/campaign-negative-keywords-form.component';
 import { MicrosoftKeywordsTableComponent } from '../microsoft-keywords-table/microsoft-keywords-table.component';
 
@@ -99,6 +104,7 @@ import { MicrosoftKeywordsTableComponent } from '../microsoft-keywords-table/mic
     AdsPctPipe,
     CampaignBidFormComponent,
     CampaignBudgetFormComponent,
+    CampaignKeywordTargetingPanelComponent,
     CampaignNegativeKeywordsFormComponent,
     EventLabelPipe,
     MicrosoftKeywordsTableComponent,
@@ -224,8 +230,10 @@ export class OptimizationTabComponent implements OnInit {
   /** The bid this session CONFIRMED per row. The index carries no bid, so this is the only one the row can show. */
   protected readonly confirmedBid = signal<Partial<Record<string, CampaignBidChange>>>({});
 
-  /** Which Microsoft rows have their negative-keyword editor open. */
+  /** Which Microsoft Advertising, Reddit and X rows have their negative-keyword editor open. */
   protected readonly negativesEditorOpen = signal<Record<string, boolean>>({});
+  /** Which Reddit and X rows have their keyword-targeting panel open. */
+  protected readonly targetingPanelOpen = signal<Record<string, boolean>>({});
   /**
    * Which rows' negative-keyword request is in flight. Read from the root
    * `CampaignNegativeKeywordsService`, which owns the request, rather than reported by the editor:
@@ -571,6 +579,8 @@ export class OptimizationTabComponent implements OnInit {
       const bidUnavailableReason = this.bidUnavailableReasonFor(campaign, status);
       const negativeKeywordsOffered = typeof campaign.platform === 'string' && NEGATIVE_KEYWORD_CAMPAIGN_PLATFORMS.has(campaign.platform);
       const negativeKeywordsUnavailableReason = negativeKeywordsOffered ? this.negativeKeywordsUnavailableReasonFor(campaign, status) : '';
+      const keywordTargetingOffered = typeof campaign.platform === 'string' && KEYWORD_TARGETING_CAMPAIGN_PLATFORMS.has(campaign.platform);
+      const keywordTargetingUnavailableReason = keywordTargetingOffered ? this.keywordTargetingUnavailableReasonFor(campaign, status) : '';
       return {
         campaign,
         status,
@@ -588,6 +598,11 @@ export class OptimizationTabComponent implements OnInit {
         negativeKeywordsOffered,
         negativeKeywordsAvailable: negativeKeywordsOffered && negativeKeywordsUnavailableReason === '',
         negativeKeywordsUnavailableReason,
+        negativeKeywordsPlatform: negativeKeywordsOffered ? (campaign.platform as NegativeKeywordCampaignPlatform) : null,
+        keywordTargetingOffered,
+        keywordTargetingAvailable: keywordTargetingOffered && keywordTargetingUnavailableReason === '',
+        keywordTargetingUnavailableReason,
+        keywordTargetingPlatform: keywordTargetingOffered ? (campaign.platform as KeywordTargetingPlatform) : null,
       };
     });
   });
@@ -1073,7 +1088,7 @@ export class OptimizationTabComponent implements OnInit {
   }
 
   /**
-   * Opens or closes one Microsoft row's negative-keyword editor. A request in flight keeps it open,
+   * Opens or closes one row's negative-keyword editor (Microsoft Advertising, Reddit or X). A request in flight keeps it open,
    * but does not keep a CLOSED one shut: after a remount the editor shows the request's progress.
    */
   protected toggleNegativesEditor(row: CampaignRow): void {
@@ -1093,6 +1108,23 @@ export class OptimizationTabComponent implements OnInit {
       return;
     }
     this.negativesEditorOpen.update((open) => this.omitKeys(open, [campaignId]));
+  }
+
+  /** Opens or closes one Reddit or X row's keyword-targeting panel. The panel itself refuses to close mid-removal. */
+  protected toggleTargetingPanel(row: CampaignRow): void {
+    const id = row.campaign.id;
+    if (this.targetingPanelOpen()[id]) {
+      this.closeTargetingPanel(id);
+      return;
+    }
+    if (!row.keywordTargetingAvailable) {
+      return;
+    }
+    this.targetingPanelOpen.update((open) => ({ ...open, [id]: true }));
+  }
+
+  protected closeTargetingPanel(campaignId: string): void {
+    this.targetingPanelOpen.update((open) => this.omitKeys(open, [campaignId]));
   }
 
   /** The row note's Dismiss: forgets one campaign's settled negative-keyword result. */
@@ -1922,6 +1954,7 @@ export class OptimizationTabComponent implements OnInit {
         // Negative-keyword requests are keyed by (project, brief, campaign) in the root service, and
         // the campaigns page (which stays mounted across tabs) scopes them; see `setScope`.
         this.negativesEditorOpen.set({});
+        this.targetingPanelOpen.set({});
         this.lastDeliveredEtags = {};
         this.hasDeliveredList = false;
         this.etagsWrittenDuringRead.clear();
@@ -2323,7 +2356,18 @@ export class OptimizationTabComponent implements OnInit {
     return '';
   }
 
-  /** Why a Microsoft row's negative-keyword editor is disabled, or `''`. Only asked for offered rows. */
+  /** Why a Reddit or X row's keyword-targeting panel is disabled, or `''`. Only asked for offered rows. */
+  private keywordTargetingUnavailableReasonFor(campaign: CampaignIndexDoc, status: string): string {
+    if (typeof campaign.platform_campaign_id !== 'string' || campaign.platform_campaign_id.trim() === '') {
+      return KEYWORD_TARGETING_UNAVAILABLE_UNPROVISIONED_REASON;
+    }
+    if (status === 'deleted') {
+      return CAMPAIGN_UNAVAILABLE_REASONS['deleted'];
+    }
+    return '';
+  }
+
+  /** Why a row's negative-keyword editor is disabled, or `''`. Only asked for offered rows. */
   private negativeKeywordsUnavailableReasonFor(campaign: CampaignIndexDoc, status: string): string {
     if (typeof campaign.platform_campaign_id !== 'string' || campaign.platform_campaign_id.trim() === '') {
       return CAMPAIGN_NEGATIVE_KEYWORDS_UNAVAILABLE_UNPROVISIONED_REASON;
