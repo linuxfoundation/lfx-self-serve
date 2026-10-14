@@ -52,3 +52,12 @@ export const OBJECT_STORE_LOCAL_DEFAULT_DIR = '.object-store';
  * a key that ends in it is refused so a document can never shadow a sidecar.
  */
 export const OBJECT_STORE_FILE_METADATA_SUFFIX = '.meta.json';
+
+/**
+ * Suffix of the in-flight file the file backend writes next to its target
+ * (`<target>.<uuid>.partial`) and renames into place once every byte is on
+ * disk, so a body or sidecar is never observed half-written. One left behind
+ * by a crash is garbage: listings skip files with this suffix, and a key that
+ * ends in it is refused so a document can never be mistaken for one.
+ */
+export const OBJECT_STORE_FILE_PARTIAL_SUFFIX = '.partial';

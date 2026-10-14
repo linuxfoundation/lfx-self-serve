@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { ObjectStoreBackend, ObjectStoreFileSidecar, ObjectStoreListEntry, ObjectStorePutInput, ObjectStoreReadResult } from '@lfx-one/shared/interfaces';
-import { access, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { access, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
-import { OBJECT_STORE_FILE_METADATA_SUFFIX } from '../constants';
+import { OBJECT_STORE_FILE_METADATA_SUFFIX, OBJECT_STORE_FILE_PARTIAL_SUFFIX } from '../constants';
 import { ServiceValidationError } from '../errors';
 
 /**
@@ -20,6 +21,11 @@ import { ServiceValidationError } from '../errors';
  *   metadata) lives in a `<key>.meta.json` sidecar next to the body. An
  *   object with no sidecar reads back with empty metadata, like an S3 object
  *   written without any.
+ * - A put is all-or-nothing per file, as an S3 PUT is: body and sidecar are
+ *   each written whole to a `.partial` neighbour and renamed into place, so a
+ *   reader — or a crash — never meets a half-written one. The body lands
+ *   first, so an interrupted put leaves at worst a complete body with stale
+ *   or missing labels, which the next content-addressed put rewrites.
  * - `lastModified` is the body file's mtime, so the shared artifact layer's
  *   "latest is write time" ordering — and its metadata-refresh rewrite that
  *   advances the stamp — behave exactly as against S3.
@@ -90,10 +96,13 @@ export class FileObjectStoreBackend implements ObjectStoreBackend {
     };
     try {
       await mkdir(dirname(bodyPath), { recursive: true });
-      // Sidecar first, body last: a reader only sees the object once its body
-      // exists, and by then the labels describing it are already on disk.
-      await writeFile(`${bodyPath}${OBJECT_STORE_FILE_METADATA_SUFFIX}`, JSON.stringify(sidecar, null, 2));
-      await writeFile(bodyPath, input.body);
+      // Body first, sidecar last. Should the put stop between the two, the body is already
+      // complete and its advanced mtime plus the stale (or missing) labels make the caller's
+      // metadata check rewrite both on the next put, repairing the object. The reverse order
+      // would leave a sidecar announcing a version whose body never landed — which that same
+      // check reads as "already written", a torn object no later put repairs.
+      await writeWhole(bodyPath, input.body);
+      await writeWhole(`${bodyPath}${OBJECT_STORE_FILE_METADATA_SUFFIX}`, JSON.stringify(sidecar, null, 2));
     } catch (error) {
       if (isNestedKeyCollision(error)) {
         throw ServiceValidationError.forField('key', `Object key collides with a stored object that is its path prefix or extension: "${key}"`, {
@@ -131,7 +140,7 @@ export class FileObjectStoreBackend implements ObjectStoreBackend {
 
     const objects: ObjectStoreListEntry[] = [];
     for (const entry of entries) {
-      if (!entry.isFile() || entry.name.endsWith(OBJECT_STORE_FILE_METADATA_SUFFIX)) {
+      if (!entry.isFile() || entry.name.endsWith(OBJECT_STORE_FILE_METADATA_SUFFIX) || entry.name.endsWith(OBJECT_STORE_FILE_PARTIAL_SUFFIX)) {
         continue;
       }
       const bodyPath = join(entry.parentPath, entry.name);
@@ -148,8 +157,9 @@ export class FileObjectStoreBackend implements ObjectStoreBackend {
   /**
    * The body file for a key. Refuses a key that cannot round-trip through
    * `listObjects` as the same string — an empty, `.` or `..` segment (so a
-   * leading, trailing or doubled `/`) — or that would collide with a sidecar,
-   * and then checks the resolved path still sits inside the purpose folder as
+   * leading, trailing or doubled `/`) — or that would collide with a sidecar
+   * or be mistaken for an in-flight `.partial` file, and then checks the
+   * resolved path still sits inside the purpose folder as
    * defense in depth. A refused key is a typed 400 (`ServiceValidationError`
    * on the `key` field), so a caller-built key — say a project uid carrying
    * `..` — reaches `apiErrorHandler` with structured metadata, not as an
@@ -157,7 +167,8 @@ export class FileObjectStoreBackend implements ObjectStoreBackend {
    */
   private resolveKey(key: string): string {
     const segments = key.split('/');
-    if (!key || key.endsWith(OBJECT_STORE_FILE_METADATA_SUFFIX) || segments.some((segment) => segment === '' || segment === '.' || segment === '..')) {
+    const reservedSuffix = key.endsWith(OBJECT_STORE_FILE_METADATA_SUFFIX) || key.endsWith(OBJECT_STORE_FILE_PARTIAL_SUFFIX);
+    if (!key || reservedSuffix || segments.some((segment) => segment === '' || segment === '.' || segment === '..')) {
       throw ServiceValidationError.forField('key', `Object key is not storable in the file-backed object store: "${key}"`, {
         operation: 'object_store_resolve_key',
       });
@@ -200,6 +211,23 @@ export class FileObjectStoreBackend implements ObjectStoreBackend {
 }
 
 /**
+ * Writes `data` to a uniquely named `.partial` neighbour of `target` and renames it into place
+ * once the write has completed, so `target` is only ever absent or whole — `rename` within one
+ * folder is atomic on every filesystem the store runs on. A failed write or rename removes the
+ * partial file before rethrowing, so nothing is left behind.
+ */
+async function writeWhole(target: string, data: Uint8Array | string): Promise<void> {
+  const partial = `${target}.${randomUUID()}${OBJECT_STORE_FILE_PARTIAL_SUFFIX}`;
+  try {
+    await writeFile(partial, data);
+    await rename(partial, target);
+  } catch (error) {
+    await rm(partial, { force: true });
+    throw error;
+  }
+}
+
+/**
  * True for ENOENT, ENOTDIR (a key segment names a stored object) and EISDIR (the key names
  * a folder of other objects) — every way the file system says "no object here", the same
  * answer S3 gives for a key that is only the prefix or extension of stored keys.
@@ -212,7 +240,7 @@ function isMissing(error: unknown): boolean {
 /**
  * True when a write hit the file/folder namespace clash the class doc describes: the key's
  * parent is a stored object (EEXIST from mkdir, ENOTDIR from the write) or the key itself is
- * a folder holding other objects (EISDIR).
+ * a folder holding other objects (EISDIR from renaming the body over it).
  */
 function isNestedKeyCollision(error: unknown): boolean {
   const code = fsErrorCode(error);

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -61,6 +61,21 @@ describe('FileObjectStoreBackend', () => {
         cacheControl: 'private',
         metadata: { version: '2', 'intake-mode': 'form' },
       });
+    });
+
+    it('a put leaves exactly the body and its sidecar — the in-flight .partial files are renamed away', async () => {
+      await backend.putObject(key, { body: Buffer.from('v1'), contentType: 'text/plain', cacheControl: 'private', metadata: { version: '1' } });
+      await backend.putObject(key, { body: Buffer.from('v2'), contentType: 'text/plain', cacheControl: 'private', metadata: { version: '2' } });
+
+      await expect(readdir(join(root, 'brand-kit', 'proj-uid-1'))).resolves.toEqual(['abc.md', 'abc.md.meta.json']);
+    });
+
+    it('a .partial file left by an interrupted put is neither listed nor read as an object', async () => {
+      await backend.putObject(key, { body: Buffer.from('# doc'), contentType: 'text/markdown', cacheControl: 'private' });
+      await writeFile(join(root, 'brand-kit', 'proj-uid-1', 'zzz.md.0f1e2d3c.partial'), 'half');
+
+      expect((await backend.listObjects('')).map((object) => object.key)).toEqual([key]);
+      await expect(backend.getObject('brand-kit/proj-uid-1/zzz.md')).resolves.toBeNull();
     });
 
     it('headObject returns the stored metadata, and null for a missing object', async () => {
@@ -163,11 +178,14 @@ describe('FileObjectStoreBackend', () => {
       expect((await backend.listObjects('')).map((object) => object.key)).toEqual([key]);
     });
 
-    it('refuses a key that would collide with a sidecar', async () => {
-      const put = backend.putObject('brand-kit/x.md.meta.json', { body: Buffer.from('x'), contentType: 'text/plain', cacheControl: 'private' });
-      await expect(put).rejects.toBeInstanceOf(ServiceValidationError);
-      await expect(put).rejects.toMatchObject(refusedKey(/not storable/));
-    });
+    it.each(['brand-kit/x.md.meta.json', 'brand-kit/x.md.0f1e2d3c.partial'])(
+      'refuses a key that would collide with a sidecar or pass for a partial file: %j',
+      async (key) => {
+        const put = backend.putObject(key, { body: Buffer.from('x'), contentType: 'text/plain', cacheControl: 'private' });
+        await expect(put).rejects.toBeInstanceOf(ServiceValidationError);
+        await expect(put).rejects.toMatchObject(refusedKey(/not storable/));
+      }
+    );
 
     // S3 stores `a/b` and `a/b/c` side by side; a filesystem cannot. The clash surfaces as the
     // same typed 400 as a refused key — never a raw EEXIST/ENOTDIR/EISDIR — and a key that only
@@ -193,6 +211,8 @@ describe('FileObjectStoreBackend', () => {
         await expect(put).rejects.toBeInstanceOf(ServiceValidationError);
         await expect(put).rejects.toMatchObject(refusedKey(/collides with a stored object/));
         await expect(backend.getObject('a/b/c')).resolves.toEqual({ body: 'x', metadata: {} });
+        // The failed rename cleaned up after itself: no .partial file next to the folder.
+        await expect(readdir(join(root, 'a'))).resolves.toEqual(['b']);
       });
 
       it('reads a key that only names a folder, or sits under a stored object, as missing', async () => {
