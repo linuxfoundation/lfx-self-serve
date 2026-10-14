@@ -31,6 +31,7 @@ import type {
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { MetaPacingClassPipe } from '@pipes/campaign-optimization.pipe';
 import { AudienceDemographicsComponent } from '../audience-demographics/audience-demographics.component';
+import { PaidAudienceInsightsComponent } from '../paid-audience-insights/paid-audience-insights.component';
 
 type DateRangeOption = 7 | 14 | 30;
 type PlatformType = 'google' | 'linkedin' | 'reddit' | 'meta';
@@ -39,7 +40,7 @@ const KEYWORD_PAGE_SIZE = 10;
 
 @Component({
   selector: 'lfx-monitoring-tab',
-  imports: [AudienceDemographicsComponent, MetaPacingClassPipe],
+  imports: [AudienceDemographicsComponent, MetaPacingClassPipe, PaidAudienceInsightsComponent],
   templateUrl: './monitoring-tab.component.html',
   styleUrl: './monitoring-tab.component.scss',
 })

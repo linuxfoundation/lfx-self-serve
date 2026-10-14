@@ -3088,6 +3088,14 @@ export interface CampaignRow {
   negativeKeywordsAvailable: boolean;
   /** Why the negative-keyword control is disabled — set when offered but not available, empty otherwise. */
   negativeKeywordsUnavailableReason: string;
+  /** Whether the row shows the ad-set control at all: Meta campaigns only. */
+  adSetsOffered: boolean;
+  /** Whether that control can be opened (the campaign exists on Meta and is not deleted). */
+  adSetsAvailable: boolean;
+  /** Why the ad-set control is disabled — set when offered but not available, empty otherwise. */
+  adSetsUnavailableReason: string;
+  /** Why an open ad-set panel cannot change an ad set RIGHT NOW (stale validator, another write in flight), or `''`. */
+  adSetsBlockedReason: string;
   /** The row's platform when it is offered negative keywords, which decides what the editor offers and sends; `null` otherwise. */
   negativeKeywordsPlatform: NegativeKeywordCampaignPlatform | null;
   /** Whether the row shows the keyword-targeting control at all: Reddit and X campaigns (`KEYWORD_TARGETING_CAMPAIGN_PLATFORMS`). */

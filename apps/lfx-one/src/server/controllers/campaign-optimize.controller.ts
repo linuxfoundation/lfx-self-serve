@@ -23,6 +23,7 @@ import type {
   CampaignAdoptRequest,
   CampaignAudiencePlatform,
   CampaignMetricsWindow,
+  CampaignRecordResult,
   CampaignRefPlatform,
   CampaignServiceCampaignTarget,
   KeywordTargetingRemovalItem,
@@ -46,10 +47,9 @@ import { logger } from '../services/logger.service';
  * route, and every call runs on the caller's own bearer token.
  *
  * These have no legacy arm, so — following the Microsoft keyword read and the budget and bid
- * levers — they are not behind a cutover flag. The exceptions are the reads whose upstream
- * endpoint is not on campaign-service `main` yet (the Reddit and LinkedIn audience reads and the
- * LinkedIn campaign-ref resolve), which answer 404 unless
- * `LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS` is on.
+ * levers — they are not behind a cutover flag. The exception is the read still gated
+ * `LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS` (the LinkedIn campaign-ref resolve), which answers 404 unless
+ * it is on.
  *
  * Inputs are checked against the upstream contract before any round trip: project slug present,
  * brief and campaign ids UUIDs (`Format(FormatUUID)` upstream), enumerations and lengths as the Goa
@@ -175,6 +175,30 @@ export class CampaignOptimizeController {
         unknownCount: data.unknown_count,
       });
       res.json(data);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `GET /api/campaigns/:campaignId/record?project=&briefId=`: the campaign row from campaign-service
+   * with its current ETag, and whether this deployment can toggle it. Read from campaign-service, not
+   * the index, which can lag a write made a moment ago. Used by the Optimize tab to recover a row's
+   * current ETag after an ad-set write whose outcome left the validator unknown.
+   */
+  public async getCampaignRecord(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'campaign_record_read';
+    const target = readTargetFromQuery(req, operation, next);
+    if (!target) {
+      return;
+    }
+
+    const startTime = logger.startOperation(req, operation, { campaignId: target.campaignId, briefId: target.briefId });
+    try {
+      const campaign = await this.optimizeService.getCampaign(req, target);
+      const statusToggleEnabled = isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceStatusToggle);
+      logger.success(req, operation, startTime, { campaignId: target.campaignId, platform: campaign.platform, statusToggleEnabled });
+      res.json({ campaign, statusToggleEnabled } satisfies CampaignRecordResult);
     } catch (error) {
       next(error);
     }

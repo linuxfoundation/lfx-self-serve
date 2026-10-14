@@ -73,9 +73,8 @@ router.post('/:campaignId/negative-keywords', (req, res, next) => campaignContro
 // --- Optimize: campaign-service reads and levers ------------------------------
 //
 // campaign-service only, no legacy arm, so ungated like the budget and bid levers above, EXCEPT
-// the reads whose upstream endpoints are not on campaign-service main yet (Reddit and LinkedIn
-// audience, LinkedIn campaign-ref): those answer 404 unless
-// LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS is on.
+// the read still gated on LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS (LinkedIn campaign-ref): it answers
+// 404 unless that flag is on.
 // Authorization is the `requireCampaignManager` above. Campaign and brief ids are campaign-service UUIDs.
 router.get('/meta/audience', (req, res, next) => optimizeController.getPlatformAudience(req, res, next, 'meta-ads'));
 router.get('/twitter/audience', (req, res, next) => optimizeController.getPlatformAudience(req, res, next, 'twitter-ads'));
@@ -91,6 +90,9 @@ router.get('/linkedin/campaign-ref', (req, res, next) => optimizeController.reso
 router.get('/reddit/keywords', (req, res, next) => optimizeController.getRedditKeywords(req, res, next));
 // Binds a campaign that already exists on its platform to a brief; creates nothing upstream.
 router.post('/adopt', (req, res, next) => optimizeController.adoptCampaign(req, res, next));
+// The campaign row from campaign-service (not the index) with its current ETag. Used by the Optimize tab
+// to recover a row's current ETag after an ad-set write whose outcome left the validator unknown.
+router.get('/:campaignId/record', (req, res, next) => optimizeController.getCampaignRecord(req, res, next));
 router.get('/:campaignId/settings', (req, res, next) => optimizeController.getCampaignSettings(req, res, next));
 router.get('/:campaignId/meta-ad-sets', (req, res, next) => optimizeController.listMetaAdSets(req, res, next));
 // If-Match from the body's etag. A 503 that may have reached Meta answers code META_AD_SET_STATUS_UNCONFIRMED.

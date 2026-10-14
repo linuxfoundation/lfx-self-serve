@@ -10,6 +10,7 @@ import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 
 const {
   getPlatformAudience,
+  getCampaign,
   resolvePlatformCampaign,
   getRedditAdsKeywords,
   getCampaignSettings,
@@ -22,6 +23,7 @@ const {
   logger,
 } = vi.hoisted(() => ({
   getPlatformAudience: vi.fn(),
+  getCampaign: vi.fn(),
   resolvePlatformCampaign: vi.fn(),
   getRedditAdsKeywords: vi.fn(),
   getCampaignSettings: vi.fn(),
@@ -37,6 +39,7 @@ const {
 vi.mock('../services/campaign-optimize.service', () => ({
   CampaignOptimizeService: class {
     public getPlatformAudience = getPlatformAudience;
+    public getCampaign = getCampaign;
     public resolvePlatformCampaign = resolvePlatformCampaign;
     public getRedditAdsKeywords = getRedditAdsKeywords;
     public getCampaignSettings = getCampaignSettings;
@@ -88,31 +91,50 @@ beforeEach(() => {
 });
 
 describe('CampaignOptimizeController.getPlatformAudience', () => {
-  it.each(['meta-ads', 'twitter-ads', 'microsoft-ads'] as const)('serves %s with the flag OFF (its upstream endpoint exists)', async (platform) => {
-    getPlatformAudience.mockResolvedValue({ window: 'today', buckets: [], bucket_count: 0 });
+  it.each(['meta-ads', 'twitter-ads', 'microsoft-ads', 'linkedin-ads', 'reddit-ads'] as const)(
+    'serves %s with the flag OFF (its upstream endpoint exists)',
+    async (platform) => {
+      getPlatformAudience.mockResolvedValue({ window: 'today', buckets: [], bucket_count: 0 });
 
-    await controller.getPlatformAudience(buildReq({ query: { project: ' tlf ', window: 'today' } }), res, next, platform);
+      await controller.getPlatformAudience(buildReq({ query: { project: ' tlf ', window: 'today' } }), res, next, platform);
 
-    expect(getPlatformAudience).toHaveBeenCalledWith(expect.anything(), 'tlf', platform, 'today');
-    expect(res.json).toHaveBeenCalled();
+      expect(getPlatformAudience).toHaveBeenCalledWith(expect.anything(), 'tlf', platform, 'today');
+      expect(res.json).toHaveBeenCalled();
+      expect(next).not.toHaveBeenCalled();
+    }
+  );
+
+  it('serves reddit-ads with no window, leaving upstream its own default', async () => {
+    getPlatformAudience.mockResolvedValue({ window: 'last_30_days', buckets: [], bucket_count: 0 });
+
+    await controller.getPlatformAudience(buildReq({}), res, next, 'reddit-ads');
+
+    expect(getPlatformAudience).toHaveBeenCalledWith(expect.anything(), 'tlf', 'reddit-ads', undefined);
     expect(next).not.toHaveBeenCalled();
+    // Ungated: the optimize-reads flag is not even consulted for an audience read.
+    expect(isServerFeatureEnabled).not.toHaveBeenCalledWith(ServerFeatureFlag.CampaignServiceOptimizeReads);
   });
 
-  it.each(['reddit-ads', 'linkedin-ads'] as const)('answers 404 for %s while the optimize-reads flag is OFF', async (platform) => {
-    await controller.getPlatformAudience(buildReq({}), res, next, platform);
+  it.each(['yesterday', 'last_14_days'])('refuses a window Reddit does not serve (%s)', async (window) => {
+    await controller.getPlatformAudience(buildReq({ query: { project: 'tlf', window } }), res, next, 'reddit-ads');
 
-    expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ResourceNotFoundError);
+    expectFieldError(next, 'window');
     expect(getPlatformAudience).not.toHaveBeenCalled();
   });
 
-  it.each(['reddit-ads', 'linkedin-ads'] as const)('serves %s once the optimize-reads flag is ON', async (platform) => {
-    isServerFeatureEnabled.mockImplementation((flag) => flag === ServerFeatureFlag.CampaignServiceOptimizeReads);
-    getPlatformAudience.mockResolvedValue({ window: 'last_30_days', buckets: [], bucket_count: 0 });
+  it.each(['yesterday', 'last_14_days'])('refuses a window LinkedIn does not serve (%s)', async (window) => {
+    await controller.getPlatformAudience(buildReq({ query: { project: 'tlf', window } }), res, next, 'linkedin-ads');
 
-    await controller.getPlatformAudience(buildReq({}), res, next, platform);
+    expectFieldError(next, 'window');
+    expect(getPlatformAudience).not.toHaveBeenCalled();
+  });
 
-    expect(getPlatformAudience).toHaveBeenCalledWith(expect.anything(), 'tlf', platform, undefined);
-    expect(next).not.toHaveBeenCalled();
+  it('passes a LinkedIn window it serves through', async () => {
+    getPlatformAudience.mockResolvedValue({ window: 'this_month', buckets: [], bucket_count: 0, approximate: true });
+
+    await controller.getPlatformAudience(buildReq({ query: { project: 'tlf', window: 'this_month' } }), res, next, 'linkedin-ads');
+
+    expect(getPlatformAudience).toHaveBeenCalledWith(expect.anything(), 'tlf', 'linkedin-ads', 'this_month');
   });
 
   it('refuses a window the platform does not serve (X caps at 7 days)', async () => {
@@ -348,5 +370,37 @@ describe('CampaignOptimizeController.removeKeywordTargeting', () => {
 
     expectFieldError(next, field);
     expect(removeKeywordTargeting).not.toHaveBeenCalled();
+  });
+});
+
+describe('CampaignOptimizeController.getCampaignRecord', () => {
+  it('answers the row with whether this deployment can toggle it', async () => {
+    getCampaign.mockResolvedValue({ id: CAMPAIGN, platform: 'linkedin-ads', etag: '"4"' });
+    isServerFeatureEnabled.mockImplementation((flag) => flag === ServerFeatureFlag.CampaignServiceStatusToggle);
+
+    await controller.getCampaignRecord(buildReq({ params: { campaignId: CAMPAIGN }, query: { project: 'tlf', briefId: BRIEF } }), res, next);
+
+    expect(getCampaign).toHaveBeenCalledWith(expect.anything(), { projectSlug: 'tlf', briefId: BRIEF, campaignId: CAMPAIGN });
+    expect(res.json).toHaveBeenCalledWith({ campaign: { id: CAMPAIGN, platform: 'linkedin-ads', etag: '"4"' }, statusToggleEnabled: true });
+  });
+
+  it.each([
+    ['campaignId', { campaignId: 'not-a-uuid' }, { project: 'tlf', briefId: BRIEF }],
+    ['briefId', { campaignId: CAMPAIGN }, { project: 'tlf', briefId: 'nope' }],
+    ['project', { campaignId: CAMPAIGN }, { project: ' ', briefId: BRIEF }],
+  ])('refuses a bad %s before any upstream call', async (field, params, query) => {
+    await controller.getCampaignRecord(buildReq({ params, query }), res, next);
+
+    expectFieldError(next, field);
+    expect(getCampaign).not.toHaveBeenCalled();
+  });
+
+  it('hands an upstream failure to the error middleware', async () => {
+    const failure = new Error('upstream');
+    getCampaign.mockRejectedValue(failure);
+
+    await controller.getCampaignRecord(buildReq({ params: { campaignId: CAMPAIGN }, query: { project: 'tlf', briefId: BRIEF } }), res, next);
+
+    expect(next).toHaveBeenCalledWith(failure);
   });
 });

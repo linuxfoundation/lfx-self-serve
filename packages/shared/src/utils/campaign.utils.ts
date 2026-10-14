@@ -146,3 +146,20 @@ export function keywordActionKey(platform: KeywordActionPlatform, adGroupId: str
 export function keywordIdentityKey(platform: KeywordActionPlatform, campaignId: string, adGroupId: string, criterionId: string): string {
   return `${platform}:${campaignId}:${adGroupId}:${criterionId}`;
 }
+
+/**
+ * The row version a campaign-service ETag names, or `null` when it is not one.
+ *
+ * campaign-service's ETag is exactly `"<version>"`, quotes included (`briefETag`; see
+ * `CampaignIndexDoc.etag`), and the version only ever grows. That makes two ETags of one row
+ * ORDERABLE, which an opaque compare is not: an asynchronously indexed list can deliver an ETag that
+ * differs from a validator this session confirmed yet is OLDER than it, and only the versions say so.
+ * Anything else (a weak validator, an unquoted or non-numeric value) is not comparable: `null`.
+ */
+export function campaignEtagVersion(etag: string | null | undefined): number | null {
+  if (typeof etag !== 'string') {
+    return null;
+  }
+  const match = /^"(\d{1,15})"$/.exec(etag);
+  return match ? Number(match[1]) : null;
+}
