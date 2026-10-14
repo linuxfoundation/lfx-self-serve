@@ -20,7 +20,7 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await import('../../../../../packages/shared/src/utils/org-selector.utils')),
 }));
 
-import { deriveKeys } from '@gatewaze/host-session';
+import { deriveKeys, SessionStore } from '@gatewaze/host-session';
 
 import {
   deriveGatewazeMasterKey,
@@ -39,6 +39,7 @@ const SECRET = 'synthetic-pcc-auth0-secret-for-specs';
 const SUB_A = 'auth0|synthetic-user-a';
 const SUB_B = 'auth0|synthetic-user-b';
 const LFX_SID = 'a'.repeat(64);
+const USER_EMAIL = 'synthetic.user@example.test';
 const OTHER_LFX_SID = 'b'.repeat(64);
 
 /** In-memory KeyValue with the same semantics as the package's Redis one (TTLs are not modelled). */
@@ -47,14 +48,18 @@ class FakeKeyValue implements KeyValue {
   public readonly published: string[] = [];
   public failSubscribe = false;
   public failGet = false;
+  /** Every call hangs, as a Valkey that accepted the connection and stopped answering would. */
+  public hang = false;
   public closed = false;
   private readonly listeners: { channel: string; onMessage: (message: string) => void }[] = [];
 
   public async get(key: string) {
+    if (this.hang) return new Promise<string | null>(() => undefined);
     if (this.failGet) throw new Error('synthetic valkey outage');
     return this.data.get(key) ?? null;
   }
   public async set(key: string, value: string) {
+    if (this.hang) return new Promise<void>(() => undefined);
     this.data.set(key, value);
   }
   public async setIfExists(key: string, value: string) {
@@ -71,7 +76,9 @@ class FakeKeyValue implements KeyValue {
     this.data.delete(key);
   }
   public async delIfEquals(key: string, value: string) {
-    if (this.data.get(key) === value) this.data.delete(key);
+    if (this.data.get(key) !== value) return false;
+    this.data.delete(key);
+    return true;
   }
   public async setIfLockHeld(key: string, value: string, _ttl: number, lockKey: string, lockValue: string, blockKey: string): Promise<SetIfLockHeldResult> {
     if (this.data.has(blockKey)) return 'blocked';
@@ -113,6 +120,11 @@ function fakeUpstreams() {
     grantStatus: 200,
     grantExpiresIn: 3600,
     refreshStatus: 200,
+    adminStatus: 200,
+    adminActive: true,
+    /** Statuses for successive GoTrue /user calls; 200 once the list runs out. */
+    userStatuses: [] as number[],
+    logoutStatus: 204,
     grants: 0,
   };
   const calls: string[] = [];
@@ -138,8 +150,14 @@ function fakeUpstreams() {
     if (url === `${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`) {
       return json(state.refreshStatus, state.refreshStatus === 200 ? {} : { error: 'refresh_token_not_found' });
     }
-    if (url.startsWith(`${SUPABASE_URL}/rest/v1/admin_profiles`)) return json(200, [{ is_active: true }]);
-    if (url === `${SUPABASE_URL}/auth/v1/logout?scope=local`) return new Response(null, { status: 204 });
+    if (url.startsWith(`${SUPABASE_URL}/rest/v1/admin_profiles`)) {
+      return state.adminStatus === 200 ? json(200, [{ is_active: state.adminActive }]) : json(state.adminStatus, {});
+    }
+    if (url === `${SUPABASE_URL}/auth/v1/user`) {
+      const status = state.userStatuses.shift() ?? 200;
+      return status === 200 ? json(200, { id: 'gw-user-synthetic', email: USER_EMAIL }) : json(status, { msg: 'synthetic' });
+    }
+    if (url === `${SUPABASE_URL}/auth/v1/logout?scope=local`) return new Response(null, { status: state.logoutStatus });
     throw new Error(`unexpected fetch ${url}`);
   });
   return { state, calls, fetchMock, count: (url: string) => calls.filter((c) => c === url).length };
@@ -148,6 +166,10 @@ function fakeUpstreams() {
 const AUTH0_TOKEN = `${AUTH0_URL}/oauth/token`;
 const ID_TOKEN_GRANT = `${SUPABASE_URL}/auth/v1/token?grant_type=id_token`;
 const LOGOUT = `${SUPABASE_URL}/auth/v1/logout?scope=local`;
+const USER = `${SUPABASE_URL}/auth/v1/user`;
+const GW_SID = deriveGatewazeSid(deriveGatewazeSidKey(SECRET), LFX_SID);
+const SESSION_KEY = `lfx-ui:gatewaze:v1:session:${GW_SID}`;
+const SIGNED_OUT_KEY = `lfx-ui:gatewaze:v1:signed-out:${GW_SID}`;
 
 function buildReq(sub: string | null = SUB_A, lfxSid: string | null = LFX_SID): Request {
   return {
@@ -417,5 +439,221 @@ describe('GatewazeSessionService.getGatewazeSession', () => {
     expect(isGatewazeHostSessionEnabled()).toBe(true);
     await expect(service.getGatewazeSession(buildReq(SUB_A, cookie))).resolves.toEqual({ outcome: 'host_session_unavailable' });
     expect(createKeyValue).not.toHaveBeenCalled();
+  });
+});
+
+describe('GatewazeSessionService me and logout', () => {
+  let kv: FakeKeyValue;
+  let upstreams: ReturnType<typeof fakeUpstreams>;
+  let service: GatewazeSessionService;
+  let createKeyValue: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    enableHostSession();
+    kv = new FakeKeyValue();
+    upstreams = fakeUpstreams();
+    vi.stubGlobal('fetch', upstreams.fetchMock);
+    createKeyValue = vi.fn(() => kv);
+    service = new GatewazeSessionService(createKeyValue as unknown as (url: string) => KeyValue);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  /** On the first GoTrue revoke, another request on the same LFX session mints a new record (grant 2). */
+  function replaceRecordOnRevoke() {
+    const fetchMock = upstreams.fetchMock.getMockImplementation()!;
+    let replaced = false;
+    upstreams.fetchMock.mockImplementation(async (input: string, init?: RequestInit) => {
+      if (String(input) === LOGOUT && !replaced) {
+        replaced = true;
+        kv.data.delete(SESSION_KEY);
+        await service.getGatewazeSession(buildReq());
+      }
+      return fetchMock(input, init);
+    });
+  }
+
+  describe('getGatewazeMe', () => {
+    it('answers ok with the GoTrue user for an admin', async () => {
+      await expect(service.getGatewazeMe(buildReq())).resolves.toEqual({
+        outcome: 'ok',
+        user: { id: 'gw-user-synthetic', email: USER_EMAIL },
+      });
+      expect(upstreams.count(USER)).toBe(1);
+    });
+
+    it('answers not_admin with the email when admin_profiles has no active row', async () => {
+      upstreams.state.adminActive = false;
+
+      await expect(service.getGatewazeMe(buildReq())).resolves.toEqual({ outcome: 'not_admin', email: USER_EMAIL });
+    });
+
+    it('answers admin_check_pending with a positive Retry-After, before calling /user', async () => {
+      upstreams.state.adminStatus = 503;
+
+      const result = await service.getGatewazeMe(buildReq());
+
+      expect(result).toEqual({ outcome: 'admin_check_pending', retryAfterSeconds: expect.any(Number) });
+      expect((result as { retryAfterSeconds: number }).retryAfterSeconds).toBeGreaterThanOrEqual(1);
+      expect(upstreams.count(USER)).toBe(0);
+    });
+
+    it.each([401, 403, 404])('revokes, drops the record and re-mints once when /user answers %i', async (status) => {
+      upstreams.state.userStatuses = [status];
+
+      const result = await service.getGatewazeMe(buildReq());
+
+      expect(result).toEqual({ outcome: 'ok', user: expect.objectContaining({ id: 'gw-user-synthetic' }) });
+      expect(upstreams.count(ID_TOKEN_GRANT)).toBe(2);
+      expect(upstreams.count(LOGOUT)).toBe(1);
+      // Dropped without the sign-out marker, which would have blocked the re-mint for 5 minutes.
+      expect(kv.data.has(SIGNED_OUT_KEY)).toBe(false);
+      expect(kv.published).toContain(GW_SID);
+    });
+
+    it('keeps a session another request minted after /user refused the old one', async () => {
+      upstreams.state.userStatuses = [401];
+      replaceRecordOnRevoke();
+      const discard = vi.spyOn(SessionStore.prototype, 'discard');
+
+      const result = await service.getGatewazeMe(buildReq());
+
+      expect(discard).toHaveBeenCalledWith(GW_SID, { onlyIfAccessToken: 'gw-access-1' });
+      await expect(discard.mock.results[0].value).resolves.toBe(false);
+      // The second pass uses the other request's session (grant 2) rather than minting a third.
+      expect(result).toMatchObject({ outcome: 'ok' });
+      expect(upstreams.count(ID_TOKEN_GRANT)).toBe(2);
+      discard.mockRestore();
+    });
+
+    it('answers unavailable when the refused record cannot be dropped', async () => {
+      upstreams.state.userStatuses = [401];
+      const discard = vi.spyOn(SessionStore.prototype, 'discard').mockRejectedValue(new Error('synthetic valkey outage'));
+
+      await expect(service.getGatewazeMe(buildReq())).resolves.toEqual({ outcome: 'unavailable' });
+      expect(upstreams.count(ID_TOKEN_GRANT)).toBe(1);
+      discard.mockRestore();
+    });
+
+    it('answers ended after one re-mint when /user still refuses', async () => {
+      upstreams.state.userStatuses = [401, 401];
+
+      await expect(service.getGatewazeMe(buildReq())).resolves.toEqual({ outcome: 'ended' });
+      expect(upstreams.count(ID_TOKEN_GRANT)).toBe(2);
+      expect(upstreams.count(USER)).toBe(2);
+    });
+
+    it('answers unavailable, without re-minting, when /user cannot answer', async () => {
+      upstreams.state.userStatuses = [500];
+
+      await expect(service.getGatewazeMe(buildReq())).resolves.toEqual({ outcome: 'unavailable' });
+      expect(upstreams.count(ID_TOKEN_GRANT)).toBe(1);
+    });
+
+    it('passes a session failure through unchanged', async () => {
+      upstreams.state.grantStatus = 400;
+
+      await expect(service.getGatewazeMe(buildReq())).resolves.toEqual({ outcome: 'refused' });
+      expect(upstreams.count(USER)).toBe(0);
+    });
+  });
+
+  describe('endGatewazeSession', () => {
+    const LFX_LOGOUT = { blockReMint: true };
+    const EMBED_SIGN_OUT = { blockReMint: false };
+
+    it('revokes at GoTrue before it deletes the record, then publishes the sign-out', async () => {
+      await service.getGatewazeSession(buildReq());
+      let recordAtRevoke: boolean | null = null;
+      const fetchMock = upstreams.fetchMock.getMockImplementation()!;
+      upstreams.fetchMock.mockImplementation(async (input: string, init?: RequestInit) => {
+        if (String(input) === LOGOUT) recordAtRevoke = kv.data.has(SESSION_KEY);
+        return fetchMock(input, init);
+      });
+
+      const result = await service.endGatewazeSession(buildReq(null), LFX_LOGOUT);
+
+      expect(result).toEqual({ found: true, revoked: true, deleted: true });
+      expect(recordAtRevoke).toBe(true);
+      expect(kv.data.has(SESSION_KEY)).toBe(false);
+      expect(kv.data.has(SIGNED_OUT_KEY)).toBe(true);
+      expect(kv.published).toContain(GW_SID);
+    });
+
+    it('still deletes the record when GoTrue refuses the revoke, and logs it', async () => {
+      await service.getGatewazeSession(buildReq());
+      upstreams.state.logoutStatus = 500;
+
+      await expect(service.endGatewazeSession(buildReq(null), LFX_LOGOUT)).resolves.toEqual({ found: true, revoked: false, deleted: true });
+      expect(kv.data.has(SESSION_KEY)).toBe(false);
+      expect(loggerMock.warning).toHaveBeenCalledWith(expect.anything(), 'end_gatewaze_session', expect.stringContaining('GoTrue did not confirm'));
+    });
+
+    it('on LFX logout, sets the sign-out marker so nothing re-mints on the id', async () => {
+      await service.getGatewazeSession(buildReq());
+      await service.endGatewazeSession(buildReq(null), LFX_LOGOUT);
+
+      await expect(service.getGatewazeSession(buildReq())).resolves.toEqual({ outcome: 'ended' });
+      expect(upstreams.count(ID_TOKEN_GRANT)).toBe(1);
+    });
+
+    it('on the embed sign-out, revokes and drops the record without the marker, so the next check mints again', async () => {
+      await service.getGatewazeSession(buildReq());
+
+      await expect(service.endGatewazeSession(buildReq(null), EMBED_SIGN_OUT)).resolves.toEqual({ found: true, revoked: true, deleted: true });
+      expect(upstreams.count(LOGOUT)).toBe(1);
+      expect(kv.data.has(SESSION_KEY)).toBe(false);
+      expect(kv.data.has(SIGNED_OUT_KEY)).toBe(false);
+      expect(kv.published).toContain(GW_SID);
+
+      await expect(service.getGatewazeSession(buildReq())).resolves.toMatchObject({ outcome: 'ok' });
+      expect(upstreams.count(ID_TOKEN_GRANT)).toBe(2);
+    });
+
+    it('on the embed sign-out, leaves a session another request minted after the revoke', async () => {
+      await service.getGatewazeSession(buildReq());
+      replaceRecordOnRevoke();
+
+      await expect(service.endGatewazeSession(buildReq(null), EMBED_SIGN_OUT)).resolves.toEqual({ found: true, revoked: true, deleted: false });
+      expect(kv.data.has(SESSION_KEY)).toBe(true);
+      // The kept record is the other request's session: serving it needs no new grant.
+      await expect(service.getGatewazeSession(buildReq())).resolves.toMatchObject({ outcome: 'ok', session: { access_token: 'gw-access-2' } });
+      expect(upstreams.count(ID_TOKEN_GRANT)).toBe(2);
+    });
+
+    it('on the embed sign-out, removes nothing when there is no stored session', async () => {
+      await expect(service.endGatewazeSession(buildReq(null), EMBED_SIGN_OUT)).resolves.toEqual({ found: false, revoked: false, deleted: false });
+      expect(upstreams.count(LOGOUT)).toBe(0);
+      expect(kv.published).toEqual([]);
+    });
+
+    it('deletes without revoking when there is no stored session', async () => {
+      await expect(service.endGatewazeSession(buildReq(null), LFX_LOGOUT)).resolves.toEqual({ found: false, revoked: false, deleted: true });
+      expect(upstreams.count(LOGOUT)).toBe(0);
+    });
+
+    it('does nothing, and never connects, when host-session mode is off', async () => {
+      vi.stubEnv('LFX_GATEWAZE_HOST_SESSION', '');
+
+      await expect(service.endGatewazeSession(buildReq(null), LFX_LOGOUT)).resolves.toEqual({ found: false, revoked: false, deleted: false });
+      expect(createKeyValue).not.toHaveBeenCalled();
+    });
+
+    it('bounds every step, so a hung Valkey cannot hold the caller', async () => {
+      await service.getGatewazeSession(buildReq());
+      kv.hang = true;
+      vi.useFakeTimers();
+
+      const pending = service.endGatewazeSession(buildReq(null), LFX_LOGOUT);
+      // refresh, the fallback read and the delete each give up after their own bound.
+      await vi.advanceTimersByTimeAsync(3 * 2_000 + 10);
+
+      await expect(pending).resolves.toEqual({ found: false, revoked: false, deleted: false });
+    });
   });
 });

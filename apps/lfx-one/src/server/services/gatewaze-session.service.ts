@@ -9,8 +9,12 @@ import {
   type KeyValue,
   deriveKeys,
   errorMessage,
+  getUser,
   IdTokenGrantRefusedError,
+  isAdminCheckPending,
+  logout,
   RedisKeyValue,
+  retryAfterSeconds,
   SessionEndedError,
   SessionStore,
   SessionUnavailableError,
@@ -18,6 +22,7 @@ import {
 } from '@gatewaze/host-session';
 import {
   GW_HOST_SESSION_HKDF_INFO,
+  GW_HOST_SESSION_LOGOUT_STEP_TIMEOUT_MS,
   GW_HOST_SESSION_SID_HKDF_INFO,
   GW_HOST_SESSION_SID_LABEL,
   GW_HOST_SESSION_STORE_LOG_FIELDS,
@@ -25,7 +30,13 @@ import {
   GW_HOST_SESSION_VALKEY_COMMAND_TIMEOUT_MS,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
-import { GatewazeHostSessionSettings, GatewazeSessionResult } from '@lfx-one/shared/interfaces';
+import {
+  GatewazeHostSessionSettings,
+  GatewazeMeResult,
+  GatewazeSessionEndOptions,
+  GatewazeSessionEndResult,
+  GatewazeSessionResult,
+} from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 import Redis from 'ioredis';
 
@@ -71,7 +82,8 @@ export function deriveGatewazeSid(sidKey: Buffer, lfxSid: string): string {
 
 /**
  * Host-session configuration, or null when host-session mode is off or cannot run. Every condition
- * is checked together so the routes (next PR) and the embed outlet cannot disagree about it.
+ * is checked together so the `/api/gatewaze` routes and the embed outlet (through
+ * `RuntimeConfig.gwHostSession`) cannot disagree about it.
  * Environment is read per call, as `isServerFeatureEnabled` does.
  */
 export function resolveGatewazeHostSessionConfig(): GatewazeHostSessionSettings | null {
@@ -114,6 +126,16 @@ function toHostConfig(config: GatewazeHostSessionSettings): HostSessionConfig {
   return { supabaseUrl: config.supabaseUrl, anonKey: config.anonKey };
 }
 
+/** Rejects when `promise` has not settled within `ms`. The work itself carries on; only the wait is bounded. */
+function withTimeout<T>(promise: Promise<T>, ms: number, step: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${step} timed out after ${ms} ms`)), ms);
+    timer.unref();
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 /** True when host-session mode is on and fully configured. */
 export function isGatewazeHostSessionEnabled(): boolean {
   return resolveGatewazeHostSessionConfig() !== null;
@@ -135,8 +157,8 @@ function createValkeyKeyValue(url: string): KeyValue {
 
 /**
  * Holds the Gatewaze (GoTrue) session for each LFX session on the server, in an encrypted Valkey
- * record managed by `@gatewaze/host-session`'s `SessionStore`. Nothing is mounted on it yet; the
- * `/api/gatewaze` routes come in the next PR. See `docs/architecture/backend/gw-host-session.md`.
+ * record managed by `@gatewaze/host-session`'s `SessionStore`. The `/api/gatewaze/session` routes and
+ * LFX's `/logout` use it. See `docs/architecture/backend/gw-host-session.md`.
  */
 export class GatewazeSessionService {
   private storePromise: Promise<SessionStore> | null = null;
@@ -157,8 +179,8 @@ export class GatewazeSessionService {
     if (!config) {
       return { outcome: 'host_session_unavailable' };
     }
-    const lfxSid = readAppSessionId(req.headers.cookie);
-    if (!lfxSid) {
+    const gwSid = this.gwSidFor(req, config);
+    if (!gwSid) {
       logger.debug(req, 'get_gatewaze_session', 'No store-backed appSession id on the request');
       return { outcome: 'host_session_unavailable' };
     }
@@ -168,7 +190,6 @@ export class GatewazeSessionService {
       return { outcome: 'ended' };
     }
 
-    const gwSid = deriveGatewazeSid(deriveGatewazeSidKey(config.authSecret), lfxSid);
     try {
       const store = await this.getStore(config, deriveGatewazeMasterKey(config.authSecret));
       // acquire() returns the stored session (refreshed if needed) before it considers minting.
@@ -179,12 +200,154 @@ export class GatewazeSessionService {
     }
   }
 
+  /**
+   * The answer for `GET /api/gatewaze/session/me`, as the admin BFF's `/bff/me` gives it: a pending
+   * admin check first, then GoTrue's `/user`, then the admin flag. When GoTrue refuses the access
+   * token on `/user` (user deleted, session revoked at GoTrue), the record is dropped and minted
+   * once more from the LFX session; a second refusal is `ended`. Never throws.
+   */
+  public async getGatewazeMe(req: Request): Promise<GatewazeMeResult> {
+    const first = await this.getGatewazeSession(req);
+    if (first.outcome !== 'ok') {
+      return first;
+    }
+    const answer = await this.describeSession(req, first.session);
+    if (answer !== 'user_refused') {
+      return answer;
+    }
+    if (!(await this.dropRefusedSession(req, first.session))) {
+      return { outcome: 'unavailable' };
+    }
+    const second = await this.getGatewazeSession(req);
+    if (second.outcome !== 'ok') {
+      return second;
+    }
+    const retried = await this.describeSession(req, second.session);
+    return retried === 'user_refused' ? { outcome: 'ended' } : retried;
+  }
+
+  /**
+   * Ends the Gatewaze session behind the request's `appSession` cookie: refresh it if needed (GoTrue's
+   * logout authenticates with the access token), revoke it at GoTrue, then remove the record, which
+   * publishes the sign-out to every pod. `blockReMint` picks how it is removed (see
+   * `GatewazeSessionEndOptions`). Uses the cookie alone, so LFX's `/logout`, which runs before
+   * `express-openid-connect`, can call it. Each step is bounded and a failed step does not stop the
+   * next. Never throws. The LFX session is not touched.
+   */
+  public async endGatewazeSession(req: Request, options: GatewazeSessionEndOptions): Promise<GatewazeSessionEndResult> {
+    const result: GatewazeSessionEndResult = { found: false, revoked: false, deleted: false };
+    const config = resolveGatewazeHostSessionConfig();
+    const gwSid = config ? this.gwSidFor(req, config) : null;
+    if (!config || !gwSid) {
+      return result;
+    }
+    const step = <T>(promise: Promise<T>, name: string) => withTimeout(promise, GW_HOST_SESSION_LOGOUT_STEP_TIMEOUT_MS, name);
+    const warn = (message: string, error: unknown) => logger.warning(req, 'end_gatewaze_session', message, { reason: errorMessage(error) });
+
+    let store: SessionStore;
+    try {
+      store = await step(this.getStore(config, deriveGatewazeMasterKey(config.authSecret)), 'connect');
+    } catch (error) {
+      warn('Could not reach the Gatewaze session store; the record ages out on its TTL', error);
+      return result;
+    }
+
+    let session: GwSession | null = null;
+    try {
+      session = await step(store.fresh(gwSid), 'refresh');
+    } catch (error) {
+      warn('Refresh before revoke failed; revoking with the stored token', error);
+      session = await step(store.get(gwSid), 'read').catch(() => null);
+    }
+    result.found = session !== null;
+    if (session) {
+      // logout() resolves false rather than throwing when GoTrue refuses or cannot be reached.
+      result.revoked = await step(logout(toHostConfig(config), session), 'revoke').catch(() => false);
+      if (!result.revoked) {
+        logger.warning(req, 'end_gatewaze_session', 'GoTrue did not confirm the revoke; the refresh token stays valid until GoTrue expires it');
+      }
+    }
+
+    try {
+      if (options.blockReMint) {
+        await step(store.delete(gwSid), 'delete');
+        result.deleted = true;
+      } else if (session) {
+        // Only while the record still holds the token just revoked, so a session another tab has
+        // minted since is left alone.
+        result.deleted = await step(store.discard(gwSid, { onlyIfAccessToken: session.access_token }), 'discard');
+      }
+    } catch (error) {
+      warn('Could not delete the Gatewaze session record; it ages out on its TTL', error);
+    }
+    return result;
+  }
+
   /** Closes the Valkey connections. Registered as a shutdown hook on first connect. */
   public async close(): Promise<void> {
     const pending = this.storePromise;
     this.storePromise = null;
     if (pending) {
       await pending.then((store) => store.close()).catch(() => undefined);
+    }
+  }
+
+  /** The Gatewaze session id for the request's `appSession` cookie, or null when it has no store-backed id. */
+  private gwSidFor(req: Request, config: GatewazeHostSessionSettings): string | null {
+    const lfxSid = readAppSessionId(req.headers.cookie);
+    return lfxSid ? deriveGatewazeSid(deriveGatewazeSidKey(config.authSecret), lfxSid) : null;
+  }
+
+  /** One pass of the `/me` answer for a session in hand. `user_refused` means GoTrue's `/user` no longer accepts its token. */
+  private async describeSession(req: Request, session: GwSession): Promise<GatewazeMeResult | 'user_refused'> {
+    if (isAdminCheckPending(session)) {
+      return { outcome: 'admin_check_pending', retryAfterSeconds: retryAfterSeconds(session) };
+    }
+    const config = resolveGatewazeHostSessionConfig();
+    if (!config) {
+      return { outcome: 'host_session_unavailable' };
+    }
+    let user: Record<string, unknown>;
+    try {
+      user = await getUser(toHostConfig(config), session.access_token);
+    } catch (error) {
+      if (error instanceof SessionEndedError) {
+        logger.debug(req, 'get_gatewaze_me', 'GoTrue /user refused the session token', { reason: error.message });
+        return 'user_refused';
+      }
+      logger.warning(req, 'get_gatewaze_me', 'GoTrue /user unavailable', { reason: errorMessage(error) });
+      return { outcome: 'unavailable' };
+    }
+    if (!session.is_admin) {
+      return { outcome: 'not_admin', email: typeof user['email'] === 'string' ? user['email'] : undefined };
+    }
+    return { outcome: 'ok', user };
+  }
+
+  /**
+   * After GoTrue's `/user` refused `refused`'s token: revoke it, then remove the record without the
+   * sign-out marker (`store.delete` would block the re-mint for 5 minutes), and only while the record
+   * still holds that token, so a session another tab has minted since is kept. Either way the next
+   * `acquire` finds a usable record or mints one. False only when the store failed.
+   */
+  private async dropRefusedSession(req: Request, refused: GwSession): Promise<boolean> {
+    const config = resolveGatewazeHostSessionConfig();
+    const gwSid = config ? this.gwSidFor(req, config) : null;
+    if (!config || !gwSid) {
+      return false;
+    }
+    // GoTrue most likely refuses this too, as it already refused the token; logout() never throws.
+    await withTimeout(logout(toHostConfig(config), refused), GW_HOST_SESSION_LOGOUT_STEP_TIMEOUT_MS, 'revoke').catch(() => false);
+    try {
+      const store = await this.getStore(config, deriveGatewazeMasterKey(config.authSecret));
+      const removed = await store.discard(gwSid, { onlyIfAccessToken: refused.access_token });
+      if (!removed) {
+        logger.debug(req, 'get_gatewaze_me', 'The refused Gatewaze session was already replaced');
+      }
+      return true;
+    } catch (error) {
+      logger.warning(req, 'get_gatewaze_me', 'Could not drop the refused Gatewaze session', { reason: errorMessage(error) });
+      return false;
     }
   }
 
