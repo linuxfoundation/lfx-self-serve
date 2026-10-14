@@ -189,6 +189,45 @@ describe('GatewazeProxyController over a real socket', () => {
   );
 
   it(
+    'answers a clean 502 without the upstream headers when the upstream dies before the first body byte',
+    async () => {
+      respond = (req, res) => {
+        req.resume();
+        req.on('end', () => {
+          res.writeHead(200, {
+            'content-type': 'application/json',
+            'content-encoding': 'gzip',
+            etag: '"x"',
+            'cache-control': 'public, max-age=60',
+            'content-length': '1000',
+          });
+          res.flushHeaders();
+          setTimeout(() => res.socket?.destroy(), 20);
+        });
+      };
+
+      const result = await new Promise<{ status?: number; headers: Record<string, unknown>; body: string }>((resolve, reject) => {
+        const req = httpRequest({ hostname: '127.0.0.1', port: appPort, path: '/api/gatewaze/supabase/rest/v1/x', headers }, (res) => {
+          let body = '';
+          res.setEncoding('utf8');
+          res.on('data', (chunk: string) => (body += chunk));
+          res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body }));
+        });
+        req.on('error', reject);
+        req.end();
+      });
+
+      expect(result.status).toBe(502);
+      expect(JSON.parse(result.body)).toEqual({ code: 'GW_UPSTREAM_UNAVAILABLE' });
+      expect(result.headers['content-encoding']).toBeUndefined();
+      // Express sets its own weak ETag on the JSON error; the upstream's is gone.
+      expect(result.headers['etag']).not.toBe('"x"');
+      expect(result.headers['cache-control']).toBe('no-store');
+    },
+    SOCKET_TEST_TIMEOUT_MS
+  );
+
+  it(
     'breaks the connection, rather than ending cleanly, when the upstream dies mid-body',
     async () => {
       respond = (req, res) => {

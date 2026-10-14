@@ -52,7 +52,7 @@ The ID token `express-openid-connect` received at login carries LFX's raw `nonce
 
 `app.use('/api/gatewaze', gatewazeRouter)` sits after `authMiddleware` and the API rate limiter, next to `/api/gw`. `/api/*` requires an LFX session, so a signed-out caller gets `authMiddleware`'s JSON 401 before the router runs. The proxies stream the raw request body, so `isGwProxyPath` matches `/api/gatewaze` as well as `/api/gw`, and the mount gets the same body-parser, compression and drain-guard exclusions in `server.ts`. The router runs, in order:
 
-1. `Cache-Control: no-store` on every `/session` response, including the gates' 404 and 403.
+1. `Cache-Control: no-store` on every response, including the gates' 404 and 403. A proxied response replaces it with the upstream's own `Cache-Control`. A proxy failure before any body byte reached the browser answers with `no-store` and none of the upstream's headers.
 2. `requireGatewazeHostSession`: the uniform 404 unless `resolveGatewazeHostSessionConfig` is non-null. The body is the same `NOT_FOUND` error `/api/gw` gives with its flag off.
 3. `requireGatewazeBearer`: the same uniform 404 when the request has no LFX bearer token. `requireGwEmbedAccess` lets such a request through, because `/api/gw`'s controller answers it itself, so this guard makes the router's authorization independent of `authMiddleware`. Under `/api` it never fires today.
 4. `requireGwEmbedAccess`, reused as is: ED, root writer or any writer grant, and 403 `GW_EMBED_IMPERSONATION_BLOCKED` while impersonating. No Gatewaze session is ever minted for an impersonation target.

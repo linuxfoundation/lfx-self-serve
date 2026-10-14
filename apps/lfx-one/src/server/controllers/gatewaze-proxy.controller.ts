@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { IncomingMessage } from 'node:http';
 import { Transform } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
 
 import {
   anonCredentials,
@@ -219,6 +219,7 @@ export class GatewazeProxyController {
     // Set by the body limiter when it rejects an upload, and awaited before the 413, as on /api/gw.
     let bodyDrained: Promise<void> | null = null;
     const timeoutMs = getGwProxyTimeoutMs();
+    let upstreamBody: IncomingMessage | null = null;
     try {
       const limiter = createByteLimiter(this.maxBodyBytes);
       limiter.on('error', () => {
@@ -240,7 +241,10 @@ export class GatewazeProxyController {
         log: proxyLogger(req),
       });
 
+      upstreamBody = upstreamRes.body;
       res.status(upstreamRes.status);
+      // Replaces the router's no-store default; the upstream's own Cache-Control, if any, is copied below.
+      res.removeHeader('Cache-Control');
       for (const [name, value] of Object.entries(upstreamRes.headers)) {
         if (!GW_HOST_SESSION_PROXY_RESPONSE_HEADERS.has(name.toLowerCase())) {
           continue;
@@ -252,18 +256,27 @@ export class GatewazeProxyController {
       res.setHeader('X-Content-Type-Options', 'nosniff');
       res.setHeader('Content-Security-Policy', "sandbox; default-src 'none'");
 
-      await pipeline(upstreamRes.body, res);
+      await streamBody(upstreamRes.body, res);
       logger.success(req, OPERATION, startTime, { method: req.method, path: req.path, upstream: kind, upstream_status: upstreamRes.status });
     } catch (error) {
       const reported = toProxyError(req, error, timeoutMs);
+      upstreamBody?.destroy();
       if (res.headersSent) {
-        // The response is on the wire, so apiErrorHandler cannot answer. pipeline() has already
-        // destroyed it on a stream error; destroy() covers any other failure after the headers. The
-        // browser then sees a broken body, never a short one that looks complete.
+        // The response is on the wire, so apiErrorHandler cannot answer. Destroyed, so the browser
+        // sees a broken body, never a short one that looks complete.
         logger.error(req, OPERATION, startTime, reported, { method: req.method, path: req.path, upstream: kind, stage: 'streaming' });
         res.destroy();
         return;
       }
+      // Nothing reached the browser yet, so it gets a clean error. The upstream headers copied above
+      // must not travel with it: a `Content-Encoding: gzip` on a JSON error would fail to decode, and
+      // the upstream's caching headers would apply to the failure.
+      for (const name of res.getHeaderNames()) {
+        if (GW_HOST_SESSION_PROXY_RESPONSE_HEADERS.has(name)) {
+          res.removeHeader(name);
+        }
+      }
+      res.setHeader('Cache-Control', 'no-store');
       await (bodyDrained ?? drainRequestBody(req));
       next(reported);
     }
@@ -284,6 +297,25 @@ export class GatewazeProxyController {
     res.setHeader(SESSION_HEADER, SESSION_EXPIRED);
     await this.answer(req, res, startTime, 401, { error: 'not_signed_in' });
   }
+}
+
+/**
+ * Pipes the upstream body to the browser and settles when the response finishes. Unlike
+ * `stream.pipeline`, it does not destroy `res` on an upstream error, so a body that fails before the
+ * first byte (headers not yet sent) can still be answered with a clean 502 by the caller.
+ */
+function streamBody(body: IncomingMessage, res: Response): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    body.once('error', reject);
+    body.once('aborted', () => reject(new Error('upstream aborted the response')));
+    res.once('finish', resolve);
+    res.once('close', () => {
+      if (!res.writableFinished) {
+        reject(new Error('the browser closed the response'));
+      }
+    });
+    body.pipe(res);
+  });
 }
 
 /** Counts the bytes forwarded and fails the stream with a 413 once they pass `maxBytes`. A chunked upload has no content-length to check first. */

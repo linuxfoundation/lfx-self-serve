@@ -177,12 +177,13 @@ describe('/api/gatewaze router', () => {
       expect(getGatewazeSession).toHaveBeenCalledOnce();
     });
 
-    it('answers the uniform 404 with host-session mode off, before any authorization', async () => {
+    it('answers the uniform 404 with host-session mode off, before any authorization, with no-store', async () => {
       hostSessionEnabled.mockReturnValue(false);
 
       const res = await rest();
 
       expect(res.status).toBe(404);
+      expect(res.headers.get('cache-control')).toBe('no-store');
       expect((await res.json()).code).toBe('NOT_FOUND');
       expect(getPersonas).not.toHaveBeenCalled();
       expect(getGatewazeSession).not.toHaveBeenCalled();
@@ -209,6 +210,7 @@ describe('/api/gatewaze router', () => {
       const res = await rest();
 
       expect(res.status).toBe(403);
+      expect(res.headers.get('cache-control')).toBe('no-store');
       expect((await res.json()).code).toBe('GW_EMBED_IMPERSONATION_BLOCKED');
       expect(getGatewazeSession).not.toHaveBeenCalled();
     });
