@@ -9,25 +9,31 @@ import {
   ACCOUNT_MONITOR_METRICS_DISABLED_CODE,
   CAMPAIGN_PACING_THRESHOLDS,
   CAMPAIGN_PLATFORMS,
-  HUBSPOT_BRAND_COLOR,
   MONITOR_CONNECTION_PROVIDERS,
   MONITOR_DATE_RANGE_OPTIONS,
   MONITOR_KEYWORD_PAGE_SIZE,
   parseCampaignName,
-  PLATFORM_BRAND_COLORS,
+  MONITOR_PLATFORM_BUTTON_COLORS,
 } from '@lfx-one/shared/constants';
 import { formatPercent } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 
 import type {
+  AccountMonitorCampaignRowView,
+  AccountMonitorKpisView,
+  AccountMonitorPanelView,
   CampaignMetrics,
   CampaignMonitorConnections,
   CampaignMonitorResponse,
   HubSpotEmailMonitorResponse,
   HubSpotMonitorView,
+  GoogleMonitorCampaignRowView,
+  GoogleMonitorKpisView,
   KeywordMetrics,
   KeywordMetricsResponse,
+  KeywordRowView,
+  KeywordTotalsView,
   LinkedInAccount,
   LinkedInCampaignMetrics,
   LinkedInMonitorResponse,
@@ -42,24 +48,22 @@ import type {
   MonitorPanelKey,
   MonitorPanelNotice,
   MonitorPanelNoticeState,
+  MonitorPlatformButtonView,
   MonitorTabPlatform,
   RedditAccountOption,
+  RedditAccountTotals,
   RedditCampaignMetrics,
   RedditMonitorResponse,
   RedditPacingLabel,
-  ReportBackedCampaignRowView,
-  ReportBackedKpisView,
   ReportBackedMonitorResponse,
-  ReportBackedMonitorView,
 } from '@lfx-one/shared/interfaces';
 
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
-import { MetaPacingClassPipe } from '@pipes/campaign-optimization.pipe';
 import { AudienceDemographicsComponent } from '../audience-demographics/audience-demographics.component';
 
 @Component({
   selector: 'lfx-monitoring-tab',
-  imports: [AudienceDemographicsComponent, MetaPacingClassPipe, NgTemplateOutlet],
+  imports: [AudienceDemographicsComponent, NgTemplateOutlet],
   templateUrl: './monitoring-tab.component.html',
   styleUrl: './monitoring-tab.component.scss',
 })
@@ -73,9 +77,9 @@ export class MonitoringTabComponent implements OnInit {
   private linkedInSub: Subscription | null = null;
   private redditSub: Subscription | null = null;
   private readonly currencyFormatter = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+  /** The two-decimal currency and percentage every ad panel but LinkedIn renders. */
+  private readonly standardFormats = { currency: (n: number): string => this.formatCurrency(n), pct: (n: number): string => this.formatPct(n) };
 
-  protected readonly Math = Math;
-  protected readonly platformColors = PLATFORM_BRAND_COLORS;
   protected readonly dateRangeOptions: readonly MonitorDateRangeOption[] = MONITOR_DATE_RANGE_OPTIONS;
   protected readonly keywordPageSize = MONITOR_KEYWORD_PAGE_SIZE;
   protected readonly copiedName = signal<string | null>(null);
@@ -95,7 +99,6 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly linkedInData = signal<LinkedInMonitorResponse | null>(null);
   protected readonly linkedInError = signal<string | null>(null);
   protected readonly linkedInCampaigns = computed(() => this.linkedInData()?.campaigns ?? []);
-  protected readonly linkedInTotals = computed(() => this.linkedInData()?.accountTotals ?? null);
   protected readonly linkedInTotalsNote = computed(() => this.totalsCoverageNote(this.linkedInCampaigns()));
   protected readonly linkedInPulledAt = computed(() => {
     const pulledAt = this.linkedInData()?.pulledAt;
@@ -109,7 +112,6 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly redditData = signal<RedditMonitorResponse | null>(null);
   protected readonly redditError = signal<string | null>(null);
   protected readonly redditCampaigns = computed(() => this.redditData()?.campaigns ?? []);
-  protected readonly redditTotals = computed(() => this.redditData()?.accountTotals ?? null);
   protected readonly redditTotalsNote = computed(() => this.totalsCoverageNote(this.redditCampaigns()));
   protected readonly redditPulledAt = computed(() => {
     const pulledAt = this.redditData()?.pulledAt;
@@ -124,7 +126,6 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly metaData = signal<MetaMonitorResponse | null>(null);
   protected readonly metaError = signal<string | null>(null);
   protected readonly metaCampaigns = computed(() => this.metaData()?.campaigns ?? []);
-  protected readonly metaTotals = computed(() => this.metaData()?.accountTotals ?? null);
   protected readonly metaTotalsNote = computed(() => this.totalsCoverageNote(this.metaCampaigns()));
   protected readonly metaPulledAt = computed(() => {
     const pulledAt = this.metaData()?.pulledAt;
@@ -139,7 +140,6 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly metricsDisabledPlatforms = signal<ReadonlySet<MonitorConnectionPlatform>>(new Set());
   /** X stays hidden while the app does not offer it (`disabled: true` in `CAMPAIGN_PLATFORMS`), whatever the flag says. */
   protected readonly twitterOffered = !CAMPAIGN_PLATFORMS.find((p) => p.id === 'twitter-ads')?.disabled;
-  protected readonly hubSpotColor = HUBSPOT_BRAND_COLOR;
 
   // Microsoft Ads / X: one report-backed panel, showing whichever of the two is selected.
   private reportBackedSub: Subscription | null = null;
@@ -240,7 +240,16 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly hubSpotFreshness: Signal<string | null> = this.initHubSpotFreshness();
   protected readonly hubSpotCoverageNote: Signal<string | null> = this.initHubSpotCoverageNote();
   /** The Microsoft/X and HubSpot sections, formatted for the template (no template functions). */
-  protected readonly reportBackedView: Signal<ReportBackedMonitorView | null> = this.initReportBackedView();
+  protected readonly reportBackedView: Signal<AccountMonitorPanelView | null> = this.initReportBackedView();
+  /** The four original panels, formatted the same way (no template functions). */
+  protected readonly linkedInView: Signal<AccountMonitorPanelView | null> = this.initLinkedInView();
+  protected readonly redditView: Signal<AccountMonitorPanelView | null> = this.initRedditView();
+  protected readonly metaView: Signal<AccountMonitorPanelView | null> = this.initMetaView();
+  protected readonly googleKpisView: Signal<GoogleMonitorKpisView | null> = this.initGoogleKpisView();
+  protected readonly googleCampaignRows: Signal<GoogleMonitorCampaignRowView[]> = this.initGoogleCampaignRows();
+  protected readonly keywordTotalsView: Signal<KeywordTotalsView | null> = this.initKeywordTotalsView();
+  protected readonly visibleKeywordRows: Signal<KeywordRowView[]> = this.initVisibleKeywordRows();
+  protected readonly platformButtons: Signal<Record<MonitorTabPlatform, MonitorPlatformButtonView>> = this.initPlatformButtons();
   protected readonly hubSpotView: Signal<HubSpotMonitorView | null> = this.initHubSpotView();
 
   public constructor() {
@@ -520,20 +529,6 @@ export class MonitoringTabComponent implements OnInit {
       });
   }
 
-  protected linkedInPacingClass(label: LinkedInPacingLabel): string {
-    if (label === 'underspending') return 'text-red-600';
-    if (label === 'constrained' || label === 'overspending') return 'text-amber-600';
-    return 'text-green-600';
-  }
-
-  protected formatLinkedInCurrency(n: number): string {
-    return this.currencyFormatter.format(n);
-  }
-
-  protected formatLinkedInPct(n: number): string {
-    return `${formatPercent(n)}%`;
-  }
-
   protected setRedditAccount(key: string): void {
     this.selectedRedditAccountKey.set(key);
     this.fetchRedditData();
@@ -570,12 +565,6 @@ export class MonitoringTabComponent implements OnInit {
           this.redditLoading.set(false);
         },
       });
-  }
-
-  protected redditPacingClass(label: RedditPacingLabel): string {
-    if (label === 'underspending') return 'text-red-600';
-    if (label === 'constrained' || label === 'overspending') return 'text-amber-600';
-    return 'text-green-600';
   }
 
   protected setMetaAccount(key: string): void {
@@ -616,62 +605,6 @@ export class MonitoringTabComponent implements OnInit {
       });
   }
 
-  protected eventLabel(campaignName: string): string {
-    return parseCampaignName(campaignName).baseName || campaignName;
-  }
-
-  protected qualityScoreClass(score: number | null): string {
-    if (score === null) return 'text-gray-400';
-    if (score >= 7) return 'text-green-700';
-    if (score >= 4) return 'text-amber-700';
-    return 'text-red-700';
-  }
-
-  protected matchTypeClass(type: string): string {
-    switch (type) {
-      case 'EXACT':
-        return 'bg-blue-100 text-blue-700';
-      case 'PHRASE':
-        return 'bg-violet-100 text-violet-700';
-      default:
-        return 'bg-gray-100 text-gray-600';
-    }
-  }
-
-  protected formatDate(dateStr: string): string {
-    if (!dateStr) return '–';
-    const normalized = /^\d{4}-\d{2}-\d{2}$/.test(dateStr) ? `${dateStr}T00:00:00` : dateStr;
-    const date = new Date(normalized);
-    if (isNaN(date.getTime())) return '–';
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  }
-
-  protected pacingClass(campaign: CampaignMetrics): string {
-    const pct = campaign.pacingPct;
-    if (pct < CAMPAIGN_PACING_THRESHOLDS.underspending) return 'bg-red-500';
-    if (pct <= CAMPAIGN_PACING_THRESHOLDS.normal) return 'bg-green-500';
-    if (pct <= CAMPAIGN_PACING_THRESHOLDS.constrained) return 'bg-amber-500';
-    return 'bg-red-500';
-  }
-
-  /**
-   * Two decimals for every monetary figure on this tab. Budgets and spend are cents-denominated
-   * amounts a user reconciles against the ad platform's own reporting, and avgCpc is typically
-   * under a dollar — one-decimal rounding would turn $10.04 into $10 and a $0.42 CPC into $0.4.
-   * `formatCompactRounded` is for derived figures with unbounded precision (CPA), not these.
-   */
-  protected formatCurrency(value: number): string {
-    return `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  }
-
-  protected formatNumber(value: number): string {
-    return value.toLocaleString('en-US');
-  }
-
-  protected formatPct(value: number): string {
-    return `${formatPercent(value)}%`;
-  }
-
   private initPanelNotices(): Signal<Partial<Record<MonitorPanelKey, MonitorPanelNotice>>> {
     return computed(() => {
       const notices: Partial<Record<MonitorPanelKey, MonitorPanelNotice>> = {};
@@ -695,54 +628,206 @@ export class MonitoringTabComponent implements OnInit {
     });
   }
 
-  private initReportBackedView(): Signal<ReportBackedMonitorView | null> {
+  private initReportBackedView(): Signal<AccountMonitorPanelView | null> {
     return computed(() => {
       const data = this.reportBackedData();
-      if (!data) return null;
-      const totals = data.accountTotals;
-      const kpis: ReportBackedKpisView | null = totals
-        ? {
-            impressions: this.formatNumber(totals.impressions),
-            clicks: this.formatNumber(totals.clicks),
-            ctr: totals.impressions > 0 ? this.formatPct((totals.clicks / totals.impressions) * 100) : '—',
-            spend: this.formatCurrency(totals.spend),
-            conversions:
-              totals.conversionsMeasured === false
-                ? { text: 'Not measured', className: 'text-gray-500' }
-                : { text: this.formatNumber(totals.conversions), className: 'text-gray-900' },
-          }
-        : null;
-      const unread: MonitorCellView = { text: '—', className: 'text-gray-500' };
-      const measured = (text: string): MonitorCellView => ({ text, className: 'text-gray-700' });
-      const rows = (data.campaigns ?? []).map((camp): ReportBackedCampaignRowView => {
-        const base = {
-          campaignId: camp.campaignId,
-          campaignName: camp.campaignName,
-          status: camp.status,
-          fetchFailed: camp.fetchFailed === true,
-          flight: camp.startDate ? `${camp.startDate} → ${camp.endDate || 'Ongoing'}` : '—',
-          budget: this.formatCurrency(camp.totalBudget || camp.dailyBudget),
-        };
-        // Metrics that could not be read are not zeros: every metric cell is a dash.
-        if (camp.fetchFailed) {
-          return { ...base, spend: unread, pacing: unread, impressions: unread, clicks: unread, ctr: unread, conversions: unread };
-        }
-        const pacing: MonitorCellView =
-          camp.pacingUnknown || !camp.pacingLabel
-            ? { text: 'Unknown', className: 'text-gray-500' }
-            : { text: `${camp.pacingPct.toFixed(0)}% ${camp.pacingLabel}`, className: `font-medium ${this.redditPacingClass(camp.pacingLabel)}` };
-        return {
-          ...base,
-          spend: measured(this.formatCurrency(camp.spend)),
-          pacing,
-          impressions: measured(this.formatNumber(camp.impressions)),
-          clicks: measured(this.formatNumber(camp.clicks)),
-          ctr: measured(this.formatPct(camp.ctr)),
-          conversions: camp.conversionsMeasured === false ? { text: 'Not measured', className: 'text-gray-500' } : measured(String(camp.conversions)),
-        };
-      });
-      return { kpis, rows };
+      return data ? this.buildAccountPanelView(data.campaigns, data.accountTotals, this.standardFormats) : null;
     });
+  }
+
+  private initLinkedInView(): Signal<AccountMonitorPanelView | null> {
+    return computed(() => {
+      const data = this.linkedInData();
+      if (!data) return null;
+      const view = this.buildAccountPanelView(data.campaigns, data.accountTotals, {
+        currency: (n) => this.formatLinkedInCurrency(n),
+        pct: (n) => this.formatLinkedInPct(n),
+      });
+      // LinkedIn heads each row with the event name over the full campaign name, and adds the
+      // creative count — "Not read" when campaign-service did not read creatives.
+      const campaigns = data.campaigns ?? [];
+      return {
+        ...view,
+        rows: view.rows.map((row, i) => ({
+          ...row,
+          title: campaigns[i].eventName,
+          subtitle: campaigns[i].campaignName,
+          creatives:
+            campaigns[i].creativesMeasured === false
+              ? { text: 'Not read', className: 'text-gray-500' }
+              : { text: String(campaigns[i].creatives.length), className: 'text-gray-700' },
+        })),
+      };
+    });
+  }
+
+  private initRedditView(): Signal<AccountMonitorPanelView | null> {
+    return computed(() => {
+      const data = this.redditData();
+      return data ? this.buildAccountPanelView(data.campaigns, data.accountTotals, this.standardFormats) : null;
+    });
+  }
+
+  private initMetaView(): Signal<AccountMonitorPanelView | null> {
+    return computed(() => {
+      const data = this.metaData();
+      return data ? this.buildAccountPanelView(data.campaigns, data.accountTotals, this.standardFormats) : null;
+    });
+  }
+
+  private initGoogleKpisView(): Signal<GoogleMonitorKpisView | null> {
+    return computed(() => {
+      const totals = this.accountTotals();
+      if (!totals) return null;
+      const ctr = this.totalCtr();
+      return {
+        impressions: this.formatNumber(totals.impressions),
+        clicks: this.formatNumber(totals.clicks),
+        ctr: ctr === null ? '—' : this.formatPct(ctr),
+        spend: this.formatCurrency(totals.spend),
+        conversions: this.formatNumber(totals.conversions),
+      };
+    });
+  }
+
+  private initGoogleCampaignRows(): Signal<GoogleMonitorCampaignRowView[]> {
+    return computed(() =>
+      this.campaigns().map((campaign) => ({
+        campaignId: campaign.campaignId,
+        title: campaign.eventName || campaign.name,
+        name: campaign.name,
+        shortName: campaign.shortName,
+        startDate: this.formatDate(campaign.startDate),
+        endDate: this.formatDate(campaign.endDate),
+        totalBudget: this.formatCurrency(campaign.totalBudget),
+        spend: this.formatCurrency(campaign.spend),
+        impressions: this.formatNumber(campaign.impressions),
+        clicks: this.formatNumber(campaign.clicks),
+        ctr: this.formatPct(campaign.ctr),
+        avgCpc: this.formatCurrency(campaign.avgCpc),
+        conversions: this.formatNumber(campaign.conversions),
+        pacingBarClass: this.pacingClass(campaign),
+        pacingBarWidth: Math.min(campaign.pacingPct, 100),
+        pacingText: `${campaign.pacingPct}%`,
+      }))
+    );
+  }
+
+  private initKeywordTotalsView(): Signal<KeywordTotalsView | null> {
+    return computed(() => {
+      const totals = this.keywordTotals();
+      if (!totals) return null;
+      return {
+        impressions: this.formatNumber(totals.impressions),
+        clicks: this.formatNumber(totals.clicks),
+        avgCtr: this.formatPct(totals.avgCtr),
+        spend: this.formatCurrency(totals.spend),
+        conversions: this.formatNumber(totals.conversions),
+      };
+    });
+  }
+
+  private initVisibleKeywordRows(): Signal<KeywordRowView[]> {
+    return computed(() =>
+      this.visibleKeywords().map((kw) => ({
+        trackKey: `${kw.keyword}-${kw.campaignId}`,
+        keyword: kw.keyword,
+        campaign: kw.campaign,
+        campaignLabel: this.eventLabel(kw.campaign),
+        matchType: kw.matchType,
+        matchTypeClass: this.matchTypeClass(kw.matchType),
+        qualityScore: kw.qualityScore === null || kw.qualityScore === undefined ? '–' : String(kw.qualityScore),
+        qualityScoreClass: this.qualityScoreClass(kw.qualityScore),
+        impressions: this.formatNumber(kw.impressions),
+        clicks: this.formatNumber(kw.clicks),
+        ctr: this.formatPct(kw.ctr),
+        avgCpc: this.formatCurrency(kw.avgCpc),
+        spend: this.formatCurrency(kw.spend),
+        conversions: this.formatNumber(kw.conversions),
+      }))
+    );
+  }
+
+  /** Each platform button's classes and background for the current selection; see `MONITOR_PLATFORM_BUTTON_COLORS`. */
+  private initPlatformButtons(): Signal<Record<MonitorTabPlatform, MonitorPlatformButtonView>> {
+    return computed(() => {
+      const selected = this.selectedPlatform();
+      const buttons = {} as Record<MonitorTabPlatform, MonitorPlatformButtonView>;
+      for (const platform of Object.keys(MONITOR_PLATFORM_BUTTON_COLORS) as MonitorTabPlatform[]) {
+        const colors = MONITOR_PLATFORM_BUTTON_COLORS[platform];
+        buttons[platform] =
+          platform === selected
+            ? { className: `flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium ${colors.textClass}`, background: colors.background }
+            : {
+                className: 'flex items-center gap-1.5 rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-200',
+                background: null,
+              };
+      }
+      return buttons;
+    });
+  }
+
+  /**
+   * One ad-platform panel, formatted: the KPI tiles and a row per campaign with every cell's text
+   * and class. Shared by LinkedIn, Reddit, Meta and the report-backed Microsoft/X panel, which
+   * render the same conventions — "Couldn't read" rows dashed, "Unknown" pacing, "Not measured"
+   * conversions. `formats` carries the one per-platform difference: LinkedIn's whole-dollar
+   * currency and its own percentage formatter.
+   */
+  private buildAccountPanelView(
+    campaigns: readonly (RedditCampaignMetrics | LinkedInCampaignMetrics | MetaCampaignMetrics)[] | null | undefined,
+    totals: RedditAccountTotals | null | undefined,
+    formats: { currency: (n: number) => string; pct: (n: number) => string }
+  ): AccountMonitorPanelView {
+    const kpis: AccountMonitorKpisView | null = totals
+      ? {
+          impressions: this.formatNumber(totals.impressions),
+          clicks: this.formatNumber(totals.clicks),
+          ctr: totals.impressions > 0 ? formats.pct((totals.clicks / totals.impressions) * 100) : '—',
+          spend: formats.currency(totals.spend),
+          conversions:
+            totals.conversionsMeasured === false
+              ? { text: 'Not measured', className: 'text-gray-500' }
+              : { text: this.formatNumber(totals.conversions), className: 'text-gray-900' },
+        }
+      : null;
+    const unread: MonitorCellView = { text: '—', className: 'text-gray-500' };
+    const measured = (text: string): MonitorCellView => ({ text, className: 'text-gray-700' });
+    const rows = (campaigns ?? []).map((camp): AccountMonitorCampaignRowView => {
+      const base = {
+        campaignId: camp.campaignId,
+        title: camp.campaignName,
+        subtitle: null,
+        campaignName: camp.campaignName,
+        status: camp.status,
+        statusClass:
+          camp.status === 'ACTIVE'
+            ? 'inline-flex items-center rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700'
+            : 'inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600',
+        fetchFailed: camp.fetchFailed === true,
+        flight: camp.startDate ? `${camp.startDate} → ${camp.endDate || 'Ongoing'}` : '—',
+        budget: formats.currency(camp.totalBudget || camp.dailyBudget),
+        creatives: null,
+      };
+      // Metrics that could not be read are not zeros: every metric cell is a dash.
+      if (camp.fetchFailed) {
+        return { ...base, spend: unread, pacing: unread, impressions: unread, clicks: unread, ctr: unread, conversions: unread };
+      }
+      const pacing: MonitorCellView =
+        camp.pacingUnknown || !camp.pacingLabel
+          ? { text: 'Unknown', className: 'text-gray-500' }
+          : { text: `${camp.pacingPct.toFixed(0)}% ${camp.pacingLabel}`, className: `font-medium ${this.redditPacingClass(camp.pacingLabel)}` };
+      return {
+        ...base,
+        spend: measured(formats.currency(camp.spend)),
+        pacing,
+        impressions: measured(this.formatNumber(camp.impressions)),
+        clicks: measured(this.formatNumber(camp.clicks)),
+        ctr: measured(formats.pct(camp.ctr)),
+        conversions: camp.conversionsMeasured === false ? { text: 'Not measured', className: 'text-gray-500' } : measured(String(camp.conversions)),
+      };
+    });
+    return { kpis, rows };
   }
 
   private initHubSpotView(): Signal<HubSpotMonitorView | null> {
@@ -1233,5 +1318,81 @@ export class MonitoringTabComponent implements OnInit {
           this.metaError.set(extractErrorMessage(httpErr, 'Failed to load Meta accounts'));
         },
       });
+  }
+
+  private eventLabel(campaignName: string): string {
+    return parseCampaignName(campaignName).baseName || campaignName;
+  }
+
+  private qualityScoreClass(score: number | null): string {
+    if (score === null) return 'text-gray-400';
+    if (score >= 7) return 'text-green-700';
+    if (score >= 4) return 'text-amber-700';
+    return 'text-red-700';
+  }
+
+  private matchTypeClass(type: string): string {
+    switch (type) {
+      case 'EXACT':
+        return 'bg-blue-100 text-blue-700';
+      case 'PHRASE':
+        return 'bg-violet-100 text-violet-700';
+      default:
+        return 'bg-gray-100 text-gray-600';
+    }
+  }
+
+  private formatDate(dateStr: string): string {
+    if (!dateStr) return '–';
+    const normalized = /^\d{4}-\d{2}-\d{2}$/.test(dateStr) ? `${dateStr}T00:00:00` : dateStr;
+    const date = new Date(normalized);
+    if (isNaN(date.getTime())) return '–';
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+
+  private pacingClass(campaign: CampaignMetrics): string {
+    const pct = campaign.pacingPct;
+    if (pct < CAMPAIGN_PACING_THRESHOLDS.underspending) return 'bg-red-500';
+    if (pct <= CAMPAIGN_PACING_THRESHOLDS.normal) return 'bg-green-500';
+    if (pct <= CAMPAIGN_PACING_THRESHOLDS.constrained) return 'bg-amber-500';
+    return 'bg-red-500';
+  }
+
+  /**
+   * Two decimals for every monetary figure on this tab. Budgets and spend are cents-denominated
+   * amounts a user reconciles against the ad platform's own reporting, and avgCpc is typically
+   * under a dollar — one-decimal rounding would turn $10.04 into $10 and a $0.42 CPC into $0.4.
+   * `formatCompactRounded` is for derived figures with unbounded precision (CPA), not these.
+   */
+  private formatCurrency(value: number): string {
+    return `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+
+  private formatNumber(value: number): string {
+    return value.toLocaleString('en-US');
+  }
+
+  private formatPct(value: number): string {
+    return `${formatPercent(value)}%`;
+  }
+
+  private linkedInPacingClass(label: LinkedInPacingLabel): string {
+    if (label === 'underspending') return 'text-red-600';
+    if (label === 'constrained' || label === 'overspending') return 'text-amber-600';
+    return 'text-green-600';
+  }
+
+  private formatLinkedInCurrency(n: number): string {
+    return this.currencyFormatter.format(n);
+  }
+
+  private formatLinkedInPct(n: number): string {
+    return `${formatPercent(n)}%`;
+  }
+
+  private redditPacingClass(label: RedditPacingLabel): string {
+    if (label === 'underspending') return 'text-red-600';
+    if (label === 'constrained' || label === 'overspending') return 'text-amber-600';
+    return 'text-green-600';
   }
 }

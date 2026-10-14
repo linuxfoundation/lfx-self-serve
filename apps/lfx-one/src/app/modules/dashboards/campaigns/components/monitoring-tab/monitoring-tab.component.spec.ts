@@ -851,14 +851,161 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
   });
 
   describe('platform buttons', () => {
-    /** White on #00A4EF / #FF7A59 is under 3:1; gray-900 on them is over 6:1 (WCAG AA needs 4.5:1). */
-    it.each(['microsoft', 'hubspot'])('selects %s with dark text, not white', async (platform) => {
+    /**
+     * Selected colours come from MONITOR_PLATFORM_BUTTON_COLORS (whose own spec checks every ratio):
+     * white fails AA on Google, Reddit, Meta, Microsoft and HubSpot, so those take gray-950; LinkedIn
+     * and X keep white.
+     */
+    it.each([
+      ['google', 'text-gray-950'],
+      ['linkedin', 'text-white'],
+      ['reddit', 'text-gray-950'],
+      ['meta', 'text-gray-950'],
+      ['microsoft', 'text-gray-950'],
+      ['hubspot', 'text-gray-950'],
+    ])('selects %s with %s on its brand colour', async (platform, textClass) => {
       await setup(allConnected);
       select(platform);
 
       const button = el(`platform-${platform}`) as HTMLElement;
-      expect(button.className).toContain('text-gray-900');
-      expect(button.className).not.toContain('text-white');
+      expect(button.className).toContain(textClass);
+      expect(button.className).not.toContain(textClass === 'text-white' ? 'text-gray-950' : 'text-white');
+      expect(button.style.backgroundColor).not.toBe('');
+      expect((el('platform-google') as HTMLElement).style.backgroundColor === '').toBe(platform !== 'google');
+    });
+  });
+
+  /** The original panels render precomputed view models; these pin that the formatting is unchanged. */
+  describe('original panels from view models', () => {
+    const googleMonitor = {
+      pulledAt: '2026-08-28T00:00:00.000Z',
+      dateRange: { mode: 'LAST_30_DAYS' },
+      campaigns: [
+        {
+          name: 'NA | KubeCon | Search',
+          shortName: 'Search',
+          eventName: 'KubeCon',
+          adFormat: 'Search',
+          targeting: 'Global',
+          status: 'enabled',
+          startDate: '2026-08-01',
+          endDate: '2026-09-01',
+          budgetDay: 100,
+          totalBudget: 3000,
+          spend: 1234.5,
+          impressions: 15000,
+          clicks: 400,
+          ctr: 2.67,
+          avgCpc: 0.42,
+          conversions: 12,
+          pacingPct: 140,
+          pacingLabel: 'overspending',
+          campaignId: '555',
+          googleAdsUrl: '',
+        },
+      ],
+      accountTotals: { impressions: 15000, clicks: 400, spend: 1234.5, conversions: 12 },
+      actionItems: [],
+    };
+    const keywords = {
+      pulledAt: '2026-08-28T00:00:00.000Z',
+      days: 30,
+      totalKeywords: 1,
+      truncated: false,
+      totals: { impressions: 1000, clicks: 40, spend: 25, conversions: 3, avgCtr: 4 },
+      keywords: [
+        {
+          keyword: 'kubecon tickets',
+          matchType: 'EXACT',
+          qualityScore: null,
+          status: 'ENABLED',
+          adGroup: 'AG',
+          adGroupId: '1',
+          criterionId: '2',
+          campaign: 'NA | KubeCon | Search',
+          campaignId: '555',
+          googleAdsUrl: '',
+          impressions: 1000,
+          clicks: 40,
+          ctr: 4,
+          avgCpc: 0.625,
+          spend: 25,
+          conversions: 3,
+        },
+      ],
+    };
+
+    it('renders the Google KPIs, campaign row and keyword row as before', async () => {
+      await setup({ viaCampaignService: false, platforms: {} });
+      service['getMonitorData'].mockReturnValue(of(googleMonitor));
+      service['getKeywords'].mockReturnValue(of(keywords));
+      (el('monitoring-range-7') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      expect(text('monitoring-kpi-impressions')).toBe('15,000');
+      expect(text('monitoring-kpi-ctr')).toBe('2.7%');
+      expect(text('monitoring-kpi-spend')).toBe('$1,234.50');
+      const row = text('monitoring-campaign-row-0');
+      expect(row).toContain('KubeCon');
+      expect(row).toContain('Aug 1, 2026');
+      expect(row).toContain('$0.42');
+      expect(row).toContain('140%');
+      const bar = el('monitoring-campaign-row-0')?.querySelector('.h-full') as HTMLElement;
+      expect(bar.style.width).toBe('100%');
+      expect(bar.className).toContain('bg-red-500');
+      const kw = text('keyword-row-0');
+      expect(kw).toContain('kubecon tickets');
+      expect(kw).toContain('–');
+      expect(kw).toContain('$0.63');
+      expect(el('keyword-row-0')?.querySelector('.bg-blue-100')?.textContent?.trim()).toBe('EXACT');
+      expect(text('keyword-totals')).toContain('$25.00');
+    });
+
+    it("keeps LinkedIn's whole-dollar currency and the other panels' two decimals", async () => {
+      await setup(allConnected);
+      const legacy = {
+        accountLabel: 'LF',
+        pulledAt: '2026-10-13T00:00:00.000Z',
+        dateRange: { mode: 'last_30_days' },
+        campaigns: [
+          {
+            campaignId: '1',
+            campaignName: 'NA | KubeCon NA 2026 | Awareness',
+            eventName: 'KubeCon NA 2026',
+            creatives: [{}, {}],
+            status: 'ACTIVE',
+            totalBudget: 1000,
+            dailyBudget: 0,
+            spend: 412.5,
+            impressions: 52000,
+            clicks: 610,
+            ctr: 1.17,
+            conversions: 14,
+            pacingPct: 88,
+            pacingLabel: 'normal',
+            startDate: '2026-09-01',
+            endDate: '',
+          },
+        ],
+        accountTotals: { spend: 412.5, impressions: 52000, clicks: 610, conversions: 14, campaignCount: 1 },
+        actionItems: [],
+      };
+      service['getLinkedInMonitorData'].mockReturnValue(of(legacy));
+      service['getRedditMonitorData'].mockReturnValue(of(legacy));
+      select('linkedin');
+
+      expect(text('linkedin-kpi-spend')).toBe('$413');
+      const linkedInRow = text('linkedin-campaign-row-0');
+      expect(linkedInRow).toContain('KubeCon NA 2026');
+      expect(linkedInRow).toContain('NA | KubeCon NA 2026 | Awareness');
+      expect(linkedInRow).toContain('2026-09-01 → Ongoing');
+      expect(text('linkedin-campaign-creatives')).toBe('2');
+      expect(el('linkedin-campaign-row-0')?.querySelector('.bg-green-50')?.textContent?.trim()).toBe('ACTIVE');
+
+      select('reddit');
+      expect(text('reddit-kpi-spend')).toBe('$412.50');
+      expect(text('reddit-kpi-ctr')).toBe('1.2%');
+      expect(el('reddit-campaign-creatives')).toBeNull();
     });
   });
 
