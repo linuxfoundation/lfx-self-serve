@@ -48,10 +48,12 @@ import {
   stripHostKey,
 } from '../helpers/meeting.helper';
 import { validateUidParameter } from '../helpers/validation.helper';
+import { resolveVerifiedUserEmails } from '../helpers/verified-emails.helper';
 import { AccessCheckService } from '../services/access-check.service';
+import { EmailVerificationService } from '../services/email-verification.service';
 import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
-import { getEffectiveEmail, getEffectiveUsername } from '../utils/auth-helper';
+import { getEffectiveEmail, getEffectiveSub, getEffectiveUsername, stripAuthPrefix } from '../utils/auth-helper';
 import { ProjectService } from '../services/project.service';
 import { generateM2MToken } from '../utils/m2m-token.util';
 import { validatePassword } from '../utils/security.util';
@@ -63,6 +65,7 @@ export class PublicMeetingController {
   private meetingService: MeetingService = new MeetingService();
   private projectService: ProjectService = new ProjectService();
   private accessCheckService: AccessCheckService = new AccessCheckService();
+  private emailVerificationService: EmailVerificationService = new EmailVerificationService();
   /**
    * GET /public/api/meetings/:id
    * Retrieves a single meeting by ID without requiring authentication
@@ -1339,22 +1342,34 @@ export class PublicMeetingController {
       });
     }
 
-    // Username is the primary check — it's the auth-provider-verified identity and survives
-    // accounts with multiple emails. Email is the fallback for unauthenticated flows or when
-    // no username is available.
+    // One query for every identity the caller can prove (E10-01): the username (the
+    // auth-provider-verified identity, which survives accounts with several emails), the email they
+    // gave or signed in with, and — for a signed-in caller — every other email auth-service has
+    // verified for them. Unverified alternates are never used, and a failed auth-service lookup falls
+    // back to the session email, so this never hard-fails on it.
+    const verified = getEffectiveSub(req) ? await resolveVerifiedUserEmails(req, this.emailVerificationService) : { emails: [], alternates: [] };
+    const givenEmail = email?.trim().toLowerCase() || '';
+    const candidateEmails = [...new Set([givenEmail, ...verified.emails].filter(Boolean))];
+    const found = await this.meetingService.getMeetingRegistrantsForUser(req, id, candidateEmails, username ?? undefined);
+
+    // Prefer a username match, then the email given (typed, or the session's), then any other
+    // verified address, so the join link is issued for the strongest match. `matched_by` records
+    // which: `username`, `email` (the one given), or the account's `primary_email` / `alternate_email`.
+    const plainUsername = username ? stripAuthPrefix(username) : '';
+    const emailOf = (registrant: MeetingRegistrant): string => registrant.email?.trim().toLowerCase() ?? '';
+    const byUsername = plainUsername ? found.filter((registrant) => registrant.username === plainUsername) : [];
+    const byGivenEmail = givenEmail ? found.filter((registrant) => emailOf(registrant) === givenEmail) : [];
     let registrants: MeetingRegistrant[] = [];
-    let matchedBy: 'username' | 'email' | null = null;
-    if (username) {
-      registrants = await this.meetingService.getMeetingRegistrantsByUsername(req, id, username);
-      if (registrants.length > 0) {
-        matchedBy = 'username';
-      }
-    }
-    if (registrants.length === 0 && email) {
-      registrants = await this.meetingService.getMeetingRegistrantsByEmail(req, id, email);
-      if (registrants.length > 0) {
-        matchedBy = 'email';
-      }
+    let matchedBy: 'username' | 'email' | 'primary_email' | 'alternate_email' | null = null;
+    if (byUsername.length > 0) {
+      registrants = byUsername;
+      matchedBy = 'username';
+    } else if (byGivenEmail.length > 0) {
+      registrants = byGivenEmail;
+      matchedBy = 'email';
+    } else if (found.length > 0) {
+      registrants = found;
+      matchedBy = verified.alternates.includes(emailOf(found[0])) ? 'alternate_email' : 'primary_email';
     }
 
     if (registrants.length === 0) {

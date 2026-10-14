@@ -1306,6 +1306,23 @@ describe('MeetingService.assertCommitteeAttributionAllowed', () => {
   });
 });
 
+// E10-01: one `filters_or` clause per address, so N verified emails plus the username stay one query.
+describe('MeetingService.getMeetingRegistrantsForUser', () => {
+  it('turns several emails into one clause each, lowercased and de-duplicated, beside the username', async () => {
+    proxyRequest.mockReset();
+    proxyRequest.mockResolvedValueOnce({ resources: [] });
+    const service = new MeetingService();
+
+    await service.getMeetingRegistrantsForUser(req, 'meeting-1', ['User@Example.com', 'work@acme.example', 'user@example.com', ' '], 'user');
+
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(proxyRequest.mock.calls[0][4]).toMatchObject({
+      filters: ['meeting_id:meeting-1'],
+      filters_or: ['email:user@example.com', 'email:work@acme.example', 'username:user'],
+    });
+  });
+});
+
 describe('MeetingService.getPastMeetingParticipants', () => {
   let service: MeetingService;
 

@@ -48,6 +48,17 @@ export interface EmailManagementData {
 }
 
 /**
+ * The caller's email addresses as the BFF resolves them for matching (`resolveVerifiedUserEmails`):
+ * the primary first, then the alternates auth-service flags verified, lowercased and de-duplicated.
+ */
+export interface VerifiedUserEmails {
+  /** Every usable address. */
+  emails: string[];
+  /** The verified alternates alone, so a caller can tell which kind of address matched. */
+  alternates: string[];
+}
+
+/**
  * Preferred meeting-invitation email from the meeting-service.
  * Both fields are null when the user has no explicit override (i.e. meeting invitations
  * fall back to the primary email).

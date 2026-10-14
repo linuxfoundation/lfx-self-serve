@@ -24,6 +24,8 @@ const {
   generateM2MTokenMock,
   getEffectiveEmailMock,
   getEffectiveUsernameMock,
+  getEffectiveSubMock,
+  getUserEmailsMock,
   getUsernameFromAuthMock,
   validatePasswordMock,
   validateUidParameterMock,
@@ -37,6 +39,8 @@ const {
   generateM2MTokenMock: vi.fn(),
   getEffectiveEmailMock: vi.fn(),
   getEffectiveUsernameMock: vi.fn(),
+  getEffectiveSubMock: vi.fn(),
+  getUserEmailsMock: vi.fn(),
   getUsernameFromAuthMock: vi.fn(),
   validatePasswordMock: vi.fn(),
   validateUidParameterMock: vi.fn<(uid: unknown, req: unknown, next: (err: unknown) => void) => boolean>(() => true),
@@ -61,6 +65,7 @@ const {
     getPublicMeetingAttachments: vi.fn(),
     getMeetingAttachmentDownloadUrl: vi.fn(),
     getMeetingRegistrantsForUser: vi.fn(),
+    getMeetingJoinUrl: vi.fn(),
   },
   projectSvc: { getProjectById: vi.fn() },
   addInvitedStatusToMeetingMock: vi.fn(),
@@ -164,11 +169,18 @@ vi.mock('../utils/auth-helper', async () => {
   return {
     getEffectiveEmail: getEffectiveEmailMock,
     getEffectiveUsername: getEffectiveUsernameMock,
+    getEffectiveSub: getEffectiveSubMock,
     getUsernameFromAuth: getUsernameFromAuthMock,
     stripAuthPrefix: actual.stripAuthPrefix,
   };
 });
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: generateM2MTokenMock }));
+// The real service opens a NATS client in its constructor; only its email lookup matters here.
+vi.mock('../services/email-verification.service', () => ({
+  EmailVerificationService: class {
+    public getUserEmails = getUserEmailsMock;
+  },
+}));
 vi.mock('../utils/security.util', () => ({ validatePassword: validatePasswordMock }));
 
 // Keep the real host-key gate (resolveOrganizerAndHostKey + applyOrganizerAndHostKeyResult +
@@ -1922,5 +1934,100 @@ describe('PublicMeetingController public past-meeting artifacts (E4-04)', () => 
       expect(checkPastMeetingAccessMock).toHaveBeenCalledWith(req, expect.anything(), 'm2m-token', false);
       expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403 }));
     });
+  });
+});
+
+// E10-01 (#3601): a restricted meeting matches the caller on every identity they can prove — the
+// username, the email given, and their other auth-service-verified emails — in one query.
+describe('PublicMeetingController.postMeetingJoinUrl restricted-meeting identity match', () => {
+  let controller: PublicMeetingController;
+
+  const joinReq = (bodyEmail?: string) => {
+    const { req, res, next } = buildReqRes(true);
+    req.body = bodyEmail ? { email: bodyEmail } : {};
+    // The join link always needs the meeting passcode; validatePassword is stubbed to accept it.
+    req.headers = { 'x-meeting-password': 'passcode' };
+    return { req, res, next };
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new PublicMeetingController();
+    generateM2MTokenMock.mockResolvedValue('m2m-token');
+    validatePasswordMock.mockReturnValue(true);
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ restricted: true }));
+    meetingSvc.getMeetingJoinUrl.mockResolvedValue({ link: 'https://zoom.example/j/1' });
+    getEffectiveEmailMock.mockReturnValue('user@example.com');
+    getEffectiveUsernameMock.mockReturnValue('user');
+    getEffectiveSubMock.mockReturnValue('auth0|user');
+    getUserEmailsMock.mockResolvedValue({
+      primary_email: 'user@example.com',
+      alternate_emails: [
+        { email: 'Work@Acme.example', verified: true },
+        { email: 'old@unverified.example', verified: false },
+      ],
+    });
+  });
+
+  it('matches a verified alternate email in one query, never an unverified one, and joins with it', async () => {
+    meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([{ uid: 'r1', email: 'work@acme.example' }]);
+    const { req, res, next } = joinReq();
+
+    await controller.postMeetingJoinUrl(req, res, next);
+
+    expect(meetingSvc.getMeetingRegistrantsForUser).toHaveBeenCalledTimes(1);
+    expect(meetingSvc.getMeetingRegistrantsForUser).toHaveBeenCalledWith(req, MEETING_ID, ['user@example.com', 'work@acme.example'], 'user');
+    expect(meetingSvc.getMeetingJoinUrl).toHaveBeenCalledWith(req, MEETING_ID, 'work@acme.example');
+    expect(next).not.toHaveBeenCalled();
+    const { logger } = await import('../services/logger.service');
+    expect(logger.success).toHaveBeenCalledWith(req, 'restricted_meeting_check', expect.anything(), expect.objectContaining({ matched_by: 'alternate_email' }));
+  });
+
+  it('prefers a username match over an email match', async () => {
+    meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([
+      { uid: 'r1', email: 'user@example.com', username: 'someone-else' },
+      { uid: 'r2', email: 'invited@acme.example', username: 'user' },
+    ]);
+    const { req, res, next } = joinReq();
+
+    await controller.postMeetingJoinUrl(req, res, next);
+
+    expect(meetingSvc.getMeetingJoinUrl).toHaveBeenCalledWith(req, MEETING_ID, 'invited@acme.example');
+    const { logger } = await import('../services/logger.service');
+    expect(logger.success).toHaveBeenCalledWith(req, 'restricted_meeting_check', expect.anything(), expect.objectContaining({ matched_by: 'username' }));
+  });
+
+  it('falls back to the session email when auth-service cannot be reached, without failing', async () => {
+    getUserEmailsMock.mockResolvedValue(null);
+    meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([{ uid: 'r1', email: 'user@example.com' }]);
+    const { req, res, next } = joinReq();
+
+    await controller.postMeetingJoinUrl(req, res, next);
+
+    expect(meetingSvc.getMeetingRegistrantsForUser).toHaveBeenCalledWith(req, MEETING_ID, ['user@example.com'], 'user');
+    expect(meetingSvc.getMeetingJoinUrl).toHaveBeenCalledWith(req, MEETING_ID, 'user@example.com');
+  });
+
+  it('checks only the typed email for a guest with no session, and asks auth-service nothing', async () => {
+    getEffectiveSubMock.mockReturnValue(null);
+    getEffectiveEmailMock.mockReturnValue(null);
+    getEffectiveUsernameMock.mockReturnValue(null);
+    meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([{ uid: 'r1', email: 'guest@acme.example' }]);
+    const { req, res, next } = joinReq('Guest@Acme.example');
+
+    await controller.postMeetingJoinUrl(req, res, next);
+
+    expect(getUserEmailsMock).not.toHaveBeenCalled();
+    expect(meetingSvc.getMeetingRegistrantsForUser).toHaveBeenCalledWith(req, MEETING_ID, ['guest@acme.example'], undefined);
+  });
+
+  it('still refuses with NOT_REGISTERED_FOR_MEETING when no identity matches', async () => {
+    meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([]);
+    const { req, res, next } = joinReq();
+
+    await controller.postMeetingJoinUrl(req, res, next);
+
+    expect(meetingSvc.getMeetingJoinUrl).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'NOT_REGISTERED_FOR_MEETING' }));
   });
 });

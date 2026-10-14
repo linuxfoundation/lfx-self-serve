@@ -1060,20 +1060,21 @@ export class MeetingService {
   }
 
   /**
-   * Fetches registrants for a meeting that match the caller's email or username in a single query.
-   * Uses `filters=meeting_id:X` (AND) combined with `filters_or=[email:Y, username:Z]` so the
-   * query service resolves the intersection in one call instead of two sequential lookups.
+   * Fetches registrants for a meeting that match the caller's email(s) or username in a single query.
+   * Uses `filters=meeting_id:X` (AND) combined with `filters_or=[email:Y…, username:Z]` so the
+   * query service resolves the intersection in one call instead of sequential lookups. `email` may be
+   * a list, one clause per address, for a caller with several verified addresses (E10-01).
    */
   public async getMeetingRegistrantsForUser(
     req: Request,
     meetingUid: string,
-    email: string | undefined,
+    email: string | readonly string[] | undefined,
     username: string | undefined,
     m2mToken?: string,
     failOnPartial = false
   ): Promise<MeetingRegistrant[]> {
-    const orClauses: string[] = [];
-    if (email) orClauses.push(`email:${email.toLowerCase()}`);
+    const emails = [...new Set((typeof email === 'string' ? [email] : (email ?? [])).map((value) => value.trim().toLowerCase()).filter(Boolean))];
+    const orClauses: string[] = emails.map((value) => `email:${value}`);
     if (username) orClauses.push(`username:${stripAuthPrefix(username)}`);
     if (orClauses.length === 0) return [];
 
@@ -1086,7 +1087,7 @@ export class MeetingService {
 
     logger.debug(req, 'get_meeting_registrants_for_user', 'Fetching registrants for current user', {
       meeting_id: meetingUid,
-      has_email: !!email,
+      email_count: emails.length,
       has_username: !!username,
     });
 
