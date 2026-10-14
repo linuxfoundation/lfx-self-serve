@@ -1743,19 +1743,26 @@ export class CommitteeService {
 
     // Project context is best-effort: a failed or slow lookup must not hide a request the caller can still review, nor push
     // the dashboard past the discovery budget the live reads above already honour.
-    let projectNames = new Map<string, string>();
+    let projects = new Map<string, { name: string; slug?: string; isFoundation?: boolean }>();
     const remainingMs = deadlineAt - Date.now();
     if (remainingMs > 0) {
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {
         const enriched = await Promise.race([
-          this.projectService.enrichWithProjectData(req, Array.from(committees.values())),
+          this.projectService.enrichWithProjectData(req, Array.from(committees.values()), requestOptions),
           new Promise<null>((resolve) => {
             timer = setTimeout(() => resolve(null), remainingMs);
           }),
         ]);
         if (enriched) {
-          projectNames = new Map(enriched.filter((committee) => committee.project_name).map((committee) => [committee.uid, committee.project_name]));
+          projects = new Map(
+            enriched
+              .filter((committee) => committee.project_name)
+              .map((committee) => [
+                committee.uid,
+                { name: committee.project_name, slug: committee.project_slug || undefined, isFoundation: committee.is_foundation },
+              ])
+          );
         } else {
           logger.warning(
             req,
@@ -1781,9 +1788,10 @@ export class CommitteeService {
       return {
         ...application,
         committee_name: committee?.name ?? application.committee_uid,
-        project_name: projectNames.get(application.committee_uid),
+        project_name: projects.get(application.committee_uid)?.name,
+        project_slug: projects.get(application.committee_uid)?.slug,
+        is_foundation: projects.get(application.committee_uid)?.isFoundation,
         committee_category: committee?.category || undefined,
-        committee_description: committee?.description || undefined,
       };
     });
   }

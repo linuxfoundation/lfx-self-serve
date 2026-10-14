@@ -1541,26 +1541,32 @@ describe('CommitteeService.getManagedPendingApplications', () => {
       const base = proxyRequest.getMockImplementation()!;
       proxyRequest.mockImplementation((...args: Parameters<typeof base>) =>
         args[4]?.['type'] === 'committee'
-          ? Promise.resolve(pageOf([{ uid: 'manager', name: 'Group manager', category: 'Technical Steering Committee', description: 'Owns releases' }]))
+          ? Promise.resolve(pageOf([{ uid: 'manager', name: 'Group manager', category: 'Technical Steering Committee' }]))
           : base(...args)
       );
     };
 
-    it('adds the project name, group category and description', async () => {
+    it('adds the project name, slug, tier and the group category', async () => {
       const app = application('manager');
       prime([app]);
       withGroupDetails();
       enrichWithProjectData.mockImplementationOnce((_req: unknown, items: unknown[]) =>
-        Promise.resolve((items as { uid: string }[]).map((item) => ({ ...item, project_name: 'Project Alpha' })))
+        Promise.resolve(
+          (items as { uid: string }[]).map((item) => ({ ...item, project_name: 'Project Alpha', project_slug: 'project-alpha', is_foundation: false }))
+        )
       );
 
-      expect(await service.getManagedPendingApplications(req)).toEqual([
+      const result = await service.getManagedPendingApplications(req);
+      // The discovery deadline must reach the project lookup so a slow upstream stops, not just stops being awaited.
+      expect(enrichWithProjectData).toHaveBeenCalledWith(req, expect.any(Array), { deadlineAt: expect.any(Number) });
+      expect(result).toEqual([
         {
           ...app,
           committee_name: 'Group manager',
           project_name: 'Project Alpha',
+          project_slug: 'project-alpha',
+          is_foundation: false,
           committee_category: 'Technical Steering Committee',
-          committee_description: 'Owns releases',
         },
       ]);
     });

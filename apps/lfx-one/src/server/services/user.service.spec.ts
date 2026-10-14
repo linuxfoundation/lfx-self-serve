@@ -1346,7 +1346,8 @@ describe('UserService.getPendingActions managed applications (GH-3131)', () => {
     message: 'I maintain the upstream driver and want to help review patches.',
     project_name: 'Project Alpha',
     committee_category: 'Technical Steering Committee',
-    committee_description: 'Owns the release process.',
+    project_slug: 'project-alpha',
+    is_foundation: false,
     reviewer_notes: 'private notes',
     reason: 'private reason',
   }));
@@ -1416,7 +1417,8 @@ describe('UserService.getPendingActions managed applications (GH-3131)', () => {
     expect(actions[0]).toMatchObject({
       applicationProjectName: 'Project Alpha',
       applicationGroupCategory: 'Technical Steering Committee',
-      applicationGroupDescription: 'Owns the release process.',
+      applicationProjectSlug: 'project-alpha',
+      applicationIsFoundation: false,
       applicationMessage: 'I maintain the upstream driver and want to help review patches.',
       applicationSubmittedAt: tomorrow,
     });

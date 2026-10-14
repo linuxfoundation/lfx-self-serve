@@ -221,7 +221,7 @@
                             severity="primary"
                             [label]="processingApplicationKey() === item.rowKey ? 'Saving' : 'Approve'"
                             [loading]="processingApplicationKey() === item.rowKey"
-                            [disabled]="processingApplicationKey() !== null || !item.committeeUid || !item.applicationUid || !item.applicationApplicantEmail"
+                            [disabled]="processingApplicationKey() !== null || !item.isReviewableApplication"
                             [ariaLabel]="'Approve request from ' + item.applicationApplicantEmail + ' to join ' + item.badge"
                             (onClick)="onApproveApplication(item)"
                             data-testid="dashboard-pending-actions-application-approve" />
@@ -230,7 +230,7 @@
                             severity="danger"
                             [text]="true"
                             label="Reject"
-                            [disabled]="processingApplicationKey() !== null || !item.committeeUid || !item.applicationUid || !item.applicationApplicantEmail"
+                            [disabled]="processingApplicationKey() !== null || !item.isReviewableApplication"
                             [ariaLabel]="'Reject request from ' + item.applicationApplicantEmail + ' to join ' + item.badge"
                             (onClick)="onRejectApplication(item)"
                             data-testid="dashboard-pending-actions-application-reject" />
@@ -309,10 +309,7 @@
                           type="button"
                           class="shrink-0 self-start sm:self-auto sm:ml-4 text-[10px] text-gray-400 hover:text-gray-500 hover:underline transition-colors whitespace-nowrap disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
                           (click)="handleDismiss(item)"
-                          [disabled]="
-                            item.type === 'JoinApplication' &&
-                            (processingApplicationKey() !== null || !item.committeeUid || !item.applicationUid || !item.applicationApplicantEmail)
-                          "
+                          [disabled]="item.type === 'JoinApplication' && (processingApplicationKey() !== null || !item.isReviewableApplication)"
                           [attr.aria-label]="'Dismiss: ' + item.text"
                           [attr.data-testid]="'dashboard-pending-actions-dismiss-' + item.type">
                           Dismiss

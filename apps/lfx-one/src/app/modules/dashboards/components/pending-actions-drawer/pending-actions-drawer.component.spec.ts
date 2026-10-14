@@ -361,7 +361,7 @@ describe('PendingActionsDrawerComponent — section grouping', () => {
       ...overrides,
     });
 
-  it('places independent same-email applications after invitations and before formation, without links, each with a Dismiss control', async () => {
+  it('places independent same-email applications after invitations and before formation, linking only to the group (never a buttonLink), each with a Dismiss control', async () => {
     const first = applicationRow({ buttonLink: '/must-not-navigate' });
     const second = applicationRow({ committeeUid: 'group-beta', badge: 'Group Beta', applicationApplicantName: undefined });
     await render([formationRow(), second, row('Invitation', 'Invite A'), first]);
@@ -380,7 +380,11 @@ describe('PendingActionsDrawerComponent — section grouping', () => {
     expect(rows?.[1].textContent).toContain('Applicant Name');
     expect(rows?.[1].textContent).toContain('applicant@example.com');
     expect(rows?.[1].textContent).toContain('Group Alpha');
-    expect(applications?.querySelector('a')).toBeNull();
+    // The only links are the group-name links to the group's own page; a stray buttonLink must never become one.
+    const anchors = Array.from(applications?.querySelectorAll('a') ?? []);
+    expect(anchors).toHaveLength(2);
+    expect(anchors.every((a) => a.getAttribute('data-testid') === 'pending-actions-drawer-application-group')).toBe(true);
+    expect(anchors.some((a) => a.getAttribute('href')?.includes('must-not-navigate'))).toBe(false);
     expect(applications?.querySelectorAll('[data-testid="pending-actions-drawer-dismiss-JoinApplication"]')).toHaveLength(2);
     expect(byTestId('pending-actions-drawer-section-count-applications')?.textContent?.trim()).toBe('2');
     expect(byTestId('pending-actions-drawer-count')?.textContent).toContain('(4)');

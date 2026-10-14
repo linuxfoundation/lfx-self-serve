@@ -18,7 +18,7 @@ import {
   PENDING_ACTION_SECTION_LABEL,
   PENDING_ACTION_SECTION_ORDER,
 } from '@lfx-one/shared/constants';
-import { buildFormationPendingActionView } from '@lfx-one/shared/utils';
+import { buildFormationPendingActionView, isReviewableJoinApplication } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { HiddenActionsService } from '@shared/services/hidden-actions.service';
 import { InvitationService } from '@shared/services/invitation.service';
@@ -130,7 +130,7 @@ export class PendingActionsDrawerComponent {
   protected handleDismiss(item: DrawerActionRow): void {
     if (item.type === 'JoinApplication') {
       // Hides the request for this user only; it stays pending for other reviewers and on the group's applications tab.
-      if (!item.committeeUid || !item.applicationUid || !item.applicationApplicantEmail) return;
+      if (!isReviewableJoinApplication(item)) return;
       this.hiddenActionsService.dismissAction(item);
       this.hiddenActionsVersion.update((v) => v + 1);
       this.actionCompleted.emit(item);
@@ -326,6 +326,7 @@ export class PendingActionsDrawerComponent {
             isMeetingLoading: !!item.meetingUid && loading.has(item.meetingUid),
             meetingLoadFailed,
             isInvitation,
+            isReviewableApplication: item.type === 'JoinApplication' && isReviewableJoinApplication(item),
             // Formation rows (#2732): link, status chip and due label — shared with the dashboard list.
             ...buildFormationPendingActionView(item),
             acceptAriaLabel: `Accept invite to ${inviteGroupName}`,

@@ -1856,7 +1856,8 @@ export class UserService {
       applicationApplicantName: application.applicant_name,
       applicationProjectName: application.project_name,
       applicationGroupCategory: application.committee_category,
-      applicationGroupDescription: application.committee_description,
+      applicationProjectSlug: application.project_slug,
+      applicationIsFoundation: application.is_foundation,
       applicationMessage: application.message,
       applicationSubmittedAt: application.created_at,
     }));

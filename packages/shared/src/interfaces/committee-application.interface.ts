@@ -34,8 +34,10 @@ export interface ManagedPendingApplication extends CommitteeJoinApplication {
   project_name?: string;
   /** Group category (e.g. "Technical Steering Committee"); absent when the group record has none. */
   committee_category?: string;
-  /** What the group is for; absent when the group record has none. */
-  committee_description?: string;
+  /** Owning project slug — drives the `?project=` query param on the group link; absent when the project lookup failed. */
+  project_slug?: string;
+  /** Whether the owning project is a foundation — picks the `/foundation` vs `/project` route prefix; absent when unknown. */
+  is_foundation?: boolean;
 }
 
 /** Request payload to approve a committee join application */
