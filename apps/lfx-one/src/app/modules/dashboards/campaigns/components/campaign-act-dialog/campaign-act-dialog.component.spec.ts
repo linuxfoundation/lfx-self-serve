@@ -4,6 +4,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { By } from '@angular/platform-browser';
 import {
   CAMPAIGN_ACT_AMBIGUOUS_MESSAGE,
   CAMPAIGN_ACT_META_RESUME_NOTE,
@@ -27,6 +28,8 @@ import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { Observable, of, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
+import { CampaignBidFormComponent } from '../campaign-bid-form/campaign-bid-form.component';
+import { CampaignBudgetFormComponent } from '../campaign-budget-form/campaign-budget-form.component';
 import { CampaignActDialogComponent } from './campaign-act-dialog.component';
 
 const CAMPAIGN: CampaignServiceCampaign = {
@@ -227,6 +230,43 @@ describe('CampaignActDialogComponent (#3299)', () => {
       expect.objectContaining({ campaignId: 'c-1', briefId: 'b-1', bid: 2.5, bidType: 'cpc', etag: '"3"' })
     );
     expect(q('campaign-act-dialog-bid-current')?.textContent).toContain('2.5');
+  });
+
+  it('does not refill the bid editor with a stale amount after a 412 and Reload', async () => {
+    await setup({ lever: 'bid' });
+    service.updateCampaignBid.mockReturnValueOnce(of({ campaignId: 'c-1', bid: 2.5, bidType: 'cpc', etag: '"4"' }));
+    fixture.componentInstance['changeBid']({ bid: 2.5 });
+    fixture.detectChanges();
+    expect(q('campaign-act-dialog-bid-current')).not.toBeNull();
+
+    service.updateCampaignBid.mockReturnValueOnce(throwError(() => bffError(412, 'stale')));
+    fixture.componentInstance['changeBid']({ bid: 3 });
+    fixture.detectChanges();
+    expect(q('campaign-act-dialog-conflict')).not.toBeNull();
+
+    service.getCampaignRecord.mockReturnValue(of({ campaign: { ...CAMPAIGN, etag: '"9"' }, statusToggleEnabled: true }));
+    click('campaign-act-dialog-reload');
+
+    // Another manager may have changed the bid: the editor starts from the reloaded row, not from 2.5.
+    expect(q('campaign-act-dialog-bid-current')).toBeNull();
+    const form = fixture.debugElement.query(By.directive(CampaignBidFormComponent)).componentInstance as CampaignBidFormComponent;
+    expect(form.form.controls.bid.value).toBeNull();
+  });
+
+  it('does not refill the budget editor with a stale amount after a 412 and Reload', async () => {
+    await setup({ lever: 'budget' });
+    service.updateCampaignBudget.mockReturnValueOnce(of({ campaignId: 'c-1', budget: 100, budgetType: 'daily', etag: '"4"' }));
+    fixture.componentInstance['changeBudget']({ budget: 100, budgetType: 'daily' });
+    fixture.detectChanges();
+    service.updateCampaignBudget.mockReturnValueOnce(throwError(() => bffError(412, 'stale')));
+    fixture.componentInstance['changeBudget']({ budget: 120, budgetType: 'daily' });
+    fixture.detectChanges();
+
+    click('campaign-act-dialog-reload');
+
+    expect(q('campaign-act-dialog-budget-current')).toBeNull();
+    const form = fixture.debugElement.query(By.directive(CampaignBudgetFormComponent)).componentInstance as CampaignBudgetFormComponent;
+    expect(form.initialBudget()).toBeNull();
   });
 
   it('withholds the budget editor for a campaign never created on its platform', async () => {

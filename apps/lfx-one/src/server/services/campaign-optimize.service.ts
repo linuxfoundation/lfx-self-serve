@@ -8,7 +8,7 @@ import {
   CAMPAIGN_ETAG_REQUIRED_MESSAGE,
   CAMPAIGN_ETAG_STALE_CODE,
   CAMPAIGN_ETAG_STALE_MESSAGE,
-  CAMPAIGN_REF_ID_PATTERNS,
+  isValidCampaignRefId,
   KEYWORD_TARGETING_REMOVAL_OUTCOME_UNCONFIRMED,
   KEYWORD_TARGETING_REMOVAL_UNCONFIRMED_CODE,
   KEYWORD_TARGETING_REMOVAL_UNCONFIRMED_OUTCOME,
@@ -115,8 +115,7 @@ export class CampaignOptimizeService {
     platform: CampaignRefPlatform,
     platformCampaignId: string
   ): Promise<CampaignServiceCampaignResolution> {
-    const pattern = Object.prototype.hasOwnProperty.call(CAMPAIGN_REF_ID_PATTERNS, platform) ? CAMPAIGN_REF_ID_PATTERNS[platform] : null;
-    if (projectSlug === '' || !pattern || !pattern.test(platformCampaignId)) {
+    if (projectSlug === '' || !isValidCampaignRefId(platform, platformCampaignId)) {
       throw ServiceValidationError.forField('platformCampaignId', 'A campaign reference lookup requires the project and a valid platform campaign id.', {
         operation: 'resolve_platform_campaign',
         service: 'campaign_optimize_service',
@@ -260,11 +259,15 @@ export class CampaignOptimizeService {
    * Service (campaign-service exposes no brief list; `campaign_brief` is indexed instead).
    *
    * Filtered HERE, not with a query filter: an index filter on `status` is unverified, and a filter
-   * that silently matched nothing would read as "no approved briefs". Only a document that SAYS
-   * `delivery_type: 'paid-marketing'` is offered. One with no `delivery_type` was indexed before the
-   * field existed and may be a paid brief OR a legacy email brief, which this read cannot tell apart,
-   * so it is left out rather than risk adopting an ad campaign into an email brief. Such a brief appears
-   * once its next write re-indexes it (campaign-service `BriefDoc`).
+   * that silently matched nothing would read as "no approved briefs".
+   *
+   * `delivery_type` follows campaign-service's index contract (`BriefDoc`,
+   * `internal/infrastructure/indexer/contract.go`): a document indexed before the field existed keeps
+   * its old shape, and an ABSENT field means "written before the widening", which for every such row
+   * is paid-marketing with an empty stage. Email briefs exist only after the widening and always
+   * publish `delivery_type` (the field has no `omitempty`). So an absent value or `'paid-marketing'` is
+   * offered, and `'email'` or any other explicit value is not. `adopt-campaign` itself refuses a brief
+   * of the wrong channel with 400.
    */
   public async listAdoptableBriefs(req: Request, projectSlug: string): Promise<CampaignAdoptableBrief[]> {
     if (projectSlug === '') {
@@ -284,7 +287,9 @@ export class CampaignOptimizeService {
       { failOnPartial: true }
     );
     const briefs = docs
-      .filter((d) => typeof d?.id === 'string' && d.id !== '' && d.status === 'approved' && d.delivery_type === 'paid-marketing')
+      .filter(
+        (d) => typeof d?.id === 'string' && d.id !== '' && d.status === 'approved' && (d.delivery_type === undefined || d.delivery_type === 'paid-marketing')
+      )
       .map((d) => ({
         id: d.id,
         eventSlug: typeof d.event_slug === 'string' ? d.event_slug : '',

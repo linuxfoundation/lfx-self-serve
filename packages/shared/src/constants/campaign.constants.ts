@@ -769,6 +769,14 @@ export const GOOGLE_ADS_RESOURCE_ID_RE = /^[0-9]{1,19}$/;
 const MAX_INT64 = 9223372036854775807n;
 
 export function isCanonicalGoogleAdsResourceId(value: unknown): boolean {
+  return isCanonicalPositiveInt64(value);
+}
+
+/**
+ * Whether a value is a string spelling a positive int64 canonically: digits only, no leading zero,
+ * at most `math.MaxInt64`. Shared by the Google Ads resource ids above and LinkedIn campaign ids.
+ */
+export function isCanonicalPositiveInt64(value: unknown): boolean {
   // `unknown`, not `string`: the caller validates req.body, which is CAST rather than parsed, so
   // a JSON number reaches here as a number. RE.test() coerces it and passes, and the
   // startsWith() below then threw a TypeError -- turning malformed input into a 500 instead of

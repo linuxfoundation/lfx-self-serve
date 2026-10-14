@@ -197,6 +197,11 @@ export class CampaignActDialogComponent {
         next: (result) => {
           this.record.set(result.campaign);
           this.statusToggleEnabled.set(result.statusToggleEnabled === true);
+          // A reload follows a 412: someone else may have changed the budget or bid. The row records
+          // neither, so what this dialog confirmed earlier is no longer known to be current and must not
+          // refill an editor; the editors start empty from the reloaded row.
+          this.confirmedBudget.set(null);
+          this.confirmedBid.set(null);
           this.conflicted.set(false);
           this.toggleOutcome.set(null);
           this.budgetOutcome.set(null);

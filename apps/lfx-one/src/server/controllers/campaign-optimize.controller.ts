@@ -8,8 +8,8 @@ import {
   CAMPAIGN_AUDIENCE_WINDOWS,
   CAMPAIGN_ETAG_HEADER_PATTERN,
   CAMPAIGN_METRICS_WINDOWS,
-  CAMPAIGN_REF_ID_PATTERNS,
   CAMPAIGN_REF_PLATFORMS_PENDING_UPSTREAM,
+  isValidCampaignRefId,
   MAX_KEYWORD_TARGETING_KEYWORD_LENGTH,
   MAX_KEYWORD_TARGETING_REMOVALS,
   MAX_KEYWORD_TARGETING_REVISION_LENGTH,
@@ -110,7 +110,7 @@ export class CampaignOptimizeController {
       return;
     }
     const platformCampaignId = req.query['platformCampaignId'];
-    if (typeof platformCampaignId !== 'string' || !CAMPAIGN_REF_ID_PATTERNS[platform].test(platformCampaignId)) {
+    if (typeof platformCampaignId !== 'string' || !isValidCampaignRefId(platform, platformCampaignId)) {
       next(fieldError('platformCampaignId', `platformCampaignId is not a valid ${platform} campaign id`, operation, req));
       return;
     }

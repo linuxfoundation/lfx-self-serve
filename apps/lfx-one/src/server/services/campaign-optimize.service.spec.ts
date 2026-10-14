@@ -114,6 +114,23 @@ describe('CampaignOptimizeService.resolvePlatformCampaign', () => {
   });
 });
 
+describe('CampaignOptimizeService.resolvePlatformCampaign LinkedIn int64 range', () => {
+  it('accepts the int64 maximum', async () => {
+    proxyRequest.mockResolvedValueOnce({ platform_campaign_id: '9223372036854775807', matches: [], match_count: 0 });
+
+    await new CampaignOptimizeService().resolvePlatformCampaign(req, 'tlf', 'linkedin-ads', '9223372036854775807');
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/linkedin-ads/campaign-ref', 'GET', {
+      platform_campaign_id: '9223372036854775807',
+    });
+  });
+
+  it.each(['9223372036854775808', '9999999999999999999'])('refuses %s, past int64, without calling the proxy', async (id) => {
+    await expect(new CampaignOptimizeService().resolvePlatformCampaign(req, 'tlf', 'linkedin-ads', id)).rejects.toBeInstanceOf(ServiceValidationError);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});
+
 describe('CampaignOptimizeService.getRedditAdsKeywords', () => {
   it('GETs the Reddit keyword read with the window as a QUERY parameter', async () => {
     proxyRequest.mockResolvedValueOnce({ window: 'last_7_days', rows: [] });
@@ -427,7 +444,7 @@ describe('CampaignOptimizeService.getCampaign', () => {
 describe('CampaignOptimizeService.listAdoptableBriefs', () => {
   const page = (data: unknown[]) => ({ resources: data.map((d) => ({ type: 'campaign_brief', id: 'x', data: d })) });
 
-  it('reads campaign_brief from the Query Service and keeps approved briefs that say paid-marketing, excluding undefined and email', async () => {
+  it('reads campaign_brief and keeps approved paid briefs: absent and paid-marketing included, email excluded', async () => {
     proxyRequest.mockResolvedValueOnce(
       page([
         { id: 'b-1', event_slug: 'kubecon', program_type: 'events', delivery_type: 'paid-marketing', status: 'approved', platforms: ['linkedin-ads', 7] },
@@ -441,8 +458,12 @@ describe('CampaignOptimizeService.listAdoptableBriefs', () => {
     const briefs = await new CampaignOptimizeService().listAdoptableBriefs(req, 'tlf');
 
     expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', { type: 'campaign_brief', parent: 'project:tlf' });
-    // Only an explicit paid-marketing brief: `legacy` (no delivery_type) may be a pre-field email brief.
-    expect(briefs).toEqual([{ id: 'b-1', eventSlug: 'kubecon', programType: 'events', platforms: ['linkedin-ads'] }]);
+    // campaign-service's BriefDoc contract: an ABSENT delivery_type predates the widening and means
+    // paid-marketing; email briefs always publish theirs.
+    expect(briefs).toEqual([
+      { id: 'b-1', eventSlug: 'kubecon', programType: 'events', platforms: ['linkedin-ads'] },
+      { id: 'b-2', eventSlug: 'legacy', programType: '', platforms: [] },
+    ]);
   });
 
   it('refuses an empty project without calling the Query Service', async () => {

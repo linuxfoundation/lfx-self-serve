@@ -16,7 +16,7 @@ import type {
   RedditKeywordsWindow,
   RedditKeywordsWindowOption,
 } from '../interfaces/campaign-optimize.interface';
-import { CAMPAIGN_METRICS_WINDOWS, MICROSOFT_KEYWORDS_WINDOWS } from './campaign.constants';
+import { CAMPAIGN_METRICS_WINDOWS, isCanonicalPositiveInt64, MICROSOFT_KEYWORDS_WINDOWS } from './campaign.constants';
 
 // ---------------------------------------------------------------------------
 // Optimize-tab reads and levers proxied to lfx-v2-campaign-service
@@ -80,6 +80,21 @@ export const CAMPAIGN_REF_ID_PATTERNS: Readonly<Record<CampaignRefPlatform, RegE
   'twitter-ads': /^[A-Za-z0-9]{1,64}$/,
   'linkedin-ads': /^[1-9][0-9]{0,18}$/,
 };
+
+/**
+ * Whether a platform campaign id passes the campaign-ref resolve's id rule. The pattern is the shape;
+ * LinkedIn's ids must also be within int64 (upstream refuses one past 9223372036854775807 with 400),
+ * which a regex states badly, so that range is checked arithmetically.
+ */
+export function isValidCampaignRefId(platform: CampaignRefPlatform, value: unknown): boolean {
+  if (typeof value !== 'string' || !Object.prototype.hasOwnProperty.call(CAMPAIGN_REF_ID_PATTERNS, platform)) {
+    return false;
+  }
+  if (!CAMPAIGN_REF_ID_PATTERNS[platform].test(value)) {
+    return false;
+  }
+  return platform === 'linkedin-ads' ? isCanonicalPositiveInt64(value) : true;
+}
 
 /**
  * Campaign-ref resolves whose campaign-service endpoint is not on `main` yet; 404 unless

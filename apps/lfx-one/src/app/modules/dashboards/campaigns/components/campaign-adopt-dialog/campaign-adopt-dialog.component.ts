@@ -168,7 +168,8 @@ export class CampaignAdoptDialogComponent {
    * After an unconfirmed adoption: asks LFX One whether the campaign is now bound, through the same
    * campaign-ref resolve the act dialog uses. Only a match on the brief the adoption was SENT for
    * confirms it; a match on another brief means this adoption did not happen; none means it did not
-   * happen and Adopt is offered again; several is refused as everywhere else.
+   * happen and Adopt is offered again. Several, like a self-contradicting answer, settles nothing:
+   * the adoption stays unconfirmed and Adopt stays locked.
    */
   protected verify(): void {
     const entry = this.inFlight();
@@ -190,6 +191,12 @@ export class CampaignAdoptDialogComponent {
             this.adoptionState.annotate(key, CAMPAIGN_ADOPT_VERIFY_UNEXPECTED_MESSAGE);
             return;
           }
+          // Several matches say nothing about whether THIS adoption landed, so the lock stays: only
+          // no match, or one match (here or on another brief), settles it.
+          if (verdict.kind === 'several') {
+            this.adoptionState.annotate(key, CAMPAIGN_ACT_AMBIGUOUS_MESSAGE);
+            return;
+          }
           if (verdict.kind === 'one' && verdict.match.brief_id === entry.briefId) {
             this.adoptionState.markAdopted(key, entry.briefId);
             this.announceAdopted();
@@ -205,15 +212,12 @@ export class CampaignAdoptDialogComponent {
       });
   }
 
-  /** What a check that did not confirm THIS adoption says. */
-  private unsettledCheckFailure(kind: 'none' | 'one' | 'several'): CampaignAdoptFailure {
+  /** What a check that settled the adoption as NOT made says: no match, or a match on another brief. */
+  private unsettledCheckFailure(kind: 'none' | 'one'): CampaignAdoptFailure {
     if (kind === 'one') {
       return { state: 'failed', title: 'Not adopted: bound to a different brief', message: CAMPAIGN_ADOPT_VERIFY_OTHER_BRIEF_MESSAGE, detail: '' };
     }
-    if (kind === 'none') {
-      return { state: 'failed', title: 'Not adopted', message: CAMPAIGN_ADOPT_VERIFY_ABSENT_MESSAGE, detail: '' };
-    }
-    return { state: 'failed', title: 'Not changed', message: CAMPAIGN_ACT_AMBIGUOUS_MESSAGE, detail: '' };
+    return { state: 'failed', title: 'Not adopted', message: CAMPAIGN_ADOPT_VERIFY_ABSENT_MESSAGE, detail: '' };
   }
 
   /** Announces a success; the store's `adopted` entry closes every live dialog for this campaign. */

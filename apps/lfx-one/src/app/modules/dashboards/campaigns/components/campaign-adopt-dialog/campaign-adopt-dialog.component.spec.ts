@@ -5,6 +5,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import {
+  CAMPAIGN_ACT_AMBIGUOUS_MESSAGE,
   CAMPAIGN_ADOPT_BRIEFS_EMPTY_MESSAGE,
   CAMPAIGN_ADOPT_BRIEFS_UNAVAILABLE_MESSAGE,
   CAMPAIGN_ADOPT_OUTCOME_UNCONFIRMED,
@@ -268,6 +269,34 @@ describe('CampaignAdoptDialogComponent (#3299)', () => {
     expect(toast).toHaveBeenCalledWith(
       expect.objectContaining({ severity: 'error', sticky: true, summary: 'Not adopted: this campaign cannot be bound to this brief: KubeCon EU' })
     );
+  });
+
+  it('keeps the adoption unconfirmed and locked when the check finds several matches', async () => {
+    await setup();
+    service.adoptCampaign.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 0 })));
+    chooseAndSubmit();
+    service.resolvePlatformCampaign.mockReturnValue(
+      of({
+        platform_campaign_id: '123456',
+        matches: [
+          { campaign_id: 'c-9', brief_id: 'b-1' },
+          { campaign_id: 'c-8', brief_id: 'b-2' },
+        ],
+        match_count: 2,
+      })
+    );
+
+    (q('campaign-adopt-dialog-verify')?.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(q('campaign-adopt-dialog-unconfirmed')).not.toBeNull();
+    expect(text('campaign-adopt-dialog-unconfirmed-detail')).toContain(CAMPAIGN_ACT_AMBIGUOUS_MESSAGE);
+    expect(submitDisabled()).toBe(true);
+    expect(close).not.toHaveBeenCalled();
+    expect(toast).not.toHaveBeenCalled();
+
+    reopen();
+    expect(submitDisabled()).toBe(true);
   });
 
   it('never reports success when the check finds the campaign bound to a different brief', async () => {

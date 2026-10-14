@@ -169,6 +169,24 @@ describe('CampaignOptimizeController.resolvePlatformCampaign', () => {
   });
 });
 
+describe('CampaignOptimizeController.resolvePlatformCampaign LinkedIn int64 range', () => {
+  it('serves the int64 maximum', async () => {
+    resolvePlatformCampaign.mockResolvedValue({ platform_campaign_id: '9223372036854775807', matches: [], match_count: 0 });
+
+    await controller.resolvePlatformCampaign(buildReq({ query: { project: 'tlf', platformCampaignId: '9223372036854775807' } }), res, next, 'linkedin-ads');
+
+    expect(resolvePlatformCampaign).toHaveBeenCalledWith(expect.anything(), 'tlf', 'linkedin-ads', '9223372036854775807');
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it.each(['9223372036854775808', '9999999999999999999'])('refuses %s, past int64, with a 400', async (id) => {
+    await controller.resolvePlatformCampaign(buildReq({ query: { project: 'tlf', platformCampaignId: id } }), res, next, 'linkedin-ads');
+
+    expectFieldError(next, 'platformCampaignId');
+    expect(resolvePlatformCampaign).not.toHaveBeenCalled();
+  });
+});
+
 describe('CampaignOptimizeController.getRedditKeywords', () => {
   // campaign-service serves the read now (#331): no flag, with OPTIMIZE_READS off as the default here.
   it('reads and maps the rows with the flag OFF', async () => {
