@@ -1,0 +1,109 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// The Marketing OS document store: key layout, id shapes and the document
+// types the Documents area lists. Revisions live in the same private
+// `marketing-os-artifacts` bucket as the pre-revision artifacts, under their
+// own `documents/` prefix.
+
+import type { MktgArtifactIntakeMode } from '../interfaces/mktg-artifact.interface';
+import type { MktgDocumentType } from '../interfaces/mktg-document-store.interface';
+
+/** BFF base path of the Documents area: `GET ?project=`, `GET /:agentKey/:documentId`, `GET …/revisions/:revisionId`, `POST …/restore`. */
+export const MKTG_DOCUMENTS_API_PATH = '/api/mktg-agents/documents';
+
+/** Key prefix of every revision: `documents/{project}/{agentKey}/{documentId}/{sequence}-{sha256}.json`. */
+export const MKTG_DOCUMENT_STORE_KEY_PREFIX = 'documents';
+
+/** Schema id written into every stored revision record. */
+export const MKTG_REVISION_SCHEMA = 'mktg-document-revision/v1';
+
+/** Object key suffix of a stored revision record. */
+export const MKTG_REVISION_KEY_SUFFIX = '.json';
+
+/** Content type revision records are written with. */
+export const MKTG_REVISION_CONTENT_TYPE = 'application/json; charset=utf-8';
+
+/** Digits of the zero-padded write sequence that leads a revision key, so keys sort in write order. */
+export const MKTG_REVISION_SEQUENCE_DIGITS = 6;
+
+/** Document id of a living document: one per project and agent. */
+export const MKTG_LIVING_DOCUMENT_ID = 'living';
+
+/** Prefix of a one-off run's document id (`run-` + 24 hex characters derived from the run's session). */
+export const MKTG_RUN_DOCUMENT_ID_PREFIX = 'run-';
+
+/** Shape of a document id: the living id, or a run id. One safe key segment either way. */
+export const MKTG_DOCUMENT_ID_REGEX = /^(living|run-[0-9a-f]{24})$/;
+
+/** Prefix of the id of a living document's revision 1 that is still read from the pre-revision store. */
+export const MKTG_LEGACY_REVISION_ID_PREFIX = 'legacy-';
+
+/** Shape of a revision id: `{sequence}-{sha256}` for a stored revision, `legacy-{sha256}` for a not-yet-migrated one. */
+export const MKTG_REVISION_ID_REGEX = /^([0-9]{6}-[0-9a-f]{64}|legacy-[0-9a-f]{64})$/;
+
+/**
+ * Document types in the order the Documents area lists them: living
+ * documents in run order (the marketplace's agent numbers), then the one-off
+ * run types. Living documents are read from the pre-revision store until
+ * their first revision is written, so each names its legacy artifact key.
+ */
+export const MKTG_DOCUMENT_TYPES: MktgDocumentType[] = [
+  {
+    agentKey: 'brand-kit',
+    kind: 'living',
+    catalogAgentId: 'brand-kit',
+    agentName: 'Brand Kit Agent',
+    label: 'Brand Kit',
+    itemLabel: 'Brand Kit',
+    legacyArtifactKey: 'brand-kit',
+  },
+  {
+    agentKey: 'foundation-message',
+    kind: 'living',
+    catalogAgentId: 'foundation-setup',
+    agentName: 'Message Foundation Agent',
+    label: 'Message Foundation',
+    itemLabel: 'Message Foundation',
+    legacyArtifactKey: 'foundation-message',
+  },
+  {
+    agentKey: 'icp',
+    kind: 'living',
+    catalogAgentId: 'icp',
+    agentName: 'ICP & Target Markets Agent',
+    label: 'ICP & Target Markets',
+    itemLabel: 'ICP & Target Markets',
+    legacyArtifactKey: 'icp',
+  },
+  {
+    agentKey: 'aeo-geo',
+    kind: 'run',
+    catalogAgentId: 'aeo-geo',
+    agentName: 'AEO / GEO Agent',
+    label: 'AEO/GEO reports',
+    itemLabel: 'AEO/GEO report',
+  },
+  {
+    agentKey: 'linkedin-post',
+    kind: 'run',
+    catalogAgentId: 'linkedin-post',
+    agentName: 'LinkedIn Post Agent',
+    label: 'LinkedIn posts',
+    itemLabel: 'LinkedIn post',
+  },
+  {
+    agentKey: 'member-360',
+    kind: 'run',
+    agentName: 'Member 360 Agent',
+    label: 'Member 360',
+    itemLabel: 'Member 360 run',
+  },
+];
+
+/** "How it was made" for a generated revision, by intake mode. */
+export const MKTG_REVISION_GENERATED_LABEL: Record<MktgArtifactIntakeMode, string> = {
+  form: 'Generated from the form',
+  conversational: 'Generated in a conversation with the agent',
+  prefill: 'Generated from the form with your existing documents (pre-fill)',
+};
