@@ -12,6 +12,14 @@ export const GW_HOST_SESSION_PROXY_OPERATION = 'gatewaze_proxy_request';
 /** Where the embed's Supabase client points: `supabase.url` is `<origin>/api/gatewaze/supabase`. */
 export const GW_HOST_SESSION_PROXY_SUPABASE_MOUNT = '/api/gatewaze/supabase';
 
+/**
+ * Query params that can carry a credential on a proxied URL, redacted from LFX's request log, its
+ * HTTP spans and Datadog RUM. `token` is a Storage signed-URL token or an edge function's own signed
+ * value, and `access_token` the placeholder (or, from an older embed, a real token). The same set
+ * as `@gatewaze/host-session`'s `redactUrl`. Mirrored in `apps/lfx-one/otel.mjs`.
+ */
+export const GW_HOST_SESSION_PROXY_CREDENTIAL_QUERY_PARAMS = ['token', 'access_token', 'refresh_token', 'code'] as const;
+
 /** Where the embed's API calls land: `apiBaseUrl` is `/api/gatewaze`, and it calls `${apiBaseUrl}/api/...`. */
 export const GW_HOST_SESSION_PROXY_API_MOUNT = '/api/gatewaze';
 

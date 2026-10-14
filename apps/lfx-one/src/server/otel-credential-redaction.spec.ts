@@ -17,6 +17,14 @@ describe('otel.mjs invite-token redaction', () => {
     expect(redactCredentialUrl(url)).toBe(expected);
   });
 
+  it.each([
+    ['/api/gatewaze/supabase/storage/v1/object/sign/media/a.png?token=SIGNED.JWT', '/api/gatewaze/supabase/storage/v1/object/sign/media/a.png?token=redacted'],
+    ['/api/gatewaze/supabase/rest/v1/x?select=id&access_token=SECRET', '/api/gatewaze/supabase/rest/v1/x?select=id&access_token=redacted'],
+    ['/API/GATEWAZE/api/x?code=SECRET', '/API/GATEWAZE/api/x?code=redacted'],
+  ])('redacts the credential params on a Gatewaze proxy path: %s', (url, expected) => {
+    expect(redactCredentialUrl(url)).toBe(expected);
+  });
+
   it('redacts an invite URL carried in returnTo', () => {
     const redacted = redactCredentialUrl(`/login?returnTo=${encodeURIComponent('/mentorship/mentor/invites?token=SUPER.SECRET')}`);
 
@@ -24,7 +32,12 @@ describe('otel.mjs invite-token redaction', () => {
     expect(new URL(redacted, 'http://localhost').searchParams.get('returnTo')).toBe('/mentorship/mentor/invites?token=redacted');
   });
 
-  it.each(['/meetings?token=keep', '/mentorship/mentor/programs', `/login?returnTo=${encodeURIComponent('/meetings')}`])('leaves %s unchanged', (url) => {
+  it.each([
+    '/meetings?token=keep',
+    '/api/gatewaze/supabase/rest/v1/x?select=id',
+    '/mentorship/mentor/programs',
+    `/login?returnTo=${encodeURIComponent('/meetings')}`,
+  ])('leaves %s unchanged', (url) => {
     expect(redactCredentialUrl(url)).toBe(url);
   });
 

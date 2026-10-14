@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { AUTH_FRAGMENT_KEYS, CREDENTIAL_REDACTION_MARKER, INVITE_TOKEN_QUERY_PARAM, MEETING_PASSWORD_QUERY_PARAMS } from '../constants/auth-fragment.constants';
+import { GW_HOST_SESSION_PROXY_API_MOUNT, GW_HOST_SESSION_PROXY_CREDENTIAL_QUERY_PARAMS } from '../constants/gw-host-session-proxy.constants';
 import { isInviteLandingPath, isMentorshipMentorInvitePath } from './url.utils';
 
 const RETURN_TO_QUERY_PARAM = 'returnTo';
@@ -184,11 +185,41 @@ export function redactMeetingPassword(url: string, base?: string): string {
 }
 
 /**
- * Returns a request URL fit for a server log: the invite `token` and any meeting passcode replaced
- * by a marker. Meeting join links (and the legacy `?password=` API calls) carry the passcode in the
+ * Returns `url` with the credential query params of the Gatewaze host-session proxies (a Storage
+ * signed-URL `token`, an `access_token`) replaced by a marker, or unchanged when the path is not
+ * under `/api/gatewaze` (matched case-insensitively, like the mount) or carries none. A relative
+ * `url` comes back relative.
+ */
+export function redactGatewazeProxyCredentials(url: string, base?: string): string {
+  try {
+    const parsed = new URL(url, base);
+    const path = parsed.pathname.toLowerCase();
+    if (path !== GW_HOST_SESSION_PROXY_API_MOUNT && !path.startsWith(`${GW_HOST_SESSION_PROXY_API_MOUNT}/`)) {
+      return url;
+    }
+    let redacted = false;
+    for (const key of GW_HOST_SESSION_PROXY_CREDENTIAL_QUERY_PARAMS) {
+      if (parsed.searchParams.has(key)) {
+        parsed.searchParams.set(key, CREDENTIAL_REDACTION_MARKER);
+        redacted = true;
+      }
+    }
+    if (!redacted) {
+      return url;
+    }
+    return url.startsWith('/') ? `${parsed.pathname}${parsed.search}${parsed.hash}` : parsed.toString();
+  } catch {
+    // Never throw from a log serializer or `beforeSend`; an unparseable proxy URL loses its query.
+    return url.toLowerCase().includes(GW_HOST_SESSION_PROXY_API_MOUNT) ? url.split('?')[0] : url;
+  }
+}
+
+/**
+ * Returns a request URL fit for a server log: the invite `token`, any meeting passcode and the
+ * Gatewaze proxies' credential params replaced by a marker. Meeting join links (and the legacy `?password=` API calls) carry the passcode in the
  * query string, so every logged `url` / `originalUrl` goes through this rather than
  * {@link redactInviteToken} alone.
  */
 export function redactLoggedUrl(url: string, base: string): string {
-  return redactMeetingPassword(redactInviteToken(url, base), base);
+  return redactGatewazeProxyCredentials(redactMeetingPassword(redactInviteToken(url, base), base), base);
 }

@@ -8,6 +8,7 @@ import {
   hasAuthFragment,
   redactAuthFragment,
   redactInviteToken,
+  redactGatewazeProxyCredentials,
   redactLoggedUrl,
   redactMeetingPassword,
   redactMeetingPasswordInText,
@@ -210,11 +211,34 @@ describe('redactMeetingPasswordInText', () => {
   });
 });
 
+describe('redactGatewazeProxyCredentials', () => {
+  it.each([
+    ['/api/gatewaze/supabase/storage/v1/object/sign/media/a.png?token=SIGNED.JWT', '/api/gatewaze/supabase/storage/v1/object/sign/media/a.png?token=redacted'],
+    ['/api/gatewaze/supabase/rest/v1/x?select=id&access_token=SECRET', '/api/gatewaze/supabase/rest/v1/x?select=id&access_token=redacted'],
+    ['/API/Gatewaze/api/x?refresh_token=SECRET&code=SECRET', '/API/Gatewaze/api/x?refresh_token=redacted&code=redacted'],
+  ])('redacts %s', (url, expected) => {
+    expect(redactGatewazeProxyCredentials(url, 'http://localhost')).toBe(expected);
+  });
+
+  it.each(['/api/gatewaze/supabase/rest/v1/x?select=id', '/meetings?token=keep', '/api/gatewazex/y?token=keep'])('leaves %s unchanged', (url) => {
+    expect(redactGatewazeProxyCredentials(url, 'http://localhost')).toBe(url);
+  });
+
+  it('keeps an absolute URL absolute', () => {
+    expect(redactGatewazeProxyCredentials('https://app.example.test/api/gatewaze/supabase/storage/v1/object/sign/a?token=S', 'https://app.example.test')).toBe(
+      'https://app.example.test/api/gatewaze/supabase/storage/v1/object/sign/a?token=redacted'
+    );
+  });
+});
+
 describe('redactLoggedUrl', () => {
   it('redacts both the invite token and a meeting passcode, keeping a relative URL relative', () => {
     expect(redactLoggedUrl('/invite?token=SUPER_SECRET', 'http://localhost')).toBe('/invite?token=redacted');
     expect(redactLoggedUrl('/meetings/m-1?password=SUPER_SECRET&tab=a', 'http://localhost')).toBe('/meetings/m-1?password=redacted&tab=a');
     expect(redactLoggedUrl('/meetings/m-1?tab=a', 'http://localhost')).toBe('/meetings/m-1?tab=a');
+    expect(redactLoggedUrl('/api/gatewaze/supabase/storage/v1/object/sign/a?token=SIGNED', 'http://localhost')).toBe(
+      '/api/gatewaze/supabase/storage/v1/object/sign/a?token=redacted'
+    );
   });
 });
 
