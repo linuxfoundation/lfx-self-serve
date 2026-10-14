@@ -50,6 +50,7 @@ import { AuthenticationError, ServiceValidationError } from '../errors';
 import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
 import { getStringQueryParam } from '../helpers/validation.helper';
 import { assertOrgUid } from '../helpers/org-uid.helper';
+import { sanitizeFoundationSfid } from '../services/org-cla-foundation-pair';
 import { OrgClaPermissionsService } from '../services/org-cla-permissions.service';
 import { OrgClaService } from '../services/org-cla.service';
 import { logger } from '../services/logger.service';
@@ -835,7 +836,15 @@ export class OrgClasController {
         ...(projectSfid ? { projectSfid } : {}),
         ...(foundationSfid ? { foundationSfid } : {}),
       };
-      const allowed = await this.orgClaPermissions.check(req, orgUid, request.action, request.projectSfid, request.foundationSfid);
+      // The browser attaches `foundationSfid` from the row it is rendering, but a preview endpoint
+      // that trusts that id turns into an authorization-exploration oracle (the viewer can be
+      // asked whether they hold `cla-manager` on any `(project, foundation)` pair of their
+      // choosing). Re-derive the authoritative pair from the organization's own CLA Group list
+      // and only pass the client's value through when it matches — otherwise drop it and let ACS
+      // answer the project pair alone, which preserves the preview's "200 with `{ allowed }`,
+      // never 5xx" contract.
+      const sanitizedFoundationSfid = await sanitizeFoundationSfid(req, this.orgClaService, orgUid, request.projectSfid, request.foundationSfid);
+      const allowed = await this.orgClaPermissions.check(req, orgUid, request.action, request.projectSfid, sanitizedFoundationSfid);
 
       logger.success(req, 'check_org_cla_permission', startTime, { org_uid: orgUid, action, allowed });
       res.setHeader('Cache-Control', 'no-store');
