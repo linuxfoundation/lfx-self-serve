@@ -773,6 +773,13 @@ export interface CampaignImplementationDraft {
    */
   googleCallouts?: string[];
   /**
+   * Google's sitelink extensions, as the operator typed them.
+   *
+   * Held and restored on exactly the same rule as {@link googleCallouts}: absent and empty agree,
+   * and a list saved under a non-Search channel is kept rather than discarded.
+   */
+  googleSitelinks?: CampaignSitelink[];
+  /**
    * The Google bidding section, as RAW form text — the same choice `googleCreatives` and
    * {@link microsoftCpcBid} make, and for the same reason: a draft hands the operator back the
    * form they left, and an empty string is "they have not filled this in", which is a different
@@ -1746,6 +1753,23 @@ export interface GoogleDisplayCreative {
   callToActionText?: string;
 }
 
+/**
+ * One Google sitelink extension: a label, its destination, and an optional two-line description.
+ *
+ * `finalUrl` is REQUIRED. Upstream (`assets.go`'s `validateSitelinks`) treats a sitelink with no
+ * destination as unservable rather than as a lesser sitelink, and refuses the whole create.
+ *
+ * The two description lines are ALL-OR-NOTHING: Google renders them together and rejects an asset
+ * carrying only one, so upstream refuses a sitelink that has exactly one of them. They are
+ * optional together, which is why both are optional here rather than required.
+ */
+export interface CampaignSitelink {
+  text: string;
+  description1?: string;
+  description2?: string;
+  finalUrl: string;
+}
+
 export interface CampaignCreateRequest {
   eventName: string;
   eventSlug: string;
@@ -1806,6 +1830,12 @@ export interface CampaignCreateRequest {
    * it by name.
    */
   callouts?: string[];
+  /**
+   * The Google campaign's sitelink extensions — extra links rendered under the text ad.
+   *
+   * Omitted when empty and SEARCH ONLY, on the same rule as {@link callouts}.
+   */
+  sitelinks?: CampaignSitelink[];
   /**
    * How the Google campaign bids, and the numbers that go with the strategy it names.
    *
@@ -3396,6 +3426,14 @@ export interface CampaignRow {
   negativeKeywordsAvailable: boolean;
   /** Why the negative-keyword control is disabled — set when offered but not available, empty otherwise. */
   negativeKeywordsUnavailableReason: string;
+  /** Whether the row shows the ad-set control at all: Meta campaigns only. */
+  adSetsOffered: boolean;
+  /** Whether that control can be opened (the campaign exists on Meta and is not deleted). */
+  adSetsAvailable: boolean;
+  /** Why the ad-set control is disabled — set when offered but not available, empty otherwise. */
+  adSetsUnavailableReason: string;
+  /** Why an open ad-set panel cannot change an ad set RIGHT NOW (stale validator, another write in flight), or `''`. */
+  adSetsBlockedReason: string;
   /** The row's platform when it is offered negative keywords, which decides what the editor offers and sends; `null` otherwise. */
   negativeKeywordsPlatform: NegativeKeywordCampaignPlatform | null;
   /** Whether the row shows the keyword-targeting control at all: Reddit and X campaigns (`KEYWORD_TARGETING_CAMPAIGN_PLATFORMS`). */

@@ -42,7 +42,7 @@ See which sidebar links and pages each persona can access in each lens, plus rou
 
 ### [Gatewaze Embed Host](./gw-embed.md)
 
-Understand how the React newsletter module is mounted without an iframe: the dual-router contract, style containment, and the LFID sign-in round trip.
+Understand how the React newsletter module is mounted without an iframe: the dual-router contract, style containment, and the server-held session.
 
 ### [Angular Patterns](./angular-patterns.md)
 

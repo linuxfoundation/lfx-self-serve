@@ -64,7 +64,7 @@ export * from './org-lens-url.constants';
 export * from './org-lens-projects.constants';
 export * from './org-memberships.constants';
 export * from './feature-flags.constants';
-export * from './auth-fragment.constants';
+export * from './credential-redaction.constants';
 export * from './gw-embed.constants';
 export * from './gw-host-session.constants';
 export * from './gw-host-session-proxy.constants';

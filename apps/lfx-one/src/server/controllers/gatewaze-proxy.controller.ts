@@ -7,7 +7,6 @@ import { Transform } from 'node:stream';
 import {
   anonCredentials,
   carriesPlaceholder,
-  type CoreLogger,
   csrfDecision,
   isAdminCheckPending,
   isPublicRead,
@@ -35,7 +34,7 @@ import { authorizeGatewazeModule, gatewazeModuleForPath } from '../helpers/gatew
 import { drainRequestBody, ensureGwRequestId, getGwApiBaseUrl } from '../helpers/gw-api.helper';
 import { getGwProxyMaxBodyBytes, getGwProxyTimeoutMs } from '../helpers/gw-proxy-limits.helper';
 import { gatewazeHostSessionNotFound } from '../middleware/require-gatewaze-host-session.middleware';
-import { getGatewazeSessionService, resolveGatewazeHostSessionConfig } from '../services/gatewaze-session.service';
+import { getGatewazeSessionService, hostSessionCoreLogger, resolveGatewazeHostSessionConfig } from '../services/gatewaze-session.service';
 import { logger } from '../services/logger.service';
 
 /**
@@ -83,7 +82,7 @@ export class GatewazeProxyController {
   /**
    * @param maxBodyBytesOverride Explicit upload ceiling, so a test can exercise the 413 against a
    *   real socket without sending 100MB. Production passes nothing and reads `GW_PROXY_MAX_BODY_BYTES`
-   *   per request, as `/api/gw` does.
+   *   per request.
    */
   public constructor(private readonly maxBodyBytesOverride?: number) {}
 
@@ -239,7 +238,7 @@ export class GatewazeProxyController {
       delete req.headers[name];
     }
 
-    // Set by the body limiter when it rejects an upload, and awaited before the 413, as on /api/gw.
+    // Set by the body limiter when it rejects an upload, and awaited before the 413.
     let bodyDrained: Promise<void> | null = null;
     const timeoutMs = getGwProxyTimeoutMs();
     let upstreamBody: IncomingMessage | null = null;
@@ -253,7 +252,7 @@ export class GatewazeProxyController {
       const upstreamRes = await proxyRequest(req, upstream, pathAndQuery, {
         creds,
         // Only the client address LFX resolved itself (`trust proxy` counts the ingress hop). The
-        // browser's own X-Forwarded-For chain is not forwarded, as on /api/gw.
+        // browser's own X-Forwarded-For chain is not forwarded.
         xff: req.ip ?? '',
         // An idle bound on the upstream socket, so a hung upstream is cut off while a slow upload
         // or a long download that keeps moving is not.
@@ -261,7 +260,7 @@ export class GatewazeProxyController {
         downstream: res,
         privateResponse,
         body: req.pipe(limiter),
-        log: proxyLogger(req),
+        log: hostSessionCoreLogger(OPERATION, req),
       });
 
       upstreamBody = upstreamRes.body;
@@ -377,7 +376,7 @@ function createByteLimiter(maxBytes: number): Transform {
   });
 }
 
-/** Maps a forward failure to the error apiErrorHandler answers with, matching `/api/gw`'s codes. */
+/** Maps a forward failure to the error apiErrorHandler answers with. */
 function toProxyError(req: Request, error: unknown, timeoutMs: number): unknown {
   if (isBaseApiError(error)) {
     // The body limiter's 413.
@@ -404,11 +403,6 @@ function toProxyError(req: Request, error: unknown, timeoutMs: number): unknown 
   });
 }
 
-/** The package's warnings (a dropped unsafe redirect) under this request. Its metadata is a status and a path. */
-function proxyLogger(req: Request): CoreLogger {
-  return { warn: (meta, message) => logger.warning(req, OPERATION, message, meta) };
-}
-
 /** LFX One's own origin, from `PCC_BASE_URL`, or null when it is missing or invalid (the proxy then refuses every request that needs CSRF proof). */
 function resolveSiteOrigin(): string | null {
   try {
@@ -421,7 +415,6 @@ function resolveSiteOrigin(): string | null {
 /**
  * `GW_API_URL` as an origin. The package resolves every path against the upstream's origin, so a
  * base path on `GW_API_URL` would be dropped silently; it is refused as a misconfiguration instead.
- * `/api/gw` accepts a base path, but the deployed value is an origin.
  */
 function resolveGwApiOrigin(): string {
   const base = new URL(getGwApiBaseUrl(OPERATION));

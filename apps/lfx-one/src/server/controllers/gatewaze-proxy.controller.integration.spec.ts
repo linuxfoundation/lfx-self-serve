@@ -3,8 +3,7 @@
 
 /**
  * Real-socket tests for the `/api/gatewaze` proxy's body cap, drain, timeout and mid-stream failure.
- * Like `gw-proxy.controller.integration.spec.ts`, these are about the client half of the connection:
- * whether a rejected caller can finish writing and gets its answer, which only a genuine
+ * These are about the client half of the connection: whether a rejected caller can finish writing and gets its answer, which only a genuine
  * `http.Server` and client socket show. The upstream is a real local server too, because
  * `proxyRequest` speaks `node:http` to it.
  */
@@ -31,6 +30,7 @@ vi.mock('../services/gatewaze-session.service', () => ({
   }),
   resolveGatewazeHostSessionConfig: () => ({ supabaseUrl: config.supabaseUrl, anonKey: ANON_KEY, valkeyUrl: 'redis://synthetic', authSecret: 'synthetic' }),
   isGatewazeHostSessionEnabled: () => true,
+  hostSessionCoreLogger: () => ({ warn: vi.fn() }),
 }));
 vi.mock('../services/logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },

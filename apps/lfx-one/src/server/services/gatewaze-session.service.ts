@@ -4,6 +4,7 @@
 import { createHmac, hkdfSync } from 'node:crypto';
 
 import {
+  type CoreLogger,
   type GwSession,
   type HostSessionConfig,
   type KeyValue,
@@ -33,9 +34,12 @@ import {
 import {
   GatewazeHostSessionSettings,
   GatewazeMeResult,
+  GatewazeRealtimeSession,
   GatewazeSessionEndOptions,
   GatewazeSessionEndResult,
+  GatewazeSessionFailure,
   GatewazeSessionResult,
+  SessionStorePayload,
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 import Redis from 'ioredis';
@@ -43,9 +47,11 @@ import Redis from 'ioredis';
 import { readAppSessionId } from '../helpers/app-session-cookie.helper';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { isPublishableSupabaseKey } from '../helpers/supabase-key.helper';
+import { hasActiveImpersonation } from '../utils/auth-helper';
 import { exchangeRefreshTokenForIdToken } from '../utils/refresh-token-exchange.util';
 import { addShutdownHook } from '../utils/shutdown';
 import { logger } from './logger.service';
+import { sessionStoreService } from './session-store.service';
 import { buildGatewazeHostSessionKeyPrefix } from './valkey.service';
 
 /**
@@ -80,6 +86,27 @@ export function deriveGatewazeSid(sidKey: Buffer, lfxSid: string): string {
     .digest('base64url');
 }
 
+let flagMismatchWarned = false;
+
+/**
+ * Logs once per process that only one of the embed's two server flags is on. The embed needs both,
+ * so this is the likeliest reason for its not-configured panel. Once, because this check runs on
+ * every page render and every `/api/gatewaze` request.
+ */
+function warnFlagMismatchOnce(hostSessionOn: boolean): void {
+  if (flagMismatchWarned) {
+    return;
+  }
+  flagMismatchWarned = true;
+  const [on, off] = hostSessionOn
+    ? [ServerFeatureFlag.GatewazeHostSession, ServerFeatureFlag.GatewazeEmbedEnabled]
+    : [ServerFeatureFlag.GatewazeEmbedEnabled, ServerFeatureFlag.GatewazeHostSession];
+  logger.warning(undefined, 'resolve_gatewaze_host_session_config', `${on} is on but ${off} is off; the Gatewaze embed needs both and stays off`, {
+    flag_on: on,
+    flag_off: off,
+  });
+}
+
 /**
  * Host-session configuration, or null when host-session mode is off or cannot run. Every condition
  * is checked together so the `/api/gatewaze` routes and the embed outlet (through
@@ -87,7 +114,12 @@ export function deriveGatewazeSid(sidKey: Buffer, lfxSid: string): string {
  * Environment is read per call, as `isServerFeatureEnabled` does.
  */
 export function resolveGatewazeHostSessionConfig(): GatewazeHostSessionSettings | null {
-  if (!isServerFeatureEnabled(ServerFeatureFlag.GatewazeHostSession) || !isServerFeatureEnabled(ServerFeatureFlag.GatewazeEmbedEnabled)) {
+  const hostSessionOn = isServerFeatureEnabled(ServerFeatureFlag.GatewazeHostSession);
+  const embedOn = isServerFeatureEnabled(ServerFeatureFlag.GatewazeEmbedEnabled);
+  if (!hostSessionOn || !embedOn) {
+    if (hostSessionOn !== embedOn) {
+      warnFlagMismatchOnce(hostSessionOn);
+    }
     return null;
   }
   // Without the session store, `appSession` is an encrypted cookie with no stable id to key on.
@@ -120,6 +152,29 @@ function storeLogMeta(meta: Record<string, unknown>): Record<string, unknown> {
     if (meta[field] !== undefined) kept[field] = meta[field];
   }
   return kept;
+}
+
+/**
+ * A `CoreLogger` for `@gatewaze/host-session` that logs under `operation` at WARN, under `req` when
+ * given, with its metadata filtered to `GW_HOST_SESSION_STORE_LOG_FIELDS`. Every use of the package
+ * logs through this, so its `user_id` never reaches LFX logs.
+ */
+export function hostSessionCoreLogger(operation: string, req?: Request): CoreLogger {
+  return { warn: (meta, message) => logger.warning(req, operation, message, storeLogMeta(meta)) };
+}
+
+/**
+ * True while the LFX session behind `lfxSid` is still live and not impersonating. A Realtime socket
+ * outlives the request that opened it, so the bridge checks this before each token refresh. A
+ * Valkey fault reads as a missing session (`SessionStoreService` is fail-soft), which ends the
+ * socket; realtime-js then reconnects through the full upgrade checks.
+ */
+async function isLfxSessionLive(lfxSid: string): Promise<boolean> {
+  const payload = await (sessionStoreService.get(lfxSid) as Promise<SessionStorePayload | null>);
+  if (!payload || payload.header.exp * 1000 <= Date.now()) {
+    return false;
+  }
+  return !hasActiveImpersonation(payload.data);
 }
 
 function toHostConfig(config: GatewazeHostSessionSettings): HostSessionConfig {
@@ -196,6 +251,68 @@ export class GatewazeSessionService {
       const session = await store.acquire(gwSid, () => this.mint(req, toHostConfig(config)), { expectedSub });
       return { outcome: 'ok', session };
     } catch (error) {
+      return this.toFailure(req, startTime, error);
+    }
+  }
+
+  /**
+   * The Gatewaze session for a Realtime socket, with the callbacks `bridgeRealtime` needs, bound to
+   * this LFX session. Loads the session the way `getGatewazeSession` does (stored, refreshed or newly
+   * minted), but first starts listening for a sign-out, so one that lands while the session loads
+   * is caught (`signedOut()`). The caller must call `release()` once the bridge listens for itself or
+   * the upgrade is refused. `fresh` also ends the socket once the LFX session is gone or starts
+   * impersonating. Never throws: every failure is an outcome, as for `getGatewazeSession`.
+   */
+  public async openRealtimeSession(req: Request): Promise<GatewazeSessionResult<GatewazeRealtimeSession<GwSession>>> {
+    const startTime = Date.now();
+    const config = resolveGatewazeHostSessionConfig();
+    const lfxSid = readAppSessionId(req.headers.cookie);
+    if (!config || !lfxSid) {
+      return { outcome: 'host_session_unavailable' };
+    }
+    const gwSid = deriveGatewazeSid(deriveGatewazeSidKey(config.authSecret), lfxSid);
+    const expectedSub = req.oidc?.user?.['sub'];
+    if (typeof expectedSub !== 'string' || !expectedSub) {
+      return { outcome: 'ended' };
+    }
+
+    let store: SessionStore;
+    try {
+      store = await this.getStore(config, deriveGatewazeMasterKey(config.authSecret));
+    } catch (error) {
+      return this.toFailure(req, startTime, error);
+    }
+    let signedOut = false;
+    const stopListening = store.onDelete(gwSid, () => {
+      signedOut = true;
+    });
+    // Once only: the store's unsubscribe, called again after its listener set emptied, would drop
+    // the set a later socket on the same session registered into.
+    let released = false;
+    const release = () => {
+      if (!released) {
+        released = true;
+        stopListening();
+      }
+    };
+    try {
+      const session = await store.acquire(gwSid, () => this.mint(req, toHostConfig(config)), { expectedSub });
+      if (signedOut) {
+        release();
+        return { outcome: 'ended' };
+      }
+      return {
+        outcome: 'ok',
+        session: {
+          session,
+          fresh: async () => ((await isLfxSessionLive(lfxSid)) ? store.fresh(gwSid, { expectedSub }) : null),
+          onSignedOut: (listener) => store.onDelete(gwSid, listener),
+          signedOut: () => signedOut,
+          release,
+        },
+      };
+    } catch (error) {
+      release();
       return this.toFailure(req, startTime, error);
     }
   }
@@ -389,7 +506,7 @@ export class GatewazeSessionService {
     return signInWithIdToken(hostConfig, result.idToken);
   }
 
-  private toFailure(req: Request, startTime: number, error: unknown): GatewazeSessionResult<GwSession> {
+  private toFailure(req: Request, startTime: number, error: unknown): GatewazeSessionFailure {
     if (error instanceof IdTokenGrantRefusedError) {
       // A configuration fault (provider audience, issuer) or a banned user, never a dead LFX session.
       // ERROR, not WARN: every user hits the same fault until the provider config is fixed.
@@ -428,7 +545,7 @@ export class GatewazeSessionService {
       keyPrefix: buildGatewazeHostSessionKeyPrefix(),
       ttlSeconds: GW_HOST_SESSION_TTL_SECONDS,
       // The package's messages never carry tokens.
-      log: { warn: (meta, message) => logger.warning(undefined, 'gatewaze_session_store', message, storeLogMeta(meta)) },
+      log: hostSessionCoreLogger('gatewaze_session_store'),
     });
     try {
       await store.start();

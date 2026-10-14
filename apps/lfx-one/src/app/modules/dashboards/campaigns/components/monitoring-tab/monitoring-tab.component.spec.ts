@@ -11,13 +11,17 @@ import type {
   MonitorConnectionAccount,
   ReportBackedMonitorResponse,
 } from '@lfx-one/shared/interfaces';
+import { CAMPAIGN_ACT_FOUNDATION_CHANGED_MESSAGE } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
+import { DialogService } from 'primeng/dynamicdialog';
 import { of, Subject, throwError } from 'rxjs';
 import { signal } from '@angular/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { CampaignActDialogComponent } from '../campaign-act-dialog/campaign-act-dialog.component';
+import { CampaignAdoptDialogComponent } from '../campaign-adopt-dialog/campaign-adopt-dialog.component';
 import { MonitoringTabComponent } from './monitoring-tab.component';
 
 /**
@@ -88,6 +92,7 @@ describe('MonitoringTabComponent — keyword totals completeness', () => {
         provideNoopAnimations(),
         { provide: MessageService, useValue: { add: vi.fn() } },
         { provide: ProjectContextService, useValue: { activeContext: signal({ slug: 'tlf' }) } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
         {
           provide: CampaignService,
           useValue: {
@@ -96,6 +101,7 @@ describe('MonitoringTabComponent — keyword totals completeness', () => {
             getMonitorData: vi.fn().mockReturnValue(of(null)),
             getKeywords: vi.fn().mockReturnValue(of(null)),
             getAudience: vi.fn().mockReturnValue(of(null)),
+            getPlatformAudience: vi.fn().mockReturnValue(of({ window: 'last_30_days', bucket_count: 0, buckets: [] })),
             getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
             getRedditAccounts: vi.fn().mockReturnValue(of([])),
             getMetaAccounts: vi.fn().mockReturnValue(of([])),
@@ -318,12 +324,14 @@ describe.each(['linkedin', 'reddit', 'meta'] as const)('MonitoringTabComponent �
         provideNoopAnimations(),
         { provide: MessageService, useValue: { add: vi.fn() } },
         { provide: ProjectContextService, useValue: { activeContext: signal({ slug: 'tlf' }) } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
         {
           provide: CampaignService,
           useValue: {
             getMonitorData: vi.fn().mockReturnValue(of(null)),
             getKeywords: vi.fn().mockReturnValue(of(null)),
             getAudience: vi.fn().mockReturnValue(of(null)),
+            getPlatformAudience: vi.fn().mockReturnValue(of({ window: 'last_30_days', bucket_count: 0, buckets: [] })),
             getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
             getRedditAccounts: vi.fn().mockReturnValue(of([])),
             getMetaAccounts: vi.fn().mockReturnValue(of([])),
@@ -571,6 +579,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       getMonitorData: vi.fn().mockReturnValue(of(null)),
       getKeywords: vi.fn().mockReturnValue(of(null)),
       getAudience: vi.fn().mockReturnValue(of(null)),
+      getPlatformAudience: vi.fn().mockReturnValue(of({ window: 'last_30_days', bucket_count: 0, buckets: [] })),
       getLinkedInAccounts: vi.fn().mockReturnValue(of([{ accountId: '512345678', label: 'LF LinkedIn (legacy)', orgId: '1' }])),
       getRedditAccounts: vi.fn().mockReturnValue(of([{ key: 't2_legacy', label: 'LF Reddit (legacy)' }])),
       getMetaAccounts: vi.fn().mockReturnValue(of([{ key: 'act_1', label: 'LF Meta (legacy)' }])),
@@ -588,6 +597,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
         provideNoopAnimations(),
         { provide: MessageService, useValue: { add: vi.fn() } },
         { provide: ProjectContextService, useValue: { activeContext: signal({ slug: 'cncf' }) } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
         { provide: CampaignService, useValue: service },
       ],
     }).compileComponents();
@@ -894,6 +904,23 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       accountB.next(adPanel('Account B campaign'));
       fixture.detectChanges();
       expect(text('linkedin-campaign-row-0')).toContain('Account B campaign');
+    });
+
+    /**
+     * The audience section is project-scoped (it does not follow the selected ad account) and keeps
+     * its own state inside its component, so a rebind leaves it alone: still rendered, not re-read.
+     */
+    it('leaves the project-scoped audience section alone on a rebind', async () => {
+      await setup(allConnected);
+      select('linkedin');
+      const audienceReads = service['getPlatformAudience'].mock.calls.length;
+      expect(el('monitoring-paid-audience')).not.toBeNull();
+
+      service['getMonitorConnections'].mockReturnValue(of(rebound));
+      reloadConnections();
+
+      expect(el('monitoring-paid-audience')).not.toBeNull();
+      expect(service['getPlatformAudience'].mock.calls.length).toBe(audienceReads);
     });
 
     it("ignores account A's read when it lands after the rebind to B", async () => {
@@ -1313,4 +1340,215 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       expect(el('hubspot-error')).toBeNull();
     });
   });
+});
+
+/**
+ * Act from Monitor (#3299): a LinkedIn, Reddit or Meta row's actions open the act dialog with the
+ * row's PLATFORM campaign id (the dialog resolves it before showing any lever), an adopt request
+ * opens the adopt dialog, and a confirmed adoption reopens the act dialog on the same lever.
+ */
+describe.each([
+  ['linkedin', 'linkedin-ads'],
+  ['reddit', 'reddit-ads'],
+  ['meta', 'meta-ads'],
+] as const)('MonitoringTabComponent — %s row actions', (platform, platformId) => {
+  let fixture: ComponentFixture<MonitoringTabComponent>;
+  let open: ReturnType<typeof vi.fn>;
+  let closes: Subject<unknown>[];
+  let context: ReturnType<typeof signal<{ slug: string }>>;
+  let toast: ReturnType<typeof vi.fn>;
+
+  beforeEach(async () => {
+    closes = [];
+    context = signal({ slug: 'tlf' });
+    toast = vi.fn();
+    open = vi.fn(() => {
+      const onClose = new Subject<unknown>();
+      closes.push(onClose);
+      return { onClose };
+    });
+    await TestBed.configureTestingModule({
+      imports: [MonitoringTabComponent],
+      providers: [
+        provideNoopAnimations(),
+        { provide: MessageService, useValue: { add: toast } },
+        { provide: ProjectContextService, useValue: { activeContext: context } },
+        { provide: DialogService, useValue: { open } },
+        {
+          provide: CampaignService,
+          useValue: {
+            getMonitorData: vi.fn().mockReturnValue(of(null)),
+            getKeywords: vi.fn().mockReturnValue(of(null)),
+            getAudience: vi.fn().mockReturnValue(of(null)),
+            getPlatformAudience: vi.fn().mockReturnValue(of({ window: 'last_30_days', bucket_count: 0, buckets: [] })),
+            getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
+            getRedditAccounts: vi.fn().mockReturnValue(of([])),
+            getMetaAccounts: vi.fn().mockReturnValue(of([])),
+            getMonitorConnections: vi.fn().mockReturnValue(of({ viaCampaignService: false, platforms: {} })),
+          },
+        },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(MonitoringTabComponent);
+    fixture.detectChanges();
+    const instance = fixture.componentInstance as unknown as Record<string, { set(v: unknown): void }>;
+    instance['selectedPlatform'].set(platform);
+    const data = {
+      accountLabel: 'LF',
+      pulledAt: '2026-10-13T00:00:00.000Z',
+      dateRange: { mode: 'last_30_days' },
+      campaigns: [
+        {
+          campaignId: '987654',
+          campaignName: 'KubeCon NA 2026',
+          eventName: 'KubeCon NA 2026',
+          creatives: [],
+          status: 'ACTIVE',
+          totalBudget: 1000,
+          dailyBudget: 0,
+          spend: 10,
+          impressions: 100,
+          clicks: 1,
+          ctr: 1,
+          conversions: 0,
+          pacingPct: 10,
+          pacingLabel: 'normal',
+          startDate: '2026-09-01',
+          endDate: '2026-11-30',
+        },
+      ],
+      accountTotals: { spend: 10, impressions: 100, clicks: 1, conversions: 0, campaignCount: 1 },
+      actionItems: [],
+    };
+    ({ linkedin: instance['linkedInData'], reddit: instance['redditData'], meta: instance['metaData'] })[platform].set(data);
+    fixture.detectChanges();
+  });
+
+  const click = (testId: string): void => {
+    (fixture.nativeElement.querySelector(`[data-testid="${testId}"] button`) as HTMLButtonElement).click();
+  };
+
+  it.each([
+    ['monitor-act-toggle-987654', 'pause_resume', 'Pause or resume: KubeCon NA 2026'],
+    ['monitor-act-budget-987654', 'budget', 'Budget: KubeCon NA 2026'],
+    ['monitor-act-bid-987654', 'bid', 'Bid: KubeCon NA 2026'],
+  ])('%s opens the act dialog with the platform campaign id', (testId, lever, header) => {
+    click(testId);
+
+    expect(open).toHaveBeenCalledWith(
+      CampaignActDialogComponent,
+      expect.objectContaining({
+        header,
+        data: { projectSlug: 'tlf', platform: platformId, platformCampaignId: '987654', campaignName: 'KubeCon NA 2026', lever },
+      })
+    );
+  });
+
+  it('opens the adopt dialog on request, and reopens the act dialog once adopted', () => {
+    click('monitor-act-bid-987654');
+    closes[0].next({ adopt: true });
+
+    expect(open).toHaveBeenLastCalledWith(
+      CampaignAdoptDialogComponent,
+      expect.objectContaining({ data: { projectSlug: 'tlf', platform: platformId, platformCampaignId: '987654', campaignName: 'KubeCon NA 2026' } })
+    );
+
+    closes[1].next(true);
+    expect(open).toHaveBeenCalledTimes(3);
+    expect(open).toHaveBeenLastCalledWith(CampaignActDialogComponent, expect.objectContaining({ data: expect.objectContaining({ lever: 'bid' }) }));
+  });
+
+  it('caps both dialogs to the viewport so they fit a phone', () => {
+    click('monitor-act-bid-987654');
+    closes[0].next({ adopt: true });
+
+    for (const [, config] of open.mock.calls) {
+      expect(config).toEqual(expect.objectContaining({ width: '36rem', style: expect.objectContaining({ maxWidth: '90vw' }) }));
+    }
+    expect(open).toHaveBeenCalledTimes(2);
+  });
+
+  it('does nothing more when either dialog is simply closed', () => {
+    click('monitor-act-budget-987654');
+    closes[0].next(undefined);
+    expect(open).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens nothing when a dialog closes after the tab is destroyed', () => {
+    click('monitor-act-bid-987654');
+    fixture.destroy();
+    closes[0].next({ adopt: true });
+
+    expect(open).toHaveBeenCalledTimes(1);
+  });
+
+  it('carries the project the flow started on, and does not reopen after a foundation switch', () => {
+    click('monitor-act-budget-987654');
+    closes[0].next({ adopt: true });
+    expect(open.mock.calls[1][1].data.projectSlug).toBe('tlf');
+
+    // Adopted under 'tlf', but the operator has since switched foundations.
+    context.set({ slug: 'cncf' });
+    closes[1].next(true);
+
+    expect(open).toHaveBeenCalledTimes(2);
+    expect(toast).toHaveBeenCalledWith(expect.objectContaining({ detail: CAMPAIGN_ACT_FOUNDATION_CHANGED_MESSAGE }));
+  });
+
+  it('reopens against the captured project when the foundation is unchanged', () => {
+    click('monitor-act-budget-987654');
+    closes[0].next({ adopt: true });
+    closes[1].next(true);
+
+    expect(open).toHaveBeenCalledTimes(3);
+    expect(open.mock.calls[2][1].data).toEqual(expect.objectContaining({ projectSlug: 'tlf', lever: 'budget' }));
+    expect(toast).not.toHaveBeenCalled();
+  });
+});
+
+describe('MonitoringTabComponent — campaign-service audience by platform', () => {
+  let fixture: ComponentFixture<MonitoringTabComponent>;
+  const getPlatformAudience = vi.fn();
+
+  beforeEach(async () => {
+    getPlatformAudience.mockReset();
+    getPlatformAudience.mockReturnValue(of({ window: 'last_30_days', bucket_count: 0, buckets: [] }));
+    await TestBed.configureTestingModule({
+      imports: [MonitoringTabComponent],
+      providers: [
+        provideNoopAnimations(),
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: ProjectContextService, useValue: { activeContext: signal({ slug: 'tlf' }) } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+        {
+          provide: CampaignService,
+          useValue: {
+            getMonitorData: vi.fn().mockReturnValue(of(null)),
+            getKeywords: vi.fn().mockReturnValue(of(null)),
+            getAudience: vi.fn().mockReturnValue(of(null)),
+            getPlatformAudience,
+            getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
+            getRedditAccounts: vi.fn().mockReturnValue(of([])),
+            getMetaAccounts: vi.fn().mockReturnValue(of([])),
+            getMonitorConnections: vi.fn().mockReturnValue(of({ viaCampaignService: false, platforms: {} })),
+          },
+        },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(MonitoringTabComponent);
+  });
+
+  it.each(['google', 'linkedin', 'reddit', 'meta'] as const)(
+    'shows the section, scoped to the active project, whichever monitor platform (%s) is picked',
+    (platform) => {
+      fixture.detectChanges();
+      (fixture.componentInstance as unknown as { selectedPlatform: { set(v: string): void } }).selectedPlatform.set(platform);
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('[data-testid="monitoring-paid-audience"]')).not.toBeNull();
+      expect(getPlatformAudience).toHaveBeenCalledWith('tlf', 'meta-ads', 'last_30_days');
+    }
+  );
 });

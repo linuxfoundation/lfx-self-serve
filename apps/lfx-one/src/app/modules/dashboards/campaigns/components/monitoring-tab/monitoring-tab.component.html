@@ -520,7 +520,9 @@
           <p class="text-sm text-gray-500">No active LinkedIn campaigns found for this account.</p>
         </div>
       } @else if (linkedInView(); as view) {
-        <ng-container [ngTemplateOutlet]="accountPanel" [ngTemplateOutletContext]="{ $implicit: view, panel: 'linkedin', note: linkedInTotalsNote() }" />
+        <ng-container
+          [ngTemplateOutlet]="accountPanel"
+          [ngTemplateOutletContext]="{ $implicit: view, panel: 'linkedin', actPlatform: 'linkedin-ads', note: linkedInTotalsNote() }" />
       }
     </div>
   } @else if (selectedPlatform() === 'reddit') {
@@ -583,7 +585,9 @@
           <p class="text-sm text-gray-500">No active Reddit campaigns found for this account.</p>
         </div>
       } @else if (redditView(); as view) {
-        <ng-container [ngTemplateOutlet]="accountPanel" [ngTemplateOutletContext]="{ $implicit: view, panel: 'reddit', note: redditTotalsNote() }" />
+        <ng-container
+          [ngTemplateOutlet]="accountPanel"
+          [ngTemplateOutletContext]="{ $implicit: view, panel: 'reddit', actPlatform: 'reddit-ads', note: redditTotalsNote() }" />
       }
     </div>
   } @else if (selectedPlatform() === 'meta') {
@@ -646,7 +650,9 @@
           <p class="text-sm text-gray-500">No active Meta campaigns found for this account.</p>
         </div>
       } @else if (metaView(); as view) {
-        <ng-container [ngTemplateOutlet]="accountPanel" [ngTemplateOutletContext]="{ $implicit: view, panel: 'meta', note: metaTotalsNote() }" />
+        <ng-container
+          [ngTemplateOutlet]="accountPanel"
+          [ngTemplateOutletContext]="{ $implicit: view, panel: 'meta', actPlatform: 'meta-ads', note: metaTotalsNote() }" />
       }
     </div>
   } @else if (selectedPlatform() === 'microsoft' || selectedPlatform() === 'twitter') {
@@ -890,10 +896,21 @@
     </div>
   }
 
+  <!--
+    campaign-service's per-platform audience reads (Meta, LinkedIn, Microsoft Advertising, Reddit, X).
+    Outside the platform switch above on purpose, like the Microsoft keyword table on the Optimize
+    tab: each read has its own source, window and failure states, and it is project-scoped, so it
+    does not follow the monitor's selected ad account. Google's audience stays in its own panel above.
+  -->
+  @if (activeFoundationSlug()) {
+    <lfx-paid-audience-insights [projectSlug]="activeFoundationSlug()" data-testid="monitoring-paid-audience" />
+  }
+
   <!-- An ad platform's KPI strip and campaign table (LinkedIn, Reddit, Meta, Microsoft Ads, X), from its
        precomputed AccountMonitorPanelView: "Couldn't read" rows are dashed, "Unknown" pacing and "Not
-       measured" conversions are grey. LinkedIn adds its creatives column. -->
-  <ng-template #accountPanel let-view let-panel="panel" let-note="note">
+       measured" conversions are grey. LinkedIn adds its creatives column; LinkedIn, Reddit and Meta
+       (`actPlatform`) add the row actions. -->
+  <ng-template #accountPanel let-view let-panel="panel" let-note="note" let-actPlatform="actPlatform">
     @if (view.kpis; as kpis) {
       <!-- KPI Strip -->
       <div class="grid grid-cols-2 gap-4 md:grid-cols-5" [attr.data-testid]="panel + '-kpi-strip'">
@@ -942,6 +959,9 @@
               @if (panel === 'linkedin') {
                 <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Creatives</th>
               }
+              @if (actPlatform) {
+                <th class="px-4 py-3 text-xs font-medium text-gray-500"><span class="sr-only">Actions</span></th>
+              }
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-100">
@@ -981,6 +1001,11 @@
                     {{ creatives.text }}
                   </td>
                 }
+                @if (actPlatform) {
+                  <td class="px-4 py-3">
+                    <ng-container *ngTemplateOutlet="actCell; context: { platform: actPlatform, id: row.campaignId, name: row.campaignName }" />
+                  </td>
+                }
               </tr>
             }
           </tbody>
@@ -1008,3 +1033,36 @@
     </div>
   </ng-template>
 </div>
+
+<!--
+  A Monitor row's actions. Each first resolves the row's PLATFORM campaign id to the campaign LFX One
+  manages (campaign-ref) inside the act dialog, so nothing is changed from here directly.
+-->
+<ng-template #actCell let-platform="platform" let-id="id" let-name="name">
+  <div class="flex items-center justify-end gap-1" [attr.data-testid]="'monitor-act-' + platform + '-' + id">
+    <lfx-button
+      label="Pause / resume"
+      size="small"
+      [text]="true"
+      ariaHaspopup="dialog"
+      [ariaLabel]="'Pause or resume ' + name"
+      (onClick)="openAct(platform, id, name, 'pause_resume')"
+      [attr.data-testid]="'monitor-act-toggle-' + id" />
+    <lfx-button
+      label="Budget"
+      size="small"
+      [text]="true"
+      ariaHaspopup="dialog"
+      [ariaLabel]="'Change budget of ' + name"
+      (onClick)="openAct(platform, id, name, 'budget')"
+      [attr.data-testid]="'monitor-act-budget-' + id" />
+    <lfx-button
+      label="Bid"
+      size="small"
+      [text]="true"
+      ariaHaspopup="dialog"
+      [ariaLabel]="'Change bid of ' + name"
+      (onClick)="openAct(platform, id, name, 'bid')"
+      [attr.data-testid]="'monitor-act-bid-' + id" />
+  </div>
+</ng-template>
