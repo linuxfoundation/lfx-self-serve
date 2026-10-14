@@ -194,8 +194,9 @@ against `main`: H-01 #3612, H-07 #3613, H-08 #3614, H-09 #3615, H-10 #3616. H-04
 fixed, H-05 is folded into E10-01 (#3601), and H-06 was covered by E3-05. Two security findings are held
 for private reporting rather than filed as public issues.
 
-Every Phase 1, Phase 2 and Phase 3 item is filed (2026-10-14). Every Phase 1 and Phase 2 item ships
-behind the `meeting-details-v2` flag, including the ones that wait on upstream blockers.
+Every remaining Phase 1 and Phase 2 item and both spikes have a tracking issue (2026-10-14); the
+hygiene items are accounted for above. Every Phase 1 and Phase 2 item ships behind the
+`meeting-details-v2` flag, including the ones that wait on upstream blockers.
 
 The `U-` series is upstream API blockers: changes owned by `lfx-v2-meeting-service` and
 `lfx-v2-committee-service`, tracked here as U-01 to U-08 (#2927 to #2934). The Phase 2 table shows

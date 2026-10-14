@@ -195,8 +195,10 @@ axis values and `ActionSlotKind` members defined in the state matrix.
 
 ## Traceability
 
-Every Phase 1, Phase 2 and Phase 3 item is filed (Phase 2 and 3 on 2026-10-14). An issue column
-of `—` marks a row with no issue of its own (V1 parity, tracked by its FRs).
+Every remaining Phase 1 and Phase 2 item has a tracking issue (Phase 2 filed on 2026-10-14), and
+so does every Phase 3 spike; the Phase 3 hygiene items are accounted for in `spec.md` § Phase 3. An
+issue column of `—` marks a row with no issue of its own: work shipped before the epic (E5-01), or
+V1 parity tracked by its FRs.
 
 | Plan ID                       | Issue             | Requirements                                        |
 | ----------------------------- | ----------------- | --------------------------------------------------- |
