@@ -3,7 +3,7 @@
 
 import { PLATFORM_ID, signal, TransferState } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { Router } from '@angular/router';
+import { NavigationEnd, NavigationStart, Router, Event as RouterEvent } from '@angular/router';
 import {
   GW_EMBED_CAPABILITY_MISSING_CODE,
   GW_EMBED_HOST_SESSION_LOGOUT_URL,
@@ -11,7 +11,7 @@ import {
   GW_EMBED_STYLESHEET_ROUTE,
 } from '@lfx-one/shared/constants';
 import { GwEmbedManifest, GwHostContext, RuntimeConfig } from '@lfx-one/shared/interfaces';
-import { EMPTY } from 'rxjs';
+import { EMPTY, Subject } from 'rxjs';
 import { MessageService } from 'primeng/api';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -35,6 +35,7 @@ describe('GwModuleOutletComponent', () => {
   let component: GwModuleOutletComponent;
   let navigateByUrl: ReturnType<typeof vi.fn>;
   let add: ReturnType<typeof vi.fn>;
+  let routerEvents: Subject<RouterEvent>;
 
   /** Private by design — these are internal decisions, not API, but they're where the risk lives. */
   const callPrivate = <T>(name: string, ...args: unknown[]): T => (component as unknown as Record<string, (...a: unknown[]) => T>)[name](...args);
@@ -42,11 +43,12 @@ describe('GwModuleOutletComponent', () => {
   beforeEach(() => {
     navigateByUrl = vi.fn();
     add = vi.fn();
+    routerEvents = new Subject<RouterEvent>();
 
     TestBed.configureTestingModule({
       imports: [GwModuleOutletComponent],
       providers: [
-        { provide: Router, useValue: { navigateByUrl } },
+        { provide: Router, useValue: { navigateByUrl, events: routerEvents } },
         { provide: MessageService, useValue: { add } },
         // Stubbed rather than real: UserService pulls in HttpClient and a chain of app providers,
         // and all this component asks it for is whether the user is impersonating.
@@ -336,20 +338,25 @@ describe('GwModuleOutletComponent', () => {
   });
 
   describe('syncEmbedToHostUrl', () => {
-    // Re-dispatches popstate so the embed's own router follows a host navigation. The lastSyncedUrl
-    // guard is the only thing between this and the unbounded NavigationEnd -> dispatch ->
-    // NavigationEnd loop that shipped once already, so it is asserted directly.
+    // Re-dispatches popstate so the embed's own router follows a host navigation. Whether it fires
+    // is decided by what started the navigation, not by comparing URLs: the embed's own pushState
+    // calls are invisible to the host, so a remembered URL goes stale and swallowed the sidebar
+    // link back to it. Skipping popstate-triggered navigations is what keeps our own dispatch from
+    // looping, so both sides of that rule are asserted through the router events.
     let dispatched: number;
     let onPopState: () => void;
+    let nextId: number;
 
     beforeEach(() => {
       dispatched = 0;
+      nextId = 1;
       onPopState = (): void => {
         dispatched += 1;
       };
       window.addEventListener('popstate', onPopState);
       // The guard returns early without a mount handle, which would make every case below vacuous.
       (component as unknown as { mountHandle: unknown }).mountHandle = { unmount: vi.fn() };
+      callPrivate('watchHostNavigation');
     });
 
     afterEach(() => {
@@ -359,29 +366,38 @@ describe('GwModuleOutletComponent', () => {
 
     const at = (path: string): void => window.history.replaceState(window.history.state, '', path);
 
-    it('tells the embed about an in-prefix navigation', () => {
-      at('/foundation/gw/newsletters');
+    /** Runs one host navigation through the router events, landing the address bar on `path`. */
+    const navigate = (path: string, trigger: NavigationStart['navigationTrigger']): void => {
+      const id = nextId++;
+      routerEvents.next(new NavigationStart(id, path, trigger));
+      at(path);
+      routerEvents.next(new NavigationEnd(id, path, path));
+    };
 
-      callPrivate('syncEmbedToHostUrl');
+    it('redraws the embed when a host link returns to the mount URL after the embed moved on its own', () => {
+      // The reported shape: the outlet mounted on the list, the embed pushed an edition URL itself,
+      // then the sidebar's Newsletters link navigated back to the list.
+      // The first navigation tells the outlet about the list URL, as the mount used to record it.
+      navigate('/foundation/gw/newsletters', 'imperative');
+      dispatched = 0;
+      window.history.pushState(window.history.state, '', '/foundation/gw/newsletters/editions/abc');
+
+      navigate('/foundation/gw/newsletters', 'imperative');
 
       expect(dispatched).toBe(1);
     });
 
-    it('does not re-dispatch for a URL it has already synced', () => {
-      at('/foundation/gw/newsletters');
-      callPrivate('syncEmbedToHostUrl');
+    it('dispatches nothing for a popstate-triggered navigation', () => {
+      // Back/Forward already reached the embed's router, and our own dispatch produces exactly
+      // this kind of navigation, so answering it would loop.
+      navigate('/foundation/gw/newsletters', 'popstate');
 
-      callPrivate('syncEmbedToHostUrl');
-
-      expect(dispatched).toBe(1);
+      expect(dispatched).toBe(0);
     });
 
-    it('dispatches again once the query string changes', () => {
-      at('/foundation/gw/newsletters');
-      callPrivate('syncEmbedToHostUrl');
-
-      at('/foundation/gw/newsletters?page=2');
-      callPrivate('syncEmbedToHostUrl');
+    it('dispatches on every imperative navigation, even to the same URL twice', () => {
+      navigate('/foundation/gw/newsletters', 'imperative');
+      navigate('/foundation/gw/newsletters', 'imperative');
 
       expect(dispatched).toBe(2);
     });
