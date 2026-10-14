@@ -22,8 +22,15 @@ export const MKTG_OS_AGENTS_ROUTES: Routes = [
     canActivate: [authGuard],
   },
   {
-    // One revision of a Marketing OS document, with its Revisions panel
-    // (open, restore). Static path — must precede the `:agentId` matcher.
+    // The Documents area: every stored Marketing OS output of the project as a
+    // document with revisions (list, view, restore). Static paths — must
+    // precede the `:agentId` matcher.
+    path: 'documents',
+    title: 'Documents',
+    loadComponent: () => import('./mktg-documents/mktg-documents.component').then((m) => m.MktgDocumentsComponent),
+    canActivate: [authGuard],
+  },
+  {
     path: 'documents/:agentKey/:documentId',
     title: 'Document',
     loadComponent: () => import('./mktg-document-view/mktg-document-view.component').then((m) => m.MktgDocumentViewComponent),
