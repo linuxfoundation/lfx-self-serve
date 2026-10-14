@@ -1364,6 +1364,8 @@ describe('MeetingService.getPastMeetingParticipants', () => {
     expect(merged.is_verified).toBe(true);
     expect(merged.mapped_invitee_name).toBe('Jane Doe');
     expect(merged.is_invited).toBe(true);
+    // The Zoom name only the other record had survives the merge.
+    expect(merged.zoom_user_name).toBe('Jane (iPhone)');
   });
 
   it('does not merge two records with the same email but different usernames', async () => {

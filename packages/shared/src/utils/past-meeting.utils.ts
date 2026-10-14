@@ -289,14 +289,15 @@ export function getPastMeetingIdentityNames(
 /**
  * An admin participant-list row (N-02): the participant with its identity tier, the tier's label
  * (`PAST_MEETING_IDENTITY_TIER_LABELS`, or `PAST_MEETING_IDENTITY_UNKNOWN_LABEL` for an unverified
- * attendee left unknown), and the names behind the row. An unmatched notetaker bot gets
- * `PAST_MEETING_NOTETAKER_BOT_LABEL` and no tier.
+ * attendee left unknown), and the names behind the row. An attending notetaker bot gets
+ * `PAST_MEETING_NOTETAKER_BOT_LABEL` and no tier, whatever its flags.
  */
 export function toPastMeetingParticipantRow(participant: EnrichedPastMeetingParticipant): PastMeetingParticipantRow {
   const identity_names = getPastMeetingIdentityNames(participant);
   const tier = getPastMeetingIdentityTier(participant);
-  // An unmatched bot never reaches the review queue (#2253): it is labelled a bot, with no tier.
-  if (tier === 'unverified' && isPastMeetingNotetakerBot(participant)) {
+  // A bot is labelled a bot, with no tier, whatever its flags (#2253): reconciliation never queues
+  // one now, but records reconciled before that can carry a match, and the public roster hides every bot.
+  if (tier && isPastMeetingNotetakerBot(participant)) {
     return { ...participant, identity_tier: null, identity_label: PAST_MEETING_NOTETAKER_BOT_LABEL, identity_names, is_notetaker_bot: true };
   }
   let label: string | null = null;

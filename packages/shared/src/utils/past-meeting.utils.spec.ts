@@ -618,6 +618,9 @@ describe('participant identity tiers (N-02)', () => {
 
     expect(toPastMeetingParticipantRow(bot)).toMatchObject({ identity_tier: null, identity_label: 'Notetaker bot', is_notetaker_bot: true });
     expect(toPastMeetingParticipantRow(participant({ is_attended: true }))).toMatchObject({ identity_tier: 'unverified', is_notetaker_bot: false });
+    // A record reconciled before the bot exclusion can carry a match; it is still a bot.
+    const matchedBot = participant({ is_attended: true, is_verified: true, is_ai_reconciled: true, zoom_user_name: 'Fathom Notetaker' });
+    expect(toPastMeetingParticipantRow(matchedBot)).toMatchObject({ identity_tier: null, identity_label: 'Notetaker bot', is_notetaker_bot: true });
     expect(isPastMeetingUnverifiedAttendee(bot)).toBe(false);
 
     const roster = toPublicPastMeetingRoster([bot, participant({ uid: 'unknown', is_attended: true, is_unknown: true })]);
