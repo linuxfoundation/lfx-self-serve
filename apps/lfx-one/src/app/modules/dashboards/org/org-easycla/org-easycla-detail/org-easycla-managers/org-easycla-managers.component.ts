@@ -77,16 +77,7 @@ export class OrgEasyclaManagersComponent implements OnInit {
   public constructor() {
     this.contextChanged$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.onContextChanged());
 
-    toObservable(
-      computed(() => {
-        if (!this.signed()) return '';
-        const orgUid = this.orgUid();
-        const group = this.claGroup();
-        const projectSfid = orgClaPairProjectSfid(group);
-        const foundationSfid = orgClaPairFoundationSfid(group) ?? '';
-        return orgUid && projectSfid ? `${orgUid}::${projectSfid}::${foundationSfid}` : '';
-      })
-    )
+    toObservable(computed(() => this.initWriteGrantPair()))
       .pipe(
         distinctUntilChanged(),
         tap(() => {
@@ -178,6 +169,15 @@ export class OrgEasyclaManagersComponent implements OnInit {
 
   protected isSelf(manager: OrgClaManager): boolean {
     return manager.isViewer === true;
+  }
+
+  private initWriteGrantPair(): string {
+    if (!this.signed()) return '';
+    const orgUid = this.orgUid();
+    const group = this.claGroup();
+    const projectSfid = orgClaPairProjectSfid(group);
+    const foundationSfid = orgClaPairFoundationSfid(group) ?? '';
+    return orgUid && projectSfid ? `${orgUid}::${projectSfid}::${foundationSfid}` : '';
   }
 
   private initRows(): OrgClaManagerRow[] | null {

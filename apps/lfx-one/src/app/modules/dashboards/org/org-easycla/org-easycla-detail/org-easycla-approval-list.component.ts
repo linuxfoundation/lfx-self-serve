@@ -155,16 +155,7 @@ export class OrgEasyclaApprovalListComponent {
       this.dismissPendingWrites();
     });
 
-    toObservable(
-      computed(() => {
-        if (this.locked()) return '';
-        const orgUid = this.accountContext.selectedAccount()?.uid;
-        const group = this.claGroup();
-        const projectSfid = orgClaPairProjectSfid(group);
-        const foundationSfid = orgClaPairFoundationSfid(group) ?? '';
-        return orgUid && projectSfid ? `${orgUid}::${projectSfid}::${foundationSfid}` : '';
-      })
-    )
+    toObservable(computed(() => this.initMutateGrantPair()))
       .pipe(
         distinctUntilChanged(),
         tap(() => this.mutateGrant.set(null)),
@@ -213,6 +204,15 @@ export class OrgEasyclaApprovalListComponent {
       rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
       accept: () => this.applyUpdate({ add: [], remove: [{ kind: entry.kind, value: entry.value }] }, 'removed', target),
     });
+  }
+
+  private initMutateGrantPair(): string {
+    if (this.locked()) return '';
+    const orgUid = this.accountContext.selectedAccount()?.uid;
+    const group = this.claGroup();
+    const projectSfid = orgClaPairProjectSfid(group);
+    const foundationSfid = orgClaPairFoundationSfid(group) ?? '';
+    return orgUid && projectSfid ? `${orgUid}::${projectSfid}::${foundationSfid}` : '';
   }
 
   private writeTarget(): { orgUid: string; signatureId: string } | null {

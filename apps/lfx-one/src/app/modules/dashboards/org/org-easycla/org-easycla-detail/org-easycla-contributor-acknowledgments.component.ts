@@ -268,15 +268,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
         this.invalidateDialog = null;
       });
 
-    toObservable(
-      computed(() => {
-        const orgUid = this.orgUid();
-        const group = this.claGroup();
-        const projectSfid = orgClaPairProjectSfid(group);
-        const foundationSfid = orgClaPairFoundationSfid(group) ?? '';
-        return orgUid && projectSfid ? `${orgUid}::${projectSfid}::${foundationSfid}` : '';
-      })
-    )
+    toObservable(computed(() => this.initWritePermissionPair()))
       .pipe(
         distinctUntilChanged(),
         tap(() => {
@@ -410,6 +402,14 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
       if (orgUid !== this.orgUid() || claSignatureId !== this.signatureId()) return;
       this.sendInvalidate(row, request, orgUid, claSignatureId, removeApprovalEntries ?? []);
     });
+  }
+
+  private initWritePermissionPair(): string {
+    const orgUid = this.orgUid();
+    const group = this.claGroup();
+    const projectSfid = orgClaPairProjectSfid(group);
+    const foundationSfid = orgClaPairFoundationSfid(group) ?? '';
+    return orgUid && projectSfid ? `${orgUid}::${projectSfid}::${foundationSfid}` : '';
   }
 
   /** Entries added for this contributor alone. Domain and org entries cover others too, so they never match. */
