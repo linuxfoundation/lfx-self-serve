@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { computed, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
@@ -9,7 +10,7 @@ import { MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
 import { MktgDocumentDetailResponse, MktgDocumentsResponse, MktgDocumentType, MktgRevisionSummary, ProjectContext } from '@lfx-one/shared/interfaces';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgDocumentsComponent } from './mktg-documents.component';
@@ -123,5 +124,27 @@ describe('MktgDocumentsComponent', () => {
     await render('/?type=linkedin-post');
 
     expect(query('mktg-documents-empty-runs')?.textContent).toContain('a new run is a new document');
+  });
+
+  it('shows only the error when the documents list cannot be read, never an empty state', async () => {
+    store.listDocuments.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+    await render();
+
+    expect(query('mktg-documents-error')?.textContent).toContain('The documents could not be loaded');
+    expect(query('mktg-documents-list-failed')).not.toBeNull();
+    expect(query('mktg-documents-empty-living')).toBeNull();
+    expect(query('mktg-documents-empty-runs')).toBeNull();
+    expect(query('mktg-documents-nav')?.textContent).not.toContain('Not generated yet');
+    expect(query('mktg-documents-nav')?.textContent).not.toContain('No runs yet');
+    expect(store.getDocument).not.toHaveBeenCalled();
+  });
+
+  it('shows only the access error on a 403 list read, never an empty state', async () => {
+    store.listDocuments.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403 })));
+    await render('/?type=linkedin-post');
+
+    expect(query('mktg-documents-error')?.textContent).toContain('You need write access');
+    expect(query('mktg-documents-empty-runs')).toBeNull();
+    expect(query('mktg-documents-nav')?.textContent).not.toContain('No runs yet');
   });
 });

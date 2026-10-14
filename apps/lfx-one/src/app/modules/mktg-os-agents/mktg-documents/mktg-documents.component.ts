@@ -44,6 +44,10 @@ export class MktgDocumentsComponent {
   // === Signals ===
   protected readonly loading = signal(true);
   protected readonly errorText = signal('');
+  // The documents list could not be read: nothing is known about what the
+  // project has stored, so neither the empty states nor the nav badges may
+  // assert an absence while this is set.
+  protected readonly listFailed = signal(false);
   protected readonly documents = signal<MktgDocumentsResponse | null>(null);
   protected readonly detail = signal<MktgDocumentDetailResponse | null>(null);
   protected readonly detailLoading = signal(false);
@@ -90,10 +94,14 @@ export class MktgDocumentsComponent {
       this.listRequest$
         .pipe(
           filter((request) => !!request.project),
-          tap(() => this.errorText.set('')),
+          tap(() => {
+            this.errorText.set('');
+            this.listFailed.set(false);
+          }),
           switchMap((request) =>
             this.documentStore.listDocuments(request.project).pipe(
               catchError((error: HttpErrorResponse) => {
+                this.listFailed.set(true);
                 this.errorText.set(
                   error.status === 403
                     ? 'You need write access to this project to see its Marketing OS documents.'
@@ -176,13 +184,15 @@ export class MktgDocumentsComponent {
   private initNav(kind: MktgDocumentType['kind']): Signal<MktgDocumentNavItem[]> {
     return computed(() => {
       const groups = this.documents()?.groups ?? [];
+      const listFailed = this.listFailed();
       const selected = this.selectedType().agentKey;
       return MKTG_DOCUMENT_TYPES.filter((type) => type.kind === kind).map((type, index) => {
         const documents = groups.find((group) => group.type.agentKey === type.agentKey)?.documents ?? [];
         return {
           type,
           position: kind === 'living' ? index + 1 : null,
-          ...this.navBadge(type, documents.length, documents[0]?.revisionCount ?? 0),
+          // A failed list read knows nothing about the counts: no badge rather than "Not generated yet".
+          ...(listFailed ? { badge: '', badgeClass: '' } : this.navBadge(type, documents.length, documents[0]?.revisionCount ?? 0)),
           selected: type.agentKey === selected,
         };
       });

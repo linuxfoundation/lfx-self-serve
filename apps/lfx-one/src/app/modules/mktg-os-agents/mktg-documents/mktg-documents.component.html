@@ -33,7 +33,9 @@
             [attr.aria-current]="item.selected ? 'page' : null"
             [attr.data-testid]="'mktg-documents-nav-' + item.type.agentKey">
             <span>{{ item.position }} · {{ item.type.label }}</span>
-            <span class="text-xs font-normal shrink-0" [ngClass]="item.badgeClass">{{ item.badge }}</span>
+            @if (item.badge) {
+              <span class="text-xs font-normal shrink-0" [ngClass]="item.badgeClass">{{ item.badge }}</span>
+            }
           </a>
         }
 
@@ -48,7 +50,9 @@
             [attr.aria-current]="item.selected ? 'page' : null"
             [attr.data-testid]="'mktg-documents-nav-' + item.type.agentKey">
             <span>{{ item.type.label }}</span>
-            <span class="text-xs font-normal shrink-0" [ngClass]="item.badgeClass">{{ item.badge }}</span>
+            @if (item.badge) {
+              <span class="text-xs font-normal shrink-0" [ngClass]="item.badgeClass">{{ item.badge }}</span>
+            }
           </a>
         }
         <p class="mx-3 mt-3 text-xs text-gray-500">Living documents get revisions. Runs are one-off documents: a new run is a new document.</p>
@@ -59,6 +63,11 @@
         @if (loading()) {
           <div class="rounded-xl border border-gray-200 bg-white px-6 py-10 text-sm text-gray-500" role="status" data-testid="mktg-documents-loading">
             Loading documents…
+          </div>
+        } @else if (listFailed()) {
+          <!-- The list read failed: the error above is the only answer; no empty state may claim nothing is stored. -->
+          <div class="rounded-xl border border-gray-200 bg-white px-6 py-10 text-sm text-gray-500" role="status" data-testid="mktg-documents-list-failed">
+            The documents for {{ projectName() || 'this project' }} are unavailable right now.
           </div>
         } @else if (selectedLiving(); as living) {
           <!-- A living document: its header and its Revisions table -->
