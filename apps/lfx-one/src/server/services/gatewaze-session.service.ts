@@ -204,7 +204,9 @@ export class GatewazeSessionService {
    * The answer for `GET /api/gatewaze/session/me`, as the admin BFF's `/bff/me` gives it: a pending
    * admin check first, then GoTrue's `/user`, then the admin flag. When GoTrue refuses the access
    * token on `/user` (user deleted, session revoked at GoTrue), the record is dropped and minted
-   * once more from the LFX session; a second refusal is `ended`. Never throws.
+   * once more from the LFX session. A second refusal is `unavailable`, not `ended`: the LFX session is
+   * still live and has just minted, so a 401 would send the embed round a reload that hits the same
+   * refusal. That record is dropped too. Never throws.
    */
   public async getGatewazeMe(req: Request): Promise<GatewazeMeResult> {
     const first = await this.getGatewazeSession(req);
@@ -223,7 +225,12 @@ export class GatewazeSessionService {
       return second;
     }
     const retried = await this.describeSession(req, second.session);
-    return retried === 'user_refused' ? { outcome: 'ended' } : retried;
+    if (retried !== 'user_refused') {
+      return retried;
+    }
+    logger.warning(req, 'get_gatewaze_me', 'GoTrue /user refused a session minted moments before; answering unavailable');
+    await this.dropRefusedSession(req, second.session);
+    return { outcome: 'unavailable' };
   }
 
   /**

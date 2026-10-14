@@ -63,21 +63,21 @@ The controller sends the answers in the tables below with `res.status().json()` 
 
 `getGatewazeMe` follows the admin BFF's `/bff/me`. It checks for a pending admin check first, then calls GoTrue `/user` with the session's access token (the package's `getUser`), then checks `is_admin`.
 
-| Situation                                                         | Answer                                                                                  |
-| ----------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Not signed in to LFX                                              | 401 from `authMiddleware`, no marker                                                    |
-| Host-session mode off or misconfigured, or no store-backed cookie | Uniform 404                                                                             |
-| No LFX writer or ED access                                        | 403 `GW_EMBED_ACCESS_REQUIRED`                                                          |
-| Impersonating                                                     | 403 `GW_EMBED_IMPERSONATION_BLOCKED`                                                    |
-| Session ok and an active admin                                    | 200 `{ user }`, the GoTrue `/user` body                                                 |
-| Session ok, not an admin                                          | 403 `{ error: 'not_admin', email }`                                                     |
-| Admin check pending                                               | 503 `{ error: 'admin_check_pending' }` with `Retry-After: retryAfterSeconds(s)`         |
-| `ended`: Auth0 `invalid_grant`, or LFX logged out (see below)     | 401 `{ error: 'not_signed_in' }` with `x-gw-session: expired`                           |
-| GoTrue `/user` answers 401, 403 or 404                            | The record is dropped and minted once more; a second refusal is the 401 with the marker |
-| `refused`: GoTrue refused the ID token                            | 503 `{ error: 'session_unavailable' }`; the service logs it at ERROR                    |
-| `unavailable`: Valkey, Auth0 or GoTrue could not answer           | 503 `{ error: 'session_unavailable' }`                                                  |
+| Situation                                                         | Answer                                                                                                                                           |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Not signed in to LFX                                              | 401 from `authMiddleware`, no marker                                                                                                             |
+| Host-session mode off or misconfigured, or no store-backed cookie | Uniform 404                                                                                                                                      |
+| No LFX writer or ED access                                        | 403 `GW_EMBED_ACCESS_REQUIRED`                                                                                                                   |
+| Impersonating                                                     | 403 `GW_EMBED_IMPERSONATION_BLOCKED`                                                                                                             |
+| Session ok and an active admin                                    | 200 `{ user }`, the GoTrue `/user` body                                                                                                          |
+| Session ok, not an admin                                          | 403 `{ error: 'not_admin', email }`                                                                                                              |
+| Admin check pending                                               | 503 `{ error: 'admin_check_pending' }` with `Retry-After: retryAfterSeconds(s)`                                                                  |
+| `ended`: Auth0 `invalid_grant`, or LFX logged out (see below)     | 401 `{ error: 'not_signed_in' }` with `x-gw-session: expired`                                                                                    |
+| GoTrue `/user` answers 401, 403 or 404                            | The record is dropped and minted once more; a second refusal drops that record too and is 503 `{ error: 'session_unavailable' }`, logged at WARN |
+| `refused`: GoTrue refused the ID token                            | 503 `{ error: 'session_unavailable' }`; the service logs it at ERROR                                                                             |
+| `unavailable`: Valkey, Auth0 or GoTrue could not answer           | 503 `{ error: 'session_unavailable' }`                                                                                                           |
 
-The marker is the only answer that tells the embed its session is gone, so it is never sent for a fault. After a `/user` refusal the service revokes the refused session at GoTrue, then calls `store.discard(gwSid, { onlyIfAccessToken })` with the refused access token. `discard` removes the record and publishes the sign-out without setting the sign-out marker. `store.delete` would set it, and the re-mint would then fail as `ended` for 5 minutes. With `onlyIfAccessToken` the record is removed only while it still holds that token, so a session another tab minted in the meantime is kept and used.
+The marker is the only answer that tells the embed its session is gone, so it is never sent for a fault. After a `/user` refusal the service revokes the refused session at GoTrue, then calls `store.discard(gwSid, { onlyIfAccessToken })` with the refused access token. `discard` removes the record and publishes the sign-out without setting the sign-out marker. `store.delete` would set it, and the re-mint would then fail as `ended` for 5 minutes. With `onlyIfAccessToken` the record is removed only while it still holds that token, so a session another tab minted in the meantime is kept and used. If GoTrue also refuses the session just minted, that is a Gatewaze fault, not a dead LFX session, and a 401 would send the embed round a reload into the same refusal. The service drops that record as well and answers 503.
 
 ### `POST /api/gatewaze/session/logout`
 

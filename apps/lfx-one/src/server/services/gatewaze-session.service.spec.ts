@@ -540,12 +540,16 @@ describe('GatewazeSessionService me and logout', () => {
       discard.mockRestore();
     });
 
-    it('answers ended after one re-mint when /user still refuses', async () => {
+    it('answers unavailable, never ended, and drops the record when /user refuses the re-minted session too', async () => {
       upstreams.state.userStatuses = [401, 401];
 
-      await expect(service.getGatewazeMe(buildReq())).resolves.toEqual({ outcome: 'ended' });
+      await expect(service.getGatewazeMe(buildReq())).resolves.toEqual({ outcome: 'unavailable' });
       expect(upstreams.count(ID_TOKEN_GRANT)).toBe(2);
       expect(upstreams.count(USER)).toBe(2);
+      expect(upstreams.count(LOGOUT)).toBe(2);
+      expect(kv.data.has(SESSION_KEY)).toBe(false);
+      expect(kv.data.has(SIGNED_OUT_KEY)).toBe(false);
+      expect(loggerMock.warning).toHaveBeenCalledWith(expect.anything(), 'get_gatewaze_me', expect.stringContaining('refused a session minted'));
     });
 
     it('answers unavailable, without re-minting, when /user cannot answer', async () => {
