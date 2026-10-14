@@ -55,6 +55,13 @@ const GROUP_ID = '7c1a9000-0000-4000-8000-000000000001';
 const ELSEWHERE_GROUP_ID = '7c1a9000-0000-4000-8000-000000000002';
 const UNHELD_GROUP_ID = '7c1a9000-0000-4000-8000-000000000003';
 
+function roleMissingError(): HttpErrorResponse {
+  return new HttpErrorResponse({
+    status: 403,
+    error: { error: "You don't have an EasyCLA role at this organization", code: 'EASYCLA_ROLE_MISSING' },
+  });
+}
+
 describe('OrgEasyclaDetailComponent', () => {
   const SELECTED_ACCOUNT = { uid: '0014100000AcmeOrgAAA', accountName: 'Acme' };
   const OTHER_ORG = { uid: '0014100000OtherOrgAA', accountName: 'Other' };
@@ -2185,6 +2192,28 @@ describe('OrgEasyclaDetailComponent', () => {
     expect(byTestId(fixture, 'org-easycla-detail-not-found-state')).toBeNull();
   });
 
+  it('surfaces a missing EasyCLA role instead of a list failure or a missing agreement', async () => {
+    getClaGroups.mockReturnValue(throwError(() => roleMissingError()));
+
+    const fixture = await render();
+    const state = byTestId(fixture, 'org-easycla-detail-role-missing-state');
+
+    expect(state).toBeTruthy();
+    expect(state?.textContent).toContain("You don't have an EasyCLA role at this organization");
+    expect(state?.textContent).not.toContain('Refresh');
+    expect(byTestId(fixture, 'org-easycla-detail-error-state')).toBeNull();
+    expect(byTestId(fixture, 'org-easycla-detail-not-found-state')).toBeNull();
+  });
+
+  it('keeps the list failure for a 403 without the missing-role code', async () => {
+    getClaGroups.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403, error: { error: 'Forbidden', code: 'FORBIDDEN' } })));
+
+    const fixture = await render();
+
+    expect(byTestId(fixture, 'org-easycla-detail-error-state')).toBeTruthy();
+    expect(byTestId(fixture, 'org-easycla-detail-role-missing-state')).toBeNull();
+  });
+
   it('downloads in-page after resolving the url, and does not resolve it on first paint', async () => {
     const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
     const openSpy = vi.spyOn(window, 'open');
@@ -2995,6 +3024,23 @@ describe('OrgEasyclaDetailComponent', () => {
         expect(byTestId(fixture, 'org-easycla-detail-error-state')).toBeNull();
         expect(byTestId(fixture, 'org-easycla-detail-signature-pending-state')).not.toBeNull();
         expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('clears a missing-role refusal once a retry recovers the list', async () => {
+      vi.useFakeTimers();
+      try {
+        getClaGroups.mockReturnValueOnce(throwError(() => roleMissingError()));
+        getClaGroups.mockReturnValue(of({ orgUid: NAMED.uid, claGroups: [] }));
+        const { fixture } = await renderReturn({ claGroups: [] });
+
+        await vi.advanceTimersByTimeAsync(30_000);
+        await flush(fixture);
+
+        expect(byTestId(fixture, 'org-easycla-detail-role-missing-state')).toBeNull();
+        expect(byTestId(fixture, 'org-easycla-detail-signature-pending-state')).not.toBeNull();
       } finally {
         vi.useRealTimers();
       }

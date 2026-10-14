@@ -39,6 +39,12 @@
         </p>
       }
     </section>
+  } @else if (easyclaRoleMissing()) {
+    <lfx-empty-state
+      data-testid="org-easycla-detail-role-missing-state"
+      icon="fa-light fa-lock"
+      [title]="easyclaRoleMissingCopy.title"
+      [subtitle]="easyclaRoleMissingCopy.subtitle" />
   } @else if (fetchError()) {
     <lfx-empty-state
       data-testid="org-easycla-detail-error-state"

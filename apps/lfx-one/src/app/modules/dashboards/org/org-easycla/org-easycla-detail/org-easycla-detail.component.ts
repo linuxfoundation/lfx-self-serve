@@ -30,6 +30,8 @@ import {
   ORG_CLA_DESIGNEE_START_COPY,
   ORG_CLA_DETAIL_TABS,
   ORG_CLA_DOWNLOAD_COPY,
+  ORG_CLA_EASYCLA_ROLE_MISSING_COPY,
+  ORG_CLA_EASYCLA_ROLE_MISSING_ERROR_CODE,
   ORG_CLA_IDENTIFY_MANAGER_COPY,
   ORG_CLA_HEADING_STATUS,
   ORG_CLA_LOCKED_TAB_COPY,
@@ -200,6 +202,8 @@ export class OrgEasyclaDetailComponent {
   protected readonly downloading = signal(false);
   protected readonly reviewCopyDownloading = signal(false);
   protected readonly fetchError = signal(false);
+  protected readonly easyclaRoleMissing = signal(false);
+  protected readonly easyclaRoleMissingCopy = ORG_CLA_EASYCLA_ROLE_MISSING_COPY;
   private readonly claLoadingState = signal(false);
   private readonly loadedManagerCount = signal<{ signatureId: string; count: number } | null>(null);
   /**
@@ -1751,6 +1755,7 @@ export class OrgEasyclaDetailComponent {
       tap(() => {
         this.claLoadingState.set(true);
         this.fetchError.set(false);
+        this.easyclaRoleMissing.set(false);
         this.autoEclaWrites.forgetSettled();
         this.selfRemovals.forgetAll();
         this.listReloaded$.next();
@@ -1761,6 +1766,7 @@ export class OrgEasyclaDetailComponent {
           catchError((error: HttpErrorResponse) => {
             console.error('Failed to load organization CLA groups:', error.status, error.message);
             this.fetchError.set(true);
+            this.easyclaRoleMissing.set(error.status === 403 && error.error?.code === ORG_CLA_EASYCLA_ROLE_MISSING_ERROR_CODE);
             this.claLoadingState.set(false);
             return of(null);
           })
@@ -1995,6 +2001,7 @@ export class OrgEasyclaDetailComponent {
           if (!list) return;
           this.retriedList$.next(list);
           this.fetchError.set(false);
+          this.easyclaRoleMissing.set(false);
         }),
         map(() => this.listedGroupForAddress()),
         takeUntil(tripEnded$),
