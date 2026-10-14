@@ -43,7 +43,7 @@ export function committeeEngagementTable(): string {
   return `${resolveLfxOnePlatinumSchema()}.COMMITTEE_MEETING_ATTENDANCE`;
 }
 
-/** Governed Social Listening analytics relations from `lf-dbt#1873`, qualified with the guarded dev-overridable LFX One schema. */
+/** Governed Social Listening analytics relations for `linuxfoundation/lfx-self-serve#1873`, qualified with the guarded dev-overridable LFX One schema. */
 export function socialListeningAnalyticsTable(
   relation: (typeof SOCIAL_LISTENING_ANALYTICS_RELATIONS)[keyof typeof SOCIAL_LISTENING_ANALYTICS_RELATIONS]
 ): string {

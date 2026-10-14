@@ -95,7 +95,7 @@ class OverviewNoRowsError extends Error {}
 
 /**
  * Snowflake reads for the Social Listening page (LFXV2-3002, PCC port): the feed uses an explicit
- * half-open `MENTION_TS` range; analytics read the governed relations from lf-dbt #1873.
+ * half-open `MENTION_TS` range; analytics read the governed relations for linuxfoundation/lfx-self-serve#1873.
  */
 export class SocialListeningService {
   private readonly snowflakeService: SnowflakeService;
