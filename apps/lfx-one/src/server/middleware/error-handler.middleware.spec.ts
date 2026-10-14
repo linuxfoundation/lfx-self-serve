@@ -163,3 +163,33 @@ describe('apiErrorHandler — errors that set no client message', () => {
     expect(res.body?.['error']).toBe(GENERIC);
   });
 });
+
+describe('apiErrorHandler — JSON parser errors', () => {
+  it('returns a validation error without exposing submitted data in the response or log', () => {
+    const submittedData = 'synthetic-private-body';
+    const error = Object.assign(new SyntaxError(`Unexpected token in ${submittedData}`), {
+      type: 'entity.parse.failed',
+      status: 400,
+      body: submittedData,
+    });
+    const { res } = handle(error);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toMatchObject({ code: 'VALIDATION_ERROR', errors: [{ field: 'body' }] });
+    expect(JSON.stringify(res.body)).not.toContain(submittedData);
+    expect(emittedLogText()).not.toContain(submittedData);
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    Object.assign(new Error('Unexpected failure'), { status: 400 }),
+    Object.assign(new SyntaxError('Unexpected syntax failure'), { status: 400 }),
+    Object.assign(new SyntaxError('Unexpected parser status'), { type: 'entity.parse.failed', status: 500 }),
+  ])('keeps unrecognized errors on the internal-error path: $message', (error) => {
+    const { res } = handle(error);
+
+    expect(res.statusCode).toBe(500);
+    expect(res.body).toMatchObject({ code: 'INTERNAL_ERROR' });
+    expect(logger.warning).not.toHaveBeenCalled();
+  });
+});
