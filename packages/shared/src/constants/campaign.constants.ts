@@ -1156,8 +1156,16 @@ export const GOOGLE_ADS_MAX_CALLOUTS = 20;
  */
 export const GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES = 25;
 
-/** One character Go's `unicode.IsSpace` matches: ASCII space controls, U+0085, and category Z. */
-const GO_TRIMMED_SPACE = /^[\t\n\v\f\r\u0085\p{Z}]$/u;
+/**
+ * Whether a UTF-16 code unit is one Go's `unicode.IsSpace` matches: `\t`–`\r`, space, U+0085, U+00A0,
+ * and the White_Space code points above U+00FF (all of category Z). A numeric test rather than a
+ * regex per character, because the trims below can walk a whitespace-only string up to the body
+ * limit. Every such code point is a single UTF-16 unit, so testing units is exact.
+ */
+export function isGoSpaceCode(code: number): boolean {
+  if (code <= 0x00ff) return (code >= 0x09 && code <= 0x0d) || code === 0x20 || code === 0x85 || code === 0xa0;
+  return code === 0x1680 || (code >= 0x2000 && code <= 0x200a) || code === 0x2028 || code === 0x2029 || code === 0x202f || code === 0x205f || code === 0x3000;
+}
 
 /**
  * Go's `strings.TrimSpace`, which upstream applies to each callout before judging it.
@@ -1168,12 +1176,11 @@ const GO_TRIMMED_SPACE = /^[\t\n\v\f\r\u0085\p{Z}]$/u;
  */
 export function googleAdsTrimSpace(text: string): string {
   // An index walk, not a `[ws]+$` regex: that pattern backtracks quadratically over a long
-  // interior whitespace run, and the text comes from an unvalidated body. Every character Go
-  // trims is a single UTF-16 unit, so walking units is exact.
+  // interior whitespace run, and the text comes from an unvalidated body.
   let start = 0;
   let end = text.length;
-  while (start < end && GO_TRIMMED_SPACE.test(text[start])) start++;
-  while (end > start && GO_TRIMMED_SPACE.test(text[end - 1])) end--;
+  while (start < end && isGoSpaceCode(text.charCodeAt(start))) start++;
+  while (end > start && isGoSpaceCode(text.charCodeAt(end - 1))) end--;
   return text.slice(start, end);
 }
 

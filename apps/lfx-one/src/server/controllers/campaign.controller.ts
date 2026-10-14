@@ -105,6 +105,7 @@ import {
   googleAdsTrimSpace,
   googleAdsUrlGoParseFlaw,
   isCanonicalGoogleAdsResourceId,
+  isGoSpaceCode,
   isMicrosoftMatchType,
 } from '@lfx-one/shared/constants';
 
@@ -3667,8 +3668,10 @@ export class CampaignController {
    *
    * Walks the raw body rather than the normalised output, because the allocation this bounds happens
    * DURING normalisation — a check on the result would run after the work it is meant to prevent.
-   * Shape-only, like everything else on this road: a non-string entry is left for the normalisers to
-   * drop and is not counted against the length bound.
+   * Each string is measured by {@link boundedLength}, after trimming: every field here is trimmed
+   * before it is sent, and upstream trims again, so measuring the raw length would refuse a short
+   * value padded with whitespace that upstream accepts. Shape-only, like everything else on this
+   * road: a non-string entry is left for the normalisers to drop and is not counted.
    *
    * Names the offending field in the refusal so an operator who somehow reaches it is told which one,
    * matching the HubSpot sibling rather than failing the create anonymously.
@@ -3688,21 +3691,21 @@ export class CampaignController {
           if (value.length > MAX_GOOGLE_CREATIVE_LIST_ENTRIES) {
             return { field, message: `the list exceeds the maximum of ${MAX_GOOGLE_CREATIVE_LIST_ENTRIES} entries` };
           }
-          const long = value.find((entry) => typeof entry === 'string' && entry.length > MAX_GOOGLE_CREATIVE_FIELD_LENGTH);
+          const long = value.find((entry) => typeof entry === 'string' && this.boundedLength(entry) > MAX_GOOGLE_CREATIVE_FIELD_LENGTH);
           if (long !== undefined) {
             return { field, message: `an entry exceeds the maximum length of ${MAX_GOOGLE_CREATIVE_FIELD_LENGTH}` };
           }
           continue;
         }
-        if (typeof value === 'string' && value.length > MAX_GOOGLE_CREATIVE_FIELD_LENGTH) {
+        if (typeof value === 'string' && this.boundedLength(value) > MAX_GOOGLE_CREATIVE_FIELD_LENGTH) {
           return { field, message: `the value exceeds the maximum length of ${MAX_GOOGLE_CREATIVE_FIELD_LENGTH}` };
         }
       }
     }
 
-    // Sitelinks are a list of objects, so `boundableEntries` cannot reach their fields. Each field
-    // is bounded where upstream already refuses it: link text and description lines far above their
-    // rune limits, and the URL at its byte limit, which no longer string can be under.
+    // Sitelinks are a list of objects, so `boundableEntries` cannot reach their fields. Each trimmed
+    // field is bounded where upstream already refuses it: link text and description lines far above
+    // their rune limits, and the URL at its byte limit, which no longer trimmed string can be under.
     const sitelinks = raw['sitelinks'];
     if (Array.isArray(sitelinks)) {
       if (sitelinks.length > MAX_GOOGLE_CREATIVE_LIST_ENTRIES) {
@@ -3713,13 +3716,30 @@ export class CampaignController {
         for (const name of ['text', 'description1', 'description2', 'finalUrl'] as const) {
           const value = (entry as Record<string, unknown>)[name];
           const max = name === 'finalUrl' ? GOOGLE_ADS_MAX_FINAL_URL_BYTES : MAX_GOOGLE_CREATIVE_FIELD_LENGTH;
-          if (typeof value === 'string' && value.length > max) {
+          if (typeof value === 'string' && this.boundedLength(value) > max) {
             return { field: `sitelinks.${name}`, message: `a value exceeds the maximum length of ${max}` };
           }
         }
       }
     }
     return null;
+  }
+
+  /**
+   * A string's length once every character JS's `trim` OR Go's `strings.TrimSpace` would strip is
+   * gone from both ends — the shortest any trim on the way to upstream can make it. The creative
+   * and conversion normalisers use JS `trim` (which strips U+FEFF), the sitelink and callout ones
+   * Go's (which strips U+0085), and upstream trims with Go's again; measuring the union means the
+   * bound never refuses what any of them would shorten below it. A numeric index walk, so linear,
+   * with no copy of the string.
+   */
+  private boundedLength(value: string): number {
+    let start = 0;
+    let end = value.length;
+    // JS's `trim` set is Go's minus U+0085 plus U+FEFF, so the union is Go's plus U+FEFF.
+    while (start < end && (isGoSpaceCode(value.charCodeAt(start)) || value.charCodeAt(start) === 0xfeff)) start++;
+    while (end > start && (isGoSpaceCode(value.charCodeAt(end - 1)) || value.charCodeAt(end - 1) === 0xfeff)) end--;
+    return end - start;
   }
 
   /**

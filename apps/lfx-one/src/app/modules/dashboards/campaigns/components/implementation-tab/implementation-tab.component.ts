@@ -1175,6 +1175,12 @@ export class ImplementationTabComponent implements OnInit {
    * disabled state is what withholds the add until it is filled. This warns only about text that
    * is present and unservable.
    */
+  protected readonly googleSitelinkUrlInvalid = computed(() => {
+    const url = googleAdsTrimSpace(this.googleSitelinkDraft().finalUrl);
+    if (url === '') return false;
+    return !this.isServableDestination(url);
+  });
+
   /** UTF-8 byte length of a servable destination over upstream's `maxFinalURLBytes`, else 0. */
   protected readonly googleSitelinkUrlBytesOver = computed(() => {
     const url = googleAdsTrimSpace(this.googleSitelinkDraft().finalUrl);
@@ -1188,12 +1194,6 @@ export class ImplementationTabComponent implements OnInit {
     if (this.googleSitelinkUrlInvalid()) return 'google-sitelink-url-invalid';
     if (this.googleSitelinkUrlBytesOver() > 0) return 'google-sitelink-url-too-long';
     return null;
-  });
-
-  protected readonly googleSitelinkUrlInvalid = computed(() => {
-    const url = googleAdsTrimSpace(this.googleSitelinkDraft().finalUrl);
-    if (url === '') return false;
-    return !this.isServableDestination(url);
   });
 
   /**

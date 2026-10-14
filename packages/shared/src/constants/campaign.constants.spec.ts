@@ -49,6 +49,7 @@ import {
   googleAdsToLower,
   googleAdsTrimSpace,
   googleAdsUrlGoParseFlaw,
+  isGoSpaceCode,
 } from './campaign.constants';
 
 describe('campaignToggleAction', () => {
@@ -958,6 +959,17 @@ describe('Google Ads string rules', () => {
     ['U+FEFF, which JS `trim` strips and Go keeps', '\ufeffFree', '\ufeffFree'],
   ])('trims %s as Go does', (_label, input, expected) => {
     expect(googleAdsTrimSpace(input)).toBe(expected);
+  });
+
+  it("matches Go's `unicode.IsSpace` on every UTF-16 code unit", () => {
+    // `\t`–`\r`, U+0085 and category Z: Go's set, written as a regex only here, as the reference.
+    const goSpace = /^[\t\n\v\f\r\u0085\p{Z}]$/u;
+    const mismatches: number[] = [];
+    for (let code = 0; code <= 0xffff; code++) {
+      if (isGoSpaceCode(code) !== goSpace.test(String.fromCharCode(code))) mismatches.push(code);
+    }
+
+    expect(mismatches).toEqual([]);
   });
 
   it('trims a long interior whitespace run in linear time', () => {

@@ -1178,6 +1178,61 @@ describe('CampaignController.createCampaign cutover', () => {
   });
 
   /**
+   * The bound measures each value after trimming every character JS's `trim` or Go's `TrimSpace`
+   * strips, because every field is trimmed before it is sent and upstream trims again. A short valid
+   * value padded past the ceiling with whitespace is one upstream accepts, so refusing it here would
+   * be the over-refusal these guards exist to avoid.
+   */
+  it.each([
+    ['a sitelink URL', { campaignTypes: ['search'], sitelinks: [{ text: 'Register', finalUrl: `https://events.example.org/r${' '.repeat(2085)}` }] }],
+    [
+      'sitelink link text',
+      { campaignTypes: ['search'], sitelinks: [{ text: `Register${' '.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH)}`, finalUrl: 'https://events.example.org/r' }] },
+    ],
+    ['a callout', { campaignTypes: ['search'], callouts: [`Free shipping${'\u00a0'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH)}`] }],
+    ['a conversion action', { conversionActions: [`123${' '.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH)}`] }],
+    ['a creative field', { displayCreative: { longHeadline: `Join us${' '.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH)}` } }],
+    // The two trims disagree, so each direction is pinned: JS `trim` strips U+FEFF (the creative
+    // normaliser's), Go's strips U+0085 (the callout normaliser's and upstream's).
+    [
+      'a creative field padded with U+FEFF, which JS trims',
+      { displayCreative: { longHeadline: `Join us${'\ufeff'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH)}` } },
+    ],
+    [
+      'a callout padded with U+0085, which Go trims',
+      { campaignTypes: ['search'], callouts: [`Free shipping${'\u0085'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH)}`] },
+    ],
+  ])('does not refuse %s that is only over the bound because of padding upstream trims', async (_label, overrides) => {
+    const createConfigEnvelope = vi.spyOn(controller as unknown as { createConfigEnvelope: (body: unknown) => unknown }, 'createConfigEnvelope');
+
+    await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['display'], ...overrides }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    // Past the bound: normalisation ran. Whatever the later guards decide, it was not this one.
+    expect(createConfigEnvelope).toHaveBeenCalled();
+  });
+
+  it('dispatches a padded sitelink URL and callout trimmed, end to end, rather than refusing them', async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000002a', error: null });
+
+    await controller.createCampaign(
+      buildReq(
+        googleBody({
+          sitelinks: [{ text: 'Register', finalUrl: `https://events.example.org/r${' '.repeat(2085)}` }],
+          callouts: [`Free shipping${'\u00a0'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH)}`],
+        }),
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    const sent = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    expect(sent['sitelinks']).toEqual([{ text: 'Register', finalUrl: 'https://events.example.org/r' }]);
+    expect(sent['callouts']).toEqual(['Free shipping']);
+  });
+
+  /**
    * A body that is not a JSON object is a named 400, not a 500.
    *
    * `express.json()` leaves `req.body` undefined for a request that is not `application/json`, and
