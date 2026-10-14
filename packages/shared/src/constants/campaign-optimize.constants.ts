@@ -69,9 +69,16 @@ export const CAMPAIGN_AUDIENCE_PLATFORMS_PENDING_UPSTREAM: ReadonlySet<CampaignA
  */
 export const CAMPAIGN_AUDIENCE_NO_CONNECTION_CODE = 'CAMPAIGN_AUDIENCE_NO_CONNECTION';
 export const CAMPAIGN_AUDIENCE_NO_CONNECTION_MESSAGE = 'This project has no connection for this ad platform, so its audience cannot be read.';
-export const CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_CODE = 'CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH';
-export const CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_MESSAGE =
-  "This ad platform connection cannot be used for the project's campaigns: its ad account is not the one every campaign was created under, or a campaign does not record which account it was created under. Reconnect the account the campaigns run in, or re-dispatch the campaigns that do not record one.";
+/**
+ * Every answered 409 on an audience read. campaign-service answers 409 for several unrelated
+ * reasons (a campaign created under another ad account, one that does not record its account, a
+ * malformed stored campaign id, more campaigns than the read covers) and its `conflict-error`
+ * carries no `reason` for any of them, so the BFF cannot say which. The message names them all;
+ * campaign-service's own sentence is logged at DEBUG.
+ */
+export const CAMPAIGN_AUDIENCE_CONFLICT_CODE = 'CAMPAIGN_AUDIENCE_CONFLICT';
+export const CAMPAIGN_AUDIENCE_CONFLICT_MESSAGE =
+  "These campaigns can't be read together: a campaign was created under another ad account or doesn't record its account, a stored campaign id is malformed, or the project has more campaigns than this read covers.";
 export const CAMPAIGN_AUDIENCE_UNAVAILABLE_CODE = 'CAMPAIGN_AUDIENCE_UNAVAILABLE';
 export const CAMPAIGN_AUDIENCE_UNAVAILABLE_MESSAGE =
   'The ad platform did not confirm the audience read (it may be rate-limited or unreachable), so nothing is shown rather than a partial picture. Try again in a few minutes.';
@@ -80,8 +87,9 @@ export const CAMPAIGN_AUDIENCE_NOT_ENABLED_MESSAGE =
   "Audience insights for this ad platform are not available: they are not enabled in this environment, or the project's connection is inactive or has no ad account selected.";
 /**
  * The most characters of campaign-service's own sentence the BFF logs (at DEBUG) when it answers an
- * upstream 400 on an audience read as `CAMPAIGN_AUDIENCE_NOT_ENABLED`. Bounded like the other
- * upstream-text log lines; the logger's field scrubber still applies to it.
+ * upstream 400 or 409 on an audience read with one fixed message (`CAMPAIGN_AUDIENCE_NOT_ENABLED`,
+ * `CAMPAIGN_AUDIENCE_CONFLICT`). Bounded like the other upstream-text log lines; the logger's field
+ * scrubber still applies to it.
  */
 export const CAMPAIGN_AUDIENCE_LOGGED_UPSTREAM_MESSAGE_MAX_LENGTH = 300;
 
@@ -172,7 +180,8 @@ export const META_AD_SET_STATUS_OUTCOME_UNCONFIRMED =
 
 /**
  * The `code` the BFF answers when an ad-set status change is CONFIRMED on Meta but campaign-service
- * could not confirm whether it recorded (or cleared) the deliberate pause on the campaign row: its
+ * could not confirm whether it recorded (after a pause) or cleared (after a resume) the deliberate
+ * pause on the campaign row. The caller knows which from the status it sent. campaign-service's
  * answered 503 says the record "could not be confirmed" and asks for `deliberately_paused` to be
  * re-read. A campaign resume reads that record, so the operator must check it before resuming.
  */
@@ -180,7 +189,7 @@ export const META_AD_SET_PAUSE_RECORD_UNCONFIRMED_CODE = 'META_AD_SET_PAUSE_RECO
 
 /** What the BFF says alongside `META_AD_SET_PAUSE_RECORD_UNCONFIRMED_CODE`. */
 export const META_AD_SET_PAUSE_RECORD_OUTCOME_UNCONFIRMED =
-  "The ad set's status was changed on Meta, but whether its deliberate pause is recorded on the campaign could not be confirmed. Reload the ad sets and check Deliberately paused before resuming the campaign.";
+  "The ad set's status on Meta is as requested, but whether the campaign's deliberate-pause record was updated could not be confirmed. Reload the ad sets and check Deliberately paused before resuming the campaign.";
 
 /**
  * Matched against an answered 503 AFTER `META_AD_SET_STATUS_UNCONFIRMED_OUTCOME`'s marker missed:
@@ -297,8 +306,8 @@ export const PLATFORM_AUDIENCE_SECTION_TITLES: Readonly<Record<PlatformAudienceP
  */
 export const PLATFORM_AUDIENCE_ERROR_MESSAGES: Readonly<Record<PlatformAudienceErrorKind, string>> = {
   'no-connection': "This project has no {platform} connection. Connect the {platform} ad account in the project's channel connections to see its audience.",
-  'account-mismatch':
-    "The {platform} connection can't be used for these campaigns: its ad account isn't the one every campaign was created under, or a campaign doesn't record which account it was created under. Reconnect the account the campaigns run in, or re-dispatch the campaigns that don't record one, then retry.",
+  conflict:
+    "{platform} can't read these campaigns together: a campaign was created under another ad account or doesn't record its account, a stored campaign id is malformed, or the project has more campaigns than this read covers. Reconnect the account the campaigns run in, or re-dispatch the campaigns that don't record one, then retry.",
   unavailable:
     "{platform} didn't confirm the audience read — it may be rate-limited or temporarily unreachable. Nothing is shown rather than a partial picture. Try again in a few minutes.",
   'not-enabled':
@@ -354,6 +363,16 @@ export const META_AD_SET_RESUME_ELSEWHERE_REASON = 'Only the ad set created here
 
 /** The visible word of the action that re-sends PAUSED to record a deliberate pause (see `MetaAdSetDisplayRow.recordPause`). */
 export const META_AD_SET_RECORD_PAUSE_LABEL = 'Pause again (record)';
+
+/** The visible word of the action that re-sends ACTIVE to clear a stale deliberate-pause record (see `MetaAdSetDisplayRow.recordAction`). */
+export const META_AD_SET_CLEAR_RECORD_LABEL = 'Resume again (clear record)';
+
+/**
+ * campaign-service's advice after a RESUME whose outcome was unconfirmed: an unconfirmed resume does
+ * not clear the deliberate-pause record, so a campaign resume would leave the ad set paused.
+ */
+export const META_AD_SET_DELIBERATE_RESUME_ADVICE =
+  'Re-read Deliberately paused: if this ad set is still shown as deliberately paused, resume it here again — otherwise resuming the campaign will leave it paused.';
 
 /** Why an ad set Meta reports deleted or archived, or no longer lists, offers no action. */
 export const META_AD_SET_NO_ACTION_REASON = 'This ad set cannot be paused or resumed.';

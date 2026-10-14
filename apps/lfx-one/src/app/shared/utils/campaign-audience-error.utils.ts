@@ -3,7 +3,7 @@
 
 import { HttpErrorResponse } from '@angular/common/http';
 import {
-  CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_CODE,
+  CAMPAIGN_AUDIENCE_CONFLICT_CODE,
   CAMPAIGN_AUDIENCE_NO_CONNECTION_CODE,
   CAMPAIGN_AUDIENCE_NOT_ENABLED_CODE,
   CAMPAIGN_AUDIENCE_UNAVAILABLE_CODE,
@@ -15,7 +15,7 @@ import { isBffErrorEnvelope } from './campaign-write-error.utils';
 
 const KIND_BY_CODE: Readonly<Record<string, PlatformAudienceErrorKind>> = {
   [CAMPAIGN_AUDIENCE_NO_CONNECTION_CODE]: 'no-connection',
-  [CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_CODE]: 'account-mismatch',
+  [CAMPAIGN_AUDIENCE_CONFLICT_CODE]: 'conflict',
   [CAMPAIGN_AUDIENCE_UNAVAILABLE_CODE]: 'unavailable',
   [CAMPAIGN_AUDIENCE_NOT_ENABLED_CODE]: 'not-enabled',
 };

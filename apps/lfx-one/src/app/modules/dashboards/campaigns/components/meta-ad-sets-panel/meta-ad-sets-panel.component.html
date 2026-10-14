@@ -16,7 +16,7 @@
         size="small"
         severity="secondary"
         [text]="true"
-        [disabled]="pendingAdSetId() !== null"
+        [disabled]="pending() !== null"
         (onClick)="closePanel.emit()"
         data-testid="meta-ad-sets-close" />
     </div>
@@ -29,17 +29,13 @@
   @if (outcome(); as result) {
     <div class="flex flex-col gap-1" data-testid="meta-ad-sets-outcome">
       <p class="text-xs" [class]="outcomeClass()" [attr.data-testid]="'meta-ad-sets-outcome-' + result.state">{{ result.message }}</p>
-      @if (pauseCheck().advice) {
-        <p class="text-xs text-amber-700" data-testid="meta-ad-sets-deliberate-pause-advice">{{ deliberatePauseAdvice }}</p>
-        @if (pauseCheck().shown === true) {
-          <p class="text-xs text-emerald-700" data-testid="meta-ad-sets-deliberate-pause-shown">
-            The re-read shows {{ result.adSetName }} as deliberately paused.
-          </p>
-        } @else if (pauseCheck().shown === false) {
-          <p class="text-xs font-medium text-red-600" data-testid="meta-ad-sets-deliberate-pause-missing">
-            The re-read does not show {{ result.adSetName }} as deliberately paused. Use {{ recordPauseLabel }} before resuming the campaign.
-          </p>
-        }
+      <!--
+        The follow-up after an unconfirmed change: campaign-service's advice for the direction sent,
+        then what the re-read made FOR this change shows (pending until it lands).
+      -->
+      @if (recordCheckView(); as check) {
+        <p class="text-xs text-amber-700" data-testid="meta-ad-sets-record-check-advice">{{ check.advice }}</p>
+        <p class="text-xs" [class]="check.tone" [attr.data-testid]="'meta-ad-sets-record-check-' + recordCheck()?.state">{{ check.text }}</p>
       }
     </div>
   }
@@ -128,11 +124,11 @@
                         (click)="toggle(row)"
                         [disabled]="locked()"
                         [attr.aria-label]="row.actionLabel + ' ' + row.name"
-                        [attr.aria-busy]="pendingAdSetId() === row.adSet.id ? 'true' : null"
+                        [attr.aria-busy]="pending()?.adSetId === row.adSet.id && pending()?.kind === 'toggle' ? 'true' : null"
                         [attr.aria-describedby]="blockedReason() ? 'meta-ad-sets-blocked-' + campaignId() : null"
                         class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                         [attr.data-testid]="'meta-ad-set-toggle-' + row.adSet.id">
-                        @if (pendingAdSetId() === row.adSet.id) {
+                        @if (pending()?.adSetId === row.adSet.id && pending()?.kind === 'toggle') {
                           <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
                         }
                         {{ row.actionLabel }}
@@ -141,19 +137,23 @@
                       <span class="text-xs text-gray-500" [attr.data-testid]="'meta-ad-set-no-action-' + row.adSet.id">{{ row.noActionReason }}</span>
                     }
                     <!--
-                      Paused on Meta but its deliberate pause is not recorded: re-sending PAUSED records it
-                      and activates nothing, so a campaign resume will leave this ad set paused.
+                      Re-sends the status Meta already reports, to record (Pause again) or clear (Resume
+                      again) the deliberate pause. Nothing else changes on Meta.
                     -->
-                    @if (row.recordPause) {
+                    @if (row.recordAction) {
                       <button
                         type="button"
-                        (click)="recordPause(row)"
+                        (click)="recordAction(row)"
                         [disabled]="locked()"
-                        [attr.aria-label]="recordPauseLabel + ' ' + row.name"
+                        [attr.aria-label]="row.recordActionLabel + ' ' + row.name"
+                        [attr.aria-busy]="pending()?.adSetId === row.adSet.id && pending()?.kind === 'record' ? 'true' : null"
                         [attr.aria-describedby]="blockedReason() ? 'meta-ad-sets-blocked-' + campaignId() : null"
                         class="rounded-md border border-amber-300 px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-50 disabled:opacity-50"
-                        [attr.data-testid]="'meta-ad-set-record-pause-' + row.adSet.id">
-                        {{ recordPauseLabel }}
+                        [attr.data-testid]="'meta-ad-set-record-action-' + row.adSet.id">
+                        @if (pending()?.adSetId === row.adSet.id && pending()?.kind === 'record') {
+                          <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+                        }
+                        {{ row.recordActionLabel }}
                       </button>
                     }
                   </div>

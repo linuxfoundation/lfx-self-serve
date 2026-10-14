@@ -4,10 +4,10 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { META_AD_SET_DELIBERATE_PAUSE_ADVICE, META_AD_SET_RESUME_ELSEWHERE_REASON } from '@lfx-one/shared/constants';
+import { META_AD_SET_DELIBERATE_PAUSE_ADVICE, META_AD_SET_DELIBERATE_RESUME_ADVICE, META_AD_SET_RESUME_ELSEWHERE_REASON } from '@lfx-one/shared/constants';
 import type { CampaignServiceMetaAdSet, CampaignServiceMetaAdSets, MetaAdSetToggleOutcome, MetaAdSetToggleRequest } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MetaAdSetsPanelComponent } from './meta-ad-sets-panel.component';
@@ -101,9 +101,9 @@ describe('MetaAdSetsPanelComponent', () => {
     render();
 
     (q('meta-ad-set-toggle-111') as HTMLButtonElement).click();
-    expect(emitted).toEqual([{ adSetId: '111', adSetName: 'Leads — US', status: 'PAUSED' }]);
+    expect(emitted).toEqual([{ adSetId: '111', adSetName: 'Leads — US', status: 'PAUSED', kind: 'toggle' }]);
 
-    fixture.componentRef.setInput('pendingAdSetId', '111');
+    fixture.componentRef.setInput('pending', { adSetId: '111', kind: 'toggle' });
     fixture.detectChanges();
     const button = q('meta-ad-set-toggle-111') as HTMLButtonElement;
     expect(button.disabled).toBe(true);
@@ -142,50 +142,110 @@ describe('MetaAdSetsPanelComponent', () => {
     expect(listMetaAdSets).toHaveBeenCalledTimes(2);
   });
 
-  it('after an unconfirmed pause, gives the advice and flags a re-read that does not show the record', () => {
-    listMetaAdSets.mockReturnValue(of(list([adSet({ status: 'PAUSED', deliberately_paused: false })])));
-    render({ outcome: unconfirmedPause });
+  it('after an unconfirmed pause, waits for the re-read made for it, then flags a record it does not show', () => {
+    listMetaAdSets.mockReturnValue(of(list([adSet({ status: 'PAUSED', deliberately_paused: true })])));
+    render();
+    // The list on screen shows the record, but it predates the change: no verdict from it.
+    const reread = new Subject<CampaignServiceMetaAdSets>();
+    listMetaAdSets.mockReturnValue(reread.asObservable());
+    fixture.componentRef.setInput('outcome', unconfirmedPause);
+    fixture.componentRef.setInput('reloadToken', 1);
+    fixture.detectChanges();
 
-    expect(q('meta-ad-sets-deliberate-pause-advice')!.textContent).toContain(META_AD_SET_DELIBERATE_PAUSE_ADVICE);
-    expect(q('meta-ad-sets-deliberate-pause-missing')!.textContent).toContain('Pause again (record)');
-    expect(q('meta-ad-sets-deliberate-pause-shown')).toBeNull();
+    expect(q('meta-ad-sets-record-check-advice')!.textContent).toContain(META_AD_SET_DELIBERATE_PAUSE_ADVICE);
+    expect(q('meta-ad-sets-record-check-pending')).not.toBeNull();
+    expect(q('meta-ad-sets-record-check-confirmed')).toBeNull();
+
+    reread.next(list([adSet({ status: 'PAUSED', deliberately_paused: false })]));
+    fixture.detectChanges();
+    expect(q('meta-ad-sets-record-check-missing')!.textContent).toContain('Pause again (record)');
   });
 
-  it('offers Pause again (record) beside Resume when the created ad set is paused but not recorded, and asks for PAUSED', () => {
+  it('confirms the record once the re-read shows it', () => {
+    listMetaAdSets.mockReturnValue(of(list([adSet({ status: 'PAUSED', deliberately_paused: true })])));
+    render({ outcome: unconfirmedPause });
+
+    expect(q('meta-ad-sets-record-check-confirmed')!.textContent).toContain('as deliberately paused');
+  });
+
+  it('treats a re-read that FAILS as a missing record, never as fine', () => {
+    listMetaAdSets.mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 503, error: { error: 'Meta did not answer', code: 'SERVICE_UNAVAILABLE' } }))
+    );
+    render({ outcome: unconfirmedPause });
+
+    expect(q('meta-ad-sets-record-check-missing')!.textContent).toContain('could not be re-read');
+  });
+
+  it('treats a re-read that OMITS the ad set as a missing record', () => {
+    listMetaAdSets.mockReturnValue(of(list([adSet({ id: '999' })])));
+    render({ outcome: unconfirmedPause });
+
+    expect(q('meta-ad-sets-record-check-missing')!.textContent).toContain('does not list Leads — US');
+  });
+
+  it('after an unconfirmed RESUME, checks the record was cleared and offers Resume again (clear record) when it was not', () => {
+    listMetaAdSets.mockReturnValue(of(list([adSet({ status: 'ACTIVE', deliberately_paused: true })])));
+    render({ outcome: { ...unconfirmedPause, requestedStatus: 'ACTIVE' } });
+
+    expect(q('meta-ad-sets-record-check-advice')!.textContent).toContain(META_AD_SET_DELIBERATE_RESUME_ADVICE);
+    expect(q('meta-ad-sets-record-check-missing')!.textContent).toContain('still shows Leads — US as deliberately paused');
+    const clear = q('meta-ad-set-record-action-111') as HTMLButtonElement;
+    expect(clear.textContent).toContain('Resume again (clear record)');
+    clear.click();
+    // Never PAUSED: re-sending ACTIVE clears the record and pauses nothing.
+    expect(emitted).toEqual([{ adSetId: '111', adSetName: 'Leads — US', status: 'ACTIVE', kind: 'record' }]);
+  });
+
+  it('confirms a cleared record after an unconfirmed resume', () => {
+    listMetaAdSets.mockReturnValue(of(list([adSet({ status: 'ACTIVE', deliberately_paused: false })])));
+    render({ outcome: { ...unconfirmedPause, requestedStatus: 'ACTIVE' } });
+
+    expect(q('meta-ad-sets-record-check-confirmed')!.textContent).toContain('deliberate pause cleared');
+  });
+
+  it('offers Pause again (record) beside Resume, asks for PAUSED, and marks only the RUNNING button busy', () => {
     listMetaAdSets.mockReturnValue(of(list([adSet({ status: 'PAUSED', deliberately_paused: false })])));
     render({ outcome: unconfirmedPause });
 
     expect(q('meta-ad-set-toggle-111')!.textContent).toContain('Resume');
-    const record = q('meta-ad-set-record-pause-111') as HTMLButtonElement;
+    const record = q('meta-ad-set-record-action-111') as HTMLButtonElement;
     expect(record.textContent).toContain('Pause again (record)');
     expect(record.getAttribute('aria-label')).toBe('Pause again (record) Leads — US');
     record.click();
     // Never ACTIVE: re-sending PAUSED records the pause and activates nothing.
-    expect(emitted).toEqual([{ adSetId: '111', adSetName: 'Leads — US', status: 'PAUSED' }]);
+    expect(emitted).toEqual([{ adSetId: '111', adSetName: 'Leads — US', status: 'PAUSED', kind: 'record' }]);
 
-    fixture.componentRef.setInput('pendingAdSetId', '111');
+    fixture.componentRef.setInput('pending', { adSetId: '111', kind: 'record' });
     fixture.detectChanges();
-    (q('meta-ad-set-record-pause-111') as HTMLButtonElement).click();
-    expect((q('meta-ad-set-record-pause-111') as HTMLButtonElement).disabled).toBe(true);
+    const toggle = q('meta-ad-set-toggle-111') as HTMLButtonElement;
+    const running = q('meta-ad-set-record-action-111') as HTMLButtonElement;
+    expect(running.getAttribute('aria-busy')).toBe('true');
+    expect(running.querySelector('.fa-spinner-third')).not.toBeNull();
+    expect(toggle.getAttribute('aria-busy')).toBeNull();
+    expect(toggle.querySelector('.fa-spinner-third')).toBeNull();
+    running.click();
+    expect(running.disabled).toBe(true);
+    expect(toggle.disabled).toBe(true);
     expect(emitted).toHaveLength(1);
   });
 
   it.each([
     ['already recorded as deliberately paused', { status: 'PAUSED', deliberately_paused: true }],
-    ['active', { status: 'ACTIVE' }],
+    ['active and not recorded', { status: 'ACTIVE' }],
     ['not created here', { status: 'PAUSED', recorded: false }],
-  ])('offers no Pause again (record) on an ad set that is %s', (_label, over) => {
+  ])('offers no record action on an ad set that is %s', (_label, over) => {
     listMetaAdSets.mockReturnValue(of(list([adSet(over as Partial<CampaignServiceMetaAdSet>)])));
     render();
 
-    expect(q('meta-ad-set-record-pause-111')).toBeNull();
+    expect(q('meta-ad-set-record-action-111')).toBeNull();
   });
 
-  it('gives no deliberate-pause advice for an ad set whose pause is never recorded', () => {
+  it('runs no record check for an ad set whose pause is never recorded', () => {
     listMetaAdSets.mockReturnValue(of(list([adSet({ status: 'PAUSED', recorded: false })])));
     render({ outcome: unconfirmedPause });
 
-    expect(q('meta-ad-sets-deliberate-pause-advice')).toBeNull();
+    expect(q('meta-ad-sets-record-check-advice')).toBeNull();
   });
 
   it('states a failed read with a retry', () => {

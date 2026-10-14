@@ -3,8 +3,8 @@
 
 import {
   CAMPAIGN_ADOPT_OUTCOME_UNCONFIRMED,
-  CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_CODE,
-  CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_MESSAGE,
+  CAMPAIGN_AUDIENCE_CONFLICT_CODE,
+  CAMPAIGN_AUDIENCE_CONFLICT_MESSAGE,
   CAMPAIGN_AUDIENCE_FAILED_MESSAGE,
   CAMPAIGN_AUDIENCE_LOGGED_UPSTREAM_MESSAGE_MAX_LENGTH,
   CAMPAIGN_AUDIENCE_NO_CONNECTION_CODE,
@@ -113,13 +113,15 @@ export class CampaignOptimizeService {
         window ? { window } : undefined
       );
     } catch (error) {
-      // Every answered 400 becomes NOT_ENABLED, which offers no retry. campaign-service also answers
-      // 400 for an inactive connection, a missing ad account or a window it refuses, so its own
-      // sentence is kept in the log (bounded, scrubbed like every log field, never sent to the
-      // browser) to tell those apart if the mapping ever needs to.
-      if (error instanceof MicroserviceError && error.statusCode === 400 && upstreamAnswered(error)) {
+      // An answered 400 or 409 each becomes ONE fixed message although campaign-service means
+      // several things by it (400: switched off, an inactive connection, no ad account; 409: another
+      // or no recorded account, a malformed stored id, too many campaigns) and its error carries no
+      // `reason` for any of them. Its own sentence is kept in the log (bounded, scrubbed like every
+      // log field, never sent to the browser) so the cause stays diagnosable.
+      if (error instanceof MicroserviceError && (error.statusCode === 400 || error.statusCode === 409) && upstreamAnswered(error)) {
         const upstreamMessage = (error.errorBody as { message?: unknown } | undefined)?.message;
-        logger.debug(req, 'get_platform_audience', 'campaign-service refused the audience read with 400; answering not enabled', {
+        logger.debug(req, 'get_platform_audience', `campaign-service refused the audience read with ${error.statusCode}; answering a fixed message`, {
+          status: error.statusCode,
           platform,
           window,
           upstream_message: typeof upstreamMessage === 'string' ? upstreamMessage.slice(0, CAMPAIGN_AUDIENCE_LOGGED_UPSTREAM_MESSAGE_MAX_LENGTH) : undefined,
@@ -432,9 +434,10 @@ export function asLeverFailure(error: unknown, operation: string, unconfirmed: C
  * own sentence never reaches the browser and the UI can branch on `code` alone.
  *
  * Only campaign-service's own answer (`upstreamAnswered`) earns a specific code: 404 is "no
- * connection for the platform", 409 an unusable connection or an account that is not the
- * campaigns' own, 503 a read the platform did not confirm (rate-limited, unreachable, partial), and
- * 400 a read switched off in this environment (or a window it refuses). Everything else, answered or
+ * connection for the platform", 409 campaigns that cannot be read together (campaign-service's
+ * `conflict-error` carries no `reason` on these reads, so the message names every cause), 503 a
+ * read the platform did not confirm (rate-limited, unreachable, partial), and 400 a read switched
+ * off in this environment, or a connection that is inactive or has no ad account. Everything else, answered or
  * not (an auth refusal, a server error, a gateway page, a transport failure), keeps its status and
  * the code that status maps to, with a generic message.
  */
@@ -447,7 +450,7 @@ export function asAudienceReadFailure(error: unknown, operation: string): unknow
       case 404:
         return rewrap(error, operation, CAMPAIGN_AUDIENCE_NO_CONNECTION_CODE, CAMPAIGN_AUDIENCE_NO_CONNECTION_MESSAGE);
       case 409:
-        return rewrap(error, operation, CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_CODE, CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_MESSAGE);
+        return rewrap(error, operation, CAMPAIGN_AUDIENCE_CONFLICT_CODE, CAMPAIGN_AUDIENCE_CONFLICT_MESSAGE);
       case 503:
         return rewrap(error, operation, CAMPAIGN_AUDIENCE_UNAVAILABLE_CODE, CAMPAIGN_AUDIENCE_UNAVAILABLE_MESSAGE);
       case 400:

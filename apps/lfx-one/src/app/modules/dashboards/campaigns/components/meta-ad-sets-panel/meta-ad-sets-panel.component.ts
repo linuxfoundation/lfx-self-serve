@@ -4,10 +4,18 @@
 import { DatePipe } from '@angular/common';
 import { Component, computed, inject, input, output, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { META_AD_SET_DELIBERATE_PAUSE_ADVICE, META_AD_SET_RECORD_PAUSE_LABEL } from '@lfx-one/shared/constants';
+import {
+  META_AD_SET_CLEAR_RECORD_LABEL,
+  META_AD_SET_DELIBERATE_PAUSE_ADVICE,
+  META_AD_SET_DELIBERATE_RESUME_ADVICE,
+  META_AD_SET_RECORD_PAUSE_LABEL,
+} from '@lfx-one/shared/constants';
 import type {
   CampaignServiceMetaAdSets,
+  MetaAdSetActionKind,
   MetaAdSetDisplayRow,
+  MetaAdSetPendingChange,
+  MetaAdSetRecordCheck,
   MetaAdSetStatus,
   MetaAdSetToggleOutcome,
   MetaAdSetToggleRequest,
@@ -28,8 +36,9 @@ import { catchError, EMPTY, map, of, switchMap } from 'rxjs';
  * writes while it is out — all state the parent already owns. This panel only asks for a change
  * (`toggleAdSet`) and renders the outcome the parent hands back; it never retries one.
  *
- * Every toggle is disabled while any change to the campaign is in flight (`pendingAdSetId`) or the
- * parent has a reason to block it (`blockedReason`: a stale validator, another write).
+ * Every action is disabled while any change to the campaign is in flight (`pending`) or the parent
+ * has a reason to block it (`blockedReason`: a stale or unknown validator, another write). Only the
+ * button whose action is actually running carries the spinner and `aria-busy`.
  */
 @Component({
   selector: 'lfx-meta-ad-sets-panel',
@@ -44,8 +53,8 @@ export class MetaAdSetsPanelComponent {
   public readonly briefId = input.required<string>();
   public readonly campaignId = input.required<string>();
   public readonly campaignName = input.required<string>();
-  /** The ad set whose status change is in flight on this campaign, or `null`. */
-  public readonly pendingAdSetId = input<string | null>(null);
+  /** The ad-set change in flight on this campaign (which ad set, which action), or `null`. */
+  public readonly pending = input<MetaAdSetPendingChange | null>(null);
   /** Why no ad set can be changed right now, or `''`. */
   public readonly blockedReason = input('');
   /** How the campaign's last ad-set change ended, or `null`. */
@@ -61,13 +70,16 @@ export class MetaAdSetsPanelComponent {
   protected readonly errorMessage = signal('');
   /** Bumped by the in-panel Retry; combined with the parent's reloadToken. */
   protected readonly retryToken = signal(0);
-
-  protected readonly deliberatePauseAdvice = META_AD_SET_DELIBERATE_PAUSE_ADVICE;
-  protected readonly recordPauseLabel = META_AD_SET_RECORD_PAUSE_LABEL;
+  /**
+   * The `reloadToken` the last COMPLETED read was made for, and whether it succeeded. The follow-up
+   * check reads this, so it decides only from the re-read for the change it follows, never from
+   * the list that was on screen before it.
+   */
+  protected readonly lastRead = signal<{ token: number; ok: boolean } | null>(null);
 
   protected readonly rows: Signal<MetaAdSetDisplayRow[]> = this.initRows();
-  /** Whether no toggle may be pressed right now. */
-  protected readonly locked: Signal<boolean> = computed(() => this.pendingAdSetId() !== null || this.blockedReason() !== '' || this.state() === 'loading');
+  /** Whether no action may be pressed right now. */
+  protected readonly locked: Signal<boolean> = computed(() => this.pending() !== null || this.blockedReason() !== '' || this.state() === 'loading');
   /** The outcome's own tone, as a class string, so the template does not branch three ways. */
   protected readonly outcomeClass: Signal<string> = computed(() => {
     const state = this.outcome()?.state;
@@ -76,12 +88,10 @@ export class MetaAdSetsPanelComponent {
     }
     return state === 'failed' ? 'text-red-600' : 'text-amber-700';
   });
-  /**
-   * After a PAUSE whose outcome was unconfirmed: the campaign-service advice, and what the re-read
-   * now shows for that ad set's `deliberately_paused` (`null` until the re-read lands, or when the
-   * ad set is not the recorded one, whose pause is never recorded).
-   */
-  protected readonly pauseCheck: Signal<{ advice: boolean; shown: boolean | null }> = this.initPauseCheck();
+  /** After an unconfirmed change to the created ad set: what its re-read shows for `deliberately_paused`. */
+  protected readonly recordCheck: Signal<MetaAdSetRecordCheck | null> = this.initRecordCheck();
+  /** The check as the panel words it: campaign-service's advice for the direction, and the verdict. */
+  protected readonly recordCheckView: Signal<{ advice: string; text: string; tone: string } | null> = this.initRecordCheckView();
 
   public constructor() {
     this.initLoad();
@@ -91,19 +101,19 @@ export class MetaAdSetsPanelComponent {
     if (this.locked() || row.action === null) {
       return;
     }
-    this.request(row, row.action);
+    this.request(row, row.action, 'toggle');
   }
 
   /**
-   * "Pause again (record)": re-sends PAUSED for the created ad set Meta already reports paused, so
-   * campaign-service records the deliberate pause (`ALREADY_IN_STATE`, nothing activated). Asked of
-   * the parent like any other change, so it carries the same If-Match, lock and no-retry rules.
+   * "Pause again (record)" / "Resume again (clear record)": re-sends the status Meta already reports
+   * so campaign-service records or clears the deliberate pause (`ALREADY_IN_STATE`, nothing else
+   * changes on Meta). Asked of the parent like any other change: same If-Match, lock and no retry.
    */
-  protected recordPause(row: MetaAdSetDisplayRow): void {
-    if (this.locked() || !row.recordPause) {
+  protected recordAction(row: MetaAdSetDisplayRow): void {
+    if (this.locked() || row.recordAction === null) {
       return;
     }
-    this.request(row, 'PAUSED');
+    this.request(row, row.recordAction, 'record');
   }
 
   protected retry(): void {
@@ -122,7 +132,7 @@ export class MetaAdSetsPanelComponent {
       }))
     )
       .pipe(
-        switchMap(({ projectSlug, briefId, campaignId }) => {
+        switchMap(({ projectSlug, briefId, campaignId, reload }) => {
           this.errorMessage.set('');
           if (projectSlug === '' || briefId === '' || campaignId === '') {
             this.data.set(null);
@@ -133,16 +143,17 @@ export class MetaAdSetsPanelComponent {
           // does not blank the rows the operator is checking.
           this.state.set('loading');
           return this.campaignService.listMetaAdSets(projectSlug, briefId, campaignId).pipe(
-            map((data) => ({ data, error: '' })),
-            catchError((err: unknown) => of({ data: null, error: extractErrorMessage(err, "This campaign's ad sets could not be read from Meta.") }))
+            map((data) => ({ data, error: '', reload })),
+            catchError((err: unknown) => of({ data: null, error: extractErrorMessage(err, "This campaign's ad sets could not be read from Meta."), reload }))
           );
         }),
         takeUntilDestroyed()
       )
-      .subscribe(({ data, error }) => {
+      .subscribe(({ data, error, reload }) => {
         this.data.set(data);
         this.errorMessage.set(error);
         this.state.set(data !== null ? 'loaded' : 'error');
+        this.lastRead.set({ token: reload, ok: data !== null });
       });
   }
 
@@ -157,23 +168,77 @@ export class MetaAdSetsPanelComponent {
     });
   }
 
-  private initPauseCheck(): Signal<{ advice: boolean; shown: boolean | null }> {
+  /**
+   * Run after ANY unconfirmed change (status unconfirmed, or only its record), in the direction
+   * requested: after a PAUSE the record should be `true`, after a RESUME `false`. Decided only from
+   * the re-read made for the current `reloadToken`; a read that failed or does not list the ad set
+   * is `missing`, never fine. An ad set this service did not create has no record: no check.
+   */
+  private initRecordCheck(): Signal<MetaAdSetRecordCheck | null> {
     return computed(() => {
       const outcome = this.outcome();
-      if (outcome === null || outcome.state !== 'unconfirmed' || outcome.requestedStatus !== 'PAUSED') {
-        return { advice: false, shown: null };
+      if (outcome === null || outcome.state !== 'unconfirmed') {
+        return null;
+      }
+      const direction = outcome.requestedStatus;
+      const read = this.lastRead();
+      if (read === null || read.token !== this.reloadToken()) {
+        return { direction, state: 'pending', reason: null };
+      }
+      if (!read.ok) {
+        return { direction, state: 'missing', reason: 'read-failed' };
       }
       const adSet = this.data()?.ad_sets?.find((candidate) => candidate.id === outcome.adSetId);
-      // Only the recorded ad set's pause is recorded: for any other the advice does not apply.
-      if (adSet !== undefined && !adSet.recorded) {
-        return { advice: false, shown: null };
+      if (adSet === undefined) {
+        return { direction, state: 'missing', reason: 'absent' };
       }
-      const settled = this.state() === 'loaded' && adSet !== undefined;
-      return { advice: true, shown: settled ? adSet.deliberately_paused === true : null };
+      if (adSet.recorded !== true) {
+        return null;
+      }
+      const expected = direction === 'PAUSED';
+      return adSet.deliberately_paused === expected ? { direction, state: 'confirmed', reason: null } : { direction, state: 'missing', reason: 'not-shown' };
     });
   }
 
-  private request(row: MetaAdSetDisplayRow, status: MetaAdSetStatus): void {
-    this.toggleAdSet.emit({ adSetId: row.adSet.id, adSetName: row.name, status });
+  private initRecordCheckView(): Signal<{ advice: string; text: string; tone: string } | null> {
+    return computed(() => {
+      const check = this.recordCheck();
+      const name = this.outcome()?.adSetName ?? '';
+      if (check === null) {
+        return null;
+      }
+      const paused = check.direction === 'PAUSED';
+      const advice = paused ? META_AD_SET_DELIBERATE_PAUSE_ADVICE : META_AD_SET_DELIBERATE_RESUME_ADVICE;
+      const fix = paused ? META_AD_SET_RECORD_PAUSE_LABEL : `Resume (or ${META_AD_SET_CLEAR_RECORD_LABEL})`;
+      if (check.state === 'pending') {
+        return { advice, text: 'Re-reading the ad sets to check Deliberately paused…', tone: 'text-gray-500' };
+      }
+      if (check.state === 'confirmed') {
+        const text = paused ? `The re-read shows ${name} as deliberately paused.` : `The re-read shows ${name}'s deliberate pause cleared.`;
+        return { advice, text, tone: 'text-emerald-700' };
+      }
+      if (check.reason === 'read-failed') {
+        return {
+          advice,
+          text: `The ad sets could not be re-read, so whether ${name}'s deliberate pause is recorded is unknown. Treat it as wrong: retry the read, then use ${fix} before resuming the campaign.`,
+          tone: 'font-medium text-red-600',
+        };
+      }
+      if (check.reason === 'absent') {
+        return {
+          advice,
+          text: `The re-read does not list ${name}, so whether its deliberate pause is recorded is unknown. Check it in Meta Ads Manager before resuming the campaign.`,
+          tone: 'font-medium text-red-600',
+        };
+      }
+      const text = paused
+        ? `The re-read does not show ${name} as deliberately paused. Use ${fix} before resuming the campaign.`
+        : `The re-read still shows ${name} as deliberately paused. Use ${fix} before resuming the campaign, or it will stay paused.`;
+      return { advice, text, tone: 'font-medium text-red-600' };
+    });
+  }
+
+  private request(row: MetaAdSetDisplayRow, status: MetaAdSetStatus, kind: MetaAdSetActionKind): void {
+    this.toggleAdSet.emit({ adSetId: row.adSet.id, adSetName: row.name, status, kind });
   }
 }

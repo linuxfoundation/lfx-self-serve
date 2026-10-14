@@ -422,6 +422,7 @@
                     <button
                       type="button"
                       (click)="toggleAdSetsPanel(row)"
+                      [id]="'campaign-ad-sets-edit-' + row.campaign.id"
                       [disabled]="!row.adSetsAvailable || (!!adSetPending()[row.campaign.id] && !!adSetsPanelOpen()[row.campaign.id])"
                       [attr.aria-expanded]="row.adSetsAvailable ? !!adSetsPanelOpen()[row.campaign.id] : null"
                       [attr.aria-controls]="adSetsPanelOpen()[row.campaign.id] ? 'campaign-ad-sets-panel-' + row.campaign.id : null"
@@ -514,12 +515,12 @@
                   [briefId]="briefId()"
                   [campaignId]="row.campaign.id"
                   [campaignName]="row.campaign.campaign_name"
-                  [pendingAdSetId]="adSetPending()[row.campaign.id] ?? null"
+                  [pending]="adSetPending()[row.campaign.id] ?? null"
                   [blockedReason]="row.adSetsBlockedReason"
                   [outcome]="adSetOutcome()[row.campaign.id] ?? null"
                   [reloadToken]="adSetsReload()[row.campaign.id] ?? 0"
                   (toggleAdSet)="changeMetaAdSetStatus(row, $event)"
-                  (closePanel)="closeAdSetsPanel(row.campaign.id)" />
+                  (closePanel)="cancelAdSetsPanel(row.campaign.id)" />
               }
             </li>
           }

@@ -1,7 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { META_AD_SET_NO_ACTION_REASON, META_AD_SET_RESUME_ELSEWHERE_REASON } from '../constants/campaign-optimize.constants';
+import {
+  META_AD_SET_CLEAR_RECORD_LABEL,
+  META_AD_SET_NO_ACTION_REASON,
+  META_AD_SET_RECORD_PAUSE_LABEL,
+  META_AD_SET_RESUME_ELSEWHERE_REASON,
+} from '../constants/campaign-optimize.constants';
 import type { CampaignServiceMetaAdSet, MetaAdSetDisplayRow } from '../interfaces/campaign-optimize.interface';
 
 /**
@@ -10,10 +15,14 @@ import type { CampaignServiceMetaAdSet, MetaAdSetDisplayRow } from '../interface
  * - ACTIVE (and still listed): Pause.
  * - PAUSED, the ad set this service created: Resume. campaign-service activates no other ad set
  *   (409), so any other paused one says where to resume it instead.
- * - PAUSED, the created one, but NOT recorded as deliberately paused: also "Pause again (record)".
- *   An unconfirmed pause can leave Meta reporting it PAUSED with no record, and a campaign resume
- *   would then re-activate it. Re-sending PAUSED activates nothing: campaign-service answers
+ * - PAUSED, the created one, with `deliberately_paused: false`: also "Pause again (record)". An
+ *   unconfirmed pause can leave Meta reporting it PAUSED with no record, and a campaign resume would
+ *   then re-activate it. Re-sending PAUSED activates nothing: campaign-service answers
  *   ALREADY_IN_STATE and writes the record.
+ * - ACTIVE, the created one, with `deliberately_paused: true`: also "Resume again (clear record)".
+ *   An unconfirmed resume leaves the record, and a campaign resume would then leave it paused.
+ *   Re-sending ACTIVE answers ALREADY_IN_STATE and clears it.
+ * - An ABSENT `deliberately_paused` is unknown, not false: no record action is offered on it.
  * - Anything else (DELETED, ARCHIVED, unreported, or no longer listed by Meta): no action.
  *
  * Every descriptive field is read defensively off the unvalidated wire; an absent name falls back
@@ -37,6 +46,12 @@ export function toMetaAdSetDisplayRow(adSet: CampaignServiceMetaAdSet, currency:
     action = recorded ? 'ACTIVE' : null;
     noActionReason = recorded ? '' : META_AD_SET_RESUME_ELSEWHERE_REASON;
   }
+  let recordAction: MetaAdSetDisplayRow['recordAction'] = null;
+  if (listed && recorded && status === 'PAUSED' && adSet.deliberately_paused === false) {
+    recordAction = 'PAUSED';
+  } else if (listed && recorded && status === 'ACTIVE' && adSet.deliberately_paused === true) {
+    recordAction = 'ACTIVE';
+  }
   return {
     adSet,
     name: typeof adSet.name === 'string' && adSet.name !== '' ? adSet.name : adSet.id,
@@ -46,6 +61,14 @@ export function toMetaAdSetDisplayRow(adSet: CampaignServiceMetaAdSet, currency:
     action,
     actionLabel: action === 'PAUSED' ? 'Pause' : 'Resume',
     noActionReason,
-    recordPause: listed && recorded && status === 'PAUSED' && adSet.deliberately_paused !== true,
+    recordAction,
+    recordActionLabel: recordActionLabel(recordAction),
   };
+}
+
+function recordActionLabel(action: MetaAdSetDisplayRow['recordAction']): string {
+  if (action === 'PAUSED') {
+    return META_AD_SET_RECORD_PAUSE_LABEL;
+  }
+  return action === 'ACTIVE' ? META_AD_SET_CLEAR_RECORD_LABEL : '';
 }

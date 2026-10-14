@@ -397,18 +397,47 @@ export interface PlatformAudienceView {
 /**
  * Why an audience read failed, as the panel states it:
  * - `no-connection`: 404, the project has no connection for the platform;
- * - `account-mismatch`: 409, a campaign was created under another account or records none;
+ * - `conflict`: 409, the campaigns cannot be read together (another or no recorded account, a
+ *   malformed stored id, too many campaigns); campaign-service does not say which;
  * - `unavailable`: 503, the platform did not confirm the read (rate-limited, unreachable, partial);
  * - `not-enabled`: 400, the read is switched off here, or the connection is inactive or has no account;
  * - `failed`: anything else.
  */
-export type PlatformAudienceErrorKind = 'no-connection' | 'account-mismatch' | 'unavailable' | 'not-enabled' | 'failed';
+export type PlatformAudienceErrorKind = 'no-connection' | 'conflict' | 'unavailable' | 'not-enabled' | 'failed';
+
+/**
+ * Which ad-set action was asked for: the row's Pause/Resume (`toggle`), or the re-send that records
+ * or clears a deliberate pause without changing Meta's status (`record`).
+ */
+export type MetaAdSetActionKind = 'toggle' | 'record';
 
 /** The pause or resume the ad-set panel asks its parent to send. */
 export interface MetaAdSetToggleRequest {
   adSetId: string;
   adSetName: string;
   status: MetaAdSetStatus;
+  kind: MetaAdSetActionKind;
+}
+
+/** The ad-set change in flight on a campaign, so the panel can mark the button that is running. */
+export interface MetaAdSetPendingChange {
+  adSetId: string;
+  kind: MetaAdSetActionKind;
+}
+
+/**
+ * The follow-up check after an unconfirmed change, decided only once the re-read for that change
+ * has landed: whether the created ad set's `deliberately_paused` now says what the requested
+ * direction should leave (true after a PAUSE, false after a RESUME).
+ * - `pending`: the re-read has not completed yet;
+ * - `confirmed`: it shows the expected record;
+ * - `missing`: it does not (`not-shown`), it does not list the ad set (`absent`), or it failed
+ *   (`read-failed`). The last two are treated as the record being wrong, never as fine.
+ */
+export interface MetaAdSetRecordCheck {
+  direction: MetaAdSetStatus;
+  state: 'pending' | 'confirmed' | 'missing';
+  reason: 'not-shown' | 'absent' | 'read-failed' | null;
 }
 
 /**
@@ -443,12 +472,16 @@ export interface MetaAdSetDisplayRow {
   /** Why no action is offered, or `''`. */
   noActionReason: string;
   /**
-   * Whether to also offer "Pause again (record)": the created ad set is PAUSED on Meta but its
-   * deliberate pause is not recorded (an unconfirmed pause can leave it so), and a campaign resume
-   * would re-activate it. Sending PAUSED again activates nothing: campaign-service answers
-   * `ALREADY_IN_STATE` without contacting Meta's write and records the pause.
+   * A second action that re-sends the status Meta already reports, to fix the deliberate-pause
+   * record without changing Meta (campaign-service answers `ALREADY_IN_STATE` and writes the record):
+   * - `PAUSED` ("Pause again (record)"): the created ad set is PAUSED but `deliberately_paused` is
+   *   explicitly `false` — a campaign resume would re-activate it;
+   * - `ACTIVE` ("Resume again (clear record)"): it is ACTIVE but still `deliberately_paused: true`;
+   * - `null` otherwise, including when `deliberately_paused` is absent (unknown is never acted on).
    */
-  recordPause: boolean;
+  recordAction: MetaAdSetStatus | null;
+  /** The second action's visible words, or `''`. */
+  recordActionLabel: string;
 }
 
 /** How a lever reports an outcome it cannot confirm: its own error code and fixed client message. */

@@ -19,8 +19,8 @@ vi.mock('./logger.service', () => ({ logger }));
 
 import {
   CAMPAIGN_ADOPT_OUTCOME_UNCONFIRMED,
-  CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_CODE,
-  CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_MESSAGE,
+  CAMPAIGN_AUDIENCE_CONFLICT_CODE,
+  CAMPAIGN_AUDIENCE_CONFLICT_MESSAGE,
   CAMPAIGN_AUDIENCE_FAILED_MESSAGE,
   CAMPAIGN_AUDIENCE_LOGGED_UPSTREAM_MESSAGE_MAX_LENGTH,
   CAMPAIGN_AUDIENCE_NO_CONNECTION_CODE,
@@ -117,8 +117,8 @@ describe('CampaignOptimizeService.getPlatformAudience failures', () => {
     [
       409,
       'the campaign was created under ad account 123 but the connection is bound to 456',
-      CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_CODE,
-      CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_MESSAGE,
+      CAMPAIGN_AUDIENCE_CONFLICT_CODE,
+      CAMPAIGN_AUDIENCE_CONFLICT_MESSAGE,
     ],
     [503, 'linkedin answered 429: rate limited (retry-after 30)', CAMPAIGN_AUDIENCE_UNAVAILABLE_CODE, CAMPAIGN_AUDIENCE_UNAVAILABLE_MESSAGE],
     [400, 'keyword and audience insights are not supported for this platform', CAMPAIGN_AUDIENCE_NOT_ENABLED_CODE, CAMPAIGN_AUDIENCE_NOT_ENABLED_MESSAGE],
@@ -131,7 +131,7 @@ describe('CampaignOptimizeService.getPlatformAudience failures', () => {
     expect(JSON.stringify(body)).not.toContain(upstreamText);
   });
 
-  it("maps Reddit's 409 for mixed provenance (a foreign campaign and one recording no account) to the fixed message naming both remedies", async () => {
+  it("maps Reddit's 409 for mixed provenance (a foreign campaign and one recording no account) to the generic conflict message, which names both causes", async () => {
     proxyRequest.mockRejectedValueOnce(
       upstreamError(
         409,
@@ -141,9 +141,9 @@ describe('CampaignOptimizeService.getPlatformAudience failures', () => {
     const error = (await new CampaignOptimizeService().getPlatformAudience(req, 'tlf', 'reddit-ads').catch((e: unknown) => e)) as MicroserviceError;
 
     expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/reddit-ads/audience', 'GET', undefined);
-    expect(error.toResponse()).toMatchObject({ code: CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_CODE, error: CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_MESSAGE });
-    expect(CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_MESSAGE).toContain('Reconnect');
-    expect(CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_MESSAGE).toContain('re-dispatch');
+    expect(error.toResponse()).toMatchObject({ code: CAMPAIGN_AUDIENCE_CONFLICT_CODE, error: CAMPAIGN_AUDIENCE_CONFLICT_MESSAGE });
+    expect(CAMPAIGN_AUDIENCE_CONFLICT_MESSAGE).toContain('another ad account');
+    expect(CAMPAIGN_AUDIENCE_CONFLICT_MESSAGE).toContain("doesn't record its account");
     expect(JSON.stringify(error.toResponse())).not.toContain('t2_abc');
   });
 
@@ -172,11 +172,25 @@ describe('CampaignOptimizeService.getPlatformAudience failures', () => {
     expect(logger.warning).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['the LinkedIn campaign cap', 'linkedin-ads', 'this project has 11 linkedin campaigns; the audience read covers at most 10'],
+    ['a malformed stored Reddit id', 'reddit-ads', 'campaign c-9 stores an invalid reddit campaign id'],
+    ['an unrecorded account', 'reddit-ads', 'campaign t2_def does not record which ad account it was created under; re-dispatch it'],
+  ] as const)('answers %s (409, no reason) with the GENERIC conflict, logging the upstream sentence at DEBUG', async (_label, platform, upstreamText) => {
+    proxyRequest.mockRejectedValueOnce(upstreamError(409, upstreamText));
+    const error = (await new CampaignOptimizeService().getPlatformAudience(req, 'tlf', platform).catch((e: unknown) => e)) as MicroserviceError;
+
+    expect(error.toResponse()).toMatchObject({ code: CAMPAIGN_AUDIENCE_CONFLICT_CODE, error: CAMPAIGN_AUDIENCE_CONFLICT_MESSAGE });
+    expect(JSON.stringify(error.toResponse())).not.toContain(upstreamText);
+    const call = logger.debug.mock.calls.find((args: unknown[]) => String(args[2]).includes('409')) as unknown[] | undefined;
+    expect(call?.[3]).toMatchObject({ status: 409, platform, upstream_message: upstreamText });
+  });
+
   it('does not log an upstream sentence for a 400 nobody answered, or for another status', async () => {
     await failureFor(gatewayError(400));
     await failureFor(upstreamError(404, 'no linkedin ads connection'));
 
-    expect(logger.debug.mock.calls.some((args: unknown[]) => String(args[2]).includes('400'))).toBe(false);
+    expect(logger.debug.mock.calls.some((args: unknown[]) => String(args[2]).includes('answering a fixed message'))).toBe(false);
   });
 
   it('passes a non-microservice error through untouched', async () => {

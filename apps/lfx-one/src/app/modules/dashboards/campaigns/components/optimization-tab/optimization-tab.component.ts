@@ -29,6 +29,7 @@ import type {
   LinkedInMonitorResponse,
   MetaAccountOption,
   MetaActionItem,
+  MetaAdSetPendingChange,
   MetaAdSetToggleOutcome,
   MetaAdSetToggleRequest,
   KeywordActionOutcome,
@@ -72,6 +73,7 @@ import {
   KEYWORD_ACTION_OUTCOME_LABELS,
   META_AD_SET_BLOCKED_BUSY_REASON,
   META_AD_SET_BLOCKED_STALE_REASON,
+  META_AD_SET_UNCONFIRMED_MESSAGE,
   META_AD_SETS_CAMPAIGN_PLATFORM,
   META_AD_SETS_UNAVAILABLE_UNPROVISIONED_REASON,
   NEGATIVE_KEYWORD_CAMPAIGN_PLATFORMS,
@@ -258,8 +260,8 @@ export class OptimizationTabComponent implements OnInit {
    * row's other writes wait while it is out.
    */
   protected readonly adSetsPanelOpen = signal<Record<string, boolean>>({});
-  /** The ad set whose status change is in flight, per campaign id. One per campaign at a time. */
-  protected readonly adSetPending = signal<Partial<Record<string, string>>>({});
+  /** The ad-set change in flight (which ad set, which action), per campaign id. One per campaign at a time. */
+  protected readonly adSetPending = signal<Partial<Record<string, MetaAdSetPendingChange>>>({});
   /** How the campaign's last ad-set change ended; replaced when a new one is dispatched. */
   protected readonly adSetOutcome = signal<Partial<Record<string, MetaAdSetToggleOutcome>>>({});
   /** Bumped per campaign after every ad-set change, confirmed or not, so its panel re-reads the ad sets. */
@@ -465,6 +467,17 @@ export class OptimizationTabComponent implements OnInit {
    * longer pending yet holds the fresher validator.
    */
   private etagsWrittenDuringRead = new Set<string>();
+
+  /**
+   * Rows whose validator is UNKNOWN after an unconfirmed ad-set change. Such a change may have
+   * written (or withdrawn) the deliberate-pause record and so bumped the row's version, while its
+   * error carries no ETag. The row is held conflicted — the existing banner offers Refresh and every
+   * write on the row waits — until a campaign-list read that STARTED after the change lands; that
+   * delivery's etag is then adopted whether or not it moved, because "moved" is not the question
+   * here. Ids added while a read is already in flight wait for the next one (`validatorUnknownAwaitingRead`).
+   */
+  private validatorUnknownIds = new Set<string>();
+  private validatorUnknownAwaitingRead = new Set<string>();
 
   /** True between the parent's `null` push and the delivery that answers it. */
   private listReadInFlight = false;
@@ -1160,6 +1173,15 @@ export class OptimizationTabComponent implements OnInit {
     this.adSetsPanelOpen.update((open) => this.omitKeys(open, [campaignId]));
   }
 
+  /** The panel's Close: closes it and returns focus to the row's "Ad sets" disclosure, as the budget and bid editors do. */
+  protected cancelAdSetsPanel(campaignId: string): void {
+    if (this.adSetPending()[campaignId]) {
+      return;
+    }
+    this.returnFocusToDisclosure(`campaign-ad-sets-edit-${campaignId}`, `campaign-ad-sets-panel-${campaignId}`);
+    this.closeAdSetsPanel(campaignId);
+  }
+
   /**
    * Pause or resume one ad set of a Meta campaign.
    *
@@ -1203,11 +1225,21 @@ export class OptimizationTabComponent implements OnInit {
       return;
     }
 
-    this.adSetPending.update((p) => ({ ...p, [id]: request.adSetId }));
+    this.adSetPending.update((p) => ({ ...p, [id]: { adSetId: request.adSetId, kind: request.kind } }));
     this.adSetOutcome.update((o) => this.omitKeys(o, [id]));
     const dispatchedIn = this.contextGeneration;
     const campaignName = campaign.campaign_name;
     const verb = request.status === 'PAUSED' ? 'Paused' : 'Resumed';
+    const unconfirmed = (message: string): void => {
+      this.announceAdSetFailure(campaignName, request.adSetName, 'unconfirmed', message);
+      if (dispatchedIn !== this.contextGeneration) {
+        return;
+      }
+      this.adSetPending.update((p) => this.omitKeys(p, [id]));
+      this.adSetOutcome.update((o) => ({ ...o, [id]: outcomeOf('unconfirmed', message) }));
+      this.bumpAdSetsReload(id);
+      this.holdUnknownValidator(id);
+    };
 
     // `take(1)`, not `takeUntilDestroyed`, for the toggle's reason: a tab switch destroys this
     // component, and aborting a write on a live ad set would leave its outcome unknown with nothing
@@ -1224,10 +1256,21 @@ export class OptimizationTabComponent implements OnInit {
       .pipe(take(1))
       .subscribe({
         next: (result) => {
+          // A 2xx counts as applied only when it answers THIS request: the same ad set, the same
+          // status, and an outcome campaign-service defines. Anything else proves nothing about what
+          // Meta holds, so it takes the unconfirmed path: no success toast, and its etag is not
+          // adopted (it may not be this row's).
+          const answers =
+            !!result &&
+            result.ad_set_id === request.adSetId &&
+            result.requested_status === request.status &&
+            (result.outcome === 'APPLIED' || result.outcome === 'ALREADY_IN_STATE');
+          if (!answers) {
+            unconfirmed(META_AD_SET_UNCONFIRMED_MESSAGE);
+            return;
+          }
           const already = result.outcome === 'ALREADY_IN_STATE';
-          const message = already
-            ? `${request.adSetName} was already ${request.status === 'PAUSED' ? 'paused' : 'active'}; nothing was sent to Meta.`
-            : `${verb} ${request.adSetName}.`;
+          const message = this.adSetSuccessMessage(request, already, verb);
           this.messageService.add({ severity: 'success', summary: `Ad set changed in ${campaignName}`, detail: message, life: 5000 });
           if (dispatchedIn !== this.contextGeneration) {
             return;
@@ -1246,6 +1289,10 @@ export class OptimizationTabComponent implements OnInit {
         },
         error: (err: unknown) => {
           const failure = metaAdSetFailureOutcome(err);
+          if (failure.state === 'unconfirmed') {
+            unconfirmed(failure.message);
+            return;
+          }
           this.announceAdSetFailure(campaignName, request.adSetName, failure.state, failure.message);
           if (dispatchedIn !== this.contextGeneration) {
             return;
@@ -2092,6 +2139,8 @@ export class OptimizationTabComponent implements OnInit {
         this.adSetPending.set({});
         this.adSetOutcome.set({});
         this.adSetsReload.set({});
+        this.validatorUnknownIds.clear();
+        this.validatorUnknownAwaitingRead.clear();
         this.lastDeliveredEtags = {};
         this.hasDeliveredList = false;
         this.etagsWrittenDuringRead.clear();
@@ -2105,10 +2154,24 @@ export class OptimizationTabComponent implements OnInit {
           // The parent has begun a read. Everything written from here until rows land is
           // concurrent with it.
           this.listReadInFlight = true;
+          // Unknown validators recorded before this read began are answered by its delivery.
+          for (const id of this.validatorUnknownAwaitingRead) {
+            this.validatorUnknownIds.add(id);
+          }
+          this.validatorUnknownAwaitingRead.clear();
           return;
         }
         const readWasInFlight = this.listReadInFlight;
         this.listReadInFlight = false;
+        // A read that started after an unconfirmed ad-set change carries the row's current indexed
+        // etag: adopt it (drop the cached validator and the hold) for every such row it lists.
+        const resolvedUnknown = rows.map((row) => row.id).filter((id) => this.validatorUnknownIds.has(id));
+        if (resolvedUnknown.length > 0) {
+          for (const id of resolvedUnknown) {
+            this.validatorUnknownIds.delete(id);
+          }
+          this.clearConflictStateFor(resolvedUnknown);
+        }
 
         const delivered: Record<string, string | undefined> = {};
         for (const row of rows) {
@@ -2613,6 +2676,38 @@ export class OptimizationTabComponent implements OnInit {
       return;
     }
     this.messageService.add({ severity: 'error', summary: `Ad set change needs attention: ${adSetName} (${campaignName})`, detail: message, sticky: true });
+  }
+
+  /** What a confirmed ad-set change says. A record re-send changed nothing on Meta; say what it did instead. */
+  private adSetSuccessMessage(request: MetaAdSetToggleRequest, already: boolean, verb: string): string {
+    if (request.kind === 'record' && already) {
+      return request.status === 'PAUSED'
+        ? `Recorded ${request.adSetName}'s deliberate pause; nothing was sent to Meta.`
+        : `Cleared ${request.adSetName}'s deliberate-pause record; nothing was sent to Meta.`;
+    }
+    if (already) {
+      return `${request.adSetName} was already ${request.status === 'PAUSED' ? 'paused' : 'active'}; nothing was sent to Meta.`;
+    }
+    return `${verb} ${request.adSetName}.`;
+  }
+
+  /**
+   * After an unconfirmed ad-set change the row's validator is unknown (see `validatorUnknownIds`):
+   * drop the cached one, hold the row conflicted so the banner offers Refresh and its writes wait,
+   * and let the next campaign-list read that starts after now release it.
+   */
+  private holdUnknownValidator(campaignId: string): void {
+    this.toggledEtag.update((etags) => this.omitKeys(etags, [campaignId]));
+    this.conflictedCampaignIds.update((ids) => {
+      const next = new Set(ids);
+      next.add(campaignId);
+      return next;
+    });
+    if (this.listReadInFlight) {
+      this.validatorUnknownAwaitingRead.add(campaignId);
+    } else {
+      this.validatorUnknownIds.add(campaignId);
+    }
   }
 
   private bumpAdSetsReload(campaignId: string): void {

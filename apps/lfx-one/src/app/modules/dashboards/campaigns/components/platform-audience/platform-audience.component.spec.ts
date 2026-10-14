@@ -5,8 +5,8 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import {
-  CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_CODE,
-  CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_MESSAGE,
+  CAMPAIGN_AUDIENCE_CONFLICT_CODE,
+  CAMPAIGN_AUDIENCE_CONFLICT_MESSAGE,
   CAMPAIGN_AUDIENCE_NO_CONNECTION_CODE,
   CAMPAIGN_AUDIENCE_NO_CONNECTION_MESSAGE,
   CAMPAIGN_AUDIENCE_NOT_ENABLED_CODE,
@@ -144,13 +144,14 @@ describe('PlatformAudienceComponent', () => {
     expect(text()).toContain('Spend (acct. currency)');
   });
 
-  it("states Reddit's mixed-provenance 409 with both remedies", () => {
-    getPlatformAudience.mockReturnValue(throwError(() => bffError(409, CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_CODE, CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_MESSAGE)));
+  it('states a 409 (Reddit mixed provenance, a campaign cap or a malformed id: campaign-service does not say which) with every cause and both remedies', () => {
+    getPlatformAudience.mockReturnValue(throwError(() => bffError(409, CAMPAIGN_AUDIENCE_CONFLICT_CODE, CAMPAIGN_AUDIENCE_CONFLICT_MESSAGE)));
     render('reddit-ads', 'Reddit');
 
-    const error = q('platform-audience-error-account-mismatch')!.textContent ?? '';
+    const error = q('platform-audience-error-conflict')!.textContent ?? '';
     expect(error).toContain('Reconnect the account the campaigns run in');
     expect(error).toContain('re-dispatch');
+    expect(error).toContain('more campaigns than this read covers');
     expect(q('platform-audience-retry')).not.toBeNull();
   });
 
@@ -172,13 +173,7 @@ describe('PlatformAudienceComponent', () => {
 
   it.each([
     [404, CAMPAIGN_AUDIENCE_NO_CONNECTION_CODE, CAMPAIGN_AUDIENCE_NO_CONNECTION_MESSAGE, 'no-connection', 'This project has no LinkedIn connection.'],
-    [
-      409,
-      CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_CODE,
-      CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_MESSAGE,
-      'account-mismatch',
-      "isn't the one every campaign was created under",
-    ],
+    [409, CAMPAIGN_AUDIENCE_CONFLICT_CODE, CAMPAIGN_AUDIENCE_CONFLICT_MESSAGE, 'conflict', "can't read these campaigns together"],
     [503, CAMPAIGN_AUDIENCE_UNAVAILABLE_CODE, CAMPAIGN_AUDIENCE_UNAVAILABLE_MESSAGE, 'unavailable', "LinkedIn didn't confirm the audience read"],
   ])('states a %i (%s) by cause, naming the platform, with a retry', (status, code, message, kind, expected) => {
     getPlatformAudience.mockReturnValueOnce(throwError(() => bffError(status, code, message)));

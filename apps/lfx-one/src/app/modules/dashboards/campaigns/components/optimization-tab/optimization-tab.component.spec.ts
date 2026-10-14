@@ -3844,16 +3844,88 @@ describe('OptimizationTabComponent — Meta ad sets (#3299)', () => {
 
     expect(listMetaAdSets).toHaveBeenCalledTimes(2);
     expect(q('meta-ad-sets-outcome-unconfirmed')!.textContent).toContain(META_AD_SET_UNCONFIRMED_MESSAGE);
-    expect(q('meta-ad-sets-deliberate-pause-advice')!.textContent).toContain(META_AD_SET_DELIBERATE_PAUSE_ADVICE);
-    expect(q('meta-ad-sets-deliberate-pause-missing')).not.toBeNull();
+    expect(q('meta-ad-sets-record-check-advice')!.textContent).toContain(META_AD_SET_DELIBERATE_PAUSE_ADVICE);
+    expect(q('meta-ad-sets-record-check-missing')).not.toBeNull();
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', sticky: true }));
     // Never retried.
     expect(updateMetaAdSetStatus).toHaveBeenCalledTimes(1);
-    // The toggle is usable again once the re-read lands: the operator decides.
-    expect((q('meta-ad-set-toggle-120210000000000888') as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it("keeps the BFF's own sentence when only the pause RECORD is unconfirmed, and confirms it once the re-read shows it", () => {
+  it('holds the row on an UNKNOWN validator after an unconfirmed change until a fresh campaign-list read lands, then adopts its etag', () => {
+    updateMetaAdSetStatus.mockReturnValue(throwError(() => bffError(503, META_AD_SET_STATUS_UNCONFIRMED_CODE, META_AD_SET_STATUS_OUTCOME_UNCONFIRMED)));
+    render([doc()]);
+    openPanel();
+    clickToggle();
+
+    // The record write may have bumped the row's version: every write on the row waits, and the banner offers Refresh.
+    expect(q('optimization-campaigns-conflict')).not.toBeNull();
+    expect(q('meta-ad-sets-blocked')!.textContent).toContain(META_AD_SET_BLOCKED_STALE_REASON);
+    expect((q('meta-ad-set-toggle-120210000000000888') as HTMLButtonElement).disabled).toBe(true);
+    expect((q('optimization-campaign-toggle-c-1') as HTMLButtonElement).disabled).toBe(true);
+
+    // The campaign list is re-read (the parent pushes null, then the fresh rows) — even with the SAME
+    // indexed etag, a read that started after the change answers the unknown.
+    render(null);
+    render([doc({ etag: '"7"' })]);
+    expect(q('optimization-campaigns-conflict')).toBeNull();
+    (q('optimization-campaign-toggle-c-1') as HTMLButtonElement).click();
+    expect(updateCampaignStatus.mock.calls[0][0].etag).toBe('"7"');
+  });
+
+  it('does not release an unknown validator on a list read that was already in flight when the change answered', () => {
+    const response = new Subject<never>();
+    updateMetaAdSetStatus.mockReturnValue(response.asObservable());
+    render([doc()]);
+    openPanel();
+    clickToggle();
+    render(null);
+    response.error(bffError(503, META_AD_SET_STATUS_UNCONFIRMED_CODE, META_AD_SET_STATUS_OUTCOME_UNCONFIRMED));
+    fixture.detectChanges();
+    // That read began before the answer: its rows may predate the record write.
+    render([doc()]);
+    expect(q('optimization-campaigns-conflict')).not.toBeNull();
+
+    render(null);
+    render([doc({ etag: '"8"' })]);
+    expect(q('optimization-campaigns-conflict')).toBeNull();
+  });
+
+  it.each([
+    ['another ad set', { ad_set_id: '999', requested_status: 'PAUSED', outcome: 'APPLIED' }],
+    ['another status', { ad_set_id: '120210000000000888', requested_status: 'ACTIVE', outcome: 'APPLIED' }],
+    ['an outcome campaign-service does not define', { ad_set_id: '120210000000000888', requested_status: 'PAUSED', outcome: 'QUEUED' }],
+    ['an empty body', {}],
+  ])('treats a 2xx naming %s as UNCONFIRMED: no success toast, no etag adopted, the row held', (_label, body) => {
+    updateMetaAdSetStatus.mockReturnValue(of({ campaign_id: 'c-1', etag: '"99"', ...body }));
+    render([doc()]);
+    openPanel();
+    clickToggle();
+
+    expect(q('meta-ad-sets-outcome-unconfirmed')!.textContent).toContain(META_AD_SET_UNCONFIRMED_MESSAGE);
+    expect(messageAdd).not.toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn' }));
+    expect(q('optimization-campaigns-conflict')).not.toBeNull();
+    // Released by a fresh read, whose etag — not the unverified '"99"' — is what the next write sends.
+    render(null);
+    render([doc({ etag: '"5"' })]);
+    (q('optimization-campaign-toggle-c-1') as HTMLButtonElement).click();
+    expect(updateCampaignStatus.mock.calls[0][0].etag).toBe('"5"');
+  });
+
+  it('returns focus to the Ad sets disclosure when the panel is closed', () => {
+    render([doc()]);
+    openPanel();
+    const disclosure = q('optimization-campaign-ad-sets-c-1') as HTMLButtonElement;
+    expect(disclosure.id).toBe('campaign-ad-sets-edit-c-1');
+    (q('meta-ad-sets-close')!.querySelector('button') as HTMLButtonElement).focus();
+    (q('meta-ad-sets-close')!.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(q('meta-ad-sets-panel-c-1')).toBeNull();
+    expect(document.activeElement).toBe(disclosure);
+  });
+
+  it("keeps the BFF's own sentence when only the RECORD is unconfirmed after a pause, and confirms it once the re-read shows it", () => {
     updateMetaAdSetStatus.mockReturnValue(
       throwError(() => bffError(503, META_AD_SET_PAUSE_RECORD_UNCONFIRMED_CODE, META_AD_SET_PAUSE_RECORD_OUTCOME_UNCONFIRMED))
     );
@@ -3863,7 +3935,23 @@ describe('OptimizationTabComponent — Meta ad sets (#3299)', () => {
     clickToggle();
 
     expect(q('meta-ad-sets-outcome-unconfirmed')!.textContent).toContain(META_AD_SET_PAUSE_RECORD_OUTCOME_UNCONFIRMED);
-    expect(q('meta-ad-sets-deliberate-pause-shown')).not.toBeNull();
+    expect(q('meta-ad-sets-record-check-confirmed')).not.toBeNull();
+  });
+
+  it('runs the record check in the RESUME direction when only the record clear is unconfirmed after a resume', () => {
+    listMetaAdSets.mockReturnValue(of(adSets([adSet({ status: 'PAUSED', deliberately_paused: true })])));
+    updateMetaAdSetStatus.mockReturnValue(
+      throwError(() => bffError(503, META_AD_SET_PAUSE_RECORD_UNCONFIRMED_CODE, META_AD_SET_PAUSE_RECORD_OUTCOME_UNCONFIRMED))
+    );
+    render([doc()]);
+    openPanel();
+    // Meta is ACTIVE now, but the re-read still holds the record.
+    listMetaAdSets.mockReturnValue(of(adSets([adSet({ status: 'ACTIVE', deliberately_paused: true })])));
+    clickToggle();
+
+    expect(updateMetaAdSetStatus.mock.calls[0][0].status).toBe('ACTIVE');
+    expect(q('meta-ad-sets-record-check-missing')!.textContent).toContain('still shows Leads — US as deliberately paused');
+    expect(q('meta-ad-set-record-action-120210000000000888')!.textContent).toContain('Resume again (clear record)');
   });
 
   it('treats a response with no BFF envelope (lost connection) as unconfirmed, never as a failure', () => {
@@ -3884,7 +3972,7 @@ describe('OptimizationTabComponent — Meta ad sets (#3299)', () => {
 
     expect(q('meta-ad-sets-outcome-failed')!.textContent).toContain(message);
     expect(listMetaAdSets).toHaveBeenCalledTimes(2);
-    expect(q('meta-ad-sets-deliberate-pause-advice')).toBeNull();
+    expect(q('meta-ad-sets-record-check-advice')).toBeNull();
   });
 
   it('records an unrecorded pause with PAUSED again — never ACTIVE — under the same If-Match, lock and no-retry rules', () => {
@@ -3894,7 +3982,7 @@ describe('OptimizationTabComponent — Meta ad sets (#3299)', () => {
     render([doc()]);
     openPanel();
 
-    (q('meta-ad-set-record-pause-120210000000000888') as HTMLButtonElement).click();
+    (q('meta-ad-set-record-action-120210000000000888') as HTMLButtonElement).click();
     fixture.detectChanges();
     expect(updateMetaAdSetStatus).toHaveBeenCalledWith({
       projectSlug: 'tlf',
@@ -3905,10 +3993,10 @@ describe('OptimizationTabComponent — Meta ad sets (#3299)', () => {
       etag: '"3"',
     });
     // In flight: both of the ad set's actions and the row's own toggle are locked; a second click sends nothing.
-    expect((q('meta-ad-set-record-pause-120210000000000888') as HTMLButtonElement).disabled).toBe(true);
+    expect((q('meta-ad-set-record-action-120210000000000888') as HTMLButtonElement).disabled).toBe(true);
     expect((q('meta-ad-set-toggle-120210000000000888') as HTMLButtonElement).disabled).toBe(true);
     expect((q('optimization-campaign-toggle-c-1') as HTMLButtonElement).disabled).toBe(true);
-    (q('meta-ad-set-record-pause-120210000000000888') as HTMLButtonElement).click();
+    (q('meta-ad-set-record-action-120210000000000888') as HTMLButtonElement).click();
     expect(updateMetaAdSetStatus).toHaveBeenCalledTimes(1);
 
     // campaign-service answers ALREADY_IN_STATE and records the pause, bumping the row's version.
@@ -3919,7 +4007,7 @@ describe('OptimizationTabComponent — Meta ad sets (#3299)', () => {
 
     expect(q('meta-ad-sets-outcome-already')).not.toBeNull();
     expect(q('meta-ad-set-deliberately-paused-120210000000000888')).not.toBeNull();
-    expect(q('meta-ad-set-record-pause-120210000000000888')).toBeNull();
+    expect(q('meta-ad-set-record-action-120210000000000888')).toBeNull();
     (q('optimization-campaign-toggle-c-1') as HTMLButtonElement).click();
     expect(updateCampaignStatus.mock.calls[0][0].etag).toBe('"4"');
   });
