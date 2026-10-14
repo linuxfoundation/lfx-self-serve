@@ -260,9 +260,11 @@ export class CampaignOptimizeService {
    * Service (campaign-service exposes no brief list; `campaign_brief` is indexed instead).
    *
    * Filtered HERE, not with a query filter: an index filter on `status` is unverified, and a filter
-   * that silently matched nothing would read as "no approved briefs". A document with no
-   * `delivery_type` was indexed before the field existed and is a paid brief (campaign-service
-   * `BriefDoc`); `adopt-campaign` itself refuses any other brief with 400, so this only narrows the picker.
+   * that silently matched nothing would read as "no approved briefs". Only a document that SAYS
+   * `delivery_type: 'paid-marketing'` is offered. One with no `delivery_type` was indexed before the
+   * field existed and may be a paid brief OR a legacy email brief, which this read cannot tell apart,
+   * so it is left out rather than risk adopting an ad campaign into an email brief. Such a brief appears
+   * once its next write re-indexes it (campaign-service `BriefDoc`).
    */
   public async listAdoptableBriefs(req: Request, projectSlug: string): Promise<CampaignAdoptableBrief[]> {
     if (projectSlug === '') {
@@ -282,9 +284,7 @@ export class CampaignOptimizeService {
       { failOnPartial: true }
     );
     const briefs = docs
-      .filter(
-        (d) => typeof d?.id === 'string' && d.id !== '' && d.status === 'approved' && (d.delivery_type === undefined || d.delivery_type === 'paid-marketing')
-      )
+      .filter((d) => typeof d?.id === 'string' && d.id !== '' && d.status === 'approved' && d.delivery_type === 'paid-marketing')
       .map((d) => ({
         id: d.id,
         eventSlug: typeof d.event_slug === 'string' ? d.event_slug : '',

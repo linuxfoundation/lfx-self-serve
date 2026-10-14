@@ -639,6 +639,9 @@ export class MonitoringTabComponent implements OnInit {
       .open(CampaignActDialogComponent, {
         header: `${CAMPAIGN_MONITOR_ACT_LEVER_LABELS[data.lever]}: ${data.campaignName}`,
         width: '36rem',
+        // The dialog preset caps nothing, so a fixed width alone runs off a phone: capped to the viewport,
+        // as the org EasyCLA dialogs do.
+        style: { maxWidth: '90vw' },
         modal: true,
         closable: true,
         dismissableMask: true,
@@ -664,6 +667,9 @@ export class MonitoringTabComponent implements OnInit {
       .open(CampaignAdoptDialogComponent, {
         header: `Adopt campaign: ${act.campaignName}`,
         width: '36rem',
+        // The dialog preset caps nothing, so a fixed width alone runs off a phone: capped to the viewport,
+        // as the org EasyCLA dialogs do.
+        style: { maxWidth: '90vw' },
         modal: true,
         closable: true,
         data,

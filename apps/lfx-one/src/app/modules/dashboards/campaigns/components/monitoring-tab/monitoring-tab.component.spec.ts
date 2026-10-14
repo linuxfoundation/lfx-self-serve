@@ -557,6 +557,16 @@ describe.each([
     expect(open).toHaveBeenLastCalledWith(CampaignActDialogComponent, expect.objectContaining({ data: expect.objectContaining({ lever: 'bid' }) }));
   });
 
+  it('caps both dialogs to the viewport so they fit a phone', () => {
+    click('monitor-act-bid-987654');
+    closes[0].next({ adopt: true });
+
+    for (const [, config] of open.mock.calls) {
+      expect(config).toEqual(expect.objectContaining({ width: '36rem', style: expect.objectContaining({ maxWidth: '90vw' }) }));
+    }
+    expect(open).toHaveBeenCalledTimes(2);
+  });
+
   it('does nothing more when either dialog is simply closed', () => {
     click('monitor-act-budget-987654');
     closes[0].next(undefined);

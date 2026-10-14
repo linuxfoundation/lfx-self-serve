@@ -427,7 +427,7 @@ describe('CampaignOptimizeService.getCampaign', () => {
 describe('CampaignOptimizeService.listAdoptableBriefs', () => {
   const page = (data: unknown[]) => ({ resources: data.map((d) => ({ type: 'campaign_brief', id: 'x', data: d })) });
 
-  it('reads campaign_brief from the Query Service and keeps approved paid briefs only', async () => {
+  it('reads campaign_brief from the Query Service and keeps approved briefs that say paid-marketing, excluding undefined and email', async () => {
     proxyRequest.mockResolvedValueOnce(
       page([
         { id: 'b-1', event_slug: 'kubecon', program_type: 'events', delivery_type: 'paid-marketing', status: 'approved', platforms: ['linkedin-ads', 7] },
@@ -441,10 +441,8 @@ describe('CampaignOptimizeService.listAdoptableBriefs', () => {
     const briefs = await new CampaignOptimizeService().listAdoptableBriefs(req, 'tlf');
 
     expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', { type: 'campaign_brief', parent: 'project:tlf' });
-    expect(briefs).toEqual([
-      { id: 'b-1', eventSlug: 'kubecon', programType: 'events', platforms: ['linkedin-ads'] },
-      { id: 'b-2', eventSlug: 'legacy', programType: '', platforms: [] },
-    ]);
+    // Only an explicit paid-marketing brief: `legacy` (no delivery_type) may be a pre-field email brief.
+    expect(briefs).toEqual([{ id: 'b-1', eventSlug: 'kubecon', programType: 'events', platforms: ['linkedin-ads'] }]);
   });
 
   it('refuses an empty project without calling the Query Service', async () => {
