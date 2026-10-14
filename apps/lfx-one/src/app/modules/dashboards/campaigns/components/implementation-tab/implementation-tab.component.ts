@@ -54,6 +54,10 @@ import {
   GOOGLE_ADS_MAX_CONVERSION_ACTIONS,
   GOOGLE_ADS_MAX_GEO_TARGETS,
   GOOGLE_ADS_MAX_LANGUAGES,
+  GOOGLE_ADS_MAX_SITELINKS,
+  GOOGLE_ADS_MAX_FINAL_URL_BYTES,
+  GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES,
+  GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES,
   GOOGLE_BIDDING_CPA_STRATEGIES,
   GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
   GOOGLE_BIDDING_ROAS_STRATEGIES,
@@ -82,6 +86,7 @@ import {
   REDDIT_SELECTABLE_OBJECTIVES,
   googleAdsToLower,
   googleAdsTrimSpace,
+  googleAdsUrlGoParseFlaw,
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -99,6 +104,7 @@ import type {
   CampaignKeyword,
   CampaignPlatform,
   CampaignPlatformResult,
+  CampaignSitelink,
   CampaignType,
   GoogleBiddingOption,
   GoogleBiddingStrategy,
@@ -738,6 +744,23 @@ export class ImplementationTabComponent implements OnInit {
    * ADDED, exactly as {@link microsoftKeywordDraft} does.
    */
   protected readonly googleCalloutDraft = signal('');
+  /**
+   * Google's sitelink extensions — extra links rendered under the Search ad.
+   *
+   * Four fields rather than the callout's one, so the draft is an OBJECT and the add guard has more
+   * to say. An entry arrives through {@link addGoogleSitelink} or a restored draft; the BFF guard
+   * re-checks every entry against `validateSitelinks` before anything is sent.
+   */
+  protected readonly googleSitelinks = signal<CampaignSitelink[]>([]);
+  protected readonly googleMaxSitelinks = GOOGLE_ADS_MAX_SITELINKS;
+  protected readonly googleMaxFinalUrlBytes = GOOGLE_ADS_MAX_FINAL_URL_BYTES;
+  protected readonly googleMaxSitelinkRunes = GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES;
+  protected readonly googleMaxSitelinkDescriptionRunes = GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES;
+  /**
+   * The sitelink sub-form's live values, on the same rule as {@link googleCalloutDraft}: transient,
+   * reaching the saved draft only when a sitelink is added.
+   */
+  protected readonly googleSitelinkDraft = signal<CampaignSitelink>({ text: '', description1: '', description2: '', finalUrl: '' });
   protected readonly metaVariants = signal<MetaAdVariant[]>([]);
   protected readonly metaGeoTargets = signal<string[]>([]);
   protected readonly metaBudgetUsd = signal(500);
@@ -1111,6 +1134,110 @@ export class ImplementationTabComponent implements OnInit {
 
   protected readonly googleCalloutsFull = computed(() => this.googleCallouts().length >= GOOGLE_ADS_MAX_CALLOUTS);
 
+  /** Rune length of the in-progress sitelink link text. Spread, not `.length` — as the callout. */
+  protected readonly googleSitelinkTextLength = computed(() => [...googleAdsTrimSpace(this.googleSitelinkDraft().text)].length);
+
+  protected readonly googleSitelinkTextTooLong = computed(() => this.googleSitelinkTextLength() > GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES);
+
+  /**
+   * Whether either description line is over its own bound.
+   *
+   * EACH line separately, not their total: upstream applies `maxSitelinkDescriptionRunes` to
+   * `desc1` and `desc2` in turn, so a pair of 30-rune lines is fine and one 36-rune line is not.
+   */
+  protected readonly googleSitelinkDescriptionTooLong = computed(() => {
+    const draft = this.googleSitelinkDraft();
+    return [draft.description1 ?? '', draft.description2 ?? ''].some((d) => [...googleAdsTrimSpace(d)].length > GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES);
+  });
+
+  /**
+   * Whether exactly one description line is filled in.
+   *
+   * Google renders the two lines together and rejects an asset carrying only one, so upstream
+   * refuses the whole create on this. Both filled or both empty are the two legal states.
+   */
+  protected readonly googleSitelinkDescriptionHalfFilled = computed(() => {
+    const draft = this.googleSitelinkDraft();
+    return (googleAdsTrimSpace(draft.description1 ?? '') === '') !== (googleAdsTrimSpace(draft.description2 ?? '') === '');
+  });
+
+  /** Case-folded with Go's rules, as the callout sibling is — upstream refuses, not de-duplicates. */
+  protected readonly googleSitelinkDuplicate = computed(() => {
+    const key = googleAdsToLower(googleAdsTrimSpace(this.googleSitelinkDraft().text));
+    if (key === '') return false;
+    return this.googleSitelinks().some((s) => googleAdsToLower(s.text) === key);
+  });
+
+  /**
+   * Whether the destination in the box is one the ad platforms will refuse.
+   *
+   * False while the box is EMPTY: an unfilled field is not yet a mistake, and the add button's own
+   * disabled state is what withholds the add until it is filled. This warns only about text that
+   * is present and unservable.
+   */
+  protected readonly googleSitelinkUrlInvalid = computed(() => {
+    const url = googleAdsTrimSpace(this.googleSitelinkDraft().finalUrl);
+    if (url === '') return false;
+    return !this.isServableDestination(url);
+  });
+
+  /** UTF-8 byte length of a servable destination over upstream's `maxFinalURLBytes`, else 0. */
+  protected readonly googleSitelinkUrlBytesOver = computed(() => {
+    const url = googleAdsTrimSpace(this.googleSitelinkDraft().finalUrl);
+    if (url === '' || this.googleSitelinkUrlInvalid()) return 0;
+    const bytes = new TextEncoder().encode(url).length;
+    return bytes > GOOGLE_ADS_MAX_FINAL_URL_BYTES ? bytes : 0;
+  });
+
+  /** The message line describing the destination box, or null when it is clean. */
+  protected readonly googleSitelinkUrlErrorId = computed<string | null>(() => {
+    if (this.googleSitelinkUrlInvalid()) return 'google-sitelink-url-invalid';
+    if (this.googleSitelinkUrlBytesOver() > 0) return 'google-sitelink-url-too-long';
+    return null;
+  });
+
+  /**
+   * Ids of the message lines currently describing the link-text box and the two description boxes,
+   * or `null` when each is clean. Same reason as {@link googleCalloutDraftErrorId}: `aria-invalid`
+   * marks the field wrong and `aria-describedby` is what says why once focus returns to it. One
+   * computed per group rather than a template ternary, because each group's messages are mutually
+   * exclusive and `.claude/rules/styling.md` forbids nesting ternaries in a binding.
+   */
+  protected readonly googleSitelinkTextErrorId = computed<string | null>(() => {
+    if (this.googleSitelinkTextTooLong()) return 'google-sitelink-too-long';
+    if (this.googleSitelinkDuplicate()) return 'google-sitelink-duplicate';
+    return null;
+  });
+
+  protected readonly googleSitelinkDescriptionErrorId = computed<string | null>(() => {
+    if (this.googleSitelinkDescriptionHalfFilled()) return 'google-sitelink-half-described';
+    if (this.googleSitelinkDescriptionTooLong()) return 'google-sitelink-description-too-long';
+    return null;
+  });
+
+  protected readonly googleSitelinksFull = computed(() => this.googleSitelinks().length >= GOOGLE_ADS_MAX_SITELINKS);
+
+  /**
+   * Whether the add button is withheld. A computed rather than an expression in the template, so
+   * the button's condition and `addGoogleSitelink`'s refusals stay one list in one place.
+   *
+   * The two required fields are withheld as "not filled in yet" rather than warned about, which is
+   * why the empty cases live here and not in {@link googleSitelinkUrlInvalid}.
+   */
+  protected readonly googleSitelinkAddDisabled = computed(() => {
+    const draft = this.googleSitelinkDraft();
+    if (googleAdsTrimSpace(draft.text) === '' || googleAdsTrimSpace(draft.finalUrl) === '') return true;
+    return (
+      this.googleSitelinksFull() ||
+      this.googleSitelinkTextTooLong() ||
+      this.googleSitelinkDuplicate() ||
+      this.googleSitelinkDescriptionHalfFilled() ||
+      this.googleSitelinkDescriptionTooLong() ||
+      this.googleSitelinkUrlInvalid() ||
+      this.googleSitelinkUrlBytesOver() > 0
+    );
+  });
+
   /**
    * The effective geo list as a display string. A computed rather than `.join()` in the template:
    * `docs/reviews/frontend-checklist.md` permits signal reads, computeds and pipes in bindings but
@@ -1438,6 +1565,7 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleBiddingChannel: Signal<GoogleCampaignChannel | null> = this.initGoogleBiddingChannel();
   protected readonly googleCalloutsAvailable: Signal<boolean> = this.initGoogleCalloutsAvailable();
   protected readonly googleCalloutsWithheldWarning: Signal<string | null> = this.initGoogleCalloutsWithheldWarning();
+  protected readonly googleSitelinksWithheldWarning: Signal<string | null> = this.initGoogleSitelinksWithheldWarning();
   protected readonly googleBiddingOptions: Signal<GoogleBiddingOption[]> = this.initGoogleBiddingOptions();
   protected readonly googleBiddingStrategy: Signal<GoogleBiddingStrategy | null> = this.initGoogleBiddingStrategy();
   protected readonly googleBiddingDefaultLabel: Signal<string> = this.initGoogleBiddingDefaultLabel();
@@ -2012,6 +2140,63 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
+  /**
+   * Add one sitelink, reporting whether it was actually added.
+   *
+   * Boolean for the same reason {@link addGoogleCallout} is: a refusal must leave the sub-form
+   * filled so the operator can fix the field the warning names, not retype four of them.
+   *
+   * One refusal per branch of upstream's `validateSitelinks`, in its order — cap on the raw list,
+   * blank link text, the rune bound, the case-folded duplicate, the all-or-nothing description
+   * pair, each description line's own rune bound, then the destination and its byte bound. A
+   * sitelink that passes every one is one upstream accepts, short of the utm-tagging margin
+   * documented on {@link GOOGLE_ADS_MAX_FINAL_URL_BYTES}.
+   */
+  protected addGoogleSitelink(sitelink: CampaignSitelink): boolean {
+    const text = googleAdsTrimSpace(sitelink.text);
+    const description1 = googleAdsTrimSpace(sitelink.description1 ?? '');
+    const description2 = googleAdsTrimSpace(sitelink.description2 ?? '');
+    const finalUrl = googleAdsTrimSpace(sitelink.finalUrl);
+
+    if (this.googleSitelinks().length >= GOOGLE_ADS_MAX_SITELINKS) return false;
+    if (!text) return false;
+    if ([...text].length > GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES) return false;
+    if (this.googleSitelinks().some((s) => googleAdsToLower(s.text) === googleAdsToLower(text))) return false;
+    if ((description1 === '') !== (description2 === '')) return false;
+    if ([description1, description2].some((d) => [...d].length > GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES)) return false;
+    // Upstream treats a sitelink with no destination as UNSERVABLE, not as a lesser sitelink, and
+    // refuses the whole create — so an empty URL is a refusal here, not an omitted optional field.
+    if (!this.isServableDestination(finalUrl)) return false;
+    if (new TextEncoder().encode(finalUrl).length > GOOGLE_ADS_MAX_FINAL_URL_BYTES) return false;
+
+    this.googleSitelinks.update((sitelinks) => [
+      ...sitelinks,
+      // Descriptions omitted together when neither is filled, so the request carries absence rather
+      // than two empty strings — the shape the BFF helper and upstream both expect.
+      { text, ...(description1 !== '' || description2 !== '' ? { description1, description2 } : {}), finalUrl },
+    ]);
+    this.emitDraft();
+    return true;
+  }
+
+  protected onGoogleSitelinkDraftInput(field: keyof CampaignSitelink, event: Event): void {
+    // Draft only — no `emitDraft()`, matching the callout box. It reaches the draft on ADD.
+    const value = (event.target as HTMLInputElement).value;
+    this.googleSitelinkDraft.update((draft) => ({ ...draft, [field]: value }));
+  }
+
+  protected onGoogleSitelinkAdd(): void {
+    // Cleared ONLY on success, so a refused sitelink keeps all four fields and its warning.
+    if (this.addGoogleSitelink(this.googleSitelinkDraft())) {
+      this.googleSitelinkDraft.set({ text: '', description1: '', description2: '', finalUrl: '' });
+    }
+  }
+
+  protected removeGoogleSitelink(index: number): void {
+    this.googleSitelinks.update((sitelinks) => sitelinks.filter((_, i) => i !== index));
+    this.emitDraft();
+  }
+
   protected removeMicrosoftGeoTarget(index: number): void {
     this.microsoftGeoTargets.update((targets) => targets.filter((_, i) => i !== index));
     this.emitDraft();
@@ -2141,6 +2326,9 @@ export class ImplementationTabComponent implements OnInit {
       // are, and already narrowed by `googleCalloutsAvailable` to the one channel upstream accepts
       // extensions on.
       ...(platforms.includes('google-ads') ? this.googleCalloutsPayload() : {}),
+      // The sitelink extensions, on the same gate as the callouts — both are ad extensions, and
+      // upstream refuses the whole create when any extension list reaches a non-Search campaign.
+      ...(platforms.includes('google-ads') ? this.googleSitelinksPayload() : {}),
       driveFolderUrl: this.briefDriveFolderUrl() || undefined,
       platforms,
       ...(platforms.includes('linkedin-ads')
@@ -2496,6 +2684,12 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.googleCallouts !== undefined) {
       this.googleCallouts.set([...draft.googleCallouts]);
     }
+    // Each entry copied as well as the array: a sitelink is an object, so a shallow array spread
+    // would still hand the draft's own entries to the signal, and a later edit here would reach
+    // back into the stored draft.
+    if (draft.googleSitelinks !== undefined) {
+      this.googleSitelinks.set(draft.googleSitelinks.map((s) => ({ ...s })));
+    }
     // The bidding controls, each on the same present-only rule. One `if` per field rather than a
     // single patch, because a draft saved before this section shipped carries some of these and
     // not others only as the section grows — and a blanket patch of `undefined` would clear a
@@ -2648,6 +2842,8 @@ export class ImplementationTabComponent implements OnInit {
       googleGeoTargets: [...this.googleGeoTargets()],
       googleLanguages: [...this.googleLanguages()],
       googleCallouts: [...this.googleCallouts()],
+      // Entries copied too, for the reason the restore above gives in the other direction.
+      googleSitelinks: this.googleSitelinks().map((s) => ({ ...s })),
       // The bidding plan as TYPED, not as resolved: the raw strategy the operator picked, not the
       // channel default standing in for it, and the raw text of each number. A draft gives back
       // the form that was left, and resolving here would make a reopened draft claim a choice
@@ -3226,6 +3422,15 @@ export class ImplementationTabComponent implements OnInit {
       return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take callouts, so the ${count} you added will not be sent. Switch back to Search to keep them.`;
     });
   }
+  /** The sitelink twin of {@link initGoogleCalloutsWithheldWarning}, on the same Search gate. */
+  private initGoogleSitelinksWithheldWarning(): Signal<string | null> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      const count = this.googleSitelinks().length;
+      if (!channel || this.googleCalloutsAvailable() || count === 0) return null;
+      return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take sitelinks, so the ${count} you added will not be sent. Switch back to Search to keep them.`;
+    });
+  }
 
   /**
    * Whether the campaign this form will dispatch can carry ad extensions at all.
@@ -3652,6 +3857,45 @@ export class ImplementationTabComponent implements OnInit {
     if (!this.googleCalloutsAvailable()) return {};
     const callouts = this.googleCallouts();
     return callouts.length > 0 ? { callouts: [...callouts] } : {};
+  }
+
+  /**
+   * The sitelink extensions as the request carries them, or `{}` when there is nothing to send.
+   *
+   * Gate, withholding and omit-when-empty are {@link googleCalloutsPayload}'s exactly. The entries
+   * are COPIED rather than passed by reference, so a later chip edit cannot reach a request that
+   * has already been built.
+   */
+  private googleSitelinksPayload(): Partial<CampaignCreateRequest> {
+    if (!this.googleCalloutsAvailable()) return {};
+    const sitelinks = this.googleSitelinks();
+    return sitelinks.length > 0 ? { sitelinks: sitelinks.map((s) => ({ ...s })) } : {};
+  }
+
+  /**
+   * Whether a destination URL is one the ad platforms will serve.
+   *
+   * The same accept set as the BFF's sitelink guard and upstream's `validateServableURL`: absolute,
+   * http(s), with a hostname and no embedded credentials, and none of the Go parser flaws
+   * {@link googleAdsUrlGoParseFlaw} names. Three tiers hold this contract
+   * because none of them can call the others — so the rule for changing it is that all three move
+   * together, and this one must never be the strictest: a URL refused here never reaches the BFF
+   * guard that would have named the real reason.
+   */
+  private isServableDestination(raw: string): boolean {
+    const value = googleAdsTrimSpace(raw);
+    if (value === '' || googleAdsUrlGoParseFlaw(value)) return false;
+
+    let parsed: URL;
+    try {
+      parsed = new URL(value);
+    } catch {
+      return false;
+    }
+
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+    if (parsed.hostname === '') return false;
+    return parsed.username === '' && parsed.password === '';
   }
 
   /** One typed bidding number, or `undefined` when the field is blank or cannot be a number. */

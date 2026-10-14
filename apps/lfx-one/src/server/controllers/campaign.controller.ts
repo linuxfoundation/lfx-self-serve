@@ -30,6 +30,7 @@ import type {
   CampaignNegativeKeywordMatchType,
   CampaignNegativeKeywordsRequest,
   CampaignPlatform,
+  CampaignSitelink,
   CampaignSSEEventType,
   CampaignServiceAccountMonitor,
   CampaignStatusUpdateRequest,
@@ -56,8 +57,12 @@ import {
   GOOGLE_ADS_LANGUAGE_MAP,
   GOOGLE_ADS_MAX_CALLOUTS,
   GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
+  GOOGLE_ADS_MAX_FINAL_URL_BYTES,
   GOOGLE_ADS_MAX_GEO_TARGETS,
   GOOGLE_ADS_MAX_LANGUAGES,
+  GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES,
+  GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES,
+  GOOGLE_ADS_MAX_SITELINKS,
   GOOGLE_ADS_MICROS_PER_UNIT,
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
@@ -99,7 +104,9 @@ import {
   googleAdsEchoed,
   googleAdsToLower,
   googleAdsTrimSpace,
+  googleAdsUrlGoParseFlaw,
   isCanonicalGoogleAdsResourceId,
+  isGoSpaceCode,
   isMicrosoftMatchType,
 } from '@lfx-one/shared/constants';
 
@@ -731,6 +738,46 @@ export class CampaignController {
                 next(ServiceValidationError.forField('languages', refusal, { operation: 'campaign_create', service: 'campaign_controller' }));
                 return;
               }
+            }
+          }
+        }
+      }
+
+      // Sitelinks next, BEFORE callouts, as `validateAssetPlan` runs `validateSitelinks` first: JSON
+      // decode, the Search-only fence, the cap, then each entry in `validateSitelinks`' order, first
+      // bad one wins. Each would otherwise fail in Go as the opaque "platform campaign creation failed".
+      const rawSitelinks = body?.sitelinks;
+      if (cutoverOn && platforms.includes('google-ads') && rawSitelinks !== undefined && rawSitelinks !== null) {
+        const refuse = (message: string): void =>
+          next(ServiceValidationError.forField('sitelinks', message, { operation: 'campaign_create', service: 'campaign_controller' }));
+        // The Go decode into `[]googleAdsSitelinkConfig` refuses a non-list, a non-object entry or a
+        // non-string field. A null entry or field decodes to blanks, which the entry checks refuse.
+        if (!Array.isArray(rawSitelinks) || !rawSitelinks.every((entry) => this.isSitelinkShape(entry))) {
+          refuse('Google Ads sitelinks must be a list of objects with text fields.');
+          return;
+        }
+        const googleChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
+        if (rawSitelinks.length > 0 && typeof googleChannel === 'string') {
+          // REFUSED by name, not withheld: `validateAssetPlan` fails the whole create on any channel
+          // but Search, counting every entry. The UI never sends this.
+          if (!(GOOGLE_CHANNELS_WITH_AD_EXTENSIONS as readonly string[]).includes(googleChannel)) {
+            refuse(
+              `Google Ads only accepts sitelinks on Search campaigns, not on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove the sitelinks or pick Search, then create again.`
+            );
+            return;
+          }
+          if (rawSitelinks.length > GOOGLE_ADS_MAX_SITELINKS) {
+            refuse(
+              `Google Ads accepts at most ${GOOGLE_ADS_MAX_SITELINKS} sitelinks on one campaign, and this one has ${rawSitelinks.length}. Remove some and create again.`
+            );
+            return;
+          }
+          const seen = new Set<string>();
+          for (const [index, sitelink] of this.googleSitelinkList(rawSitelinks).entries()) {
+            const refusal = this.googleSitelinkRefusal(sitelink, index, seen);
+            if (refusal) {
+              refuse(refusal);
+              return;
             }
           }
         }
@@ -3306,6 +3353,84 @@ export class CampaignController {
   }
 
   /**
+   * Why upstream would refuse one entry of a trimmed sitelink list, or `null` when it would not.
+   *
+   * `validateSitelinks`' per-entry branches in order: link text blank, over 25 runes, then a repeat
+   * keyed on Go's `strings.ToLower`; the description lines both-or-neither, then each over 35 runes;
+   * then the destination, judged by {@link googleSitelinkUrlRefusal}. The echo is cut short.
+   */
+  private googleSitelinkRefusal(sitelink: CampaignSitelink, index: number, seen: Set<string>): string | null {
+    const { text, description1 = '', description2 = '', finalUrl } = sitelink;
+    if (text === '') return `Google Ads sitelink ${index + 1} has no link text. Fill it in or remove the sitelink, then create again.`;
+    const shown = googleAdsEchoed(text);
+    const runes = [...text].length;
+    if (runes > GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES) {
+      return `Google Ads accepts sitelink link text of at most ${GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES} characters, and ${shown} has ${runes}. Shorten it and create again.`;
+    }
+    const key = googleAdsToLower(text);
+    if (seen.has(key)) return `Google Ads refuses a campaign that lists the sitelink ${shown} more than once. Remove the repeat and create again.`;
+    seen.add(key);
+
+    if ((description1 === '') !== (description2 === '')) {
+      return `Google Ads needs both description lines on the sitelink ${shown} or neither, and this one has just one. Fill in the other or clear both, then create again.`;
+    }
+    if ([description1, description2].some((line) => [...line].length > GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES)) {
+      return `Google Ads accepts sitelink description lines of at most ${GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES} characters, and one on ${shown} is longer. Shorten it and create again.`;
+    }
+    return this.googleSitelinkUrlRefusal(finalUrl, shown);
+  }
+
+  /**
+   * Why upstream would refuse a sitelink destination, or `null` when it would not.
+   *
+   * `validateServableURL`, then the byte bound: {@link describeDestinationUrl} plus the Go parser
+   * rules `new URL()` does not share ({@link googleAdsUrlGoParseFlaw}).
+   *
+   * The byte bound is measured on the URL as sent. Upstream measures it after `buildTaggedFinalURL`
+   * adds the utm parameters, which this does not rebuild, so a URL just under the bound can still be
+   * refused upstream: a known under-refusal, documented on {@link GOOGLE_ADS_MAX_FINAL_URL_BYTES}.
+   */
+  private googleSitelinkUrlRefusal(finalUrl: string, shown: string): string | null {
+    if (finalUrl === '') return `The Google Ads sitelink ${shown} has no destination URL. Fill it in or remove the sitelink, then create again.`;
+    const shape = this.describeDestinationUrl(finalUrl);
+    if ((shape !== 'ok' && shape !== 'ok-http') || googleAdsUrlGoParseFlaw(finalUrl)) {
+      return `The destination URL on the Google Ads sitelink ${shown} is not a web address Google accepts. Use a full https:// address with no embedded credentials, no semicolons in the query and no stray % signs, then create again.`;
+    }
+    const bytes = new TextEncoder().encode(finalUrl).length;
+    if (bytes > GOOGLE_ADS_MAX_FINAL_URL_BYTES) {
+      return `The destination URL on the Google Ads sitelink ${shown} is ${bytes} bytes, over Google's ${GOOGLE_ADS_MAX_FINAL_URL_BYTES}-byte limit. Shorten it and create again.`;
+    }
+    return null;
+  }
+
+  /**
+   * Whether one raw sitelink entry survives the Go decode into `googleAdsSitelinkConfig`: an object
+   * (or null, which decodes to a blank sitelink) whose four fields are absent, null or text.
+   */
+  private isSitelinkShape(entry: unknown): boolean {
+    if (entry === null) return true;
+    if (typeof entry !== 'object' || Array.isArray(entry)) return false;
+    const fields = entry as Record<string, unknown>;
+    return (['text', 'description1', 'description2', 'finalUrl'] as const).every(
+      (f) => fields[f] === undefined || fields[f] === null || typeof fields[f] === 'string'
+    );
+  }
+
+  /**
+   * The sitelink list as judged and dispatched: each field trimmed with Go's rules as
+   * `validateSitelinks` trims it, an absent or null field read as blank. Nothing is dropped, so a
+   * blank entry is refused by name. Callers have checked the shape with {@link isSitelinkShape}.
+   */
+  private googleSitelinkList(raw: unknown): CampaignSitelink[] {
+    if (!Array.isArray(raw)) return [];
+    return raw.map((entry) => {
+      const fields = (entry ?? {}) as Record<string, unknown>;
+      const field = (name: string): string => (typeof fields[name] === 'string' ? googleAdsTrimSpace(fields[name] as string) : '');
+      return { text: field('text'), description1: field('description1'), description2: field('description2'), finalUrl: field('finalUrl') };
+    });
+  }
+
+  /**
    * Google's config, translated from the flat legacy request.
    *
    * Google is the one platform whose inputs live on the request root rather than in a
@@ -3486,6 +3611,8 @@ export class CampaignController {
 
     // Normalized only — `createCampaign` names every callout refusal before this is dispatched.
     const callouts = this.googleCallouts(body);
+    // Normalized only, as the callouts are — `createCampaign` names every sitelink refusal first.
+    const sitelinks = this.googleSitelinks(body);
 
     return {
       budget,
@@ -3507,6 +3634,7 @@ export class CampaignController {
       ...(cleanGeoTargets.length > 0 ? { geoTargets: cleanGeoTargets } : {}),
       ...searchLanguages,
       ...callouts,
+      ...sitelinks,
     };
   }
 
@@ -3554,12 +3682,30 @@ export class CampaignController {
   }
 
   /**
+   * The Search campaign's sitelink extensions, spread-ready, or `{}` when the request names none.
+   *
+   * Search only, as {@link googleCallouts}: `createCampaign` refuses sitelinks on any other channel
+   * by name, and every per-entry refusal, before this is dispatched. An empty description pair is
+   * omitted rather than sent as two empty strings; both absent is one of upstream's two legal states.
+   */
+  private googleSitelinks(body: CampaignCreateRequest): { sitelinks?: CampaignSitelink[] } {
+    const clean = this.googleSitelinkList(body?.sitelinks).map(({ text, description1 = '', description2 = '', finalUrl }) => ({
+      text,
+      ...(description1 !== '' ? { description1, description2 } : {}),
+      finalUrl,
+    }));
+    return clean.length > 0 ? { sitelinks: clean } : {};
+  }
+
+  /**
    * The first Google creative or bidding field that breaks a resource bound, or null when none does.
    *
    * Walks the raw body rather than the normalised output, because the allocation this bounds happens
    * DURING normalisation — a check on the result would run after the work it is meant to prevent.
-   * Shape-only, like everything else on this road: a non-string entry is left for the normalisers to
-   * drop and is not counted against the length bound.
+   * Each string is measured by {@link boundedLength}, after trimming: every field here is trimmed
+   * before it is sent, and upstream trims again, so measuring the raw length would refuse a short
+   * value padded with whitespace that upstream accepts. Shape-only, like everything else on this
+   * road: a non-string entry is left for the normalisers to drop and is not counted.
    *
    * Names the offending field in the refusal so an operator who somehow reaches it is told which one,
    * matching the HubSpot sibling rather than failing the create anonymously.
@@ -3579,19 +3725,55 @@ export class CampaignController {
           if (value.length > MAX_GOOGLE_CREATIVE_LIST_ENTRIES) {
             return { field, message: `the list exceeds the maximum of ${MAX_GOOGLE_CREATIVE_LIST_ENTRIES} entries` };
           }
-          const long = value.find((entry) => typeof entry === 'string' && entry.length > MAX_GOOGLE_CREATIVE_FIELD_LENGTH);
+          const long = value.find((entry) => typeof entry === 'string' && this.boundedLength(entry) > MAX_GOOGLE_CREATIVE_FIELD_LENGTH);
           if (long !== undefined) {
             return { field, message: `an entry exceeds the maximum length of ${MAX_GOOGLE_CREATIVE_FIELD_LENGTH}` };
           }
           continue;
         }
-        if (typeof value === 'string' && value.length > MAX_GOOGLE_CREATIVE_FIELD_LENGTH) {
+        if (typeof value === 'string' && this.boundedLength(value) > MAX_GOOGLE_CREATIVE_FIELD_LENGTH) {
           return { field, message: `the value exceeds the maximum length of ${MAX_GOOGLE_CREATIVE_FIELD_LENGTH}` };
         }
       }
     }
 
+    // Sitelinks are a list of objects, so `boundableEntries` cannot reach their fields. Each trimmed
+    // field is bounded where upstream already refuses it: link text and description lines far above
+    // their rune limits, and the URL at its byte limit, which no longer trimmed string can be under.
+    const sitelinks = raw['sitelinks'];
+    if (Array.isArray(sitelinks)) {
+      if (sitelinks.length > MAX_GOOGLE_CREATIVE_LIST_ENTRIES) {
+        return { field: 'sitelinks', message: `the list exceeds the maximum of ${MAX_GOOGLE_CREATIVE_LIST_ENTRIES} entries` };
+      }
+      for (const entry of sitelinks) {
+        if (!entry || typeof entry !== 'object') continue;
+        for (const name of ['text', 'description1', 'description2', 'finalUrl'] as const) {
+          const value = (entry as Record<string, unknown>)[name];
+          const max = name === 'finalUrl' ? GOOGLE_ADS_MAX_FINAL_URL_BYTES : MAX_GOOGLE_CREATIVE_FIELD_LENGTH;
+          if (typeof value === 'string' && this.boundedLength(value) > max) {
+            return { field: `sitelinks.${name}`, message: `a value exceeds the maximum length of ${max}` };
+          }
+        }
+      }
+    }
     return null;
+  }
+
+  /**
+   * A string's length once every character JS's `trim` OR Go's `strings.TrimSpace` would strip is
+   * gone from both ends — the shortest any trim on the way to upstream can make it. The creative
+   * and conversion normalisers use JS `trim` (which strips U+FEFF), the sitelink and callout ones
+   * Go's (which strips U+0085), and upstream trims with Go's again; measuring the union means the
+   * bound never refuses what any of them would shorten below it. A numeric index walk, so linear,
+   * with no copy of the string.
+   */
+  private boundedLength(value: string): number {
+    let start = 0;
+    let end = value.length;
+    // JS's `trim` set is Go's minus U+0085 plus U+FEFF, so the union is Go's plus U+FEFF.
+    while (start < end && (isGoSpaceCode(value.charCodeAt(start)) || value.charCodeAt(start) === 0xfeff)) start++;
+    while (end > start && (isGoSpaceCode(value.charCodeAt(end - 1)) || value.charCodeAt(end - 1) === 0xfeff)) end--;
+    return end - start;
   }
 
   /**
