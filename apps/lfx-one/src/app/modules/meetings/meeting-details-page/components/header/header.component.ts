@@ -31,11 +31,11 @@ import { MeetingDetailsStateService } from '../../meeting-details-state.service'
  * the feature badges (Recording, Transcripts, YouTube Upload, AI summary). E1-05's status pill and
  * E1-04's privacy chip lead the row.
  *
- * Feature badges read the `*_enabled` flags only, never artifact access: those flags survive on the
- * reduced past payload, so a viewer without access still sees what the meeting was configured to
- * capture (FR-041). They say nothing about whether an artifact exists. This deliberately differs
- * from v1, which badges a past-id load's Recording only once a recording URL resolves; the
- * artifact itself is E4-01's to show or explain.
+ * Feature badges read the `*_enabled` flags only, never artifact access, so before and during the
+ * meeting they show what it is configured to capture. Once it has ended, the Recording, Transcripts
+ * and AI Summary chips are dropped (`showArtifactChips`, #3633): the recording section (E4-01) then
+ * shows what the meeting actually produced, and a setting chip beside "No recording for this
+ * meeting" would only contradict it. YouTube Upload stays, as no section reports it.
  */
 @Component({
   selector: 'lfx-meeting-header',
@@ -107,6 +107,12 @@ export class MeetingHeaderComponent {
   /** The page's time state and meeting status, from the state service so the bar shows the same. */
   protected readonly timeState: Signal<MeetingTimeState | null> = this.state.timeState;
   protected readonly status: Signal<MeetingStatusKind | null> = this.state.meetingStatus;
+  /**
+   * The Recording, Transcripts and AI Summary chips are the meeting's settings: what it will
+   * produce. Once it has ended, the recording section shows what it did produce, so the chips would
+   * only contradict it ("Recording" above "No recording for this meeting").
+   */
+  protected readonly showArtifactChips = computed(() => this.timeState() !== 'ended');
   protected readonly statusLabel = computed(() => {
     const status = this.status();
     return status ? MEETING_STATUS_LABELS[status] : '';
