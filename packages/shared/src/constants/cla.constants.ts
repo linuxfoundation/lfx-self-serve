@@ -980,3 +980,32 @@ export const ORG_CLA_RECENT_ACTIVITY_HEADING = 'Recent activity';
 export const ORG_CLA_RECENT_ACTIVITY_VIEW_ALL_LABEL = 'View full activity log';
 
 export const ORG_CLA_RECENT_ACTIVITY_PAGE_SIZE = 3;
+
+/**
+ * M3 CLA-manager lens entry. A CLA Manager holds ACS `cla-manager` on one `project|organization`
+ * scope per CLA Group, and that scope is the only record of the role readable with their own token,
+ * so it is how Self Serve finds the companies a CLA Manager without a `b2b_org` grant may open.
+ */
+export const ORG_CLA_MANAGER_ROLE = 'cla-manager';
+
+/** The ACS scope type that pairs a project with a company; its `ID` is `[projectSfid, companySfid]`. */
+export const ORG_CLA_MANAGER_SCOPE_TYPE = 'project|organization';
+
+/** Per-user cache namespace for the caller's CLA-manager companies. Bump the version when the stored shape changes. */
+export const ORG_CLA_MANAGER_SCOPES_NAMESPACE = 'org-cla-manager-scopes:v1';
+
+/**
+ * How long a non-empty answer is reused. Bounds how long a removed CLA Manager keeps the entry,
+ * on top of whatever the gateway and ACS cache upstream. Empty and failed answers are never stored,
+ * so a newly added CLA Manager is seen on the next request.
+ */
+export const ORG_CLA_MANAGER_SCOPES_TTL_SECONDS = 60;
+
+/** Most CLA-only organizations named through EasyCLA for one selector load, so a caller holding many scopes cannot fan out unbounded upstream reads. */
+export const ORG_CLA_ONLY_ORGS_MAX = 25;
+
+/**
+ * How long the CLA-only page guard waits for the role-grants answer before admitting the page. Admitting
+ * is safe: the BFF refuses every non-CLA page's data to a CLA-only caller regardless.
+ */
+export const ORG_CLA_ONLY_GRANTS_WAIT_MS = 10_000;

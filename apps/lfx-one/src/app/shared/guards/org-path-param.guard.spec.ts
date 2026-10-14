@@ -7,6 +7,7 @@ import { TestBed } from '@angular/core/testing';
 import { ActivatedRouteSnapshot, convertToParamMap, provideRouter, Router, RouterStateSnapshot, UrlTree } from '@angular/router';
 import { Account, OrgResolveResponse } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@shared/services/account-context.service';
+import { OrgClaOnlyAccessService } from '@shared/services/org-cla-only-access.service';
 import { OrgSlugResolverService } from '@shared/services/org-slug-resolver.service';
 import { firstValueFrom, Observable, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, Mock, vi } from 'vitest';
@@ -28,6 +29,7 @@ describe('orgPathParamGuard', () => {
   let clearAccount: Mock;
   let refreshCanonicalRecord: Mock;
   let resolve: Mock;
+  let noteAddressed: Mock;
   let router: Router;
 
   const account = (overrides: Partial<Account>): Account => ({
@@ -66,6 +68,7 @@ describe('orgPathParamGuard', () => {
     clearAccount = vi.fn(() => selectedAccount.set(placeholder));
     refreshCanonicalRecord = vi.fn().mockResolvedValue(undefined);
     resolve = vi.fn().mockReturnValue(of(null));
+    noteAddressed = vi.fn();
 
     TestBed.configureTestingModule({
       providers: [
@@ -73,6 +76,7 @@ describe('orgPathParamGuard', () => {
         { provide: PLATFORM_ID, useFactory: () => platformId },
         { provide: AccountContextService, useValue: { selectedAccount, adoptFromAddress, pinSelection, clearAccount, refreshCanonicalRecord } },
         { provide: OrgSlugResolverService, useValue: { resolve } },
+        { provide: OrgClaOnlyAccessService, useValue: { noteAddressed } },
       ],
     });
     router = TestBed.inject(Router);
@@ -231,6 +235,18 @@ describe('orgPathParamGuard', () => {
 
       resolve.mockReturnValueOnce(of(hit(UID_B, 'people')));
       expect(await outcome(UID_B, `/org/${UID_B}/people`)).toBe(true);
+    });
+
+    it('records whether the resolved organization is CLA-only, before adopting it', async () => {
+      resolve.mockReturnValueOnce(of({ ...hit(UID_B, null), claOnly: true }));
+      await outcome(UID_B, `/org/${UID_B}/easycla`);
+      expect(noteAddressed).toHaveBeenLastCalledWith(UID_B, true);
+      expect(noteAddressed.mock.invocationCallOrder[0]).toBeLessThan(adoptFromAddress.mock.invocationCallOrder[0]);
+
+      selectedAccount.set(placeholder);
+      resolve.mockReturnValueOnce(of(hit(UID_B, null)));
+      await outcome(UID_B, `/org/${UID_B}/people`);
+      expect(noteAddressed).toHaveBeenLastCalledWith(UID_B, false);
     });
 
     it('lands on not-found for a miss (404/409 surface as null) without touching the selection (FR-024)', async () => {

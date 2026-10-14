@@ -52,6 +52,7 @@ describe('SidebarNavService', () => {
   const canWrite = signal(false);
   const selectedOrgUid = signal<string | null>(null);
   const orgWriterSet = signal(new Set<string>());
+  const claManagerOrgSet = signal(new Set<string>());
   /** Settable so the Gatewaze embed's tenant gate can be exercised; the embed is AAIF-only. */
   const selectedProject = signal<{ slug: string } | null>(null);
   const selectedFoundation = signal<{ slug: string } | null>(null);
@@ -87,6 +88,7 @@ describe('SidebarNavService', () => {
     canWrite.set(false);
     selectedOrgUid.set(null);
     orgWriterSet.set(new Set());
+    claManagerOrgSet.set(new Set());
 
     TestBed.configureTestingModule({
       providers: [
@@ -145,7 +147,7 @@ describe('SidebarNavService', () => {
         // the cases that assert the org-scoped form.
         { provide: OrgLensNavigationService, useValue: { orgLensPath: (page: string) => (orgSegment() ? `/org/${orgSegment()}/${page}` : `/org/${page}`) } },
         { provide: AccountContextService, useValue: { selectedAccount: () => ({ accountId: '', accountName: 'Acme', uid: selectedOrgUid() }) } },
-        { provide: OrgRoleGrantsService, useValue: { writerSet: orgWriterSet } },
+        { provide: OrgRoleGrantsService, useValue: { writerSet: orgWriterSet, claManagerOrgSet } },
       ],
     });
   });
@@ -461,6 +463,42 @@ describe('SidebarNavService', () => {
     // The two flags are independent: EasyCLA must not displace ROI's slot, or vice versa.
     expect(itemLabels.indexOf('ROI Metrics')).toBe(itemLabels.indexOf('Projects') + 1);
     expect(itemLabels.indexOf('Organization Profile')).toBe(itemLabels.indexOf('EasyCLA Management') + 1);
+  });
+
+  describe('a CLA-only organization (M3)', () => {
+    const CLA_ONLY_UID = '0014100000ClaOnlyA';
+
+    beforeEach(() => {
+      activeLens.set('org');
+      orgSegment.set(CLA_ONLY_UID);
+      selectedOrgUid.set(CLA_ONLY_UID);
+      claManagerOrgSet.set(new Set([CLA_ONLY_UID]));
+    });
+
+    it('shows the EasyCLA Management section and nothing else', () => {
+      orgEasyclaEnabled.set(true);
+      orgRoiEnabled.set(true);
+      crowdfundingAttributionEnabled.set(true);
+
+      const items = TestBed.inject(SidebarNavService).sidebarItems();
+
+      expect(labels(items)).toEqual(['EasyCLA Management']);
+      expect(items[0].items).toEqual([expect.objectContaining({ label: 'EasyCLA', routerLink: `/org/${CLA_ONLY_UID}/easycla` })]);
+    });
+
+    it('keeps the full org sidebar for any other selected organization', () => {
+      orgEasyclaEnabled.set(true);
+      selectedOrgUid.set('0014100000OtherOrg');
+
+      expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).toContain('Dashboard');
+    });
+
+    it('applies nothing while org-lens-cla-m3-enabled is off', () => {
+      const itemLabels = labels(TestBed.inject(SidebarNavService).sidebarItems());
+
+      expect(itemLabels).toContain('Dashboard');
+      expect(itemLabels).not.toContain('EasyCLA Management');
+    });
   });
 
   it('addresses every Org Lens item to the selected organization and still places ROI and the EasyCLA section by their neighbours', () => {

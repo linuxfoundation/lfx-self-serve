@@ -30,6 +30,7 @@ import { AccountContextService } from '@services/account-context.service';
 import { AnalyticsService } from '@services/analytics.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
+import { OrgClaOnlyAccessService } from '@services/org-cla-only-access.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
@@ -57,6 +58,7 @@ export class SidebarNavService {
   private readonly orgLensNavigation = inject(OrgLensNavigationService);
   private readonly accountContext = inject(AccountContextService);
   private readonly orgRoleGrants = inject(OrgRoleGrantsService);
+  private readonly orgClaOnlyAccess = inject(OrgClaOnlyAccessService);
 
   /** The Me lens section My Formations (#2753) is appended to; matched by label because the tree is built inline. */
   private readonly meEngagementSectionLabel = 'My Engagement';
@@ -172,6 +174,8 @@ export class SidebarNavService {
   });
 
   private readonly visibleOrgLensItems = computed((): SidebarMenuItem[] => {
+    // M3: an org reached only as its CLA Manager has the EasyCLA tab and nothing else (flag-gated in the service).
+    if (this.orgClaOnlyAccess.isClaOnly(this.accountContext.selectedAccount().uid)) return [this.orgEasyclaSection()];
     const base = this.orgLensItems();
     const items = this.isOrgLensClaM3Enabled() ? this.withEasyclaSection(base) : base;
     const afterProjectsItems = [
