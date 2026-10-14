@@ -313,21 +313,21 @@ export enum ServerFeatureFlag {
   CampaignServiceKeywordActions = 'LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS',
 
   /**
-   * Serves the Optimize-tab reads whose campaign-service endpoint is NOT on its `main` yet:
-   * `GET /api/campaigns/reddit/audience`, `/linkedin/audience`, `/linkedin/campaign-ref` and
-   * `/reddit/keywords`. OFF answers 404, as if the route did not exist, so no deployment calls an
-   * upstream route that campaign-service does not serve. Reddit's audience read is on a
-   * campaign-service feature branch; the other three are not published, and their wire types here
-   * are provisional (built on their siblings' documented shapes).
+   * Serves the Optimize-tab reads not yet verified against a published campaign-service endpoint:
+   * `GET /api/campaigns/reddit/audience`, `/linkedin/campaign-ref` and `/reddit/keywords`. OFF
+   * answers 404, as if the route did not exist, so no deployment calls an upstream route that
+   * campaign-service does not serve. Reddit's audience read is on a campaign-service feature branch
+   * and the Reddit keyword read is not published; LinkedIn's campaign-ref was published after it
+   * was gated here and its wire type is still to be re-checked before the flag is turned on.
    *
-   * Not a cutover flag: there is no legacy arm. It gates ONLY these four routes. The other
-   * campaign-service-only Optimize routes (Meta/X/Microsoft audience, Meta/Reddit/X campaign-ref,
-   * campaign settings, Meta ad sets, keyword targeting, adopt) are ungated, following the
-   * precedent of the Microsoft keyword read and the budget/bid levers: their upstream endpoints
+   * Not a cutover flag: there is no legacy arm. It gates ONLY these three routes. The other
+   * campaign-service-only Optimize routes (Meta/X/Microsoft/LinkedIn audience, Meta/Reddit/X
+   * campaign-ref, campaign settings, Meta ad sets, keyword targeting, adopt) are ungated, following
+   * the precedent of the Microsoft keyword read and the budget/bid levers: their upstream endpoints
    * exist, and campaign-service answers 400 itself where a platform's metrics are switched off.
    *
-   * Turn it on only once campaign-service serves all four in the target environment. Turning it
-   * back off strands nothing: all four are reads. Same accepted values as the flags above.
+   * Turn it on only once campaign-service serves all three in the target environment. Turning it
+   * back off strands nothing: all three are reads. Same accepted values as the flags above.
    */
   CampaignServiceOptimizeReads = 'LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS',
 

@@ -3,6 +3,15 @@
 
 import {
   CAMPAIGN_ADOPT_OUTCOME_UNCONFIRMED,
+  CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_CODE,
+  CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_MESSAGE,
+  CAMPAIGN_AUDIENCE_FAILED_MESSAGE,
+  CAMPAIGN_AUDIENCE_NO_CONNECTION_CODE,
+  CAMPAIGN_AUDIENCE_NO_CONNECTION_MESSAGE,
+  CAMPAIGN_AUDIENCE_NOT_ENABLED_CODE,
+  CAMPAIGN_AUDIENCE_NOT_ENABLED_MESSAGE,
+  CAMPAIGN_AUDIENCE_UNAVAILABLE_CODE,
+  CAMPAIGN_AUDIENCE_UNAVAILABLE_MESSAGE,
   CAMPAIGN_AUDIENCE_WINDOWS,
   CAMPAIGN_ETAG_REQUIRED_CODE,
   CAMPAIGN_ETAG_REQUIRED_MESSAGE,
@@ -12,6 +21,9 @@ import {
   KEYWORD_TARGETING_REMOVAL_OUTCOME_UNCONFIRMED,
   KEYWORD_TARGETING_REMOVAL_UNCONFIRMED_CODE,
   KEYWORD_TARGETING_REMOVAL_UNCONFIRMED_OUTCOME,
+  META_AD_SET_PAUSE_RECORD_OUTCOME_UNCONFIRMED,
+  META_AD_SET_PAUSE_RECORD_UNCONFIRMED_CODE,
+  META_AD_SET_PAUSE_RECORD_UNCONFIRMED_MARKER,
   META_AD_SET_STATUS_UNCONFIRMED_OUTCOME,
 } from '@lfx-one/shared/constants';
 import type {
@@ -39,6 +51,7 @@ import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors/microservice.error';
 import { ServiceValidationError } from '../errors/service-validation.error';
+import { getCodeForStatus } from '../helpers/http-status.helper';
 import { encodePathSegment } from '../helpers/url-validation';
 import { upstreamAnswered } from './campaign-keyword-actions';
 import { asUnconfirmedWriteFailure, readEtag } from './campaign-service.service';
@@ -67,6 +80,9 @@ export class CampaignOptimizeService {
    * request; it is still checked against the table so a caller bug cannot address another route.
    * The window is a QUERY parameter, omitted when the caller names none so upstream applies its own
    * default. Upstream fails the whole read when any one breakdown fails, so there is no partial arm.
+   *
+   * A failure is answered with a fixed message per status (`asAudienceReadFailure`), never with
+   * campaign-service's own sentence.
    */
   public async getPlatformAudience<P extends CampaignAudiencePlatform>(
     req: Request,
@@ -87,13 +103,17 @@ export class CampaignOptimizeService {
       });
     }
     logger.debug(req, 'get_platform_audience', 'Reading audience demographics from campaign-service', { platform, window });
-    return this.microserviceProxy.proxyRequest<CampaignServicePlatformAudienceMap[P]>(
-      req,
-      'LFX_V2_CAMPAIGN_SERVICE',
-      `/projects/${encodePathSegment(projectSlug)}/${platform}/audience`,
-      'GET',
-      window ? { window } : undefined
-    );
+    try {
+      return await this.microserviceProxy.proxyRequest<CampaignServicePlatformAudienceMap[P]>(
+        req,
+        'LFX_V2_CAMPAIGN_SERVICE',
+        `/projects/${encodePathSegment(projectSlug)}/${platform}/audience`,
+        'GET',
+        window ? { window } : undefined
+      );
+    } catch (error) {
+      throw asAudienceReadFailure(error, 'get_platform_audience');
+    }
   }
 
   /**
@@ -176,13 +196,17 @@ export class CampaignOptimizeService {
    *
    * A dispatching write on a live paid campaign, guarded like the campaign status toggle: `If-Match`
    * carries the campaign ROW's ETag (upstream answers 428 without it and 412 when it is stale). The
-   * ETag in the answer is the row's version UNCHANGED, because an ad set's status is not stored on
-   * the row; it is taken off the response header, which the contract guarantees, as for the toggle.
+   * ETag in the answer is taken off the response header, which the contract guarantees, as for the
+   * toggle. It is the row's version UNCHANGED for most changes, but a NEW one when the call wrote or
+   * cleared the recorded ad set's deliberate-pause record, so the caller must always adopt it.
    *
    * Failures are classified by `asLeverFailure`: 412/428 get their own codes and fixed messages; a
    * 503 that says the change is unconfirmed, and any failure nobody answered, become
    * `META_AD_SET_STATUS_UNCONFIRMED`; a 409 (including "the status WAS changed on Meta, but the
-   * campaign changed meanwhile") passes through with campaign-service's own fixed sentence.
+   * campaign changed meanwhile") passes through with campaign-service's own fixed sentence. Before
+   * that, an answered 503 saying the status changed but its deliberate-pause RECORD "could not be
+   * confirmed" becomes `META_AD_SET_PAUSE_RECORD_UNCONFIRMED`, so the UI asks for
+   * `deliberately_paused` to be re-read rather than showing it as a definite failure.
    */
   public async updateMetaAdSetStatus(
     req: Request,
@@ -207,7 +231,14 @@ export class CampaignOptimizeService {
       );
       return { ...response.data, etag: readEtag(response) ?? response.data.etag };
     } catch (error) {
-      throw asLeverFailure(error, 'update_meta_ad_set_status', META_AD_SET_STATUS_UNCONFIRMED_OUTCOME);
+      const failure = asLeverFailure(error, 'update_meta_ad_set_status', META_AD_SET_STATUS_UNCONFIRMED_OUTCOME);
+      if (failure === error && error instanceof MicroserviceError && error.statusCode === 503 && upstreamAnswered(error)) {
+        const upstreamMessage = (error.errorBody as { message?: unknown } | undefined)?.message;
+        if (typeof upstreamMessage === 'string' && META_AD_SET_PAUSE_RECORD_UNCONFIRMED_MARKER.test(upstreamMessage)) {
+          throw rewrap(error, 'update_meta_ad_set_status', META_AD_SET_PAUSE_RECORD_UNCONFIRMED_CODE, META_AD_SET_PAUSE_RECORD_OUTCOME_UNCONFIRMED);
+        }
+      }
+      throw failure;
     }
   }
 
@@ -381,6 +412,36 @@ export function asLeverFailure(error: unknown, operation: string, unconfirmed: C
     return error;
   }
   return rewrap(error, operation, unconfirmed.code, unconfirmed.message);
+}
+
+/**
+ * The error a failed audience read should surface: a fixed message per status, so campaign-service's
+ * own sentence never reaches the browser and the UI can branch on `code` alone.
+ *
+ * Only campaign-service's own answer (`upstreamAnswered`) earns a specific code: 404 is "no
+ * connection for the platform", 409 an unusable connection or an account that is not the
+ * campaigns' own, 503 a read the platform did not confirm (rate-limited, unreachable, partial), and
+ * 400 a read switched off in this environment (or a window it refuses). Everything else, answered or
+ * not (an auth refusal, a server error, a gateway page, a transport failure), keeps its status and
+ * the code that status maps to, with a generic message.
+ */
+export function asAudienceReadFailure(error: unknown, operation: string): unknown {
+  if (!(error instanceof MicroserviceError)) {
+    return error;
+  }
+  if (upstreamAnswered(error)) {
+    switch (error.statusCode) {
+      case 404:
+        return rewrap(error, operation, CAMPAIGN_AUDIENCE_NO_CONNECTION_CODE, CAMPAIGN_AUDIENCE_NO_CONNECTION_MESSAGE);
+      case 409:
+        return rewrap(error, operation, CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_CODE, CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_MESSAGE);
+      case 503:
+        return rewrap(error, operation, CAMPAIGN_AUDIENCE_UNAVAILABLE_CODE, CAMPAIGN_AUDIENCE_UNAVAILABLE_MESSAGE);
+      case 400:
+        return rewrap(error, operation, CAMPAIGN_AUDIENCE_NOT_ENABLED_CODE, CAMPAIGN_AUDIENCE_NOT_ENABLED_MESSAGE);
+    }
+  }
+  return rewrap(error, operation, getCodeForStatus(error.statusCode), CAMPAIGN_AUDIENCE_FAILED_MESSAGE);
 }
 
 function rewrap(error: MicroserviceError, operation: string, code: string, clientMessage: string): MicroserviceError {

@@ -88,31 +88,49 @@ beforeEach(() => {
 });
 
 describe('CampaignOptimizeController.getPlatformAudience', () => {
-  it.each(['meta-ads', 'twitter-ads', 'microsoft-ads'] as const)('serves %s with the flag OFF (its upstream endpoint exists)', async (platform) => {
-    getPlatformAudience.mockResolvedValue({ window: 'today', buckets: [], bucket_count: 0 });
+  it.each(['meta-ads', 'twitter-ads', 'microsoft-ads', 'linkedin-ads'] as const)(
+    'serves %s with the flag OFF (its upstream endpoint exists)',
+    async (platform) => {
+      getPlatformAudience.mockResolvedValue({ window: 'today', buckets: [], bucket_count: 0 });
 
-    await controller.getPlatformAudience(buildReq({ query: { project: ' tlf ', window: 'today' } }), res, next, platform);
+      await controller.getPlatformAudience(buildReq({ query: { project: ' tlf ', window: 'today' } }), res, next, platform);
 
-    expect(getPlatformAudience).toHaveBeenCalledWith(expect.anything(), 'tlf', platform, 'today');
-    expect(res.json).toHaveBeenCalled();
-    expect(next).not.toHaveBeenCalled();
-  });
+      expect(getPlatformAudience).toHaveBeenCalledWith(expect.anything(), 'tlf', platform, 'today');
+      expect(res.json).toHaveBeenCalled();
+      expect(next).not.toHaveBeenCalled();
+    }
+  );
 
-  it.each(['reddit-ads', 'linkedin-ads'] as const)('answers 404 for %s while the optimize-reads flag is OFF', async (platform) => {
-    await controller.getPlatformAudience(buildReq({}), res, next, platform);
+  it('answers 404 for reddit-ads while the optimize-reads flag is OFF', async () => {
+    await controller.getPlatformAudience(buildReq({}), res, next, 'reddit-ads');
 
     expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ResourceNotFoundError);
     expect(getPlatformAudience).not.toHaveBeenCalled();
   });
 
-  it.each(['reddit-ads', 'linkedin-ads'] as const)('serves %s once the optimize-reads flag is ON', async (platform) => {
+  it('serves reddit-ads once the optimize-reads flag is ON', async () => {
     isServerFeatureEnabled.mockImplementation((flag) => flag === ServerFeatureFlag.CampaignServiceOptimizeReads);
     getPlatformAudience.mockResolvedValue({ window: 'last_30_days', buckets: [], bucket_count: 0 });
 
-    await controller.getPlatformAudience(buildReq({}), res, next, platform);
+    await controller.getPlatformAudience(buildReq({}), res, next, 'reddit-ads');
 
-    expect(getPlatformAudience).toHaveBeenCalledWith(expect.anything(), 'tlf', platform, undefined);
+    expect(getPlatformAudience).toHaveBeenCalledWith(expect.anything(), 'tlf', 'reddit-ads', undefined);
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it.each(['yesterday', 'last_14_days'])('refuses a window LinkedIn does not serve (%s)', async (window) => {
+    await controller.getPlatformAudience(buildReq({ query: { project: 'tlf', window } }), res, next, 'linkedin-ads');
+
+    expectFieldError(next, 'window');
+    expect(getPlatformAudience).not.toHaveBeenCalled();
+  });
+
+  it('passes a LinkedIn window it serves through', async () => {
+    getPlatformAudience.mockResolvedValue({ window: 'this_month', buckets: [], bucket_count: 0, approximate: true });
+
+    await controller.getPlatformAudience(buildReq({ query: { project: 'tlf', window: 'this_month' } }), res, next, 'linkedin-ads');
+
+    expect(getPlatformAudience).toHaveBeenCalledWith(expect.anything(), 'tlf', 'linkedin-ads', 'this_month');
   });
 
   it('refuses a window the platform does not serve (X caps at 7 days)', async () => {

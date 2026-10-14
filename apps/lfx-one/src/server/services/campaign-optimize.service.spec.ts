@@ -19,12 +19,23 @@ vi.mock('./logger.service', () => ({ logger }));
 
 import {
   CAMPAIGN_ADOPT_OUTCOME_UNCONFIRMED,
+  CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_CODE,
+  CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_MESSAGE,
+  CAMPAIGN_AUDIENCE_FAILED_MESSAGE,
+  CAMPAIGN_AUDIENCE_NO_CONNECTION_CODE,
+  CAMPAIGN_AUDIENCE_NO_CONNECTION_MESSAGE,
+  CAMPAIGN_AUDIENCE_NOT_ENABLED_CODE,
+  CAMPAIGN_AUDIENCE_NOT_ENABLED_MESSAGE,
+  CAMPAIGN_AUDIENCE_UNAVAILABLE_CODE,
+  CAMPAIGN_AUDIENCE_UNAVAILABLE_MESSAGE,
   CAMPAIGN_ETAG_REQUIRED_CODE,
   CAMPAIGN_ETAG_REQUIRED_MESSAGE,
   CAMPAIGN_ETAG_STALE_CODE,
   CAMPAIGN_ETAG_STALE_MESSAGE,
   KEYWORD_TARGETING_REMOVAL_OUTCOME_UNCONFIRMED,
   KEYWORD_TARGETING_REMOVAL_UNCONFIRMED_CODE,
+  META_AD_SET_PAUSE_RECORD_OUTCOME_UNCONFIRMED,
+  META_AD_SET_PAUSE_RECORD_UNCONFIRMED_CODE,
   META_AD_SET_STATUS_OUTCOME_UNCONFIRMED,
   META_AD_SET_STATUS_UNCONFIRMED_CODE,
 } from '@lfx-one/shared/constants';
@@ -89,6 +100,52 @@ describe('CampaignOptimizeService.getPlatformAudience', () => {
     // @ts-expect-error -- a platform outside the table must not reach the proxy even if a caller bug passes one.
     await expect(service.getPlatformAudience(req, 'tlf', 'google-ads')).rejects.toBeInstanceOf(ServiceValidationError);
     expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe('CampaignOptimizeService.getPlatformAudience failures', () => {
+  async function failureFor(error: unknown): Promise<MicroserviceError> {
+    proxyRequest.mockRejectedValueOnce(error);
+    const caught = await new CampaignOptimizeService().getPlatformAudience(req, 'tlf', 'linkedin-ads').catch((e: unknown) => e);
+    expect(caught).toBeInstanceOf(MicroserviceError);
+    return caught as MicroserviceError;
+  }
+
+  it.each([
+    [404, 'no linkedin ads connection configured for this project', CAMPAIGN_AUDIENCE_NO_CONNECTION_CODE, CAMPAIGN_AUDIENCE_NO_CONNECTION_MESSAGE],
+    [
+      409,
+      'the campaign was created under ad account 123 but the connection is bound to 456',
+      CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_CODE,
+      CAMPAIGN_AUDIENCE_ACCOUNT_MISMATCH_MESSAGE,
+    ],
+    [503, 'linkedin answered 429: rate limited (retry-after 30)', CAMPAIGN_AUDIENCE_UNAVAILABLE_CODE, CAMPAIGN_AUDIENCE_UNAVAILABLE_MESSAGE],
+    [400, 'keyword and audience insights are not supported for this platform', CAMPAIGN_AUDIENCE_NOT_ENABLED_CODE, CAMPAIGN_AUDIENCE_NOT_ENABLED_MESSAGE],
+  ])('maps an answered %i to its own code and a fixed message, never the upstream sentence', async (status, upstreamText, code, message) => {
+    const error = await failureFor(upstreamError(status, upstreamText));
+
+    expect(error.statusCode).toBe(status);
+    const body = error.toResponse();
+    expect(body).toMatchObject({ code, error: message });
+    expect(JSON.stringify(body)).not.toContain(upstreamText);
+  });
+
+  it.each([
+    ['an answered 500', upstreamError(500, 'pq: connection refused at 10.0.0.1')],
+    ['an unanswered gateway 503', gatewayError(503)],
+    ['a transport failure', transportError()],
+  ])('gives %s the generic message and keeps its status', async (_label, raw) => {
+    const error = await failureFor(raw);
+
+    expect(error.statusCode).toBe(raw.statusCode);
+    expect(error.toResponse()['error']).toBe(CAMPAIGN_AUDIENCE_FAILED_MESSAGE);
+    expect(error.toResponse()['code']).not.toBe(CAMPAIGN_AUDIENCE_UNAVAILABLE_CODE);
+  });
+
+  it('passes a non-microservice error through untouched', async () => {
+    const raw = new Error('boom');
+    proxyRequest.mockRejectedValueOnce(raw);
+    await expect(new CampaignOptimizeService().getPlatformAudience(req, 'tlf', 'meta-ads')).rejects.toBe(raw);
   });
 });
 
@@ -222,6 +279,21 @@ describe('CampaignOptimizeService.updateMetaAdSetStatus', () => {
     const error = await failureFor(upstreamError(503, message));
     expect(error.statusCode).toBe(503);
     expect(error.toResponse()).toMatchObject({ code: META_AD_SET_STATUS_UNCONFIRMED_CODE, error: META_AD_SET_STATUS_OUTCOME_UNCONFIRMED });
+  });
+
+  it.each([
+    'the ad set WAS paused on Meta, but whether that was recorded on the campaign could not be confirmed: read the ad sets (deliberately_paused); if it is not shown, a campaign resume would re-activate it; pause it here again',
+    "the ad set is already paused on Meta (nothing was sent), but this request lost the campaign's write lock while recording that, so whether the deliberate-pause record is on the campaign could not be confirmed: read the ad sets (deliberately_paused) before retrying; if it is not shown, pause it here again",
+  ])('surfaces an answered 503 whose pause RECORD could not be confirmed as its own code: %s', async (message) => {
+    const error = await failureFor(upstreamError(503, message));
+    expect(error.statusCode).toBe(503);
+    expect(error.toResponse()).toMatchObject({ code: META_AD_SET_PAUSE_RECORD_UNCONFIRMED_CODE, error: META_AD_SET_PAUSE_RECORD_OUTCOME_UNCONFIRMED });
+  });
+
+  it('does not read a record-unconfirmed sentence off an UNANSWERED 503', async () => {
+    const raw = new MicroserviceError('could not be confirmed', 503, 'SERVICE_UNAVAILABLE', { errorBody: { message: 'could not be confirmed' } });
+    const error = await failureFor(raw);
+    expect(error.toResponse()['code']).toBe(META_AD_SET_STATUS_UNCONFIRMED_CODE);
   });
 
   it('keeps a DEFINITE answered 503 as SERVICE_UNAVAILABLE-class with its own sentence', async () => {

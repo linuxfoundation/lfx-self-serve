@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { TWITTER_AUDIENCE_WINDOWS } from '../constants/campaign-optimize.constants';
+import type { LINKEDIN_AUDIENCE_WINDOWS, TWITTER_AUDIENCE_WINDOWS } from '../constants/campaign-optimize.constants';
 import type { CampaignMetricsWindow, CampaignServiceMicrosoftKeywords, MicrosoftKeywordMetricsResponse, MicrosoftKeywordsWindow } from './campaign.interface';
 
 // ---------------------------------------------------------------------------
@@ -115,25 +115,35 @@ export interface CampaignServiceRedditAdsAudience {
   bucket_count: number;
 }
 
+/** The LinkedIn professional-demographic pivots the LinkedIn audience read returns. */
+export type LinkedInAudienceDimension = 'job_function' | 'seniority' | 'industry' | 'company_size' | 'country';
+
+/** The reporting windows the LinkedIn audience read accepts. */
+export type LinkedInAudienceWindow = (typeof LINKEDIN_AUDIENCE_WINDOWS)[number];
+
 /**
- * PROVISIONAL: campaign-service has no LinkedIn audience read yet. Typed on its siblings'
- * dimension/value bucket shape so the route can be wired behind its flag; re-check against the
- * published design before the flag is turned on.
+ * One LinkedIn audience bucket (`linkedin-ads-audience-bucket`, campaign-service
+ * `design/linkedin_audience.go`): one pivot value's counters, summed across the project's own
+ * campaigns. Every counter is APPROXIMATE (LinkedIn's privacy approximation).
  */
 export interface CampaignServiceLinkedInAdsAudienceBucket {
-  dimension: string;
-  value?: string;
+  dimension: LinkedInAudienceDimension;
+  /** LinkedIn's pivot value VERBATIM: a URN such as `urn:li:function:8`, never resolved to a name. */
+  value: string;
   impressions: number;
   clicks: number;
+  /** Micro-units of USD (LinkedIn's `costInUsd`); there is no account currency. */
   cost_micros: number;
   ctr: number;
 }
 
-/** PROVISIONAL LinkedIn audience read; see `CampaignServiceLinkedInAdsAudienceBucket`. */
+/** `linkedin-ads-audience`: all five pivots, or a 503. */
 export interface CampaignServiceLinkedInAdsAudience {
-  window: string;
+  window: LinkedInAudienceWindow;
   buckets: CampaignServiceLinkedInAdsAudienceBucket[];
   bucket_count: number;
+  /** Always true: every counter is an estimate, privacy-thresholded and delayed 12-24 hours. */
+  approximate: boolean;
 }
 
 /** Each audience platform's wire result. */
@@ -195,6 +205,13 @@ export interface CampaignServiceMetaAdSet {
   ctr: number;
   /** true for the ONE ad set this service created; only that one may be set ACTIVE here. */
   recorded: boolean;
+  /**
+   * true when this is the `recorded` ad set and campaign-service holds a DELIBERATE pause of it:
+   * resuming the campaign then leaves it PAUSED. campaign-service's record, not Meta's (`status`
+   * is Meta's). After a pause whose outcome was unconfirmed it is normally true but NOT guaranteed,
+   * so it must be re-read; always false on an adopted campaign.
+   */
+  deliberately_paused: boolean;
 }
 
 /** `meta-ad-sets`: one Meta campaign's ad sets, read live. */
@@ -209,8 +226,9 @@ export interface CampaignServiceMetaAdSets {
 }
 
 /**
- * `meta-ad-set-status-change`. `etag` is the campaign row's version, UNCHANGED: an ad set's status
- * is not stored on the row. The BFF fills it from the `ETag` response header.
+ * `meta-ad-set-status-change`. `etag` is the campaign row's version: UNCHANGED for most changes,
+ * but NEW when the call wrote or cleared the deliberate-pause record of the recorded ad set, so the
+ * caller must adopt it for its next write on the row. The BFF fills it from the `ETag` header.
  */
 export interface CampaignServiceMetaAdSetStatusChange {
   campaign_id: string;
@@ -312,6 +330,122 @@ export type CampaignServiceRedditKeywords = CampaignServiceMicrosoftKeywords;
 
 /** Response of `GET /api/campaigns/reddit/keywords`: the Microsoft keyword table's shape. */
 export type RedditKeywordMetricsResponse = MicrosoftKeywordMetricsResponse;
+
+// ---------------------------------------------------------------------------
+// Optimize/Monitor UI view models over the reads above
+// ---------------------------------------------------------------------------
+
+/** An audience platform the Monitor tab shows a panel for (Reddit is withheld until its read is published). */
+export type PlatformAudiencePanelPlatform = Exclude<CampaignAudiencePlatform, 'reddit-ads'>;
+
+/** One platform choice offered by the audience insights section. */
+export interface PlatformAudiencePlatformOption {
+  value: PlatformAudiencePanelPlatform;
+  label: string;
+}
+
+/** One reporting-window choice offered by an audience panel. */
+export interface PlatformAudienceWindowOption {
+  value: string;
+  label: string;
+}
+
+/**
+ * One breakdown row as rendered. A `null` counter is NOT MEASURED (absent on the wire, or a
+ * dimension the platform reported with no measurement at all) and is never shown as `0`.
+ */
+export interface PlatformAudienceRow {
+  key: string;
+  label: string;
+  impressions: number | null;
+  clicks: number | null;
+  /** Whole units of the section's currency (`cost_micros / 1e6`). */
+  spend: number | null;
+  /** A fraction (clicks / impressions), as the wire carries it. */
+  ctr: number | null;
+  /** Share of the largest impressions count in the section, 0-100, for the bar. 0 when not measured. */
+  barPct: number;
+}
+
+/** One breakdown (age, gender, placement, job function, ...) of one platform's audience read. */
+export interface PlatformAudienceSection {
+  key: string;
+  title: string;
+  rows: PlatformAudienceRow[];
+  /** True when the platform said this breakdown's counters are not a measurement. */
+  notMeasured: boolean;
+}
+
+/** One platform's audience read, normalised for the panel. */
+export interface PlatformAudienceView {
+  sections: PlatformAudienceSection[];
+  /** ISO 4217 code the spend is in, or `null` when the read does not say (shown as the ad account's currency). */
+  currency: string | null;
+  /** Every counter is an estimate (LinkedIn). */
+  approximate: boolean;
+  /** No finished report covers the project yet (Microsoft): empty sections mean "building", never "no audience". */
+  reportBuilding: boolean;
+  /** A newer report is building (Microsoft). */
+  metricsPending: boolean;
+  /** The served report may still rise (Microsoft). */
+  dataIncomplete: boolean;
+  /** When the served report was requested (Microsoft), or `null`. */
+  metricsAsOf: string | null;
+  /** At least one breakdown carried no measurement at all (X `all_counters_null`). */
+  someNotMeasured: boolean;
+  /** No bucket in any breakdown. */
+  empty: boolean;
+}
+
+/**
+ * Why an audience read failed, as the panel states it:
+ * - `no-connection`: 404, the project has no connection for the platform;
+ * - `account-mismatch`: 409, the connection is unusable or its account is not the campaigns' own;
+ * - `unavailable`: 503, the platform did not confirm the read (rate-limited, unreachable, partial);
+ * - `not-enabled`: 400, the read is switched off in this environment;
+ * - `failed`: anything else.
+ */
+export type PlatformAudienceErrorKind = 'no-connection' | 'account-mismatch' | 'unavailable' | 'not-enabled' | 'failed';
+
+/** The pause or resume the ad-set panel asks its parent to send. */
+export interface MetaAdSetToggleRequest {
+  adSetId: string;
+  adSetName: string;
+  status: MetaAdSetStatus;
+}
+
+/**
+ * How the last ad-set status change on a campaign ended, as the panel states it:
+ * - `applied` / `already`: confirmed (`ALREADY_IN_STATE` means nothing was sent);
+ * - `conflict`: 412, the campaign changed since it was loaded and nothing was changed;
+ * - `unconfirmed`: may or may not have been applied; the ad sets are re-read;
+ * - `failed`: a definite refusal (409 included), its message shown verbatim.
+ */
+export interface MetaAdSetToggleOutcome {
+  state: 'applied' | 'already' | 'conflict' | 'unconfirmed' | 'failed';
+  message: string;
+  adSetId: string;
+  adSetName: string;
+  requestedStatus: MetaAdSetStatus;
+}
+
+/** One ad set as the panel renders it. */
+export interface MetaAdSetDisplayRow {
+  adSet: CampaignServiceMetaAdSet;
+  name: string;
+  /** Meta's configured status, or `null` when not reported. */
+  status: string | null;
+  /** The effective status when it differs from the configured one (e.g. CAMPAIGN_PAUSED), else `null`. */
+  effectiveStatus: string | null;
+  /** `"50.00 USD daily"`, or `null` when the ad set holds no budget of its own (or its scale is unknown). */
+  budget: string | null;
+  /** The action offered, or `null` when none can be sent from here. */
+  action: MetaAdSetStatus | null;
+  /** The button's visible word. */
+  actionLabel: string;
+  /** Why no action is offered, or `''`. */
+  noActionReason: string;
+}
 
 /** How a lever reports an outcome it cannot confirm: its own error code and fixed client message. */
 export interface CampaignLeverUnconfirmedOutcome {

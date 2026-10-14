@@ -686,8 +686,9 @@ export class CampaignService {
   // `KEYWORD_TARGETING_REMOVAL_UNCONFIRMED`), which a defaulted response would erase.
 
   /**
-   * One platform's audience demographics for the project's own campaigns. The Reddit and LinkedIn
-   * reads answer 404 until campaign-service serves them and the server flag is on.
+   * One platform's audience demographics for the project's own campaigns. The Reddit read answers
+   * 404 until campaign-service serves it and the server flag is on. A failure carries a fixed
+   * message and a `CAMPAIGN_AUDIENCE_*` code per cause; campaign-service's own text never arrives.
    */
   public getPlatformAudience<P extends CampaignAudiencePlatform>(
     projectSlug: string,
@@ -740,7 +741,8 @@ export class CampaignService {
 
   /**
    * Pause or resume one Meta ad set. `etag` is the campaign ROW's and goes upstream as `If-Match`;
-   * the answer's etag is the row's version unchanged. `ALREADY_IN_STATE` means nothing was sent.
+   * the answer's etag is the row's version, which a pause or resume of the recorded ad set BUMPS,
+   * so the caller must adopt it for its next write. `ALREADY_IN_STATE` means nothing was sent.
    */
   public updateMetaAdSetStatus(params: MetaAdSetStatusParams): Observable<CampaignServiceMetaAdSetStatusChange> {
     const { projectSlug, campaignId, adSetId, briefId, status, etag } = params;

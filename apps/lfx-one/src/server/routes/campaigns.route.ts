@@ -72,9 +72,8 @@ router.post('/:campaignId/negative-keywords', (req, res, next) => campaignContro
 // --- Optimize: campaign-service reads and levers ------------------------------
 //
 // campaign-service only, no legacy arm, so ungated like the budget and bid levers above, EXCEPT
-// the reads whose upstream endpoints are not on campaign-service main yet (Reddit and LinkedIn
-// audience, LinkedIn campaign-ref, Reddit keywords): those answer 404 unless
-// LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS is on.
+// the reads still gated on LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS (Reddit audience, LinkedIn
+// campaign-ref, Reddit keywords): those answer 404 unless it is on.
 // Authorization is the `requireCampaignManager` above. Campaign and brief ids are campaign-service UUIDs.
 router.get('/meta/audience', (req, res, next) => optimizeController.getPlatformAudience(req, res, next, 'meta-ads'));
 router.get('/twitter/audience', (req, res, next) => optimizeController.getPlatformAudience(req, res, next, 'twitter-ads'));
