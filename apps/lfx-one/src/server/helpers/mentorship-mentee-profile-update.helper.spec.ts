@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MENTORSHIP_RICH_TEXT_RAW_MAX, MENTORSHIP_RICH_TEXT_TOO_LARGE_MESSAGE } from '@lfx-one/shared/constants';
+import { MENTORSHIP_RICH_TEXT_RAW_MAX, MENTORSHIP_RICH_TEXT_TOO_LARGE_MESSAGE, MENTORSHIP_SKILL_MAX_LENGTH } from '@lfx-one/shared/constants';
 import { MentorshipUpstreamUserProfile } from '@lfx-one/shared/interfaces';
 import { describe, expect, it } from 'vitest';
 
@@ -119,8 +119,10 @@ describe('parseMentorshipMenteeProfileUpdate', () => {
     it('rejects non-string, blank and over-long items', () => {
       expectRejected({ skillSet: { skillsHave: [1], skillsWant: ['Rust'] } }, 'skillSet.skillsHave');
       expectRejected({ skillSet: { skillsHave: ['Go', '  '], skillsWant: ['Rust'] } }, 'skillSet.skillsHave');
-      expectRejected({ skillSet: { skillsHave: ['x'.repeat(101)], skillsWant: ['Rust'] } }, 'skillSet.skillsHave');
-      expect(parseMentorshipMenteeProfileUpdate({ skillSet: { skillsHave: ['x'.repeat(100)], skillsWant: ['Rust'] } }, OPERATION).skillSet).toBeDefined();
+      expectRejected({ skillSet: { skillsHave: ['x'.repeat(MENTORSHIP_SKILL_MAX_LENGTH + 1)], skillsWant: ['Rust'] } }, 'skillSet.skillsHave');
+      expect(
+        parseMentorshipMenteeProfileUpdate({ skillSet: { skillsHave: ['x'.repeat(MENTORSHIP_SKILL_MAX_LENGTH)], skillsWant: ['Rust'] } }, OPERATION).skillSet
+      ).toBeDefined();
     });
 
     it('rejects more than 100 skills and accepts exactly 100', () => {

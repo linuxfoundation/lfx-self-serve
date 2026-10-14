@@ -49,6 +49,7 @@ import {
   MENTORSHIP_SKILL_MAX_LENGTH,
   MENTORSHIP_SKILLS_LIMIT_MESSAGE,
   MENTORSHIP_SKILLS_MAX_ITEMS,
+  MENTORSHIP_TECHNOLOGIES_LIMIT_MESSAGE,
 } from '../constants/mentorship.constants';
 import type {
   MentorshipMenteeApplication,
@@ -120,6 +121,7 @@ import {
   isMentorshipTermEnded,
   mentorshipDateOnlyFloor,
   mentorshipDescriptionLength,
+  mentorshipSkillSuggestions,
   mentorshipOpenTermCount,
   mentorshipTermHasApplications,
   isMentorshipCiiProjectId,
@@ -174,6 +176,30 @@ describe('getMentorshipEnrollStepErrors', () => {
     expect(errors.description).toBe('Program description is required.');
     expect(errors.repositoryUrl).toBe("A link to the program's repository is required.");
     expect(errors.logoFileName).toBe('Logo is required.');
+  });
+
+  it('accepts custom technologies and program skills but holds them to the shared limits', () => {
+    const details = createValidDetailsForm();
+    const tooMany = Array.from({ length: MENTORSHIP_SKILLS_MAX_ITEMS + 1 }, (_, index) => `Item ${index}`);
+    const tooLong = 'a'.repeat(MENTORSHIP_SKILL_MAX_LENGTH + 1);
+
+    expect(getMentorshipEnrollStepErrors('details', { ...details, technologies: ['My Custom Tech'] }).technologies).toBeUndefined();
+    expect(getMentorshipEnrollStepErrors('details', { ...details, technologies: tooMany }).technologies).toBe(MENTORSHIP_TECHNOLOGIES_LIMIT_MESSAGE);
+    expect(getMentorshipEnrollStepErrors('details', { ...details, technologies: [tooLong] }).technologies).toBe(MENTORSHIP_TECHNOLOGIES_LIMIT_MESSAGE);
+
+    const setup = createEmptyMentorshipEnrollForm();
+    expect(getMentorshipEnrollStepErrors('setup', { ...setup, skills: ['My Custom Skill'] }).skills).toBeUndefined();
+    expect(getMentorshipEnrollStepErrors('setup', { ...setup, skills: tooMany }).skills).toBe(MENTORSHIP_SKILLS_LIMIT_MESSAGE);
+    expect(getMentorshipEnrollStepErrors('setup', { ...setup, skills: [tooLong] }).skills).toBe(MENTORSHIP_SKILLS_LIMIT_MESSAGE);
+  });
+
+  it('suggests catalog skills matching the query, case-insensitively, without ones already chosen', () => {
+    const [first, second] = MENTORSHIP_SKILL_OPTIONS;
+
+    expect(mentorshipSkillSuggestions('', [])).toEqual([...MENTORSHIP_SKILL_OPTIONS]);
+    expect(mentorshipSkillSuggestions('', [first.toUpperCase()])).not.toContain(first);
+    expect(mentorshipSkillSuggestions(` ${second.toLowerCase()} `, [])).toContain(second);
+    expect(mentorshipSkillSuggestions('zz-no-such-skill', [])).toEqual([]);
   });
 
   it('starts a new enroll form with no terms, so the admin adds one before the setup step passes', () => {

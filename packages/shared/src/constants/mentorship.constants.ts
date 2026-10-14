@@ -258,6 +258,7 @@ export const MENTORSHIP_REGISTER_ERROR_FALLBACK = 'We could not save your regist
 export const MENTORSHIP_SKILLS_MAX_ITEMS = 100;
 export const MENTORSHIP_SKILL_MAX_LENGTH = 300;
 export const MENTORSHIP_SKILLS_LIMIT_MESSAGE = `You can add up to ${MENTORSHIP_SKILLS_MAX_ITEMS} skills of up to ${MENTORSHIP_SKILL_MAX_LENGTH} characters each.`;
+export const MENTORSHIP_TECHNOLOGIES_LIMIT_MESSAGE = `You can add up to ${MENTORSHIP_SKILLS_MAX_ITEMS} technologies of up to ${MENTORSHIP_SKILL_MAX_LENGTH} characters each.`;
 
 /**
  * Most rows one `GET .../mentors` or `GET .../terms` page may return. The BFF rejects a larger `limit` and caps

@@ -24,6 +24,7 @@ import {
   MENTORSHIP_MAX_OPEN_TERMS_MESSAGE,
   MENTORSHIP_RICH_TEXT_RAW_MAX,
   MENTORSHIP_RICH_TEXT_TOO_LARGE_MESSAGE,
+  MENTORSHIP_SKILL_OPTIONS,
   MENTORSHIP_TERM_NAME_MAX,
 } from '../constants/mentorship-enroll.constants';
 import {
@@ -72,6 +73,7 @@ import {
   MENTORSHIP_SKILL_MAX_LENGTH,
   MENTORSHIP_SKILLS_LIMIT_MESSAGE,
   MENTORSHIP_SKILLS_MAX_ITEMS,
+  MENTORSHIP_TECHNOLOGIES_LIMIT_MESSAGE,
 } from '../constants/mentorship.constants';
 import type {
   MentorshipApplicantDisplayStatus,
@@ -700,6 +702,7 @@ export function getMentorshipEnrollStepErrors(
       errors.projectId = MENTORSHIP_ENROLL_PROJECT_REQUIRED;
     }
     if (!form.technologies.length) errors.technologies = 'Add at least one technology.';
+    else if (isMentorshipSkillListOverLimit(form.technologies)) errors.technologies = MENTORSHIP_TECHNOLOGIES_LIMIT_MESSAGE;
     const descriptionError = mentorshipRichTextError(
       form.description,
       MENTORSHIP_ENROLL_DESCRIPTION_MAX,
@@ -733,6 +736,7 @@ export function getMentorshipEnrollStepErrors(
   if (step === 'setup') {
     const errors: MentorshipEnrollFieldErrors = {};
     if (!form.skills.length) errors.skills = 'Add at least one skill.';
+    else if (isMentorshipSkillListOverLimit(form.skills)) errors.skills = MENTORSHIP_SKILLS_LIMIT_MESSAGE;
     // A program being edited that had only closed terms may stay that way; upstream keeps a program's last open term otherwise.
     if (!form.terms.length && (!edit || edit.terms.length > 0)) {
       errors.terms = 'Add at least one program term.';
@@ -1012,8 +1016,16 @@ export function getMentorshipMenteeRegisterRequestErrors(
   return errors;
 }
 
-function isMentorshipSkillListOverLimit(skills: readonly string[]): boolean {
+/** True when a skill or technology list has more than `MENTORSHIP_SKILLS_MAX_ITEMS` items or an item over `MENTORSHIP_SKILL_MAX_LENGTH`. */
+export function isMentorshipSkillListOverLimit(skills: readonly string[]): boolean {
   return skills.length > MENTORSHIP_SKILLS_MAX_ITEMS || skills.some((skill) => skill.trim().length > MENTORSHIP_SKILL_MAX_LENGTH);
+}
+
+/** Catalog skills containing `query` (case-insensitive), leaving out any already in `chosen`. */
+export function mentorshipSkillSuggestions(query: string, chosen: readonly string[]): string[] {
+  const needle = query.trim().toLowerCase();
+  const selected = new Set(chosen.map((item) => item.toLowerCase()));
+  return MENTORSHIP_SKILL_OPTIONS.filter((skill) => !selected.has(skill.toLowerCase()) && skill.toLowerCase().includes(needle));
 }
 
 /**
