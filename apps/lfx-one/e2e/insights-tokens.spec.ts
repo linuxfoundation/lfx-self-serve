@@ -35,7 +35,10 @@ test.describe('LFX Insights API tokens', () => {
   test('shows the lock notice and no create CTA for a user without access', async ({ page }) => {
     await openInsightsTokens(page, { tokens: [], eligibility: NOT_ENABLED });
 
-    await expect(page.getByTestId('insights-tokens-lock-notice')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    const notice = page.getByTestId('insights-tokens-lock-notice');
+    await expect(notice).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(notice).toContainText("LFX Insights API tokens aren't enabled for your account yet");
+    await expect(notice.getByTestId('insights-tokens-contact-support')).toHaveText('LFX Support');
     await expect(page.getByTestId('insights-tokens-empty')).toHaveCount(0);
     await expect(page.getByTestId('insights-tokens-new-button')).toHaveCount(0);
   });
@@ -43,7 +46,9 @@ test.describe('LFX Insights API tokens', () => {
   test('shows a retryable notice instead of the lock notice when eligibility could not be verified', async ({ page }) => {
     await openInsightsTokens(page, { tokens: [], eligibility: CHECK_FAILED });
 
-    await expect(page.getByTestId('insights-tokens-eligibility-error')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    const notice = page.getByTestId('insights-tokens-eligibility-error');
+    await expect(notice).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(notice).toContainText("We couldn't check if you are eligible");
     await expect(page.getByTestId('insights-tokens-eligibility-retry-button')).toBeVisible();
     await expect(page.getByTestId('insights-tokens-lock-notice')).toHaveCount(0);
   });
