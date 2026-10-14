@@ -22,8 +22,6 @@ import {
   MENTORSHIP_MENTEE_COUNTRY_UNKNOWN_MESSAGE,
   MENTORSHIP_MENTEE_INTRODUCTION_MAX,
   MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE,
-  MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE,
-  MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS,
   MENTORSHIP_MENTEE_REGISTER_ERROR_INELIGIBLE,
   MENTORSHIP_MENTEE_REGISTER_ERROR_PROFILE_EXISTS,
   MENTORSHIP_MENTEE_REGISTER_FAILURE_OPTIONS,
@@ -48,7 +46,9 @@ import {
   MENTORSHIP_REGISTER_ERROR_CONFLICT,
   MENTORSHIP_REGISTER_ERROR_FALLBACK,
   MENTORSHIP_REGISTER_ERROR_READ_ONLY,
-  MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL,
+  MENTORSHIP_SKILL_MAX_LENGTH,
+  MENTORSHIP_SKILLS_LIMIT_MESSAGE,
+  MENTORSHIP_SKILLS_MAX_ITEMS,
 } from '../constants/mentorship.constants';
 import type {
   MentorshipMenteeApplication,
@@ -1085,11 +1085,10 @@ describe('program detail helpers', () => {
     );
   });
 
-  it('refuses a mentor skill the picker does not offer, since only a tampered request can carry one', () => {
+  it('accepts a custom mentor skill outside the catalog', () => {
     const form = { ...createEmptyMentorshipMentorForm(), introduction: '<p>Hi</p>', complianceAccepted: true, termsAccepted: true };
 
-    expect(getMentorshipMentorRegisterErrors({ ...form, skills: ['Kubernetes', 'Not A Skill'] }).skills).toBe(MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL);
-    expect(getMentorshipMentorRegisterErrors({ ...form, skills: ['Kubernetes'] }).skills).toBeUndefined();
+    expect(getMentorshipMentorRegisterErrors({ ...form, skills: ['Kubernetes', 'Custom Skill'] }).skills).toBeUndefined();
   });
 
   it('checks only the mentor profile fields present in an edit', () => {
@@ -1098,7 +1097,15 @@ describe('program detail helpers', () => {
     expect(getMentorshipMentorProfileErrors({ skills: ['Kubernetes'] })).toEqual({});
     expect(getMentorshipMentorProfileErrors({ introduction: '<p></p>' })).toEqual({ introduction: 'Introduction is required.' });
     expect(getMentorshipMentorProfileErrors({ skills: [] })).toEqual({ skills: 'Add at least one skill.' });
-    expect(getMentorshipMentorProfileErrors({ skills: ['Not A Skill'] })).toEqual({ skills: MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL });
+    expect(getMentorshipMentorProfileErrors({ skills: ['Custom Skill'] })).toEqual({});
+  });
+
+  it('holds mentor skills to the item and length caps', () => {
+    const atCap = Array.from({ length: MENTORSHIP_SKILLS_MAX_ITEMS }, (_, index) => `${index}`.padEnd(MENTORSHIP_SKILL_MAX_LENGTH, 'x'));
+
+    expect(getMentorshipMentorProfileErrors({ skills: atCap })).toEqual({});
+    expect(getMentorshipMentorProfileErrors({ skills: [...atCap, 'One More'] })).toEqual({ skills: MENTORSHIP_SKILLS_LIMIT_MESSAGE });
+    expect(getMentorshipMentorProfileErrors({ skills: ['a'.repeat(MENTORSHIP_SKILL_MAX_LENGTH + 1)] })).toEqual({ skills: MENTORSHIP_SKILLS_LIMIT_MESSAGE });
   });
 
   it('sends only the mentor profile fields that changed', () => {
@@ -1736,19 +1743,16 @@ describe('getMentorshipMenteeRegisterRequestErrors', () => {
     expect(errors).toEqual(getMentorshipMenteeRegisterErrors(createEmptyMentorshipMenteeForm()));
   });
 
-  it('rejects a skill outside the catalog on either side', () => {
+  it('accepts a custom skill outside the catalog on either side', () => {
     const request = buildMentorshipMenteeRegisterRequest(VALID_MENTEE_REGISTER_FORM);
 
-    expect(getMentorshipMenteeRegisterRequestErrors({ ...request, skillsHave: ['Java', 'Not A Skill'] }).skillsHave).toBe(
-      MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL
-    );
-    expect(getMentorshipMenteeRegisterRequestErrors({ ...request, skillsWant: ['not a skill'] }).skillsWant).toBe(MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL);
+    expect(getMentorshipMenteeRegisterRequestErrors({ ...request, skillsHave: ['Java', 'Custom Skill'], skillsWant: ['custom skill'] })).toEqual({});
   });
 
   it('accepts every skill in MENTORSHIP_SKILL_OPTIONS', () => {
     const request = buildMentorshipMenteeRegisterRequest(VALID_MENTEE_REGISTER_FORM);
-    const firstHalf = MENTORSHIP_SKILL_OPTIONS.slice(0, MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS);
-    const secondHalf = MENTORSHIP_SKILL_OPTIONS.slice(MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS);
+    const firstHalf = MENTORSHIP_SKILL_OPTIONS.slice(0, MENTORSHIP_SKILLS_MAX_ITEMS);
+    const secondHalf = MENTORSHIP_SKILL_OPTIONS.slice(MENTORSHIP_SKILLS_MAX_ITEMS);
 
     expect(getMentorshipMenteeRegisterRequestErrors({ ...request, skillsHave: firstHalf, skillsWant: secondHalf })).toEqual({});
     expect(getMentorshipMenteeRegisterRequestErrors({ ...request, skillsHave: secondHalf, skillsWant: firstHalf })).toEqual({});
@@ -1756,16 +1760,26 @@ describe('getMentorshipMenteeRegisterRequestErrors', () => {
 
   it('holds each list to the profile edit skills cap, so a registered profile stays editable', () => {
     const request = buildMentorshipMenteeRegisterRequest(VALID_MENTEE_REGISTER_FORM);
-    const atCap = MENTORSHIP_SKILL_OPTIONS.slice(0, MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS);
-    const overCap = MENTORSHIP_SKILL_OPTIONS.slice(0, MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS + 1);
+    const atCap = MENTORSHIP_SKILL_OPTIONS.slice(0, MENTORSHIP_SKILLS_MAX_ITEMS);
+    const overCap = MENTORSHIP_SKILL_OPTIONS.slice(0, MENTORSHIP_SKILLS_MAX_ITEMS + 1);
 
     expect(getMentorshipMenteeRegisterRequestErrors({ ...request, skillsHave: atCap, skillsWant: atCap })).toEqual({});
-    expect(getMentorshipMenteeRegisterRequestErrors({ ...request, skillsHave: overCap }).skillsHave).toBe(MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE);
-    expect(getMentorshipMenteeRegisterRequestErrors({ ...request, skillsWant: overCap }).skillsWant).toBe(MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE);
+    expect(getMentorshipMenteeRegisterRequestErrors({ ...request, skillsHave: overCap }).skillsHave).toBe(MENTORSHIP_SKILLS_LIMIT_MESSAGE);
+    expect(getMentorshipMenteeRegisterRequestErrors({ ...request, skillsWant: overCap }).skillsWant).toBe(MENTORSHIP_SKILLS_LIMIT_MESSAGE);
+  });
+
+  it('holds each mentee skill to the length cap', () => {
+    const request = buildMentorshipMenteeRegisterRequest(VALID_MENTEE_REGISTER_FORM);
+    const atCap = 'a'.repeat(MENTORSHIP_SKILL_MAX_LENGTH);
+    const overCap = `${atCap}a`;
+
+    expect(getMentorshipMenteeRegisterRequestErrors({ ...request, skillsHave: [atCap], skillsWant: [atCap] })).toEqual({});
+    expect(getMentorshipMenteeRegisterRequestErrors({ ...request, skillsHave: [overCap] }).skillsHave).toBe(MENTORSHIP_SKILLS_LIMIT_MESSAGE);
+    expect(getMentorshipMenteeRegisterRequestErrors({ ...request, skillsWant: [overCap] }).skillsWant).toBe(MENTORSHIP_SKILLS_LIMIT_MESSAGE);
   });
 
   it('gives the form validator the same result for the same values', () => {
-    const form = { ...VALID_MENTEE_REGISTER_FORM, skillsHave: ['Not A Skill'], termsAccepted: false };
+    const form = { ...VALID_MENTEE_REGISTER_FORM, skillsHave: [], termsAccepted: false };
 
     expect(getMentorshipMenteeRegisterErrors(form)).toEqual(getMentorshipMenteeRegisterRequestErrors(buildMentorshipMenteeRegisterRequest(form)));
   });

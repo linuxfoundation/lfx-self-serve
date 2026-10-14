@@ -24,11 +24,11 @@ import {
   MENTORSHIP_MENTEE_PROFILE_EDIT_SUBTITLE,
   MENTORSHIP_MENTEE_PROFILE_SAVE_LABEL,
   MENTORSHIP_MENTEE_PROFILE_SAVE_SUCCESS_SUMMARY,
-  MENTORSHIP_MENTEE_PROFILE_SKILL_MAX_LENGTH,
+  MENTORSHIP_SKILL_MAX_LENGTH,
   MENTORSHIP_MENTEE_PROFILE_SKILLS_HAVE_EDIT_LABEL,
   MENTORSHIP_MENTEE_PROFILE_SKILLS_INTRO,
-  MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE,
-  MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS,
+  MENTORSHIP_SKILLS_LIMIT_MESSAGE,
+  MENTORSHIP_SKILLS_MAX_ITEMS,
   MENTORSHIP_MENTEE_PROFILE_SKILLS_WANT_EDIT_LABEL,
 } from '@lfx-one/shared/constants';
 import { MentorshipMenteeProfileDetails, MentorshipMenteeProfileUpdateResponse } from '@lfx-one/shared/interfaces';
@@ -55,8 +55,8 @@ function boundedStringList(): ValidatorFn {
   return (control) => {
     const value: unknown = control.value;
     if (!Array.isArray(value)) return null;
-    const tooLong = value.some((item) => typeof item === 'string' && item.trim().length > MENTORSHIP_MENTEE_PROFILE_SKILL_MAX_LENGTH);
-    return value.length > MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS || tooLong ? { boundedList: true } : null;
+    const tooLong = value.some((item) => typeof item === 'string' && item.trim().length > MENTORSHIP_SKILL_MAX_LENGTH);
+    return value.length > MENTORSHIP_SKILLS_MAX_ITEMS || tooLong ? { boundedList: true } : null;
   };
 }
 
@@ -236,6 +236,6 @@ export class MenteeProfileEditDrawerComponent {
     this.saveAttempted();
     const field = this.form.controls[control];
     if (!field.touched || field.valid) return undefined;
-    return field.hasError('boundedList') ? MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE : message;
+    return field.hasError('boundedList') ? MENTORSHIP_SKILLS_LIMIT_MESSAGE : message;
   }
 }

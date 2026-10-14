@@ -57,7 +57,7 @@ describe('parseMentorshipMentorProfileUpdate', () => {
     expect(rejectedFields({ introduction: '<p></p>' })).toEqual(['introduction']);
     expect(rejectedFields({ introduction: `<p>${'a'.repeat(MENTORSHIP_MENTOR_INTRODUCTION_MAX + 1)}</p>` })).toEqual(['introduction']);
     expect(rejectedFields({ skills: [] })).toEqual(['skills']);
-    expect(rejectedFields({ skills: ['Not A Real Skill'] })).toEqual(['skills']);
+    expect(parseMentorshipMentorProfileUpdate({ skills: ['Custom Skill'] }, OPERATION)).toEqual({ skills: ['Custom Skill'] });
     expect(rejectedFields({ introduction: '<p></p>', skills: [] }).sort()).toEqual(['introduction', 'skills']);
   });
 
