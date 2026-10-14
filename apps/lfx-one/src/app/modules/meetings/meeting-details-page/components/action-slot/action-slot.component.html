@@ -102,7 +102,7 @@
              an anonymous viewer with access signs in first (FR-028). -->
         @if (viewerRole() === 'visitor') {
           <p class="m-0 text-[13px] leading-[1.45] text-[var(--md-text-body)]" data-testid="meeting-action-message">
-            This meeting has ended. Sign in to see its recording and summary.
+            This meeting has ended. Sign in to see its recording, transcript and summary, where available.
           </p>
           <ng-container [ngTemplateOutlet]="signIn" />
         } @else {

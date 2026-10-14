@@ -274,7 +274,8 @@ describe('MeetingHeaderComponent', () => {
     expect(fixture.nativeElement.querySelectorAll('[data-testid^="meeting-header-badge-committee-"]').length).toBe(2);
   });
 
-  it('shows each feature badge from its flag alone before the meeting ends', () => {
+  it.each(['before', 'live'] as const)('shows each feature badge from its flag alone while the meeting is %s', (state) => {
+    timeState.set(state);
     for (const id of ['recording', 'transcripts', 'youtube', 'ai-summary']) {
       expect(query(`meeting-header-badge-${id}`)).toBeNull();
     }
