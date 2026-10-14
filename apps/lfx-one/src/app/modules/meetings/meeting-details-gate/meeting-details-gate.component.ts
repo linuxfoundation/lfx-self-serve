@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { afterNextRender, Component, computed, inject, signal } from '@angular/core';
-import { MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import { MEETING_DETAILS_V2_FLAG } from '@lfx-one/shared/constants';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { UserService } from '@services/user.service';
 
@@ -12,7 +12,7 @@ import { MeetingDetailsSeedService } from './meeting-details-seed.service';
 
 /**
  * Route target for the public meeting page `/meetings/:id` (#2873). Renders the pre-v2 page by
- * default and swaps to the v2 tree only once `MEETING_V2_ENABLED_FLAG` resolves true for a
+ * default and swaps to the v2 tree only once `MEETING_DETAILS_V2_FLAG` resolves true for a
  * targeted, signed-in viewer — a signal-driven `@if` inside one stable route, not a router-level
  * component swap. Same shape as {@link HealthMetricsGateComponent}, for the same reasons.
  *
@@ -35,8 +35,8 @@ import { MeetingDetailsSeedService } from './meeting-details-seed.service';
  * Angular never reconciles two different trees. Making v2's *first* paint v2 requires giving SSR a
  * flag source (a LaunchDarkly server SDK, or the BFF stamping the decision into a cookie /
  * `runtimeConfig`). That was #2920, and it was declined (`rollout.md` § No server-side flag
- * decision): signed-in viewers move from tester lists to everyone in one step, and the swap ends
- * when V1 retirement removes this gate.
+ * decision): signed-in viewers move from tester lists to everyone in one step, and the swap lasts
+ * as long as this gate stands (V1 stays: `rollout.md` § V1 stays).
  *
  * Two consequences of that server-side `false` which #2874 should not have to rediscover. First,
  * the pre-v2 page is what SSR renders and what runs the public meeting lookup, including for a
@@ -61,7 +61,7 @@ import { MeetingDetailsSeedService } from './meeting-details-seed.service';
  * `v2Enabled` is forced false until `hydrated` latches in `afterNextRender` (a no-op on the
  * server). Without the latch the non-production localStorage override in `FeatureFlagService`
  * reads synchronously, ahead of `isInitialized()`, so a pre-seeded override — exactly what
- * `stubMeetingsV2Flag` does in e2e — would swap trees on the very first client render and mismatch
+ * `stubMeetingDetailsV2Flag` does in e2e — would swap trees on the very first client render and mismatch
  * the SSR-rendered v1 DOM.
  *
  * **The seed handoff (E1-01).** v1 reads the `meetingJoinState` TransferState key and removes it in
@@ -85,7 +85,7 @@ export class MeetingDetailsGateComponent {
   private readonly seedService = inject(MeetingDetailsSeedService);
 
   private readonly hydrated = signal(false);
-  private readonly rawV2Enabled = this.featureFlagService.getBooleanFlag(MEETING_V2_ENABLED_FLAG, false);
+  private readonly rawV2Enabled = this.featureFlagService.getBooleanFlag(MEETING_DETAILS_V2_FLAG, false);
 
   protected readonly v2Enabled = computed(() => this.hydrated() && this.userService.authenticated() && this.rawV2Enabled());
 

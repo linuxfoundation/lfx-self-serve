@@ -14,8 +14,8 @@ axis values and `ActionSlotKind` members defined in the state matrix.
 
 ### Rollout and page lifecycle
 
-- **FR-001**: Until stage 7 of `rollout.md` removes the gate, a **signed-in** viewer MUST get V2 only
-  when `MEETING_V2_ENABLED_FLAG` evaluates true for them, and V1 otherwise; the V1 component MUST
+- **FR-001**: While the gate stands (V1 stays, `rollout.md` § V1 stays), a **signed-in** viewer MUST get V2 only
+  when `MEETING_DETAILS_V2_FLAG` evaluates true for them, and V1 otherwise; the V1 component MUST
   stay byte-identical (R01). The decision MUST be made after hydration, so SSR renders V1 for them:
   the server has no flag source (#2920 was declined, see `rollout.md`). **Anonymous** visitors are
   outside the flag: they MUST get V1 until stage 5 (R05), and from stage 5 they get V2 by a code
@@ -250,4 +250,4 @@ are not filed yet.
 | O-01 – O-04 organizer dialogs | —     | FR-051                                              |
 | M-01 / M-02 magic link        | —     | FR-052                                              |
 | S-01 / S-02 spikes (Phase 3)  | —     | none: spikes produce decisions                      |
-| V1 retirement (after rollout) | #3266 | FR-001, SC-006 (ends them)                          |
+| V1 retirement (out of scope)  | #3266 | none: closed 2026-10-14, V1 stays                   |
