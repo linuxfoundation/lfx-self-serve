@@ -2,7 +2,7 @@
 
 Host-session mode moves the embedded Gatewaze admin off its browser sign-in. LFX One gets the user's Gatewaze (GoTrue) session server to server with GoTrue's `id_token` grant and keeps it in Valkey. The browser holds only its LFX `appSession` cookie and never sees a Gatewaze token. Tracking issue: #2738.
 
-This page covers session acquisition, the `/api/gatewaze/session` routes and logout. The Supabase and API proxy, Realtime and the embed outlet change come in later PRs, and each one extends this page.
+This page covers session acquisition, the `/api/gatewaze/session` routes, logout, and the Supabase and Gatewaze API proxies. Realtime and the embed outlet change come in later PRs, and each one extends this page.
 
 ## Files
 
@@ -11,7 +11,9 @@ This page covers session acquisition, the `/api/gatewaze/session` routes and log
 | `src/server/services/gatewaze-session.service.ts`                    | Configuration gate, key derivation, the session store, `getGatewazeSession`, `getGatewazeMe`, `endGatewazeSession` |
 | `src/server/routes/gatewaze.route.ts`                                | The `/api/gatewaze` router: `no-store`, the gates, the session routes                                              |
 | `src/server/controllers/gatewaze-session.controller.ts`              | `/session/me` and `/session/logout`                                                                                |
-| `src/server/middleware/require-gatewaze-host-session.middleware.ts`  | The uniform 404 while host-session mode is off                                                                     |
+| `src/server/controllers/gatewaze-proxy.controller.ts`                | `proxySupabase` and `proxyApi`, the cookie-authenticated proxies                                                   |
+| `src/server/helpers/gatewaze-module.helper.ts`                       | The per-module entitlement seam: `gatewazeModuleForPath` and `authorizeGatewazeModule`                             |
+| `src/server/middleware/require-gatewaze-host-session.middleware.ts`  | The uniform 404 while host-session mode is off, or with no LFX bearer token                                        |
 | `src/server/middleware/end-gatewaze-session-on-logout.middleware.ts` | Ends the Gatewaze session on LFX's `/logout`                                                                       |
 | `src/server/helpers/gw-runtime-config.helper.ts`                     | The embed's `RuntimeConfig` fields, including `gwHostSession`                                                      |
 | `src/server/utils/refresh-token-exchange.util.ts`                    | `exchangeRefreshTokenForIdToken`, the Auth0 refresh grant that yields an ID token                                  |
@@ -48,14 +50,14 @@ The ID token `express-openid-connect` received at login carries LFX's raw `nonce
 
 ## Routes
 
-`app.use('/api/gatewaze', gatewazeRouter)` sits after `authMiddleware` and the API rate limiter, next to `/api/gw`. `/api/*` requires an LFX session, so a signed-out caller gets `authMiddleware`'s JSON 401 before the router runs. The routes are JSON only, so unlike `/api/gw` they need no body-parser or compression exclusion. The router runs, in order:
+`app.use('/api/gatewaze', gatewazeRouter)` sits after `authMiddleware` and the API rate limiter, next to `/api/gw`. `/api/*` requires an LFX session, so a signed-out caller gets `authMiddleware`'s JSON 401 before the router runs. The proxies stream the raw request body, so `isGwProxyPath` matches `/api/gatewaze` as well as `/api/gw`, and the mount gets the same body-parser, compression and drain-guard exclusions in `server.ts`. The router runs, in order:
 
 1. `Cache-Control: no-store` on every `/session` response, including the gates' 404 and 403.
 2. `requireGatewazeHostSession`: the uniform 404 unless `resolveGatewazeHostSessionConfig` is non-null. The body is the same `NOT_FOUND` error `/api/gw` gives with its flag off.
-3. `requireGwEmbedAccess`, reused as is: ED, root writer or any writer grant, and 403 `GW_EMBED_IMPERSONATION_BLOCKED` while impersonating. No Gatewaze session is ever minted for an impersonation target.
-4. `GET /session/me` and `POST /session/logout`.
-
-`requireGwEmbedAccess` lets a request with no bearer token through, because `/api/gw`'s controller answers that itself. The router therefore relies on being mounted under `/api`, where `authMiddleware` has already answered 401.
+3. `requireGatewazeBearer`: the same uniform 404 when the request has no LFX bearer token. `requireGwEmbedAccess` lets such a request through, because `/api/gw`'s controller answers it itself, so this guard makes the router's authorization independent of `authMiddleware`. Under `/api` it never fires today.
+4. `requireGwEmbedAccess`, reused as is: ED, root writer or any writer grant, and 403 `GW_EMBED_IMPERSONATION_BLOCKED` while impersonating. No Gatewaze session is ever minted for an impersonation target.
+5. The proxies, `ALL /supabase/{rest,storage,functions}/v1/*` and `ALL /api/*`.
+6. `GET /session/me` and `POST /session/logout`.
 
 The controller sends the answers in the tables below with `res.status().json()` rather than through the error classes and `apiErrorHandler`. The embed's shim reads these exact bodies and the `x-gw-session` header, so they are contract answers, not failures. The gates' 404 and 403 still go through `apiErrorHandler`.
 
@@ -92,6 +94,51 @@ Then `endGatewazeSession` runs host contract step 8:
 Each step is bounded at `GW_HOST_SESSION_LOGOUT_STEP_TIMEOUT_MS` (2 seconds). A failed refresh or revoke does not stop the steps after it. If the store cannot be reached, or there is no stored session, nothing is removed and no sign-out is published. The route answers 204 even when GoTrue or Valkey failed; the service logs those at WARN, and an undeleted record ages out on its TTL. The LFX session is not touched.
 
 The LFX session is still live, so the embed's next `/session/me` mints a new Gatewaze session from it. The embed's sign-out is in effect a reconnect: it revokes the old GoTrue session and closes its sockets, and the user carries on. Signing out of Gatewaze for real means logging out of LFX.
+
+### The Supabase and API proxies
+
+The embed's Supabase client points at `<origin>/api/gatewaze/supabase` and its API calls at `/api/gatewaze/api`, so every call it makes in host-session mode comes here with the placeholder `Authorization: Bearer host-session`.
+
+| Browser path                            | Upstream                              |
+| --------------------------------------- | ------------------------------------- |
+| `/api/gatewaze/supabase/rest/v1/*`      | `GW_SUPABASE_URL` + `/rest/v1/*`      |
+| `/api/gatewaze/supabase/storage/v1/*`   | `GW_SUPABASE_URL` + `/storage/v1/*`   |
+| `/api/gatewaze/supabase/functions/v1/*` | `GW_SUPABASE_URL` + `/functions/v1/*` |
+| `/api/gatewaze/api/*`                   | `GW_API_URL` + `/api/*`               |
+
+GoTrue's `/auth/v1` is not proxied, as in the admin BFF: the embed's shim answers auth from `/session/me`. Realtime has its own upgrade handler. `GW_API_URL` must be an origin here, because the package resolves every path against the upstream's origin; a base path answers 503 `GW_API_URL_MISCONFIGURED` rather than being dropped.
+
+`GatewazeProxyController` follows the package's host contract, steps 2 to 6. For each request it:
+
+1. Resolves the path with the package's `upstreamUrl`. A path that normalises out of its prefix (`..`, `%2e%2e`, a backslash) gets 400 `GW_BAD_PATH`, before any session is loaded.
+2. Calls `csrfDecision` with the origin of `PCC_BASE_URL`. `reject` gets 403 `{ error: 'cross_site' }`. A write needs the same origin (or none) and either `apikey` equal to the anon key or a Bearer header. A GET without proof is `anon`. A missing `PCC_BASE_URL` rejects everything that needs proof. No response ever carries `Access-Control-Allow-*`, so a cross-site page can set neither header.
+3. Asks the module seam (below). A refusal is 403 `GW_MODULE_ACCESS_REQUIRED`.
+4. For `session`, calls `getGatewazeSession` and maps the outcome:
+
+| Outcome                                     | Answer                                                                            |
+| ------------------------------------------- | --------------------------------------------------------------------------------- |
+| `ok`, active admin                          | Forwarded with `Bearer <access token>` (and `apikey` on Supabase)                 |
+| `ok`, not an admin, `isPublicRead` path     | Forwarded as anon                                                                 |
+| `ok`, not an admin, admin check pending     | 503 `{ error: 'admin_check_pending' }` with `Retry-After`                         |
+| `ok`, not an admin                          | 403 `{ error: 'not_admin' }`                                                      |
+| `ended`                                     | 401 `{ error: 'not_signed_in' }` with `x-gw-session: expired`                     |
+| `host_session_unavailable` with placeholder | 401 with the marker: embed code that only runs after sign-in has lost its session |
+| `host_session_unavailable`, no placeholder  | Forwarded as anon                                                                 |
+| `refused` or `unavailable`                  | 503 `{ error: 'session_unavailable' }`, never the marker                          |
+
+5. Forwards with the package's `proxyRequest`. Anon credentials come from `anonCredentials`: a publishable key goes in `apikey` only, and the API gets nothing.
+
+What it shares with `/api/gw`:
+
+- **Request headers.** The package drops `Authorization`, `Cookie`, `Origin`, `Referer`, `apikey`, `Host`, `X-Forwarded-*`, `Forwarded` and hop-by-hop headers, and sets its own credentials. The controller also drops the client-address headers `/api/gw` strips (`X-Real-IP`, `CF-Connecting-IP`, `True-Client-IP`, `X-Client-IP`, `Via`, `X-Forwarded-Server`). `?access_token=` and `?token=host-session` are removed from the URL. LFX's own bearer token is never sent upstream.
+- **Response headers.** An allowlist, applied after the package drops `Set-Cookie` and any upstream `x-gw-session`. The body passes through still encoded, so `Content-Encoding` and `Content-Length` travel together. `X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox; default-src 'none'` are set last, because Storage serves user uploads from the LFX origin. A response made with the session gets `Cache-Control: private` and `Vary: Cookie` from the package.
+- **Redirects.** Never followed. The package's `rewriteLocation` drops unsafe values and makes a redirect to the upstream's origin root-relative; the controller then puts the mount in front, so it lands back on the proxy. An `https:` redirect elsewhere, such as an edge function's OAuth hand-off, passes unchanged.
+- **Body cap.** `GW_PROXY_MAX_BODY_BYTES`, counted on the bytes forwarded. Over the cap is 413 `gw_body_too_large`, after the request is drained so the client can finish writing. Every early answer drains first too.
+- **Timeout.** `GW_PROXY_TIMEOUT_MS`, as an idle bound on the upstream socket, so a hung upstream is cut off and a slow upload or download that keeps moving is not. A timeout before the response is 408 `TIMEOUT`; any other upstream failure is 502 `GW_UPSTREAM_UNAVAILABLE`. A failure after the headers are sent breaks the connection.
+
+#### Module entitlements (seam only)
+
+`gatewazeModuleForPath(upstream, pathname)` maps a request to a Gatewaze module id. Today only the API's `/api/modules/<id>/…` routes map to one. `authorizeGatewazeModule(req, moduleId)` is called for each mapped request before the session is loaded, and allows everything for now. A follow-up enforces LFX-permission-based module entitlements there, and extends the mapping to Supabase tables, buckets and functions.
 
 ### LFX logout
 

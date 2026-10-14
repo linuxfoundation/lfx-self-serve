@@ -31,3 +31,19 @@ export function requireGatewazeHostSession(req: Request, _res: Response, next: N
   logger.debug(req, 'require_gatewaze_host_session', 'Answering the uniform 404: host-session mode is off or misconfigured', { path: req.path });
   next(gatewazeHostSessionNotFound(req));
 }
+
+/**
+ * Answers the uniform 404 when the request carries no LFX bearer token. `requireGwEmbedAccess` lets
+ * such a request through, because `/api/gw`'s controller answers it, so without this the router's
+ * authorization would rest on `authMiddleware` alone. Under `/api` that middleware already answers
+ * 401 to a caller with no token, so this never fires today; it keeps the router safe if the mount or
+ * the route classification changes.
+ */
+export function requireGatewazeBearer(req: Request, _res: Response, next: NextFunction): void {
+  if (req.bearerToken) {
+    next();
+    return;
+  }
+  logger.debug(req, 'require_gatewaze_bearer', 'Answering the uniform 404: no LFX bearer token on the request', { path: req.path });
+  next(gatewazeHostSessionNotFound(req));
+}
