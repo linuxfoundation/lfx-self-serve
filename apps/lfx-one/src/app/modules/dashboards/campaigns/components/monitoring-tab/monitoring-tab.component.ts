@@ -27,6 +27,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import type {
   AccountMonitorCampaignRowView,
   AccountMonitorKpisView,
+  AccountMonitorPanelReadState,
   AccountMonitorPanelView,
   CampaignActDialogData,
   CampaignActDialogResult,
@@ -306,6 +307,8 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly visibleKeywordRows: Signal<KeywordRowView[]> = this.initVisibleKeywordRows();
   protected readonly platformButtons: Signal<Record<MonitorTabPlatform, MonitorPlatformButtonView>> = this.initPlatformButtons();
   protected readonly hubSpotView: Signal<HubSpotMonitorView | null> = this.initHubSpotView();
+  /** What the persistent live region says about the selected LinkedIn/Reddit/Meta/Microsoft Ads/X panel's read. */
+  protected readonly adPanelAnnouncement: Signal<string> = this.initAdPanelAnnouncement();
 
   public constructor() {
     // toObservable + skip(1) per frontend-checklist §5 ("No effect() — use toObservable() with
@@ -679,6 +682,71 @@ export class MonitoringTabComponent implements OnInit {
           this.metaLoading.set(false);
         },
       });
+  }
+
+  /**
+   * The screen-reader status of the selected ad-platform panel, mirroring the branch its template
+   * shows: a notice says nothing (it is static guidance, not a read), a read in flight — first load
+   * or Refresh — says it is loading, and a finished read says how many campaigns the panel shows
+   * and what its totals leave out. Without it a read and a Refresh were visual only: the spinner
+   * and the changing figures were never announced.
+   *
+   * A failure returns '' on purpose: the visible error block carries role="alert", so repeating
+   * the message here would announce it twice. Google Ads and HubSpot are outside this region.
+   */
+  private initAdPanelAnnouncement(): Signal<string> {
+    return computed(() => {
+      const panel = this.selectedPlatform();
+      if (panel === 'google' || panel === 'hubspot' || this.panelNotices()[panel]) return '';
+      const read = this.adPanelReadState(panel);
+      if (read.loading) return `Loading ${read.label} campaigns`;
+      if (read.error || !read.loaded) return '';
+      const count = read.campaigns;
+      const shown =
+        count === 0 ? `No ${read.label} campaigns found for this account.` : `${read.label}: ${count} ${count === 1 ? 'campaign' : 'campaigns'} shown.`;
+      return read.note ? `${shown} ${read.note}` : shown;
+    });
+  }
+
+  private adPanelReadState(panel: MonitorConnectionPlatform): AccountMonitorPanelReadState {
+    switch (panel) {
+      case 'linkedin':
+        return {
+          label: 'LinkedIn',
+          loading: this.linkedInLoading(),
+          error: this.linkedInError(),
+          loaded: this.linkedInData() !== null,
+          campaigns: this.linkedInCampaigns().length,
+          note: this.linkedInTotalsNote(),
+        };
+      case 'reddit':
+        return {
+          label: 'Reddit',
+          loading: this.redditLoading(),
+          error: this.redditError(),
+          loaded: this.redditData() !== null,
+          campaigns: this.redditCampaigns().length,
+          note: this.redditTotalsNote(),
+        };
+      case 'meta':
+        return {
+          label: 'Meta',
+          loading: this.metaLoading(),
+          error: this.metaError(),
+          loaded: this.metaData() !== null,
+          campaigns: this.metaCampaigns().length,
+          note: this.metaTotalsNote(),
+        };
+      default:
+        return {
+          label: this.reportBackedLabel(),
+          loading: this.reportBackedLoading(),
+          error: this.reportBackedError(),
+          loaded: this.reportBackedData() !== null,
+          campaigns: this.reportBackedCampaigns().length,
+          note: this.reportBackedTotalsNote(),
+        };
+    }
   }
 
   private initPanelNotices(): Signal<Partial<Record<MonitorPanelKey, MonitorPanelNotice>>> {

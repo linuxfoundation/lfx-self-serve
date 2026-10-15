@@ -1338,6 +1338,64 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
     });
   });
 
+  describe('screen-reader read status', () => {
+    const live = (): string => text('monitoring-ad-panel-live');
+
+    it('keeps one persistent polite live region, empty on the Google panel', async () => {
+      await setup(allConnected);
+
+      const region = el('monitoring-ad-panel-live');
+      expect(region?.getAttribute('role')).toBe('status');
+      expect(region?.getAttribute('aria-live')).toBe('polite');
+      expect(live()).toBe('');
+    });
+
+    it('announces a read in flight, then what the panel shows, in the same region', async () => {
+      await setup(allConnected);
+      const region = el('monitoring-ad-panel-live');
+      const reply = new Subject<ReportBackedMonitorResponse>();
+      service['getMicrosoftMonitorData'].mockReturnValue(reply);
+      select('microsoft');
+
+      expect(live()).toBe('Loading Microsoft Ads campaigns');
+
+      reply.next(reportBacked());
+      reply.complete();
+      fixture.detectChanges();
+
+      expect(el('monitoring-ad-panel-live')).toBe(region);
+      expect(live()).toBe('Microsoft Ads: 1 campaign shown.');
+    });
+
+    it("adds the totals-coverage note when some rows couldn't be read", async () => {
+      await setup(allConnected);
+      const campaigns = reportBacked().campaigns;
+      service['getMicrosoftMonitorData'].mockReturnValue(
+        of(reportBacked({ campaigns: [...campaigns, { ...campaigns[0], campaignId: '2', fetchFailed: true, pacingLabel: undefined }] }))
+      );
+      select('microsoft');
+
+      expect(live()).toBe('Microsoft Ads: 2 campaigns shown. Totals cover 1 of 2 campaigns.');
+    });
+
+    it('says when the account has no campaigns', async () => {
+      await setup(allConnected);
+      service['getMicrosoftMonitorData'].mockReturnValue(of(reportBacked({ campaigns: [] })));
+      select('microsoft');
+
+      expect(live()).toBe('No Microsoft Ads campaigns found for this account.');
+    });
+
+    it('leaves a failed read to the role="alert" error block, so it is announced once', async () => {
+      await setup(allConnected);
+      service['getRedditMonitorData'].mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+      select('reddit');
+
+      expect(el('reddit-error')?.getAttribute('role')).toBe('alert');
+      expect(live()).toBe('');
+    });
+  });
+
   describe('platform buttons', () => {
     /**
      * Selected colours come from MONITOR_PLATFORM_BUTTON_COLORS (whose own spec checks every ratio):

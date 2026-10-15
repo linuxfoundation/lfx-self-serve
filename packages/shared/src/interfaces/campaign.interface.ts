@@ -2935,6 +2935,18 @@ export interface AccountMonitorKpisView {
   conversions: MonitorCellView;
 }
 
+/** The read state of one LinkedIn/Reddit/Meta/Microsoft Ads/X Monitor panel, as its screen-reader status describes it. */
+export interface AccountMonitorPanelReadState {
+  label: string;
+  loading: boolean;
+  error: string | null;
+  /** A read has answered, so `campaigns` and `note` describe what the panel shows. */
+  loaded: boolean;
+  campaigns: number;
+  /** The panel's totals-coverage note, or null when the totals cover every campaign. */
+  note: string | null;
+}
+
 /** One campaign row of an ad-platform panel. Every metric cell is a dash when `fetchFailed`. */
 export interface AccountMonitorCampaignRowView {
   campaignId: string;
