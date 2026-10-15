@@ -678,6 +678,15 @@ export class ImplementationTabComponent implements OnInit {
     this.redditNeedsVideoGoal() && this.redditEffectiveVideoGoal() === null ? 'Choose a video goal — Reddit needs one for a Video Views campaign.' : null
   );
   /**
+   * The message shown under the Post URL while Video Views has no post, else `null`. A video-views
+   * campaign has to promote an existing video post: the image-URL route authors an IMAGE post, which
+   * can never earn a video view, and with neither the campaign is created with no ad at all. Neither
+   * creator checks the creative against the objective, so this is the only place it is enforced.
+   */
+  protected readonly redditVideoPostError = computed(() =>
+    this.redditNeedsVideoGoal() && !this.redditPostUrl() ? 'Video Views promotes an existing Reddit video post — enter its Post URL.' : null
+  );
+  /**
    * Link to an EXISTING Reddit post to promote. Ungated, because both creators read it: the
    * legacy path extracts the post id and builds the ad from it (`reddit-ads.service.ts`), exactly
    * as campaign-service does.
@@ -1550,6 +1559,8 @@ export class ImplementationTabComponent implements OnInit {
     // because creation is async that refusal would arrive as a dead job. The message is on screen
     // under the goal picker.
     if (redditSelected && this.redditVideoGoalError() !== null) return false;
+    // Video Views without a post would build an image-post ad or no ad — never a video view.
+    if (redditSelected && this.redditVideoPostError() !== null) return false;
     if (metaSelected && !this.metaVariants().some((v) => v.primaryText.trim() && v.headline.trim())) return false;
     if (metaSelected && !this.metaHasPlacement()) return false;
     if (metaSelected && !this.metaPixelValid()) return false;
@@ -2025,6 +2036,12 @@ export class ImplementationTabComponent implements OnInit {
   protected onRedditObjectiveChange(event: Event): void {
     this.redditObjective.set((event.target as HTMLSelectElement).value as RedditObjective);
     this.emitDraft();
+  }
+
+  /** `{ videoGoal }` for a Video Views campaign with a usable goal, otherwise `{}`. */
+  private redditVideoGoalPayload(): { videoGoal?: RedditVideoGoal } {
+    const goal = this.redditEffectiveVideoGoal();
+    return this.redditNeedsVideoGoal() && goal ? { videoGoal: goal } : {};
   }
 
   protected onRedditVideoGoalChange(event: Event): void {
@@ -2544,7 +2561,7 @@ export class ImplementationTabComponent implements OnInit {
               // Only with `video_views`: both creators require it there and ignore it elsewhere, so
               // a goal left over from an earlier Video Views choice is not sent with another
               // objective. `canSubmit` guarantees it is present whenever the objective needs it.
-              ...(this.redditNeedsVideoGoal() && this.redditEffectiveVideoGoal() ? { videoGoal: this.redditEffectiveVideoGoal() as RedditVideoGoal } : {}),
+              ...this.redditVideoGoalPayload(),
               // Omitted when blank rather than sent empty: upstream treats an empty `postUrl` as
               // "author a post instead", and an empty `callToAction` as "use the default" — both
               // the same decision an absent key makes, so a blank string would only add a value

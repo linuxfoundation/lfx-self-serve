@@ -1602,7 +1602,7 @@
                   }
                 </select>
                 <p id="reddit-video-goal-hint" class="text-xs text-gray-500">
-                  How long a view must last to count. Video views need a video post, so promote an existing Reddit video post through the Post URL below.
+                  How long a view must last to count.
                 </p>
                 @if (redditVideoGoalError(); as error) {
                   <p id="reddit-video-goal-error" role="alert" class="text-xs text-red-600" data-testid="implementation-reddit-video-goal-error">{{ error }}</p>
@@ -1634,10 +1634,15 @@
                 data-testid="implementation-reddit-post-url" />
               <p class="text-xs text-gray-500">
                 An existing Reddit post to promote — a reddit.com post link, a redd.it link, or the post id on its own.
-                @if (redditCreativeAvailable()) {
+                @if (redditNeedsVideoGoal()) {
+                  Video Views needs an existing video post here; an image post cannot earn video views.
+                } @else if (redditCreativeAvailable()) {
                   Leave it blank to have one composed from the image below instead.
                 }
               </p>
+              @if (redditVideoPostError(); as error) {
+                <p role="alert" class="text-xs text-red-600" data-testid="implementation-reddit-video-post-error">{{ error }}</p>
+              }
             </div>
 
             <!-- Compose a NEW post. Withheld unless the capability says yes: the other creator
