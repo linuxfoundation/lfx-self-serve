@@ -21,7 +21,7 @@ test.describe('Marketing OS runs land on documents', () => {
     await expect(page.getByTestId('mktg-document-view-document')).toHaveCount(0);
     await expect(page.getByTestId('mktg-document-view-about')).toHaveCount(0);
     await expect(page.getByTestId('mktg-document-view-generating-title')).toHaveText('Writing the Synthetic Orbit Brand Kit');
-    await expect(page.getByTestId('mktg-document-view-generating-meta')).toContainText(/Started \d{2}:\d{2}/);
+    await expect(page.getByTestId('mktg-document-view-generating-meta')).toContainText(/Started \d{1,2} [A-Za-z]+, \d{2}:\d{2}/);
     await expect(page.getByTestId('mktg-document-view-generating-meta')).toContainText(
       '· usually three to five minutes · you can leave this page; the result lands in Documents'
     );
@@ -53,14 +53,14 @@ test.describe('Marketing OS runs land on documents', () => {
     await testInfo.attach('generating-with-previous-revision', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
     run.finish();
     await expect(page.getByTestId('mktg-document-view-storing-step')).toHaveAttribute('aria-current', 'step', { timeout: DATA_LOAD_TIMEOUT });
-    await expect(page.getByTestId('mktg-document-view-storing-step')).toContainText('● Storing revision 2');
     await expect(page.getByTestId('mktg-document-view-writing-step')).toContainText('✓ Writing the document');
     await expect(page.getByTestId('mktg-document-view-generating-meta')).toHaveText(started);
     await expect(page.getByTestId('mktg-document-view-document')).toContainText('Synthetic revision 1');
     await expect(page.getByTestId('mktg-document-view-generating')).not.toContainText('Sources read');
     await expect(page.getByTestId('mktg-document-view-generating')).not.toContainText('Building the slides');
-    await testInfo.attach('storing-with-previous-revision', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
+    await expect(page.getByTestId('mktg-document-view-storing-step')).toContainText('● Storing revision 2');
     run.persist();
+    await testInfo.attach('storing-with-previous-revision', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
     await expect(page.getByTestId('mktg-document-view-document')).toContainText('Synthetic revision 2', { timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('mktg-document-view-generating')).toHaveCount(0);
     await testInfo.attach('stored-revision', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });

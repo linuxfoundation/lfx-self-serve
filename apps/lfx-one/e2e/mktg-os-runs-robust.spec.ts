@@ -49,8 +49,13 @@ test.describe('Marketing OS run/document structure and access states', () => {
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       const revisionLabel = page.getByTestId(/^mktg-document-view-revision-label-/).first();
       await expect(revisionLabel).toHaveCSS('text-align', 'left');
-      await expect(revisionLabel).toHaveCSS('white-space', 'nowrap');
-      await expect(revisionLabel).toHaveCSS('text-overflow', 'ellipsis');
+      await expect(revisionLabel).toHaveCSS('white-space', 'normal');
+      await expect(revisionLabel).toHaveAttribute('title', /Generated from the form/);
+      const provenance = page.getByTestId(/^mktg-document-view-revision-how-/).first();
+      await expect(provenance).toHaveText('Generated from the form');
+      await expect(provenance).toHaveCSS('display', 'block');
+      await expect(provenance).toHaveCSS('white-space', 'normal');
+      await expect(provenance).toHaveCSS('text-overflow', 'clip');
     };
 
     for (const width of [1440, 1280, 1100, 1024, 768]) {
