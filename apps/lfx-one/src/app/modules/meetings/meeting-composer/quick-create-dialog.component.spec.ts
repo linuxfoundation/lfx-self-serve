@@ -288,7 +288,8 @@ describe('QuickCreateDialogComponent — frozen while a save is in flight', () =
     expect(cancelButton()?.disabled).toBe(false);
     expect(dialog().closable).toBe(true);
     expect(dialog().closeOnEscape).toBe(true);
-    expect(dialog().dismissableMask).toBe(true);
+    // A click on the mask never closes the dialog — only the X, Cancel or Escape do.
+    expect(dialog().dismissableMask).toBe(false);
   });
 
   it('freezes the fields and closes every way out for the length of the save', async () => {
@@ -332,6 +333,7 @@ describe('QuickCreateDialogComponent — frozen while a save is in flight', () =
     // with the request rather than latch.
     expect(body()?.hasAttribute('inert')).toBe(false);
     expect(cancelButton()?.disabled).toBe(false);
-    expect(dialog().dismissableMask).toBe(true);
+    // A click on the mask never closes the dialog — only the X, Cancel or Escape do.
+    expect(dialog().dismissableMask).toBe(false);
   });
 });

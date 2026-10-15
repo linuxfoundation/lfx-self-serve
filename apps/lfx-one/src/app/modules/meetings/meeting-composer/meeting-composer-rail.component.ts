@@ -50,6 +50,19 @@ export class MeetingComposerRailComponent {
   protected readonly testIdPrefix: Signal<string> = computed(() => (this.compact() ? 'meeting-composer-rail-compact' : 'meeting-composer-rail'));
   // Edit mode has no ordering and no Next/Back, so announcing a step would describe a wizard that
   // isn't there — matching what the desktop edit rows already do.
+  /**
+   * Layout of the rail itself.
+   * @description The create-mode stepper bleeds past its column by the rows' own side padding (`px-3.5`, the
+   * preview card's inset), so each step's marker lines up with the preview card's border and the row
+   * highlight extends beyond it on both sides. Edit rows keep their flush layout.
+   */
+  protected readonly navClass: Signal<string> = computed(() => {
+    if (this.compact()) {
+      return 'flex items-center gap-1 overflow-x-auto pb-1';
+    }
+
+    return this.isEditMode() ? 'flex flex-col gap-[2px]' : '-mx-3.5 flex flex-col gap-[2px]';
+  });
   protected readonly activeChipAriaCurrent: Signal<'step' | 'true'> = computed(() => (this.isEditMode() ? 'true' : 'step'));
 
   public constructor() {
