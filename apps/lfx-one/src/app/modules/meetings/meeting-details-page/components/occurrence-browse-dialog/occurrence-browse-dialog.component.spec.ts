@@ -166,6 +166,39 @@ describe('MeetingOccurrenceBrowseDialogComponent', () => {
     expect(query('[data-testid="occurrence-browse-partial"]')).toBeNull();
   });
 
+  it('moves no focus, and shows no Loading on the other tab, when the viewer switches tabs mid-read', async () => {
+    more.past.set(true);
+    more.upcoming.set(true);
+    await render(at(-1));
+    document.body.appendChild(fixture.nativeElement);
+    let settleRead: (value: boolean) => void = () => undefined;
+    loadMore.mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          settleRead = (value) => {
+            items.update((current) => [item(-3), ...current]);
+            resolve(value);
+          };
+        })
+    );
+
+    (query('[data-testid="occurrence-browse-load-more"] button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(query('[data-testid="occurrence-browse-load-more"]')?.textContent).toContain('Loading');
+    tab('upcoming')?.click();
+    fixture.detectChanges();
+    expect(query('[data-testid="occurrence-browse-load-more"]')?.textContent).toContain('Load more');
+    const focused = document.activeElement;
+
+    settleRead(true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(document.activeElement).toBe(focused);
+    fixture.nativeElement.remove();
+  });
+
   it('makes an empty tab panel focusable, so its message is reached', async () => {
     items.set([item(0)]);
     await render(at(0));

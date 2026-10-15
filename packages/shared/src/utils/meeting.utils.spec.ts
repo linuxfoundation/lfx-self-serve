@@ -1526,6 +1526,20 @@ describe('buildOccurrenceStripItems (E6-03)', () => {
     ]);
   });
 
+  it("takes an ended duplicate's end from its past record: known only when the record has a scheduled end", () => {
+    const record = (day: number, endMinutes?: number) => ({
+      meeting_and_occurrence_id: `99152950841-${at(day)}`,
+      scheduled_start_time: new Date(at(day)).toISOString(),
+      ...(endMinutes !== undefined && { scheduled_end_time: new Date(at(day) + endMinutes * 60_000).toISOString() }),
+    });
+    const items = buildOccurrenceStripItems([], { past: [record(9), record(16, 50)], future: [occurrence(9), occurrence(16)] }, 30, now);
+
+    expect(items.map((item) => [item.startMs, item.duration, item.endKnown, !!item.pastResourceId])).toEqual([
+      [at(9), 30, false, true],
+      [at(16), 50, true, true],
+    ]);
+  });
+
   it('flags a past record whose id is listed as cancelled', () => {
     const items = buildOccurrenceStripItems(
       [],

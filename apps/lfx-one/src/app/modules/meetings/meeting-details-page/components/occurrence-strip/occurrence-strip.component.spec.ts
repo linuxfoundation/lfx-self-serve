@@ -182,6 +182,15 @@ describe('MeetingOccurrenceStripComponent', () => {
       expect(navigatedTo()).toBe(at(2));
     });
 
+    it('keeps one dialog: a second activation while it is open opens nothing', async () => {
+      await loaded();
+      const { open } = openBrowse();
+
+      button('occurrence-strip-position')?.click();
+
+      expect(open).toHaveBeenCalledTimes(1);
+    });
+
     it('closes an open dialog when the strip goes', async () => {
       await loaded();
       const { ref } = openBrowse();
@@ -604,6 +613,24 @@ describe('MeetingOccurrenceStripComponent', () => {
     expect(getPage).toHaveBeenCalledTimes(1);
     expect(navigateToOccurrence.mock.calls.at(-1)?.[0]).toEqual(expect.objectContaining({ startMs: at(-10), isPast: true }));
     expect(navigateToOccurrence.mock.calls.at(-1)?.[0].pastResourceId).toBeUndefined();
+  });
+
+  it('closes the dialog when a refused page hides the strip', async () => {
+    await render(page({ past: [past(-1)], past_has_more: true, past_cursor: String(at(-1)) }), {
+      selected: at(-1),
+      pages: [new HttpErrorResponse({ status: 403 })],
+    });
+    const dialogService = fixture.debugElement.injector.get(DialogService);
+    const ref = { onDestroy: new Subject<void>(), close: vi.fn() } as unknown as DynamicDialogRef;
+    const open = vi.spyOn(dialogService, 'open').mockReturnValue(ref);
+    button('occurrence-strip-position')?.click();
+    const data = open.mock.calls[0][1].data as MeetingOccurrenceBrowseDialogData;
+
+    await data.loadMore('past');
+    await settle();
+
+    expect(query('[data-testid="occurrence-strip-section"]')).toBeNull();
+    expect(ref.close).toHaveBeenCalled();
   });
 
   it("lets the dialog read the past side through the strip's loader, in the largest pages", async () => {

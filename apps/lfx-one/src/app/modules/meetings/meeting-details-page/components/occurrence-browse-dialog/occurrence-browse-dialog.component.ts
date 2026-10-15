@@ -54,7 +54,9 @@ export class MeetingOccurrenceBrowseDialogComponent {
     '!h-[30px] !w-[30px] !min-w-0 !rounded-[var(--md-radius-md)] !border !border-[var(--md-border)] !bg-[var(--md-surface-card)] !p-0 !text-[var(--md-text-muted)] hover:!bg-[var(--md-surface-hover)] focus-visible:!shadow-[var(--md-shadow-focus)]';
 
   protected readonly tab = signal<MeetingOccurrenceBrowseTab>(this.initialTab());
-  protected readonly loadingMore = signal(false);
+  /** The tab whose next page is being read; "Loading…" shows on that tab only. */
+  protected readonly loadingTab = signal<MeetingOccurrenceBrowseTab | null>(null);
+  protected readonly loadingMore = computed(() => this.loadingTab() === this.tab());
 
   private readonly monthFormat = new Intl.DateTimeFormat('en-US', { month: 'short', timeZone: this.data.timezone });
   private readonly dayFormat = new Intl.DateTimeFormat('en-US', { day: 'numeric', timeZone: this.data.timezone });
@@ -101,32 +103,41 @@ export class MeetingOccurrenceBrowseDialogComponent {
   }
 
   /**
-   * Reads the next page on the open tab. The button stays enabled (`aria-busy` while reading), so focus
-   * stays on it; when the read adds rows, focus moves to the first new one, and if nothing more remains
-   * (the button goes) to the last row, so it never falls out of the dialog to the page behind.
+   * Reads the next page on the open tab. The button stays enabled, so focus stays on it; when the read
+   * adds rows to that tab, focus moves to the first one not there before, and if nothing more remains (the
+   * button goes) to the last row, so it never falls out of the dialog to the page behind. Nothing moves
+   * if the viewer has switched tabs meanwhile.
    */
   protected async loadMore(): Promise<void> {
-    if (this.loadingMore()) {
+    if (this.loadingTab()) {
       return;
     }
-    const before = this.rows().length;
-    this.loadingMore.set(true);
+    const tab = this.tab();
+    const before = new Set(this.rows().map((row) => row.item.startMs));
+    this.loadingTab.set(tab);
     try {
-      await this.data.loadMore(this.tab());
+      await this.data.loadMore(tab);
     } finally {
-      this.loadingMore.set(false);
+      this.loadingTab.set(null);
+    }
+    if (this.tab() !== tab) {
+      return;
     }
     const rows = this.rows();
-    let target: MeetingOccurrenceBrowseRow | undefined;
-    if (rows.length > before) {
-      target = rows[before];
-    } else if (!this.hasMore()) {
+    let target: MeetingOccurrenceBrowseRow | undefined = rows.find((row) => !before.has(row.item.startMs));
+    if (!target && !this.hasMore()) {
       target = rows[rows.length - 1];
     }
     if (target) {
-      afterNextRender(() => this.host.nativeElement.querySelector<HTMLElement>(`[data-start-ms="${target.item.startMs}"]`)?.focus(), {
-        injector: this.injector,
-      });
+      const startMs = target.item.startMs;
+      afterNextRender(
+        () => {
+          if (this.tab() === tab) {
+            this.host.nativeElement.querySelector<HTMLElement>(`[data-start-ms="${startMs}"]`)?.focus();
+          }
+        },
+        { injector: this.injector }
+      );
     }
   }
 

@@ -21,7 +21,7 @@ import { buildOccurrenceStripItems, buildRecurrenceSummary, compositeIdToStartMs
 import { MeetingService } from '@services/meeting.service';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { firstValueFrom } from 'rxjs';
+import { firstValueFrom, take } from 'rxjs';
 
 import { nameDynamicDialog } from '@shared/utils/name-dynamic-dialog';
 import { restoreFocusOnDialogClose } from '@shared/utils/restore-dialog-focus.util';
@@ -215,7 +215,9 @@ export class MeetingOccurrenceStripComponent {
    */
   protected openBrowse(): void {
     const meeting = this.state.meeting();
-    if (!meeting) {
+    // One dialog at a time: a second activation (a double click) keeps the open one's ref, which the
+    // strip closes when it hides or goes.
+    if (!meeting || this.browseRef) {
       return;
     }
     const trigger = this.document.activeElement;
@@ -231,7 +233,7 @@ export class MeetingOccurrenceStripComponent {
       loadMore: (tab) => this.loadMore(this.runId, tab === 'past' ? 'past' : 'future', MEETING_OCCURRENCES_PAGE_MAX_LIMIT),
       open: (item) => void this.moveTo(item),
     };
-    this.browseRef = this.dialogService.open(MeetingOccurrenceBrowseDialogComponent, {
+    const ref = this.dialogService.open(MeetingOccurrenceBrowseDialogComponent, {
       showHeader: false,
       width: '520px',
       breakpoints: { '600px': 'calc(100vw - 40px)' },
@@ -244,11 +246,18 @@ export class MeetingOccurrenceStripComponent {
         '!rounded-[var(--md-radius-dialog)] !border !border-[var(--md-border)] !bg-[var(--md-surface-card)] !shadow-[var(--md-shadow-dialog)] overflow-hidden',
       data,
     });
-    // PrimeNG 20.4 leaves a headless dialog's `ariaLabelledBy` config unbound: name it from its heading.
-    if (this.browseRef) {
-      nameDynamicDialog(this.dialogService, this.browseRef, MeetingOccurrenceBrowseDialogComponent.headingId);
+    if (!ref) {
+      return;
     }
-    restoreFocusOnDialogClose(this.browseRef, trigger);
+    this.browseRef = ref;
+    ref.onDestroy.pipe(take(1)).subscribe(() => {
+      if (this.browseRef === ref) {
+        this.browseRef = null;
+      }
+    });
+    // PrimeNG 20.4 leaves a headless dialog's `ariaLabelledBy` config unbound: name it from its heading.
+    nameDynamicDialog(this.dialogService, ref, MeetingOccurrenceBrowseDialogComponent.headingId);
+    restoreFocusOnDialogClose(ref, trigger);
   }
 
   protected jumpToNext(): void {
@@ -393,6 +402,12 @@ export class MeetingOccurrenceStripComponent {
     return null;
   }
 
+  /** Hides the strip, and the browse dialog with it, which would otherwise outlive its trigger. */
+  private hide(): void {
+    this.status.set('hidden');
+    this.browseRef?.close();
+  }
+
   /** Each side's read end: the oldest past record and the latest upcoming occurrence the pages hold. */
   private readEdges(loaded: MeetingOccurrenceStripPages): { oldestPast?: number; latestFuture?: number } {
     const pastStarts = loaded.past.map((record) => compositeIdToStartMs(record.meeting_and_occurrence_id)).filter((ms): ms is number => ms !== null);
@@ -445,7 +460,7 @@ export class MeetingOccurrenceStripComponent {
       } catch {
         // The service has logged anything but a refusal, which hides the strip silently, as V1's.
         if (run === this.runId) {
-          this.status.set('hidden');
+          this.hide();
         }
         return;
       }
@@ -488,7 +503,11 @@ export class MeetingOccurrenceStripComponent {
 
     if (run === this.runId) {
       const timeline = this.timeline();
-      this.status.set((timeline?.items.length ?? 0) > 1 || timeline?.pastHasMore || timeline?.futureHasMore ? 'ready' : 'hidden');
+      if ((timeline?.items.length ?? 0) > 1 || timeline?.pastHasMore || timeline?.futureHasMore) {
+        this.status.set('ready');
+      } else {
+        this.hide();
+      }
     }
   }
 
@@ -558,7 +577,7 @@ export class MeetingOccurrenceStripComponent {
       if (run === this.runId && error instanceof HttpErrorResponse && (error.status === 400 || error.status === 403)) {
         this.runId++;
         this.loaded.set(null);
-        this.status.set('hidden');
+        this.hide();
       }
       return false;
     } finally {

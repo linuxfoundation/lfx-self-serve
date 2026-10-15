@@ -850,19 +850,25 @@ export function buildOccurrenceStripItems(
     if (startMs === null) {
       continue;
     }
-    // An ended occurrence the live list still carries gets the record's composite id, its canonical URL;
-    // one still in progress keeps its live entry alone, as the page joins it from there.
-    const existing = byInstant.get(startMs);
-    if (existing) {
-      if (existing.isPast) {
-        byInstant.set(startMs, { ...existing, pastResourceId: past.meeting_and_occurrence_id });
-      }
-      continue;
-    }
     const scheduled =
       past.scheduled_end_time && past.scheduled_start_time
         ? Math.round((new Date(past.scheduled_end_time).getTime() - new Date(past.scheduled_start_time).getTime()) / 60000)
         : 0;
+    // An ended occurrence the live list still carries takes the record's composite id, its canonical URL,
+    // and the record's end: shown only when the record has a scheduled end (the live duration may be the
+    // series' standing in). One still in progress keeps its live entry alone, as the page joins it there.
+    const existing = byInstant.get(startMs);
+    if (existing) {
+      if (existing.isPast) {
+        byInstant.set(startMs, {
+          ...existing,
+          pastResourceId: past.meeting_and_occurrence_id,
+          duration: scheduled > 0 ? scheduled : existing.duration,
+          endKnown: scheduled > 0,
+        });
+      }
+      continue;
+    }
     add({
       startMs,
       startTime: new Date(startMs).toISOString(),
