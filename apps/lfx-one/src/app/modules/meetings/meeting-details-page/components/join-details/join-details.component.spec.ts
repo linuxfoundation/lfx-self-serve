@@ -210,6 +210,21 @@ describe('MeetingJoinDetailsComponent', () => {
     expect(query('join-details-host-key-toggle')).not.toBeNull();
   });
 
+  it('reads when the window opens on an occurrence the page switched to while both windows were closed', async () => {
+    const week = 7 * 24 * HOUR;
+    meeting.set(build({ organizer: true, start_time: new Date(Date.now() + 5 * HOUR).toISOString() }));
+    selectedOccurrence.set({ occurrence_id: '1', start_time: new Date(Date.now() + 5 * HOUR).toISOString(), duration: 60 });
+    await update();
+    const later = Date.now() + 5 * HOUR + week;
+    selectedOccurrence.set({ occurrence_id: '2', start_time: new Date(later).toISOString(), duration: 60 });
+    await update();
+
+    now.set(new Date(later - 60 * 60_000));
+    await update();
+
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
   it('shows a key the server returned to a browser whose clock runs a few minutes behind', async () => {
     // The server, by its clock, is inside the window; the browser is 5 minutes before it opens.
     meeting.set(build({ host_key: KEY, can_view_host_key: true, start_time: new Date(Date.now() + 75 * 60_000).toISOString() }));

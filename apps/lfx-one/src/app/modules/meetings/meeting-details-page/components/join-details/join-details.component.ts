@@ -176,16 +176,24 @@ export class MeetingJoinDetailsComponent {
     if (!isPlatformBrowser(this.platformId)) {
       return;
     }
-    toObservable(this.hostKeyWait)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((wait) => {
+    // The wait together with the window it is about: switching between two occurrences whose windows are
+    // both still closed changes the window, not the wait, and each must be recorded as seen closed.
+    const watched = computed(
+      () => {
         const meeting = this.state.meeting();
         const windowStart = meeting ? getHostKeyWindowStartMs(this.windowTiming(meeting)) : null;
-        if (!meeting || windowStart === null) {
+        // Per meeting and window: each later occurrence's window gets its own read and retry.
+        return meeting && windowStart !== null ? { id: `${meeting.id}@${windowStart}`, wait: this.hostKeyWait() } : null;
+      },
+      { equal: (a, b) => a?.id === b?.id && a?.wait === b?.wait }
+    );
+    toObservable(watched)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((current) => {
+        if (!current) {
           return;
         }
-        // Per meeting and window: each later occurrence's window gets its own read and retry.
-        const id = `${meeting.id}@${windowStart}`;
+        const { id, wait } = current;
         if (wait === 'closed' && !this.sawClosed().has(id)) {
           this.sawClosed.update((ids) => new Set([...ids, id]));
           return;
