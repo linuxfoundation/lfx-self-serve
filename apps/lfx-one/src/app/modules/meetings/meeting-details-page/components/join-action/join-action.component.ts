@@ -8,7 +8,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { environment } from '@environments/environment';
 import { MeetingJoinUrlState } from '@lfx-one/shared/interfaces';
-import { buildJoinUrlWithParams, buildMeetingOrganizerMailto, formatMeetingMailtoDate, resolveMeetingOrganizer } from '@lfx-one/shared/utils';
+import { buildJoinUrlWithParams, buildOccurrenceOrganizerMailto } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { MessageService } from 'primeng/api';
@@ -65,7 +65,7 @@ export class MeetingJoinActionComponent {
   protected readonly identitiesPath = '/profile/identities';
   /** An email to the organizer about this occurrence, when the page knows their address. */
   protected readonly organizerMailto: Signal<string | null> = this.initOrganizerMailto();
-  /** A 13px text action under the error, as Try again. */
+  /** The error's text actions (the remedies and Try again): an underlined link in the alert's colour and size. */
   protected readonly linkClass =
     'w-fit rounded-[var(--md-radius-xs)] font-semibold text-[var(--md-status-live)] underline focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none';
 
@@ -151,13 +151,7 @@ export class MeetingJoinActionComponent {
       if (!meeting || !this.notRegistered()) {
         return null;
       }
-      // As the invitation-required state builds it: the selected occurrence's date, in the meeting's zone.
-      return buildMeetingOrganizerMailto({
-        email: resolveMeetingOrganizer(meeting)?.email,
-        meetingTitle: meeting.title,
-        meetingDate: formatMeetingMailtoDate(this.state.selectedOccurrence()?.start_time ?? meeting.start_time, meeting.timezone),
-        detailUrl: `${environment.urls.home}/meetings/${encodeURIComponent(meeting.id)}`,
-      });
+      return buildOccurrenceOrganizerMailto(meeting, this.state.selectedOccurrence()?.start_time, environment.urls.home);
     });
   }
 }

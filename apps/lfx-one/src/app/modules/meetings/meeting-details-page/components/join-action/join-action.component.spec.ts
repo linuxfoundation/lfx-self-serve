@@ -137,7 +137,7 @@ describe('MeetingJoinActionComponent', () => {
       create({ response: throwError(() => ({ error: { error: 'Meeting not joinable yet' } })) });
 
       expect(button()?.getAttribute('data-state')).toBe('error');
-      expect(query('meeting-action-join-error')?.getAttribute('role')).toBe('alert');
+      expect(query('meeting-action-join-error')?.querySelector('[role="alert"]')?.textContent).toContain('Meeting not joinable yet');
       expect(query('meeting-action-join-error')?.textContent).toContain('Meeting not joinable yet');
 
       getPublicMeetingJoinUrl.mockReturnValue(of({ link: ZOOM_LINK }));
@@ -154,9 +154,36 @@ describe('MeetingJoinActionComponent', () => {
       create({ response: throwError(() => ({ error: { ...notRegistered.error, error: 'Any wording at all' } })) });
 
       expect(query('meeting-action-not-registered-reason')?.textContent?.trim()).toBe(
-        "This meeting's invitation went to an email address that isn't on the account you're signed in with."
+        "You're not on this meeting's invite list with the account you're signed in with. The invitation may have gone to a different email address."
       );
       expect(query('meeting-action-join-error')?.textContent).not.toContain('Any wording at all');
+    });
+
+    it("offers no remedies for the server's not-registered wording without the code", () => {
+      create({ response: throwError(() => ({ error: { error: 'You are not registered for this restricted meeting' } })) });
+
+      expect(query('meeting-action-not-registered-reason')).toBeNull();
+      expect(query('meeting-action-add-email')).toBeNull();
+      expect(query('meeting-action-join-error')?.textContent).toContain('You are not registered for this restricted meeting');
+    });
+
+    it('announces only the message, not the actions', () => {
+      create({ response: throwError(() => notRegistered) });
+
+      const alert = query('meeting-action-join-error')?.querySelector('[role="alert"]');
+      expect(alert?.textContent).toContain("You're not on this meeting's invite list");
+      expect(alert?.querySelector('a, button')).toBeNull();
+    });
+
+    it('clears the remedies when Try again succeeds', () => {
+      create({ response: throwError(() => notRegistered) });
+      getPublicMeetingJoinUrl.mockReturnValue(of({ link: ZOOM_LINK }));
+
+      query('meeting-action-join-retry')?.click();
+      fixture.detectChanges();
+
+      expect(query('meeting-action-not-registered-reason')).toBeNull();
+      expect(button()?.getAttribute('data-state')).toBe('ready');
     });
 
     it('links to the identities page to add and verify the invited email', () => {

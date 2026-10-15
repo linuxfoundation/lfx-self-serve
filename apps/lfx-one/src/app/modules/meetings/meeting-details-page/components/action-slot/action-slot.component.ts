@@ -8,7 +8,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { environment } from '@environments/environment';
 import { DEFAULT_EARLY_JOIN_TIME } from '@lfx-one/shared/constants';
 import { ActionSlotKind, MeetingViewerRole } from '@lfx-one/shared/interfaces';
-import { buildMeetingOrganizerMailto, formatMeetingMailtoDate, resolveMeetingOrganizer } from '@lfx-one/shared/utils';
+import { buildOccurrenceOrganizerMailto } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { restoreFocusOnDialogClose } from '@shared/utils/restore-dialog-focus.util';
@@ -127,14 +127,7 @@ export class MeetingActionSlotComponent {
       if (!meeting || this.kind() !== 'invitation-required') {
         return null;
       }
-      // The selected occurrence's date, so a series' email names the occurrence the page is about, in
-      // the meeting's own timezone so the server render and the browser agree.
-      return buildMeetingOrganizerMailto({
-        email: resolveMeetingOrganizer(meeting)?.email,
-        meetingTitle: meeting.title,
-        meetingDate: formatMeetingMailtoDate(this.state.selectedOccurrence()?.start_time ?? meeting.start_time, meeting.timezone),
-        detailUrl: `${environment.urls.home}/meetings/${encodeURIComponent(meeting.id)}`,
-      });
+      return buildOccurrenceOrganizerMailto(meeting, this.state.selectedOccurrence()?.start_time, environment.urls.home);
     });
   }
 

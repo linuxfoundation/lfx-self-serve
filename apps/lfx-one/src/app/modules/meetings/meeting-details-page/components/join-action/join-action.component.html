@@ -36,14 +36,20 @@
           data-state="error" />
         <div
           class="flex flex-col gap-[6px] rounded-[var(--md-radius-md)] bg-[var(--md-status-live-bg)] px-[12px] py-[10px] text-[12.5px] leading-[1.4] text-[var(--md-status-live)]"
-          role="alert"
           data-testid="meeting-action-join-error">
+          <!-- Only the message is the alert, so it is announced alone; the actions follow it. -->
+          <div role="alert">
+            @if (notRegistered()) {
+              <!-- E10-02: why, in one sentence true for every cause of the code (another email, or no
+                   invitation at all), then the remedies. Keyed on the code, never the message. -->
+              <span class="font-semibold" data-testid="meeting-action-not-registered-reason">
+                You're not on this meeting's invite list with the account you're signed in with. The invitation may have gone to a different email address.
+              </span>
+            } @else {
+              <span>{{ joinState().error }}</span>
+            }
+          </div>
           @if (notRegistered()) {
-            <!-- E10-02: why, in one sentence, then the remedies: another email now, the invited email for
-                 good (identities page, OTP verification), or the organizer. Keyed on the code. -->
-            <span class="font-semibold" data-testid="meeting-action-not-registered-reason">
-              This meeting's invitation went to an email address that isn't on the account you're signed in with.
-            </span>
             <button type="button" [class]="linkClass" (click)="joinWithDifferentEmail()" data-testid="meeting-action-join-different-email">
               Join with a different email
             </button>
@@ -53,16 +59,8 @@
             } @else {
               <button type="button" [class]="linkClass" lfxOpenIntercom data-testid="meeting-action-contact-support">Contact support</button>
             }
-          } @else {
-            <span>{{ joinState().error }}</span>
           }
-          <button
-            type="button"
-            class="w-fit rounded-[var(--md-radius-xs)] font-semibold underline focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
-            (click)="retry()"
-            data-testid="meeting-action-join-retry">
-            Try again
-          </button>
+          <button type="button" [class]="linkClass" (click)="retry()" data-testid="meeting-action-join-retry">Try again</button>
         </div>
       </div>
     }

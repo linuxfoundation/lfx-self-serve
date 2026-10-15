@@ -71,7 +71,7 @@ own namespace; the two never share a value.
 | `meeting-cancelled-no-next`                 | On a cancelled occurrence with no active one ahead: "There are no upcoming occurrences in this series."                 |
 | `meeting-action-slot`                       | The action slot inside the rail (see below)                                                                             |
 | `meeting-action-join-button`                | The Join control in the `join` kind (see below)                                                                         |
-| `meeting-action-join-error`                 | Its error message (`role="alert"`)                                                                                      |
+| `meeting-action-join-error`                 | The error block: its message is the `role="alert"` (announced alone), its actions follow it                             |
 | `meeting-action-join-retry`                 | Its error's "Try again" control                                                                                         |
 | `meeting-action-join-different-email`       | After `NOT_REGISTERED_FOR_MEETING`, the control that opens the guest form to join with another email                    |
 | `meeting-action-join-different-email-intro` | The line introducing the guest form on that path                                                                        |
