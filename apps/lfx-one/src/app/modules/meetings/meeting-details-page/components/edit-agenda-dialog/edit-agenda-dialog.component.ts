@@ -10,6 +10,7 @@ import { MEETING_AGENDA_MAX_LENGTH, MEETING_AGENDA_WARNING_LENGTH } from '@lfx-o
 import { Meeting, MeetingEditAgendaDialogData, MeetingOccurrence } from '@lfx-one/shared/interfaces';
 import { buildMeetingUpdateRequest } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
+import { lockDynamicDialogWhile } from '@shared/utils/lock-dynamic-dialog.util';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { firstValueFrom } from 'rxjs';
@@ -78,6 +79,11 @@ export class MeetingEditAgendaDialogComponent {
     () => !this.saving() && !this.moved() && this.length() <= MEETING_AGENDA_MAX_LENGTH && !this.emptyOccurrence() && this.value().trim() !== this.baseline()
   );
 
+  public constructor() {
+    // No Escape or close while a save is in flight: it would land after the organizer thought it cancelled.
+    lockDynamicDialogWhile(this.saving);
+  }
+
   protected async save(): Promise<void> {
     if (!this.canSave()) {
       return;
@@ -133,9 +139,20 @@ export class MeetingEditAgendaDialogComponent {
     }
   }
 
-  /** The occurrence this dialog edits, as the fresh record holds it; `null` for a series edit. */
+  /**
+   * The occurrence this dialog edits, as the fresh record holds it; `null` for a series edit. Matched by
+   * its start instant as well as its id: the page's payload and the authenticated read need not spell
+   * the id alike (seconds or milliseconds), but they agree on when it starts.
+   */
   private freshOccurrence(meeting: Meeting): MeetingOccurrence | null {
-    const occurrenceId = this.data.scope === 'occurrence' ? this.data.occurrence?.occurrenceId : null;
-    return occurrenceId ? ((meeting.occurrences ?? []).find((occurrence) => occurrence.occurrence_id === occurrenceId) ?? null) : null;
+    const edited = this.data.scope === 'occurrence' ? this.data.occurrence : null;
+    if (!edited) {
+      return null;
+    }
+    const startMs = Date.parse(edited.startTime);
+    return (
+      (meeting.occurrences ?? []).find((occurrence) => occurrence.occurrence_id === edited.occurrenceId || Date.parse(occurrence.start_time) === startMs) ??
+      null
+    );
   }
 }

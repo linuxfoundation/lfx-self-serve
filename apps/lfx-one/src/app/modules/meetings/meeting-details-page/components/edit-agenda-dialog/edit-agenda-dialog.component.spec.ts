@@ -7,7 +7,7 @@ import { Meeting, MeetingEditAgendaDialogData } from '@lfx-one/shared/interfaces
 import { MeetingService } from '@services/meeting.service';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { MeetingEditAgendaDialogComponent } from './edit-agenda-dialog.component';
@@ -111,6 +111,42 @@ describe('MeetingEditAgendaDialogComponent', () => {
       description: 'Occurrence agenda',
     });
     expect(updateMeeting).not.toHaveBeenCalled();
+  });
+
+  it('finds the occurrence by its start when the authenticated read spells its id in milliseconds', async () => {
+    await render(
+      { scope: 'occurrence', occurrence: OCCURRENCE },
+      fresh({ occurrences: [{ occurrence_id: '1700000000000', start_time: '2023-11-14T22:13:20.000Z', duration: 45, description: ORIGINAL }] })
+    );
+    type('Occurrence agenda');
+
+    saveButton().click();
+    await settle();
+
+    expect(query('edit-agenda-moved')).toBeNull();
+    expect(updateOccurrence).toHaveBeenCalledWith('meeting-1', '1700000000000', expect.objectContaining({ description: 'Occurrence agenda' }));
+  });
+
+  it('ignores Escape while a save is in flight', async () => {
+    await render();
+    const config = TestBed.inject(DynamicDialogConfig);
+    const read = new Subject<Meeting>();
+    getMeetingDetail.mockReturnValue(read);
+    type('New agenda');
+
+    saveButton().click();
+    TestBed.tick();
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true });
+    document.dispatchEvent(escape);
+
+    expect(escape.defaultPrevented).toBe(true);
+    expect(config.closable).toBe(false);
+
+    read.next(fresh());
+    read.complete();
+    await settle();
+    TestBed.tick();
+    expect(config.closable).toBe(true);
   });
 
   it('says an occurrence moved or cancelled meanwhile, and saves nothing to it', async () => {
