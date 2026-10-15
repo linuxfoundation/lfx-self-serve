@@ -55,7 +55,7 @@ export class MktgSourceTextService {
       logger.info(req, 'mktg_source_text', 'Could not fetch a link — the agent is told it was not read', {
         host,
         reason: tooLarge ? 'too-large' : 'fetch-failed',
-        error: error instanceof Error ? error.message : 'unknown',
+        err: error,
       });
       return this.none(tooLarge ? 'too-large' : 'fetch-failed');
     }
