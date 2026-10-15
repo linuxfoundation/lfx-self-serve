@@ -1465,7 +1465,7 @@ export class UserService {
             })
         : Promise.resolve([] as MyFormationItemRow[]),
 
-      // Review authority comes from committee writer access, not the caller's email identity.
+      // Review authority comes from being on the group's own writer roster (not inherited writer access), not the caller's email identity.
       isMeLens
         ? this.committeeService.getManagedPendingApplications(req).catch((error) => {
             logger.warning(req, 'get_user_pending_actions', 'Failed to fetch pending join applications', { err: error });
