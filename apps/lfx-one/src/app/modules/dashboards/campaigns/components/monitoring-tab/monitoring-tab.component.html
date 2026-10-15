@@ -1217,7 +1217,7 @@
                         <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">{{ row.status }}</span>
                       </td>
                       <td class="px-4 py-3 text-xs text-gray-500">{{ row.flight }}</td>
-                      <td class="px-4 py-3 text-right text-xs text-gray-700">{{ row.budget }}</td>
+                      <td class="px-4 py-3 text-right text-xs text-gray-700" [attr.data-testid]="reportBackedPanel() + '-campaign-budget'">{{ row.budget }}</td>
                       <td [class]="'px-4 py-3 text-right text-xs ' + row.spend.className">{{ row.spend.text }}</td>
                       <td [class]="'px-4 py-3 text-right text-xs ' + row.pacing.className" [attr.data-testid]="reportBackedPanel() + '-campaign-pacing'">
                         {{ row.pacing.text }}

@@ -4,6 +4,7 @@
 import {
   ACCOUNT_MONITOR_CONFLICT_REASONS,
   ACCOUNT_MONITOR_METRICS_DISABLED_CODE,
+  ACCOUNT_MONITOR_NO_CONNECTION_CODE,
   ACCOUNT_MONITOR_UNSUPPORTED_UPSTREAM_MESSAGE,
 } from '@lfx-one/shared/constants';
 import type {
@@ -26,6 +27,7 @@ import type {
 
 import { MicroserviceError } from '../errors/microservice.error';
 import { getCodeForStatus, getDefaultMessageForStatus } from '../helpers/http-status.helper';
+import { isCampaignServiceNotFound } from './campaign-service.service';
 
 // ---------------------------------------------------------------------------
 // campaign-service account monitor → the Monitor/Optimize tabs' legacy shapes (#2519)
@@ -286,7 +288,9 @@ function monitorErrorMessage(statusCode: number, platformLabel: string): string 
     case 400:
       return `campaign-service could not read this ${platformLabel} account for this project: the project's own ${platformLabel} connection is unusable or is not bound to this account.`;
     case 404:
-      return `This project has no ${platformLabel} connection of its own to read the account with.`;
+      // Only reached for a 404 that is NOT campaign-service's typed not-found (a gateway or routing
+      // miss): nothing says the connection is absent, so the text claims no such thing.
+      return `The ${platformLabel} monitor could not be reached just now. Please try again shortly.`;
     case 409:
       return `This ${platformLabel} account cannot be monitored as it stands.`;
     case 502:
@@ -308,7 +312,9 @@ function monitorErrorMessage(statusCode: number, platformLabel: string): string 
  * text. So an HTTP failure keeps its STATUS — which is what the panels and the error middleware act
  * on — and loses its text: a fixed message per status, with the upstream error kept as
  * `originalError` for the log. A 409's `reason` is forwarded as `upstreamCode` only when it is one of
- * the two values upstream's closed enum allows.
+ * the two values upstream's closed enum allows. A 404 is marked `connection_not_found` only when its
+ * body is campaign-service's own typed not-found (as `readMonitorConnection` classifies it); a
+ * gateway or routing 404 keeps its status but no marker, so no panel reads it as a missing connection.
  *
  * A transport failure, or any non-`MicroserviceError`, passes through unchanged: those are raised by
  * this app with fixed text already (`api-client.service.ts`).
@@ -324,6 +330,19 @@ export function toAccountMonitorClientError(error: unknown, platformLabel: strin
       statusCode,
       getCodeForStatus(statusCode),
       { operation, service: 'campaign_controller', originalError: error, errorBody: { error: ACCOUNT_MONITOR_METRICS_DISABLED_CODE } }
+    );
+  }
+  if (statusCode === 404 && isCampaignServiceNotFound(error.errorBody)) {
+    return new MicroserviceError(
+      `This project has no ${platformLabel} connection of its own to read the account with.`,
+      statusCode,
+      getCodeForStatus(statusCode),
+      {
+        operation,
+        service: 'campaign_controller',
+        originalError: error,
+        errorBody: { error: ACCOUNT_MONITOR_NO_CONNECTION_CODE },
+      }
     );
   }
   const reason = statusCode === 409 ? (error.errorBody as { reason?: unknown } | undefined)?.reason : undefined;

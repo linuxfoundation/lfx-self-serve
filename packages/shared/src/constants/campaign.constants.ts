@@ -949,6 +949,14 @@ export const ACCOUNT_MONITOR_UNSUPPORTED_UPSTREAM_MESSAGE = 'account monitor is 
 export const ACCOUNT_MONITOR_METRICS_DISABLED_CODE = 'metrics_not_enabled';
 
 /**
+ * The `upstreamCode` the BFF puts on an account-monitor 404 only when it is campaign-service's own
+ * typed not-found (the project has no connection for the platform). Any other 404 — a gateway or
+ * routing miss — carries no code, so the Monitor tab shows it as a retryable error rather than
+ * claiming the connection is absent.
+ */
+export const ACCOUNT_MONITOR_NO_CONNECTION_CODE = 'connection_not_found';
+
+/**
  * The Monitor tab's connection-backed platforms, each with the campaign-service provider whose
  * connection binds its account. Ordered as the tab's buttons are.
  */

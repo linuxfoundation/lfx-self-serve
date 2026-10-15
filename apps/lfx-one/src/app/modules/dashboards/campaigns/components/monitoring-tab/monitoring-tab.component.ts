@@ -8,6 +8,7 @@ import { skip, take, type Observable, type Subscription } from 'rxjs';
 import { ButtonComponent } from '@components/button/button.component';
 import {
   ACCOUNT_MONITOR_METRICS_DISABLED_CODE,
+  ACCOUNT_MONITOR_NO_CONNECTION_CODE,
   CAMPAIGN_ACT_FOUNDATION_CHANGED_MESSAGE,
   CAMPAIGN_MONITOR_ACT_LEVER_LABELS,
   CAMPAIGN_MONITOR_ACT_PLATFORMS,
@@ -153,6 +154,11 @@ export class MonitoringTabComponent implements OnInit {
   /** The in-flight legacy account-list reads; cancelled whenever the picker source changes. */
   private legacyAccountSubs: Subscription[] = [];
   protected readonly monitorViaCampaignService = signal(false);
+  /**
+   * The last connections read FAILED while the flag was not known to be on, so the legacy pickers are
+   * a fallback, not a confirmed "cutover off". A panel's Retry re-runs that discovery first.
+   */
+  private readonly monitorSourceUnknown = signal(false);
   protected readonly monitorConnections = signal<CampaignMonitorConnections['platforms']>({});
   protected readonly metricsDisabledPlatforms = signal<ReadonlySet<MonitorConnectionPlatform>>(new Set());
   /** X stays hidden while the app does not offer it (`disabled: true` in `CAMPAIGN_PLATFORMS`), whatever the flag says. */
@@ -435,11 +441,17 @@ export class MonitoringTabComponent implements OnInit {
    * `MONITOR_CUTOVER_MISMATCH` means a pod with the flag OFF answered, and if the flag has since
    * gone off everywhere the tab must fall back to the legacy pickers rather than retry the
    * connection's account. Re-reading the connections re-fetches the selected panel once they land.
-   * Flag off, it is the panel's own read, as before.
+   * When the source is UNKNOWN (the discovery read failed and the legacy lists are only a fallback),
+   * discovery is retried too, and the panel read again on whichever source it settles on. Flag
+   * confirmed off, it is the panel's own read, as before.
    */
   protected retryPanelRead(panel: 'linkedin' | 'reddit' | 'meta' | 'reportBacked' | 'hubspot'): void {
     if (this.monitorViaCampaignService()) {
       this.loadMonitorConnections();
+      return;
+    }
+    if (this.monitorSourceUnknown()) {
+      this.loadMonitorConnections(true);
       return;
     }
     if (panel === 'linkedin') {
@@ -504,9 +516,10 @@ export class MonitoringTabComponent implements OnInit {
           this.hubSpotData.set(null);
           if (this.isMetricsDisabledError(err)) {
             this.hubSpotNoticeState.set('metrics_disabled');
-          } else if ((err as { status?: unknown } | null)?.status === 404) {
-            // The button only shows with the cutover on, so a 404 here is campaign-service finding no
-            // HubSpot connection for the project and no LF system one to fall back to.
+          } else if (this.upstreamCode(err) === ACCOUNT_MONITOR_NO_CONNECTION_CODE) {
+            // Only campaign-service's typed not-found carries this marker (the BFF classifies it): the
+            // project has no HubSpot connection and there is no LF system one to fall back to. Any other
+            // 404 — a gateway or routing miss — falls through to a retryable error below.
             this.hubSpotNoticeState.set('no_connection');
           } else {
             this.hubSpotError.set(extractErrorMessage(err, 'Failed to load HubSpot email data'));
@@ -693,7 +706,6 @@ export class MonitoringTabComponent implements OnInit {
    * under a dollar — one-decimal rounding would turn $10.04 into $10 and a $0.42 CPC into $0.4.
    * `formatCompactRounded` is for derived figures with unbounded precision (CPA), not these.
    */
-
   protected formatCurrency(value: number): string {
     return `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   }
@@ -765,7 +777,8 @@ export class MonitoringTabComponent implements OnInit {
           status: camp.status,
           fetchFailed: camp.fetchFailed === true,
           flight: camp.startDate ? `${camp.startDate} → ${camp.endDate || 'Ongoing'}` : '—',
-          budget: this.formatAccountAmount(camp.totalBudget || camp.dailyBudget),
+          // A failed row's budget was not read either (it arrives as 0), so it is a dash, not 0.00.
+          budget: camp.fetchFailed ? '—' : this.formatAccountAmount(camp.totalBudget || camp.dailyBudget),
         };
         // Metrics that could not be read are not zeros: every metric cell is a dash.
         if (camp.fetchFailed) {
@@ -1125,8 +1138,13 @@ export class MonitoringTabComponent implements OnInit {
     this.loadMonitorConnections();
   }
 
-  /** Reads the project's connections; see `loadForActiveFoundation`. Also the retry behind a panel's connection notice. */
-  private loadMonitorConnections(): void {
+  /**
+   * Reads the project's connections; see `loadForActiveFoundation`. Also the retry behind a panel's
+   * connection notice and error. `readPanelOnLegacy` re-reads the selected panel when the answer is
+   * the legacy pickers (the cutover path re-reads it anyway): set by a Retry, whose panel must be
+   * read again even when its legacy account is already selected.
+   */
+  private loadMonitorConnections(readPanelOnLegacy = false): void {
     const slug = this.activeFoundationSlug();
     this.connectionsSub?.unsubscribe();
     this.connectionsSub = this.campaignService
@@ -1135,10 +1153,11 @@ export class MonitoringTabComponent implements OnInit {
       .subscribe({
         next: (result) => {
           if (slug !== this.activeFoundationSlug()) return;
+          this.monitorSourceUnknown.set(false);
           if (result?.viaCampaignService === true) {
             this.applyMonitorConnections(result.platforms ?? {});
           } else {
-            this.useLegacyAccounts(slug);
+            this.useLegacyAccounts(slug, readPanelOnLegacy);
           }
         },
         error: () => {
@@ -1151,7 +1170,10 @@ export class MonitoringTabComponent implements OnInit {
               Object.fromEntries((Object.keys(MONITOR_CONNECTION_PROVIDERS) as MonitorConnectionPlatform[]).map((p) => [p, unavailable]))
             );
           } else {
-            this.useLegacyAccounts(slug);
+            // Not "cutover off": nothing is known yet. The legacy lists fill in meanwhile, and a
+            // panel's Retry re-runs this discovery before reading again.
+            this.monitorSourceUnknown.set(true);
+            this.useLegacyAccounts(slug, readPanelOnLegacy);
           }
         },
       });
@@ -1185,7 +1207,7 @@ export class MonitoringTabComponent implements OnInit {
   }
 
   /** The cutover is off: the pickers are the legacy account lists, loaded exactly as before it existed. */
-  private useLegacyAccounts(slug: string): void {
+  private useLegacyAccounts(slug: string, readPanel = false): void {
     const wasViaCampaignService = this.monitorViaCampaignService();
     this.monitorViaCampaignService.set(false);
     if (wasViaCampaignService) {
@@ -1206,6 +1228,10 @@ export class MonitoringTabComponent implements OnInit {
       this.selectedPlatform.set('google');
     }
     this.loadLegacyAccounts(slug);
+    if (readPanel) {
+      // With no account selected yet this reads nothing; the legacy list's arrival reads it instead.
+      this.fetchSelectedPanel();
+    }
   }
 
   /** Cancel the legacy account-list reads still in flight, so a late one cannot land after a source switch. */
