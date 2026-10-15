@@ -4,6 +4,7 @@
 import { Component, computed, DestroyRef, inject, input, linkedSignal, model, output, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { Router, UrlTree } from '@angular/router';
+import { JoinRequestSummaryComponent } from '@app/modules/dashboards/components/join-request-summary/join-request-summary.component';
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
@@ -17,7 +18,7 @@ import {
   PENDING_ACTION_SECTION_LABEL,
   PENDING_ACTION_SECTION_ORDER,
 } from '@lfx-one/shared/constants';
-import { buildFormationPendingActionView } from '@lfx-one/shared/utils';
+import { buildFormationPendingActionView, isReviewableJoinApplication } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { HiddenActionsService } from '@shared/services/hidden-actions.service';
 import { InvitationService } from '@shared/services/invitation.service';
@@ -38,7 +39,16 @@ import type {
 
 @Component({
   selector: 'lfx-pending-actions-drawer',
-  imports: [DrawerModule, SkeletonModule, ButtonComponent, BadgeComponent, TagComponent, EmptyStateComponent, RsvpButtonGroupComponent],
+  imports: [
+    DrawerModule,
+    SkeletonModule,
+    ButtonComponent,
+    BadgeComponent,
+    TagComponent,
+    EmptyStateComponent,
+    RsvpButtonGroupComponent,
+    JoinRequestSummaryComponent,
+  ],
   templateUrl: './pending-actions-drawer.component.html',
   styleUrl: './pending-actions-drawer.component.scss',
 })
@@ -118,7 +128,19 @@ export class PendingActionsDrawerComponent {
   }
 
   protected handleDismiss(item: DrawerActionRow): void {
-    if (item.type === 'JoinApplication') return;
+    if (item.type === 'JoinApplication') {
+      // Hides the request for this user only; it stays pending for other reviewers and on the group's applications tab.
+      if (!isReviewableJoinApplication(item)) return;
+      this.hiddenActionsService.dismissAction(item);
+      this.hiddenActionsVersion.update((v) => v + 1);
+      this.actionCompleted.emit(item);
+      this.messageService.add({
+        severity: 'info',
+        summary: 'Request Dismissed',
+        detail: `The request from ${item.applicationApplicantEmail} is hidden from your pending actions. It is still pending for other reviewers.`,
+      });
+      return;
+    }
     this.hiddenActionsService.dismissAction(item);
     // skipHide: the permanent dismiss cookie already hides the row; a 24h hideAction cookie would be redundant.
     this.startCompletion(item, true);
@@ -304,6 +326,7 @@ export class PendingActionsDrawerComponent {
             isMeetingLoading: !!item.meetingUid && loading.has(item.meetingUid),
             meetingLoadFailed,
             isInvitation,
+            isReviewableApplication: item.type === 'JoinApplication' && isReviewableJoinApplication(item),
             // Formation rows (#2732): link, status chip and due label — shared with the dashboard list.
             ...buildFormationPendingActionView(item),
             acceptAriaLabel: `Accept invite to ${inviteGroupName}`,

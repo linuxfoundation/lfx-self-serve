@@ -3,7 +3,13 @@
 
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { CAMPAIGN_JOB_POLL_INTERVAL_MS, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
+import {
+  CAMPAIGN_JOB_POLL_INTERVAL_MS,
+  JOB_LOST_MESSAGE,
+  MONITOR_ACCOUNT_SOURCE_CONNECTION,
+  MONITOR_ACCOUNT_SOURCE_LEGACY,
+  MONITOR_ACCOUNT_SOURCE_PARAM,
+} from '@lfx-one/shared/constants';
 import {
   AudienceAttachExistingRequest,
   AudienceAttachExistingResult,
@@ -45,16 +51,16 @@ import {
   CampaignJobStatus,
   CampaignListResult,
   CampaignMetricsWindow,
+  CampaignMonitorConnections,
   CampaignMonitorResponse,
   CampaignNegativeKeywordInput,
   CampaignNegativeKeywordsRequest,
   CampaignNegativeKeywordsResult,
   CampaignSSEEventType,
-  CampaignServiceAccountMonitor,
-  CampaignServiceHubSpotEmailMonitor,
   CampaignStatusToggleParams,
   CampaignStatusUpdateResult,
   GenerateEmailCopyResult,
+  HubSpotEmailMonitorResponse,
   HubSpotEmailSearchResult,
   HubSpotUtmCreateResult,
   HubSpotUtmLookupResult,
@@ -68,6 +74,7 @@ import {
   MicrosoftKeywordsWindow,
   RedditAccountOption,
   RedditMonitorResponse,
+  ReportBackedMonitorResponse,
   SSEEvent,
 } from '@lfx-one/shared/interfaces';
 import type {
@@ -87,6 +94,7 @@ import type {
   KeywordTargetingRemovalsRequest,
   MetaAdSetStatusParams,
   MetaAdSetStatusRequest,
+  MonitorAccountSource,
   RedditKeywordMetricsResponse,
   RedditKeywordsWindow,
 } from '@lfx-one/shared/interfaces';
@@ -323,45 +331,80 @@ export class CampaignService {
     return this.http.get<LinkedInAccount[]>('/api/campaigns/linkedin/accounts', { params: { project: projectSlug } });
   }
 
-  public getLinkedInMonitorData(projectSlug: string, accountKey: string, days: number = 30): Observable<LinkedInMonitorResponse> {
-    return this.http.get<LinkedInMonitorResponse>('/api/campaigns/linkedin/monitor', { params: { project: projectSlug, days, accountKey } });
+  public getLinkedInMonitorData(
+    projectSlug: string,
+    accountKey: string,
+    days: number = 30,
+    accountSource: MonitorAccountSource | null = null
+  ): Observable<LinkedInMonitorResponse> {
+    return this.http.get<LinkedInMonitorResponse>('/api/campaigns/linkedin/monitor', {
+      params: { project: projectSlug, days, accountKey, ...this.monitorAccountSource(accountSource) },
+    });
   }
 
   public getRedditAccounts(projectSlug: string): Observable<RedditAccountOption[]> {
     return this.http.get<RedditAccountOption[]>('/api/campaigns/reddit/accounts', { params: { project: projectSlug } });
   }
 
-  public getRedditMonitorData(projectSlug: string, accountKey: string, days: number = 30): Observable<RedditMonitorResponse> {
-    return this.http.get<RedditMonitorResponse>('/api/campaigns/reddit/monitor', { params: { project: projectSlug, days, accountKey } });
+  public getRedditMonitorData(
+    projectSlug: string,
+    accountKey: string,
+    days: number = 30,
+    accountSource: MonitorAccountSource | null = null
+  ): Observable<RedditMonitorResponse> {
+    return this.http.get<RedditMonitorResponse>('/api/campaigns/reddit/monitor', {
+      params: { project: projectSlug, days, accountKey, ...this.monitorAccountSource(accountSource) },
+    });
   }
 
   public getMetaAccounts(projectSlug: string): Observable<MetaAccountOption[]> {
     return this.http.get<MetaAccountOption[]>('/api/campaigns/meta/accounts', { params: { project: projectSlug } });
   }
 
-  public getMetaMonitorData(projectSlug: string, accountKey: string, days: number = 30): Observable<MetaMonitorResponse> {
-    return this.http.get<MetaMonitorResponse>('/api/campaigns/meta/monitor', { params: { project: projectSlug, days, accountKey } });
+  public getMetaMonitorData(
+    projectSlug: string,
+    accountKey: string,
+    days: number = 30,
+    accountSource: MonitorAccountSource | null = null
+  ): Observable<MetaMonitorResponse> {
+    return this.http.get<MetaMonitorResponse>('/api/campaigns/meta/monitor', {
+      params: { project: projectSlug, days, accountKey, ...this.monitorAccountSource(accountSource) },
+    });
   }
 
   /**
-   * Microsoft Advertising account monitor, served by campaign-service in its own (snake_case) shape.
-   *
-   * 404 while the server's monitor cutover flag is off. Report-backed: `metrics_as_of`,
-   * `metrics_pending` and `metrics_window_*` say how fresh the figures are, and on the first read
-   * every campaign is `fetch_failed` while the report builds. No panel renders this yet.
+   * Which account each connection-backed Monitor panel offers — the project's OWN connection's — and
+   * whether the monitors are served by campaign-service at all. `viaCampaignService: false` (with
+   * no platforms) while the server's monitor cutover flag is off: the tab then keeps its legacy
+   * account lists.
    */
-  public getMicrosoftMonitorData(projectSlug: string, accountId: string, days: number = 30): Observable<CampaignServiceAccountMonitor> {
-    return this.http.get<CampaignServiceAccountMonitor>('/api/campaigns/microsoft/monitor', { params: { project: projectSlug, days, accountKey: accountId } });
+  public getMonitorConnections(projectSlug: string): Observable<CampaignMonitorConnections> {
+    return this.http.get<CampaignMonitorConnections>('/api/campaigns/monitor/connections', { params: { project: projectSlug } });
+  }
+
+  /**
+   * Microsoft Advertising account monitor, from campaign-service. 404 while the server's monitor
+   * cutover flag is off. Report-backed: `metricsAsOf`, `metricsPending` and `metricsWindow*` say how
+   * fresh the figures are, and on the first read every campaign is `fetchFailed` while the report builds.
+   */
+  public getMicrosoftMonitorData(projectSlug: string, accountId: string, days: number = 30): Observable<ReportBackedMonitorResponse> {
+    return this.http.get<ReportBackedMonitorResponse>('/api/campaigns/microsoft/monitor', {
+      params: { project: projectSlug, days, accountKey: accountId, ...this.monitorAccountSource('connection') },
+    });
   }
 
   /** X (Twitter) Ads account monitor — the Microsoft one's sibling, plus a 409 for an account it cannot monitor. */
-  public getTwitterMonitorData(projectSlug: string, accountId: string, days: number = 30): Observable<CampaignServiceAccountMonitor> {
-    return this.http.get<CampaignServiceAccountMonitor>('/api/campaigns/twitter/monitor', { params: { project: projectSlug, days, accountKey: accountId } });
+  public getTwitterMonitorData(projectSlug: string, accountId: string, days: number = 30): Observable<ReportBackedMonitorResponse> {
+    return this.http.get<ReportBackedMonitorResponse>('/api/campaigns/twitter/monitor', {
+      params: { project: projectSlug, days, accountKey: accountId, ...this.monitorAccountSource('connection') },
+    });
   }
 
   /** HubSpot email monitor: project-scoped, so no account. 404 while the server's monitor cutover flag is off. */
-  public getHubSpotMonitorData(projectSlug: string, days: number = 30): Observable<CampaignServiceHubSpotEmailMonitor> {
-    return this.http.get<CampaignServiceHubSpotEmailMonitor>('/api/campaigns/hubspot/monitor', { params: { project: projectSlug, days } });
+  public getHubSpotMonitorData(projectSlug: string, days: number = 30): Observable<HubSpotEmailMonitorResponse> {
+    return this.http.get<HubSpotEmailMonitorResponse>('/api/campaigns/hubspot/monitor', {
+      params: { project: projectSlug, days, ...this.monitorAccountSource('connection') },
+    });
   }
 
   public getKeywords(projectSlug: string, days: number = 30): Observable<KeywordMetricsResponse> {
@@ -829,5 +872,16 @@ export class CampaignService {
       ),
       takeWhile((status) => status.status === 'running', true)
     );
+  }
+
+  /**
+   * The marker a Monitor-tab read carries: `connection` when its account (or the panel itself) came
+   * from the connection path, i.e. a pod with the monitor cutover ON, and `legacy` when it came from
+   * a legacy allowlist picker. A pod whose flag disagrees refuses the read with a typed mismatch
+   * (`MONITOR_CUTOVER_MISMATCH` / `MONITOR_CUTOVER_LEGACY_MISMATCH`) instead of misserving it; see
+   * `MONITOR_ACCOUNT_SOURCE_PARAM`. `null` sends no marker: the Optimize tab's reads, unchanged.
+   */
+  private monitorAccountSource(source: MonitorAccountSource | null): Record<string, string> {
+    return source ? { [MONITOR_ACCOUNT_SOURCE_PARAM]: source === 'connection' ? MONITOR_ACCOUNT_SOURCE_CONNECTION : MONITOR_ACCOUNT_SOURCE_LEGACY } : {};
   }
 }

@@ -1465,7 +1465,7 @@ export class UserService {
             })
         : Promise.resolve([] as MyFormationItemRow[]),
 
-      // Review authority comes from committee writer access, not the caller's email identity.
+      // Review authority comes from being on the group's own writer roster (not inherited writer access), not the caller's email identity.
       isMeLens
         ? this.committeeService.getManagedPendingApplications(req).catch((error) => {
             logger.warning(req, 'get_user_pending_actions', 'Failed to fetch pending join applications', { err: error });
@@ -1841,7 +1841,7 @@ export class UserService {
     return buildInvitationActions(invitations);
   }
 
-  /** Emit only the applicant/group identity and review address; omit private application details. */
+  /** Emit the applicant, the group and its project, and the applicant's own message — what a group writer needs to decide. */
   private transformApplicationsToActions(applications: ManagedPendingApplication[]): PendingActionItem[] {
     return applications.map((application) => ({
       type: 'JoinApplication',
@@ -1854,6 +1854,12 @@ export class UserService {
       applicationUid: application.uid,
       applicationApplicantEmail: application.applicant_email,
       applicationApplicantName: application.applicant_name,
+      applicationProjectName: application.project_name,
+      applicationGroupCategory: application.committee_category,
+      applicationProjectSlug: application.project_slug,
+      applicationIsFoundation: application.is_foundation,
+      applicationMessage: application.message,
+      applicationSubmittedAt: application.created_at,
     }));
   }
 

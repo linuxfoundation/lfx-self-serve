@@ -81,6 +81,26 @@ export class ComposerDetailsAccessComponent {
   protected readonly iconChipSelectedClass = 'text-white';
 
   /**
+   * Option card styling for the visibility / join-restriction groups.
+   * @description The selected card takes a light blue fill and a blue border so the answer reads at a glance;
+   * the rest stay neutral with a hover cue. Whole class strings, for the same Tailwind reason as above.
+   */
+  protected readonly accessOptionClass = 'z-0 border-gray-200 bg-white hover:z-[1] hover:border-gray-300 hover:bg-gray-50';
+  protected readonly accessOptionSelectedClass = 'z-[2] border-blue-500 bg-blue-50';
+  /**
+   * Layout of the visibility / join-restriction groups.
+   * @description Each group's two options sit side by side from `sm` up and stack on phones. The groups get
+   * equal-height rows, so the shorter join-restriction cards match visibility's. The options join into one
+   * card: the first takes the leading corners and the other the trailing ones, pulled back 1px so the two
+   * borders collapse into one — which corners and which edge depend on the breakpoint, so both are spelled
+   * out. Whole class strings, for the same Tailwind reason as above.
+   */
+  protected readonly accessGroupsLayoutClass = 'grid auto-rows-fr gap-4';
+  protected readonly accessOptionsLayoutClass = 'grid flex-1 grid-cols-1 sm:grid-cols-2';
+  protected readonly accessOptionFirstClass = 'rounded-t-lg sm:rounded-tr-none sm:rounded-l-lg';
+  protected readonly accessOptionNextClass = '-mt-px rounded-b-lg sm:-ml-px sm:mt-0 sm:rounded-bl-none sm:rounded-r-lg';
+
+  /**
    * Form state the template and the a11y attributes read, one named signal per control.
    * @description Templates may only read signals, computed values and pipes — never `FormGroup.get()`
    * (`docs/reviews/frontend-checklist.md` section 4). All of these are built on `AbstractControl.events`,

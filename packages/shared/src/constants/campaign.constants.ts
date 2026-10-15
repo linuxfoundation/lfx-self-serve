@@ -2,9 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  AudienceBuildMode,
+  AudienceCustomOperator,
+  AudienceCustomReuseRecommendation,
+  AudienceLastSentMatchReason,
   AudienceSignal,
   AudienceSpeakerScope,
   BriefMetricsActionRule,
+  CampaignBiddingPlatform,
+  CampaignBiddingPlatformRule,
   CampaignBidType,
   CampaignBudgetType,
   CampaignBudgetTypeOption,
@@ -23,6 +29,7 @@ import type {
   CampaignPlatform,
   CampaignPlatformOption,
   CampaignProgramTypeOption,
+  CampaignServiceMonitorProvider,
   CampaignStatus,
   CampaignTabOption,
   CampaignToggleAction,
@@ -37,12 +44,16 @@ import type {
   MetaPlacement,
   MicrosoftKeywordsWindow,
   MicrosoftKeywordsWindowOption,
+  MonitorConnectionPlatform,
+  MonitorPlatformButtonColors,
+  MonitorTabPlatform,
   NegativeKeywordCampaignPlatform,
   ParsedCampaignName,
   RedditObjective,
   RedditObjectiveParams,
   SelectableMetaObjective,
 } from '../interfaces/campaign.interface';
+import { lfxColors } from './colors.constants';
 import { COUNTRIES } from './countries.constants';
 
 /** Tab definitions for the Campaigns page tab navigation. */
@@ -903,6 +914,149 @@ export function isMicrosoftMatchType(value: unknown): boolean {
 export const MICROSOFT_MIN_CPC_BID = 0.01;
 export const MICROSOFT_MAX_CPC_BID = 1000;
 
+// ---------------------------------------------------------------------------
+// Campaign Bidding at create time (#3299)
+// ---------------------------------------------------------------------------
+
+/**
+ * The bidding strategies a per-platform create config accepts, spelled exactly — campaign-service
+ * does no case folding (linuxfoundation/lfx-v2-campaign-service#332, `internal/dispatch/bidding.go`).
+ * The first is the default.
+ */
+export const CAMPAIGN_BIDDING_STRATEGIES = ['automatic', 'manual'] as const;
+
+/**
+ * Every platform whose create config takes a `bidding` object. Google Ads is NOT one: it has its
+ * own bidding plan (`googleAdsConfig.biddingStrategy`), and campaign-service refuses
+ * `googleAdsConfig.bidding` with a 400.
+ */
+export const CAMPAIGN_BIDDING_PLATFORMS = ['linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads', 'twitter-ads'] as const;
+
+/**
+ * The bidding platforms the create flow renders a control for, in section order. X is a bidding
+ * platform upstream but is not here: the create flow builds no `twitterConfig` yet, and the BFF
+ * refuses `twitter-ads` until one exists. Its rule below is ready for when it does.
+ */
+export const CAMPAIGN_BIDDING_CREATE_PLATFORMS: readonly CampaignBiddingPlatform[] = ['linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads'];
+
+/**
+ * campaign-service's own synchronous refusal of a `bidding` object, e.g.
+ * `invalid campaign config: metaConfig.bidding: bidAmount must be greater than zero` (`biddingInvalid`,
+ * `internal/dispatch/bidding.go`). Its text is the service's own: the only caller input it can echo is
+ * the amount, or an unknown key quoted and cut to 40 characters, and nothing comes from an ad
+ * platform. So unlike the other create refusals the BFF may show it — it is the one that tells the
+ * operator which bid to fix. Google's `googleAdsConfig.bidding` refusal is deliberately not matched.
+ */
+export const CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN = /invalid campaign config: (?:linkedIn|meta|microsoft|reddit|twitter)Config\.bidding: .+/;
+
+/** The largest starting bid campaign-service sets on any platform (`maxCreateBid`), in the platform's currency. */
+export const CAMPAIGN_BIDDING_MAX_BID = 1_000_000;
+
+/** One micro-unit per major unit: the finest unit any of these platforms bids in, so every bid is a whole number of them. */
+export const CAMPAIGN_BIDDING_MICRO_SCALE = 1_000_000;
+
+/** Whole cents. LinkedIn, Microsoft and Meta bids are refused with a third decimal rather than rounded. */
+export const CAMPAIGN_BIDDING_CENT_SCALE = 100;
+
+/**
+ * What each platform accepts as a manual create-time bid, mirroring the checks campaign-service
+ * runs before it accepts a create (linuxfoundation/lfx-v2-campaign-service#332):
+ *
+ * - LinkedIn (`linkedinBidPlan`, `linkedin.ValidateBidAmount`): USD, whole cents, 0.01–1,000,000.
+ *   Automatic is a WEBSITE_VISIT campaign bidding MAX_CLICK; manual a WEBSITE_CONVERSION campaign
+ *   with a CPC `unitCost`.
+ * - Meta (`metaBidPlan`, `meta.ManualBidSupported`, `meta.BidCapDailyBudgetMultiple`): two
+ *   decimals at most; only the traffic or leads objective (the ad set must optimise for link
+ *   clicks); and a DAILY budget of at least 5× the bid, checked by the Meta client before anything
+ *   is created. A lifetime budget has no such rule.
+ * - Microsoft (`microsoftBidPlan`, `microsoft.ValidateMaxCPCBid`): two decimals at most, 0.01–1,000.
+ * - Reddit (`redditBidPlan`, `reddit.ManualCPCBidSupported`): whole micro-units; only the traffic
+ *   objective, the one Reddit objective here that bids per click. campaign-service assumes
+ *   `conversions` when no objective is sent.
+ * - X (`twitterBidPlan`): whole micro-units; the bid may not exceed the campaign's daily budget.
+ *
+ * Every platform but LinkedIn bids in the ad ACCOUNT's own currency, which neither this app nor
+ * campaign-service converts. A platform's own floor (LinkedIn's depends on the audience) is checked
+ * when the campaign is created, so a bid inside these limits can still be refused there.
+ */
+export const CAMPAIGN_BIDDING_RULES: Readonly<Record<CampaignBiddingPlatform, CampaignBiddingPlatformRule>> = {
+  'linkedin-ads': {
+    label: 'LinkedIn',
+    currency: 'USD',
+    scale: CAMPAIGN_BIDDING_CENT_SCALE,
+    minBid: 0.01,
+    maxBid: CAMPAIGN_BIDDING_MAX_BID,
+    manualObjectives: null,
+    defaultObjective: null,
+    dailyBudgetMultiple: null,
+    bidAtMostDailyBudget: false,
+    automaticDescription: 'LinkedIn optimizes for website visits and sets every bid (maximum clicks).',
+    manualDescription: 'Creates a website-conversion campaign with a manual cost-per-click bid.',
+    currencyHint: 'In USD, whole cents (for example 2.50).',
+    limitText: "LinkedIn's own minimum depends on the audience and is checked when the campaign is created.",
+  },
+  'meta-ads': {
+    label: 'Meta',
+    currency: 'account',
+    scale: CAMPAIGN_BIDDING_CENT_SCALE,
+    minBid: 0.01,
+    maxBid: CAMPAIGN_BIDDING_MAX_BID,
+    manualObjectives: ['traffic', 'leads'],
+    defaultObjective: 'traffic',
+    dailyBudgetMultiple: 5,
+    bidAtMostDailyBudget: false,
+    automaticDescription: 'Meta bids for the lowest cost, with no cap.',
+    manualDescription: 'Caps the cost per link click on the ad set.',
+    currencyHint: "In the ad account's currency, at most two decimal places. Not converted from USD.",
+    limitText: 'Needs the Traffic or Leads objective, and a daily budget of at least 5× the bid.',
+  },
+  'microsoft-ads': {
+    label: 'Microsoft Ads',
+    currency: 'account',
+    scale: CAMPAIGN_BIDDING_CENT_SCALE,
+    minBid: MICROSOFT_MIN_CPC_BID,
+    maxBid: MICROSOFT_MAX_CPC_BID,
+    manualObjectives: null,
+    defaultObjective: null,
+    dailyBudgetMultiple: null,
+    bidAtMostDailyBudget: false,
+    automaticDescription: 'Microsoft Advertising maximizes clicks within the budget.',
+    manualDescription: 'Uses Enhanced CPC with this max CPC bid on the ad group.',
+    currencyHint: "In the ad account's currency, at most two decimal places. Not converted from USD.",
+    limitText: `Between ${MICROSOFT_MIN_CPC_BID} and ${MICROSOFT_MAX_CPC_BID}.`,
+  },
+  'reddit-ads': {
+    label: 'Reddit',
+    currency: 'account',
+    scale: CAMPAIGN_BIDDING_MICRO_SCALE,
+    minBid: 0.000001,
+    maxBid: CAMPAIGN_BIDDING_MAX_BID,
+    manualObjectives: ['traffic'],
+    defaultObjective: 'conversions',
+    dailyBudgetMultiple: null,
+    bidAtMostDailyBudget: false,
+    automaticDescription: 'Reddit sets every bid.',
+    manualDescription: 'Bids a manual cost per click on the campaign and ad group.',
+    currencyHint: "In the ad account's currency. Not converted from USD.",
+    limitText: 'Needs the Traffic objective — the other objectives bid per thousand impressions.',
+  },
+  'twitter-ads': {
+    label: 'X',
+    currency: 'account',
+    scale: CAMPAIGN_BIDDING_MICRO_SCALE,
+    minBid: 0.000001,
+    maxBid: CAMPAIGN_BIDDING_MAX_BID,
+    manualObjectives: null,
+    defaultObjective: null,
+    dailyBudgetMultiple: null,
+    bidAtMostDailyBudget: true,
+    automaticDescription: 'X sets every bid.',
+    manualDescription: 'Bids a maximum amount, charged per link click.',
+    currencyHint: "In the ad account's currency. Not converted from USD.",
+    limitText: 'May not exceed the daily budget.',
+  },
+};
+
 /** ISO 3166-1 alpha-2 shape for a Meta geo target, after normalization. */
 export const META_GEO_CODE_PATTERN = /^[A-Z]{2}$/;
 
@@ -932,6 +1086,100 @@ export const ACCOUNT_MONITOR_DEFAULT_DAYS = 30;
  * so no other upstream text reaches the client.
  */
 export const ACCOUNT_MONITOR_CONFLICT_REASONS = ['account_too_many_active_campaigns', 'account_timezone_unsupported'] as const;
+
+/**
+ * The message campaign-service's account monitors answer their 400 with when the platform's
+ * metrics are switched off in that deployment (`MICROSOFT_METRICS_ENABLED` / `TWITTER_METRICS_ENABLED`
+ * not "true") or the platform has no monitor at all: `ErrAccountMetricsUnsupported`, classified by
+ * its `classifyDiscoveryError` as `"<operation> is not supported for this platform"`. The other
+ * 400s (an unusable connection, an account the connection does not manage) carry other text, so
+ * this exact string is what tells "not enabled" apart from "misconfigured".
+ */
+export const ACCOUNT_MONITOR_UNSUPPORTED_UPSTREAM_MESSAGE = 'account monitor is not supported for this platform';
+
+/** The `upstreamCode` the BFF puts on that 400, so the Monitor tab can show "not enabled" rather than an error. */
+export const ACCOUNT_MONITOR_METRICS_DISABLED_CODE = 'metrics_not_enabled';
+
+/**
+ * The `upstreamCode` the BFF puts on an account-monitor 404 only when it is campaign-service's own
+ * typed not-found (the project has no connection for the platform). Any other 404 — a gateway or
+ * routing miss — carries no code, so the Monitor tab shows it as a retryable error rather than
+ * claiming the connection is absent.
+ */
+export const ACCOUNT_MONITOR_NO_CONNECTION_CODE = 'connection_not_found';
+
+/**
+ * The Monitor tab's connection-backed platforms, each with the campaign-service provider whose
+ * connection binds its account. Ordered as the tab's buttons are.
+ */
+export const MONITOR_CONNECTION_PROVIDERS: Readonly<Record<MonitorConnectionPlatform, CampaignServiceMonitorProvider>> = {
+  linkedin: 'linkedin-ads',
+  reddit: 'reddit-ads',
+  meta: 'meta-ads',
+  microsoft: 'microsoft-ads',
+  twitter: 'twitter-ads',
+};
+
+/**
+ * Account-id shapes campaign-service's LIVE-read account monitors accept (`monitor-linkedin-ads-account`,
+ * `monitor-meta-ads-account`, `monitor-reddit-ads-account`). With the monitor cutover on, the picker
+ * offers the connection's bound account rather than an allowlist entry, so the BFF checks the id's
+ * shape instead — the same patterns, and the same 64-character cap the connections store.
+ */
+export const LINKEDIN_ADS_MONITOR_ACCOUNT_ID_PATTERN = /^[0-9]{1,64}$/;
+export const META_ADS_MONITOR_ACCOUNT_ID_PATTERN = /^act_[0-9]{1,60}$/;
+export const REDDIT_ADS_MONITOR_ACCOUNT_ID_PATTERN = /^[A-Za-z0-9_]{1,64}$/;
+
+/** The Monitor tab's date-range buttons, in trailing days. */
+export const MONITOR_DATE_RANGE_OPTIONS = [7, 14, 30] as const;
+
+/** Rows per page in the Monitor tab's Google Ads keyword table. */
+export const MONITOR_KEYWORD_PAGE_SIZE = 10;
+
+/**
+ * The query parameter, and its one value, the Monitor tab sends on a monitor read whose account (or
+ * panel) came from `/api/campaigns/monitor/connections` — i.e. from a pod with the monitor cutover
+ * ON. The flag is per pod and the two reads are separately load-balanced, so during a rolling flag
+ * change the monitor read can land on a pod with it OFF. That pod refuses the read with
+ * `MONITOR_CUTOVER_MISMATCH_CODE` rather than serve it from the legacy path, which would swap the
+ * account (LinkedIn's default) or refuse it as off the allowlist (Reddit, Meta).
+ */
+export const MONITOR_ACCOUNT_SOURCE_PARAM = 'accountSource';
+export const MONITOR_ACCOUNT_SOURCE_CONNECTION = 'connection';
+/**
+ * The inverse marker: the Monitor tab's read whose account came from a LEGACY picker, i.e. from a
+ * pod with the cutover OFF (or before discovery settled). A pod with it ON refuses such a read with
+ * `MONITOR_CUTOVER_LEGACY_MISMATCH_CODE` rather than hand the allowlist account to campaign-service,
+ * which reads only the project's own connection's account and would refuse it. Other callers of the
+ * monitor reads (the Optimize tab) send no marker and are served exactly as before.
+ */
+export const MONITOR_ACCOUNT_SOURCE_LEGACY = 'legacy';
+
+/** The error `code` (HTTP 409) of that refusal; retryable once the rollout settles. */
+export const MONITOR_CUTOVER_MISMATCH_CODE = 'MONITOR_CUTOVER_MISMATCH';
+/** The error `code` (HTTP 409) of the inverse refusal, by a pod with the cutover ON; also retryable. */
+export const MONITOR_CUTOVER_LEGACY_MISMATCH_CODE = 'MONITOR_CUTOVER_LEGACY_MISMATCH';
+export const MONITOR_CUTOVER_MISMATCH_MESSAGE = 'The monitor is switching data sources; refresh in a moment.';
+
+/** HubSpot's brand orange, for the Monitor tab's email button (HubSpot is not a `CampaignPlatform`). */
+export const HUBSPOT_BRAND_COLOR = '#FF7A59';
+
+/**
+ * Each Monitor tab platform button's SELECTED colours. The background is the brand colour; the
+ * foreground is whichever of white and gray-950 clears WCAG AA (4.5:1) for 12px text on it. White
+ * fails on Google (3.6:1), Reddit (3.4:1), Meta (4.2:1), Microsoft (2.8:1) and HubSpot (2.6:1), so
+ * those take gray-950 (5.7, 5.9, 4.8, 7.3, 7.8:1); LinkedIn (4.9:1) and X (21:1) keep white. The
+ * spec recomputes every ratio, so a brand-colour change that breaks AA fails there.
+ */
+export const MONITOR_PLATFORM_BUTTON_COLORS: Readonly<Record<MonitorTabPlatform, MonitorPlatformButtonColors>> = {
+  google: { background: PLATFORM_BRAND_COLORS['google-ads'], foreground: lfxColors.gray[950], textClass: 'text-gray-950' },
+  linkedin: { background: PLATFORM_BRAND_COLORS['linkedin-ads'], foreground: lfxColors.white, textClass: 'text-white' },
+  reddit: { background: PLATFORM_BRAND_COLORS['reddit-ads'], foreground: lfxColors.gray[950], textClass: 'text-gray-950' },
+  meta: { background: PLATFORM_BRAND_COLORS['meta-ads'], foreground: lfxColors.gray[950], textClass: 'text-gray-950' },
+  microsoft: { background: PLATFORM_BRAND_COLORS['microsoft-ads'], foreground: lfxColors.gray[950], textClass: 'text-gray-950' },
+  twitter: { background: PLATFORM_BRAND_COLORS['twitter-ads'], foreground: lfxColors.white, textClass: 'text-white' },
+  hubspot: { background: HUBSPOT_BRAND_COLOR, foreground: lfxColors.gray[950], textClass: 'text-gray-950' },
+};
 
 /**
  * Zero-padded `YYYY-MM-DD` shape for a campaign flight date.
@@ -1313,6 +1561,126 @@ export const GOOGLE_ADS_SCHEDULE_MINUTES = [0, 15, 30, 45] as const;
  */
 export const GOOGLE_ADS_MIN_BID_MODIFIER = 0.1;
 export const GOOGLE_ADS_MAX_BID_MODIFIER = 10.0;
+
+/**
+ * The Google channels whose campaign-level criteria accept a device bid modifier.
+ *
+ * THREE channels, not the four that take languages and ad schedules. `validateCriteriaPlan` refuses
+ * the whole non-location set on Demand Gen, then SPLITS the remainder on Performance Max: languages
+ * and ad schedules stay (Google documents both as PMax campaign criteria), while device bid
+ * modifiers are refused by their own branch, because Performance Max's automated bidding owns the
+ * bid and sets no device adjustment.
+ *
+ * Keeping this list separate from {@link GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS} mirrors the
+ * two separate upstream branches rather than the one answer they happen to give today. Upstream
+ * refuses them with different messages for different reasons — a bid Performance Max does not set,
+ * against demographics it takes as asset-group signals — and either could move without the other.
+ *
+ * NOT a rule about automated bidding, which is a different rule with a different shape: an automated
+ * SEARCH campaign ignores a device adjustment too, and that belongs to the bidding plan, where the
+ * strategy is known. Widening this fence to every automated channel would refuse the device
+ * EXCLUSIONS (the 0 opt-out) that Google honours.
+ *
+ * Video is listed because upstream accepts it there, not because this client can reach it — the
+ * Google Ads API has no mutate that creates a Video campaign, so the create is refused earlier.
+ */
+export const GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS = ['search', 'video', 'display'] as const;
+
+/**
+ * The Google channels whose campaign-level criteria accept a demographic exclusion.
+ *
+ * The same three as {@link GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS} today, and a separate constant
+ * for the reason given there: upstream fences the two in separate branches, for separate reasons.
+ * Performance Max excludes demographics through asset-group signals, which this client does not
+ * create, so a campaign-level exclusion is refused rather than silently absent from a paid campaign.
+ */
+export const GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS = ['search', 'video', 'display'] as const;
+
+/**
+ * Upstream's bound on a device bid modifier list (`campaign_criteria.go`'s
+ * `maxDeviceBidModifiers`).
+ *
+ * It tracks the SIZE OF {@link GOOGLE_ADS_DEVICES} rather than Google's own enum size, and upstream
+ * holds a test asserting the two agree. The cap's whole claim is "a longer list must contain a
+ * duplicate", which stops being true the moment the accepted vocabulary and this number drift — so
+ * a device added below must raise this, and a spec here pins them together.
+ */
+export const GOOGLE_ADS_MAX_DEVICE_BID_MODIFIERS = 3;
+
+/**
+ * The `Device` enum this client accepts on a bid modifier (`campaign_criteria.go`'s `deviceTypes`).
+ *
+ * Compared after trimming and upper-casing, so `" mobile "` is MOBILE.
+ *
+ * Two of Google's values are deliberately absent. `OTHER` is a reporting bucket rather than
+ * something a campaign bids on. `CONNECTED_TV` is a NAMED GAP: Google accepts TV screens on Display
+ * and Video campaigns, so on those two the omission is this client's limitation rather than
+ * Google's, and upstream states it as one. It stays closed because opening it is a live-API
+ * question — whether a `CONNECTED_TV` criterion carries a bid modifier at all — and guessing wrong
+ * lands at the criteria mutate, AFTER the budget and campaign are committed.
+ */
+export const GOOGLE_ADS_DEVICES = ['MOBILE', 'DESKTOP', 'TABLET'] as const;
+
+/**
+ * Upstream's bound on EACH demographic exclusion list
+ * (`campaign_criteria.go`'s `maxDemographicExclusions`).
+ *
+ * Both vocabularies are closed enums far smaller than this, so the cap refuses nothing a sane caller
+ * writes; it exists so a malformed one cannot push an unbounded payload into the mutate. Applied to
+ * each list on its own, not to the two added together.
+ */
+export const GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS = 20;
+
+/**
+ * The age ranges accepted on a campaign-level exclusion, mapped to Google's `AgeRangeType` enum
+ * (`campaign_criteria.go`'s `ageRangeTypes`).
+ *
+ * BOTH SPELLINGS are keys — the friendly `18-24` a human writes into a brief and Google's own
+ * `AGE_RANGE_18_24` — because upstream accepts both, and `18-24` failing while `AGE_RANGE_18_24`
+ * succeeds is a trap with no upside. Looked up after trimming and upper-casing; every key here is
+ * already upper-case, so the friendly spellings survive that unchanged.
+ *
+ * `UNDETERMINED` is the bucket Google puts users it could not classify into. Excluding it is a real
+ * choice a campaign makes, so it is a member rather than a non-value.
+ *
+ * READ FOR MEMBERSHIP, NOT FOR RESOLUTION: the BFF tests a key with `Object.hasOwn` and then
+ * dispatches the caller's OWN spelling, upper-cased — `18-24` goes on the wire as `18-24`, not as
+ * `AGE_RANGE_18_24`. The values are here so the enum each friendly spelling denotes is written down
+ * beside it; nothing reads them, and {@link GOOGLE_ADS_AGE_RANGES} derives from the KEYS alone.
+ * Resolving through them instead would be a behaviour change, not a tidy-up:
+ * upstream accepts both spellings, so the wire is correct either way, and the spec pins the
+ * pass-through.
+ */
+export const GOOGLE_ADS_AGE_RANGE_MAP = {
+  '18-24': 'AGE_RANGE_18_24',
+  AGE_RANGE_18_24: 'AGE_RANGE_18_24',
+  '25-34': 'AGE_RANGE_25_34',
+  AGE_RANGE_25_34: 'AGE_RANGE_25_34',
+  '35-44': 'AGE_RANGE_35_44',
+  AGE_RANGE_35_44: 'AGE_RANGE_35_44',
+  '45-54': 'AGE_RANGE_45_54',
+  AGE_RANGE_45_54: 'AGE_RANGE_45_54',
+  '55-64': 'AGE_RANGE_55_64',
+  AGE_RANGE_55_64: 'AGE_RANGE_55_64',
+  '65+': 'AGE_RANGE_65_UP',
+  AGE_RANGE_65_UP: 'AGE_RANGE_65_UP',
+  UNDETERMINED: 'AGE_RANGE_UNDETERMINED',
+  AGE_RANGE_UNDETERMINED: 'AGE_RANGE_UNDETERMINED',
+} as const;
+
+/**
+ * The friendly age-range spellings, for a message that offers a caller the shorter vocabulary rather
+ * than reciting both halves of {@link GOOGLE_ADS_AGE_RANGE_MAP}. Derived from the map so a range
+ * added there cannot be missed here.
+ */
+export const GOOGLE_ADS_AGE_RANGES = Object.keys(GOOGLE_ADS_AGE_RANGE_MAP).filter((range) => !range.startsWith('AGE_RANGE_'));
+
+/**
+ * The `Gender` enum accepted on a campaign-level exclusion (`campaign_criteria.go`'s `genderTypes`).
+ *
+ * `UNDETERMINED` is a member for the same reason it is one in {@link GOOGLE_ADS_AGE_RANGE_MAP}.
+ */
+export const GOOGLE_ADS_GENDERS = ['MALE', 'FEMALE', 'UNDETERMINED'] as const;
 
 /**
  * Upstream's own bound on a Google Ads callout list (`assets.go`'s `maxCallouts`).
@@ -2576,6 +2944,59 @@ export const AUDIENCE_SPEAKER_SCOPES: readonly { key: AudienceSpeakerScope; labe
   { key: 'past', label: 'Past event speakers' },
   { key: 'current_past', label: 'Current + Past event speakers' },
 ] as const;
+
+/**
+ * Missing signals the custom builder can be opened for — every classified signal, as in the legacy
+ * builder. Speakers, registrants and page views are deterministic presets; education enrolment and
+ * the two opt-ins are drafted by the model, and the service verifies every property it names.
+ */
+export const AUDIENCE_CUSTOM_CREATABLE_SIGNALS: readonly AudienceSignal[] = [
+  'event_speakers',
+  'event_registration',
+  'page_view',
+  'education_enrollment',
+  'project_opt_in',
+  'lf_newsletter_opt_in',
+] as const;
+
+/** The Audience tab's three modes, in the legacy builder's order. */
+export const AUDIENCE_BUILD_MODES: readonly { mode: AudienceBuildMode; label: string }[] = [
+  { mode: 'event', label: 'Event Audience' },
+  { mode: 'custom', label: 'Custom Audience' },
+  { mode: 'reuse', label: 'Reuse or Discover Existing Audience' },
+] as const;
+
+/** Operators the custom-audience builder offers for an extra property filter, in display order. */
+export const AUDIENCE_CUSTOM_OPERATORS: readonly { value: AudienceCustomOperator; label: string }[] = [
+  { value: 'is_equal_to', label: 'is equal to' },
+  { value: 'contains', label: 'contains' },
+  { value: 'is_any_of', label: 'is any of' },
+  { value: 'is_not_any_of', label: 'is not any of' },
+  { value: 'is_known', label: 'is known' },
+  { value: 'is_unknown', label: 'is unknown' },
+] as const;
+
+/**
+ * HTTP statuses that prove a custom-audience create did nothing: the request itself was refused.
+ * Every other outcome (a 502 partial, a timeout, a lost connection, any 5xx) may mean HubSpot
+ * created the list, so it is unconfirmed and must not be retried.
+ */
+export const AUDIENCE_CUSTOM_CREATE_DEFINITE_FAILURES: readonly number[] = [400, 401, 403, 404, 409, 422];
+
+/** How the model judged an existing list against the audience being built, with its label. */
+export const AUDIENCE_CUSTOM_REUSE_RECOMMENDATIONS: Readonly<Record<AudienceCustomReuseRecommendation, string>> = {
+  reuse: 'Likely the same audience',
+  update: 'Close — consider building a new version',
+  unrelated: 'Probably a different audience',
+};
+
+/** Why a prior send is listed, with its label; brand-only and related-word rows are weaker precedent. */
+export const AUDIENCE_LAST_SENT_MATCH_REASONS: Readonly<Record<AudienceLastSentMatchReason, string>> = {
+  event_name: 'Matched on the event name',
+  subject: 'Matched on the subject line',
+  related_words: 'Matched on related words only — check it',
+  brand_only: 'Matched on the brand only — check it',
+};
 
 /**
  * Above this combined estimated size, an exact union count is refused.

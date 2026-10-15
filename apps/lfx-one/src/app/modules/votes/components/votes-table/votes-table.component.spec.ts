@@ -180,6 +180,42 @@ describe('VotesTableComponent — personal summary filters', () => {
     expect(rows()).toEqual(VOTES.map((v) => v.uid));
   });
 
+  it('opts into recoverable empty lazy results without changing default consumers', async () => {
+    await render();
+    fixture.componentRef.setInput('lazy', true);
+    fixture.componentRef.setInput('votes', []);
+    await settle(true);
+    expect(table['isFiltered']()).toBe(false);
+    expect(fixture.nativeElement.querySelector('[data-testid="votes-search-input"]')).toBeNull();
+    fixture.componentRef.setInput('serverFiltersActive', true);
+    await settle();
+    expect(fixture.nativeElement.textContent).toContain('No results found');
+    expect(fixture.nativeElement.querySelector('[data-testid="votes-search-input"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('[data-testid="votes-group-filter"]')).toBeTruthy();
+    expect(fixture.nativeElement.textContent).toContain('Reset filters');
+    table['resetFilters']();
+    fixture.componentRef.setInput('serverFiltersActive', false);
+    fixture.componentRef.setInput('votes', VOTES);
+    await settle(true);
+    expect(rows()).toEqual(VOTES.map((v) => v.uid));
+  });
+
+  it('hides pending pagination without hiding filters or loaded rows', async () => {
+    await render();
+    fixture.componentRef.setInput('lazy', true);
+    fixture.componentRef.setInput('totalRecords', 20);
+    await settle();
+    expect(fixture.nativeElement.querySelector('.p-paginator')).toBeTruthy();
+    fixture.componentRef.setInput('paginationLoading', true);
+    await settle();
+    expect(fixture.nativeElement.querySelector('.p-paginator')).toBeNull();
+    expect(rows()).toEqual(VOTES.map((v) => v.uid));
+    expect(fixture.nativeElement.querySelector('[data-testid="votes-search-input"]')).toBeTruthy();
+    fixture.componentRef.setInput('paginationLoading', false);
+    await settle();
+    expect(fixture.nativeElement.querySelector('.p-paginator')).toBeTruthy();
+  });
+
   it('clears an unavailable group only after loading, preserving search and summary', async () => {
     await render();
     fixture.componentRef.setInput('quickFilter', 'needs-vote');

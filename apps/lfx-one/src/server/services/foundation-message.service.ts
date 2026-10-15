@@ -21,7 +21,7 @@ import { Request } from 'express';
 import { GithubReadmeService } from './github-readme.service';
 import { GuildService } from './guild.service';
 import { logger } from './logger.service';
-import { MktgArtifactService } from './mktg-artifact.service';
+import { MktgDocumentStoreService } from './mktg-document-store.service';
 
 /**
  * Message Foundation generation flow (message-foundation-output/v1), the
@@ -54,13 +54,13 @@ export class FoundationMessageService {
   private readonly githubReadmeService = new GithubReadmeService();
 
   /**
-   * The SHARED agent-artifact persistence layer (the Brand Kit's write and
-   * read path, generalized). This service supplies only the Message
-   * Foundation's artifact spec and envelope; the entitlement boundary, key
-   * layout, size gate, metadata refresh rule and degrade-to-null semantics all
-   * live there.
+   * The Marketing OS document store over the SHARED agent-artifact
+   * persistence layer: every validated document is written exactly as before
+   * (entitlement boundary, key layout, size gate, metadata refresh rule,
+   * degrade-to-null) and then recorded as a revision of the project's
+   * Message Foundation document, whose latest revision is what the stored read serves.
    */
-  private readonly artifactService = new MktgArtifactService();
+  private readonly documentStore = new MktgDocumentStoreService();
 
   /** Message Foundation knobs for the shared persistence layer: key prefix, size cap, log namespace. */
   private readonly artifactSpec = MKTG_ARTIFACT_SPECS['foundation-message'];
@@ -152,7 +152,7 @@ export class FoundationMessageService {
       document_chars: envelope.document_markdown.length,
     });
 
-    const persistence = await this.persistEnvelope(req, envelope, projectUid);
+    const persistence = await this.persistEnvelope(req, envelope, sessionId, projectUid);
 
     return {
       status: 'ready',
@@ -167,17 +167,20 @@ export class FoundationMessageService {
   }
 
   /**
-   * Fetch the project's LATEST persisted Message Foundation document from the
-   * content-addressed partition `foundation-message/{project uid}/` — the
+   * Fetch the project's LATEST Message Foundation document — the
    * dec-agent-dependency-gating read path that lets a dependent agent (or any
    * other browser, or any other entitled user) reach a Message Foundation it
-   * did not generate. Delegated verbatim to the shared agent-artifact layer:
-   * newest by store write time, each candidate's bytes re-hashed against its
-   * content-addressed key before it can be served, and a storage failure
-   * degraded to null at WARN.
+   * did not generate — through {@link MktgDocumentStoreService.readLatest}:
+   * the latest stored revision of the project's living Message Foundation
+   * document, ordered by revision sequence, so a restored revision is what
+   * dependent agents read after a Restore. Only when the document has no
+   * revisions yet, or the revision read fails, does it fall back to the
+   * pre-revision agent-artifact read (newest by store write time under
+   * `foundation-message/{project uid}/`), which degrades a storage failure to
+   * null at WARN.
    */
   public async getStoredFoundationMessage(req: Request, project: string): Promise<FoundationMessageStoredResponse | null> {
-    return this.artifactService.readLatest(req, this.artifactSpec, project);
+    return this.documentStore.readLatest(req, this.artifactSpec, project);
   }
 
   /**
@@ -195,8 +198,13 @@ export class FoundationMessageService {
    * at WARN — the document still reaches the user, without a receipt, and the
    * next poll retries the idempotent write.
    */
-  private async persistEnvelope(req: Request, envelope: FoundationMessageEnvelope, projectUid?: string): Promise<FoundationMessagePersistReceipt | null> {
-    return this.artifactService.persist(req, this.artifactSpec, envelope, projectUid);
+  private async persistEnvelope(
+    req: Request,
+    envelope: FoundationMessageEnvelope,
+    sessionId: string,
+    projectUid?: string
+  ): Promise<FoundationMessagePersistReceipt | null> {
+    return this.documentStore.persistGeneration(req, this.artifactSpec, envelope, projectUid, sessionId);
   }
 
   /**

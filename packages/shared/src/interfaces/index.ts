@@ -31,6 +31,9 @@ export * from './auth.interface';
 // Session store interfaces
 export * from './session-store.interface';
 
+// Object store (S3 or file-backed) interfaces
+export * from './object-store.interface';
+
 // Auth-state (Flow C CSRF nonce) interfaces
 export * from './auth-state.interface';
 
@@ -256,6 +259,7 @@ export * from './marketing-impact.interface';
 export * from './github-url.interface';
 export * from './mktg-agent.interface';
 export * from './mktg-artifact.interface';
+export * from './mktg-document-store.interface';
 export * from './mktg-chat.interface';
 export * from './mktg-run.interface';
 

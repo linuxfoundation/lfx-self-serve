@@ -5,6 +5,7 @@ import {
   CAMPAIGN_BID_OUTCOME_UNCONFIRMED,
   CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED,
   CAMPAIGN_EMAIL_STAGES,
+  CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN,
   CAMPAIGN_GOALS,
   CAMPAIGN_NEGATIVE_KEYWORD_OUTCOMES,
   CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED,
@@ -48,6 +49,7 @@ import type {
   CampaignServiceAudience,
   CampaignServiceCampaign,
   CampaignServiceCampaignResolution,
+  CampaignServiceConnection,
   CampaignServiceCreateResult,
   CampaignServiceHubSpotCampaign,
   CampaignServiceHubSpotCampaigns,
@@ -115,6 +117,8 @@ interface CampaignServiceJobPollResponse {
     campaign_id?: string;
     /** HubSpot app URL of the created draft; campaign-service builds it from the connection's portal id. */
     hubspot_url?: string;
+    /** Best-effort steps of a successful create that did not apply (email channel: a hero that could not be added). */
+    warnings?: string[];
     error?: string;
   }[];
   error?: string;
@@ -473,6 +477,18 @@ function canCreateGoogleChannels(): boolean {
   return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceGoogleChannels);
 }
 
+/**
+ * Whether a create may carry a per-platform `bidding` object (#3299).
+ *
+ * Needs the campaign-service create path to serve the create AND the bidding flag. Either alone is
+ * not enough, and both failures are silent: the legacy creator never reads `bidding`, and a
+ * campaign-service older than linuxfoundation/lfx-v2-campaign-service#332 drops the unknown key.
+ * Both would create the campaign on automatic bidding while the operator asked for a manual bid.
+ */
+export function canCreateWithBidding(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBidding);
+}
+
 export class CampaignServiceClient {
   private readonly microserviceProxy: MicroserviceProxyService;
 
@@ -539,6 +555,7 @@ export class CampaignServiceClient {
         googleChannelsEnabled: canCreateGoogleChannels(),
         googleCreativeEnabled: cutoverOwnsCreate(),
         redditCreativeEnabled: canCreateRedditCreative(),
+        biddingEnabled: canCreateWithBidding(),
       };
     }
 
@@ -592,6 +609,7 @@ export class CampaignServiceClient {
       googleChannelsEnabled: canCreateGoogleChannels(),
       googleCreativeEnabled: cutoverOwnsCreate(),
       redditCreativeEnabled: canCreateRedditCreative(),
+      biddingEnabled: canCreateWithBidding(),
     };
   }
 
@@ -1520,6 +1538,13 @@ export class CampaignServiceClient {
       }
       const definitelyRejected = error instanceof MicroserviceError && error.statusCode >= 400 && error.statusCode < 500 && error.statusCode !== 408;
       if (definitelyRejected) {
+        // The one refusal worth naming: an invalid bid (#3299). Matched on the service's own wording,
+        // so nothing else upstream sends is rendered — see `CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN`.
+        const biddingRefusal =
+          error instanceof MicroserviceError && error.statusCode === 400 ? CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN.exec(error.message) : null;
+        if (biddingRefusal !== null) {
+          return { enabled: true, jobId: null, error: `Campaign creation was rejected and nothing was created: ${biddingRefusal[0]}` };
+        }
         return { enabled: true, jobId: null, error: 'Campaign creation was rejected and nothing was created. Please try again.' };
       }
       return {
@@ -2246,6 +2271,31 @@ export class CampaignServiceClient {
       `/projects/${encodePathSegment(projectSlug)}/connection-hubspot/account-monitor`,
       'GET',
       { days }
+    );
+  }
+
+  /**
+   * The project's OWN connection for one ad provider (`get-<provider>` on campaign-service), read so
+   * the Monitor tab can offer the account it is bound to — the only account the account monitor
+   * will read for this project. Credentials are redacted upstream.
+   *
+   * campaign-service answers its typed 404 when the project has no connection of this provider;
+   * that is left to the caller to classify (see `isCampaignServiceNotFound`), because a gateway 404
+   * is not the same statement.
+   */
+  public async getConnection(req: Request, projectSlug: string, provider: CampaignServiceMonitorProvider): Promise<CampaignServiceConnection> {
+    if (projectSlug === '') {
+      // `/projects//connection-…` 404s at the gateway, which a caller would read as "no connection".
+      throw ServiceValidationError.forField('project', 'A connection read requires the project it belongs to.', {
+        operation: `get_${provider.replace('-', '_')}_connection`,
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceConnection>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/connection-${provider}`,
+      'GET'
     );
   }
 
@@ -3527,6 +3577,24 @@ export function isCampaignServiceNotFound(errorBody: unknown): boolean {
 }
 
 /**
+ * The warnings campaign-service attached to one platform result, reduced to non-blank strings and bounded.
+ *
+ * They are rendered as text in the UI, so only the shape is policed here: a non-array, a non-string element or a
+ * blank one is dropped, duplicates are collapsed, and the count and each entry's length are capped so a malformed upstream response cannot
+ * flood the banner.
+ */
+function cleanWarnings(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((entry): entry is string => typeof entry === 'string' && entry.trim() !== '')
+    .map((entry) => entry.trim().slice(0, 500))
+    .filter((entry, index, all) => all.indexOf(entry) === index) // the UI keys warnings by their text
+    .slice(0, 10);
+}
+
+/**
  * Translate campaign-service's `job-poll-response` into the shape the poller expects.
  *
  * This is NOT a pass-through, and the difference matters more than it looks. The Angular
@@ -3554,13 +3622,17 @@ export function adaptJobPollResponse(response: CampaignServiceJobPollResponse): 
   // claim from "the job reported nothing yet"; the poller reaches here for terminal states
   // that legitimately carry no result (a job that failed before dispatch). The component
   // coalesces to `[]` at the point of rendering, where the distinction no longer matters.
-  const platformResults: CampaignPlatformResult[] | undefined = response.result?.map((r) => ({
-    platform: r.platform,
-    ok: r.ok,
-    campaignId: r.campaign_id,
-    hubspotUrl: r.hubspot_url,
-    error: r.error,
-  }));
+  const platformResults: CampaignPlatformResult[] | undefined = response.result?.map((r) => {
+    const warnings = cleanWarnings(r.warnings);
+    return {
+      platform: r.platform,
+      ok: r.ok,
+      campaignId: r.campaign_id,
+      hubspotUrl: r.hubspot_url,
+      ...(warnings.length > 0 ? { warnings } : {}),
+      error: r.error,
+    };
+  });
 
   switch (response.status) {
     case 'queued':

@@ -20,6 +20,7 @@ import {
 import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
 
 import { MicroserviceError, ServiceValidationError } from '../errors';
+import { ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
 const {
@@ -1544,6 +1545,104 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(sent['geoTargets']).toEqual(['US']);
   });
 
+  /**
+   * Bidding (#3299). With the capability on, every lane config's `bidding` reaches campaign-service
+   * UNTOUCHED: the service is the authority on its shape and answers a broken one with a 400 naming
+   * the field. With it off, the request is refused rather than the key dropped, because both
+   * creators that would serve it ignore `bidding` and would create the campaign automatic.
+   */
+  describe('bidding', () => {
+    const laneBody = (bidding: unknown): Record<string, unknown> => ({
+      platforms: ['linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads'],
+      linkedInConfig: { budgetUsd: 100, bidding },
+      metaConfig: { budgetUsd: 250, lifetimeBudget: false, objective: 'traffic', geoTargets: ['US'], variants: [{ primaryText: 'p', headline: 'h' }], bidding },
+      microsoftConfig: microsoftConfig({ bidding }),
+      redditConfig: { budgetUsd: 50, objective: 'traffic', bidding },
+    });
+
+    const flagsWith = (bidding: boolean, cutover: boolean): void => {
+      isServerFeatureEnabled.mockImplementation((flag: unknown) => (flag === ServerFeatureFlag.CampaignServiceBidding ? bidding : cutover));
+    };
+
+    it.each([
+      ['automatic', { strategy: 'automatic' }],
+      ['manual', { strategy: 'manual', bidAmount: 1.25 }],
+    ])('forwards a %s bidding object untouched on every lane config', async (_label, bidding) => {
+      flagsWith(true, true);
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+      await controller.createCampaign(buildReq(laneBody(bidding), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      const envelope = envelopeFor(createCampaigns);
+      for (const key of ['linkedInConfig', 'metaConfig', 'microsoftConfig', 'redditConfig']) {
+        expect((envelope[key] as Record<string, unknown>)['bidding']).toEqual(bidding);
+      }
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['the bidding flag is off', false, true],
+      ['the create cutover is dark', true, false],
+      ['both are off', false, false],
+    ])('refuses a request carrying bidding when %s, creating nothing', async (_label, biddingFlag, cutover) => {
+      flagsWith(biddingFlag, cutover);
+      createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+      legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+      await controller.createCampaign(
+        buildReq(
+          { platforms: ['meta-ads'], metaConfig: { budgetUsd: 250, bidding: { strategy: 'manual', bidAmount: 1 } } },
+          { project: 'tlf', brief_id: 'b-1' }
+        ),
+        res,
+        next
+      );
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(legacyCreate).not.toHaveBeenCalled();
+      const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      expect(error.statusCode).toBe(400);
+      expect(error.toResponse()['errors']).toEqual([
+        {
+          field: 'metaConfig.bidding',
+          message: 'bidding options are not enabled on this deployment; omit bidding to use automatic bidding',
+          code: 'FIELD_VALIDATION_ERROR',
+        },
+      ]);
+    });
+
+    it('refuses an explicit null bidding too, rather than reading it as absent', async () => {
+      flagsWith(false, true);
+
+      await controller.createCampaign(
+        buildReq({ platforms: ['reddit-ads'], redditConfig: { budgetUsd: 50, bidding: null } }, { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+      expect(error.toResponse()['errors'][0].field).toBe('redditConfig.bidding');
+    });
+
+    it('lets a request without bidding through unchanged when the flag is off', async () => {
+      flagsWith(false, true);
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+      await controller.createCampaign(
+        buildReq({ platforms: ['microsoft-ads'], microsoftConfig: microsoftConfig({ cpcBid: 2.5 }) }, { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+
+      expect(next).not.toHaveBeenCalled();
+      const sent = envelopeFor(createCampaigns)['microsoftConfig'] as Record<string, unknown>;
+      expect(sent).not.toHaveProperty('bidding');
+      expect(sent['cpcBid']).toBe(2.5);
+    });
+  });
+
   it('omits cpcBid and timeZone when unset, leaving Microsoft its serve-capable defaults', async () => {
     // An explicit 0 would claim a bid the account does not have; omitted means Microsoft applies
     // the account-currency minimum. A blank timeZone is the same non-answer as an absent one.
@@ -2727,8 +2826,11 @@ describe('CampaignController.createCampaign cutover', () => {
     ['excludedGeoTargets', Array.from({ length: 101 }, () => 'US')],
     ['proximityTargets', Array.from({ length: 101 }, () => ({ latitude: -33.8688, longitude: 151.2093, radius: 25, radiusUnit: 'KILOMETERS' }))],
     ['adSchedules', Array.from({ length: 101 }, () => ({ dayOfWeek: 'MONDAY', startHour: 9, startMinute: 0, endHour: 17, endMinute: 0 }))],
+    ['deviceBidModifiers', Array.from({ length: 101 }, () => ({ device: 'MOBILE', bidModifier: 1.2 }))],
+    ['excludedAgeRanges', Array.from({ length: 101 }, () => '18-24')],
+    ['excludedGenders', Array.from({ length: 101 }, () => 'MALE')],
   ])('bounds a %s list before the envelope normalizes it, since that runs ahead of the named cap', async (field, list) => {
-    // The named caps (60, 20 and 42) are the operator-facing refusal and still fire first for any
+    // The named caps (60, 20, 42, 3 and 20) are the operator-facing refusal and still fire first for any
     // plausible list. This ceiling only stops `createConfigEnvelope` — which runs BEFORE them and
     // allocates per entry — from walking a 15mb body.
     await controller.createCampaign(buildReq(googleBody({ [field]: list } as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
@@ -3312,6 +3414,398 @@ describe('CampaignController.createCampaign cutover', () => {
     );
 
     expect(refusalFrom().message).toContain('ad schedule 2');
+  });
+
+  const MOBILE_BID = { device: 'MOBILE', bidModifier: 1.2 };
+
+  it('dispatches the device bid modifiers the operator picked, so a mobile-heavy campaign bids up there', async () => {
+    // The contrast for every device refusal below: without it they would all pass on a controller
+    // that refused or dropped every device list. Unlike an ad schedule, whose `bidModifier` is a
+    // pointer upstream, a device entry's is a plain `float64` the dispatcher insists on — so the
+    // key is always present on the wire here.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000020', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ deviceBidModifiers: [MOBILE_BID, { device: ' tablet ', bidModifier: 0.8 }] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    const sent = (envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['deviceBidModifiers'] as Record<string, unknown>[];
+    expect(sent).toHaveLength(2);
+    expect(sent[1]['bidModifier']).toBe(0.8);
+  });
+
+  it('refuses device bid modifiers on Performance Max, whose automated bidding sets no device adjustment', async () => {
+    // Half of `validateCriteriaPlan`'s Performance Max SPLIT, and the half that makes this list
+    // narrower than ad schedules: the same channel that keeps schedules refuses these.
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: ['performance-max'], deviceBidModifiers: [MOBILE_BID] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.field).toBe('deviceBidModifiers');
+    expect(error.message).toContain('Performance Max');
+  });
+
+  it('refuses device bid modifiers on Demand Gen, which refuses the whole criteria set', async () => {
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: ['demand-gen'], deviceBidModifiers: [MOBILE_BID] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.field).toBe('deviceBidModifiers');
+    expect(error.message).toContain('Demand Gen');
+  });
+
+  it.each([['video'], ['display']])('dispatches device bid modifiers on %s, which upstream leaves un-narrowed', async (channel) => {
+    // The over-refusal guard for the channel fence: only Demand Gen and Performance Max are fenced
+    // off, so fencing the list to Search alone would refuse two creates Google takes.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000021', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: [channel], deviceBidModifiers: [MOBILE_BID] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['deviceBidModifiers']).toHaveLength(1);
+  });
+
+  it('names a device that omits its bid modifier even on Demand Gen, which the dispatcher reaches first', async () => {
+    // `googleAdsDeviceBidModifiers` runs in the dispatcher BEFORE the channel switch, deliberately,
+    // so a malformed entry is refused identically on both channels and on the adoption path. A
+    // guard that put this check inside its channel fence would blame the channel for a body that is
+    // malformed whatever channel it is sent on.
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: ['demand-gen'], deviceBidModifiers: [{ device: 'MOBILE' }] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.field).toBe('deviceBidModifiers');
+    expect(error.message).toContain('MOBILE');
+    expect(error.message).toContain('-100%');
+  });
+
+  it('names a device whose bid modifier is null, which Go reads as the same nil pointer an omitted key gives', async () => {
+    await controller.createCampaign(
+      buildReq(googleBody({ deviceBidModifiers: [{ device: 'DESKTOP', bidModifier: null }] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().message).toContain('DESKTOP');
+  });
+
+  it.each([
+    ['a non-array device list', { deviceBidModifiers: {} }],
+    ['a non-object device entry', { deviceBidModifiers: ['mobile'] }],
+    ['a null device entry', { deviceBidModifiers: [null] }],
+    ['a non-string device', { deviceBidModifiers: [{ device: 1, bidModifier: 1.2 }] }],
+    ['a non-numeric bid modifier', { deviceBidModifiers: [{ device: 'MOBILE', bidModifier: '1.2' }] }],
+  ])('refuses %s before it reaches the dispatcher, which decodes the field as typed structs', async (_label, overrides) => {
+    await controller.createCampaign(buildReq(googleBody(overrides as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('deviceBidModifiers');
+  });
+
+  it('refuses a fourth device bid modifier, the cap upstream ties to the devices it accepts', async () => {
+    // Checked against the SUBMITTED count, where `validateDeviceBidModifiers` checks its own: a
+    // fourth entry must repeat a device, and the per-entry pass would refuse it anyway, but
+    // upstream names the cap first.
+    await controller.createCampaign(
+      buildReq(
+        googleBody({
+          deviceBidModifiers: [MOBILE_BID, { device: 'DESKTOP', bidModifier: 1 }, { device: 'TABLET', bidModifier: 1 }, { device: 'MOBILE', bidModifier: 2 }],
+        }),
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.field).toBe('deviceBidModifiers');
+    expect(error.message).toContain('3');
+  });
+
+  it('refuses a device outside the three this client accepts, naming them', async () => {
+    // `CONNECTED_TV` is a named gap rather than an oversight: Google accepts it on Display and
+    // Video, but this client's `deviceTypes` does not, so a create carrying it would fail upstream.
+    await controller.createCampaign(
+      buildReq(googleBody({ deviceBidModifiers: [{ device: 'CONNECTED_TV', bidModifier: 1.2 }] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.message).toContain('CONNECTED_TV');
+    expect(error.message).toContain('MOBILE, DESKTOP, TABLET');
+  });
+
+  it('refuses a repeated device rather than collapsing it, because the second adjustment is the one Google drops', async () => {
+    // The asymmetry with the two demographic lists below, pinned. A repeated device carries a
+    // second bid modifier; a repeated exclusion asks twice for the one thing it already said.
+    await controller.createCampaign(
+      buildReq(googleBody({ deviceBidModifiers: [MOBILE_BID, { device: 'mobile', bidModifier: 2 }] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.field).toBe('deviceBidModifiers');
+    expect(error.message).toContain('more than once');
+  });
+
+  it('dispatches a device bid modifier of 0, the opt-out rather than a value below the floor', async () => {
+    // `validateBidModifier` returns EARLY on 0 for a device exactly as it does for a schedule: it is
+    // the -100% "do not serve on this device" modifier, which is how a desktop-only campaign is
+    // expressed. Refusing it on the range would refuse the one value such a campaign must carry.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000022', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ deviceBidModifiers: [{ device: 'MOBILE', bidModifier: 0 }] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    const sent = (envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['deviceBidModifiers'] as Record<string, unknown>[];
+    expect(sent[0]['bidModifier']).toBe(0);
+  });
+
+  it.each([
+    ['below the floor', 0.05, '0.1 to 10'],
+    ['above the ceiling', 10.5, '0.1 to 10'],
+    ['not finite', Number.NaN, 'finite'],
+  ])('refuses a device bid modifier %s, which upstream refuses before the first mutate', async (_label, bidModifier, expected) => {
+    await controller.createCampaign(
+      buildReq(googleBody({ deviceBidModifiers: [{ device: 'MOBILE', bidModifier }] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.field).toBe('deviceBidModifiers');
+    expect(error.message).toContain(expected);
+  });
+
+  it("trims a device with Go's whitespace set, so a device upstream accepts is not refused here", async () => {
+    // `strings.TrimSpace` strips U+0085 (NEL) and `String.prototype.trim` does not — the
+    // over-refusal these Go mirrors exist to prevent.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000023', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ deviceBidModifiers: [{ device: '\u0085mobile\u0085', bidModifier: 1.2 }] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['deviceBidModifiers']).toHaveLength(1);
+  });
+
+  it('numbers the refused device bid modifier from 1, so the operator can find the row', async () => {
+    await controller.createCampaign(
+      buildReq(googleBody({ deviceBidModifiers: [MOBILE_BID, { device: 'FRIDGE', bidModifier: 1.2 }] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(refusalFrom().message).toContain('device bid modifier 2');
+  });
+
+  it('dispatches the demographic exclusions the operator picked, in both vocabularies', async () => {
+    // The contrast for every demographic refusal below. `ageRangeTypes` accepts the friendly
+    // spelling and Google's own `AGE_RANGE_*` enum name deliberately, so both reach the wire as
+    // written, upper-cased — and `UNDETERMINED` is an ordinary member of both vocabularies, not a
+    // placeholder: excluding it is how a campaign skips users Google could not classify.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000024', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ excludedAgeRanges: [' 18-24 ', 'age_range_65_up'], excludedGenders: ['male', 'UNDETERMINED'] }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    const config = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    expect(config['excludedAgeRanges']).toEqual(['18-24', 'AGE_RANGE_65_UP']);
+    expect(config['excludedGenders']).toEqual(['MALE', 'UNDETERMINED']);
+  });
+
+  it.each([
+    ['excludedAgeRanges', { excludedAgeRanges: ['18-24'] }],
+    ['excludedGenders', { excludedGenders: ['MALE'] }],
+  ])('refuses %s on Performance Max, which takes demographics as asset-group signals this client does not create', async (field, overrides) => {
+    // The other half of the Performance Max split, fenced separately from the device list above for
+    // a different reason — either could move without the other.
+    await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['performance-max'], ...overrides }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.field).toBe(field);
+    expect(error.message).toContain('Performance Max');
+  });
+
+  it.each([
+    ['excludedAgeRanges', { excludedAgeRanges: ['18-24'] }],
+    ['excludedGenders', { excludedGenders: ['MALE'] }],
+  ])('refuses %s on Demand Gen, which refuses the whole criteria set', async (field, overrides) => {
+    await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['demand-gen'], ...overrides }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe(field);
+  });
+
+  it.each([['video'], ['display']])('dispatches demographic exclusions on %s, which upstream leaves un-narrowed', async (channel) => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000025', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: [channel], excludedAgeRanges: ['18-24'], excludedGenders: ['MALE'] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    const config = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    expect(config['excludedAgeRanges']).toHaveLength(1);
+    expect(config['excludedGenders']).toHaveLength(1);
+  });
+
+  it('dispatches 20 exclusions on EACH list, since upstream caps the two independently', async () => {
+    // The over-refusal guard for the cap: `validateExcludedAgeRanges` and `validateExcludedGenders`
+    // each compare their own slice against `maxDemographicExclusions`, so a shared budget of 20
+    // across both would refuse a create upstream accepts.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000026', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ excludedAgeRanges: Array.from({ length: 20 }, () => '18-24'), excludedGenders: Array.from({ length: 20 }, () => 'MALE') }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['excludedAgeRanges']).toHaveLength(20);
+  });
+
+  it.each([
+    ['excludedAgeRanges', { excludedAgeRanges: Array.from({ length: 21 }, () => '18-24') }],
+    ['excludedGenders', { excludedGenders: Array.from({ length: 21 }, () => 'MALE') }],
+  ])('refuses a 21st %s against the submitted count, before any repeat is collapsed', async (field, overrides) => {
+    await controller.createCampaign(buildReq(googleBody(overrides as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.field).toBe(field);
+    expect(error.message).toContain('20');
+  });
+
+  it.each([
+    ['a non-array age range list', { excludedAgeRanges: {} }, 'excludedAgeRanges'],
+    ['a non-string age range', { excludedAgeRanges: [18] }, 'excludedAgeRanges'],
+    ['a non-array gender list', { excludedGenders: {} }, 'excludedGenders'],
+    ['a non-string gender', { excludedGenders: [1] }, 'excludedGenders'],
+  ])('refuses %s before it reaches the dispatcher, which decodes both fields as Go string slices', async (_label, overrides, field) => {
+    await controller.createCampaign(buildReq(googleBody(overrides as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe(field);
+  });
+
+  it.each([
+    ['an unknown age range', { excludedAgeRanges: ['18-25'] }, 'excludedAgeRanges', '18-25'],
+    ['a blank age range', { excludedAgeRanges: ['  '] }, 'excludedAgeRanges', '18-24'],
+    ['a prototype key as an age range', { excludedAgeRanges: ['constructor'] }, 'excludedAgeRanges', '18-24'],
+    ['an unknown gender', { excludedGenders: ['NONBINARY'] }, 'excludedGenders', 'NONBINARY'],
+    ['a blank gender', { excludedGenders: ['  '] }, 'excludedGenders', 'MALE, FEMALE, UNDETERMINED'],
+  ])('refuses %s, which upstream refuses on the vocabulary', async (_label, overrides, field, expected) => {
+    // A blank entry has no branch of its own upstream — it is simply absent from the map — so it
+    // gets the vocabulary message rather than a blank-specific one, unlike a blank language.
+    //
+    // `constructor` is the same case as any other unknown spelling, and is here to pin that: the
+    // age-range vocabulary is a MAP, and `in` would have said yes to every inherited `Object.prototype`
+    // key and let `CONSTRUCTOR` through to Google. `Object.hasOwn` is what keeps it a refusal, and
+    // this row fails if anyone swaps it back.
+    await controller.createCampaign(buildReq(googleBody(overrides as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.field).toBe(field);
+    expect(error.message).toContain(expected);
+  });
+
+  it('dispatches a repeated exclusion rather than refusing it, because upstream collapses one', async () => {
+    // `validateExcludedAgeRanges` skips a repeat with `continue`, where
+    // `validateDeviceBidModifiers` refuses one. Refusing here would refuse a create Google takes.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000027', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ excludedAgeRanges: ['18-24', '18-24'], excludedGenders: ['MALE', 'male'] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    const config = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    expect(config['excludedAgeRanges']).toEqual(['18-24', '18-24']);
+    expect(config['excludedGenders']).toEqual(['MALE', 'MALE']);
+  });
+
+  it("trims an exclusion with Go's whitespace set, so a value upstream accepts is not refused here", async () => {
+    // Both lists normalize through the same helper the languages and geo lists use, so U+0085 has
+    // to be stripped here too or a value `genderTypes` resolves would be refused before it is sent.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000028', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ excludedGenders: ['\u0085female\u0085'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['excludedGenders']).toEqual(['FEMALE']);
+  });
+
+  it('omits all three criteria lists entirely when none were picked, which is how Google\'s "everyone, every device" default is reached', async () => {
+    // An empty list is not the same as an absent one: sending `[]` would be a criteria plan that
+    // asks for nothing, and the fields have to stay off the envelope for the default to apply.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000029', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ deviceBidModifiers: [], excludedAgeRanges: [], excludedGenders: [] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    const config = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    expect(config).not.toHaveProperty('deviceBidModifiers');
+    expect(config).not.toHaveProperty('excludedAgeRanges');
+    expect(config).not.toHaveProperty('excludedGenders');
   });
 
   it('dispatches the languages the operator picked, trimmed and upper-cased', async () => {

@@ -86,6 +86,38 @@ The `page_token` from the query service passes through unchanged.
 > only for internal consumers that need the raw upstream cursor, like committee-activity's
 > saturation walk.
 
+### Management vote summaries and closing-only lists
+
+`GET /api/votes/summary` accepts exactly one nonempty `parent=project:<uid>` and an optional
+nonempty `group` committee name. Other keys and repeated values are rejected. Accepted Group
+names are trimmed before the caller-authorized indexed scan uses `committee_name:<group>`.
+The endpoint returns `{ active_votes, closing_soon, as_of }`. No invitation lookup or project enrichment
+is needed. Search, status, and pagination never affect these totals; foundation scope is the
+selected foundation's project UID, not an expansion into descendants.
+
+`GET /api/votes?closing_soon=true` applies the shared active/deadline predicate to the complete
+normalized set **before** sorting and slicing. This BFF-only flag accepts a single `true` or
+`false` and is never forwarded upstream. True responses add `total_records` from the same
+snapshot as the returned page; the dashboard skips the separate count request in this mode.
+False/omitted flags preserve the ordinary response shape. Summary and list both require
+`failOnPartial: true`, so a failed scan is unavailable, never a partial total.
+
+The canonical `filters=status:active` clause is evaluated locally with normalized status for
+both `GET /api/votes` and `GET /api/votes/count`. Forwarding it as an exact upstream term would
+exclude legacy mixed-case active votes that the summary counts. The BFF removes only that
+clause, keeps other filters/search/scope upstream, and applies normalized active matching to
+the complete authorized scan. The Active count therefore drains pages rather than using the
+upstream exact-value count; it ignores list pagination and rejects incomplete scans. Other
+count queries and the internal upstream-cursor passthrough retain their existing behavior.
+Recognized indexed statuses are canonicalized in returned rows so status-dependent actions
+agree with the normalized predicates; unrecognized values are preserved.
+
+Closing means `now < end_time <= now + 7 × 24 hours`. Active totals still include indexed-active
+votes whose deadlines are past or invalid. The summary's RFC3339 `as_of` describes its snapshot;
+list pagination takes a fresh snapshot, so counts can legitimately differ at a deadline.
+Existing cursor recovery handles shrinking sets. Refresh/re-entry reloads totals and rows,
+but cannot promise immediate convergence of the search index after mutations.
+
 ## Backend: Complete Fetch (All Pages)
 
 When the server needs all records (e.g., meeting registrants for invitation checks), use the `fetchAllQueryResources` helper:
@@ -116,7 +148,7 @@ See [Server Helpers](./server-helpers.md) for more details on the helper impleme
 
 For a paginated source that also performs authorization and enrichment, a timeout per HTTP request is not a timeout for the entire source. Pass the same `ApiRequestOptions.deadlineAt` (absolute epoch milliseconds) to every standard JSON proxy request and strict access check. `ApiClientService` uses the smaller of the per-request timeout and the remaining deadline, aborts an in-flight transfer when that budget expires, and rejects before dispatch when no budget remains. Pagination retry delays can briefly extend source completion beyond the transport deadline, but cannot dispatch another expired request.
 
-`CommitteeService.getManagedPendingApplications` shares a five-second deadline across discovery pages, writer checks, live reads, and committee-name enrichment. Writer checks run sequentially in batches of at most 100; live reads run ten at a time and do not start another wave after the deadline. Metadata reads are likewise limited to one 100-UID batch at a time and pass the same deadline through `getCommitteesByIds`. Timeout or other strict failures reject the entire application source; the Me pending-actions aggregator isolates that failure from its other sources rather than returning an incomplete application list.
+`CommitteeService.getManagedPendingApplications` shares a five-second deadline across discovery pages, writer checks, live reads, and committee-name enrichment. Writer checks run sequentially in batches of at most 100. Groups that pass are then narrowed to those whose own `settings.writers` roster lists the caller (username, then email), so project/foundation admins with inherited writer access do not get every group's requests in their pending actions; roster reads run ten at a time, a 403/404 means "not on the roster", and any other failure rejects the source. Live reads run ten at a time and do not start another wave after the deadline. Metadata reads are likewise limited to one 100-UID batch at a time and pass the same deadline through `getCommitteesByIds`. Timeout or other strict failures reject the entire application source; the Me pending-actions aggregator isolates that failure from its other sources rather than returning an incomplete application list.
 
 This is containment, not writer-scoped discovery. The query service filters returned applications by viewer access, but its status-only candidate search can still walk unrelated pending records upstream. Its direct-grant filter and access-check's `/my-grants` do not enumerate effective inherited writers, so using them as a no-manager short-circuit would exclude legitimate managers. Fully scoped discovery requires an upstream contract that preserves effective writer access.
 

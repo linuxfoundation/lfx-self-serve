@@ -4,7 +4,7 @@
 import { isPlatformBrowser } from '@angular/common';
 import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, PLATFORM_ID, signal, TransferState, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { NavigationEnd, Router } from '@angular/router';
+import { NavigationEnd, NavigationStart, Router } from '@angular/router';
 import { filter } from 'rxjs';
 import {
   GW_EMBED_CAPABILITY_MISSING_CODE,
@@ -98,8 +98,8 @@ export class GwModuleOutletComponent {
   // Plain (non-signal) mount bookkeeping — not template-bound, so no need for reactivity here.
   private destroyed = false;
   private mountHandle: GwEmbedMountHandle | null = null;
-  /** Last URL the embed's router has been told about — see syncEmbedToHostUrl. */
-  private lastSyncedUrl: string | null = null;
+  /** The latest host navigation's id and trigger — see watchHostNavigation. */
+  private pendingNavigation: Pick<NavigationStart, 'id' | 'navigationTrigger'> | null = null;
   /** Which mount path this instance is serving; see resolveGwEmbedRoutePrefix. */
   private routePrefix: string = resolveGwEmbedRoutePrefix('');
 
@@ -213,7 +213,6 @@ export class GwModuleOutletComponent {
       // Failures on that path come back through `onFatal` (and `ready` resolves null), and an
       // `unmount()` before `ready` cancels the mount, so teardown needs no extra bookkeeping.
       this.mountHandle = mod.mount(this.embedRoot().nativeElement, ctx);
-      this.lastSyncedUrl = `${window.location.pathname}${window.location.search}`;
       this.watchHostNavigation();
       // Keep the skeleton up until the embed is actually in the DOM: `mounting` is cleared in the
       // finally below, and clearing it on the synchronous return would leave the outlet blank
@@ -249,28 +248,40 @@ export class GwModuleOutletComponent {
    * Both mounts are `**` wildcards, so moving between two embed URLs — going back to an index from
    * a detail page, say — does not recreate this component. Angular updates the URL with
    * `history.pushState`, which fires no `popstate`, and `popstate` is the only thing the embed's
-   * router listens to. The address bar moved while the embed carried on rendering the previous
-   * page, and only a reload resolved it.
+   * router listens to. Without a nudge the address bar moves while the embed carries on rendering
+   * the previous page, and only a reload resolves it.
    *
-   * Deliberately NOT the sidebar's Newsletters link followed from inside an edition. That is the
-   * one case this sync cannot reach — its target equals Angular's stale current URL, so the
-   * navigation is skipped entirely, no `NavigationEnd` fires, and the address bar never moves.
-   * Recorded as a known limitation in `docs/architecture/frontend/gw-embed.md`, tracked on #2262.
+   * So every host navigation started by a `routerLink` or `router.navigate` (trigger
+   * `'imperative'`) re-dispatches `popstate`, which tells the embed's router to re-read the URL.
+   * That includes a navigation to a URL the embed was already told about: the embed pushes its own
+   * URLs with `pushState`, which Angular never observes, so the host cannot know whether the embed
+   * is still showing that URL. The sidebar's Newsletters link followed from inside an edition is
+   * exactly that case. Angular still runs it, because the address bar no longer matches its own
+   * URL, and it must redraw the list.
    *
-   * Re-dispatching `popstate` is what tells the embed's router to re-read the URL. Guarded on
-   * `lastSyncedUrl` because Angular also handles `popstate`: without it, Angular's own handling
-   * could emit another NavigationEnd and this would dispatch again, forever.
-   *
-   * Only host navigation needs this. The embed pushes its own URLs with `pushState`, which Angular
-   * never observes, so its internal navigation cannot reach here and cannot be clobbered by it.
+   * Navigations triggered by `popstate` are skipped. A real Back or Forward already reached the
+   * embed's router through the same event. The synthetic `popstate` dispatched here can only start
+   * `popstate`-triggered navigations in Angular, so it can never feed back into another dispatch.
    */
   private watchHostNavigation(): void {
     this.router.events
       .pipe(
-        filter((event): event is NavigationEnd => event instanceof NavigationEnd),
+        filter((event): event is NavigationStart | NavigationEnd => event instanceof NavigationStart || event instanceof NavigationEnd),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe(() => this.syncEmbedToHostUrl());
+      .subscribe((event) => {
+        if (event instanceof NavigationStart) {
+          // One slot is enough: a newer navigation cancels the older one, so only the latest start
+          // can be followed by a NavigationEnd.
+          this.pendingNavigation = { id: event.id, navigationTrigger: event.navigationTrigger };
+          return;
+        }
+        const pending = this.pendingNavigation;
+        this.pendingNavigation = null;
+        if (pending?.id === event.id && pending.navigationTrigger === 'imperative') {
+          this.syncEmbedToHostUrl();
+        }
+      });
   }
 
   private syncEmbedToHostUrl(): void {
@@ -287,18 +298,6 @@ export class GwModuleOutletComponent {
       return;
     }
 
-    // A DURABLE guard, deliberately. A synchronous re-entrancy flag does not work here: Angular
-    // wraps its own popstate handling in a setTimeout (router2.mjs, "added in #12160"), so the flag
-    // is already cleared by the time that runs. Combined with onSameUrlNavigation: 'reload' it
-    // produced an unbounded loop — NavigationEnd → dispatch → same-URL navigation → NavigationEnd.
-    // With the default 'ignore', that re-entry is answered with NavigationSkipped rather than
-    // NavigationEnd, so this never fires for our own dispatch and the URL comparison below is the
-    // only guard needed.
-    const url = `${path}${window.location.search}`;
-    if (url === this.lastSyncedUrl) {
-      return;
-    }
-    this.lastSyncedUrl = url;
     window.dispatchEvent(new PopStateEvent('popstate', { state: window.history.state }));
   }
 

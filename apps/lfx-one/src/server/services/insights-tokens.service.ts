@@ -4,17 +4,14 @@
 import {
   INSIGHTS_PUBLIC_API_TOKEN_ACCESS_FLAG,
   INSIGHTS_TOKEN_AUDIENCE,
-  INSIGHTS_TOKEN_ELIGIBILITY_UNAVAILABLE,
+  INSIGHTS_TOKEN_ELIGIBLE,
   INSIGHTS_TOKEN_ERROR_CODES,
-  INSIGHTS_TOKEN_FLAG_ELIGIBLE,
   INSIGHTS_TOKEN_INELIGIBLE,
 } from '@lfx-one/shared/constants';
 import type {
   CreateInsightsTokenResponse,
   InsightsToken,
   InsightsTokenEligibility,
-  InsightsTokenEligibleOrg,
-  MemberOrgTier,
   PatServiceCreateResponse,
   PatServiceListResponse,
   PatServiceToken,
@@ -24,8 +21,6 @@ import { Request } from 'express';
 import { getDefaultMessageForStatus } from '../helpers/http-status.helper';
 
 import { MicroserviceError } from '../errors/microservice.error';
-import { getUsernameFromAuth } from '../utils/auth-helper';
-import { generateM2MToken } from '../utils/m2m-token.util';
 import { LaunchDarklyServerService } from './launchdarkly-server.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -56,8 +51,8 @@ function withoutPatRefusalText(error: unknown): unknown {
 
 /**
  * LFX Insights API tokens (IN-1233). Token CRUD proxies `lfx-v2-pat-service` with the user's own
- * bearer (the service scopes tokens to the caller's principal). Eligibility follows architecture
- * option 4b: the UI/BFF asks the member-service tier endpoint before the PAT service issues a token.
+ * bearer (the service scopes tokens to the caller's principal). Access is decided by the
+ * `insights-public-api-token-access` flag alone, evaluated on the server for the session user.
  */
 export class InsightsTokensService {
   private readonly microserviceProxy: MicroserviceProxyService;
@@ -66,9 +61,9 @@ export class InsightsTokensService {
     this.microserviceProxy = new MicroserviceProxyService();
   }
 
-  /** Caller's Insights tokens, newest first. Key Contacts and flag-targeted users only; the audience is always fixed server-side. */
+  /** Caller's Insights tokens, newest first. Flag-enabled users only; the audience is always fixed server-side. */
   public async listTokens(req: Request): Promise<InsightsToken[]> {
-    await this.assertKeyContact(req, 'list_insights_tokens', '/tokens');
+    await this.assertAccess(req, 'list_insights_tokens', '/tokens');
     const response = await this.microserviceProxy.proxyRequest<PatServiceListResponse>(req, 'LFX_V2_SERVICE', '/tokens', 'GET', {
       v: '1',
       audience: INSIGHTS_TOKEN_AUDIENCE,
@@ -78,9 +73,9 @@ export class InsightsTokensService {
     return tokens;
   }
 
-  /** Issues a token for a Key Contact or flag-targeted user. The plaintext secret is returned exactly once by the PAT service. */
+  /** Issues a token for a flag-enabled user. The plaintext secret is returned exactly once by the PAT service. */
   public async createToken(req: Request, name: string): Promise<CreateInsightsTokenResponse> {
-    await this.assertKeyContact(req, 'create_insights_token', '/tokens');
+    await this.assertAccess(req, 'create_insights_token', '/tokens');
 
     let response: PatServiceCreateResponse;
     try {
@@ -100,129 +95,44 @@ export class InsightsTokensService {
     return { token: this.toInsightsToken(response.token), secret: response.secret };
   }
 
-  /** Revokes one of the caller's tokens, for Key Contacts and flag-targeted users only. The PAT service returns 404 for tokens the caller does not own. */
+  /** Revokes one of the caller's tokens, for flag-enabled users only. The PAT service returns 404 for tokens the caller does not own. */
   public async revokeToken(req: Request, uid: string): Promise<void> {
-    await this.assertKeyContact(req, 'revoke_insights_token', '/tokens/{uid}');
+    await this.assertAccess(req, 'revoke_insights_token', '/tokens/{uid}');
     await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/tokens/${encodeURIComponent(uid)}`, 'DELETE', { v: '1' });
     logger.debug(req, 'revoke_insights_token', 'PAT service revoked Insights token', { token_uid: uid });
   }
 
   /**
-   * Whether the caller may create tokens. A user targeted by the `insights-public-api-token-access` flag is eligible
-   * straight away (`INSIGHTS_TOKEN_FLAG_ELIGIBLE`, no member-service call); everyone else must be a Key
-   * Contact of at least one org, as follows. Any entry
-   * with a non-empty `b2b_org_uid` is enough; `company_name` is optional upstream and the tier value
-   * itself is not checked. Fails closed:
-   * an empty list or a missing username yields `canCreate: false`; any upstream error, a response that
-   * is not a list, or a non-empty list with no usable org uid (including the
-   * gateway denying the M2M caller before its FGA team tuples exist) yields `canCreate: false` with
-   * `checkFailed: true`, so the UI can say "couldn't verify" instead of "not a Key Contact".
-   *
-   * The tier endpoint is M2M-only (FGA team `member_tiers_caller`). The username comes from the
-   * authenticated session, never from client input, so a caller can only look up themselves; the M2M
-   * token is scoped to this single call via `options.bearerToken`.
+   * Whether the caller may use Insights tokens. The `insights-public-api-token-access` flag decides on
+   * its own: off, the default, means only the LFIDs the flag targets individually; serving it on to
+   * everyone opens tokens to every LFID holder. There is no membership lookup. The server evaluates the
+   * flag against the session's LFID username, never from anything the client sends, and fails closed:
+   * with no SDK key, no username, or LaunchDarkly not reached yet, the answer is `false`. Once
+   * connected, a later outage serves the last known flag value, so a targeting removal takes effect on
+   * reconnect (accepted; see `LaunchDarklyServerService`). `checkFailed` is never set here; the browser
+   * sets it when the eligibility request itself fails.
    */
   public async getEligibility(req: Request): Promise<InsightsTokenEligibility> {
-    if (await this.hasFlagAccess(req)) {
-      logger.debug(req, 'get_insights_token_eligibility', 'User targeted by insights-public-api-token-access flag; skipping Key Contact check');
-      return INSIGHTS_TOKEN_FLAG_ELIGIBLE;
-    }
-
-    const username = await getUsernameFromAuth(req);
-    if (!username) {
-      logger.warning(req, 'get_insights_token_eligibility', 'No username on session; treating as ineligible');
-      return INSIGHTS_TOKEN_INELIGIBLE;
-    }
-
-    try {
-      const m2mToken = await generateM2MToken(req);
-      logger.debug(req, 'get_insights_token_eligibility', 'Minted M2M token; looking up member tiers');
-      const tiers = await this.microserviceProxy.proxyRequest<MemberOrgTier[]>(
-        req,
-        'LFX_V2_SERVICE',
-        `/b2b_orgs/member-tiers/${encodeURIComponent(username)}`,
-        'GET',
-        { v: '1' },
-        undefined,
-        undefined,
-        { bearerToken: m2mToken }
-      );
-
-      // A 200 that is not a list means the check could not be completed, not that the caller has no orgs;
-      // throw so the catch below reports it as unavailable rather than "not a Key Contact".
-      if (!Array.isArray(tiers)) {
-        throw new TypeError('Member tier response is not a list');
-      }
-
-      // Eligibility keys on the org uid: member-service omits `company_name` when the Account has none,
-      // and a Key Contact of such an org is still eligible. The name is carried only when present.
-      const seen = new Set<string>();
-      const orgs: InsightsTokenEligibleOrg[] = [];
-      for (const tier of tiers) {
-        const uid = tier.b2b_org_uid?.trim();
-        if (!uid || seen.has(uid)) continue;
-        seen.add(uid);
-        const name = tier.company_name?.trim();
-        orgs.push(name ? { uid, name } : { uid });
-      }
-      // Upstream requires `b2b_org_uid` on every entry, so a non-empty list with none usable is a broken
-      // response, not a confirmed "not a Key Contact". Only an empty list means ineligible.
-      if (tiers.length > 0 && orgs.length === 0) {
-        throw new TypeError('Member tier response has no usable org uid');
-      }
-
-      logger.debug(req, 'get_insights_token_eligibility', 'Resolved member tiers', {
-        tier_count: tiers.length,
-        org_count: orgs.length,
-      });
-      return { canCreate: orgs.length > 0, orgs, checkFailed: false };
-    } catch (error) {
-      // Not `{ err: error }`: a MicroserviceError's path/operation embed the username from the tier URL.
-      const status = error instanceof MicroserviceError ? error.statusCode : undefined;
-      const code = error instanceof MicroserviceError ? error.code : (error as Error)?.name;
-      logger.warning(req, 'get_insights_token_eligibility', 'Member tier lookup failed; failing closed', { status, code });
-      return INSIGHTS_TOKEN_ELIGIBILITY_UNAVAILABLE;
-    }
+    const enabled = await LaunchDarklyServerService.getInstance().isFlagEnabled(req, INSIGHTS_PUBLIC_API_TOKEN_ACCESS_FLAG, false);
+    logger.debug(req, 'get_insights_token_eligibility', 'Evaluated the insights-public-api-token-access flag', { enabled });
+    return enabled ? INSIGHTS_TOKEN_ELIGIBLE : INSIGHTS_TOKEN_INELIGIBLE;
   }
 
   /**
-   * Re-runs the eligibility check (the UI gate is not trusted) before any token call: a flag-targeted
-   * user passes, everyone else needs Key Contact status. List, create and revoke share one enforcement: 503 `eligibility_unavailable` when it could not be verified, 403
-   * `not_key_contact` when the caller is not one. A user who loses Key Contact status loses access to
-   * their existing tokens too (product decision, IN-1233).
+   * Re-runs the flag check (the UI gate is not trusted) before any token call, so list, create and
+   * revoke share one enforcement: 403 `not_enabled` when the flag is off for the caller. A user the
+   * flag stops targeting loses access to their existing tokens too (product decision, IN-1233).
    */
-  private async assertKeyContact(req: Request, operation: string, path: string): Promise<void> {
+  private async assertAccess(req: Request, operation: string, path: string): Promise<void> {
     const eligibility = await this.getEligibility(req);
-    if (eligibility.checkFailed) {
-      throw new MicroserviceError('Key Contact eligibility could not be verified', 503, 'SERVICE_UNAVAILABLE', {
-        operation,
-        service: 'insights_tokens_service',
-        path,
-        errorBody: { error: INSIGHTS_TOKEN_ERROR_CODES.ELIGIBILITY_UNAVAILABLE },
-      });
-    }
     if (!eligibility.canCreate) {
-      throw new MicroserviceError('Only Key Contacts of a member organization can use Insights API tokens', 403, 'FORBIDDEN', {
+      throw new MicroserviceError('LFX Insights API tokens are not enabled for this account', 403, 'FORBIDDEN', {
         operation,
         service: 'insights_tokens_service',
         path,
-        errorBody: { error: INSIGHTS_TOKEN_ERROR_CODES.NOT_KEY_CONTACT },
+        errorBody: { error: INSIGHTS_TOKEN_ERROR_CODES.NOT_ENABLED },
       });
     }
-  }
-
-  /**
-   * Users targeted by the `insights-public-api-token-access` flag may do anything a Key Contact can.
-   * It is separate from the `insights-public-api` visibility flag, so widening visibility never widens
-   * access. The server evaluates the flag itself against the session's LFID username, never from
-   * anything the client sends. It fails closed until LaunchDarkly has been reached: with no SDK key,
-   * or no connection yet, the answer is `false` and the normal Key Contact check runs. Once connected,
-   * a later outage serves the last known flag value, so a targeting removal takes effect on reconnect
-   * (accepted; see `LaunchDarklyServerService`). The PAT service still scopes every token to the
-   * caller's own principal.
-   */
-  private hasFlagAccess(req: Request): Promise<boolean> {
-    return LaunchDarklyServerService.getInstance().isFlagEnabled(req, INSIGHTS_PUBLIC_API_TOKEN_ACCESS_FLAG, false);
   }
 
   private toInsightsToken(token: PatServiceToken): InsightsToken {

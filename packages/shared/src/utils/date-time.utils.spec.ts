@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   daysUntilInTimezone,
+  detectBrowserTimezoneOption,
+  findSameWallClockZone,
   formatIsoDateLabel,
   formatIsoDateShortLabel,
   formatMemberSince,
@@ -467,5 +469,62 @@ describe('wallTimeExistsInTimezone', () => {
         process.env.TZ = previousTz;
       }
     }
+  });
+});
+
+describe('detectBrowserTimezoneOption', () => {
+  // The reported zone is passed in, so no `Intl` stub is needed; `now` pins the sampled year.
+  const june2026 = new Date('2026-06-01T00:00:00Z');
+
+  it('returns the reported zone when it is one of the picker options', () => {
+    expect(detectBrowserTimezoneOption(june2026, 'Europe/Berlin')).toBe('Europe/Berlin');
+  });
+
+  it('maps a legacy alias onto the picker option for the same zone', () => {
+    expect(detectBrowserTimezoneOption(june2026, 'Asia/Calcutta')).toBe('Asia/Kolkata');
+  });
+
+  it('falls back to a listed zone that keeps the same wall-clock time all year', () => {
+    expect(detectBrowserTimezoneOption(june2026, 'Europe/Lisbon')).toBe('Europe/London');
+  });
+
+  it('does not pair zones that share an offset only part of the year', () => {
+    // Same offset as Europe/London in winter, but no DST: only UTC matches it all year.
+    expect(detectBrowserTimezoneOption(june2026, 'Africa/Abidjan')).toBe('UTC');
+  });
+
+  it('returns null when no zone is reported', () => {
+    expect(detectBrowserTimezoneOption(june2026, '')).toBeNull();
+  });
+
+  it('returns null when no picker option matches the reported zone', () => {
+    expect(detectBrowserTimezoneOption(june2026, 'Antarctica/Troll')).toBeNull();
+  });
+
+  it('reads the browser zone when none is passed', () => {
+    const reported = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    expect(detectBrowserTimezoneOption(june2026)).toBe(detectBrowserTimezoneOption(june2026, reported));
+  });
+});
+
+describe('findSameWallClockZone', () => {
+  // Fixed, synthetic zones so the matching is tested independently of the runtime's tzdata: each is UTC+2 in
+  // winter and UTC+3 in summer, differing only in the instant the clocks change.
+  const hour = 60 * 60 * 1000;
+  const reference = Date.UTC(2026, 2, 29, 1); // last Sunday of March, 01:00 UTC
+  const springForward: Record<string, number> = {
+    REF: reference,
+    SAME: reference,
+    HOUR_LATER: reference + hour,
+    DAY_LATER: reference + 24 * hour,
+  };
+  const offsetAt = (zone: string, time: number): number => (time >= springForward[zone] ? 3 : 2) * hour;
+
+  it('pairs a zone whose clocks change at the same instant', () => {
+    expect(findSameWallClockZone('REF', 2026, ['HOUR_LATER', 'DAY_LATER', 'SAME'], offsetAt)).toBe('SAME');
+  });
+
+  it('does not pair zones whose clocks change an hour or a day apart', () => {
+    expect(findSameWallClockZone('REF', 2026, ['HOUR_LATER', 'DAY_LATER'], offsetAt)).toBeNull();
   });
 });
