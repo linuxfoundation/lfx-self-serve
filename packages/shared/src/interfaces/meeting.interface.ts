@@ -297,11 +297,15 @@ export interface Meeting {
   youtube_upload_enabled: boolean | null;
   /**
    * Share the guest list in calendar invites: when on, each guest's ICS lists the other
-   * attendees and their last known RSVP instead of the recipient alone. Board and restricted
-   * meetings can never opt in — `isShowMeetingAttendeesLocked` disables the control and the BFF
-   * forces the field off on write. In LFX it also decides whether an invitee who is not an
-   * organizer can see the guest list: `GET /api/meetings/:uid/my-meeting-registrants` returns `[]`
-   * to them when it is off, and the meeting card and meeting page hide their guest lists to match.
+   * attendees and their last known RSVP instead of the recipient alone. Board meetings can never
+   * opt in — `isShowMeetingAttendeesLocked` disables the control and the BFF forces the field off on
+   * write. A restricted meeting keeps any explicit `true` the BFF receives from a caller allowed to
+   * edit it — in practice only the meeting v2 composer (`allowRestricted`) sends one, since the pre-v2
+   * wizard locks the control off — and any other write is forced off. In LFX it also decides whether an invitee who is not an organizer can see
+   * the guest list: `GET /api/meetings/:uid/my-meeting-registrants` returns `[]` to them when it is
+   * off — and always for Board and restricted meetings, whose lists stay hidden in LFX even when a
+   * restricted meeting opted in (that opt-in reaches calendar invites only) — and the meeting card and
+   * meeting page hide their guest lists to match.
    * `GET /api/meetings/:uid/registrants` (tolerant listing) and `GET /api/meetings/:uid/rsvp`
    * apply the same rule. Past-meeting participants ignore it and go to organizers and the people on
    * them instead, so meetings already held keep their attendance (#2827).
@@ -353,6 +357,13 @@ export interface Meeting {
   /** Invited to meeting (response only) */
   invited: boolean;
   /**
+   * The viewer is invited to the meeting through a committee (response only).
+   * @description True when any of the viewer's registrations for this meeting was added from a committee. Such a
+   * registration is managed by committee membership, so the viewer cannot remove themselves from the meeting.
+   * Unset when the viewer is not invited.
+   */
+  invited_via_committee?: boolean;
+  /**
    * Total registrant count. `GET /public/api/meetings/:id` sets it for an invitee who is not an
    * organizer, so they see how many are invited even when the guest list is hidden from them.
    */
@@ -391,9 +402,13 @@ export interface Meeting {
    * see `getActiveOccurrences` (LFXV2-2057).
    */
   cancelled_occurrences?: string[];
-  /** Current user's RSVP for this meeting (null when the user hasn't responded).
-   * Populated by /api/user/meetings only. Absent on other Meeting-returning endpoints. */
+  /** Effective viewer's RSVP, enriched by /api/user/meetings only.
+   * Null confirms no response; undefined means enrichment was unavailable (or another endpoint).
+   * A date-scoped response may not apply to the meeting's current/next occurrence. */
   my_rsvp?: MeetingRsvp | null;
+  /** Effective viewer's active registration UIDs, enriched by /api/user/meetings only.
+   * An empty array confirms no active registration; undefined means enrichment was unavailable. */
+  my_registrant_ids?: string[];
   /** Project name — populated on query-service list payloads; on the authenticated detail
    * response (`GET /api/meetings/:uid`) it is populated via BFF enrichment and is
    * absent when that enrichment fails (and from the raw ITX detail payload). */
@@ -652,6 +667,16 @@ export interface MeetingRegistrant {
   attended: boolean | null;
   /** Registrant's RSVP (only included when include_rsvp=true) */
   rsvp?: MeetingRsvp | null;
+}
+
+/** Server-resolved outcomes of removing the authenticated user's meeting registrations. */
+export interface MeetingRegistrationRemovalResult {
+  /** Registrant IDs whose upstream deletes succeeded. */
+  removed_registrant_ids: string[];
+  /** Registrant IDs whose upstream deletes failed and remain invited. */
+  remaining_registrant_ids: string[];
+  /** Raw RSVP history for server-confirmed remaining IDs after partial removal. Omitted when unavailable; [] means no history. */
+  remaining_rsvps?: MeetingRsvp[];
 }
 
 /**
@@ -986,7 +1011,7 @@ export interface PastMeeting extends Meeting {
   platform_meeting_id: string;
   /** Array of session objects with start/end times */
   sessions: MeetingSession[];
-  /** Whether the requesting user attended this meeting — populated by /api/user/past-meetings only */
+  /** Whether the requesting user attended this meeting — populated by /api/user/past-meetings and /api/past-meetings when a signed-in user is present */
   user_attended?: boolean;
 }
 
@@ -1925,6 +1950,12 @@ export interface MeetingTypeBadge {
  */
 export type PastMeetingSort = (typeof PAST_MEETING_SORT)[keyof typeof PAST_MEETING_SORT];
 
+/** Time period shown by the meeting dashboard. */
+export type MeetingDashboardView = 'upcoming' | 'past';
+
+/** Personal response filter, independent of time and organizer selection. */
+export type MeetingResponseFilter = 'all' | 'pending' | 'accepted' | 'maybe' | 'declined';
+
 /**
  * Client-side filter criteria applied to the Me lens meeting lists (My Meetings), which are
  * fetched once and filtered in the browser rather than re-queried per filter change.
@@ -1938,14 +1969,14 @@ export interface MeLensMeetingFilters {
   foundation: string | null;
   /** Project UID; takes precedence over `foundation` when both are set. */
   project: string | null;
-  /** Keep only meetings with no RSVP recorded (upcoming only). */
-  pendingRsvpOnly: boolean;
-  /** Keep only meetings the viewer organized (created), matching the "Organized by you" chip. */
-  organizerOnly: boolean;
-  /** Viewer username/LFID used by the `organizerOnly` predicate; null disables matching. */
+  /** Time period; response filters apply only to upcoming meetings. */
+  view: MeetingDashboardView;
+  responseFilter: MeetingResponseFilter;
+  organizedByMe: boolean;
+  /** Canonical viewer username/LFID for owner-first organizer matching; null never matches. */
   viewerUsername: string | null;
-  /** Keep meetings the viewer declined for every occurrence; when false they are hidden. */
-  showDeclined: boolean;
+  /** Explicitly hide all-date declines, except meetings organized by the viewer. */
+  hideDeclined: boolean;
 }
 
 /**
@@ -2015,7 +2046,7 @@ export interface PublicProjectMeetingsResponse {
   meetings: PublicCalendarMeeting[];
   /** Number of entries in `meetings` */
   total: number;
-  /** Slim project envelope for the page header; `name` is empty when project lookup fails */
+  /** Slim project envelope; `name` is empty for an unknown or non-discoverable UID. Transient UID lookup failures return an error, not this envelope. */
   project: { uid: string; name: string };
 }
 
@@ -2143,6 +2174,16 @@ export interface MeetingComposerEditScope {
   label?: string;
 }
 
+/** Options for the show-attendees lock (`isShowMeetingAttendeesLocked` and its helpers). */
+export interface ShowMeetingAttendeesLockOptions {
+  /**
+   * Let restricted (invite-only) meetings opt in — only board meetings lock.
+   * @description Meeting v2 composer only (`meeting-v2-enabled`). Everything else — the pre-v2 wizard and
+   * every read of a stored meeting — keeps the default rule, so existing meetings are unaffected.
+   */
+  allowRestricted?: boolean;
+}
+
 /** Composer surface: the full sectioned drawer, or the condensed quick create dialog. */
 export type MeetingComposerVariant = 'drawer' | 'quick';
 
@@ -2222,3 +2263,24 @@ export interface MeetingCreateMenuRow {
  * column, where hanging the whole panel off to one side reads as belonging to something else.
  */
 export type MeetingCreateMenuAlign = 'right' | 'center';
+
+/** Common fields needed to build a calendar deep link for "Add to calendar" (GH-3505). */
+export interface CalendarLinkEvent {
+  title: string;
+  /** ISO start time. */
+  startIso: string;
+  durationMinutes: number;
+  description?: string;
+  joinUrl?: string;
+}
+
+/** Which occurrence(s) an "Add to calendar" download/deep-link covers (GH-3505). */
+export type MeetingCalendarScope = 'occurrence' | 'series';
+
+/** Optional per-event extras for the server's ICS `buildVEvent` beyond the title/time fields every caller has. */
+export interface VEventExtras {
+  /** Agenda/body text. Falls back to the title when omitted, matching prior behavior. */
+  description?: string;
+  /** Join link, appended to DESCRIPTION and set as the ICS URL property (GH-3505). */
+  joinUrl?: string;
+}

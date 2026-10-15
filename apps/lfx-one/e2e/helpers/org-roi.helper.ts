@@ -181,7 +181,6 @@ function projectRow(projectSlug: string, projectName: string, totalExpenditure: 
     profit,
     roi: totalExpenditure > 0 ? profit / totalExpenditure : null,
     bcr: totalExpenditure > 0 ? totalReturn / totalExpenditure : null,
-    breakevenMarkup: 0.331,
     categories: projectCategories(totalExpenditure),
   };
 }
@@ -258,7 +257,6 @@ export const NO_INVESTMENT_PROJECT = {
   profit: 0,
   roi: null,
   bcr: null,
-  breakevenMarkup: null,
   categories: [],
 };
 

@@ -6,10 +6,10 @@
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError } from '../errors';
+import { resolveVerifiedUserEmails } from '../helpers/user-emails.helper';
 import { CredlyService } from '../services/credly.service';
 import { EmailVerificationService } from '../services/email-verification.service';
 import { logger } from '../services/logger.service';
-import { getEffectiveEmail, getEffectiveSub } from '../utils/auth-helper';
 
 export class BadgesController {
   private readonly credlyService = new CredlyService();
@@ -26,7 +26,7 @@ export class BadgesController {
     const startTime = logger.startOperation(req, 'get_badges');
 
     try {
-      const emails = await this.resolveUserEmails(req);
+      const emails = await resolveVerifiedUserEmails(req, this.emailVerificationService);
 
       if (emails.length === 0) {
         return next(new AuthenticationError('User authentication required', { operation: 'get_badges' }));
@@ -43,57 +43,5 @@ export class BadgesController {
     } catch (error) {
       return next(error);
     }
-  }
-
-  /**
-   * Resolve email addresses for the authenticated user used to look up Credly badges.
-   * Queries auth-service via NATS and returns the primary email plus any alternate
-   * emails flagged verified by auth-service. The primary has no separate verified flag
-   * and is the same root email as the session claim, so it is included only when the
-   * session email passed the `email_verified` check (`getEffectiveEmail` non-null). Falls back to the single effective session email
-   * (impersonated target during impersonation, otherwise the OIDC user) if the
-   * auth-service lookup fails or returns no usable addresses.
-   */
-  private async resolveUserEmails(req: Request): Promise<string[]> {
-    const effectiveEmail = getEffectiveEmail(req);
-    const userSub = getEffectiveSub(req);
-
-    if (!userSub) {
-      logger.debug(req, 'resolve_user_emails', 'No effective sub for user, using session email only', {});
-      return effectiveEmail ? [effectiveEmail] : [];
-    }
-
-    const emailData = await this.emailVerificationService.getUserEmails(req, userSub);
-
-    if (!emailData) {
-      return effectiveEmail ? [effectiveEmail] : [];
-    }
-
-    const seen = new Set<string>();
-    const verifiedEmails: string[] = [];
-
-    const add = (email: string): void => {
-      if (!email) return;
-      const trimmed = email.trim();
-      if (!trimmed) return;
-      const lower = trimmed.toLowerCase();
-      if (!seen.has(lower)) {
-        seen.add(lower);
-        verifiedEmails.push(lower);
-      }
-    };
-
-    if (effectiveEmail) add(emailData.primary_email);
-    for (const alt of emailData.alternate_emails) {
-      if (alt.verified) add(alt.email);
-    }
-
-    logger.debug(req, 'resolve_user_emails', 'Resolved verified emails from auth-service', {
-      alternate_count: emailData.alternate_emails.length,
-      verified_count: verifiedEmails.length,
-    });
-
-    if (verifiedEmails.length > 0) return verifiedEmails;
-    return effectiveEmail ? [effectiveEmail] : [];
   }
 }

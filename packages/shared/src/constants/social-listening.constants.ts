@@ -19,6 +19,15 @@ import type {
 } from '../interfaces/social-listening.interface';
 import { lfxColors } from './colors.constants';
 
+/** Governed panel relations for linuxfoundation/lfx-self-serve#1873; schema qualification stays server-side. */
+export const SOCIAL_LISTENING_ANALYTICS_RELATIONS = {
+  overview: 'SOCIAL_LISTENING_ANALYTICS_OVERVIEW',
+  overTime: 'SOCIAL_LISTENING_ANALYTICS_OVER_TIME',
+  platformDistribution: 'SOCIAL_LISTENING_ANALYTICS_PLATFORM_DISTRIBUTION',
+  sentimentDistribution: 'SOCIAL_LISTENING_ANALYTICS_SENTIMENT_DISTRIBUTION',
+  topProjects: 'SOCIAL_LISTENING_ANALYTICS_TOP_PROJECTS',
+} as const;
+
 // ---------------------------------------------------------------------------
 // Display config
 // ---------------------------------------------------------------------------
@@ -128,8 +137,8 @@ export const MENTION_FILTER_MAX_VALUES = 200;
 export const MENTION_FILTER_UI_MAX_VALUES = 50;
 
 /**
- * Cap for the bookmarked-mentions filter — bounds the bookmark store, the HTTP boundary, and the SQL builder. The feed/count GETs serialize the ids as
- * repeated query params, so a saturated set can approach header-size limits (see MENTION_READ_IDS_MAX_VALUES) — same deferred-POST call, no lower cap.
+ * Cap for the bookmarked-mentions filter — bounds the bookmark store, JSON feed/count bodies,
+ * and SQL builder without placing persisted bookmark IDs in request URLs.
  */
 export const MENTION_IDS_MAX_VALUES = 500;
 
@@ -137,12 +146,8 @@ export const MENTION_IDS_MAX_VALUES = 500;
 export const MAX_READ_IDS = 500;
 
 /**
- * Transport cap for the unread filter's read-state ID arrays at the HTTP boundary — matches `MAX_READ_IDS`
- * so a valid persisted doc is never truncated in flight. Note the feed/count GETs serialize both arrays as
- * repeated query params, so a saturated doc (500 + 500 long Snowflake keys) can approach header-size limits
- * (Node's default is 16KB). Bounded and self-limiting in practice — GC slices to the cap, mark-all clears
- * both arrays, and a toggle only grows the side of the cutoff the mention sits on — but if saturated docs
- * prove real, the feed/count endpoints need to move to POST rather than lowering this cap.
+ * Transport cap for unread read-state arrays in feed/count JSON bodies — matches `MAX_READ_IDS`
+ * so valid persisted histories are preserved in flight without expanding request URLs.
  */
 export const MENTION_READ_IDS_MAX_VALUES = MAX_READ_IDS;
 

@@ -40,9 +40,9 @@ export function getParentVoteId(r: IndexedVoteResponse): string | undefined {
 /**
  * The single identity-keyed current-user `vote_response` row source (GH #2985): every read
  * that resolves "the indexed participation rows of the user behind this request" by identity
- * goes through here so My Votes and Pending Actions can never diverge. The one current-user
- * read NOT routed here is `VoteService.createVoteResponse`'s post-cast index poll — it matches
- * a known `vote_response_uid` rather than resolving identity (see the known-gap note there).
+ * goes through here so My Votes, Pending Actions, and post-cast confirmation share the same
+ * identity and ownership rules. `VoteService.createVoteResponse` narrows its index poll with
+ * the submitted response's `uid` filter and confirms that exact row's `responded` status.
  *
  * Identity resolution: `resolveUserIdentity` (`getUsernameFromAuth` + `stripAuthPrefix` + `getEffectiveEmail`), matched
  * via `filters_or` on `user_email` / `username` (whichever are present). The email is queried

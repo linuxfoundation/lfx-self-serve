@@ -23,6 +23,7 @@ import {
   ProjectDocument,
   ProjectDocumentSource,
 } from '@lfx-one/shared/interfaces';
+import { resolveProjectDocumentKind } from '@lfx-one/shared/utils';
 import { DocumentService } from '@services/document.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
@@ -428,6 +429,7 @@ export class DocumentsDashboardComponent {
       summaryUid: doc.summary_uid,
       summaryContent: doc.summary_content,
       projectDocumentSource: docSource,
+      documentKind: resolveProjectDocumentKind(doc, docSource),
     };
   }
 

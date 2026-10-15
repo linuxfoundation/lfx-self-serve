@@ -256,7 +256,7 @@ export function normalizeToUrl(input: string): string | null {
   const trimmedInput = input.trim();
 
   // If it already looks like a URL, validate it using existing function
-  if (trimmedInput.startsWith('http://') || trimmedInput.startsWith('https://')) {
+  if (/^https?:\/\//i.test(trimmedInput)) {
     return isValidUrl(trimmedInput) ? trimmedInput : null;
   }
 

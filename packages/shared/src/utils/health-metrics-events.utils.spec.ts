@@ -491,6 +491,8 @@ describe('buildHealthMetricsEventsRevenueView', () => {
       hasUnconverted: false,
       registrationGoalWithheld: false,
       sponsorshipGoalWithheld: false,
+      isPastEvent: true,
+      goalMet: null,
       ranges: ['YTD'],
       ...overrides,
     };
@@ -567,6 +569,33 @@ describe('buildHealthMetricsEventsRevenueView', () => {
 
     expect(view.rows[0]).toMatchObject({ registrationGoalLabel: 'goal not in USD', sponsorshipGoalLabel: '' });
     expect(view.hasUnconverted).toBe(false);
+  });
+
+  it('chips a past event against its combined goal, and leaves one without a goal bare', () => {
+    const events = [
+      revenueEvent({ eventId: 'met', goalMet: true }),
+      revenueEvent({ eventId: 'missed', goalMet: false }),
+      revenueEvent({ eventId: 'no-goal', goalMet: null }),
+    ];
+    const { rows } = buildHealthMetricsEventsRevenueView(revenue({ events }), 'YTD');
+
+    expect(rows.map((row) => row.goalStatus?.label ?? null)).toEqual(['Hit goal', 'Missed goal', null]);
+  });
+
+  it('lists upcoming events apart, soonest first, on the current-year view only and never with a chip', () => {
+    const events = [
+      revenueEvent(),
+      revenueEvent({ eventId: 'later', eventStartDate: '2027-02-01', isPastEvent: false, goalMet: true, ranges: [] }),
+      revenueEvent({ eventId: 'undated', eventStartDate: null, isPastEvent: false, ranges: [] }),
+      revenueEvent({ eventId: 'sooner', eventStartDate: '2026-11-20', isPastEvent: false, ranges: [] }),
+    ];
+
+    const current = buildHealthMetricsEventsRevenueView(revenue({ events }), 'YTD');
+    expect(current.rows.map((row) => row.event.eventId)).toEqual(['rev-1']);
+    expect(current.upcomingRows.map((row) => row.event.eventId)).toEqual(['sooner', 'later', 'undated']);
+    expect(current.upcomingRows.every((row) => row.goalStatus === null)).toBe(true);
+
+    expect(buildHealthMetricsEventsRevenueView(revenue({ events }), 'COMPLETED_YEAR').upcomingRows).toEqual([]);
   });
 
   it('carries whether the read had per-event figures at all', () => {

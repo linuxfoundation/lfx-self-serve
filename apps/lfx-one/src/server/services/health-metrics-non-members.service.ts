@@ -50,6 +50,8 @@ interface OrgRow {
   CONTRIBUTIONS_COUNT: number | null;
   IS_NEW: boolean | null;
   SORT_RANK: number | null;
+  MEMBERSHIP_STATUS: string | null;
+  FIT_BAND: string | null;
   IS_HIGH_FIT: boolean | null;
 }
 
@@ -65,6 +67,7 @@ interface PersonRow {
   LAST_ATTENDED_DATE: Date | string | null;
   MEETINGS_ATTENDED_COUNT: number | null;
   SORT_RANK: number | null;
+  SCOPE_INDIVIDUALS_COUNT: number | null;
 }
 
 interface ConversionRow {
@@ -125,11 +128,11 @@ export class HealthMetricsNonMembersService {
           p.contributions_count_${suffix} AS contributions_count,
           p.is_new_${suffix} AS is_new,
           p.sort_rank_${suffix} AS sort_rank,
-          COALESCE(f.is_high_fit_${suffix}, FALSE) AS is_high_fit
+          p.membership_status,
+          p.fit_band,
+          -- High band among active rows: the set high_fit_org_count counts.
+          COALESCE(p.fit_band = 'High', FALSE) AS is_high_fit
         FROM ${NON_MEMBER_COMPANY_PARTICIPATION_VIEW} p
-        LEFT JOIN ${NON_MEMBER_FIT_SCORE_VIEW} f
-          ON f.foundation_slug = p.foundation_slug
-          AND f.account_id = p.account_id
         WHERE p.foundation_slug = ?
           -- Rows the mapper cannot show must not count, or the totals and the page window drift apart.
           AND p.account_id IS NOT NULL
@@ -201,12 +204,14 @@ export class HealthMetricsNonMembersService {
           p.account_name,
           p.last_attended_date,
           p.meetings_attended_count_${suffix} AS meetings_attended_count,
-          p.sort_rank_${suffix} AS sort_rank
+          p.sort_rank_${suffix} AS sort_rank,
+          p.scope_individuals_count_${suffix} AS scope_individuals_count
         FROM ${NON_MEMBER_PEOPLE_VIEW} p
         WHERE p.foundation_slug = ?
           -- Rows the mapper cannot show must not count, or the totals and the page window drift apart.
           AND p.person_key IS NOT NULL
           AND p.person_key <> ''
+          -- The model scopes individuals to meeting attendees, the set scope_individuals_count counts.
           AND COALESCE(p.meetings_attended_count_${suffix}, 0) > 0
       ),
       matched AS (
@@ -214,7 +219,8 @@ export class HealthMetricsNonMembersService {
       ),
       totals AS (
         SELECT
-          (SELECT COUNT(*) FROM scoped) AS scope_total,
+          -- The model's foundation-wide figure; zero only for an empty scope, so an unset figure stays NULL.
+          (SELECT CASE WHEN COUNT(*) = 0 THEN 0 ELSE ANY_VALUE(scope_individuals_count) END FROM scoped) AS scope_total,
           (SELECT COUNT(*) FROM matched) AS total_records
       ),
       page AS (
@@ -241,7 +247,7 @@ export class HealthMetricsNonMembersService {
     return {
       rows: result.rows.filter((row) => row.IS_PAGE_ROW === true && !!row.PERSON_KEY).map((row, index) => mapPerson(row, offset + index + 1)),
       totalRecords: Number(first?.TOTAL_RECORDS ?? 0),
-      scopeTotal: Number(first?.SCOPE_TOTAL ?? 0),
+      scopeTotal: toNullableNumber(first?.SCOPE_TOTAL),
     };
   }
 
@@ -251,7 +257,7 @@ export class HealthMetricsNonMembersService {
     const suffix = HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[query.range];
     const options = { operation: 'get_non_members_conversion', clientMessage: 'Conversion opportunity is unavailable right now.' };
 
-    // The view holds one row per foundation, so `LIMIT 1` needs no ORDER BY.
+    // One row per foundation; ordering by the model key still pins `LIMIT 1` should a duplicate appear.
     const summarySql = `
       SELECT
         entry_tier_name,
@@ -262,6 +268,7 @@ export class HealthMetricsNonMembersService {
         estimated_pipeline_usd_${suffix} AS estimated_pipeline_usd
       FROM ${NON_MEMBER_CONVERSION_OPPORTUNITY_VIEW}
       WHERE foundation_slug = ?
+      ORDER BY _key ASC
       LIMIT 1
     `;
 
@@ -273,6 +280,7 @@ export class HealthMetricsNonMembersService {
         contributions_count_${suffix} AS contributions_count
       FROM ${NON_MEMBER_FIT_SCORE_VIEW}
       WHERE foundation_slug = ?
+        -- The flag is the High band among active rows, the same set getOrgs filters as high-fit.
         AND is_high_fit_${suffix}
         AND account_id IS NOT NULL
         AND account_id <> ''
@@ -343,6 +351,8 @@ function mapOrg(row: OrgRow): HealthMetricsNonMembersOrg[] {
       distinctPeople: toNullableNumber(row.DISTINCT_PEOPLE_COUNT),
       contributions: toNullableNumber(row.CONTRIBUTIONS_COUNT),
       isNew: row.IS_NEW === true,
+      membershipStatus: row.MEMBERSHIP_STATUS || null,
+      fitBand: row.FIT_BAND || null,
     },
   ];
 }

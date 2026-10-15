@@ -7,8 +7,14 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import {
   GOOGLE_ADS_BIDDING_BOUNDS,
+  GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
+  GOOGLE_ADS_MAX_CALLOUTS,
   GOOGLE_ADS_MAX_CONVERSION_ACTIONS,
   GOOGLE_ADS_MAX_GEO_TARGETS,
+  GOOGLE_ADS_MAX_LANGUAGES,
+  GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES,
+  GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES,
+  GOOGLE_ADS_MAX_SITELINKS,
   GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
   GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL,
   GOOGLE_BIDDING_STRATEGY_LABELS,
@@ -17,11 +23,15 @@ import {
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_CREATIVE_SECTION_TITLES,
   META_OBJECTIVE_LABELS,
+  REDDIT_CALL_TO_ACTIONS,
+  REDDIT_OBJECTIVE_LABELS,
 } from '@lfx-one/shared/constants';
 import type {
   CampaignBriefOutput,
   CampaignBriefPersistenceState,
+  CampaignCreateResult,
   CampaignImplementationDraft,
+  CampaignSitelink,
   GoogleCreativeChannel,
   GoogleCreativeFieldSpec,
 } from '@lfx-one/shared/interfaces';
@@ -2142,6 +2152,251 @@ describe('ImplementationTabComponent reddit budget gate', () => {
 });
 
 /**
+ * The Reddit objective picker, which until now did not exist: `objective` was declared on the
+ * request interface and never serialized, so both creators fell back to their own default and
+ * every Reddit campaign was built as Conversions with nothing on screen saying so.
+ *
+ * Structured as Meta's objective suite is, because the same two defects are possible — a picker
+ * offering an objective the platform cannot run, and a restored draft silently displaying the
+ * first selectable value instead of the stored one.
+ */
+describe('ImplementationTabComponent reddit objective', () => {
+  /** Mount with a persisted draft naming `objective`, as a tab revisit would. */
+  async function restoredWithObjective(objective: string): Promise<ComponentFixture<ImplementationTabComponent>> {
+    const restored = TestBed.createComponent(ImplementationTabComponent);
+    // `headlines`, `descriptions` and `countryCode` are supplied because `applyDraft` consumes
+    // all three unguarded — it iterates the copy arrays and patches `countryCode` straight onto
+    // the form, which the Reddit geo preview then trims. Every draft `emitDraft` produces carries
+    // them, so this matches the real shape rather than working around anything.
+    restored.componentRef.setInput('draft', {
+      eventSlug: 'kubecon-eu-2026',
+      redditObjective: objective,
+      countryCode: 'US',
+      headlines: [''],
+      descriptions: [''],
+    });
+    // `redditCopy` carries every recommendation array because `populateFromBrief` assigns them
+    // straight through once the key exists, and the read-only chip previews map over the result.
+    restored.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'US', registrationUrl: 'https://events.example.com/k' },
+      selectedPlatforms: ['reddit-ads'],
+      redditCopy: {
+        variants: [{ headline: 'Brief reddit headline', destinationUrl: 'https://example.com/brief' }],
+        recommendedSubreddits: ['briefsub'],
+        recommendedInterests: ['brief-interest'],
+        recommendedKeywords: ['brief-keyword'],
+        recommendedGeos: ['US'],
+      },
+    } as unknown as CampaignBriefOutput);
+    restored.detectChanges();
+    await restored.whenStable();
+    return restored;
+  }
+
+  function objectiveSelect(f: ComponentFixture<ImplementationTabComponent>): HTMLSelectElement {
+    const el = f.nativeElement.querySelector('[data-testid="implementation-reddit-objective"]') as HTMLSelectElement;
+    expect(el).not.toBeNull();
+    return el;
+  }
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CampaignService, useValue: { createCampaign: vi.fn(), getLinkedInAccounts: () => of([]) } },
+      ],
+    }).compileComponents();
+  });
+
+  /**
+   * A LITERAL list, for the reason the Meta equivalent is one: comparing against the constant the
+   * template renders from would agree with whatever that constant contained, and so could never
+   * catch an objective appearing or disappearing from the picker.
+   */
+  it('renders exactly the selectable objectives, in order', async () => {
+    const f = await restoredWithObjective('conversions');
+
+    expect(Array.from(objectiveSelect(f).options).map((o) => o.value)).toEqual(['awareness', 'traffic', 'conversions']);
+  });
+
+  /**
+   * `video_views` cannot succeed on either arm today. Reddit has no bare `VIDEO_VIEWS`
+   * optimization goal, so both creators require a companion `videoGoal` and refuse the request
+   * without one — and no control in this tier can set one, so offering the objective would
+   * guarantee a refused create.
+   */
+  it('does not offer video_views', async () => {
+    const f = await restoredWithObjective('conversions');
+
+    expect(Array.from(objectiveSelect(f).options).map((o) => o.value)).not.toContain('video_views');
+  });
+
+  /** The label survives the option's removal — a restored draft must still render a name. */
+  it('keeps a label for the withheld video_views objective', () => {
+    expect(REDDIT_OBJECTIVE_LABELS['video_views']).toBe('Video Views');
+  });
+
+  /**
+   * Driven through the REAL draft input rather than by setting the signal: a signal-only test
+   * leaves `applyDraft` unexercised, and a coercion added there — mapping the unrenderable value
+   * onto the first option — would silently discard the stored objective while passing.
+   */
+  it('restores video_views from a persisted draft', async () => {
+    const f = await restoredWithObjective('video_views');
+
+    expect((f.componentInstance as unknown as Record<string, any>)['redditObjective']()).toBe('video_views');
+  });
+
+  /**
+   * The DOM half the signal assertion cannot cover, and the worse symptom: the template selects
+   * per-`<option>` via `[selected]`, so without the disabled legacy option Angular applies the
+   * binding while no matching option exists and the browser falls back to index 0 — the field
+   * would read `Awareness` while the signal held `video_views`, a wrong value the operator could
+   * submit without noticing.
+   */
+  it('shows the restored video_views objective rather than the first selectable one', async () => {
+    const select = objectiveSelect(await restoredWithObjective('video_views'));
+
+    expect(select.value).toBe('video_views');
+    expect(select.options[select.selectedIndex].text).toContain('Video Views');
+  });
+
+  /** Visible, but NOT newly choosable — the whole point of withholding it. */
+  it('renders the restored video_views objective as disabled', async () => {
+    const select = objectiveSelect(await restoredWithObjective('video_views'));
+
+    expect(Array.from(select.options).find((o) => o.value === 'video_views')?.disabled).toBe(true);
+  });
+
+  /** A restore affordance, not a permanent fourth option — absent for a normal draft. */
+  it('does not render the legacy option when the objective is selectable', async () => {
+    const select = objectiveSelect(await restoredWithObjective('traffic'));
+
+    expect(Array.from(select.options).map((o) => o.value)).toEqual(['awareness', 'traffic', 'conversions']);
+  });
+
+  /** And the selectable value still round-trips, so the assertion above cannot pass by ignoring the draft. */
+  it('restores a selectable objective from a persisted draft', async () => {
+    const f = await restoredWithObjective('traffic');
+
+    expect((f.componentInstance as unknown as Record<string, any>)['redditObjective']()).toBe('traffic');
+    expect(objectiveSelect(f).value).toBe('traffic');
+  });
+});
+
+/**
+ * The call-to-action picker's half of the same guard, kept beside the objective's on purpose.
+ *
+ * The exposure is identical — a restored value that matches no `<option>` makes the browser fall
+ * back to index 0, so the control reads "Default (Learn More)" while the signal still holds and
+ * still sends the stored label. It differs only in how it is reached: `REDDIT_SELECTABLE_OBJECTIVES`
+ * deliberately withholds `video_views`, so an unavailable objective is reachable by design, while
+ * `REDDIT_CALL_TO_ACTIONS` is the whole upstream set and a stale CTA only becomes possible once
+ * Reddit retires a label. Latent, then — and pinned anyway, so the two siblings cannot drift.
+ */
+describe('ImplementationTabComponent reddit call to action', () => {
+  /**
+   * Mount with a persisted draft naming `redditCallToAction`, as a tab revisit would.
+   *
+   * `redditCreativeEnabled: true` is the part the objective's equivalent does not need: the CTA
+   * control lives inside the authored-post block, which `redditCreativeAvailable()` withholds
+   * until the capability answers yes. Without it the select is simply absent and every assertion
+   * below would fail on a null element rather than on the behaviour it names.
+   */
+  async function restoredWithCallToAction(cta: string): Promise<ComponentFixture<ImplementationTabComponent>> {
+    const restored = TestBed.createComponent(ImplementationTabComponent);
+    // Same three unguarded `applyDraft` keys the objective suite supplies, for the same reason.
+    restored.componentRef.setInput('draft', {
+      eventSlug: 'kubecon-eu-2026',
+      redditCallToAction: cta,
+      countryCode: 'US',
+      headlines: [''],
+      descriptions: [''],
+    });
+    restored.componentRef.setInput('redditCreativeEnabled', true);
+    restored.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'US', registrationUrl: 'https://events.example.com/k' },
+      selectedPlatforms: ['reddit-ads'],
+      redditCopy: {
+        variants: [{ headline: 'Brief reddit headline', destinationUrl: 'https://example.com/brief' }],
+        recommendedSubreddits: ['briefsub'],
+        recommendedInterests: ['brief-interest'],
+        recommendedKeywords: ['brief-keyword'],
+        recommendedGeos: ['US'],
+      },
+    } as unknown as CampaignBriefOutput);
+    restored.detectChanges();
+    await restored.whenStable();
+    return restored;
+  }
+
+  function ctaSelect(f: ComponentFixture<ImplementationTabComponent>): HTMLSelectElement {
+    const el = f.nativeElement.querySelector('[data-testid="implementation-reddit-call-to-action"]') as HTMLSelectElement;
+    expect(el).not.toBeNull();
+    return el;
+  }
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CampaignService, useValue: { createCampaign: vi.fn(), getLinkedInAccounts: () => of([]) } },
+      ],
+    }).compileComponents();
+  });
+
+  /**
+   * The symptom the guard exists to prevent: the screen and the payload disagreeing. Without the
+   * trailing option the select would read `Default (Learn More)` here while the signal still held
+   * — and still sent — `Get Showtimes Legacy`, which upstream then refuses.
+   */
+  it('shows a retired call to action rather than falling back to the default option', async () => {
+    const select = ctaSelect(await restoredWithCallToAction('Get Showtimes Legacy'));
+
+    expect(select.value).toBe('Get Showtimes Legacy');
+    expect(select.options[select.selectedIndex].text).toBe('Get Showtimes Legacy (no longer available)');
+  });
+
+  /** Visible so the operator can see what is stored, but not re-choosable. */
+  it('renders the retired call to action as disabled', async () => {
+    const select = ctaSelect(await restoredWithCallToAction('Get Showtimes Legacy'));
+
+    expect(Array.from(select.options).find((o) => o.value === 'Get Showtimes Legacy')?.disabled).toBe(true);
+  });
+
+  /** A restore affordance, not a permanent extra option — absent for a CTA still in the set. */
+  it('does not render the retired option when the call to action is current', async () => {
+    const select = ctaSelect(await restoredWithCallToAction('Sign Up'));
+
+    expect(select.value).toBe('Sign Up');
+    expect(Array.from(select.options).filter((o) => o.disabled)).toEqual([]);
+    expect(Array.from(select.options).map((o) => o.value)).toEqual(['', ...REDDIT_CALL_TO_ACTIONS]);
+  });
+
+  /**
+   * And the empty string is NOT unavailable: it is the real "let upstream default" selection the
+   * first option carries, so treating it as a stale value would render a duplicate disabled
+   * option reading " (no longer available)".
+   */
+  it('treats the empty selection as the default rather than as a retired value', async () => {
+    const select = ctaSelect(await restoredWithCallToAction(''));
+
+    expect(select.value).toBe('');
+    expect(Array.from(select.options).filter((o) => o.disabled)).toEqual([]);
+  });
+});
+
+/**
  * A brief saved BEFORE a platform was disabled must not restore that platform.
  *
  * The Plan picker gates `disabled` at the tile, but a stored brief reaches `selectedPlatforms`
@@ -2894,6 +3149,12 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     redditGeoTargets: () => string[];
     redditVariants: () => unknown[];
     redditBudgetUsd: () => number;
+    redditObjective: () => string;
+    redditPostUrl: () => string;
+    redditImageUrl: () => string;
+    redditCallToAction: () => string;
+    redditNoAdWarning: () => string | null;
+    canSubmit: () => boolean;
     metaVariants: () => unknown[];
     submit(): void;
   }
@@ -2903,7 +3164,13 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
    * Mount as the parent does, carrying ONLY the previous mount's emitted draft — which is all
    * that survives the component's teardown in production.
    */
-  async function mount(draft: CampaignImplementationDraft | null): Promise<{
+  async function mount(
+    draft: CampaignImplementationDraft | null,
+    // Left UNSET by default, which is the `null` the parent holds before its capability read
+    // answers — so every test that does not name it runs with the authored-post controls
+    // withheld, the state a deployment with the cutover dark is in.
+    redditCreative?: boolean
+  ): Promise<{
     fixture: ComponentFixture<ImplementationTabComponent>;
     latest: () => CampaignImplementationDraft | null;
   }> {
@@ -2911,6 +3178,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     let captured: CampaignImplementationDraft | null = null;
     f.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (captured = d));
     if (draft) f.componentRef.setInput('draft', draft);
+    if (redditCreative !== undefined) f.componentRef.setInput('redditCreativeEnabled', redditCreative);
     f.componentRef.setInput('briefData', brief());
     f.detectChanges();
     await f.whenStable();
@@ -2939,6 +3207,39 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     const input = f.nativeElement.querySelector('[data-testid="implementation-reddit-budget"]') as HTMLInputElement;
     input.value = String(value);
     input.dispatchEvent(new Event('input'));
+    f.detectChanges();
+  }
+
+  function pickRedditObjective(f: ComponentFixture<ImplementationTabComponent>, value: string): void {
+    const select = f.nativeElement.querySelector('[data-testid="implementation-reddit-objective"]') as HTMLSelectElement;
+    select.value = value;
+    select.dispatchEvent(new Event('change'));
+    f.detectChanges();
+  }
+
+  function typeRedditPostUrl(f: ComponentFixture<ImplementationTabComponent>, value: string): void {
+    const input = f.nativeElement.querySelector('[data-testid="implementation-reddit-post-url"]') as HTMLInputElement;
+    input.value = value;
+    input.dispatchEvent(new Event('input'));
+    f.detectChanges();
+  }
+
+  /** Returns null when the capability withholds the control, which several tests assert on. */
+  function redditImageUrlInput(f: ComponentFixture<ImplementationTabComponent>): HTMLInputElement | null {
+    return f.nativeElement.querySelector('[data-testid="implementation-reddit-image-url"]') as HTMLInputElement | null;
+  }
+
+  function typeRedditImageUrl(f: ComponentFixture<ImplementationTabComponent>, value: string): void {
+    const input = redditImageUrlInput(f) as HTMLInputElement;
+    input.value = value;
+    input.dispatchEvent(new Event('input'));
+    f.detectChanges();
+  }
+
+  function pickRedditCallToAction(f: ComponentFixture<ImplementationTabComponent>, value: string): void {
+    const select = f.nativeElement.querySelector('[data-testid="implementation-reddit-call-to-action"]') as HTMLSelectElement;
+    select.value = value;
+    select.dispatchEvent(new Event('change'));
     f.detectChanges();
   }
 
@@ -2986,13 +3287,12 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     }).compileComponents();
   });
 
-  // === Reddit: the budget, the platform's one bound control ===
+  // === Reddit: the bound controls ===
 
   /**
-   * The budget is the one Reddit control the template binds, and so the only Reddit value the
-   * draft carries. Driven through the real `(input)` binding: a test calling `redditBudgetUsd.set`
-   * directly would stay green with the handler's `emitDraft()` removed, since it never exercises
-   * the emission path a live edit takes.
+   * Driven through the real `(input)` binding: a test calling `redditBudgetUsd.set` directly would
+   * stay green with the handler's `emitDraft()` removed, since it never exercises the emission
+   * path a live edit takes.
    *
    * 750 is neither the component's 500 default nor anything the brief carries, so the assertion
    * cannot be satisfied by a re-stamp.
@@ -3013,6 +3313,332 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
 
     expect(at(second.fixture).redditBudgetUsd()).toBe(750);
     expect(sentConfig('redditConfig')['budgetUsd']).toBe(750);
+  });
+
+  /**
+   * The untouched picker must dispatch what both creators already assumed. `conversions` is
+   * `defaultRedditObjective` upstream and `config.objective ?? 'conversions'` in the legacy
+   * creator, so sending it explicitly changes nobody's campaign — which is the only thing that
+   * makes turning this control on safe. Pinned as a LITERAL: asserting the constant back would
+   * agree with any value someone later seeded it with.
+   */
+  it('sends conversions as the default reddit objective', async () => {
+    const f = (await mount(null)).fixture;
+    at(f).selectedPlatforms.set(['reddit-ads']);
+    makeSubmittable(f);
+    f.detectChanges();
+    at(f).submit();
+
+    expect(sentConfig('redditConfig')['objective']).toBe('conversions');
+  });
+
+  /**
+   * The picked objective through the full round trip. `awareness` is neither the component
+   * default nor anything the brief carries, so a restore that dropped the field would fail here
+   * rather than coincide with a re-stamp. Driven through the template's own `(change)` binding
+   * for the reason the budget is.
+   */
+  it('carries the reddit objective through a tab round-trip and into the request', async () => {
+    const first = await mount(null);
+    pickRedditObjective(first.fixture, 'awareness');
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    expect(draft?.redditObjective).toBe('awareness');
+
+    const second = await mount(draft);
+    at(second.fixture).selectedPlatforms.set(['reddit-ads']);
+    makeSubmittable(second.fixture);
+    second.fixture.detectChanges();
+    at(second.fixture).submit();
+
+    expect(at(second.fixture).redditObjective()).toBe('awareness');
+    expect(sentConfig('redditConfig')['objective']).toBe('awareness');
+  });
+
+  /**
+   * The Post URL is UNGATED, and this is the test that holds that open. Both creators read the
+   * field and build the ad from it — the legacy one extracts the post id in
+   * `reddit-ads.service.ts` exactly as campaign-service does — so gating it behind the creative
+   * capability would withhold a control that works in every deployment. Mounted with the
+   * capability left unanswered, which is the state that withholds the other two.
+   */
+  it('offers the reddit post url while the creative capability is unanswered', async () => {
+    const first = await mount(null);
+    typeRedditPostUrl(first.fixture, 'https://www.reddit.com/r/kubernetes/comments/abc123/attend/');
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    expect(draft?.redditPostUrl).toBe('https://www.reddit.com/r/kubernetes/comments/abc123/attend/');
+
+    const second = await mount(draft);
+    at(second.fixture).selectedPlatforms.set(['reddit-ads']);
+    makeSubmittable(second.fixture);
+    second.fixture.detectChanges();
+    at(second.fixture).submit();
+
+    expect(at(second.fixture).redditPostUrl()).toBe('https://www.reddit.com/r/kubernetes/comments/abc123/attend/');
+    expect(sentConfig('redditConfig')['postUrl']).toBe('https://www.reddit.com/r/kubernetes/comments/abc123/attend/');
+  });
+
+  /**
+   * An untouched Post URL sends no key at all. An empty string is not neutral upstream: the Go
+   * client branches on `PostURL != ""` to choose between promoting a post and authoring one, and
+   * a blank value is the same decision as an absent key, so sending one only gives a reader
+   * something to misread.
+   */
+  it('omits the reddit post url when it was never typed', async () => {
+    const f = (await mount(null)).fixture;
+    at(f).selectedPlatforms.set(['reddit-ads']);
+    makeSubmittable(f);
+    f.detectChanges();
+    at(f).submit();
+
+    expect('postUrl' in sentConfig('redditConfig')).toBe(false);
+  });
+
+  /**
+   * The authored-post pair on an explicit yes: typed through the real bindings, carried across
+   * the remount, and dispatched. `Shop Now` is neither the component default nor upstream's, so a
+   * restore that dropped the field could not coincide with a re-stamp.
+   */
+  it('carries the reddit creative pair through a tab round-trip and into the request', async () => {
+    const first = await mount(null, true);
+    typeRedditImageUrl(first.fixture, 'https://cdn.example.org/promo.png');
+    pickRedditCallToAction(first.fixture, 'Shop Now');
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    expect(draft?.redditImageUrl).toBe('https://cdn.example.org/promo.png');
+    expect(draft?.redditCallToAction).toBe('Shop Now');
+
+    const second = await mount(draft, true);
+    at(second.fixture).selectedPlatforms.set(['reddit-ads']);
+    makeSubmittable(second.fixture);
+    second.fixture.detectChanges();
+    at(second.fixture).submit();
+
+    const config = sentConfig('redditConfig');
+    expect(config['imageUrl']).toBe('https://cdn.example.org/promo.png');
+    expect(config['callToAction']).toBe('Shop Now');
+  });
+
+  /**
+   * The empty CTA choice is a real selection, not a missing one: it sends no key, which is what
+   * makes upstream apply `defaultRedditCTA`. Asserting the key's ABSENCE rather than an empty
+   * string, because upstream rejects any value outside its set and `''` is not in it.
+   */
+  it('sends no call to action for the default choice', async () => {
+    const f = (await mount(null, true)).fixture;
+    typeRedditImageUrl(f, 'https://cdn.example.org/promo.png');
+    at(f).selectedPlatforms.set(['reddit-ads']);
+    makeSubmittable(f);
+    f.detectChanges();
+    at(f).submit();
+
+    const config = sentConfig('redditConfig');
+    expect(config['imageUrl']).toBe('https://cdn.example.org/promo.png');
+    expect('callToAction' in config).toBe(false);
+  });
+
+  /**
+   * The withholding itself, at both `null` and `false`. With the cutover dark the legacy creator
+   * reads neither key, so a rendered Image URL would be typed, accepted, and discarded into a
+   * campaign with no ad — the same silent discard the Google creative capability exists to
+   * prevent.
+   */
+  it.each([[undefined], [false]])('renders no authored-post controls while redditCreativeEnabled is %s', async (capability) => {
+    const f = (await mount(null, capability as boolean | undefined)).fixture;
+
+    expect(redditImageUrlInput(f)).toBeNull();
+    expect(f.nativeElement.querySelector('[data-testid="implementation-reddit-call-to-action"]')).toBeNull();
+  });
+
+  /**
+   * The HINT has to be withheld with the controls it describes. Its second sentence offers a route
+   * — leave the post URL blank and a post is composed from the image below — that exists only
+   * while the capability is granted. Left unconditional it tells an operator with the cutover dark
+   * to do the one thing that produces a campaign with no ad, and points at a field that is not on
+   * the page. The test asserts both halves so neither the sentence nor its `@if` can be dropped
+   * without a failure.
+   */
+  it.each([
+    [true, true],
+    [false, false],
+  ])('offers the composed-post route in the hint only while the capability is %s', async (capability, offered) => {
+    const f = (await mount(null, capability)).fixture;
+    const input = f.nativeElement.querySelector('[data-testid="implementation-reddit-post-url"]') as HTMLInputElement;
+    const hint = input.parentElement?.querySelector('p')?.textContent ?? '';
+
+    // The first sentence describes the field itself and is never withheld.
+    expect(hint).toContain('the post id on its own');
+    expect(hint.includes('Leave it blank')).toBe(offered);
+  });
+
+  /**
+   * A withheld capability must not reach the REQUEST either, even when a draft written while it
+   * was granted still carries the values. The draft deliberately keeps them — destroying an
+   * operator's text on a capability answer they never saw would be worse — so the request is the
+   * only place the gate can be enforced, and this is the test that proves it is.
+   */
+  it('drops a restored creative pair from the request while the capability is withheld', async () => {
+    const granted = await mount(null, true);
+    typeRedditImageUrl(granted.fixture, 'https://cdn.example.org/promo.png');
+    pickRedditCallToAction(granted.fixture, 'Shop Now');
+    const draft = granted.latest();
+    granted.fixture.destroy();
+
+    const withheld = await mount(draft, false);
+    at(withheld.fixture).selectedPlatforms.set(['reddit-ads']);
+    makeSubmittable(withheld.fixture);
+    withheld.fixture.detectChanges();
+    at(withheld.fixture).submit();
+
+    // Remembered...
+    expect(at(withheld.fixture).redditImageUrl()).toBe('https://cdn.example.org/promo.png');
+    expect(at(withheld.fixture).redditCallToAction()).toBe('Shop Now');
+    // ...and not sent.
+    const config = sentConfig('redditConfig');
+    expect('imageUrl' in config).toBe(false);
+    expect('callToAction' in config).toBe(false);
+  });
+
+  // === Reddit: the pre-submit no-ad warning ===
+
+  /** Render the Reddit section, which is what `redditNoAdWarning` is scoped to. */
+  function selectReddit(f: ComponentFixture<ImplementationTabComponent>): Internals {
+    const c = at(f);
+    c.selectedPlatforms.set(['reddit-ads']);
+    f.detectChanges();
+    return c;
+  }
+
+  const warningText = (f: ComponentFixture<ImplementationTabComponent>): string | undefined =>
+    (f.nativeElement.querySelector('[data-testid="implementation-reddit-no-ad-warning"]') as HTMLElement | null)?.textContent?.trim();
+
+  /**
+   * The warning, and the fact that it is only a warning.
+   *
+   * Both creators accept a Reddit create with no post and no image — they make the campaign and its
+   * ad group, return success, and leave nothing that can serve — so the button must stay live. The
+   * `canSubmit` assertion is the half that matters most: turning this into a refusal would block a
+   * create the platform makes, which is the one thing this section's controls are forbidden to do.
+   *
+   * The activation clause says "will not change that" rather than "stays refused permanently", for
+   * the reason the post-submit sibling was corrected to the same wording in #3451: the clause has
+   * to hold on BOTH arms, and only campaign-service refuses
+   * (`RedditDispatcher.ToggleStatus` in `internal/dispatch/reddit.go`).
+   * The legacy toggle has no ad-existence guard at all and goes through — to a campaign with
+   * nothing to serve. Claiming a refusal there would be a sentence the running code never delivers.
+   */
+  it('warns before submit when a reddit create would make no ad, without blocking it', async () => {
+    const f = (await mount(null, true)).fixture;
+    const c = selectReddit(f);
+
+    expect(c.redditNoAdWarning()).toBe(
+      'No post URL and no image URL, so this campaign is created with no ad: the campaign and its ad group are made and the create reports success, ' +
+        'but nothing serves. Activating it from LFX will not change that, so either supply a post above or build and launch the campaign in Reddit Ads Manager.'
+    );
+    expect(warningText(f)).toBe(c.redditNoAdWarning());
+    expect(c.canSubmit()).toBe(true);
+  });
+
+  /**
+   * With the authored-post controls withheld there is no image field on screen, so naming one would
+   * be advice the operator cannot take. Asserted at both withheld states, since `null` (unanswered)
+   * and `false` (answered no) reach the template by different routes.
+   */
+  it.each([[undefined], [false]])('names only the post url while redditCreativeEnabled is %s', async (capability) => {
+    const f = (await mount(null, capability as boolean | undefined)).fixture;
+    const c = selectReddit(f);
+
+    expect(c.redditNoAdWarning()).toContain('No post URL, so this campaign is created with no ad');
+    expect(c.redditNoAdWarning()).not.toContain('image URL');
+  });
+
+  /** A post URL is the one answer that works on both arms, so it clears the warning on both. */
+  it.each([[undefined], [true]])('clears once a post url is typed, with redditCreativeEnabled %s', async (capability) => {
+    const f = (await mount(null, capability as boolean | undefined)).fixture;
+    const c = selectReddit(f);
+    expect(c.redditNoAdWarning()).not.toBeNull();
+
+    typeRedditPostUrl(f, 'https://redd.it/abc123');
+
+    expect(c.redditNoAdWarning()).toBeNull();
+    expect(warningText(f)).toBeUndefined();
+  });
+
+  /** An image authors the post upstream, so with the capability granted it is a real answer too. */
+  it('clears once an image url is typed while the capability is granted', async () => {
+    const f = (await mount(null, true)).fixture;
+    const c = selectReddit(f);
+
+    typeRedditImageUrl(f, 'https://cdn.example.org/promo.png');
+
+    expect(c.redditNoAdWarning()).toBeNull();
+  });
+
+  /**
+   * The asymmetry that makes this warning worth having, and the one a warning keyed on the controls
+   * instead of on the payload's own gates would get wrong: a draft written while the capability was
+   * granted still carries an image, the remount still remembers it, and the request still drops it
+   * — so there is still no ad, and the warning must still fire.
+   */
+  it('keeps warning about a remembered image the request will not carry', async () => {
+    const granted = await mount(null, true);
+    typeRedditImageUrl(granted.fixture, 'https://cdn.example.org/promo.png');
+    const draft = granted.latest();
+    granted.fixture.destroy();
+
+    const withheld = await mount(draft, false);
+    const c = selectReddit(withheld.fixture);
+
+    expect(c.redditImageUrl()).toBe('https://cdn.example.org/promo.png');
+    expect(c.redditNoAdWarning()).not.toBeNull();
+  });
+
+  /** Nothing here belongs to a campaign Reddit is not part of. */
+  it('says nothing when reddit is not selected', async () => {
+    const f = (await mount(null, true)).fixture;
+    const c = at(f);
+    c.selectedPlatforms.set(['linkedin-ads']);
+    f.detectChanges();
+
+    expect(c.redditNoAdWarning()).toBeNull();
+  });
+
+  /**
+   * How it reaches a screen reader, which is a separate question from what it says — and the same
+   * one the Google warning's region answers. The region must be in the DOM BEFORE the sentence
+   * appears: an aria-live element inserted with its text already in it is not reliably announced,
+   * and the visible copy's guard IS the sentence, so no placement inside that guard works.
+   *
+   * Each assertion fails against a different wrong fix: the region existing while empty rules out
+   * wrapping it in an `@if`; the text pins that it carries the message; and the bare `<p>` rules
+   * out putting `role="status"` on the visible element, which would announce it twice.
+   */
+  it('announces the no-ad warning politely, from a region that outlives it', async () => {
+    const f = (await mount(null, true)).fixture;
+    const find = (testId: string): HTMLElement | null => f.nativeElement.querySelector(`[data-testid="${testId}"]`);
+    // Away from the brief's own selection first, so the region is observed with nothing to say and
+    // the sentence arrives as a CONTENT change in an element that already existed.
+    at(f).selectedPlatforms.set(['linkedin-ads']);
+    f.detectChanges();
+
+    const live = find('implementation-reddit-no-ad-live');
+    expect(live).not.toBeNull();
+    expect(live?.textContent?.trim()).toBe('');
+    expect(live?.getAttribute('role')).toBe('status');
+    expect(live?.getAttribute('aria-live')).toBe('polite');
+    expect(live?.getAttribute('aria-atomic')).toBe('true');
+
+    const c = selectReddit(f);
+    expect(find('implementation-reddit-no-ad-live')).toBe(live);
+    expect(live?.textContent?.trim()).toBe(c.redditNoAdWarning());
+
+    const visible = find('implementation-reddit-no-ad-warning');
+    expect(visible?.getAttribute('role')).toBeNull();
+    expect(visible?.getAttribute('aria-live')).toBeNull();
   });
 
   // === LinkedIn: the budget pair ===
@@ -3052,7 +3678,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
   // === Handler emission, which naming the field in `emitDraft` does not give you ===
 
   /**
-   * These three handlers mutate signals `campaignForm.valueChanges` cannot see, so without their
+   * These handlers mutate signals `campaignForm.valueChanges` cannot see, so without their
    * own `emitDraft()` call the parent never learns the edit — and the field is lost despite being
    * named in the emit.
    *
@@ -3071,6 +3697,34 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     typeRedditBudget(first.fixture, 640);
 
     expect(first.latest()?.redditBudgetUsd).toBe(640);
+  });
+
+  it('emits the draft when the reddit objective handler runs', async () => {
+    const first = await mount(null);
+    pickRedditObjective(first.fixture, 'traffic');
+
+    expect(first.latest()?.redditObjective).toBe('traffic');
+  });
+
+  it('emits the draft when the reddit post url handler runs', async () => {
+    const first = await mount(null);
+    typeRedditPostUrl(first.fixture, 'https://redd.it/abc123');
+
+    expect(first.latest()?.redditPostUrl).toBe('https://redd.it/abc123');
+  });
+
+  it('emits the draft when the reddit image url handler runs', async () => {
+    const first = await mount(null, true);
+    typeRedditImageUrl(first.fixture, 'https://cdn.example.org/promo.png');
+
+    expect(first.latest()?.redditImageUrl).toBe('https://cdn.example.org/promo.png');
+  });
+
+  it('emits the draft when the reddit call to action handler runs', async () => {
+    const first = await mount(null, true);
+    pickRedditCallToAction(first.fixture, 'Sign Up');
+
+    expect(first.latest()?.redditCallToAction).toBe('Sign Up');
   });
 
   it('emits the draft when the linkedin budget handler runs', async () => {
@@ -3106,12 +3760,24 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
    * carrying a non-default lifetime budget would be silently downgraded (LFXV2-3230 review).
    *
    * Reddit has no brief-seeded budget to beat, so its 500 is the component default by nature; it
-   * is asserted to pin that an omitted field is not turned into some OTHER value.
+   * is asserted to pin that an omitted field is not turned into some OTHER value — and the same
+   * for `redditObjective` and the three promoted-post fields, which every draft written before
+   * those controls shipped omits. The post fields start EMPTY by design: the brief recommends no
+   * post and no image, so there is nothing to seed and an omitted field must leave them blank
+   * rather than acquire a value from anywhere.
    */
   it('leaves the platform values seeded when an older draft omits them', async () => {
     const first = await mount(null);
     const legacy = { ...(first.latest() as CampaignImplementationDraft) } as Record<string, unknown>;
-    for (const key of ['redditBudgetUsd', 'linkedInBudgetUsd', 'linkedInLifetimeBudget']) {
+    for (const key of [
+      'redditBudgetUsd',
+      'redditObjective',
+      'redditPostUrl',
+      'redditImageUrl',
+      'redditCallToAction',
+      'linkedInBudgetUsd',
+      'linkedInLifetimeBudget',
+    ]) {
       delete legacy[key];
     }
     first.fixture.destroy();
@@ -3125,6 +3791,10 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     const c = at(second.fixture);
 
     expect(c.redditBudgetUsd()).toBe(500);
+    expect(c.redditObjective()).toBe('conversions');
+    expect(c.redditPostUrl()).toBe('');
+    expect(c.redditImageUrl()).toBe('');
+    expect(c.redditCallToAction()).toBe('');
     expect(c.linkedInBudgetUsd()).toBe(7300);
     expect(c.linkedInLifetimeBudget()).toBe(true);
   });
@@ -4652,8 +5322,8 @@ describe('ImplementationTabComponent google creative minimums', () => {
     const c = seedChannel(fixture, { includeDisplay: true });
 
     expect(c['googleCreativeEmptyWarning']()).toBe(
-      `${GOOGLE_CREATIVE_SECTION_TITLES.display} has no creative. The campaign and its budget are still created, but it cannot serve until the assets are added in Google Ads. ` +
-        'Activation is refused until the ad (or, on Performance Max, the asset group) exists.'
+      `${GOOGLE_CREATIVE_SECTION_TITLES.display} has no creative. The campaign and its budget are still created, but it cannot serve until the assets are added AND the campaign is enabled in Google Ads. ` +
+        'Activating it from LFX stays refused even after that, so launch it in Google Ads.'
     );
     expect(c['canSubmit']()).toBe(true);
   });
@@ -4664,8 +5334,8 @@ describe('ImplementationTabComponent google creative minimums', () => {
 
     expect(c['googleCreativeEmptyWarning']()).toBe(
       `${GOOGLE_CREATIVE_SECTION_TITLES['demand-gen']} and ${GOOGLE_CREATIVE_SECTION_TITLES.display} have no creative. ` +
-        'The campaign and its budget are still created, but it cannot serve until the assets are added in Google Ads. ' +
-        'Activation is refused until the ad (or, on Performance Max, the asset group) exists.'
+        'The campaign and its budget are still created, but it cannot serve until the assets are added AND the campaign is enabled in Google Ads. ' +
+        'Activating it from LFX stays refused even after that, so launch it in Google Ads.'
     );
   });
 
@@ -4677,9 +5347,15 @@ describe('ImplementationTabComponent google creative minimums', () => {
    * Performance Max arrives at the same refusal through `ToggleStatus`'s own asset-group check
    * (`internal/platform/googleads/pmax.go`). Claiming it for Performance Max alone — as this
    * sentence once did — understated what happens to the other two.
+   *
+   * The clause also has to say the refusal never LIFTS. Both gate inputs come from the persisted
+   * `Result` blob (`internal/dispatch/googleads.go:2687`, `:2614`, call site `:2083-2089`), so an
+   * ad added by hand upstream is never discovered and activation from LFX stays refused. An
+   * earlier wording — "refused until the ad ... exists" — read as a precondition the operator
+   * could satisfy, and this assertion pinned it by value, which is what kept it green.
    */
   it('claims the activation refusal for every empty channel', () => {
-    const activation = 'Activation is refused until the ad (or, on Performance Max, the asset group) exists.';
+    const activation = 'Activating it from LFX stays refused even after that, so launch it in Google Ads.';
 
     const c = seedChannel(fixture, { includeDisplay: true });
     expect(c['googleCreativeEmptyWarning']()).toContain(activation);
@@ -4738,6 +5414,11 @@ describe('ImplementationTabComponent google creative minimums', () => {
     expect(live?.textContent?.trim()).toBe('');
     expect(live?.getAttribute('role')).toBe('status');
     expect(live?.getAttribute('aria-live')).toBe('polite');
+    // Pinned so the attribute cannot be dropped silently. This pair because both are in view
+    // here; the template's third live region, `implementation-reddit-no-ad-live`, is pinned the
+    // same way in the Reddit no-ad section rather than restated here.
+    expect(live?.getAttribute('aria-atomic')).toBe('true');
+    expect(find('implementation-brief-status-live')?.getAttribute('aria-atomic')).toBe('true');
 
     const c = seedChannel(fixture, { includeDisplay: true });
     expect(find('implementation-google-creative-empty-live')).toBe(live);
@@ -4751,6 +5432,105 @@ describe('ImplementationTabComponent google creative minimums', () => {
     c['campaignForm'].controls.displayCreative.patchValue({ businessName: 'Acme' });
     fixture.detectChanges();
     expect(find('implementation-google-creative-error')?.getAttribute('role')).toBe('alert');
+  });
+});
+
+/**
+ * The results step's Reddit notice. Uses `configureGoogleTab` deliberately: that helper is a
+ * plain ImplementationTabComponent harness with nothing Google-specific in its providers, and
+ * the results step renders straight off the `results` signal with no capability gate.
+ */
+describe('ImplementationTabComponent reddit results notice', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  /**
+   * A Reddit result exactly as `campaign-proxy.service.ts:2054-2064` builds one, with only the ad
+   * count varied. `type` is `'social'` — Reddit has no `CampaignType` of its own — and
+   * `adGroupCount` is the literal `1` the proxy hardcodes even when no ad was created, so a
+   * notice keyed on the ad group rather than on `adCount` would not fire on the real payload.
+   */
+  const redditResult = (adCount: number): CampaignCreateResult => ({
+    platform: 'reddit-ads',
+    type: 'social',
+    campaignName: 'Synthetic Summit 2026',
+    campaignId: 't3_synthetic',
+    adGroupCount: 1,
+    keywordCount: 0,
+    adCount,
+    campaignUrl: 'https://ads.reddit.com/',
+    steps: [],
+  });
+
+  /** The results step is driven straight off these two protected signals. */
+  const atResults = (adCount: number): void => {
+    const c = fixture.componentInstance as unknown as {
+      results: { set(v: CampaignCreateResult[]): void };
+      step: { set(v: 'results'): void };
+    };
+    c.results.set([redditResult(adCount)]);
+    c.step.set('results');
+    fixture.detectChanges();
+  };
+
+  const notice = (): HTMLElement | null => fixture.nativeElement.querySelector('[data-testid="implementation-reddit-no-ad-notice"]');
+
+  /**
+   * The Reddit no-ad notice carries TWO claims that pull against each other, and the notice has
+   * been wrong in both directions. Each assertion below pins one of them.
+   *
+   * (Each reference below names the symbol to look up, not a line number — those drift.)
+   *
+   * 1. LFX activation never recovers. On the campaign-service arm the both-child-ids guard
+   *    (`RedditDispatcher.ToggleStatus` in `internal/dispatch/reddit.go`) takes them from
+   *    `redditChildIDs` in the same file, which reads only the persisted Result blob — nothing re-reads Reddit, so an ad attached by
+   *    hand in Ads Manager is never discovered. The claim is pinned as "will not change that"
+   *    rather than "stays refused" because this notice also renders for legacy-created campaigns:
+   *    `results()` is set from the `createCampaign` subscribe (`implementation-tab.component.ts:2087`)
+   *    as well as from `pollJob` (`:2688`), and a legacy campaign's toggle takes the legacy arm of
+   *    `updateCampaignStatus` (`campaign-proxy.service.ts:1921`), which has no ad-existence guard
+   *    and is NOT refused — it just activates a campaign with no ad to serve. Pinning the refusal
+   *    would pin a sentence that is false on one of the two arms that render it.
+   * 2. The campaign and ad group ALREADY EXIST. This notice renders only on `adCount === 0`,
+   *    which is reached with both upstream resources created and PAUSED, so the recovery must
+   *    name THIS campaign. Telling the operator to build one orphans the first — the defect
+   *    campaign-service recorded at
+   *    `docs/knowledge/code/internal-platform-reddit.md:263-265`.
+   *
+   * Pinned on the clauses that carry the claims rather than the whole sentence, so rewording is
+   * free and quietly dropping a correction is not. The second clause keeps "the ad" rather than
+   * the bare "to this campaign": the object matters, since what has to be named is the ad landing
+   * on the campaign that already exists, and the verb is left loose so Add/Attach both pass.
+   *
+   * The negative assertion matches a PATTERN, not the one phrase that happened to ship. "Build and
+   * launch the campaign" was the instance; the defect is any create-verb aimed at a campaign, and
+   * "Create a new campaign in Reddit Ads Manager" would pass a literal `not.toContain` while
+   * orphaning the first campaign exactly as before. It deliberately does NOT forbid "launch the
+   * campaign" — the campaign exists and launching it from Ads Manager is the right answer — nor
+   * the older "attach it to this campaign", which is correct now that the sentence also denies
+   * that LFX activation helps. Forbidding a phrase by value is how a guard ends up refusing the
+   * correct wording.
+   */
+  it('tells a Reddit campaign with no ad that LFX will not recover and points at the existing campaign', () => {
+    atResults(0);
+
+    expect(notice()).not.toBeNull();
+    expect(notice()?.textContent).toContain('activating it from LFX will not change that');
+    expect(notice()?.textContent).toContain('the ad to this campaign');
+    expect(notice()?.textContent).not.toMatch(/\b(build|create|make|set up)\b[^.]{0,40}\bcampaign\b/i);
+  });
+
+  /** The notice is about the no-ad state, so a campaign that got an ad must not carry it. */
+  it('omits the Reddit no-ad notice once an ad exists', () => {
+    atResults(1);
+
+    expect(notice()).toBeNull();
   });
 });
 
@@ -4868,6 +5648,810 @@ describe('ImplementationTabComponent google geo targets', () => {
     restoreGoogleDraft(fixture, c, {});
 
     expect(c['googleGeoTargets']()).toEqual([code]);
+  });
+});
+
+/**
+ * The Google language chips.
+ *
+ * The control is a `<select>` over the supported table's own keys, so the guards left are the ones
+ * a select cannot express — the cap, not adding a code twice — plus the CHANNEL gate, which the geo
+ * sibling has no equivalent of: upstream's `validateCriteriaPlan` refuses the whole non-location
+ * criteria set on Demand Gen, so the section and the payload both close there.
+ */
+describe('ImplementationTabComponent google languages', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it('adds a code once and refuses a duplicate or a blank', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const { code } = c['googleLanguageOptions'][0];
+
+    c['addGoogleLanguage'](code);
+    c['addGoogleLanguage'](code);
+    c['addGoogleLanguage']('');
+
+    expect(c['googleLanguages']()).toEqual([code]);
+  });
+
+  it('refuses an add at the cap', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    // The curated table holds 39 codes and the cap is 40, so the cap cannot be reached from the
+    // select alone — the list is seeded past it to exercise the guard the select cannot express.
+    c['googleLanguages'].set(Array.from({ length: GOOGLE_ADS_MAX_LANGUAGES }, (_, i) => `X${i}`));
+
+    c['addGoogleLanguage'](c['googleLanguageOptions'][0].code);
+
+    expect(c['googleLanguages']()).toHaveLength(GOOGLE_ADS_MAX_LANGUAGES);
+  });
+
+  it('removes a chip by index', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const [first, second] = c['googleLanguageOptions'];
+    c['addGoogleLanguage'](first.code);
+    c['addGoogleLanguage'](second.code);
+
+    c['removeGoogleLanguage'](0);
+
+    expect(c['googleLanguages']()).toEqual([second.code]);
+  });
+
+  /**
+   * Sorted by the English NAME, because that is what the options render, under a PINNED `en`
+   * collation — the endpoints are asserted by value so the order cannot quietly follow whichever
+   * locale runs the suite.
+   */
+  it('offers the languages in name order', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const labels = c['googleLanguageOptions'].map((o: { label: string }) => o.label);
+
+    expect(labels).toEqual([...labels].sort((a: string, b: string) => a.localeCompare(b, 'en')));
+    expect(labels[0]).toBe('Arabic');
+    expect(labels.at(-1)).toBe('Vietnamese');
+  });
+
+  /**
+   * Chips read as the name the select offered, not the code. A restored draft is the other source
+   * of a code, so an unknown one falls back to itself — including an inherited `Object.prototype`
+   * key, which a plain-object index would have resolved to a function (#3504).
+   */
+  it.each([
+    ['DE', 'German'],
+    ['ZZ', 'ZZ'],
+    ['constructor', 'constructor'],
+  ])('names the chip for %s as %s', (code, name) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['googleLanguages'].set([code]);
+    fixture.detectChanges();
+
+    expect(c['googleLanguageChips']()).toEqual([{ code, name }]);
+    const remove = fixture.nativeElement.querySelector(`[data-testid="implementation-google-language-remove-${code}"]`);
+    expect(remove?.getAttribute('aria-label')).toBe(`Remove ${name}`);
+  });
+
+  it.each([
+    ['search', { includeSearch: true }],
+    ['performance-max', { includePerformanceMax: true }],
+    ['display', { includeDisplay: true }],
+  ])('opens the section on %s, which upstream accepts campaign languages on', (channel, patch) => {
+    const c = seedChannel(fixture, patch);
+
+    expect(c['googleLanguagesChannel']()).toBe(channel);
+  });
+
+  /**
+   * Video is in `GOOGLE_CHANNELS_WITH_LANGUAGES` because `validateCriteriaPlan` accepts languages
+   * there, and is still unreachable from this screen: `GOOGLE_VIDEO_CREATE_SUPPORTED` is false, so
+   * `selectedGoogleChannels` drops it and there is no Video create for a language to ride on. The
+   * constant stays right about upstream; this asserts the narrower thing the UI can do.
+   */
+  it('closes the section on video, which has no create to attach a language to', () => {
+    const c = seedChannel(fixture, { includeVideo: true });
+
+    expect(c['googleLanguagesChannel']()).toBeNull();
+  });
+
+  /**
+   * The one closed channel, and the reason the gate exists at all. `validateCriteriaPlan` refuses
+   * languages, device bid modifiers, demographics and ad schedules together on Demand Gen, so a
+   * control offered here would be offering a refusal.
+   */
+  it('closes the section on demand-gen', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+
+    expect(c['googleLanguagesChannel']()).toBeNull();
+  });
+
+  it('withholds a list picked under one channel once the selection moves to demand-gen', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleLanguage'](c['googleLanguageOptions'][0].code);
+    expect(c['googleLanguagesPayload']()).toHaveProperty('languages');
+
+    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    fixture.detectChanges();
+
+    // HELD, not cleared: the chips survive so switching back restores the operator's choice, but
+    // the payload carries nothing a Demand Gen create would be refused for.
+    expect(c['googleLanguages']()).toHaveLength(1);
+    expect(c['googleLanguagesPayload']()).toEqual({});
+  });
+
+  /**
+   * Held is not silent. The section disappears on Demand Gen, so without this notice the operator
+   * would read nothing about the campaign now serving in every language; switching back clears it.
+   */
+  it('says the held list will not be sent on demand-gen, and clears the notice on a switch back', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleLanguage']('DE');
+    const notice = () => fixture.nativeElement.querySelector('[data-testid="implementation-google-languages-withheld"]');
+    fixture.detectChanges();
+    expect(notice()).toBeNull();
+
+    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    fixture.detectChanges();
+    expect(c['googleLanguagesWithheldOn']()).toBe('Demand Gen');
+    expect(notice()?.textContent).toContain('serve in every language');
+
+    c['campaignForm'].patchValue({ includeSearch: true, includeDemandGen: false });
+    fixture.detectChanges();
+    expect(notice()).toBeNull();
+    expect(c['googleLanguagesPayload']()).toEqual({ languages: ['DE'] });
+  });
+
+  it('shows no withheld notice on demand-gen when no language was picked', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+
+    expect(c['googleLanguagesWithheldOn']()).toBeNull();
+  });
+
+  /**
+   * An absent key, not `[]`. Upstream reads an absent language list as Google's own default of
+   * every language, so sending an empty array would be a narrowing nobody asked for.
+   */
+  it('sends nothing when no language was picked', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['googleLanguagesPayload']()).toEqual({});
+  });
+
+  /**
+   * The legacy road. The in-process creator reads nothing on `googleAdsConfig`, so a language picked
+   * there would be collected and dropped, and the campaign created serving in every language. A
+   * picked list is held, not sent, and the section is not rendered; `null` (not known yet) withholds
+   * the same way.
+   */
+  it.each([[null], [false]])('withholds the section and the payload while googleCreativeEnabled is %s', (capability) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleLanguage']('DE');
+    fixture.componentRef.setInput('googleCreativeEnabled', capability);
+    fixture.detectChanges();
+
+    expect(c['googleLanguagesChannel']()).toBeNull();
+    expect(c['googleLanguagesPayload']()).toEqual({});
+    expect(fixture.nativeElement.querySelector('[data-testid="implementation-google-languages-section"]')).toBeNull();
+    expect(c['googleLanguages']()).toEqual(['DE']);
+  });
+
+  it('renders the section once the capability is on', () => {
+    seedChannel(fixture, { includeSearch: true });
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="implementation-google-languages-section"]')).not.toBeNull();
+  });
+
+  it('round-trips the chips through a draft', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    let emitted: CampaignImplementationDraft | undefined;
+    fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
+    const { code } = c['googleLanguageOptions'][1];
+    c['addGoogleLanguage'](code);
+
+    expect(emitted?.googleLanguages).toEqual([code]);
+
+    c['googleLanguages'].set([]);
+    restoreGoogleDraft(fixture, c, { googleLanguages: [code] });
+
+    expect(c['googleLanguages']()).toEqual([code]);
+  });
+
+  /** The chips are COPIED out of the draft, so the parent's array cannot be mutated through them. */
+  it('does not share the restored array with the draft', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const saved = [c['googleLanguageOptions'][1].code];
+
+    restoreGoogleDraft(fixture, c, { googleLanguages: saved });
+    c['addGoogleLanguage'](c['googleLanguageOptions'][2].code);
+
+    expect(saved).toHaveLength(1);
+  });
+
+  /** A draft saved before this section shipped carries no key, and must not clear the chips. */
+  it('leaves the chips alone when the draft carries no language key', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const { code } = c['googleLanguageOptions'][1];
+    c['addGoogleLanguage'](code);
+
+    restoreGoogleDraft(fixture, c, {});
+
+    expect(c['googleLanguages']()).toEqual([code]);
+  });
+});
+
+/**
+ * The Google callout chips.
+ *
+ * Free text rather than a select, so every one of upstream's `validateCallouts` branches has to be
+ * mirrored on the add path — and each test below is one of those branches, plus the accept-cases
+ * that keep the guards from refusing what upstream takes.
+ */
+describe('ImplementationTabComponent google callouts', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it('trims an added callout and refuses a blank', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['addGoogleCallout']('  Free shipping  ')).toBe(true);
+    expect(c['addGoogleCallout']('   ')).toBe(false);
+
+    expect(c['googleCallouts']()).toEqual(['Free shipping']);
+  });
+
+  /**
+   * Case-folded, because upstream keys its duplicate check on `strings.ToLower(text)` and REFUSES
+   * the whole create rather than de-duplicating. Two chips differing only in case would be one
+   * callout upstream and a campaign that never gets created.
+   */
+  it('refuses a callout that repeats an existing one in a different case', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleCallout']('Free Shipping');
+
+    expect(c['addGoogleCallout']('free shipping')).toBe(false);
+    expect(c['googleCallouts']()).toEqual(['Free Shipping']);
+  });
+
+  it('refuses an add at the cap', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    for (let i = 0; i < GOOGLE_ADS_MAX_CALLOUTS; i++) c['addGoogleCallout'](`Callout ${i + 1}`);
+
+    expect(c['addGoogleCallout']('One more')).toBe(false);
+    expect(c['googleCallouts']()).toHaveLength(GOOGLE_ADS_MAX_CALLOUTS);
+  });
+
+  /**
+   * Runes, not UTF-16 units. `utf8.RuneCountInString` counts code points, so 25 astral-plane
+   * characters are a callout upstream accepts — counted with `.length` they would be 50 and this
+   * add would be refused for no reason, which is the over-refusal these mirrors exist to avoid.
+   */
+  it('accepts a 25-emoji callout and refuses a 26-character one', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['addGoogleCallout']('🎉'.repeat(GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES))).toBe(true);
+    expect(c['addGoogleCallout']('A'.repeat(GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES + 1))).toBe(false);
+
+    expect(c['googleCallouts']()).toEqual(['🎉'.repeat(GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES)]);
+  });
+
+  /** The live warnings describe what is IN THE BOX, which is why the draft text is a signal. */
+  it('warns on the in-progress text by rune count and by case-folded repeat', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleCallout']('Free Shipping');
+
+    c['googleCalloutDraft'].set('🎉'.repeat(GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES + 1));
+    expect(c['googleCalloutDraftLength']()).toBe(GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES + 1);
+    expect(c['googleCalloutDraftTooLong']()).toBe(true);
+
+    c['googleCalloutDraft'].set('  free shipping ');
+    expect(c['googleCalloutDraftTooLong']()).toBe(false);
+    expect(c['googleCalloutDraftDuplicate']()).toBe(true);
+  });
+
+  /**
+   * `aria-invalid` says the box is wrong; only `aria-describedby` says why, and it is the half that
+   * survives focus returning to the field later — `role="alert"` fires once, as the line appears.
+   * The id is asserted against the message element actually rendered, so a renamed id on either
+   * side breaks the test rather than silently pointing `aria-describedby` at nothing.
+   */
+  it('points the callout box at whichever message is rendered, and at nothing when clean', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleCallout']('Free Shipping');
+    const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+    expect(c['googleCalloutDraftErrorId']()).toBeNull();
+
+    c['googleCalloutDraft'].set('A'.repeat(GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES + 1));
+    fixture.detectChanges();
+    expect(find('implementation-google-callout-add')?.getAttribute('aria-describedby')).toBe(find('implementation-google-callout-too-long')?.id);
+
+    c['googleCalloutDraft'].set('free shipping');
+    fixture.detectChanges();
+    expect(find('implementation-google-callout-add')?.getAttribute('aria-describedby')).toBe(find('implementation-google-callout-duplicate')?.id);
+
+    c['googleCalloutDraft'].set('Fast delivery');
+    fixture.detectChanges();
+    expect(find('implementation-google-callout-add')?.getAttribute('aria-describedby')).toBeNull();
+  });
+
+  it('removes a chip by index', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleCallout']('First');
+    c['addGoogleCallout']('Second');
+
+    c['removeGoogleCallout'](0);
+
+    expect(c['googleCallouts']()).toEqual(['Second']);
+  });
+
+  /**
+   * SEARCH ONLY, and withheld rather than refused elsewhere: `validateAssetPlan` refuses the whole
+   * extension set on any other channel at preflight, before the budget mutate, so forwarding a
+   * list typed under Search and then abandoned would cost the operator the entire campaign.
+   */
+  it('offers callouts on Search and withholds them on a non-Search channel', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    expect(c['googleCalloutsAvailable']()).toBe(true);
+    c['addGoogleCallout']('Free shipping');
+    expect(c['googleCalloutsPayload']()).toEqual({ callouts: ['Free shipping'] });
+
+    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    fixture.detectChanges();
+
+    expect(c['googleCalloutsAvailable']()).toBe(false);
+    expect(c['googleCalloutsPayload']()).toEqual({});
+    // Held, not discarded — the chips are still there if Search is re-ticked.
+    expect(c['googleCallouts']()).toEqual(['Free shipping']);
+  });
+
+  /** Omitted rather than sent empty, so the upstream default is reached by the absent-key route. */
+  it('omits the callouts key when nothing was added', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['googleCalloutsPayload']()).toEqual({});
+  });
+
+  it('round-trips the chips through a draft', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    let emitted: CampaignImplementationDraft | undefined;
+    fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
+    c['addGoogleCallout']('Free shipping');
+
+    expect(emitted?.googleCallouts).toEqual(['Free shipping']);
+
+    c['googleCallouts'].set([]);
+    restoreGoogleDraft(fixture, c, { googleCallouts: ['Free shipping'] });
+
+    expect(c['googleCallouts']()).toEqual(['Free shipping']);
+  });
+
+  /** COPIED out of the draft, so the parent's array cannot be mutated through the chips. */
+  it('does not share the restored array with the draft', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const saved = ['Free shipping'];
+
+    restoreGoogleDraft(fixture, c, { googleCallouts: saved });
+    c['addGoogleCallout']('Next day delivery');
+
+    expect(saved).toHaveLength(1);
+  });
+
+  /**
+   * Go's string rules, not JS's: upstream trims with `strings.TrimSpace` (which strips U+0085 and
+   * keeps U+FEFF) and keys repeats on `strings.ToLower` (no final-sigma rule). A chip JS calls new
+   * but Go calls a repeat would cost the whole create.
+   */
+  it.each([
+    ['a trailing U+0085', 'Free shipping', 'free shipping\u0085'],
+    ['final sigma', 'ΟΔΟΣ', 'οδοσ'],
+  ])('refuses a repeat hidden by %s, on the add and in the live warning', (_label, first, repeat) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleCallout'](first);
+
+    c['googleCalloutDraft'].set(repeat);
+    expect(c['googleCalloutDraftDuplicate']()).toBe(true);
+    expect(c['addGoogleCallout'](repeat)).toBe(false);
+    expect(c['googleCallouts']()).toEqual([first]);
+  });
+
+  it('says out loud that callouts are withheld after a switch away from Search, in the notice and its live region', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+    // The region exists, empty, BEFORE there is anything to say: an aria-live element inserted
+    // with its text already present is not reliably announced.
+    expect(find('implementation-google-callouts-withheld-live')?.textContent?.trim()).toBe('');
+
+    c['addGoogleCallout']('Free shipping');
+    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    fixture.detectChanges();
+
+    const notice = find('implementation-google-callouts-withheld')?.textContent ?? '';
+    expect(notice).toContain('Demand Gen campaigns do not take callouts');
+    expect(notice).toContain('the 1 you added');
+    expect(find('implementation-google-callouts-withheld-live')?.textContent?.trim()).toBe(c['googleCalloutsWithheldWarning']());
+    // The visible copy carries no role, or the sentence would be announced twice.
+    expect(find('implementation-google-callouts-withheld')?.getAttribute('role')).toBeNull();
+  });
+
+  it('shows no withheld notice when no callouts were added', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+
+    expect(c['googleCalloutsWithheldWarning']()).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="implementation-google-callouts-withheld"]')).toBeNull();
+  });
+
+  /**
+   * Through `submit()`, not the payload helper: deleting the payload spread would leave every
+   * helper-level test above green while every callout an operator adds is dropped.
+   */
+  it.each([
+    ['Search', { includeSearch: true }, ['Free shipping']],
+    ['Demand Gen, after a switch from Search', { includeDemandGen: true }, undefined],
+  ])('sends the callouts on a submitted %s create only when the channel takes them', async (_label, channel, expected) => {
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleCallout']('Free shipping');
+    c['campaignForm'].patchValue({ includeSearch: false, ...channel });
+    fixture.detectChanges();
+    expect(c['canSubmit']()).toBe(true);
+
+    c['submit']();
+    await fixture.whenStable();
+
+    expect(createCampaign).toHaveBeenCalled();
+    expect((createCampaign.mock.calls[0][0] as unknown as Record<string, unknown>)['callouts']).toEqual(expected);
+  });
+
+  /** A draft saved before this section shipped carries no key, and must not clear the chips. */
+  it('leaves the chips alone when the draft carries no callouts key', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleCallout']('Free shipping');
+
+    restoreGoogleDraft(fixture, c, {});
+
+    expect(c['googleCallouts']()).toEqual(['Free shipping']);
+  });
+});
+
+/**
+ * The sitelink extensions.
+ *
+ * Every bound and refusal here mirrors `validateSitelinks`
+ * (`internal/platform/googleads/assets.go`), one test per branch. The guard runs inside
+ * `validateAssetPlan`, inside `preflightCampaignKind`, BEFORE the budget mutate — so each of these
+ * costs the whole campaign upstream rather than just the sitelink.
+ */
+describe('ImplementationTabComponent google sitelinks', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  const sitelink = (text: string, overrides: Partial<CampaignSitelink> = {}): CampaignSitelink => ({
+    text,
+    description1: '',
+    description2: '',
+    finalUrl: 'https://events.example.org/register',
+    ...overrides,
+  });
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  /**
+   * Every box in the sub-form is reachable by a screen reader on its own terms: the section's
+   * `<label for>` names only the link-text box, so the other three carry an `aria-label` — a
+   * placeholder is not an accessible name and vanishes as soon as the operator types. The ids are
+   * asserted against the message elements actually rendered, so a rename on either side fails the
+   * test rather than leaving `aria-describedby` pointing at nothing.
+   */
+  it('names every box and points each at whichever of its messages is rendered', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleSitelink'](sitelink('Register now'));
+    const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+    expect(find('implementation-google-sitelink-url')?.getAttribute('aria-label')).toBe('Sitelink destination URL');
+    expect(find('implementation-google-sitelink-description1')?.getAttribute('aria-label')).toBe('Sitelink description line 1');
+    expect(find('implementation-google-sitelink-description2')?.getAttribute('aria-label')).toBe('Sitelink description line 2');
+    expect(find('implementation-google-sitelink-text')?.getAttribute('aria-describedby')).toBeNull();
+
+    c['googleSitelinkDraft'].set(sitelink('A'.repeat(GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES + 1)));
+    fixture.detectChanges();
+    expect(find('implementation-google-sitelink-text')?.getAttribute('aria-describedby')).toBe(find('implementation-google-sitelink-too-long')?.id);
+
+    c['googleSitelinkDraft'].set(sitelink('register now'));
+    fixture.detectChanges();
+    expect(find('implementation-google-sitelink-text')?.getAttribute('aria-describedby')).toBe(find('implementation-google-sitelink-duplicate')?.id);
+
+    // Both description boxes point at the ONE line describing the pair — the rule they break is
+    // about the pair, so naming it on only the box last typed in would be the wrong half.
+    c['googleSitelinkDraft'].set(sitelink('Agenda', { description1: 'Talks and workshops' }));
+    fixture.detectChanges();
+    const halfDescribed = find('implementation-google-sitelink-half-described')?.id;
+    expect(find('implementation-google-sitelink-description1')?.getAttribute('aria-describedby')).toBe(halfDescribed);
+    expect(find('implementation-google-sitelink-description2')?.getAttribute('aria-describedby')).toBe(halfDescribed);
+
+    c['googleSitelinkDraft'].set(sitelink('Agenda', { finalUrl: 'events.example.org/agenda' }));
+    fixture.detectChanges();
+    expect(find('implementation-google-sitelink-url')?.getAttribute('aria-describedby')).toBe(find('implementation-google-sitelink-url-invalid')?.id);
+  });
+
+  it('trims an added sitelink and drops the two blank description lines', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['addGoogleSitelink'](sitelink('  Register now  ', { finalUrl: '  https://events.example.org/register  ' }))).toBe(true);
+
+    // Descriptions OMITTED, not sent as empty strings: absent on both lines is one of the two
+    // legal states upstream recognises, where one line present and one empty is not.
+    expect(c['googleSitelinks']()).toEqual([{ text: 'Register now', finalUrl: 'https://events.example.org/register' }]);
+  });
+
+  it.each([
+    ['no link text', sitelink('   ')],
+    ['no destination', sitelink('Register', { finalUrl: '  ' })],
+    ['a destination with no scheme', sitelink('Register', { finalUrl: 'events.example.org/register' })],
+    ['a destination carrying embedded credentials', sitelink('Register', { finalUrl: 'https://user:pw@events.example.org/register' })],
+  ])('refuses a sitelink with %s', (_label, entry) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['addGoogleSitelink'](entry)).toBe(false);
+    expect(c['googleSitelinks']()).toEqual([]);
+  });
+
+  it('refuses a sitelink that repeats an existing link text in a different case', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleSitelink'](sitelink('Register Now'));
+
+    expect(c['addGoogleSitelink'](sitelink('register now'))).toBe(false);
+    expect(c['googleSitelinks']()).toHaveLength(1);
+  });
+
+  it('refuses an add at the cap', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    for (let i = 0; i < GOOGLE_ADS_MAX_SITELINKS; i++) c['addGoogleSitelink'](sitelink(`Sitelink ${i + 1}`));
+
+    expect(c['addGoogleSitelink'](sitelink('One more'))).toBe(false);
+    expect(c['googleSitelinks']()).toHaveLength(GOOGLE_ADS_MAX_SITELINKS);
+  });
+
+  /**
+   * Runes, not UTF-16 units — the same hazard the callouts carry. 25 astral-plane characters are
+   * link text upstream accepts; counted with `.length` they would be 50 and refused for no reason.
+   */
+  it('accepts 25-emoji link text and refuses 26 characters', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['addGoogleSitelink'](sitelink('🎉'.repeat(GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES)))).toBe(true);
+    expect(c['addGoogleSitelink'](sitelink('A'.repeat(GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES + 1)))).toBe(false);
+
+    expect(c['googleSitelinks']()).toHaveLength(1);
+  });
+
+  /** Google renders the two lines together and rejects an asset carrying only one. */
+  it.each([
+    ['only the first line', { description1: 'Seats are limited' }],
+    ['only the second line', { description2: 'Seats are limited' }],
+  ])('refuses a sitelink described on %s', (_label, overrides) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['addGoogleSitelink'](sitelink('Register', overrides))).toBe(false);
+  });
+
+  /**
+   * The 35-rune bound is PER LINE, not on the two together: upstream measures each line with its
+   * own `utf8.RuneCountInString`. Summing them would refuse this 70-rune pair, which it accepts.
+   */
+  it('accepts both description lines at exactly 35 runes and refuses a 36th on either', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const line = 'A'.repeat(GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES);
+
+    expect(c['addGoogleSitelink'](sitelink('Register', { description1: line, description2: line }))).toBe(true);
+    expect(c['addGoogleSitelink'](sitelink('Tickets', { description1: line, description2: `${line}B` }))).toBe(false);
+  });
+
+  it('warns on the sub-form in progress and withholds the add button until both required fields are filled', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleSitelink'](sitelink('Register Now'));
+
+    // An empty sub-form is not yet a mistake — withheld, not warned about.
+    expect(c['googleSitelinkUrlInvalid']()).toBe(false);
+    expect(c['googleSitelinkAddDisabled']()).toBe(true);
+
+    c['googleSitelinkDraft'].set({ text: '  register now ', description1: 'One line only', description2: '', finalUrl: 'not a url' });
+
+    expect(c['googleSitelinkDuplicate']()).toBe(true);
+    expect(c['googleSitelinkDescriptionHalfFilled']()).toBe(true);
+    expect(c['googleSitelinkUrlInvalid']()).toBe(true);
+    expect(c['googleSitelinkAddDisabled']()).toBe(true);
+
+    c['googleSitelinkDraft'].set({
+      text: '🎉'.repeat(GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES + 1),
+      description1: '',
+      description2: '',
+      finalUrl: 'https://events.example.org/x',
+    });
+
+    expect(c['googleSitelinkTextLength']()).toBe(GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES + 1);
+    expect(c['googleSitelinkTextTooLong']()).toBe(true);
+  });
+
+  /** Cleared ONLY on success, so a refused entry stays editable beside the warning that named it. */
+  it('clears the sub-form on a successful add and leaves it standing on a refusal', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    c['googleSitelinkDraft'].set(sitelink('Register'));
+    c['onGoogleSitelinkAdd']();
+    expect(c['googleSitelinkDraft']()).toEqual({ text: '', description1: '', description2: '', finalUrl: '' });
+
+    c['googleSitelinkDraft'].set(sitelink('register'));
+    c['onGoogleSitelinkAdd']();
+    expect(c['googleSitelinkDraft']().text).toBe('register');
+  });
+
+  it('removes a sitelink by index', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleSitelink'](sitelink('First'));
+    c['addGoogleSitelink'](sitelink('Second'));
+
+    c['removeGoogleSitelink'](0);
+
+    expect(c['googleSitelinks']().map((s: CampaignSitelink) => s.text)).toEqual(['Second']);
+  });
+
+  /** Search only, and WITHHELD elsewhere rather than refused — exactly as the callouts are. */
+  it('offers sitelinks on Search and withholds them on a non-Search channel', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleSitelink'](sitelink('Register'));
+
+    expect(c['googleSitelinksPayload']()).toEqual({ sitelinks: [{ text: 'Register', finalUrl: 'https://events.example.org/register' }] });
+
+    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    fixture.detectChanges();
+
+    expect(c['googleSitelinksPayload']()).toEqual({});
+    // Held, not discarded — the list is still there if Search is re-ticked.
+    expect(c['googleSitelinks']()).toHaveLength(1);
+  });
+
+  /** Omitted rather than sent empty, so the upstream default is reached by the absent-key route. */
+  it('omits the sitelinks key when nothing was added', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['googleSitelinksPayload']()).toEqual({});
+  });
+
+  it('round-trips the sitelinks through a draft', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    let emitted: CampaignImplementationDraft | undefined;
+    fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
+    c['addGoogleSitelink'](sitelink('Register'));
+
+    expect(emitted?.googleSitelinks).toEqual([{ text: 'Register', finalUrl: 'https://events.example.org/register' }]);
+
+    c['googleSitelinks'].set([]);
+    restoreGoogleDraft(fixture, c, { googleSitelinks: [{ text: 'Register', finalUrl: 'https://events.example.org/register' }] });
+
+    expect(c['googleSitelinks']()).toHaveLength(1);
+  });
+
+  /**
+   * COPIED out of the draft ENTRY BY ENTRY, not just array-spread: a sitelink is an object, so a
+   * shallow spread would still hand the draft's own entries over and let an edit here reach back
+   * into the stored draft.
+   */
+  it('does not share the restored entries with the draft', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const saved = [sitelink('Register')];
+
+    restoreGoogleDraft(fixture, c, { googleSitelinks: saved });
+    c['googleSitelinks']()[0].text = 'Edited';
+
+    expect(saved[0].text).toBe('Register');
+  });
+
+  /** A draft saved before this section shipped carries no key, and must not clear the list. */
+  it.each([
+    ['a trailing U+0085', 'Register', 'register\u0085'],
+    ['final sigma', 'ΟΔΟΣ', 'οδοσ'],
+  ])('refuses a repeated link text hidden by %s, on the add and in the live warning', (_label, first, repeat) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleSitelink'](sitelink(first));
+
+    c['googleSitelinkDraft'].set(sitelink(repeat));
+    expect(c['googleSitelinkDuplicate']()).toBe(true);
+    expect(c['addGoogleSitelink'](sitelink(repeat))).toBe(false);
+    expect(c['googleSitelinks']()).toHaveLength(1);
+  });
+
+  it.each([
+    ['a semicolon in the query', 'https://events.example.org/register?a=1;b=2'],
+    ['a stray percent sign', 'https://events.example.org/50%off'],
+    ['no `//` after the scheme', 'https:events.example.org/register'],
+    ['a tab inside the path', 'https://events.example.org/reg\tister'],
+  ])("refuses a destination with %s, which Go's URL parser refuses and `new URL()` accepts", (_label, finalUrl) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    c['googleSitelinkDraft'].set(sitelink('Register', { finalUrl }));
+    expect(c['googleSitelinkUrlInvalid']()).toBe(true);
+    expect(c['addGoogleSitelink'](sitelink('Register', { finalUrl }))).toBe(false);
+  });
+
+  /** BYTES, as Go's `len()` counts them: 1,100 two-byte characters cross 2,084 at half the length. */
+  it('warns on and refuses a destination over the 2084-byte limit, pointing the box at the message', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const finalUrl = `https://events.example.org/${'é'.repeat(1100)}`;
+    const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+    c['googleSitelinkDraft'].set(sitelink('Register', { finalUrl }));
+    fixture.detectChanges();
+
+    expect(c['googleSitelinkUrlBytesOver']()).toBe(new TextEncoder().encode(finalUrl).length);
+    expect(c['googleSitelinkAddDisabled']()).toBe(true);
+    expect(find('implementation-google-sitelink-url')?.getAttribute('aria-describedby')).toBe(find('implementation-google-sitelink-url-too-long')?.id);
+    expect(c['addGoogleSitelink'](sitelink('Register', { finalUrl }))).toBe(false);
+  });
+
+  it('says out loud that sitelinks are withheld after a switch away from Search, in the notice and its live region', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+    // Mounted, empty, before there is anything to say.
+    expect(find('implementation-google-sitelinks-withheld-live')?.textContent?.trim()).toBe('');
+
+    c['addGoogleSitelink'](sitelink('Register'));
+    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    fixture.detectChanges();
+
+    const notice = find('implementation-google-sitelinks-withheld')?.textContent ?? '';
+    expect(notice).toContain('Demand Gen campaigns do not take sitelinks');
+    expect(notice).toContain('the 1 you added');
+    expect(find('implementation-google-sitelinks-withheld-live')?.textContent?.trim()).toBe(c['googleSitelinksWithheldWarning']());
+    expect(find('implementation-google-sitelinks-withheld')?.getAttribute('role')).toBeNull();
+  });
+
+  it('shows no sitelinks notice when none were added', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+
+    expect(c['googleSitelinksWithheldWarning']()).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="implementation-google-sitelinks-withheld"]')).toBeNull();
+  });
+
+  /** Through `submit()`, so deleting the payload spread fails here and not only in a helper test. */
+  it.each([
+    ['Search', { includeSearch: true }, [{ text: 'Register', finalUrl: 'https://events.example.org/register' }]],
+    ['Demand Gen, after a switch from Search', { includeDemandGen: true }, undefined],
+  ])('sends the sitelinks on a submitted %s create only when the channel takes them', async (_label, channel, expected) => {
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleSitelink'](sitelink('Register'));
+    c['campaignForm'].patchValue({ includeSearch: false, ...channel });
+    fixture.detectChanges();
+    expect(c['canSubmit']()).toBe(true);
+
+    c['submit']();
+    await fixture.whenStable();
+
+    expect(createCampaign).toHaveBeenCalled();
+    expect((createCampaign.mock.calls[0][0] as unknown as Record<string, unknown>)['sitelinks']).toEqual(expected);
+  });
+
+  it('leaves the list alone when the draft carries no sitelinks key', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleSitelink'](sitelink('Register'));
+
+    restoreGoogleDraft(fixture, c, {});
+
+    expect(c['googleSitelinks']()).toHaveLength(1);
   });
 });
 
@@ -5209,5 +6793,583 @@ describe('ImplementationTabComponent google bidding', () => {
     expect(c['campaignForm'].controls.googleBiddingStrategy.value).toBe('retired-strategy');
     expect(c['googleBiddingStrategy']()).toBe(GOOGLE_BIDDING_DEFAULT_BY_CHANNEL.search);
     expect(c['googleBiddingPayload']().biddingStrategy).toBeUndefined();
+  });
+});
+
+/**
+ * The per-platform Bidding control (#3299): Automatic or Manual max CPC bid on LinkedIn, Meta,
+ * Microsoft Ads and Reddit, behind `biddingEnabled` (`LFX_CUTOVER_CAMPAIGN_SERVICE_BIDDING`).
+ *
+ * Asserted on what `createCampaign` is CALLED with, because the guarantee that matters is the wire
+ * shape campaign-service #332 accepts: `bidding` absent while the flag is off, otherwise an explicit
+ * object with exactly `strategy` (and `bidAmount` for manual) — never `null`, never `''`.
+ */
+describe('ImplementationTabComponent bidding control', () => {
+  const LANE_CONFIGS = ['linkedInConfig', 'metaConfig', 'microsoftConfig', 'redditConfig'] as const;
+
+  let createCampaign: ReturnType<typeof vi.fn>;
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  const brief = (): CampaignBriefOutput =>
+    ({
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'US', registrationUrl: 'https://example.com/kubecon' },
+      totalBudget: 500,
+      selectedPlatforms: ['linkedin-ads', 'reddit-ads', 'meta-ads', 'microsoft-ads'],
+      structuredCopy: { google_search: { headlines: ['Attend KubeCon'], descriptions: ['Join us in September'] } },
+      linkedInCopy: {
+        variants: [{ headline: 'Brief headline', introText: 'Brief intro', destinationUrl: 'https://example.com/brief' }],
+        recommendedGeoTargets: [{ urn: 'urn:li:geo:103644278', label: 'United States' }],
+        recommendedTargetingProfile: 'cloud-native',
+      },
+      redditCopy: {
+        variants: [{ headline: 'Brief reddit headline', destinationUrl: 'https://example.com/brief' }],
+        recommendedSubreddits: ['briefsub'],
+        recommendedInterests: ['brief-interest'],
+        recommendedKeywords: ['brief-keyword'],
+        recommendedGeos: ['US'],
+      },
+      metaCopy: {
+        variants: [{ primaryText: 'Brief primary', headline: 'Brief meta headline', description: 'Brief description' }],
+        recommendedGeos: ['US'],
+      },
+      keywords: [],
+      hsUtm: null,
+      driveFolderUrl: '',
+    }) as unknown as CampaignBriefOutput;
+
+  function component(f: ComponentFixture<ImplementationTabComponent> = fixture): Record<string, any> {
+    return f.componentInstance as unknown as Record<string, any>;
+  }
+
+  function query(testId: string, f: ComponentFixture<ImplementationTabComponent> = fixture): HTMLElement | null {
+    return f.nativeElement.querySelector(`[data-testid="${testId}"]`);
+  }
+
+  async function mount(
+    bidding: boolean | null | undefined,
+    draft: CampaignImplementationDraft | null = null
+  ): Promise<ComponentFixture<ImplementationTabComponent>> {
+    const f = TestBed.createComponent(ImplementationTabComponent);
+    if (draft) f.componentRef.setInput('draft', draft);
+    if (bidding !== undefined) f.componentRef.setInput('biddingEnabled', bidding);
+    f.componentRef.setInput('briefData', brief());
+    f.detectChanges();
+    await f.whenStable();
+    const c = component(f);
+    c['selectedPlatforms'].set(['linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads']);
+    c['campaignForm'].controls['eventName'].setValue('KubeCon EU 2026');
+    c['campaignForm'].controls['registrationUrl'].setValue('https://example.com/kubecon');
+    c['campaignForm'].controls['startDate'].setValue('2026-09-01');
+    c['campaignForm'].controls['endDate'].setValue('2026-09-30');
+    c['addMicrosoftKeyword']('service mesh');
+    f.detectChanges();
+    await f.whenStable();
+    return f;
+  }
+
+  /** Pick a strategy through the control's own form, so the change travels the real `(biddingChange)` binding. */
+  async function pickStrategy(platform: string, strategy: 'automatic' | 'manual', f: ComponentFixture<ImplementationTabComponent> = fixture): Promise<void> {
+    const host = query(`implementation-bidding-${platform}`, f)?.closest('lfx-campaign-bidding-control');
+    expect(host).not.toBeNull();
+    const control = f.debugElement.queryAll((el) => el.nativeElement === host)[0].componentInstance;
+    control.form.controls.strategy.setValue(strategy);
+    f.detectChanges();
+    await f.whenStable();
+  }
+
+  /** Type a bid into the rendered amount input, as an operator would. */
+  async function typeBid(platform: string, value: string, f: ComponentFixture<ImplementationTabComponent> = fixture): Promise<void> {
+    const input = query(`implementation-bidding-${platform}-amount`, f)?.querySelector('input') as HTMLInputElement | null;
+    expect(input).not.toBeNull();
+    (input as HTMLInputElement).value = value;
+    (input as HTMLInputElement).dispatchEvent(new Event('input'));
+    f.detectChanges();
+    await f.whenStable();
+  }
+
+  async function submitted(f: ComponentFixture<ImplementationTabComponent> = fixture): Promise<Record<string, Record<string, unknown>>> {
+    expect(component(f)['canSubmit']()).toBe(true);
+    component(f)['submit']();
+    await f.whenStable();
+    expect(createCampaign).toHaveBeenCalled();
+    return createCampaign.mock.calls[createCampaign.mock.calls.length - 1][0];
+  }
+
+  beforeEach(async () => {
+    createCampaign = vi.fn().mockReturnValue(of({ result: { campaigns: [], errors: [] } }));
+
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        {
+          provide: CampaignService,
+          useValue: {
+            createCampaign,
+            getLinkedInAccounts: () => of([{ accountId: 'urn:li:sponsoredAccount:1', name: 'LF Account', status: 'ACTIVE' }]),
+          },
+        },
+      ],
+    }).compileComponents();
+  });
+
+  describe('with the flag off', () => {
+    it.each([
+      ['unanswered', undefined],
+      ['null', null],
+      ['false', false],
+    ])('hides the control when the capability is %s', async (_label, bidding) => {
+      fixture = await mount(bidding);
+
+      for (const platform of ['linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads']) {
+        expect(query(`implementation-bidding-${platform}`)).toBeNull();
+      }
+      // The legacy Microsoft max CPC field stays exactly as it was.
+      expect(query('implementation-microsoft-cpc-bid')).not.toBeNull();
+    });
+
+    it('sends no bidding key on any config, so the create is unchanged', async () => {
+      fixture = await mount(false);
+      component()['microsoftCpcBid'].set('2.5');
+
+      const request = await submitted();
+
+      for (const key of LANE_CONFIGS) {
+        expect(request[key]).toBeDefined();
+        expect(Object.keys(request[key])).not.toContain('bidding');
+      }
+      // The legacy field still travels while the control is not offered.
+      expect(request['microsoftConfig']['cpcBid']).toBe(2.5);
+    });
+  });
+
+  /**
+   * A Manual choice retained across a tab round-trip while the capability is not an explicit yes
+   * (#3299). The control is hidden then and `bidding` is not sent, which campaign-service reads as
+   * automatic — so the create must be BLOCKED, never sent without the choice.
+   */
+  describe('a retained Manual choice while the capability is unknown or off', () => {
+    async function manualDraft(platform: 'meta-ads' | 'microsoft-ads' = 'meta-ads'): Promise<CampaignImplementationDraft> {
+      let draft: CampaignImplementationDraft | null = null;
+      const first = await mount(true);
+      first.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (draft = d));
+      await pickStrategy(platform, 'manual', first);
+      await typeBid(platform, '1', first);
+      first.destroy();
+      expect(draft).not.toBeNull();
+      return draft as unknown as CampaignImplementationDraft;
+    }
+
+    async function remount(
+      bidding: boolean | null,
+      read: 'unknown' | 'pending' | 'ready' | 'failed',
+      platform: 'meta-ads' | 'microsoft-ads' = 'meta-ads',
+      edit: (d: CampaignImplementationDraft) => CampaignImplementationDraft = (d) => d,
+      briefId: string | null = 'brief-1'
+    ): Promise<ComponentFixture<ImplementationTabComponent>> {
+      const draft = edit(await manualDraft(platform));
+      const f = TestBed.createComponent(ImplementationTabComponent);
+      f.componentRef.setInput('draft', draft);
+      f.componentRef.setInput('briefPersistence', { status: briefId ? 'saved' : 'off', briefId, message: null, approved: !!briefId });
+      f.componentRef.setInput('biddingEnabled', bidding);
+      f.componentRef.setInput('biddingCapabilityRead', read);
+      f.componentRef.setInput('briefData', brief());
+      f.detectChanges();
+      await f.whenStable();
+      const c = component(f);
+      c['selectedPlatforms'].set(['linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads']);
+      c['campaignForm'].controls['eventName'].setValue('KubeCon EU 2026');
+      c['campaignForm'].controls['registrationUrl'].setValue('https://example.com/kubecon');
+      c['campaignForm'].controls['startDate'].setValue('2026-09-01');
+      c['campaignForm'].controls['endDate'].setValue('2026-09-30');
+      c['addMicrosoftKeyword']('service mesh');
+      f.detectChanges();
+      await f.whenStable();
+      return f;
+    }
+
+    it('blocks Create and says it is checking while the capability read is pending', async () => {
+      fixture = await remount(null, 'pending');
+
+      expect(component()['canSubmit']()).toBe(false);
+      expect(query('implementation-bidding-capability-pending')?.textContent).toContain('Checking bidding support…');
+      expect(query('implementation-bidding-capability-live')?.textContent?.trim()).toBe('Checking bidding support…');
+      component()['submit']();
+      expect(createCampaign).not.toHaveBeenCalled();
+
+      // The answer arrives: the control returns with the retained choice, and it is sent.
+      fixture.componentRef.setInput('biddingEnabled', true);
+      fixture.componentRef.setInput('biddingCapabilityRead', 'ready');
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(query('implementation-bidding-capability-live')?.textContent?.trim()).toBe('');
+      const request = await submitted();
+      expect(request['metaConfig']['bidding']).toEqual({ strategy: 'manual', bidAmount: 1 });
+    });
+
+    it('blocks Create with a Retry that asks the parent to re-read when the read failed', async () => {
+      fixture = await remount(null, 'failed');
+      const retried = vi.fn();
+      fixture.componentRef.instance.retryBiddingCapability.subscribe(retried);
+
+      expect(component()['canSubmit']()).toBe(false);
+      expect(query('implementation-bidding-capability-failed')?.textContent).toContain('Could not confirm that manual bidding is supported');
+      (query('implementation-bidding-capability-retry')?.querySelector('button') as HTMLButtonElement).click();
+
+      expect(retried).toHaveBeenCalledTimes(1);
+      expect(createCampaign).not.toHaveBeenCalled();
+    });
+
+    it('blocks Create when the capability is off, until the operator switches to Automatic', async () => {
+      fixture = await remount(false, 'ready');
+
+      expect(component()['canSubmit']()).toBe(false);
+      expect(query('implementation-bidding-capability-unsupported')?.textContent).toContain('Meta');
+
+      (query('implementation-bidding-capability-automatic')?.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(query('implementation-bidding-capability-unsupported')).toBeNull();
+      expect(component()['biddingDrafts']()['meta-ads']).toEqual({ strategy: 'automatic', bidAmount: 1 });
+      const request = await submitted();
+      // Off: no bidding key at all — the operator chose automatic, which is what that means.
+      expect(Object.keys(request['metaConfig'])).not.toContain('bidding');
+    });
+
+    it('lets the operator switch to Automatic while the read is still pending', async () => {
+      fixture = await remount(null, 'pending');
+
+      (query('implementation-bidding-capability-automatic')?.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(query('implementation-bidding-capability-pending')).toBeNull();
+      expect(component()['canSubmit']()).toBe(true);
+    });
+
+    /**
+     * A foundation switch (or a list load with no brief id) clears the capability WITHOUT starting a
+     * read, leaving `unknown`. "Checking…" would wait forever there, so it is treated like a failed
+     * read: Retry starts one, and Switch to Automatic is offered too.
+     */
+    it('offers Retry and Switch to Automatic when no read is in flight (after a foundation switch)', async () => {
+      fixture = await remount(null, 'unknown');
+      const retried = vi.fn();
+      fixture.componentRef.instance.retryBiddingCapability.subscribe(retried);
+
+      expect(component()['canSubmit']()).toBe(false);
+      expect(query('implementation-bidding-capability-pending')).toBeNull();
+      expect(query('implementation-bidding-capability-failed')).not.toBeNull();
+      (query('implementation-bidding-capability-retry')?.querySelector('button') as HTMLButtonElement).click();
+      expect(retried).toHaveBeenCalledTimes(1);
+
+      (query('implementation-bidding-capability-automatic')?.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(component()['canSubmit']()).toBe(true);
+    });
+
+    /**
+     * The thread's sequence: a legacy Microsoft max CPC is in the draft beside a retained Manual
+     * choice; the capability comes back off; the operator switches to Automatic. Without `bidding`,
+     * campaign-service reads a `cpcBid` as MANUAL — so it must not be sent.
+     */
+    it('sends no Microsoft cpcBid after Switch to Automatic, even with a legacy value in the draft', async () => {
+      fixture = await remount(false, 'ready', 'microsoft-ads', (d) => ({ ...d, microsoftCpcBid: '2.5' }));
+      expect(query('implementation-bidding-capability-unsupported')).not.toBeNull();
+
+      (query('implementation-bidding-capability-automatic')?.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(component()['microsoftCpcBid']()).toBe('');
+      const request = await submitted();
+      expect(Object.keys(request['microsoftConfig'])).not.toContain('cpcBid');
+      expect(Object.keys(request['microsoftConfig'])).not.toContain('bidding');
+    });
+
+    it('never sends a legacy cpcBid beside an explicit Automatic choice, however it got there', async () => {
+      // A restored draft that already says Automatic for Microsoft, carrying a stale legacy value.
+      fixture = await remount(false, 'ready', 'microsoft-ads', (d) => ({
+        ...d,
+        microsoftCpcBid: '2.5',
+        bidding: { ...d.bidding, 'microsoft-ads': { strategy: 'automatic', bidAmount: 1 } },
+      }));
+
+      const request = await submitted();
+
+      expect(Object.keys(request['microsoftConfig'])).not.toContain('cpcBid');
+    });
+
+    it('lets a bid typed into the legacy field win over an earlier Automatic', async () => {
+      fixture = await remount(false, 'ready', 'microsoft-ads', (d) => ({
+        ...d,
+        bidding: { ...d.bidding, 'microsoft-ads': { strategy: 'automatic', bidAmount: 1 } },
+      }));
+      const input = query('implementation-microsoft-cpc-bid') as HTMLInputElement;
+      input.value = '3';
+      input.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+
+      const request = await submitted();
+
+      expect(request['microsoftConfig']['cpcBid']).toBe(3);
+    });
+
+    /**
+     * With no brief id there is nothing to read against: the parent's read returns at once, so a
+     * Retry would do nothing. Saving the brief starts the read, so the banner asks for that instead.
+     */
+    it.each(['unknown', 'failed'] as const)('asks to save the brief, and offers no Retry, when %s with no brief id', async (read) => {
+      fixture = await remount(null, read, 'meta-ads', (d) => d, null);
+
+      expect(component()['canSubmit']()).toBe(false);
+      expect(query('implementation-bidding-capability-unsaved')?.textContent).toContain(
+        "Bidding support can't be checked until this brief is saved. Save the brief, or switch to Automatic."
+      );
+      expect(query('implementation-bidding-capability-retry')).toBeNull();
+      expect(query('implementation-bidding-capability-automatic')).not.toBeNull();
+    });
+
+    /**
+     * The thread's sequence: the capability is unanswered, so the legacy Microsoft field shows and
+     * the operator types a bid into it; then the capability resolves to true and the legacy field
+     * hides. The bid must carry into the control as Manual — not vanish and be sent as Automatic.
+     */
+    it('carries a legacy Microsoft bid into the control as Manual when the capability turns true', async () => {
+      fixture = await mount(null);
+      const input = query('implementation-microsoft-cpc-bid') as HTMLInputElement;
+      input.value = '2.5';
+      input.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+
+      fixture.componentRef.setInput('biddingEnabled', true);
+      fixture.componentRef.setInput('biddingCapabilityRead', 'ready');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(query('implementation-microsoft-cpc-bid')).toBeNull();
+      expect(component()['biddingDrafts']()['microsoft-ads']).toEqual({ strategy: 'manual', bidAmount: 2.5 });
+      expect(component()['microsoftCpcBid']()).toBe('');
+      expect((query('implementation-bidding-microsoft-ads-amount')?.querySelector('input') as HTMLInputElement).value).toBe('2.5');
+      const request = await submitted();
+      expect(request['microsoftConfig']['bidding']).toEqual({ strategy: 'manual', bidAmount: 2.5 });
+      expect(Object.keys(request['microsoftConfig'])).not.toContain('cpcBid');
+    });
+
+    it('leaves an explicit Microsoft choice alone when the capability turns true', async () => {
+      fixture = await remount(null, 'unknown', 'microsoft-ads', (d) => ({
+        ...d,
+        microsoftCpcBid: '2.5',
+        bidding: { ...d.bidding, 'microsoft-ads': { strategy: 'automatic', bidAmount: null } },
+      }));
+
+      fixture.componentRef.setInput('biddingEnabled', true);
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(component()['biddingDrafts']()['microsoft-ads']).toEqual({ strategy: 'automatic', bidAmount: null });
+      const request = await submitted();
+      expect(request['microsoftConfig']['bidding']).toEqual({ strategy: 'automatic' });
+      expect(Object.keys(request['microsoftConfig'])).not.toContain('cpcBid');
+    });
+
+    it('never renders Retry while a read is in flight either', async () => {
+      fixture = await remount(null, 'pending');
+
+      expect(query('implementation-bidding-capability-retry')).toBeNull();
+    });
+
+    it('does not block a retained Manual choice on a platform that is not selected', async () => {
+      fixture = await remount(null, 'pending');
+      component()['selectedPlatforms'].set(['linkedin-ads']);
+      fixture.detectChanges();
+
+      expect(query('implementation-bidding-capability-pending')).toBeNull();
+      expect(component()['canSubmit']()).toBe(true);
+    });
+  });
+
+  describe('with the flag on', () => {
+    beforeEach(async () => {
+      fixture = await mount(true);
+    });
+
+    it('renders a control per supported platform, defaulting to Automatic', () => {
+      for (const platform of ['linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads']) {
+        expect(query(`implementation-bidding-${platform}`)).not.toBeNull();
+        // Automatic is the default, so the bid input is not shown.
+        expect(query(`implementation-bidding-${platform}-amount`)).toBeNull();
+        expect(component()['biddingViews']()[platform].value).toEqual({ strategy: 'automatic', bidAmount: null });
+      }
+      expect(query('implementation-bidding-google-ads')).toBeNull();
+    });
+
+    it('labels the strategy group and names the currency per platform', async () => {
+      expect(query('implementation-bidding-linkedin-ads')?.querySelector('legend')?.textContent?.trim()).toBe('Bidding');
+
+      await pickStrategy('linkedin-ads', 'manual');
+      await pickStrategy('meta-ads', 'manual');
+
+      expect(query('implementation-bidding-linkedin-ads-currency')?.textContent).toContain('USD');
+      expect(query('implementation-bidding-meta-ads-currency')?.textContent).toContain("ad account's currency");
+      expect(query('implementation-bidding-meta-ads-limit')?.textContent).toContain('5×');
+      const label = fixture.nativeElement.querySelector('label[for="campaign-bidding-linkedin-ads-amount"]') as HTMLLabelElement | null;
+      expect(label?.textContent).toContain('USD');
+    });
+
+    it('hides the legacy Microsoft max CPC field and never sends cpcBid beside bidding', async () => {
+      expect(query('implementation-microsoft-cpc-bid')).toBeNull();
+      // A stale legacy value (a restored draft) neither blocks the create nor reaches the wire.
+      component()['microsoftCpcBid'].set('5000');
+      fixture.detectChanges();
+
+      const request = await submitted();
+
+      expect(Object.keys(request['microsoftConfig'])).not.toContain('cpcBid');
+    });
+
+    it('sends an explicit automatic strategy, and nothing else, on every config by default', async () => {
+      const request = await submitted();
+
+      for (const key of LANE_CONFIGS) {
+        expect(request[key]['bidding']).toEqual({ strategy: 'automatic' });
+        expect(Object.keys(request[key]['bidding'] as object)).toEqual(['strategy']);
+      }
+      expect(request['googleAdsConfig']).toBeUndefined();
+    });
+
+    it('sends a manual bid exactly as typed', async () => {
+      await pickStrategy('linkedin-ads', 'manual');
+      await typeBid('linkedin-ads', '2.5');
+
+      const request = await submitted();
+
+      expect(request['linkedInConfig']['bidding']).toEqual({ strategy: 'manual', bidAmount: 2.5 });
+      expect(request['metaConfig']['bidding']).toEqual({ strategy: 'automatic' });
+    });
+
+    it('never puts null or an empty string on the wire', async () => {
+      await pickStrategy('microsoft-ads', 'manual');
+      await typeBid('microsoft-ads', '1.25');
+      await pickStrategy('reddit-ads', 'manual');
+      component()['redditObjective'].set('traffic');
+      await typeBid('reddit-ads', '0.75');
+      // Picked and then put back: the typed amount must not travel with automatic.
+      await pickStrategy('meta-ads', 'manual');
+      await typeBid('meta-ads', '1');
+      await pickStrategy('meta-ads', 'automatic');
+
+      const request = await submitted();
+
+      for (const key of LANE_CONFIGS) {
+        const bidding = request[key]['bidding'] as Record<string, unknown>;
+        expect(bidding).not.toBeNull();
+        for (const [field, value] of Object.entries(bidding)) {
+          expect(['strategy', 'bidAmount']).toContain(field);
+          expect(value).not.toBeNull();
+          expect(value).not.toBe('');
+        }
+      }
+      expect(request['metaConfig']['bidding']).toEqual({ strategy: 'automatic' });
+      expect(request['microsoftConfig']['bidding']).toEqual({ strategy: 'manual', bidAmount: 1.25 });
+      expect(request['redditConfig']['bidding']).toEqual({ strategy: 'manual', bidAmount: 0.75 });
+    });
+
+    it('blocks the create while a manual choice has no bid, and says why', async () => {
+      await pickStrategy('linkedin-ads', 'manual');
+
+      expect(component()['canSubmit']()).toBe(false);
+      expect(query('implementation-bidding-linkedin-ads-error')?.textContent).toContain('Enter a max CPC bid');
+      const input = query('implementation-bidding-linkedin-ads-amount')?.querySelector('input');
+      expect(input?.getAttribute('aria-invalid')).toBe('true');
+      expect(input?.getAttribute('aria-describedby')).toContain('campaign-bidding-linkedin-ads-error');
+
+      await typeBid('linkedin-ads', '3');
+
+      expect(component()['canSubmit']()).toBe(true);
+      expect(query('implementation-bidding-linkedin-ads-error')).toBeNull();
+    });
+
+    it.each([
+      ['linkedin-ads', '2.345', 'two decimal places'],
+      ['linkedin-ads', '0', 'greater than zero'],
+      ['microsoft-ads', '1000.01', 'at most 1,000'],
+      ['microsoft-ads', '0.001', 'at least 0.01'],
+      ['meta-ads', '0.125', 'two decimal places'],
+    ])('refuses a %s bid of %s', async (platform, bid, message) => {
+      await pickStrategy(platform, 'manual');
+      await typeBid(platform, bid);
+
+      expect(component()['canSubmit']()).toBe(false);
+      expect(query(`implementation-bidding-${platform}-error`)?.textContent).toContain(message);
+    });
+
+    it('refuses manual Meta under an objective without link clicks, and accepts it under traffic', async () => {
+      await pickStrategy('meta-ads', 'manual');
+      await typeBid('meta-ads', '1');
+      component()['metaObjective'].set('awareness');
+      fixture.detectChanges();
+
+      expect(component()['canSubmit']()).toBe(false);
+      expect(query('implementation-bidding-meta-ads-error')?.textContent).toContain('Traffic or Leads');
+
+      component()['metaObjective'].set('traffic');
+      fixture.detectChanges();
+
+      expect(component()['canSubmit']()).toBe(true);
+    });
+
+    it('refuses a Meta bid above a fifth of the daily budget, but not under a lifetime budget', async () => {
+      component()['metaBudgetUsd'].set(10);
+      await pickStrategy('meta-ads', 'manual');
+      await typeBid('meta-ads', '2.01');
+
+      expect(component()['canSubmit']()).toBe(false);
+      expect(query('implementation-bidding-meta-ads-error')?.textContent).toContain('at least 5× the bid');
+
+      component()['metaLifetimeBudget'].set(true);
+      fixture.detectChanges();
+
+      expect(component()['canSubmit']()).toBe(true);
+    });
+
+    it('refuses manual Reddit under the default conversions objective, and accepts it under traffic', async () => {
+      await pickStrategy('reddit-ads', 'manual');
+      await typeBid('reddit-ads', '0.5');
+
+      expect(component()['canSubmit']()).toBe(false);
+      expect(query('implementation-bidding-reddit-ads-error')?.textContent).toContain('needs the Traffic objective');
+
+      component()['redditObjective'].set('traffic');
+      fixture.detectChanges();
+
+      expect(component()['canSubmit']()).toBe(true);
+    });
+
+    it('keeps the choice through a tab round-trip and sends it from the remount', async () => {
+      let draft: CampaignImplementationDraft | null = null;
+      fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (draft = d));
+      await pickStrategy('linkedin-ads', 'manual');
+      await typeBid('linkedin-ads', '3.5');
+      fixture.destroy();
+
+      expect(draft).not.toBeNull();
+      expect((draft as unknown as CampaignImplementationDraft).bidding?.['linkedin-ads']).toEqual({ strategy: 'manual', bidAmount: 3.5 });
+
+      const restored = await mount(true, draft);
+
+      // The remounted control shows the restored choice, not the default.
+      expect(query('implementation-bidding-linkedin-ads-amount', restored)?.querySelector('input')?.value).toBe('3.5');
+      const request = await submitted(restored);
+      expect(request['linkedInConfig']['bidding']).toEqual({ strategy: 'manual', bidAmount: 3.5 });
+    });
   });
 });

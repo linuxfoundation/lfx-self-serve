@@ -58,6 +58,18 @@
           </lfx-select>
         }
 
+        <!-- Organizer Filter -->
+        <lfx-select
+          [form]="filterForm"
+          control="organizerFilter"
+          [options]="organizerFilterOptions"
+          optionLabel="label"
+          optionValue="value"
+          [styleClass]="'text-[10px]'"
+          placeholder="Role"
+          data-testid="organizer-filter-select">
+        </lfx-select>
+
         <!-- Group Filter (only show if meeting has committees) -->
         @if (hasCommittees()) {
           <lfx-select
@@ -318,12 +330,25 @@
                zero out one section don't drop the other section's label. -->
           @if (committeeFilteredRegistrants().length > 0) {
             <div class="flex flex-col gap-2" data-testid="board-members-section">
-              <div class="flex items-center gap-2 px-1">
+              <button
+                type="button"
+                class="flex items-center gap-2 px-1 w-full text-left cursor-pointer"
+                [attr.aria-expanded]="!membersCollapsed()"
+                aria-controls="board-members-list"
+                (click)="toggleMembersCollapsed()"
+                data-testid="board-members-toggle">
                 <i class="fa-light fa-building-columns text-gray-400 text-xs"></i>
-                <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Board Members ({{ committeeFilteredRegistrants().length }})</span>
-              </div>
-              @for (registrant of committeeFilteredRegistrants(); track registrant.uid) {
-                <ng-container *ngTemplateOutlet="registrantCard; context: { $implicit: registrant }"></ng-container>
+                <span class="text-xs font-medium text-gray-500 uppercase tracking-wide flex-1">
+                  Board Members ({{ committeeFilteredRegistrants().length }})
+                </span>
+                <i class="fa-light text-gray-400 text-xs" [class]="membersCollapsed() ? 'fa-chevron-down' : 'fa-chevron-up'" aria-hidden="true"></i>
+              </button>
+              @if (!membersCollapsed()) {
+                <div id="board-members-list" class="flex flex-col gap-2">
+                  @for (registrant of committeeFilteredRegistrants(); track registrant.uid) {
+                    <ng-container *ngTemplateOutlet="registrantCard; context: { $implicit: registrant }"></ng-container>
+                  }
+                </div>
               }
             </div>
           }
@@ -334,12 +359,23 @@
 
           @if (directFilteredRegistrants().length > 0) {
             <div class="flex flex-col gap-2" data-testid="guests-section">
-              <div class="flex items-center gap-2 px-1">
+              <button
+                type="button"
+                class="flex items-center gap-2 px-1 w-full text-left cursor-pointer"
+                [attr.aria-expanded]="!guestsCollapsed()"
+                aria-controls="guests-list"
+                (click)="toggleGuestsCollapsed()"
+                data-testid="guests-toggle">
                 <i class="fa-light fa-user text-gray-400 text-xs"></i>
-                <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Guests ({{ directFilteredRegistrants().length }})</span>
-              </div>
-              @for (registrant of directFilteredRegistrants(); track registrant.uid) {
-                <ng-container *ngTemplateOutlet="registrantCard; context: { $implicit: registrant }"></ng-container>
+                <span class="text-xs font-medium text-gray-500 uppercase tracking-wide flex-1">Guests ({{ directFilteredRegistrants().length }})</span>
+                <i class="fa-light text-gray-400 text-xs" [class]="guestsCollapsed() ? 'fa-chevron-down' : 'fa-chevron-up'" aria-hidden="true"></i>
+              </button>
+              @if (!guestsCollapsed()) {
+                <div id="guests-list" class="flex flex-col gap-2">
+                  @for (registrant of directFilteredRegistrants(); track registrant.uid) {
+                    <ng-container *ngTemplateOutlet="registrantCard; context: { $implicit: registrant }"></ng-container>
+                  }
+                </div>
               }
             </div>
           }

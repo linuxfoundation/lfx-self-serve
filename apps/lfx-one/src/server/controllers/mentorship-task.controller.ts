@@ -101,7 +101,7 @@ export class MentorshipTaskController {
 
       res.status(upstream.status);
       // `fetch` decodes a compressed body but keeps the compressed length and ranges, and copying the length would make Node
-      // cut the file short (see gw-proxy.controller.ts). The service asks for identity, so these are only dropped if upstream
+      // cut the file short. The service asks for identity, so these are only dropped if upstream
       // compresses anyway.
       const encoding = (upstream.headers.get('content-encoding') ?? '').trim().toLowerCase();
       const decodedBody = encoding !== '' && encoding !== 'identity';

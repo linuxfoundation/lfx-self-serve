@@ -748,9 +748,11 @@ describe('CampaignServiceClient.saveBrief', () => {
     // version means the row carries edits this POST never made, so adopting it would hand the
     // caller ownership of someone else's work and let the next save replace it.
     //
-    // This is the load-bearing guard on THIS branch: `CampaignServiceBrief` here declares only
-    // the columns the write path reads, so the payload comparison can check program and slug but
-    // not url or platforms. LFXV2-3108 widens the type and strengthens that half.
+    // It is one of the two conditions `reconcileLostCreate` ANDs together, and the only one that
+    // speaks to the row's HISTORY rather than its current contents: a row can hold exactly the
+    // payload this POST sent and still have been written more than once. The sibling test below
+    // covers the other condition — `storedBriefMatches` comparing the whole brief, url and
+    // platforms included.
     proxyRequestWithResponse
       .mockRejectedValueOnce(NOT_FOUND)
       .mockRejectedValueOnce(new MicroserviceError('gateway', 502, 'BAD_GATEWAY', {}))
@@ -1864,6 +1866,39 @@ describe('CampaignServiceClient.createCampaigns', () => {
     expect(res.error).toContain('nothing was created');
     expect(res.indeterminate, 'a definite refusal was marked indeterminate').toBeUndefined();
     expect(res.error).toContain('try again');
+  });
+
+  /**
+   * campaign-service's own bidding refusal (#3299) names the field and the reason, and carries no
+   * caller value but the amount — so it is the one upstream 400 worth showing. Matched on its exact
+   * wording, so any other 400 keeps the generic text.
+   */
+  it('names an invalid bid that campaign-service refused', async () => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockRejectedValueOnce(
+      new MicroserviceError('invalid campaign config: metaConfig.bidding: bidAmount must be greater than zero', 400, 'campaign_service')
+    );
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['meta-ads'], { metaConfig: { budget: 100 } });
+
+    expect(res.jobId).toBeNull();
+    expect(res.indeterminate).toBeUndefined();
+    expect(res.error).toBe(
+      'Campaign creation was rejected and nothing was created: invalid campaign config: metaConfig.bidding: bidAmount must be greater than zero'
+    );
+  });
+
+  it.each([
+    ['another config field', 400, 'invalid campaign config: metaConfig.budget: must be positive'],
+    ['a googleAdsConfig bidding refusal', 400, 'invalid campaign config: googleAdsConfig.bidding: use googleAdsConfig.biddingStrategy'],
+    ['a bidding message on a 409', 409, 'invalid campaign config: metaConfig.bidding: bidAmount must be greater than zero'],
+  ])('keeps the generic refusal text for %s', async (_label, status, message) => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError(message, status, 'campaign_service'));
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['meta-ads'], { metaConfig: { budget: 100 } });
+
+    expect(res.error).toBe('Campaign creation was rejected and nothing was created. Please try again.');
   });
 
   it('does NOT tell the user to retry after an indeterminate failure', async () => {
@@ -3763,6 +3798,61 @@ describe('CampaignServiceClient.addNegativeKeywords', () => {
     });
     // No headers argument at all: this lever persists nothing and takes no If-Match.
     expect(call).toHaveLength(6);
+    // Microsoft Advertising and X refuse a PRESENT revision, even an empty one.
+    expect(call[5]).not.toHaveProperty('revision');
+  });
+
+  it("sends Reddit's revision in the body, exactly as given, when the caller passes one", async () => {
+    const revision = 'sha256:5e1b7f0c2a9d4e3b8c6a1f0e9d8c7b6a';
+    const broad = [{ text: 'free download', matchType: 'Broad' as const }];
+    proxyRequest.mockResolvedValueOnce({
+      campaign_id: 'c-1',
+      results: [{ text: 'free download', match_type: 'Broad', outcome: 'APPLIED' }],
+      applied_count: 1,
+    });
+
+    await new CampaignServiceClient().addNegativeKeywords(req, { ...args, negativeKeywords: broad, revision });
+
+    expect(proxyRequest.mock.calls[0][5]).toEqual({ negative_keywords: [{ text: 'free download', match_type: 'Broad' }], revision });
+  });
+
+  // Reddit: the new keywords share one PATCH's outcome, and ALREADY_PRESENT ones keep theirs. A
+  // mixed batch is answered per item, so the ALREADY_PRESENT entries must survive the mapping.
+  it('keeps the ALREADY_PRESENT entries of a mixed Reddit batch at their own positions', async () => {
+    const reddit = [
+      { text: 'free', matchType: 'Broad' as const },
+      { text: 'torrent', matchType: 'Broad' as const },
+      { text: 'crack', matchType: 'Broad' as const },
+    ];
+    proxyRequest.mockResolvedValueOnce({
+      campaign_id: 'c-1',
+      results: [
+        { text: 'free', match_type: 'Broad', outcome: 'UNCONFIRMED' },
+        { text: 'torrent', match_type: 'Broad', outcome: 'ALREADY_PRESENT' },
+        { text: 'crack', match_type: 'Broad', outcome: 'UNCONFIRMED' },
+      ],
+      applied_count: 1,
+    });
+
+    const result = await new CampaignServiceClient().addNegativeKeywords(req, { ...args, negativeKeywords: reddit, revision: 'sha256:abc' });
+
+    expect(result.results.map((r) => r.outcome)).toEqual(['UNCONFIRMED', 'ALREADY_PRESENT', 'UNCONFIRMED']);
+    expect(result.appliedCount).toBe(1);
+  });
+
+  it.each([
+    ['NOT_SENT', 'NOT_SENT'],
+    ['REJECTED', 'REJECTED'],
+  ])('relays the %s error code of a FAILED X or Reddit keyword', async (_label, code) => {
+    proxyRequest.mockResolvedValueOnce({
+      campaign_id: 'c-1',
+      results: [{ text: 'free', match_type: 'Exact', outcome: 'FAILED', error_code: code }],
+      applied_count: 0,
+    });
+
+    const result = await new CampaignServiceClient().addNegativeKeywords(req, { ...args, negativeKeywords: [{ text: 'free', matchType: 'Exact' }] });
+
+    expect(result.results[0]).toEqual({ text: 'free', matchType: 'Exact', outcome: 'FAILED', errorCode: code });
   });
 
   /**
@@ -4058,6 +4148,11 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       demandGenEnabled: true,
       googleChannelsEnabled: false,
       googleCreativeEnabled: false,
+      // TRUE with every flag off, unlike its Google sibling: both creators author the promoted
+      // post since #3432, so the capability no longer tracks the cutover (`canCreateRedditCreative`).
+      redditCreativeEnabled: true,
+      // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
+      biddingEnabled: false,
     });
   });
 
@@ -4185,6 +4280,36 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
+  /**
+   * The Bidding capability (#3299) needs the create cutover AND its own flag: the legacy creator
+   * never reads `bidding`, and a campaign-service without #332 drops it — either would create the
+   * campaign automatic while the operator asked for a manual bid.
+   */
+  it.each([
+    [{ create: true, briefs: true, jobs: true, bidding: true }, true],
+    [{ create: true, briefs: true, jobs: true, bidding: false }, false],
+    [{ create: false, briefs: true, jobs: true, bidding: true }, false],
+    [{ create: true, briefs: false, jobs: true, bidding: true }, false],
+    [{ create: true, briefs: true, jobs: false, bidding: true }, false],
+  ])('reports the bidding capability only when the cutover owns the create and the flag is on (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      if (flag === ServerFeatureFlag.CampaignServiceBidding) return flags.bidding;
+      return false;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.biddingEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
   // A TRUNCATED list is worse than an error, which is what failOnPartial buys. The caller cannot
   // tell a short list from a complete one, and the campaigns missing from it are live and
   // spending — so a page-two failure must propagate rather than quietly return page one.
@@ -4214,6 +4339,11 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       demandGenEnabled: true,
       googleChannelsEnabled: false,
       googleCreativeEnabled: false,
+      // TRUE with every flag off, unlike its Google sibling: both creators author the promoted
+      // post since #3432, so the capability no longer tracks the cutover (`canCreateRedditCreative`).
+      redditCreativeEnabled: true,
+      // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
+      biddingEnabled: false,
     });
   });
 });
@@ -4766,5 +4896,134 @@ describe('fromBriefResponse — scraped hero and sponsors survive a reload', () 
     );
 
     expect(restored?.eventDetails?.sponsors).toEqual([]);
+  });
+});
+
+describe('CampaignServiceClient account monitors', () => {
+  const monitor = { account_id: 'x', days: 30, campaigns: [], action_items: [], totals: { spend: 0, impressions: 0, clicks: 0, campaign_count: 0 } };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it.each([
+    ['getLinkedInAdsAccountMonitor', 'linkedin-ads', '512345678'],
+    ['getMetaAdsAccountMonitor', 'meta-ads', 'act_100000000000001'],
+    ['getRedditAdsAccountMonitor', 'reddit-ads', 't2_abc123'],
+    ['getMicrosoftAdsAccountMonitor', 'microsoft-ads', '187654321'],
+    ['getTwitterAdsAccountMonitor', 'twitter-ads', '18ce54d4x5t'],
+  ] as const)('%s GETs connection-%s/account-monitor with account_id and days as QUERY parameters', async (method, provider, accountId) => {
+    proxyRequest.mockResolvedValueOnce(monitor);
+
+    const result = await new CampaignServiceClient()[method](req, 'cncf', accountId, 14);
+
+    expect(result).toBe(monitor);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', `/projects/cncf/connection-${provider}/account-monitor`, 'GET', {
+      account_id: accountId,
+      days: 14,
+    });
+    expect(proxyRequest.mock.calls[0]).toHaveLength(5);
+  });
+
+  it('encodes the project as a path segment', async () => {
+    proxyRequest.mockResolvedValueOnce(monitor);
+
+    await new CampaignServiceClient().getRedditAdsAccountMonitor(req, 'a b/c', 't2_abc123', 30);
+
+    expect(proxyRequest.mock.calls[0][2]).toBe('/projects/a%20b%2Fc/connection-reddit-ads/account-monitor');
+  });
+
+  it('encodes the project for the LinkedIn monitor and refuses an empty account', async () => {
+    proxyRequest.mockResolvedValueOnce(monitor);
+
+    await new CampaignServiceClient().getLinkedInAdsAccountMonitor(req, 'lf/ai', '512345678', 7);
+    const caught = await new CampaignServiceClient().getLinkedInAdsAccountMonitor(req, 'tlf', '', 7).catch((e: unknown) => e);
+
+    expect(proxyRequest.mock.calls[0][2]).toBe('/projects/lf%2Fai/connection-linkedin-ads/account-monitor');
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it('refuses a path-climbing project without calling the proxy', async () => {
+    await expect(new CampaignServiceClient().getMetaAdsAccountMonitor(req, '..', 'act_1', 30)).rejects.toBeInstanceOf(ServiceValidationError);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['', 't2_abc123', 'project'],
+    ['cncf', '', 'accountKey'],
+  ])('refuses project=%j account=%j without calling the proxy', async (project, accountId, field) => {
+    const caught = await new CampaignServiceClient().getRedditAdsAccountMonitor(req, project, accountId, 30).catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect((caught as ServiceValidationError).validationErrors[0].field).toBe(field);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('GETs the project-scoped HubSpot monitor with only days, and no account', async () => {
+    const hubspot = {
+      days: 7,
+      emails: [],
+      action_items: [],
+      totals: {},
+      emails_checked: 0,
+      emails_not_sent_in_window: 0,
+      emails_unattributable: 0,
+      emails_truncated: false,
+    };
+    proxyRequest.mockResolvedValueOnce(hubspot);
+
+    const result = await new CampaignServiceClient().getHubSpotAccountMonitor(req, 'a b', 7);
+
+    expect(result).toBe(hubspot);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/a%20b/connection-hubspot/account-monitor', 'GET', { days: 7 });
+  });
+
+  it('refuses an empty project for the HubSpot monitor without calling the proxy', async () => {
+    await expect(new CampaignServiceClient().getHubSpotAccountMonitor(req, '', 30)).rejects.toBeInstanceOf(ServiceValidationError);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe('CampaignServiceClient.getConnection', () => {
+  const connection = { id: 'c1', project_id: 'cncf', account_id: '187654321', has_credentials: true, status: 'active' };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it.each(['linkedin-ads', 'meta-ads', 'reddit-ads', 'microsoft-ads', 'twitter-ads'] as const)(
+    "GETs the project's own connection-%s with no query or body",
+    async (provider) => {
+      proxyRequest.mockResolvedValueOnce(connection);
+
+      const result = await new CampaignServiceClient().getConnection(req, 'cncf', provider);
+
+      expect(result).toBe(connection);
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', `/projects/cncf/connection-${provider}`, 'GET');
+    }
+  );
+
+  it('encodes the project as a path segment', async () => {
+    proxyRequest.mockResolvedValueOnce(connection);
+
+    await new CampaignServiceClient().getConnection(req, 'lf/ai', 'meta-ads');
+
+    expect(proxyRequest.mock.calls[0][2]).toBe('/projects/lf%2Fai/connection-meta-ads');
+  });
+
+  it('refuses an empty project without calling the proxy', async () => {
+    const caught = await new CampaignServiceClient().getConnection(req, '', 'reddit-ads').catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect((caught as ServiceValidationError).validationErrors[0].field).toBe('project');
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('propagates an upstream failure for the caller to classify', async () => {
+    const upstream = new Error('404');
+    proxyRequest.mockRejectedValueOnce(upstream);
+
+    await expect(new CampaignServiceClient().getConnection(req, 'cncf', 'linkedin-ads')).rejects.toBe(upstream);
   });
 });

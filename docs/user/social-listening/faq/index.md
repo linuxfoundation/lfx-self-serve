@@ -5,7 +5,7 @@ display_order: 4
 audience: [executive-director]
 product_area: Social Listening
 tags: [social listening, faq, octolens, access, limits]
-last_updated: 2026-08-31
+last_updated: 2026-10-14
 intercom_collection: Social Listening
 ---
 
@@ -29,6 +29,8 @@ All mention data is provided by **Octolens** and consists exclusively of publicl
 ## How fresh is the data?
 
 The **Data as of** timestamp above the mentions feed shows when the underlying data was last refreshed. Mentions published after that time appear on the next refresh.
+
+The five analytics panels read governed models refreshed hourly. **Analytics as of** shows when those values were computed. Immediately after a UTC month or year rollover, the newest period may not appear until the next hourly refresh, with up to five additional minutes for cached panel results to expire. Mentions by Tag continues to follow the feed's content filters.
 
 ## Which platforms are monitored?
 

@@ -32,7 +32,7 @@ const currentYear = new Date().getFullYear();
 
 const PERIOD: HealthMetricsTrainingEnrollmentPeriod = {
   totals: { enrollments: 12000, certifications: 300, revenueUsd: 100000 },
-  baseline: { enrollments: 10000, certifications: 300, revenueUsd: 125000 },
+  change: { enrollments: 0.2, certifications: 0, revenueUsd: -0.2 },
   byType: [
     { deliveryType: 'E-Learning', enrollments: 9000, revenueUsd: 30000 },
     { deliveryType: 'Certification Exam', enrollments: 3000, revenueUsd: 70000 },
@@ -117,7 +117,7 @@ describe('TrainingEnrollComponent', () => {
     expect(query('training-enroll-loading')).toBeNull();
   });
 
-  it('renders the headline, side stats and their deltas against the named baseline', async () => {
+  it('renders the headline, side stats and their deltas, naming what they compare against', async () => {
     await render();
 
     expect(text('training-enroll-headline-value')).toBe('12,000');
@@ -189,16 +189,16 @@ describe('TrainingEnrollComponent', () => {
     expect(ticks.callback(2000)).toBe('2K');
   });
 
-  it('says a delta is not available without a baseline, and names why', async () => {
-    await render(enrollment({}, { baseline: null }));
+  it('says a delta is not available without a comparison, and names why', async () => {
+    await render(enrollment({}, { change: null }));
 
     expect(text('training-enroll-headline-delta')).toBe('not available');
-    expect(text('training-enroll-baseline')).toBe('no earlier year to compare against');
+    expect(text('training-enroll-baseline')).toBe('no year-over-year comparison for this period');
   });
 
-  it('re-projects a period change from the one read and names the prior year as the baseline', async () => {
+  it('re-projects a period change from the one read, with no comparison for a completed year', async () => {
     const payload = enrollment();
-    payload.periods.COMPLETED_YEAR = { ...PERIOD, totals: { enrollments: 15000, certifications: 400, revenueUsd: 90000 } };
+    payload.periods.COMPLETED_YEAR = { ...PERIOD, totals: { enrollments: 15000, certifications: 400, revenueUsd: 90000 }, change: null };
     await render(payload);
     lifecycle = [];
 
@@ -208,7 +208,8 @@ describe('TrainingEnrollComponent', () => {
     expect(getTrainingEnrollment).toHaveBeenCalledTimes(1);
     expect(lifecycle).toEqual([]);
     expect(text('training-enroll-headline-value')).toBe('15,000');
-    expect(text('training-enroll-baseline')).toBe(`all against ${currentYear - 2}`);
+    expect(text('training-enroll-headline-delta')).toBe('not available');
+    expect(text('training-enroll-baseline')).toBe('no year-over-year comparison for this period');
   });
 
   it('shows the not-measured state when the foundation has no summary row', async () => {

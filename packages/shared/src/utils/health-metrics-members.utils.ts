@@ -5,6 +5,7 @@ import { getYearForRange } from '../constants/dashboard-metrics.constants';
 import { HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS } from '../constants/health-metrics-engagement.constants';
 import {
   HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_LABELS,
+  HEALTH_METRICS_MEMBERS_AT_RISK_CHURN_RISK_CLASSES,
   HEALTH_METRICS_MEMBERS_BOARD_COHORT_OPTIONS,
   HEALTH_METRICS_MEMBERS_BOARD_MEETING_NOUNS,
   HEALTH_METRICS_MEMBERS_BRIDGE_STEP_LABELS,
@@ -132,9 +133,10 @@ export function buildHealthMetricsMembersTiersView(
     tier,
     color: HEALTH_METRICS_MEMBERS_TIERS_COLORS[index % HEALTH_METRICS_MEMBERS_TIERS_COLORS.length],
     cells: yearViews.map((yearView) => {
-      const count = (rowsByYear.get(yearView.year) ?? []).find((row) => row.tier === tier)?.memberCount ?? null;
-      const total = yearView.totalMembers ?? 0;
-      return { year: yearView.year, count, label: count ? formatCount(count) : '—', sharePct: sharePercent(count, total) };
+      const row = (rowsByYear.get(yearView.year) ?? []).find((candidate) => candidate.tier === tier);
+      const value = (mode === 'members' ? row?.memberCount : row?.revenueUsd) ?? null;
+      const sharePct = (mode === 'members' ? row?.memberSharePct : row?.revenueSharePct) ?? null;
+      return { year: yearView.year, value, label: value ? formatTierValue(value, mode) : '—', sharePct };
     }),
   }));
 
@@ -301,6 +303,9 @@ export function buildHealthMetricsMembersAtRiskRows(rows: HealthMetricsMembersAt
     tierLabel: row.membershipTier ?? '—',
     overdueLabel: formatUsd(row.outstandingBalanceUsd),
     ageLabel: row.daysOverdue === null ? '—' : pluralize(Math.round(row.daysOverdue), 'day'),
+    agingLabel: row.agingBucket ? HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_LABELS[row.agingBucket] : '—',
+    churnRiskLabel: row.churnRisk ? `${row.churnRisk} risk` : null,
+    churnRiskClass: row.churnRisk ? HEALTH_METRICS_MEMBERS_AT_RISK_CHURN_RISK_CLASSES[row.churnRisk] : '',
     lastEngagedLabel: formatIsoDate(row.lastEngagedDate),
   }));
 }
@@ -326,15 +331,18 @@ export function buildHealthMetricsMembersRenewalsSummary(summary: HealthMetricsM
   };
 }
 
-/** Renewal rows; a missing tier, date or dues renders as a dash, never $0. */
+/** Renewal rows; a missing tier, date, countdown or dues renders as a dash, never $0. */
 export function buildHealthMetricsMembersRenewalRows(rows: HealthMetricsMembersRenewal[]): HealthMetricsMembersRenewalRowView[] {
   return rows.map((row) => ({
     accountId: row.accountId,
     accountName: row.accountName,
     tierLabel: row.membershipTier ?? '—',
     renewalDateLabel: formatIsoDate(row.renewalDate),
+    // A renewed membership has nothing left to count down to.
+    daysUntilLabel: row.hasRenewed ? '—' : formatDaysUntil(row.daysUntilRenewal),
     duesLabel: formatUsd(row.duesUsd),
     hasOutstandingBalance: row.hasOutstandingBalance,
+    hasRenewed: row.hasRenewed,
   }));
 }
 
@@ -861,10 +869,8 @@ function buildStat(
   return { key, label, value, ...formatDelta(change), baseline: change === null ? null : baseline, positive: false };
 }
 
-/** A tier's share of its year; an unmeasured count stays `null` rather than reading as 0%. */
-function sharePercent(count: number | null, total: number): number | null {
-  if (count === null) return null;
-  return total > 0 ? (count / total) * 100 : 0;
+function formatTierValue(value: number, mode: HealthMetricsMembersTiersMode): string {
+  return mode === 'members' ? formatCount(value) : formatUsd(value);
 }
 
 /** A change as a whole percent (`−25%`); the sign follows the rounded value. */
@@ -880,6 +886,12 @@ function formatDelta(fraction: number | null): Pick<HealthMetricsMembersTiersSta
 function formatShare(revenue: number | null, foundationTotal: number | null): string {
   if (revenue === null || foundationTotal === null || foundationTotal <= 0) return HEALTH_METRICS_MEMBERS_NOT_AVAILABLE;
   return `${Math.round((revenue / foundationTotal) * 100)}%`;
+}
+
+function formatDaysUntil(days: number | null): string {
+  if (days === null || days < 0) return '—';
+  const rounded = Math.round(days);
+  return rounded === 0 ? 'Today' : `In ${pluralize(rounded, 'day')}`;
 }
 
 function formatCount(value: number | null): string {

@@ -4,28 +4,34 @@
 import { DatePipe, formatDate, isPlatformBrowser } from '@angular/common';
 import { Component, computed, DestroyRef, inject, model, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { AvatarComponent } from '@components/avatar/avatar.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
-import { MyNewsletter, MyNewsletterRow, MyNewslettersState } from '@lfx-one/shared/interfaces';
+import { NEWSLETTER_INVITE_QUERY_PARAM } from '@lfx-one/shared/constants';
+import { MyNewsletter, MyNewsletterFoundation, MyNewsletterFoundationsState, MyNewsletterRow, NewsletterInviteDialogData } from '@lfx-one/shared/interfaces';
 import { newsletterIssuePath, toAbsoluteUrl } from '@lfx-one/shared/utils';
 import { NewsletterService } from '@services/newsletter.service';
 import { PersonaService } from '@services/persona.service';
 import { MessageService } from 'primeng/api';
+import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import { BehaviorSubject, catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, map, of, scan, startWith, switchMap } from 'rxjs';
 
+import { NewsletterInviteDialogComponent } from '../components/newsletter-invite-dialog/newsletter-invite-dialog.component';
+import { NewsletterInviteLandingComponent } from '../components/newsletter-invite-landing/newsletter-invite-landing.component';
 import { NewsletterPreviewDrawerComponent } from '../components/newsletter-preview-drawer/newsletter-preview-drawer.component';
 
 /**
- * Me-lens "My Newsletters" page: sent newsletters reachable through the
- * user's current committee memberships. Access is membership-derived — the
+ * Me-lens "My Newsletters" foundation drill-down (`/newsletters/my/:foundationSlug`, #3483): the
+ * sent newsletters of one foundation reachable through the user's current committee memberships.
+ * Also where a newsletter invite lands (`?invite=<group uid>`) — see NewsletterInviteLandingComponent. Access is membership-derived — the
  * BFF fans out committee-scoped upstream reads that the gateway FGA-checks
  * per request — so joining a group reveals its past newsletters and leaving
  * hides them. Clicking a subject fetches the rendered body via the existing
@@ -34,18 +40,22 @@ import { NewsletterPreviewDrawerComponent } from '../components/newsletter-previ
 @Component({
   selector: 'lfx-my-newsletters',
   imports: [
+    AvatarComponent,
     ButtonComponent,
     CardComponent,
     DatePipe,
     EmptyStateComponent,
     InputTextComponent,
+    NewsletterInviteLandingComponent,
     NewsletterPreviewDrawerComponent,
     ReactiveFormsModule,
+    RouterLink,
     SelectComponent,
     SkeletonModule,
     TableComponent,
     TooltipModule,
   ],
+  providers: [DialogService],
   templateUrl: './my-newsletters.component.html',
   styleUrl: './my-newsletters.component.scss',
 })
@@ -54,6 +64,7 @@ export class MyNewslettersComponent {
   private readonly newsletterService = inject(NewsletterService);
   private readonly personaService = inject(PersonaService);
   private readonly messageService = inject(MessageService);
+  private readonly dialogService = inject(DialogService);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
@@ -63,7 +74,6 @@ export class MyNewslettersComponent {
   // === Forms ===
   public readonly searchForm = new FormGroup({
     search: new FormControl<string>('', { nonNullable: true }),
-    foundationFilter: new FormControl<string | null>(null),
     projectFilter: new FormControl<string | null>(null),
   });
 
@@ -74,8 +84,16 @@ export class MyNewslettersComponent {
   protected readonly selected = signal<MyNewsletter | null>(null);
   protected readonly previewBody = signal<string>('');
   protected readonly searchTerm = signal<string>('');
-  protected readonly foundationFilter = signal<string | null>(null);
   protected readonly projectFilter = signal<string | null>(null);
+
+  // === Route Signals ===
+  protected readonly foundationSlug: Signal<string> = toSignal(this.route.paramMap.pipe(map((m) => m.get('foundationSlug') ?? '')), {
+    initialValue: this.route.snapshot.paramMap.get('foundationSlug') ?? '',
+  });
+  /** Newsletter group uid of an invite this page is the landing of. */
+  protected readonly inviteCommitteeUid: Signal<string | null> = toSignal(this.route.queryParamMap.pipe(map((m) => m.get(NEWSLETTER_INVITE_QUERY_PARAM))), {
+    initialValue: null,
+  });
 
   // === Query Param Signals (for drawer↔URL sync) ===
   protected readonly queryIssueId: Signal<string | null> = toSignal(this.route.queryParamMap.pipe(map((m) => m.get('issue'))), { initialValue: null });
@@ -83,13 +101,15 @@ export class MyNewslettersComponent {
 
   // === Computed Signals ===
   protected readonly personaLoaded = this.personaService.personaLoaded;
-  private readonly state: Signal<MyNewslettersState> = this.initMyNewslettersState();
+  private readonly state: Signal<MyNewsletterFoundationsState> = this.initState();
   public readonly loading = computed(() => this.state().loading);
   public readonly error = computed(() => this.state().error);
-  public readonly myNewsletters = computed(() => this.state().newsletters);
-  public readonly complete = computed(() => this.state().complete);
+  /** This page's foundation card, when the user receives its newsletters (null for an invitee not on the list yet). */
+  protected readonly foundation: Signal<MyNewsletterFoundation | null> = this.initFoundation();
+  protected readonly foundationInitial: Signal<string> = computed(() => (this.foundation()?.name ?? '').charAt(0).toUpperCase());
+  public readonly myNewsletters: Signal<MyNewsletter[]> = this.initMyNewsletters();
+  public readonly complete = computed(() => this.state().data?.complete ?? null);
   public readonly completenessNotice = this.initCompletenessNotice();
-  protected readonly foundationOptions: Signal<{ label: string; value: string | null }[]> = this.initFoundationOptions();
   protected readonly projectOptions: Signal<{ label: string; value: string | null }[]> = this.initProjectOptions();
   protected readonly filteredNewsletters: Signal<MyNewsletter[]> = this.initFilteredNewsletters();
   /**
@@ -100,9 +120,8 @@ export class MyNewslettersComponent {
   protected readonly filteredNewsletterRows: Signal<MyNewsletterRow[]> = computed(() =>
     this.filteredNewsletters().map((newsletter) => ({ ...newsletter, issuePath: this.issuePath(newsletter) }))
   );
-  protected readonly showFoundationFilter: Signal<boolean> = computed(() => this.foundationOptions().length > 1);
   protected readonly showProjectFilter: Signal<boolean> = computed(() => this.projectOptions().length > 1);
-  protected readonly hasActiveFilters: Signal<boolean> = computed(() => !!(this.searchTerm().trim() || this.foundationFilter() || this.projectFilter()));
+  protected readonly hasActiveFilters: Signal<boolean> = computed(() => !!(this.searchTerm().trim() || this.projectFilter()));
   /** Reader-framed drawer subtitle, e.g. "Sent Jul 29, 2026". */
   protected readonly drawerSubtitle: Signal<string> = computed(() => {
     const sentAt = this.selected()?.sent_at;
@@ -127,7 +146,7 @@ export class MyNewslettersComponent {
     // open or mid-fetch is a no-op, so the sync never re-triggers a fetch.
     combineLatest([toObservable(this.queryIssueId), toObservable(this.queryProjectSlug), toObservable(this.state)])
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(([issueId, projectSlug, { newsletters, loading, error, complete }]) => {
+      .subscribe(([issueId, projectSlug, { loading, error, data }]) => {
         if (!issueId || !projectSlug) {
           // Params cleared (drawer close or back navigation) — close the drawer.
           if (this.previewVisible()) {
@@ -139,11 +158,11 @@ export class MyNewslettersComponent {
         if (loading || error || this.openingId() || (this.previewVisible() && this.selected()?.id === issueId)) {
           return;
         }
-        const newsletter = newsletters.find((n) => n.id === issueId && n.project_slug === projectSlug);
+        const newsletter = this.myNewsletters().find((n) => n.id === issueId && n.project_slug === projectSlug);
         if (newsletter) {
           // Newsletter is in the feed — open the drawer via the normal path
           this.onOpenNewsletter(newsletter);
-        } else if (complete === true) {
+        } else if (data?.complete === true) {
           // Newsletter not in the feed (e.g. non-member pasted a URL).
           // Redirect to the canonical permalink page, which handles access uniformly.
           this.router.navigate(['/newsletters', projectSlug, issueId]);
@@ -153,6 +172,33 @@ export class MyNewslettersComponent {
 
   public onRetry(): void {
     this.retry$.next(undefined);
+  }
+
+  protected onInvite(): void {
+    const foundation = this.foundation();
+    if (!foundation?.can_invite) return;
+    this.dialogService.open(NewsletterInviteDialogComponent, {
+      header: 'Invite a colleague',
+      width: '480px',
+      modal: true,
+      closable: true,
+      dismissableMask: false,
+      data: { foundation } satisfies NewsletterInviteDialogData,
+    });
+  }
+
+  /** The invite was accepted (or the user was already on the list): reload so the new group's issues and Invite show. */
+  protected onInviteJoined(): void {
+    this.retry$.next(undefined);
+  }
+
+  protected onInviteDismissed(): void {
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { [NEWSLETTER_INVITE_QUERY_PARAM]: null },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
   }
 
   // === Protected Methods ===
@@ -248,82 +294,64 @@ export class MyNewslettersComponent {
     });
   }
 
-  protected onFoundationFilterChange(value: string | null): void {
-    this.foundationFilter.set(value);
-    this.projectFilter.set(null);
-    this.searchForm.patchValue({ projectFilter: null }, { emitEvent: false });
-  }
-
   protected onProjectFilterChange(value: string | null): void {
     this.projectFilter.set(value);
   }
 
   protected resetFilters(): void {
-    this.searchForm.reset({ search: '', foundationFilter: null, projectFilter: null }, { emitEvent: false });
+    this.searchForm.reset({ search: '', projectFilter: null }, { emitEvent: false });
     this.searchTerm.set('');
-    this.foundationFilter.set(null);
     this.projectFilter.set(null);
   }
 
   // === Private Initializers ===
   private initCompletenessNotice(): Signal<string> {
     return computed(() => {
-      if (this.loading() || this.error() || this.complete() === true) return '';
-      return this.complete() === false ? 'Some newsletters could not be loaded' : "We couldn't verify that this list is complete";
+      return !this.loading() && !this.error() && this.complete() === false ? 'Some newsletters could not be loaded' : '';
     });
   }
 
-  private initMyNewslettersState(): Signal<MyNewslettersState> {
-    const pending: MyNewslettersState = { loading: true, error: false, newsletters: [], complete: null };
+  private initState(): Signal<MyNewsletterFoundationsState> {
+    const pending: MyNewsletterFoundationsState = { loading: true, error: false, data: null };
     return toSignal(
       this.retry$.pipe(
         switchMap(() =>
-          this.newsletterService.getMyNewsletters().pipe(
-            map(
-              (response): MyNewslettersState => ({
-                loading: false,
-                error: false,
-                newsletters: Array.isArray(response) ? response : response.newsletters,
-                complete: Array.isArray(response) ? null : response.complete,
-              })
-            ),
+          this.newsletterService.getMyNewsletterFoundations().pipe(
+            map((data): MyNewsletterFoundationsState => ({ loading: false, error: false, data })),
             catchError((error: unknown) => {
               console.error('[MyNewsletters] Failed to load newsletters', error);
-              return of<MyNewslettersState>({ loading: false, error: true, newsletters: [], complete: null });
+              return of<MyNewsletterFoundationsState>({ loading: false, error: true, data: null });
             }),
             startWith(pending)
           )
         ),
-        scan((previous, next) => (next.loading ? { ...next, newsletters: previous.newsletters, complete: previous.complete } : next), pending)
+        // Keep the previous rows on screen while a retry loads.
+        scan((previous, next) => (next.loading ? { ...next, data: previous.data } : next), pending)
       ),
       { initialValue: pending }
     );
   }
 
-  private initFoundationOptions(): Signal<{ label: string; value: string | null }[]> {
+  private initFoundation(): Signal<MyNewsletterFoundation | null> {
     return computed(() => {
-      const seen = new Map<string, string>();
-      for (const item of this.myNewsletters()) {
-        if (item.is_foundation === true && item.project_name) {
-          seen.set(item.project_uid, item.project_name);
-        } else if (item.is_foundation === false && item.parent_is_foundation === true && item.parent_project_uid && item.parent_project_name) {
-          seen.set(item.parent_project_uid, item.parent_project_name);
-        }
-      }
-      const options = [...seen.entries()].map(([uid, name]) => ({ label: name, value: uid })).sort((a, b) => a.label.localeCompare(b.label));
-      return [{ label: 'All Foundations', value: null }, ...options];
+      const slug = this.foundationSlug();
+      return this.state().data?.foundations.find((entry) => entry.slug === slug || entry.uid === slug) ?? null;
+    });
+  }
+
+  private initMyNewsletters(): Signal<MyNewsletter[]> {
+    return computed(() => {
+      const foundation = this.foundation();
+      if (!foundation) return [];
+      return (this.state().data?.newsletters ?? []).filter((row) => (row.foundation_uid ?? row.project_uid) === foundation.uid);
     });
   }
 
   private initProjectOptions(): Signal<{ label: string; value: string | null }[]> {
     return computed(() => {
-      const foundation = this.foundationFilter();
       const seen = new Map<string, string>();
       for (const item of this.myNewsletters()) {
         if (item.is_foundation === false && item.project_uid && !seen.has(item.project_uid)) {
-          if (foundation && item.parent_project_uid !== foundation) {
-            continue;
-          }
           seen.set(item.project_uid, item.project_name || item.project_uid);
         }
       }
@@ -336,7 +364,6 @@ export class MyNewslettersComponent {
     return computed(() => {
       const term = this.searchTerm().trim().toLowerCase();
       const project = this.projectFilter();
-      const foundation = this.foundationFilter();
       let filtered = this.myNewsletters();
 
       if (term) {
@@ -344,8 +371,6 @@ export class MyNewslettersComponent {
       }
       if (project) {
         filtered = filtered.filter((n) => n.project_uid === project);
-      } else if (foundation) {
-        filtered = filtered.filter((n) => n.project_uid === foundation || (n.parent_project_uid === foundation && !n.is_foundation));
       }
 
       return filtered;

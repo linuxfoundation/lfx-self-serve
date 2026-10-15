@@ -82,59 +82,22 @@
 
       @if (!view().eventsMeasured) {
         <p class="text-sm text-gray-500" data-testid="events-revenue-events-unmeasured">Per-event revenue is not available for this foundation yet.</p>
-      } @else if (view().rows.length === 0) {
-        <p class="text-sm text-gray-500" data-testid="events-revenue-empty">No event in the selected period.</p>
       } @else {
-        <lfx-table [value]="view().rows" data-testid="events-revenue-table">
-          <ng-template #header>
-            <tr>
-              <th scope="col"><span class="text-xs font-medium text-gray-500">Event</span></th>
-              <th scope="col"><span class="text-xs font-medium text-gray-500">Date</span></th>
-              <th scope="col"><span class="text-xs font-medium text-gray-500">Registration revenue</span></th>
-              <th scope="col"><span class="text-xs font-medium text-gray-500">Sponsorship revenue</span></th>
-            </tr>
-          </ng-template>
+        @if (view().upcomingRows.length > 0) {
+          <h5 class="text-[12px] font-medium text-gray-500" data-testid="events-revenue-past-heading">Past events</h5>
+        }
+        @if (view().rows.length === 0) {
+          <p class="text-sm text-gray-500" data-testid="events-revenue-empty">No past event in the selected period.</p>
+        } @else {
+          <ng-container [ngTemplateOutlet]="eventsTable" [ngTemplateOutletContext]="{ $implicit: view().rows, testId: 'events-revenue-table' }" />
+        }
 
-          <ng-template #body let-view>
-            <tr [attr.data-testid]="'events-revenue-row-' + view.event.eventId">
-              <td>
-                <span class="text-sm font-medium text-gray-900">{{ view.event.eventName }}</span>
-              </td>
-              <td>
-                <span class="text-sm tabular-nums text-gray-800">{{ view.dateLabel }}</span>
-              </td>
-              <td>
-                <span
-                  class="inline-flex items-baseline gap-1 text-sm tabular-nums text-gray-800"
-                  [attr.data-testid]="'events-revenue-registration-' + view.event.eventId">
-                  <span [attr.data-testid]="'events-revenue-registration-value-' + view.event.eventId">{{ view.registrationLabel }}</span>
-                  @if (view.event.hasUnconverted) {
-                    <!-- The footer note explains the marker; screen readers get the same text inline. -->
-                    <span class="text-amber-600" aria-hidden="true" [attr.data-testid]="'events-revenue-unconverted-' + view.event.eventId">*</span>
-                    <span class="sr-only">{{ unconvertedScreenReaderText }}</span>
-                  }
-                  @if (view.registrationGoalLabel) {
-                    <span class="text-xs text-gray-400" [attr.data-testid]="'events-revenue-registration-goal-' + view.event.eventId"
-                      >/ {{ view.registrationGoalLabel }}</span
-                    >
-                  }
-                </span>
-              </td>
-              <td>
-                <span
-                  class="inline-flex items-baseline gap-1 text-sm tabular-nums text-gray-800"
-                  [attr.data-testid]="'events-revenue-sponsorship-' + view.event.eventId">
-                  <span [attr.data-testid]="'events-revenue-sponsorship-value-' + view.event.eventId">{{ view.sponsorshipLabel }}</span>
-                  @if (view.sponsorshipGoalLabel) {
-                    <span class="text-xs text-gray-400" [attr.data-testid]="'events-revenue-sponsorship-goal-' + view.event.eventId"
-                      >/ {{ view.sponsorshipGoalLabel }}</span
-                    >
-                  }
-                </span>
-              </td>
-            </tr>
-          </ng-template>
-        </lfx-table>
+        @if (view().upcomingRows.length > 0) {
+          <h5 class="pt-2 text-[12px] font-medium text-gray-500" data-testid="events-revenue-upcoming-heading">Upcoming events</h5>
+          <ng-container
+            [ngTemplateOutlet]="eventsTable"
+            [ngTemplateOutletContext]="{ $implicit: view().upcomingRows, testId: 'events-revenue-upcoming-table' }" />
+        }
       }
     </div>
 
@@ -145,4 +108,67 @@
       </p>
     }
   }
+
+  <ng-template #eventsTable let-rows let-testId="testId">
+    <lfx-table [value]="rows" [attr.data-testid]="testId">
+      <ng-template #header>
+        <tr>
+          <th scope="col"><span class="text-xs font-medium text-gray-500">Event</span></th>
+          <th scope="col"><span class="text-xs font-medium text-gray-500">Date</span></th>
+          <th scope="col"><span class="text-xs font-medium text-gray-500">Registration revenue</span></th>
+          <th scope="col"><span class="text-xs font-medium text-gray-500">Sponsorship revenue</span></th>
+        </tr>
+      </ng-template>
+
+      <ng-template #body let-view>
+        <tr [attr.data-testid]="'events-revenue-row-' + view.event.eventId">
+          <td>
+            <span class="inline-flex flex-wrap items-center gap-2">
+              <span class="text-sm font-medium text-gray-900">{{ view.event.eventName }}</span>
+              @if (view.goalStatus) {
+                <span
+                  class="rounded-full px-2 py-0.5 text-[11px] font-medium"
+                  [class]="view.goalStatus.badgeClass"
+                  [attr.data-testid]="'events-revenue-goal-status-' + view.event.eventId"
+                  >{{ view.goalStatus.label }}</span
+                >
+              }
+            </span>
+          </td>
+          <td>
+            <span class="text-sm tabular-nums text-gray-800">{{ view.dateLabel }}</span>
+          </td>
+          <td>
+            <span
+              class="inline-flex items-baseline gap-1 text-sm tabular-nums text-gray-800"
+              [attr.data-testid]="'events-revenue-registration-' + view.event.eventId">
+              <span [attr.data-testid]="'events-revenue-registration-value-' + view.event.eventId">{{ view.registrationLabel }}</span>
+              @if (view.event.hasUnconverted) {
+                <!-- The footer note explains the marker; screen readers get the same text inline. -->
+                <span class="text-amber-600" aria-hidden="true" [attr.data-testid]="'events-revenue-unconverted-' + view.event.eventId">*</span>
+                <span class="sr-only">{{ unconvertedScreenReaderText }}</span>
+              }
+              @if (view.registrationGoalLabel) {
+                <span class="text-xs text-gray-400" [attr.data-testid]="'events-revenue-registration-goal-' + view.event.eventId"
+                  >/ {{ view.registrationGoalLabel }}</span
+                >
+              }
+            </span>
+          </td>
+          <td>
+            <span
+              class="inline-flex items-baseline gap-1 text-sm tabular-nums text-gray-800"
+              [attr.data-testid]="'events-revenue-sponsorship-' + view.event.eventId">
+              <span [attr.data-testid]="'events-revenue-sponsorship-value-' + view.event.eventId">{{ view.sponsorshipLabel }}</span>
+              @if (view.sponsorshipGoalLabel) {
+                <span class="text-xs text-gray-400" [attr.data-testid]="'events-revenue-sponsorship-goal-' + view.event.eventId"
+                  >/ {{ view.sponsorshipGoalLabel }}</span
+                >
+              }
+            </span>
+          </td>
+        </tr>
+      </ng-template>
+    </lfx-table>
+  </ng-template>
 </div>

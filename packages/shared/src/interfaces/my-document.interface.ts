@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AuditUserProfile, ProjectDocumentSource } from './project.interface';
+import { AuditUserProfile, DocumentKind, ProjectDocumentSource } from './project.interface';
 
 /** Source type for My Documents page */
 export type MyDocumentSource = 'link' | 'meeting' | 'file' | 'recording' | 'transcript' | 'summary' | 'mailing_list' | 'committee' | 'project';
@@ -159,4 +159,6 @@ export interface MyDocumentItem {
    * filter dropdown. Undefined for Me-lens documents.
    */
   projectDocumentSource?: ProjectDocumentSource;
+  /** What the document is (file, link, recording, ...) — drives the label next to the name. Unset for folders. */
+  documentKind?: DocumentKind;
 }

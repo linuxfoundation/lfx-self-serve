@@ -3,7 +3,7 @@
 
 import '@angular/compiler';
 
-import { MENTORSHIP_MAX_OPEN_TERMS } from '@lfx-one/shared/constants';
+import { MENTORSHIP_MAX_OPEN_TERMS, MENTORSHIP_SKILL_MAX_LENGTH, MENTORSHIP_SKILLS_MAX_ITEMS } from '@lfx-one/shared/constants';
 import type { MentorshipUpstreamEnrollTemplate } from '@lfx-one/shared/interfaces';
 import { describe, expect, it } from 'vitest';
 
@@ -54,7 +54,7 @@ describe('parseMentorshipEnrollCreateRequest', () => {
       repositoryUrl: 'https://github.com/example/repo',
       skills: ['Go', 'Testing'],
       terms: [term()],
-      prerequisites: [{ name: 'Resume', description: 'Upload it.', required: true, requireFile: true, dueDate: null }],
+      prerequisites: [{ name: 'Resume', description: 'Upload it.', required: true, requireFile: true, dueDate: null, custom: false }],
       termsAccepted: true,
     });
   });
@@ -75,6 +75,27 @@ describe('parseMentorshipEnrollCreateRequest', () => {
     expect(parseMentorshipEnrollCreateRequest(validBody({ industry: ' GO, Kubernetes ' }), OPERATION).industry).toBe('GO, Kubernetes');
     expect(parseMentorshipEnrollCreateRequest(validBody({ industry: '' }), OPERATION)).not.toHaveProperty('industry');
     expect(parseMentorshipEnrollCreateRequest(validBody({ industry: 5 }), OPERATION)).not.toHaveProperty('industry');
+  });
+
+  it('holds the skills and the industry technologies to the shared skill limits', () => {
+    const tooMany = Array.from({ length: MENTORSHIP_SKILLS_MAX_ITEMS + 1 }, (_, index) => `Skill ${index}`);
+    const tooLong = 'a'.repeat(MENTORSHIP_SKILL_MAX_LENGTH + 1);
+
+    expect(() => parseMentorshipEnrollCreateRequest(validBody({ skills: tooMany }), OPERATION)).toThrow(ServiceValidationError);
+    expect(() => parseMentorshipEnrollCreateRequest(validBody({ skills: [tooLong] }), OPERATION)).toThrow(ServiceValidationError);
+    expect(() => parseMentorshipEnrollCreateRequest(validBody({ industry: tooMany.join(', ') }), OPERATION)).toThrow(ServiceValidationError);
+    expect(() => parseMentorshipEnrollCreateRequest(validBody({ industry: `Go, ${tooLong}` }), OPERATION)).toThrow(ServiceValidationError);
+    expect(parseMentorshipEnrollCreateRequest(validBody({ industry: 'Go, My Custom Tech' }), OPERATION).industry).toBe('Go, My Custom Tech');
+  });
+
+  it('measures and sends the industry technologies trimmed, with blanks dropped', () => {
+    const paddedTooLong = `${' '.repeat(MENTORSHIP_SKILL_MAX_LENGTH)}${'a'.repeat(MENTORSHIP_SKILL_MAX_LENGTH)}`;
+
+    expect(parseMentorshipEnrollCreateRequest(validBody({ industry: ' Go ,, Rust ,  ' }), OPERATION).industry).toBe('Go, Rust');
+    expect(parseMentorshipEnrollCreateRequest(validBody({ industry: `Go, ${paddedTooLong}` }), OPERATION).industry).toBe(
+      `Go, ${'a'.repeat(MENTORSHIP_SKILL_MAX_LENGTH)}`
+    );
+    expect(parseMentorshipEnrollCreateRequest(validBody({ industry: ' , ' }), OPERATION)).not.toHaveProperty('industry');
   });
 
   it('drops fields the create body must never carry', () => {
@@ -115,13 +136,34 @@ describe('parseMentorshipEnrollCreateRequest', () => {
     expect(parsed.websiteUrl).toBe('https://example.org');
     expect(parsed.terms[0].name).toBe('Term 1');
     expect(parsed.terms[0].startDate).toBe('2030-03-01');
-    expect(parsed.prerequisites[0]).toEqual({ name: 'Resume', description: ' Upload it. ', required: false, requireFile: false, dueDate: '2030-02-01' });
+    expect(parsed.prerequisites[0]).toEqual({
+      name: 'Resume',
+      description: ' Upload it. ',
+      required: false,
+      requireFile: false,
+      dueDate: '2030-02-01',
+      custom: false,
+    });
   });
 
   it('keeps a prerequisite due date and defaults the flags to false', () => {
     const parsed = parseMentorshipEnrollCreateRequest(validBody({ prerequisites: [{ name: 'Task', dueDate: '2030-02-01' }] }), OPERATION);
 
-    expect(parsed.prerequisites).toEqual([{ name: 'Task', description: '', required: false, requireFile: false, dueDate: '2030-02-01' }]);
+    expect(parsed.prerequisites).toEqual([{ name: 'Task', description: '', required: false, requireFile: false, dueDate: '2030-02-01', custom: false }]);
+  });
+
+  it('keeps the custom flag of each prerequisite', () => {
+    const parsed = parseMentorshipEnrollCreateRequest(
+      validBody({
+        prerequisites: [
+          { name: 'Resume', required: true, custom: false },
+          { name: 'Essay', required: true, custom: true },
+        ],
+      }),
+      OPERATION
+    );
+
+    expect(parsed.prerequisites.map((item) => item.custom)).toEqual([false, true]);
   });
 
   it('accepts no prerequisites and the largest number of terms', () => {
@@ -157,6 +199,7 @@ describe('parseMentorshipEnrollCreateRequest', () => {
     ['a prerequisite with a null file flag', validBody({ prerequisites: [{ name: 'Resume', requireFile: null }] }), 'prerequisites[0].requireFile'],
     ['a prerequisite description that is not text', validBody({ prerequisites: [{ name: 'Resume', description: 5 }] }), 'prerequisites[0].description'],
     ['a prerequisite due date that is not text', validBody({ prerequisites: [{ name: 'Task', dueDate: 20300201 }] }), 'prerequisites[0].dueDate'],
+    ['a prerequisite custom flag sent as text', validBody({ prerequisites: [{ name: 'Task', custom: 'true' }] }), 'prerequisites[0].custom'],
     ['terms that are not accepted', validBody({ termsAccepted: false }), 'termsAccepted'],
     ['terms accepted as text', validBody({ termsAccepted: 'true' }), 'termsAccepted'],
   ])('rejects %s with a 400 on the field', (_label, body, field) => {
@@ -183,7 +226,7 @@ describe('parseMentorshipEnrollUpdateRequest', () => {
       description: '<p>Build things.</p>',
       repositoryUrl: 'https://github.com/example/repo',
       skills: ['Go', 'Testing'],
-      prerequisites: [{ name: 'Resume', description: 'Upload it.', required: true, requireFile: true, dueDate: null }],
+      prerequisites: [{ name: 'Resume', description: 'Upload it.', required: true, requireFile: true, dueDate: null, custom: false }],
       industry: 'Go, Rust',
       terms: [term()],
     });
@@ -221,9 +264,9 @@ describe('toMentorshipUpstreamProgramUpdate', () => {
       validBody({
         terms: undefined,
         prerequisites: [
-          { name: 'Resume', description: 'Upload it.', required: true, requireFile: true, dueDate: null },
-          { name: 'Essay', description: 'Why you.', required: true, requireFile: false, dueDate: '2030-01-15' },
-          { name: 'Cover Letter', description: 'Unpicked.', required: false, requireFile: true, dueDate: null },
+          { name: 'Resume', description: 'Upload it.', required: true, requireFile: true, dueDate: null, custom: false },
+          { name: 'Essay', description: 'Why you.', required: true, requireFile: false, dueDate: '2030-01-15', custom: true },
+          { name: 'Cover Letter', description: 'Unpicked.', required: false, requireFile: true, dueDate: null, custom: false },
         ],
       }),
       'update_mentorship_admin_program'
@@ -239,8 +282,8 @@ describe('toMentorshipUpstreamProgramUpdate', () => {
       industry: '',
       skills: ['Go', 'Testing'],
       task_templates: [
-        { name: 'Resume', description: 'Upload it.', submitFile: 'required', dueDate: null },
-        { name: 'Essay', description: 'Why you.', submitFile: null, dueDate: '2030-01-15' },
+        { name: 'Resume', description: 'Upload it.', submitFile: 'required', dueDate: null, custom: false },
+        { name: 'Essay', description: 'Why you.', submitFile: null, dueDate: '2030-01-15', custom: true },
       ],
       project_uid: PROJECT_ID,
       project_slug: 'example-project',
@@ -385,7 +428,7 @@ describe('toMentorshipEnrollImport', () => {
         {},
         {
           prerequisites: [
-            { name: 'Resume', description: 'Upload it', submitFile: 'required', dueDate: '2030-02-01' },
+            { name: 'Resume', description: 'Upload it', submitFile: 'required', dueDate: '2030-02-01', custom: false },
             { name: 'Essay', description: null, submitFile: null, dueDate: null },
           ],
         }

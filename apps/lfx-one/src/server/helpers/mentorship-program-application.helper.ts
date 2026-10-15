@@ -1,7 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MENTORSHIP_ADMIN_MENTEE_STATUS_FILTER_LABELS } from '@lfx-one/shared/constants';
 import {
+  MentorshipAdminMenteeTab,
   MentorshipApplicantTask,
   MentorshipMenteeStatus,
   MentorshipProgramApplicant,
@@ -10,7 +12,7 @@ import {
   MentorshipUpstreamProgramApplicationRow,
   MentorshipUpstreamTask,
 } from '@lfx-one/shared/interfaces';
-import { isUuid } from '@lfx-one/shared/utils';
+import { isUuid, mentorshipApplicantDisplayStatus } from '@lfx-one/shared/utils';
 
 import { MENTORSHIP_ADMIN_APPLICATION_STATUS_MAP, MENTORSHIP_MENTOR_PROGRAM_TASK_STATUS_MAP } from '../constants';
 import { toIsoDate } from './date-format.helper';
@@ -83,3 +85,18 @@ export const mapMentorshipAdminApplicantRow = (row: MentorshipUpstreamProgramApp
   if (otherApplications.length > 0) applicant.otherApplications = otherApplications;
   return applicant;
 };
+
+/**
+ * One data row of a mentee tab's CSV, in `MENTORSHIP_ADMIN_MENTEES_EXPORT_COLUMNS` order. The status reads as the tab's
+ * badge shows it: on Current Mentees a pending application is Applied or Tasks Completed, on Past Mentees it stays
+ * Pending. Task progress is written `2 of 3`, never `2/3`, which a spreadsheet would read as a date.
+ */
+export const toMentorshipAdminMenteesExportRow = (applicant: MentorshipProgramApplicant, tab: MentorshipAdminMenteeTab): string[] => [
+  applicant.name,
+  applicant.email,
+  MENTORSHIP_ADMIN_MENTEE_STATUS_FILTER_LABELS[tab === 'current' ? mentorshipApplicantDisplayStatus(applicant) : applicant.status],
+  applicant.termName,
+  `${applicant.tasksSubmitted ?? 0} of ${applicant.tasksTotal ?? 0}`,
+  applicant.createdOn,
+  applicant.updatedOn,
+];

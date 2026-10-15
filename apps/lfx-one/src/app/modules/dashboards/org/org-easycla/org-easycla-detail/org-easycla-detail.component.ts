@@ -25,9 +25,13 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import {
   CCLA_SIGN_COPY,
+  ORG_CLA_AUTO_ECLA_LOCKED_HINT,
   ORG_CLA_DESIGNEE_REFUSAL_COPY,
   ORG_CLA_DESIGNEE_START_COPY,
   ORG_CLA_DETAIL_TABS,
+  ORG_CLA_DOWNLOAD_COPY,
+  ORG_CLA_EASYCLA_ROLE_MISSING_COPY,
+  ORG_CLA_EASYCLA_ROLE_MISSING_ERROR_CODE,
   ORG_CLA_IDENTIFY_MANAGER_COPY,
   ORG_CLA_HEADING_STATUS,
   ORG_CLA_LOCKED_TAB_COPY,
@@ -49,6 +53,7 @@ import {
   orgClaCoverageChips,
   orgClaCoverageSummary,
   orgClaGroupForAddress,
+  orgClaPairFoundationSfid,
   orgClaPairProjectSfid,
   orgClaPreviewGroup,
   orgClaReviewCopyFilename,
@@ -93,6 +98,7 @@ import { OrgLensNavigationService } from '@services/org-lens-navigation.service'
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
+import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { OrgClaAutoEclaWritesService } from '@shared/services/org-cla-auto-ecla-writes.service';
 import { OrgClaSelfRemovalsService } from '@shared/services/org-cla-self-removals.service';
 import { OrgClaReturnService } from '@shared/services/org-cla-return.service';
@@ -132,6 +138,7 @@ function designeeRefusalCopy(error: unknown): string {
     ButtonComponent,
     EmptyStateComponent,
     MessageComponent,
+    OpenIntercomDirective,
     OrgEasyclaActivityLogComponent,
     OrgEasyclaApprovalListComponent,
     OrgEasyclaContributorAcknowledgmentsComponent,
@@ -197,6 +204,8 @@ export class OrgEasyclaDetailComponent {
   protected readonly downloading = signal(false);
   protected readonly reviewCopyDownloading = signal(false);
   protected readonly fetchError = signal(false);
+  protected readonly easyclaRoleMissing = signal(false);
+  protected readonly easyclaRoleMissingCopy = ORG_CLA_EASYCLA_ROLE_MISSING_COPY;
   private readonly claLoadingState = signal(false);
   private readonly loadedManagerCount = signal<{ signatureId: string; count: number } | null>(null);
   /**
@@ -313,10 +322,12 @@ export class OrgEasyclaDetailComponent {
 
   /**
    * Whether ACS grants the current viewer the Auto ECLA write for this agreement's pair (#1988).
-   * `null` while the hop is in flight — the toggle is withheld during that window rather than
-   * shown enabled from an unchecked grant. `false` hides the toggle entirely, matching the
-   * design's choice to hide rather than disable a control the viewer cannot use, until the
-   * read-only banner (#1989) exists to explain a disabled state.
+   * `null` while the hop is in flight — the toggle stays disabled during that window rather than
+   * enabled from an unchecked grant; enablement waits for this answer, while the explanation
+   * follows the roster on its own, so an off-roster viewer sees it even while this is `null`.
+   * `false` disables it (#3406); it never hides
+   * it, because the stored value is readable by anyone who can open the agreement. Whether a
+   * sentence explains the disabled switch follows the roster alone — see `initAutoEclaLocked`.
    *
    * The running write and the value last asked for or confirmed live in
    * `OrgClaAutoEclaWritesService`, keyed on organization and signature, so both survive leaving
@@ -526,16 +537,32 @@ export class OrgEasyclaDetailComponent {
 
   protected readonly coverageHint = computed(() => this.initCoverageHint());
 
-  // Read from `signed` rather than the status, because this component serves two sources and only
-  // the flag answers both: the preview builds an agreement nobody has signed, and `status` there
-  // is `not-started` while on a sanctioned list row it says nothing about whether a document
-  // exists. Offering the download on an agreement without one is a control that can only fail.
-  protected readonly canDownload = computed(() => this.claGroup()?.signed === true);
+  protected readonly showDownload = computed(() => this.claGroup()?.signed === true);
+
+  protected readonly canDownload = computed(() => this.initCanDownload());
+
+  protected readonly downloadBlockedReason = computed(() => (this.canDownload() ? undefined : ORG_CLA_DOWNLOAD_COPY.offRosterTooltip));
+
+  protected readonly downloadAriaLabel = computed(() => this.initDownloadAriaLabel());
 
   /**
    * Whether the Auto ECLA toggle is shown at all.
    */
   protected readonly showAutoEclaToggle = computed(() => this.initShowAutoEclaToggle());
+
+  /** Whether this viewer may move the switch, as opposed to only read it (#3406). */
+  protected readonly autoEclaWritable = computed(() => this.initAutoEclaWritable());
+
+  /** Whether the switch carries the sentence naming who can change it (#3406). */
+  protected readonly autoEclaLocked = computed(() => this.initAutoEclaLocked());
+
+  protected readonly autoEclaLockedHint = ORG_CLA_AUTO_ECLA_LOCKED_HINT;
+
+  /** Disabled for a viewer who cannot write, and for the length of a running write. */
+  protected readonly autoEclaDisabled = computed(() => !this.autoEclaWritable() || this.autoEclaPending());
+
+  /** Carries the locked sentence whenever it shows, so the reason is not sighted-only. */
+  protected readonly autoEclaAriaLabel = computed(() => (this.autoEclaLocked() ? `Auto ECLA — ${this.autoEclaLockedHint}` : 'Auto ECLA'));
 
   /**
    * The current toggle value the template binds to.
@@ -555,12 +582,14 @@ export class OrgEasyclaDetailComponent {
 
   private readonly autoEclaProjectSfid = computed(() => this.initAutoEclaProjectSfid());
 
+  private readonly autoEclaFoundationSfid = computed(() => this.initAutoEclaFoundationSfid());
+
   private readonly autoEclaPermissionPair = computed(() => this.initAutoEclaPermissionPair());
 
   protected readonly notStartedCopy = ORG_CLA_NOT_STARTED_COPY;
 
   /**
-   * Read from the status rather than from `signed` being false, unlike `canDownload` above.
+   * Read from the status rather than from `signed` being false, unlike `showDownload` above.
    * Sanctions occupy the same status slot, and a sanctioned agreement carries its own explanatory
    * body in the design — walking that viewer through how to start signing would talk past the
    * reason they cannot.
@@ -749,8 +778,9 @@ export class OrgEasyclaDetailComponent {
     // Auto ECLA ACS check (#1988). Keyed on (organization, project SFID) exactly like the peer
     // managers panel — the pair the grant is written on, not the signature id, because ACS scopes
     // the grant to `project|organization`. The project is the pinned pair project, else the first
-    // covered project, else the foundation. Withheld while the group is unsigned (nothing to toggle) or while the pair
-    // is unresolvable (a data problem upstream that the toggle would silently open a 403 into).
+    // covered project, else the foundation. Not asked while the group is unsigned (nothing to toggle). An unresolvable
+    // pair (a data problem upstream that a write would open a 403 into) answers `false` without asking, so the
+    // toggle settles disabled rather than left pending.
     // `null` resets the allowed signal so a stale answer cannot outlive the row it was fetched for.
     toObservable(this.autoEclaPermissionPair)
       .pipe(
@@ -760,8 +790,8 @@ export class OrgEasyclaDetailComponent {
         }),
         switchMap((pair) => {
           if (!pair) return of(false);
-          const [orgUid, projectSfid] = pair.split('::');
-          return this.claService.checkPermission(orgUid, 'auto-ecla-update', projectSfid);
+          const [orgUid, projectSfid, foundationSfid] = pair.split('::');
+          return this.claService.checkPermission(orgUid, 'auto-ecla-update', projectSfid, foundationSfid || undefined);
         }),
         takeUntilDestroyed(this.destroyRef)
       )
@@ -881,7 +911,7 @@ export class OrgEasyclaDetailComponent {
   protected onDownload(): void {
     const group = this.claGroup();
     const orgUid = this.accountContext.selectedAccount()?.uid;
-    if (!group || !orgUid || this.downloading()) return;
+    if (!group || !orgUid || !this.canDownload() || this.downloading()) return;
 
     this.downloading.set(true);
     this.claService
@@ -971,6 +1001,12 @@ export class OrgEasyclaDetailComponent {
    */
   protected onAutoEclaToggle(next: boolean): void {
     if (this.autoEclaPending()) return;
+
+    // The switch is rendered for a viewer who cannot move it (#3406), so this path can now be
+    // reached by something other than a click on an enabled control. Refusing here keeps the
+    // optimistic value from being written for a viewer whose request the server will refuse; it
+    // is not what stops the write, which the application server and EasyCLA each do themselves.
+    if (!this.autoEclaWritable()) return;
 
     const group = this.claGroup();
     const orgUid = this.selectedOrgUid();
@@ -1372,9 +1408,9 @@ export class OrgEasyclaDetailComponent {
     return this.showingPreview() && this.previewSelection ? orgClaPreviewGroup(this.previewSelection) : undefined;
   }
 
-  private initStatus(): OrgClaStatusDisplay | undefined {
+  private initStatus(): OrgClaStatusDisplay | null {
     const group = this.claGroup();
-    return group ? ORG_CLA_STATUS_DISPLAY[group.status] : undefined;
+    return group ? ORG_CLA_STATUS_DISPLAY[group.status] : null;
   }
 
   private initCoverageChips(): OrgClaCoverageChip[] {
@@ -1445,16 +1481,84 @@ export class OrgEasyclaDetailComponent {
   }
 
   /**
-   * Four conjuncts: the row is signed (the producer stores the flag on the corporate signature,
-   * so an unsigned row has nothing to update); the viewer is on its CLA Manager list (EasyCLA
-   * refuses the write otherwise, whatever ACS says); ACS granted the write (hide-on-deny — the
-   * design withholds the control from a viewer who cannot use it, since the disabled-with-banner
-   * pattern needs #1989 to explain itself); and this page is not showing the pre-sign preview
-   * (the row it would flip does not exist yet).
+   * Whether the control does anything, as opposed to {@link showDownload}, which is whether it is
+   * on the page at all. Off the roster it renders disabled and explains itself, because a reader
+   * who cannot download is better served learning the document exists and who to ask than by a
+   * section that silently loses a button.
+   *
+   * Read from `signed` rather than the status, because this component serves two sources and only
+   * the flag answers both: the preview builds an agreement nobody has signed, and `status` there
+   * is `not-started` while on a sanctioned list row it says nothing about whether a document
+   * exists.
+   *
+   * The roster conjunct is the authorization half. EasyCLA authorizes the signed document on an
+   * ACS `project` or `project|organization` grant, and the company-level grant that let the
+   * viewer open this page is not one of them, so an organization admin is routinely refused. The
+   * roster stands in for that grant rather than duplicating it, because holding the CLA manager
+   * role is what issues it, so there is no second ACS conjunct here as there is on the Auto ECLA
+   * toggle. The two disagree only while ACS propagates, which is what `onDownload`'s fail-closed
+   * toast covers. Restricting the control is the decided shape rather than widening the
+   * producer's ACL.
+   */
+  private initCanDownload(): boolean {
+    const group = this.claGroup();
+    return group?.signed === true && group.viewerIsClaManager === true;
+  }
+
+  /**
+   * The reason a disabled control is disabled belongs in the accessible name, not only in the
+   * tooltip: a disabled button is not focusable, so a keyboard or screen-reader user never reaches
+   * the hover the sighted reader gets. Same reasoning as the refused sign control above.
+   */
+  private initDownloadAriaLabel(): string {
+    if (this.downloading()) return 'Preparing the signed CCLA PDF for download';
+    if (!this.canDownload()) return `Download signed CCLA PDF. ${ORG_CLA_DOWNLOAD_COPY.offRosterTooltip}`;
+    return 'Download signed CCLA PDF';
+  }
+
+  /**
+   * Two conjuncts, both about whether there is a value to read: the row is signed (the producer
+   * stores the flag on the corporate signature, so an unsigned row has nothing to show or
+   * update), and this page is not showing the pre-sign preview (the row it would flip does not
+   * exist yet).
+   *
+   * Neither authorization check is here (#3406). Whether Auto ECLA is on is a fact about the
+   * agreement, and a viewer who may read the agreement may read it — so the two write checks
+   * decide whether the switch can be moved, not whether it is rendered. That narrows the
+   * hide-on-deny rule to the controls whose state says nothing on its own (the approval-list
+   * mutations and Invalidate), which keep it.
    */
   private initShowAutoEclaToggle(): boolean {
     const group = this.claGroup();
-    return group?.signed === true && group.viewerIsClaManager === true && !this.showingPreview() && this.autoEclaAllowed() === true;
+    return group?.signed === true && !this.showingPreview();
+  }
+
+  /**
+   * Whether this viewer may move the switch.
+   *
+   * Both of the write path's own checks, and both must pass: the viewer is on the agreement's
+   * CLA Manager list (EasyCLA refuses the write otherwise, whatever ACS says) and ACS granted
+   * `ecla_auto_create:update` for the pair. Neither is a guard — the application server refuses
+   * the write independently, and EasyCLA refuses it again. This only decides what the control
+   * offers to do.
+   *
+   * Fails closed, including while the ACS answer is still `null`.
+   */
+  private initAutoEclaWritable(): boolean {
+    return this.claGroup()?.viewerIsClaManager === true && this.autoEclaAllowed() === true;
+  }
+
+  /**
+   * Whether to explain why the switch cannot be moved: only when the roster is the reason.
+   *
+   * Deliberately not `!autoEclaWritable()`. The sentence names CLA Manager as the role that can
+   * change the setting, which is false for a viewer on the roster. A roster CLA manager whose ACS
+   * answer is `false` (a missing grant, or a failed check, which `checkPermission` cannot tell
+   * apart) gets a disabled switch with no sentence rather than one that contradicts them. The
+   * ACS answer plays no part, so a viewer off the roster is told at once, not a round trip later.
+   */
+  private initAutoEclaLocked(): boolean {
+    return this.showAutoEclaToggle() && this.claGroup()?.viewerIsClaManager !== true;
   }
 
   private initAutoEclaValue(): boolean {
@@ -1492,12 +1596,18 @@ export class OrgEasyclaDetailComponent {
     return group ? (orgClaPairProjectSfid(group) ?? '') : '';
   }
 
+  private initAutoEclaFoundationSfid(): string {
+    const group = this.claGroup();
+    return group ? (orgClaPairFoundationSfid(group) ?? '') : '';
+  }
+
   private initAutoEclaPermissionPair(): string {
     const group = this.claGroup();
     if (!group?.signed || this.showingPreview()) return '';
     const orgUid = this.selectedOrgUid();
     const projectSfid = this.autoEclaProjectSfid();
-    return orgUid && projectSfid ? `${orgUid}::${projectSfid}` : '';
+    const foundationSfid = this.autoEclaFoundationSfid();
+    return orgUid && projectSfid ? `${orgUid}::${projectSfid}::${foundationSfid}` : '';
   }
 
   private initDesigneePair(): string | null {
@@ -1647,6 +1757,7 @@ export class OrgEasyclaDetailComponent {
       tap(() => {
         this.claLoadingState.set(true);
         this.fetchError.set(false);
+        this.easyclaRoleMissing.set(false);
         this.autoEclaWrites.forgetSettled();
         this.selfRemovals.forgetAll();
         this.listReloaded$.next();
@@ -1657,6 +1768,7 @@ export class OrgEasyclaDetailComponent {
           catchError((error: HttpErrorResponse) => {
             console.error('Failed to load organization CLA groups:', error.status, error.message);
             this.fetchError.set(true);
+            this.easyclaRoleMissing.set(error.status === 403 && error.error?.code === ORG_CLA_EASYCLA_ROLE_MISSING_ERROR_CODE);
             this.claLoadingState.set(false);
             return of(null);
           })
@@ -1891,6 +2003,7 @@ export class OrgEasyclaDetailComponent {
           if (!list) return;
           this.retriedList$.next(list);
           this.fetchError.set(false);
+          this.easyclaRoleMissing.set(false);
         }),
         map(() => this.listedGroupForAddress()),
         takeUntil(tripEnded$),

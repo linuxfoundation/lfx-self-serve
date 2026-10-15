@@ -11,7 +11,15 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { MessageComponent } from '@components/message/message.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
-import { MKTG_AGENT_INTAKES, MKTG_AGENTS, MKTG_INTAKE_FORMAT_ERRORS, MKTG_README_SKIP_NOTES, MKTG_RUN_STAGES } from '@lfx-one/shared/constants';
+import {
+  MKTG_AGENT_INTAKES,
+  MKTG_AGENTS,
+  MKTG_DOCUMENT_STATUS_REVIEWED_PREFIX,
+  MKTG_DOCUMENT_TYPES,
+  MKTG_INTAKE_FORMAT_ERRORS,
+  MKTG_README_SKIP_NOTES,
+  MKTG_RUN_STAGES,
+} from '@lfx-one/shared/constants';
 import {
   GithubRepoUrlError,
   MktgAgent,
@@ -19,6 +27,7 @@ import {
   MktgAgentIntake,
   MktgAttachmentChip,
   MktgDependencyDocument,
+  MktgDocumentStatusChip,
   MktgIntakePrefillSource,
   MktgRunPhase,
   MktgRunVersion,
@@ -26,7 +35,7 @@ import {
   ProjectContext,
   User,
 } from '@lfx-one/shared/interfaces';
-import { mktgAgentDocumentName } from '@lfx-one/shared/utils';
+import { findMktgDocumentStatus, mktgAgentDocumentName } from '@lfx-one/shared/utils';
 import { githubRepoUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 import { MessageService } from 'primeng/api';
 import { combineLatest, distinctUntilChanged, EMPTY, filter, map, Subscription, switchMap } from 'rxjs';
@@ -249,6 +258,13 @@ export class MktgAgentRunComponent {
     }
     return MKTG_README_SKIP_NOTES[readme.skipReason];
   });
+  /**
+   * The document's own review status — the label read out of the document
+   * (`Draft — pre-filled`, `Draft — from your documents`, `ED-reviewed —
+   * [name], [date]`, …). Null when the document carries none, so nothing is
+   * asserted that the document does not say.
+   */
+  protected readonly statusChip: Signal<MktgDocumentStatusChip | null> = this.initStatusChip();
   /** Copyable derivative chips for the current version (empty when the agent has none). */
   protected readonly derivativeChips: Signal<{ key: string; label: string; value: string; copied: boolean }[]> = this.initDerivativeChips();
   /** Screen-reader copy confirmation for the template's live region — the visible chip flip alone is never announced. */
@@ -287,6 +303,13 @@ export class MktgAgentRunComponent {
     present: { chipClass: 'border-blue-200 bg-blue-50 text-blue-700', iconClass: 'fa-light fa-paperclip' },
     absent: { chipClass: 'border-gray-200 bg-gray-50 text-gray-600', iconClass: 'fa-light fa-circle-info' },
   };
+  // Status chip presentation: a draft (any of the "Draft — …" labels) is
+  // amber, a reviewed document emerald. Literal class names for the same
+  // Tailwind content-scan reason as above.
+  private readonly statusChipStyle: Record<'draft' | 'reviewed', string> = {
+    draft: 'border-amber-200 bg-amber-50 text-amber-700',
+    reviewed: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  };
   private readonly stageLabelClass: Record<'done' | 'active' | 'pending', string> = {
     done: 'text-gray-400',
     active: 'text-gray-600',
@@ -298,6 +321,8 @@ export class MktgAgentRunComponent {
   // methods (docs/reviews/frontend-checklist.md §4).
   protected readonly agentIconClass: string = this.accentIcon[this.agent?.accent ?? 'gray'];
   protected readonly agentTagline: string = this.agent?.tags.join(' · ') ?? '';
+  /** The Documents area type this agent's output is stored as, when it has one. */
+  protected readonly documentsAgentKey: string | null = MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === this.agent?.id)?.agentKey ?? null;
 
   public constructor() {
     // The deferred timers must not outlive the view (their callbacks only
@@ -366,6 +391,11 @@ export class MktgAgentRunComponent {
   // === Protected methods ===
   protected onBack(): void {
     this.router.navigate(['..'], { relativeTo: this.route, queryParamsHandling: 'preserve' });
+  }
+
+  /** Every revision of this agent's document is kept in the Documents area. */
+  protected onOpenDocuments(): void {
+    this.router.navigate(['..', 'documents'], { relativeTo: this.route, queryParams: { type: this.documentsAgentKey }, queryParamsHandling: 'merge' });
   }
 
   protected onSubmit(): void {
@@ -487,6 +517,17 @@ export class MktgAgentRunComponent {
     });
   }
 
+  private initStatusChip(): Signal<MktgDocumentStatusChip | null> {
+    return computed(() => {
+      const label = findMktgDocumentStatus(this.currentVersion()?.document ?? '');
+      if (!label) {
+        return null;
+      }
+      const reviewed = label.toLowerCase().startsWith(MKTG_DOCUMENT_STATUS_REVIEWED_PREFIX.toLowerCase());
+      return { label, chipClass: this.statusChipStyle[reviewed ? 'reviewed' : 'draft'] };
+    });
+  }
+
   private initAttachmentChips(): Signal<MktgAttachmentChip[]> {
     return computed(() => {
       const docs = this.dependencyDocs();
@@ -531,8 +572,9 @@ export class MktgAgentRunComponent {
       const messages: Record<string, string> = {};
       for (const field of this.intake?.fields ?? []) {
         const error = this.intakeForm.controls[field.key]?.errors?.['githubRepoUrl'] as GithubRepoUrlError | undefined;
-        if (field.format && error) {
-          messages[field.key] = MKTG_INTAKE_FORMAT_ERRORS[field.format][error.reason];
+        const message = field.format && error ? MKTG_INTAKE_FORMAT_ERRORS[field.format][error.reason] : undefined;
+        if (message) {
+          messages[field.key] = message;
         }
       }
       return messages;
@@ -564,6 +606,10 @@ export class MktgAgentRunComponent {
       const validators = field.optional ? [] : [trimmedRequired()];
       if (field.format === 'github-repo-url') {
         validators.push(githubRepoUrlValidator());
+      } else if (field.format === 'github-url') {
+        // The Brand Kit's rule: a GitHub organization URL is a usable answer;
+        // only a value that is not a GitHub URL at all is refused.
+        validators.push(githubRepoUrlValidator({ acceptOwner: true }));
       }
       controls[field.key] = new FormControl('', { nonNullable: true, validators });
     }

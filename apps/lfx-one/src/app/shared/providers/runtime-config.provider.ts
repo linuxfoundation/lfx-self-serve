@@ -17,8 +17,8 @@ export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
   stripePublishableKey: '',
   gwSupabaseUrl: '',
   gwSupabaseAnonKey: '',
-  gwLfidStartUrl: '',
   gwEmbedUrl: '',
+  gwHostSession: false,
 };
 
 /**

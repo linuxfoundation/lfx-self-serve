@@ -3,9 +3,15 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { SHOW_MEETING_ATTENDEES_BOARD_LOCKED_NOTE, SHOW_MEETING_ATTENDEES_LOCKED_NOTE } from '../constants/meeting.constants';
 import { MeetingType } from '../enums';
 import type { Meeting } from '../interfaces';
-import { getSavedAttendeeVisibility, isMeetingAttendeeListShared, isShowMeetingAttendeesLocked } from './meeting-attendee-lock.utils';
+import {
+  getSavedAttendeeVisibility,
+  getShowMeetingAttendeesLockedNote,
+  isMeetingAttendeeListShared,
+  isShowMeetingAttendeesLocked,
+} from './meeting-attendee-lock.utils';
 
 describe('isShowMeetingAttendeesLocked', () => {
   it('locks board meetings even when unrestricted', () => {
@@ -97,5 +103,25 @@ describe('isMeetingAttendeeListShared', () => {
   it('keeps a locked meeting private even when a legacy row still carries the opt-in', () => {
     expect(isMeetingAttendeeListShared(meeting({ meeting_type: MeetingType.BOARD, show_meeting_attendees: true }))).toBe(false);
     expect(isMeetingAttendeeListShared(meeting({ restricted: true, show_meeting_attendees: true }))).toBe(false);
+  });
+});
+
+describe('allowRestricted (meeting v2 composer rule)', () => {
+  const meeting = (overrides: Partial<Meeting>) => ({ meeting_type: MeetingType.TECHNICAL, restricted: false, ...overrides }) as Meeting;
+
+  it('unlocks restricted meetings, keeps board locked', () => {
+    expect(isShowMeetingAttendeesLocked(MeetingType.TECHNICAL, true, { allowRestricted: true })).toBe(false);
+    expect(isShowMeetingAttendeesLocked(MeetingType.BOARD, true, { allowRestricted: true })).toBe(true);
+  });
+
+  it('leaves the default rule unchanged', () => {
+    expect(isShowMeetingAttendeesLocked(MeetingType.TECHNICAL, true)).toBe(true);
+    expect(isMeetingAttendeeListShared(meeting({ restricted: true, show_meeting_attendees: true }))).toBe(false);
+  });
+
+  it('shows the board-only note under the composer rule and the existing note otherwise', () => {
+    expect(getShowMeetingAttendeesLockedNote(MeetingType.BOARD, false, { allowRestricted: true })).toBe(SHOW_MEETING_ATTENDEES_BOARD_LOCKED_NOTE);
+    expect(getShowMeetingAttendeesLockedNote(MeetingType.TECHNICAL, true, { allowRestricted: true })).toBeNull();
+    expect(getShowMeetingAttendeesLockedNote(MeetingType.TECHNICAL, true)).toBe(SHOW_MEETING_ATTENDEES_LOCKED_NOTE);
   });
 });

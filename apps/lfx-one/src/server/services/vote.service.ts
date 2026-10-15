@@ -483,21 +483,8 @@ export class VoteService {
       req,
       operation: 'create_vote_response_poll',
       pollFn: async () => {
-        // Known gap (GH #2985): filter_grants=direct never matches email-only invitees (the voting
-        // service emits no invitee FGA tuple for them), so this poll always times out for those
-        // users — see fetchCurrentUserVoteResponses.
-        const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVoteResponse>>(
-          req,
-          'LFX_V2_SERVICE',
-          '/query/resources',
-          'GET',
-          {
-            type: 'vote_response',
-            filter_grants: 'direct',
-            filters: [`vote_uid:${payload.vote_uid}`],
-          }
-        );
-        return resources.some((r) => r.data.uid === payload.vote_response_uid && r.data.vote_status === IndexedVoteResponseStatus.RESPONDED);
+        const responses = await fetchCurrentUserVoteResponses(req, this.microserviceProxy, { filters: [`uid:${payload.vote_response_uid}`] });
+        return responses.some((row) => row.uid === payload.vote_response_uid && row.vote_status === IndexedVoteResponseStatus.RESPONDED);
       },
       maxRetries: 5,
       retryDelayMs: 1000,

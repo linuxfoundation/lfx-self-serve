@@ -57,15 +57,13 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     await expect(kpi).toContainText(EXPECTED_PROJECT_COUNT);
   });
 
-  test('discloses that the investment figure is a modelled cost, not compensation', async ({ page }) => {
+  test('discloses how the investment figure is derived, and that no pay data is used', async ({ page }) => {
     await stubOrgLensContext(page);
     await gotoOrgRoiPage(page);
 
     await page.getByTestId('org-roi-kpi-explanations-toggle').click();
     const investment = page.getByTestId('org-roi-kpi-explanation-total-expenditure');
     await expect(investment).toBeVisible();
-    await expect(investment).toContainText('modelled cost');
-    await expect(investment).toContainText('not actual or reported compensation');
     await expect(investment).toContainText('same for every organization');
     await expect(investment).toContainText('No salary, payroll, or invoice data is used.');
   });
@@ -268,6 +266,16 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     await trigger.click();
     await expect(page.getByTestId('org-roi-assumptions-method-logit')).toBeVisible();
     await expect(page.getByTestId('org-roi-assumptions-method-direct')).toBeVisible();
+  });
+
+  test('selects logit by default and lists it first in the assumptions drawer', async ({ page }) => {
+    // A fresh visit stores nothing, so the drawer shows the default; the first option is the first one the drawer renders.
+    await stubOrgLensContext(page);
+    await gotoOrgRoiPage(page);
+
+    await page.getByTestId('org-roi-assumptions-trigger').click();
+    await expect(page.getByTestId('org-roi-assumptions-method-logit')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('[data-testid^="org-roi-assumptions-method-"]').first()).toHaveAttribute('data-testid', 'org-roi-assumptions-method-logit');
   });
 
   test('exposes the yearly series to assistive technology, not only as a canvas', async ({ page }) => {
@@ -493,7 +501,7 @@ test.describe('Org Lens ROI Metrics — investment by category', () => {
     await expect(page.getByTestId('org-roi-category-donut-total')).toHaveText(EXPECTED_INVESTMENT);
   });
 
-  test('carries the modelled-cost disclosure on the category breakdown', async ({ page }) => {
+  test('carries the investment disclosure on the category breakdown', async ({ page }) => {
     // The surface the privacy audit was most concerned about: 19.4% of covered organizations have a
     // single code contributor, so a lone "Code Contribution" amount can read as one person's pay.
     await stubOrgLensContext(page);
@@ -501,8 +509,6 @@ test.describe('Org Lens ROI Metrics — investment by category', () => {
 
     const note = page.getByTestId('org-roi-category-donut-modelled-cost-note');
     await expect(note).toBeVisible();
-    await expect(note).toContainText('modelled cost');
-    await expect(note).toContainText('not actual or reported compensation');
     await expect(note).toContainText('same for every organization');
     await expect(note).toContainText('No salary, payroll, or invoice data is used.');
   });

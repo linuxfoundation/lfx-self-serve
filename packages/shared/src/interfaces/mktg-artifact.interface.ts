@@ -6,6 +6,7 @@
 // with the agent-specific parts lifted into a spec, so the eight agents share
 // one implementation instead of eight copies of it.
 
+import type { MKTG_ARTIFACT_INTAKE_MODES } from '../constants/mktg-artifact.constants';
 import type { MktgRunPersistReceipt } from './mktg-run.interface';
 
 /**
@@ -21,10 +22,12 @@ export type MktgArtifactKey = 'brand-kit' | 'foundation-message' | 'icp';
 
 /**
  * How an agent's intake answers were collected. Every Marketing OS envelope
- * contract defines the same two modes, so the persistence layer can label a
- * stored object without knowing which agent wrote it.
+ * contract draws on the same vocabulary (`form` and `conversational`
+ * everywhere; `prefill` — documents and no interviewee — since the ICP's
+ * 0.4.0 re-pin), so the persistence layer can label a stored object without
+ * knowing which agent wrote it.
  */
-export type MktgArtifactIntakeMode = 'form' | 'conversational';
+export type MktgArtifactIntakeMode = (typeof MKTG_ARTIFACT_INTAKE_MODES)[number];
 
 /**
  * Everything that differs between agents when persisting a document — the

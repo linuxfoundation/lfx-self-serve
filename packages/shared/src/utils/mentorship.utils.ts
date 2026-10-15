@@ -7,7 +7,6 @@ import {
   MENTORSHIP_CHALLENGE_URL_REQUIRED,
   MENTORSHIP_CUSTOM_PREREQ_DESCRIPTION_MAX,
   MENTORSHIP_CUSTOM_PREREQ_NAME_MAX,
-  createDefaultMentorshipTerm,
   createEmptyMentorshipEnrollForm,
   MENTORSHIP_ENROLL_CURRENT_LOGO_LABEL,
   MENTORSHIP_ENROLL_DESCRIPTION_MAX,
@@ -44,8 +43,6 @@ import {
   MENTORSHIP_MENTEE_PAST_OUTCOME_BY_STATUS,
   MENTORSHIP_MENTEE_PAST_OUTCOME_CLASSES,
   MENTORSHIP_MENTEE_PAST_OUTCOME_LABELS,
-  MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE,
-  MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS,
   MENTORSHIP_MENTEE_PROFILE_UPDATE_KEYS,
   MENTORSHIP_MENTEE_TASK_FILE_EXTENSIONS,
   MENTORSHIP_MENTEE_TASK_HINT_FILE_REQUIRED,
@@ -73,7 +70,10 @@ import {
   MENTORSHIP_REGISTER_ERROR_CONFLICT,
   MENTORSHIP_REGISTER_ERROR_FALLBACK,
   MENTORSHIP_REGISTER_ERROR_READ_ONLY,
-  MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL,
+  MENTORSHIP_SKILL_MAX_LENGTH,
+  MENTORSHIP_SKILLS_LIMIT_MESSAGE,
+  MENTORSHIP_SKILLS_MAX_ITEMS,
+  MENTORSHIP_TECHNOLOGIES_LIMIT_MESSAGE,
 } from '../constants/mentorship.constants';
 import type {
   MentorshipApplicantDisplayStatus,
@@ -249,10 +249,9 @@ export function getMentorshipEnrollLogoError(file: { name: string; size: number;
   return '';
 }
 
-/** Upstream create refuses a single-day application window and one that does not end before the term starts. */
-function getMentorshipEnrollTermWindowError(term: Pick<MentorshipProgramTerm, 'startDate' | 'applicationStartDate' | 'applicationEndDate'>): string {
+/** Upstream create refuses a single-day application window. The window may run into the term; the shared rules keep it within the end month. */
+function getMentorshipEnrollTermWindowError(term: Pick<MentorshipProgramTerm, 'applicationStartDate' | 'applicationEndDate'>): string {
   if (term.applicationEndDate <= term.applicationStartDate) return 'Application end date must be after the application start date.';
-  if (term.applicationEndDate >= term.startDate) return 'Application end date must be before the term start month.';
   return '';
 }
 
@@ -346,6 +345,7 @@ function toMentorshipEnrollProgramFields(
         required: item.required,
         requireFile: item.requireFile === true,
         dueDate: item.dueDate || null,
+        custom: item.custom === true,
       };
     }),
   };
@@ -394,7 +394,7 @@ export function isSameMentorshipTerm(before: MentorshipProgramTerm | undefined, 
 
 /**
  * The wizard form for an imported program. The template's details and prerequisites are copied; the terms are not, so the
- * form gets one default term, and the logo is not, so the admin picks one. `termsAccepted` starts over as `false`.
+ * form starts with no terms, and the logo is not, so the admin picks one. `termsAccepted` starts over as `false`.
  */
 export function formFromMentorshipEnrollImport(importProgramId: string, data: MentorshipEnrollImport): MentorshipEnrollForm {
   return {
@@ -409,7 +409,6 @@ export function formFromMentorshipEnrollImport(importProgramId: string, data: Me
     ciiProjectId: data.ciiProjectId,
     codeOfConductUrl: data.codeOfConductUrl,
     skills: [...data.skills],
-    terms: [createDefaultMentorshipTerm()],
     prerequisites: mergeImportedMentorshipPrerequisites(data.prerequisites),
   };
 }
@@ -608,12 +607,17 @@ export function mentorshipDateOnlyFloor(today = new Date()): string {
   return toMentorshipDateOnly(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1));
 }
 
+/**
+ * Date rules for one term. A saved term being edited (`original`) skips the not-before-today and current-month floors,
+ * since an admin may edit a term that is already under way; the ordering rules still apply.
+ */
 export function getMentorshipTermDateErrors(
   term: Pick<MentorshipProgramTerm, 'startDate' | 'endDate' | 'applicationStartDate' | 'applicationEndDate'>,
   today = new Date(),
   original?: Pick<MentorshipProgramTerm, 'startDate' | 'endDate' | 'applicationStartDate' | 'applicationEndDate'>
 ): MentorshipTermDateErrors {
   const errors: MentorshipTermDateErrors = {};
+  const checkFloors = original === undefined;
   const todayFloor = mentorshipDateOnlyFloor(today);
   const floorDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
   const currentMonthStart = `${floorDate.getFullYear()}-${String(floorDate.getMonth() + 1).padStart(2, '0')}-01`;
@@ -624,7 +628,7 @@ export function getMentorshipTermDateErrors(
 
   if (!startValid) {
     errors.startDate = MENTORSHIP_ISO_DATE_ERROR;
-  } else if (term.startDate < currentMonthStart && term.startDate !== original?.startDate) {
+  } else if (checkFloors && term.startDate < currentMonthStart) {
     errors.startDate = 'Start month should be greater than or equal to current month.';
   }
   if (!endValid) {
@@ -634,14 +638,14 @@ export function getMentorshipTermDateErrors(
   }
   if (!appStartValid) {
     errors.applicationStartDate = MENTORSHIP_ISO_DATE_ERROR;
-  } else if (term.applicationStartDate < todayFloor && term.applicationStartDate !== original?.applicationStartDate) {
+  } else if (checkFloors && term.applicationStartDate < todayFloor) {
     errors.applicationStartDate = 'Application start date cannot be before today.';
   } else if (startValid && term.applicationStartDate >= term.startDate) {
     errors.applicationStartDate = 'Application start date must be before the term start month.';
   }
   if (!appEndValid) {
     errors.applicationEndDate = MENTORSHIP_ISO_DATE_ERROR;
-  } else if (term.applicationEndDate < todayFloor && term.applicationEndDate !== original?.applicationEndDate) {
+  } else if (checkFloors && term.applicationEndDate < todayFloor) {
     errors.applicationEndDate = 'Application end date cannot be before today.';
   } else if (appStartValid && term.applicationEndDate < term.applicationStartDate) {
     errors.applicationEndDate = 'Application end date must be on or after the application start date.';
@@ -698,6 +702,7 @@ export function getMentorshipEnrollStepErrors(
       errors.projectId = MENTORSHIP_ENROLL_PROJECT_REQUIRED;
     }
     if (!form.technologies.length) errors.technologies = 'Add at least one technology.';
+    else if (isMentorshipSkillListOverLimit(form.technologies)) errors.technologies = MENTORSHIP_TECHNOLOGIES_LIMIT_MESSAGE;
     const descriptionError = mentorshipRichTextError(
       form.description,
       MENTORSHIP_ENROLL_DESCRIPTION_MAX,
@@ -731,6 +736,7 @@ export function getMentorshipEnrollStepErrors(
   if (step === 'setup') {
     const errors: MentorshipEnrollFieldErrors = {};
     if (!form.skills.length) errors.skills = 'Add at least one skill.';
+    else if (isMentorshipSkillListOverLimit(form.skills)) errors.skills = MENTORSHIP_SKILLS_LIMIT_MESSAGE;
     // A program being edited that had only closed terms may stay that way; upstream keeps a program's last open term otherwise.
     if (!form.terms.length && (!edit || edit.terms.length > 0)) {
       errors.terms = 'Add at least one program term.';
@@ -796,9 +802,7 @@ export function getMentorshipEnrollStepErrors(
  *
  * Program requests are deliberately unvalidated. They are optional: a mentor may register
  * a profile now and apply to programs later, so the request list is not checked here and
- * does not reach this function at all. A skill outside `MENTORSHIP_SKILL_OPTIONS`
- * can only come from a tampered request (the picker offers nothing else), so it gets its
- * own message after the required check.
+ * does not reach this function at all.
  */
 export function getMentorshipMentorRegisterErrors(
   form: Pick<MentorshipMentorRegisterForm, 'introduction' | 'skills' | 'complianceAccepted' | 'termsAccepted'>
@@ -813,9 +817,8 @@ export function getMentorshipMentorRegisterErrors(
 /**
  * The introduction and skills rules a mentor profile is held to, on register and on edit, in the browser
  * and in the BFF. Only the fields present are checked, so an edit that leaves one out is not refused for
- * what is already stored. A skill outside `MENTORSHIP_SKILL_OPTIONS` can only come from a stored legacy
- * value or a tampered request (the picker offers nothing else), so it gets its own message after the
- * required check.
+ * what is already stored. Skills are free-form, held only to `MENTORSHIP_SKILLS_MAX_ITEMS` and
+ * `MENTORSHIP_SKILL_MAX_LENGTH`.
  */
 export function getMentorshipMentorProfileErrors(input: MentorshipMentorProfileUpdateRequest): MentorshipMentorProfileFieldErrors {
   const errors: MentorshipMentorProfileFieldErrors = {};
@@ -831,7 +834,7 @@ export function getMentorshipMentorProfileErrors(input: MentorshipMentorProfileU
   }
   if (input.skills !== undefined) {
     if (!input.skills.length) errors.skills = 'Add at least one skill.';
-    else if (hasUnknownMentorshipSkill(input.skills)) errors.skills = MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL;
+    else if (isMentorshipSkillListOverLimit(input.skills)) errors.skills = MENTORSHIP_SKILLS_LIMIT_MESSAGE;
   }
 
   return errors;
@@ -984,11 +987,9 @@ export function getMentorshipMenteeCountryError(country: string): string | undef
 
 /**
  * The register rules, expressed over the wire request so the browser and the BFF share them. Keys are
- * assigned in form order because the submit toast shows `Object.values(errors)[0]`. A skill outside
- * `MENTORSHIP_SKILL_OPTIONS` can only come from a tampered request (the picker offers nothing else),
- * so it gets its own message after the required check. Each list is held to the profile edit's
- * `MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS`: the picker offers more options than that, and a profile
- * registered over the cap could never be saved from the profile drawer again.
+ * assigned in form order because the submit toast shows `Object.values(errors)[0]`. Skills are
+ * free-form, and each list is held to the same `MENTORSHIP_SKILLS_MAX_ITEMS` and
+ * `MENTORSHIP_SKILL_MAX_LENGTH` as the profile edit, so a registered profile stays editable.
  */
 export function getMentorshipMenteeRegisterRequestErrors(
   input: Pick<
@@ -1001,11 +1002,9 @@ export function getMentorshipMenteeRegisterRequestErrors(
   const introductionError = getMentorshipMenteeIntroductionError(input.introduction);
   if (introductionError) errors.introduction = introductionError;
   if (!input.skillsHave.length) errors.skillsHave = 'Add at least one skill you currently have.';
-  else if (input.skillsHave.length > MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS) errors.skillsHave = MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE;
-  else if (hasUnknownMentorshipSkill(input.skillsHave)) errors.skillsHave = MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL;
+  else if (isMentorshipSkillListOverLimit(input.skillsHave)) errors.skillsHave = MENTORSHIP_SKILLS_LIMIT_MESSAGE;
   if (!input.skillsWant.length) errors.skillsWant = 'Add at least one skill you would like to improve.';
-  else if (input.skillsWant.length > MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS) errors.skillsWant = MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE;
-  else if (hasUnknownMentorshipSkill(input.skillsWant)) errors.skillsWant = MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL;
+  else if (isMentorshipSkillListOverLimit(input.skillsWant)) errors.skillsWant = MENTORSHIP_SKILLS_LIMIT_MESSAGE;
   const countryError = getMentorshipMenteeCountryError(input.country);
   if (countryError) errors.country = countryError;
   if (!isMentorshipTermsAccepted(input.ageEligible)) errors.ageEligible = 'Please confirm you are 18 years of age or older.';
@@ -1017,8 +1016,16 @@ export function getMentorshipMenteeRegisterRequestErrors(
   return errors;
 }
 
-function hasUnknownMentorshipSkill(skills: string[]): boolean {
-  return skills.some((skill) => !MENTORSHIP_SKILL_OPTIONS.includes(skill));
+/** True when a skill or technology list has more than `MENTORSHIP_SKILLS_MAX_ITEMS` items or an item over `MENTORSHIP_SKILL_MAX_LENGTH`. */
+export function isMentorshipSkillListOverLimit(skills: readonly string[]): boolean {
+  return skills.length > MENTORSHIP_SKILLS_MAX_ITEMS || skills.some((skill) => skill.trim().length > MENTORSHIP_SKILL_MAX_LENGTH);
+}
+
+/** Catalog skills containing `query` (case-insensitive), leaving out any already in `chosen`. */
+export function mentorshipSkillSuggestions(query: string, chosen: readonly string[]): string[] {
+  const needle = query.trim().toLowerCase();
+  const selected = new Set(chosen.map((item) => item.toLowerCase()));
+  return MENTORSHIP_SKILL_OPTIONS.filter((skill) => !selected.has(skill.toLowerCase()) && skill.toLowerCase().includes(needle));
 }
 
 /**

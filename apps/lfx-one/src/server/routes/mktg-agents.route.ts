@@ -4,9 +4,11 @@
 import { Router } from 'express';
 
 import { MktgAgentsController } from '../controllers/mktg-agents.controller';
+import { MktgDocumentsController } from '../controllers/mktg-documents.controller';
 
 const router = Router();
 const mktgAgentsController = new MktgAgentsController();
+const mktgDocumentsController = new MktgDocumentsController();
 
 // POST /api/mktg-agents/chat - create a Guild session or post a follow-up
 router.post('/chat', (req, res, next) => mktgAgentsController.chat(req, res, next));
@@ -37,5 +39,17 @@ router.post('/icp/result', (req, res, next) => mktgAgentsController.icpResult(re
 
 // GET /api/mktg-agents/foundation-message/stored - the project's latest persisted document (writer-entitled callers only)
 router.get('/foundation-message/stored', (req, res, next) => mktgAgentsController.storedFoundationMessage(req, res, next));
+
+// GET /api/mktg-agents/documents?project=<uid> - every stored Marketing OS document of the project, grouped by type (writer-entitled callers only)
+router.get('/documents', (req, res, next) => mktgDocumentsController.listDocuments(req, res, next));
+
+// GET /api/mktg-agents/documents/:agentKey/:documentId?project=<uid> - one document and its revisions, newest first
+router.get('/documents/:agentKey/:documentId', (req, res, next) => mktgDocumentsController.getDocument(req, res, next));
+
+// GET /api/mktg-agents/documents/:agentKey/:documentId/revisions/:revisionId?project=<uid> - one revision with its Markdown
+router.get('/documents/:agentKey/:documentId/revisions/:revisionId', (req, res, next) => mktgDocumentsController.getRevision(req, res, next));
+
+// POST /api/mktg-agents/documents/:agentKey/:documentId/restore - make an older revision the latest, as a new revision
+router.post('/documents/:agentKey/:documentId/restore', (req, res, next) => mktgDocumentsController.restoreRevision(req, res, next));
 
 export default router;

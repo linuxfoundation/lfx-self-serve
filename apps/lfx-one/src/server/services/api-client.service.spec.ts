@@ -354,3 +354,59 @@ describe('ApiClientService.request — request bodies', () => {
     expect(bodyOf(fetchMock)).toBeUndefined();
   });
 });
+
+describe('ApiClientService.request — shared operation deadline', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  it('rejects an expired operation before dispatching another request', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1000);
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      new ApiClientService().request('GET', 'https://example.invalid/x', undefined, undefined, undefined, undefined, { deadlineAt: 1000 })
+    ).rejects.toMatchObject({ statusCode: 408, code: 'TIMEOUT' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('aborts a later request at the original operation deadline rather than giving it a fresh budget', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1000);
+    vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms) => {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(new DOMException('Deadline elapsed', 'TimeoutError')), ms);
+      return controller.signal;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise<Response>((resolve, reject) => {
+            const timer = setTimeout(() => resolve(new Response('{}', { status: 200 })), 30);
+            init.signal!.addEventListener(
+              'abort',
+              () => {
+                clearTimeout(timer);
+                reject(init.signal!.reason);
+              },
+              { once: true }
+            );
+          })
+      )
+    );
+    const client = new ApiClientService({ timeout: 1000 });
+    const options = { deadlineAt: 1050 };
+    const first = client.request('GET', 'https://example.invalid/first', undefined, undefined, undefined, undefined, options);
+    await vi.advanceTimersByTimeAsync(30);
+    await first;
+
+    const second = client.request('GET', 'https://example.invalid/second', undefined, undefined, undefined, undefined, options);
+    const result = expect(second).rejects.toMatchObject({ statusCode: 408, code: 'TIMEOUT' });
+    await vi.advanceTimersByTimeAsync(20);
+    await result;
+  });
+});

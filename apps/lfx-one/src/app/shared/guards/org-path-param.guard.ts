@@ -11,6 +11,7 @@ import { isOrgAccountIdSegment, isOrgSlugSegment, normalizeOrgSegment, orgUrlSeg
 import { catchError, map, of } from 'rxjs';
 
 import { AccountContextService } from '../services/account-context.service';
+import { OrgClaOnlyAccessService } from '../services/org-cla-only-access.service';
 import { OrgSlugResolverService } from '../services/org-slug-resolver.service';
 
 /**
@@ -52,6 +53,7 @@ export const orgPathParamGuard: CanActivateFn = (route, state) => {
   const router = inject(Router);
   const accountContext = inject(AccountContextService);
   const resolver = inject(OrgSlugResolverService);
+  const claOnlyAccess = inject(OrgClaOnlyAccessService);
 
   const notFound = router.createUrlTree([ORG_NOT_FOUND_PATH]);
   /**
@@ -110,6 +112,8 @@ export const orgPathParamGuard: CanActivateFn = (route, state) => {
         uid: resolved.uid,
         slug: resolved.slug,
       };
+      // M3: the selector may not list this organization (a grant holder reaches a CLA-only org by link only), so its CLA-only shell keys on this answer.
+      claOnlyAccess.noteAddressed(resolved.uid, resolved.claOnly === true);
       accountContext.adoptFromAddress(account);
       // Spec 020 US4 — fire-and-forget canonical reconciliation fills display fields.
       void accountContext.refreshCanonicalRecord(account);

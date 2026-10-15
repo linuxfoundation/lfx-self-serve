@@ -8,6 +8,7 @@ import { InsightsTokensController } from '../controllers/insights-tokens.control
 import { ProfileController } from '../controllers/profile.controller';
 import { MicroserviceError } from '../errors/microservice.error';
 import { blockDuringImpersonation } from '../middleware/impersonation-readonly.middleware';
+import { emailSendCodeTargetRateLimiter, emailSendCodeUserRateLimiter } from '../middleware/rate-limit.middleware';
 
 const router = Router();
 
@@ -104,12 +105,12 @@ router.put('/emails/meeting-invite', blockDuringImpersonation, (req, res, next) 
 // GET /api/profile/developer - Get current user's developer token information
 router.get('/developer', (req, res, next) => profileController.getDeveloperTokenInfo(req, res, next));
 
-// LFX Insights API tokens (IN-1233) — proxied to lfx-v2-pat-service; eligibility from the member-service
-// tier endpoint. Reads stay open while impersonating (metadata only — the list never carries a secret);
+// LFX Insights API tokens (IN-1233) — proxied to lfx-v2-pat-service; eligibility from the
+// insights-public-api-token-access flag. Reads stay open while impersonating (metadata only — the list never carries a secret);
 // create and revoke are blocked: a minted token is a live credential the impersonator would walk away
 // with, and neither action carries the impersonator's identity upstream.
 
-// GET /api/profile/insights-tokens/eligibility - Whether the caller may create tokens (Key Contact check)
+// GET /api/profile/insights-tokens/eligibility - Whether the caller may create tokens (access flag)
 router.get('/insights-tokens/eligibility', (req, res, next) => insightsTokensController.getEligibility(req, res, next));
 
 // GET /api/profile/insights-tokens - List the caller's Insights API tokens
@@ -139,7 +140,9 @@ router.post('/reset-password', blockDuringImpersonation, (req, res, next) => pro
 router.post('/change-password', blockDuringImpersonation, (req, res, next) => profileController.changePassword(req, res, next));
 
 // POST /api/profile/identities/email/send-code - Send email verification code
-router.post('/identities/email/send-code', blockDuringImpersonation, (req, res, next) => profileController.sendEmailVerification(req, res, next));
+router.post('/identities/email/send-code', blockDuringImpersonation, emailSendCodeUserRateLimiter, emailSendCodeTargetRateLimiter, (req, res, next) =>
+  profileController.sendEmailVerification(req, res, next)
+);
 
 // POST /api/profile/identities/email/verify - Verify OTP and link email identity
 router.post('/identities/email/verify', blockDuringImpersonation, (req, res, next) => profileController.verifyAndLinkEmail(req, res, next));

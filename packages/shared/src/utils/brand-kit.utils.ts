@@ -26,7 +26,7 @@ import { extractMktgEnvelopeCandidates } from './mktg-envelope.utils';
 
 /**
  * Validate a candidate Brand Kit envelope against the v1 contract's schema
- * gates and the 12-heading structural presence gate (contract §1 + §3 steps
+ * gates and the 13-heading structural presence gate (contract §1 + §3 steps
  * 1, 3, 4). Hash equality (step 2) is the caller's job — see module note.
  */
 export function validateBrandKitEnvelope(candidate: unknown): BrandKitValidationResult {

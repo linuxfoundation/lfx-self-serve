@@ -5,6 +5,7 @@ import {
   CAMPAIGN_BID_OUTCOME_UNCONFIRMED,
   CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED,
   CAMPAIGN_EMAIL_STAGES,
+  CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN,
   CAMPAIGN_GOALS,
   CAMPAIGN_NEGATIVE_KEYWORD_OUTCOMES,
   CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED,
@@ -44,16 +45,20 @@ import type {
   CampaignPlatform,
   CampaignPlatformResult,
   CampaignProgramType,
+  CampaignServiceAccountMonitor,
   CampaignServiceAudience,
   CampaignServiceCampaign,
   CampaignServiceCampaignResolution,
+  CampaignServiceConnection,
   CampaignServiceCreateResult,
   CampaignServiceHubSpotCampaign,
   CampaignServiceHubSpotCampaigns,
+  CampaignServiceHubSpotEmailMonitor,
   CampaignServiceKeywordActionInput,
   CampaignServiceKeywordActions,
   CampaignServiceKeywords,
   CampaignServiceMicrosoftKeywords,
+  CampaignServiceMonitorProvider,
   CampaignServiceNegativeKeywordInput,
   CampaignServiceNegativeKeywordResult,
   CampaignServiceNegativeKeywords,
@@ -419,6 +424,29 @@ function canCreateDemandGen(): boolean {
 }
 
 /**
+ * Whether this deployment can create a Reddit campaign from an image rather than an existing post.
+ *
+ * Constant `true`, and the constant is the point: BOTH creators author the promoted post from
+ * `imageUrl` + `callToAction` now. campaign-service always did (`CreateCampaign`); the legacy
+ * vendor-direct creator gained it in #3432 (`reddit-ads.service.ts`, `createRedditPromotedPost`),
+ * which is what makes the answer independent of the cutover.
+ *
+ * It stays a derived capability rather than a literal at the two call sites because the client
+ * cannot infer it — nothing in a create request says which arm will serve, and the controls this
+ * answer gates are the difference between a campaign that can serve and one that cannot. A flag
+ * here again is what a THIRD creator, or a legacy regression, would look like.
+ *
+ * Deliberately NOT `cutoverOwnsCreate()`, which is what it was while only one arm honoured the
+ * fields: reporting that now withholds the image and CTA controls on a deployment that handles
+ * them perfectly well, which is the same working-option-hidden defect `canCreateDemandGen`
+ * documents in the mirror-image direction. `googleCreativeEnabled` keeps the cutover gate because
+ * the legacy Google creator did NOT gain the matching capability.
+ */
+function canCreateRedditCreative(): boolean {
+  return true;
+}
+
+/**
  * Whether the campaign-service create path is the one that will serve a create.
  *
  * All THREE flags, because a partial set is equivalent to "cutover off" in `createCampaigns` and
@@ -445,6 +473,18 @@ function cutoverOwnsCreate(): boolean {
  */
 function canCreateGoogleChannels(): boolean {
   return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceGoogleChannels);
+}
+
+/**
+ * Whether a create may carry a per-platform `bidding` object (#3299).
+ *
+ * Needs the campaign-service create path to serve the create AND the bidding flag. Either alone is
+ * not enough, and both failures are silent: the legacy creator never reads `bidding`, and a
+ * campaign-service older than linuxfoundation/lfx-v2-campaign-service#332 drops the unknown key.
+ * Both would create the campaign on automatic bidding while the operator asked for a manual bid.
+ */
+export function canCreateWithBidding(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBidding);
 }
 
 export class CampaignServiceClient {
@@ -512,6 +552,8 @@ export class CampaignServiceClient {
         demandGenEnabled: canCreateDemandGen(),
         googleChannelsEnabled: canCreateGoogleChannels(),
         googleCreativeEnabled: cutoverOwnsCreate(),
+        redditCreativeEnabled: canCreateRedditCreative(),
+        biddingEnabled: canCreateWithBidding(),
       };
     }
 
@@ -564,6 +606,8 @@ export class CampaignServiceClient {
       demandGenEnabled: canCreateDemandGen(),
       googleChannelsEnabled: canCreateGoogleChannels(),
       googleCreativeEnabled: cutoverOwnsCreate(),
+      redditCreativeEnabled: canCreateRedditCreative(),
+      biddingEnabled: canCreateWithBidding(),
     };
   }
 
@@ -693,25 +737,30 @@ export class CampaignServiceClient {
     //
     // This is the guard for LFXV2-3200. Without it the update branch below is reachable by a
     // caller that never saw the stored brief, and it overwrites content the user was never
-    // shown. Two routes lead there and only one involves a slug mismatch:
+    // shown.
     //
     // `knownBriefId` defaults to null, and there are two ways a caller comes to hold one.
     //
-    // In THIS phase: by having created the brief itself. `CampaignsComponent` records the id a
+    // By having created the brief itself. `CampaignsComponent` records the id a
     // successful save returns, so the second Proceed of a session sends it and takes the ordinary
     // replace path. Note this parameter is NOT reliably null here: recording the created id
     // populates it, so any logic must read the value rather than assume its absence.
     //
-    // What is still missing is the RELOAD path: a fresh session, a second tab, or a reload cannot
-    // learn the id of a brief it did not write, so those callers arrive with null and are refused.
-    // LFXV2-3108 adds the read that closes that half.
+    // After a RELOAD: by restoring. `loadBrief` finds the stored brief, the user accepts the
+    // Restore offer, and `onRestoreSavedBrief` records the id and ETag — so a fresh session or a
+    // second tab CAN come to own a brief it did not write, which is how the refusal below is
+    // escapable at all, exactly as its user-facing message says.
+    //
+    // A caller still arrives with null whenever that offer never ran. Two routes lead there and
+    // only one involves a slug mismatch:
     //
     //   1. The lookup's slug (last path segment of the pasted URL) and the save's slug
     //      (`brief.eventDetails.slug`, from the scrape) diverge, so the Restore offer never
     //      appears, the user regenerates, and THIS find hits the row the offer missed.
-    //   2. No divergence at all — a reload, or a second tab. The page holds no brief id
-    //      because nothing loaded one, the slugs match perfectly, and the save still replaces
-    //      a brief whose contents the caller never read.
+    //   2. No divergence at all — a reload, or a second tab, where the offer never ran because
+    //      the page starts empty and `loadBrief` fires only once the event URL is re-entered.
+    //      The page holds no brief id, the slugs match perfectly, and the save would still
+    //      replace a brief whose contents the caller never read.
     //
     // Route 2 is why normalizing the two slug derivations is not the fix: it would close route
     // 1 and leave route 2 wide open. Ownership is the property that actually distinguishes
@@ -1487,6 +1536,13 @@ export class CampaignServiceClient {
       }
       const definitelyRejected = error instanceof MicroserviceError && error.statusCode >= 400 && error.statusCode < 500 && error.statusCode !== 408;
       if (definitelyRejected) {
+        // The one refusal worth naming: an invalid bid (#3299). Matched on the service's own wording,
+        // so nothing else upstream sends is rendered — see `CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN`.
+        const biddingRefusal =
+          error instanceof MicroserviceError && error.statusCode === 400 ? CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN.exec(error.message) : null;
+        if (biddingRefusal !== null) {
+          return { enabled: true, jobId: null, error: `Campaign creation was rejected and nothing was created: ${biddingRefusal[0]}` };
+        }
         return { enabled: true, jobId: null, error: 'Campaign creation was rejected and nothing was created. Please try again.' };
       }
       return {
@@ -1652,12 +1708,18 @@ export class CampaignServiceClient {
   }
 
   /**
-   * Add campaign-level negative keywords to one live campaign (Microsoft Advertising today).
+   * Add negative keywords to one live Microsoft Advertising, Reddit or X campaign: at campaign level
+   * on Microsoft, in the excluded keywords of the campaign's one ad group on Reddit, and as negated
+   * keyword targeting on its one line item on X.
    *
    * NOT ATOMIC and POSITIONAL: upstream answers one result per requested keyword, in request
    * order, each with its own outcome. The response is therefore mapped index for index and never
    * filtered, sorted or de-duplicated, because a caller zips `results[i]` onto the keyword it sent
    * at `i`, and a shifted entry would show a keyword that was not added as added.
+   *
+   * `revision` (Reddit's compare-and-set token from the keyword-targeting read) goes in the body
+   * ONLY when the caller passed one: Microsoft Advertising and X refuse the field whenever it is
+   * present, even empty.
    *
    * No `If-Match` and no ETag: upstream persists nothing for this lever. Upstream's own refusals
    * (400 malformed batch or unsupported platform, 409, 503) pass through unchanged. A transport
@@ -1689,7 +1751,10 @@ export class CampaignServiceClient {
       'POST',
       // The body is the SIXTH argument: a payload in the query position goes out with no body.
       undefined,
-      { negative_keywords: params.negativeKeywords.map((kw): CampaignServiceNegativeKeywordInput => ({ text: kw.text, match_type: kw.matchType })) }
+      {
+        negative_keywords: params.negativeKeywords.map((kw): CampaignServiceNegativeKeywordInput => ({ text: kw.text, match_type: kw.matchType })),
+        ...(params.revision !== undefined && { revision: params.revision }),
+      }
     );
 
     const readable =
@@ -2131,6 +2196,129 @@ export class CampaignServiceClient {
       `/projects/${encodePathSegment(projectSlug)}/google-ads/audience`,
       'GET',
       window ? { window } : undefined
+    );
+  }
+
+  /**
+   * The Meta Ads account monitor (`monitor-meta-ads-account`).
+   *
+   * ACCOUNT-scoped, unlike every other read here: `projectSlug` selects whose stored connection
+   * reads the account — the project's OWN only, never the LF system fallback, so a project without
+   * one gets a 404 — and campaign-service refuses an `accountId` that connection is not bound to.
+   * Every campaign the credential sees on the account comes back, not only this project's.
+   *
+   * `days` is sent as given: upstream REJECTS a value outside 7–90 rather than clamping, so the
+   * caller clamps (the controller does).
+   */
+  public async getMetaAdsAccountMonitor(req: Request, projectSlug: string, accountId: string, days: number): Promise<CampaignServiceAccountMonitor> {
+    return this.getAccountMonitor(req, 'meta-ads', projectSlug, accountId, days);
+  }
+
+  /**
+   * The LinkedIn Ads account monitor (`monitor-linkedin-ads-account`). Same scoping as
+   * `getMetaAdsAccountMonitor`. Its `pacing_pct` is deliberately unrounded upstream.
+   */
+  public async getLinkedInAdsAccountMonitor(req: Request, projectSlug: string, accountId: string, days: number): Promise<CampaignServiceAccountMonitor> {
+    return this.getAccountMonitor(req, 'linkedin-ads', projectSlug, accountId, days);
+  }
+
+  /** The Reddit Ads account monitor (`monitor-reddit-ads-account`). Same scoping as `getMetaAdsAccountMonitor`. */
+  public async getRedditAdsAccountMonitor(req: Request, projectSlug: string, accountId: string, days: number): Promise<CampaignServiceAccountMonitor> {
+    return this.getAccountMonitor(req, 'reddit-ads', projectSlug, accountId, days);
+  }
+
+  /**
+   * The Microsoft Advertising account monitor (`monitor-microsoft-ads-account`).
+   *
+   * REPORT-backed: the campaign list is live but the metrics come from the last finished
+   * asynchronous report, so the first read for an account and window returns every campaign
+   * `fetch_failed` with `metrics_pending: true`. Upstream answers 400 while its Microsoft metrics
+   * are disabled.
+   */
+  public async getMicrosoftAdsAccountMonitor(req: Request, projectSlug: string, accountId: string, days: number): Promise<CampaignServiceAccountMonitor> {
+    return this.getAccountMonitor(req, 'microsoft-ads', projectSlug, accountId, days);
+  }
+
+  /**
+   * The X Ads account monitor (`monitor-twitter-ads-account`). Report-backed like Microsoft's, and
+   * the one monitor with a 409: more than 200 campaigns active in the window, or an account timezone
+   * off the whole UTC hour (`reason` says which).
+   */
+  public async getTwitterAdsAccountMonitor(req: Request, projectSlug: string, accountId: string, days: number): Promise<CampaignServiceAccountMonitor> {
+    return this.getAccountMonitor(req, 'twitter-ads', projectSlug, accountId, days);
+  }
+
+  /**
+   * The HubSpot email monitor (`monitor-hubspot-account`).
+   *
+   * PROJECT-scoped, so there is no account id: the scope is the marketing emails campaign-service
+   * recorded for the project. A project with none gets an empty 200 without HubSpot being called.
+   */
+  public async getHubSpotAccountMonitor(req: Request, projectSlug: string, days: number): Promise<CampaignServiceHubSpotEmailMonitor> {
+    if (projectSlug === '') {
+      // Refused rather than sent: `/projects//…` is a different route that 404s at the gateway,
+      // which a caller would read as "no HubSpot connection".
+      throw ServiceValidationError.forField('project', 'An account monitor read requires the project it is scoped to.', {
+        operation: 'get_hubspot_account_monitor',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceHubSpotEmailMonitor>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/connection-hubspot/account-monitor`,
+      'GET',
+      { days }
+    );
+  }
+
+  /**
+   * The project's OWN connection for one ad provider (`get-<provider>` on campaign-service), read so
+   * the Monitor tab can offer the account it is bound to — the only account the account monitor
+   * will read for this project. Credentials are redacted upstream.
+   *
+   * campaign-service answers its typed 404 when the project has no connection of this provider;
+   * that is left to the caller to classify (see `isCampaignServiceNotFound`), because a gateway 404
+   * is not the same statement.
+   */
+  public async getConnection(req: Request, projectSlug: string, provider: CampaignServiceMonitorProvider): Promise<CampaignServiceConnection> {
+    if (projectSlug === '') {
+      // `/projects//connection-…` 404s at the gateway, which a caller would read as "no connection".
+      throw ServiceValidationError.forField('project', 'A connection read requires the project it belongs to.', {
+        operation: `get_${provider.replace('-', '_')}_connection`,
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceConnection>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/connection-${provider}`,
+      'GET'
+    );
+  }
+
+  /** The shared account-monitor GET. The provider segment comes from the calling method, never the request. */
+  private async getAccountMonitor(
+    req: Request,
+    provider: CampaignServiceMonitorProvider,
+    projectSlug: string,
+    accountId: string,
+    days: number
+  ): Promise<CampaignServiceAccountMonitor> {
+    if (projectSlug === '' || accountId === '') {
+      throw ServiceValidationError.forField(
+        projectSlug === '' ? 'project' : 'accountKey',
+        'An account monitor read requires both the project and the account it reads.',
+        { operation: `get_${provider.replace('-', '_')}_account_monitor`, service: 'campaign_service_client' }
+      );
+    }
+    // Query parameters in the FIFTH argument; the sixth is a body, which a GET discards.
+    return this.microserviceProxy.proxyRequest<CampaignServiceAccountMonitor>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/connection-${provider}/account-monitor`,
+      'GET',
+      { account_id: accountId, days }
     );
   }
 
@@ -2710,7 +2898,7 @@ function deepEqual(a: unknown, b: unknown): boolean {
  * standard requires that iteration to yield lower-cased names. A `headers['ETag']` fallback
  * would be unreachable code that implies the casing is uncertain.
  */
-function readEtag(response: ApiResponse<unknown>): string | null {
+export function readEtag(response: ApiResponse<unknown>): string | null {
   const etag = response.headers['etag'];
   return typeof etag === 'string' && etag.length > 0 ? etag : null;
 }
@@ -2727,8 +2915,10 @@ function readEtag(response: ApiResponse<unknown>): string | null {
  * reached the ad platform. Its client message becomes the lever's own unconfirmed message
  * (`CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED`, `CAMPAIGN_BID_OUTCOME_UNCONFIRMED`) rather than a bare
  * "please try again". `message` stays as it was, so the log keeps the cause.
+ *
+ * Exported for `campaign-optimize.service.ts`, whose adopt and lever writes share the problem.
  */
-function asUnconfirmedWriteFailure(error: unknown, operation: string, clientMessage: string): unknown {
+export function asUnconfirmedWriteFailure(error: unknown, operation: string, clientMessage: string): unknown {
   if (!(error instanceof MicroserviceError) || upstreamAnswered(error)) {
     return error;
   }

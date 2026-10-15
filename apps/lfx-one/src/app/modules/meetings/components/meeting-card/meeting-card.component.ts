@@ -57,6 +57,7 @@ import {
   MeetingCancelOccurrenceResult,
   MeetingDeleteTypeResult,
   MeetingOccurrence,
+  MeetingRsvp,
   MeetingRecurrence,
   MeetingRescheduleOccurrenceResult,
   RecurringMeetingEditScopeResult,
@@ -71,7 +72,7 @@ import {
   resolveOccurrenceRecurrence,
   TagSeverity,
 } from '@lfx-one/shared';
-import { isMeetingAttendeeListShared, isMeetingInviteResponsesEnabled, isSameOccurrenceId } from '@lfx-one/shared/utils';
+import { isMeetingAttendeeListShared, isMeetingInviteResponsesEnabled, isSameOccurrenceId, retainConfirmedRsvp } from '@lfx-one/shared/utils';
 import { RecordingModalComponent } from '@components/recording-modal/recording-modal.component';
 import { SummaryModalComponent } from '@components/summary-modal/summary-modal.component';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
@@ -81,6 +82,7 @@ import { FeatureFlagService } from '@services/feature-flag.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
+import { extractErrorMessage, isBffValidationError } from '@shared/utils/http-error.utils';
 import { AnimateOnScrollModule } from 'primeng/animateonscroll';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -128,6 +130,7 @@ export class MeetingCardComponent implements OnInit {
   private readonly meetingService = inject(MeetingService);
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
+  private readonly confirmationService = inject(ConfirmationService);
   private readonly injector = inject(Injector);
   private readonly clipboard = inject(Clipboard);
   private readonly userService = inject(UserService);
@@ -147,16 +150,13 @@ export class MeetingCardComponent implements OnInit {
   public showRegistrants: WritableSignal<boolean> = signal(false);
   /** Set when the drawer is opened from "Invite people", so it opens on the Add Guest form. */
   public openRegistrantsOnAddForm: WritableSignal<boolean> = signal(false);
-  public showMyRsvp: WritableSignal<boolean> = signal(false);
-  // Set by <lfx-meeting-rsvp-details> after it resolves its registrants/rsvps data.
-  // Drives the "Set My RSVP" / "Update My RSVP" label on the toggle button.
-  public userHasRsvp: WritableSignal<boolean> = signal(false);
   public meeting: WritableSignal<Meeting | PastMeeting> = signal({} as Meeting | PastMeeting);
   public occurrence: WritableSignal<MeetingOccurrence | null> = signal(null);
   public recording: WritableSignal<PastMeetingRecording | null> = signal(null);
   public summary: WritableSignal<PastMeetingSummary | null> = signal(null);
   public transcript: WritableSignal<PastMeetingTranscript | null> = signal(null);
   public additionalRegistrantsCount: WritableSignal<number> = signal(0);
+  public readonly confirmedRsvps = signal<MeetingRsvp[]>([]);
   /**
    * What the registrants drawer counted, or `null` while it has not counted yet.
    * @description `null` and `0` are different answers here, which is why this is not a plain `signal(0)`.
@@ -169,6 +169,9 @@ export class MeetingCardComponent implements OnInit {
    */
   public drawerGuestCount: WritableSignal<number | null> = signal(null);
   private readonly optimisticInvited: WritableSignal<boolean> = signal(false);
+  // True once the user has removed themselves, so the card does not offer "Remove" again while a refetched
+  // `invited` flag is stale (query-service indexing lag). Read from the service so it outlasts this card.
+  private readonly optimisticLeft: Signal<boolean> = computed(() => this.meetingService.removedRegistrationMeetingIds().has(this.meeting().id));
   // Host-flagged people surfaced by the registrants drawer, fed to the organizer chip so it
   // resolves the same organizer set the drawer badges (see resolvedHostsChange).
   public drawerHosts: WritableSignal<MeetingHostCandidate[]> = signal<MeetingHostCandidate[]>([]);
@@ -176,6 +179,7 @@ export class MeetingCardComponent implements OnInit {
   public materialsDrawerVisible = signal(false);
   /** Set while the pre-open write-access probe is in flight, so the edit button cannot be double-fired. */
   public checkingEditAccess: WritableSignal<boolean> = signal(false);
+  public readonly leavingMeeting: WritableSignal<boolean> = signal(false);
 
   // Computed values for template
   public readonly summaryContent: Signal<string | null> = this.initSummaryContent();
@@ -194,8 +198,9 @@ export class MeetingCardComponent implements OnInit {
     text: string;
   } | null> = this.initMeetingTypeBadge();
   public readonly containerClass: Signal<string> = this.initContainerClass();
-  public readonly rsvpToggleLabel: Signal<string> = this.initRsvpToggleLabel();
   public readonly currentOccurrence: Signal<MeetingOccurrence | null> = this.initCurrentOccurrence();
+  public readonly rsvpMeeting: Signal<Meeting> = this.initRsvpMeeting();
+  public readonly overviewConfirmedRsvps: Signal<MeetingRsvp[]> = this.initOverviewConfirmedRsvps();
   // Recurrence rule that drives the cadence badge: the displayed occurrence's own override
   // when present (cadence changed at/after it — LFXV2-2112), otherwise the series rule.
   public readonly displayRecurrence: Signal<MeetingRecurrence | null> = computed(() => resolveOccurrenceRecurrence(this.meeting(), this.currentOccurrence()));
@@ -224,16 +229,26 @@ export class MeetingCardComponent implements OnInit {
   public readonly isInvited: Signal<boolean> = computed(() => this.meeting().invited ?? false);
   // True when the user is invited OR has just registered in this session (optimistic, before the
   // meeting refetch settles invited:true). Used to show RSVP options immediately after registration.
-  public readonly effectivelyInvited: Signal<boolean> = computed(() => this.isInvited() || this.optimisticInvited());
+  public readonly effectivelyInvited: Signal<boolean> = computed(() => (this.isInvited() && !this.optimisticLeft()) || this.optimisticInvited());
   public readonly inviteResponsesEnabled: Signal<boolean> = computed(() => isMeetingInviteResponsesEnabled(this.meeting()));
   public readonly attendeeListShared: Signal<boolean> = computed(() => isMeetingAttendeeListShared(this.meeting()));
+  public readonly isRegisteredAttendee: Signal<boolean> = computed(
+    () => this.authenticated() && this.effectivelyInvited() && !this.meeting().organizer && !this.pastMeeting()
+  );
+  public readonly userAttended: Signal<boolean> = computed(() => {
+    // Read the input, not the local `meeting` signal: that one is only seeded while it has no id, so a
+    // refreshed input for the same card would leave this stale. `user_attended` has no optimistic updates.
+    const meeting = this.meetingInput();
+    return this.pastMeeting() && 'user_attended' in meeting && meeting.user_attended === true;
+  });
+  // A committee-sourced registration follows committee membership, so it cannot be removed from here.
+  public readonly canLeaveMeeting: Signal<boolean> = computed(() => this.isRegisteredAttendee() && !this.meeting().invited_via_committee);
   public readonly canRegisterForMeeting: Signal<boolean> = computed(
     () => this.authenticated() && !this.effectivelyInvited() && !this.meeting().restricted && this.meeting().visibility === 'public'
   );
-  // Computed signal to check if user can toggle between RSVP Details and RSVP Button Group
-  // True when user is both an organizer AND invited, and this meeting collects LFX RSVPs.
-  public readonly canToggleRsvpView: Signal<boolean> = computed(
-    () => !!this.meeting().organizer && this.isInvited() && !this.pastMeeting() && this.inviteResponsesEnabled()
+  // Invited organizers see their response controls alongside the guest overview.
+  public readonly canRespondAsOrganizer: Signal<boolean> = computed(
+    () => !!this.meeting().organizer && this.effectivelyInvited() && !this.pastMeeting() && this.inviteResponsesEnabled()
   );
   public readonly guestCount: Signal<number> = this.initGuestCount();
 
@@ -335,15 +350,24 @@ export class MeetingCardComponent implements OnInit {
       )
       .subscribe(() => this.refreshAttachments$.next());
 
-    // Reset post-registration flag if this card instance is reused for a different meeting.
-    toObservable(this.meetingInput)
+    // Local confirmations and post-registration state belong to this meeting and viewer identity.
+    combineLatest([meeting$, toObservable(this.userService.meetingFeedIdentity)])
       .pipe(
-        map((m) => m?.id),
-        distinctUntilChanged(),
+        distinctUntilChanged(
+          ([previousMeeting, previousIdentity], [meeting, identity]) => previousMeeting?.id === meeting?.id && previousIdentity === identity
+        ),
         skip(1),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe(() => this.optimisticInvited.set(false));
+      .subscribe(() => {
+        this.optimisticInvited.set(false);
+        this.confirmedRsvps.set([]);
+      });
+  }
+
+  public onRsvpChanged(rsvp: MeetingRsvp): void {
+    if (!this.userService.isMeetingRsvpCurrent(rsvp, this.meetingInput())) return;
+    this.confirmedRsvps.update((responses) => retainConfirmedRsvp(responses, rsvp));
   }
 
   /**
@@ -428,10 +452,6 @@ export class MeetingCardComponent implements OnInit {
     this.openRegistrantsOnAddForm.set(false);
   }
 
-  public onRsvpViewToggle(): void {
-    this.showMyRsvp.set(!this.showMyRsvp());
-  }
-
   public openMaterialsDrawer(): void {
     this.materialsDrawerVisible.set(true);
   }
@@ -490,9 +510,22 @@ export class MeetingCardComponent implements OnInit {
     dialogRef.onClose.pipe(take(1)).subscribe((result: { registered: boolean } | undefined) => {
       if (result?.registered) {
         this.optimisticInvited.set(true);
+        this.meetingService.clearRemovedRegistration(meeting.id);
         this.additionalRegistrantsCount.set(this.additionalRegistrantsCount() + 1);
         this.refreshMeeting();
       }
+    });
+  }
+
+  public confirmLeaveMeeting(): void {
+    this.confirmationService.confirm({
+      header: 'Remove Yourself',
+      message: `Remove yourself from "${this.meetingTitle()}"? You will no longer be invited to any occurrence and will lose your RSVP.`,
+      acceptLabel: 'Remove Me',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-danger p-button-sm',
+      rejectButtonStyleClass: 'p-button-outlined p-button-sm',
+      accept: () => this.leaveMeeting(),
     });
   }
 
@@ -807,6 +840,56 @@ export class MeetingCardComponent implements OnInit {
     });
   }
 
+  private leaveMeeting(): void {
+    const meetingId = this.meeting().id;
+    const subject = this.userService.user()?.sub || this.userService.viewerUsername() || this.userService.user()?.email || '';
+    this.leavingMeeting.set(true);
+
+    this.meetingService
+      .removeMyMeetingRegistration(meetingId)
+      .pipe(
+        take(1),
+        finalize(() => this.leavingMeeting.set(false))
+      )
+      .subscribe({
+        next: (result) => {
+          this.userService.clearConfirmedMeetingRsvps(meetingId, subject, result);
+          const currentSubject = this.userService.user()?.sub || this.userService.viewerUsername() || this.userService.user()?.email || '';
+          if (this.meeting().id !== meetingId || currentSubject !== subject) return;
+          if (result.remaining_registrant_ids.length > 0) {
+            this.confirmedRsvps.update((responses) => responses.filter((rsvp) => !result.removed_registrant_ids.includes(rsvp.registrant_id)));
+            this.optimisticInvited.set(true);
+            this.messageService.add({
+              severity: 'warn',
+              summary: 'Removal incomplete',
+              detail: 'Some of your registrations could not be removed. You are still invited to this meeting. Please try again.',
+            });
+            this.userService.refreshUserMeetings(false);
+            this.refreshMeeting();
+            return;
+          }
+          this.confirmedRsvps.set([]);
+          this.optimisticInvited.set(false);
+          this.meetingService.markRegistrationRemoved(meetingId);
+          this.meeting.update((meeting) => ({ ...meeting, invited: false, my_rsvp: null }));
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Removed',
+            detail: 'You have been removed from this meeting.',
+          });
+          this.meetingDeleted.emit();
+        },
+        error: (error: unknown) => {
+          const fallback = 'Unable to remove you from this meeting. Please try again.';
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: isBffValidationError(error) ? extractErrorMessage(error, fallback) : fallback,
+          });
+        },
+      });
+  }
+
   private refreshMeeting(): void {
     this.meetingService
       .getMeeting(this.meeting().id)
@@ -922,11 +1005,27 @@ export class MeetingCardComponent implements OnInit {
     });
   }
 
-  private initRsvpToggleLabel(): Signal<string> {
+  private initRsvpMeeting(): Signal<Meeting> {
     return computed(() => {
-      if (this.showMyRsvp()) return 'Hide My RSVP';
-      if (this.userHasRsvp()) return 'Update My RSVP';
-      return 'Set My RSVP';
+      const meeting = this.meeting();
+      const input = this.meetingInput();
+      const supplied = input.my_rsvp;
+      const myRsvp = supplied && !this.userService.isMeetingRsvpCurrent(supplied, input) ? null : supplied;
+      return meeting.my_rsvp === myRsvp && meeting.my_registrant_ids === input.my_registrant_ids
+        ? meeting
+        : { ...meeting, my_rsvp: myRsvp, my_registrant_ids: input.my_registrant_ids };
+    });
+  }
+
+  private initOverviewConfirmedRsvps(): Signal<MeetingRsvp[]> {
+    return computed(() => {
+      const meeting = this.rsvpMeeting();
+      const supplied = meeting.my_rsvp;
+      // Retained answers outlive this card instance, so a recreated card keeps a successful write too.
+      const confirmed = [...this.confirmedRsvps(), ...this.userService.confirmedMeetingRsvps(meeting.id)].filter((rsvp) =>
+        this.userService.isMeetingRsvpCurrent(rsvp, meeting)
+      );
+      return supplied ? [...confirmed, supplied] : confirmed;
     });
   }
 

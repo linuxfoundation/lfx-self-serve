@@ -135,6 +135,41 @@ describe('ComposerGuestsComponent', () => {
    * registrants the happy path doesn't produce — a duplicated email, a missing name — so neither is
    * reachable from the reconciliation tests above.
    */
+  describe('invited list filter', () => {
+    const named = (uid: string, first: string, last: string, email: string): MeetingRegistrantWithState => ({
+      ...savedGroupGuest,
+      uid,
+      first_name: first,
+      last_name: last,
+      email,
+      type: 'direct',
+    });
+    const filterTo = (term: string): string[] => {
+      component['guestFilterForm'].controls.query.setValue(term);
+      return component['filteredGuestRows']().map((row) => row.guest.uid);
+    };
+
+    beforeEach(() => {
+      formService.setGuests([named('r-anna', 'Anna', 'Kowalski', 'anna.kowalski@fabrikam.example'), named('r-bob', 'Bob', 'Marino', 'bob@tailspin.example')]);
+    });
+
+    it('narrows from the first character by word start, not substring', () => {
+      // "Bob Marino" contains an "a" but no word starts with one.
+      expect(filterTo('a')).toEqual(['r-anna']);
+      expect(filterTo('m')).toEqual(['r-bob']);
+    });
+
+    it('matches a typed or pasted email as a whole', () => {
+      expect(filterTo('anna.kowalski@fab')).toEqual(['r-anna']);
+      expect(filterTo('bob@tailspin.example')).toEqual(['r-bob']);
+    });
+
+    it('lists everyone for an empty term and no one for a miss', () => {
+      expect(filterTo('  ')).toEqual(['r-anna', 'r-bob']);
+      expect(filterTo('zz')).toEqual([]);
+    });
+  });
+
   describe('guest rows', () => {
     const rows = (): ComposerGuestRow[] => component['guestRows']();
 
@@ -354,6 +389,10 @@ describe('ComposerGuestsComponent', () => {
 
     it('reports no decision for a board meeting carrying a stale opt-in', () => {
       expect(resolve({ meeting_type: 'Board', show_meeting_attendees: true })).toBeNull();
+    });
+
+    it('reports a restricted meeting as decided off, so a group default cannot switch sharing on', () => {
+      expect(resolve({ restricted: true, show_meeting_attendees: true })).toBe(false);
     });
 
     it('reports an opt-out for a meeting whose flag the API omitted', () => {

@@ -131,6 +131,7 @@ export class AccountSettingsComponent {
   // Preferred meeting-invitation email (meeting-service). Null address = no override (uses primary).
   public meetingInviteData: Signal<MeetingInviteEmail | null> = computed(() => this.emailState().invite);
   public meetingInviteEmail = computed((): string | null => this.meetingInviteData()?.email ?? null);
+  public meetingInviteLoadFailed = computed((): boolean => this.emailState().inviteLoadFailed);
 
   // Inline banner for a meeting-invite validation failure (the address isn't an active, verified
   // record upstream). Held in a signal rather than a toast so it can host a "contact support" link.
@@ -157,24 +158,32 @@ export class AccountSettingsComponent {
 
   public emailsWithMetadata = computed(() => {
     const inviteEmail = this.meetingInviteEmail();
+    const inviteLoadFailed = this.meetingInviteLoadFailed();
     const primaryEmail = this.emailData()?.primary_email;
     return this.allEmails().map((email) => {
       const isPrimary = emailsEqual(email.email, primaryEmail);
-      // Explicit selection — drives the badge, which only appears once the user has chosen.
-      const isMeetingInvite = emailsEqual(email.email, inviteEmail);
-      // The primary row's action is "reset to default", which is meaningful whenever an override
-      // exists — including one pinned to the primary address, since clearing it lets invitations
-      // follow a later primary change. Other rows offer "use this address" until they are the override.
-      const canReset = inviteEmail !== null;
+      // The stored override — drives the delete guard.
+      const isInviteOverride = emailsEqual(email.email, inviteEmail);
+      // Where invitations actually go: the override, else the primary. Unknown when the lookup failed.
+      const isMeetingInvite = !inviteLoadFailed && (inviteEmail === null ? isPrimary : isInviteOverride);
       return {
         ...email,
         isPrimary,
+        isInviteOverride,
         isMeetingInvite,
         canDelete: this.allEmails().length > 1 && !isPrimary && !!email.user_id,
         canSetPrimary: !isPrimary && email.verified,
-        canSetMeetingInvite: email.verified && (isPrimary ? canReset : !isMeetingInvite),
+        canSetMeetingInvite: email.verified && !isMeetingInvite,
       };
     });
+  });
+
+  // A stored override that matches none of the listed addresses (e.g. the SFDC record differs from
+  // Auth0), so no row can carry the badge — surfaced as a banner instead of silently disappearing.
+  public orphanedInviteEmail = computed((): string | null => {
+    const inviteEmail = this.meetingInviteEmail();
+    if (inviteEmail === null || this.allEmails().length === 0) return null;
+    return this.allEmails().some((e) => emailsEqual(e.email, inviteEmail)) ? null : inviteEmail;
   });
 
   // Per-row action menu (kebab). Keyed by email address so each row resolves its own items.
@@ -319,7 +328,11 @@ export class AccountSettingsComponent {
           }
         },
         error: (error) => {
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: error.error?.message || 'Failed to send verification code' });
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: error.error?.message || error.error?.error || 'Failed to send verification code',
+          });
         },
       });
   }
@@ -388,14 +401,13 @@ export class AccountSettingsComponent {
   }
 
   public setMeetingInvite(email: UserEmail): void {
-    // Picking the primary row means "go back to the default". Sending its literal address would
-    // instead pin an explicit override that stops following a later primary-email change — the
-    // meeting service only clears the override for the sentinel.
+    // Picking the primary row sends the sentinel, which clears the override so invitations keep
+    // following the primary email; its literal address would pin it past a later primary change.
     const inviteEmail = this.meetingInviteEmail();
     const isReset = emailsEqual(email.email, this.emailData()?.primary_email);
-    // A reset still does work while any override exists, even one pointing at the primary address,
-    // so only a non-reset re-pick of the current override is a no-op.
-    const isNoop = isReset ? inviteEmail === null : emailsEqual(email.email, inviteEmail);
+    // No-op when the row already receives invitations — the primary also does when it is pinned.
+    // After a failed lookup that is unknown, so the write goes through and restores a known state.
+    const isNoop = !this.meetingInviteLoadFailed() && (emailsEqual(email.email, inviteEmail) || (isReset && inviteEmail === null));
 
     if (!email.verified || isNoop || this.savingMeetingInvite() || emailsEqual(email.email, this.deletingEmailAddress())) {
       return;
@@ -699,18 +711,15 @@ export class AccountSettingsComponent {
           items.push({ label: 'Make Primary', icon: 'fa-light fa-star', command: () => this.setPrimary(email) });
         }
         if (email.canSetMeetingInvite) {
-          // On the primary row the action clears the override rather than pinning an address — name it
-          // as a reset, since it also shows on a primary row already badged as the current override.
-          const label = email.isPrimary ? 'Reset to Default (Primary Email)' : 'Use for Meeting Invitations';
           items.push({
-            label,
+            label: 'Use for Meeting Invitations',
             icon: 'fa-light fa-envelope',
             disabled: savingInvite,
             command: () => this.setMeetingInvite(email),
           });
         }
         if (email.canDelete) {
-          const blockedReason = this.getDeleteBlockedReason(email.isMeetingInvite, savingInvite, this.emailState().inviteLoadFailed, deletingInProgress);
+          const blockedReason = this.getDeleteBlockedReason(email.isInviteOverride, savingInvite, this.emailState().inviteLoadFailed, deletingInProgress);
           if (blockedReason) {
             items.push({ label: 'Delete', icon: 'fa-light fa-trash', styleClass: 'text-red-500', disabled: true, title: blockedReason });
           } else {
@@ -724,14 +733,14 @@ export class AccountSettingsComponent {
   }
 
   /**
-   * Why deleting is blocked, or null when it's allowed. `isMeetingInvite` still reflects the
+   * Why deleting is blocked, or null when it's allowed. `isInviteOverride` still reflects the
    * previous selection until the refresh lands, so an in-flight write has to block every row —
    * otherwise the address just picked stays deletable for the whole SET and orphans the preference.
    * `inviteLoadFailed` means which address is protected is unknown, so every row blocks.
    * `deletingInProgress` means another row's delete is already in flight — every row blocks so a
    * second click can't overwrite the tracked address before the first delete lands.
    */
-  private getDeleteBlockedReason(isMeetingInvite: boolean, savingInvite: boolean, inviteLoadFailed: boolean, deletingInProgress: boolean): string | null {
+  private getDeleteBlockedReason(isInviteOverride: boolean, savingInvite: boolean, inviteLoadFailed: boolean, deletingInProgress: boolean): string | null {
     if (inviteLoadFailed) {
       return 'Could not confirm your meeting-invitation email. Reload the page before deleting an address.';
     }
@@ -741,7 +750,7 @@ export class AccountSettingsComponent {
     if (deletingInProgress) {
       return 'Deleting an email address. Wait for it to finish before deleting another.';
     }
-    if (isMeetingInvite) {
+    if (isInviteOverride) {
       return 'This email is set for meeting invitations. Choose a different meeting-invitation email before deleting it.';
     }
     return null;

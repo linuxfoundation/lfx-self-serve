@@ -20,6 +20,7 @@ import {
   VOTE_COLOR,
 } from '../constants';
 import type {
+  BatchRegistrantOperationResponse,
   CustomRecurrencePattern,
   Meeting,
   MeetingCommittee,
@@ -54,6 +55,7 @@ import {
   fromMeetingApiVotingStatuses,
   getMeetingOrganizerDisplayName,
   isCalendarDeadlinePast,
+  isMeetingAccepted,
   isMeetingDeclinedForAllOccurrences,
   isMeetingHiddenAsDeclined,
   isMeetingInviteResponsesEnabled,
@@ -62,7 +64,9 @@ import {
   isOccurrencePast,
   isPastMeetingCompositeId,
   isUnresolvableParticipantName,
+  isBatchRegistrantOperationResponse,
   isVoteCalendarEventPast,
+  mergeBatchRegistrantResponses,
   normalizeIndexedMeetingAiSummary,
   normalizeIndexedMeetingInviteResponses,
   normalizeMeetingApiVotingStatuses,
@@ -1737,6 +1741,62 @@ describe('isMeetingDeclinedForAllOccurrences', () => {
   });
 });
 
+describe('isMeetingAccepted', () => {
+  const rsvp = (response_type: MeetingRsvp['response_type'], scope: MeetingRsvp['scope'] = 'all'): MeetingRsvp => ({
+    id: 'r1',
+    meeting_id: 'm1',
+    registrant_id: 'reg1',
+    username: 'alovelace',
+    email: 'ada@example.com',
+    response_type,
+    scope,
+    created_at: '2026-01-01T00:00:00Z',
+  });
+
+  it('is true for an acceptance, whatever its scope', () => {
+    expect(isMeetingAccepted(buildMeetingFixture({ my_rsvp: rsvp('accepted') }))).toBe(true);
+    expect(isMeetingAccepted(buildMeetingFixture({ my_rsvp: rsvp('accepted', 'single') }))).toBe(true);
+  });
+
+  describe('recurring meetings', () => {
+    const NEXT_OCCURRENCE_ID = '4070908800';
+    const NEXT_START = '2099-01-01T10:00:00Z';
+    const recurring = (my_rsvp: MeetingRsvp | null): Meeting =>
+      buildMeetingFixture({
+        id: 'm1',
+        recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '2' },
+        occurrences: [{ occurrence_id: NEXT_OCCURRENCE_ID, start_time: NEXT_START, duration: 60 }],
+        my_rsvp,
+      });
+
+    it('counts an acceptance that covers the next date', () => {
+      expect(isMeetingAccepted(recurring(rsvp('accepted', 'all')))).toBe(true);
+      expect(isMeetingAccepted(recurring({ ...rsvp('accepted', 'single'), occurrence_id: NEXT_OCCURRENCE_ID }))).toBe(true);
+    });
+
+    it('does not count an acceptance given only for a different date', () => {
+      // The BFF falls back to the newest series RSVP when none applies to the next date.
+      expect(isMeetingAccepted(recurring({ ...rsvp('accepted', 'single'), occurrence_id: '1785247200' }))).toBe(false);
+    });
+
+    it.each(['single', 'this_and_following'] as const)('does not count a %s acceptance without a resolved recurring date', (scope) => {
+      const meeting = { ...recurring({ ...rsvp('accepted', scope), occurrence_id: NEXT_OCCURRENCE_ID }), occurrences: [] };
+      expect(isMeetingAccepted(meeting)).toBe(false);
+    });
+
+    it('counts an all-dates acceptance without a resolved recurring date', () => {
+      expect(isMeetingAccepted({ ...recurring(rsvp('accepted', 'all')), occurrences: [] })).toBe(true);
+    });
+  });
+
+  it('is false for maybe, declined, or no RSVP', () => {
+    expect(isMeetingAccepted(buildMeetingFixture({ my_rsvp: rsvp('maybe') }))).toBe(false);
+    expect(isMeetingAccepted(buildMeetingFixture({ my_rsvp: rsvp('declined') }))).toBe(false);
+    expect(isMeetingAccepted(buildMeetingFixture({ my_rsvp: null }))).toBe(false);
+    expect(isMeetingAccepted(null)).toBe(false);
+  });
+});
+
 describe('isMeetingHiddenAsDeclined', () => {
   const declinedAll = { id: 'r1', response_type: 'declined', scope: 'all' } as MeetingRsvp;
   const ada = { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' };
@@ -1840,5 +1900,59 @@ describe('buildMeetingOccurrenceOptions', () => {
     const series = buildMeetingFixture({ id: 'meeting-2', timezone: 'UTC', duration: 60, occurrences: [running] });
 
     expect(buildMeetingOccurrenceOptions(series, null, NOW).map((option) => option.value)).toEqual([running.occurrence_id]);
+  });
+});
+
+describe('mergeBatchRegistrantResponses', () => {
+  const failure = (input: string, message: string): BatchRegistrantOperationResponse<string>['failures'][number] => ({ input, error: { message } });
+
+  it('returns empty arrays and zero counts for no responses', () => {
+    expect(mergeBatchRegistrantResponses<string>([])).toEqual({ successes: [], failures: [], summary: { total: 0, successful: 0, failed: 0 } });
+  });
+
+  it('returns a single response unchanged', () => {
+    const response: BatchRegistrantOperationResponse<string> = {
+      successes: ['reg-1', 'reg-2'],
+      failures: [failure('reg-3', 'Not found')],
+      summary: { total: 3, successful: 2, failed: 1 },
+    };
+
+    expect(mergeBatchRegistrantResponses([response])).toEqual(response);
+  });
+
+  it('concatenates successes and failures in request order and sums the counts', () => {
+    const merged = mergeBatchRegistrantResponses<string>([
+      { successes: ['reg-1', 'reg-2'], failures: [], summary: { total: 2, successful: 2, failed: 0 } },
+      { successes: ['reg-3'], failures: [failure('reg-4', 'Forbidden')], summary: { total: 2, successful: 1, failed: 1 } },
+      { successes: [], failures: [failure('reg-5', 'Request failed'), failure('reg-6', 'Request failed')], summary: { total: 2, successful: 0, failed: 2 } },
+    ]);
+
+    expect(merged.successes).toEqual(['reg-1', 'reg-2', 'reg-3']);
+    expect(merged.failures.map((item) => item.input)).toEqual(['reg-4', 'reg-5', 'reg-6']);
+    expect(merged.failures[0].error.message).toBe('Forbidden');
+    expect(merged.summary).toEqual({ total: 6, successful: 3, failed: 3 });
+  });
+});
+
+describe('isBatchRegistrantOperationResponse', () => {
+  it('accepts a batch response, including an all-failed one', () => {
+    expect(
+      isBatchRegistrantOperationResponse({
+        successes: [],
+        failures: [{ input: 'reg-1', error: { message: 'Not found' } }],
+        summary: { total: 1, successful: 0, failed: 1 },
+      })
+    ).toBe(true);
+  });
+
+  it.each([
+    ['null', null],
+    ['a string', 'Bad Request'],
+    ['a validation error body', { error: 'Validation failed', validationErrors: [{ field: 'registrants', message: 'No registrants provided' }] }],
+    ['a body missing failures', { successes: [], summary: { total: 0, successful: 0, failed: 0 } }],
+    ['a body with a null summary', { successes: [], failures: [], summary: null }],
+    ['a body with a non-numeric count', { successes: [], failures: [], summary: { total: '1', successful: 0, failed: 1 } }],
+  ])('rejects %s', (_label, value) => {
+    expect(isBatchRegistrantOperationResponse(value)).toBe(false);
   });
 });

@@ -51,7 +51,14 @@ export class VoteService {
   } | null = null;
 
   public getMyVotes(): Observable<Vote[]> {
-    return this.http.get<Vote[]>('/api/votes/my-votes').pipe(catchError(() => of([])));
+    return this.http.get<Vote[]>('/api/votes/my-votes').pipe(
+      catchError((error: unknown) => {
+        console.error('Failed to load personal votes', {
+          status: error instanceof HttpErrorResponse ? error.status : undefined,
+        });
+        return throwError(() => error);
+      })
+    );
   }
 
   public getVotesByProjectPaginated(

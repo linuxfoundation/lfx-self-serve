@@ -61,6 +61,26 @@ vi.mock('./object-store.service', () => ({
     public getObject = objectStoreMocks.getObject;
   },
 }));
+// The document store records revisions on top of the agent's own write and
+// has its own spec (mktg-document-store.service.spec.ts). Here it passes
+// through, so this spec keeps asserting the agent's persistence, plus the
+// session id the store keys revisions by.
+const documentStoreMocks = vi.hoisted(() => ({ recordedSessions: [] as string[] }));
+vi.mock('./mktg-document-store.service', async () => {
+  const { MktgArtifactService } = await import('./mktg-artifact.service');
+  return {
+    MktgDocumentStoreService: class {
+      private readonly artifactService = new MktgArtifactService();
+      public persistGeneration(req: Request, spec: MktgArtifactSpec, envelope: MktgArtifactEnvelope, projectUid: string | undefined, sessionId: string) {
+        documentStoreMocks.recordedSessions.push(sessionId);
+        return this.artifactService.persist(req, spec, envelope, projectUid);
+      }
+      public readLatest(req: Request, spec: MktgArtifactSpec, project: string) {
+        return this.artifactService.readLatest(req, spec, project);
+      }
+    },
+  };
+});
 vi.mock('./logger.service', () => ({
   logger: loggerMocks,
 }));
@@ -70,6 +90,7 @@ vi.mock('./project.service', () => ({
   },
 }));
 
+import type { MktgArtifactEnvelope, MktgArtifactSpec } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
 import { BrandKitService } from './brand-kit.service';
@@ -77,18 +98,19 @@ import { BrandKitService } from './brand-kit.service';
 const req = { path: '/api/mktg-agents/brand-kit/result' } as unknown as Request;
 
 const REQUIRED_HEADINGS = [
+  '## Review Sheet',
   '## How to Use This Document',
   '## 1. Project Definition',
   '## 2. Positioning',
-  '## 3. Brand Personality & Voice',
-  '## 4. Primary Audiences & Messaging',
+  '## 3. Voice & Language',
+  '## 4. Primary Audiences',
   '## 5. Key Brand Strengths',
   '## 6. Competitive Differentiation & Guardrails',
   '## 7. Visual Identity',
   '## 8. Tagline Options',
-  '## 9. Channel Quick Reference',
   '## Appendix A: Document Architecture',
   '## Appendix B: Source Intake',
+  '## Appendix C: LFX Project Record & Research Sweep',
 ];
 
 function buildDocument(): string {
@@ -127,6 +149,7 @@ describe('BrandKitService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    documentStoreMocks.recordedSessions.length = 0;
     objectStoreMocks.putContentAddressedObject.mockResolvedValue(true);
     // Default: the caller holds the writer grant on the run's project.
     projectMocks.getProjectById.mockResolvedValue({ uid: PROJECT_UID, slug: 'testorbit', writer: true });
@@ -212,6 +235,8 @@ describe('BrandKitService', () => {
         version: 1,
         intake_mode: 'form',
       });
+      // Recorded as a revision of the project's Brand Kit, keyed by the run's session.
+      expect(documentStoreMocks.recordedSessions).toEqual(['s']);
     });
 
     it('rewrites an identical document only for a STRICTLY newer draft, so its stored label and store timestamp follow the latest draft', async () => {

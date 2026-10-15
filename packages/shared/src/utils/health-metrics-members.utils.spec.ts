@@ -183,22 +183,33 @@ describe('buildHealthMetricsMembersDirectorySearchPlaceholder', () => {
 });
 
 describe('buildHealthMetricsMembersTiersView', () => {
-  const row = (year: number, tier: string, sortRank: number, memberCount: number | null, revenueUsd: number | null, newMemberCount: number | null = 0) => ({
+  const row = (
+    year: number,
+    tier: string,
+    sortRank: number,
+    memberCount: number | null,
+    revenueUsd: number | null,
+    newMemberCount: number | null = 0,
+    memberSharePct: number | null = null,
+    revenueSharePct: number | null = null
+  ) => ({
     year,
     tier,
     sortRank,
     memberCount,
     newMemberCount,
     revenueUsd,
+    memberSharePct,
+    revenueSharePct,
     isPartialYear: year === 2026,
   });
   const TIERS: HealthMetricsMembersTiers = {
     rows: [
       row(2024, 'Gold', 2, 10, 500_000),
       row(2024, 'Platinum', 1, 5, 1_000_000),
-      row(2025, 'Gold', 2, 15, 750_000, 6),
-      row(2025, 'Platinum', 1, 5, 1_000_000, 1),
-      row(2025, 'Silver', 3, 0, 0),
+      row(2025, 'Gold', 2, 15, 750_000, 6, 75, 42.9),
+      row(2025, 'Platinum', 1, 5, 1_000_000, 1, 25, 57.1),
+      row(2025, 'Silver', 3, 0, 0, 0, 0, 0),
       row(2026, 'Gold', 2, 16, 800_000, 2),
       row(2026, 'Platinum', 1, 6, 1_200_000, 1),
     ],
@@ -232,7 +243,7 @@ describe('buildHealthMetricsMembersTiersView', () => {
   it('keeps the matrix total equal to the headline for the selected year', () => {
     const view = buildHealthMetricsMembersTiersView(TIERS, 'COMPLETED_YEAR', 'members');
     const column = view.years.findIndex((year) => year.year === 2025);
-    const cellSum = view.tiers.reduce((sum, tier) => sum + (tier.cells[column].count ?? 0), 0);
+    const cellSum = view.tiers.reduce((sum, tier) => sum + (tier.cells[column].value ?? 0), 0);
 
     expect(view.years[column].totalMembers).toBe(cellSum);
     expect(view.headline.value).toBe(String(cellSum));
@@ -278,18 +289,31 @@ describe('buildHealthMetricsMembersTiersView', () => {
     const silver = view.tiers.find((tier) => tier.tier === 'Silver');
 
     expect(silver?.cells.map((cell) => cell.label)).toEqual(['—', '—', '—']);
-    // A measured zero is a 0% share; a year the tier is missing from has no share at all.
+    // The model's share is shown as-is; a year the tier is missing from has no share at all.
     expect(silver?.cells.map((cell) => cell.sharePct)).toEqual([null, 0, null]);
     expect(view.yearMeasured).toBe(false);
     expect(view.headline).toMatchObject({ value: '—', delta: 'not available' });
   });
 
   it('draws one tier in one year as a single full bar', () => {
-    const view = buildHealthMetricsMembersTiersView({ rows: [row(2025, 'Member', 1, 4, 40_000)], foundationRevenue: [] }, 'COMPLETED_YEAR', 'members');
+    const view = buildHealthMetricsMembersTiersView(
+      { rows: [row(2025, 'Member', 1, 4, 40_000, 0, 100, 100)], foundationRevenue: [] },
+      'COMPLETED_YEAR',
+      'members'
+    );
 
     expect(view.tiers).toHaveLength(1);
-    expect(view.tiers[0].cells).toEqual([{ year: 2025, count: 4, label: '4', sharePct: 100 }]);
+    expect(view.tiers[0].cells).toEqual([{ year: 2025, value: 4, label: '4', sharePct: 100 }]);
     expect(view.metaLabel).toBe('1 tier · 1 year');
+  });
+
+  it('fills the cells with revenue and its share in revenue mode', () => {
+    const view = buildHealthMetricsMembersTiersView(TIERS, 'COMPLETED_YEAR', 'revenue');
+    const column = view.years.findIndex((year) => year.year === 2025);
+    const gold = view.tiers.find((tier) => tier.tier === 'Gold');
+
+    expect(gold?.cells[column]).toEqual({ year: 2025, value: 750_000, label: '$750K', sharePct: 42.9 });
+    expect(view.tiers.find((tier) => tier.tier === 'Platinum')?.cells[column].sharePct).toBe(57.1);
   });
 
   it('reports an unmeasured foundation', () => {
@@ -480,6 +504,8 @@ describe('members at risk', () => {
       outstandingBalanceUsd: 20_000,
       daysOverdue: 71,
       lastEngagedDate: '2026-03-04',
+      churnRisk: 'High',
+      agingBucket: '60_89_days',
       ...overrides,
     };
   }
@@ -532,10 +558,15 @@ describe('members at risk', () => {
       tierLabel: 'Gold Membership',
       overdueLabel: '$20K',
       ageLabel: '71 days',
+      agingLabel: '60–89 days',
+      churnRiskLabel: 'High risk',
+      churnRiskClass: 'bg-red-50 text-red-700',
     });
     expect(
-      buildHealthMetricsMembersAtRiskRows([atRiskMember({ membershipTier: null, outstandingBalanceUsd: null, daysOverdue: null, lastEngagedDate: null })])[0]
-    ).toMatchObject({ tierLabel: '—', overdueLabel: '—', ageLabel: '—', lastEngagedLabel: '—' });
+      buildHealthMetricsMembersAtRiskRows([
+        atRiskMember({ membershipTier: null, outstandingBalanceUsd: null, daysOverdue: null, lastEngagedDate: null, churnRisk: null, agingBucket: null }),
+      ])[0]
+    ).toMatchObject({ tierLabel: '—', overdueLabel: '—', ageLabel: '—', lastEngagedLabel: '—', agingLabel: '—', churnRiskLabel: null, churnRiskClass: '' });
   });
 
   it('notes the overdue count and balance, and nothing while no member is at risk', () => {
@@ -591,6 +622,8 @@ describe('buildHealthMetricsMembersRenewalRows', () => {
           renewalDate: '2026-11-18',
           duesUsd: 20_000,
           hasOutstandingBalance: true,
+          daysUntilRenewal: 40,
+          hasRenewed: false,
         },
       ])
     ).toEqual([
@@ -601,15 +634,61 @@ describe('buildHealthMetricsMembersRenewalRows', () => {
         renewalDateLabel: 'Nov 18, 2026',
         duesLabel: '$20K',
         hasOutstandingBalance: true,
+        daysUntilLabel: 'In 40 days',
+        hasRenewed: false,
       },
     ]);
   });
 
   it('dashes a missing tier, date or dues instead of $0', () => {
     const [row] = buildHealthMetricsMembersRenewalRows([
-      { accountId: 'acct-2', accountName: 'Acme Labs', membershipTier: null, renewalDate: null, duesUsd: null, hasOutstandingBalance: false },
+      {
+        accountId: 'acct-2',
+        accountName: 'Acme Labs',
+        membershipTier: null,
+        renewalDate: null,
+        duesUsd: null,
+        hasOutstandingBalance: false,
+        daysUntilRenewal: null,
+        hasRenewed: true,
+      },
     ]);
-    expect(row).toMatchObject({ tierLabel: '—', renewalDateLabel: '—', duesLabel: '—', hasOutstandingBalance: false });
+    expect(row).toMatchObject({ tierLabel: '—', renewalDateLabel: '—', duesLabel: '—', hasOutstandingBalance: false, daysUntilLabel: '—', hasRenewed: true });
+  });
+
+  it('counts down to the renewal date, and dashes a date already past', () => {
+    const labels = [0, 1, 12, -3].map(
+      (daysUntilRenewal) =>
+        buildHealthMetricsMembersRenewalRows([
+          {
+            accountId: 'acct-3',
+            accountName: 'Acme Works',
+            membershipTier: 'Gold',
+            renewalDate: '2026-10-09',
+            duesUsd: 10_000,
+            hasOutstandingBalance: false,
+            daysUntilRenewal,
+            hasRenewed: false,
+          },
+        ])[0].daysUntilLabel
+    );
+    expect(labels).toEqual(['Today', 'In 1 day', 'In 12 days', '—']);
+  });
+
+  it('gives a renewed membership no countdown', () => {
+    const [row] = buildHealthMetricsMembersRenewalRows([
+      {
+        accountId: 'acct-4',
+        accountName: 'Acme Works',
+        membershipTier: 'Gold',
+        renewalDate: '2026-11-01',
+        duesUsd: 10_000,
+        hasOutstandingBalance: false,
+        daysUntilRenewal: 23,
+        hasRenewed: true,
+      },
+    ]);
+    expect(row).toMatchObject({ daysUntilLabel: '—', hasRenewed: true });
   });
 });
 

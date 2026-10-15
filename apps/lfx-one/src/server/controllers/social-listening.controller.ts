@@ -10,10 +10,11 @@ import {
   MAX_TAGS_LIMIT,
   parseFoundationSlug,
   parseSocialListeningAnalyticsFilters,
+  parseSocialListeningAnalyticsScope,
   parseSocialListeningAuthorFilters,
-  parseSocialListeningFilters,
+  parseSocialListeningCountBody,
+  parseSocialListeningFeedBody,
   parseSocialListeningLimit,
-  parseSocialListeningPagination,
   parseSocialListeningScope,
 } from '../helpers/social-listening-params.helper';
 import { logger } from '../services/logger.service';
@@ -24,8 +25,8 @@ import { isImpersonating } from '../utils/auth-helper';
 import type { PreferenceReadResponse, PreferenceUpsertRequest } from '@lfx-one/shared/interfaces';
 
 /**
- * Social Listening HTTP boundary (LFXV2-3002): query params are validated via
- * `social-listening-params.helper` before touching the service. The dashboard-access gate (ED + LF Staff) lives in the route middleware.
+ * Social Listening HTTP boundary: feed/count JSON bodies and remaining GET query params are
+ * validated before touching the service. The dashboard-access gate (ED + LF Staff) lives in route middleware.
  */
 export class SocialListeningController {
   private readonly socialListeningService: SocialListeningService;
@@ -110,23 +111,17 @@ export class SocialListeningController {
   }
 
   /**
-   * GET /api/social-listening/mentions-feed — one page of mentions for a foundation, newest first.
-   * Query params: foundationSlug (required), period, sourceProjectId, platform, page_size, page_token, feed filters
+   * POST /api/social-listening/mentions-feed — one page of mentions for a foundation, newest first.
+   * JSON body: foundationSlug (required), period, sourceProjectId, platform, page_size, page_token, feed filters.
    */
   public async getMentionsFeed(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'get_social_listening_mentions_feed';
     const startTime = logger.startOperation(req, operation);
 
     try {
-      const scope = parseSocialListeningScope(req, operation);
-      const { pageSize, cursor } = parseSocialListeningPagination(req, operation);
-
-      const response = await this.socialListeningService.getMentionsFeed(req, {
-        ...scope,
-        ...parseSocialListeningFilters(req, operation),
-        pageSize,
-        cursor,
-      });
+      const scope = parseSocialListeningFeedBody(req.body, operation);
+      const { pageSize, cursor } = scope;
+      const response = await this.socialListeningService.getMentionsFeed(req, scope);
 
       logger.success(req, operation, startTime, {
         foundation_slug: scope.foundationSlug,
@@ -142,20 +137,16 @@ export class SocialListeningController {
   }
 
   /**
-   * GET /api/social-listening/mentions-count — total mentions matching the feed's scope + filters.
-   * Query params: foundationSlug (required), period, sourceProjectId, platform, feed filters
+   * POST /api/social-listening/mentions-count — total mentions matching the feed's scope + filters.
+   * JSON body: foundationSlug (required), period, sourceProjectId, platform, feed filters.
    */
   public async getMentionsCount(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'get_social_listening_mentions_count';
     const startTime = logger.startOperation(req, operation);
 
     try {
-      const scope = parseSocialListeningScope(req, operation);
-
-      const total = await this.socialListeningService.getMentionsCount(req, {
-        ...scope,
-        ...parseSocialListeningFilters(req, operation),
-      });
+      const scope = parseSocialListeningCountBody(req.body, operation);
+      const total = await this.socialListeningService.getMentionsCount(req, scope);
 
       logger.success(req, operation, startTime, { foundation_slug: scope.foundationSlug, total });
 
@@ -296,16 +287,16 @@ export class SocialListeningController {
   }
 
   /**
-   * GET /api/social-listening/analytics-overview — headline KPIs plus change vs. the preceding equal-length window.
-   * Query params: foundationSlug (required), period, sourceProjectId, platform, feed filters except `mentionIds`
+   * GET /api/social-listening/analytics-overview — governed headline KPIs and modeled changes.
+   * Governed values for foundation/period/project/platform; content filters ignored.
    */
   public async getAnalyticsOverview(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'get_social_listening_analytics_overview';
     const startTime = logger.startOperation(req, operation);
 
     try {
-      const scope = parseSocialListeningScope(req, operation);
-      const overview = await this.socialListeningService.getAnalyticsOverview(req, { ...scope, ...parseSocialListeningAnalyticsFilters(req, operation) });
+      const scope = parseSocialListeningAnalyticsScope(req, operation);
+      const overview = await this.socialListeningService.getAnalyticsOverview(req, scope);
 
       logger.success(req, operation, startTime, {
         foundation_slug: scope.foundationSlug,
@@ -319,16 +310,16 @@ export class SocialListeningController {
   }
 
   /**
-   * GET /api/social-listening/analytics-over-time — mention volume bucketed by day (≤ ~2 months) or month.
-   * Query params: foundationSlug (required), period, sourceProjectId, platform, feed filters except `mentionIds`
+   * GET /api/social-listening/analytics-over-time — governed mention volume buckets.
+   * Governed values for foundation/period/project/platform; content filters ignored.
    */
   public async getAnalyticsOverTime(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'get_social_listening_analytics_over_time';
     const startTime = logger.startOperation(req, operation);
 
     try {
-      const scope = parseSocialListeningScope(req, operation);
-      const points = await this.socialListeningService.getAnalyticsOverTime(req, { ...scope, ...parseSocialListeningAnalyticsFilters(req, operation) });
+      const scope = parseSocialListeningAnalyticsScope(req, operation);
+      const points = await this.socialListeningService.getAnalyticsOverTime(req, scope);
 
       logger.success(req, operation, startTime, { foundation_slug: scope.foundationSlug, data_points: points.length });
 
@@ -339,19 +330,16 @@ export class SocialListeningController {
   }
 
   /**
-   * GET /api/social-listening/analytics-platform-distribution — mention share per platform in scope + window.
-   * Query params: foundationSlug (required), period, sourceProjectId, platform, feed filters except `mentionIds`
+   * GET /api/social-listening/analytics-platform-distribution — governed mention share per platform.
+   * Governed values for foundation/period/project/platform; content filters ignored.
    */
   public async getAnalyticsPlatformDistribution(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'get_social_listening_analytics_platform_distribution';
     const startTime = logger.startOperation(req, operation);
 
     try {
-      const scope = parseSocialListeningScope(req, operation);
-      const distribution = await this.socialListeningService.getAnalyticsPlatformDistribution(req, {
-        ...scope,
-        ...parseSocialListeningAnalyticsFilters(req, operation),
-      });
+      const scope = parseSocialListeningAnalyticsScope(req, operation);
+      const distribution = await this.socialListeningService.getAnalyticsPlatformDistribution(req, scope);
 
       logger.success(req, operation, startTime, { foundation_slug: scope.foundationSlug, platform_count: distribution.length });
 
@@ -362,19 +350,16 @@ export class SocialListeningController {
   }
 
   /**
-   * GET /api/social-listening/analytics-sentiment-distribution — mention share per sentiment bucket in scope + window.
-   * Query params: foundationSlug (required), period, sourceProjectId, platform, feed filters except `mentionIds`
+   * GET /api/social-listening/analytics-sentiment-distribution — governed mention share per sentiment.
+   * Governed values for foundation/period/project/platform; content filters ignored.
    */
   public async getAnalyticsSentimentDistribution(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'get_social_listening_analytics_sentiment_distribution';
     const startTime = logger.startOperation(req, operation);
 
     try {
-      const scope = parseSocialListeningScope(req, operation);
-      const distribution = await this.socialListeningService.getAnalyticsSentimentDistribution(req, {
-        ...scope,
-        ...parseSocialListeningAnalyticsFilters(req, operation),
-      });
+      const scope = parseSocialListeningAnalyticsScope(req, operation);
+      const distribution = await this.socialListeningService.getAnalyticsSentimentDistribution(req, scope);
 
       logger.success(req, operation, startTime, { foundation_slug: scope.foundationSlug, bucket_count: distribution.length });
 
@@ -385,19 +370,18 @@ export class SocialListeningController {
   }
 
   /**
-   * GET /api/social-listening/analytics-top-projects — sub-projects ranked by mention volume.
-   * Query params: foundationSlug (required), period, sourceProjectId, platform, limit, feed filters except `mentionIds`
+   * GET /api/social-listening/analytics-top-projects — governed sub-project mention ranking.
+   * Governed values for foundation/period/project/platform with an optional limit; content filters ignored.
    */
   public async getAnalyticsTopProjects(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'get_social_listening_analytics_top_projects';
     const startTime = logger.startOperation(req, operation);
 
     try {
-      const scope = parseSocialListeningScope(req, operation);
+      const scope = parseSocialListeningAnalyticsScope(req, operation);
       const limit = parseSocialListeningLimit(req, operation);
       const projects = await this.socialListeningService.getAnalyticsTopProjects(req, {
         ...scope,
-        ...parseSocialListeningAnalyticsFilters(req, operation),
         limit,
       });
 

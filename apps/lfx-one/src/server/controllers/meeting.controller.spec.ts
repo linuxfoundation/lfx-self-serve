@@ -9,6 +9,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // are what the controller under test actually reads.
 const MEETING_AGENDA_MAX_LENGTH = 2000;
 const MEETING_AGENDA_PROMPT_MAX_LENGTH = 1000;
+const MEETING_REGISTRANT_BATCH_MAX = 100;
+const MEETING_REGISTRANT_BATCH_CONCURRENCY = 5;
 
 const MEETING_ID = 'meeting-1111';
 const V2_COMMITTEE_UID = 'cmte-v2-aaaa';
@@ -24,11 +26,16 @@ const { meetingSvc, aiSvc, committeeSvc, resolveCommitteeV2UidsToV1IdsMock, reso
     canViewMeetingRoster: vi.fn(),
     getMeetingRsvps: vi.fn(),
     getMeetingRegistrantsForUser: vi.fn(),
+    removeMeetingRegistrantSelf: vi.fn(),
     addMeetingRegistrant: vi.fn(),
     updateMeetingRegistrant: vi.fn(),
+    deleteMeetingRegistrant: vi.fn(),
     createMeetingRsvp: vi.fn(),
     updateOccurrence: vi.fn(),
     cancelOccurrence: vi.fn(),
+    getMeetingJoinUrl: vi.fn(),
+    getMeetingRegistrantsByUsername: vi.fn(),
+    getMeetingRegistrantsByEmail: vi.fn(),
   },
   aiSvc: { generateMeetingAgenda: vi.fn() },
   committeeSvc: { getCommitteeBase: vi.fn(), getCommitteeMembers: vi.fn() },
@@ -61,11 +68,14 @@ vi.mock('@lfx-one/shared/enums', async (importOriginal) => ({
   },
 }));
 // Literals rather than the consts above: `vi.mock` factories are hoisted, so they can't close over
-// module-level bindings. Kept in sync with `MEETING_AGENDA_*`, `MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH` and `*_CUSTOM_DURATION` in the shared constants barrel.
+// module-level bindings. Kept in sync with `MEETING_AGENDA_*`, `MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH`,
+// `MEETING_REGISTRANT_BATCH_*` and `*_CUSTOM_DURATION` in the shared constants barrel.
 vi.mock('@lfx-one/shared/constants', () => ({
   MEETING_AGENDA_MAX_LENGTH: 2000,
   MEETING_AGENDA_PROMPT_MAX_LENGTH: 1000,
   MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH: 4000,
+  MEETING_REGISTRANT_BATCH_MAX: 100,
+  MEETING_REGISTRANT_BATCH_CONCURRENCY: 5,
   MIN_CUSTOM_DURATION: 5,
   MAX_CUSTOM_DURATION: 480,
 }));
@@ -77,6 +87,7 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   truncateToUtf16Units: (await import('../../../../../packages/shared/src/utils/string.utils')).truncateToUtf16Units,
   codePointLength: (await import('../../../../../packages/shared/src/utils/string.utils')).codePointLength,
   isMeetingAttendeeListShared: (await import('../../../../../packages/shared/src/utils/meeting-attendee-lock.utils')).isMeetingAttendeeListShared,
+  isSameOccurrenceId: (await import('../../../../../packages/shared/src/utils/rsvp-calculator.util')).isSameOccurrenceId,
 }));
 
 vi.mock('../helpers/validation.helper', () => ({ validateUidParameter: vi.fn(() => true) }));
@@ -90,7 +101,12 @@ vi.mock('../helpers/committee-v1-mapping.helper', () => ({
   resolveCommitteeV2UidsToV1Ids: resolveCommitteeV2UidsToV1IdsMock,
   resolveCommitteeV2UidMappings: resolveCommitteeV2UidMappingsMock,
 }));
-vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail: vi.fn(() => 'user@example.com'), getUsernameFromAuth: vi.fn(async () => null) }));
+vi.mock('../utils/auth-helper', () => ({
+  getEffectiveEmail: vi.fn(() => 'user@example.com'),
+  getEffectiveUsername: vi.fn(() => null),
+  getUsernameFromAuth: vi.fn(async () => null),
+}));
+vi.mock('../helpers/ics.helper', () => ({ buildMeetingCalendarEvents: vi.fn(() => ['VEVENT']), buildVCalendar: vi.fn(() => 'ICS_CONTENT') }));
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: generateM2MTokenMock }));
 
 vi.mock('../services/meeting.service', () => ({ MeetingService: vi.fn(() => meetingSvc) }));
@@ -169,9 +185,11 @@ const { MeetingController } = await import('./meeting.controller');
 // The stubbed logger, imported after the mock is registered, so the metadata assertions read the same
 // object the controller writes to.
 const { logger } = await import('../services/logger.service');
+const { getEffectiveEmail, getEffectiveUsername, getUsernameFromAuth } = await import('../utils/auth-helper');
+const { buildMeetingCalendarEvents, buildVCalendar } = await import('../helpers/ics.helper');
 
 function buildRes(): Response {
-  const res = { status: vi.fn(() => res), json: vi.fn(() => res), send: vi.fn(() => res) } as unknown as Response;
+  const res = { status: vi.fn(() => res), json: vi.fn(() => res), send: vi.fn(() => res), setHeader: vi.fn(() => res) } as unknown as Response;
   return res;
 }
 
@@ -491,6 +509,28 @@ describe('MeetingController', () => {
       // distinction the `null` above is protecting.
       expect(logger.startOperation).toHaveBeenCalledWith(req, 'add_meeting_registrants', expect.objectContaining({ request_content_length: 0 }));
     });
+
+    // lfx-self-serve-ops#439: each entry is one upstream write, so an over-long array is refused before
+    // the meeting is loaded or any registrant is created. The rows carry a committee_uid so the meeting
+    // lookup would run if the cap didn't come first.
+    it('rejects more than the batch maximum before loading the meeting or creating anyone', async () => {
+      const body = Array.from({ length: MEETING_REGISTRANT_BATCH_MAX + 1 }, (_, i) => ({ email: `guest-${i}@example.com`, committee_uid: V2_COMMITTEE_UID }));
+
+      await controller.addMeetingRegistrants(buildReq({ body }), buildRes(), next);
+
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ validationErrors: [expect.objectContaining({ field: 'registrants' })] }));
+      expect(meetingSvc.getMeetingById).not.toHaveBeenCalled();
+      expect(meetingSvc.addMeetingRegistrant).not.toHaveBeenCalled();
+    });
+
+    it('processes a batch of exactly the maximum', async () => {
+      const body = Array.from({ length: MEETING_REGISTRANT_BATCH_MAX }, (_, i) => ({ email: `guest-${i}@example.com` }));
+
+      await controller.addMeetingRegistrants(buildReq({ body }), buildRes(), next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(meetingSvc.addMeetingRegistrant).toHaveBeenCalledTimes(MEETING_REGISTRANT_BATCH_MAX);
+    });
   });
 
   describe('updateMeetingRegistrants', () => {
@@ -608,6 +648,125 @@ describe('MeetingController', () => {
 
       expect(next).toHaveBeenCalledWith(expect.any(FakeValidationError));
       expect(meetingSvc.updateMeetingRegistrant).not.toHaveBeenCalled();
+    });
+
+    it('rejects more than the batch maximum before updating anyone', async () => {
+      const body = Array.from({ length: MEETING_REGISTRANT_BATCH_MAX + 1 }, (_, i) => ({ uid: `reg-${i}`, changes: { first_name: 'Alice' } }));
+
+      await controller.updateMeetingRegistrants(buildReq({ body }), buildRes(), next);
+
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ validationErrors: [expect.objectContaining({ field: 'registrants' })] }));
+      expect(meetingSvc.updateMeetingRegistrant).not.toHaveBeenCalled();
+    });
+
+    it('processes a batch of exactly the maximum', async () => {
+      meetingSvc.updateMeetingRegistrant.mockImplementation((_req: Request, _uid: string, regUid: string) => Promise.resolve({ uid: regUid }));
+      const body = Array.from({ length: MEETING_REGISTRANT_BATCH_MAX }, (_, i) => ({ uid: `reg-${i}`, changes: { first_name: 'Alice' } }));
+
+      await controller.updateMeetingRegistrants(buildReq({ body }), buildRes(), next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(meetingSvc.updateMeetingRegistrant).toHaveBeenCalledTimes(MEETING_REGISTRANT_BATCH_MAX);
+    });
+  });
+
+  describe('deleteMeetingRegistrants', () => {
+    const uids = (count: number): string[] => Array.from({ length: count }, (_, i) => `reg-${i}`);
+
+    /** Resolves each delete on a later macrotask and records how many were in flight at once. */
+    function trackInFlight(rejectUid?: (registrantUid: string) => Error | undefined): { maxInFlight: () => number } {
+      let inFlight = 0;
+      let maxInFlight = 0;
+      meetingSvc.deleteMeetingRegistrant.mockImplementation(async (_req: Request, _uid: string, registrantUid: string) => {
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        inFlight -= 1;
+        const error = rejectUid?.(registrantUid);
+        if (error) throw error;
+      });
+      return { maxInFlight: () => maxInFlight };
+    }
+
+    beforeEach(() => {
+      meetingSvc.deleteMeetingRegistrant.mockResolvedValue(undefined);
+    });
+
+    it('rejects more than the batch maximum before deleting anyone', async () => {
+      await controller.deleteMeetingRegistrants(buildReq({ body: uids(MEETING_REGISTRANT_BATCH_MAX + 1) }), buildRes(), next);
+
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ validationErrors: [expect.objectContaining({ field: 'registrantUids' })] }));
+      expect(meetingSvc.deleteMeetingRegistrant).not.toHaveBeenCalled();
+    });
+
+    it('processes a batch of exactly the maximum', async () => {
+      await controller.deleteMeetingRegistrants(buildReq({ body: uids(MEETING_REGISTRANT_BATCH_MAX) }), buildRes(), next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(meetingSvc.deleteMeetingRegistrant).toHaveBeenCalledTimes(MEETING_REGISTRANT_BATCH_MAX);
+    });
+
+    // The header is read instead of re-serializing a body that hasn't been validated yet.
+    it('records the declared content length rather than re-serializing the body', async () => {
+      const req = buildReq({ body: uids(2) }, { 'content-length': '512' });
+
+      await controller.deleteMeetingRegistrants(req, buildRes(), next);
+
+      expect(logger.startOperation).toHaveBeenCalledWith(req, 'delete_meeting_registrants', expect.not.objectContaining({ body_size: expect.anything() }));
+      expect(logger.startOperation).toHaveBeenCalledWith(req, 'delete_meeting_registrants', expect.objectContaining({ request_content_length: 512 }));
+    });
+
+    // lfx-self-serve-ops#439: the remaining items used to be fired all at once.
+    it('never has more than the concurrency limit of upstream deletes in flight', async () => {
+      const tracker = trackInFlight();
+      const res = buildRes();
+
+      await controller.deleteMeetingRegistrants(buildReq({ body: uids(MEETING_REGISTRANT_BATCH_MAX) }), res, next);
+
+      expect(tracker.maxInFlight()).toBeLessThanOrEqual(MEETING_REGISTRANT_BATCH_CONCURRENCY);
+      expect(meetingSvc.deleteMeetingRegistrant).toHaveBeenCalledTimes(MEETING_REGISTRANT_BATCH_MAX);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ summary: { total: MEETING_REGISTRANT_BATCH_MAX, successful: MEETING_REGISTRANT_BATCH_MAX, failed: 0 } })
+      );
+    });
+
+    it('keeps the concurrency limit on the path where the first item fails with a non-403 error', async () => {
+      const tracker = trackInFlight((registrantUid) => (registrantUid === 'reg-0' ? Object.assign(new Error('upstream down'), { status: 502 }) : undefined));
+      const res = buildRes();
+
+      await controller.deleteMeetingRegistrants(buildReq({ body: uids(MEETING_REGISTRANT_BATCH_MAX) }), res, next);
+
+      expect(tracker.maxInFlight()).toBeLessThanOrEqual(MEETING_REGISTRANT_BATCH_CONCURRENCY);
+      expect(meetingSvc.deleteMeetingRegistrant).toHaveBeenCalledTimes(MEETING_REGISTRANT_BATCH_MAX);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ summary: { total: MEETING_REGISTRANT_BATCH_MAX, successful: MEETING_REGISTRANT_BATCH_MAX - 1, failed: 1 } })
+      );
+    });
+
+    it('still fails the whole request when the first item is forbidden', async () => {
+      const forbidden = Object.assign(new Error('Forbidden'), { status: 403 });
+      meetingSvc.deleteMeetingRegistrant.mockRejectedValueOnce(forbidden);
+
+      await controller.deleteMeetingRegistrants(buildReq({ body: uids(10) }), buildRes(), next);
+
+      expect(next).toHaveBeenCalledWith(forbidden);
+      expect(meetingSvc.deleteMeetingRegistrant).toHaveBeenCalledTimes(1);
+    });
+
+    // `createBatchResponse` pairs results with inputs by index, so the sliced fan-out has to keep
+    // input order for a failure to be reported against the right registrant.
+    it('reports a failure against the input that failed', async () => {
+      trackInFlight((registrantUid) => (registrantUid === 'reg-7' ? new Error('Not found') : undefined));
+      const res = buildRes();
+
+      await controller.deleteMeetingRegistrants(buildReq({ body: uids(12) }), res, next);
+
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          failures: [expect.objectContaining({ input: 'reg-7', error: expect.objectContaining({ message: 'Not found' }) })],
+          summary: { total: 12, successful: 11, failed: 1 },
+        })
+      );
     });
   });
 
@@ -788,9 +947,6 @@ describe('MeetingController', () => {
 
       await controller.getMyMeetingRegistrants(buildReq({ query: { preview: 'true' } }), res, next);
 
-      expect(meetingSvc.getMeetingRegistrants).toHaveBeenCalledWith(expect.anything(), MEETING_ID, false, undefined, false, undefined, {
-        bearerToken: M2M_TOKEN,
-      });
       expect(resolveCommitteeV2UidsToV1IdsMock).not.toHaveBeenCalled();
       expect(committeeSvc.getCommitteeBase).not.toHaveBeenCalled();
       expect(res.json).toHaveBeenCalledWith([registrant]);
@@ -1121,6 +1277,145 @@ describe('MeetingController', () => {
       await controller.updateOccurrence(buildOccurrenceReq({ start_time: futureStart(), duration: 30 }), buildRes(), next);
 
       expect(next).toHaveBeenCalledWith(upstream);
+    });
+  });
+
+  describe('getMeetingCalendarIcs', () => {
+    const fieldsIn = (error: unknown): string[] => ((error as FakeValidationError).validationErrors ?? []).map((e) => e.field);
+
+    function buildIcsReq(query: Record<string, string> = {}): Request {
+      return buildReq({ params: { uid: MEETING_ID }, query, path: `/meetings/${MEETING_ID}/calendar.ics` });
+    }
+
+    beforeEach(() => {
+      meetingSvc.getMeetingJoinUrl.mockResolvedValue({ link: 'https://zoom.us/j/123' });
+    });
+
+    it('sets the response headers and sends the generated ICS for a non-recurring meeting', async () => {
+      meetingSvc.getMeetingById.mockResolvedValue({ id: MEETING_ID, title: 'Weekly Sync', restricted: false, recurrence: null });
+      const res = buildRes();
+
+      await controller.getMeetingCalendarIcs(buildIcsReq(), res, next);
+
+      expect(meetingSvc.getMeetingJoinUrl).toHaveBeenCalledWith(expect.anything(), MEETING_ID, undefined);
+      expect(buildMeetingCalendarEvents).toHaveBeenCalledWith(expect.objectContaining({ id: MEETING_ID }), {
+        scope: 'occurrence',
+        occurrenceId: undefined,
+        joinUrl: 'https://zoom.us/j/123',
+      });
+      expect(buildVCalendar).toHaveBeenCalledWith(['VEVENT'], '-//LFX//Meeting Calendar//EN', 'Weekly Sync');
+      expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/calendar; charset=utf-8');
+      expect(res.setHeader).toHaveBeenCalledWith('Content-Disposition', `attachment; filename="meeting-${MEETING_ID}.ics"`);
+      expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'private, no-store');
+      expect(res.send).toHaveBeenCalledWith('ICS_CONTENT');
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('degrades to no join link when resolving it fails', async () => {
+      meetingSvc.getMeetingById.mockResolvedValue({ id: MEETING_ID, title: 'Weekly Sync', restricted: false, recurrence: null });
+      meetingSvc.getMeetingJoinUrl.mockRejectedValue(new Error('upstream down'));
+
+      await controller.getMeetingCalendarIcs(buildIcsReq(), buildRes(), next);
+
+      expect(buildMeetingCalendarEvents).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ joinUrl: undefined }));
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('400s a recurring meeting request missing a valid occurrenceId instead of falling back to the series start', async () => {
+      meetingSvc.getMeetingById.mockResolvedValue({
+        id: MEETING_ID,
+        title: 'Weekly Sync',
+        restricted: false,
+        recurrence: { type: 1 },
+        occurrences: [{ occurrence_id: '111', status: 'active' }],
+      });
+
+      await controller.getMeetingCalendarIcs(buildIcsReq({ occurrenceId: 'stale-999' }), buildRes(), next);
+
+      expect(fieldsIn(vi.mocked(next).mock.calls[0][0])).toEqual(['occurrenceId']);
+      expect(meetingSvc.getMeetingJoinUrl).not.toHaveBeenCalled();
+      expect(buildMeetingCalendarEvents).not.toHaveBeenCalled();
+    });
+
+    it('resolves a registrant-specific join link for a restricted meeting the caller is registered on', async () => {
+      meetingSvc.getMeetingById.mockResolvedValue({ id: MEETING_ID, title: 'Board Sync', restricted: true, recurrence: null });
+      vi.mocked(getEffectiveUsername).mockReturnValueOnce('alice');
+      meetingSvc.getMeetingRegistrantsByUsername.mockResolvedValue([{ email: 'alice@example.com' }]);
+
+      await controller.getMeetingCalendarIcs(buildIcsReq(), buildRes(), next);
+
+      expect(meetingSvc.getMeetingRegistrantsByUsername).toHaveBeenCalledWith(expect.anything(), MEETING_ID, 'alice');
+      expect(meetingSvc.getMeetingJoinUrl).toHaveBeenCalledWith(expect.anything(), MEETING_ID, 'alice@example.com');
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('omits the join link for a restricted meeting when the caller is not a registrant — never falls back to a bare getMeetingJoinUrl call', async () => {
+      meetingSvc.getMeetingById.mockResolvedValue({ id: MEETING_ID, title: 'Board Sync', restricted: true, recurrence: null });
+      vi.mocked(getEffectiveUsername).mockReturnValueOnce('mallory');
+      meetingSvc.getMeetingRegistrantsByUsername.mockResolvedValue([]);
+      vi.mocked(getEffectiveEmail).mockReturnValueOnce('mallory@example.com');
+      meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
+
+      await controller.getMeetingCalendarIcs(buildIcsReq(), buildRes(), next);
+
+      expect(meetingSvc.getMeetingJoinUrl).not.toHaveBeenCalled();
+      expect(buildMeetingCalendarEvents).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ joinUrl: undefined }));
+      expect(next).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('removeMyMeetingRegistration', () => {
+    beforeEach(() => {
+      generateM2MTokenMock.mockResolvedValue(M2M_TOKEN);
+      meetingSvc.removeMeetingRegistrantSelf.mockResolvedValue({ removed_registrant_ids: ['reg-1'], remaining_registrant_ids: [] });
+    });
+
+    it('ignores client-supplied identity and IDs and answers 200 with the removed registration IDs', async () => {
+      vi.mocked(getUsernameFromAuth).mockResolvedValueOnce('alice');
+      const req = buildReq({
+        body: { email: 'other@example.com', username: 'other', registrant_id: 'reg-other' },
+        query: { email: 'other@example.com', username: 'other', registrant_id: 'reg-other' },
+      });
+      const res = buildRes();
+
+      await controller.removeMyMeetingRegistration(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(meetingSvc.removeMeetingRegistrantSelf).toHaveBeenCalledWith(req, MEETING_ID, 'user@example.com', 'alice', M2M_TOKEN);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({ removed_registrant_ids: ['reg-1'], remaining_registrant_ids: [] });
+    });
+
+    it('answers 200 with both removed and remaining registration IDs after partial success', async () => {
+      const result = { removed_registrant_ids: ['reg-2'], remaining_registrant_ids: ['reg-1'] };
+      meetingSvc.removeMeetingRegistrantSelf.mockResolvedValueOnce(result);
+      const res = buildRes();
+
+      await controller.removeMyMeetingRegistration(buildReq(), res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(result);
+    });
+
+    it('rejects a caller whose identity cannot be resolved, without touching the service', async () => {
+      vi.mocked(getEffectiveEmail).mockReturnValueOnce('');
+
+      await controller.removeMyMeetingRegistration(buildReq(), buildRes(), next);
+
+      expect(meetingSvc.removeMeetingRegistrantSelf).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(FakeValidationError));
+    });
+
+    it('passes service failures to the error handler', async () => {
+      const failure = new FakeMicroserviceError('forbidden', 403, 'FORBIDDEN');
+      meetingSvc.removeMeetingRegistrantSelf.mockRejectedValue(failure);
+      const res = buildRes();
+
+      await controller.removeMyMeetingRegistration(buildReq(), res, next);
+
+      expect(next).toHaveBeenCalledWith(failure);
+      expect(res.status).not.toHaveBeenCalled();
     });
   });
 });

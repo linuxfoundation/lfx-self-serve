@@ -1,9 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Meeting, PaginatedResponse } from '@lfx-one/shared/interfaces';
-import { addMinutesToDate } from '@lfx-one/shared/utils';
+import { Meeting, MeetingCalendarScope, PaginatedResponse, VEventExtras } from '@lfx-one/shared/interfaces';
+import { addMinutesToDate, isSameOccurrenceId } from '@lfx-one/shared/utils';
 import { logger } from '../services/logger.service';
+
+/** Host suffix for the globally-unique ICS UID per RFC 5545 §3.8.4.7 — this is LFX's own domain, not a per-meeting value. */
+export const ICS_UID_DOMAIN = 'lfx.linuxfoundation.org';
 
 /**
  * Formats an ISO date string to ICS DTSTART/DTEND format (e.g., 20230115T140000Z).
@@ -62,22 +65,71 @@ export function foldLine(line: string): string {
  * Includes SEQUENCE:0 per RFC 5545 so calendar clients can detect rescheduled events,
  * and DESCRIPTION with the meeting title for richer calendar entries.
  */
-export function buildVEvent(uid: string, title: string, startIso: string, durationMinutes: number | null | undefined): string {
+export function buildVEvent(uid: string, title: string, startIso: string, durationMinutes: number | null | undefined, extras?: VEventExtras): string {
   const dtstart = formatICSDate(startIso);
   const dtend = formatICSDate(addMinutesToDate(startIso, durationMinutes).toISOString());
   const dtstamp = formatICSDate(new Date().toISOString());
 
-  return [
+  const descriptionBody = extras?.description?.trim() || title;
+  // The join link is appended to DESCRIPTION too, not only URL: Google Calendar's event detail view
+  // surfaces DESCRIPTION far more prominently than the URL property, and some clients drop URL entirely.
+  const description = extras?.joinUrl ? `${descriptionBody}\n\nJoin: ${extras.joinUrl}` : descriptionBody;
+
+  const lines = [
     'BEGIN:VEVENT',
-    `UID:${uid}@lfx.linuxfoundation.org`,
+    `UID:${uid}@${ICS_UID_DOMAIN}`,
     `DTSTAMP:${dtstamp}`,
     `DTSTART:${dtstart}`,
     `DTEND:${dtend}`,
     'SEQUENCE:0',
     foldLine(`SUMMARY:${escapeICSText(title)}`),
-    foldLine(`DESCRIPTION:${escapeICSText(title)}`),
-    'END:VEVENT',
-  ].join('\r\n');
+    foldLine(`DESCRIPTION:${escapeICSText(description)}`),
+  ];
+
+  if (extras?.joinUrl) {
+    lines.push(foldLine(`URL:${extras.joinUrl}`));
+  }
+
+  lines.push('END:VEVENT');
+
+  return lines.join('\r\n');
+}
+
+/**
+ * Builds the VEVENT(s) for a single meeting's "Add to calendar" download (GH-3505).
+ * - `scope: 'occurrence'` (default) builds one event for `occurrenceId` (or the meeting's own
+ *   start/duration when it isn't recurring or the occurrence can't be found).
+ * - `scope: 'series'` expands every non-cancelled occurrence, matching `meetingsToVEvents`; a
+ *   non-recurring meeting still gets its single event since there is no series to expand.
+ * `joinUrl` is attached to every event produced — the caller is responsible for resolving it
+ * through the same access-controlled path the Join Meeting button uses.
+ */
+export function buildMeetingCalendarEvents(meeting: Meeting, options: { scope: MeetingCalendarScope; occurrenceId?: string; joinUrl?: string }): string[] {
+  const { scope, occurrenceId, joinUrl } = options;
+  const occurrences = meeting.occurrences?.filter((occ) => occ.status !== 'cancel') ?? [];
+
+  if (scope === 'series') {
+    // A recurring meeting with every occurrence cancelled has no active date left to export — falling
+    // through to the single-event path below would put the (cancelled) series' original date back on
+    // the user's calendar. Only a non-recurring meeting has no series to expand (GH-3505).
+    if (meeting.recurrence) {
+      return occurrences.map((occ) =>
+        buildVEvent(`${meeting.id}-${occ.occurrence_id}`, occ.title || meeting.title, occ.start_time, occ.duration ?? meeting.duration, {
+          description: occ.description || meeting.description,
+          joinUrl,
+        })
+      );
+    }
+  }
+
+  const occurrence = occurrenceId ? occurrences.find((occ) => isSameOccurrenceId(occ.occurrence_id, occurrenceId)) : undefined;
+  const uid = occurrence ? `${meeting.id}-${occurrence.occurrence_id}` : meeting.id;
+  const title = occurrence?.title || meeting.title;
+  const startTime = occurrence?.start_time || meeting.start_time;
+  const duration = occurrence?.duration ?? meeting.duration;
+  const description = occurrence?.description || meeting.description;
+
+  return [buildVEvent(uid, title, startTime, duration, { description, joinUrl })];
 }
 
 /**

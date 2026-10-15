@@ -226,6 +226,17 @@ export const ORG_CLA_REVIEW_COPY_FAILURE = {
   detail: 'Could not download a review copy of the CCLA. Please try again.',
 } as const;
 
+export const ORG_CLA_EASYCLA_ROLE_MISSING_ERROR_CODE = 'EASYCLA_ROLE_MISSING';
+
+export const ORG_CLA_EASYCLA_ROLE_MISSING_COPY = {
+  title: "We couldn't load your CLAs",
+  reason: "You don't have an EasyCLA role at this organization.",
+  supportLead: 'Please',
+  supportLabel: 'contact support',
+  supportTail: 'if you need EasyCLA assistance.',
+  signClaAriaLabel: "Sign a corporate CLA — you don't have an EasyCLA role at this organization",
+} as const;
+
 /**
  * The leftover EasyCLA address, `/org/easycla` (#1983). Still routed for three consumers:
  * corporate-signing returns minted before lfx-self-serve#2743 deployed, returns minted by any
@@ -508,6 +519,14 @@ export const ACS_CLA_AUTO_ECLA_ACTION = 'update';
 export const ACS_CLA_PROJECT_ORG_OBJECT_TYPE = 'project|organization';
 
 /**
+ * Shown under the Auto ECLA toggle to a viewer off the agreement's CLA manager roster, who may
+ * read the setting but not change it (#3406). A roster CLA manager whom ACS denies gets the
+ * disabled switch without it, since it would contradict them. Wording is a placeholder pending a product pass; it lives here so that pass is a
+ * one-line edit rather than a hunt through the template.
+ */
+export const ORG_CLA_AUTO_ECLA_LOCKED_HINT = 'Only CLA Managers can change this setting.';
+
+/**
  * Tab order of the Organization Lens CLA Group detail page. `OrgClaDetailTab` is derived from
  * this, so the set exists once: a tab added here is a compile error everywhere that switches on
  * the union until it is handled.
@@ -521,10 +540,10 @@ export const ORG_CLA_DETAIL_TABS = [
 ] as const;
 
 /** Pill shown against an agreement in the Organization Lens CLA list and on its detail page. */
-export const ORG_CLA_STATUS_DISPLAY: Record<OrgClaGroup['status'], OrgClaStatusDisplay> = {
+export const ORG_CLA_STATUS_DISPLAY: Record<OrgClaGroup['status'], OrgClaStatusDisplay | null> = {
   signed: { label: 'Signed', severity: 'success' },
   'not-started': { label: 'Not started', severity: 'secondary' },
-  sanctioned: { label: 'Sanctioned', severity: 'danger' },
+  sanctioned: null,
 };
 
 /**
@@ -817,6 +836,18 @@ export const ORG_CLA_ACKNOWLEDGMENT_NOT_AUTHORIZED_COPY = {
   invalidateOnly: 'Invalidate to remove for good.',
 } as const;
 
+/**
+ * The signed-document download on a CLA Group's Overview.
+ *
+ * Shown disabled rather than hidden off the roster, so a reader who cannot download learns the
+ * document exists and who to ask — the same read-visible, write-gated shape the Auto ECLA toggle
+ * takes. The approval-list mutations and Invalidate still disappear instead, because their
+ * presence says nothing about the agreement on its own.
+ */
+export const ORG_CLA_DOWNLOAD_COPY = {
+  offRosterTooltip: 'Only a CLA Manager named on this CCLA can download the signed document',
+} as const;
+
 /** Placeholder for a row whose field is empty. Never omit the row; render this instead. */
 export const ORG_CLA_ACKNOWLEDGMENTS_EM_DASH = '—';
 
@@ -960,3 +991,32 @@ export const ORG_CLA_RECENT_ACTIVITY_HEADING = 'Recent activity';
 export const ORG_CLA_RECENT_ACTIVITY_VIEW_ALL_LABEL = 'View full activity log';
 
 export const ORG_CLA_RECENT_ACTIVITY_PAGE_SIZE = 3;
+
+/**
+ * M3 CLA-manager lens entry. A CLA Manager holds ACS `cla-manager` on one `project|organization`
+ * scope per CLA Group, and that scope is the only record of the role readable with their own token,
+ * so it is how Self Serve finds the companies a CLA Manager without a `b2b_org` grant may open.
+ */
+export const ORG_CLA_MANAGER_ROLE = 'cla-manager';
+
+/** The ACS scope type that pairs a project with a company; its `ID` is `[projectSfid, companySfid]`. */
+export const ORG_CLA_MANAGER_SCOPE_TYPE = 'project|organization';
+
+/** Per-user cache namespace for the caller's CLA-manager companies. Bump the version when the stored shape changes. */
+export const ORG_CLA_MANAGER_SCOPES_NAMESPACE = 'org-cla-manager-scopes:v1';
+
+/**
+ * How long a non-empty answer is reused. Bounds how long a removed CLA Manager keeps the entry,
+ * on top of whatever the gateway and ACS cache upstream. Empty and failed answers are never stored,
+ * so a newly added CLA Manager is seen on the next request.
+ */
+export const ORG_CLA_MANAGER_SCOPES_TTL_SECONDS = 60;
+
+/** Most CLA-only organizations named through EasyCLA for one selector load, so a caller holding many scopes cannot fan out unbounded upstream reads. */
+export const ORG_CLA_ONLY_ORGS_MAX = 25;
+
+/**
+ * How long the CLA-only page guard waits for the role-grants answer before admitting the page. Admitting
+ * is safe: the BFF refuses every non-CLA page's data to a CLA-only caller regardless.
+ */
+export const ORG_CLA_ONLY_GRANTS_WAIT_MS = 10_000;

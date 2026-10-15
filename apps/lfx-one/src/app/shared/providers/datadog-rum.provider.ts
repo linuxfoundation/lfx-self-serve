@@ -8,19 +8,20 @@ import { environment } from '@environments/environment';
 import { fromEvent, Observable, Subscription } from 'rxjs';
 
 import { CREDENTIAL_REDACTION_MARKER } from '@lfx-one/shared/constants';
-import { redactAuthFragment, redactInviteToken, redactMeetingPassword, redactMeetingPasswordInText } from '@lfx-one/shared/utils';
+import { redactGatewazeProxyCredentials, redactInviteToken, redactMeetingPassword, redactMeetingPasswordInText } from '@lfx-one/shared/utils';
 
 import { getRuntimeConfig } from './runtime-config.provider';
 
 /**
- * Redacts every credential a URL can carry into Datadog: an auth fragment, an invite `?token=` and
- * a meeting passcode. Returns the URL unchanged when it carries none.
+ * Redacts every credential a URL can carry into Datadog: an invite `?token=`, a meeting passcode,
+ * and a Storage signed-URL `token` or `access_token` on the Gatewaze proxies. Returns the URL
+ * unchanged when it carries none.
  *
  * @param url Absolute or relative URL.
  * @param origin Origin a relative URL is resolved against.
  */
 export function redactRumUrl(url: string, origin: string): string {
-  return redactMeetingPassword(redactInviteToken(redactAuthFragment(url, origin), origin), origin);
+  return redactGatewazeProxyCredentials(redactMeetingPassword(redactInviteToken(url, origin), origin), origin);
 }
 
 /**
@@ -45,9 +46,11 @@ export function shouldRecordReplay(url: string, origin: string): boolean {
  * redirect) carries a credential, and on a history traversal (`popState`) once the browser has
  * already moved to such a URL. The caller must subscribe `popState` in the capture phase before
  * RUM starts, so this runs ahead of RUM's own listener, which records the new view. Once a
- * navigation settles, recording follows the URL actually shown. A URL change made outside the
- * router leaves the state as it was until the next navigation; it can only remove a credential
- * (the embed clearing its auth fragment), so replay stays stopped meanwhile.
+ * navigation settles, recording follows the URL actually shown.
+ *
+ * A URL change made outside the router, such as the Gatewaze embed's own `pushState`, is not
+ * observed. Recording keeps its current state until the next router navigation or history
+ * traversal. That is safe only while no such change adds a credential to the URL.
  *
  * @param routerEvents The router's event stream.
  * @param popState Emits on every `popstate`, after the browser has moved to the new URL.
@@ -97,9 +100,9 @@ export function gateReplayRecording(
 }
 
 /**
- * Redacts, in place, every credential a Datadog RUM event can carry: an auth fragment, an invite
- * `?token=` and a meeting passcode in each modifiable URL field, and a meeting passcode quoted in
- * the free-text error and long-task fields. The `beforeSend` hook below calls it on every event;
+ * Redacts, in place, every credential a Datadog RUM event can carry: each credential `redactRumUrl`
+ * covers, in each modifiable URL field, and a meeting passcode quoted in the free-text error and
+ * long-task fields. The `beforeSend` hook below calls it on every event;
  * exported so a spec can drive representative events through the same wiring.
  *
  * @param event A RUM event; fields it does not carry are skipped.
@@ -190,27 +193,18 @@ async function initializeDataDogRum(): Promise<void> {
     datadogRum.init({
       applicationId: dataDogRumApplicationId,
       clientToken: dataDogRumClientId,
-      // RUM's first view event captures window.location.href as it is at startup, and the
-      // Gatewaze embed's LFID sign-in returns to `#access_token=…&refresh_token=…`. The component
-      // that clears that fragment runs in afterNextRender, long after this initializer, so without
-      // redaction here a Supabase access AND refresh token reach a third-party analytics sink.
+      // RUM's first view event captures window.location.href as it is at startup, and the referrer
+      // carries the previous URL, so both go through the same redaction.
       //
-      // Redacting here rather than clearing the address bar before init, which is the more obvious
-      // fix and is wrong: GwModuleOutletComponent.adoptAuthFragment reads window.location.hash to
-      // establish the embed session, so clearing it early would stop the tokens reaching Datadog
-      // by breaking sign-in altogether. The fragment must survive in the address bar until the
-      // outlet consumes it; what must not happen is RUM reporting it.
-      //
-      // Covers the referrer too, which carries the previous URL and would otherwise leak the same
-      // fragment on the next view.
-      //
-      // Invite landing puts a single-factor accept credential in `?token=` rather than the hash.
-      // redactAuthFragment does not touch the query string, so redactInviteToken runs after it.
+      // Invite landing puts a single-factor accept credential in `?token=`.
       //
       // Meeting join links carry the private/restricted-meeting passcode in `?password=` on any
       // path, so redactMeetingPassword runs too — on every other modifiable URL field as well
       // (trackResources records the initial document load; LCP and long-task script attribution
       // can name the page URL), and on free-text error/long-task fields that may quote a URL.
+      //
+      // A Storage signed URL fetched through the Gatewaze proxies carries its credential in `?token=`,
+      // so redactGatewazeProxyCredentials runs on every URL field as well.
       //
       // beforeSend does not see Session Replay records, which is why replay is gated above.
       beforeSend: (event) => {

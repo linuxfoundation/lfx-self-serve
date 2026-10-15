@@ -8,12 +8,43 @@
       <div class="flex items-center gap-2 flex-wrap">
         <!-- Privacy Badge -->
         @if (meeting().visibility === 'private') {
-          <lfx-tag value="Private" severity="danger" icon="fa-light fa-shield" styleClass="tag-private"></lfx-tag>
+          <lfx-tag
+            value="Private"
+            severity="danger"
+            icon="fa-light fa-shield"
+            styleClass="tag-private"
+            tooltip="Not publicly discoverable. You can't find this meeting in the app, the project calendar, or the webcal feed unless you're invited."
+            data-testid="private-badge"></lfx-tag>
         }
 
         <!-- Restricted Badge -->
         @if (meeting().restricted) {
-          <lfx-tag value="Restricted" severity="warn" icon="fa-light fa-lock"></lfx-tag>
+          <lfx-tag
+            value="Restricted"
+            severity="warn"
+            icon="fa-light fa-lock"
+            tooltip="Only people on the invite list can join."
+            data-testid="restricted-badge"></lfx-tag>
+        }
+
+        <!-- Registered Badge (upcoming meetings the viewer is registered for) -->
+        @if (isRegisteredAttendee()) {
+          <lfx-tag
+            value="Registered"
+            severity="success"
+            icon="fa-light fa-circle-check"
+            tooltip="You're registered for this meeting."
+            data-testid="registered-badge"></lfx-tag>
+        }
+
+        <!-- Attended Badge (past meetings the viewer attended) -->
+        @if (userAttended()) {
+          <lfx-tag
+            value="Attended"
+            severity="success"
+            icon="fa-light fa-circle-check"
+            tooltip="You attended this meeting."
+            data-testid="attended-badge"></lfx-tag>
         }
 
         <!-- Meeting Type Badge -->
@@ -313,24 +344,21 @@
       <div class="flex flex-col gap-2">
         @if (meeting().organizer) {
           @defer (on viewport) {
-            <!-- Organizer view with optional toggle for invited organizers -->
-            @if (canToggleRsvpView() && showMyRsvp()) {
-              <!-- Show RSVP Button Group when organizer toggles to set their own RSVP -->
-              <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="occurrence()?.occurrence_id"> </lfx-rsvp-button-group>
-            } @else {
-              <!-- Show RSVP Details for organizers (default view) -->
-              <lfx-meeting-rsvp-details
-                [meeting]="meeting()"
-                [currentOccurrence]="currentOccurrence()"
-                [pastMeeting]="pastMeeting()"
-                [showAddButton]="!pastMeeting()"
-                [showAttendeePreview]="true"
-                [additionalRegistrantsCount]="additionalRegistrantsCount()"
-                (addClicked)="onInvitePeople()"
-                (viewAllClicked)="showRegistrants.set(true)"
-                (currentUserHasRsvpChanged)="userHasRsvp.set($event)">
-              </lfx-meeting-rsvp-details>
+            @if (canRespondAsOrganizer()) {
+              <lfx-rsvp-button-group [meeting]="rsvpMeeting()" [occurrenceId]="occurrence()?.occurrence_id" (rsvpChanged)="onRsvpChanged($event)">
+              </lfx-rsvp-button-group>
             }
+            <lfx-meeting-rsvp-details
+              [meeting]="meeting()"
+              [confirmedRsvps]="overviewConfirmedRsvps()"
+              [currentOccurrence]="occurrence()"
+              [pastMeeting]="pastMeeting()"
+              [showAddButton]="!pastMeeting()"
+              [showAttendeePreview]="true"
+              [additionalRegistrantsCount]="additionalRegistrantsCount()"
+              (addClicked)="onInvitePeople()"
+              (viewAllClicked)="showRegistrants.set(true)">
+            </lfx-meeting-rsvp-details>
           } @placeholder {
             <div class="rounded-md p-3 flex flex-col gap-2 flex-1 bg-gray-100/60 min-h-[80px]">
               <div class="flex items-center justify-between gap-2">
@@ -359,7 +387,8 @@
           @if (effectivelyInvited() && (inviteResponsesEnabled() || attendeeListShared())) {
             @defer (on viewport) {
               @if (inviteResponsesEnabled()) {
-                <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="occurrence()?.occurrence_id"> </lfx-rsvp-button-group>
+                <lfx-rsvp-button-group [meeting]="rsvpMeeting()" [occurrenceId]="occurrence()?.occurrence_id" (rsvpChanged)="onRsvpChanged($event)">
+                </lfx-rsvp-button-group>
               }
               @if (attendeeListShared()) {
                 <lfx-meeting-invitee-attendees [meeting]="meeting()" [occurrence]="occurrence()" />
@@ -427,18 +456,6 @@
               (click)="onRegistrantsToggle()">
             </lfx-button>
             <lfx-host-key-popover class="w-full" [meeting]="meeting()" [occurrence]="occurrence()" [pastMeeting]="pastMeeting()" />
-            @if (canToggleRsvpView()) {
-              <lfx-button
-                class="w-full"
-                icon="fa-light fa-hand"
-                [label]="rsvpToggleLabel()"
-                size="small"
-                severity="secondary"
-                styleClass="w-full"
-                data-testid="toggle-rsvp-view-button"
-                (click)="onRsvpViewToggle()">
-              </lfx-button>
-            }
           }
           @if (pastMeeting()) {
             <lfx-button
@@ -466,6 +483,21 @@
             </lfx-button>
           }
         </div>
+        @if (canLeaveMeeting()) {
+          <div class="mt-2">
+            <lfx-button
+              class="w-full"
+              styleClass="w-full"
+              icon="fa-light fa-user-xmark"
+              label="Remove Myself"
+              size="small"
+              severity="secondary"
+              data-testid="leave-meeting-button"
+              [loading]="leavingMeeting()"
+              (onClick)="confirmLeaveMeeting()">
+            </lfx-button>
+          </div>
+        }
       </div>
     </div>
 

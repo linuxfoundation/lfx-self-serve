@@ -62,4 +62,13 @@ describe('HiddenActionsService', () => {
     expect(service.isActionHidden(formationRow)).toBe(false);
     expect(check).not.toHaveBeenCalled();
   });
+
+  it.each([
+    { committeeUid: 'group-1', applicationUid: 'application-1', applicationApplicantEmail: 'applicant@example.com' },
+    { committeeUid: undefined, applicationUid: undefined, applicationApplicantEmail: undefined },
+  ])('never cookie-hides a join application, including incomplete identity: %j', (identity) => {
+    check.mockReturnValue(true);
+    expect(service.isActionHidden({ ...rsvpRow, type: 'JoinApplication', ...identity })).toBe(false);
+    expect(check).not.toHaveBeenCalled();
+  });
 });

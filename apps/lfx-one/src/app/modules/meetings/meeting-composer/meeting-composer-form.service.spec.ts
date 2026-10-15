@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
+import { PLATFORM_ID } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { FormArray, FormControl, FormGroup } from '@angular/forms';
 import { MEETING_ATTACHMENT_WRITE_CONCURRENCY, MEETING_COMPOSER_SECTIONS } from '@lfx-one/shared/constants';
@@ -16,6 +17,7 @@ import type {
   MeetingRegistrant,
   MeetingRegistrantWithState,
 } from '@lfx-one/shared/interfaces';
+import { detectBrowserTimezoneOption } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -894,14 +896,14 @@ describe('MeetingComposerFormService \u2014 meeting type access defaults', () =>
     expect(service.form().get('restricted')?.value).toBe(false);
   });
 
-  it('locks attendee visibility when the meeting is restricted', () => {
+  it('leaves attendee visibility to the organizer when the meeting is restricted (composer v2 rule)', () => {
     service.initialize({ mode: 'create', projectUid: 'project-1' });
     service.form().get('show_meeting_attendees')?.setValue(true);
 
     service.form().get('restricted')?.setValue(true);
 
-    expect(service.form().get('show_meeting_attendees')?.disabled).toBe(true);
-    expect(service.form().get('show_meeting_attendees')?.value).toBe(false);
+    expect(service.form().get('show_meeting_attendees')?.disabled).toBe(false);
+    expect(service.form().get('show_meeting_attendees')?.value).toBe(true);
   });
 
   it('locks attendee visibility when switching to Board in edit mode without flipping restricted', () => {
@@ -1492,6 +1494,15 @@ describe('MeetingComposerFormService \u2014 edit-mode hydration', () => {
 
   // Upstream types the field as a free-form string, so a stored value this build has no card for is
   // possible. Blanking it would silently rewrite the organizer's meeting on the next save.
+  // Existing restricted meetings are untouched by composer v2: a stored `true` saved before the composer
+  // allowed sharing opens as off, so a save can't re-assert it.
+  it('opens an existing restricted meeting with attendee sharing off, whatever it stored', () => {
+    const service = openEdit({ restricted: true, show_meeting_attendees: true }, of([]));
+
+    expect(service.form().get('show_meeting_attendees')?.value).toBe(false);
+    expect(service.form().get('show_meeting_attendees')?.disabled).toBe(false);
+  });
+
   it('keeps a stored type the composer does not recognize', () => {
     const service = openEdit({ meeting_type: 'Retrospective' }, of([]));
 
@@ -2477,5 +2488,54 @@ describe('MeetingComposerFormService — series edit save gate', () => {
     service.initialize({ mode: 'create', projectUid: 'project-1' });
 
     expect(service.hasSeriesChanges()).toBe(false);
+  });
+});
+
+describe('MeetingComposerFormService — timezone preselect', () => {
+  const setup = (platformId: 'browser' | 'server'): MeetingComposerFormService => {
+    TestBed.configureTestingModule({
+      providers: [
+        MeetingComposerFormService,
+        { provide: PLATFORM_ID, useValue: platformId },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: {} },
+        { provide: ProjectContextService, useValue: { activeContextUid: () => null } },
+        {
+          provide: MeetingService,
+          useValue: {
+            getMeeting: vi.fn().mockReturnValue(throwError(() => new Error('not found'))),
+            getMeetingAttachments: vi.fn().mockReturnValue(of([])),
+            getMeetingRegistrants: vi.fn().mockReturnValue(of([] as MeetingRegistrant[])),
+          },
+        },
+      ],
+    });
+
+    return TestBed.inject(MeetingComposerFormService);
+  };
+
+  it("preselects the browser's own zone on create, leaving the control pristine", () => {
+    const service = setup('browser');
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+
+    const timezone = service.form().get('timezone');
+    // Whatever the runner's zone resolves to — the same matcher the service calls, or empty if none matches.
+    expect(timezone?.value).toBe(detectBrowserTimezoneOption() ?? '');
+    expect(timezone?.pristine).toBe(true);
+  });
+
+  it('does not preselect on edit — the saved meeting owns the zone', () => {
+    const service = setup('browser');
+    // The load fails here, so nothing hydrates: whatever the field holds came from initialize() alone.
+    service.initialize({ mode: 'edit', meetingUid: 'meeting-1' });
+
+    expect(service.form().get('timezone')?.value).toBe('');
+  });
+
+  it('leaves the zone empty during SSR, where Intl reports the server', () => {
+    const service = setup('server');
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+
+    expect(service.form().get('timezone')?.value).toBe('');
   });
 });

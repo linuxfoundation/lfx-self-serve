@@ -23,6 +23,8 @@ function member(overrides: Partial<HealthMetricsMembersAtRiskMember> = {}): Heal
     outstandingBalanceUsd: 20000,
     daysOverdue: 71,
     lastEngagedDate: '2026-02-03',
+    churnRisk: 'High',
+    agingBucket: '60_89_days',
     ...overrides,
   };
 }
@@ -133,6 +135,20 @@ describe('MembersAtRiskComponent', () => {
     expect(text(`members-at-risk-row-${ACCOUNT_ID}-age`)).toBe('71 days');
     expect(query(`members-at-risk-row-${ACCOUNT_ID}-age`)?.classList).toContain('text-red-600');
     expect(query(`members-at-risk-row-${ACCOUNT_ID}-last-engaged`)?.classList).toContain('text-amber-700');
+  });
+
+  it('chips the churn risk and names the aging bucket, leaving both out when the model has none', async () => {
+    await render();
+
+    expect(text(`members-at-risk-row-${ACCOUNT_ID}-churn-risk`)).toBe('High risk');
+    expect(query(`members-at-risk-row-${ACCOUNT_ID}-churn-risk`)?.className).toContain('bg-red-50');
+    expect(text(`members-at-risk-row-${ACCOUNT_ID}-aging`)).toBe('60–89 days');
+
+    TestBed.resetTestingModule();
+    await render(response({ rows: [member({ churnRisk: null, agingBucket: null })] }));
+
+    expect(query(`members-at-risk-row-${ACCOUNT_ID}-churn-risk`)).toBeNull();
+    expect(text(`members-at-risk-row-${ACCOUNT_ID}-aging`)).toBe('—');
   });
 
   it('re-reads one bucket from page 1, keeping the note, and writes it to the URL with the fragment kept', async () => {

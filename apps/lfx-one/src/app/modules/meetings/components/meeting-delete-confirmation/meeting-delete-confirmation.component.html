@@ -80,6 +80,9 @@
       @if (!meetingsV2Enabled()) {
         <h4 class="mb-1 font-medium">Warning</h4>
       }
+      <p class="mb-2 text-sm font-medium">
+        You are deleting this meeting for all registrants, not just yourself. This is not how you unregister yourself from a meeting.
+      </p>
       <p class="text-sm">
         @if (isRecurring && !isPastMeeting && deleteForm.get('deleteType')?.value === 'series') {
           This will permanently delete all meetings in this series. This action cannot be undone.

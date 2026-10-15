@@ -19,6 +19,9 @@ router.get('/count', (req, res, next) => meetingController.getMeetingsCount(req,
 // GET /meetings/:uid - get a single meeting
 router.get('/:uid', (req, res, next) => meetingController.getMeetingById(req, res, next));
 
+// GET /meetings/:uid/calendar.ics - download a meeting (or its recurring series) as an .ics file
+router.get('/:uid/calendar.ics', (req, res, next) => meetingController.getMeetingCalendarIcs(req, res, next));
+
 // POST /meetings - create a new meeting
 router.post('/', (req, res, next) => meetingController.createMeeting(req, res, next));
 
@@ -45,6 +48,9 @@ router.post('/:uid/registrants', (req, res, next) => meetingController.addMeetin
 
 // PUT /meetings/:uid/registrants - update registrants (handles single or multiple)
 router.put('/:uid/registrants', (req, res, next) => meetingController.updateMeetingRegistrants(req, res, next));
+
+// DELETE /meetings/:uid/registrants/self - remove the authenticated user as a registrant
+router.delete('/:uid/registrants/self', (req, res, next) => meetingController.removeMyMeetingRegistration(req, res, next));
 
 // DELETE /meetings/:uid/registrants - delete registrants (handles single or multiple)
 router.delete('/:uid/registrants', (req, res, next) => meetingController.deleteMeetingRegistrants(req, res, next));

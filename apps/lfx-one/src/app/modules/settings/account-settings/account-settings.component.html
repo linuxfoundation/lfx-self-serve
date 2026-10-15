@@ -83,7 +83,30 @@
                 <ng-template #content>
                   <p class="text-sm">
                     {{ meetingInviteError() }} If you believe this is an error,
-                    <button type="button" lfxOpenIntercom class="font-medium underline">contact support</button>.
+                    <button type="button" lfxOpenIntercom class="font-medium underline" data-testid="meeting-invite-error-support-button">
+                      contact support</button
+                    >.
+                  </p>
+                </ng-template>
+              </lfx-message>
+            }
+
+            <!-- Meeting-invite lookup failed: which address receives invitations is unknown -->
+            @if (meetingInviteLoadFailed()) {
+              <lfx-message severity="warn" data-testid="meeting-invite-load-failed-banner">
+                <ng-template #content>
+                  <p class="text-sm">We couldn't load your meeting-invitation email. Reload the page to try again.</p>
+                </ng-template>
+              </lfx-message>
+            } @else if (orphanedInviteEmail()) {
+              <!-- Stored override matches none of the listed addresses -->
+              <lfx-message severity="warn" data-testid="meeting-invite-orphaned-banner">
+                <ng-template #content>
+                  <p class="text-sm">
+                    Meeting invitations are going to {{ orphanedInviteEmail() }}, which isn't one of the addresses listed here. Choose an address below or
+                    <button type="button" lfxOpenIntercom class="font-medium underline" data-testid="meeting-invite-orphaned-support-button">
+                      contact support</button
+                    >.
                   </p>
                 </ng-template>
               </lfx-message>
@@ -189,7 +212,7 @@
                     <div>
                       <p class="text-sm font-medium text-slate-700">Enter verification code</p>
                       <p class="text-xs text-slate-500 mt-0.5">
-                        A 6-digit code was sent to <strong>{{ pendingEmail() }}</strong
+                        If this address can be added, a 6-digit code was sent to <strong>{{ pendingEmail() }}</strong
                         >. Enter it below to verify and add the address.
                       </p>
                     </div>
@@ -239,6 +262,10 @@
                         {{ sendingCode() ? 'Sending...' : "Didn't receive the code? Resend" }}
                       </button>
                     }
+                    <p class="text-xs text-slate-500" data-testid="otp-support-hint">
+                      Didn't get a code? The address may already be linked to another LFX account —
+                      <button type="button" lfxOpenIntercom class="font-medium underline" data-testid="otp-support-button">contact support</button>.
+                    </p>
                   </div>
                 }
               </div>

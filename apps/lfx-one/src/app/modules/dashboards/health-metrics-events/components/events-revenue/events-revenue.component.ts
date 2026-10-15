@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser } from '@angular/common';
+import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import { Component, computed, inject, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -28,7 +28,7 @@ import type { HealthMetricsEventsRevenue, HealthMetricsEventsRevenueQuery, Healt
  */
 @Component({
   selector: 'lfx-events-revenue',
-  imports: [EmptyStateComponent, Skeleton, TableComponent],
+  imports: [EmptyStateComponent, NgTemplateOutlet, Skeleton, TableComponent],
   templateUrl: './events-revenue.component.html',
 })
 export class EventsRevenueComponent {

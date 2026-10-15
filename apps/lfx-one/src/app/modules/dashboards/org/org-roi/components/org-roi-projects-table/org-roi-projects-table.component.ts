@@ -157,8 +157,7 @@ export class OrgRoiProjectsTableComponent {
     if (field === 'return') return row.totalReturn;
     if (field === 'profit') return row.profit;
     if (field === 'roi') return row.roi;
-    if (field === 'bcr') return row.bcr;
-    return row.breakevenMarkup;
+    return row.bcr;
   }
 
   /** Never re-derives roi, bcr or profit: they are defined once in the metric layer. */
@@ -174,13 +173,11 @@ export class OrgRoiProjectsTableComponent {
       profit: project.profit,
       roi: project.roi,
       bcr: project.bcr,
-      breakevenMarkup: project.breakevenMarkup,
       investmentLabel: formatCurrency(project.totalExpenditure),
       returnLabel: formatCurrency(project.totalReturn),
       profitLabel: formatCurrency(project.profit),
       roiLabel: this.isRenderable(project.roi) ? `${formatPercent(project.roi * 100)}%` : ORG_LENS_ROI_NO_VALUE,
       bcrLabel: this.isRenderable(project.bcr) ? `${project.bcr.toFixed(1)}×` : ORG_LENS_ROI_NO_VALUE,
-      breakevenMarkupLabel: this.isRenderable(project.breakevenMarkup) ? project.breakevenMarkup.toFixed(3) : ORG_LENS_ROI_NO_VALUE,
     };
   }
 

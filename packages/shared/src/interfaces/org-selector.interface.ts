@@ -30,6 +30,8 @@ export interface OrgItem {
    * `uid` for the `/org/{segment}/…` address (spec 050, DR-001). Never generated client-side.
    */
   slug?: string | null;
+  /** True for an org the caller reaches only as its CLA Manager (see `OrgResolveResponse.claOnly`). Absent means false. */
+  claOnly?: boolean;
 }
 
 /** Row projection with role-decoration + selection metadata resolved once per render. */
@@ -138,6 +140,19 @@ export interface RoleGrantsResponse {
    * that may be an earlier request's, which is why it is not this request's `X-Request-Id`.
    */
   correlationId?: string;
+  /**
+   * Organizations (18-char SFIDs) the caller reaches only as a CLA Manager, from their own
+   * `cla-manager` scopes. Filled only when every grant array above is empty and `isStaff` is false;
+   * empty when the scopes could not be read. Grants the EasyCLA tab of these orgs and nothing else.
+   * Optional for rolling deploys: absent ⇒ empty.
+   */
+  claManagerOrgs?: string[];
+  /**
+   * M3 — `failed` when the caller's `cla-manager` scopes were asked for and could not be read, so an
+   * empty `claManagerOrgs` is unknown rather than "manages nothing" and the client renders the outage
+   * state with Retry. Absent ⇒ `ok`.
+   */
+  claManagerLookup?: 'ok' | 'failed';
 }
 
 /** Spec 053 — completeness of the caller's organization-list lookup. */
@@ -157,8 +172,10 @@ export interface OrgResolveResponse {
   uid: string;
   /** Lowercase URL-identity slug; null when the org has none (address uses `uid`). */
   slug: string | null;
-  /** Display name — only ever returned for an org the caller has just proven `auditor` on. */
+  /** Display name — only ever returned for an org the caller has just proven `auditor` on, or holds a `cla-manager` scope on (`claOnly`). */
   name: string;
+  /** True when the caller reaches this org only as its CLA Manager: no Org Lens read, so only its EasyCLA tab opens. Absent means false. */
+  claOnly?: boolean;
 }
 
 /** Canonical org record returned by `GET /api/orgs/:accountId` (member-service snake_case → camelCase). Spec 002: keyed by the org account id (18-char SFID). */
@@ -278,10 +295,14 @@ export interface OrgListState {
 
 /** Shape of `b2b_org.data` from the query-service indexed document — only fields the selector reads. */
 export interface B2bOrgIndexedDoc {
+  /** Canonical 18-char Salesforce Account id (same value as `project_membership.b2b_org_uid`). */
+  uid?: string;
   sfid?: string | null;
   name?: string;
   logo_url?: string | null;
   primary_domain?: string | null;
+  /** Additional normalized domains of the company (Salesforce `Domain_Alias__c`). */
+  domain_aliases?: string[] | null;
   is_member?: boolean;
   /** Spec 022 — true when this org has child orgs in the b2b_org index. Drives cascading-children lookup per D-004. */
   is_parent?: boolean;

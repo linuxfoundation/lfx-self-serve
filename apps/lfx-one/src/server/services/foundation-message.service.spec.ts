@@ -64,10 +64,31 @@ vi.mock('./github-readme.service', () => ({
     public fetchReadme = readmeMocks.fetchReadme;
   },
 }));
+// The document store records revisions on top of the agent's own write and
+// has its own spec (mktg-document-store.service.spec.ts). Here it passes
+// through, so this spec keeps asserting the agent's persistence, plus the
+// session id the store keys revisions by.
+const documentStoreMocks = vi.hoisted(() => ({ recordedSessions: [] as string[] }));
+vi.mock('./mktg-document-store.service', async () => {
+  const { MktgArtifactService } = await import('./mktg-artifact.service');
+  return {
+    MktgDocumentStoreService: class {
+      private readonly artifactService = new MktgArtifactService();
+      public persistGeneration(req: Request, spec: MktgArtifactSpec, envelope: MktgArtifactEnvelope, projectUid: string | undefined, sessionId: string) {
+        documentStoreMocks.recordedSessions.push(sessionId);
+        return this.artifactService.persist(req, spec, envelope, projectUid);
+      }
+      public readLatest(req: Request, spec: MktgArtifactSpec, project: string) {
+        return this.artifactService.readLatest(req, spec, project);
+      }
+    },
+  };
+});
 vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
 
+import type { MktgArtifactEnvelope, MktgArtifactSpec } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
 import { FOUNDATION_MESSAGE_REQUIRED_HEADINGS, FOUNDATION_MESSAGE_REVISED_INTAKE_FEEDBACK } from '@lfx-one/shared/constants';
@@ -95,7 +116,8 @@ const DERIVATIVES: Record<string, string> = {
   boilerplate:
     'TestOrbit is an open source toolkit for platform teams who need to ship reliable services without assembling their own release toolchain. It packages opinionated defaults for building, testing, and rolling out changes, and keeps every decision inspectable so teams can adapt it to their own environment. Governed in the open under the Linux Foundation, TestOrbit is maintained by contributors from a range of organisations who review each change in public. Adopters use it to shorten the path from a merged pull request to a production release while keeping the audit trail their compliance teams expect.',
   llms_txt: '# TestOrbit\n\nTestOrbit is an open source toolkit for platform teams.',
-  elevator_pitch_headline: 'Ship reliable services faster with TestOrbit',
+  elevator_pitch:
+    'TestOrbit gives platform teams one open source toolkit for building, testing and rolling out reliable services, governed in the open under the Linux Foundation.',
 };
 
 function buildDocument(): string {
@@ -103,8 +125,8 @@ function buildDocument(): string {
   const sections = ['# TestOrbit Message Foundation', ''];
   for (const heading of FOUNDATION_MESSAGE_REQUIRED_HEADINGS) {
     sections.push(heading, '', filler, '');
-    if (heading.startsWith('## 1a.')) {
-      // The document is the single source for the derivatives (gate G3).
+    if (heading.startsWith('## 3.')) {
+      // §3 Copy Primitives — the document is the single source for the derivatives (gate G3).
       sections.push(...Object.values(DERIVATIVES), '');
     }
   }
@@ -258,17 +280,18 @@ describe('FoundationMessageService.getResult', () => {
     expect(result.version).toBe(1);
     expect(result.projectName).toBe('TestOrbit');
     expect(result.intakeMode).toBe('form');
-    expect(result.derivatives).toMatchObject({ summary_25: DERIVATIVES['summary_25'], elevator_pitch_headline: DERIVATIVES['elevator_pitch_headline'] });
-    expect(result.documentMarkdown).toContain('## 6. Messaging Pillars');
+    expect(result.derivatives).toMatchObject({ summary_25: DERIVATIVES['summary_25'], elevator_pitch: DERIVATIVES['elevator_pitch'] });
+    expect(result.documentMarkdown).toContain('## 5. Messaging Pillars');
   });
 
   it('suppresses an envelope whose derivatives break the §1a word-count locks (never surfaced as "word-count-locked")', async () => {
-    const overLongHeadline = 'This elevator pitch headline runs well past the contract hard cap of ten words easily';
-    const document = `${buildDocument()}\n${overLongHeadline}\n`;
+    // 13 words × 8 = 104 words, well past the §3 elevator-pitch cap of 90.
+    const overLongPitch = 'This elevator pitch runs well past the contract hard cap of ninety words. '.repeat(8).trim();
+    const document = `${buildDocument()}\n${overLongPitch}\n`;
     const forged = buildEnvelope({
       document_markdown: document,
       content_sha256: createHash('sha256').update(document, 'utf8').digest('hex'),
-      derivatives: { ...DERIVATIVES, elevator_pitch_headline: overLongHeadline },
+      derivatives: { ...DERIVATIVES, elevator_pitch: overLongPitch },
     });
     guildMocks.getRawEventPayloads.mockResolvedValue([toolResultPayload(forged)]);
 
@@ -322,6 +345,7 @@ describe('FoundationMessageService persistence', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    documentStoreMocks.recordedSessions.length = 0;
     objectStoreMocks.putContentAddressedObject.mockResolvedValue(true);
     projectMocks.getProjectById.mockResolvedValue({ uid: PROJECT_UID, slug: 'testorbit', writer: true });
     service = new FoundationMessageService();
@@ -351,6 +375,8 @@ describe('FoundationMessageService persistence', () => {
       version: 1,
       intake_mode: 'form',
     });
+    // Recorded as a revision of the project's Message Foundation, keyed by the run's session.
+    expect(documentStoreMocks.recordedSessions).toEqual(['session-1']);
   });
 
   it('never writes into a partition the caller cannot write: no writer grant, no persistence', async () => {

@@ -48,16 +48,7 @@
           dataTest="mentorship-current-mentees-term" />
       </div>
 
-      <lfx-button
-        label="Download By Status"
-        icon="fa-light fa-download"
-        iconPos="left"
-        severity="secondary"
-        size="small"
-        [outlined]="true"
-        styleClass="whitespace-nowrap !py-2.5"
-        (onClick)="onAction('Download by status')"
-        data-testid="mentorship-current-mentees-download" />
+      <lfx-mentorship-mentees-download-menu [programId]="programId()" tab="current" dataTest="mentorship-current-mentees-download" />
     </div>
   </div>
 
