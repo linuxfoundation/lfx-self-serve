@@ -17,6 +17,7 @@ import {
   MeetingRegistrationRemovalResult,
   MeetingRsvp,
   PublicMeetingProject,
+  PublicPastMeetingResponse,
   User,
 } from '@lfx-one/shared/interfaces';
 import { MeetingRsvpDetailsComponent } from '@app/modules/meetings/components/meeting-rsvp-details/meeting-rsvp-details.component';
@@ -215,6 +216,36 @@ describe('MeetingJoinComponent', () => {
         { provide: MessageService, useValue: { add: toastAdd } },
       ],
     });
+  });
+
+  it.each([
+    ['composite route', '1-1700000000000'],
+    ['upcoming lookup fallback', MEETING_ID],
+  ])('accepts projected anonymous past-meeting detail via %s', async (_path, id) => {
+    authenticated.set(false);
+    paramMap$.next(convertToParamMap({ id }));
+    getPublicMeeting.mockReturnValue(throwError(() => ({ status: 404 })));
+    const response: PublicPastMeetingResponse = {
+      meeting: {
+        id,
+        meeting_id: MEETING_ID,
+        project_uid: 'project-1',
+        title: 'Public sync',
+        start_time: '2026-01-01T10:00:00Z',
+        duration: 60,
+      },
+      project: buildProject(),
+      full_access: true,
+    };
+    getPublicPastMeeting.mockReturnValue(of(response));
+
+    const component = await createComponent();
+
+    expect(component.meeting()).toEqual({ ...response.meeting, project: response.project });
+    expect(component.meetingTitle()).toBe('Public sync');
+    expect(component.meeting()).not.toHaveProperty('sessions');
+    expect(component.meeting()).not.toHaveProperty('platform_meeting_id');
+    expect(component.meeting()).not.toHaveProperty('organizers');
   });
 
   it('clears registrantsLoading and yields no registrants when the viewer is unauthenticated', async () => {
