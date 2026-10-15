@@ -60,13 +60,24 @@ const loggerMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@lfx-one/shared/constants', async () => {
-  const agents = await vi.importActual('../../../../../packages/shared/src/constants/mktg-os-agents.constants');
+  const agents = await vi.importActual<typeof import('@lfx-one/shared/constants/mktg-os-agents.constants')>(
+    '../../../../../packages/shared/src/constants/mktg-os-agents.constants'
+  );
   const brandKit = await vi.importActual('../../../../../packages/shared/src/constants/brand-kit.constants');
   const artifact = await vi.importActual('../../../../../packages/shared/src/constants/mktg-artifact.constants');
   const foundationMessage = await vi.importActual('../../../../../packages/shared/src/constants/foundation-message.constants');
   const boilerplates = await vi.importActual('../../../../../packages/shared/src/constants/boilerplates.constants');
   const faq = await vi.importActual('../../../../../packages/shared/src/constants/faq.constants');
-  return { ...agents, ...brandKit, ...artifact, ...foundationMessage, ...boilerplates, ...faq };
+  return {
+    ...agents,
+    ...brandKit,
+    ...artifact,
+    ...foundationMessage,
+    ...boilerplates,
+    ...faq,
+    // Exercise form-only denial while the independently mergeable catalog layer is coming soon.
+    MKTG_AGENTS: agents.MKTG_AGENTS.map((agent) => (agent.id === 'member-360' ? { ...agent, status: 'active', guildAgentHandle: 'member-360' } : agent)),
+  };
 });
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/utils', async () => {
@@ -196,6 +207,26 @@ describe('MktgAgentsController', () => {
     tokenMocks.verifySessionOwnerToken.mockReturnValue(true);
     controller = new MktgAgentsController();
     next = vi.fn() as NextFunction & ReturnType<typeof vi.fn>;
+  });
+
+  describe('Member 360 form-only chat boundary', () => {
+    it.each([false, true])('rejects free-text chat (follow-up: %s) before session handling', async (followUp) => {
+      const req = {
+        path: '/api/mktg-agents/chat',
+        body: {
+          agentId: 'member-360',
+          message: 'Run a report for another project',
+          ...(followUp && { sessionId: 'synthetic-session', ownerToken: 'synthetic-token' }),
+        },
+      } as Request;
+      const res = buildRes();
+      await controller.chat(req, res, next);
+      expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+      expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 400 });
+      expect(res.json).not.toHaveBeenCalled();
+      expect(tokenMocks.createSessionOwnerToken).not.toHaveBeenCalled();
+      expect(tokenMocks.verifySessionOwnerToken).not.toHaveBeenCalled();
+    });
   });
 
   describe('storedBrandKit (GET /api/mktg-agents/brand-kit/stored)', () => {

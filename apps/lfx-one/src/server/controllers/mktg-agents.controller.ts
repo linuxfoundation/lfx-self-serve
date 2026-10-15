@@ -139,7 +139,7 @@ export class MktgAgentsController {
 
     // Only `active` agents have a live Guild handle; reject `coming-soon` agents
     // so a placeholder can never be routed to a default/incorrect Guild agent.
-    if (agent.status !== 'active') {
+    if (agent.status !== 'active' || agent.formOnly) {
       next(
         ServiceValidationError.forField('agentId', `Agent is not available for chat: ${trimmedAgentId}`, {
           operation: 'mktg_agents_chat',

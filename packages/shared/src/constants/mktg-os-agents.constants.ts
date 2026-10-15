@@ -168,4 +168,15 @@ export const MKTG_AGENTS: MktgAgent[] = [
     icon: 'fa-light fa-chart-line',
     accent: 'emerald',
   },
+  {
+    id: 'member-360',
+    number: 9,
+    name: 'Member 360 Agent',
+    tags: ['Members', 'Engagement'],
+    status: 'coming-soon',
+    description: 'Scores member engagement, finds the gaps and recommends one next action per member.',
+    icon: 'fa-light fa-users',
+    accent: 'blue',
+    formOnly: true,
+  },
 ];

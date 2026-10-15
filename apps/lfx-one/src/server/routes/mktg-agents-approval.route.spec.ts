@@ -7,9 +7,11 @@ import type { Request, Response } from 'express';
 const approve = vi.hoisted(() => vi.fn());
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/foundation-message.constants')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/member-360.constants')),
 }));
 vi.mock('../controllers/mktg-slides-export.controller', () => ({ MktgSlidesExportController: class {} }));
 vi.mock('../controllers/mktg-agents.controller', () => ({ MktgAgentsController: class {} }));
+vi.mock('../controllers/member-360.controller', () => ({ Member360Controller: class {} }));
 vi.mock('../controllers/mktg-documents.controller', () => ({
   MktgDocumentsController: class {
     public approveRevision = approve;

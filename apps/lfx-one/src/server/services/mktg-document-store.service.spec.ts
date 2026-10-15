@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { createHash } from 'node:crypto';
+import { buildMktgRunDocumentId } from '../utils/mktg-document-store.util';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -1389,6 +1390,7 @@ describe('MktgDocumentStoreService', () => {
 
       const group = (await service.listDocuments(req, PROJECT)).groups.find((candidate) => candidate.type.agentKey === 'linkedin-post');
       expect(group?.documents).toHaveLength(2);
+      expect(group?.documents.map((document) => document.documentId).sort()).toEqual(['session-a', 'session-b'].map(buildMktgRunDocumentId).sort());
       expect(group?.documents.every((document) => document.revisionCount === 1 && /^run-[0-9a-f]{24}$/.test(document.documentId))).toBe(true);
     });
   });

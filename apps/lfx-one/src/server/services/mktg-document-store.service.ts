@@ -15,7 +15,6 @@ import {
   MKTG_REVISION_CONTENT_TYPE,
   MKTG_REVISION_SCHEMA,
   MKTG_REVISION_STATUS_METADATA_MAX_CHARS,
-  MKTG_RUN_DOCUMENT_ID_PREFIX,
 } from '@lfx-one/shared/constants';
 import {
   MktgArtifactEnvelope,
@@ -59,11 +58,13 @@ import {
   parseMktgLegacyRevisionId,
   parseMktgRevisionKey,
 } from '@lfx-one/shared/utils';
+import { envelopeSchema as member360Schema } from '@lfx-one/shared/server';
 import { Request } from 'express';
 import { createHash } from 'node:crypto';
 
 import { AuthenticationError, ConflictError, MicroserviceError, PreconditionFailedError, ServiceValidationError } from '../errors';
 import { getEffectiveSub, isImpersonating } from '../utils/auth-helper';
+import { buildMktgRunDocumentId } from '../utils/mktg-document-store.util';
 import { logger } from './logger.service';
 import { MktgArtifactService } from './mktg-artifact.service';
 import { ObjectStoreService } from './object-store.service';
@@ -156,7 +157,7 @@ export class MktgDocumentStoreService {
     envelope: MktgArtifactEnvelope | MktgRevisionContentSource,
     sessionId: string
   ): Promise<MktgStoredRevision> {
-    const documentId = type.kind === 'run' ? `${MKTG_RUN_DOCUMENT_ID_PREFIX}${this.sha256(sessionId).slice(0, 24)}` : MKTG_LIVING_DOCUMENT_ID;
+    const documentId = type.kind === 'run' ? buildMktgRunDocumentId(sessionId) : MKTG_LIVING_DOCUMENT_ID;
     const source = 'document_markdown' in envelope ? this.markdownSource(envelope) : envelope;
     return this.recordRevision(
       req,
@@ -325,7 +326,15 @@ export class MktgDocumentStoreService {
     revisionId: string
   ): Promise<MktgRevisionResponse | null> {
     const detail = await this.getDocument(req, project, type, documentId);
-    return detail ? this.readRevision(req, detail, revisionId) : null;
+    const view = detail ? await this.readRevision(req, detail, revisionId) : null;
+    if (!view || type.agentKey !== 'member-360') return view;
+    const candidate = view.sidecar?.['member360'];
+    const parsed = member360Schema.safeParse(candidate);
+    const member360 =
+      parsed.success && this.sha256(JSON.stringify((candidate as typeof parsed.data).tabs)) === parsed.data.content_sha256
+        ? (candidate as typeof parsed.data)
+        : undefined;
+    return { ...view, member360 };
   }
 
   /** Compatibility endpoint name; the action moves current and never adds a revision. */

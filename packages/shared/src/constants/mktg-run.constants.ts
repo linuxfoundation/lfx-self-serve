@@ -695,6 +695,18 @@ export const MKTG_AGENT_INTAKES: Record<string, MktgAgentIntake> = {
   [BOILERPLATES_INTAKE.agentId]: BOILERPLATES_INTAKE,
   [ICP_INTAKE.agentId]: ICP_INTAKE,
   [FAQ_INTAKE.agentId]: FAQ_INTAKE,
+  'member-360': {
+    agentId: 'member-360',
+    formTitleAction: 'Run',
+    documentName: 'Member 360',
+    intro: 'Scores member engagement for the active, entitlement-checked project.',
+    batchPreamble: [],
+    fields: [],
+    sections: ['Member Ranking', 'Actions by Team', 'Evidence', 'Method'],
+    endpoints: { generate: '/api/mktg-agents/member-360/generate', result: '/api/mktg-agents/member-360/result' },
+    persistsDocument: true,
+    regenerateViaGenerate: true,
+  },
 };
 
 /** Max recursion depth when scanning event payloads for envelope candidates (all Marketing OS contracts). */

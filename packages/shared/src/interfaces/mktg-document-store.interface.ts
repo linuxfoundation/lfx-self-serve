@@ -14,6 +14,7 @@
 // inside the hashed bytes, or removing it would drop the revision.
 
 import type { MktgArtifactIntakeMode, MktgArtifactKey } from './mktg-artifact.interface';
+import type { Member360Envelope } from './member-360.interface';
 
 /**
  * Agent key of a document type — the artifact namespace for the agents that
@@ -257,6 +258,8 @@ export interface MktgRevisionResponse extends MktgDocumentDetailResponse {
    * inputs record from it.
    */
   sidecar: Record<string, unknown> | null;
+  /** Validated structured document type; absent for prose documents. */
+  member360?: Member360Envelope;
 }
 
 /** Body of `POST /api/mktg-agents/documents/:agentKey/:documentId/restore`. */
