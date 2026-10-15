@@ -6,6 +6,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
+import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { SelectComponent } from '@components/select/select.component';
 import { Committee, CommitteeMember, MeetingCommittee } from '@lfx-one/shared';
 import { CommitteeMemberVotingStatus, MeetingVisibility } from '@lfx-one/shared/enums';
@@ -30,7 +31,7 @@ interface CommitteeMemberDisplay extends CommitteeMember {
 
 @Component({
   selector: 'lfx-meeting-committee-manager',
-  imports: [ButtonComponent, ReactiveFormsModule, MultiSelectComponent, SelectComponent, TooltipModule],
+  imports: [ButtonComponent, ReactiveFormsModule, MultiSelectComponent, RadioButtonComponent, SelectComponent, TooltipModule],
   templateUrl: './meeting-committee-manager.component.html',
 })
 export class MeetingCommitteeManagerComponent {
@@ -67,6 +68,17 @@ export class MeetingCommitteeManagerComponent {
    * always had (board or restricted).
    */
   public readonly allowRestrictedAttendees = input<boolean>(false);
+  /**
+   * Meeting v2 composer only: the picker's description sits between its label and the dropdown, always
+   * shown, and the placeholder is the shorter "Select group(s)".
+   * @description Off by default, so the pre-v2 wizard keeps its hint-below layout.
+   */
+  public readonly composerLayout = input<boolean>(false);
+  /**
+   * Composer guests step only: from `lg` up, list the picked groups as removable chips under a field that keeps
+   * its placeholder. Off everywhere else (quick create included), where the picks are listed in the field.
+   */
+  public readonly groupChips = input<boolean>(false);
 
   // Outputs
   public readonly committeesChange: OutputEmitterRef<MeetingCommittee[]> = output<MeetingCommittee[]>();
@@ -192,6 +204,20 @@ export class MeetingCommitteeManagerComponent {
 
   // Committee options loaded from API
   public readonly committeeOptions: Signal<Committee[]> = this.initCommitteeOptions();
+  /**
+   * The picked groups as chips (composer layout), in selection order.
+   * @description Names come from the loaded options, falling back to the meeting's own saved committees and
+   * finally the uid, so a chip still renders while the option list is loading or failed.
+   */
+  public readonly selectedCommitteeChips: Signal<MeetingCommittee[]> = computed(() => {
+    const options = this.committeeOptions();
+    const saved = this.selectedCommittees();
+
+    return this.selectedCommitteeIds().map((uid) => ({
+      uid,
+      name: options.find((option) => option.uid === uid)?.name ?? saved.find((committee) => committee.uid === uid)?.name ?? uid,
+    }));
+  });
 
   // Reactive committee members loading
   public committeeMembers: Signal<CommitteeMemberDisplay[]> = this.initCommitteeMembers();
@@ -321,6 +347,12 @@ export class MeetingCommitteeManagerComponent {
         this.committeeMembersResolvedChange.emit(this.selectedCommitteeIds());
         this.committeeMembersChange.emit(members);
       });
+  }
+
+  /** Drops one group from the selection — the chip's dismiss button. Goes through the control so every listener runs. */
+  public removeCommittee(uid: string): void {
+    const control = this.committeeForm.get('committees');
+    control?.setValue(this.selectedCommitteeIds().filter((id) => id !== uid));
   }
 
   /**

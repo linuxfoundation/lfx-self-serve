@@ -23,6 +23,7 @@ test.setTimeout(120_000);
 
 const guestList = (page: Page) => page.getByTestId('composer-guests-list');
 const guestStats = (page: Page) => page.getByTestId('composer-guests-stats');
+const guestCount = (page: Page) => page.getByTestId('composer-guests-count');
 const emptyState = (page: Page) => page.getByTestId('composer-guests-empty');
 const removeButtons = (page: Page) => page.locator('[data-testid^="composer-guest-remove-"]');
 /** `lfx-button` puts `data-testid` on the host, so the clickable element is one level in. */
@@ -76,7 +77,7 @@ test.describe('Meeting composer — inviting guests before the meeting exists', 
     await expect(row).toContainText('Ada Byron');
     // One assertion for the whole secondary line: `email · org`, joined in that order.
     await expect(row).toContainText(`${DIRECTORY_GUEST.email} · Acme Motors`);
-    await expect(guestStats(page)).toContainText('1 direct guest');
+    await expect(guestCount(page)).toHaveText('Invited (1)');
     await expect(emptyState(page)).toHaveCount(0);
 
     // The row is brand new, so it has no uid — hence the testid prefix rather than a known id.
@@ -116,7 +117,7 @@ test.describe('Meeting composer — inviting guests before the meeting exists', 
     const row = guestList(page).locator('li').first();
     await expect(row).toContainText('Grace Hopper');
     await expect(row).toContainText(MANUAL_GUEST.email);
-    await expect(guestStats(page)).toContainText('1 direct guest');
+    await expect(guestCount(page)).toHaveText('Invited (1)');
   });
 
   test('sends the guests queued before the meeting existed, once the create returns an id', async ({ page }) => {
