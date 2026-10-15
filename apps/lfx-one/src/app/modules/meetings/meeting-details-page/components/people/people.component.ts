@@ -83,6 +83,13 @@ export class MeetingPeopleComponent {
 
   protected readonly organizer = computed(() => this.state.viewerRole() === 'organizer');
   protected readonly roster: Signal<MeetingRosterState> = this.initRoster();
+  /**
+   * The roster less guests just removed: what both the People rows and the drawer's list show, so a
+   * drawer reopened before the index drops a guest never brings them back.
+   */
+  protected readonly registrants: Signal<MeetingRegistrant[]> = computed(() =>
+    this.roster().registrants.filter((registrant) => !this.removedUids().has(registrant.uid))
+  );
   protected readonly rows: Signal<MeetingPeopleRow[]> = this.initRows();
   protected readonly previewRows = computed(() => this.rows().slice(0, MEETING_ATTENDEE_PREVIEW_LIMIT));
   /** The faces after the listed rows, for the footer's stack. */
@@ -200,15 +207,12 @@ export class MeetingPeopleComponent {
 
   private initRows(): Signal<MeetingPeopleRow[]> {
     return computed(() =>
-      buildMeetingPeopleRows(
-        this.roster().registrants.filter((registrant) => !this.removedUids().has(registrant.uid)),
-        {
-          inviteResponsesEnabled: this.showRsvpChips(),
-          viewer: { username: this.userService.viewerUsername(), email: this.userService.user()?.email },
-          // The viewer's answer for the same occurrence the roster is for, ahead of the index.
-          viewerRsvp: this.state.myRsvp() ?? null,
-        }
-      )
+      buildMeetingPeopleRows(this.registrants(), {
+        inviteResponsesEnabled: this.showRsvpChips(),
+        viewer: { username: this.userService.viewerUsername(), email: this.userService.user()?.email },
+        // The viewer's answer for the same occurrence the roster is for, ahead of the index.
+        viewerRsvp: this.state.myRsvp() ?? null,
+      })
     );
   }
 

@@ -194,7 +194,7 @@
       [openAddFormOnShow]="drawerOpensAddForm()"
       [occurrence]="occurrence()"
       [myMeetingRegistrants]="true"
-      [initialRegistrants]="roster().status === 'error' ? null : roster().registrants"
+      [initialRegistrants]="roster().status === 'error' ? null : registrants()"
       [initialRegistrantsLoading]="roster().status === 'loading'"
       [visible]="drawerVisible()"
       (registrantsRemoved)="onRegistrantsRemoved($event)"

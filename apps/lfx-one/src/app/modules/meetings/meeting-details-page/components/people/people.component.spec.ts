@@ -293,6 +293,27 @@ describe('MeetingPeopleComponent', () => {
     expect(query('participant-row-a')).not.toBeNull();
   });
 
+  it("keeps a removed guest out of the drawer's list when it is reopened before the roster catches up", async () => {
+    await setup(() => of([registrant('a'), registrant('b')]));
+    viewerRole.set('organizer');
+    fixture.detectChanges();
+    query('people-section-add')?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    removeGuest('a');
+    fixture.componentInstance.closeDrawer();
+    fixture.detectChanges();
+    query('people-section-add')?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const display = fixture.debugElement.query((el) => el.componentInstance instanceof RegistrantsDisplayStubComponent)?.componentInstance as
+      | RegistrantsDisplayStubComponent
+      | undefined;
+    expect(display?.initialRegistrants()?.map((r) => r.uid)).toEqual(['b']);
+  });
+
   it('says nobody is invited once the last guest is removed', async () => {
     await setup(() => of([registrant('a')]));
 
