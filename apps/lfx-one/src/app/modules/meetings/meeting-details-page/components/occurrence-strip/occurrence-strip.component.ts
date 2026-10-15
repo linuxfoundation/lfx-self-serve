@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { isPlatformBrowser } from '@angular/common';
+import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { afterRenderEffect, Component, computed, DestroyRef, ElementRef, inject, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { MEETING_OCCURRENCE_STRIP_MAX_CHASE_PAGES, MEETING_OCCURRENCE_STRIP_PAGE_SIZE, MEETING_OCCURRENCES_PAGE_MAX_LIMIT } from '@lfx-one/shared/constants';
 import {
+  MeetingOccurrenceBrowseDialogData,
   MeetingOccurrenceDirection,
   MeetingOccurrenceStripChip,
   MeetingOccurrenceStripItem,
@@ -16,12 +17,16 @@ import {
   MeetingOccurrenceStripTimeline,
   PublicMeetingOccurrencesResponse,
 } from '@lfx-one/shared/interfaces';
-import { buildOccurrenceStripItems, compositeIdToStartMs, getUserTimezone } from '@lfx-one/shared/utils';
+import { buildOccurrenceStripItems, buildRecurrenceSummary, compositeIdToStartMs, convertRecurrenceToPattern, getUserTimezone } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
+import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { firstValueFrom } from 'rxjs';
 
+import { restoreFocusOnDialogClose } from '@shared/utils/restore-dialog-focus.util';
+
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
+import { MeetingOccurrenceBrowseDialogComponent } from '../occurrence-browse-dialog/occurrence-browse-dialog.component';
 
 /**
  * The V2 occurrence strip, first in the content column of a meeting in a series (E6-03, #3586, FR-044,
@@ -53,6 +58,7 @@ import { MeetingDetailsStateService } from '../../meeting-details-state.service'
 @Component({
   selector: 'lfx-meeting-occurrence-strip',
   imports: [ButtonComponent, SkeletonModule],
+  providers: [DialogService],
   templateUrl: './occurrence-strip.component.html',
 })
 export class MeetingOccurrenceStripComponent {
@@ -60,11 +66,17 @@ export class MeetingOccurrenceStripComponent {
   private readonly meetingService = inject(MeetingService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly dialogService = inject(DialogService);
+  private readonly document = inject(DOCUMENT);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly scroller = viewChild<ElementRef<HTMLElement>>('scroller');
 
   /** The prototype's 32px round Previous / Next. */
   protected readonly roundButtonClass =
     '!h-[32px] !w-[32px] !min-w-0 !rounded-[var(--md-radius-circle)] !border !border-[var(--md-border)] !bg-[var(--md-surface-card)] !p-0 !text-[var(--md-text-body)] shadow-[var(--md-shadow-raise)] hover:!bg-[var(--md-surface-hover)] focus-visible:!shadow-[var(--md-shadow-focus)] disabled:!opacity-40';
+  /** The prototype's header trigger ("Occurrence N of M"): a bare 12.5px text button with two glyphs. */
+  protected readonly browseButtonClass =
+    '!h-auto !gap-[7px] !border-0 !bg-transparent !p-0 !text-[12.5px] !font-semibold !text-[var(--md-text-body)] hover:!text-[var(--md-text-heading)] focus-visible:!shadow-[var(--md-shadow-focus)]';
   /** The prototype's 12.5px text action ("Jump to next meeting"), on one line. */
   protected readonly textButtonClass =
     '!h-auto !whitespace-nowrap !border-0 !bg-transparent !p-0 !text-[12.5px] !font-semibold !text-[var(--md-accent-ink)] hover:!underline focus-visible:!shadow-[var(--md-shadow-focus)]';
@@ -77,6 +89,8 @@ export class MeetingOccurrenceStripComponent {
   private readonly focusStartMs = signal<number | null>(null);
   /** The run whose page is being read, so Previous / Next at a loaded end do not read it twice. */
   private readonly pagingRun = signal<number | null>(null);
+  /** The open browse dialog, closed with the strip (the page leaves, or a move rebuilds it). */
+  private browseRef: DynamicDialogRef | null = null;
   /** Bumped by each new request: a read whose run is no longer this one is dropped. */
   private runId = 0;
   /** Bumped by each move: a move superseded by a later one, while its reads were in flight, is dropped. */
@@ -123,6 +137,11 @@ export class MeetingOccurrenceStripComponent {
   });
   /** "Occurrence N of M", only when the whole series is known. */
   protected readonly position: Signal<{ index: number; total: number } | null> = this.initPosition();
+  /** The header's trigger: "Occurrence N of M" once the whole series is known, else "Browse occurrences". */
+  protected readonly browseLabel = computed(() => {
+    const position = this.position();
+    return position ? `Occurrence ${position.index} of ${position.total}` : 'Browse occurrences';
+  });
   protected readonly canGoPrevious = computed(() => this.canStep(this.adjacent(-1)));
   protected readonly canGoNext = computed(() => this.canStep(this.adjacent(1)));
   protected readonly chips: Signal<MeetingOccurrenceStripChip[]> = this.initChips();
@@ -156,7 +175,10 @@ export class MeetingOccurrenceStripComponent {
     });
 
     // A destroyed strip's reads are superseded like any other, so none of them acts after it.
-    this.destroyRef.onDestroy(() => this.runId++);
+    this.destroyRef.onDestroy(() => {
+      this.runId++;
+      this.browseRef?.close();
+    });
 
     // After the strip moved the page: a strip created again by that move takes focus back to the
     // chip, when the move left none (the old strip's control went with its view). A move that kept
@@ -182,6 +204,47 @@ export class MeetingOccurrenceStripComponent {
     if (!item.cancelled && item.startMs !== this.selected()?.startMs) {
       void this.moveTo(item);
     }
+  }
+
+  /**
+   * Opens the browse-all dialog (E6-04). It reads this strip's loaded series and asks it for more, or to
+   * open a row, so one loader serves both. Appended inside the page's `.meeting-details-v2` scope, where
+   * the `--md-*` tokens resolve, and not inside the strip, which a move can rebuild. Focus goes back to
+   * the trigger on close while it is still on the page.
+   */
+  protected openBrowse(): void {
+    const meeting = this.state.meeting();
+    if (!meeting) {
+      return;
+    }
+    const trigger = this.document.activeElement;
+    const data: MeetingOccurrenceBrowseDialogData = {
+      title: meeting.title,
+      logoUrl: meeting.project?.logo_url || null,
+      cadence: meeting.recurrence ? buildRecurrenceSummary(convertRecurrenceToPattern(meeting.recurrence)).description : null,
+      timezone: this.timezone,
+      items: () => this.items(),
+      selectedStartMs: () => this.state.selectedOccurrenceStartMs(),
+      hasMore: (tab) => !!(tab === 'past' ? this.loaded()?.pastHasMore : this.loaded()?.futureHasMore),
+      pastIncomplete: () => !!this.loaded()?.pastIncomplete,
+      loadMore: (tab) => this.loadMore(this.runId, tab === 'past' ? 'past' : 'future', MEETING_OCCURRENCES_PAGE_MAX_LIMIT),
+      open: (item) => void this.moveTo(item),
+    };
+    this.browseRef = this.dialogService.open(MeetingOccurrenceBrowseDialogComponent, {
+      showHeader: false,
+      width: '520px',
+      breakpoints: { '600px': 'calc(100vw - 40px)' },
+      modal: true,
+      closable: true,
+      closeOnEscape: true,
+      dismissableMask: true,
+      ariaLabelledBy: 'occurrence-browse-title',
+      appendTo: this.host.nativeElement.closest('.meeting-details-v2') ?? 'body',
+      styleClass:
+        '!rounded-[var(--md-radius-dialog)] !border !border-[var(--md-border)] !bg-[var(--md-surface-card)] !shadow-[var(--md-shadow-dialog)] overflow-hidden',
+      data,
+    });
+    restoreFocusOnDialogClose(this.browseRef, trigger);
   }
 
   protected jumpToNext(): void {

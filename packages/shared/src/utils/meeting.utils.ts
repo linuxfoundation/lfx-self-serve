@@ -835,6 +835,7 @@ export function buildOccurrenceStripItems(
       startMs,
       startTime: occurrence.start_time,
       duration,
+      endKnown: (occurrence.duration ?? 0) > 0,
       occurrenceId: occurrence.occurrence_id,
       isPast: isOccurrencePast(occurrence.start_time, duration, now),
       cancelled: occurrence.status === 'cancel' || cancelledIds.has(occurrence.occurrence_id),
@@ -866,6 +867,7 @@ export function buildOccurrenceStripItems(
       startMs,
       startTime: new Date(startMs).toISOString(),
       duration: scheduled > 0 ? scheduled : fallbackDuration,
+      endKnown: scheduled > 0,
       occurrenceId: startMsToOccurrenceId(startMs),
       pastResourceId: past.meeting_and_occurrence_id,
       isPast: true,
@@ -877,7 +879,15 @@ export function buildOccurrenceStripItems(
     const startMs = occurrenceIdToStartMs(id);
     if (startMs !== null) {
       const startTime = new Date(startMs).toISOString();
-      add({ startMs, startTime, duration: fallbackDuration, occurrenceId: id, isPast: isOccurrencePast(startTime, fallbackDuration, now), cancelled: true });
+      add({
+        startMs,
+        startTime,
+        duration: fallbackDuration,
+        endKnown: false,
+        occurrenceId: id,
+        isPast: isOccurrencePast(startTime, fallbackDuration, now),
+        cancelled: true,
+      });
     }
   }
 

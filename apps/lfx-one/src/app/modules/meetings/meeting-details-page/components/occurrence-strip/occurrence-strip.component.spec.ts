@@ -6,6 +6,7 @@ import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import {
   Meeting,
+  MeetingOccurrenceBrowseDialogData,
   MeetingOccurrenceStripItem,
   MeetingOccurrenceStripPages,
   MeetingRecurrence,
@@ -14,10 +15,12 @@ import {
   PublicMeetingOccurrencesResponse,
 } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
+import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
+import { MeetingOccurrenceBrowseDialogComponent } from '../occurrence-browse-dialog/occurrence-browse-dialog.component';
 import { MeetingOccurrenceStripComponent } from './occurrence-strip.component';
 
 const WEEK = 7 * 24 * 60 * 60 * 1000;
@@ -143,6 +146,26 @@ describe('MeetingOccurrenceStripComponent', () => {
       expect(navigatedTo()).toBe(at(1));
     });
 
+    it("opens the browse-all dialog from the position, handing it the strip's series and loader", async () => {
+      await loaded();
+      const dialogService = fixture.debugElement.injector.get(DialogService);
+      const open = vi.spyOn(dialogService, 'open').mockReturnValue({ onDestroy: new Subject<void>(), close: vi.fn() } as unknown as DynamicDialogRef);
+
+      button('occurrence-strip-position')?.click();
+
+      expect(open).toHaveBeenCalledWith(
+        MeetingOccurrenceBrowseDialogComponent,
+        expect.objectContaining({ showHeader: false, ariaLabelledBy: 'occurrence-browse-title' })
+      );
+      const data = open.mock.calls[0][1].data as MeetingOccurrenceBrowseDialogData;
+      expect(data.items().map((item) => item.startMs)).toEqual([at(-2), at(-1), at(1), at(2)]);
+      expect(data.selectedStartMs()).toBe(at(-1));
+
+      data.open(data.items()[3]);
+      await settle();
+      expect(navigatedTo()).toBe(at(2));
+    });
+
     it('says the position once the whole series is loaded', async () => {
       await loaded();
       expect(query('[data-testid="occurrence-strip-position"]')?.textContent?.trim()).toBe('Occurrence 2 of 4');
@@ -236,7 +259,7 @@ describe('MeetingOccurrenceStripComponent', () => {
     await render(page({ past: [], future: [future(1), future(2)], past_incomplete: true }));
 
     expect(query('[data-testid="occurrence-strip-section"]')).not.toBeNull();
-    expect(query('[data-testid="occurrence-strip-position"]')).toBeNull();
+    expect(query('[data-testid="occurrence-strip-position"]')?.textContent?.trim()).toBe('Browse occurrences');
   });
 
   it('leaves out the position while more of the series is unread, and pages in at a loaded end', async () => {
@@ -244,7 +267,7 @@ describe('MeetingOccurrenceStripComponent', () => {
       selected: at(-1),
       pages: [page({ past: [past(-2)], future: [], past_has_more: false })],
     });
-    expect(query('[data-testid="occurrence-strip-position"]')).toBeNull();
+    expect(query('[data-testid="occurrence-strip-position"]')?.textContent?.trim()).toBe('Browse occurrences');
 
     button('occurrence-strip-prev')?.click();
     await settle();

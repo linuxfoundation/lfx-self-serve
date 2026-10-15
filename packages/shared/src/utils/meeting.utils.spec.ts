@@ -1500,6 +1500,32 @@ describe('buildOccurrenceStripItems (E6-03)', () => {
     expect(item).toEqual(expect.objectContaining({ duration: 60, isPast: false }));
   });
 
+  it("knows the end only from an occurrence's own duration or a record's scheduled end", () => {
+    const items = buildOccurrenceStripItems(
+      [],
+      {
+        past: [
+          { meeting_and_occurrence_id: `99152950841-${at(9)}`, scheduled_start_time: new Date(at(9)).toISOString() },
+          {
+            meeting_and_occurrence_id: `99152950841-${at(16)}`,
+            scheduled_start_time: new Date(at(16)).toISOString(),
+            scheduled_end_time: new Date(at(16) + 45 * 60_000).toISOString(),
+          },
+        ],
+        future: [occurrence(23, { duration: 0 }), occurrence(30)],
+      },
+      60,
+      now
+    );
+
+    expect(items.map((item) => [item.duration, item.endKnown])).toEqual([
+      [60, false],
+      [45, true],
+      [60, false],
+      [30, true],
+    ]);
+  });
+
   it('flags a past record whose id is listed as cancelled', () => {
     const items = buildOccurrenceStripItems(
       [],
