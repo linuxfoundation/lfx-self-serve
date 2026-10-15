@@ -33,3 +33,88 @@ export interface GatewazeSessionFailure {
 
 /** Result of `GatewazeSessionService.getGatewazeSession`. */
 export type GatewazeSessionResult<TSession> = GatewazeSessionOk<TSession> | GatewazeSessionFailure;
+
+/** `getGatewazeMe` found an admin session. `user` is GoTrue's `/user` body, sent to the embed as `{ user }`. */
+export interface GatewazeMeOk {
+  outcome: 'ok';
+  user: Record<string, unknown>;
+}
+
+/** The session is good but the user has no active `admin_profiles` row. 403 `{ error: 'not_admin', email }`. */
+export interface GatewazeMeNotAdmin {
+  outcome: 'not_admin';
+  email?: string;
+}
+
+/** The admin check could not be made at sign-in. 503 `{ error: 'admin_check_pending' }` with `Retry-After`. */
+export interface GatewazeMeAdminCheckPending {
+  outcome: 'admin_check_pending';
+  retryAfterSeconds: number;
+}
+
+/** Result of `GatewazeSessionService.getGatewazeMe`, one per row of the `/session/me` table. */
+export type GatewazeMeResult = GatewazeMeOk | GatewazeMeNotAdmin | GatewazeMeAdminCheckPending | GatewazeSessionFailure;
+
+/** How `endGatewazeSession` removes the record once the session is revoked. */
+export interface GatewazeSessionEndOptions {
+  /**
+   * True for LFX's `/logout`: `store.delete`, which also sets the package's 5 minute sign-out marker so
+   * a request already in flight cannot mint a new session on the same id. False for the embed's own
+   * sign-out button: `store.discard` with the revoked access token, no marker, so the next
+   * `/session/me` mints again from the still-live LFX session.
+   */
+  blockReMint: boolean;
+}
+
+/** What `endGatewazeSession` managed to do. It never throws, so the caller can always answer. */
+export interface GatewazeSessionEndResult {
+  /** A stored session was found for this LFX session. */
+  found: boolean;
+  /** GoTrue confirmed it revoked the refresh token. */
+  revoked: boolean;
+  /** The record was removed and the sign-out published. False when there was nothing to remove, or another request had already replaced it. */
+  deleted: boolean;
+}
+
+/**
+ * A Gatewaze session opened for a Realtime socket, from `GatewazeSessionService.openRealtimeSession`.
+ * `TSession` is `@gatewaze/host-session`'s `GwSession`. The callbacks are the ones the package's
+ * `bridgeRealtime` takes, bound to this LFX session.
+ */
+export interface GatewazeRealtimeSession<TSession> {
+  /** The session the socket opens with. */
+  session: TSession;
+  /** The refresh the bridge runs before each token expires. Null ends the socket. */
+  fresh: () => Promise<TSession | null>;
+  /** Registers a listener for this session's sign-out on any pod; returns its removal. */
+  onSignedOut: (listener: () => void) => () => void;
+  /** True when a sign-out arrived after the session started loading, before the bridge was listening. */
+  signedOut: () => boolean;
+  /** Removes the early sign-out listener. Call once the bridge listens for itself, or when the upgrade is refused. */
+  release: () => void;
+}
+
+/** Per-pod Realtime socket caps for `GatewazeRealtimeService`. */
+export interface GatewazeRealtimeLimits {
+  /** Sockets one LFX user may hold on one pod. */
+  perUser: number;
+  /** Sockets, open or still being checked, that one pod accepts across all users. */
+  total: number;
+}
+
+/**
+ * A Realtime upgrade that passed the checks before Express and is now running through the Express
+ * app. `TSocket` and `THead` are Node's `Duplex` and `Buffer`, which this package does not depend on.
+ */
+export interface GatewazeRealtimePendingUpgrade<TSocket, THead> {
+  socket: TSocket;
+  head: THead;
+  /** Set once the Realtime route, the Express answer or the deadline has taken the upgrade from Express. */
+  taken: boolean;
+  /** Set once the upgrade is refused or handed to the WebSocket server, so it is answered once. */
+  settled: boolean;
+  /** Frees every slot this upgrade holds. Idempotent. */
+  release: () => void;
+  /** Adds a release step, run with `release`, or at once when already released. */
+  onRelease: (step: () => void) => void;
+}

@@ -384,6 +384,18 @@ describe('OrgEasyclaApprovalListComponent', () => {
       expect(byTestId(fixture, 'org-easycla-approval-edit')).not.toBeNull();
       expect(byTestId(fixture, 'org-easycla-approval-delete')).not.toBeNull();
     });
+
+    // The approval-list permission check has to carry the distinct foundation id alongside the
+    // covered-project id so an EasyCLA grant on the foundation pair wins the OR for Add/Edit/
+    // Remove. Without this assertion, dropping the fourth argument at `component.ts`'s
+    // `checkPermission(...)` call would leave the suite green and hide those controls from a
+    // foundation-only manager. The managers and contributor-acknowledgments specs assert the same
+    // shape; this one is the regression pin for the approval list.
+    it('sends both the project pair and the foundation pair to checkPermission', async () => {
+      await render(claGroup({ pairProjectSfid: 'a09410000182dD3AAI', foundationSfid: 'a09410000182dFOUND' }));
+
+      expect(checkPermission).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'approval-list-update', 'a09410000182dD3AAI', 'a09410000182dFOUND');
+    });
   });
 
   describe('adding entries', () => {

@@ -3,54 +3,14 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { AUTH_FRAGMENT_KEYS, MEETING_PASSWORD_QUERY_PARAMS } from '../constants/auth-fragment.constants';
+import { MEETING_PASSWORD_QUERY_PARAMS } from '../constants/credential-redaction.constants';
 import {
-  hasAuthFragment,
-  redactAuthFragment,
   redactInviteToken,
+  redactGatewazeProxyCredentials,
   redactLoggedUrl,
   redactMeetingPassword,
   redactMeetingPasswordInText,
-} from './auth-fragment.utils';
-
-/**
- * Guards Supabase access AND refresh tokens from reaching a third-party analytics sink. A refresh
- * token is long-lived, so a leak here does not expire on its own.
- */
-describe('redactAuthFragment', () => {
-  const ORIGIN = 'https://lfx.example.com';
-
-  it.each(AUTH_FRAGMENT_KEYS)('redacts a fragment carrying %s', (key) => {
-    const redacted = redactAuthFragment(`${ORIGIN}/project/gw/newsletters?project=aaif#${key}=SUPER_SECRET&expires_in=3600`);
-
-    expect(redacted).not.toContain('SUPER_SECRET');
-    expect(redacted).toBe(`${ORIGIN}/project/gw/newsletters?project=aaif#redacted`);
-  });
-
-  it('redacts the whole fragment when several auth keys are present, not just the first', () => {
-    const redacted = redactAuthFragment(`${ORIGIN}/x#access_token=AAA&refresh_token=BBB`);
-
-    expect(redacted).not.toContain('AAA');
-    expect(redacted).not.toContain('BBB');
-  });
-
-  it('resolves a relative URL against the base so a same-origin referrer is still redacted', () => {
-    expect(redactAuthFragment('/relative/path#refresh_token=SECRET', ORIGIN)).not.toContain('SECRET');
-  });
-
-  it.each([
-    ['no fragment at all', `${ORIGIN}/project/gw/newsletters`],
-    ['a plain anchor', `${ORIGIN}/docs#section-heading`],
-    ['a fragment with no auth key', `${ORIGIN}/x#expires_in=3600&token_type=bearer`],
-  ])('leaves a URL with %s untouched', (_label, url) => {
-    // Over-redacting would blind the analytics this is meant to keep useful.
-    expect(redactAuthFragment(url)).toBe(url);
-  });
-
-  it('drops the fragment wholesale when the URL cannot be parsed, rather than passing it through', () => {
-    expect(redactAuthFragment('http://[not a url#access_token=SECRET')).not.toContain('SECRET');
-  });
-});
+} from './credential-redaction.utils';
 
 describe('redactInviteToken', () => {
   const ORIGIN = 'https://lfx.example.com';
@@ -210,25 +170,46 @@ describe('redactMeetingPasswordInText', () => {
   });
 });
 
+describe('redactGatewazeProxyCredentials', () => {
+  it.each([
+    ['/api/gatewaze/supabase/storage/v1/object/sign/media/a.png?token=SIGNED.JWT', '/api/gatewaze/supabase/storage/v1/object/sign/media/a.png?token=redacted'],
+    ['/api/gatewaze/supabase/rest/v1/x?select=id&access_token=SECRET', '/api/gatewaze/supabase/rest/v1/x?select=id&access_token=redacted'],
+    ['/API/Gatewaze/api/x?refresh_token=SECRET&code=SECRET', '/API/Gatewaze/api/x?refresh_token=redacted&code=redacted'],
+  ])('redacts %s', (url, expected) => {
+    expect(redactGatewazeProxyCredentials(url, 'http://localhost')).toBe(expected);
+  });
+
+  it.each(['/api/gatewaze/supabase/rest/v1/x?select=id', '/meetings?token=keep', '/api/gatewazex/y?token=keep'])('leaves %s unchanged', (url) => {
+    expect(redactGatewazeProxyCredentials(url, 'http://localhost')).toBe(url);
+  });
+
+  it('redacts a proxy URL nested in returnTo, at any depth', () => {
+    const inner = '/api/gatewaze/supabase/storage/v1/object/sign/a?token=SIGNED';
+    const once = redactGatewazeProxyCredentials(`/login?returnTo=${encodeURIComponent(inner)}`, 'http://localhost');
+    const twice = redactGatewazeProxyCredentials(
+      `/auth-error?returnTo=${encodeURIComponent(`/login?returnTo=${encodeURIComponent(inner)}`)}`,
+      'http://localhost'
+    );
+
+    expect(once).not.toContain('SIGNED');
+    expect(new URL(once, 'http://localhost').searchParams.get('returnTo')).toBe('/api/gatewaze/supabase/storage/v1/object/sign/a?token=redacted');
+    expect(twice).not.toContain('SIGNED');
+  });
+
+  it('keeps an absolute URL absolute', () => {
+    expect(redactGatewazeProxyCredentials('https://app.example.test/api/gatewaze/supabase/storage/v1/object/sign/a?token=S', 'https://app.example.test')).toBe(
+      'https://app.example.test/api/gatewaze/supabase/storage/v1/object/sign/a?token=redacted'
+    );
+  });
+});
+
 describe('redactLoggedUrl', () => {
   it('redacts both the invite token and a meeting passcode, keeping a relative URL relative', () => {
     expect(redactLoggedUrl('/invite?token=SUPER_SECRET', 'http://localhost')).toBe('/invite?token=redacted');
     expect(redactLoggedUrl('/meetings/m-1?password=SUPER_SECRET&tab=a', 'http://localhost')).toBe('/meetings/m-1?password=redacted&tab=a');
     expect(redactLoggedUrl('/meetings/m-1?tab=a', 'http://localhost')).toBe('/meetings/m-1?tab=a');
-  });
-});
-
-describe('hasAuthFragment', () => {
-  it('is false for an empty hash', () => {
-    expect(hasAuthFragment('')).toBe(false);
-  });
-
-  it('tolerates a leading # and detects the key either way', () => {
-    expect(hasAuthFragment('#access_token=x')).toBe(true);
-    expect(hasAuthFragment('access_token=x')).toBe(true);
-  });
-
-  it('does not match a key that merely contains an auth key as a substring', () => {
-    expect(hasAuthFragment('#not_access_token=x')).toBe(false);
+    expect(redactLoggedUrl('/api/gatewaze/supabase/storage/v1/object/sign/a?token=SIGNED', 'http://localhost')).toBe(
+      '/api/gatewaze/supabase/storage/v1/object/sign/a?token=redacted'
+    );
   });
 });

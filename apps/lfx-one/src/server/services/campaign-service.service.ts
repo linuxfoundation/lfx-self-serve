@@ -5,6 +5,7 @@ import {
   CAMPAIGN_BID_OUTCOME_UNCONFIRMED,
   CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED,
   CAMPAIGN_EMAIL_STAGES,
+  CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN,
   CAMPAIGN_GOALS,
   CAMPAIGN_NEGATIVE_KEYWORD_OUTCOMES,
   CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED,
@@ -473,6 +474,18 @@ function canCreateGoogleChannels(): boolean {
   return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceGoogleChannels);
 }
 
+/**
+ * Whether a create may carry a per-platform `bidding` object (#3299).
+ *
+ * Needs the campaign-service create path to serve the create AND the bidding flag. Either alone is
+ * not enough, and both failures are silent: the legacy creator never reads `bidding`, and a
+ * campaign-service older than linuxfoundation/lfx-v2-campaign-service#332 drops the unknown key.
+ * Both would create the campaign on automatic bidding while the operator asked for a manual bid.
+ */
+export function canCreateWithBidding(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBidding);
+}
+
 export class CampaignServiceClient {
   private readonly microserviceProxy: MicroserviceProxyService;
 
@@ -539,6 +552,7 @@ export class CampaignServiceClient {
         googleChannelsEnabled: canCreateGoogleChannels(),
         googleCreativeEnabled: cutoverOwnsCreate(),
         redditCreativeEnabled: canCreateRedditCreative(),
+        biddingEnabled: canCreateWithBidding(),
       };
     }
 
@@ -592,6 +606,7 @@ export class CampaignServiceClient {
       googleChannelsEnabled: canCreateGoogleChannels(),
       googleCreativeEnabled: cutoverOwnsCreate(),
       redditCreativeEnabled: canCreateRedditCreative(),
+      biddingEnabled: canCreateWithBidding(),
     };
   }
 
@@ -1520,6 +1535,13 @@ export class CampaignServiceClient {
       }
       const definitelyRejected = error instanceof MicroserviceError && error.statusCode >= 400 && error.statusCode < 500 && error.statusCode !== 408;
       if (definitelyRejected) {
+        // The one refusal worth naming: an invalid bid (#3299). Matched on the service's own wording,
+        // so nothing else upstream sends is rendered — see `CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN`.
+        const biddingRefusal =
+          error instanceof MicroserviceError && error.statusCode === 400 ? CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN.exec(error.message) : null;
+        if (biddingRefusal !== null) {
+          return { enabled: true, jobId: null, error: `Campaign creation was rejected and nothing was created: ${biddingRefusal[0]}` };
+        }
         return { enabled: true, jobId: null, error: 'Campaign creation was rejected and nothing was created. Please try again.' };
       }
       return {
@@ -1685,12 +1707,18 @@ export class CampaignServiceClient {
   }
 
   /**
-   * Add campaign-level negative keywords to one live campaign (Microsoft Advertising today).
+   * Add negative keywords to one live Microsoft Advertising, Reddit or X campaign: at campaign level
+   * on Microsoft, in the excluded keywords of the campaign's one ad group on Reddit, and as negated
+   * keyword targeting on its one line item on X.
    *
    * NOT ATOMIC and POSITIONAL: upstream answers one result per requested keyword, in request
    * order, each with its own outcome. The response is therefore mapped index for index and never
    * filtered, sorted or de-duplicated, because a caller zips `results[i]` onto the keyword it sent
    * at `i`, and a shifted entry would show a keyword that was not added as added.
+   *
+   * `revision` (Reddit's compare-and-set token from the keyword-targeting read) goes in the body
+   * ONLY when the caller passed one: Microsoft Advertising and X refuse the field whenever it is
+   * present, even empty.
    *
    * No `If-Match` and no ETag: upstream persists nothing for this lever. Upstream's own refusals
    * (400 malformed batch or unsupported platform, 409, 503) pass through unchanged. A transport
@@ -1722,7 +1750,10 @@ export class CampaignServiceClient {
       'POST',
       // The body is the SIXTH argument: a payload in the query position goes out with no body.
       undefined,
-      { negative_keywords: params.negativeKeywords.map((kw): CampaignServiceNegativeKeywordInput => ({ text: kw.text, match_type: kw.matchType })) }
+      {
+        negative_keywords: params.negativeKeywords.map((kw): CampaignServiceNegativeKeywordInput => ({ text: kw.text, match_type: kw.matchType })),
+        ...(params.revision !== undefined && { revision: params.revision }),
+      }
     );
 
     const readable =

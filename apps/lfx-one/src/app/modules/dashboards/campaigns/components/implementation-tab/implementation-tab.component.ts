@@ -18,6 +18,9 @@ import {
 } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import {
+  CAMPAIGN_BIDDING_CREATE_PLATFORMS,
+  CAMPAIGN_BIDDING_PLATFORMS,
+  CAMPAIGN_BIDDING_RULES,
   CAMPAIGN_BUDGET_DEFAULTS,
   CAMPAIGN_CHAR_LIMITS,
   CAMPAIGN_JOB_POLL_INTERVAL_MS,
@@ -54,6 +57,10 @@ import {
   GOOGLE_ADS_MAX_CONVERSION_ACTIONS,
   GOOGLE_ADS_MAX_GEO_TARGETS,
   GOOGLE_ADS_MAX_LANGUAGES,
+  GOOGLE_ADS_MAX_SITELINKS,
+  GOOGLE_ADS_MAX_FINAL_URL_BYTES,
+  GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES,
+  GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES,
   GOOGLE_BIDDING_CPA_STRATEGIES,
   GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
   GOOGLE_BIDDING_ROAS_STRATEGIES,
@@ -82,6 +89,7 @@ import {
   REDDIT_SELECTABLE_OBJECTIVES,
   googleAdsToLower,
   googleAdsTrimSpace,
+  googleAdsUrlGoParseFlaw,
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -90,8 +98,16 @@ import { filter, map, merge, scan, skip, startWith, Subscription, take } from 'r
 
 import type { Signal } from '@angular/core';
 import type {
+  CampaignBiddingCapabilityBlock,
+  CampaignBiddingConfig,
+  CampaignBiddingContext,
+  CampaignBiddingControlView,
+  CampaignBiddingDraft,
+  CampaignBiddingDrafts,
+  CampaignBiddingPlatform,
   CampaignBriefOutput,
   CampaignBriefPersistenceState,
+  CampaignCapabilityReadState,
   CampaignCreateRequest,
   CampaignCreateResult,
   CampaignImplementationDraft,
@@ -99,6 +115,7 @@ import type {
   CampaignKeyword,
   CampaignPlatform,
   CampaignPlatformResult,
+  CampaignSitelink,
   CampaignType,
   GoogleBiddingOption,
   GoogleBiddingStrategy,
@@ -119,7 +136,9 @@ import type {
   RedditCallToAction,
   RedditObjective,
 } from '@lfx-one/shared/interfaces';
-import { codePointLength } from '@lfx-one/shared/utils';
+import { campaignBiddingError, campaignBiddingPayload, codePointLength, defaultCampaignBiddingDraft } from '@lfx-one/shared/utils';
+
+import { CampaignBiddingControlComponent } from '../campaign-bidding-control/campaign-bidding-control.component';
 
 type ImplementationStep = 'form' | 'creating' | 'results';
 
@@ -145,7 +164,7 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
 
 @Component({
   selector: 'lfx-implementation-tab',
-  imports: [ReactiveFormsModule, ButtonComponent, SlicePipe],
+  imports: [ReactiveFormsModule, ButtonComponent, SlicePipe, CampaignBiddingControlComponent],
   templateUrl: './implementation-tab.component.html',
   styleUrl: './implementation-tab.component.scss',
 })
@@ -286,6 +305,27 @@ export class ImplementationTabComponent implements OnInit {
 
   /** @see redditCreativeEnabled — an explicit yes, never a `null`. */
   protected readonly redditCreativeAvailable = computed<boolean>(() => this.redditCreativeEnabled() === true);
+
+  /**
+   * Whether this deployment can honour a per-platform Bidding choice (#3299) —
+   * `CampaignListResult.biddingEnabled`, behind `LFX_CUTOVER_CAMPAIGN_SERVICE_BIDDING`. `null`
+   * (unanswered) and `false` hide the control and send no `bidding` at all, which is the create
+   * exactly as it was before the control existed.
+   */
+  public readonly biddingEnabled = input<boolean | null>(null);
+
+  /** @see biddingEnabled — an explicit yes, never a `null`. */
+  protected readonly biddingAvailable = computed<boolean>(() => this.biddingEnabled() === true);
+
+  /**
+   * Where the read behind `biddingEnabled` stands — what tells "still checking" from "the check
+   * failed" while `biddingEnabled` is `null`. Read only when a retained Manual choice needs the
+   * answer; see `biddingCapabilityBlock`.
+   */
+  public readonly biddingCapabilityRead = input<CampaignCapabilityReadState>('unknown');
+
+  /** Asks the parent to re-read the create capabilities after a failed read. */
+  public readonly retryBiddingCapability = output<void>();
 
   /**
    * Emitted whenever a user-editable field changes, so the parent's copy is current at the moment
@@ -659,6 +699,13 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly microsoftKeywords = signal<MicrosoftKeyword[]>([]);
   protected readonly microsoftBudgetUsd = signal(500);
   protected readonly microsoftCpcBid = signal('');
+
+  /**
+   * The Bidding choice per platform (#3299). A platform with no entry is on the default, automatic.
+   * Kept for every platform whatever is selected, like the other per-platform fields, so
+   * deselecting and reselecting a platform does not lose a typed bid.
+   */
+  protected readonly biddingDrafts = signal<CampaignBiddingDrafts>({});
   /**
    * Google's own geo targets, as ISO-2 country codes.
    *
@@ -738,6 +785,23 @@ export class ImplementationTabComponent implements OnInit {
    * ADDED, exactly as {@link microsoftKeywordDraft} does.
    */
   protected readonly googleCalloutDraft = signal('');
+  /**
+   * Google's sitelink extensions — extra links rendered under the Search ad.
+   *
+   * Four fields rather than the callout's one, so the draft is an OBJECT and the add guard has more
+   * to say. An entry arrives through {@link addGoogleSitelink} or a restored draft; the BFF guard
+   * re-checks every entry against `validateSitelinks` before anything is sent.
+   */
+  protected readonly googleSitelinks = signal<CampaignSitelink[]>([]);
+  protected readonly googleMaxSitelinks = GOOGLE_ADS_MAX_SITELINKS;
+  protected readonly googleMaxFinalUrlBytes = GOOGLE_ADS_MAX_FINAL_URL_BYTES;
+  protected readonly googleMaxSitelinkRunes = GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES;
+  protected readonly googleMaxSitelinkDescriptionRunes = GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES;
+  /**
+   * The sitelink sub-form's live values, on the same rule as {@link googleCalloutDraft}: transient,
+   * reaching the saved draft only when a sitelink is added.
+   */
+  protected readonly googleSitelinkDraft = signal<CampaignSitelink>({ text: '', description1: '', description2: '', finalUrl: '' });
   protected readonly metaVariants = signal<MetaAdVariant[]>([]);
   protected readonly metaGeoTargets = signal<string[]>([]);
   protected readonly metaBudgetUsd = signal(500);
@@ -1111,6 +1175,110 @@ export class ImplementationTabComponent implements OnInit {
 
   protected readonly googleCalloutsFull = computed(() => this.googleCallouts().length >= GOOGLE_ADS_MAX_CALLOUTS);
 
+  /** Rune length of the in-progress sitelink link text. Spread, not `.length` — as the callout. */
+  protected readonly googleSitelinkTextLength = computed(() => [...googleAdsTrimSpace(this.googleSitelinkDraft().text)].length);
+
+  protected readonly googleSitelinkTextTooLong = computed(() => this.googleSitelinkTextLength() > GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES);
+
+  /**
+   * Whether either description line is over its own bound.
+   *
+   * EACH line separately, not their total: upstream applies `maxSitelinkDescriptionRunes` to
+   * `desc1` and `desc2` in turn, so a pair of 30-rune lines is fine and one 36-rune line is not.
+   */
+  protected readonly googleSitelinkDescriptionTooLong = computed(() => {
+    const draft = this.googleSitelinkDraft();
+    return [draft.description1 ?? '', draft.description2 ?? ''].some((d) => [...googleAdsTrimSpace(d)].length > GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES);
+  });
+
+  /**
+   * Whether exactly one description line is filled in.
+   *
+   * Google renders the two lines together and rejects an asset carrying only one, so upstream
+   * refuses the whole create on this. Both filled or both empty are the two legal states.
+   */
+  protected readonly googleSitelinkDescriptionHalfFilled = computed(() => {
+    const draft = this.googleSitelinkDraft();
+    return (googleAdsTrimSpace(draft.description1 ?? '') === '') !== (googleAdsTrimSpace(draft.description2 ?? '') === '');
+  });
+
+  /** Case-folded with Go's rules, as the callout sibling is — upstream refuses, not de-duplicates. */
+  protected readonly googleSitelinkDuplicate = computed(() => {
+    const key = googleAdsToLower(googleAdsTrimSpace(this.googleSitelinkDraft().text));
+    if (key === '') return false;
+    return this.googleSitelinks().some((s) => googleAdsToLower(s.text) === key);
+  });
+
+  /**
+   * Whether the destination in the box is one the ad platforms will refuse.
+   *
+   * False while the box is EMPTY: an unfilled field is not yet a mistake, and the add button's own
+   * disabled state is what withholds the add until it is filled. This warns only about text that
+   * is present and unservable.
+   */
+  protected readonly googleSitelinkUrlInvalid = computed(() => {
+    const url = googleAdsTrimSpace(this.googleSitelinkDraft().finalUrl);
+    if (url === '') return false;
+    return !this.isServableDestination(url);
+  });
+
+  /** UTF-8 byte length of a servable destination over upstream's `maxFinalURLBytes`, else 0. */
+  protected readonly googleSitelinkUrlBytesOver = computed(() => {
+    const url = googleAdsTrimSpace(this.googleSitelinkDraft().finalUrl);
+    if (url === '' || this.googleSitelinkUrlInvalid()) return 0;
+    const bytes = new TextEncoder().encode(url).length;
+    return bytes > GOOGLE_ADS_MAX_FINAL_URL_BYTES ? bytes : 0;
+  });
+
+  /** The message line describing the destination box, or null when it is clean. */
+  protected readonly googleSitelinkUrlErrorId = computed<string | null>(() => {
+    if (this.googleSitelinkUrlInvalid()) return 'google-sitelink-url-invalid';
+    if (this.googleSitelinkUrlBytesOver() > 0) return 'google-sitelink-url-too-long';
+    return null;
+  });
+
+  /**
+   * Ids of the message lines currently describing the link-text box and the two description boxes,
+   * or `null` when each is clean. Same reason as {@link googleCalloutDraftErrorId}: `aria-invalid`
+   * marks the field wrong and `aria-describedby` is what says why once focus returns to it. One
+   * computed per group rather than a template ternary, because each group's messages are mutually
+   * exclusive and `.claude/rules/styling.md` forbids nesting ternaries in a binding.
+   */
+  protected readonly googleSitelinkTextErrorId = computed<string | null>(() => {
+    if (this.googleSitelinkTextTooLong()) return 'google-sitelink-too-long';
+    if (this.googleSitelinkDuplicate()) return 'google-sitelink-duplicate';
+    return null;
+  });
+
+  protected readonly googleSitelinkDescriptionErrorId = computed<string | null>(() => {
+    if (this.googleSitelinkDescriptionHalfFilled()) return 'google-sitelink-half-described';
+    if (this.googleSitelinkDescriptionTooLong()) return 'google-sitelink-description-too-long';
+    return null;
+  });
+
+  protected readonly googleSitelinksFull = computed(() => this.googleSitelinks().length >= GOOGLE_ADS_MAX_SITELINKS);
+
+  /**
+   * Whether the add button is withheld. A computed rather than an expression in the template, so
+   * the button's condition and `addGoogleSitelink`'s refusals stay one list in one place.
+   *
+   * The two required fields are withheld as "not filled in yet" rather than warned about, which is
+   * why the empty cases live here and not in {@link googleSitelinkUrlInvalid}.
+   */
+  protected readonly googleSitelinkAddDisabled = computed(() => {
+    const draft = this.googleSitelinkDraft();
+    if (googleAdsTrimSpace(draft.text) === '' || googleAdsTrimSpace(draft.finalUrl) === '') return true;
+    return (
+      this.googleSitelinksFull() ||
+      this.googleSitelinkTextTooLong() ||
+      this.googleSitelinkDuplicate() ||
+      this.googleSitelinkDescriptionHalfFilled() ||
+      this.googleSitelinkDescriptionTooLong() ||
+      this.googleSitelinkUrlInvalid() ||
+      this.googleSitelinkUrlBytesOver() > 0
+    );
+  });
+
   /**
    * The effective geo list as a display string. A computed rather than `.join()` in the template:
    * `docs/reviews/frontend-checklist.md` permits signal reads, computeds and pipes in bindings but
@@ -1225,6 +1393,32 @@ export class ImplementationTabComponent implements OnInit {
     const accounts = this.linkedInAccounts();
     return accounts.find((a) => a.accountId === this.linkedInAccountId()) ?? accounts[0];
   });
+
+  /**
+   * What each platform's Bidding control renders (#3299): the choice, and why it cannot be sent —
+   * validated against the rest of that platform's config by the same shared rules
+   * `biddingPayloads` applies, so the message on screen is the reason the create is blocked.
+   */
+  protected readonly biddingViews: Signal<Record<CampaignBiddingPlatform, CampaignBiddingControlView>> = this.initBiddingViews();
+
+  /**
+   * The `bidding` object each platform's config carries, or `null` where the choice cannot be sent.
+   * `canSubmit` blocks on a `null` for a selected platform, so `submit` never has to choose between
+   * dropping a refused manual bid (which would create the campaign automatic) and sending it.
+   */
+  protected readonly biddingPayloads: Signal<Record<CampaignBiddingPlatform, CampaignBiddingConfig | null>> = this.initBiddingPayloads();
+
+  /**
+   * Why Create is blocked for a Manual bidding choice this tab still holds but cannot send (#3299),
+   * or `null`. While the capability is not an explicit yes the control is hidden and `bidding` is
+   * not sent — and campaign-service reads an absent `bidding` as AUTOMATIC. So a Manual choice
+   * retained in the draft (made earlier, before a tab round-trip left the capability unanswered or
+   * false) must block the create rather than be dropped: pending says it is checking, failed offers
+   * a Retry, and an explicit no asks the operator to switch to Automatic themselves.
+   */
+  protected readonly biddingCapabilityBlock: Signal<CampaignBiddingCapabilityBlock | null> = this.initBiddingCapabilityBlock();
+  /** The always-mounted live region's text for `biddingCapabilityBlock`; `''` when nothing blocks. */
+  protected readonly biddingCapabilityMessage = computed(() => this.biddingCapabilityBlock()?.message ?? '');
 
   protected readonly canSubmit = computed(() => {
     // Read FIRST and for its side effect only — see `campaignFormRevision`. Every direct form read
@@ -1354,7 +1548,14 @@ export class ImplementationTabComponent implements OnInit {
       return false;
     if (microsoftSelected && this.microsoftEffectiveKeywords().length === 0) return false;
     if (microsoftSelected && this.microsoftEffectiveGeoTargets().length === 0) return false;
-    if (microsoftSelected && !this.microsoftCpcBidValid()) return false;
+    // The legacy max CPC field is hidden — and not sent — while the Bidding control is offered, so
+    // a stale value in it must not block a create the operator cannot see the reason for.
+    if (microsoftSelected && this.microsoftLegacyCpcBidApplies() && !this.microsoftCpcBidValid()) return false;
+    // A selected platform whose Bidding choice cannot be sent (#3299): its message is on screen,
+    // under that platform's control.
+    if (this.biddingAvailable() && CAMPAIGN_BIDDING_CREATE_PLATFORMS.some((p) => platforms.includes(p) && this.biddingPayloads()[p] === null)) return false;
+    // A retained Manual choice the deployment has not (yet) confirmed it can send: never dropped.
+    if (this.biddingCapabilityBlock() !== null) return false;
     // Backstop for a state the add handlers cannot produce but a RESTORED DRAFT can: a draft
     // written before these caps existed carries whatever list it had, and `applyDraft` replays it
     // verbatim by design (an emptied list must stay emptied). Without this the form would look
@@ -1438,6 +1639,7 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleBiddingChannel: Signal<GoogleCampaignChannel | null> = this.initGoogleBiddingChannel();
   protected readonly googleCalloutsAvailable: Signal<boolean> = this.initGoogleCalloutsAvailable();
   protected readonly googleCalloutsWithheldWarning: Signal<string | null> = this.initGoogleCalloutsWithheldWarning();
+  protected readonly googleSitelinksWithheldWarning: Signal<string | null> = this.initGoogleSitelinksWithheldWarning();
   protected readonly googleBiddingOptions: Signal<GoogleBiddingOption[]> = this.initGoogleBiddingOptions();
   protected readonly googleBiddingStrategy: Signal<GoogleBiddingStrategy | null> = this.initGoogleBiddingStrategy();
   protected readonly googleBiddingDefaultLabel: Signal<string> = this.initGoogleBiddingDefaultLabel();
@@ -1554,6 +1756,18 @@ export class ImplementationTabComponent implements OnInit {
       if (this.seeding) return;
       this.emitDraft();
     });
+
+    // When the Bidding control becomes available, a bid typed into the legacy Microsoft field while
+    // it was not (#3299) would otherwise vanish with that field and Automatic would be sent. It is
+    // carried into the control as the Manual choice it always meant upstream (a `cpcBid` without
+    // `bidding` is a manual bid). Subscribed after the draft-restore effect is created, so a
+    // restored legacy value is seen too.
+    toObservable(this.biddingEnabled)
+      .pipe(
+        filter((enabled) => enabled === true),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(() => this.adoptLegacyMicrosoftCpcBid());
 
     // Re-run the two ad-copy array validators when the answer `searchCopyRequired` reads moves.
     //
@@ -1874,7 +2088,43 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   protected onMicrosoftCpcBidInput(event: Event): void {
-    this.microsoftCpcBid.set((event.target as HTMLInputElement).value);
+    const value = (event.target as HTMLInputElement).value;
+    this.microsoftCpcBid.set(value);
+    // Typing a bid into the legacy field is the operator's newest choice, so it supersedes an
+    // earlier explicit Automatic — otherwise the typed bid would be silently not sent
+    // (`microsoftLegacyCpcBidApplies`).
+    if (value.trim() !== '' && this.biddingDrafts()['microsoft-ads']?.strategy === 'automatic') {
+      this.biddingDrafts.update((drafts) => {
+        const next = { ...drafts };
+        delete next['microsoft-ads'];
+        return next;
+      });
+    }
+    this.emitDraft();
+  }
+
+  /**
+   * The explicit way out of an `unsupported` or `failed` block: the operator moves the retained
+   * Manual choices of the selected platforms to Automatic. The typed amounts are kept, so turning
+   * Manual back on later does not lose them.
+   */
+  protected switchRetainedBiddingToAutomatic(): void {
+    const platforms = this.retainedManualBiddingPlatforms();
+    this.biddingDrafts.update((drafts) => {
+      const next = { ...drafts };
+      for (const platform of platforms) {
+        const draft = next[platform];
+        if (draft) next[platform] = { ...draft, strategy: 'automatic' };
+      }
+      return next;
+    });
+    if (platforms.includes('microsoft-ads')) this.clearLegacyMicrosoftCpcBid();
+    this.emitDraft();
+  }
+
+  protected onBiddingChange(platform: CampaignBiddingPlatform, draft: CampaignBiddingDraft): void {
+    this.biddingDrafts.update((drafts) => ({ ...drafts, [platform]: { ...draft } }));
+    if (platform === 'microsoft-ads' && draft.strategy === 'automatic') this.clearLegacyMicrosoftCpcBid();
     this.emitDraft();
   }
 
@@ -2012,6 +2262,63 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
+  /**
+   * Add one sitelink, reporting whether it was actually added.
+   *
+   * Boolean for the same reason {@link addGoogleCallout} is: a refusal must leave the sub-form
+   * filled so the operator can fix the field the warning names, not retype four of them.
+   *
+   * One refusal per branch of upstream's `validateSitelinks`, in its order — cap on the raw list,
+   * blank link text, the rune bound, the case-folded duplicate, the all-or-nothing description
+   * pair, each description line's own rune bound, then the destination and its byte bound. A
+   * sitelink that passes every one is one upstream accepts, short of the utm-tagging margin
+   * documented on {@link GOOGLE_ADS_MAX_FINAL_URL_BYTES}.
+   */
+  protected addGoogleSitelink(sitelink: CampaignSitelink): boolean {
+    const text = googleAdsTrimSpace(sitelink.text);
+    const description1 = googleAdsTrimSpace(sitelink.description1 ?? '');
+    const description2 = googleAdsTrimSpace(sitelink.description2 ?? '');
+    const finalUrl = googleAdsTrimSpace(sitelink.finalUrl);
+
+    if (this.googleSitelinks().length >= GOOGLE_ADS_MAX_SITELINKS) return false;
+    if (!text) return false;
+    if ([...text].length > GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES) return false;
+    if (this.googleSitelinks().some((s) => googleAdsToLower(s.text) === googleAdsToLower(text))) return false;
+    if ((description1 === '') !== (description2 === '')) return false;
+    if ([description1, description2].some((d) => [...d].length > GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES)) return false;
+    // Upstream treats a sitelink with no destination as UNSERVABLE, not as a lesser sitelink, and
+    // refuses the whole create — so an empty URL is a refusal here, not an omitted optional field.
+    if (!this.isServableDestination(finalUrl)) return false;
+    if (new TextEncoder().encode(finalUrl).length > GOOGLE_ADS_MAX_FINAL_URL_BYTES) return false;
+
+    this.googleSitelinks.update((sitelinks) => [
+      ...sitelinks,
+      // Descriptions omitted together when neither is filled, so the request carries absence rather
+      // than two empty strings — the shape the BFF helper and upstream both expect.
+      { text, ...(description1 !== '' || description2 !== '' ? { description1, description2 } : {}), finalUrl },
+    ]);
+    this.emitDraft();
+    return true;
+  }
+
+  protected onGoogleSitelinkDraftInput(field: keyof CampaignSitelink, event: Event): void {
+    // Draft only — no `emitDraft()`, matching the callout box. It reaches the draft on ADD.
+    const value = (event.target as HTMLInputElement).value;
+    this.googleSitelinkDraft.update((draft) => ({ ...draft, [field]: value }));
+  }
+
+  protected onGoogleSitelinkAdd(): void {
+    // Cleared ONLY on success, so a refused sitelink keeps all four fields and its warning.
+    if (this.addGoogleSitelink(this.googleSitelinkDraft())) {
+      this.googleSitelinkDraft.set({ text: '', description1: '', description2: '', finalUrl: '' });
+    }
+  }
+
+  protected removeGoogleSitelink(index: number): void {
+    this.googleSitelinks.update((sitelinks) => sitelinks.filter((_, i) => i !== index));
+    this.emitDraft();
+  }
+
   protected removeMicrosoftGeoTarget(index: number): void {
     this.microsoftGeoTargets.update((targets) => targets.filter((_, i) => i !== index));
     this.emitDraft();
@@ -2141,6 +2448,9 @@ export class ImplementationTabComponent implements OnInit {
       // are, and already narrowed by `googleCalloutsAvailable` to the one channel upstream accepts
       // extensions on.
       ...(platforms.includes('google-ads') ? this.googleCalloutsPayload() : {}),
+      // The sitelink extensions, on the same gate as the callouts — both are ad extensions, and
+      // upstream refuses the whole create when any extension list reaches a non-Search campaign.
+      ...(platforms.includes('google-ads') ? this.googleSitelinksPayload() : {}),
       driveFolderUrl: this.briefDriveFolderUrl() || undefined,
       platforms,
       ...(platforms.includes('linkedin-ads')
@@ -2159,6 +2469,7 @@ export class ImplementationTabComponent implements OnInit {
               targetingProfile: this.linkedInTargetingProfile(),
               variants: this.linkedInVariants(),
               adAccountId: this.linkedInAccountId(),
+              ...this.biddingField('linkedin-ads'),
             },
           }
         : {}),
@@ -2210,6 +2521,7 @@ export class ImplementationTabComponent implements OnInit {
               ...(this.redditCreativeAvailable() && this.redditImageUrl() ? { imageUrl: this.redditImageUrl() } : {}),
               ...(this.redditCreativeAvailable() && this.redditCallToAction() ? { callToAction: this.redditCallToAction() as RedditCallToAction } : {}),
               project: this.briefData()?.eventDetails?.themes?.[0] || undefined,
+              ...this.biddingField('reddit-ads'),
             },
           }
         : {}),
@@ -2235,6 +2547,7 @@ export class ImplementationTabComponent implements OnInit {
               // reasonably take as meaningful. Trimmed to match the upstream trim.
               ...(this.metaRequiresPixel() ? { pixelId: this.metaPixelId().trim() } : {}),
               project: this.briefData()?.eventDetails?.themes?.[0] || undefined,
+              ...this.biddingField('meta-ads'),
             },
           }
         : {}),
@@ -2255,8 +2568,12 @@ export class ImplementationTabComponent implements OnInit {
               keywords: this.microsoftEffectiveKeywords(),
               // Sent only when set. An explicit 0 would claim a bid the account does not have,
               // whereas omitting it lets Microsoft apply the account-currency minimum.
-              ...(this.microsoftEffectiveCpcBid() !== null ? { cpcBid: this.microsoftEffectiveCpcBid() as number } : {}),
+              //
+              // Never beside `bidding` (#3299): the Bidding control replaces this field, and
+              // campaign-service refuses an automatic `bidding` with any `cpcBid`.
+              ...(this.microsoftLegacyCpcBidApplies() && this.microsoftEffectiveCpcBid() !== null ? { cpcBid: this.microsoftEffectiveCpcBid() as number } : {}),
               project: this.briefData()?.eventDetails?.themes?.[0] || undefined,
+              ...this.biddingField('microsoft-ads'),
             },
           }
         : {}),
@@ -2496,6 +2813,12 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.googleCallouts !== undefined) {
       this.googleCallouts.set([...draft.googleCallouts]);
     }
+    // Each entry copied as well as the array: a sitelink is an object, so a shallow array spread
+    // would still hand the draft's own entries to the signal, and a later edit here would reach
+    // back into the stored draft.
+    if (draft.googleSitelinks !== undefined) {
+      this.googleSitelinks.set(draft.googleSitelinks.map((s) => ({ ...s })));
+    }
     // The bidding controls, each on the same present-only rule. One `if` per field rather than a
     // single patch, because a draft saved before this section shipped carries some of these and
     // not others only as the section grows — and a blanket patch of `undefined` would clear a
@@ -2577,6 +2900,9 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.microsoftCpcBid !== undefined) {
       this.microsoftCpcBid.set(draft.microsoftCpcBid);
     }
+    if (draft.bidding !== undefined) {
+      this.biddingDrafts.set(Object.fromEntries(Object.entries(draft.bidding).map(([platform, choice]) => [platform, { ...choice }])));
+    }
   }
 
   /**
@@ -2648,6 +2974,8 @@ export class ImplementationTabComponent implements OnInit {
       googleGeoTargets: [...this.googleGeoTargets()],
       googleLanguages: [...this.googleLanguages()],
       googleCallouts: [...this.googleCallouts()],
+      // Entries copied too, for the reason the restore above gives in the other direction.
+      googleSitelinks: this.googleSitelinks().map((s) => ({ ...s })),
       // The bidding plan as TYPED, not as resolved: the raw strategy the operator picked, not the
       // channel default standing in for it, and the raw text of each number. A draft gives back
       // the form that was left, and resolving here would make a reopened draft claim a choice
@@ -2674,6 +3002,9 @@ export class ImplementationTabComponent implements OnInit {
       microsoftGeoTargets: [...this.microsoftGeoTargets()],
       microsoftKeywords: this.microsoftKeywords().map((k) => ({ ...k })),
       microsoftCpcBid: this.microsoftCpcBid(),
+      // Snapshotted whatever `biddingAvailable()` says, like the Reddit creative below: a capability
+      // decides what is sent, not what the draft remembers. Entries copied so the parent holds values.
+      bidding: Object.fromEntries(Object.entries(this.biddingDrafts()).map(([platform, draft]) => [platform, { ...draft }])),
       // The remaining signal-backed values, on the same terms as the Meta block above: snapshotted
       // rather than referenced, and named explicitly rather than spread.
       //
@@ -3226,6 +3557,15 @@ export class ImplementationTabComponent implements OnInit {
       return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take callouts, so the ${count} you added will not be sent. Switch back to Search to keep them.`;
     });
   }
+  /** The sitelink twin of {@link initGoogleCalloutsWithheldWarning}, on the same Search gate. */
+  private initGoogleSitelinksWithheldWarning(): Signal<string | null> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      const count = this.googleSitelinks().length;
+      if (!channel || this.googleCalloutsAvailable() || count === 0) return null;
+      return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take sitelinks, so the ${count} you added will not be sent. Switch back to Search to keep them.`;
+    });
+  }
 
   /**
    * Whether the campaign this form will dispatch can carry ad extensions at all.
@@ -3313,6 +3653,97 @@ export class ImplementationTabComponent implements OnInit {
     return computed(() => {
       const strategy = this.googleBiddingStrategy();
       return strategy !== null && (GOOGLE_BIDDING_ROAS_STRATEGIES as readonly string[]).includes(strategy);
+    });
+  }
+
+  private initBiddingCapabilityBlock(): Signal<CampaignBiddingCapabilityBlock | null> {
+    return computed(() => {
+      if (this.biddingAvailable()) return null;
+      const platforms = this.retainedManualBiddingPlatforms();
+      if (platforms.length === 0) return null;
+      const names = platforms.map((p) => CAMPAIGN_BIDDING_RULES[p].label).join(', ');
+      if (this.biddingEnabled() === false) {
+        return {
+          kind: 'unsupported',
+          message: `Manual bidding is not available on this deployment, so the manual max CPC bid chosen for ${names} cannot be sent. Switch to Automatic to create the campaign.`,
+        };
+      }
+      // Only an IN-FLIGHT read is "checking". `unknown` — no read out and none answered, as after a
+      // foundation switch — is treated like a failure: it gets a Retry, because nothing else will
+      // start the read the block is waiting for.
+      if (this.biddingCapabilityRead() === 'pending') {
+        return { kind: 'pending', message: 'Checking bidding support…' };
+      }
+      // No read out and no brief id to read against (none saved yet, or a save in flight): a Retry
+      // would be a no-op, since the parent's read needs a brief id. Saving the brief starts the read
+      // itself — the parent's persist success arm calls `loadCreateCapabilitiesFor` with the new
+      // id — so that is what the message asks for, and Retry is offered only when it can read.
+      if (!this.briefPersistence().briefId) {
+        return { kind: 'unsaved', message: "Bidding support can't be checked until this brief is saved. Save the brief, or switch to Automatic." };
+      }
+      return {
+        kind: 'failed',
+        message: `Could not confirm that manual bidding is supported, so the manual max CPC bid chosen for ${names} cannot be sent yet. Retry the check, or switch to Automatic.`,
+      };
+    });
+  }
+
+  /**
+   * Whether the legacy Microsoft max CPC field still speaks for the operator. Not while the Bidding
+   * control is offered (it replaces the field), and not once the operator has explicitly chosen
+   * Automatic for Microsoft: campaign-service reads a `cpcBid` without `bidding` as a MANUAL bid, so
+   * sending it then would create the campaign manual against the choice on screen.
+   */
+  private microsoftLegacyCpcBidApplies(): boolean {
+    return !this.biddingAvailable() && this.biddingDrafts()['microsoft-ads']?.strategy !== 'automatic';
+  }
+
+  /**
+   * Moves a legacy Microsoft max CPC into the Bidding control as a Manual choice, then clears the
+   * legacy field so the bid cannot be sent twice. Only when there is a value and no explicit
+   * Microsoft choice yet — an explicit choice is newer than the legacy field and wins.
+   */
+  private adoptLegacyMicrosoftCpcBid(): void {
+    const raw = this.microsoftCpcBid().trim();
+    if (raw === '' || this.biddingDrafts()['microsoft-ads'] !== undefined) return;
+    const amount = Number(raw);
+    this.biddingDrafts.update((drafts) => ({ ...drafts, 'microsoft-ads': { strategy: 'manual', bidAmount: Number.isFinite(amount) ? amount : null } }));
+    this.clearLegacyMicrosoftCpcBid();
+    this.emitDraft();
+  }
+
+  /** Choosing Automatic for Microsoft retires the legacy max CPC value, so it cannot resurface as a manual bid. */
+  private clearLegacyMicrosoftCpcBid(): void {
+    this.microsoftCpcBid.set('');
+  }
+
+  /** The selected bidding platforms whose retained choice is Manual. */
+  private retainedManualBiddingPlatforms(): CampaignBiddingPlatform[] {
+    const drafts = this.biddingDrafts();
+    const selected = this.selectedPlatforms();
+    return CAMPAIGN_BIDDING_CREATE_PLATFORMS.filter((p) => selected.includes(p) && drafts[p]?.strategy === 'manual');
+  }
+
+  private initBiddingViews(): Signal<Record<CampaignBiddingPlatform, CampaignBiddingControlView>> {
+    return computed(() => {
+      const drafts = this.biddingDrafts();
+      const views = {} as Record<CampaignBiddingPlatform, CampaignBiddingControlView>;
+      for (const platform of CAMPAIGN_BIDDING_PLATFORMS) {
+        const value = drafts[platform] ?? defaultCampaignBiddingDraft();
+        views[platform] = { platform, value, error: campaignBiddingError(platform, value, this.biddingContext(platform)) };
+      }
+      return views;
+    });
+  }
+
+  private initBiddingPayloads(): Signal<Record<CampaignBiddingPlatform, CampaignBiddingConfig | null>> {
+    return computed(() => {
+      const views = this.biddingViews();
+      const payloads = {} as Record<CampaignBiddingPlatform, CampaignBiddingConfig | null>;
+      for (const platform of CAMPAIGN_BIDDING_PLATFORMS) {
+        payloads[platform] = campaignBiddingPayload(platform, views[platform].value, this.biddingContext(platform));
+      }
+      return payloads;
     });
   }
 
@@ -3654,6 +4085,45 @@ export class ImplementationTabComponent implements OnInit {
     return callouts.length > 0 ? { callouts: [...callouts] } : {};
   }
 
+  /**
+   * The sitelink extensions as the request carries them, or `{}` when there is nothing to send.
+   *
+   * Gate, withholding and omit-when-empty are {@link googleCalloutsPayload}'s exactly. The entries
+   * are COPIED rather than passed by reference, so a later chip edit cannot reach a request that
+   * has already been built.
+   */
+  private googleSitelinksPayload(): Partial<CampaignCreateRequest> {
+    if (!this.googleCalloutsAvailable()) return {};
+    const sitelinks = this.googleSitelinks();
+    return sitelinks.length > 0 ? { sitelinks: sitelinks.map((s) => ({ ...s })) } : {};
+  }
+
+  /**
+   * Whether a destination URL is one the ad platforms will serve.
+   *
+   * The same accept set as the BFF's sitelink guard and upstream's `validateServableURL`: absolute,
+   * http(s), with a hostname and no embedded credentials, and none of the Go parser flaws
+   * {@link googleAdsUrlGoParseFlaw} names. Three tiers hold this contract
+   * because none of them can call the others — so the rule for changing it is that all three move
+   * together, and this one must never be the strictest: a URL refused here never reaches the BFF
+   * guard that would have named the real reason.
+   */
+  private isServableDestination(raw: string): boolean {
+    const value = googleAdsTrimSpace(raw);
+    if (value === '' || googleAdsUrlGoParseFlaw(value)) return false;
+
+    let parsed: URL;
+    try {
+      parsed = new URL(value);
+    } catch {
+      return false;
+    }
+
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+    if (parsed.hostname === '') return false;
+    return parsed.username === '' && parsed.password === '';
+  }
+
   /** One typed bidding number, or `undefined` when the field is blank or cannot be a number. */
   private googleBidAmount(raw: string): number | undefined {
     const text = raw.trim();
@@ -3892,6 +4362,36 @@ export class ImplementationTabComponent implements OnInit {
         group.controls[field.control].setValue(value, { emitEvent: false });
       }
     }
+  }
+
+  /**
+   * The rest of a platform's config its bidding rules read: Meta's objective and DAILY budget (a
+   * lifetime budget has no 5× rule), Reddit's objective. The same signals `submit` sends, so the
+   * check and the request cannot disagree.
+   */
+  private biddingContext(platform: CampaignBiddingPlatform): CampaignBiddingContext {
+    switch (platform) {
+      case 'meta-ads':
+        return { objective: this.metaObjective(), dailyBudget: this.metaLifetimeBudget() ? null : this.metaBudgetUsd() };
+      case 'reddit-ads':
+        return { objective: this.redditObjective() };
+      default:
+        return {};
+    }
+  }
+
+  /**
+   * The `bidding` key for one platform's config (#3299): nothing at all while the control is not
+   * offered, otherwise ALWAYS an explicit object — `{"strategy":"automatic"}` or
+   * `{"strategy":"manual","bidAmount":N}`. campaign-service treats an explicit automatic exactly as
+   * an omitted `bidding`, so the explicit form costs nothing and makes the request say what the
+   * screen shows. It also keeps the Microsoft request unambiguous: without `bidding`, a legacy
+   * `cpcBid` there means manual. Never `null` and never `''`, which campaign-service refuses.
+   */
+  private biddingField(platform: CampaignBiddingPlatform): { bidding?: CampaignBiddingConfig } {
+    if (!this.biddingAvailable()) return {};
+    const bidding = this.biddingPayloads()[platform];
+    return bidding === null ? {} : { bidding };
   }
 
   /**

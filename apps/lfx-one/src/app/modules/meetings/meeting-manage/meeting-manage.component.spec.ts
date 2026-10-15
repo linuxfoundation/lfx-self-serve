@@ -13,7 +13,7 @@ import { ProjectService } from '@services/project.service';
 import { CancelOnCommitteeRemoval, MeetingType, MeetingVisibility } from '@lfx-one/shared/enums';
 import { Meeting } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
-import { BehaviorSubject, NEVER, of, throwError } from 'rxjs';
+import { BehaviorSubject, NEVER, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingManageComponent } from './meeting-manage.component';
@@ -250,6 +250,53 @@ describe('MeetingManageComponent', () => {
         detail: 'Meeting not found or you do not have permission to access it',
       });
       expect(navigate).toHaveBeenCalledWith(['/', 'meetings']);
+    });
+  });
+
+  // initWriteAccess's tri-state project leg (meetingWriteAccessState) must not collapse an
+  // unconfirmed lookup into a denial and evict a legitimate meeting coordinator mid-form
+  // (linuxfoundation/lfx-self-serve-ops#500). A plain Subject (not of()) defers each project
+  // resolution past the provisional-true boot emission — a synchronous mock resolves the whole
+  // chain in the first effect pass, and evictOnWriteAccessLoss's skip(1) would swallow the
+  // transition before the test could observe it (see vote-manage.component.spec.ts's analogous
+  // eviction test for the same reasoning).
+  describe('write-access eviction (linuxfoundation/lfx-self-serve-ops#500)', () => {
+    let project$: Subject<{ writer: boolean; meetingCoordinator?: boolean } | null>;
+
+    beforeEach(() => {
+      project$ = new Subject();
+      getMeetingDetail.mockReturnValue(of(enrichedMeeting()));
+      getProject.mockReturnValue(project$.asObservable());
+    });
+
+    it('does not evict when the BFF omits meetingCoordinator — its own FGA check failed, not a confirmed denial', async () => {
+      const router = TestBed.inject(Router);
+      await createComponent();
+
+      project$.next({ writer: false, meetingCoordinator: undefined });
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(router.navigateByUrl).not.toHaveBeenCalled();
+    });
+
+    it('does not evict when the project lookup errors transiently', async () => {
+      const router = TestBed.inject(Router);
+      await createComponent();
+
+      project$.error(new Error('network'));
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(router.navigateByUrl).not.toHaveBeenCalled();
+    });
+
+    it('still evicts once write access is confirmedly denied', async () => {
+      const router = TestBed.inject(Router);
+      await createComponent();
+
+      project$.next({ writer: false, meetingCoordinator: false });
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(router.navigateByUrl).toHaveBeenCalled();
     });
   });
 

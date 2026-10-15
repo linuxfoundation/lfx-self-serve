@@ -6,7 +6,7 @@ import { GW_PROXY_DEFAULT_MAX_BODY_BYTES, GW_PROXY_DEFAULT_TIMEOUT_MS, NODE_MAX_
 /**
  * Reads a positive-integer env override, falling back to the compiled default.
  *
- * Both limits on the `/api/gw` proxy are per-environment concerns: #2263 asks for them as
+ * Both limits on the `/api/gatewaze` proxies are per-environment concerns: #2263 asks for them as
  * deployment variables so a slow upstream or a larger media ceiling can be accommodated without a
  * code change and an image promotion. They were compiled-in constants, which meant neither could be
  * tuned at all.
@@ -49,14 +49,10 @@ function readPositiveIntEnv(name: string, fallback: number, max: number): number
 /**
  * How long a proxied upstream request may take before it is aborted, in ms.
  *
- * Bounded by `NODE_MAX_TIMER_DELAY_MS` because the controller hands this value to `setTimeout`,
- * which overflows rather than saturates past that — see that constant for why an over-large
- * override is an instant-abort outage rather than a long timeout.
- *
- * `setTimeout` on a hand-built `AbortController`, deliberately not `AbortSignal.timeout`: that one
- * stays live through body streaming and would abort a slow download mid-response. See
- * `gw-proxy.controller.ts` at the `fetch` options for the full reasoning. The bound is the same
- * either way — both resolve to Node's one timer implementation — so only the named API changes.
+ * Bounded by `NODE_MAX_TIMER_DELAY_MS` because the value ends up in a Node timer, which overflows
+ * rather than saturates past that — see that constant for why an over-large override is an
+ * instant-abort outage rather than a long timeout. `gatewaze-proxy.controller.ts` uses it as an
+ * idle bound on the upstream socket, so a slow upload or download that keeps moving is not cut off.
  */
 export function getGwProxyTimeoutMs(): number {
   return readPositiveIntEnv('GW_PROXY_TIMEOUT_MS', GW_PROXY_DEFAULT_TIMEOUT_MS, NODE_MAX_TIMER_DELAY_MS);

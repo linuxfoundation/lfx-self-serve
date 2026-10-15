@@ -66,30 +66,36 @@ router.patch('/:campaignId/status', (req, res, next) => campaignController.updat
 router.patch('/:campaignId/budget', (req, res, next) => campaignController.updateCampaignBudget(req, res, next));
 // campaign-service only, like the budget change. Manual max CPC bid, in the ad account's own currency.
 router.patch('/:campaignId/bid', (req, res, next) => campaignController.updateCampaignBid(req, res, next));
-// campaign-service only. Positional response: results[i] answers negativeKeywords[i].
+// campaign-service only: Microsoft Advertising, Reddit and X. Positional response: results[i] answers
+// negativeKeywords[i]. Reddit requires the keyword-targeting read's `revision`; the others refuse it.
 router.post('/:campaignId/negative-keywords', (req, res, next) => campaignController.addNegativeKeywords(req, res, next));
 
 // --- Optimize: campaign-service reads and levers ------------------------------
 //
 // campaign-service only, no legacy arm, so ungated like the budget and bid levers above, EXCEPT
-// the reads whose upstream endpoints are not on campaign-service main yet (Reddit and LinkedIn
-// audience, LinkedIn campaign-ref, Reddit keywords): those answer 404 unless
-// LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS is on.
+// a read whose upstream endpoint is not served yet. None is pending today (both PENDING_UPSTREAM sets
+// are empty); such a read answers 404 unless LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS is on.
 // Authorization is the `requireCampaignManager` above. Campaign and brief ids are campaign-service UUIDs.
 router.get('/meta/audience', (req, res, next) => optimizeController.getPlatformAudience(req, res, next, 'meta-ads'));
 router.get('/twitter/audience', (req, res, next) => optimizeController.getPlatformAudience(req, res, next, 'twitter-ads'));
 router.get('/microsoft/audience', (req, res, next) => optimizeController.getPlatformAudience(req, res, next, 'microsoft-ads'));
 router.get('/reddit/audience', (req, res, next) => optimizeController.getPlatformAudience(req, res, next, 'reddit-ads'));
 router.get('/linkedin/audience', (req, res, next) => optimizeController.getPlatformAudience(req, res, next, 'linkedin-ads'));
-// Platform campaign id -> campaign-service campaign + brief. LinkedIn is pending upstream (flag-gated).
+// Platform campaign id -> campaign-service campaign + brief. More than one match is reachable: refuse, never choose.
 router.get('/meta/campaign-ref', (req, res, next) => optimizeController.resolvePlatformCampaign(req, res, next, 'meta-ads'));
 router.get('/reddit/campaign-ref', (req, res, next) => optimizeController.resolvePlatformCampaign(req, res, next, 'reddit-ads'));
 router.get('/twitter/campaign-ref', (req, res, next) => optimizeController.resolvePlatformCampaign(req, res, next, 'twitter-ads'));
 router.get('/linkedin/campaign-ref', (req, res, next) => optimizeController.resolvePlatformCampaign(req, res, next, 'linkedin-ads'));
-// Pending upstream (flag-gated). Takes `?window=` like the Microsoft keyword read.
+// Reddit keyword performance, read-only (campaign-service #331). Takes `?window=` like the Microsoft keyword read.
 router.get('/reddit/keywords', (req, res, next) => optimizeController.getRedditKeywords(req, res, next));
 // Binds a campaign that already exists on its platform to a brief; creates nothing upstream.
 router.post('/adopt', (req, res, next) => optimizeController.adoptCampaign(req, res, next));
+// The approved paid briefs a campaign can be adopted into (Query Service). 404 unless campaign-service briefs are on.
+router.get('/briefs', (req, res, next) => optimizeController.listAdoptableBriefs(req, res, next));
+// The campaign row from campaign-service (not the index) with its current ETag. Two callers: the Optimize tab,
+// to recover a row's ETag after an ad-set write whose outcome left the validator unknown, and the
+// act-from-Monitor dialog, for its levers' If-Match.
+router.get('/:campaignId/record', (req, res, next) => optimizeController.getCampaignRecord(req, res, next));
 router.get('/:campaignId/settings', (req, res, next) => optimizeController.getCampaignSettings(req, res, next));
 router.get('/:campaignId/meta-ad-sets', (req, res, next) => optimizeController.listMetaAdSets(req, res, next));
 // If-Match from the body's etag. A 503 that may have reached Meta answers code META_AD_SET_STATUS_UNCONFIRMED.

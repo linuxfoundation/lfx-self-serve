@@ -5,6 +5,8 @@ import type {
   AudienceSignal,
   AudienceSpeakerScope,
   BriefMetricsActionRule,
+  CampaignBiddingPlatform,
+  CampaignBiddingPlatformRule,
   CampaignBidType,
   CampaignBudgetType,
   CampaignBudgetTypeOption,
@@ -19,6 +21,7 @@ import type {
   CampaignNegativeKeywordMatchType,
   CampaignNegativeKeywordMatchTypeOption,
   CampaignNegativeKeywordOutcome,
+  CampaignNegativeKeywordPlatformRules,
   CampaignPlatform,
   CampaignPlatformOption,
   CampaignProgramTypeOption,
@@ -36,6 +39,7 @@ import type {
   MetaPlacement,
   MicrosoftKeywordsWindow,
   MicrosoftKeywordsWindowOption,
+  NegativeKeywordCampaignPlatform,
   ParsedCampaignName,
   RedditObjective,
   RedditObjectiveParams,
@@ -767,6 +771,14 @@ export const GOOGLE_ADS_RESOURCE_ID_RE = /^[0-9]{1,19}$/;
 const MAX_INT64 = 9223372036854775807n;
 
 export function isCanonicalGoogleAdsResourceId(value: unknown): boolean {
+  return isCanonicalPositiveInt64(value);
+}
+
+/**
+ * Whether a value is a string spelling a positive int64 canonically: digits only, no leading zero,
+ * at most `math.MaxInt64`. Shared by the Google Ads resource ids above and LinkedIn campaign ids.
+ */
+export function isCanonicalPositiveInt64(value: unknown): boolean {
   // `unknown`, not `string`: the caller validates req.body, which is CAST rather than parsed, so
   // a JSON number reaches here as a number. RE.test() coerces it and passes, and the
   // startsWith() below then threw a TypeError -- turning malformed input into a 500 instead of
@@ -893,6 +905,149 @@ export function isMicrosoftMatchType(value: unknown): boolean {
 export const MICROSOFT_MIN_CPC_BID = 0.01;
 export const MICROSOFT_MAX_CPC_BID = 1000;
 
+// ---------------------------------------------------------------------------
+// Campaign Bidding at create time (#3299)
+// ---------------------------------------------------------------------------
+
+/**
+ * The bidding strategies a per-platform create config accepts, spelled exactly — campaign-service
+ * does no case folding (linuxfoundation/lfx-v2-campaign-service#332, `internal/dispatch/bidding.go`).
+ * The first is the default.
+ */
+export const CAMPAIGN_BIDDING_STRATEGIES = ['automatic', 'manual'] as const;
+
+/**
+ * Every platform whose create config takes a `bidding` object. Google Ads is NOT one: it has its
+ * own bidding plan (`googleAdsConfig.biddingStrategy`), and campaign-service refuses
+ * `googleAdsConfig.bidding` with a 400.
+ */
+export const CAMPAIGN_BIDDING_PLATFORMS = ['linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads', 'twitter-ads'] as const;
+
+/**
+ * The bidding platforms the create flow renders a control for, in section order. X is a bidding
+ * platform upstream but is not here: the create flow builds no `twitterConfig` yet, and the BFF
+ * refuses `twitter-ads` until one exists. Its rule below is ready for when it does.
+ */
+export const CAMPAIGN_BIDDING_CREATE_PLATFORMS: readonly CampaignBiddingPlatform[] = ['linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads'];
+
+/**
+ * campaign-service's own synchronous refusal of a `bidding` object, e.g.
+ * `invalid campaign config: metaConfig.bidding: bidAmount must be greater than zero` (`biddingInvalid`,
+ * `internal/dispatch/bidding.go`). Its text is the service's own: the only caller input it can echo is
+ * the amount, or an unknown key quoted and cut to 40 characters, and nothing comes from an ad
+ * platform. So unlike the other create refusals the BFF may show it — it is the one that tells the
+ * operator which bid to fix. Google's `googleAdsConfig.bidding` refusal is deliberately not matched.
+ */
+export const CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN = /invalid campaign config: (?:linkedIn|meta|microsoft|reddit|twitter)Config\.bidding: .+/;
+
+/** The largest starting bid campaign-service sets on any platform (`maxCreateBid`), in the platform's currency. */
+export const CAMPAIGN_BIDDING_MAX_BID = 1_000_000;
+
+/** One micro-unit per major unit: the finest unit any of these platforms bids in, so every bid is a whole number of them. */
+export const CAMPAIGN_BIDDING_MICRO_SCALE = 1_000_000;
+
+/** Whole cents. LinkedIn, Microsoft and Meta bids are refused with a third decimal rather than rounded. */
+export const CAMPAIGN_BIDDING_CENT_SCALE = 100;
+
+/**
+ * What each platform accepts as a manual create-time bid, mirroring the checks campaign-service
+ * runs before it accepts a create (linuxfoundation/lfx-v2-campaign-service#332):
+ *
+ * - LinkedIn (`linkedinBidPlan`, `linkedin.ValidateBidAmount`): USD, whole cents, 0.01–1,000,000.
+ *   Automatic is a WEBSITE_VISIT campaign bidding MAX_CLICK; manual a WEBSITE_CONVERSION campaign
+ *   with a CPC `unitCost`.
+ * - Meta (`metaBidPlan`, `meta.ManualBidSupported`, `meta.BidCapDailyBudgetMultiple`): two
+ *   decimals at most; only the traffic or leads objective (the ad set must optimise for link
+ *   clicks); and a DAILY budget of at least 5× the bid, checked by the Meta client before anything
+ *   is created. A lifetime budget has no such rule.
+ * - Microsoft (`microsoftBidPlan`, `microsoft.ValidateMaxCPCBid`): two decimals at most, 0.01–1,000.
+ * - Reddit (`redditBidPlan`, `reddit.ManualCPCBidSupported`): whole micro-units; only the traffic
+ *   objective, the one Reddit objective here that bids per click. campaign-service assumes
+ *   `conversions` when no objective is sent.
+ * - X (`twitterBidPlan`): whole micro-units; the bid may not exceed the campaign's daily budget.
+ *
+ * Every platform but LinkedIn bids in the ad ACCOUNT's own currency, which neither this app nor
+ * campaign-service converts. A platform's own floor (LinkedIn's depends on the audience) is checked
+ * when the campaign is created, so a bid inside these limits can still be refused there.
+ */
+export const CAMPAIGN_BIDDING_RULES: Readonly<Record<CampaignBiddingPlatform, CampaignBiddingPlatformRule>> = {
+  'linkedin-ads': {
+    label: 'LinkedIn',
+    currency: 'USD',
+    scale: CAMPAIGN_BIDDING_CENT_SCALE,
+    minBid: 0.01,
+    maxBid: CAMPAIGN_BIDDING_MAX_BID,
+    manualObjectives: null,
+    defaultObjective: null,
+    dailyBudgetMultiple: null,
+    bidAtMostDailyBudget: false,
+    automaticDescription: 'LinkedIn optimizes for website visits and sets every bid (maximum clicks).',
+    manualDescription: 'Creates a website-conversion campaign with a manual cost-per-click bid.',
+    currencyHint: 'In USD, whole cents (for example 2.50).',
+    limitText: "LinkedIn's own minimum depends on the audience and is checked when the campaign is created.",
+  },
+  'meta-ads': {
+    label: 'Meta',
+    currency: 'account',
+    scale: CAMPAIGN_BIDDING_CENT_SCALE,
+    minBid: 0.01,
+    maxBid: CAMPAIGN_BIDDING_MAX_BID,
+    manualObjectives: ['traffic', 'leads'],
+    defaultObjective: 'traffic',
+    dailyBudgetMultiple: 5,
+    bidAtMostDailyBudget: false,
+    automaticDescription: 'Meta bids for the lowest cost, with no cap.',
+    manualDescription: 'Caps the cost per link click on the ad set.',
+    currencyHint: "In the ad account's currency, at most two decimal places. Not converted from USD.",
+    limitText: 'Needs the Traffic or Leads objective, and a daily budget of at least 5× the bid.',
+  },
+  'microsoft-ads': {
+    label: 'Microsoft Ads',
+    currency: 'account',
+    scale: CAMPAIGN_BIDDING_CENT_SCALE,
+    minBid: MICROSOFT_MIN_CPC_BID,
+    maxBid: MICROSOFT_MAX_CPC_BID,
+    manualObjectives: null,
+    defaultObjective: null,
+    dailyBudgetMultiple: null,
+    bidAtMostDailyBudget: false,
+    automaticDescription: 'Microsoft Advertising maximizes clicks within the budget.',
+    manualDescription: 'Uses Enhanced CPC with this max CPC bid on the ad group.',
+    currencyHint: "In the ad account's currency, at most two decimal places. Not converted from USD.",
+    limitText: `Between ${MICROSOFT_MIN_CPC_BID} and ${MICROSOFT_MAX_CPC_BID}.`,
+  },
+  'reddit-ads': {
+    label: 'Reddit',
+    currency: 'account',
+    scale: CAMPAIGN_BIDDING_MICRO_SCALE,
+    minBid: 0.000001,
+    maxBid: CAMPAIGN_BIDDING_MAX_BID,
+    manualObjectives: ['traffic'],
+    defaultObjective: 'conversions',
+    dailyBudgetMultiple: null,
+    bidAtMostDailyBudget: false,
+    automaticDescription: 'Reddit sets every bid.',
+    manualDescription: 'Bids a manual cost per click on the campaign and ad group.',
+    currencyHint: "In the ad account's currency. Not converted from USD.",
+    limitText: 'Needs the Traffic objective — the other objectives bid per thousand impressions.',
+  },
+  'twitter-ads': {
+    label: 'X',
+    currency: 'account',
+    scale: CAMPAIGN_BIDDING_MICRO_SCALE,
+    minBid: 0.000001,
+    maxBid: CAMPAIGN_BIDDING_MAX_BID,
+    manualObjectives: null,
+    defaultObjective: null,
+    dailyBudgetMultiple: null,
+    bidAtMostDailyBudget: true,
+    automaticDescription: 'X sets every bid.',
+    manualDescription: 'Bids a maximum amount, charged per link click.',
+    currencyHint: "In the ad account's currency. Not converted from USD.",
+    limitText: 'May not exceed the daily budget.',
+  },
+};
+
 /** ISO 3166-1 alpha-2 shape for a Meta geo target, after normalization. */
 export const META_GEO_CODE_PATTERN = /^[A-Z]{2}$/;
 
@@ -978,11 +1133,108 @@ export const GOOGLE_ADS_GEO_TARGET_MAP: Record<string, string> = {
 };
 
 /**
- * Upstream's own bound on a Google Ads geo target list (`geo.go`'s `maxGeoTargets`), checked there
- * BEFORE de-duplication — so a list that is only over the cap because it repeats a code is still
- * refused.
+ * How many countries the Implementation tab's picker will add to one campaign.
+ *
+ * This is THIS APPLICATION'S bound, not upstream's, and the two are no longer the same number:
+ * `geo.go`'s `maxGeoTargets` was raised from 30 to 60 in campaign-service #239, while the picker
+ * still offers exactly the {@link GOOGLE_ADS_GEO_TARGET_MAP} countries — 30 of them — so a
+ * UI-built request cannot reach even this bound, let alone upstream's.
+ *
+ * Keeping the stricter number costs nothing REACHABLE: every entry the geo guard accepts must be a
+ * key of that 30-entry map, so a list longer than 30 can only be one that repeats a country. Such a
+ * list is refused here and would be accepted upstream (which checks its cap BEFORE de-duplication,
+ * then collapses the repeat), which is a narrow over-refusal on a request no picker produces. It is
+ * recorded here rather than silently fixed because raising this value changes what the picker's own
+ * clamp means, which is a separate change from the one this constant serves.
+ *
+ * {@link GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS} carries upstream's real per-list bound, and the
+ * exclusion list is judged against that rather than against this one.
  */
 export const GOOGLE_ADS_MAX_GEO_TARGETS = 30;
+
+/**
+ * Upstream's own bound on ONE Google Ads geo target list (`geo.go`'s `maxGeoTargets`, 60).
+ *
+ * PER LIST, not per campaign: `validateGeoPlan` calls `resolveGeoList` once for the targeted list
+ * and once for the excluded one, each with its own counter, so 60 targeted alongside 60 excluded is
+ * accepted and must not be refused here.
+ *
+ * Checked BEFORE de-duplication upstream — a list that is only over the cap because it repeats an
+ * entry is still refused — so the guard that mirrors it counts the submitted entries, not the
+ * surviving ones.
+ */
+export const GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS = 60;
+
+/**
+ * A Google Ads geo target entry that is a raw geo target constant id rather than a country code.
+ *
+ * The exact geo twin of {@link GOOGLE_ADS_LANGUAGE_ID_PATTERN}, and `resolveGeoEntry` splits its two
+ * accepted forms the same way that function's language sibling does: "an ISO alpha-2 code is two
+ * letters and a constant id is all digits, so no input is ambiguous". A numeric id is how a caller
+ * addresses a CITY, region, metro or postal code — none of which the curated country map can
+ * express — so it must NOT be tested against {@link GOOGLE_ADS_GEO_TARGET_MAP}; refusing an id
+ * absent from that table would be an over-refusal of something upstream accepts.
+ *
+ * Digits-only rather than a bounded run, matching Go's `numericID`: a 21-digit entry is CLASSIFIED
+ * as an id here and then refused as non-canonical by {@link isCanonicalGoogleAdsResourceId}, which
+ * is the message upstream gives it. A bounded pattern would misclassify it as a country code and
+ * refuse it for the wrong reason.
+ */
+export const GOOGLE_ADS_GEO_TARGET_ID_PATTERN = /^[0-9]+$/;
+
+/**
+ * Upstream's bound on the proximity list (`geo.go`'s `maxProximityTargets`).
+ *
+ * Checked against the SUBMITTED count, before any collapsing of exact repeats, for the reason the
+ * geo cap is: "a caller handing over a list longer than this has lost track of what it is asking
+ * for, and silently shrinking it into the cap would hide that rather than report it".
+ *
+ * An exact repeat is COLLAPSED upstream, not refused — unlike a repeated ad schedule, which carries
+ * a bid modifier two entries could disagree on. A proximity target carries no such field, so two
+ * entries rendering to the same wire tuple say the same thing and nothing is lost by keeping one.
+ * Callers must therefore not refuse a repeat either; it is not an error upstream would report.
+ */
+export const GOOGLE_ADS_MAX_PROXIMITY_TARGETS = 20;
+
+/**
+ * The only two `ProximityInfo.radiusUnits` values Google accepts (`geo.go`'s `radiusUnitMiles` /
+ * `radiusUnitKilometers`).
+ *
+ * There is deliberately NO default upstream, and callers must not invent one: "a radius of 50 means
+ * two very different campaigns depending on the unit, and guessing one would silently buy ~2.5x the
+ * intended area (or 0.4x)". The unit is compared after trimming and upper-casing, so `" miles "` and
+ * `"Miles"` are the same unit.
+ */
+export const GOOGLE_ADS_RADIUS_UNITS = ['MILES', 'KILOMETERS'] as const;
+
+/**
+ * Google's documented radius ceiling for each unit (`geo.go`'s `maxRadiusMiles` /
+ * `maxRadiusKilometers`), keyed by the unit it applies to.
+ *
+ * The two are NOT a converted pair — 800 km is about 497 miles, not 500 — so each unit is checked
+ * against its own ceiling rather than against a single distance. A radius exactly equal to the
+ * ceiling is ACCEPTED: upstream refuses only `radius > max`.
+ */
+export const GOOGLE_ADS_MAX_RADIUS = { MILES: 500, KILOMETERS: 800 } as const;
+
+/**
+ * The Google channels whose campaign criteria accept proximity (radius) targeting.
+ *
+ * Every channel EXCEPT Demand Gen — the same four as {@link GOOGLE_CHANNELS_WITH_LANGUAGES}, but
+ * gated by a DIFFERENT upstream validator: this one is `validateGeoPlan`'s own, the language fence
+ * is `validateCriteriaPlan`'s. They are two constants rather than one because upstream is free to
+ * move either fence without the other. Demand Gen attaches location criteria at the AD GROUP level, where this
+ * client has not verified that a proximity criterion is accepted, so upstream refuses it on that
+ * channel before any mutate rather than creating a paid campaign to find out.
+ *
+ * EXCLUDED geo targets are deliberately NOT gated this way — `validateGeoPlan` applies no channel
+ * fence to them at all, so they go to every channel including Demand Gen. Gating the two together
+ * would refuse exclusions upstream accepts.
+ *
+ * Video is listed because upstream accepts it there, not because this client can reach it — the
+ * Google Ads API has no mutate that creates a Video campaign.
+ */
+export const GOOGLE_CHANNELS_WITH_PROXIMITY = ['search', 'performance-max', 'video', 'display'] as const;
 
 /**
  * ISO 639-1 language code to Google Ads language constant id.
@@ -1134,11 +1386,205 @@ export const GOOGLE_ADS_LANGUAGE_ID_PATTERN = /^[0-9]+$/;
 export const GOOGLE_CHANNELS_WITH_LANGUAGES = ['search', 'performance-max', 'video', 'display'] as const;
 
 /**
+ * The Google channels whose campaign-level criteria accept an ad schedule.
+ *
+ * The same four as {@link GOOGLE_CHANNELS_WITH_LANGUAGES}, and for once the same upstream gate:
+ * `validateCriteriaPlan` refuses languages, ad schedules, device bid modifiers and demographic
+ * exclusions together on Demand Gen, then splits the remainder on Performance Max — which keeps
+ * languages and AD SCHEDULES (Google documents both as PMax campaign criteria) and refuses only the
+ * device and demographic halves.
+ *
+ * It is a separate constant rather than a reuse of the language list for the reason the proximity
+ * fence is separate: the two happen to name the same channels today, and upstream is free to move
+ * either without the other. A reader who finds one list doing two jobs cannot tell which rule a
+ * future edit is meant to change.
+ *
+ * Video is listed because upstream accepts it there, not because this client can reach it — the
+ * Google Ads API has no mutate that creates a Video campaign, so the create is refused earlier.
+ */
+export const GOOGLE_CHANNELS_WITH_AD_SCHEDULES = ['search', 'performance-max', 'video', 'display'] as const;
+
+/**
+ * Upstream's own bound on a Google Ads ad-schedule list (`campaign_criteria.go`'s `maxAdSchedules`).
+ *
+ * 42 is 6x7 — Google's own per-day limit across all seven days — so it is the UPSTREAM ceiling
+ * rather than a tighter local opinion, and nothing Google would accept is refused by it. Checked
+ * against the SUBMITTED count, before any exact repeat is collapsed, on the same rule as every other
+ * cap here: a list over the cap only because it repeats an interval is still refused.
+ */
+export const GOOGLE_ADS_MAX_AD_SCHEDULES = 42;
+
+/**
+ * Google's own limit on intervals for ONE day of the week
+ * (`campaign_criteria.go`'s `maxAdSchedulesPerDay`).
+ *
+ * {@link GOOGLE_ADS_MAX_AD_SCHEDULES} cannot express this: 42 is satisfied by a list that puts seven
+ * intervals on Monday and none on Sunday, which Google refuses — and refuses only at the criteria
+ * mutate, after the budget and campaign are already committed. The limit is Google's, so enforcing
+ * it early refuses nothing Google would have accepted; it only moves the refusal to where it is free.
+ *
+ * Counted over ACCEPTED intervals, so a collapsed exact repeat does not count twice.
+ */
+export const GOOGLE_ADS_MAX_AD_SCHEDULES_PER_DAY = 6;
+
+/**
+ * The `DayOfWeek` enum Google accepts on an `AdScheduleInfo` (`campaign_criteria.go`'s
+ * `adScheduleDays`).
+ *
+ * Compared after trimming and upper-casing, so `" monday "` is MONDAY. Weekend days are ordinary
+ * members — there is no working-week narrowing here.
+ */
+export const GOOGLE_ADS_SCHEDULE_DAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'] as const;
+
+/**
+ * The only four minute values Google's `MinuteOfHour` enum admits
+ * (`campaign_criteria.go`'s `adScheduleMinutes`).
+ *
+ * Google models minutes as an ENUM, not an integer, so a schedule starting at :10 is not a near miss
+ * to be rounded — it is unrepresentable, and saying so by name is clearer than the upstream
+ * enum-parse error a caller would otherwise get after the campaign exists.
+ */
+export const GOOGLE_ADS_SCHEDULE_MINUTES = [0, 15, 30, 45] as const;
+
+/**
+ * Google's documented bid-adjustment range for an ad schedule or device criterion
+ * (`campaign_criteria.go`'s `minBidModifier` / `maxBidModifier`): a multiplier of 0.1 through 10.0,
+ * which is -90%..+900%.
+ *
+ * 0 is NOT below the minimum — it is the -100% "do not serve here at all" opt-out, and it sits
+ * outside the range above rather than at its bottom end: upstream accepts it on its own, before the
+ * range is ever tested. What upstream refuses is a value strictly between 0 and the minimum, so a
+ * guard that simply tested `value < 0.1` would refuse the opt-out every day-parted campaign uses.
+ */
+export const GOOGLE_ADS_MIN_BID_MODIFIER = 0.1;
+export const GOOGLE_ADS_MAX_BID_MODIFIER = 10.0;
+
+/**
+ * The Google channels whose campaign-level criteria accept a device bid modifier.
+ *
+ * THREE channels, not the four that take languages and ad schedules. `validateCriteriaPlan` refuses
+ * the whole non-location set on Demand Gen, then SPLITS the remainder on Performance Max: languages
+ * and ad schedules stay (Google documents both as PMax campaign criteria), while device bid
+ * modifiers are refused by their own branch, because Performance Max's automated bidding owns the
+ * bid and sets no device adjustment.
+ *
+ * Keeping this list separate from {@link GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS} mirrors the
+ * two separate upstream branches rather than the one answer they happen to give today. Upstream
+ * refuses them with different messages for different reasons — a bid Performance Max does not set,
+ * against demographics it takes as asset-group signals — and either could move without the other.
+ *
+ * NOT a rule about automated bidding, which is a different rule with a different shape: an automated
+ * SEARCH campaign ignores a device adjustment too, and that belongs to the bidding plan, where the
+ * strategy is known. Widening this fence to every automated channel would refuse the device
+ * EXCLUSIONS (the 0 opt-out) that Google honours.
+ *
+ * Video is listed because upstream accepts it there, not because this client can reach it — the
+ * Google Ads API has no mutate that creates a Video campaign, so the create is refused earlier.
+ */
+export const GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS = ['search', 'video', 'display'] as const;
+
+/**
+ * The Google channels whose campaign-level criteria accept a demographic exclusion.
+ *
+ * The same three as {@link GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS} today, and a separate constant
+ * for the reason given there: upstream fences the two in separate branches, for separate reasons.
+ * Performance Max excludes demographics through asset-group signals, which this client does not
+ * create, so a campaign-level exclusion is refused rather than silently absent from a paid campaign.
+ */
+export const GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS = ['search', 'video', 'display'] as const;
+
+/**
+ * Upstream's bound on a device bid modifier list (`campaign_criteria.go`'s
+ * `maxDeviceBidModifiers`).
+ *
+ * It tracks the SIZE OF {@link GOOGLE_ADS_DEVICES} rather than Google's own enum size, and upstream
+ * holds a test asserting the two agree. The cap's whole claim is "a longer list must contain a
+ * duplicate", which stops being true the moment the accepted vocabulary and this number drift — so
+ * a device added below must raise this, and a spec here pins them together.
+ */
+export const GOOGLE_ADS_MAX_DEVICE_BID_MODIFIERS = 3;
+
+/**
+ * The `Device` enum this client accepts on a bid modifier (`campaign_criteria.go`'s `deviceTypes`).
+ *
+ * Compared after trimming and upper-casing, so `" mobile "` is MOBILE.
+ *
+ * Two of Google's values are deliberately absent. `OTHER` is a reporting bucket rather than
+ * something a campaign bids on. `CONNECTED_TV` is a NAMED GAP: Google accepts TV screens on Display
+ * and Video campaigns, so on those two the omission is this client's limitation rather than
+ * Google's, and upstream states it as one. It stays closed because opening it is a live-API
+ * question — whether a `CONNECTED_TV` criterion carries a bid modifier at all — and guessing wrong
+ * lands at the criteria mutate, AFTER the budget and campaign are committed.
+ */
+export const GOOGLE_ADS_DEVICES = ['MOBILE', 'DESKTOP', 'TABLET'] as const;
+
+/**
+ * Upstream's bound on EACH demographic exclusion list
+ * (`campaign_criteria.go`'s `maxDemographicExclusions`).
+ *
+ * Both vocabularies are closed enums far smaller than this, so the cap refuses nothing a sane caller
+ * writes; it exists so a malformed one cannot push an unbounded payload into the mutate. Applied to
+ * each list on its own, not to the two added together.
+ */
+export const GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS = 20;
+
+/**
+ * The age ranges accepted on a campaign-level exclusion, mapped to Google's `AgeRangeType` enum
+ * (`campaign_criteria.go`'s `ageRangeTypes`).
+ *
+ * BOTH SPELLINGS are keys — the friendly `18-24` a human writes into a brief and Google's own
+ * `AGE_RANGE_18_24` — because upstream accepts both, and `18-24` failing while `AGE_RANGE_18_24`
+ * succeeds is a trap with no upside. Looked up after trimming and upper-casing; every key here is
+ * already upper-case, so the friendly spellings survive that unchanged.
+ *
+ * `UNDETERMINED` is the bucket Google puts users it could not classify into. Excluding it is a real
+ * choice a campaign makes, so it is a member rather than a non-value.
+ *
+ * READ FOR MEMBERSHIP, NOT FOR RESOLUTION: the BFF tests a key with `Object.hasOwn` and then
+ * dispatches the caller's OWN spelling, upper-cased — `18-24` goes on the wire as `18-24`, not as
+ * `AGE_RANGE_18_24`. The values are here so the enum each friendly spelling denotes is written down
+ * beside it; nothing reads them, and {@link GOOGLE_ADS_AGE_RANGES} derives from the KEYS alone.
+ * Resolving through them instead would be a behaviour change, not a tidy-up:
+ * upstream accepts both spellings, so the wire is correct either way, and the spec pins the
+ * pass-through.
+ */
+export const GOOGLE_ADS_AGE_RANGE_MAP = {
+  '18-24': 'AGE_RANGE_18_24',
+  AGE_RANGE_18_24: 'AGE_RANGE_18_24',
+  '25-34': 'AGE_RANGE_25_34',
+  AGE_RANGE_25_34: 'AGE_RANGE_25_34',
+  '35-44': 'AGE_RANGE_35_44',
+  AGE_RANGE_35_44: 'AGE_RANGE_35_44',
+  '45-54': 'AGE_RANGE_45_54',
+  AGE_RANGE_45_54: 'AGE_RANGE_45_54',
+  '55-64': 'AGE_RANGE_55_64',
+  AGE_RANGE_55_64: 'AGE_RANGE_55_64',
+  '65+': 'AGE_RANGE_65_UP',
+  AGE_RANGE_65_UP: 'AGE_RANGE_65_UP',
+  UNDETERMINED: 'AGE_RANGE_UNDETERMINED',
+  AGE_RANGE_UNDETERMINED: 'AGE_RANGE_UNDETERMINED',
+} as const;
+
+/**
+ * The friendly age-range spellings, for a message that offers a caller the shorter vocabulary rather
+ * than reciting both halves of {@link GOOGLE_ADS_AGE_RANGE_MAP}. Derived from the map so a range
+ * added there cannot be missed here.
+ */
+export const GOOGLE_ADS_AGE_RANGES = Object.keys(GOOGLE_ADS_AGE_RANGE_MAP).filter((range) => !range.startsWith('AGE_RANGE_'));
+
+/**
+ * The `Gender` enum accepted on a campaign-level exclusion (`campaign_criteria.go`'s `genderTypes`).
+ *
+ * `UNDETERMINED` is a member for the same reason it is one in {@link GOOGLE_ADS_AGE_RANGE_MAP}.
+ */
+export const GOOGLE_ADS_GENDERS = ['MALE', 'FEMALE', 'UNDETERMINED'] as const;
+
+/**
  * Upstream's own bound on a Google Ads callout list (`assets.go`'s `maxCallouts`).
  *
- * Unlike {@link GOOGLE_ADS_MAX_GEO_TARGETS} this one is checked AFTER nothing — `validateCallouts`
- * compares the raw slice length before it looks at any entry, so a list that is only over the cap
- * because it repeats a phrase is refused on the cap, not on the duplicate.
+ * Unlike {@link GOOGLE_ADS_MAX_GEO_TARGETS}, this one is checked BEFORE any entry: `validateCallouts`
+ * compares the raw slice length first, so a list that is only over the cap because it repeats a
+ * phrase is refused on the cap, not on the duplicate.
  */
 export const GOOGLE_ADS_MAX_CALLOUTS = 20;
 
@@ -1156,8 +1602,16 @@ export const GOOGLE_ADS_MAX_CALLOUTS = 20;
  */
 export const GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES = 25;
 
-/** One character Go's `unicode.IsSpace` matches: ASCII space controls, U+0085, and category Z. */
-const GO_TRIMMED_SPACE = /^[\t\n\v\f\r\u0085\p{Z}]$/u;
+/**
+ * Whether a UTF-16 code unit is one Go's `unicode.IsSpace` matches: `\t`–`\r`, space, U+0085, U+00A0,
+ * and the White_Space code points above U+00FF (all of category Z). A numeric test rather than a
+ * regex per character, because the trims below can walk a whitespace-only string up to the body
+ * limit. Every such code point is a single UTF-16 unit, so testing units is exact.
+ */
+export function isGoSpaceCode(code: number): boolean {
+  if (code <= 0x00ff) return (code >= 0x09 && code <= 0x0d) || code === 0x20 || code === 0x85 || code === 0xa0;
+  return code === 0x1680 || (code >= 0x2000 && code <= 0x200a) || code === 0x2028 || code === 0x2029 || code === 0x202f || code === 0x205f || code === 0x3000;
+}
 
 /**
  * Go's `strings.TrimSpace`, which upstream applies to each callout before judging it.
@@ -1168,13 +1622,49 @@ const GO_TRIMMED_SPACE = /^[\t\n\v\f\r\u0085\p{Z}]$/u;
  */
 export function googleAdsTrimSpace(text: string): string {
   // An index walk, not a `[ws]+$` regex: that pattern backtracks quadratically over a long
-  // interior whitespace run, and the text comes from an unvalidated body. Every character Go
-  // trims is a single UTF-16 unit, so walking units is exact.
+  // interior whitespace run, and the text comes from an unvalidated body.
   let start = 0;
   let end = text.length;
-  while (start < end && GO_TRIMMED_SPACE.test(text[start])) start++;
-  while (end > start && GO_TRIMMED_SPACE.test(text[end - 1])) end--;
+  while (start < end && isGoSpaceCode(text.charCodeAt(start))) start++;
+  while (end > start && isGoSpaceCode(text.charCodeAt(end - 1))) end--;
   return text.slice(start, end);
+}
+
+/**
+ * Whether a URL fails upstream's `validateServableURL` in a way `new URL()` does not catch, so the
+ * refusal is named here instead of arriving as "platform campaign creation failed". Each rule was
+ * found by running both parsers over the same generated corpus; `new URL()` repairs or accepts all
+ * of these, Go's `url.Parse` / `url.ParseQuery` refuse them:
+ *
+ * - no `http(s)://` prefix (Go reads `https:example.com` and `https:\\example.com` as hostless;
+ *   any other scheme fails the scheme check there anyway);
+ * - a C0 control character or DEL before the fragment ("invalid control character in URL");
+ * - in the authority (between `//` and the first `/`, `?` or `#`): nothing at all, any `@` (even an
+ *   empty userinfo, which Go still refuses), any `%`, or any of `\\ { } \``;
+ * - a `%` not followed by two hex digits, anywhere;
+ * - a `;` in the query.
+ *
+ * The parsers also disagree the other way: `new URL()` refuses some hosts Go accepts (`<`, `>`, `]`,
+ * U+0085, a no-break or line separator, a lone surrogate, a port over 65535, an out-of-range IPv4
+ * address, an IPv6 zone id). No site can have those hosts and Google would refuse them anyway, so
+ * refusing them here is kept as the safer direction.
+ */
+export function googleAdsUrlGoParseFlaw(url: string): boolean {
+  const prefix = /^https?:\/\//i.exec(url);
+  if (!prefix) return true;
+  // Go cuts the fragment off at the first `#` before it checks for control characters.
+  const withoutFragment = url.split('#')[0];
+  for (let i = 0; i < withoutFragment.length; i++) {
+    const code = withoutFragment.charCodeAt(i);
+    if (code < 0x20 || code === 0x7f) return true;
+  }
+  const rest = url.slice(prefix[0].length);
+  const authority = rest.slice(0, rest.search(/[/?#]|$/));
+  if (authority === '' || /[@%\\{}`]/.test(authority)) return true;
+
+  const queryStart = withoutFragment.indexOf('?');
+  const query = queryStart === -1 ? '' : withoutFragment.slice(queryStart + 1);
+  return /%(?![0-9A-Fa-f]{2})/.test(url) || query.includes(';');
 }
 
 /**
@@ -1197,6 +1687,41 @@ export function googleAdsEchoed(text: string, max = 32): string {
 export function googleAdsToLower(text: string): string {
   return [...text].map((ch) => (ch === '\u0130' ? 'i' : ch.toLowerCase())).join('');
 }
+
+/**
+ * Upstream's own bound on a Google Ads sitelink list (`assets.go`'s `maxSitelinks`), checked on the
+ * raw slice before any entry is inspected — the same shape as {@link GOOGLE_ADS_MAX_CALLOUTS}.
+ */
+export const GOOGLE_ADS_MAX_SITELINKS = 20;
+
+/**
+ * Upstream's per-sitelink link-text bound (`assets.go`'s `maxSitelinkTextRunes`), in RUNES.
+ *
+ * Count it with the spread (`[...text].length`), never `.length` — see
+ * {@link GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES} for why a UTF-16 count over-refuses here.
+ */
+export const GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES = 25;
+
+/**
+ * Upstream's per-line bound on a sitelink description (`assets.go`'s
+ * `maxSitelinkDescriptionRunes`), in RUNES, applied to each of the two lines separately rather than
+ * to their total.
+ */
+export const GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES = 35;
+
+/**
+ * Upstream's byte bound on a final URL (`adgroup_ad.go`'s `maxFinalURLBytes`).
+ *
+ * BYTES, not runes and not UTF-16 units: upstream measures `len(finalURL)` on a Go string, which is
+ * its UTF-8 byte length. Mirror it with `new TextEncoder().encode(url).length`.
+ *
+ * It is also measured on the TAGGED url — upstream appends `utm_source`, `utm_medium` and,
+ * when absent, `utm_campaign` and `utm_content` before checking. A guard here therefore cannot be
+ * exact without rebuilding that tagging, so this app checks the untagged URL only, which refuses
+ * strictly less than upstream does. A URL within this bound untagged can still be refused upstream
+ * once tagged; that is an under-refusal, and the safe direction.
+ */
+export const GOOGLE_ADS_MAX_FINAL_URL_BYTES = 2084;
 
 /**
  * Micros per whole currency unit, the denomination google-ads bills budgets in.
@@ -1387,10 +1912,15 @@ export const DEFAULT_CAMPAIGN_BID_TYPE: CampaignBidType = 'cpc';
 export const CAMPAIGN_BID_OUTCOME_UNCONFIRMED =
   'The bid change could not be confirmed and may already have been applied. Verify the bid in the ad platform before retrying.';
 
-/** Match types a negative keyword may carry (campaign-service's `negativeKeywordMatchTypeEnum`). */
+/**
+ * Match types a negative keyword may carry (campaign-service's `negativeKeywordMatchTypeEnum`),
+ * across the three platforms. Which of them a campaign's platform takes is upstream's to decide: it
+ * refuses any other with 400 before the platform is contacted.
+ */
 export const VALID_CAMPAIGN_NEGATIVE_KEYWORD_MATCH_TYPES: ReadonlySet<CampaignNegativeKeywordMatchType> = new Set<CampaignNegativeKeywordMatchType>([
   'Exact',
   'Phrase',
+  'Broad',
 ]);
 
 /** Per-keyword outcomes of the negative-keywords lever (campaign-service's `negativeKeywordOutcomeEnum`). */
@@ -1403,6 +1933,9 @@ export const CAMPAIGN_NEGATIVE_KEYWORD_OUTCOMES: ReadonlySet<CampaignNegativeKey
 
 /** Most negative keywords one request may carry (the upstream payload's `MaxLength(60)`). */
 export const MAX_NEGATIVE_KEYWORDS_PER_REQUEST = 60;
+
+/** Most negative keywords one request may carry on X: one write per keyword, paced at one a second, so upstream caps it at 20. */
+export const MAX_X_NEGATIVE_KEYWORDS_PER_REQUEST = 20;
 
 /** Microsoft's limit on a negative keyword's text, in characters (code points, not bytes). */
 export const MAX_NEGATIVE_KEYWORD_TEXT_LENGTH = 100;
@@ -1547,16 +2080,17 @@ export const CAMPAIGN_OPTIMIZE_LEVER_LABELS: Readonly<Record<Exclude<CampaignOpt
 
 /**
  * The platforms whose manual max CPC bid campaign-service can change (`update-campaign-bid`):
- * Microsoft Advertising, Reddit, Meta and X. Google Ads and LinkedIn are refused upstream with 400,
- * so the Optimize tab withholds the bid editor for them rather than offering a doomed form.
+ * Microsoft Advertising, Reddit, Meta, X and LinkedIn (its campaign `unitCost`, campaign-service
+ * #318). Google Ads is refused upstream with 400, so the Optimize tab withholds the bid editor for
+ * it rather than offering a doomed form.
  *
  * Hand-listed for the reason `BUDGET_WRITABLE_CAMPAIGN_PLATFORMS` is: bid writing is wired per
  * platform upstream, and X has a bid write while it has no budget write or pause/resume here.
  */
-export const BID_WRITABLE_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<string>(['microsoft-ads', 'reddit-ads', 'meta-ads', 'twitter-ads']);
+export const BID_WRITABLE_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<string>(['microsoft-ads', 'reddit-ads', 'meta-ads', 'twitter-ads', 'linkedin-ads']);
 
 /** Why the bid editor is disabled for a platform campaign-service cannot write bids on. */
-export const CAMPAIGN_BID_UNAVAILABLE_PLATFORM_REASON = 'Bid changes are available for Microsoft Advertising, Reddit, Meta and X campaigns only.';
+export const CAMPAIGN_BID_UNAVAILABLE_PLATFORM_REASON = 'Bid changes are available for Microsoft Advertising, Reddit, Meta, X and LinkedIn campaigns only.';
 
 /** Why the bid editor is disabled for a campaign never created on its ad platform (upstream 409). */
 export const CAMPAIGN_BID_UNAVAILABLE_UNPROVISIONED_REASON = 'This campaign has not been created on its ad platform, so its bid cannot be changed.';
@@ -1566,7 +2100,7 @@ export const CAMPAIGN_BID_UNAVAILABLE_UNPROVISIONED_REASON = 'This campaign has 
  * refuses an automated or non-per-click strategy with a neutral 409 rather than switching it.
  */
 export const CAMPAIGN_BID_STRATEGY_NOTE =
-  'Applies only to campaigns on a manual per-click bid. Campaigns on automated bidding are refused, and LFX One never changes a bid strategy.';
+  'Applies only to campaigns LFX One created that are on a manual per-click bid. Campaigns on automated bidding, and adopted campaigns, are refused, and LFX One never changes a bid strategy.';
 
 /** What a bid change refused with 412 tells the operator. Nothing was changed. */
 export const CAMPAIGN_BID_CONFLICT_MESSAGE =
@@ -1588,8 +2122,12 @@ export const CAMPAIGN_BID_FAILURE_FALLBACK = 'The bid could not be changed.';
  */
 export const CAMPAIGN_BID_DEFINITE_FAILURE_MARKER = 'was not modified';
 
-/** The platforms a campaign-level negative keyword can be added on (`add-negative-keywords`). */
-export const NEGATIVE_KEYWORD_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<string>(['microsoft-ads']);
+/** The platforms a negative keyword can be added on (`add-negative-keywords`). */
+export const NEGATIVE_KEYWORD_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<NegativeKeywordCampaignPlatform>([
+  'microsoft-ads',
+  'reddit-ads',
+  'twitter-ads',
+]);
 
 /** Why the negative-keyword editor is disabled for a campaign never created on its ad platform. */
 export const CAMPAIGN_NEGATIVE_KEYWORDS_UNAVAILABLE_UNPROVISIONED_REASON =
@@ -1600,6 +2138,49 @@ export const CAMPAIGN_NEGATIVE_KEYWORD_MATCH_TYPE_OPTIONS: readonly CampaignNega
   { value: 'Exact', label: 'Exact' },
   { value: 'Phrase', label: 'Phrase' },
 ] as const;
+
+/**
+ * What the negative-keyword editor offers and sends per platform, from campaign-service's
+ * `add-negative-keywords` contract:
+ * - Microsoft Advertising: Exact or Phrase, at campaign level, up to 60.
+ * - Reddit: Broad only (its excluded keywords carry no match type), on the campaign's one ad group,
+ *   up to 60, and the keyword-targeting read's `revision` is REQUIRED.
+ * - X: Broad, Phrase or Exact, as negated targeting on the campaign's one line item, up to 20.
+ */
+export const CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES: Readonly<Record<NegativeKeywordCampaignPlatform, CampaignNegativeKeywordPlatformRules>> = {
+  'microsoft-ads': {
+    label: 'Microsoft Advertising',
+    matchTypes: CAMPAIGN_NEGATIVE_KEYWORD_MATCH_TYPE_OPTIONS,
+    // Exact is the narrowest a negative can be, so it is the default that blocks the least traffic.
+    defaultMatchType: 'Exact',
+    maxKeywords: MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
+    requiresRevision: false,
+    destination: 'Added to this campaign in Microsoft Advertising.',
+    matchTypeHint: 'Applies to every keyword in this request. Microsoft supports Exact and Phrase for negatives.',
+  },
+  'reddit-ads': {
+    label: 'Reddit',
+    matchTypes: [{ value: 'Broad', label: 'Broad' }],
+    defaultMatchType: 'Broad',
+    maxKeywords: MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
+    requiresRevision: true,
+    destination: "Added to the excluded keywords of this campaign's ad group on Reddit.",
+    matchTypeHint: "Reddit's excluded keywords carry no match type, so Broad is the only choice.",
+  },
+  'twitter-ads': {
+    label: 'X',
+    matchTypes: [
+      { value: 'Exact', label: 'Exact' },
+      { value: 'Phrase', label: 'Phrase' },
+      { value: 'Broad', label: 'Broad' },
+    ],
+    defaultMatchType: 'Exact',
+    maxKeywords: MAX_X_NEGATIVE_KEYWORDS_PER_REQUEST,
+    requiresRevision: false,
+    destination: "Added as negative keyword targeting on this campaign's line item on X.",
+    matchTypeHint: 'Applies to every keyword in this request. X supports Exact, Phrase and Broad for negatives.',
+  },
+};
 
 /** Visible label of each per-keyword outcome. UNCONFIRMED is never worded as a failure. */
 export const CAMPAIGN_NEGATIVE_KEYWORD_OUTCOME_LABELS: Readonly<Record<CampaignNegativeKeywordOutcome, string>> = {
@@ -1612,6 +2193,13 @@ export const CAMPAIGN_NEGATIVE_KEYWORD_OUTCOME_LABELS: Readonly<Record<CampaignN
 /** What an UNCONFIRMED negative keyword tells the operator to do before trying it again. */
 export const CAMPAIGN_NEGATIVE_KEYWORD_UNCONFIRMED_ADVICE =
   "This keyword may have been added. Check the campaign's negative keywords in Microsoft Advertising before retrying.";
+
+/**
+ * What a negative-keywords request that failed with no documented refusal reports (a 5xx, a timeout,
+ * a lost connection): the add may have reached the platform for any of its keywords.
+ */
+export const CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNKNOWN =
+  "The negative keywords may or may not have been added. Check the campaign's negative keywords in the ad platform before retrying.";
 
 /** Shown for a negative-keywords refusal whose response carried no readable message. */
 export const CAMPAIGN_NEGATIVE_KEYWORDS_FAILURE_FALLBACK = 'The negative keywords could not be added.';
@@ -2366,10 +2954,11 @@ export const AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH = 2_000;
  *
  * Deliberately FAR above anything legitimate, because these are resource bounds and not content
  * rules — every width and count in `GOOGLE_CREATIVE_FIELD_SPECS` is the upstream client's preflight
- * to enforce, and this layer stays shape-only. The widest catalogue list holds 20 entries and the
- * widest text field 256 characters (`assetGroupName`), so nothing a real operator can produce comes
- * near either ceiling; refusing here can therefore never refuse a create upstream would have
- * accepted.
+ * to enforce, and this layer stays shape-only. The widest list this bounds holds 60 entries (an
+ * excluded geo plan, {@link GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS}; the widest creative list holds
+ * 20) and the widest text field 256 characters (`assetGroupName`), so nothing a real operator can
+ * produce comes near either ceiling; refusing here can therefore never refuse a create upstream
+ * would have accepted.
  */
 export const MAX_GOOGLE_CREATIVE_LIST_ENTRIES = 100;
 export const MAX_GOOGLE_CREATIVE_FIELD_LENGTH = 2048;

@@ -61,6 +61,7 @@ export class AutocompleteComponent {
   public forceSelection = input<boolean>(false);
   public showEmptyMessage = input<boolean>(true);
   public size = input<'small' | 'large'>('small');
+  public maxLength = input<number | null>(null);
   // Forwarded to p-autocomplete's [optionDisabled]: the name of a boolean field on each suggestion
   // (or a resolver), so a caller can list a row that is visible but not selectable — e.g. a pending
   // invitee in a scoped people picker (#2594).

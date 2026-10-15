@@ -4,7 +4,7 @@ description: Link, verify, and remove the GitHub, social, and email identities u
 audience: [all]
 product_area: Account
 tags: [account, identities, github, email, verification, linux-com-alias, meeting-invitations]
-last_updated: 2026-09-08
+last_updated: 2026-10-14
 intercom_collection: Account
 ---
 
@@ -30,14 +30,14 @@ Identities are grouped into two sections:
 - **Verified identities** — accounts you have confirmed. A verified identity that is your primary shows a **Primary** badge.
 - **Unverified identities** — accounts connected to your profile that still need confirmation. You will see a reminder to verify them so your project affiliations and work history stay accurate.
 
-> **Note:** A single identity can only be linked to one LFX account. If an identity is already linked elsewhere, LFX shows a conflict message — contact support if you believe this is an error.
+> **Note:** A single identity can only be linked to one LFX account. For email addresses, LFX shows the code-entry step whether or not the address is already linked elsewhere. If no code arrives, the address may belong to another LFX account — use **contact support** in the code step for help. Social-account conflicts still show a conflict message after provider sign-in.
 
 ## Add an identity
 
 1. Select **Add identity**.
 2. Choose a provider:
    - For a social account (for example GitHub, Google, or LinkedIn), select **Continue with _[provider]_** and complete the provider's sign-in. Linked identities are used to attribute contributions and participation across projects.
-   - For an email address, select **Add email**, enter the address, and select **Send verification code**. Enter the 6-digit code sent to that address, then select **Verify email**. Use **Resend Code** if it does not arrive.
+   - For an email address, select **Add email**, enter the address, and select **Send verification code**. If the address can be added, a 6-digit code is sent to it; enter that code and select **Verify email**. Use **Resend Code** if needed. If no code arrives, the address may already be linked to another LFX account — select **contact support** in the code step.
 
 ## Verify an unverified identity
 
