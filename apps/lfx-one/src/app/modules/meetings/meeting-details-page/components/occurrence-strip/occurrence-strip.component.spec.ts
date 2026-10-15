@@ -272,6 +272,48 @@ describe('MeetingOccurrenceStripComponent', () => {
     expect(chip(-5)?.getAttribute('data-selected')).toBe('true');
   });
 
+  it('shows nothing while the page loads another route, even with the series held', async () => {
+    const onRoute = signal(false);
+    getPage = vi.fn();
+    await TestBed.configureTestingModule({
+      imports: [MeetingOccurrenceStripComponent],
+      providers: [
+        { provide: MeetingService, useValue: { getPublicMeetingOccurrencesPage: getPage } },
+        {
+          provide: MeetingDetailsStateService,
+          useValue: {
+            meeting: signal({ id: SERIES, duration: 30, recurrence: { type: 2 } } as Meeting),
+            now: signal(new Date()),
+            seriesUid: signal(SERIES),
+            matchesRoute: onRoute,
+            loadedViaPastMeetingId: signal(false),
+            password: signal('pw'),
+            selectedOccurrenceStartMs: signal(at(1)),
+            navigateToOccurrence: vi.fn(),
+            occurrenceStripPages: signal<MeetingOccurrenceStripPages | null>({
+              key: `${SERIES}:pw`,
+              past: [past(-1)],
+              future: [future(1), future(2)],
+              cancelled: [],
+              pastHasMore: false,
+              futureHasMore: false,
+              pastIncomplete: false,
+            }),
+            occurrenceStripFocusMs: signal(null),
+          },
+        },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(MeetingOccurrenceStripComponent);
+    fixture.detectChanges();
+    await settle();
+    expect(query('[data-testid="occurrence-strip-section"]')).toBeNull();
+
+    onRoute.set(true);
+    fixture.detectChanges();
+    expect(chip(1)).not.toBeNull();
+  });
+
   it('drops a Previous step whose page arrives after the page moved elsewhere', async () => {
     const older = new Subject<PublicMeetingOccurrencesResponse>();
     await render(page({ past: [past(-1)], past_has_more: true, past_cursor: String(at(-1)) }), { selected: at(-1), pages: [older] });

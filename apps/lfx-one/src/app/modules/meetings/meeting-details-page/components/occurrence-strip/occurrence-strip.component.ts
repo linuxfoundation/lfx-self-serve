@@ -92,6 +92,12 @@ export class MeetingOccurrenceStripComponent {
     timeZone: this.timezone,
   });
 
+  /**
+   * Whether the page shows the meeting its route names. While another one loads, the page lays out
+   * its skeleton with the previous meeting's columns: the strip shows nothing there, so held pages
+   * never paint the previous series under the new URL.
+   */
+  protected readonly onRoute = this.state.matchesRoute;
   /** The loading placeholder holds the strip's height only for a meeting known to recur. */
   protected readonly reservesSpace = computed(() => !!this.state.meeting()?.recurrence);
   protected readonly timeline: Signal<MeetingOccurrenceStripTimeline | null> = this.initTimeline();
@@ -350,8 +356,10 @@ export class MeetingOccurrenceStripComponent {
       const page = await firstValueFrom(
         this.meetingService.getPublicMeetingOccurrencesPage(request.seriesUid, request.password, { pageSize, direction, cursor })
       );
+      // Merged only into the same series' pages, and only for a live, current run: the pages are the
+      // state service's, shared with a strip a move created in this one's place.
       const current = this.loaded();
-      if (run !== this.runId || !current) {
+      if (run !== this.runId || !current || current.key !== loaded.key) {
         return false;
       }
       this.loaded.set(
