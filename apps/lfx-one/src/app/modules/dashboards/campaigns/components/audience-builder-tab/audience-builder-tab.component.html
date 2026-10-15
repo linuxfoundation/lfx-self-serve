@@ -864,15 +864,25 @@
             <!-- A created list can come back without a usable link; its name is still shown, as text,
                  because href="" would open this app rather than the list. -->
             @if (result.master.hubspotUrl) {
-              <a [href]="result.master.hubspotUrl" target="_blank" rel="noopener noreferrer" class="text-xs text-blue-600 hover:underline">{{
-                result.master.name
-              }}</a>
+              <a
+                [href]="result.master.hubspotUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-xs text-blue-600 hover:underline"
+                data-testid="campaigns-audience-compose-result-master-link"
+                >{{ result.master.name }}</a
+              >
             } @else {
               <span class="text-xs text-gray-900" data-testid="campaigns-audience-compose-result-master-name">{{ result.master.name }}</span>
             }
             @if (result.suppression; as suppression) {
               @if (suppression.hubspotUrl) {
-                <a [href]="suppression.hubspotUrl" target="_blank" rel="noopener noreferrer" class="text-xs text-blue-600 hover:underline">
+                <a
+                  [href]="suppression.hubspotUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="text-xs text-blue-600 hover:underline"
+                  data-testid="campaigns-audience-compose-result-suppression-link">
                   {{ suppression.name }} (combined suppression)
                 </a>
               } @else {
@@ -942,7 +952,14 @@
               <p class="text-xs text-gray-700">
                 A combined suppression list was already created and is now orphaned. Delete it or reuse it before composing again:
                 @if (suppression.hubspotUrl) {
-                  <a [href]="suppression.hubspotUrl" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">{{ suppression.name }}</a>
+                  <a
+                    [href]="suppression.hubspotUrl"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="text-blue-600 hover:underline"
+                    data-testid="campaigns-audience-compose-partial-suppression-link"
+                    >{{ suppression.name }}</a
+                  >
                 } @else {
                   <span class="font-medium">{{ suppression.name }}</span>
                 }

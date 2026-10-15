@@ -1736,7 +1736,9 @@ describe('AudienceBuilderTabComponent', () => {
       };
 
       await compose(masterUrl);
-      expect(resultBlock()?.querySelector(`a[href="${masterUrl}"]`)?.textContent?.trim()).toBe('26Q1 - SYN - Synthetic Summit 2026 - Master');
+      const masterLink = resultBlock()?.querySelector<HTMLAnchorElement>('[data-testid="campaigns-audience-compose-result-master-link"]');
+      expect(masterLink?.getAttribute('href')).toBe(masterUrl);
+      expect(masterLink?.textContent?.trim()).toBe('26Q1 - SYN - Synthetic Summit 2026 - Master');
       expect(resultBlock()?.querySelector('[data-testid="campaigns-audience-compose-result-master-name"]')).toBeNull();
 
       await compose('');

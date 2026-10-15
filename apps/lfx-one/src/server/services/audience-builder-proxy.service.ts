@@ -48,6 +48,7 @@ import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors/microservice.error';
 import { toAudienceStatus } from '../helpers/campaign-audience.helper';
+import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
 /**
@@ -820,7 +821,7 @@ export class AudienceBuilderProxyService {
       // Validated before it is reported as a success: this is a non-idempotent create, and a
       // rewritten `{ master: {}, source_list_ids: [] }` would render "Master list created" over
       // a list id the operator cannot act on.
-      // toComposedList validates every identifying field of BOTH lists — the suppression object
+      // toCreatedList validates every identifying field of BOTH lists — the suppression object
       // was previously passed through unchecked beside a validated master.
       // `recorded` defaults to FALSE, and the default is the whole point of reading it separately
       // from `audience`. Goa's decoder ignores unknown body fields, so an upstream deployed before
@@ -837,15 +838,31 @@ export class AudienceBuilderProxyService {
         // would render an attachment over a row the operator cannot address.
         audience: recorded ? toRecordedAudience(required(wire.audience, 'audience'), request.briefId ?? '') : undefined,
       };
-    } catch {
-      // A list with a confirmed id is passed as the list; one without is passed only by name, to
-      // search for. Never both for the same list (see AudienceComposePartialError).
-      const master = confirmedWireList(wire?.master) ? toComposedList(wire.master) : undefined;
-      const suppression = confirmedWireList(wire?.suppression) ? toComposedList(wire.suppression) : undefined;
+    } catch (error) {
+      // Which field was unusable is the one thing the partial cannot carry, so it is logged here.
+      logger.warning(req, 'audience_compose_master', 'Compose reply unusable; reporting it as a do-not-retry partial', {
+        reason: error instanceof Error ? error.message : String(error),
+        master_list_id: wire?.master?.list_id,
+      });
+      // The suppression is never passed: the partial's suppression arm is the ORPHAN banner ("delete
+      // it or reuse it"), and on a 2xx the suppression belongs to the master that exists. Deleting
+      // it would silently drop the master's exclusions.
+      if (wire?.recorded === true) {
+        // Upstream reported the attach, so the master is not "unattached"; only the reply is
+        // unreadable. No list is passed, so the client does not offer to attach it again.
+        throw new AudienceComposePartialError(
+          'HubSpot created the master list and reported it attached, but the reply could not be read. Refresh the campaign before composing again.'
+        );
+      }
+      // A master with a confirmed id is passed as the list; one without, only by name to search
+      // for. Never both (see AudienceComposePartialError). A confirmed list is never nameless.
+      const master = confirmedWireList(wire?.master)
+        ? { ...toComposedList(wire.master), name: wireName(wire.master) || request.name || `list ${wire.master.list_id.trim()}` }
+        : undefined;
       throw new AudienceComposePartialError(
         'HubSpot created the master list, but the reply could not be fully read. Check the portal for it before composing again.',
-        suppression,
-        suppression ? undefined : wireName(wire?.suppression),
+        undefined,
+        undefined,
         master ? undefined : wireName(wire?.master) || request.name || undefined,
         master
       );
@@ -940,7 +957,10 @@ export class AudienceBuilderProxyService {
     }
     try {
       return toCreatedList(wire, 'list');
-    } catch {
+    } catch (error) {
+      logger.warning(req, 'audience_create_custom', 'Create reply unusable; reporting it as a do-not-retry partial', {
+        reason: error instanceof Error ? error.message : String(error),
+      });
       // Upstream answered 2xx, so the list EXISTS; only its reply is unusable. That is still a
       // do-not-retry outcome — a retry would create a second list.
       throw new AudienceComposePartialError(
@@ -1038,6 +1058,11 @@ function timeout(timeoutMs: number = AUDIENCE_BUILDER_REQUEST_TIMEOUT_MS): { tim
   return { timeoutMs };
 }
 
+/** A wire list's trimmed name, or undefined when it has none. */
+function wireName(list: WireComposedList | undefined | null): string | undefined {
+  return (typeof list?.name === 'string' && list.name.trim()) || undefined;
+}
+
 /**
  * Does this wire object describe a list whose creation was CONFIRMED?
  *
@@ -1046,11 +1071,6 @@ function timeout(timeoutMs: number = AUDIENCE_BUILDER_REQUEST_TIMEOUT_MS): { tim
  * length check was added to close, through a narrower door. One predicate rather than a copy per
  * arm, because two copies of this rule is how one of them ends up admitting a blank id.
  */
-/** A wire list's trimmed name, or undefined when it has none. */
-function wireName(list: WireComposedList | undefined | null): string | undefined {
-  return (typeof list?.name === 'string' && list.name.trim()) || undefined;
-}
-
 function confirmedWireList(list: WireComposedList | undefined | null): list is WireComposedList {
   return list !== undefined && list !== null && typeof list.list_id === 'string' && list.list_id.trim().length > 0;
 }

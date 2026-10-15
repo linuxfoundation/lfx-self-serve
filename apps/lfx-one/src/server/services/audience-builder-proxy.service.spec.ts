@@ -31,6 +31,7 @@ import { MicroserviceError } from '../errors/microservice.error';
 import { AUDIENCE_BUILDER_REQUEST_TIMEOUT_MS } from '@lfx-one/shared/constants';
 
 import { AudienceBuilderProxyService, AudienceComposePartialError } from './audience-builder-proxy.service';
+import { logger } from './logger.service';
 
 const req = {} as unknown as Request;
 
@@ -125,9 +126,11 @@ describe('AudienceBuilderProxyService wire mapping', () => {
     expect((error as AudienceComposePartialError).master, 'an unconfirmed master is never passed as a list').toBeUndefined();
   });
 
-  it('turns a compose whose SUPPRESSION name is blank into a partial that keeps the confirmed lists', async () => {
+  it('turns a compose whose SUPPRESSION name is blank into a partial that keeps the master and orphans nothing', async () => {
     // The suppression object was passed through unchecked beside a validated master, so a
-    // create with a blank suppression name still rendered as confirmed and actionable.
+    // create with a blank suppression name still rendered as confirmed and actionable. On a 2xx
+    // the suppression is the master's own exclusion list: it must never reach the ORPHAN banner,
+    // which tells the operator to delete it.
     proxyRequest.mockResolvedValue({
       master: { list_id: '900', name: 'Master', hubspot_url: 'https://app.hubspot.com/l/1' },
       suppression: { list_id: '901', name: '', hubspot_url: 'https://app.hubspot.com/l/1' },
@@ -140,7 +143,31 @@ describe('AudienceBuilderProxyService wire mapping', () => {
     const partial = error as AudienceComposePartialError;
     expect(partial.master?.listId).toBe('900');
     expect(partial.masterName, 'never beside a confirmed master').toBeUndefined();
-    expect(partial.suppression?.listId).toBe('901');
+    expect(partial.suppression, "the master's suppression is not an orphan").toBeUndefined();
+    expect(partial.suppressionName).toBeUndefined();
+  });
+
+  it('never passes a confirmed master without a name', async () => {
+    proxyRequest.mockResolvedValue({ master: { list_id: '900', name: ' ', hubspot_url: '' }, source_list_ids: null });
+
+    const named = await service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [], name: 'Requested' }).catch((e: unknown) => e);
+    expect((named as AudienceComposePartialError).master?.name, 'the requested name').toBe('Requested');
+
+    const unnamed = await service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [] }).catch((e: unknown) => e);
+    expect((unnamed as AudienceComposePartialError).master?.name, 'the id when nothing else names it').toBe('list 900');
+  });
+
+  it('logs which field made a compose reply unusable', async () => {
+    proxyRequest.mockResolvedValue({ master: { list_id: '900', name: 'Master', hubspot_url: '' } });
+
+    await service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [] }).catch(() => undefined);
+
+    expect(logger.warning).toHaveBeenCalledWith(
+      req,
+      'audience_compose_master',
+      expect.any(String),
+      expect.objectContaining({ reason: expect.stringContaining('source_list_ids'), master_list_id: '900' })
+    );
   });
 
   it('does NOT apply that strictness to the partial path', async () => {
@@ -211,10 +238,13 @@ describe('AudienceBuilderProxyService wire mapping', () => {
       audience: {},
     });
 
-    // The master exists, so this is a do-not-retry partial pointing at it, never a retryable error.
+    // The master exists, so this is a do-not-retry partial, never a retryable error. Upstream
+    // reported the attach, so no list is passed: the client must not call it "unattached".
     const error = await service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [], briefId: 'brief-1' }).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(AudienceComposePartialError);
-    expect((error as AudienceComposePartialError).master?.listId).toBe('900');
+    expect((error as AudienceComposePartialError).master).toBeUndefined();
+    expect((error as AudienceComposePartialError).masterName).toBeUndefined();
+    expect((error as AudienceComposePartialError).message).toContain('Refresh the campaign');
   });
 
   it('coerces an unrecognised recorded status to failed rather than trusting it', async () => {
