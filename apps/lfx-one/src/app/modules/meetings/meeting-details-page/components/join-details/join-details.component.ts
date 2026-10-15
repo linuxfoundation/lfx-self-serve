@@ -7,7 +7,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, DestroyRef, inject, linkedSignal, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
-import { HOST_KEY_EARLY_MINUTES, MEETING_HOST_KEY_RETRY_MS } from '@lfx-one/shared/constants';
+import { HOST_KEY_EARLY_MINUTES, MEETING_HOST_KEY_CLOCK_SKEW_MS, MEETING_HOST_KEY_RETRY_MS } from '@lfx-one/shared/constants';
 import { Meeting, MeetingHostKeyWait } from '@lfx-one/shared/interfaces';
 import { getHostKeyWindowStartMs, isHostKeyVisible, isWithinHostKeyWindow } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
@@ -91,7 +91,7 @@ export class MeetingJoinDetailsComponent {
   private initHostKey(): Signal<string | null> {
     return computed(() => {
       const meeting = this.state.meeting();
-      if (!meeting || !this.upcoming() || !isHostKeyVisible(meeting) || !isWithinHostKeyWindow(this.windowTiming(meeting), this.state.now())) {
+      if (!meeting || !this.upcoming() || !isHostKeyVisible(meeting) || !this.keyWindowHolds(meeting)) {
         return null;
       }
       return meeting.host_key ?? null;
@@ -136,6 +136,22 @@ export class MeetingJoinDetailsComponent {
     return occurrence?.start_time
       ? { start_time: occurrence.start_time, duration: occurrence.duration }
       : { start_time: meeting.start_time, duration: meeting.duration, next_occurrence_start_time: meeting.next_occurrence_start_time };
+  }
+
+  /**
+   * Whether the shown occurrence's window still holds a key the server returned: it hides one once that
+   * window has closed (a page left open), or when the shown occurrence's window is still well ahead (a
+   * later occurrence selected), but allows a browser clock running up to
+   * {@link MEETING_HOST_KEY_CLOCK_SKEW_MS} behind the server's that authorized it.
+   */
+  private keyWindowHolds(meeting: Meeting): boolean {
+    const timing = this.windowTiming(meeting);
+    const windowStart = getHostKeyWindowStartMs(timing);
+    const now = this.state.now();
+    if (windowStart === null || now.getTime() < windowStart - MEETING_HOST_KEY_CLOCK_SKEW_MS) {
+      return false;
+    }
+    return now.getTime() < windowStart || isWithinHostKeyWindow(timing, now);
   }
 
   /** An upcoming or live occurrence of a meeting the page loaded as such, not cancelled. */

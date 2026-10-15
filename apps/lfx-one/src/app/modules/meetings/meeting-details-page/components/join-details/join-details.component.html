@@ -14,12 +14,14 @@
         <div class="flex min-w-0 flex-1 flex-col gap-[2px]">
           <span class="text-[11.5px] font-semibold text-[var(--md-accent-ink)]">Host key (only you)</span>
           @if (hostKey(); as key) {
-            <!-- The key, masked until revealed; a polite live region, so revealing it reads it out. -->
+            <!-- The key, masked until revealed, in a polite atomic live region that names it, so revealing it
+                 reads "Host key" and the digits. -->
             <span
               class="text-[13.5px] font-semibold tabular-nums tracking-[.04em] text-[var(--md-text-heading)]"
               aria-live="polite"
+              aria-atomic="true"
               data-testid="join-details-host-key-value"
-              >{{ revealed() ? key : '••••••' }}</span
+              ><span class="sr-only">Host key&#32;</span>{{ revealed() ? key : '••••••' }}</span
             >
           } @else {
             <span class="text-[13.5px] text-[var(--md-text-body)]" data-testid="join-details-host-key-pending">

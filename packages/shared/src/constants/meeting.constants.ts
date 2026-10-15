@@ -86,6 +86,14 @@ export const HOST_KEY_LATE_MINUTES = 40;
 export const MEETING_HOST_KEY_RETRY_MS = 90_000;
 
 /**
+ * How far ahead of the host-key window's opening, by the browser's clock, the V2 join details section
+ * still shows a key the server returned (E7-02): the server authorized it by its own clock, which a
+ * browser running slow would otherwise contradict. Wide enough for clock skew, far narrower than the
+ * days between a series' occurrences, so today's key never shows on a later occurrence's page.
+ */
+export const MEETING_HOST_KEY_CLOCK_SKEW_MS = 10 * 60_000;
+
+/**
  * Available meeting platforms and their configurations
  * @description Defines the supported platforms for hosting meetings
  */

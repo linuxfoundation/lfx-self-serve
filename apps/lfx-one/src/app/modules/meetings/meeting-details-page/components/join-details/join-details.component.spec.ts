@@ -82,7 +82,8 @@ describe('MeetingJoinDetailsComponent', () => {
     expect(query('join-details-host-key-toggle')?.getAttribute('aria-pressed')).toBe('true');
     // The toggle keeps one name; the key shows (and is read out) in its own live region.
     expect(query('join-details-host-key-toggle')?.getAttribute('aria-label')).toBe('Show host key');
-    expect(query('join-details-host-key-value')?.textContent?.trim()).toBe(KEY);
+    expect(query('join-details-host-key-value')?.getAttribute('aria-atomic')).toBe('true');
+    expect(query('join-details-host-key-value')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(`Host key ${KEY}`);
 
     (query('join-details-host-key-copy')?.querySelector('button') as HTMLButtonElement).click();
     expect(copy).toHaveBeenCalledWith(KEY);
@@ -182,6 +183,14 @@ describe('MeetingJoinDetailsComponent', () => {
       expect(reload).toHaveBeenCalledTimes(1);
       expect(query('join-details-host-key-toggle')).not.toBeNull();
     });
+  });
+
+  it('shows a key the server returned to a browser whose clock runs a few minutes behind', async () => {
+    // The server, by its clock, is inside the window; the browser is 5 minutes before it opens.
+    meeting.set(build({ host_key: KEY, can_view_host_key: true, start_time: new Date(Date.now() + 75 * 60_000).toISOString() }));
+    await update();
+
+    expect(query('join-details-host-key-toggle')).not.toBeNull();
   });
 
   it("times the window from the page's selected occurrence, not the series' next one", async () => {
