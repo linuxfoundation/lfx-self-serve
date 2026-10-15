@@ -75,7 +75,6 @@ import {
   CAMPAIGN_UNAVAILABLE_DEPLOYMENT_REASON,
   CAMPAIGN_UNAVAILABLE_PLATFORM_REASON,
   CAMPAIGN_UNAVAILABLE_REASONS,
-  DAILY_ONLY_BUDGET_CAMPAIGN_PLATFORMS,
   DEFAULT_CAMPAIGN_BID_TYPE,
   KEYWORD_ACTION_OUTCOME_CLASSES,
   KEYWORD_ACTION_OUTCOME_LABELS,
@@ -95,7 +94,6 @@ import {
 import {
   campaignActionItemLever,
   campaignBiddingSummary,
-  campaignBudgetPacingFromSettings,
   campaignEtagVersion,
   keywordActionKey,
   keywordIdentityKey,
@@ -106,6 +104,7 @@ import { AdsCurrencyPipe, AdsPctPipe, EventLabelPipe, PacingClassPipe, PriorityC
 import { metaAdSetFailureOutcome, metaAdSetWriteLeftValidatorKnown } from '@shared/utils/campaign-ad-set-error.utils';
 import { campaignBidFailureOutcome } from '@shared/utils/campaign-bid-error.utils';
 import { campaignBudgetFailureOutcome } from '@shared/utils/campaign-budget-error.utils';
+import { isDailyOnlyBudgetPlatform, readCampaignBudgetPacing } from '@shared/utils/campaign-budget-pacing.utils';
 import { classifyCampaignWriteFailure } from '@shared/utils/campaign-write-error.utils';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { CampaignKeywordTargetingService } from '@services/campaign-keyword-targeting.service';
@@ -702,7 +701,7 @@ export class OptimizationTabComponent implements OnInit {
           adSetBusy,
           budgetPacing[campaign.id] === 'pending'
         ),
-        budgetDailyOnly: typeof campaign.platform === 'string' && DAILY_ONLY_BUDGET_CAMPAIGN_PLATFORMS.has(campaign.platform),
+        budgetDailyOnly: isDailyOnlyBudgetPlatform(campaign.platform),
         bidAvailable: bidUnavailableReason === '',
         bidUnavailableReason,
         bidBlockedReason: this.bidBlockedReasonFor(conflicted, pendingDirection !== undefined || !!budgetPending[campaign.id] || adSetBusy),
@@ -2757,7 +2756,7 @@ export class OptimizationTabComponent implements OnInit {
   private readBudgetPacing(row: CampaignRow): void {
     const campaign = row.campaign;
     const id = campaign.id;
-    if (typeof campaign.platform !== 'string' || !DAILY_ONLY_BUDGET_CAMPAIGN_PLATFORMS.has(campaign.platform)) {
+    if (!isDailyOnlyBudgetPlatform(campaign.platform)) {
       return;
     }
     const known = this.budgetPacing()[id];
@@ -2766,21 +2765,11 @@ export class OptimizationTabComponent implements OnInit {
     }
     this.budgetPacing.update((p) => ({ ...p, [id]: 'pending' }));
     const askedIn = this.contextGeneration;
-    this.campaignService
-      .getCampaignSettings(this.projectSlug(), this.briefId(), id)
-      .pipe(take(1))
-      .subscribe({
-        next: (readback) => {
-          if (askedIn === this.contextGeneration) {
-            this.budgetPacing.update((p) => ({ ...p, [id]: campaignBudgetPacingFromSettings(readback) }));
-          }
-        },
-        error: () => {
-          if (askedIn === this.contextGeneration) {
-            this.budgetPacing.update((p) => ({ ...p, [id]: 'unknown' }));
-          }
-        },
-      });
+    readCampaignBudgetPacing(this.campaignService.getCampaignSettings(this.projectSlug(), this.briefId(), id)).subscribe((pacing) => {
+      if (askedIn === this.contextGeneration) {
+        this.budgetPacing.update((p) => ({ ...p, [id]: pacing }));
+      }
+    });
   }
 
   /** Why a Meta row's ad-set panel cannot be opened, or `''`. Only asked for offered rows. */

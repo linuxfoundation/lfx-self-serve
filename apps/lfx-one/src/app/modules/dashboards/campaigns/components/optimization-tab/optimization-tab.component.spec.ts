@@ -2581,6 +2581,7 @@ describe('OptimizationTabComponent — budget change (#3299)', () => {
 
     const button = q('optimization-campaign-budget-edit-c-1') as HTMLButtonElement;
     expect(button.disabled).toBe(false);
+    expect(button.getAttribute('aria-disabled')).toBeNull();
     expect(button.getAttribute('aria-label')).toBe('Change budget for KubeCon EU');
     expect(button.getAttribute('aria-expanded')).toBe('false');
     expect(q('optimization-campaign-budget-unavailable-c-1')).toBeNull();
@@ -2596,16 +2597,23 @@ describe('OptimizationTabComponent — budget change (#3299)', () => {
   it('withholds the editor, with its reason, for a platform without budget-write support', () => {
     render([doc({ platform: 'hubspot' })]);
 
+    // aria-disabled, not disabled: it stays focusable, and a click opens nothing.
     const button = q('optimization-campaign-budget-edit-c-1') as HTMLButtonElement;
-    expect(button.disabled).toBe(true);
+    expect(button.disabled).toBe(false);
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    expect(button.getAttribute('aria-expanded')).toBeNull();
     expect(button.getAttribute('aria-describedby')).toBe('campaign-budget-unavailable-c-1');
     expect(q('optimization-campaign-budget-unavailable-c-1')!.textContent).toContain(CAMPAIGN_BUDGET_UNAVAILABLE_PLATFORM_REASON);
+
+    button.click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('#campaign-budget-panel-c-1')).toBeNull();
   });
 
   it('withholds the editor for a campaign that was never created on its platform', () => {
     render([doc({ platform_campaign_id: undefined })]);
 
-    expect((q('optimization-campaign-budget-edit-c-1') as HTMLButtonElement).disabled).toBe(true);
+    expect(q('optimization-campaign-budget-edit-c-1')!.getAttribute('aria-disabled')).toBe('true');
     expect(q('optimization-campaign-budget-unavailable-c-1')!.textContent).toContain(CAMPAIGN_BUDGET_UNAVAILABLE_UNPROVISIONED_REASON);
   });
 
@@ -2617,6 +2625,7 @@ describe('OptimizationTabComponent — budget change (#3299)', () => {
 
     expect((q('optimization-campaign-toggle-c-1') as HTMLButtonElement).disabled).toBe(true);
     expect((q('optimization-campaign-budget-edit-c-1') as HTMLButtonElement).disabled).toBe(false);
+    expect(q('optimization-campaign-budget-edit-c-1')!.getAttribute('aria-disabled')).toBeNull();
   });
 
   it.each([
@@ -2733,17 +2742,40 @@ describe('OptimizationTabComponent — budget change (#3299)', () => {
       expect(q('optimization-campaign-budget-blocked-c-1')!.textContent).toContain(CAMPAIGN_BUDGET_X_LIFETIME_REASON);
       expect(q('optimization-campaign-budget-unavailable-c-1')!.textContent).toContain(CAMPAIGN_BUDGET_X_LIFETIME_REASON);
 
-      // Still closable from its disclosure, then disabled with the reason described.
+      // Still closable from its disclosure, then aria-disabled (still focusable) with the reason described.
       const button = q('optimization-campaign-budget-edit-c-1') as HTMLButtonElement;
       expect(button.disabled).toBe(false);
+      expect(button.getAttribute('aria-disabled')).toBeNull();
       button.click();
       fixture.detectChanges();
       expect(fixture.nativeElement.querySelector('#campaign-budget-panel-c-1')).toBeNull();
-      expect(button.disabled).toBe(true);
+      expect(button.disabled).toBe(false);
+      expect(button.getAttribute('aria-disabled')).toBe('true');
       expect(button.getAttribute('aria-describedby')).toBe('campaign-budget-unavailable-c-1');
+
+      // And it stays shut: a click on the unavailable disclosure opens nothing.
+      button.click();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('#campaign-budget-panel-c-1')).toBeNull();
 
       // Known for the session: not read again.
       expect(getCampaignSettings).toHaveBeenCalledTimes(1);
+    });
+
+    // Cancel hands focus back to the disclosure; were the now-unavailable disclosure `disabled`, it would be lost.
+    it('returns focus to the disclosure when Cancel closes an editor the pacing read made unavailable', () => {
+      getCampaignSettings.mockReturnValue(of(settingsWith('lifetime')));
+      render([xDoc()]);
+      openEditor();
+      const cancel = q('optimization-campaign-budget-cancel-c-1')!.querySelector('button') as HTMLButtonElement;
+      cancel.focus();
+      cancel.click();
+      fixture.detectChanges();
+
+      const disclosure = q('optimization-campaign-budget-edit-c-1') as HTMLButtonElement;
+      expect(fixture.nativeElement.querySelector('#campaign-budget-panel-c-1')).toBeNull();
+      expect(disclosure.getAttribute('aria-disabled')).toBe('true');
+      expect(document.activeElement).toBe(disclosure);
     });
 
     // A failed read or an unreported pacing does not block: upstream stays the authority.

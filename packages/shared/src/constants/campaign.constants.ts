@@ -2096,7 +2096,9 @@ export const BUDGET_WRITABLE_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<s
  *
  * X: `update-campaign-budget` writes only the campaign's `daily_budget_amount_local_micro`, and a
  * `lifetime` request is always refused 409 — so the editor offers no lifetime pacing for these
- * platforms, and a campaign read as lifetime-budgeted has its editor withheld instead.
+ * platforms, and a campaign read as lifetime-budgeted has its editor withheld instead. Applied by
+ * every surface that mounts the budget form (the Optimize tab and the Monitor act dialog) through
+ * `isDailyOnlyBudgetPlatform` / `readCampaignBudgetPacing` in `campaign-budget-pacing.utils`.
  */
 export const DAILY_ONLY_BUDGET_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<string>(['twitter-ads']);
 
