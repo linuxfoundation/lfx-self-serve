@@ -862,6 +862,7 @@ export function buildOccurrenceStripItems(
       if (existing.isPast) {
         byInstant.set(startMs, {
           ...existing,
+          startTime: past.scheduled_start_time || existing.startTime,
           pastResourceId: past.meeting_and_occurrence_id,
           duration: scheduled > 0 ? scheduled : existing.duration,
           endKnown: scheduled > 0,
@@ -871,7 +872,9 @@ export function buildOccurrenceStripItems(
     }
     add({
       startMs,
-      startTime: new Date(startMs).toISOString(),
+      // The composite id's start is the record's identity and URL; its scheduled start, when present, is
+      // what was on the calendar, and what a row shows (the two can differ).
+      startTime: past.scheduled_start_time || new Date(startMs).toISOString(),
       duration: scheduled > 0 ? scheduled : fallbackDuration,
       endKnown: scheduled > 0,
       occurrenceId: startMsToOccurrenceId(startMs),

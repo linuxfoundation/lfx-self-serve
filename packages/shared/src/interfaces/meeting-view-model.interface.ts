@@ -360,7 +360,10 @@ export interface MeetingAdminLink {
 export interface MeetingOccurrenceStripItem {
   /** The start as a Unix-millisecond instant: the strip's key, and the URL's `?occurrence=` value */
   startMs: number;
-  /** ISO start time */
+  /**
+   * ISO start time as scheduled, what a row displays: a past record's `scheduled_start_time` when it has
+   * one, which can differ from the composite id's start (`startMs`, the identity)
+   */
   startTime: string;
   /** Minutes */
   duration: number;

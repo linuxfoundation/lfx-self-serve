@@ -167,12 +167,13 @@ export class MeetingOccurrenceBrowseDialogComponent {
       const items = this.data.items().filter((item) => (tab === 'past' ? item.isPast : !item.isPast));
       const ordered = tab === 'past' ? [...items].reverse() : items;
       return ordered.map((item) => {
-        const start = new Date(item.startMs);
+        // Displayed as scheduled (`startTime`); `startMs` stays the row's identity.
+        const start = new Date(item.startTime);
         const selected = !item.cancelled && item.startMs === selectedMs;
         const startTime = formatDisplayTimeInTimezone(start, this.data.timezone);
         // An end only when it is the occurrence's own, never the series' duration standing in.
         const time = item.endKnown
-          ? `${startTime} – ${formatDisplayTimeInTimezone(new Date(item.startMs + item.duration * 60_000), this.data.timezone)}`
+          ? `${startTime} – ${formatDisplayTimeInTimezone(new Date(start.getTime() + item.duration * 60_000), this.data.timezone)}`
           : startTime;
         return {
           item,

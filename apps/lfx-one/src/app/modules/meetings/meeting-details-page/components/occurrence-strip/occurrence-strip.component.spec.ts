@@ -84,6 +84,7 @@ describe('MeetingOccurrenceStripComponent', () => {
             meeting: signal({ id: SERIES, duration: 30, recurrence: options.recurrence === undefined ? { type: 2 } : options.recurrence } as Meeting),
             now: signal(new Date()),
             seriesUid: signal(SERIES),
+            selectedOccurrence: signal(null),
             matchesRoute: signal(true),
             loadedViaPastMeetingId: signal(!!options.pastPage),
             password,
@@ -180,6 +181,17 @@ describe('MeetingOccurrenceStripComponent', () => {
       data.open(data.items()[3]);
       await settle();
       expect(navigatedTo()).toBe(at(2));
+    });
+
+    it("labels the cadence from the selected occurrence's own rule when it overrides the meeting's", async () => {
+      await loaded();
+      (TestBed.inject(MeetingDetailsStateService).selectedOccurrence as WritableSignal<unknown>).set({
+        ...future(1),
+        recurrence: { type: 3, repeat_interval: 3, monthly_day: 16 },
+      });
+      const data = openBrowse().open.mock.calls[0][1].data as MeetingOccurrenceBrowseDialogData;
+
+      expect(data.cadence).toBe('Quarterly on day 16');
     });
 
     it('keeps one dialog: a second activation while it is open opens nothing', async () => {
@@ -361,6 +373,7 @@ describe('MeetingOccurrenceStripComponent', () => {
             meeting: signal({ id: SERIES, duration: 30, recurrence: { type: 2 } } as Meeting),
             now: signal(new Date()),
             seriesUid: signal(SERIES),
+            selectedOccurrence: signal(null),
             matchesRoute: onRoute,
             loadedViaPastMeetingId: signal(false),
             password: signal('pw'),
@@ -803,6 +816,7 @@ describe('MeetingOccurrenceStripComponent', () => {
             meeting: signal({ id: SERIES, duration: 30, recurrence: null } as Meeting),
             now: signal(new Date()),
             seriesUid: signal(SERIES),
+            selectedOccurrence: signal(null),
             matchesRoute: signal(true),
             loadedViaPastMeetingId: signal(true),
             password: signal('pw'),
@@ -848,6 +862,7 @@ describe('MeetingOccurrenceStripComponent', () => {
             meeting: signal({ id: SERIES, duration: 30, recurrence } as Meeting),
             now: signal(new Date()),
             seriesUid: signal(SERIES),
+            selectedOccurrence: signal(null),
             matchesRoute: signal(true),
             loadedViaPastMeetingId: signal(recurrence === null),
             password,

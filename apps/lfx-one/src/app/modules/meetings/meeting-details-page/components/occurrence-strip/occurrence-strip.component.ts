@@ -18,7 +18,14 @@ import {
   MeetingOccurrenceStripTimeline,
   PublicMeetingOccurrencesResponse,
 } from '@lfx-one/shared/interfaces';
-import { buildOccurrenceStripItems, buildRecurrenceSummary, compositeIdToStartMs, convertRecurrenceToPattern, getUserTimezone } from '@lfx-one/shared/utils';
+import {
+  buildOccurrenceStripItems,
+  buildRecurrenceSummary,
+  compositeIdToStartMs,
+  convertRecurrenceToPattern,
+  getUserTimezone,
+  resolveOccurrenceRecurrence,
+} from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -235,7 +242,7 @@ export class MeetingOccurrenceStripComponent {
     const data: MeetingOccurrenceBrowseDialogData = {
       title: meeting.title,
       logoUrl: meeting.project?.logo_url || null,
-      cadence: meeting.recurrence ? buildRecurrenceSummary(convertRecurrenceToPattern(meeting.recurrence)).description : null,
+      cadence: this.cadence(),
       timezone: this.timezone,
       items: () => this.items(),
       selectedStartMs: () => this.state.selectedOccurrenceStartMs(),
@@ -436,6 +443,16 @@ export class MeetingOccurrenceStripComponent {
     const { latestFuture } = this.readEdges(loaded);
     const latestRead = this.items().find((item) => item.startMs === latestFuture);
     return loaded.futureHasMore && !!latestRead?.isPast ? 'future' : null;
+  }
+
+  /**
+   * The cadence for the dialog's subtitle ("Weekly on Thursday"): the selected occurrence's own rule when
+   * the cadence changed from it on (an `all_following` override), else the meeting's.
+   */
+  private cadence(): string | null {
+    const meeting = this.state.meeting();
+    const recurrence = meeting ? resolveOccurrenceRecurrence(meeting, this.state.selectedOccurrence()) : null;
+    return recurrence ? buildRecurrenceSummary(convertRecurrenceToPattern(recurrence)).description : null;
   }
 
   /** Hides the strip, and the browse dialog with it, which would otherwise outlive its trigger. */

@@ -100,6 +100,13 @@ describe('MeetingOccurrenceBrowseDialogComponent', () => {
     expect(row(-2)?.textContent).not.toContain('–');
   });
 
+  it("shows a past row's scheduled time even when its id carries another start", async () => {
+    items.set([item(-1, { startTime: new Date(at(-1) + 60 * 60_000).toISOString(), duration: 30 })]);
+    await render(at(-1));
+
+    expect(row(-1)?.textContent).toContain('5:00 PM – 5:30 PM');
+  });
+
   it('has no attendance column', async () => {
     await render(at(-1));
 

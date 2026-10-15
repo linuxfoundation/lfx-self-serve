@@ -1540,6 +1540,27 @@ describe('buildOccurrenceStripItems (E6-03)', () => {
     ]);
   });
 
+  it("keeps a past record's composite start as its identity but its scheduled start for display", () => {
+    const scheduled = at(16) + 60 * 60_000;
+    const [item] = buildOccurrenceStripItems(
+      [],
+      {
+        past: [
+          {
+            meeting_and_occurrence_id: `99152950841-${at(16)}`,
+            scheduled_start_time: new Date(scheduled).toISOString(),
+            scheduled_end_time: new Date(scheduled + 30 * 60_000).toISOString(),
+          },
+        ],
+        future: [],
+      },
+      60,
+      now
+    );
+
+    expect(item).toEqual(expect.objectContaining({ startMs: at(16), startTime: new Date(scheduled).toISOString(), duration: 30, endKnown: true }));
+  });
+
   it('flags a past record whose id is listed as cancelled', () => {
     const items = buildOccurrenceStripItems(
       [],
