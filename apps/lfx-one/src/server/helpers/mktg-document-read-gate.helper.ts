@@ -37,7 +37,7 @@ export class MktgReadBudget {
  *   with `maxWaitingPerUser` reads already waiting is refused at once.
  * - Parses run one at a time across the process, each after a turn of the
  *   event loop. Every parse is bounded on its own (the PDF deadline and page
- *   cap, the Word inflate cap, the HTML size cap), so other requests run
+ *   cap, the Word markup cap and deadline, the HTML size cap), so other requests run
  *   between two documents instead of waiting for a whole batch.
  */
 export class MktgDocumentReadGate {

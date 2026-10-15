@@ -4,7 +4,8 @@
 import JSZip from 'jszip';
 import { readFileSync } from 'node:fs';
 import PDFDocument from 'pdfkit';
-import { describe, expect, it } from 'vitest';
+import mammoth from 'mammoth';
+import { describe, expect, it, vi } from 'vitest';
 
 import { MktgDocumentText } from './mktg-document-text.helper';
 
@@ -30,12 +31,22 @@ async function pdfkitPdf(pages: string[], userPassword?: string): Promise<Buffer
 }
 
 /** A zip of the given entries, deflated. */
-async function zip(entries: Record<string, string>): Promise<Buffer> {
+async function zip(entries: Record<string, string | Buffer>): Promise<Buffer> {
   const archive = new JSZip();
   for (const [name, content] of Object.entries(entries)) {
     archive.file(name, content);
   }
   return archive.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE', compressionOptions: { level: 9 } });
+}
+
+/** A minimal .docx whose main document (at `mainPath`) holds `paragraphs` short paragraphs, plus any `extra` parts. */
+async function wordZip(paragraphs: number, extra: Record<string, string | Buffer> = {}, mainPath = 'word/document.xml'): Promise<Buffer> {
+  const w = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+  const rels =
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" ' +
+    `Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="${mainPath}"/></Relationships>`;
+  const body = '<w:p><w:r><w:t>Pillar</w:t></w:r></w:p>'.repeat(paragraphs);
+  return zip({ '_rels/.rels': rels, [mainPath]: `<w:document xmlns:w="${w}"><w:body>${body}</w:body></w:document>`, ...extra });
 }
 
 describe('MktgDocumentText.read — PDF', () => {
@@ -98,11 +109,40 @@ describe('MktgDocumentText.read — Word, HTML and text', () => {
     expect((await MktgDocumentText.read(notWord, { fileName: 'deck.pptx' })).reason).toBe('unsupported');
   });
 
-  it('refuses a .docx that inflates past the cap (a compression bomb) before mammoth reads it', async () => {
+  it('refuses a .docx whose markup inflates past the cap (a compression bomb) before mammoth reads it', async () => {
+    const parse = vi.spyOn(mammoth, 'extractRawText');
     const bomb = await zip({ 'word/document.xml': `<w:document>${' '.repeat(40 * 1024 * 1024)}</w:document>` });
+    const tooLong = await wordZip(60_000);
 
     expect(bomb.length).toBeLessThan(1024 * 1024);
-    expect((await MktgDocumentText.read(bomb, { fileName: 'bomb.docx' })).reason).toBe('unsupported');
+    expect((await MktgDocumentText.read(bomb, { fileName: 'bomb.docx' })).reason).toBe('too-complex');
+    expect((await MktgDocumentText.read(tooLong, { fileName: 'long.docx' })).reason).toBe('too-complex');
+    expect(parse).not.toHaveBeenCalled();
+    parse.mockRestore();
+  }, 20_000);
+
+  it('never inflates the parts it does not parse: a bomb among the images costs nothing, a main document hidden in one is not read', async () => {
+    const imageBomb = await wordZip(3, { 'word/media/image1.png': Buffer.alloc(40 * 1024 * 1024) });
+    const hidden = await wordZip(3, {}, 'word/media/image1.png');
+
+    expect((await MktgDocumentText.read(imageBomb, { fileName: 'brief.docx' })).text).toBe('Pillar\n\nPillar\n\nPillar');
+    expect((await MktgDocumentText.read(hidden, { fileName: 'brief.docx' })).reason).toBe('unsupported');
+  }, 20_000);
+
+  it('reads a .docx just under the markup cap within the deadline, and stops one at a spent deadline before mammoth starts', async () => {
+    const nearCap = await wordZip(45_000);
+    const parse = vi.spyOn(mammoth, 'extractRawText');
+
+    const start = performance.now();
+    const read = await MktgDocumentText.read(nearCap, { fileName: 'long.docx' });
+    expect(performance.now() - start).toBeLessThan(MktgDocumentText.maxDocxMillis + 1000);
+    expect(read.text === null ? read.reason : 'read').toMatch(/^(read|too-complex)$/);
+
+    parse.mockClear();
+    expect((await MktgDocumentText.read(nearCap, { fileName: 'long.docx' }, 1)).reason).toBe('too-complex');
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(parse).not.toHaveBeenCalled();
+    parse.mockRestore();
   }, 20_000);
 
   it('turns a page into Markdown-flavoured text, keeping absolute link and image URLs and dropping scripts', async () => {

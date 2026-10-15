@@ -13,7 +13,7 @@ import { Request } from 'express';
 import { MktgDocumentReadGate, MktgReadBudget } from '../helpers/mktg-document-read-gate.helper';
 import { MktgDocumentText } from '../helpers/mktg-document-text.helper';
 import { fetchSafeUrlBytes } from '../helpers/url-validation';
-import { getEffectiveSub } from '../utils/auth-helper';
+import { getEffectiveUsername } from '../utils/auth-helper';
 import { logger } from './logger.service';
 
 /**
@@ -94,8 +94,8 @@ export class MktgSourceTextService {
       return this.cap(read, maxChars);
     } catch (error) {
       const tooLarge = error instanceof Error && error.message.startsWith('Response exceeded');
-      // Raised to INFO: a source the agent never saw makes a thinner document, and this is where to find out why.
-      logger.info(req, 'mktg_source_text', 'Could not fetch a link — the agent is told it was not read', {
+      // DEBUG: the links come from the user, so this branch is caller-triggerable.
+      logger.debug(req, 'mktg_source_text', 'Could not fetch a link — the agent is told it was not read', {
         host,
         reason: tooLarge ? 'too-large' : 'fetch-failed',
         err: error,
@@ -123,7 +123,7 @@ export class MktgSourceTextService {
 
   /** Whose slots a read takes: the signed-in user, else the client address. */
   private user(req: Request): string {
-    return getEffectiveSub(req) ?? `ip:${req.ip ?? 'unknown'}`;
+    return getEffectiveUsername(req) ?? `ip:${req.ip ?? 'unknown'}`;
   }
 
   /** The URL to fetch for a link: a Google Doc's plain-text export, else the link itself. */

@@ -102,7 +102,10 @@ describe('MktgSourceTextService.readLink', () => {
   it('refuses a read as busy when the user already has too many waiting, instead of queueing without end', async () => {
     const held: ((value: ReturnType<typeof response>) => void)[] = [];
     fetchMocks.fetchSafeUrlBytes.mockImplementation(() => new Promise((resolve) => held.push(resolve)));
-    const busyReq = { path: '/api/mktg-agents/foundation-message/documents/link', oidc: { user: { sub: 'auth0|busy' } } } as unknown as Request;
+    const busyReq = {
+      path: '/api/mktg-agents/foundation-message/documents/link',
+      oidc: { user: { 'https://sso.linuxfoundation.org/claims/username': 'busy-user' } },
+    } as unknown as Request;
 
     // Four run and twelve wait; the seventeenth is refused at once.
     const pending = Array.from({ length: 16 }, () => service.readLink(busyReq, 'https://search.example.org/slow', 1000));

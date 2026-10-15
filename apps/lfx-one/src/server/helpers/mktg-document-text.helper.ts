@@ -25,12 +25,17 @@ export class MktgDocumentText {
   /** Most HTML characters tokenized: a page's header, navigation and body copy sit well inside this. */
   private static readonly maxHtmlChars = 2_000_000;
 
+  /** Wall-clock limit for one .docx; a caller whose own budget has less left may only lower it. */
+  public static readonly maxDocxMillis = 500;
+
   /**
-   * Most bytes the parts of a .docx may inflate to beyond the file's own size
-   * — a guard against compression bombs (the body of a 300-page document is a
-   * few megabytes; images inflate to about their stored size).
+   * Most bytes a .docx's markup (its `.xml` and `.rels` parts, everything
+   * mammoth parses for text) may inflate to, all parts together. mammoth's XML
+   * parse is synchronous and builds a DOM, so this cap is what bounds the
+   * event-loop time and memory one Word file takes: about a quarter of a
+   * second at the cap, for a body far longer than the 60,000 characters kept.
    */
-  private static readonly maxDocxInflatedBytes = 16 * 1024 * 1024;
+  private static readonly maxDocxMarkupBytes = 2 * 1024 * 1024;
 
   /** Block-level elements: each starts and ends a line. */
   // prettier-ignore
@@ -47,12 +52,12 @@ export class MktgDocumentText {
    *
    * @param bytes - The raw bytes
    * @param hints - The file name or the response's content type, and for HTML the URL relative links resolve against
-   * @param maxMillis - A tighter wall-clock limit for a PDF than `maxPdfMillis`
+   * @param maxMillis - A tighter wall-clock limit than the format's own (`maxPdfMillis`, `maxDocxMillis`)
    */
   public static async read(
     bytes: Buffer,
     hints: { fileName?: string; contentType?: string; baseUrl?: string },
-    maxMillis = MktgDocumentText.maxPdfMillis
+    maxMillis = Number.POSITIVE_INFINITY
   ): Promise<MktgReadText> {
     try {
       return await MktgDocumentText.readBytes(bytes, hints, maxMillis);
@@ -76,7 +81,7 @@ export class MktgDocumentText {
       return MktgDocumentText.pdfText(bytes, Math.min(maxMillis, MktgDocumentText.maxPdfMillis));
     }
     if (head.startsWith('PK\u0003\u0004')) {
-      return MktgDocumentText.docxText(bytes);
+      return MktgDocumentText.docxText(bytes, Math.min(maxMillis, MktgDocumentText.maxDocxMillis));
     }
     if (bytes.includes(0)) {
       return MktgDocumentText.none('unsupported');
@@ -147,46 +152,71 @@ export class MktgDocumentText {
 
   /**
    * A .docx body's text through mammoth, a blank line between paragraphs.
-   * The archive is inflated and counted first, without keeping the bytes, so a
-   * compression bomb is refused before mammoth inflates it whole. An archive
-   * over the cap, a broken one, or one that is not a Word document is `unsupported`.
+   * mammoth only ever sees a copy holding the file's markup (`docxMarkup`), so
+   * what it parses is capped before it starts. The deadline is a race, and is
+   * checked again before mammoth starts; mammoth's XML parse itself cannot be
+   * interrupted, so a parse already running when the deadline passes finishes
+   * in the background, bounded by the markup cap. Markup over the cap or a
+   * passed deadline is `too-complex`; a broken archive, or one that is not a
+   * Word document, is `unsupported`.
    */
-  private static async docxText(bytes: Buffer): Promise<MktgReadText> {
-    try {
-      if (!(await MktgDocumentText.docxWithinCap(bytes))) {
-        return MktgDocumentText.none('unsupported');
+  private static async docxText(bytes: Buffer, maxMillis: number): Promise<MktgReadText> {
+    const deadline = performance.now() + maxMillis;
+    let timer: NodeJS.Timeout | undefined;
+    const expiry = new Promise<MktgReadText>((resolve) => {
+      timer = setTimeout(() => resolve(MktgDocumentText.none('too-complex')), maxMillis);
+    });
+    const extraction = (async (): Promise<MktgReadText> => {
+      const markup = await MktgDocumentText.docxMarkup(bytes, deadline);
+      if (markup === null || performance.now() >= deadline) {
+        return MktgDocumentText.none('too-complex');
       }
-      const { value } = await mammoth.extractRawText({ buffer: bytes });
+      const { value } = await mammoth.extractRawText({ buffer: markup });
       return MktgDocumentText.ok(value.replace(/\n{3,}/g, '\n\n'));
-    } catch {
-      return MktgDocumentText.none('unsupported');
+    })().catch(() => MktgDocumentText.none('unsupported'));
+    try {
+      return await Promise.race([extraction, expiry]);
+    } finally {
+      clearTimeout(timer);
     }
   }
 
-  /** Whether every entry of a zip inflates, together, to at most `maxDocxInflatedBytes` beyond the zip's own size; stops counting at the cap. */
-  private static async docxWithinCap(bytes: Buffer): Promise<boolean> {
-    const zip = await JSZip.loadAsync(bytes);
-    const cap = bytes.length + MktgDocumentText.maxDocxInflatedBytes;
+  /**
+   * A copy of a .docx holding only its `.xml` and `.rels` parts, stored
+   * uncompressed, or null once they inflate past `maxDocxMarkupBytes` together
+   * or the deadline passes. Nothing else is inflated: images and embedded files
+   * are never read for text, so a compression bomb among them costs nothing,
+   * and a main document hidden under another name is simply not in the copy.
+   */
+  private static async docxMarkup(bytes: Buffer, deadline: number): Promise<Buffer | null> {
+    const source = await JSZip.loadAsync(bytes);
+    const copy = new JSZip();
     let inflated = 0;
-    for (const entry of Object.values(zip.files).filter((file) => !file.dir)) {
+    for (const entry of Object.values(source.files).filter((file) => !file.dir && /\.(xml|rels)$/i.test(file.name))) {
+      const chunks: Buffer[] = [];
       const within = await new Promise<boolean>((resolve, reject) => {
         const stream = entry.nodeStream('nodebuffer');
-        stream.on('data', (chunk: Buffer) => {
+        const onData = (chunk: Buffer): void => {
           inflated += chunk.length;
-          if (inflated > cap) {
+          if (inflated > MktgDocumentText.maxDocxMarkupBytes || performance.now() >= deadline) {
             stream.pause();
-            stream.removeAllListeners();
+            stream.off('data', onData);
             resolve(false);
+          } else {
+            chunks.push(chunk);
           }
-        });
+        };
+        stream.on('data', onData);
+        // Kept after a stop, so a late inflate error is swallowed rather than thrown as an unhandled 'error' event.
         stream.on('error', reject);
         stream.on('end', () => resolve(true));
       });
       if (!within) {
-        return false;
+        return null;
       }
+      copy.file(entry.name, Buffer.concat(chunks));
     }
-    return true;
+    return copy.generateAsync({ type: 'nodebuffer', compression: 'STORE' });
   }
 
   // === HTML ===
