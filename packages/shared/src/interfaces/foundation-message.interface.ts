@@ -150,6 +150,16 @@ export interface FoundationMessageFormPayload {
   existing_documents?: FoundationMessageExistingDocument[];
 }
 
+/** What the BFF read to text for the form, layered onto the validated answers. */
+export interface FoundationMessageFormInputs {
+  /** The text read from each source's URL; a source with no text was not read. */
+  sourceTexts?: Partial<Record<FoundationMessageSourceKind, string>>;
+  /** The existing documents, as the agent takes them. */
+  documents?: FoundationMessageExistingDocument[];
+  /** The run date, YYYY-MM-DD; the renderer defaults it to today (UTC). */
+  runDate?: string;
+}
+
 /** Request body for `POST /api/mktg-agents/foundation-message/generate` — the answers plus the existing documents. */
 export type FoundationMessageGenerateRequest = MktgRunGenerateBody;
 

@@ -45,7 +45,9 @@ import {
 import {
   FoundationMessageEnvelope,
   FoundationMessageExistingDocument,
+  FoundationMessageAnswerKey,
   FoundationMessageField,
+  FoundationMessageFormInputs,
   FoundationMessageFormPayload,
   FoundationMessageGenerateShape,
   FoundationMessageSourceKind,
@@ -54,7 +56,7 @@ import {
 
 const ONE_LINE = /^[^\r\n]+$/;
 const SOURCE_URL_KEYS: string[] = FOUNDATION_MESSAGE_SOURCE_KINDS.map((kind) => FOUNDATION_MESSAGE_SOURCE_FIELDS[kind].urlKey);
-const ANSWER_KEYS: string[] = FOUNDATION_MESSAGE_QUESTIONS.map((question) => question.key);
+const ANSWER_KEYS: FoundationMessageAnswerKey[] = FOUNDATION_MESSAGE_QUESTIONS.map((question) => question.key);
 const FORM_ANSWER_KEYS = new Set<string>(['project_name', ...SOURCE_URL_KEYS, ...ANSWER_KEYS]);
 
 // ---------------------------------------------------------------------------
@@ -184,16 +186,6 @@ export function validateFoundationMessageDocuments(documents: unknown): Foundati
 // The generate form and its rendering (mirror of the agent's src/form.ts)
 // ---------------------------------------------------------------------------
 
-/** What the BFF read to text for the form, layered onto the validated answers. */
-export interface FoundationMessageFormInputs {
-  /** The text read from each source's URL; a source with no text was not read. */
-  sourceTexts?: Partial<Record<FoundationMessageSourceKind, string>>;
-  /** The existing documents, as the agent takes them. */
-  documents?: FoundationMessageExistingDocument[];
-  /** The run date, YYYY-MM-DD; the renderer defaults it to today (UTC). */
-  runDate?: string;
-}
-
 /**
  * Build the `messaging_document_intake_form` payload from a VALIDATED answers
  * record. Answers pass through trimmed but otherwise verbatim; a "none" or
@@ -202,25 +194,23 @@ export interface FoundationMessageFormInputs {
  */
 export function buildFoundationMessageFormPayload(answers: Record<string, string>, inputs: FoundationMessageFormInputs = {}): FoundationMessageFormPayload {
   const payload: FoundationMessageFormPayload = { type: FOUNDATION_MESSAGE_FORM_TYPE, project_name: (answers['project_name'] ?? '').trim() };
-  const fields = payload as unknown as Record<string, unknown>;
-
   for (const kind of FOUNDATION_MESSAGE_SOURCE_KINDS) {
     const { urlKey, textKey } = FOUNDATION_MESSAGE_SOURCE_FIELDS[kind];
     const url = foundationMessageSourceUrl(answers[urlKey]);
     if (url === null) {
       continue;
     }
-    fields[urlKey] = url;
+    payload[urlKey] = url;
     const text = inputs.sourceTexts?.[kind];
     if (text) {
-      fields[textKey] = text;
+      payload[textKey] = text;
     }
   }
 
   for (const key of ANSWER_KEYS) {
     const value = (answers[key] ?? '').trim();
     if (value) {
-      fields[key] = value;
+      payload[key] = value;
     }
   }
 
@@ -235,8 +225,7 @@ export function buildFoundationMessageFormPayload(answers: Record<string, string
 
 /** The form's shape: no answers → PRE-FILL; answers and documents → DOCUMENTS WITH ANSWERS; answers only → ANSWERS. */
 export function foundationMessageShapeOf(payload: FoundationMessageFormPayload): FoundationMessageGenerateShape {
-  const fields = payload as unknown as Record<string, unknown>;
-  if (!ANSWER_KEYS.some((key) => fields[key] !== undefined)) {
+  if (!ANSWER_KEYS.some((key) => payload[key] !== undefined)) {
     return 'prefill';
   }
   return (payload.existing_documents?.length ?? 0) > 0 ? 'documents-with-answers' : 'answers';
@@ -282,10 +271,9 @@ export function foundationMessageStampedQuestion(question: { label: string; ques
  * runs (live smoke, 2026-08-20), so the model would receive raw JSON.
  */
 export function renderFoundationMessageFormText(payload: FoundationMessageFormPayload, now: Date = new Date()): string {
-  const fields = payload as unknown as Record<string, string | undefined>;
   const runDate = payload.run_date ?? now.toISOString().slice(0, 10);
   const shape = foundationMessageShapeOf(payload);
-  const answered = ANSWER_KEYS.filter((key) => fields[key] !== undefined);
+  const answered = ANSWER_KEYS.filter((key) => payload[key] !== undefined);
   const docs = payload.existing_documents ?? [];
 
   const lines: string[] = [FOUNDATION_MESSAGE_GENERATE_HEADER, `FORM SHAPE: ${FOUNDATION_MESSAGE_SHAPE_LABELS[shape]}`];
@@ -312,8 +300,8 @@ export function renderFoundationMessageFormText(payload: FoundationMessageFormPa
 
   lines.push('SOURCES (Step 0b) — fetched to text by LFX One; you cannot fetch. A source with no text was not read.');
   for (const kind of FOUNDATION_MESSAGE_SOURCE_KINDS) {
-    const url = fields[FOUNDATION_MESSAGE_SOURCE_FIELDS[kind].urlKey];
-    const text = fields[FOUNDATION_MESSAGE_SOURCE_FIELDS[kind].textKey];
+    const url = payload[FOUNDATION_MESSAGE_SOURCE_FIELDS[kind].urlKey];
+    const text = payload[FOUNDATION_MESSAGE_SOURCE_FIELDS[kind].textKey];
     lines.push(`--- SOURCE ${kind}: ${FOUNDATION_MESSAGE_SOURCE_LABELS[kind]} ---`);
     lines.push(`URL: ${url ?? 'none'}`);
     if (url === undefined) {
@@ -346,7 +334,7 @@ export function renderFoundationMessageFormText(payload: FoundationMessageFormPa
   lines.push(`STEP 1 ANSWERS: ${answered.length} of 10 answered on the form`);
   FOUNDATION_MESSAGE_QUESTIONS.forEach((question, index) => {
     const n = index + 1;
-    const answer = fields[question.key];
+    const answer = payload[question.key];
     lines.push(`--- Q${n} ${question.key} ---`, `QUESTION: ${foundationMessageStampedQuestion(question)}`);
     if (answer === undefined) {
       lines.push('ANSWER: (not answered on the form)');
