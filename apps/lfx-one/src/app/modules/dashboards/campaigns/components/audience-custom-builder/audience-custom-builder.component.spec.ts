@@ -61,11 +61,12 @@ const created: AudienceComposedList = { listId: '7777', name: preview.name, hubs
 
 describe('AudienceCustomBuilderComponent', () => {
   let fixture: ComponentFixture<AudienceCustomBuilderComponent>;
-  const service = { interpret: vi.fn(), preview: vi.fn(), create: vi.fn(), inFlightCreate: vi.fn() };
+  const service = { interpret: vi.fn(), preview: vi.fn(), create: vi.fn(), inFlightCreate: vi.fn(), takeCreateOutcome: vi.fn() };
 
   beforeEach(async () => {
     service.interpret.mockReset().mockReturnValue(of(settled));
     service.inFlightCreate.mockReset().mockReturnValue(null);
+    service.takeCreateOutcome.mockReset().mockReturnValue(null);
     service.preview.mockReset().mockReturnValue(of(preview));
     service.create.mockReset().mockReturnValue(of(created));
     await TestBed.configureTestingModule({
@@ -299,6 +300,45 @@ describe('AudienceCustomBuilderComponent', () => {
     expect(host().querySelector('[data-testid="audience-custom-builder-criteria"]'), 'the old draft is gone').toBeNull();
     expect(el('audience-custom-builder-unconfirmed').textContent).toContain(preview.name);
     expect(emitted).toEqual([]);
+  });
+
+  it('picks up an unconfirmed create left by a builder that was destroyed, and holds Create', () => {
+    service.takeCreateOutcome.mockReturnValue({ kind: 'unconfirmed', name: 'Seoul (left behind)' });
+    fixture.componentRef.setInput('projectSlug', 'tlf3');
+    fixture.detectChanges();
+
+    expect(el('audience-custom-builder-unconfirmed').textContent).toContain('Seoul (left behind)');
+    interpretSeoul();
+    click('audience-custom-builder-preview');
+    expect(host().querySelector('[data-testid="audience-custom-builder-create"]'), 'no button may offer a second create').toBeNull();
+  });
+
+  it('says a list was created after the builder was gone, instead of offering it again silently', () => {
+    service.takeCreateOutcome.mockReturnValue({ kind: 'created', list: created });
+    fixture.componentRef.setInput('projectSlug', 'tlf4');
+    fixture.detectChanges();
+
+    expect(el('audience-custom-builder-stranded-created').textContent).toContain(created.name);
+  });
+
+  it('lets the operator set the questions aside and finish by hand, keeping the draft', () => {
+    service.interpret.mockReturnValue(of(interpretation));
+    interpretSeoul();
+    click('audience-custom-builder-leave-questions');
+    click('audience-custom-builder-preview');
+
+    expect(host().querySelector('[data-testid="audience-custom-builder-questions"]')).toBeNull();
+    expect(el<HTMLInputElement | HTMLTextAreaElement>('audience-custom-builder-cities').value, 'the draft is kept').toBe('Seoul');
+    expect(el<HTMLButtonElement>('audience-custom-builder-create').disabled).toBe(false);
+  });
+
+  it('clears questions a model that became unavailable can no longer answer', () => {
+    service.interpret.mockReturnValueOnce(of(interpretation)).mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+    interpretSeoul();
+    click('audience-custom-builder-option-mailability-1');
+    click('audience-custom-builder-preview');
+
+    expect(el<HTMLButtonElement>('audience-custom-builder-create').disabled, 'the hand-filled draft can be created').toBe(false);
   });
 
   it('applies a deterministic preset without calling the model', () => {

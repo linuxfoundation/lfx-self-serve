@@ -1269,8 +1269,8 @@ export class AudienceBuilderTabComponent {
     const eventUrl = this.eventUrlControl.value.trim();
     // Not while an attach is on the wire, either. Discovery resets the run, which discards that
     // attach's reply -- so its outcome, success or error, would never be shown for the brief it was
-    // recorded against.
-    if (this.degraded() || this.discovering() || this.attachInFlight() || eventUrl.length === 0) {
+    // recorded against. Likewise a custom create: the reset would discard even its success.
+    if (this.degraded() || this.discovering() || this.attachInFlight() || this.customCreating() || eventUrl.length === 0) {
       return;
     }
     // Refused HERE rather than re-locking after the reset. `composeAttempted` is the
@@ -2039,7 +2039,7 @@ export class AudienceBuilderTabComponent {
     const event = this.plannedEvent();
     const brand = event?.brandShort ?? '';
     const name = event?.eventName ?? '';
-    const scope = event ? `${brand}|${name}` : '';
+    const scope = this.plannedSuppressionScope();
     if (this.suppressionLists().length > 0 && scope === this.suppressionScope) {
       return;
     }
@@ -2049,6 +2049,23 @@ export class AudienceBuilderTabComponent {
   }
 
   /** Fetches the suppression lists. Safe with empty scope: the hygiene rows are portfolio-wide. */
+  /** The scope the no-discovery suppression rows should have: the planned event's, else portfolio-wide. */
+  private plannedSuppressionScope(): string {
+    const event = this.plannedEvent();
+    return event ? `${event.brandShort ?? ''}|${event.eventName ?? ''}` : '';
+  }
+
+  /**
+   * A planned event can arrive while the portfolio-wide load is on the wire, when
+   * `ensureSuppressionLoaded` returns early; once that load settles, load the wanted scope.
+   * Only on a scope change, never to retry a failure, so a failing endpoint cannot loop.
+   */
+  private reconcileSuppressionScope(): void {
+    if (!this.hasDiscovered() && this.suppressionLists().length > 0 && this.plannedSuppressionScope() !== this.suppressionScope) {
+      this.ensureSuppressionLoaded();
+    }
+  }
+
   private loadSuppression(brandShort: string, eventName: string, previousKeys: ReadonlySet<string> | null = null): void {
     this.suppressionLoading.set(true);
     const run = this.runGeneration;
@@ -2069,6 +2086,7 @@ export class AudienceBuilderTabComponent {
           } else {
             this.seedSuppression(lists);
           }
+          this.reconcileSuppressionScope();
         },
         error: () => {
           if (run !== this.runGeneration) {

@@ -78,7 +78,17 @@
     <!-- Questions -->
     @if (questions().length > 0) {
       <div class="flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3" data-testid="audience-custom-builder-questions">
-        <h5 class="text-xs font-semibold text-gray-900">Answer these to finish the draft</h5>
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <h5 class="text-xs font-semibold text-gray-900">Answer these to finish the draft</h5>
+          <button
+            type="button"
+            (click)="onLeaveQuestions()"
+            [disabled]="locked()"
+            class="rounded border border-gray-300 bg-white px-2 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            data-testid="audience-custom-builder-leave-questions">
+            Finish by hand instead
+          </button>
+        </div>
         @for (q of questions(); track q.id) {
           <div class="flex flex-col gap-1.5" [attr.data-testid]="'audience-custom-builder-question-' + q.id">
             <p class="text-xs font-medium text-gray-900">{{ q.question }}</p>
@@ -483,6 +493,11 @@
     @if (createInFlightElsewhere(); as name) {
       <p class="text-xs text-amber-800" role="status" data-testid="audience-custom-builder-in-flight">
         A list{{ name ? ' named "' + name + '"' : '' }} is still being created for this project. Wait for it to finish before creating another.
+      </p>
+    }
+    @if (strandedCreated(); as list) {
+      <p class="text-xs text-amber-800" role="status" data-testid="audience-custom-builder-stranded-created">
+        "{{ list.name }}" was created after you left this page and was not added to step 2. Use "Or use an existing list" to add it instead of creating another.
       </p>
     }
     <!-- Outside the preview block, so nothing that drops the preview can hide a create's outcome. -->

@@ -2441,6 +2441,13 @@ export const AUDIENCE_CUSTOM_OPERATORS: readonly { value: AudienceCustomOperator
   { value: 'is_unknown', label: 'is unknown' },
 ] as const;
 
+/**
+ * HTTP statuses that prove a custom-audience create did nothing: the request itself was refused.
+ * Every other outcome (a 502 partial, a timeout, a lost connection, any 5xx) may mean HubSpot
+ * created the list, so it is unconfirmed and must not be retried.
+ */
+export const AUDIENCE_CUSTOM_CREATE_DEFINITE_FAILURES: readonly number[] = [400, 401, 403, 404, 409, 422];
+
 /** How the model judged an existing list against the audience being built, with its label. */
 export const AUDIENCE_CUSTOM_REUSE_RECOMMENDATIONS: Readonly<Record<AudienceCustomReuseRecommendation, string>> = {
   reuse: 'Likely the same audience',

@@ -8,7 +8,12 @@ import { FormArray, FormControl, FormGroup, ReactiveFormsModule } from '@angular
 import { AudienceCustomService } from '@services/audience-custom.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
 
-import { AUDIENCE_CUSTOM_OPERATORS, AUDIENCE_CUSTOM_REUSE_RECOMMENDATIONS, AUDIENCE_SPEAKER_SCOPES } from '@lfx-one/shared/constants';
+import {
+  AUDIENCE_CUSTOM_CREATE_DEFINITE_FAILURES,
+  AUDIENCE_CUSTOM_OPERATORS,
+  AUDIENCE_CUSTOM_REUSE_RECOMMENDATIONS,
+  AUDIENCE_SPEAKER_SCOPES,
+} from '@lfx-one/shared/constants';
 import { filter, skip } from 'rxjs';
 import type {
   AudienceComposedList,
@@ -23,9 +28,6 @@ import type {
   AudienceListSearchResult,
   AudienceSpeakerScope,
 } from '@lfx-one/shared/interfaces';
-
-/** Statuses that prove a create did nothing: the request itself was refused. Everything else is unconfirmed. */
-const DEFINITE_CREATE_FAILURES: ReadonlySet<number> = new Set([400, 401, 403, 404, 409, 422]);
 
 type FilterGroup = FormGroup<{ property: FormControl<string>; operator: FormControl<AudienceCustomOperator>; values: FormControl<string> }>;
 
@@ -140,6 +142,8 @@ export class AudienceCustomBuilderComponent {
   /** Set when HubSpot did not confirm a create: the name to search for before trying again. */
   protected readonly unconfirmedName = signal<string | null>(null);
   protected readonly createdList = signal<AudienceComposedList | null>(null);
+  /** A list created after its builder was gone: it exists, but was never added to step 2. */
+  protected readonly strandedCreated = signal<AudienceComposedList | null>(null);
 
   // === Computed Signals ===
   private readonly formValue = toSignal(this.form.valueChanges, { initialValue: this.form.getRawValue() });
@@ -190,6 +194,11 @@ export class AudienceCustomBuilderComponent {
       )
       .subscribe((preset) => this.applyPreset(preset));
 
+    // A create whose builder was destroyed before it settled left its outcome with the service.
+    toObservable(this.projectSlug)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((project) => this.claimStrandedOutcome(project));
+
     toObservable(this.resetKey)
       .pipe(skip(1), takeUntilDestroyed(this.destroyRef))
       .subscribe(() => this.onContextReset());
@@ -228,6 +237,15 @@ export class AudienceCustomBuilderComponent {
     }
     this.reusedIds.update((ids) => new Set([...ids, item.list.listId]));
     this.reuse.emit(item.list);
+  }
+
+  /** An explicit choice to set the model's questions aside and finish the criteria by hand. */
+  protected onLeaveQuestions(): void {
+    if (this.locked()) {
+      return;
+    }
+    this.questions.set([]);
+    this.onFillByHand();
   }
 
   protected onOtherInput(questionId: string, value: string): void {
@@ -306,6 +324,8 @@ export class AudienceCustomBuilderComponent {
     this.customService.create(this.projectSlug(), this.request()).subscribe({
       next: (list) => {
         if (this.destroyed || seq !== this.seq) return;
+        // Seen live, so the service need not keep it for a remounted builder.
+        this.customService.takeCreateOutcome(this.projectSlug());
         this.setCreating(false);
         this.confirming.set(false);
         this.createdList.set(list);
@@ -313,9 +333,10 @@ export class AudienceCustomBuilderComponent {
       },
       error: (err: HttpErrorResponse) => {
         if (this.destroyed || seq !== this.seq) return;
+        this.customService.takeCreateOutcome(this.projectSlug());
         this.setCreating(false);
         this.confirming.set(false);
-        if (!DEFINITE_CREATE_FAILURES.has(err.status)) {
+        if (!AUDIENCE_CUSTOM_CREATE_DEFINITE_FAILURES.includes(err.status)) {
           // Not retryable: a 502 partial, a timeout, a lost connection or any 5xx may each mean
           // HubSpot created the list. Create stays disabled until the operator starts over, so a
           // retry cannot make a second one.
@@ -345,6 +366,7 @@ export class AudienceCustomBuilderComponent {
     this.gate.set(null);
     this.interpretError.set(null);
     this.unconfirmedName.set(null);
+    this.strandedCreated.set(null);
     this.createdList.set(null);
     this.createError.set(null);
     this.interpreting.set(false);
@@ -383,6 +405,8 @@ export class AudienceCustomBuilderComponent {
           this.interpreting.set(false);
           // No model configured is not a dead end: the criteria can be filled in by hand.
           if (err.status === 503) {
+            // No model can answer its own questions now; finishing by hand is the only way on.
+            this.questions.set([]);
             this.onFillByHand();
             this.interpretError.set(serverAuthoredMessage(err, 'Describing an audience is unavailable here. Fill in the criteria by hand instead.'));
             return;
@@ -398,6 +422,15 @@ export class AudienceCustomBuilderComponent {
    * the tab does for a stranded compose: its reply is about to be discarded, and losing it silently
    * is how a duplicate gets created later.
    */
+  private claimStrandedOutcome(project: string): void {
+    const outcome = this.customService.takeCreateOutcome(project);
+    if (outcome?.kind === 'unconfirmed') {
+      this.unconfirmedName.set(outcome.name);
+    } else if (outcome?.kind === 'created') {
+      this.strandedCreated.set(outcome.list);
+    }
+  }
+
   private onContextReset(): void {
     const stranded = this.creating() ? this.nameControl.value.trim() || this.preview()?.name || 'the custom list' : null;
     this.onStartOver();

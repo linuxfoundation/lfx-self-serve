@@ -70,4 +70,29 @@ describe('AudienceCustomService', () => {
     expect(failure?.status).toBe(502);
     expect(failure?.error).toEqual({ masterName: 'Seoul' });
   });
+
+  // A builder destroyed before its create settled never sees the reply; the service keeps the
+  // outcome so a remounted builder does not offer a second create.
+  it.each([
+    [503, { kind: 'unconfirmed', name: 'Seoul' }],
+    [0, { kind: 'unconfirmed', name: 'Seoul' }],
+    [400, null],
+  ])('keeps a %s create outcome for the project until a builder takes it', (status, want) => {
+    service.create('tlf', { criteria, name: 'Seoul' }).subscribe({ error: () => undefined });
+    http.expectOne((r) => r.url === '/api/campaigns/audience-builder/custom/create').flush({ message: 'x' }, { status, statusText: 'x' });
+
+    expect(service.takeCreateOutcome('tlf')).toEqual(want);
+    expect(service.takeCreateOutcome('tlf'), 'taken once').toBeNull();
+  });
+
+  it('keeps a created list for the project, and tracks the create in flight until it settles', () => {
+    service.create('tlf', { criteria, name: 'Seoul' }).subscribe();
+    expect(service.inFlightCreate('tlf')).toBe('Seoul');
+    http
+      .expectOne((r) => r.url === '/api/campaigns/audience-builder/custom/create')
+      .flush({ listId: '7', name: 'Seoul', hubspotUrl: 'https://app.hubspot.com/x/7' });
+
+    expect(service.inFlightCreate('tlf')).toBeNull();
+    expect(service.takeCreateOutcome('tlf')).toEqual({ kind: 'created', list: { listId: '7', name: 'Seoul', hubspotUrl: 'https://app.hubspot.com/x/7' } });
+  });
 });

@@ -109,7 +109,13 @@ describe('AudienceBuilderTabComponent', () => {
         // The custom builder child owns its own requests; none of these specs drive it.
         {
           provide: AudienceCustomService,
-          useValue: { interpret: vi.fn(() => NEVER), preview: vi.fn(() => NEVER), create: vi.fn(() => NEVER), inFlightCreate: vi.fn(() => null) },
+          useValue: {
+            interpret: vi.fn(() => NEVER),
+            preview: vi.fn(() => NEVER),
+            create: vi.fn(() => NEVER),
+            inFlightCreate: vi.fn(() => null),
+            takeCreateOutcome: vi.fn(() => null),
+          },
         },
         {
           provide: CampaignService,
@@ -2902,6 +2908,46 @@ describe('AudienceBuilderTabComponent', () => {
       fixture.detectChanges();
 
       expect(getAudienceSuppressionLists).toHaveBeenLastCalledWith('tlf', 'SYN', 'Synthetic Summit 2026');
+    });
+
+    it('loads the planned scope once a portfolio-wide load already on the wire settles', async () => {
+      await render();
+      const generic = new Subject<AudienceSuppressionList[]>();
+      getAudienceSuppressionLists.mockReturnValueOnce(generic);
+      builder().created.emit({ listId: '7777', name: 'Seoul', hubspotUrl: 'https://app.hubspot.com/x/7777' });
+      fixture.detectChanges();
+      expect(getAudienceSuppressionLists).toHaveBeenLastCalledWith('tlf', '', '');
+
+      builder().eventPlanned.emit({ eventName: 'Synthetic Summit 2026', brandShort: 'SYN', eventDates: [] });
+      generic.next([
+        {
+          key: 'lf_events_gdpr',
+          label: 'LF Events GDPR',
+          listId: '201',
+          name: 'LF Events - GDPR Suppression',
+          size: 5000,
+          category: 'standard',
+          hubspotUrl: '',
+        },
+      ]);
+      generic.complete();
+      fixture.detectChanges();
+
+      expect(getAudienceSuppressionLists).toHaveBeenLastCalledWith('tlf', 'SYN', 'Synthetic Summit 2026');
+    });
+
+    it('holds Discover while a custom create is still landing', async () => {
+      await render();
+      typeEventUrl('https://events.example.org/synthetic-summit');
+      builder().creatingChange.emit(true);
+      fixture.detectChanges();
+
+      click('campaigns-audience-discover');
+      // The handler holds too, not only the button.
+      (fixture.componentInstance as unknown as { onDiscover(): void }).onDiscover();
+
+      expect(host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-discover"]')?.disabled).toBe(true);
+      expect(discoverAudience, "discovery's reset would discard the create's reply").not.toHaveBeenCalled();
     });
 
     it('sends a typed master name with the compose', async () => {

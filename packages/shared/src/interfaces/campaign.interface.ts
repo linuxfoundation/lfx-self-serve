@@ -4747,3 +4747,10 @@ export interface AudienceBuilderCapabilities {
    */
   detail?: string;
 }
+
+/**
+ * How a custom-audience create settled, kept per project by the client service so a builder
+ * remounted after navigation still knows: `created` (the list exists but was never added to step 2)
+ * or `unconfirmed` (it may exist; search before creating again).
+ */
+export type AudienceCustomCreateOutcome = { kind: 'created'; list: AudienceComposedList } | { kind: 'unconfirmed'; name: string };

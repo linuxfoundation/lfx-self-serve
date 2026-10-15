@@ -1,12 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { inject, Injectable, signal } from '@angular/core';
-import { defer, finalize, Observable } from 'rxjs';
+import { AUDIENCE_CUSTOM_CREATE_DEFINITE_FAILURES } from '@lfx-one/shared/constants';
+import { defer, finalize, Observable, tap } from 'rxjs';
 
 import type {
   AudienceComposedList,
+  AudienceCustomCreateOutcome,
   AudienceCustomInterpretRequest,
   AudienceCustomInterpretResult,
   AudienceCustomPreview,
@@ -31,6 +33,20 @@ export class AudienceCustomService {
    */
   private readonly inFlight = signal<ReadonlyMap<string, string>>(new Map());
 
+  /**
+   * How the last create for each project settled, until a builder takes it. A builder that saw the
+   * reply itself takes it at once; one that was destroyed first never does, so a remounted builder
+   * finds it here instead of offering a second create.
+   */
+  private readonly outcomes = new Map<string, AudienceCustomCreateOutcome>();
+
+  /** Takes (and forgets) the unclaimed outcome of this project's last create, if any. */
+  public takeCreateOutcome(projectSlug: string): AudienceCustomCreateOutcome | null {
+    const outcome = this.outcomes.get(projectSlug) ?? null;
+    this.outcomes.delete(projectSlug);
+    return outcome;
+  }
+
   /** The name of a create still in flight for this project, or null. */
   public inFlightCreate(projectSlug: string): string | null {
     return this.inFlight().get(projectSlug) ?? null;
@@ -52,6 +68,16 @@ export class AudienceCustomService {
       this.inFlight.update((all) => new Map(all).set(projectSlug, request.name ?? ''));
       return this.http.post<AudienceComposedList>('/api/campaigns/audience-builder/custom/create', request, { params: { project: projectSlug } });
     }).pipe(
+      tap({
+        next: (list) => this.outcomes.set(projectSlug, { kind: 'created', list }),
+        error: (err: unknown) => {
+          const status = err instanceof HttpErrorResponse ? err.status : 0;
+          if (!AUDIENCE_CUSTOM_CREATE_DEFINITE_FAILURES.includes(status)) {
+            const body = status === 502 && err instanceof HttpErrorResponse ? (err.error as { masterName?: string } | null) : null;
+            this.outcomes.set(projectSlug, { kind: 'unconfirmed', name: body?.masterName || request.name || 'the custom list' });
+          }
+        },
+      }),
       finalize(() =>
         this.inFlight.update((all) => {
           const next = new Map(all);
