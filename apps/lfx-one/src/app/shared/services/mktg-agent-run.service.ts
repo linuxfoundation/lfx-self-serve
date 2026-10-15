@@ -87,7 +87,10 @@ export class MktgAgentRunService {
   public generate(request: MktgGenerateRequest): Observable<MktgGenerateProgress> {
     const stored = this.loadRun(request.projectUid, request.agentId);
     let attempt$: Observable<MktgRunAttempt>;
-    if (!stored) {
+    if (!stored || request.intake.freshRunPerSubmission) {
+      // `freshRunPerSubmission` intakes (the Messaging Document) carry no
+      // prior version or feedback: every submission is a first run on a fresh
+      // session, appended to the stored run's history by `appendVersion`.
       attempt$ = this.startRun(request);
     } else if (request.intake.regenerateViaGenerate) {
       attempt$ = this.resubmitRun(request, stored);
@@ -158,7 +161,7 @@ export class MktgAgentRunService {
    * has no prior draft, so the result poll's gate is 0.
    */
   private startRun(request: MktgGenerateRequest): Observable<MktgRunAttempt> {
-    const body: MktgRunGenerateBody = { answers: request.answers };
+    const body: MktgRunGenerateBody = { answers: request.answers, ...(request.documents?.length && { documents: request.documents }) };
     return this.http.post<MktgRunSessionResponse>(request.intake.endpoints.generate, body).pipe(
       map((response) => ({
         session: { agentId: request.agentId, sessionId: response.sessionId, ownerToken: response.ownerToken },
@@ -348,8 +351,10 @@ export class MktgAgentRunService {
     const lastVersion = stored?.versions.length ? stored.versions[stored.versions.length - 1].version : 0;
     const version: MktgRunVersion = {
       // The envelope's own version is authoritative; pollForDocument guaranteed
-      // it (and the document) is present, so the fallbacks are type-narrowing only.
-      version: result.version ?? lastVersion + 1,
+      // it (and the document) is present, so the fallbacks are type-narrowing
+      // only. A fresh-run intake's envelope always says version 1, so the run
+      // numbers its own history instead.
+      version: request.intake.freshRunPerSubmission ? lastVersion + 1 : (result.version ?? lastVersion + 1),
       document: result.documentMarkdown ?? '',
       feedback: request.feedback,
       derivatives: result.derivatives,

@@ -12,6 +12,7 @@ import { MarkdownRendererComponent } from '@components/markdown-renderer/markdow
 import { MessageComponent } from '@components/message/message.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import {
+  FOUNDATION_MESSAGE_PROJECT_PLACEHOLDER,
   MKTG_AGENT_INTAKES,
   MKTG_AGENTS,
   MKTG_DOCUMENT_STATUS_REVIEWED_PREFIX,
@@ -28,7 +29,11 @@ import {
   MktgAttachmentChip,
   MktgDependencyDocument,
   MktgDocumentStatusChip,
+  MktgIntakeDocument,
+  MktgIntakeDocumentEntry,
+  MktgIntakeField,
   MktgIntakePrefillSource,
+  MktgResolvedFieldGroup,
   MktgRunPhase,
   MktgRunVersion,
   MktgStoredAgentRun,
@@ -36,7 +41,7 @@ import {
   User,
 } from '@lfx-one/shared/interfaces';
 import { findMktgDocumentStatus, mktgAgentDocumentName } from '@lfx-one/shared/utils';
-import { githubRepoUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
+import { githubRepoUrlValidator, sourceUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 import { MessageService } from 'primeng/api';
 import { combineLatest, distinctUntilChanged, EMPTY, filter, map, Subscription, switchMap } from 'rxjs';
 
@@ -46,6 +51,8 @@ import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
+
+import { MktgIntakeDocumentsComponent } from '../mktg-intake-documents/mktg-intake-documents.component';
 
 // Form-first agent run page (approved Marketing OS design): batch intake form
 // → staged running checklist → document result with versions and a
@@ -64,6 +71,7 @@ import { UserService } from '@services/user.service';
     TextareaComponent,
     MarkdownRendererComponent,
     MessageComponent,
+    MktgIntakeDocumentsComponent,
   ],
   templateUrl: './mktg-agent-run.component.html',
 })
@@ -165,6 +173,14 @@ export class MktgAgentRunComponent {
   protected readonly dependencyDocs = signal<Record<string, MktgDependencyDocument | null> | null>(null);
   /** Derivative chip key whose value was just copied — drives the transient "Copied" state. */
   protected readonly copiedDerivative = signal('');
+  /**
+   * The existing documents on the form (intakes with a documents section),
+   * already read to text by the BFF. Kept for edit-inputs resubmits; not
+   * stored with the run, since file texts are document-sized.
+   */
+  protected readonly documents = signal<MktgIntakeDocumentEntry[]>([]);
+  /** True while a document is still being read — submission waits for it. */
+  protected readonly documentsBusy = signal(false);
 
   // === Computed ===
   private readonly intakeValid = toSignal(this.intakeForm.statusChanges.pipe(map((status) => status === 'VALID')), { initialValue: this.intakeForm.valid });
@@ -180,7 +196,15 @@ export class MktgAgentRunComponent {
   protected readonly nextVersion = computed(() => (this.versions().at(-1)?.version ?? 0) + 1);
   protected readonly showVersionChips = computed(() => this.versions().length > 1 && this.phase() !== 'running');
   protected readonly feedbackNote = computed(() => (this.currentVersion()?.feedback ?? '').slice(0, 120));
-  protected readonly submitDisabled = computed(() => !this.intakeValid() || this.phase() === 'running' || !this.dependenciesSatisfied());
+  protected readonly submitDisabled = computed(
+    () => !this.intakeValid() || this.phase() === 'running' || this.documentsBusy() || !this.dependenciesSatisfied()
+  );
+  /**
+   * Field labels as shown: the registered question, with Paul's `[Project]`
+   * placeholder read as the project name typed on the form (else the active
+   * project's). What the agent receives keeps his wording as written.
+   */
+  protected readonly fieldLabels: Signal<Record<string, string>> = this.initFieldLabels();
   /**
    * Non-interactive "Using <project>'s <document> (vN)" chips for the
    * intake's auto-attached dependency documents (dec-agent-dependency-gating)
@@ -321,6 +345,8 @@ export class MktgAgentRunComponent {
   // methods (docs/reviews/frontend-checklist.md §4).
   protected readonly agentIconClass: string = this.accentIcon[this.agent?.accent ?? 'gray'];
   protected readonly agentTagline: string = this.agent?.tags.join(' · ') ?? '';
+  /** The intake's titled field groups with their fields resolved, or empty for a flat form. */
+  protected readonly fieldGroups: MktgResolvedFieldGroup[] = this.initFieldGroups();
   /** The Documents area type this agent's output is stored as, when it has one. */
   protected readonly documentsAgentKey: string | null = MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === this.agent?.id)?.agentKey ?? null;
 
@@ -563,6 +589,26 @@ export class MktgAgentRunComponent {
     });
   }
 
+  private initFieldGroups(): MktgResolvedFieldGroup[] {
+    return (this.intake?.fieldGroups ?? []).map((group) => ({
+      id: group.id,
+      title: group.title,
+      hint: group.hint ?? '',
+      footnote: group.footnote ?? '',
+      fields: group.fieldKeys.map((key) => this.intake?.fields.find((field) => field.key === key)).filter((field): field is MktgIntakeField => !!field),
+    }));
+  }
+
+  private initFieldLabels(): Signal<Record<string, string>> {
+    return computed(() => {
+      this.intakeValue();
+      const name = this.intakeForm.controls['project_name']?.value.trim() || this.projectName();
+      return Object.fromEntries(
+        (this.intake?.fields ?? []).map((field) => [field.key, field.question.split(FOUNDATION_MESSAGE_PROJECT_PLACEHOLDER).join(name)])
+      );
+    });
+  }
+
   private initFieldFormatErrors(): Signal<Record<string, string>> {
     return computed(() => {
       // Depend on the form's value so the message follows every keystroke.
@@ -571,7 +617,8 @@ export class MktgAgentRunComponent {
       this.intakeValue();
       const messages: Record<string, string> = {};
       for (const field of this.intake?.fields ?? []) {
-        const error = this.intakeForm.controls[field.key]?.errors?.['githubRepoUrl'] as GithubRepoUrlError | undefined;
+        const errors = this.intakeForm.controls[field.key]?.errors;
+        const error = (errors?.['githubRepoUrl'] ?? errors?.['sourceUrl']) as GithubRepoUrlError | undefined;
         const message = field.format && error ? MKTG_INTAKE_FORMAT_ERRORS[field.format][error.reason] : undefined;
         if (message) {
           messages[field.key] = message;
@@ -610,6 +657,9 @@ export class MktgAgentRunComponent {
         // The Brand Kit's rule: a GitHub organization URL is a usable answer;
         // only a value that is not a GitHub URL at all is refused.
         validators.push(githubRepoUrlValidator({ acceptOwner: true }));
+      } else if (field.format === 'source-url') {
+        // A page the BFF fetches to text: an https:// link, or Paul's "none".
+        validators.push(sourceUrlValidator());
       }
       controls[field.key] = new FormControl('', { nonNullable: true, validators });
     }
@@ -641,6 +691,16 @@ export class MktgAgentRunComponent {
       state[field.key] = this.intakeForm.controls[field.key].value.trim();
     }
     return state;
+  }
+
+  /** The form's existing documents as the generate request takes them: a link by its URL (the BFF re-reads it), a file by its text. */
+  private submittedDocuments(): MktgIntakeDocument[] {
+    return this.documents().map((document): MktgIntakeDocument => {
+      if (document.kind === 'link') {
+        return { kind: 'link', title: document.title, url: document.url };
+      }
+      return { kind: 'file', title: document.title, text: document.text };
+    });
   }
 
   /**
@@ -718,6 +778,7 @@ export class MktgAgentRunComponent {
     this.filledFromMemoryApplied.set({});
     this.prefillAppliedValues.set({});
     this.copiedDerivative.set('');
+    this.documents.set([]);
     this.intakeForm.reset();
     this.feedbackForm.reset();
     // Dependency documents are per-project — back to "resolving" until the
@@ -873,7 +934,7 @@ export class MktgAgentRunComponent {
             this.phase.set(this.versions().length > 0 ? 'result' : 'form');
             return EMPTY;
           }
-          return this.runService.generate({ agentId: agent.id, projectUid, intake, answers: attached, feedback });
+          return this.runService.generate({ agentId: agent.id, projectUid, intake, answers: attached, feedback, documents: this.submittedDocuments() });
         }),
         takeUntilDestroyed(this.destroyRef)
       )

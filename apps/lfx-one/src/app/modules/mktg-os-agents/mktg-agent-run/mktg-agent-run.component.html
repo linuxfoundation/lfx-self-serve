@@ -68,7 +68,7 @@
                 <div class="flex flex-col gap-1.5">
                   <div class="flex items-center gap-2 flex-wrap">
                     <label class="text-sm font-medium text-gray-700" [for]="'mktg-intake-' + field.key">
-                      {{ field.question }}
+                      {{ fieldLabels()[field.key] }}
                       @if (!field.optional) {
                         <span class="text-red-600">*</span>
                       }
@@ -132,8 +132,36 @@
                 </div>
               </ng-template>
 
-              @for (field of intake.fields; track field.key) {
-                <ng-container *ngTemplateOutlet="fieldTpl; context: { $implicit: field }" />
+              @if (fieldGroups.length > 0) {
+                <!-- Titled groups (e.g. the Messaging Document's Sources and Paul's ten questions), one card each. -->
+                @for (group of fieldGroups; track group.id) {
+                  <section
+                    class="bg-white border border-gray-200 rounded-xl p-5 flex flex-col gap-4"
+                    [attr.aria-labelledby]="'mktg-intake-group-' + group.id"
+                    [attr.data-testid]="'mktg-agent-run-group-' + group.id">
+                    <h2 class="text-base font-semibold text-gray-900" [id]="'mktg-intake-group-' + group.id">
+                      {{ group.title }}
+                      @if (group.hint) {
+                        <span class="ml-1 text-sm font-normal text-gray-500">{{ group.hint }}</span>
+                      }
+                    </h2>
+                    @for (field of group.fields; track field.key) {
+                      <ng-container *ngTemplateOutlet="fieldTpl; context: { $implicit: field }" />
+                    }
+                    @if (group.footnote) {
+                      <p class="max-w-prose text-xs text-gray-500">{{ group.footnote }}</p>
+                    }
+                  </section>
+                }
+              } @else {
+                @for (field of intake.fields; track field.key) {
+                  <ng-container *ngTemplateOutlet="fieldTpl; context: { $implicit: field }" />
+                }
+              }
+
+              <!-- Optional existing documents, last: each read to text by the BFF as it is added. -->
+              @if (intake.documents) {
+                <lfx-mktg-intake-documents [config]="intake.documents" [(documents)]="documents" [(busy)]="documentsBusy" />
               }
 
               <!-- Auto-attached sibling documents (dec-agent-dependency-gating): non-interactive — the stored document is always what is submitted. -->
@@ -315,29 +343,12 @@
                 </div>
               }
 
-              <!-- Request changes -->
-              <form class="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-3" [formGroup]="feedbackForm" (ngSubmit)="onRegenerate()">
-                <div class="flex flex-col gap-0.5">
-                  <span class="text-sm font-medium text-gray-700">Request changes</span>
-                  <span class="text-xs text-gray-400"
-                    >Feedback regenerates the document as v{{ nextVersion() }}. Your intake answers are kept — edit them anytime.</span
-                  >
-                </div>
-                <lfx-textarea
-                  id="mktg-agent-run-feedback"
-                  [form]="feedbackForm"
-                  control="feedback"
-                  [rows]="3"
-                  placeholder="What should change in this draft?"
-                  styleClass="w-full min-h-20 resize-y"
-                  dataTest="mktg-agent-run-feedback" />
-                <div class="flex items-center gap-3">
-                  <lfx-button
-                    type="submit"
-                    [label]="'Regenerate as v' + nextVersion()"
-                    icon="fa-light fa-rotate-right"
-                    [disabled]="regenerateDisabled()"
-                    data-testid="mktg-agent-run-regenerate-button" />
+              @if (intake.freshRunPerSubmission) {
+                <!-- No feedback box: this agent's generate takes none. A new run from edited inputs is stored as a new revision. -->
+                <div
+                  class="bg-white border border-gray-200 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3"
+                  data-testid="mktg-agent-run-new-run">
+                  <span class="text-xs text-gray-500">Change your answers or documents and generate again; each result is stored as a new revision.</span>
                   <lfx-button
                     label="Edit inputs"
                     icon="fa-light fa-pen"
@@ -345,8 +356,40 @@
                     data-testid="mktg-agent-run-edit-inputs-button"
                     (onClick)="onEditInputs()" />
                 </div>
-                <span class="text-xs text-gray-400">Foundation agents re-run quarterly — regenerate anytime to keep this current.</span>
-              </form>
+              } @else {
+                <!-- Request changes -->
+                <form class="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-3" [formGroup]="feedbackForm" (ngSubmit)="onRegenerate()">
+                  <div class="flex flex-col gap-0.5">
+                    <span class="text-sm font-medium text-gray-700">Request changes</span>
+                    <span class="text-xs text-gray-400"
+                      >Feedback regenerates the document as v{{ nextVersion() }}. Your intake answers are kept — edit them anytime.</span
+                    >
+                  </div>
+                  <lfx-textarea
+                    id="mktg-agent-run-feedback"
+                    [form]="feedbackForm"
+                    control="feedback"
+                    [rows]="3"
+                    placeholder="What should change in this draft?"
+                    styleClass="w-full min-h-20 resize-y"
+                    dataTest="mktg-agent-run-feedback" />
+                  <div class="flex items-center gap-3">
+                    <lfx-button
+                      type="submit"
+                      [label]="'Regenerate as v' + nextVersion()"
+                      icon="fa-light fa-rotate-right"
+                      [disabled]="regenerateDisabled()"
+                      data-testid="mktg-agent-run-regenerate-button" />
+                    <lfx-button
+                      label="Edit inputs"
+                      icon="fa-light fa-pen"
+                      [outlined]="true"
+                      data-testid="mktg-agent-run-edit-inputs-button"
+                      (onClick)="onEditInputs()" />
+                  </div>
+                  <span class="text-xs text-gray-400">Foundation agents re-run quarterly — regenerate anytime to keep this current.</span>
+                </form>
+              }
             </div>
           }
         }

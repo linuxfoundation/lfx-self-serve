@@ -1,0 +1,115 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { FOUNDATION_MESSAGE_INTAKE } from '@lfx-one/shared/constants';
+import { MktgDocumentExtractResponse, MktgIntakeDocumentsConfig } from '@lfx-one/shared/interfaces';
+import { MktgIntakeDocumentsService } from '@services/mktg-intake-documents.service';
+import { of, Subject, throwError } from 'rxjs';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { MktgIntakeDocumentsComponent } from './mktg-intake-documents.component';
+
+describe('MktgIntakeDocumentsComponent', () => {
+  const config = FOUNDATION_MESSAGE_INTAKE.documents as MktgIntakeDocumentsConfig;
+  let fixture: ComponentFixture<MktgIntakeDocumentsComponent>;
+  let component: MktgIntakeDocumentsComponent;
+  let readLink: ReturnType<typeof vi.fn>;
+  let readFile: ReturnType<typeof vi.fn>;
+
+  const host = (): HTMLElement => fixture.nativeElement as HTMLElement;
+  const fileEvent = (...files: File[]): Event => ({ target: { files, value: 'C:\\fakepath\\x' } }) as unknown as Event;
+
+  beforeEach(async () => {
+    readLink = vi.fn();
+    readFile = vi.fn();
+    await TestBed.configureTestingModule({
+      imports: [MktgIntakeDocumentsComponent],
+      providers: [provideNoopAnimations(), { provide: MktgIntakeDocumentsService, useValue: { readLink, readFile } }],
+    }).compileComponents();
+    fixture = TestBed.createComponent(MktgIntakeDocumentsComponent);
+    fixture.componentRef.setInput('config', config);
+    component = fixture.componentInstance;
+    await fixture.whenStable();
+  });
+
+  it('reads an added link and lists what it held, as the agent will get it', async () => {
+    readLink.mockReturnValue(of<MktgDocumentExtractResponse>({ title: 'Positioning note', read: true, words: 6100, truncated: false }));
+    component['linkForm'].controls.url.setValue('https://wiki.example.org/note');
+
+    component['onAddLink']();
+    await fixture.whenStable();
+
+    expect(readLink).toHaveBeenCalledWith(config, 'https://wiki.example.org/note');
+    expect(component.documents()).toEqual([
+      expect.objectContaining({ kind: 'link', title: 'Positioning note', url: 'https://wiki.example.org/note', read: true }),
+    ]);
+    expect(host().textContent).toContain('fetched · 6,100 words');
+    expect(component['linkForm'].controls.url.value).toBe('');
+  });
+
+  it('keeps a link that could not be read, saying why — it still goes to the agent, as not read', async () => {
+    readLink.mockReturnValue(
+      of<MktgDocumentExtractResponse>({ title: 'Doc', read: false, words: 0, truncated: false, reason: 'The document isn’t shared publicly.' })
+    );
+    component['linkForm'].controls.url.setValue('https://docs.google.com/document/d/x/edit');
+
+    component['onAddLink']();
+    await fixture.whenStable();
+
+    expect(component.documents()[0]).toMatchObject({ read: false, reason: 'The document isn’t shared publicly.' });
+    expect(host().textContent).toContain('isn’t shared publicly');
+  });
+
+  it('refuses a link that is not https://', () => {
+    component['linkForm'].controls.url.setValue('http://wiki.example.org/note');
+
+    component['onAddLink']();
+
+    expect(readLink).not.toHaveBeenCalled();
+    expect(component['errorText']()).toContain('https://');
+  });
+
+  it('adds an uploaded file with the text the server read, and is busy while it reads', async () => {
+    const response = new Subject<MktgDocumentExtractResponse>();
+    readFile.mockReturnValue(response.asObservable());
+
+    component['onFilesSelected'](fileEvent(new File(['# Notes'], 'notes.md')));
+    expect(component.busy()).toBe(true);
+
+    response.next({ title: 'notes.md', read: true, words: 1, truncated: false, text: '# Notes' });
+    response.complete();
+    await fixture.whenStable();
+
+    expect(component.busy()).toBe(false);
+    expect(component.documents()).toEqual([expect.objectContaining({ kind: 'file', title: 'notes.md', text: '# Notes', read: true })]);
+  });
+
+  it('refuses a file type it cannot read before uploading it, and never adds a file with no text', async () => {
+    component['onFilesSelected'](fileEvent(new File(['x'], 'deck.pptx')));
+    expect(readFile).not.toHaveBeenCalled();
+    expect(component['errorText']()).toContain('deck.pptx');
+
+    readFile.mockReturnValue(of<MktgDocumentExtractResponse>({ title: 'scan.pdf', read: false, words: 0, truncated: false, reason: 'No text found.' }));
+    component['onFilesSelected'](fileEvent(new File(['%PDF'], 'scan.pdf')));
+    await fixture.whenStable();
+
+    expect(component.documents()).toEqual([]);
+    expect(component['errorText']()).toBe('scan.pdf: No text found.');
+
+    readFile.mockReturnValue(throwError(() => new Error('network')));
+    component['onFilesSelected'](fileEvent(new File(['x'], 'brief.docx')));
+    await fixture.whenStable();
+    expect(component.busy()).toBe(false);
+  });
+
+  it('removes a document', async () => {
+    component.documents.set([{ id: 'file-1', kind: 'file', title: 'notes.md', text: 'x', read: true, words: 1, truncated: false }]);
+    await fixture.whenStable();
+
+    component['onRemove']('file-1');
+
+    expect(component.documents()).toEqual([]);
+  });
+});

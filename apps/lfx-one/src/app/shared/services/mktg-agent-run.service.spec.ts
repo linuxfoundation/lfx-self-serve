@@ -7,6 +7,7 @@ import { TestBed } from '@angular/core/testing';
 import {
   BRAND_KIT_INTAKE,
   FOUNDATION_MESSAGE_INTAKE,
+  ICP_INTAKE,
   MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS,
   MKTG_RUN_POLL,
   MKTG_RUN_STORAGE_KEY_PREFIX,
@@ -550,12 +551,12 @@ describe('MktgAgentRunService', () => {
     });
   });
 
-  describe('regenerate-via-generate intakes (Message Foundation)', () => {
+  describe('fresh-run intakes (Messaging Document)', () => {
     const MF_STORAGE_KEY = `${MKTG_RUN_STORAGE_KEY_PREFIX}:${USER_SUB}:proj-1:foundation-setup`;
     const MF_ANSWERS: Record<string, string> = {
       project_name: 'TestOrbit',
       github_url: 'https://github.com/example-org/testorbit',
-      brand_kit_markdown: '# TestOrbit Brand Kit',
+      vision_mission: 'TBD',
     };
 
     const mfRequest = (feedback?: string): MktgGenerateRequest => ({
@@ -577,9 +578,9 @@ describe('MktgAgentRunService', () => {
     });
 
     beforeEach(() => {
-      // Same contract-locked mock, retargeted at the MF endpoints: every
-      // submission — first run AND regeneration — is a generate POST on a
-      // FRESH session; posting to the chat endpoint would be the regression.
+      // Same contract-locked mock, retargeted at the Messaging Document
+      // endpoints: every submission is a generate POST on a FRESH session;
+      // posting to the chat endpoint would be the regression.
       httpPost.mockImplementation((url: string) => {
         if (url === FOUNDATION_MESSAGE_INTAKE.endpoints.generate) {
           return of({ sessionId: 'sess-2', ownerToken: 'token-2' });
@@ -592,45 +593,23 @@ describe('MktgAgentRunService', () => {
       });
     });
 
-    it('regenerates through the generate endpoint with the full answers + feedback + derived priorVersion — never the chat endpoint', async () => {
+    it('resubmits as a FRESH run — no priorVersion, no feedback — and numbers the run’s own history', async () => {
       window.localStorage.setItem(MF_STORAGE_KEY, JSON.stringify(mfStoredV1Run()));
-      resultResponses = [
-        { status: 'ready', documentMarkdown: '# v1', version: 1 },
-        { status: 'ready', documentMarkdown: '# v2', version: 2, derivatives: { summary_25: 'New 25.' } },
-      ];
+      // The generate envelope always says version 1; the poll's gate stays 0 so it is accepted.
+      resultResponses = [{ status: 'ready', documentMarkdown: '# second run', version: 1 }];
+      const documents = [{ kind: 'link' as const, title: 'Note', url: 'https://wiki.example.org/note' }];
 
       const events: MktgGenerateProgress[] = [];
-      service.generate(mfRequest('Sharpen the pitch.')).subscribe((event) => events.push(event));
+      service.generate({ ...mfRequest(), documents }).subscribe((event) => events.push(event));
 
-      // priorVersion is derived from the STORED run, never passed by the caller.
-      expect(httpPost).toHaveBeenCalledWith(FOUNDATION_MESSAGE_INTAKE.endpoints.generate, {
-        answers: MF_ANSWERS,
-        feedback: 'Sharpen the pitch.',
-        priorVersion: 1,
-      });
-
+      expect(httpPost).toHaveBeenCalledWith(FOUNDATION_MESSAGE_INTAKE.endpoints.generate, { answers: MF_ANSWERS, documents });
       await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
-      // Stale v1 poll response (the fresh session's poll gate is still v1) — no document event yet.
-      expect(events).toEqual([{ type: 'submitted' }]);
-
-      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
       expect(events).toHaveLength(2);
 
       const stored = JSON.parse(window.localStorage.getItem(MF_STORAGE_KEY) ?? 'null') as MktgStoredAgentRun;
-      // Version history is kept; the run now rides the FRESH session, and the
-      // envelope's derivatives are persisted with the version for the chips.
       expect(stored).toMatchObject({ sessionId: 'sess-2', ownerToken: 'token-2' });
-      expect(stored.versions).toHaveLength(2);
-      expect(stored.versions[1]).toMatchObject({ version: 2, document: '# v2', feedback: 'Sharpen the pitch.', derivatives: { summary_25: 'New 25.' } });
-    });
-
-    it('resubmits an edit-inputs change with priorVersion but no feedback (the BFF synthesizes the revision directive)', async () => {
-      window.localStorage.setItem(MF_STORAGE_KEY, JSON.stringify(mfStoredV1Run()));
-      resultResponses = [{ status: 'ready', documentMarkdown: '# v2', version: 2 }];
-
-      service.generate(mfRequest()).subscribe();
-
-      expect(httpPost).toHaveBeenCalledWith(FOUNDATION_MESSAGE_INTAKE.endpoints.generate, { answers: MF_ANSWERS, priorVersion: 1 });
+      expect(stored.versions.map((version) => version.version)).toEqual([1, 2]);
+      expect(stored.versions[1].document).toBe('# second run');
     });
 
     it('treats a first run normally — no priorVersion, plain generate body', async () => {
@@ -643,7 +622,7 @@ describe('MktgAgentRunService', () => {
 
     it('poll-retries a receipt-less ready result — this intake now persists, so a missing receipt is a failed write', async () => {
       // Was: "this intake persists nothing, so a receipt would never arrive".
-      // The Message Foundation's result endpoint now writes through the shared
+      // The Messaging Document's result endpoint writes through the shared
       // agent-artifact layer, so a ready result WITHOUT a receipt is a failed
       // server-side write — exactly the Brand Kit case, recovered by the same
       // bounded, idempotent retry. Without it the only copy of the document
@@ -679,7 +658,7 @@ describe('MktgAgentRunService', () => {
       expect(events[2]).toEqual({ type: 'persisted' });
     });
 
-    it('bounds the Message Foundation retry to the same shared budget', async () => {
+    it('bounds the Messaging Document retry to the same shared budget', async () => {
       resultResponses = [{ status: 'ready', documentMarkdown: '# v1', version: 1 }];
       service.generate(mfRequest()).subscribe();
 
@@ -687,6 +666,87 @@ describe('MktgAgentRunService', () => {
       await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 10);
 
       expect(httpPost.mock.calls.filter(([url]) => url === FOUNDATION_MESSAGE_INTAKE.endpoints.result)).toHaveLength(1 + MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS);
+    });
+  });
+
+  describe('regenerate-via-generate intakes (ICP)', () => {
+    const ICP_STORAGE_KEY = `${MKTG_RUN_STORAGE_KEY_PREFIX}:${USER_SUB}:proj-1:icp`;
+    const ICP_ANSWERS: Record<string, string> = {
+      project_name: 'TestOrbit',
+      github_url: 'https://github.com/example-org/testorbit',
+      business_outcome: 'Membership growth',
+    };
+
+    const icpRequest = (feedback?: string): MktgGenerateRequest => ({
+      agentId: 'icp',
+      projectUid: 'proj-1',
+      intake: ICP_INTAKE,
+      answers: ICP_ANSWERS,
+      feedback,
+    });
+
+    const icpStoredV1Run = (): MktgStoredAgentRun => ({
+      agentId: 'icp',
+      projectUid: 'proj-1',
+      sessionId: 'sess-1',
+      ownerToken: 'token-1',
+      answers: ICP_ANSWERS,
+      versions: [{ version: 1, document: '# v1', createdAt: '2026-08-19T00:00:00.000Z' }],
+      savedAt: new Date().toISOString(),
+    });
+
+    beforeEach(() => {
+      httpPost.mockImplementation((url: string) => {
+        if (url === ICP_INTAKE.endpoints.generate) {
+          return of({ sessionId: 'sess-2', ownerToken: 'token-2' });
+        }
+        if (url === ICP_INTAKE.endpoints.result) {
+          const next = resultResponses.length > 1 ? resultResponses.shift() : resultResponses[0];
+          return next instanceof HttpErrorResponse ? throwError(() => next) : of(next ?? { status: 'pending' });
+        }
+        throw new Error(`Unexpected POST to ${url}`);
+      });
+    });
+
+    it('regenerates through the generate endpoint with the full answers + feedback + derived priorVersion — never the chat endpoint', async () => {
+      window.localStorage.setItem(ICP_STORAGE_KEY, JSON.stringify(icpStoredV1Run()));
+      resultResponses = [
+        { status: 'ready', documentMarkdown: '# v1', version: 1 },
+        { status: 'ready', documentMarkdown: '# v2', version: 2, derivatives: { summary_25: 'New 25.' } },
+      ];
+
+      const events: MktgGenerateProgress[] = [];
+      service.generate(icpRequest('Sharpen the pitch.')).subscribe((event) => events.push(event));
+
+      // priorVersion is derived from the STORED run, never passed by the caller.
+      expect(httpPost).toHaveBeenCalledWith(ICP_INTAKE.endpoints.generate, {
+        answers: ICP_ANSWERS,
+        feedback: 'Sharpen the pitch.',
+        priorVersion: 1,
+      });
+
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+      // Stale v1 poll response (the fresh session's poll gate is still v1) — no document event yet.
+      expect(events).toEqual([{ type: 'submitted' }]);
+
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+      expect(events).toHaveLength(2);
+
+      const stored = JSON.parse(window.localStorage.getItem(ICP_STORAGE_KEY) ?? 'null') as MktgStoredAgentRun;
+      // Version history is kept; the run now rides the FRESH session, and the
+      // envelope's derivatives are persisted with the version for the chips.
+      expect(stored).toMatchObject({ sessionId: 'sess-2', ownerToken: 'token-2' });
+      expect(stored.versions).toHaveLength(2);
+      expect(stored.versions[1]).toMatchObject({ version: 2, document: '# v2', feedback: 'Sharpen the pitch.', derivatives: { summary_25: 'New 25.' } });
+    });
+
+    it('resubmits an edit-inputs change with priorVersion but no feedback (the BFF synthesizes the revision directive)', async () => {
+      window.localStorage.setItem(ICP_STORAGE_KEY, JSON.stringify(icpStoredV1Run()));
+      resultResponses = [{ status: 'ready', documentMarkdown: '# v2', version: 2 }];
+
+      service.generate(icpRequest()).subscribe();
+
+      expect(httpPost).toHaveBeenCalledWith(ICP_INTAKE.endpoints.generate, { answers: ICP_ANSWERS, priorVersion: 1 });
     });
   });
 });
