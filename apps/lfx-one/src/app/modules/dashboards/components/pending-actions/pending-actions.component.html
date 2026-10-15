@@ -114,14 +114,8 @@
                         <i class="fa-light fa-arrow-up-right-from-square text-[11px] text-gray-400 shrink-0 no-underline" aria-hidden="true"></i>
                       </a>
                     } @else if (item.type === 'JoinApplication') {
-                      <div class="flex flex-col gap-0.5 sm:flex-1 sm:min-w-0 sm:px-4">
-                        @if (item.applicationApplicantName) {
-                          <span class="text-sm font-medium text-gray-900 break-words">{{ item.applicationApplicantName }}</span>
-                        }
-                        <span class="text-sm text-gray-900 break-all" data-testid="dashboard-pending-actions-application-email">{{
-                          item.applicationApplicantEmail
-                        }}</span>
-                        <span class="text-xs text-gray-500 break-words" data-testid="dashboard-pending-actions-application-group">{{ item.badge }}</span>
+                      <div class="sm:flex-1 sm:min-w-0 sm:px-4">
+                        <lfx-join-request-summary [item]="item" testIdPrefix="dashboard-pending-actions-application" />
                       </div>
                     } @else if (item.isInvitation) {
                       <div class="flex flex-col gap-0.5 sm:flex-1 sm:min-w-0 sm:px-4">
@@ -227,16 +221,16 @@
                             severity="primary"
                             [label]="processingApplicationKey() === item.rowKey ? 'Saving' : 'Approve'"
                             [loading]="processingApplicationKey() === item.rowKey"
-                            [disabled]="processingApplicationKey() !== null || !item.committeeUid || !item.applicationUid || !item.applicationApplicantEmail"
+                            [disabled]="processingApplicationKey() !== null || !item.isReviewableApplication"
                             [ariaLabel]="'Approve request from ' + item.applicationApplicantEmail + ' to join ' + item.badge"
                             (onClick)="onApproveApplication(item)"
                             data-testid="dashboard-pending-actions-application-approve" />
                           <lfx-button
                             size="small"
-                            severity="secondary"
+                            severity="danger"
                             [text]="true"
                             label="Reject"
-                            [disabled]="processingApplicationKey() !== null || !item.committeeUid || !item.applicationUid || !item.applicationApplicantEmail"
+                            [disabled]="processingApplicationKey() !== null || !item.isReviewableApplication"
                             [ariaLabel]="'Reject request from ' + item.applicationApplicantEmail + ' to join ' + item.badge"
                             (onClick)="onRejectApplication(item)"
                             data-testid="dashboard-pending-actions-application-reject" />
@@ -304,16 +298,18 @@
                       }
                     </div>
                     <!-- Dismiss — skeleton while RSVP meeting data is loading, real button once ready. Invitations are resolved
-                       server-side (Accept/Decline), never cookie-dismissed, so they render no Dismiss control. Formation items
+                       server-side (Accept/Decline), never cookie-dismissed, so they render no Dismiss control. Join requests can be
+                       dismissed (hidden for this user only) so an admin delegating review can clear them. Formation items
                        are resolved on the checklist and stay until done or skipped (#1956, #2732), so they render none either. -->
-                    @if (!item.isInvitation && !item.isFormationItem && item.type !== 'JoinApplication') {
+                    @if (!item.isInvitation && !item.isFormationItem) {
                       @if (item.isRsvpInline && (!item.meeting || item.isLoading)) {
                         <p-skeleton width="4.5rem" height="1.25rem" styleClass="shrink-0 self-start sm:self-auto sm:ml-4" />
                       } @else {
                         <button
                           type="button"
-                          class="shrink-0 self-start sm:self-auto sm:ml-4 text-[10px] text-gray-400 hover:text-gray-500 hover:underline transition-colors whitespace-nowrap"
+                          class="shrink-0 self-start sm:self-auto sm:ml-4 text-[10px] text-gray-400 hover:text-gray-500 hover:underline transition-colors whitespace-nowrap disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
                           (click)="handleDismiss(item)"
+                          [disabled]="item.type === 'JoinApplication' && (processingApplicationKey() !== null || !item.isReviewableApplication)"
                           [attr.aria-label]="'Dismiss: ' + item.text"
                           [attr.data-testid]="'dashboard-pending-actions-dismiss-' + item.type">
                           Dismiss

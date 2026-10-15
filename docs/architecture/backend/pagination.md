@@ -86,6 +86,38 @@ The `page_token` from the query service passes through unchanged.
 > only for internal consumers that need the raw upstream cursor, like committee-activity's
 > saturation walk.
 
+### Management vote summaries and closing-only lists
+
+`GET /api/votes/summary` accepts exactly one nonempty `parent=project:<uid>` and an optional
+nonempty `group` committee name. Other keys and repeated values are rejected. Accepted Group
+names are trimmed before the caller-authorized indexed scan uses `committee_name:<group>`.
+The endpoint returns `{ active_votes, closing_soon, as_of }`. No invitation lookup or project enrichment
+is needed. Search, status, and pagination never affect these totals; foundation scope is the
+selected foundation's project UID, not an expansion into descendants.
+
+`GET /api/votes?closing_soon=true` applies the shared active/deadline predicate to the complete
+normalized set **before** sorting and slicing. This BFF-only flag accepts a single `true` or
+`false` and is never forwarded upstream. True responses add `total_records` from the same
+snapshot as the returned page; the dashboard skips the separate count request in this mode.
+False/omitted flags preserve the ordinary response shape. Summary and list both require
+`failOnPartial: true`, so a failed scan is unavailable, never a partial total.
+
+The canonical `filters=status:active` clause is evaluated locally with normalized status for
+both `GET /api/votes` and `GET /api/votes/count`. Forwarding it as an exact upstream term would
+exclude legacy mixed-case active votes that the summary counts. The BFF removes only that
+clause, keeps other filters/search/scope upstream, and applies normalized active matching to
+the complete authorized scan. The Active count therefore drains pages rather than using the
+upstream exact-value count; it ignores list pagination and rejects incomplete scans. Other
+count queries and the internal upstream-cursor passthrough retain their existing behavior.
+Recognized indexed statuses are canonicalized in returned rows so status-dependent actions
+agree with the normalized predicates; unrecognized values are preserved.
+
+Closing means `now < end_time <= now + 7 × 24 hours`. Active totals still include indexed-active
+votes whose deadlines are past or invalid. The summary's RFC3339 `as_of` describes its snapshot;
+list pagination takes a fresh snapshot, so counts can legitimately differ at a deadline.
+Existing cursor recovery handles shrinking sets. Refresh/re-entry reloads totals and rows,
+but cannot promise immediate convergence of the search index after mutations.
+
 ## Backend: Complete Fetch (All Pages)
 
 When the server needs all records (e.g., meeting registrants for invitation checks), use the `fetchAllQueryResources` helper:

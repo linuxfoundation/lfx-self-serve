@@ -688,6 +688,7 @@ export const ORG_CLA_MANAGERS_COPY = {
   addedTitle: 'CLA Manager added',
   removeAction: 'Remove',
   removeBlockedLabel: 'Remove. A CLA must always have at least one CLA Manager.',
+  offRosterReason: 'Only a CLA Manager named on this CCLA can add or remove CLA Managers',
 } as const;
 
 export const ORG_CLA_MANAGER_REMOVE_COPY = {

@@ -15,9 +15,11 @@ import {
   QueryServiceResponse,
   UpdateVoteRequest,
   Vote,
+  VoteListResponse,
+  VoteSummary,
   VoteResultsResponse,
 } from '@lfx-one/shared/interfaces';
-import { compareVotesByRecency, computeIsFoundation, sortCommentResponsesByRecency } from '@lfx-one/shared/utils';
+import { compareVotesByRecency, computeIsFoundation, isVoteClosingSoon, normalizePollStatus, sortCommentResponsesByRecency } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -151,8 +153,9 @@ export class VoteService {
    * Client `page_size`/`page_token`/`order` never go upstream: `page_token` is the BFF's own opaque
    * `offset:<n>` cursor (clients already treat the token as opaque) and `order` is the legacy param
    * the query-service ignores. `filters`/`filters_or`/`parent`/`tags`/`name` still narrow the
-   * drained set upstream, so the sorted set is exactly the filtered set and ordering holds across
-   * pagination and filters. Recently-opened interplay (GH-2730/GH-1558 review): a vote opened inside
+   * drained set upstream, except `filters=status:active`: that predicate runs locally with the
+   * same status normalization as the summary. Ordering holds across pagination and filters.
+   * Recently-opened interplay (GH-2730/GH-1558 review): a vote opened inside
    * the index-lag window still reads `disabled` in the drained set, so the status tier places it after
    * the active block and the client's `mergeRecentlyOpenedVotes` rebadge can't reposition it (or
    * surface it on page 1 when more than a page of active votes exists). Accepted: tier-2's
@@ -162,14 +165,17 @@ export class VoteService {
    * `project_name`, `project_slug`, `is_foundation` and `parent_project_uid`; opt out when the
    * caller discards them.
    */
-  public async getVotes(req: Request, query: Record<string, unknown> = {}, options: { includeProject?: boolean } = {}): Promise<PaginatedResponse<Vote>> {
+  public async getVotes(req: Request, query: Record<string, unknown> = {}, options: { includeProject?: boolean } = {}): Promise<VoteListResponse> {
     const { includeProject = true } = options;
     logger.debug(req, 'get_votes', 'Starting vote fetch', {
       query_params: Object.keys(query),
     });
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { page_size: rawPageSize, page_token: rawPageToken, order: _order, ...upstreamParams } = query;
+    const { page_size: rawPageSize, page_token: rawPageToken, order: _order, closing_soon: closingSoon, ...upstreamParams } = query;
+    if (closingSoon !== undefined && closingSoon !== 'true' && closingSoon !== 'false') {
+      throw ServiceValidationError.forField('closing_soon', 'Expected a single true or false value', { operation: 'get_votes', service: 'vote_service' });
+    }
 
     // Unscoped calls drain the entire vote index and re-sort per request (GH-1558 review) — every
     // first-party caller narrows, so log the unscoped path to make a stray caller visible before it
@@ -178,21 +184,9 @@ export class VoteService {
       logger.debug(req, 'get_votes', 'Unscoped vote list request drains the full vote index');
     }
 
-    // failOnPartial (GH-1558): the offset slices assume the drained set is the whole filtered set —
-    // a later page failing must surface as an error, not a 200 with votes silently missing.
-    const drained = await fetchAllQueryResources<IndexedVote>(
-      req,
-      (pageToken) =>
-        this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVote>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          ...upstreamParams,
-          type: 'vote',
-          page_size: VoteService.voteListUpstreamPageSize,
-          ...(pageToken && { page_token: pageToken }),
-        }),
-      { failOnPartial: true }
-    );
-
-    const sorted = drained.map((vote) => this.normalizeIndexedVote(req, vote)).sort(compareVotesByRecency);
+    const scoped = await this.fetchScopedIndexedVotes(req, upstreamParams);
+    const nowMs = Date.now();
+    const sorted = (closingSoon === 'true' ? scoped.filter((vote) => isVoteClosingSoon(vote, nowMs)) : scoped).sort(compareVotesByRecency);
 
     const pageSize = this.parseVoteListPageSize(rawPageSize);
     const offset = this.parseVoteListOffset(rawPageToken);
@@ -211,7 +205,18 @@ export class VoteService {
       has_more_pages: !!pageToken,
     });
 
-    return { data: votes, page_token: pageToken };
+    return { data: votes, page_token: pageToken, ...(closingSoon === 'true' && { total_records: sorted.length }) };
+  }
+
+  /** Complete management scope; no personal participation lookup or project enrichment. */
+  public async getVotesSummary(req: Request, parent: string, group?: string): Promise<VoteSummary> {
+    const votes = await this.fetchScopedIndexedVotes(req, { parent, ...(group && { filters: [`committee_name:${group}`] }) });
+    const nowMs = Date.now();
+    return {
+      active_votes: votes.filter((vote) => normalizePollStatus(vote.status) === PollStatus.ACTIVE).length,
+      closing_soon: votes.filter((vote) => isVoteClosingSoon(vote, nowMs)).length,
+      as_of: new Date(nowMs).toISOString(),
+    };
   }
 
   /**
@@ -264,6 +269,15 @@ export class VoteService {
     logger.debug(req, 'get_votes_count', 'Fetching vote count', {
       query_params: Object.keys(query),
     });
+
+    // The summary accepts legacy mixed-case active statuses; an exact upstream count would miss them.
+    if (this.hasActiveStatusFilter(query)) {
+      // Count is scope-wide even if a caller supplies list pagination parameters.
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { page_size: _pageSize, page_token: _pageToken, ...scope } = query;
+      const votes = await this.fetchScopedIndexedVotes(req, scope);
+      return votes.length;
+    }
 
     const params = {
       ...query,
@@ -734,10 +748,44 @@ export class VoteService {
     });
   }
 
+  private hasActiveStatusFilter(query: Record<string, unknown>): boolean {
+    const filters = query['filters'];
+    const active = `status:${PollStatus.ACTIVE}`;
+    return filters === active || (Array.isArray(filters) && filters.includes(active));
+  }
+
+  /** Offset pages and totals must reject incomplete scans rather than silently undercount. */
+  private async fetchScopedIndexedVotes(req: Request, upstreamParams: Record<string, unknown>): Promise<Vote[]> {
+    const activeOnly = this.hasActiveStatusFilter(upstreamParams);
+    const params = { ...upstreamParams };
+    if (activeOnly) {
+      // Preserve every other upstream filter, but do not discard mixed-case active rows before normalization.
+      const rawFilters = params['filters'];
+      const filters = Array.isArray(rawFilters) ? rawFilters : [rawFilters];
+      const remaining = filters.filter((clause) => clause !== `status:${PollStatus.ACTIVE}`);
+      if (remaining.length) params['filters'] = remaining;
+      else delete params['filters'];
+    }
+    const drained = await fetchAllQueryResources<IndexedVote>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVote>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          ...params,
+          type: 'vote',
+          page_size: VoteService.voteListUpstreamPageSize,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
+    );
+    const votes = drained.map((vote) => this.normalizeIndexedVote(req, vote));
+    return activeOnly ? votes.filter((vote) => normalizePollStatus(vote.status) === PollStatus.ACTIVE) : votes;
+  }
+
   /**
    * Normalizes a vote from the query service indexer shape (vote_uid) to the
    * canonical REST shape (uid). The voting service indexes votes with `vote_uid`
    * while the REST API returns `uid` — these are the same value, different field names.
+   * Canonicalizes recognized statuses so row actions agree with normalized filtering.
    */
   private normalizeIndexedVote(req: Request, raw: IndexedVote): Vote {
     const uid = raw.uid || raw.vote_uid;
@@ -748,7 +796,7 @@ export class VoteService {
     }
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { vote_uid: _discard, ...rest } = raw;
-    return { ...rest, uid: uid ?? '' };
+    return { ...rest, uid: uid ?? '', status: normalizePollStatus(rest.status) ?? rest.status };
   }
 
   // encodeURIComponent leaves `.` untouched, so reject exact dot segments — otherwise

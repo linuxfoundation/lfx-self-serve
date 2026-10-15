@@ -79,7 +79,7 @@
       } @else {
         <lfx-table
           [value]="displayedVotes()"
-          [paginator]="displayedVotes().length > 0"
+          [paginator]="displayedVotes().length > 0 && !paginationLoading()"
           [rows]="rowsPerPage()"
           [first]="first()"
           [totalRecords]="totalRecords()"

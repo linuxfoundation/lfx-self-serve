@@ -123,4 +123,41 @@ describe('AudienceCardGridComponent', () => {
     expect(text).toContain('size unknown');
     expect(text).not.toContain('0 contacts');
   });
+
+  describe('select all / clear', () => {
+    it('emits every shown list that is neither included nor excluded, and clears only included ones', () => {
+      const selected: string[][] = [];
+      const cleared: string[][] = [];
+      fixture.componentInstance.selectAll.subscribe((refs) => selected.push(refs.map((r) => r.listId)));
+      fixture.componentInstance.clearAll.subscribe((ids) => cleared.push(ids));
+      fixture.componentRef.setInput('excludedIds', new Set(['102']));
+      render([bucket('event_registration', [list(), list({ listId: '102' }), list({ listId: '103' })])], { selectedIds: new Set(['101']) });
+
+      host().querySelector<HTMLButtonElement>('[data-testid="audience-card-grid-select-all"]')?.click();
+      host().querySelector<HTMLButtonElement>('[data-testid="audience-card-grid-clear"]')?.click();
+
+      expect(selected, 'an excluded list is never swept into Include').toEqual([['103']]);
+      expect(cleared).toEqual([['101']]);
+    });
+
+    it('does nothing while disabled', () => {
+      const selected: unknown[] = [];
+      fixture.componentInstance.selectAll.subscribe((refs) => selected.push(refs));
+      render([bucket('event_registration', [list()])], { disabled: true });
+
+      host().querySelector<HTMLButtonElement>('[data-testid="audience-card-grid-select-all"]')?.click();
+
+      expect(selected).toEqual([]);
+    });
+  });
+
+  it('never sweeps uncertain lists into Include with Select all', () => {
+    const selected: string[][] = [];
+    fixture.componentInstance.selectAll.subscribe((refs) => selected.push(refs.map((r) => r.listId)));
+    render([bucket('event_registration', [list()]), bucket('uncertain', [list({ listId: '888', name: 'LF Global Opt-Outs', signal: 'uncertain' })])]);
+
+    host().querySelector<HTMLButtonElement>('[data-testid="audience-card-grid-select-all"]')?.click();
+
+    expect(selected).toEqual([['101']]);
+  });
 });

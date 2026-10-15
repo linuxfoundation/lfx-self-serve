@@ -57,15 +57,7 @@
                   <!-- Middle: meeting/action name -->
                   <div class="flex-1 min-w-0" [class]="item.type === 'JoinApplication' ? 'basis-full sm:basis-0' : ''">
                     @if (item.type === 'JoinApplication') {
-                      <div class="flex flex-col gap-1 min-w-0 break-words [overflow-wrap:anywhere]">
-                        @if (item.applicationApplicantName) {
-                          <span class="text-sm font-medium text-gray-900" data-testid="pending-actions-drawer-application-name">{{
-                            item.applicationApplicantName
-                          }}</span>
-                        }
-                        <span class="text-sm text-gray-900" data-testid="pending-actions-drawer-application-email">{{ item.applicationApplicantEmail }}</span>
-                        <span class="text-xs text-gray-500" data-testid="pending-actions-drawer-application-group">{{ item.badge }}</span>
-                      </div>
+                      <lfx-join-request-summary [item]="item" testIdPrefix="pending-actions-drawer-application" (groupLinkClick)="onClose()" />
                     } @else if (item.isFormationItem) {
                       <!-- Formation item (#2732): bold title over a gray meta line — project · due · required for Active. The
                            title wraps rather than truncating, so no hover-only `title` tooltip is needed to reach the full text. -->
@@ -117,16 +109,16 @@
                           severity="primary"
                           [label]="processingApplicationKey() === item.rowKey ? 'Saving' : 'Approve'"
                           [loading]="processingApplicationKey() === item.rowKey"
-                          [disabled]="processingApplicationKey() !== null || !item.committeeUid || !item.applicationUid || !item.applicationApplicantEmail"
+                          [disabled]="processingApplicationKey() !== null || !item.isReviewableApplication"
                           [ariaLabel]="'Approve application from ' + item.applicationApplicantEmail + ' to ' + item.badge"
                           (onClick)="approveApplicationRequested.emit(item)"
                           data-testid="pending-actions-drawer-application-approve" />
                         <lfx-button
                           size="small"
-                          severity="secondary"
+                          severity="danger"
                           [text]="true"
                           label="Reject"
-                          [disabled]="processingApplicationKey() !== null || !item.committeeUid || !item.applicationUid || !item.applicationApplicantEmail"
+                          [disabled]="processingApplicationKey() !== null || !item.isReviewableApplication"
                           [ariaLabel]="'Reject application from ' + item.applicationApplicantEmail + ' to ' + item.badge"
                           (onClick)="rejectApplicationRequested.emit(item)"
                           data-testid="pending-actions-drawer-application-reject" />
@@ -223,14 +215,15 @@
                   <!-- Dismiss — skeleton while RSVP meeting data is loading, real button once ready. Invitations are resolved
                        server-side (Accept/Decline), never cookie-dismissed, so they render no Dismiss control. Formation items
                        are resolved on the checklist and stay until done or skipped (#1956, #2732), so they're excluded too. -->
-                  @if (item.type !== 'JoinApplication' && !item.isInvitation && !item.isFormationItem) {
+                  @if (!item.isInvitation && !item.isFormationItem) {
                     @if (item.isRsvpInline && (item.isMeetingLoading || !item.meeting)) {
                       <p-skeleton width="4.5rem" height="1.25rem" styleClass="shrink-0" />
                     } @else {
                       <button
                         type="button"
-                        class="shrink-0 text-[10px] text-gray-400 hover:text-gray-500 hover:underline transition-colors whitespace-nowrap"
+                        class="shrink-0 text-[10px] text-gray-400 hover:text-gray-500 hover:underline transition-colors whitespace-nowrap disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
                         (click)="handleDismiss(item)"
+                        [disabled]="item.type === 'JoinApplication' && (processingApplicationKey() !== null || !item.isReviewableApplication)"
                         [attr.aria-label]="'Dismiss: ' + item.text"
                         [attr.data-testid]="'pending-actions-drawer-dismiss-' + item.type">
                         Dismiss

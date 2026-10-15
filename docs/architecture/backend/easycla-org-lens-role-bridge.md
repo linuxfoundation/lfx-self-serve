@@ -1,7 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-# Organization Lens EasyCLA — role-bridge (who sees Sign, who can change the approval list, who can invalidate, who can change Auto ECLA, who can download the signed CCLA)
+# Organization Lens EasyCLA — role-bridge (who sees Sign, who can change the approval list, who can invalidate, who can change Auto ECLA, who can download the signed CCLA, who can add or remove CLA Managers)
 
 Internal support note. Not Help Center copy.
 
@@ -63,6 +63,16 @@ Off the roster the control renders **disabled**, with "Only a CLA Manager named 
 
 The restriction is deliberately on the control and not on the producer: widening EasyCLA's document ACL to organization admins would need a new endpoint and a gateway permission, and the decision was to match the Corporate Console's existing audience instead.
 
+## Who can add or remove CLA Managers
+
+The CLA Managers tab's **Add CLA Manager** and **Remove** need ACS for the pair — `signature_approval_list:update` for Add (the same string Corporate Console uses for that button), `cla_manager_delete:remove` for Remove — **and** the viewer on that CCLA's roster (`viewerIsClaManager`).
+
+EasyCLA does not read the roster on either write. It refuses both from admin scope, before it looks at the person being added, and ACS answers yes to an LF admin, so a tab gated on ACS alone offered an admin off the roster Add and every Remove and then answered 403. The roster stands in for "not admin scope" because holding the CLA manager role is what issues a manager's own pair grant. An LF admin who is also on the roster still sees the controls and is still refused; the roster cannot tell the two apart.
+
+Add shows on every signed CCLA and is disabled unless both checks pass. Off the roster it carries "Only a CLA Manager named on this CCLA can add or remove CLA Managers" on hover and in its accessible name. A CLA manager on the roster whom ACS denies, or has not answered yet, sees Add disabled with no sentence, because the sentence would contradict them. Remove is hidden unless both checks pass, so a viewer off the roster sees no column of disabled buttons and no last-manager hint. A row with no CLA Manager list at all fails closed: Add disabled with the sentence, no Remove.
+
+The BFF write routes do not check the roster. EasyCLA's admin-scope refusal is the enforcement, and the refusal toast stays as the backstop.
+
 ## Grain
 
 CLA authority is per **project|organization pair**, not org-wide. A signatory for company A / project X cannot attestation-Continue for project Y.
@@ -75,11 +85,11 @@ Writes stay blocked while impersonating. The permission check itself is a read, 
 
 The roster flag and the CLA Managers tab's own-row mark are computed for the impersonated user, not the support engineer, so impersonating shows whether that user is on the CLA Manager list.
 
-## What to tell a viewer who sees no approval-list or Invalidate controls, or an Auto ECLA toggle or download they cannot use
+## What to tell a viewer who sees no approval-list, Invalidate, or Remove CLA Manager controls, or an Auto ECLA toggle, download, or Add CLA Manager they cannot use
 
-The same answers cover both shapes — the approval-list and Invalidate controls are absent, while the Auto ECLA switch and the signed-document download are present and disabled. Work out which of these applies:
+The same answers cover both shapes — the approval-list, Invalidate, and Remove CLA Manager controls are absent, while the Auto ECLA switch, the signed-document download, and Add CLA Manager are present and disabled. Work out which of these applies:
 
-- **Not on the CLA Manager list.** An organization admin is routinely not on it, even when ACS grants them the write. Ask a CLA manager on the agreement to add them as a CLA manager.
+- **Not on the CLA Manager list.** An organization admin is routinely not on it, even when ACS grants them the write. Ask a CLA manager on the agreement to add them as a CLA manager. An LF admin who is on the list and still cannot add or remove a CLA manager is refused by EasyCLA for being an admin, not for the list; ask another CLA manager on the agreement to make the change.
 - **Added recently.** ACS can take about thirty minutes to reflect a new CLA manager. The roster flag is resolved when the list loads, so if they added themselves the controls can also stay withheld, and the Auto ECLA switch and the download disabled, until the page is reloaded. Wait, then reload.
 - **On the list under a different spelling.** The match is exact, including case. A list entry whose LF username differs from their login only in case does not count, and the write is refused for the same reason. Raise it with EasyCLA support so the entry can be corrected.
 - **The agreement has no CLA Manager list at all.** The approval-list and Invalidate controls are withheld from everyone on that row. The Auto ECLA switch still shows, disabled for everyone, with the sentence naming CLA Manager as the role that can change it. The download shows disabled too, carrying its own separate sentence about who can download it — the roster answer fails closed, but the document is still known to exist. This is a data problem on the EasyCLA record, so raise it with EasyCLA support.

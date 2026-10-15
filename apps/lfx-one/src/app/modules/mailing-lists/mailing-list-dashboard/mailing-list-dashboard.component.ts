@@ -112,6 +112,8 @@ export class MailingListDashboardComponent {
   public readonly myStatCards: Signal<StatCardItem[]> = this.initMyStatCards();
   public readonly availableServices: Signal<GroupsIOService[]> = this.initServices();
   public readonly hasNoServices: Signal<boolean> = this.initHasNoServices();
+  public readonly showNoServicesState: Signal<boolean> = this.initShowNoServicesState();
+  protected readonly canCreateMailingList: Signal<boolean> = computed(() => this.canWrite() && !this.hasNoServices());
 
   /**
    * Open create mailing list dialog/page
@@ -393,6 +395,11 @@ export class MailingListDashboardComponent {
 
   private initHasNoServices(): Signal<boolean> {
     return computed(() => this.servicesLoaded() && this.availableServices().length === 0);
+  }
+
+  private initShowNoServicesState(): Signal<boolean> {
+    // A non-public service is hidden from non-auditors while its public lists stay readable.
+    return computed(() => this.hasNoServices() && this.mailingLists().length === 0);
   }
 
   private initializeFoundationOptions(): Signal<{ label: string; value: string | null }[]> {

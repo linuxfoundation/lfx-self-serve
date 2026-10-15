@@ -360,3 +360,214 @@ describe('AudienceBuilderProxyService wire mapping', () => {
     expect(sent?.includedLists[0]?.hubspotUrl).toContain('/objectLists/1/');
   });
 });
+
+describe('AudienceBuilderProxyService custom audiences', () => {
+  let service: AudienceBuilderProxyService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new AudienceBuilderProxyService();
+  });
+
+  const criteria = {
+    cities: ['Seoul'],
+    countries: [],
+    contactLocation: true,
+    eventRegistered: false,
+    educationEnrolled: false,
+    registeredFor: [],
+    gateEventHistory: false,
+    gateListId: '26716',
+    propertyFilters: [{ property: 'industry', operator: 'is_any_of' as const, values: ['X'] }],
+    speakers: { scope: 'current' as const, eventNames: ['OSS Korea 2026'] },
+    ambassadors: false,
+    educationTopics: ['Kubernetes'],
+    pageViewUrls: [],
+  };
+
+  it('sends snake_case criteria and omits blank optional ids', async () => {
+    proxyRequest.mockResolvedValue({ name: 'n', criteria: {}, branch_count: 3, warnings: [] });
+
+    await service.previewCustom(req, 'tlf', { criteria });
+
+    const [, , path, method, , body] = proxyRequest.mock.calls[0];
+    expect(path).toBe('/projects/tlf/audience-builder/custom/preview');
+    expect(method).toBe('POST');
+    expect(body.custom.criteria).toMatchObject({
+      contact_location: true,
+      gate_list_id: '26716',
+      property_filters: [{ property: 'industry', operator: 'is_any_of', values: ['X'] }],
+    });
+    expect(body.custom.criteria.speakers).toEqual({ scope: 'current', event_names: ['OSS Korea 2026'] });
+    expect(body.custom).not.toHaveProperty('name');
+    expect(body.custom.criteria.education_topics).toEqual(['Kubernetes']);
+    expect(body.custom.criteria, 'no topic property is sent unless the operator picked one').not.toHaveProperty('education_topic_property');
+  });
+
+  it('maps similar lists, dropping one with no id and an unknown recommendation', async () => {
+    proxyRequest.mockResolvedValue({
+      criteria: {},
+      questions: [],
+      notes: [],
+      similar: [
+        {
+          list: { list_id: '411', name: '25Q3 - Seoul - Mailable Contacts', hubspot_url: 'https://app.hubspot.com/x/411' },
+          recommendation: 'update',
+          reason: 'older',
+        },
+        { list: { list_id: '', name: 'blank' }, recommendation: 'reuse' },
+        { list: { list_id: '412', name: 'Seoul Meetup', hubspot_url: 'https://app.hubspot.com/x/412' }, recommendation: 'maybe' },
+      ],
+    });
+
+    const out = await service.interpretCustom(req, 'tlf', { request: 'Seoul' });
+
+    expect(out.similar.map((s) => s.list.listId)).toEqual(['411', '412']);
+    expect(out.similar[0].recommendation).toBe('update');
+    expect(out.similar[1].recommendation).toBeUndefined();
+  });
+
+  it('maps an interpretation, defaulting every array', async () => {
+    proxyRequest.mockResolvedValue({
+      criteria: { cities: ['Seoul'], contact_location: true, gate_list_id: '26716' },
+      brand_short: 'LF',
+      gate: { list_id: '26716', name: 'LF Master-list', hubspot_url: 'javascript:alert(1)' },
+      questions: [{ id: 'mailability', question: 'Gate?', options: ['a', 'b'] }],
+      notes: [],
+    });
+
+    const out = await service.interpretCustom(req, 'tlf', { request: 'Seoul', answers: [{ answer: 'a' }] });
+
+    expect(proxyRequest.mock.calls[0][5]).toEqual({ request: 'Seoul', answers: [{ answer: 'a' }] });
+    expect(out.criteria.countries).toEqual([]);
+    expect(out.criteria.propertyFilters).toEqual([]);
+    expect(out.criteria.eventRegistered).toBe(false);
+    expect(out.gate?.hubspotUrl, 'a non-http link is dropped').toBe('');
+    expect(out.questions[0].why).toBeUndefined();
+  });
+
+  // Upstream answered 2xx, so the list exists: an unusable reply is a do-not-retry partial, never a
+  // plain error the client would let the operator retry into a second list.
+  it.each([
+    ['no id', { list_id: '', name: 'Seoul', hubspot_url: 'https://app.hubspot.com/x' }],
+    ['a non-http link', { list_id: '7', name: 'Seoul', hubspot_url: 'javascript:alert(1)' }],
+  ])('turns a created list with %s into a partial carrying its name', async (_label, wire) => {
+    proxyRequest.mockResolvedValue(wire);
+
+    const error = await service.createCustom(req, 'tlf', { criteria }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(AudienceComposePartialError);
+    expect((error as AudienceComposePartialError).masterName).toBe('Seoul');
+  });
+
+  it('names a malformed create by the requested name when the reply carries none', async () => {
+    proxyRequest.mockResolvedValue(null);
+
+    const error = await service.createCustom(req, 'tlf', { criteria, name: 'My list' }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(AudienceComposePartialError);
+    expect((error as AudienceComposePartialError).masterName).toBe('My list');
+  });
+
+  // A dropped filter or scope would widen the audience the operator then creates, so an unknown
+  // criteria enum fails the reply instead.
+  it.each([
+    ['operator', { property_filters: [{ property: 'jobtitle', operator: 'is_like', values: ['x'] }] }, /property_filters.operator/],
+    ['speaker scope', { speakers: { scope: 'future', event_names: [] } }, /speakers.scope/],
+  ])('refuses an unknown upstream %s rather than dropping it', async (_label, criteria, field) => {
+    proxyRequest.mockResolvedValue({ criteria, questions: [], notes: [] });
+
+    await expect(service.interpretCustom(req, 'tlf', { request: 'x' })).rejects.toThrow(field);
+  });
+
+  it('drops a planned event with no name and malformed questions', async () => {
+    proxyRequest.mockResolvedValue({
+      criteria: {},
+      questions: [{ id: 'ok', question: 'Gate?', options: ['a', 2] }, { question: 'no id' }, { id: 'bad', question: 'x', options: 'nope' }, null],
+      notes: [],
+      event: { brand_short: 'X', event_dates: 'not-an-array' },
+    });
+
+    const out = await service.interpretCustom(req, 'tlf', { request: 'x' });
+
+    expect(out.event, 'the tab reads the event name; one without it is no event').toBeUndefined();
+    expect(out.questions).toEqual([{ id: 'ok', question: 'Gate?', why: undefined, options: ['a'] }]);
+  });
+
+  it('turns an unconfirmed create into a partial carrying the name', async () => {
+    proxyRequest.mockRejectedValue(
+      new MicroserviceError('boom', 500, 'UPSTREAM', { errorBody: { code: '500', message: 'unconfirmed', master_name: 'Seoul test' } })
+    );
+
+    const error = await service.createCustom(req, 'tlf', { criteria }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(AudienceComposePartialError);
+    expect((error as AudienceComposePartialError).masterName).toBe('Seoul test');
+  });
+
+  it('forwards the event name to QA and keeps the current-registrants check when it ran', async () => {
+    const check = { verdict: 'PASS', findings: [] };
+    proxyRequest.mockResolvedValue({
+      needs_disambiguation: false,
+      list_id: '1',
+      name: 'm',
+      checks: {
+        signal_mapping: check,
+        suppression: { ...check, applied_gdpr: true, applied_opt_out: true },
+        exclusion_completeness: { ...check, exclusion_count: 1 },
+        current_registrants: { verdict: 'FAIL', findings: [] },
+      },
+      overall: 'FAIL',
+    });
+
+    const out = await service.runQa(req, 'tlf', { listRef: '1', eventName: 'KubeCon Japan 2026' });
+
+    expect(proxyRequest.mock.calls[0][5]).toMatchObject({ event_name: 'KubeCon Japan 2026' });
+    expect(out.needsDisambiguation === false && out.checks.currentRegistrants?.verdict).toBe('FAIL');
+  });
+});
+
+describe('AudienceBuilderProxyService end-to-end test fields', () => {
+  let service: AudienceBuilderProxyService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new AudienceBuilderProxyService();
+  });
+
+  it("maps the hidden count, and each prior send's subject and match reason", async () => {
+    proxyRequest.mockResolvedValueOnce({ event: { event_name: 'E' }, lists: [], missing_signals: [], hidden: 5 });
+    const discovered = await service.discover(req, 'tlf', 'https://events.example.org/e');
+    expect(discovered.result.hidden).toBe(5);
+
+    proxyRequest.mockResolvedValueOnce({
+      emails: [
+        {
+          email_id: '1',
+          email_name: 'N',
+          hubspot_url: 'https://app.hubspot.com/x',
+          included_lists: [],
+          suppression_lists: [],
+          subject: 'S',
+          match_reason: 'brand_only',
+        },
+      ],
+    });
+    const sent = await service.getLastSent(req, 'tlf', 'E', '', 3);
+    expect(sent[0]).toMatchObject({ subject: 'S', matchReason: 'brand_only' });
+  });
+
+  it('maps the event an event audience was planned from', async () => {
+    proxyRequest.mockResolvedValue({
+      criteria: {},
+      questions: [],
+      notes: [],
+      similar: [],
+      event: { event_name: 'E', brand_short: 'AAIF', event_dates: ['2026-09-10'] },
+    });
+
+    const out = await service.interpretCustom(req, 'tlf', { request: 'x', eventUrl: 'https://events.example.org/e' });
+
+    expect(out.event).toEqual({ eventName: 'E', brandShort: 'AAIF', eventDates: ['2026-09-10'] });
+  });
+});
