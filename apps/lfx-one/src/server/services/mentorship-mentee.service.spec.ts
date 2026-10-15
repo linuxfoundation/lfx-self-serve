@@ -261,6 +261,7 @@ describe('MentorshipMenteeService apply', () => {
   const programTermId = '8e2d4c6a-1b3f-4a5c-8d7e-9f0a1b2c3d4e';
   const programPath = `${PROGRAMS_PATH}/${programId}`;
   const termPath = `${programPath}/terms/${programTermId}`;
+  const applyTargetPath = `${termPath}/apply-target`;
   let service: InstanceType<typeof MentorshipMenteeService>;
   let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
 
@@ -270,11 +271,9 @@ describe('MentorshipMenteeService apply', () => {
     service = new MentorshipMenteeService();
   });
 
-  it('builds the apply target from the program and the term', async () => {
+  it('builds the apply target from the single apply-target read', async () => {
     routeProxy(proxyRequest, {
-      [programPath]: () => ({ id: programId, name: 'Test Program', status: 'published', project_name: 'Test Project' }),
-      // No window dates, so the term takes applications whatever today is.
-      [termPath]: () => ({ id: programTermId, program_id: programId, name: 'Fall 2026', status: 'open' }),
+      [applyTargetPath]: () => ({ program_name: 'Test Program', project_name: 'Test Project', term_name: 'Fall 2026', accepting_applications: true }),
     });
 
     await expect(service.getMenteeApplyTarget(buildReq(), programId, programTermId)).resolves.toEqual({
@@ -283,14 +282,13 @@ describe('MentorshipMenteeService apply', () => {
       termName: 'Fall 2026',
       acceptingApplications: true,
     });
-    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', programPath, 'GET', undefined, undefined);
-    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', termPath, 'GET', undefined, undefined);
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', applyTargetPath, 'GET', undefined, undefined);
   });
 
-  it('reports a closed term as not accepting applications', async () => {
+  it('passes through a term that upstream reports as not accepting applications', async () => {
     routeProxy(proxyRequest, {
-      [programPath]: () => ({ id: programId, name: 'Test Program', status: 'published' }),
-      [termPath]: () => ({ id: programTermId, program_id: programId, name: 'Fall 2026', status: 'closed' }),
+      [applyTargetPath]: () => ({ program_name: 'Test Program', term_name: 'Fall 2026', accepting_applications: false }),
     });
 
     await expect(service.getMenteeApplyTarget(buildReq(), programId, programTermId)).resolves.toMatchObject({
@@ -299,11 +297,10 @@ describe('MentorshipMenteeService apply', () => {
     });
   });
 
-  it('propagates a 404 on the term read', async () => {
+  it('propagates a 404 on the apply-target read', async () => {
     const error = upstreamError(404, { error: 'not found' });
     routeProxy(proxyRequest, {
-      [programPath]: () => ({ id: programId, name: 'Test Program', status: 'published' }),
-      [termPath]: () => {
+      [applyTargetPath]: () => {
         throw error;
       },
     });
