@@ -11,8 +11,8 @@ const router = Router();
 const meetingController = new MeetingController();
 
 // AI agenda generation endpoint. Registered before every `/:uid` route, so a static path is never
-// read as a meeting id (#3613). The composer's Agenda & Resources section is the only caller in the
-// app, but this is an ordinary authenticated route any client holding a session can post to — and
+// read as a meeting id (#3613). The V1 wizard and the composer's Agenda & Resources section call it in
+// the app, but this is an ordinary authenticated route any client holding a session can post to — and
 // every call costs a LiteLLM completion, so it carries a per-user AI limiter on top of the global
 // /api one. The body's descriptors are all optional because in edit mode the section is reachable
 // with no title or type set.
