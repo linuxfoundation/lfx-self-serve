@@ -489,3 +489,10 @@ export interface MeetingOccurrenceStripRequest {
   seriesUid: string;
   password: string | null;
 }
+
+/**
+ * Where an organizer's page without a host key stands against the host-key window (E7-02): `closed`
+ * before it, `opening` for the first read after it opens, `retry` for the second, `settled` after (or
+ * `null` when the page is not waiting for a key at all).
+ */
+export type MeetingHostKeyWait = 'closed' | 'opening' | 'retry' | 'settled';

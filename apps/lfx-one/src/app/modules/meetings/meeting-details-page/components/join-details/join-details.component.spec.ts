@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Clipboard } from '@angular/cdk/clipboard';
-import { signal, WritableSignal } from '@angular/core';
+import { PLATFORM_ID, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Meeting, MeetingOccurrence, MeetingTimeState } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
@@ -28,8 +28,9 @@ describe('MeetingJoinDetailsComponent', () => {
   const build = (extra: Partial<Meeting> = {}): Meeting =>
     ({ id: 'meeting-1', start_time: new Date(Date.now() + 30 * 60_000).toISOString(), duration: 60, ...extra }) as Meeting;
 
-  beforeEach(async () => {
-    meeting = signal<Meeting | undefined>(build({ host_key: KEY, can_view_host_key: true }));
+  async function setup(platform: 'browser' | 'server' = 'browser', initial: Meeting = build({ host_key: KEY, can_view_host_key: true })): Promise<void> {
+    TestBed.resetTestingModule();
+    meeting = signal<Meeting | undefined>(initial);
     timeState = signal<MeetingTimeState | null>('before');
     loadedViaPastMeetingId = signal(false);
     cancelledOccurrence = signal<MeetingOccurrence | null>(null);
@@ -44,12 +45,15 @@ describe('MeetingJoinDetailsComponent', () => {
         { provide: MeetingDetailsStateService, useValue: { meeting, timeState, loadedViaPastMeetingId, cancelledOccurrence, now, reload } },
         { provide: Clipboard, useValue: { copy } },
         { provide: MessageService, useValue: { add } },
+        { provide: PLATFORM_ID, useValue: platform },
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(MeetingJoinDetailsComponent);
     fixture.detectChanges();
     await fixture.whenStable();
-  });
+  }
+
+  beforeEach(async () => setup());
 
   const query = (id: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
   const update = async (): Promise<void> => {
@@ -75,6 +79,10 @@ describe('MeetingJoinDetailsComponent', () => {
     expect(query('join-details-host-key-toggle')?.getAttribute('aria-pressed')).toBe('true');
     expect(query('join-details-host-key-toggle')?.getAttribute('aria-label')).toBeNull();
     expect(query('join-details-host-key')?.textContent).toContain(KEY);
+    // Read as its label and the key, not the bare digits.
+    const [labelId, valueId] = (query('join-details-host-key-toggle')?.getAttribute('aria-labelledby') ?? '').split(' ');
+    expect(fixture.nativeElement.querySelector(`#${labelId}`)?.textContent).toContain('Host key');
+    expect(fixture.nativeElement.querySelector(`#${valueId}`)?.textContent).toContain(KEY);
 
     (query('join-details-host-key-copy')?.querySelector('button') as HTMLButtonElement).click();
     expect(copy).toHaveBeenCalledWith(KEY);
@@ -104,6 +112,7 @@ describe('MeetingJoinDetailsComponent', () => {
     ['when the server says the viewer may not see it', () => meeting.set(build({ host_key: KEY, can_view_host_key: false }))],
     ['on an ended occurrence', () => timeState.set('ended')],
     ['on a past meeting', () => loadedViaPastMeetingId.set(true)],
+    ['once its window has closed on a page left open', () => now.set(new Date(Date.now() + 3 * HOUR))],
     ['on a cancelled occurrence', () => cancelledOccurrence.set({ occurrence_id: '1', start_time: '', duration: 60, status: 'cancel' })],
   ])('renders nothing %s', async (_case, arrange) => {
     arrange();
@@ -113,8 +122,12 @@ describe('MeetingJoinDetailsComponent', () => {
   });
 
   describe('for an organizer before the host-key window', () => {
+    const later = (): Meeting => build({ organizer: true, start_time: new Date(Date.now() + 5 * HOUR).toISOString() });
+    /** The window opens 70 minutes before the start: 3h50m from now. */
+    const opensAt = (): number => Date.now() + 5 * HOUR - 70 * 60_000;
+
     beforeEach(async () => {
-      meeting.set(build({ organizer: true, start_time: new Date(Date.now() + 5 * HOUR).toISOString() }));
+      meeting.set(later());
       await update();
     });
 
@@ -123,17 +136,57 @@ describe('MeetingJoinDetailsComponent', () => {
       expect(query('join-details-host-key-toggle')).toBeNull();
     });
 
-    it('reloads the meeting once when the window opens, so the server can return the key', async () => {
+    it('reads the meeting when the window opens, and once more if the key has still not come', async () => {
       expect(reload).not.toHaveBeenCalled();
 
-      now.set(new Date(Date.now() + 4 * HOUR));
+      now.set(new Date(opensAt() + 10_000));
       await update();
-      now.set(new Date(Date.now() + 4 * HOUR + 30_000));
+      expect(reload).toHaveBeenCalledTimes(1);
+      // Still waiting while it reads: the row stays.
+      expect(query('join-details-host-key-pending')).not.toBeNull();
+
+      now.set(new Date(opensAt() + 40_000));
+      await update();
+      expect(reload).toHaveBeenCalledTimes(1);
+
+      now.set(new Date(opensAt() + 100_000));
+      await update();
+      expect(reload).toHaveBeenCalledTimes(2);
+
+      // After the second read the section stops waiting.
+      now.set(new Date(opensAt() + 200_000));
+      await update();
+      expect(reload).toHaveBeenCalledTimes(2);
+      expect(query('join-details-section')).toBeNull();
+    });
+
+    it('shows the key once a read returns it, and reads no more', async () => {
+      now.set(new Date(opensAt() + 10_000));
+      await update();
+      meeting.set({ ...later(), host_key: KEY, can_view_host_key: true });
+      await update();
+      now.set(new Date(opensAt() + 100_000));
       await update();
 
       expect(reload).toHaveBeenCalledTimes(1);
-      expect(query('join-details-host-key-pending')).toBeNull();
+      expect(query('join-details-host-key-toggle')).not.toBeNull();
     });
+  });
+
+  it('reads nothing for a page opened inside the window without a key: its own read had the answer', async () => {
+    await setup('browser', build({ organizer: true }));
+    now.set(new Date(Date.now() + 5 * 60_000));
+    await update();
+
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('never reads on the server', async () => {
+    await setup('server', build({ organizer: true, start_time: new Date(Date.now() + 5 * HOUR).toISOString() }));
+    now.set(new Date(Date.now() + 4 * HOUR));
+    await update();
+
+    expect(reload).not.toHaveBeenCalled();
   });
 
   it('says nothing to a viewer who is not an organizer before the window', async () => {

@@ -79,6 +79,13 @@ export const HOST_KEY_EARLY_MINUTES = 70;
 export const HOST_KEY_LATE_MINUTES = 40;
 
 /**
+ * How long after the host-key window opens the V2 join details section reads the meeting a second time
+ * (E7-02), should the first read, timed by the browser's clock, come back without the key (a clock
+ * ahead of the server's, or a failed read). After that the section stops waiting.
+ */
+export const MEETING_HOST_KEY_RETRY_MS = 90_000;
+
+/**
  * Available meeting platforms and their configurations
  * @description Defines the supported platforms for hosting meetings
  */

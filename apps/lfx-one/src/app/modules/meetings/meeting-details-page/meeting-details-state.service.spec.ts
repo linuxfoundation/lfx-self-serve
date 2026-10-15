@@ -178,6 +178,21 @@ describe('MeetingDetailsStateService', () => {
       expect(state.status()).toBe('ready');
     });
 
+    it('re-reads the meeting on reload, unlike refresh without any retry state', async () => {
+      const state = create();
+      await settle();
+      getPublicMeeting.mockClear();
+      getPublicMeeting.mockReturnValue(of({ meeting: { ...buildMeeting(), host_key: '123456', can_view_host_key: true }, project }));
+
+      state.reload();
+      expect(state.retrying()).toBe(false);
+      await settle();
+
+      expect(getPublicMeeting).toHaveBeenCalledTimes(1);
+      expect(state.meeting()?.host_key).toBe('123456');
+      expect(state.status()).toBe('ready');
+    });
+
     it('keeps a working page when a background refresh fails', async () => {
       const state = create();
       await settle();
