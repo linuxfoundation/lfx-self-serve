@@ -4,6 +4,7 @@
 import { SALESFORCE_ID_PATTERN } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 
+import { logger } from './logger.service';
 import type { OrgClaService } from './org-cla.service';
 
 /**
@@ -44,13 +45,21 @@ export async function sanitizeFoundationSfid(
 
   try {
     const { claGroups } = await orgClaService.listClaGroups(req, orgUid);
-    const match = claGroups.find((group) => group.pairProjectSfid === projectSfid);
-    if (!match || !match.foundationSfid) return undefined;
-    return match.foundationSfid === foundationSfid ? foundationSfid : undefined;
-  } catch {
+    // Match the full pair rather than first-row-on-project: if an org has two rows for the same
+    // project under different foundations, a legitimate client pair on the second row would be
+    // dropped by a project-only `find`, denying a foundation-only manager their write controls.
+    const match = claGroups.find((group) => group.pairProjectSfid === projectSfid && group.foundationSfid === foundationSfid);
+    return match ? foundationSfid : undefined;
+  } catch (error: unknown) {
     // Upstream failure: we cannot verify the pair, so we cannot trust the client's foundation id.
     // ACS still answers the project pair alone — the exact degradation the preview endpoint's
-    // "no 5xx on preview" contract calls for.
+    // "no 5xx on preview" contract calls for. Log fail-closed so an outage of the CLA Group list
+    // is distinguishable from a client that sent a foundation the row does not sit under; mirrors
+    // the sibling fail-closed log in `OrgClaPermissionsService.check`.
+    logger.warning(req, 'check_org_cla_permission', 'Foundation pair verification failed closed', {
+      org_uid: orgUid,
+      reason: error instanceof Error ? error.message : 'unknown',
+    });
     return undefined;
   }
 }

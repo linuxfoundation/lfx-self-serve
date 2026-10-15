@@ -842,8 +842,10 @@ export class OrgClasController {
       // choosing). Re-derive the authoritative pair from the organization's own CLA Group list
       // and only pass the client's value through when it matches — otherwise drop it and let ACS
       // answer the project pair alone, which preserves the preview's "200 with `{ allowed }`,
-      // never 5xx" contract.
-      const sanitizedFoundationSfid = await sanitizeFoundationSfid(req, this.orgClaService, orgUid, request.projectSfid, request.foundationSfid);
+      // never 5xx" contract. `OrgClaPermissionsService.check` ignores the foundation half for
+      // `sign`, so skip the extra upstream fetch on sign previews (fired per row on hot views).
+      const sanitizedFoundationSfid =
+        request.action === 'sign' ? undefined : await sanitizeFoundationSfid(req, this.orgClaService, orgUid, request.projectSfid, request.foundationSfid);
       const allowed = await this.orgClaPermissions.check(req, orgUid, request.action, request.projectSfid, sanitizedFoundationSfid);
 
       logger.success(req, 'check_org_cla_permission', startTime, { org_uid: orgUid, action, allowed });

@@ -40,7 +40,14 @@ function orgClaService(response: OrgClaGroupList | Error): { listClaGroups: Retu
   return { listClaGroups };
 }
 
-const req = {} as Request;
+// The sanitizer calls `logger.warning(req, ...)` on upstream failure, which routes through
+// `req.log.warn`; a bare `{}` stub throws before the fail-closed path can return undefined.
+function reqWithLogger(): { request: Request; warn: ReturnType<typeof vi.fn> } {
+  const warn = vi.fn();
+  return { request: { log: { warn } } as unknown as Request, warn };
+}
+
+const req = reqWithLogger().request;
 
 describe('sanitizeFoundationSfid', () => {
   it('returns the client value when the resolved CLA Group carries the same foundation id', async () => {
@@ -113,5 +120,23 @@ describe('sanitizeFoundationSfid', () => {
     const service = orgClaService(new Error('upstream exploded'));
 
     await expect(sanitizeFoundationSfid(req, service, ORG, PROJECT, FOUNDATION)).resolves.toBeUndefined();
+  });
+
+  // Without this log, an outage of the CLA Group list is indistinguishable from a client that sent
+  // a foundation the row does not sit under — a foundation-only manager would see Add/Edit/Remove
+  // hidden during an upstream incident with nothing in the logs to say why.
+  it('logs fail-closed when listClaGroups fails so the degradation is traceable', async () => {
+    const service = orgClaService(new Error('upstream exploded'));
+    const { request, warn } = reqWithLogger();
+
+    await expect(sanitizeFoundationSfid(request, service, ORG, PROJECT, FOUNDATION)).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalledTimes(1);
+    const [payload, message] = warn.mock.calls[0] as [Record<string, unknown>, string];
+    expect(message).toMatch(/Foundation pair verification failed closed/i);
+    expect(payload).toMatchObject({
+      operation: 'check_org_cla_permission',
+      status: 'warning',
+      data: { org_uid: ORG, reason: 'upstream exploded' },
+    });
   });
 });

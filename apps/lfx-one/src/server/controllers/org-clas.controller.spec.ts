@@ -1229,21 +1229,25 @@ describe('OrgClasController.checkPermission', () => {
   // so ACS still answers the project pair alone and the browser still gets a 200 with
   // `{ allowed }` — never a 5xx on a preview request.
   it('drops a foundation id the organization CLA Group row does not match', async () => {
+    // Both ids are 18 chars so SALESFORCE_ID_PATTERN admits them and the sanitizer actually
+    // calls `listClaGroups`; the mismatch is exercised against the row rather than short-circuited
+    // on the first regex check.
     checkAcs.mockResolvedValue(true);
     listClaGroups.mockResolvedValue({
       orgUid: ORG,
       claGroups: [
-        { id: 'sig', pairProjectSfid: PROJECT, foundationSfid: 'a09410000182dREAL', projects: [], signed: true, status: 'signed', claGroupName: 'g' },
+        { id: 'sig', pairProjectSfid: PROJECT, foundationSfid: 'a09410000182dREALX', projects: [], signed: true, status: 'signed', claGroupName: 'g' },
       ],
     });
     const res = buildRes();
 
     await new OrgClasController().checkPermission(
-      req({ action: 'approval-list-update', projectSfid: PROJECT, foundationSfid: 'a09410000182dOTHR' }),
+      req({ action: 'approval-list-update', projectSfid: PROJECT, foundationSfid: 'a09410000182dOTHRX' }),
       res,
       vi.fn()
     );
 
+    expect(listClaGroups).toHaveBeenCalledWith(expect.anything(), ORG);
     expect(checkAcs).toHaveBeenCalledWith(expect.anything(), ORG, 'approval-list-update', PROJECT, undefined);
     expect(res.json).toHaveBeenCalledWith({ allowed: true });
   });
