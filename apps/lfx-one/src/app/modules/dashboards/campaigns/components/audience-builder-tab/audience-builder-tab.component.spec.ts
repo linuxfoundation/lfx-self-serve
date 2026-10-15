@@ -2981,6 +2981,25 @@ describe('AudienceBuilderTabComponent', () => {
       expect(getAudienceSuppressionLists).toHaveBeenLastCalledWith('tlf', 'SYN', 'Synthetic Summit 2026');
     });
 
+    it('keeps a row the operator unticked unticked when a failed rescope is retried', async () => {
+      await render();
+      builder().created.emit({ listId: '7777', name: 'Seoul', hubspotUrl: 'https://app.hubspot.com/x/7777' });
+      fixture.detectChanges();
+      const tab = fixture.componentInstance as unknown as { suppression(): ReadonlyMap<string, string>; onToggleSuppression(key: string): void };
+      expect(tab.suppression().has('lf_events_gdpr'), 'precondition: the generic row is pre-ticked').toBe(true);
+      tab.onToggleSuppression('lf_events_gdpr');
+      fixture.detectChanges();
+      getAudienceSuppressionLists.mockReturnValueOnce(throwError(() => new Error('down')));
+      builder().eventPlanned.emit({ eventName: 'Synthetic Summit 2026', brandShort: 'SYN', eventDates: [] });
+      fixture.detectChanges();
+
+      builder().created.emit({ listId: '8888', name: 'Busan', hubspotUrl: 'https://app.hubspot.com/x/8888' });
+      fixture.detectChanges();
+
+      expect(getAudienceSuppressionLists).toHaveBeenLastCalledWith('tlf', 'SYN', 'Synthetic Summit 2026');
+      expect(tab.suppression().has('lf_events_gdpr'), 'the operator unticked it; a retry must not re-tick it').toBe(false);
+    });
+
     it('sends a typed master name with the compose', async () => {
       await renderWithDiscovery();
       composeAudienceMaster.mockReturnValue(NEVER);

@@ -327,6 +327,11 @@ export class AudienceBuilderTabComponent {
   private existingSearchSeq = 0;
   /** The brand|event the no-discovery suppression rows were loaded for; '' is portfolio-wide. */
   private suppressionScope = '';
+  /**
+   * Every suppression row key loaded in this run. A rescope pre-ticks only rows NOT in here, so a
+   * row the operator unticked stays unticked -- even when a failed reload cleared the rows between.
+   */
+  private readonly loadedSuppressionKeys = new Set<string>();
   /** Bumped per preset so choosing the same signal twice re-applies it. */
   private customPresetVersion = 0;
   private previewSeq = 0;
@@ -2047,7 +2052,7 @@ export class AudienceBuilderTabComponent {
     }
     // Once a load has seeded (even an empty one), a rescope keeps the operator's ticks and
     // pre-ticks only the rows it adds.
-    const previousKeys = this.suppressionSeeded() ? new Set(this.suppressionLists().map((l) => l.key)) : null;
+    const previousKeys = this.suppressionSeeded() ? new Set(this.loadedSuppressionKeys) : null;
     this.suppressionScope = scope;
     this.loadSuppression(brand, name, previousKeys);
   }
@@ -2084,6 +2089,7 @@ export class AudienceBuilderTabComponent {
             return;
           }
           this.suppressionLists.set(lists);
+          lists.forEach((l) => this.loadedSuppressionKeys.add(l.key));
           this.suppressionFailed.set(false);
           this.suppressionLoading.set(false);
           if (previousKeys) {
@@ -2443,6 +2449,7 @@ export class AudienceBuilderTabComponent {
     this.existingSearchResults.set([]);
     this.existingSearching.set(false);
     this.suppressionScope = '';
+    this.loadedSuppressionKeys.clear();
     this.invalidatePreview();
   }
 
