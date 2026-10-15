@@ -966,6 +966,17 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       expect(text('meta-currency-note')).toBe("Spend and budgets are in the ad account's own currency.");
     });
 
+    it("prints a connection's amounts in the currency campaign-service names, and drops the note", async () => {
+      await setup(allConnected);
+      service['getMetaMonitorData'].mockReturnValue(of({ ...euroAccount, currency: 'EUR' }));
+      select('meta');
+
+      expect(text('meta-kpi-spend')).toBe('€100.00');
+      expect(text('meta-campaign-row-0')).toContain('€250.00');
+      expect(text('meta-campaign-row-0')).not.toContain('$');
+      expect(el('meta-currency-note')).toBeNull();
+    });
+
     it('keeps the legacy Meta panel in dollars, with no currency note', async () => {
       await setup({ viaCampaignService: false, platforms: {} });
       service['getMetaMonitorData'].mockReturnValue(of(euroAccount));
@@ -1225,6 +1236,27 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       expect(text('microsoft-campaign-row-0')).not.toContain('$');
       expect(text('microsoft-campaign-row-0')).toContain('100.00');
       expect(text('microsoft-currency-note')).toBe("Spend and budgets are in the ad account's own currency.");
+    });
+
+    it('prints spend and budgets in the currency campaign-service names, and drops the note', async () => {
+      await setup(allConnected);
+      service['getMicrosoftMonitorData'].mockReturnValue(of(reportBacked({ currency: 'EUR' })));
+      select('microsoft');
+
+      expect(text('microsoft-kpi-strip')).toContain('€412.50');
+      expect(text('microsoft-campaign-row-0')).toContain('€100.00');
+      expect(text('microsoft-kpi-strip')).not.toContain('$');
+      expect(el('microsoft-currency-note')).toBeNull();
+    });
+
+    it("uses the named currency's own minor units", async () => {
+      await setup(allConnected);
+      service['getMicrosoftMonitorData'].mockReturnValue(of(reportBacked({ currency: 'JPY' })));
+      select('microsoft');
+
+      expect(text('microsoft-kpi-strip')).toContain('¥413');
+      expect(text('microsoft-kpi-strip')).not.toContain('¥412.50');
+      expect(el('microsoft-currency-note')).toBeNull();
     });
 
     it('formats the freshness and "Last pulled" times in en-US, whatever the browser locale', async () => {
@@ -1490,6 +1522,51 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       expect(text('reddit-kpi-spend')).toBe('$412.50');
       expect(text('reddit-kpi-ctr')).toBe('1.2%');
       expect(el('reddit-campaign-creatives')).toBeNull();
+    });
+
+    /** Only campaign-service's path can name a currency; LinkedIn keeps its whole units in it. */
+    it('prints LinkedIn and Reddit amounts in the currency campaign-service names', async () => {
+      await setup(allConnected);
+      const named = {
+        accountLabel: 'CNCF',
+        pulledAt: '2026-10-13T00:00:00.000Z',
+        dateRange: { mode: 'last_30_days' },
+        campaigns: [
+          {
+            campaignId: '1',
+            campaignName: 'EU | KubeCon EU 2027 | Awareness',
+            eventName: 'KubeCon EU 2027',
+            creatives: [],
+            creativesMeasured: false,
+            status: 'ACTIVE',
+            totalBudget: 1000,
+            dailyBudget: 0,
+            spend: 412.5,
+            impressions: 52000,
+            clicks: 610,
+            ctr: 1.17,
+            conversions: 14,
+            pacingPct: 88,
+            pacingLabel: 'normal',
+            startDate: '2026-09-01',
+            endDate: '',
+          },
+        ],
+        accountTotals: { spend: 412.5, impressions: 52000, clicks: 610, conversions: 14, campaignCount: 1 },
+        actionItems: [],
+        currency: 'EUR',
+      };
+      service['getLinkedInMonitorData'].mockReturnValue(of(named));
+      service['getRedditMonitorData'].mockReturnValue(of(named));
+      select('linkedin');
+
+      expect(text('linkedin-kpi-spend')).toBe('€413');
+      expect(text('linkedin-campaign-row-0')).toContain('€1,000');
+      expect(text('linkedin-campaign-row-0')).not.toContain('$');
+
+      select('reddit');
+      expect(text('reddit-kpi-spend')).toBe('€412.50');
+      expect(text('reddit-campaign-row-0')).toContain('€1,000.00');
     });
   });
 

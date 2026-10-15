@@ -1130,6 +1130,13 @@ export const LINKEDIN_ADS_MONITOR_ACCOUNT_ID_PATTERN = /^[0-9]{1,64}$/;
 export const META_ADS_MONITOR_ACCOUNT_ID_PATTERN = /^act_[0-9]{1,60}$/;
 export const REDDIT_ADS_MONITOR_ACCOUNT_ID_PATTERN = /^[A-Za-z0-9_]{1,64}$/;
 
+/**
+ * The shape of campaign-service's optional account-monitor `currency` (`Pattern ^[A-Z]{3}$`): the ad
+ * account's ISO 4217 code, in which its spend and budgets are reported unconverted. The BFF passes
+ * on only a value of this shape; anything else is treated as absent, so the panel stays neutral.
+ */
+export const ACCOUNT_MONITOR_CURRENCY_PATTERN = /^[A-Z]{3}$/;
+
 /** The Monitor tab's date-range buttons, in trailing days. */
 export const MONITOR_DATE_RANGE_OPTIONS = [7, 14, 30] as const;
 

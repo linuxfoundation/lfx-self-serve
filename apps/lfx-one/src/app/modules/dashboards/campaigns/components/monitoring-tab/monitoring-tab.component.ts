@@ -152,6 +152,11 @@ export class MonitoringTabComponent implements OnInit {
    * Recorded with the data it describes, not read from the live source flag.
    */
   protected readonly metaAmountsInAccountCurrency = signal(false);
+  /**
+   * Whether the Meta panel states the unit once in a note: only for a connection's figures whose
+   * currency campaign-service did not name. A named currency is printed on every amount instead.
+   */
+  protected readonly metaCurrencyNote = computed(() => this.metaAmountsInAccountCurrency() && this.namedCurrencyFormat(this.metaData()?.currency) === null);
   protected readonly metaPulledAt = computed(() => {
     const pulledAt = this.metaData()?.pulledAt;
     return pulledAt ? new Date(pulledAt).toLocaleString('en-US') : null;
@@ -175,6 +180,8 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly reportBackedError = signal<string | null>(null);
   protected readonly reportBackedCampaigns = computed(() => this.reportBackedData()?.campaigns ?? []);
   protected readonly reportBackedTotalsNote = computed(() => this.totalsCoverageNote(this.reportBackedCampaigns()));
+  /** The "account's own currency" note shows only while campaign-service has not named the currency. */
+  protected readonly reportBackedCurrencyNote = computed(() => this.namedCurrencyFormat(this.reportBackedData()?.currency) === null);
   protected readonly reportBackedPulledAt = computed(() => {
     const pulledAt = this.reportBackedData()?.pulledAt;
     return pulledAt ? new Date(pulledAt).toLocaleString('en-US') : null;
@@ -679,11 +686,11 @@ export class MonitoringTabComponent implements OnInit {
       const data = this.reportBackedData();
       // The report-backed rows keep the neutral status badge they always had: Microsoft's statuses are
       // not the uppercase ACTIVE the green badge keys on, and X's should not turn green by accident.
-      // Their amounts are in the account's own currency, which campaign-service does not name, so
-      // they carry no $ (see formatAccountAmount).
+      // Their amounts are in the account's own currency: printed in it when campaign-service names
+      // it, and otherwise with no symbol at all (see formatAccountAmount).
       return data
         ? this.buildAccountPanelView(data.campaigns, data.accountTotals, {
-            currency: (n) => this.formatAccountAmount(n),
+            currency: this.namedCurrencyFormat(data.currency) ?? ((n) => this.formatAccountAmount(n)),
             pct: (n) => this.formatPct(n),
             statusBadges: false,
           })
@@ -698,10 +705,16 @@ export class MonitoringTabComponent implements OnInit {
       // LinkedIn heads each row with the event name over the full campaign name, and adds the
       // creative count — "Not read" when campaign-service did not read creatives. Built from the
       // row's OWN campaign inside the builder, so no index join can pair a row with another's data.
+      // Amounts stay in whole units; in the account's currency when campaign-service names it (only
+      // its path can), and in the `$` they have always carried when it does not.
       return this.buildAccountPanelView(
         data.campaigns,
         data.accountTotals,
-        { currency: (n) => this.formatLinkedInCurrency(n), pct: (n) => this.formatLinkedInPct(n), statusBadges: true },
+        {
+          currency: this.namedCurrencyFormat(data.currency, true) ?? ((n) => this.formatLinkedInCurrency(n)),
+          pct: (n) => this.formatLinkedInPct(n),
+          statusBadges: true,
+        },
         (camp: LinkedInCampaignMetrics) => ({
           title: camp.eventName,
           subtitle: camp.campaignName,
@@ -717,7 +730,11 @@ export class MonitoringTabComponent implements OnInit {
   private initRedditView(): Signal<AccountMonitorPanelView | null> {
     return computed(() => {
       const data = this.redditData();
-      return data ? this.buildAccountPanelView(data.campaigns, data.accountTotals, { ...this.standardFormats, statusBadges: true }) : null;
+      if (!data) return null;
+      // In the account's currency when campaign-service names it (only its path can); otherwise the
+      // `$` the panel has always shown.
+      const currency = this.namedCurrencyFormat(data.currency) ?? this.standardFormats.currency;
+      return this.buildAccountPanelView(data.campaigns, data.accountTotals, { ...this.standardFormats, currency, statusBadges: true });
     });
   }
 
@@ -727,11 +744,14 @@ export class MonitoringTabComponent implements OnInit {
       if (!data) return null;
       // The legacy path reads only the allowlisted (USD) LF accounts, so it keeps its `$` exactly as
       // before. A connection's account can be in any currency and campaign-service passes its amounts
-      // unconverted without naming it, so those are currency-neutral, as Microsoft/X are, and the
-      // panel states the unit once.
-      const formats = this.metaAmountsInAccountCurrency()
-        ? { currency: (n: number): string => this.formatAccountAmount(n), pct: (n: number): string => this.formatPct(n) }
-        : this.standardFormats;
+      // unconverted: printed in that currency when campaign-service names it, and otherwise
+      // currency-neutral, as Microsoft/X are, with the panel stating the unit once.
+      const named = this.namedCurrencyFormat(data.currency);
+      const formats = named
+        ? { currency: named, pct: (n: number): string => this.formatPct(n) }
+        : this.metaAmountsInAccountCurrency()
+          ? { currency: (n: number): string => this.formatAccountAmount(n), pct: (n: number): string => this.formatPct(n) }
+          : this.standardFormats;
       return this.buildAccountPanelView(data.campaigns, data.accountTotals, { ...formats, statusBadges: true });
     });
   }
@@ -1502,13 +1522,34 @@ export class MonitoringTabComponent implements OnInit {
   }
 
   /**
-   * An amount in the ad account's OWN currency, with no symbol. campaign-service's Microsoft and X
-   * monitors report spend and budgets unconverted in the account's currency and do not say which
-   * (`account-monitor` carries no currency field), so a `$` would assert dollars nobody checked.
-   * The panel states the unit once instead. Two decimals, as `formatCurrency`.
+   * An amount in the ad account's OWN currency, with no symbol. campaign-service's monitors report
+   * spend and budgets unconverted in the account's currency, and `account-monitor`'s `currency` is
+   * optional: when it is absent nobody said which currency, so a `$` would assert dollars nobody
+   * checked. The panel states the unit once instead. Two decimals, as `formatCurrency`.
    */
   private formatAccountAmount(value: number): string {
     return value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  /**
+   * Amounts in the ad account's NAMED currency (campaign-service's optional ISO 4217 `currency`,
+   * which the BFF passes on only as three uppercase letters), with its symbol and its own minor-unit
+   * digits — or whole units for LinkedIn's panel, which has always rounded to them. NULL when no
+   * currency is named, so the caller keeps its unnamed format; a code `Intl` rejects falls back the
+   * same way rather than failing the panel.
+   */
+  private namedCurrencyFormat(currency: string | undefined, wholeUnits = false): ((n: number) => string) | null {
+    if (!currency) return null;
+    try {
+      const formatter = new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency,
+        ...(wholeUnits ? { minimumFractionDigits: 0, maximumFractionDigits: 0 } : {}),
+      });
+      return (n: number): string => formatter.format(n);
+    } catch {
+      return null;
+    }
   }
 
   private linkedInPacingClass(label: LinkedInPacingLabel): string {
