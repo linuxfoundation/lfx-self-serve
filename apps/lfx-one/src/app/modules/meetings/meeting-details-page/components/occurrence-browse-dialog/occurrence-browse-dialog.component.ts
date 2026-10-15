@@ -164,8 +164,13 @@ export class MeetingOccurrenceBrowseDialogComponent {
     return computed(() => {
       const tab = this.tab();
       const selectedMs = this.data.selectedStartMs();
-      const items = this.data.items().filter((item) => (tab === 'past' ? item.isPast : !item.isPast));
-      const ordered = tab === 'past' ? [...items].reverse() : items;
+      // Ordered by the start displayed (as scheduled), which a rescheduled record can move past its
+      // neighbour's; `startMs` stays each row's key and navigation identity.
+      const items = this.data
+        .items()
+        .filter((item) => (tab === 'past' ? item.isPast : !item.isPast))
+        .sort((a, b) => Date.parse(a.startTime) - Date.parse(b.startTime));
+      const ordered = tab === 'past' ? items.reverse() : items;
       return ordered.map((item) => {
         // Displayed as scheduled (`startTime`); `startMs` stays the row's identity.
         const start = new Date(item.startTime);

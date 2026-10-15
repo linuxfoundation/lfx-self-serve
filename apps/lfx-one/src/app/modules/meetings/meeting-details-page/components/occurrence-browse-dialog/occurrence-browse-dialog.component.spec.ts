@@ -107,6 +107,14 @@ describe('MeetingOccurrenceBrowseDialogComponent', () => {
     expect(row(-1)?.textContent).toContain('5:00 PM – 5:30 PM');
   });
 
+  it('orders rows by their scheduled start, even when a rescheduled one crosses its neighbour', async () => {
+    // Week -2's record was rescheduled to after week -1's start.
+    items.set([item(-2, { startTime: new Date(at(-1) + 24 * 60 * 60_000).toISOString() }), item(-1)]);
+    await render(at(-1));
+
+    expect(rows().map((element) => Number(element.getAttribute('data-start-ms')))).toEqual([at(-2), at(-1)]);
+  });
+
   it('has no attendance column', async () => {
     await render(at(-1));
 
