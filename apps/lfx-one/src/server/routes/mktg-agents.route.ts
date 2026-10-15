@@ -1,10 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { FOUNDATION_MESSAGE_FILE_UPLOAD_CONTENT_TYPE, FOUNDATION_MESSAGE_MAX_FILE_BYTES } from '@lfx-one/shared/constants';
-import express, { NextFunction, Request, Response, Router } from 'express';
+import { FOUNDATION_MESSAGE_FILE_UPLOAD_CONTENT_TYPE, FOUNDATION_MESSAGE_MAX_FILE_BYTES, MEMBER_360_MAX_BYTES } from '@lfx-one/shared/constants';
+import express, { NextFunction, raw, Request, Response, Router } from 'express';
 
 import { Member360Controller } from '../controllers/member-360.controller';
+import { Member360WorkbookController } from '../controllers/member-360-workbook.controller';
 import { MktgAgentsController } from '../controllers/mktg-agents.controller';
 import { MktgDocumentsController } from '../controllers/mktg-documents.controller';
 import { MktgSlidesExportController } from '../controllers/mktg-slides-export.controller';
@@ -35,6 +36,12 @@ const mktgAgentsController = new MktgAgentsController();
 const mktgDocumentsController = new MktgDocumentsController();
 const mktgSlidesExportController = new MktgSlidesExportController();
 const member360Controller = new Member360Controller();
+const member360Workbook = new Member360WorkbookController();
+
+router.get('/member-360/documents/:documentId/workbook', (req, res, next) => member360Workbook.download(req, res, next));
+router.post('/member-360/tracker', raw({ type: 'application/octet-stream', limit: MEMBER_360_MAX_BYTES }), (req, res, next) =>
+  member360Workbook.parseTracker(req, res, next)
+);
 
 router.post('/member-360/generate', (req, res, next) => member360Controller.generate(req, res, next));
 router.post('/member-360/result', (req, res, next) => member360Controller.result(req, res, next));

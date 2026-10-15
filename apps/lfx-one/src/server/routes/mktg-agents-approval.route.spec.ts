@@ -12,6 +12,7 @@ vi.mock('@lfx-one/shared/constants', async () => ({
 vi.mock('../controllers/mktg-slides-export.controller', () => ({ MktgSlidesExportController: class {} }));
 vi.mock('../controllers/mktg-agents.controller', () => ({ MktgAgentsController: class {} }));
 vi.mock('../controllers/member-360.controller', () => ({ Member360Controller: class {} }));
+vi.mock('../controllers/member-360-workbook.controller', () => ({ Member360WorkbookController: class {} }));
 vi.mock('../controllers/mktg-documents.controller', () => ({
   MktgDocumentsController: class {
     public approveRevision = approve;
