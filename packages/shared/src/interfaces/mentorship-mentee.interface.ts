@@ -613,6 +613,17 @@ export interface MentorshipUpstreamProgramTerm {
   updated_on: string;
 }
 
+/**
+ * Body of `GET /mentorship/v1/programs/{programID}/terms/{termID}/apply-target`: the names for the mentee
+ * apply page and whether upstream's submit check would accept an application today.
+ */
+export interface MentorshipUpstreamProgramTermApplyTarget {
+  program_name: string;
+  project_name?: string;
+  term_name: string;
+  accepting_applications: boolean;
+}
+
 /** One task row from the mentorship service. `due_date` is a date-only `YYYY-MM-DD` string. */
 export interface MentorshipUpstreamTask {
   id: string;
