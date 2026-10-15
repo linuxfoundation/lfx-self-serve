@@ -162,8 +162,11 @@ export const VALKEY_CACHE = {
   /** Freshness window for the per-brief-revision weekly-brief action-items cache — one brief window's worth (7 days), matching the brief's own weekly cadence. */
   WEEKLY_BRIEF_ACTION_ITEMS_TTL_SECONDS: 7 * 24 * 60 * 60,
 
-  /** Freshness window for the Social Listening filter-option and analytics caches (30 minutes). The `platinum_social_listening_feed` dbt model rebuilds hourly, so a half-hour TTL can never serve a value that predates the last rebuild by more than one cycle. */
+  /** Freshness window for Social Listening filter-option and mentions-tags caches (30 minutes); the feed model rebuilds hourly. */
   SOCIAL_LISTENING_TTL_SECONDS: 1800,
+
+  /** Governed Social Listening analytics cache (5 minutes); source models refresh hourly. */
+  SOCIAL_LISTENING_ANALYTICS_TTL_SECONDS: 300,
 
   /** Fallback session TTL when express-openid-connect doesn't supply a per-session expiry (matches its `session.absoluteDuration` default of 7 days). Normally the store derives the actual TTL from the session's own `cookie.maxAge` instead. */
   SESSION_FALLBACK_TTL_SECONDS: 7 * 24 * 60 * 60,

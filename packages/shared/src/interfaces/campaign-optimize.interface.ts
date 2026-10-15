@@ -663,6 +663,34 @@ export interface MetaAdSetDisplayRow {
   recordAction: MetaAdSetStatus | null;
   /** The second action's visible words, or `''`. */
   recordActionLabel: string;
+  /** Why `action` cannot be sent while the CAMPAIGN is in its current state (see `MetaAdSetCampaignEligibility`), or `''`. */
+  actionBlockedReason: string;
+  /** Why `recordAction` cannot be sent while the campaign is in its current state, or `''`. */
+  recordActionBlockedReason: string;
+  /**
+   * What the budget cell says when `budget` is `null`, which is NOT proof the ad set has no budget:
+   * the amount, the type or the currency's minor-unit scale may simply be unreported. `''` when
+   * `budget` is set.
+   */
+  budgetNote: string;
+}
+
+/** A display row as the ad-set panel binds it: the ids each action's `aria-describedby` points at, or `null`. */
+export interface MetaAdSetPanelRow extends MetaAdSetDisplayRow {
+  actionDescribedBy: string | null;
+  recordActionDescribedBy: string | null;
+}
+
+/**
+ * Which ad-set directions campaign-service accepts for a campaign in its current state, mirroring
+ * `ToggleMetaAdSetStatus`: any change on a toggleable campaign (`created`, `active`, `paused`), and
+ * only a PAUSE on a `created_degraded` one (it needs reconciliation, so nothing may be switched on
+ * beneath it). Every other state refuses both (409). `reason` explains a refused direction, or `''`.
+ */
+export interface MetaAdSetCampaignEligibility {
+  pause: boolean;
+  resume: boolean;
+  reason: string;
 }
 
 /** How a lever reports an outcome it cannot confirm: its own error code and fixed client message. */

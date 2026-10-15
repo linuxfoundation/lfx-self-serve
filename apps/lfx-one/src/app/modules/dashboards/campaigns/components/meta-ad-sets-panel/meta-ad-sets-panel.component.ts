@@ -13,14 +13,16 @@ import {
 import type {
   CampaignServiceMetaAdSets,
   MetaAdSetActionKind,
+  MetaAdSetCampaignEligibility,
   MetaAdSetDisplayRow,
+  MetaAdSetPanelRow,
   MetaAdSetPendingChange,
   MetaAdSetRecordCheck,
   MetaAdSetStatus,
   MetaAdSetToggleOutcome,
   MetaAdSetToggleRequest,
 } from '@lfx-one/shared/interfaces';
-import { toMetaAdSetDisplayRow } from '@lfx-one/shared/utils';
+import { metaAdSetCampaignEligibility, toMetaAdSetDisplayRow } from '@lfx-one/shared/utils';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { CampaignService } from '@services/campaign.service';
@@ -61,6 +63,11 @@ export class MetaAdSetsPanelComponent {
   public readonly outcome = input<MetaAdSetToggleOutcome | null>(null);
   /** Bumped by the parent after every change, confirmed or not, to re-read the ad sets. */
   public readonly reloadToken = input(0);
+  /**
+   * Which directions the CAMPAIGN's state allows (`metaAdSetCampaignEligibility`, from the Optimize
+   * row). Defaults to refusing both, so a caller that forgets it fails closed; the read stays available.
+   */
+  public readonly eligibility = input<MetaAdSetCampaignEligibility>(metaAdSetCampaignEligibility(undefined));
 
   public readonly toggleAdSet = output<MetaAdSetToggleRequest>();
   public readonly closePanel = output<void>();
@@ -77,7 +84,7 @@ export class MetaAdSetsPanelComponent {
    */
   protected readonly lastRead = signal<{ token: number; ok: boolean } | null>(null);
 
-  protected readonly rows: Signal<MetaAdSetDisplayRow[]> = this.initRows();
+  protected readonly rows: Signal<MetaAdSetPanelRow[]> = this.initRows();
   /** Whether no action may be pressed right now. */
   protected readonly locked: Signal<boolean> = computed(() => this.pending() !== null || this.blockedReason() !== '' || this.state() === 'loading');
   /** The outcome's own tone, as a class string, so the template does not branch three ways. */
@@ -97,8 +104,8 @@ export class MetaAdSetsPanelComponent {
     this.initLoad();
   }
 
-  protected toggle(row: MetaAdSetDisplayRow): void {
-    if (this.locked() || row.action === null) {
+  protected toggle(row: MetaAdSetPanelRow): void {
+    if (this.locked() || row.action === null || row.actionBlockedReason !== '') {
       return;
     }
     this.request(row, row.action, 'toggle');
@@ -109,8 +116,8 @@ export class MetaAdSetsPanelComponent {
    * so campaign-service records or clears the deliberate pause (`ALREADY_IN_STATE`, nothing else
    * changes on Meta). Asked of the parent like any other change: same If-Match, lock and no retry.
    */
-  protected recordAction(row: MetaAdSetDisplayRow): void {
-    if (this.locked() || row.recordAction === null) {
+  protected recordAction(row: MetaAdSetPanelRow): void {
+    if (this.locked() || row.recordAction === null || row.recordActionBlockedReason !== '') {
       return;
     }
     this.request(row, row.recordAction, 'record');
@@ -157,14 +164,25 @@ export class MetaAdSetsPanelComponent {
       });
   }
 
-  private initRows(): Signal<MetaAdSetDisplayRow[]> {
+  private initRows(): Signal<MetaAdSetPanelRow[]> {
     return computed(() => {
       const data = this.data();
       if (data === null) {
         return [];
       }
       const currency = typeof data.currency === 'string' ? data.currency : '';
-      return (Array.isArray(data.ad_sets) ? data.ad_sets : []).map((adSet) => toMetaAdSetDisplayRow(adSet, currency));
+      const eligibility = this.eligibility();
+      const stateNoteId = `meta-ad-sets-campaign-state-${this.campaignId()}`;
+      const blockedNoteId = this.blockedReason() !== '' ? `meta-ad-sets-blocked-${this.campaignId()}` : null;
+      return (Array.isArray(data.ad_sets) ? data.ad_sets : []).map((adSet) => {
+        const row = toMetaAdSetDisplayRow(adSet, currency, eligibility);
+        // The campaign-state reason first: it is why THIS action is refused; else the row-wide block.
+        return {
+          ...row,
+          actionDescribedBy: row.actionBlockedReason !== '' ? stateNoteId : blockedNoteId,
+          recordActionDescribedBy: row.recordActionBlockedReason !== '' ? stateNoteId : blockedNoteId,
+        };
+      });
     });
   }
 

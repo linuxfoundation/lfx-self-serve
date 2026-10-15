@@ -3,9 +3,16 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { META_AD_SET_NO_ACTION_REASON, META_AD_SET_RESUME_ELSEWHERE_REASON } from '../constants/campaign-optimize.constants';
+import {
+  META_AD_SET_CHANGE_BLOCKED_CAMPAIGN_STATE_REASON,
+  META_AD_SET_NO_ACTION_REASON,
+  META_AD_SET_RESUME_BLOCKED_DEGRADED_REASON,
+  META_AD_SET_RESUME_ELSEWHERE_REASON,
+} from '../constants/campaign-optimize.constants';
 import type { CampaignServiceMetaAdSet } from '../interfaces/campaign-optimize.interface';
-import { toMetaAdSetDisplayRow } from './meta-ad-set.utils';
+import { metaAdSetCampaignEligibility, toMetaAdSetDisplayRow } from './meta-ad-set.utils';
+
+const TOGGLEABLE = metaAdSetCampaignEligibility('active');
 
 const adSet = (over: Partial<CampaignServiceMetaAdSet> = {}): CampaignServiceMetaAdSet => ({
   id: '111',
@@ -24,26 +31,26 @@ const adSet = (over: Partial<CampaignServiceMetaAdSet> = {}): CampaignServiceMet
 
 describe('toMetaAdSetDisplayRow', () => {
   it('offers Pause on an active ad set, with its budget and no redundant effective status', () => {
-    const row = toMetaAdSetDisplayRow(adSet({ budget_type: 'daily', budget_amount: '50.00' }), 'USD');
+    const row = toMetaAdSetDisplayRow(adSet({ budget_type: 'daily', budget_amount: '50.00' }), 'USD', TOGGLEABLE);
 
     expect(row).toMatchObject({ action: 'PAUSED', actionLabel: 'Pause', budget: '50.00 USD daily', effectiveStatus: null, recordAction: null });
   });
 
   it('offers Resume on the created ad set and shows an effective status that differs', () => {
-    const row = toMetaAdSetDisplayRow(adSet({ status: 'PAUSED', effective_status: 'CAMPAIGN_PAUSED', deliberately_paused: true }), 'USD');
+    const row = toMetaAdSetDisplayRow(adSet({ status: 'PAUSED', effective_status: 'CAMPAIGN_PAUSED', deliberately_paused: true }), 'USD', TOGGLEABLE);
 
     expect(row).toMatchObject({ action: 'ACTIVE', actionLabel: 'Resume', effectiveStatus: 'CAMPAIGN_PAUSED', recordAction: null });
   });
 
   it('also offers Pause again (record) when the created ad set is paused and explicitly not recorded', () => {
-    const row = toMetaAdSetDisplayRow(adSet({ status: 'PAUSED', deliberately_paused: false }), 'USD');
+    const row = toMetaAdSetDisplayRow(adSet({ status: 'PAUSED', deliberately_paused: false }), 'USD', TOGGLEABLE);
 
     expect(row.action).toBe('ACTIVE');
     expect(row).toMatchObject({ recordAction: 'PAUSED', recordActionLabel: 'Pause again (record)' });
   });
 
   it('offers Resume again (clear record) when the created ad set is active but still recorded as deliberately paused', () => {
-    const row = toMetaAdSetDisplayRow(adSet({ status: 'ACTIVE', deliberately_paused: true }), 'USD');
+    const row = toMetaAdSetDisplayRow(adSet({ status: 'ACTIVE', deliberately_paused: true }), 'USD', TOGGLEABLE);
 
     expect(row.action).toBe('PAUSED');
     expect(row).toMatchObject({ recordAction: 'ACTIVE', recordActionLabel: 'Resume again (clear record)' });
@@ -53,11 +60,11 @@ describe('toMetaAdSetDisplayRow', () => {
     const raw = adSet({ status });
     delete (raw as Partial<CampaignServiceMetaAdSet>).deliberately_paused;
 
-    expect(toMetaAdSetDisplayRow(raw, 'USD')).toMatchObject({ recordAction: null, recordActionLabel: '' });
+    expect(toMetaAdSetDisplayRow(raw, 'USD', TOGGLEABLE)).toMatchObject({ recordAction: null, recordActionLabel: '' });
   });
 
   it('offers neither Resume nor a record on a paused ad set this service did not create', () => {
-    const row = toMetaAdSetDisplayRow(adSet({ status: 'PAUSED', recorded: false }), 'USD');
+    const row = toMetaAdSetDisplayRow(adSet({ status: 'PAUSED', recorded: false }), 'USD', TOGGLEABLE);
 
     expect(row).toMatchObject({ action: null, noActionReason: META_AD_SET_RESUME_ELSEWHERE_REASON, recordAction: null });
   });
@@ -67,15 +74,80 @@ describe('toMetaAdSetDisplayRow', () => {
     ['no longer listed', { listed: false, status: 'PAUSED' }],
     ['unreported', { status: undefined }],
   ])('offers no action on an ad set that is %s', (_label, over) => {
-    const row = toMetaAdSetDisplayRow(adSet(over as Partial<CampaignServiceMetaAdSet>), 'USD');
+    const row = toMetaAdSetDisplayRow(adSet(over as Partial<CampaignServiceMetaAdSet>), 'USD', TOGGLEABLE);
 
     expect(row).toMatchObject({ action: null, noActionReason: META_AD_SET_NO_ACTION_REASON, recordAction: null });
   });
 
   it('falls back to the id for a missing name and omits a budget whose type is not reported', () => {
-    const row = toMetaAdSetDisplayRow(adSet({ name: undefined, budget_amount: '10.00' }), 'EUR');
+    const row = toMetaAdSetDisplayRow(adSet({ name: undefined, budget_amount: '10.00' }), 'EUR', TOGGLEABLE);
 
     expect(row.name).toBe('111');
     expect(row.budget).toBeNull();
+  });
+
+  it.each([
+    ['the type is reported but not the amount', { budget_type: 'daily', budget_amount: undefined }, 'Daily budget, amount not reported'],
+    ['neither is reported', { budget_type: undefined, budget_amount: undefined }, 'No ad set budget reported (it may use the campaign budget)'],
+    ['only the amount is reported', { budget_type: undefined, budget_amount: '5.00' }, 'Budget not reported'],
+    ['Meta no longer lists it', { listed: false }, 'Budget not reported'],
+  ])('never claims there is no budget when %s', (_label, over, note) => {
+    const row = toMetaAdSetDisplayRow(adSet(over as Partial<CampaignServiceMetaAdSet>), 'USD', TOGGLEABLE);
+
+    expect(row.budget).toBeNull();
+    expect(row.budgetNote).toBe(note);
+  });
+
+  it('carries no budget note when the budget is shown', () => {
+    expect(toMetaAdSetDisplayRow(adSet({ budget_type: 'lifetime', budget_amount: '9.00' }), 'USD', TOGGLEABLE).budgetNote).toBe('');
+  });
+});
+
+describe('metaAdSetCampaignEligibility', () => {
+  it.each(['created', 'active', 'paused', 'ACTIVE'])('allows both directions on a toggleable campaign (%s)', (status) => {
+    expect(metaAdSetCampaignEligibility(status)).toEqual({ pause: true, resume: true, reason: '' });
+  });
+
+  it('allows only PAUSE on a created_degraded campaign, saying why', () => {
+    expect(metaAdSetCampaignEligibility('created_degraded')).toEqual({ pause: true, resume: false, reason: META_AD_SET_RESUME_BLOCKED_DEGRADED_REASON });
+  });
+
+  it.each(['pending', 'group_created', 'unconfirmed', 'deleted', 'something_new', '', undefined, 42])(
+    'allows neither direction on a campaign that is not toggleable (%s)',
+    (status) => {
+      expect(metaAdSetCampaignEligibility(status)).toEqual({ pause: false, resume: false, reason: META_AD_SET_CHANGE_BLOCKED_CAMPAIGN_STATE_REASON });
+    }
+  );
+});
+
+describe('toMetaAdSetDisplayRow — campaign-state directions', () => {
+  const DEGRADED = metaAdSetCampaignEligibility('created_degraded');
+  const PROVISIONING = metaAdSetCampaignEligibility('pending');
+
+  it('keeps Pause and Pause again (record) usable under created_degraded', () => {
+    expect(toMetaAdSetDisplayRow(adSet({ status: 'ACTIVE' }), 'USD', DEGRADED).actionBlockedReason).toBe('');
+    const paused = toMetaAdSetDisplayRow(adSet({ status: 'PAUSED', deliberately_paused: false }), 'USD', DEGRADED);
+    expect(paused.recordAction).toBe('PAUSED');
+    expect(paused.recordActionBlockedReason).toBe('');
+  });
+
+  it('blocks Resume and Resume again (clear record) under created_degraded, with the reconciliation reason', () => {
+    const paused = toMetaAdSetDisplayRow(adSet({ status: 'PAUSED', deliberately_paused: true }), 'USD', DEGRADED);
+    expect(paused.action).toBe('ACTIVE');
+    expect(paused.actionBlockedReason).toBe(META_AD_SET_RESUME_BLOCKED_DEGRADED_REASON);
+
+    const active = toMetaAdSetDisplayRow(adSet({ status: 'ACTIVE', deliberately_paused: true }), 'USD', DEGRADED);
+    expect(active.recordAction).toBe('ACTIVE');
+    expect(active.recordActionBlockedReason).toBe(META_AD_SET_RESUME_BLOCKED_DEGRADED_REASON);
+    expect(active.actionBlockedReason).toBe('');
+  });
+
+  it('blocks every direction on a campaign still provisioning', () => {
+    const active = toMetaAdSetDisplayRow(adSet({ status: 'ACTIVE' }), 'USD', PROVISIONING);
+    const paused = toMetaAdSetDisplayRow(adSet({ status: 'PAUSED', deliberately_paused: false }), 'USD', PROVISIONING);
+
+    expect(active.actionBlockedReason).toBe(META_AD_SET_CHANGE_BLOCKED_CAMPAIGN_STATE_REASON);
+    expect(paused.actionBlockedReason).toBe(META_AD_SET_CHANGE_BLOCKED_CAMPAIGN_STATE_REASON);
+    expect(paused.recordActionBlockedReason).toBe(META_AD_SET_CHANGE_BLOCKED_CAMPAIGN_STATE_REASON);
   });
 });

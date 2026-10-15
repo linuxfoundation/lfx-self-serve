@@ -1868,6 +1868,39 @@ describe('CampaignServiceClient.createCampaigns', () => {
     expect(res.error).toContain('try again');
   });
 
+  /**
+   * campaign-service's own bidding refusal (#3299) names the field and the reason, and carries no
+   * caller value but the amount — so it is the one upstream 400 worth showing. Matched on its exact
+   * wording, so any other 400 keeps the generic text.
+   */
+  it('names an invalid bid that campaign-service refused', async () => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockRejectedValueOnce(
+      new MicroserviceError('invalid campaign config: metaConfig.bidding: bidAmount must be greater than zero', 400, 'campaign_service')
+    );
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['meta-ads'], { metaConfig: { budget: 100 } });
+
+    expect(res.jobId).toBeNull();
+    expect(res.indeterminate).toBeUndefined();
+    expect(res.error).toBe(
+      'Campaign creation was rejected and nothing was created: invalid campaign config: metaConfig.bidding: bidAmount must be greater than zero'
+    );
+  });
+
+  it.each([
+    ['another config field', 400, 'invalid campaign config: metaConfig.budget: must be positive'],
+    ['a googleAdsConfig bidding refusal', 400, 'invalid campaign config: googleAdsConfig.bidding: use googleAdsConfig.biddingStrategy'],
+    ['a bidding message on a 409', 409, 'invalid campaign config: metaConfig.bidding: bidAmount must be greater than zero'],
+  ])('keeps the generic refusal text for %s', async (_label, status, message) => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError(message, status, 'campaign_service'));
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['meta-ads'], { metaConfig: { budget: 100 } });
+
+    expect(res.error).toBe('Campaign creation was rejected and nothing was created. Please try again.');
+  });
+
   it('does NOT tell the user to retry after an indeterminate failure', async () => {
     bothFlagsOn();
     proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('upstream exploded', 502, 'campaign_service'));
@@ -4118,6 +4151,8 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       // TRUE with every flag off, unlike its Google sibling: both creators author the promoted
       // post since #3432, so the capability no longer tracks the cutover (`canCreateRedditCreative`).
       redditCreativeEnabled: true,
+      // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
+      biddingEnabled: false,
     });
   });
 
@@ -4245,6 +4280,36 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
+  /**
+   * The Bidding capability (#3299) needs the create cutover AND its own flag: the legacy creator
+   * never reads `bidding`, and a campaign-service without #332 drops it — either would create the
+   * campaign automatic while the operator asked for a manual bid.
+   */
+  it.each([
+    [{ create: true, briefs: true, jobs: true, bidding: true }, true],
+    [{ create: true, briefs: true, jobs: true, bidding: false }, false],
+    [{ create: false, briefs: true, jobs: true, bidding: true }, false],
+    [{ create: true, briefs: false, jobs: true, bidding: true }, false],
+    [{ create: true, briefs: true, jobs: false, bidding: true }, false],
+  ])('reports the bidding capability only when the cutover owns the create and the flag is on (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      if (flag === ServerFeatureFlag.CampaignServiceBidding) return flags.bidding;
+      return false;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.biddingEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
   // A TRUNCATED list is worse than an error, which is what failOnPartial buys. The caller cannot
   // tell a short list from a complete one, and the campaigns missing from it are live and
   // spending — so a page-two failure must propagate rather than quietly return page one.
@@ -4277,6 +4342,8 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       // TRUE with every flag off, unlike its Google sibling: both creators author the promoted
       // post since #3432, so the capability no longer tracks the cutover (`canCreateRedditCreative`).
       redditCreativeEnabled: true,
+      // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
+      biddingEnabled: false,
     });
   });
 });

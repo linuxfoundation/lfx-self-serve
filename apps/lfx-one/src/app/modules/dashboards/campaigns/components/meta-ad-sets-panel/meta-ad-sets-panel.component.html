@@ -40,6 +40,13 @@
     </div>
   }
 
+  <!-- What the campaign's own state refuses (both directions, or Resume only). The ad sets stay readable. -->
+  @if (eligibility().reason) {
+    <p class="text-xs text-gray-500" [id]="'meta-ad-sets-campaign-state-' + campaignId()" data-testid="meta-ad-sets-campaign-state">
+      {{ eligibility().reason }}
+    </p>
+  }
+
   @if (blockedReason()) {
     <p class="text-xs text-gray-500" [id]="'meta-ad-sets-blocked-' + campaignId()" data-testid="meta-ad-sets-blocked">{{ blockedReason() }}</p>
   }
@@ -113,7 +120,7 @@
                   @if (row.budget) {
                     {{ row.budget }}
                   } @else {
-                    <span class="text-gray-500">No ad set budget</span>
+                    <span class="text-gray-500">{{ row.budgetNote }}</span>
                   }
                 </td>
                 <td class="px-3 py-2 text-right">
@@ -122,10 +129,10 @@
                       <button
                         type="button"
                         (click)="toggle(row)"
-                        [disabled]="locked()"
+                        [disabled]="locked() || row.actionBlockedReason !== ''"
                         [attr.aria-label]="row.actionLabel + ' ' + row.name"
                         [attr.aria-busy]="pending()?.adSetId === row.adSet.id && pending()?.kind === 'toggle' ? 'true' : null"
-                        [attr.aria-describedby]="blockedReason() ? 'meta-ad-sets-blocked-' + campaignId() : null"
+                        [attr.aria-describedby]="row.actionDescribedBy"
                         class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                         [attr.data-testid]="'meta-ad-set-toggle-' + row.adSet.id">
                         @if (pending()?.adSetId === row.adSet.id && pending()?.kind === 'toggle') {
@@ -144,10 +151,10 @@
                       <button
                         type="button"
                         (click)="recordAction(row)"
-                        [disabled]="locked()"
+                        [disabled]="locked() || row.recordActionBlockedReason !== ''"
                         [attr.aria-label]="row.recordActionLabel + ' ' + row.name"
                         [attr.aria-busy]="pending()?.adSetId === row.adSet.id && pending()?.kind === 'record' ? 'true' : null"
-                        [attr.aria-describedby]="blockedReason() ? 'meta-ad-sets-blocked-' + campaignId() : null"
+                        [attr.aria-describedby]="row.recordActionDescribedBy"
                         class="rounded-md border border-amber-300 px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-50 disabled:opacity-50"
                         [attr.data-testid]="'meta-ad-set-record-action-' + row.adSet.id">
                         @if (pending()?.adSetId === row.adSet.id && pending()?.kind === 'record') {

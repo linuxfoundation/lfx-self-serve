@@ -3,10 +3,18 @@
 
 import type {
   ACCOUNT_MONITOR_CONFLICT_REASONS,
+  CAMPAIGN_BIDDING_PLATFORMS,
+  CAMPAIGN_BIDDING_STRATEGIES,
   CAMPAIGN_EMAIL_SEGMENTS,
   CAMPAIGN_EMAIL_STAGES,
   CAMPAIGN_EMAIL_VARIANTS,
   CAMPAIGN_METRICS_WINDOWS,
+  GOOGLE_ADS_AGE_RANGE_MAP,
+  GOOGLE_ADS_DEVICES,
+  GOOGLE_ADS_GENDERS,
+  GOOGLE_ADS_RADIUS_UNITS,
+  GOOGLE_ADS_SCHEDULE_DAYS,
+  GOOGLE_ADS_SCHEDULE_MINUTES,
   GOOGLE_BIDDING_STRATEGIES,
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
@@ -16,7 +24,7 @@ import type {
   REDDIT_SELECTABLE_OBJECTIVES,
   REDDIT_VIDEO_GOALS,
 } from '../constants/campaign.constants';
-import type { KeywordTargetingPlatform } from './campaign-optimize.interface';
+import type { KeywordTargetingPlatform, MetaAdSetCampaignEligibility } from './campaign-optimize.interface';
 
 // ---------------------------------------------------------------------------
 // Platform & Phase
@@ -734,6 +742,13 @@ export interface CampaignImplementationDraft {
   /** Empty string records "unset", which is the serve-capable default — see `cpcBid`. */
   microsoftCpcBid?: string;
   /**
+   * The per-platform Bidding choice (#3299), keyed by platform. Absent for a draft written before
+   * the control shipped, and absent per platform until the operator touches that platform's
+   * control — both mean "the default, automatic". Restored only when present, like every field
+   * here, so an older draft cannot overwrite a choice with nothing.
+   */
+  bidding?: CampaignBiddingDrafts;
+  /**
    * The per-channel Google creative sections, as RAW form text rather than the wire shape: keyed
    * by the creative's request key, then by field, with list fields still one entry per line.
    *
@@ -1062,6 +1077,8 @@ export interface LinkedInCampaignCreateRequest {
   project?: string;
   driveFolderUrl?: string;
   adAccountId?: string;
+  /** Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means automatic. */
+  bidding?: CampaignBiddingConfig;
 }
 
 export interface LinkedInCampaignCreateResult {
@@ -1168,6 +1185,8 @@ export interface RedditCampaignCreateRequest {
    * offering that objective with no way to set this field would offer a create both arms refuse.
    */
   videoGoal?: RedditVideoGoal;
+  /** Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means automatic. */
+  bidding?: CampaignBiddingConfig;
 }
 
 export interface RedditCampaignCreateResult {
@@ -1245,6 +1264,8 @@ export interface MetaCampaignCreateRequest {
   objective?: MetaObjective;
   placements?: Partial<MetaPlacement>;
   pixelId?: string;
+  /** Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means automatic. */
+  bidding?: CampaignBiddingConfig;
 }
 
 export interface MetaCampaignCreateResult {
@@ -1332,6 +1353,12 @@ export interface MicrosoftCampaignCreateRequest {
    * requires it on Add; the client supplies its default when empty.
    */
   timeZone?: string;
+  /**
+   * Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. When it is sent,
+   * `cpcBid` is not: campaign-service refuses an automatic `bidding` beside any `cpcBid`, and a
+   * manual one beside a different `cpcBid`.
+   */
+  bidding?: CampaignBiddingConfig;
 }
 
 // ---------------------------------------------------------------------------
@@ -1770,6 +1797,115 @@ export interface CampaignSitelink {
   finalUrl: string;
 }
 
+/**
+ * The radius unit a {@link CampaignProximityTarget} is measured in.
+ *
+ * Derived from {@link GOOGLE_ADS_RADIUS_UNITS} rather than written out again, so a unit added to
+ * the constant cannot leave this type behind.
+ */
+export type GoogleAdsRadiusUnit = (typeof GOOGLE_ADS_RADIUS_UNITS)[number];
+
+/**
+ * One Google proximity target: a point in decimal degrees and a radius around it.
+ *
+ * Every field is REQUIRED, `radiusUnit` emphatically so — upstream (`geo.go`'s
+ * `validateProximityTargets`) supplies no default because "a radius of 50 means two very different
+ * campaigns depending on the unit, and guessing one would silently buy ~2.5x the intended area (or
+ * 0.4x)". Refusing costs the caller one explicit word, before anything paid exists.
+ *
+ * Latitude and longitude are DECIMAL DEGREES (37.7749, -122.4194), the form every mapping tool
+ * emits; upstream converts them to the microdegrees Google's `GeoPoint` actually carries. `radius`
+ * must be greater than zero and within {@link GOOGLE_ADS_MAX_RADIUS} for its own unit — the two
+ * ceilings are not a converted pair.
+ */
+export interface CampaignProximityTarget {
+  latitude: number;
+  longitude: number;
+  radius: number;
+  radiusUnit: GoogleAdsRadiusUnit;
+}
+
+/**
+ * The day a {@link CampaignAdSchedule} runs on.
+ *
+ * Derived from {@link GOOGLE_ADS_SCHEDULE_DAYS} rather than written out again, so a day spelled
+ * differently in the constant cannot leave this type behind.
+ */
+export type GoogleAdsScheduleDay = (typeof GOOGLE_ADS_SCHEDULE_DAYS)[number];
+
+/**
+ * The minute a {@link CampaignAdSchedule} window starts or ends on.
+ *
+ * A UNION of the four values rather than `number`, because Google models minutes as an enum: `:10`
+ * is unrepresentable rather than merely unusual, and a caller honouring this type cannot write one.
+ */
+export type GoogleAdsScheduleMinute = (typeof GOOGLE_ADS_SCHEDULE_MINUTES)[number];
+
+/**
+ * One "serve during this window on this day" interval.
+ *
+ * The window is HALF-OPEN — [start, end) — which is why `endHour` admits 24 and `startHour` does
+ * not: a window running to midnight ends at hour 24, and one starting at midnight starts at hour 0.
+ * It is also what makes 09:00-12:00 and 12:00-17:00 two non-overlapping windows rather than a
+ * clash, so the ordinary split-day schedule is accepted.
+ *
+ * `bidModifier` is OPTIONAL and its absence is meaningful: an interval with no modifier restricts
+ * WHEN the campaign serves without changing what it bids, which is the ordinary case. It cannot
+ * default to 0, because 0 is the -100% opt-out — an entry written as "listed but unadjusted" would
+ * instead switch the campaign off for that window while reporting a successful create. Upstream
+ * carries the field as a pointer for exactly this reason, so an absent modifier must be OMITTED on
+ * the wire rather than sent as a zero. Any other value must be between
+ * {@link GOOGLE_ADS_MIN_BID_MODIFIER} and {@link GOOGLE_ADS_MAX_BID_MODIFIER}.
+ */
+export interface CampaignAdSchedule {
+  dayOfWeek: GoogleAdsScheduleDay;
+  startHour: number;
+  startMinute: GoogleAdsScheduleMinute;
+  endHour: number;
+  endMinute: GoogleAdsScheduleMinute;
+  bidModifier?: number;
+}
+
+/**
+ * A device a campaign may adjust its bid on.
+ *
+ * Derived from {@link GOOGLE_ADS_DEVICES} rather than written out again, so a device added to the
+ * accepted vocabulary cannot leave this type behind.
+ */
+export type GoogleAdsDevice = (typeof GOOGLE_ADS_DEVICES)[number];
+
+/**
+ * An age range a campaign may exclude, in either spelling upstream accepts — the friendly `18-24`
+ * or Google's own `AGE_RANGE_18_24`. Derived from {@link GOOGLE_ADS_AGE_RANGE_MAP}'s keys, so the
+ * type admits exactly what the lookup resolves.
+ */
+export type GoogleAdsAgeRange = keyof typeof GOOGLE_ADS_AGE_RANGE_MAP;
+
+/**
+ * A gender a campaign may exclude. Derived from {@link GOOGLE_ADS_GENDERS}.
+ */
+export type GoogleAdsGender = (typeof GOOGLE_ADS_GENDERS)[number];
+
+/**
+ * One "bid this much more, or less, on this device" adjustment.
+ *
+ * `bidModifier` is REQUIRED here, and the contrast with {@link CampaignAdSchedule}'s optional one is
+ * deliberate rather than an inconsistency. Upstream carries the schedule modifier as a `*float64`,
+ * so an omitted one stays distinguishable from `0`; it carries THIS one as a plain `float64`, where
+ * an omitted key decodes to `0` — and `0` is the -100% "do not serve on this device at all" opt-out.
+ * A caller who forgets the field would be asking, in upstream's reading, for the device to be
+ * switched off entirely on a paid campaign, and would be told the create succeeded.
+ *
+ * So there is no safe default to supply and nothing to omit on the wire: the field is required, and
+ * the BFF refuses an entry that leaves it out rather than guessing which of the two the caller
+ * meant. Any value other than the `0` opt-out must be between {@link GOOGLE_ADS_MIN_BID_MODIFIER}
+ * and {@link GOOGLE_ADS_MAX_BID_MODIFIER}.
+ */
+export interface CampaignDeviceBidModifier {
+  device: GoogleAdsDevice;
+  bidModifier: number;
+}
+
 export interface CampaignCreateRequest {
   eventName: string;
   eventSlug: string;
@@ -1803,6 +1939,38 @@ export interface CampaignCreateRequest {
   displayCreative?: GoogleDisplayCreative;
   geoTargets: string[];
   /**
+   * The places the Google campaign must NOT serve in, as ISO 3166-1 alpha-2 country codes or raw
+   * numeric Google geo target constant ids (which is how a CITY, region, metro or postal code is
+   * addressed — the curated country map cannot express those).
+   *
+   * Optional and OMITTED when empty, on the same rule as {@link geoTargets}: an absent list and an
+   * empty one both mean "exclude nowhere".
+   *
+   * Accepted on EVERY Google channel, Demand Gen included — `validateGeoPlan` puts no channel fence
+   * on exclusions, unlike {@link proximityTargets}. Bounded by
+   * {@link GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS}, which is counted separately from the targeted
+   * list's own bound.
+   *
+   * A place named in BOTH lists is refused rather than resolved: the exclusion would win and the
+   * campaign would not serve there at all, so a caller who wrote both did not get what either list
+   * says. The two are compared by RESOLVED id, so `US` in one list and `2840` in the other clash.
+   */
+  excludedGeoTargets?: string[];
+  /**
+   * Radius targeting around points — "everyone within N miles of the venue" — which is the one
+   * location shape that is not a place in Google's geo table.
+   *
+   * Optional and OMITTED when empty. Refused by upstream on Demand Gen (see
+   * {@link GOOGLE_CHANNELS_WITH_PROXIMITY}), so the BFF refuses a Demand Gen create carrying one by
+   * name rather than letting it fail after the fact, and the builder withholds the list on any
+   * channel that cannot take it. Bounded by {@link GOOGLE_ADS_MAX_PROXIMITY_TARGETS}.
+   *
+   * Two entries that render to the same criterion are COLLAPSED, not refused — unlike a repeated ad
+   * schedule, a proximity target carries no bid modifier, so two spellings of one target cannot
+   * disagree about anything.
+   */
+  proximityTargets?: CampaignProximityTarget[];
+  /**
    * The languages the Google campaign serves in, as ISO 639-1 codes (`EN`, `DE`, `JA`) or raw
    * numeric Google language constant ids.
    *
@@ -1817,6 +1985,67 @@ export interface CampaignCreateRequest {
    * numeric id skips that table and is resolved by Google.
    */
   languages?: string[];
+  /**
+   * When the Google campaign serves, as one or more intervals per day of the week. Left unset it
+   * runs around the clock, which is Google's own default — so this list is a narrowing and an
+   * absent key means the same as an empty one, exactly as {@link languages} does.
+   *
+   * Accepted on every Google channel except Demand Gen — see
+   * {@link GOOGLE_CHANNELS_WITH_AD_SCHEDULES}. Bounded by {@link GOOGLE_ADS_MAX_AD_SCHEDULES}
+   * overall and {@link GOOGLE_ADS_MAX_AD_SCHEDULES_PER_DAY} on any one day; both are Google's own
+   * limits rather than local opinions.
+   *
+   * Two intervals that OVERLAP on the same day are refused, because Google rejects them — but
+   * touching intervals do not overlap, so a day split at noon is two ordinary entries. An exact
+   * repeat carrying the SAME bid modifier is collapsed; a repeat carrying a DIFFERENT one is
+   * refused, because Google accepts one criterion per interval and the second value would be the
+   * one silently dropped. That is the difference from {@link proximityTargets}, which has no field
+   * two spellings could disagree about.
+   */
+  adSchedules?: CampaignAdSchedule[];
+  /**
+   * How much more, or less, the Google campaign bids on each device. Left unset it bids the same
+   * everywhere, which is Google's own default — so this list is an adjustment and an absent key
+   * means the same as an empty one, exactly as {@link adSchedules} does.
+   *
+   * Accepted on THREE channels — see {@link GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS} — one fewer
+   * than {@link adSchedules}: Demand Gen takes no campaign-level criteria at all, and Performance
+   * Max's automated bidding owns the bid and sets no device adjustment. Upstream refuses both rather
+   * than dropping the list, so the BFF refuses such a create by name.
+   *
+   * Bounded by {@link GOOGLE_ADS_MAX_DEVICE_BID_MODIFIERS}, which is the size of the accepted device
+   * vocabulary: a longer list necessarily REPEATS a device, and a repeat is refused rather than
+   * collapsed, because Google accepts one criterion per device and the second value would be the one
+   * silently dropped. That is the same rule {@link adSchedules} applies to a repeated interval with
+   * a different modifier — here every repeat qualifies, since a device has nothing else to agree on.
+   */
+  deviceBidModifiers?: CampaignDeviceBidModifier[];
+  /**
+   * The age ranges the Google campaign excludes. Left unset it serves to every age, which is
+   * Google's own default, so an absent key and an empty list agree.
+   *
+   * EXCLUSION-ONLY is Google's shape rather than a narrowing here: campaign-level demographic
+   * criteria are negative. Positive demographic targeting lives on the ad group, which this client
+   * does not expose, so this field cannot be mistaken for one that targets.
+   *
+   * Accepted on the channels in {@link GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS}; Performance Max
+   * takes demographics as asset-group signals, which this client does not create, so upstream
+   * refuses rather than leaving an operator to read "campaign created" with their exclusion nowhere.
+   * Bounded by {@link GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS}, applied to this list on its own.
+   *
+   * A repeated range is COLLAPSED, not refused — an exclusion carries no second field two spellings
+   * could disagree about, so the same range written twice says one thing twice.
+   */
+  excludedAgeRanges?: GoogleAdsAgeRange[];
+  /**
+   * The genders the Google campaign excludes, on the same terms as {@link excludedAgeRanges}:
+   * exclusion-only, the same channel fence, its own copy of
+   * {@link GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS}, and a repeat collapsed rather than refused.
+   *
+   * `UNDETERMINED` — the bucket Google puts users it could not classify into — is an ordinary
+   * member: excluding it is a real choice a campaign makes.
+   */
+  excludedGenders?: GoogleAdsGender[];
   /**
    * The Google campaign's callout extensions — short claims appended to the text ad, carrying no
    * link of their own.
@@ -3248,6 +3477,20 @@ export interface CampaignIndexDoc {
    * A caller that quoted it differently would get a 412 that looks like a concurrent edit.
    */
   etag?: string;
+  /**
+   * How the campaign was CREATED to bid, as campaign-service recorded it (#3299,
+   * linuxfoundation/lfx-v2-campaign-service#332). ABSENT when not recorded — a campaign created
+   * before the field existed, an adopted one, or a Google Ads one — and never read as `automatic`.
+   * Typed `string` because it is read from the index, which this app does not control; only the
+   * two documented values are rendered.
+   */
+  bidding_strategy?: string;
+  /**
+   * The manual max cost-per-click bid campaign-service most recently set — the starting bid, then
+   * whatever the bid lever set. USD on LinkedIn; the ad account's own currency everywhere else.
+   * ABSENT when the service never set one.
+   */
+  max_cpc_bid?: number;
 }
 
 /**
@@ -3261,6 +3504,17 @@ export interface CampaignIndexDoc {
  */
 export interface CampaignRow {
   campaign: CampaignIndexDoc;
+  /**
+   * The recorded bidding (`bidding_strategy` / `max_cpc_bid`) as one read-only line, or `''` when
+   * the index records neither. Carried on the row so the template only reads it.
+   */
+  biddingSummary: string;
+  /**
+   * The bid this session confirmed for the row, or `null`. `null` too once the index carries a
+   * NEWER version than the write that confirmed it, so the "set here" note and the recorded-bidding
+   * line both give way to the indexed value together.
+   */
+  confirmedBidAmount: number | null;
   /** What the row displays: this session's confirmed status, else the indexed one. */
   status: string;
   /**
@@ -3351,6 +3605,8 @@ export interface CampaignRow {
   adSetsUnavailableReason: string;
   /** Why an open ad-set panel cannot change an ad set RIGHT NOW (stale validator, another write in flight), or `''`. */
   adSetsBlockedReason: string;
+  /** Which ad-set directions the campaign's own state allows (`metaAdSetCampaignEligibility`); the read panel stays available either way. */
+  adSetEligibility: MetaAdSetCampaignEligibility;
   /** The row's platform when it is offered negative keywords, which decides what the editor offers and sends; `null` otherwise. */
   negativeKeywordsPlatform: NegativeKeywordCampaignPlatform | null;
   /** Whether the row shows the keyword-targeting control at all: Reddit and X campaigns (`KEYWORD_TARGETING_CAMPAIGN_PLATFORMS`). */
@@ -3367,6 +3623,16 @@ export interface CampaignRow {
 export interface CampaignBidChange {
   /** Manual max cost-per-click, in the AD ACCOUNT's own currency, exactly as entered. Never converted or rounded. */
   bid: number;
+}
+
+/**
+ * A bid change this session CONFIRMED, with the campaign version the successful write returned
+ * (from its ETag). The confirmed bid stands only while the index has not moved past that version:
+ * a newer indexed version may carry a bid someone else set since. `null` when the ETag could not
+ * be parsed, in which case the confirmed bid stands as before.
+ */
+export interface CampaignConfirmedBid extends CampaignBidChange {
+  version: number | null;
 }
 
 /**
@@ -3687,6 +3953,17 @@ export interface CampaignListResult {
    * answered yet still withholds the controls rather than guessing.
    */
   redditCreativeEnabled: boolean;
+  /**
+   * Whether the create flow may offer the per-platform Bidding control (#3299).
+   *
+   * True only when the campaign-service create path serves the create AND the
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_BIDDING` flag says the deployed campaign-service understands
+   * `bidding` (linuxfoundation/lfx-v2-campaign-service#332). An older service ignores the unknown
+   * key and creates every campaign on automatic bidding, and the legacy creator never reads it — so
+   * either way a Manual choice would be silently dropped. Modelled on the client like the
+   * capabilities above (`boolean | null`, `null` for unanswered), which withholds the control.
+   */
+  biddingEnabled: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -3790,6 +4067,106 @@ export interface CampaignStatusUpdateResult {
    * "what was asked for". Absent on the legacy path, whose SDK calls return no row.
    */
   serviceStatus?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Campaign Bidding at create time (#3299)
+// ---------------------------------------------------------------------------
+
+/** The two bidding strategies a create may ask for, spelled exactly as campaign-service takes them. */
+export type CampaignBiddingStrategy = (typeof CAMPAIGN_BIDDING_STRATEGIES)[number];
+
+/** The platforms whose create config accepts a `bidding` object. Google Ads has its own bidding plan. */
+export type CampaignBiddingPlatform = (typeof CAMPAIGN_BIDDING_PLATFORMS)[number];
+
+/**
+ * The optional `bidding` object of a per-platform create config, mirroring
+ * linuxfoundation/lfx-v2-campaign-service#332 (`internal/dispatch/bidding.go`).
+ *
+ * camelCase, like the config envelope it sits in. Exactly these two keys: campaign-service refuses
+ * any other key, any case variant, an explicit `null` and an empty string with a 400. Omitting the
+ * whole object means automatic. `bidAmount` is present only for `manual`; an automatic object that
+ * names an amount is refused too.
+ */
+export interface CampaignBiddingConfig {
+  strategy: CampaignBiddingStrategy;
+  /** Max cost-per-click bid, in the currency the provider expects (USD on LinkedIn). Manual only. */
+  bidAmount?: number;
+}
+
+/** One platform's Bidding control as edited. `bidAmount` is `null` until a number is entered. */
+export interface CampaignBiddingDraft {
+  strategy: CampaignBiddingStrategy;
+  bidAmount: number | null;
+}
+
+/** The Bidding control's state per platform, as the implementation draft carries it. */
+export type CampaignBiddingDrafts = Partial<Record<CampaignBiddingPlatform, CampaignBiddingDraft>>;
+
+/**
+ * Where the create-capability read stands, for a choice the form cannot send without its answer:
+ * `pending` only while a read is IN FLIGHT, `failed` after an error, `ready` once it answered, and
+ * `unknown` when no read is out and none has answered — initially, after a foundation switch, or
+ * when there was no brief to read against. `unknown` must offer a way to start a read; nothing
+ * else will. The answer itself travels separately (`biddingEnabled`).
+ */
+export type CampaignCapabilityReadState = 'unknown' | 'pending' | 'ready' | 'failed';
+
+/** Why Create is blocked for a retained Manual bidding choice the deployment cannot confirm (#3299). */
+export interface CampaignBiddingCapabilityBlock {
+  /**
+   * `pending`: a read is in flight. `failed`: a read failed, or none is out but there is a brief to
+   * read against — Retry starts one. `unsaved`: none is out and there is no brief id yet, so a Retry
+   * could not read anything; saving the brief starts the read. `unsupported`: the answer is no.
+   */
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported';
+  message: string;
+}
+
+/** The rest of a platform's config that its bidding rules read. */
+export interface CampaignBiddingContext {
+  /** The config's objective, where the platform has one. Manual bidding needs particular objectives on Meta and Reddit. */
+  objective?: string;
+  /** The DAILY budget, or `null` when the budget is a lifetime one. Meta and X compare the bid with it. */
+  dailyBudget?: number | null;
+}
+
+/** What one platform accepts as a manual bid, and how the control describes it. */
+export interface CampaignBiddingPlatformRule {
+  /** The platform's display name, used in the control's accessible names. */
+  label: string;
+  /** Where the bid's currency comes from: LinkedIn takes USD, every other platform the ad account's currency. */
+  currency: 'USD' | 'account';
+  /** The bid's precision: 100 for whole cents, 1,000,000 for whole micro-units. Finer amounts are refused, never rounded. */
+  scale: number;
+  /** Lowest bid this app lets through, in the platform's currency. */
+  minBid: number;
+  /** Highest bid campaign-service sets on this platform. */
+  maxBid: number;
+  /** Objectives manual bidding needs, or `null` when any objective will do. */
+  manualObjectives: readonly string[] | null;
+  /** Objective campaign-service assumes when none is sent; `null` when the platform has no objective. */
+  defaultObjective: string | null;
+  /** Meta: the daily budget must be at least this many times the bid. `null` when there is no such rule. */
+  dailyBudgetMultiple: number | null;
+  /** X: the bid may not exceed the daily budget. */
+  bidAtMostDailyBudget: boolean;
+  /** What Automatic does on this platform. */
+  automaticDescription: string;
+  /** What Manual creates on this platform. */
+  manualDescription: string;
+  /** The currency hint shown beside the bid input. */
+  currencyHint: string;
+  /** The platform's limits, in words. */
+  limitText: string;
+}
+
+/** Everything one platform's Bidding control renders, computed once by the implementation tab. */
+export interface CampaignBiddingControlView {
+  platform: CampaignBiddingPlatform;
+  value: CampaignBiddingDraft;
+  /** Why the choice cannot be sent, or `null` when it can. Blocks the create. */
+  error: string | null;
 }
 
 // ---------------------------------------------------------------------------

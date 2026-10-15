@@ -5,7 +5,7 @@ display_order: 2
 audience: [executive-director]
 product_area: Social Listening
 tags: [social listening, analytics, charts, sentiment, trends, export]
-last_updated: 2026-08-31
+last_updated: 2026-10-14
 intercom_collection: Social Listening
 ---
 
@@ -18,13 +18,17 @@ This article applies to users with the **executive-director** persona and to **L
 
 ## Set the scope
 
-The project, platform, and period selectors at the top of the page apply to the Analytics tab, so every panel reflects the same slice of data. The search query and most Feed tab filters — Sentiment, Relevance, Language, Has Title, Authors, Keywords, and Tags — also apply here, even though their controls stay on the Feed tab; the active-filter pills above the panels show which ones are in effect. Applying a saved view changes those filters, so its search and filter settings carry across too. Only the bookmark and read-state filters are ignored — Analytics is bookmark- and read-state-blind.
+The project, platform, and period selectors scope every panel. The five analytics panels read governed values for that scope. Search and the Feed tab filters — Sentiment, Relevance, Language, Has Title, Authors, Keywords, and Tags — do not change those analytics numbers; they narrow the mentions feed and **Mentions by Tag** only. The notice above the panels explains this distinction, and the active-filter pills remain visible because they still affect Mentions by Tag.
+
+Saved views follow the same rules: their search and content-filter settings narrow only the feed and Mentions by Tag. Bookmark and read-state filters remain feed-only.
 
 - **Project** — every project in the foundation (the default) or a single project
 - **Platform** — every platform (the default) or a single platform
 - **Period** — **Year to Date**, **Last 3 months**, **Last 6 months**, or an individual month
 
 Changing any selector reloads all panels for the new scope.
+
+Governed analytics refresh hourly. The **Analytics as of** time above the panels shows when those values were computed. Cached panel results can lag the hourly model refresh by up to five minutes.
 
 ## Read the panels
 
@@ -38,6 +42,8 @@ Three cards summarize the current scope:
 
 Each card shows a trend delta comparing the current period with the previous one. For Negative Sentiment the colors invert: an increase in negative mentions shows red, a decrease shows green.
 
+The delta is hidden when the previous period has no mentions or fewer than 20% of the current period's mentions, because that comparison would be misleading.
+
 ### Mentions Over Time
 
 A line chart of mention volume across the period, with one line per project so you can compare traction between projects.
@@ -48,7 +54,7 @@ The five platforms with the most mentions in the current scope, each with its sh
 
 ### Mentions by Tag
 
-The most common tags on mentions in the current scope, ranked by count.
+The most common tags on mentions in the current scope, ranked by count. Unlike the five governed panels, this panel also follows search and the Feed tab content filters.
 
 ### Mentions by Project
 

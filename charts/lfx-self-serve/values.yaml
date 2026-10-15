@@ -558,6 +558,23 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_CHANNELS:
     value:
 
+  # Offers the per-platform Bidding control in the create flow (#3299): Automatic (the default) or
+  # Manual with a max CPC bid, for LinkedIn, Meta, Microsoft Ads and Reddit. Not Google Ads, which
+  # has its own bidding plan.
+  #
+  # A CAPABILITY flag, like DEMAND_GEN: "does the DEPLOYED campaign-service understand
+  # `bidding`?" (linuxfoundation/lfx-v2-campaign-service#332). An older service drops the unknown
+  # key and creates every campaign on AUTOMATIC bidding — a Manual choice would be silently lost and
+  # the job would report success. It also needs the create pipeline (CREATE, BRIEFS, JOBS) on,
+  # because the legacy creator does not read `bidding` either.
+  #
+  # Off, the control is hidden and the create route refuses a request carrying `bidding` with a 400
+  # rather than dropping it. Turning it back off strands nothing: existing campaigns keep the bidding
+  # they were created with. Order: deploy campaign-service #332, confirm it, THEN set this. Same
+  # accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_BIDDING:
+    value:
+
   # Gates FGA-based (marketing_auditor / campaign_manager) authorization on the marketing
   # analytics routes (analytics.route.ts) and campaigns routes (campaigns.route.ts). Same
   # accepted values and same default-deny as the campaign-service flags above.
