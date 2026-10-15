@@ -13,6 +13,7 @@ import {
   MeetingDetailsLoadStatus,
   MeetingJoinPageState,
   MeetingOccurrence,
+  MeetingOccurrenceStripItem,
   MeetingPrivacyState,
   MeetingRosterRequest,
   MeetingRsvp,
@@ -25,8 +26,10 @@ import {
   RsvpResponse,
 } from '@lfx-one/shared/interfaces';
 import {
+  compositeIdToStartMs,
   getActiveOccurrences,
   getCurrentOrNextOccurrence,
+  getMeetingSeriesUid,
   isMeetingAttendeeListShared,
   isMeetingInviteResponsesEnabled,
   isPastMeetingCompositeId,
@@ -181,6 +184,25 @@ export class MeetingDetailsStateService {
    * by its composite id, where the meeting payload is the occurrence itself.
    */
   public readonly selectedOccurrence: Signal<MeetingOccurrence | null> = this.initSelectedOccurrence();
+  /**
+   * The series the page's meeting belongs to: the meeting itself for an upcoming one, its `meeting_id`
+   * for a past occurrence opened by its composite id. `null` until the meeting has loaded.
+   */
+  public readonly seriesUid: Signal<string | null> = computed(() => {
+    const meeting = this.meeting();
+    return meeting ? getMeetingSeriesUid(meeting) : null;
+  });
+  /**
+   * The start (Unix ms) of the occurrence the page shows, for the occurrence strip (E6-03): the selected
+   * occurrence's, or on a page opened by a past composite id, the start that id ends with.
+   */
+  public readonly selectedOccurrenceStartMs: Signal<number | null> = computed(() => {
+    if (this.loadedViaPastMeetingId()) {
+      return compositeIdToStartMs(this.routeId() ?? '');
+    }
+    const occurrence = this.selectedOccurrence();
+    return occurrence ? new Date(occurrence.start_time).getTime() : null;
+  });
   /** The selected occurrence's time state on the clock; `null` until the meeting has loaded. */
   public readonly timeState: Signal<MeetingTimeState | null> = this.initTimeState();
   /**
@@ -306,6 +328,28 @@ export class MeetingDetailsStateService {
     this.myRsvpUpdates$.next(rsvp);
   }
 
+  /**
+   * Moves the page to another occurrence of its series (E6-03), on the URL contract: an upcoming one
+   * as `/meetings/{seriesUid}?occurrence={start ms}`, a past one as its composite id. Only a password
+   * already in the address bar goes into the URL; one the composer handed over in navigation state is
+   * handed on the same way, so a private meeting's next lookup still has it and it never reaches a URL.
+   */
+  public navigateToOccurrence(item: MeetingOccurrenceStripItem): void {
+    const seriesUid = this.seriesUid();
+    if (!seriesUid || item.cancelled) {
+      return;
+    }
+    const urlPassword = this.urlPassword();
+    const statePassword = urlPassword ? null : this.password();
+    const queryParams: Record<string, string> = urlPassword ? { password: urlPassword } : {};
+    const extras = { queryParams, ...(statePassword && { state: { password: statePassword } }) };
+    if (item.isPast) {
+      void this.router.navigate(['/meetings', item.pastResourceId ?? `${seriesUid}-${item.startMs}`], extras);
+      return;
+    }
+    void this.router.navigate(['/meetings', seriesUid], { ...extras, queryParams: { ...queryParams, occurrence: String(item.startMs) } });
+  }
+
   /** Re-runs the lookup for the current route, e.g. from the error state's retry. */
   public refresh(): void {
     this.retrying.set(true);
@@ -383,7 +427,9 @@ export class MeetingDetailsStateService {
       return resolveVisibleSections({
         fullAccess: this.pastMeetingFullAccess(),
         inviteResponsesEnabled: isMeetingInviteResponsesEnabled(meeting),
-        recurring: !!meeting.recurrence,
+        // A past occurrence's payload can omit `recurrence`: it is part of a series when its series
+        // differs from itself, as V1 derives it (data-model.md § Field → axis, E).
+        recurring: !!meeting.recurrence || getMeetingSeriesUid(meeting) !== meeting.id,
         timeState,
         viewerRole,
       });

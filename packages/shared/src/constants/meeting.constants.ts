@@ -1316,3 +1316,10 @@ export const MEETING_DETAILS_SCROLL_PADDING_PX = { default: 100, impersonating: 
  */
 export const MEETING_OCCURRENCES_PAGE_DEFAULT_LIMIT = 12;
 export const MEETING_OCCURRENCES_PAGE_MAX_LIMIT = 50;
+
+/**
+ * The V2 occurrence strip (E6-03, #3586): pages it reads per side, and how many further pages it reads
+ * toward a selected occurrence outside the first window before giving up on showing it selected.
+ */
+export const MEETING_OCCURRENCE_STRIP_PAGE_SIZE = 12;
+export const MEETING_OCCURRENCE_STRIP_MAX_CHASE_PAGES = 5;

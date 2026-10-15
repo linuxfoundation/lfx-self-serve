@@ -2,7 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import type { MeetingVisibility } from '../enums';
-import type { MeetingRegistrant, PastMeetingSummary, PublicPastMeetingRoster, RsvpResponse } from './meeting.interface';
+import type {
+  MeetingRegistrant,
+  MeetingTimelineOccurrence,
+  PastMeetingSummary,
+  PastOccurrenceSummary,
+  PublicPastMeetingRoster,
+  RsvpResponse,
+} from './meeting.interface';
 
 /**
  * Where the viewer sits relative to the meeting's schedule.
@@ -344,4 +351,55 @@ export interface MeetingPastRosterState {
 export interface MeetingAdminLink {
   commands: string[];
   queryParams: Record<string, string>;
+}
+
+/**
+ * One chip of the V2 occurrence strip (E6-03, #3586): an occurrence of the series, past or upcoming,
+ * cancelled ones included (FR-044).
+ */
+export interface MeetingOccurrenceStripItem {
+  /** The start as a Unix-millisecond instant: the strip's key, and the URL's `?occurrence=` value */
+  startMs: number;
+  /** ISO start time */
+  startTime: string;
+  /** Minutes */
+  duration: number;
+  /** The canonical occurrence id (Unix seconds, 10 digits), what RSVP and occurrence APIs take */
+  occurrenceId: string;
+  /** A past record's composite id (`{meetingId}-{13-digit ms}`), its canonical URL; absent for an upcoming one */
+  pastResourceId?: string;
+  /** Ended on the clock (end plus the end buffer), or a past record */
+  isPast: boolean;
+  /** Cancelled, by `status === 'cancel'` or a listed `cancelled_occurrences` id */
+  cancelled: boolean;
+}
+
+/** The strip's timeline as loaded so far, with whether either end has more to page in. */
+export interface MeetingOccurrenceStripTimeline {
+  items: MeetingOccurrenceStripItem[];
+  pastHasMore: boolean;
+  futureHasMore: boolean;
+  /** Send as `cursor` with `direction=past` for the next older page */
+  pastCursor?: string;
+  /** Send as `cursor` with `direction=future` for the next later page */
+  futureCursor?: string;
+}
+
+/** What the strip has read of the series so far: the occurrences endpoint's pages, merged. */
+export interface MeetingOccurrenceStripPages {
+  /** `{seriesUid}:{password}`: a page read for another key is dropped */
+  key: string;
+  past: PastOccurrenceSummary[];
+  future: MeetingTimelineOccurrence[];
+  cancelled: string[];
+  pastHasMore: boolean;
+  futureHasMore: boolean;
+  pastCursor?: string;
+  futureCursor?: string;
+}
+
+/** Where the strip's request goes: the series, and the password the page holds for it. */
+export interface MeetingOccurrenceStripRequest {
+  seriesUid: string;
+  password: string | null;
 }
