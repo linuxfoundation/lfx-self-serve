@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, LowerCasePipe } from '@angular/common';
-import { Component, computed, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { Component, computed, inject, input, output, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -10,7 +10,17 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { PollStatus, VOTE_LABEL, VOTES_PAGE_WALK_LIMIT, VoteResponseStatus } from '@lfx-one/shared';
 import { MY_VOTES_STATS_WINDOW_DAYS, VOTES_STATS_WINDOW_DAYS } from '@lfx-one/shared/constants';
-import { Committee, MyVotesQuickFilter, ProjectContext, StatCardItem, Vote, VoteFilterState, VoteListResponse, VoteSummary } from '@lfx-one/shared/interfaces';
+import {
+  Committee,
+  MyVotesQuickFilter,
+  ProjectContext,
+  StatCardItem,
+  Vote,
+  VoteFilterState,
+  VoteListResponse,
+  VotePermalinkTarget,
+  VoteSummary,
+} from '@lfx-one/shared/interfaces';
 import { findCursorWalkStartIndex, getUserTimezone, matchesMyVotesQuickFilter, recordPageToken, resolveCursorWalkOutcome } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
@@ -49,6 +59,14 @@ export class VotesDashboardComponent {
   private readonly personaService = inject(PersonaService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly platformId = inject(PLATFORM_ID);
+
+  // === Inputs ===
+  /** Set by VotePermalinkComponent (`/votes/:id`): the drawer to open once for the linked vote. Null on the routed dashboard. */
+  public readonly permalinkTarget = input<VotePermalinkTarget | null>(null);
+
+  // === Outputs ===
+  /** Emits once when the permalink drawer has closed, so the host can drop the vote from the URL. */
+  public readonly permalinkClosed = output<void>();
 
   // === Constants ===
   protected readonly voteLabel = VOTE_LABEL.singular;
@@ -99,6 +117,11 @@ export class VotesDashboardComponent {
   // Sequential token array: index 0 = token for page 2, index 1 = token for page 3, etc.
   private pageTokens: string[] = [];
 
+  // === Permalink ===
+  // The uid the permalink drawer was opened for — opening once keeps a later target re-emission
+  // from reopening a drawer the user closed.
+  private openedPermalinkUid: string | null = null;
+
   // === Computed Signals ===
   protected readonly project: Signal<ProjectContext | null> = this.initProject();
   protected readonly searchQuery: Signal<string> = this.initSearchQuery();
@@ -123,6 +146,8 @@ export class VotesDashboardComponent {
     const f = this.filters();
     return !!(f.search?.trim() || f.status || f.group || this.managementClosingOnly());
   });
+  /** Results-drawer audience: the permalink's choice for the linked vote (a writer sees `creator` in the Me lens), otherwise by lens. */
+  protected readonly resultsAudience: Signal<'voter' | 'creator'> = this.initResultsAudience();
 
   public constructor() {
     toObservable(this.isMeLens)
@@ -134,6 +159,8 @@ export class VotesDashboardComponent {
         this.myVotesQuickFilter.set(null);
         this.myVotesStatusTab.set('all');
       });
+
+    this.initPermalinkDrawer();
   }
 
   protected onManagementVoteStatClick(action: string): void {
@@ -204,6 +231,8 @@ export class VotesDashboardComponent {
     this.resultsDrawerVisible.set(true);
   }
 
+  // Hiding the results drawer and showing the cast drawer in one synchronous handler means the
+  // combined visibility signal never emits both hidden, so this switch is not reported as a close.
   protected onCastFromResults(voteId: string): void {
     this.selectedVoteId.set(voteId);
     this.resultsDrawerVisible.set(false);
@@ -328,6 +357,43 @@ export class VotesDashboardComponent {
         },
       ];
     });
+  }
+
+  private initResultsAudience(): Signal<'voter' | 'creator'> {
+    return computed(() => {
+      const target = this.permalinkTarget();
+      if (target && this.selectedVoteId() === target.uid) {
+        return target.audience;
+      }
+      return this.isMeLens() ? 'voter' : 'creator';
+    });
+  }
+
+  /** Opens the permalink target's drawer once, then reports when every drawer has closed again. */
+  private initPermalinkDrawer(): void {
+    toObservable(this.permalinkTarget)
+      .pipe(
+        filter((target): target is VotePermalinkTarget => target !== null),
+        takeUntilDestroyed()
+      )
+      .subscribe((target) => {
+        if (target.uid === this.openedPermalinkUid) return;
+        this.openedPermalinkUid = target.uid;
+        this.selectedVoteId.set(target.uid);
+        this.castDrawerVisible.set(target.drawer === 'cast');
+        this.resultsDrawerVisible.set(target.drawer === 'results');
+      });
+
+    // Observe the combined signal, not separate streams: a synchronous results → cast switch
+    // must not transiently report both drawers closed while their emissions settle.
+    const anyDrawerOpen = computed(() => this.castDrawerVisible() || this.resultsDrawerVisible());
+    toObservable(anyDrawerOpen)
+      .pipe(
+        filter((open) => !open && this.openedPermalinkUid !== null),
+        take(1),
+        takeUntilDestroyed()
+      )
+      .subscribe(() => this.permalinkClosed.emit());
   }
 
   private initProject(): Signal<ProjectContext | null> {

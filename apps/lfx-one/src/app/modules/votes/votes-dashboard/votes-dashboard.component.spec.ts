@@ -7,7 +7,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import { PollStatus, VoteResponseStatus } from '@lfx-one/shared';
-import { Lens, ProjectContext, Vote, VoteListResponse, VoteSummary } from '@lfx-one/shared/interfaces';
+import { Lens, ProjectContext, Vote, VoteListResponse, VotePermalinkTarget, VoteSummary } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
@@ -515,5 +515,100 @@ describe('VotesDashboardComponent personal summary', () => {
     expect(rows()).toEqual(empty ? [] : ['responded', 'soon', 'later', 'ended']);
     expect(table.searchForm.controls.group.value).toBe(empty ? null : 'Audi Group');
     if (empty) expect(fixture.nativeElement.textContent).toContain('No results found');
+  });
+
+  describe('permalink target', () => {
+    const openTarget = async (target: VotePermalinkTarget | null) => {
+      fixture.componentRef.setInput('permalinkTarget', target);
+      await settle();
+    };
+    const drawers = () => ({ cast: dashboard['castDrawerVisible'](), results: dashboard['resultsDrawerVisible']() });
+
+    it('opens the cast drawer for a cast target', async () => {
+      await openTarget({ uid: 'soon', drawer: 'cast', audience: 'voter' });
+
+      expect(dashboard['selectedVoteId']()).toBe('soon');
+      expect(drawers()).toEqual({ cast: true, results: false });
+    });
+
+    it('opens an initial target without reporting a close before the first render', () => {
+      const initialFixture = TestBed.createComponent(VotesDashboardComponent);
+      const closed = vi.fn();
+      initialFixture.componentInstance.permalinkClosed.subscribe(closed);
+      initialFixture.componentRef.setInput('permalinkTarget', { uid: 'soon', drawer: 'cast', audience: 'voter' });
+      try {
+        initialFixture.detectChanges();
+        TestBed.tick();
+
+        expect(initialFixture.componentInstance['castDrawerVisible']()).toBe(true);
+        expect(initialFixture.componentInstance['resultsDrawerVisible']()).toBe(false);
+        expect(closed).not.toHaveBeenCalled();
+      } finally {
+        initialFixture.destroy();
+      }
+    });
+
+    it('tears down permalink visibility subscriptions when the dashboard is destroyed', async () => {
+      const closed = vi.fn();
+      dashboard.permalinkClosed.subscribe(closed);
+      await openTarget({ uid: 'soon', drawer: 'cast', audience: 'voter' });
+
+      fixture.destroy();
+      dashboard['castDrawerVisible'].set(false);
+      TestBed.tick();
+
+      expect(closed).not.toHaveBeenCalled();
+    });
+
+    it('opens the results drawer as creator for a results/creator target, in the Me lens', async () => {
+      await openTarget({ uid: 'not-in-feed', drawer: 'results', audience: 'creator' });
+
+      expect(drawers()).toEqual({ cast: false, results: true });
+      expect(dashboard['resultsAudience']()).toBe('creator');
+
+      // Another vote opened from the list falls back to the lens audience.
+      dashboard['onViewResults']('later');
+      expect(dashboard['resultsAudience']()).toBe('voter');
+    });
+
+    it('emits permalinkClosed once when the drawer closes, not when switching results → cast', async () => {
+      const closed = vi.fn();
+      dashboard.permalinkClosed.subscribe(closed);
+      await openTarget({ uid: 'soon', drawer: 'results', audience: 'voter' });
+
+      dashboard['onCastFromResults']('soon');
+      await settle();
+      expect(closed).not.toHaveBeenCalled();
+      expect(drawers()).toEqual({ cast: true, results: false });
+
+      dashboard['castDrawerVisible'].set(false);
+      await settle();
+      expect(closed).toHaveBeenCalledTimes(1);
+
+      // Re-emitting the same target never reopens the drawer, and later closes don't re-emit.
+      await openTarget({ uid: 'soon', drawer: 'results', audience: 'voter' });
+      expect(drawers()).toEqual({ cast: false, results: false });
+      dashboard['onViewResults']('later');
+      dashboard['resultsDrawerVisible'].set(false);
+      await settle();
+      expect(closed).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves the routed dashboard unchanged without a target', async () => {
+      const closed = vi.fn();
+      dashboard.permalinkClosed.subscribe(closed);
+      await openTarget(null);
+
+      expect(drawers()).toEqual({ cast: false, results: false });
+      expect(dashboard['resultsAudience']()).toBe('voter');
+      dashboard['onViewResults']('later');
+      dashboard['resultsDrawerVisible'].set(false);
+      await settle();
+      expect(closed).not.toHaveBeenCalled();
+
+      activeLens.set('project');
+      await settle();
+      expect(dashboard['resultsAudience']()).toBe('creator');
+    });
   });
 });

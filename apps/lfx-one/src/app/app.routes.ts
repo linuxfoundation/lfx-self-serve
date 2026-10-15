@@ -42,6 +42,7 @@ import { mktgOsAgentsEnabledGuard } from './shared/guards/mktg-os-agents-enabled
 import { myEventsRequestLensGuard } from './shared/guards/my-events-request-lens.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
 import { settingsLensRedirectGuard } from './shared/guards/settings-lens-redirect.guard';
+import { votePermalinkMatchGuard } from './shared/guards/vote-permalink-match.guard';
 
 const loadOrgProfilePage = () => import('./modules/dashboards/org/org-profile/org-profile.component').then((m) => m.OrgProfileComponent);
 
@@ -678,6 +679,22 @@ export const routes: Routes = [
         title: `My ${MAILING_LIST_LABEL.plural}`,
         canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/mailing-lists/mailing-lists.routes').then((m) => m.MAILING_LIST_ROUTES),
+      },
+      {
+        // Canonical shareable vote permalink (#3659), also the target of vote reminder emails.
+        // Mounted ahead of the lens-redirected `votes` mount below so the URL never rewrites to
+        // /foundation/... or /project/..., where the cast drawer never opens. `data.lens: 'me'`
+        // switches every way in to the Me lens. Access is decided in the component: a vote the
+        // user can't view renders the shared not-found page in place (HTTP 404 under SSR).
+        // `pathMatch: 'full'` leaves `votes/:id/edit` on the mount below; the match guard does
+        // the same for `votes/create`.
+        path: 'votes/:id',
+        pathMatch: 'full',
+        title: VOTE_LABEL.singular,
+        data: { lens: 'me', preload: false },
+        canMatch: [votePermalinkMatchGuard],
+        canActivate: [authGuard],
+        loadComponent: () => import('./modules/votes/vote-permalink/vote-permalink.component').then((m) => m.VotePermalinkComponent),
       },
       {
         path: 'votes',

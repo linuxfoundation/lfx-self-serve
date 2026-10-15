@@ -3,7 +3,7 @@
 
 import { Component, inject, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { ActivatedRoute, provideRouter, Router } from '@angular/router';
+import { ActivatedRoute, provideRouter, Router, UrlSegment } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { HEALTH_METRICS_TABS } from '@lfx-one/shared/constants';
 import { Lens } from '@lfx-one/shared/interfaces';
@@ -19,6 +19,7 @@ import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { meetupsLensGuard } from './shared/guards/meetups-lens.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
+import { votePermalinkMatchGuard } from './shared/guards/vote-permalink-match.guard';
 import { LensService } from './shared/services/lens.service';
 
 import type { Route } from '@angular/router';
@@ -74,6 +75,29 @@ describe('Personal newsletter route isolation', () => {
     for (const route of NEWSLETTER_ROUTES.filter((route) => route.loadComponent)) {
       expect(route.canActivate).toEqual([authGuard, newsletterAccessGuard]);
     }
+  });
+});
+
+describe('Vote permalink route isolation', () => {
+  const children = routes[0].children!;
+  const permalink = children.find((route) => route.path === 'votes/:id')!;
+
+  it('mounts the auth-only Me permalink ahead of the lens-redirected votes mount', () => {
+    const flat = children.find((route) => route.path === 'votes')!;
+    expect(permalink).toMatchObject({
+      pathMatch: 'full',
+      data: { lens: 'me', preload: false },
+      canMatch: [votePermalinkMatchGuard],
+      canActivate: [authGuard],
+    });
+    expect(children.indexOf(permalink)).toBeLessThan(children.indexOf(flat));
+    expect(flat.canActivate).toEqual([lensRedirectGuard, projectQueryParamGuard]);
+  });
+
+  it('leaves /votes/create to the votes module and matches a vote uid', () => {
+    const segments = (id: string) => [new UrlSegment('votes', {}), new UrlSegment(id, {})];
+    expect(votePermalinkMatchGuard(permalink, segments('create'))).toBe(false);
+    expect(votePermalinkMatchGuard(permalink, segments('3f2b6c1e-0000-4000-8000-000000000001'))).toBe(true);
   });
 });
 

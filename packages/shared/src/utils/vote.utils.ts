@@ -471,3 +471,14 @@ export function compareVotesByRecency(a: Vote, b: Vote): number {
   if (a.uid === b.uid) return 0;
   return a.uid < b.uid ? -1 : 1;
 }
+
+/**
+ * Builds the relative path to a vote's canonical, lens-independent permalink page
+ * (`VotePermalinkComponent`, mounted at `/votes/:id`).
+ * Combine with `toAbsoluteUrl` for a shareable/copyable absolute URL.
+ * @param voteUid - The vote uid
+ * @returns The relative permalink path, e.g. `/votes/abc123`
+ */
+export function votePermalinkPath(voteUid: string): string {
+  return `/votes/${encodeURIComponent(voteUid)}`;
+}
