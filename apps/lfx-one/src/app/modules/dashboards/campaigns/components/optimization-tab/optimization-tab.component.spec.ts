@@ -2762,6 +2762,29 @@ describe('OptimizationTabComponent — budget change (#3299)', () => {
       expect(getCampaignSettings).toHaveBeenCalledTimes(2);
     });
 
+    // A read that answers after a project/brief switch belongs to the abandoned context.
+    it('drops a pacing read that answers after the context changed, and reads again in the new one', () => {
+      const late = new Subject<CampaignServiceSettingsReadback>();
+      getCampaignSettings.mockReturnValue(late.asObservable());
+      render([xDoc()]);
+      openEditor();
+
+      fixture.componentRef.setInput('briefId', 'b-2');
+      fixture.detectChanges();
+      late.next(settingsWith('lifetime'));
+      late.complete();
+      fixture.detectChanges();
+
+      const button = q('optimization-campaign-budget-edit-c-1') as HTMLButtonElement;
+      expect(button.disabled).toBe(false);
+      expect(q('optimization-campaign-budget-unavailable-c-1')).toBeNull();
+
+      getCampaignSettings.mockReturnValue(of(settingsWith('daily')));
+      openEditor();
+      expect(getCampaignSettings).toHaveBeenCalledTimes(2);
+      expect(getCampaignSettings).toHaveBeenLastCalledWith('tlf', 'b-2', 'c-1');
+    });
+
     it("shows the BFF's X explanation of a 409 in full", () => {
       updateCampaignBudget.mockReturnValue(
         throwError(() => new HttpErrorResponse({ status: 409, statusText: 'x', error: { error: CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE, code: 'CONFLICT' } }))

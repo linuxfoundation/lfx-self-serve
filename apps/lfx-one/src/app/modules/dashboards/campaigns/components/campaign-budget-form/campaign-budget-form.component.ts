@@ -88,6 +88,7 @@ export class CampaignBudgetFormComponent implements OnInit {
       typeError: `campaign-budget-type-error-${id}`,
       typeName: `campaign-budget-type-${id}`,
       outcome: `campaign-budget-outcome-${id}`,
+      blocked: `campaign-budget-blocked-${id}`,
     };
   });
 
@@ -185,6 +186,9 @@ export class CampaignBudgetFormComponent implements OnInit {
       }
       if (this.outcome() !== null) {
         describedBy.push(ids.outcome);
+      }
+      if (this.visibleBlockedReason() !== '') {
+        describedBy.push(ids.blocked);
       }
       return describedBy.join(' ');
     });

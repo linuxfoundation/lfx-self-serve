@@ -91,9 +91,19 @@
     }
   }
 
-  @if (visibleBlockedReason(); as reason) {
-    <p class="text-xs text-gray-600" [attr.data-testid]="'optimization-campaign-budget-blocked-' + campaignId()">{{ reason }}</p>
-  }
+  <!--
+    Always rendered, so the polite live region exists before its text changes: the X pacing read
+    lands after the editor opened (and after a finding moved focus to the amount), and a
+    lifetime-budgeted campaign must still be announced. Also in the amount's describedby.
+  -->
+  <p
+    class="text-xs text-gray-600"
+    role="status"
+    aria-live="polite"
+    [id]="ids().blocked"
+    [attr.data-testid]="'optimization-campaign-budget-blocked-' + campaignId()">
+    {{ visibleBlockedReason() }}
+  </p>
 
   <div class="flex items-center gap-2">
     <lfx-button

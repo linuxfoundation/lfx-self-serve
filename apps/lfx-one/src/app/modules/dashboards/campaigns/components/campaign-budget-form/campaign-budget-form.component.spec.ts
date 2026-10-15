@@ -126,6 +126,22 @@ describe('CampaignBudgetFormComponent', () => {
     expect((el().querySelector('[data-testid="optimization-campaign-budget-submit-c-1"] button') as HTMLButtonElement).disabled).toBe(true);
   });
 
+  // The reason can arrive after the editor opened (X's pacing read), so it is announced and described.
+  it('announces a blocked reason that arrives later and describes the amount with it', () => {
+    fixture.detectChanges();
+    const blocked = q('optimization-campaign-budget-blocked-c-1')!;
+    const amount = el().querySelector('#campaign-budget-amount-c-1')!;
+    expect(blocked.getAttribute('role')).toBe('status');
+    expect(blocked.getAttribute('aria-live')).toBe('polite');
+    expect(amount.getAttribute('aria-describedby')).not.toContain('campaign-budget-blocked-c-1');
+
+    fixture.componentRef.setInput('blockedReason', 'This X campaign has a lifetime (total) budget.');
+    fixture.detectChanges();
+
+    expect(blocked.textContent).toContain('lifetime (total) budget');
+    expect(amount.getAttribute('aria-describedby')).toContain('campaign-budget-blocked-c-1');
+  });
+
   it('emits cancel', () => {
     const cancelled = vi.fn();
     fixture.componentInstance.cancelEdit.subscribe(() => cancelled());

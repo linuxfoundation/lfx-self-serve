@@ -3712,11 +3712,6 @@ export class CampaignController {
   }
 
   /**
-   * The row's platform as one of `CampaignPlatform`, checked against `CAMPAIGN_PLATFORMS` rather
-   * than cast. campaign-service's own vocabulary is that list; a value outside it (a contract change
-   * upstream, a malformed row) is logged and reported as `null`, never passed off as a known one.
-   */
-  /**
    * Rewords campaign-service's platform-neutral "budget could not be addressed" 409 for an X
    * campaign. Its sentence tells the operator to change the pacing in the ad platform, which is not
    * the remedy on X: LFX One writes only the daily budget of a campaign-budget-optimized X campaign
@@ -3744,6 +3739,11 @@ export class CampaignController {
     });
   }
 
+  /**
+   * The row's platform as one of `CampaignPlatform`, checked against `CAMPAIGN_PLATFORMS` rather
+   * than cast. campaign-service's own vocabulary is that list; a value outside it (a contract change
+   * upstream, a malformed row) is logged and reported as `null`, never passed off as a known one.
+   */
   private knownCampaignPlatform(req: Request, operation: string, platform: unknown): CampaignPlatform | null {
     const known = CAMPAIGN_PLATFORMS.find((p) => p.id === platform);
     if (known) {

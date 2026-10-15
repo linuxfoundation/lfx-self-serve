@@ -2154,7 +2154,7 @@ export const CAMPAIGN_SERVICE_BUDGET_UNWRITABLE_MESSAGE_PREFIX = "this campaign'
 
 /** What an X budget change refused 409 as unwritable tells the operator, in place of the platform-neutral sentence. */
 export const CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE =
-  "X did not accept a daily budget change for this campaign. LFX One can change only the daily budget of an X campaign that uses campaign budget optimization and has no total (lifetime) budget cap. Change this campaign's budget in X Ads Manager.";
+  "This X campaign's budget can't be changed from LFX One. LFX One can change only the daily budget of an X campaign that uses campaign budget optimization and has no total (lifetime) budget cap. Change this campaign's budget in X Ads Manager.";
 
 /**
  * HTTP statuses that, when the response carries no message, mean nobody answered for a budget
