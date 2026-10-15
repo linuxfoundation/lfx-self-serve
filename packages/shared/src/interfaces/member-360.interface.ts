@@ -32,10 +32,20 @@ export interface Member360TrackerUpload {
 export interface Member360Session extends MktgRunSessionResponse {
   documentId: string;
 }
+export interface Member360PendingRun {
+  user: string;
+  project: string;
+  session: Member360Session;
+  startedAt: number;
+}
 export interface Member360Result {
   status: 'pending' | 'ready' | 'needs_input';
   documentId?: string;
   stored?: boolean;
+}
+export interface Member360WorkbookDownload {
+  bytes: Uint8Array;
+  filename: string;
 }
 export interface Member360HeatCell {
   label: string;
