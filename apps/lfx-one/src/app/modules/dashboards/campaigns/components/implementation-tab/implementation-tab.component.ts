@@ -136,14 +136,21 @@ import type {
   RedditCallToAction,
   RedditObjective,
 } from '@lfx-one/shared/interfaces';
-import { campaignBiddingError, campaignBiddingPayload, codePointLength, defaultCampaignBiddingDraft } from '@lfx-one/shared/utils';
+import {
+  campaignBiddingError,
+  campaignBiddingPayload,
+  codePointLength,
+  defaultCampaignBiddingDraft,
+  describeCampaignDispatchFailure,
+} from '@lfx-one/shared/utils';
 
 import { CampaignBiddingControlComponent } from '../campaign-bidding-control/campaign-bidding-control.component';
 
 type ImplementationStep = 'form' | 'creating' | 'results';
 
 /**
- * One campaign-service platform result paired with the three-state outcome the row renders.
+ * One campaign-service platform result paired with the outcome the row renders, and the
+ * operator-facing reading of its `error` (`describeCampaignDispatchFailure`).
  *
  * A local intersection rather than a `@lfx-one/shared` interface: it is this component's view
  * model, derived from `CampaignPlatformResult` and consumed only by this template, so it is not
@@ -152,14 +159,24 @@ type ImplementationStep = 'form' | 'creating' | 'results';
  * `apps/lfx-one/`, while ESLint's `@typescript-eslint/consistent-type-definitions` rejects a
  * plain `type X = { … }` object literal.
  */
-type PlatformResultRow = CampaignPlatformResult & { outcome: 'created' | 'orphaned' | 'unconfirmed' };
+type PlatformResultRow = CampaignPlatformResult & {
+  outcome: 'created' | 'orphaned' | 'nothing-created' | 'unconfirmed';
+  displayError: string | null;
+  nextStep: string | null;
+};
 
 /** See `ImplementationTabComponent.platformOutcomes` for why `ok` alone is not the test. */
 function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow {
+  const failure = result.error ? describeCampaignDispatchFailure(result.error) : null;
+  const displayError = failure?.message ?? result.error ?? null;
+  const nextStep = result.ok ? null : (failure?.nextStep ?? null);
   if (result.ok) {
-    return { ...result, outcome: 'created' };
+    return { ...result, outcome: 'created', displayError, nextStep };
   }
-  return { ...result, outcome: result.campaignId ? 'orphaned' : 'unconfirmed' };
+  if (result.campaignId) {
+    return { ...result, outcome: 'orphaned', displayError, nextStep };
+  }
+  return { ...result, outcome: failure?.nothingCreated ? 'nothing-created' : 'unconfirmed', displayError, nextStep };
 }
 
 @Component({
@@ -607,6 +624,17 @@ export class ImplementationTabComponent implements OnInit {
    * campaign costs budget. Note the skip is NOT detected by matching its human-readable sentence;
    * the wire has no dedicated `skipped` field yet (LFXV2-2665 tracks adding one) and a message
    * reworded upstream would silently flip the UI's verdict.
+   *
+   * The one exception is `nothing-created`, and it is matched on text deliberately. Since
+   * campaign-service #208 a failure the service PROVED happened before anything was created (the
+   * claim was released) carries a fixed sentence whose ending says so —
+   * `CAMPAIGN_DISPATCH_NOTHING_CREATED_SUFFIXES`, mirrored from `DispatchFailureMessage`. That
+   * differs from the skip in the one way the rule above cares about: the direction of drift. A
+   * reworded skip sentence would flip a row AWAY from the warning; a reworded pre-create sentence
+   * simply stops matching and the row falls back to `unconfirmed`, the over-warning direction. No
+   * sentence for the possibly-created case ends in those suffixes, and none of them is built from
+   * upstream text, so a match cannot downgrade a real campaign to "nothing was sent". An id-bearing
+   * row stays `orphaned` whatever its message says.
    */
   protected readonly platformOutcomes = computed<PlatformResultRow[]>(() => this.platformResults().map(toPlatformResultRow));
 
@@ -622,7 +650,20 @@ export class ImplementationTabComponent implements OnInit {
    * for the same reason the row state is named `unconfirmed`: a heading is the one line a reader
    * acts on without reading further, and this one must not assert an absence nobody verified.
    */
-  protected readonly anyPlatformCreated = computed(() => this.platformOutcomes().some((r) => r.outcome !== 'unconfirmed'));
+  protected readonly anyPlatformCreated = computed(() => this.platformOutcomes().some((r) => r.outcome === 'created' || r.outcome === 'orphaned'));
+
+  /**
+   * The results panel heading. "No Campaigns Created" only when EVERY row is a proven pre-create
+   * failure; one unconfirmed row keeps "Campaign Status Unconfirmed" — see `platformOutcomes` for
+   * what `nothing-created` is and is not.
+   */
+  protected readonly platformResultsHeading = computed(() => {
+    if (this.anyPlatformCreated()) {
+      return 'Campaigns Created';
+    }
+    const rows = this.platformOutcomes();
+    return rows.length > 0 && rows.every((r) => r.outcome === 'nothing-created') ? 'No Campaigns Created' : 'Campaign Status Unconfirmed';
+  });
 
   protected readonly errors = signal<string[]>([]);
   protected readonly briefKeywords = signal<CampaignKeyword[]>([]);

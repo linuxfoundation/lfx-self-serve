@@ -31,6 +31,7 @@ import type {
   CampaignBriefPersistenceState,
   CampaignCreateResult,
   CampaignImplementationDraft,
+  CampaignPlatformResult,
   CampaignSitelink,
   GoogleCreativeChannel,
   GoogleCreativeFieldSpec,
@@ -5540,6 +5541,99 @@ describe('ImplementationTabComponent reddit results notice', () => {
  * The control is a `<select>` over the supported map's own keys, so the only guards left are the
  * ones a select cannot express — the cap, and not adding a code twice.
  */
+/**
+ * campaign-service platform rows whose `error` is one of issue #208's fixed dispatch-failure
+ * sentences (`DispatchFailureMessage`). The row must turn a known connection reason into a next
+ * step, mark a proven pre-create failure as nothing sent, and keep "could not be confirmed" for
+ * everything else.
+ */
+describe('ImplementationTabComponent dispatch failure reasons', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  const atResults = (rows: CampaignPlatformResult[]): HTMLElement => {
+    const c = fixture.componentInstance as unknown as {
+      platformResults: { set(v: CampaignPlatformResult[]): void };
+      step: { set(v: 'results'): void };
+    };
+    c.platformResults.set(rows);
+    c.step.set('results');
+    fixture.detectChanges();
+    return fixture.nativeElement as HTMLElement;
+  };
+  const row = (el: HTMLElement, platform: string): HTMLElement => el.querySelector(`[data-testid="implementation-platform-result-${platform}"]`) as HTMLElement;
+  const heading = (el: HTMLElement): string => el.querySelector('[data-testid="implementation-platform-results"] h3')?.textContent?.trim() ?? '';
+  const notUsable = (provider: string, token: string) =>
+    `this project's ${provider} connection cannot be used as configured (reason: ${token}); nothing was sent`;
+
+  it.each([
+    ['account_not_selected', "Choose an ad account on this project's Meta Ads connection, then create again."],
+    ['connection_inactive', "Reactivate this project's Meta Ads connection, then create again."],
+    ['credentials_undecodable', "Reconnect this project's Meta Ads connection to save fresh credentials, then create again."],
+    ['credentials_incomplete', "Reconnect this project's Meta Ads connection to save fresh credentials, then create again."],
+    ['credentials_expired', "Re-authorize this project's Meta Ads connection, then create again."],
+  ])('renders the next step for %s in place of the raw reason', (token, step) => {
+    const el = row(atResults([{ platform: 'meta-ads', ok: false, error: notUsable('meta-ads', token) }]), 'meta-ads');
+    expect(el.querySelector('[data-testid="implementation-platform-result-next-step"]')?.textContent?.trim()).toBe(step);
+    expect(el.textContent).not.toContain('(reason:');
+    expect(el.textContent).toContain('cannot be used as configured; nothing was sent');
+    expect(el.textContent).toContain('not created — nothing was sent, safe to fix and retry');
+    expect(el.textContent).not.toContain('could not be confirmed');
+  });
+
+  it('shows an unknown reason token verbatim with no next step', () => {
+    const error = notUsable('meta-ads', 'token_request_rejected');
+    const el = row(atResults([{ platform: 'meta-ads', ok: false, error }]), 'meta-ads');
+    expect(el.textContent).toContain(error);
+    expect(el.querySelector('[data-testid="implementation-platform-result-next-step"]')).toBeNull();
+  });
+
+  it('keeps "could not be confirmed" for an unconfirmed failure', () => {
+    const error = 'meta-ads campaign creation could not be confirmed; something may have been created — verify on the platform before retrying';
+    const el = atResults([{ platform: 'meta-ads', ok: false, error }]);
+    expect(row(el, 'meta-ads').textContent).toContain('could not be confirmed — check the ad account before creating it again');
+    expect(el.querySelector('[data-testid="implementation-platform-result-nothing-created"]')).toBeNull();
+    expect(heading(el)).toBe('Campaign Status Unconfirmed');
+  });
+
+  it('keeps "could not be confirmed" for an unclassified failure and a skip', () => {
+    const el = atResults([
+      { platform: 'meta-ads', ok: false, error: 'platform campaign creation failed' },
+      { platform: 'reddit-ads', ok: false, error: 'skipped: another concurrent dispatch owns this platform' },
+    ]);
+    expect(row(el, 'meta-ads').textContent).toContain('could not be confirmed');
+    expect(row(el, 'reddit-ads').textContent).toContain('could not be confirmed');
+  });
+
+  it('keeps an id-bearing row orphaned whatever its message says', () => {
+    const el = atResults([
+      { platform: 'meta-ads', ok: false, campaignId: '123', error: 'no meta-ads connection is configured for this project; nothing was sent' },
+    ]);
+    expect(row(el, 'meta-ads').textContent).toContain('created upstream but not recorded');
+    expect(heading(el)).toBe('Campaigns Created');
+  });
+
+  it('heads the panel "No Campaigns Created" only when every row is a proven pre-create failure', () => {
+    let el = atResults([
+      { platform: 'meta-ads', ok: false, error: notUsable('meta-ads', 'account_not_selected') },
+      { platform: 'reddit-ads', ok: false, error: 'reddit-ads refused the request (HTTP 400) before anything was created; nothing was created' },
+    ]);
+    expect(heading(el)).toBe('No Campaigns Created');
+
+    el = atResults([
+      { platform: 'meta-ads', ok: false, error: notUsable('meta-ads', 'account_not_selected') },
+      { platform: 'reddit-ads', ok: false, error: 'platform campaign creation failed' },
+    ]);
+    expect(heading(el)).toBe('Campaign Status Unconfirmed');
+  });
+});
+
 describe('ImplementationTabComponent google geo targets', () => {
   let fixture: ComponentFixture<ImplementationTabComponent>;
 

@@ -3626,3 +3626,67 @@ export const GOOGLE_ADS_BIDDING_BOUNDS = {
   targetCpa: { min: 0.01, max: 1_000_000 },
   targetRoas: { min: 0.01, max: 1000 },
 } as const;
+
+/**
+ * The one dispatch-failure sentence whose reason token this application turns into a next step:
+ * a PROJECT connection that exists but cannot be used. Mirrors the `ErrConnectionNotUsable` arm
+ * of `DispatchFailureMessage` (`internal/service/dispatch_failure.go` in
+ * lfx-v2-campaign-service, issue #208) completed by `reasonSuffix`:
+ * `this project's <provider> connection cannot be used as configured (reason: <token>); nothing was sent`.
+ *
+ * Anchored at both ends and the token restricted to `[a-z_]`, so only that fixed sentence
+ * matches. The backend builds it from a fixed format, its own provider name and a token from
+ * `unusableConnectionReason`'s fixed vocabulary (`internal/service/connection.go`) — never from
+ * upstream text — so nothing a platform said can reach the capture groups. The LF SYSTEM
+ * connection's sentence is deliberately not matched: that connection is not the project's to
+ * repair, so a project-level next step would send the operator to the wrong place.
+ */
+export const CAMPAIGN_DISPATCH_CONNECTION_NOT_USABLE_PATTERN =
+  /^this project's ([a-z][a-z-]*) connection cannot be used as configured \(reason: ([a-z_]+)\); nothing was sent$/;
+
+/**
+ * Operator next step per connection reason token, `{platform}` standing for the platform's label.
+ *
+ * Covers only the tokens whose remedy an operator can apply to the project connection. The
+ * service-side tokens (`token_request_rejected`, `account_discovery_rejected`, the `*_unwired`
+ * probes) and the ambiguous ones (`provider_config_invalid`, `application_credentials_invalid`)
+ * are left out on purpose: a missing entry renders the backend's sentence verbatim, which is the
+ * honest answer when this application has no remedy to offer.
+ */
+export const CAMPAIGN_DISPATCH_CONNECTION_REASON_NEXT_STEPS: Readonly<Record<string, string>> = {
+  account_not_selected: "Choose an ad account on this project's {platform} connection, then create again.",
+  connection_inactive: "Reactivate this project's {platform} connection, then create again.",
+  credentials_undecodable: "Reconnect this project's {platform} connection to save fresh credentials, then create again.",
+  credentials_incomplete: "Reconnect this project's {platform} connection to save fresh credentials, then create again.",
+  credential_blob_malformed: "Reconnect this project's {platform} connection to save fresh credentials, then create again.",
+  credentials_absent: "Reconnect this project's {platform} connection to save fresh credentials, then create again.",
+  credentials_expired: "Re-authorize this project's {platform} connection, then create again.",
+};
+
+/**
+ * Endings of the dispatch-failure sentences that campaign-service emits ONLY once it has proved
+ * nothing was created on the platform and released the claim (`preCreate` in
+ * `DispatchFailureMessage`, `internal/service/dispatch_failure.go` in lfx-v2-campaign-service).
+ * Each is the fixed tail of a `fmt.Sprintf` format whose only variables are the provider name, a
+ * reason token and an HTTP status number — never upstream text — so a match cannot be forged by
+ * a platform's error body:
+ *
+ * - `; nothing was sent` — no project connection, undecryptable credentials, an unusable project
+ *   or LF system connection, a missing LF system connection;
+ * - `so nothing was sent; the connection may need re-authorizing` — a token refresh failure;
+ * - `; nothing was created` — the platform answered a non-2xx before anything was created.
+ *
+ * Every sentence for the opposite case (`preCreate` false) reads "could not be confirmed …
+ * something may have been created" and ends otherwise. The service-defect sentence is NOT
+ * listed even though it is pre-create too: it ends "the connection is not at fault", and
+ * "fix and retry" is advice the operator cannot act on.
+ *
+ * Text, not a field: the wire carries no machine-readable pre-create flag yet. A reworded
+ * backend sentence stops matching and the row falls back to "could not be confirmed" — the
+ * over-warning direction — so drift can never upgrade an unconfirmed row to "nothing was sent".
+ */
+export const CAMPAIGN_DISPATCH_NOTHING_CREATED_SUFFIXES: readonly string[] = [
+  '; nothing was sent',
+  'so nothing was sent; the connection may need re-authorizing',
+  '; nothing was created',
+];

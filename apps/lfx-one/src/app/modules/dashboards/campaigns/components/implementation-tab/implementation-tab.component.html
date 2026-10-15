@@ -1975,7 +1975,7 @@
             <i class="fa-light fa-triangle-exclamation text-amber-600" aria-hidden="true"></i>
           }
           <h3 class="text-sm font-semibold text-gray-900">
-            {{ anyPlatformCreated() ? 'Campaigns Created' : 'Campaign Status Unconfirmed' }}
+            {{ platformResultsHeading() }}
           </h3>
         </div>
         <div class="flex flex-col gap-2">
@@ -1985,8 +1985,9 @@
             database write failed — `campaignId` is populated on purpose so the id is not lost)
             and an id-less remainder that mixes genuine rejections, concurrent-dispatch skips and
             responses whose upstream id was lost. Only the first is safely reportable as an
-            absence, and nothing on the wire distinguishes them. The classification and the
-            reasoning live in `platformOutcomes`.
+            absence, and nothing on the wire distinguishes them — except the fixed pre-create
+            sentences campaign-service #208 added, which render as `nothing-created`. The
+            classification and the reasoning live in `platformOutcomes`.
           -->
           @for (pr of platformOutcomes(); track pr.platform) {
             @let outcome = pr.outcome;
@@ -2002,6 +2003,9 @@
                   }
                   @case ('orphaned') {
                     <i class="fa-light fa-triangle-exclamation text-amber-600" aria-hidden="true"></i>
+                  }
+                  @case ('nothing-created') {
+                    <i class="fa-light fa-circle-xmark text-amber-600" aria-hidden="true"></i>
                   }
                   @default {
                     <i class="fa-light fa-circle-question text-amber-600" aria-hidden="true"></i>
@@ -2022,6 +2026,9 @@
                       @case ('orphaned') {
                         created upstream but not recorded — needs reconciliation
                       }
+                      @case ('nothing-created') {
+                        not created — nothing was sent, safe to fix and retry
+                      }
                       @default {
                         could not be confirmed — check the ad account before creating it again
                       }
@@ -2032,10 +2039,18 @@
                   <p class="text-xs text-gray-500">campaign {{ pr.campaignId }}</p>
                 }
               </div>
-              @if (pr.error) {
-                <p class="mt-1 text-xs" [class.text-amber-700]="outcome !== 'created'" [class.text-gray-600]="outcome === 'created'">
-                  {{ pr.error }}
+              @if (outcome === 'nothing-created') {
+                <p class="mt-1 text-xs font-medium text-gray-700" data-testid="implementation-platform-result-nothing-created">
+                  Nothing was sent — safe to fix and retry.
                 </p>
+              }
+              @if (pr.displayError) {
+                <p class="mt-1 text-xs" [class.text-amber-700]="outcome !== 'created'" [class.text-gray-600]="outcome === 'created'">
+                  {{ pr.displayError }}
+                </p>
+              }
+              @if (pr.nextStep) {
+                <p class="mt-1 text-xs font-medium text-gray-900" data-testid="implementation-platform-result-next-step">{{ pr.nextStep }}</p>
               }
             </div>
           }
