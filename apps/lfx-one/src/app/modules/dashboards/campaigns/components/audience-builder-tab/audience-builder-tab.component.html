@@ -161,7 +161,7 @@
           <button
             type="button"
             (click)="onGenerateEventPlan()"
-            [disabled]="degraded() || selectionLocked() || eventUrlControl.value.trim().length === 0"
+            [disabled]="degraded() || selectionLocked() || customCreating() || eventUrlControl.value.trim().length === 0"
             class="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
             data-testid="campaigns-audience-event-generate">
             <i class="fa-light fa-play" aria-hidden="true"></i>
@@ -191,7 +191,8 @@
         [preset]="customPreset()"
         (created)="onCustomCreated($event)"
         (reuse)="onCustomReuse($event)"
-        (eventPlanned)="onEventPlanned($event)" />
+        (eventPlanned)="onEventPlanned($event)"
+        (creatingChange)="customCreating.set($event)" />
     </div>
 
     <!-- Or use an existing list, in every mode -->
@@ -214,7 +215,7 @@
               <div class="flex min-w-0 flex-col gap-0.5">
                 <span class="text-xs font-medium break-words text-gray-900">{{ list.name }}</span>
                 <span class="flex flex-wrap items-center gap-2 text-xs text-gray-500">
-                  {{ list.size === undefined ? 'size unknown' : list.size.toLocaleString('en-US') + ' contacts' }}
+                  {{ list.size === undefined ? 'size unknown' : (list.size | number) + ' contacts' }}
                   @if (list.hubspotUrl) {
                     <a [href]="list.hubspotUrl" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">Open in HubSpot</a>
                   }
@@ -576,7 +577,7 @@
           [selectedIds]="selectedIds()"
           [excludedIds]="exclusionIds()"
           [disabled]="selectionLocked()"
-          [canCreate]="!degraded()"
+          [canCreate]="!degraded() && !customCreating()"
           (search)="onSearch($event)"
           (addList)="onAddSearchResult($event)"
           (excludeList)="onExcludeList($event)"

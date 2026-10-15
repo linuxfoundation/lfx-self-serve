@@ -162,6 +162,16 @@ describe('adaptJobPollResponse', () => {
     expect(adapted.platformResults?.[1].warnings).toBeUndefined();
   });
 
+  it('collapses duplicate warnings, which the UI keys by their text', () => {
+    const adapted = adaptJobPollResponse({
+      job_id: 'j1',
+      status: 'succeeded',
+      result: [{ platform: 'hubspot', ok: true, campaign_id: 'c1', warnings: ['Same.', ' Same. ', 'Other.'] }],
+    } as never);
+
+    expect(adapted.platformResults?.[0].warnings).toEqual(['Same.', 'Other.']);
+  });
+
   it('bounds the warnings an upstream response can carry', () => {
     const many = Array.from({ length: 25 }, (_, i) => `warning ${i}`);
     const long = 'x'.repeat(2000);

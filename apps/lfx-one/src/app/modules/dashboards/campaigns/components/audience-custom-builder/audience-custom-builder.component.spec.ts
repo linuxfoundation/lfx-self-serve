@@ -4,7 +4,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { AudienceCustomService } from '@services/audience-custom.service';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AudienceComposedList, AudienceCustomCriteria, AudienceCustomInterpretResult, AudienceCustomPreview } from '@lfx-one/shared/interfaces';
@@ -190,6 +190,64 @@ describe('AudienceCustomBuilderComponent', () => {
 
     expect(el('audience-custom-builder-unconfirmed').textContent).toContain('Seoul (v2)');
     expect(host().querySelector('[data-testid="audience-custom-builder-create"]'), 'no button may offer a second create').toBeNull();
+  });
+
+  // A timeout (408), a lost connection (503, 0) or any 5xx may each mean HubSpot created the list.
+  it.each([408, 503, 500, 0])('treats a %s on create as unconfirmed, never as retryable', (status) => {
+    service.create.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
+    interpretSeoul();
+    click('audience-custom-builder-preview');
+    click('audience-custom-builder-create');
+    click('audience-custom-builder-confirm-create');
+
+    expect(el('audience-custom-builder-unconfirmed').textContent).toContain(preview.name);
+    expect(host().querySelector('[data-testid="audience-custom-builder-create"]'), 'no button may offer a second create').toBeNull();
+  });
+
+  it('lets a refused create (400) be corrected and retried', () => {
+    service.create.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 400, error: { message: 'bad criteria' } })));
+    interpretSeoul();
+    click('audience-custom-builder-preview');
+    click('audience-custom-builder-create');
+    click('audience-custom-builder-confirm-create');
+
+    expect(host().querySelector('[data-testid="audience-custom-builder-unconfirmed"]')).toBeNull();
+    expect(host().querySelector('[data-testid="audience-custom-builder-create-error"]')).not.toBeNull();
+    expect(host().querySelector('[data-testid="audience-custom-builder-create"]')).not.toBeNull();
+  });
+
+  it('ignores a preset while a create is in flight, so its reply is never dropped', () => {
+    const reply = new Subject<AudienceComposedList>();
+    service.create.mockReturnValue(reply);
+    const emitted: AudienceComposedList[] = [];
+    const creating: boolean[] = [];
+    fixture.componentInstance.created.subscribe((list) => emitted.push(list));
+    fixture.componentInstance.creatingChange.subscribe((v) => creating.push(v));
+    interpretSeoul();
+    click('audience-custom-builder-preview');
+    click('audience-custom-builder-create');
+    click('audience-custom-builder-confirm-create');
+
+    fixture.componentRef.setInput('preset', { version: 9, criteria: { label: 'Other', registeredFor: ['Other 2026'] } });
+    fixture.detectChanges();
+    reply.next(created);
+    reply.complete();
+    fixture.detectChanges();
+
+    expect(emitted).toEqual([created]);
+    expect(creating).toEqual([true, false]);
+  });
+
+  it('keeps the preview while the list name is edited', () => {
+    interpretSeoul();
+    click('audience-custom-builder-preview');
+
+    type('audience-custom-builder-name', 'My own name');
+
+    expect(host().querySelector('[data-testid="audience-custom-builder-preview-result"]')).not.toBeNull();
+    click('audience-custom-builder-create');
+    click('audience-custom-builder-confirm-create');
+    expect(service.create).toHaveBeenCalledWith('tlf', expect.objectContaining({ name: 'My own name' }));
   });
 
   it('applies a deterministic preset without calling the model', () => {

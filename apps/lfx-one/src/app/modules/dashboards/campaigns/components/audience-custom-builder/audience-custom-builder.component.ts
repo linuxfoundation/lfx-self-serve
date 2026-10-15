@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, effect, inject, input, output, signal, untracked } from '@angular/core';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, DestroyRef, inject, input, output, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormArray, FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { AudienceCustomService } from '@services/audience-custom.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
 
-import { AUDIENCE_CUSTOM_OPERATORS, AUDIENCE_SPEAKER_SCOPES } from '@lfx-one/shared/constants';
+import { AUDIENCE_CUSTOM_OPERATORS, AUDIENCE_CUSTOM_REUSE_RECOMMENDATIONS, AUDIENCE_SPEAKER_SCOPES } from '@lfx-one/shared/constants';
+import { filter } from 'rxjs';
 import type {
   AudienceComposedList,
   AudienceCustomAnswer,
@@ -22,6 +23,9 @@ import type {
   AudienceListSearchResult,
   AudienceSpeakerScope,
 } from '@lfx-one/shared/interfaces';
+
+/** Statuses that prove a create did nothing: the request itself was refused. Everything else is unconfirmed. */
+const DEFINITE_CREATE_FAILURES: ReadonlySet<number> = new Set([400, 401, 403, 404, 409, 422]);
 
 type FilterGroup = FormGroup<{ property: FormControl<string>; operator: FormControl<AudienceCustomOperator>; values: FormControl<string> }>;
 
@@ -69,6 +73,8 @@ export class AudienceCustomBuilderComponent {
   public readonly reuse = output<AudienceListSearchResult>();
   /** The event an event audience was planned from, so the tab can QA against it. */
   public readonly eventPlanned = output<AudienceDiscoveredEvent>();
+  /** True while a create is in flight, so the container can hold back anything that would reset the builder. */
+  public readonly creatingChange = output<boolean>();
 
   // === Constants ===
   protected readonly operators = AUDIENCE_CUSTOM_OPERATORS;
@@ -136,6 +142,14 @@ export class AudienceCustomBuilderComponent {
   protected readonly locked = computed(() => this.disabled() || this.busy());
   /** Create stays disabled until a preview of the CURRENT criteria exists. */
   protected readonly canCreate = computed(() => !!this.preview() && !this.locked() && !this.unconfirmedName());
+  /** The similar lists with their recommendation's label, so the template reads values, not methods. */
+  protected readonly similarRows = computed(() =>
+    this.similar().map((item) => ({ item, label: item.recommendation ? AUDIENCE_CUSTOM_REUSE_RECOMMENDATIONS[item.recommendation] : 'Not assessed' }))
+  );
+  /** Per filter row: whether its operator takes values (`is_known`/`is_unknown` do not). */
+  protected readonly filterTakesValues = computed(() =>
+    (this.formValue().propertyFilters ?? []).map((f) => f?.operator !== 'is_known' && f?.operator !== 'is_unknown')
+  );
   protected readonly upperBoundText = computed(() => {
     const bound = this.preview()?.upperBound;
     return bound === undefined ? null : bound.toLocaleString('en-US');
@@ -152,15 +166,15 @@ export class AudienceCustomBuilderComponent {
   public constructor() {
     // Any edit makes the preview describe criteria that no longer exist, so it is dropped — a
     // Create must always follow a preview of exactly what will be created.
+    // The list name is not a criterion, so editing it keeps the preview (and the create state it holds).
     this.form.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.invalidatePreview());
-    this.nameControl.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.invalidatePreview());
 
-    effect(() => {
-      const preset = this.preset();
-      if (preset) {
-        untracked(() => this.applyPreset(preset));
-      }
-    });
+    toObservable(this.preset)
+      .pipe(
+        filter((preset): preset is AudienceCustomPreset => preset !== null),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((preset) => this.applyPreset(preset));
   }
 
   // === Protected Methods ===
@@ -197,18 +211,6 @@ export class AudienceCustomBuilderComponent {
     this.reuse.emit(item.list);
   }
 
-  protected recommendationLabel(item: AudienceCustomSimilarList): string {
-    switch (item.recommendation) {
-      case 'reuse':
-        return 'Likely the same audience';
-      case 'update':
-        return 'Close — consider building a new version';
-      case 'unrelated':
-        return 'Probably a different audience';
-    }
-    return 'Not assessed';
-  }
-
   protected onOtherInput(questionId: string, value: string): void {
     this.otherAnswers.update((all) => ({ ...all, [questionId]: value }));
   }
@@ -227,11 +229,6 @@ export class AudienceCustomBuilderComponent {
 
   protected onRemoveFilter(index: number): void {
     this.filterRows.removeAt(index);
-  }
-
-  protected takesValues(index: number): boolean {
-    const op = this.filterRows.at(index)?.controls.operator.value;
-    return op !== 'is_known' && op !== 'is_unknown';
   }
 
   protected onPreview(): void {
@@ -282,7 +279,7 @@ export class AudienceCustomBuilderComponent {
       return;
     }
     const seq = ++this.seq;
-    this.creating.set(true);
+    this.setCreating(true);
     this.createError.set(null);
     this.customService
       .create(this.projectSlug(), this.request())
@@ -290,20 +287,21 @@ export class AudienceCustomBuilderComponent {
       .subscribe({
         next: (list) => {
           if (seq !== this.seq) return;
-          this.creating.set(false);
+          this.setCreating(false);
           this.confirming.set(false);
           this.createdList.set(list);
           this.created.emit(list);
         },
         error: (err: HttpErrorResponse) => {
           if (seq !== this.seq) return;
-          this.creating.set(false);
+          this.setCreating(false);
           this.confirming.set(false);
-          if (err.status === 502) {
-            // Not retryable: HubSpot may have created the list. Create stays disabled until the
-            // operator starts over, so a double click cannot make a second one.
-            const body = err.error as { masterName?: string } | null;
-            this.unconfirmedName.set(body?.masterName || this.nameControl.value || 'the custom list');
+          if (!DEFINITE_CREATE_FAILURES.has(err.status)) {
+            // Not retryable: a 502 partial, a timeout, a lost connection or any 5xx may each mean
+            // HubSpot created the list. Create stays disabled until the operator starts over, so a
+            // retry cannot make a second one.
+            const body = err.status === 502 ? (err.error as { masterName?: string } | null) : null;
+            this.unconfirmedName.set(body?.masterName || this.nameControl.value.trim() || this.preview()?.name || 'the custom list');
             return;
           }
           this.createError.set(serverAuthoredMessage(err, 'The list could not be created.'));
@@ -332,7 +330,7 @@ export class AudienceCustomBuilderComponent {
     this.createError.set(null);
     this.interpreting.set(false);
     this.previewing.set(false);
-    this.creating.set(false);
+    this.setCreating(false);
   }
 
   // === Private Methods ===
@@ -376,6 +374,11 @@ export class AudienceCustomBuilderComponent {
   }
 
   private applyPreset(preset: AudienceCustomPreset): void {
+    // A preset resets the builder, which would drop an in-flight create's reply: the list would
+    // exist in HubSpot with nothing here to say so. The container holds presets back meanwhile.
+    if (this.creating()) {
+      return;
+    }
     this.onStartOver();
     this.eventUrl.set(preset.eventUrl ?? '');
     if (preset.criteria) {
@@ -458,6 +461,13 @@ export class AudienceCustomBuilderComponent {
       operator: new FormControl<AudienceCustomOperator>(operator, { nonNullable: true }),
       values: new FormControl(values, { nonNullable: true }),
     });
+  }
+
+  private setCreating(value: boolean): void {
+    if (this.creating() !== value) {
+      this.creating.set(value);
+      this.creatingChange.emit(value);
+    }
   }
 
   private invalidatePreview(): void {

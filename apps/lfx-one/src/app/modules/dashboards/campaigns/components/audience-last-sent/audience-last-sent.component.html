@@ -149,7 +149,7 @@
                     email.matchReason === 'brand_only' || email.matchReason === 'related_words' ? 'bg-amber-50 text-amber-700' : 'bg-gray-100 text-gray-600'
                   "
                   [attr.data-testid]="'audience-last-sent-reason-' + email.emailId">
-                  {{ matchReasonLabel(email.matchReason) }}
+                  {{ matchReasonLabels[email.matchReason] }}
                 </span>
               }
               <div class="flex flex-wrap items-center gap-x-2 text-xs text-gray-500">

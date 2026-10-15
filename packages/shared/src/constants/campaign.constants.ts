@@ -4,6 +4,8 @@
 import type {
   AudienceBuildMode,
   AudienceCustomOperator,
+  AudienceCustomReuseRecommendation,
+  AudienceLastSentMatchReason,
   AudienceSignal,
   AudienceSpeakerScope,
   BriefMetricsActionRule,
@@ -2438,6 +2440,21 @@ export const AUDIENCE_CUSTOM_OPERATORS: readonly { value: AudienceCustomOperator
   { value: 'is_known', label: 'is known' },
   { value: 'is_unknown', label: 'is unknown' },
 ] as const;
+
+/** How the model judged an existing list against the audience being built, with its label. */
+export const AUDIENCE_CUSTOM_REUSE_RECOMMENDATIONS: Readonly<Record<AudienceCustomReuseRecommendation, string>> = {
+  reuse: 'Likely the same audience',
+  update: 'Close — consider building a new version',
+  unrelated: 'Probably a different audience',
+};
+
+/** Why a prior send is listed, with its label; brand-only and related-word rows are weaker precedent. */
+export const AUDIENCE_LAST_SENT_MATCH_REASONS: Readonly<Record<AudienceLastSentMatchReason, string>> = {
+  event_name: 'Matched on the event name',
+  subject: 'Matched on the subject line',
+  related_words: 'Matched on related words only — check it',
+  brand_only: 'Matched on the brand only — check it',
+};
 
 /**
  * Above this combined estimated size, an exact union count is refused.

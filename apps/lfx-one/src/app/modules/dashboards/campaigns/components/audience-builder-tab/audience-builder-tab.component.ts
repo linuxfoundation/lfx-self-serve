@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
+import { DecimalPipe } from '@angular/common';
 import { Component, computed, DestroyRef, inject, input, output, signal } from '@angular/core';
 import { outputFromObservable, takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
@@ -69,6 +70,7 @@ import { AudienceSuppressionGridComponent } from '../audience-suppression-grid/a
 @Component({
   selector: 'lfx-audience-builder-tab',
   imports: [
+    DecimalPipe,
     ReactiveFormsModule,
     AudienceCardGridComponent,
     AudienceCustomBuilderComponent,
@@ -232,6 +234,8 @@ export class AudienceBuilderTabComponent {
   protected readonly identity = signal<AudienceDiscoveredEvent | null>(null);
   /** The custom builder's current preset, set by a missing-signal "Create list". */
   protected readonly customPreset = signal<AudienceCustomPreset | null>(null);
+  /** True while the custom builder is creating a list: a preset would reset it mid-create. */
+  protected readonly customCreating = signal(false);
   /**
    * The legacy builder's three ways to set the audience. Event Audience first, as in legacy: plan
    * one from the event page. Custom: describe it. Reuse or Discover: find the lists that exist.
@@ -590,6 +594,12 @@ export class AudienceBuilderTabComponent {
    */
   protected readonly suppressionMissing = computed(() => this.suppressionListIds().size === 0);
 
+  /** The suppression count, only while it still describes the ticked exclusions. */
+  protected readonly suppressionCount = computed(() => {
+    const result = this.suppressionCountResult();
+    return result && result.key === [...this.excludeIds()].sort().join(',') ? result.count : null;
+  });
+
   /**
    * The exclusions actually sent: ticked suppression rows plus lists marked Exclude, minus inclusion.
    *
@@ -598,12 +608,6 @@ export class AudienceBuilderTabComponent {
    * explicit intent — the suppression tick is a recommendation this component made. (An Exclude
    * mark cannot collide with inclusion: the two are kept mutually exclusive when set.)
    */
-  /** The suppression count, only while it still describes the ticked exclusions. */
-  protected readonly suppressionCount = computed(() => {
-    const result = this.suppressionCountResult();
-    return result && result.key === [...this.excludeIds()].sort().join(',') ? result.count : null;
-  });
-
   protected readonly excludeIds = computed(() =>
     [...new Set([...this.suppressionListIds(), ...this.exclusion().keys()])].filter((id) => !this.inclusion().has(id))
   );
@@ -740,6 +744,12 @@ export class AudienceBuilderTabComponent {
   });
 
   /**
+   * The suppression lists the send applies, for QA: what was recorded once the audience is
+   * attached, otherwise what Exclude currently ticks.
+   */
+  protected readonly qaSendSuppressionIds = computed<readonly string[]>(() => (this.attachedListId() ? this.attachedExclusions() : this.excludeIds()));
+
+  /**
    * The exclusions behind the current attachment, so a prior send can be matched on its FULL
    * selection rather than its master alone.
    *
@@ -753,12 +763,6 @@ export class AudienceBuilderTabComponent {
    * the mismatch this is here to remove. Upstream returns what it persisted, so a successful attach
    * is the only thing that can move either half, and the two cannot disagree.
    */
-  /**
-   * The suppression lists the send applies, for QA: what was recorded once the audience is
-   * attached, otherwise what Exclude currently ticks.
-   */
-  protected readonly qaSendSuppressionIds = computed<readonly string[]>(() => (this.attachedListId() ? this.attachedExclusions() : this.excludeIds()));
-
   protected readonly attachedExclusions = computed<readonly string[]>(() => {
     const attached = this.attachResult();
     if (attached === null || this.attachedListId() !== attached.master.listId) {
@@ -1466,11 +1470,12 @@ export class AudienceBuilderTabComponent {
   }
 
   // === Protected Methods: custom audiences ===
-  /** A list the custom builder created joins Include like any hand-added list. */
+  /** The event an event audience was planned from, so QA judges against it. */
   protected onEventPlanned(event: AudienceDiscoveredEvent): void {
     this.plannedEvent.set(event);
   }
 
+  /** A list the custom builder created joins Include like any hand-added list. */
   protected onCustomCreated(list: AudienceComposedList): void {
     this.add(list.listId, list.name);
     this.ensureSuppressionLoaded();
@@ -1489,7 +1494,7 @@ export class AudienceBuilderTabComponent {
    */
   protected onGenerateEventPlan(): void {
     const url = this.eventUrlControl.value.trim();
-    if (url === '' || this.degraded() || this.selectionLocked()) return;
+    if (url === '' || this.degraded() || this.selectionLocked() || this.customCreating()) return;
     this.mode.set('event');
     this.customPreset.set({
       version: ++this.customPresetVersion,
@@ -1561,6 +1566,7 @@ export class AudienceBuilderTabComponent {
    * Nothing is created until the operator previews and confirms in the builder.
    */
   protected onCreateForSignal(signal: AudienceSignal): void {
+    if (this.customCreating()) return;
     // The builder lives in the Custom view; switching there is what makes the preset visible.
     this.mode.set('custom');
     const eventName = this.identity()?.eventName ?? '';
@@ -1964,7 +1970,6 @@ export class AudienceBuilderTabComponent {
     // (suppression is loaded above, before the identity guard)
   }
 
-  /** Fetches the suppression lists. Safe with empty scope: the hygiene rows are portfolio-wide. */
   /**
    * A list chosen without discovery still needs the suppression rows every send must keep. They are
    * the portfolio-wide ones here; a later discovery reloads them with the brand and event rows.
@@ -1976,6 +1981,7 @@ export class AudienceBuilderTabComponent {
     this.loadSuppression('', '');
   }
 
+  /** Fetches the suppression lists. Safe with empty scope: the hygiene rows are portfolio-wide. */
   private loadSuppression(brandShort: string, eventName: string): void {
     this.suppressionLoading.set(true);
     const run = this.runGeneration;

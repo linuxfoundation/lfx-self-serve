@@ -134,12 +134,13 @@
         <h5 class="text-xs font-semibold text-gray-900">Lists that may already be this audience</h5>
         <p class="text-xs text-gray-600">Reusing one avoids a duplicate list. The assessment is a suggestion — open the list in HubSpot to check.</p>
         <div class="grid grid-cols-1 gap-2 lg:grid-cols-2">
-          @for (item of similar(); track item.list.listId) {
+          @for (row of similarRows(); track row.item.list.listId) {
+            @let item = row.item;
             <div
               class="flex flex-col gap-1 rounded-md border border-violet-100 bg-white p-2"
               [attr.data-testid]="'audience-custom-builder-similar-' + item.list.listId">
               <span class="text-xs font-medium break-words text-gray-900">{{ item.list.name }}</span>
-              <span class="text-xs text-violet-700">{{ recommendationLabel(item) }}</span>
+              <span class="text-xs text-violet-700">{{ row.label }}</span>
               @if (item.reason) {
                 <span class="text-xs text-gray-600">{{ item.reason }}</span>
               }
@@ -333,7 +334,7 @@
                   }
                 </select>
               </label>
-              @if (takesValues(i)) {
+              @if (filterTakesValues()[i] !== false) {
                 <label class="flex min-w-[12rem] flex-1 flex-col gap-1 text-xs text-gray-700">
                   Values (comma-separated)
                   <input type="text" formControlName="values" class="rounded-md border border-gray-300 px-2 py-1 text-sm" />
@@ -404,14 +405,17 @@
     <!-- Preview & create -->
     @if (preview(); as p) {
       <div class="flex flex-col gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3" data-testid="audience-custom-builder-preview-result">
-        <label class="flex flex-col gap-1 text-xs text-gray-700">
-          List name
-          <input
-            type="text"
-            [formControl]="nameControl"
-            class="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm"
-            data-testid="audience-custom-builder-name" />
-        </label>
+        <!-- Locked with the rest of the form: the name sent to create is the one shown here. -->
+        <fieldset class="flex flex-col gap-1" [disabled]="locked()">
+          <label class="flex flex-col gap-1 text-xs text-gray-700">
+            List name
+            <input
+              type="text"
+              [formControl]="nameControl"
+              class="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm"
+              data-testid="audience-custom-builder-name" />
+          </label>
+        </fieldset>
         <ul class="flex flex-col gap-1 text-xs text-gray-700">
           <li>{{ p.branchCount }} filter branches</li>
           @if (p.gate; as g) {
@@ -429,15 +433,7 @@
           </p>
         }
 
-        @if (unconfirmedName(); as name) {
-          <div
-            class="flex flex-col gap-1 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-800"
-            role="alert"
-            data-testid="audience-custom-builder-unconfirmed">
-            <span class="font-semibold">HubSpot did not confirm the list was created.</span>
-            <span>Search HubSpot for "{{ name }}" before trying again. It may already exist, and a retry could create a second one.</span>
-          </div>
-        } @else if (confirming()) {
+        @if (!unconfirmedName() && confirming()) {
           <div class="flex flex-col gap-2 rounded-md border border-amber-300 bg-white p-2" data-testid="audience-custom-builder-confirm">
             <p class="text-xs text-gray-800">
               This creates a real contact list named <span class="font-semibold">{{ nameControl.value || p.name }}</span> in HubSpot.
@@ -466,7 +462,7 @@
               </button>
             </div>
           </div>
-        } @else {
+        } @else if (!unconfirmedName()) {
           <div>
             <button
               type="button"
@@ -478,10 +474,18 @@
             </button>
           </div>
         }
-        @if (createError(); as message) {
-          <p class="text-xs text-red-700" role="alert" data-testid="audience-custom-builder-create-error">{{ message }}</p>
-        }
       </div>
+    }
+
+    <!-- Outside the preview block, so nothing that drops the preview can hide a create's outcome. -->
+    @if (unconfirmedName(); as name) {
+      <div class="flex flex-col gap-1 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-800" role="alert" data-testid="audience-custom-builder-unconfirmed">
+        <span class="font-semibold">HubSpot did not confirm the list was created.</span>
+        <span>Search HubSpot for "{{ name }}" before trying again. It may already exist, and a retry could create a second one.</span>
+      </div>
+    }
+    @if (createError(); as message) {
+      <p class="text-xs text-red-700" role="alert" data-testid="audience-custom-builder-create-error">{{ message }}</p>
     }
   }
 </div>

@@ -35,7 +35,7 @@ import type {
   AudienceSuppressionList,
   CampaignAudience,
 } from '@lfx-one/shared/interfaces';
-import { AUDIENCE_BUILDER_REQUEST_TIMEOUT_MS } from '@lfx-one/shared/constants';
+import { AUDIENCE_BUILDER_REQUEST_TIMEOUT_MS, AUDIENCE_CUSTOM_REUSE_RECOMMENDATIONS, AUDIENCE_LAST_SENT_MATCH_REASONS } from '@lfx-one/shared/constants';
 
 import { AUDIENCE_CAPABILITIES_TIMEOUT_MS } from '../constants/audience-builder.constants';
 import type { Request } from 'express';
@@ -437,6 +437,21 @@ function toSearchResult(wire: WireListSearchResult | undefined): AudienceListSea
   return { listId: wire.list_id, name: wire.name, size: wire.size, hubspotUrl: httpHref(wire.hubspot_url) };
 }
 
+/** The value when it is one of `labels`' keys, else undefined: an unknown enum is dropped, never passed through. */
+function oneOf<K extends string>(labels: Readonly<Record<K, string>>, value: unknown): K | undefined {
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(labels, value) ? (value as K) : undefined;
+}
+
+/** The event a plan was built from, or undefined unless it names one: the tab reads its name. */
+function toPlannedEvent(wire: WireEventIdentity | undefined): AudienceDiscoveredEvent | undefined {
+  if (!wire || typeof wire.event_name !== 'string' || !wire.event_name.trim()) return undefined;
+  return {
+    eventName: wire.event_name,
+    brandShort: typeof wire.brand_short === 'string' ? wire.brand_short : '',
+    eventDates: Array.isArray(wire.event_dates) ? wire.event_dates.filter((d): d is string => typeof d === 'string') : [],
+  };
+}
+
 /** Upstream criteria → client criteria. Every array is present, never undefined. */
 function toCustomCriteria(wire: WireCustomCriteria): AudienceCustomCriteria {
   return {
@@ -681,7 +696,7 @@ export class AudienceBuilderProxyService {
       emailId: email.email_id,
       emailName: email.email_name,
       subject: email.subject || undefined,
-      matchReason: (['event_name', 'subject', 'related_words', 'brand_only'] as const).find((r) => r === email.match_reason),
+      matchReason: oneOf(AUDIENCE_LAST_SENT_MATCH_REASONS, email.match_reason),
       sentAt: email.sent_at ?? '',
       hubspotUrl: httpHref(email.hubspot_url),
       includedLists: (email.included_lists ?? []).map(toListBrief),
@@ -819,16 +834,24 @@ export class AudienceBuilderProxyService {
       brandShort: wire.brand_short || undefined,
       gate: toSearchResult(wire.gate),
       speakersList: toSearchResult(wire.speakers_list),
-      questions: (wire.questions ?? []).map((q) => ({ id: q.id, question: q.question, why: q.why || undefined, options: q.options ?? [] })),
+      // Only well-formed questions reach the UI: each is rendered and keyed by its id.
+      questions: (Array.isArray(wire.questions) ? wire.questions : [])
+        .filter((q) => typeof q?.id === 'string' && q.id !== '' && typeof q.question === 'string' && (q.options === undefined || Array.isArray(q.options)))
+        .map((q) => ({
+          id: q.id,
+          question: q.question,
+          why: typeof q.why === 'string' && q.why ? q.why : undefined,
+          options: (q.options ?? []).filter((o): o is string => typeof o === 'string'),
+        })),
       notes: wire.notes ?? [],
       similar: (wire.similar ?? [])
         .filter((s) => !!s.list?.list_id)
         .map((s) => ({
           list: toSearchResult(s.list) as AudienceListSearchResult,
-          recommendation: (['reuse', 'update', 'unrelated'] as const).find((r) => r === s.recommendation),
+          recommendation: oneOf(AUDIENCE_CUSTOM_REUSE_RECOMMENDATIONS, s.recommendation),
           reason: s.reason || undefined,
         })),
-      event: wire.event ? { eventName: wire.event.event_name, brandShort: wire.event.brand_short ?? '', eventDates: wire.event.event_dates ?? [] } : undefined,
+      event: toPlannedEvent(wire.event),
     };
   }
 
@@ -851,9 +874,9 @@ export class AudienceBuilderProxyService {
    * an {@link AudienceComposePartialError} carrying the name, exactly as compose does.
    */
   public async createCustom(req: Request, projectSlug: string, request: AudienceCustomRequest): Promise<AudienceComposedList> {
+    let wire: WireComposedList;
     try {
-      const wire = await this.post<WireComposedList>(req, projectSlug, 'custom/create', { custom: this.customBody(request) });
-      return toCreatedList(wire, 'list');
+      wire = await this.post<WireComposedList>(req, projectSlug, 'custom/create', { custom: this.customBody(request) });
     } catch (error) {
       const partial = asComposePartial(error);
       if (partial) {
@@ -865,6 +888,18 @@ export class AudienceBuilderProxyService {
         );
       }
       throw error;
+    }
+    try {
+      return toCreatedList(wire, 'list');
+    } catch {
+      // Upstream answered 2xx, so the list EXISTS; only its reply is unusable. That is still a
+      // do-not-retry outcome — a retry would create a second list.
+      throw new AudienceComposePartialError(
+        'HubSpot created the list but its details could not be read. Search the portal for it before trying again.',
+        undefined,
+        undefined,
+        (typeof wire?.name === 'string' && wire.name.trim()) || request.name || undefined
+      );
     }
   }
 

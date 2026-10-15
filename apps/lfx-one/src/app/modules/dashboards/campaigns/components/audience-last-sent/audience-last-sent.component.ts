@@ -3,7 +3,7 @@
 
 import { DatePipe } from '@angular/common';
 import { Component, computed, input, output } from '@angular/core';
-import { AUDIENCE_ATTACH_MAX_LIST_IDS } from '@lfx-one/shared/constants';
+import { AUDIENCE_ATTACH_MAX_LIST_IDS, AUDIENCE_LAST_SENT_MATCH_REASONS } from '@lfx-one/shared/constants';
 
 import type { AudienceLastSentEmail, AudienceListBrief, AudienceListRef, AudienceMasterListBrief } from '@lfx-one/shared/interfaces';
 
@@ -139,6 +139,10 @@ export class AudienceLastSentComponent {
   /** Mark (or unmark) a list as an exclusion: its contacts are kept off this send. */
   public readonly excludeList = output<AudienceListRef>();
 
+  // === Constants ===
+  /** Why a prior send is listed; brand-only rows are weaker precedent than event-named ones. */
+  protected readonly matchReasonLabels = AUDIENCE_LAST_SENT_MATCH_REASONS;
+
   // === Protected Methods ===
   /**
    * Rows pre-decorated with `selected` / `sizeText`, so the template reads properties instead of
@@ -267,20 +271,6 @@ export class AudienceLastSentComponent {
    * A missing INCLUDE list is refused for the same reason in the other direction -- the reuse would
    * silently reach fewer people than the send it claims to repeat.
    */
-  /** Why a prior send is listed; brand-only rows are weaker precedent than event-named ones. */
-  protected matchReasonLabel(reason: string): string {
-    switch (reason) {
-      case 'event_name':
-        return 'Matched on the event name';
-      case 'subject':
-        return 'Matched on the subject line';
-      case 'related_words':
-        return 'Matched on related words only — check it';
-      case 'brand_only':
-        return 'Matched on the brand only — check it';
-    }
-    return '';
-  }
 
   private attachBlockedReason(email: AudienceLastSentEmail): string | null {
     if (email.listsUnavailable) {

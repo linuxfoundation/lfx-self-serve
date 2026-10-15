@@ -1,7 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AUDIENCE_ATTACH_MAX_LIST_IDS, AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH } from '@lfx-one/shared/constants';
+import {
+  AUDIENCE_ATTACH_MAX_LIST_IDS,
+  AUDIENCE_CUSTOM_OPERATORS,
+  AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH,
+  AUDIENCE_SPEAKER_SCOPES,
+} from '@lfx-one/shared/constants';
 import { NextFunction, Request, Response } from 'express';
 
 import type {
@@ -58,17 +63,20 @@ const CUSTOM_REQUEST_MAX_LENGTH = 2000;
 const CUSTOM_ANSWER_MAX_LENGTH = 500;
 const CUSTOM_MAX_ANSWERS = 12;
 const CUSTOM_MAX_VALUES = 25;
+const CUSTOM_MAX_PAGE_VIEW_URLS = 10;
 const CUSTOM_VALUE_MAX_LENGTH = 200;
 const CUSTOM_MAX_FILTERS = 10;
 const CUSTOM_NAME_MAX_LENGTH = 250;
-const CUSTOM_OPERATORS: readonly AudienceCustomOperator[] = ['is_equal_to', 'contains', 'is_any_of', 'is_not_any_of', 'is_known', 'is_unknown'];
-const SPEAKER_SCOPES: readonly AudienceSpeakerScope[] = ['current', 'past', 'current_past'];
+// Derived from the shared constants the UI offers, so an operator or scope added there is never
+// refused here.
+const CUSTOM_OPERATORS: readonly AudienceCustomOperator[] = AUDIENCE_CUSTOM_OPERATORS.map((o) => o.value);
+const SPEAKER_SCOPES: readonly AudienceSpeakerScope[] = AUDIENCE_SPEAKER_SCOPES.map((s) => s.key);
 const PROPERTY_NAME = /^[A-Za-z0-9_]{1,100}$/;
 
 /** A bounded array of trimmed, non-blank strings, or null when the value is not one. */
-function valueArray(value: unknown): string[] | null {
+function valueArray(value: unknown, max = CUSTOM_MAX_VALUES): string[] | null {
   if (value === undefined) return [];
-  if (!Array.isArray(value) || value.length > CUSTOM_MAX_VALUES) return null;
+  if (!Array.isArray(value) || value.length > max) return null;
   if (value.some((entry) => typeof entry !== 'string' || entry.length > CUSTOM_VALUE_MAX_LENGTH)) return null;
   return value.map((entry) => (entry as string).trim()).filter(Boolean);
 }
@@ -93,8 +101,10 @@ function parseCustomCriteria(raw: unknown): { criteria: AudienceCustomCriteria }
     pageViewUrls: [],
   };
   for (const field of ['cities', 'countries', 'registeredFor', 'educationTopics', 'pageViewUrls'] as const) {
-    const parsed = valueArray(c[field]);
-    if (!parsed) return { field, message: `${field} must be an array of at most ${CUSTOM_MAX_VALUES} strings` };
+    // Upstream caps page_view_urls at 10, every other list at 25.
+    const max = field === 'pageViewUrls' ? CUSTOM_MAX_PAGE_VIEW_URLS : CUSTOM_MAX_VALUES;
+    const parsed = valueArray(c[field], max);
+    if (!parsed) return { field, message: `${field} must be an array of at most ${max} strings` };
     arrays[field] = parsed;
   }
   const flags = ['contactLocation', 'eventRegistered', 'educationEnrolled', 'gateEventHistory', 'ambassadors'] as const;
@@ -102,6 +112,13 @@ function parseCustomCriteria(raw: unknown): { criteria: AudienceCustomCriteria }
   if (badFlag) return { field: badFlag, message: `${badFlag} must be a boolean` };
   const badString = (['gateListId', 'label', 'educationTopicProperty'] as const).find((field) => c[field] !== undefined && typeof c[field] !== 'string');
   if (badString) return { field: badString, message: `${badString} must be a string` };
+  if (typeof c['gateListId'] === 'string' && c['gateListId'].trim().length > MAX_LIST_ID_LENGTH) {
+    return { field: 'gateListId', message: `gateListId must be at most ${MAX_LIST_ID_LENGTH} characters` };
+  }
+  if (typeof c['label'] === 'string' && c['label'].trim().length > CUSTOM_VALUE_MAX_LENGTH) {
+    // Refused rather than cut: the label names the list, so a silent cut renames it.
+    return { field: 'label', message: `label must be at most ${CUSTOM_VALUE_MAX_LENGTH} characters` };
+  }
 
   const filters: AudienceCustomPropertyFilter[] = [];
   if (c['propertyFilters'] !== undefined) {
@@ -128,7 +145,9 @@ function parseCustomCriteria(raw: unknown): { criteria: AudienceCustomCriteria }
     const eventNames = valueArray(sp['eventNames']);
     if (!SPEAKER_SCOPES.includes(sp['scope'] as AudienceSpeakerScope))
       return { field: 'speakers', message: `speakers.scope must be one of ${SPEAKER_SCOPES.join(', ')}` };
-    if (sp['listId'] !== undefined && typeof sp['listId'] !== 'string') return { field: 'speakers', message: 'speakers.listId must be a string' };
+    if (sp['listId'] !== undefined && (typeof sp['listId'] !== 'string' || sp['listId'].trim().length > MAX_LIST_ID_LENGTH)) {
+      return { field: 'speakers', message: `speakers.listId must be a string of at most ${MAX_LIST_ID_LENGTH} characters` };
+    }
     if (!eventNames) return { field: 'speakers', message: 'speakers.eventNames must be an array of strings' };
     speakers = { scope: sp['scope'] as AudienceSpeakerScope, eventNames, ...(sp['listId'] ? { listId: (sp['listId'] as string).trim() } : {}) };
   }
@@ -143,7 +162,7 @@ function parseCustomCriteria(raw: unknown): { criteria: AudienceCustomCriteria }
       ambassadors: c['ambassadors'] === true,
       propertyFilters: filters,
       ...(typeof c['gateListId'] === 'string' && c['gateListId'].trim() ? { gateListId: c['gateListId'].trim() } : {}),
-      ...(typeof c['label'] === 'string' && c['label'].trim() ? { label: c['label'].trim().slice(0, CUSTOM_VALUE_MAX_LENGTH) } : {}),
+      ...(typeof c['label'] === 'string' && c['label'].trim() ? { label: c['label'].trim() } : {}),
       ...(typeof c['educationTopicProperty'] === 'string' && PROPERTY_NAME.test(c['educationTopicProperty'].trim())
         ? { educationTopicProperty: c['educationTopicProperty'].trim() }
         : {}),
@@ -765,12 +784,13 @@ export class AudienceBuilderController {
     const answers: AudienceCustomAnswer[] = [];
     for (const entry of rawAnswers as unknown[]) {
       const a = (entry ?? {}) as Record<string, unknown>;
-      if (typeof a['answer'] !== 'string' || a['answer'].length > CUSTOM_ANSWER_MAX_LENGTH) {
-        next(invalid(req, 'audience_custom_interpret', 'answers', `each answer must be a string of at most ${CUSTOM_ANSWER_MAX_LENGTH} characters`));
+      const answer = typeof a['answer'] === 'string' ? a['answer'].trim() : '';
+      if (!answer || answer.length > CUSTOM_ANSWER_MAX_LENGTH) {
+        next(invalid(req, 'audience_custom_interpret', 'answers', `each answer must be a non-blank string of at most ${CUSTOM_ANSWER_MAX_LENGTH} characters`));
         return;
       }
       answers.push({
-        answer: a['answer'],
+        answer,
         ...(typeof a['questionId'] === 'string' ? { questionId: a['questionId'].slice(0, 64) } : {}),
         ...(typeof a['question'] === 'string' ? { question: a['question'].slice(0, CUSTOM_ANSWER_MAX_LENGTH) } : {}),
       });

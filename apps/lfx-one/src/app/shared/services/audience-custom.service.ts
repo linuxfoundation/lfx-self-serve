@@ -34,7 +34,7 @@ export class AudienceCustomService {
     return this.http.post<AudienceCustomPreview>('/api/campaigns/audience-builder/custom/preview', request, { params: { project: projectSlug } });
   }
 
-  /** Creates ONE contact list in HubSpot. Not idempotent: a 502 means "search before retrying". */
+  /** Creates ONE contact list in HubSpot. Not idempotent: only a refused request (4xx) is safe to retry. */
   public create(projectSlug: string, request: AudienceCustomRequest): Observable<AudienceComposedList> {
     return this.http.post<AudienceComposedList>('/api/campaigns/audience-builder/custom/create', request, { params: { project: projectSlug } });
   }

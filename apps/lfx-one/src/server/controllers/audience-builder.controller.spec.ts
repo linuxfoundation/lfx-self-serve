@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { AUDIENCE_CUSTOM_OPERATORS, AUDIENCE_SPEAKER_SCOPES } from '@lfx-one/shared/constants';
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -765,6 +766,8 @@ describe('custom audiences', () => {
     ['an over-long request', { request: 'x'.repeat(2001) }, 'request'],
     ['answers that are not an array', { request: 'x', answers: 'yes' }, 'answers'],
     ['a non-string answer', { request: 'x', answers: [{ answer: 1 }] }, 'answers'],
+    ['a blank answer', { request: 'x', answers: [{ answer: '   ' }] }, 'answers'],
+    ['more than 12 answers', { request: 'x', answers: Array.from({ length: 13 }, () => ({ answer: 'a' })) }, 'answers'],
   ])('refuses %s before calling the model', async (_label, body, field) => {
     await controller.interpretCustom(buildReq(body), buildRes(), next);
 
@@ -790,6 +793,17 @@ describe('custom audiences', () => {
     expect(nextError(next).toResponse()['errors']).toMatchObject([{ field: 'eventUrl' }]);
   });
 
+  it('accepts every operator and speaker scope the UI offers', async () => {
+    proxyMethods.previewCustom.mockResolvedValue({ name: 'n', criteria, branchCount: 1, warnings: [] });
+    const propertyFilters = AUDIENCE_CUSTOM_OPERATORS.map((o) => ({ property: 'jobtitle', operator: o.value, values: [] }));
+
+    for (const scope of AUDIENCE_SPEAKER_SCOPES) {
+      await controller.previewCustom(buildReq({ criteria: { ...criteria, propertyFilters, speakers: { scope: scope.key, eventNames: [] } } }), buildRes(), next);
+    }
+
+    expect(proxyMethods.previewCustom).toHaveBeenCalledTimes(AUDIENCE_SPEAKER_SCOPES.length);
+  });
+
   it('rebuilds previewed criteria from checked fields only', async () => {
     proxyMethods.previewCustom.mockResolvedValue({ name: 'n', criteria, branchCount: 2, warnings: [] });
 
@@ -813,6 +827,13 @@ describe('custom audiences', () => {
     ['an unknown speaker scope', { criteria: { ...criteria, speakers: { scope: 'future', eventNames: [] } } }, 'speakers'],
     ['too many cities', { criteria: { ...criteria, cities: Array.from({ length: 26 }, (_u, i) => `c${i}`) } }, 'cities'],
     ['a non-string name', { criteria, name: 5 }, 'name'],
+    ['an over-long name', { criteria, name: 'n'.repeat(251) }, 'name'],
+    ['more than 10 filters', { criteria: { ...criteria, propertyFilters: Array.from({ length: 11 }, () => ({ property: 'jobtitle', operator: 'is_known', values: [] })) } }, 'propertyFilters'],
+    ['more than 25 filter values', { criteria: { ...criteria, propertyFilters: [{ property: 'jobtitle', operator: 'is_any_of', values: Array.from({ length: 26 }, (_u, i) => `v${i}`) }] } }, 'propertyFilters'],
+    ['more than 10 page URLs (upstream caps them at 10)', { criteria: { ...criteria, pageViewUrls: Array.from({ length: 11 }, (_u, i) => `https://e.org/p${i}`) } }, 'pageViewUrls'],
+    ['an over-long label (refused, never silently cut)', { criteria: { ...criteria, label: 'l'.repeat(201) } }, 'label'],
+    ['an over-long gate list id', { criteria: { ...criteria, gateListId: '1'.repeat(65) } }, 'gateListId'],
+    ['an over-long speakers list id', { criteria: { ...criteria, speakers: { scope: 'current', eventNames: [], listId: '1'.repeat(65) } } }, 'speakers'],
   ])('refuses %s without reaching the create', async (_label, body, field) => {
     await controller.createCustom(buildReq(body), buildRes(), next);
 

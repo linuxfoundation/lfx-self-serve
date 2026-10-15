@@ -446,10 +446,41 @@ describe('AudienceBuilderProxyService custom audiences', () => {
     expect(out.questions[0].why).toBeUndefined();
   });
 
-  it('refuses a created list with no id rather than reporting it as created', async () => {
-    proxyRequest.mockResolvedValue({ list_id: '', name: 'Seoul', hubspot_url: 'https://app.hubspot.com/x' });
+  // Upstream answered 2xx, so the list exists: an unusable reply is a do-not-retry partial, never a
+  // plain error the client would let the operator retry into a second list.
+  it.each([
+    ['no id', { list_id: '', name: 'Seoul', hubspot_url: 'https://app.hubspot.com/x' }],
+    ['a non-http link', { list_id: '7', name: 'Seoul', hubspot_url: 'javascript:alert(1)' }],
+  ])('turns a created list with %s into a partial carrying its name', async (_label, wire) => {
+    proxyRequest.mockResolvedValue(wire);
 
-    await expect(service.createCustom(req, 'tlf', { criteria })).rejects.toThrow(/list.list_id/);
+    const error = await service.createCustom(req, 'tlf', { criteria }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(AudienceComposePartialError);
+    expect((error as AudienceComposePartialError).masterName).toBe('Seoul');
+  });
+
+  it('names a malformed create by the requested name when the reply carries none', async () => {
+    proxyRequest.mockResolvedValue(null);
+
+    const error = await service.createCustom(req, 'tlf', { criteria, name: 'My list' }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(AudienceComposePartialError);
+    expect((error as AudienceComposePartialError).masterName).toBe('My list');
+  });
+
+  it('drops a planned event with no name and malformed questions', async () => {
+    proxyRequest.mockResolvedValue({
+      criteria: {},
+      questions: [{ id: 'ok', question: 'Gate?', options: ['a', 2] }, { question: 'no id' }, { id: 'bad', question: 'x', options: 'nope' }, null],
+      notes: [],
+      event: { brand_short: 'X', event_dates: 'not-an-array' },
+    });
+
+    const out = await service.interpretCustom(req, 'tlf', { request: 'x' });
+
+    expect(out.event, 'the tab reads the event name; one without it is no event').toBeUndefined();
+    expect(out.questions).toEqual([{ id: 'ok', question: 'Gate?', why: undefined, options: ['a'] }]);
   });
 
   it('turns an unconfirmed create into a partial carrying the name', async () => {

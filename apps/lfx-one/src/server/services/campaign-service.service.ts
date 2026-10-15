@@ -3529,6 +3529,24 @@ export function isCampaignServiceNotFound(errorBody: unknown): boolean {
 }
 
 /**
+ * The warnings campaign-service attached to one platform result, reduced to non-blank strings and bounded.
+ *
+ * They are rendered as text in the UI, so only the shape is policed here: a non-array, a non-string element or a
+ * blank one is dropped, duplicates are collapsed, and the count and each entry's length are capped so a malformed upstream response cannot
+ * flood the banner.
+ */
+function cleanWarnings(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((entry): entry is string => typeof entry === 'string' && entry.trim() !== '')
+    .map((entry) => entry.trim().slice(0, 500))
+    .filter((entry, index, all) => all.indexOf(entry) === index) // the UI keys warnings by their text
+    .slice(0, 10);
+}
+
+/**
  * Translate campaign-service's `job-poll-response` into the shape the poller expects.
  *
  * This is NOT a pass-through, and the difference matters more than it looks. The Angular
@@ -3550,23 +3568,6 @@ export function isCampaignServiceNotFound(errorBody: unknown): boolean {
  * flag carries the per-platform truth, so reporting the JOB as failed would hide the
  * campaigns that were really created.
  */
-/**
- * The warnings campaign-service attached to one platform result, reduced to non-blank strings and bounded.
- *
- * They are rendered as text in the UI, so only the shape is policed here: a non-array, a non-string element or a
- * blank one is dropped, and the count and each entry's length are capped so a malformed upstream response cannot
- * flood the banner.
- */
-function cleanWarnings(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value
-    .filter((entry): entry is string => typeof entry === 'string' && entry.trim() !== '')
-    .slice(0, 10)
-    .map((entry) => entry.trim().slice(0, 500));
-}
-
 export function adaptJobPollResponse(response: CampaignServiceJobPollResponse): CampaignJobStatus {
   // Stays `undefined` when campaign-service sent no `result` — it is NOT defaulted to `[]`.
   // An empty array would assert "the job reported on zero platforms", which is a different
