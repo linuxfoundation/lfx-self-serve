@@ -12,21 +12,15 @@
       <div class="flex items-center gap-[11px] py-[14px]" data-dd-privacy="mask" data-testid="join-details-host-key">
         <i class="fa-light fa-award w-[17px] flex-none text-center text-[17px] text-[var(--md-accent)]" aria-hidden="true"></i>
         <div class="flex min-w-0 flex-1 flex-col gap-[2px]">
-          <span [id]="labelId" class="text-[11.5px] font-semibold text-[var(--md-accent-ink)]">Host key (only you)</span>
+          <span class="text-[11.5px] font-semibold text-[var(--md-accent-ink)]">Host key (only you)</span>
           @if (hostKey(); as key) {
-            <!-- Masked, the button is "Show host key"; revealed, it is read as its label and the key. -->
-            <button
-              type="button"
-              class="self-start rounded-[var(--md-radius-md)] text-left text-[13.5px] font-semibold tabular-nums tracking-[.04em] text-[var(--md-text-heading)] hover:underline focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
-              [attr.aria-pressed]="revealed()"
-              [attr.aria-label]="revealed() ? null : 'Show host key'"
-              [attr.aria-labelledby]="revealed() ? labelId + ' ' + valueId : null"
-              [attr.aria-describedby]="helpId"
-              (click)="toggleReveal()"
-              data-dd-action-name="Host key toggle"
-              data-testid="join-details-host-key-toggle">
-              <span [id]="valueId">{{ revealed() ? key : '••••••  Show' }}</span>
-            </button>
+            <!-- The key, masked until revealed; a polite live region, so revealing it reads it out. -->
+            <span
+              class="text-[13.5px] font-semibold tabular-nums tracking-[.04em] text-[var(--md-text-heading)]"
+              aria-live="polite"
+              data-testid="join-details-host-key-value"
+              >{{ revealed() ? key : '••••••' }}</span
+            >
           } @else {
             <span class="text-[13.5px] text-[var(--md-text-body)]" data-testid="join-details-host-key-pending">
               Available {{ earlyMinutes }} minutes before the meeting starts
@@ -36,6 +30,21 @@
             >Enter this key in Zoom to claim host privileges. It is only visible to meeting hosts, starting {{ earlyMinutes }} minutes before the meeting.</span
           >
         </div>
+        @if (hostKey()) {
+          <!-- One stable name, "Show host key"; only aria-pressed changes (and the glyph). A native button, as
+               V1's, since the help text is its description and lfx-button passes no aria-describedby. -->
+          <button
+            type="button"
+            class="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-full border border-[var(--md-border)] bg-[var(--md-surface-card)] text-[var(--md-text-muted)] hover:bg-[var(--md-surface-hover)] focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
+            aria-label="Show host key"
+            [attr.aria-pressed]="revealed()"
+            [attr.aria-describedby]="helpId"
+            (click)="toggleReveal()"
+            data-dd-action-name="Host key toggle"
+            data-testid="join-details-host-key-toggle">
+            <i [class]="revealed() ? 'fa-light fa-eye-slash' : 'fa-light fa-eye'" aria-hidden="true"></i>
+          </button>
+        }
         @if (hostKey() && revealed()) {
           <lfx-button
             icon="fa-light fa-copy"

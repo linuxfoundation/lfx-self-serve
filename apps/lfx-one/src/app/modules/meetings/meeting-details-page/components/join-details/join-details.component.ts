@@ -22,7 +22,8 @@ import { MeetingDetailsStateService } from '../../meeting-details-state.service'
  * @description The host key row shows the key the BFF returned, which it does only for a signed-in host
  * inside its window (start − 70 min to end + 40 min), never on a past meeting. The client never decides
  * who may see it: it only hides a key whose window has since closed (a page left open). Masked by
- * default; a toggle (`aria-pressed`) reveals it, read with its label, and a button copies it, with V1's
+ * default; a toggle with one stable name and `aria-pressed` reveals it into a polite live region, and a
+ * button copies it, with V1's
  * toasts. Before that window an organizer, the one host the page can tell apart without the key, sees
  * when it becomes available; when the window opens the browser reads the meeting again, and once more
  * {@link MEETING_HOST_KEY_RETRY_MS} later if the key has still not come, so a page left open gains it
@@ -42,8 +43,6 @@ export class MeetingJoinDetailsComponent {
   private readonly ids = inject(_IdGenerator);
 
   protected readonly earlyMinutes = HOST_KEY_EARLY_MINUTES;
-  protected readonly labelId = this.ids.getId('meeting-host-key-label-');
-  protected readonly valueId = this.ids.getId('meeting-host-key-value-');
   protected readonly helpId = this.ids.getId('meeting-host-key-help-');
   /** A 30px round icon button, as the prototype's copy control. */
   protected readonly iconButtonClass =
@@ -123,7 +122,7 @@ export class MeetingJoinDetailsComponent {
   /**
    * In the browser only, and only as the window opens on this page (not on a page opened inside it, whose
    * read already had its answer): read the meeting when it moves from `closed` to `opening`, and again
-   * from `opening` to `retry` if the key has still not come.
+   * as it moves on from `opening` if the key has still not come.
    */
   private readKeyWhenWindowOpens(): void {
     if (!isPlatformBrowser(this.platformId)) {
@@ -132,7 +131,11 @@ export class MeetingJoinDetailsComponent {
     toObservable(this.hostKeyWait)
       .pipe(pairwise(), takeUntilDestroyed(this.destroyRef))
       .subscribe(([previous, current]) => {
-        if ((previous === 'closed' && current === 'opening') || (previous === 'opening' && current === 'retry')) {
+        // From before the window to anywhere in it, even past `opening` when the clock catches up late
+        // (a sleeping laptop, a throttled tab); then once more from the first read's stage on.
+        const opened = previous === 'closed' && (current === 'opening' || current === 'retry' || current === 'settled');
+        const retried = previous === 'opening' && (current === 'retry' || current === 'settled');
+        if (opened || retried) {
           this.state.reload();
         }
       });

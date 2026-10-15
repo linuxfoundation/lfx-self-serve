@@ -66,6 +66,7 @@ describe('MeetingJoinDetailsComponent', () => {
     expect(query('join-details-section')).not.toBeNull();
     expect(query('join-details-host-key-toggle')?.getAttribute('aria-pressed')).toBe('false');
     expect(query('join-details-host-key-toggle')?.getAttribute('aria-label')).toBe('Show host key');
+    expect(query('join-details-host-key-value')?.getAttribute('aria-live')).toBe('polite');
     expect(query('join-details-host-key')?.textContent).not.toContain(KEY);
     expect(query('join-details-host-key-copy')).toBeNull();
     // No row for a field the payload does not carry (FR-043).
@@ -77,12 +78,9 @@ describe('MeetingJoinDetailsComponent', () => {
     await update();
 
     expect(query('join-details-host-key-toggle')?.getAttribute('aria-pressed')).toBe('true');
-    expect(query('join-details-host-key-toggle')?.getAttribute('aria-label')).toBeNull();
-    expect(query('join-details-host-key')?.textContent).toContain(KEY);
-    // Read as its label and the key, not the bare digits.
-    const [labelId, valueId] = (query('join-details-host-key-toggle')?.getAttribute('aria-labelledby') ?? '').split(' ');
-    expect(fixture.nativeElement.querySelector(`#${labelId}`)?.textContent).toContain('Host key');
-    expect(fixture.nativeElement.querySelector(`#${valueId}`)?.textContent).toContain(KEY);
+    // The toggle keeps one name; the key shows (and is read out) in its own live region.
+    expect(query('join-details-host-key-toggle')?.getAttribute('aria-label')).toBe('Show host key');
+    expect(query('join-details-host-key-value')?.textContent?.trim()).toBe(KEY);
 
     (query('join-details-host-key-copy')?.querySelector('button') as HTMLButtonElement).click();
     expect(copy).toHaveBeenCalledWith(KEY);
@@ -158,6 +156,13 @@ describe('MeetingJoinDetailsComponent', () => {
       await update();
       expect(reload).toHaveBeenCalledTimes(2);
       expect(query('join-details-section')).toBeNull();
+    });
+
+    it('still reads the meeting when the clock catches up past the first read (a sleeping laptop)', async () => {
+      now.set(new Date(opensAt() + 120_000));
+      await update();
+
+      expect(reload).toHaveBeenCalledTimes(1);
     });
 
     it('shows the key once a read returns it, and reads no more', async () => {
