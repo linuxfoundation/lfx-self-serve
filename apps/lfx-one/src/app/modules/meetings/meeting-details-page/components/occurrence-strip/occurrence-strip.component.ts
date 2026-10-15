@@ -79,6 +79,8 @@ export class MeetingOccurrenceStripComponent {
   private readonly pagingRun = signal<number | null>(null);
   /** Bumped by each new request: a read whose run is no longer this one is dropped. */
   private runId = 0;
+  /** Bumped by each move: a move superseded by a later one, while its reads were in flight, is dropped. */
+  private moveId = 0;
 
   // One formatter per field, in the viewer's zone; the strip only renders its chips on the browser.
   private readonly timezone = isPlatformBrowser(this.platformId) ? getUserTimezone() : 'UTC';
@@ -225,18 +227,23 @@ export class MeetingOccurrenceStripComponent {
    * occurrence the live list carries opens by its past record's composite id when there is one, so the
    * page loads that record's recording and roster: when its record could be on a past page not read yet
    * (older than the oldest record read, while the past side has more), those pages are read first (a
-   * bounded number) and the refreshed chip is used. With no record, it opens by `?occurrence=`. The move
-   * is dropped if a read fails, or if meanwhile the run moved on or the page moved elsewhere.
+   * bounded number, of the largest size) and the refreshed chip is used. A click always lands: when a
+   * read cannot run or fails, it opens by `?occurrence=` with what is known. It is dropped only when it
+   * is stale: a later move started, the run moved on, or the page moved elsewhere meanwhile.
    */
   private async moveTo(item: MeetingOccurrenceStripItem): Promise<void> {
     this.focusStartMs.set(null);
-    let target = item;
+    const move = ++this.moveId;
     const run = this.runId;
     const from = this.selected()?.startMs;
+    let target = item;
     for (let read = 0; read < MEETING_OCCURRENCE_STRIP_MAX_CHASE_PAGES && this.recordMayBeUnread(target); read++) {
-      const paged = await this.loadMore(run, 'past', MEETING_OCCURRENCE_STRIP_PAGE_SIZE);
-      if (!paged || run !== this.runId || this.selected()?.startMs !== from) {
+      const paged = await this.loadMore(run, 'past', MEETING_OCCURRENCES_PAGE_MAX_LIMIT);
+      if (move !== this.moveId || run !== this.runId || this.selected()?.startMs !== from) {
         return;
+      }
+      if (!paged) {
+        break;
       }
       target = this.items().find((candidate) => candidate.startMs === item.startMs) ?? target;
     }

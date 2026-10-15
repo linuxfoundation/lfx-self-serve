@@ -387,8 +387,91 @@ describe('MeetingOccurrenceStripComponent', () => {
     chip(-10)?.click();
     await settle();
 
-    expect(getPage).toHaveBeenLastCalledWith(SERIES, 'pw', { pageSize: 12, direction: 'past', cursor: String(at(-2)) });
+    expect(getPage).toHaveBeenLastCalledWith(SERIES, 'pw', { pageSize: 50, direction: 'past', cursor: String(at(-2)) });
     expect(navigateToOccurrence.mock.calls.at(-1)?.[0]).toEqual(expect.objectContaining({ startMs: at(-10), pastResourceId: `${SERIES}-${at(-10)}` }));
+  });
+
+  describe('opening an ended chip whose record may be unread', () => {
+    const window = page({ past: [past(-2), past(-1)], future: [future(-10), future(-3), future(1)], past_has_more: true, past_cursor: String(at(-2)) });
+    const lastMove = (): MeetingOccurrenceStripItem | undefined => navigateToOccurrence.mock.calls.at(-1)?.[0];
+
+    it('opens it by ?occurrence= when the read fails, rather than dropping the click', async () => {
+      await render(window, { selected: at(-1), pages: [new HttpErrorResponse({ status: 500 })] });
+
+      chip(-10)?.click();
+      await settle();
+
+      expect(lastMove()).toEqual(expect.objectContaining({ startMs: at(-10) }));
+      expect(lastMove()?.pastResourceId).toBeUndefined();
+    });
+
+    it('hides the strip and opens nothing when the read is refused', async () => {
+      await render(window, { selected: at(-1), pages: [new HttpErrorResponse({ status: 403 })] });
+
+      chip(-10)?.click();
+      await settle();
+
+      expect(navigateToOccurrence).not.toHaveBeenCalled();
+      expect(query('[data-testid="occurrence-strip-section"]')).toBeNull();
+    });
+
+    it('drops the move when the page moves elsewhere while the read is in flight', async () => {
+      const older = new Subject<PublicMeetingOccurrencesResponse>();
+      await render(window, { selected: at(-1), pages: [older] });
+
+      chip(-10)?.click();
+      await settle();
+      selectedStartMs.set(at(1));
+      fixture.detectChanges();
+      older.next(page({ past: [past(-10)], future: [], past_has_more: false }));
+      older.complete();
+      await settle();
+
+      expect(navigateToOccurrence).not.toHaveBeenCalled();
+    });
+
+    it('lets the last click win when two overlap', async () => {
+      const older = new Subject<PublicMeetingOccurrencesResponse>();
+      await render(window, { selected: at(-1), pages: [older] });
+
+      chip(-10)?.click();
+      await settle();
+      // A second ended chip while the first read is still in flight: that read's slot is busy, so this
+      // one opens at once by what is known, and the first, now superseded, never navigates.
+      chip(-3)?.click();
+      await settle();
+      older.next(page({ past: [past(-10)], future: [], past_has_more: false }));
+      older.complete();
+      await settle();
+
+      expect(navigateToOccurrence).toHaveBeenCalledTimes(1);
+      expect(lastMove()).toEqual(expect.objectContaining({ startMs: at(-3) }));
+    });
+
+    it('stops after the page limit and opens it by ?occurrence=', async () => {
+      const more = (week: number) => page({ past: [past(week)], future: [], past_has_more: true, past_cursor: String(at(week)) });
+      // Each page stays newer than the chip, so its record is never reached within the limit.
+      await render(window, { selected: at(-1), pages: [more(-4), more(-5), more(-6), more(-7), more(-8), more(-9)] });
+
+      chip(-10)?.click();
+      await settle();
+
+      expect(getPage).toHaveBeenCalledTimes(6);
+      expect(lastMove()).toEqual(expect.objectContaining({ startMs: at(-10) }));
+      expect(lastMove()?.pastResourceId).toBeUndefined();
+    });
+
+    it('reads nothing for an ended chip newer than the oldest record read', async () => {
+      await render(page({ past: [past(-4), past(-1)], future: [future(-2), future(1)], past_has_more: true, past_cursor: String(at(-4)) }), {
+        selected: at(-1),
+      });
+
+      chip(-2)?.click();
+      await settle();
+
+      expect(getPage).toHaveBeenCalledTimes(1);
+      expect(lastMove()).toEqual(expect.objectContaining({ startMs: at(-2) }));
+    });
   });
 
   it('opens an ended chip by ?occurrence= when the past side holds no record for it', async () => {
