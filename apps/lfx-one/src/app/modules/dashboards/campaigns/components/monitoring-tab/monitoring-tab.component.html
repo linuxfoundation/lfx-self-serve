@@ -987,7 +987,7 @@
                   <span [class]="row.statusClass">{{ row.status }}</span>
                 </td>
                 <td class="px-4 py-3 text-xs text-gray-500">{{ row.flight }}</td>
-                <td class="px-4 py-3 text-right text-xs text-gray-700">{{ row.budget }}</td>
+                <td class="px-4 py-3 text-right text-xs text-gray-700" [attr.data-testid]="panel + '-campaign-budget'">{{ row.budget }}</td>
                 <td [class]="'px-4 py-3 text-right text-xs ' + row.spend.className">{{ row.spend.text }}</td>
                 <td [class]="'px-4 py-3 text-right text-xs ' + row.pacing.className" [attr.data-testid]="panel + '-campaign-pacing'">{{ row.pacing.text }}</td>
                 <td [class]="'px-4 py-3 text-right text-xs ' + row.impressions.className">{{ row.impressions.text }}</td>

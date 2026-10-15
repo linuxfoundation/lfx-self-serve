@@ -776,6 +776,49 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       expect(service['getLinkedInAccounts']).toHaveBeenCalledWith('cncf');
       expect(el('platform-microsoft')).toBeNull();
     });
+
+    /**
+     * A failed discovery is not a confirmed "cutover off" (#3637 review). The legacy account the
+     * fallback reads is refused while the flag is on, and Retry must re-run the discovery rather than
+     * repeat that read — so once it succeeds the connection's account is read and Microsoft and
+     * HubSpot appear, with no reload or foundation switch.
+     */
+    it('retries a failed connections read from the panel Retry, and recovers onto the connection path', async () => {
+      await setup(new Error('network'));
+      service['getLinkedInMonitorData'].mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 400, error: { error: 'connection is not bound to this account' } }))
+      );
+      select('linkedin');
+      expect(service['getLinkedInMonitorData']).toHaveBeenCalledWith('cncf', '512345678', 30, false);
+      expect(text('linkedin-error')).toContain('connection is not bound to this account');
+
+      service['getMonitorConnections'].mockReturnValue(of(allConnected));
+      service['getLinkedInMonitorData'].mockReturnValue(of(null));
+      (el('linkedin-error')?.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      expect(service['getMonitorConnections']).toHaveBeenCalledTimes(2);
+      expect(service['getLinkedInMonitorData']).toHaveBeenLastCalledWith('cncf', '700000001', 30, true);
+      expect(el('linkedin-error')).toBeNull();
+      expect(options('linkedin-account-select')).toEqual(['700000001|CNCF LinkedIn']);
+      expect(el('platform-microsoft')).not.toBeNull();
+      expect(el('platform-hubspot')).not.toBeNull();
+    });
+
+    it('still re-reads the panel when the retried connections read fails again', async () => {
+      await setup(new Error('network'));
+      service['getLinkedInMonitorData'].mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, error: { error: 'boom' } })));
+      select('linkedin');
+
+      service['getLinkedInMonitorData'].mockReturnValue(of(null));
+      (el('linkedin-error')?.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      expect(service['getMonitorConnections']).toHaveBeenCalledTimes(2);
+      expect(service['getLinkedInMonitorData']).toHaveBeenLastCalledWith('cncf', '512345678', 30, false);
+      expect(el('linkedin-error')).toBeNull();
+      expect(el('platform-microsoft')).toBeNull();
+    });
   });
 
   describe('Microsoft Ads (report-backed)', () => {
@@ -813,6 +856,22 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       expect(text('microsoft-campaign-fetch-failed')).toBe("Couldn't read");
       expect(text('microsoft-campaign-pacing')).toBe('—');
       expect(text('microsoft-totals-note')).toBe('Totals cover 0 of 1 campaigns.');
+    });
+
+    it("shows a dash, not 0.00, for a failed row's unreadable budget", async () => {
+      await setup(allConnected);
+      const unread = reportBacked().campaigns.map((c) => ({ ...c, fetchFailed: true, pacingLabel: undefined, spend: 0, totalBudget: 0, dailyBudget: 0 }));
+      service['getMicrosoftMonitorData'].mockReturnValue(of(reportBacked({ campaigns: unread })));
+      select('microsoft');
+
+      expect(text('microsoft-campaign-budget')).toBe('—');
+    });
+
+    it("formats a read row's budget in the account's currency", async () => {
+      await setup(allConnected);
+      select('microsoft');
+
+      expect(text('microsoft-campaign-budget')).toBe('100.00');
     });
 
     it('shows "Unknown" for pacing it could not compute', async () => {
@@ -1330,14 +1389,37 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       expect(text('hubspot-coverage-note')).toContain(noteFragment);
     });
 
-    it('says there is no HubSpot connection on a 404', async () => {
+    it("says there is no HubSpot connection on the BFF's typed missing-connection 404", async () => {
       await setup(allConnected);
-      service['getHubSpotMonitorData'].mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404, error: { error: 'Not found' } })));
+      service['getHubSpotMonitorData'].mockReturnValue(
+        throwError(
+          () =>
+            new HttpErrorResponse({
+              status: 404,
+              error: { error: 'This project has no HubSpot connection of its own to read the account with.', upstreamCode: 'connection_not_found' },
+            })
+        )
+      );
       select('hubspot');
 
       expect(el('hubspot-connection-notice')?.getAttribute('data-state')).toBe('no_connection');
       expect(text('hubspot-connection-notice-title')).toBe('No HubSpot connection');
       expect(el('hubspot-error')).toBeNull();
+    });
+
+    /** A gateway or routing 404 says nothing about the connection: a retryable error, never "No HubSpot connection". */
+    it('shows any other 404 as a retryable error, without claiming the connection is absent', async () => {
+      await setup(allConnected);
+      service['getHubSpotMonitorData'].mockReturnValue(
+        throwError(
+          () => new HttpErrorResponse({ status: 404, error: { error: 'The HubSpot monitor could not be reached just now. Please try again shortly.' } })
+        )
+      );
+      select('hubspot');
+
+      expect(el('hubspot-connection-notice')).toBeNull();
+      expect(text('hubspot-error')).toContain('The HubSpot monitor could not be reached just now.');
+      expect(el('hubspot-error')?.querySelector('button')).not.toBeNull();
     });
   });
 });

@@ -188,9 +188,19 @@ describe('toAccountMonitorClientError', () => {
     expect(mapped.originalError).toBe(original);
   });
 
-  it('names the missing own connection on a 404', () => {
-    const mapped = toAccountMonitorClientError(upstream(404, { message: 'x' }), 'Reddit Ads', 'reddit_monitor') as MicroserviceError;
+  it("names the missing own connection, and marks it 'connection_not_found', on campaign-service's typed 404", () => {
+    const mapped = toAccountMonitorClientError(upstream(404, { code: '404', message: 'x' }), 'Reddit Ads', 'reddit_monitor') as MicroserviceError;
+    expect(mapped.statusCode).toBe(404);
     expect(mapped.toResponse()['error']).toBe('This project has no Reddit Ads connection of its own to read the account with.');
+    expect(mapped.toResponse()['upstreamCode']).toBe('connection_not_found');
+  });
+
+  /** A gateway or routing 404 says nothing about the connection, so it is neither marked nor worded as a missing one. */
+  it('keeps any other 404 retryable, without claiming the connection is absent', () => {
+    const mapped = toAccountMonitorClientError(upstream(404, { message: 'route not found' }), 'HubSpot', 'hubspot_monitor') as MicroserviceError;
+    expect(mapped.statusCode).toBe(404);
+    expect(mapped.toResponse()['upstreamCode']).toBeUndefined();
+    expect(mapped.toResponse()['error']).toBe('The HubSpot monitor could not be reached just now. Please try again shortly.');
   });
 
   it("forwards a 409's reason only when it is one of upstream's enum values", () => {
