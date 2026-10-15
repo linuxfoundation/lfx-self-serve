@@ -15,6 +15,7 @@
 // inside the hashed bytes, or removing it would drop the revision.
 
 import type { MktgArtifactIntakeMode, MktgArtifactKey } from './mktg-artifact.interface';
+import type { MktgReadmeOutcome } from './mktg-run.interface';
 
 /**
  * Agent key of a document type — the artifact namespace for the agents that
@@ -93,6 +94,8 @@ export interface MktgRevisionDeck {
 
 /** Where a generated revision came from. */
 export interface MktgRevisionSource {
+  /** Submission's README outcome, when the authenticated run client relayed it. Older revisions have none. */
+  readme?: MktgReadmeOutcome;
   /** Guild session that produced it; null for restored and migrated revisions. */
   sessionId: string | null;
   /** The envelope's draft version within its run (a label, never an ordering). */
@@ -173,10 +176,21 @@ export interface MktgDocumentDetailResponse {
   revisions: MktgRevisionSummary[];
 }
 
+/** The exact stored revision produced by a result poll, never a lookup of whichever revision is latest. */
+export interface MktgDocumentLocation {
+  agentKey: MktgDocumentAgentKey;
+  documentId: string;
+  revisionId: string;
+}
+
 /** Response of `GET /api/mktg-agents/documents/:agentKey/:documentId/revisions/:revisionId?project=<uid>`. */
 export interface MktgRevisionResponse extends MktgDocumentDetailResponse {
   revision: MktgRevisionSummary;
   markdown: string;
+  /** Run provenance, used to match browser-held run notes to this revision only. */
+  source?: MktgRevisionSource;
+  /** Copyable derivative text from the validated envelope. */
+  derivatives?: Record<string, string>;
 }
 
 /** Body of `POST /api/mktg-agents/documents/:agentKey/:documentId/restore`. */

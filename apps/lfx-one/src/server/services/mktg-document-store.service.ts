@@ -8,6 +8,7 @@ import {
   MKTG_ARTIFACT_SPECS,
   MKTG_DOCUMENT_TYPES,
   MKTG_LIVING_DOCUMENT_ID,
+  MKTG_README_SKIP_NOTES,
   MKTG_REVISION_CONTENT_TYPE,
   MKTG_REVISION_SCHEMA,
   MKTG_RUN_DOCUMENT_ID_PREFIX,
@@ -27,6 +28,8 @@ import {
   MktgLegacyDocument,
   MktgLegacyListing,
   MktgListedRevision,
+  MktgReadmeOutcome,
+  MktgReadmeSkipReason,
   MktgRevisionRecord,
   MktgRevisionRecordFields,
   MktgRevisionResponse,
@@ -126,8 +129,8 @@ export class MktgDocumentStoreService {
     }
 
     try {
-      await this.recordGeneration(req, type, receipt.project, envelope, sessionId);
-      return receipt;
+      const revision = await this.recordGeneration(req, type, receipt.project, envelope, sessionId);
+      return { ...receipt, document: { agentKey, documentId: revision.record.documentId, revisionId: revision.id } };
     } catch (error) {
       logger.warning(req, 'mktg_document_store_record', 'Revision write failed — returning the document without a receipt; retried on next poll', {
         agent: type.agentKey,
@@ -160,7 +163,12 @@ export class MktgDocumentStoreService {
     const existing =
       type.kind === 'run'
         ? revisions[0]
-        : revisions.find((revision) => revision.record.source.sessionId === sessionId && revision.record.bundle.contentSha256 === envelope.content_sha256);
+        : revisions.find(
+            (revision) =>
+              revision.record.source.sessionId === sessionId &&
+              revision.record.source.draftVersion === envelope.version &&
+              revision.record.bundle.contentSha256 === envelope.content_sha256
+          );
     if (existing) {
       logger.debug(req, 'mktg_document_store_record', 'Generation already recorded — no new revision', { agent: type.agentKey, revision: existing.id });
       return existing;
@@ -180,7 +188,7 @@ export class MktgDocumentStoreService {
       createdAt: new Date().toISOString(),
       origin: 'generated',
       restoredFromId: null,
-      source: { sessionId, draftVersion: envelope.version, intakeMode: envelope.intake.mode },
+      source: { sessionId, draftVersion: envelope.version, intakeMode: envelope.intake.mode, ...this.readmeSource(req) },
       bundle: { markdown, contentSha256: envelope.content_sha256, sidecar, brandFile: null },
     });
 
@@ -274,7 +282,16 @@ export class MktgDocumentStoreService {
       }
       const summaries = this.summarize(revisions);
       const revision = summaries.find((summary) => summary.id === found.id) as MktgRevisionSummary;
-      return { ...this.detail(project, type, documentId, summaries), revision, markdown: found.record.bundle.markdown };
+      const derivatives = found.record.bundle.sidecar?.['derivatives'];
+      return {
+        ...this.detail(project, type, documentId, summaries),
+        revision,
+        markdown: found.record.bundle.markdown,
+        source: found.record.source,
+        ...(derivatives && typeof derivatives === 'object' && !Array.isArray(derivatives)
+          ? { derivatives: Object.fromEntries(Object.entries(derivatives).filter((entry): entry is [string, string] => typeof entry[1] === 'string')) }
+          : {}),
+      };
     }
 
     // No stored revisions: only a living document's pre-revision object can answer.
@@ -320,7 +337,7 @@ export class MktgDocumentStoreService {
       createdAt: new Date().toISOString(),
       origin: 'restored',
       restoredFromId: source.id,
-      source: { sessionId: null, draftVersion: source.record.source.draftVersion, intakeMode: source.record.source.intakeMode },
+      source: { ...source.record.source, sessionId: null },
       bundle: source.record.bundle,
     });
 
@@ -610,6 +627,22 @@ export class MktgDocumentStoreService {
   /** A run's document id: stable per Guild session, so repeated result polls address one document. */
   private runDocumentId(sessionId: string): string {
     return `${MKTG_RUN_DOCUMENT_ID_PREFIX}${this.sha256(sessionId).slice(0, 24)}`;
+  }
+
+  /**
+   * The run client relays the generate response's outcome. This is descriptive
+   * metadata only, never proof of access or agent output. Accept only a known
+   * reason. Unknown or older clients supply no outcome rather than a guess.
+   */
+  private readmeSource(req: Request): { readme?: MktgReadmeOutcome } {
+    const outcome = req.body?.readme;
+    if (outcome?.fetched !== false || typeof outcome.skipReason !== 'string') {
+      return {};
+    }
+    if (!Object.hasOwn(MKTG_README_SKIP_NOTES, outcome.skipReason)) {
+      return {};
+    }
+    return { readme: { fetched: false, skipReason: outcome.skipReason as MktgReadmeSkipReason } };
   }
 
   private sha256(value: string): string {

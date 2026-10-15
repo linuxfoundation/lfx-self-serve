@@ -13,6 +13,7 @@
 import { FOUNDATION_MESSAGE_ANSWER_ORIGINS } from '../constants/foundation-message.constants';
 import type { MKTG_RUN_ACTIVITY_KINDS } from '../constants/mktg-run-activity.constants';
 import type { MktgSessionInfo } from './mktg-chat.interface';
+import type { MktgDocumentLocation } from './mktg-document-store.interface';
 
 /** How a single intake field is rendered on the run page. */
 export type MktgIntakeFieldKind = 'text' | 'textarea';
@@ -428,6 +429,8 @@ export interface MktgRunGenerateBody {
  * body (never the query string) so it stays out of access logs and proxies.
  */
 export interface MktgRunResultBody {
+  /** Relay of this submission's README outcome for the stored revision's About panel. Not used for authorization. */
+  readme?: MktgReadmeOutcome;
   /** Guild session id returned by the generate endpoint. */
   sessionId: string;
   /** Creator-binding owner token returned by the generate endpoint. */
@@ -576,6 +579,8 @@ export interface MktgRunQuestionChip {
  * needs no normalization layer — do not camelCase them.
  */
 export interface MktgRunPersistReceipt {
+  /** Document revision recorded by this result poll. Absent on older servers. */
+  document?: MktgDocumentLocation;
   /** Content-addressed object key the document was written to, e.g. `brand-kit/{project}/{content_sha256}.md`. */
   s3_key: string;
   /** Validated + recomputed document SHA-256. */
@@ -830,6 +835,8 @@ export type MktgAnswerMemory = Record<string, MktgRememberedAnswer>;
  * `savedAt`) are pruned on load rather than left at rest indefinitely.
  */
 export interface MktgStoredAgentRun {
+  /** Resumable result polling; no new Guild session is created on a document reload. */
+  pendingAttempt?: MktgRunAttempt;
   /** Catalog agent id. */
   agentId: string;
   /** LFX project uid the run belongs to. */
@@ -906,8 +913,14 @@ export type MktgGenerateProgress =
   | { type: 'submitted' }
   | { type: 'activity'; activity: MktgRunActivity[] }
   | { type: 'questions'; pending: MktgRunQuestionsPending }
-  | { type: 'document'; run: MktgStoredAgentRun }
-  | { type: 'persisted' };
+  | { type: 'document'; run: MktgStoredAgentRun; location?: MktgDocumentLocation }
+  | { type: 'persisted'; location?: MktgDocumentLocation };
+
+/** In-memory handoff from the intake to the document page. Never put answers or session capabilities in a URL. */
+export interface MktgPreparedGeneration {
+  userSub: string;
+  request: MktgGenerateRequest;
+}
 
 /** Request to generate (or regenerate) an agent document from intake answers. */
 export interface MktgGenerateRequest {
