@@ -378,6 +378,30 @@ describe('MeetingOccurrenceStripComponent', () => {
     expect(query('[data-testid="occurrence-strip-jump-next"]')).not.toBeNull();
   });
 
+  it("reads the past page holding an ended chip's record before opening it, then opens it by that record", async () => {
+    await render(page({ past: [past(-2), past(-1)], future: [future(-10), future(1)], past_has_more: true, past_cursor: String(at(-2)) }), {
+      selected: at(-1),
+      pages: [page({ past: [past(-11), past(-10), past(-9)], future: [], past_has_more: true, past_cursor: String(at(-11)) })],
+    });
+
+    chip(-10)?.click();
+    await settle();
+
+    expect(getPage).toHaveBeenLastCalledWith(SERIES, 'pw', { pageSize: 12, direction: 'past', cursor: String(at(-2)) });
+    expect(navigateToOccurrence.mock.calls.at(-1)?.[0]).toEqual(expect.objectContaining({ startMs: at(-10), pastResourceId: `${SERIES}-${at(-10)}` }));
+  });
+
+  it('opens an ended chip by ?occurrence= when the past side holds no record for it', async () => {
+    await render(page({ past: [past(-2), past(-1)], future: [future(-10), future(1)], past_has_more: false }), { selected: at(-1) });
+
+    chip(-10)?.click();
+    await settle();
+
+    expect(getPage).toHaveBeenCalledTimes(1);
+    expect(navigateToOccurrence.mock.calls.at(-1)?.[0]).toEqual(expect.objectContaining({ startMs: at(-10), isPast: true }));
+    expect(navigateToOccurrence.mock.calls.at(-1)?.[0].pastResourceId).toBeUndefined();
+  });
+
   it("applies a later page's cancellations to chips already shown", async () => {
     await render(page({ past: [past(-1)], past_has_more: true, past_cursor: String(at(-1)), cancelled_occurrences: [] }), {
       selected: at(-1),

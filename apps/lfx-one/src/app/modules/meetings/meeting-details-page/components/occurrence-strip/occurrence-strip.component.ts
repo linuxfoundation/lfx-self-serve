@@ -172,14 +172,14 @@ export class MeetingOccurrenceStripComponent {
 
   protected select(item: MeetingOccurrenceStripItem): void {
     if (!item.cancelled && item.startMs !== this.selected()?.startMs) {
-      this.moveTo(item);
+      void this.moveTo(item);
     }
   }
 
   protected jumpToNext(): void {
     const nextUp = this.nextUp();
     if (nextUp) {
-      this.moveTo(nextUp);
+      void this.moveTo(nextUp);
     }
   }
 
@@ -192,7 +192,7 @@ export class MeetingOccurrenceStripComponent {
     for (let read = 0; read <= MEETING_OCCURRENCE_STRIP_MAX_CHASE_PAGES; read++) {
       const { item, readFirst } = this.adjacent(direction);
       if (item) {
-        this.moveTo(item);
+        void this.moveTo(item);
         return;
       }
       if (!readFirst || read === MEETING_OCCURRENCE_STRIP_MAX_CHASE_PAGES) {
@@ -220,10 +220,37 @@ export class MeetingOccurrenceStripComponent {
     this.scroller()?.nativeElement.querySelector<HTMLElement>(`[data-start-ms="${target.startMs}"]`)?.focus();
   }
 
-  /** Moves the page, and hands the tab stop back to the selection, wherever the viewer moved it. */
-  private moveTo(item: MeetingOccurrenceStripItem): void {
+  /**
+   * Moves the page, and hands the tab stop back to the selection, wherever the viewer moved it. An ended
+   * occurrence the live list carries opens by its past record's composite id when there is one, so the
+   * page loads that record's recording and roster: when its record could be on a past page not read yet
+   * (older than the oldest record read, while the past side has more), those pages are read first (a
+   * bounded number) and the refreshed chip is used. With no record, it opens by `?occurrence=`. The move
+   * is dropped if a read fails, or if meanwhile the run moved on or the page moved elsewhere.
+   */
+  private async moveTo(item: MeetingOccurrenceStripItem): Promise<void> {
     this.focusStartMs.set(null);
-    this.state.navigateToOccurrence(item);
+    let target = item;
+    const run = this.runId;
+    const from = this.selected()?.startMs;
+    for (let read = 0; read < MEETING_OCCURRENCE_STRIP_MAX_CHASE_PAGES && this.recordMayBeUnread(target); read++) {
+      const paged = await this.loadMore(run, 'past', MEETING_OCCURRENCE_STRIP_PAGE_SIZE);
+      if (!paged || run !== this.runId || this.selected()?.startMs !== from) {
+        return;
+      }
+      target = this.items().find((candidate) => candidate.startMs === item.startMs) ?? target;
+    }
+    this.state.navigateToOccurrence(target);
+  }
+
+  /** An ended chip with no record id yet, older than every past record read while the past side has more. */
+  private recordMayBeUnread(item: MeetingOccurrenceStripItem): boolean {
+    const loaded = this.loaded();
+    if (!item.isPast || item.pastResourceId || !loaded?.pastHasMore) {
+      return false;
+    }
+    const { oldestPast } = this.readEdges(loaded);
+    return oldestPast === undefined || item.startMs < oldestPast;
   }
 
   /**
