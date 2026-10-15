@@ -185,6 +185,21 @@ describe('MeetingJoinDetailsComponent', () => {
     });
   });
 
+  it("needs a fresh read for a later occurrence's window: a page left open never reuses the earlier key", async () => {
+    // The payload's key was served for today's occurrence; the page now shows next week's, inside its window.
+    const nextWeek = Date.now() + 7 * 24 * HOUR;
+    meeting.set(build({ organizer: true, host_key: KEY, can_view_host_key: true }));
+    selectedOccurrence.set({ occurrence_id: '2', start_time: new Date(nextWeek).toISOString(), duration: 60 });
+    await update();
+    expect(query('join-details-host-key-pending')).not.toBeNull();
+
+    now.set(new Date(nextWeek - 60 * 60_000));
+    await update();
+
+    expect(query('join-details-host-key-toggle')).toBeNull();
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
   it('shows a key the server returned to a browser whose clock runs a few minutes behind', async () => {
     // The server, by its clock, is inside the window; the browser is 5 minutes before it opens.
     meeting.set(build({ host_key: KEY, can_view_host_key: true, start_time: new Date(Date.now() + 75 * 60_000).toISOString() }));

@@ -50,7 +50,8 @@ export class MeetingJoinDetailsComponent {
   /** The key the server returned for this viewer, on an upcoming or live occurrence, while its window lasts. */
   protected readonly hostKey: Signal<string | null> = this.initHostKey();
   /**
-   * The meetings whose window this browser page saw closed, and the times it then read each one again.
+   * The windows (meeting and window start) this browser page saw closed, and the times it then read each
+   * one again.
    * Only a page that waited reads: one opened inside the window already had the server's answer.
    */
   private readonly sawClosed = signal<ReadonlySet<string>>(new Set());
@@ -110,10 +111,11 @@ export class MeetingJoinDetailsComponent {
       if (now.getTime() < windowStart) {
         return 'closed';
       }
-      if (!isWithinHostKeyWindow(timing, now) || !this.sawClosed().has(meeting.id)) {
+      const windowKey = `${meeting.id}@${windowStart}`;
+      if (!isWithinHostKeyWindow(timing, now) || !this.sawClosed().has(windowKey)) {
         return null;
       }
-      const reads = this.reads()[meeting.id] ?? [];
+      const reads = this.reads()[windowKey] ?? [];
       if (reads.length === 0) {
         return 'opening';
       }
@@ -147,8 +149,14 @@ export class MeetingJoinDetailsComponent {
   private keyWindowHolds(meeting: Meeting): boolean {
     const timing = this.windowTiming(meeting);
     const windowStart = getHostKeyWindowStartMs(timing);
+    // The key belongs to the window the server returned it for (the payload's next occurrence): a page
+    // left open into a later occurrence's window needs a fresh read, as the key may have rotated.
+    const servedFor = getHostKeyWindowStartMs(meeting);
     const now = this.state.now();
-    if (windowStart === null || now.getTime() < windowStart - MEETING_HOST_KEY_CLOCK_SKEW_MS) {
+    if (windowStart === null || servedFor === null || Math.abs(windowStart - servedFor) > MEETING_HOST_KEY_CLOCK_SKEW_MS) {
+      return false;
+    }
+    if (now.getTime() < windowStart - MEETING_HOST_KEY_CLOCK_SKEW_MS) {
       return false;
     }
     return now.getTime() < windowStart || isWithinHostKeyWindow(timing, now);
@@ -170,10 +178,13 @@ export class MeetingJoinDetailsComponent {
     toObservable(this.hostKeyWait)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((wait) => {
-        const id = this.state.meeting()?.id;
-        if (!id) {
+        const meeting = this.state.meeting();
+        const windowStart = meeting ? getHostKeyWindowStartMs(this.windowTiming(meeting)) : null;
+        if (!meeting || windowStart === null) {
           return;
         }
+        // Per meeting and window: each later occurrence's window gets its own read and retry.
+        const id = `${meeting.id}@${windowStart}`;
         if (wait === 'closed' && !this.sawClosed().has(id)) {
           this.sawClosed.update((ids) => new Set([...ids, id]));
           return;
