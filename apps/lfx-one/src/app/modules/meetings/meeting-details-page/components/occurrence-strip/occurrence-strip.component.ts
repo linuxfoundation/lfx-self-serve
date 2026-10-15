@@ -9,6 +9,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { MEETING_OCCURRENCE_STRIP_MAX_CHASE_PAGES, MEETING_OCCURRENCE_STRIP_PAGE_SIZE, MEETING_OCCURRENCES_PAGE_MAX_LIMIT } from '@lfx-one/shared/constants';
 import {
   MeetingOccurrenceBrowseDialogData,
+  MeetingOccurrenceBrowseTab,
   MeetingOccurrenceDirection,
   MeetingOccurrenceStripChip,
   MeetingOccurrenceStripItem,
@@ -238,9 +239,12 @@ export class MeetingOccurrenceStripComponent {
       timezone: this.timezone,
       items: () => this.items(),
       selectedStartMs: () => this.state.selectedOccurrenceStartMs(),
-      hasMore: (tab) => !!(tab === 'past' ? this.loaded()?.pastHasMore : this.loaded()?.futureHasMore),
+      hasMore: (tab) => this.browseReadSide(tab) !== null,
       pastIncomplete: () => !!this.loaded()?.pastIncomplete,
-      loadMore: (tab) => this.loadMore(this.runId, tab === 'past' ? 'past' : 'future', MEETING_OCCURRENCES_PAGE_MAX_LIMIT),
+      loadMore: (tab) => {
+        const side = this.browseReadSide(tab);
+        return side ? this.loadMore(this.runId, side, MEETING_OCCURRENCES_PAGE_MAX_LIMIT) : Promise.resolve(false);
+      },
       open: (item) => void this.moveTo(item),
     };
     const ref = this.dialogService.open(MeetingOccurrenceBrowseDialogComponent, {
@@ -410,6 +414,28 @@ export class MeetingOccurrenceStripComponent {
       return 'future';
     }
     return null;
+  }
+
+  /**
+   * Which side a browse tab reads next, or null when it has nothing more. The dialog files rows by
+   * whether they have ended, not by source, and the live list can carry ended occurrences: so Past reads
+   * the past pages first and then, while the latest live occurrence read has ended and the live list has
+   * more, the live list, whose next entries can be ended ones too. Upcoming reads the live list.
+   */
+  private browseReadSide(tab: MeetingOccurrenceBrowseTab): MeetingOccurrenceDirection | null {
+    const loaded = this.loaded();
+    if (!loaded) {
+      return null;
+    }
+    if (tab === 'upcoming') {
+      return loaded.futureHasMore ? 'future' : null;
+    }
+    if (loaded.pastHasMore) {
+      return 'past';
+    }
+    const { latestFuture } = this.readEdges(loaded);
+    const latestRead = this.items().find((item) => item.startMs === latestFuture);
+    return loaded.futureHasMore && !!latestRead?.isPast ? 'future' : null;
   }
 
   /** Hides the strip, and the browse dialog with it, which would otherwise outlive its trigger. */

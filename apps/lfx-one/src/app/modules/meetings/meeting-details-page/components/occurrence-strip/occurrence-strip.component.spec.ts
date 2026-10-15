@@ -626,6 +626,30 @@ describe('MeetingOccurrenceStripComponent', () => {
     expect(navigateToOccurrence.mock.calls.at(-1)?.[0].pastResourceId).toBeUndefined();
   });
 
+  it('lets the Past tab read on through ended entries the live list still carries', async () => {
+    // No past pages left; the live list starts with ended entries, more than the next-up search reads.
+    const ended = (week: number) => page({ past: [], future: [future(week)], past_has_more: false, future_has_more: true, future_cursor: String(at(week)) });
+    await render(page({ past: [past(-40)], future: [future(-30)], future_has_more: true, future_cursor: String(at(-30)) }), {
+      selected: at(-40),
+      pages: [ended(-29), ended(-28), ended(-27), ended(-26), ended(-25), ended(-24)],
+    });
+    const dialogService = fixture.debugElement.injector.get(DialogService);
+    const open = vi.spyOn(dialogService, 'open').mockReturnValue({ onDestroy: new Subject<void>(), close: vi.fn() } as unknown as DynamicDialogRef);
+    button('occurrence-strip-position')?.click();
+    const data = open.mock.calls[0][1].data as MeetingOccurrenceBrowseDialogData;
+
+    expect(data.hasMore('past')).toBe(true);
+    await expect(data.loadMore('past')).resolves.toBe(true);
+
+    expect(getPage).toHaveBeenLastCalledWith(SERIES, 'pw', { pageSize: 50, direction: 'future', cursor: String(at(-25)) });
+    expect(
+      data
+        .items()
+        .filter((item) => item.isPast)
+        .map((item) => item.startMs)
+    ).toContain(at(-24));
+  });
+
   it('closes the dialog when a refused page hides the strip', async () => {
     await render(page({ past: [past(-1)], past_has_more: true, past_cursor: String(at(-1)) }), {
       selected: at(-1),
