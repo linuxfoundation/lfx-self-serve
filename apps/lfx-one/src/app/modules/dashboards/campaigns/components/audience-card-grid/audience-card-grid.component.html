@@ -10,10 +10,30 @@
       <p class="text-sm text-gray-500">No qualifying lists yet. Run discovery to classify this event's HubSpot lists.</p>
     </div>
   } @else {
-    <p class="text-xs text-gray-500" data-testid="audience-card-grid-summary">
-      {{ totalLists() }} list{{ totalLists() === 1 ? '' : 's' }} across {{ populated().length }} signal{{ populated().length === 1 ? '' : 's' }}. Tick the ones
-      this send should include, or choose Exclude to keep a list's contacts off the send.
-    </p>
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <p class="text-xs text-gray-500" data-testid="audience-card-grid-summary">
+        {{ totalLists() }} list{{ totalLists() === 1 ? '' : 's' }} across {{ populated().length }} signal{{ populated().length === 1 ? '' : 's' }}. Tick the
+        ones this send should include, or choose Exclude to keep a list's contacts off the send.
+      </p>
+      <div class="flex gap-1.5">
+        <button
+          type="button"
+          (click)="onSelectAll()"
+          [disabled]="disabled()"
+          class="rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          data-testid="audience-card-grid-select-all">
+          Select all
+        </button>
+        <button
+          type="button"
+          (click)="onClearAll()"
+          [disabled]="disabled()"
+          class="rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          data-testid="audience-card-grid-clear">
+          Clear
+        </button>
+      </div>
+    </div>
 
     <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
       @for (bucket of populated(); track bucket.signal) {

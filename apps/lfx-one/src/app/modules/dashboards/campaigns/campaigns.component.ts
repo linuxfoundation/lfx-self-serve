@@ -1865,6 +1865,8 @@ export class CampaignsComponent {
   protected readonly emailStagingMessage = signal<string>('');
   /** HubSpot link to the staged draft; '' when the service sent none or it is not an http(s) URL. */
   protected readonly emailStagingDraftUrl = signal<string>('');
+  /** Notes about best-effort steps of the staged draft that did not apply (e.g. a hero image that could not be added). */
+  protected readonly emailStagingWarnings = signal<readonly string[]>([]);
 
   /**
    * Whether a send can be staged right now.
@@ -3306,6 +3308,7 @@ export class CampaignsComponent {
     this.emailStaging.set('staging');
     this.emailStagingMessage.set('');
     this.emailStagingDraftUrl.set('');
+    this.emailStagingWarnings.set([]);
 
     // Bumped BEFORE the await below; the reset bumps the same counter to invalidate it.
     const generation = ++this.emailStagingGeneration;
@@ -3916,6 +3919,7 @@ export class CampaignsComponent {
     this.emailStaging.set('idle');
     this.emailStagingMessage.set('');
     this.emailStagingDraftUrl.set('');
+    this.emailStagingWarnings.set([]);
   }
 
   /**
@@ -4416,6 +4420,8 @@ export class CampaignsComponent {
           // non-http(s) value out of the `[href]`.
           const draftId = hubspotResult?.campaignId ?? '';
           this.emailStagingDraftUrl.set(this.hubspotDraftUrl(hubspotResult?.hubspotUrl));
+          // The draft exists, so this stays a success; a warning says part of it did not apply (today: no hero).
+          this.emailStagingWarnings.set(hubspotResult?.warnings ?? []);
           this.emailStagingMessage.set(
             draftId === ''
               ? 'Draft created in HubSpot. Review and send it from there.'
