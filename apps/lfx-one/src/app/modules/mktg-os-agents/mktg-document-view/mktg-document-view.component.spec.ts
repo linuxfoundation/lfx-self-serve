@@ -112,6 +112,23 @@ describe('MktgDocumentViewComponent', () => {
     }).compileComponents();
   });
 
+  it.each([false, true])('keeps the design-aligned responsive columns with generating=%s', async (generating) => {
+    if (generating) {
+      runService.resumeGeneration.mockReturnValue(generation);
+    }
+    await render('/documents/brand-kit/living');
+    const layout = query('mktg-document-view-layout');
+    expect(layout?.classList.contains('flex-col')).toBe(true);
+    expect(layout?.classList.contains('sm:flex-row')).toBe(true);
+    expect(layout?.classList.contains('sm:items-start')).toBe(true);
+    expect(layout?.classList.contains('flex-wrap')).toBe(false);
+    expect(query('mktg-document-view-main')?.classList.contains('sm:flex-[999_1_560px]')).toBe(true);
+    expect(query('mktg-document-view-sidebar')?.classList.contains('sm:flex-[0_1_320px]')).toBe(true);
+    expect(query('mktg-document-view-sidebar')?.classList.contains('sm:min-w-[260px]')).toBe(true);
+    expect(query('mktg-document-view-sidebar')?.contains(query('mktg-document-view-revisions'))).toBe(true);
+    expect(query('mktg-document-view-sidebar')?.contains(query('mktg-document-view-about'))).toBe(true);
+  });
+
   it('shows only progress on a first run and opens the exact receipt revision when it lands', async () => {
     const request = { projectUid: PROJECT.uid, agentId: 'brand-kit', intake: BRAND_KIT_INTAKE, answers: {} };
     runService.takePreparedGeneration.mockReturnValueOnce(request);

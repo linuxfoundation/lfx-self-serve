@@ -71,10 +71,10 @@
     @if (loading() && !generating()) {
       <div class="rounded-xl border border-gray-200 bg-white px-6 py-10 text-sm text-gray-500" role="status">Loading the document…</div>
     } @else if (view(); as current) {
-      <div class="flex flex-wrap items-start gap-6">
+      <div class="flex flex-col items-stretch gap-6 sm:flex-row sm:items-start" data-testid="mktg-document-view-layout">
         <!-- The revision's document, as the agent wrote it -->
-        <!-- basis-[640px]: the design of record's document column width (arbitrary value, see styling.md). -->
-        <main class="min-w-0 grow shrink basis-[640px]">
+        <!-- Exact flex bases (560px/320px) and sidebar minimum (260px) follow DocumentView's design; see styling.md. -->
+        <main class="min-w-0 sm:flex-[999_1_560px]" data-testid="mktg-document-view-main">
           <article class="rounded-xl border border-gray-200 bg-white px-8 py-7" data-testid="mktg-document-view-document">
             <div class="mb-4 flex flex-wrap items-center gap-2">
               <button
@@ -98,7 +98,7 @@
           </article>
         </main>
 
-        <aside class="flex flex-col gap-4 grow-0 shrink basis-80 min-w-72">
+        <aside class="flex min-w-0 flex-col gap-4 sm:min-w-[260px] sm:flex-[0_1_320px]" data-testid="mktg-document-view-sidebar">
           <!-- Revisions: open or restore any other revision -->
           <div class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white px-4 py-4" data-testid="mktg-document-view-revisions">
             <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-500">Revisions</h2>

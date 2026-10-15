@@ -3,7 +3,7 @@
 
 import { expect, test } from '@playwright/test';
 
-import { runRevision, setupRunPage } from './helpers/mktg-os-runs.helper';
+import { DATA_LOAD_TIMEOUT, fillRunIntake, runRevision, setupRunPage } from './helpers/mktg-os-runs.helper';
 
 test.describe('Marketing OS run/document structure and access states', () => {
   test.use({ viewport: { width: 1440, height: 900 } });
@@ -21,6 +21,58 @@ test.describe('Marketing OS run/document structure and access states', () => {
     await expect(page.getByTestId('mktg-agent-run-form')).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await testInfo.attach('mobile-intake', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
+  });
+
+  test('sidebar stays top-right while generating and after, and stacks only on phones', async ({ page }, testInfo) => {
+    const run = await setupRunPage(page, { existing: true });
+    await run.open();
+    await expect(page.getByTestId('mktg-agent-run-form')).toBeVisible();
+    await fillRunIntake(page);
+    await page.getByTestId('mktg-agent-run-submit-button').click();
+    await expect(page.getByTestId('mktg-document-view-generating')).toBeVisible();
+    await expect(page.getByTestId('mktg-document-view-sidebar')).toBeVisible();
+
+    const expectColumns = async (stacked: boolean): Promise<void> => {
+      await expect
+        .poll(async () => {
+          const document = await page.getByTestId('mktg-document-view-main').boundingBox();
+          const sidebar = await page.getByTestId('mktg-document-view-sidebar').boundingBox();
+          if (!document || !sidebar) {
+            return false;
+          }
+          if (stacked) {
+            return sidebar.y >= document.y + document.height && Math.abs(sidebar.x - document.x) < 2;
+          }
+          return sidebar.x >= document.x + document.width && Math.abs(sidebar.y - document.y) < 2;
+        })
+        .toBe(true);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    };
+
+    for (const width of [1440, 1280, 1100, 1024, 768]) {
+      await page.setViewportSize({ width, height: 900 });
+      await expectColumns(false);
+      const progress = await page.getByTestId('mktg-document-view-generating').boundingBox();
+      const document = await page.getByTestId('mktg-document-view-main').boundingBox();
+      expect(progress && document && progress.y + progress.height <= document.y).toBe(true);
+      if (width === 1280) {
+        await testInfo.attach('desktop-generating-sidebar', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
+      }
+    }
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expectColumns(true);
+    await testInfo.attach('phone-generating-sidebar', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
+
+    run.finish();
+    await expect(page.getByTestId('mktg-document-view-document')).toContainText('Synthetic revision 2', { timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('mktg-document-view-generating')).toHaveCount(0);
+    await expectColumns(true);
+    await testInfo.attach('phone-loaded-sidebar', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
+    for (const width of [768, 1024, 1100, 1440, 1280]) {
+      await page.setViewportSize({ width, height: 900 });
+      await expectColumns(false);
+    }
+    await testInfo.attach('desktop-loaded-sidebar', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
   });
 
   test('loading and empty document states are distinct', async ({ page }, testInfo) => {
