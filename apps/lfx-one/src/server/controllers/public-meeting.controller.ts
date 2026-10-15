@@ -618,10 +618,11 @@ export class PublicMeetingController {
       // Read before any upstream call past the gate, so a malformed parameter is a 400, not wasted work.
       const page = parseOccurrencesPageRequest(req);
 
-      // throwOnFailure: a failed later page would otherwise return a silent prefix of the history. It
-      // is reported as past_incomplete with an empty past instead (#3585).
+      // A paged request (V2) gets a failed later page reported as past_incomplete with an empty past,
+      // not a silent prefix of the history (#3585). An unpaged one (V1) keeps the old degradation: the
+      // pages read so far, or none.
       let pastIncomplete = false;
-      const past = await this.meetingService.getPastOccurrencesForMeeting(req, id, { throwOnFailure: true }).catch((error: unknown) => {
+      const past = await this.meetingService.getPastOccurrencesForMeeting(req, id, { throwOnFailure: !!page }).catch((error: unknown) => {
         logger.warning(req, 'get_public_meeting_occurrences', 'Past occurrences unavailable, returning none and flagging it', {
           meeting_id: id,
           err: error,

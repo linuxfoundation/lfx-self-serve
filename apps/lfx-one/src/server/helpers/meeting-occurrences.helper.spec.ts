@@ -33,7 +33,7 @@ describe('parseOccurrencesPageRequest', () => {
 
   it('defaults the limit, and reads a direction and a cursor', () => {
     expect(parseOccurrencesPageRequest(reqWith({ direction: 'past' }))).toEqual({ limit: MEETING_OCCURRENCES_PAGE_DEFAULT_LIMIT, direction: 'past' });
-    expect(parseOccurrencesPageRequest(reqWith({ limit: '5', direction: 'future', cursor: String(T0) }))).toEqual({
+    expect(parseOccurrencesPageRequest(reqWith({ page_size: '5', direction: 'future', cursor: String(T0) }))).toEqual({
       limit: 5,
       direction: 'future',
       cursor: T0,
@@ -41,10 +41,10 @@ describe('parseOccurrencesPageRequest', () => {
   });
 
   it.each([
-    [{ limit: '0' }, 'limit'],
-    [{ limit: String(MEETING_OCCURRENCES_PAGE_MAX_LIMIT + 1) }, 'limit'],
-    [{ limit: '2.5' }, 'limit'],
-    [{ limit: ['5', '6'] }, 'limit'],
+    [{ page_size: '0' }, 'page_size'],
+    [{ page_size: String(MEETING_OCCURRENCES_PAGE_MAX_LIMIT + 1) }, 'page_size'],
+    [{ page_size: '2.5' }, 'page_size'],
+    [{ page_size: ['5', '6'] }, 'page_size'],
     [{ direction: 'sideways' }, 'direction'],
     [{ direction: 'past', cursor: '1736089200' }, 'cursor'],
     [{ cursor: String(T0) }, 'direction'],
@@ -90,6 +90,42 @@ describe('pageOccurrenceTimeline', () => {
     expect(futureWeeks(first.future)).toEqual([5, 6, 7]);
     expect(futureWeeks(next.future)).toEqual([8]);
     expect(next.future_has_more).toBe(false);
+  });
+
+  it('never splits past occurrences that share the boundary start time', () => {
+    const shared = new Date(T0 + 7 * DAY).toISOString();
+    const twins: PastOccurrenceSummary[] = [
+      { meeting_and_occurrence_id: 'a', scheduled_start_time: new Date(T0).toISOString() },
+      { meeting_and_occurrence_id: 'b', scheduled_start_time: shared },
+      { meeting_and_occurrence_id: 'c', scheduled_start_time: shared },
+      { meeting_and_occurrence_id: 'd', scheduled_start_time: new Date(T0 + 14 * DAY).toISOString() },
+    ];
+
+    const first = pageOccurrenceTimeline(twins, [], { limit: 2, direction: 'past' });
+    const next = pageOccurrenceTimeline(twins, [], { limit: 2, direction: 'past', cursor: Number(first.past_cursor) });
+
+    expect(first.past.map((o) => o.meeting_and_occurrence_id)).toEqual(['b', 'c', 'd']);
+    expect(next.past.map((o) => o.meeting_and_occurrence_id)).toEqual(['a']);
+    expect(next.past_has_more).toBe(false);
+  });
+
+  it('never splits upcoming occurrences that share the boundary start time', () => {
+    const at = (week: number, id: string): MeetingTimelineOccurrence => ({
+      occurrence_id: id,
+      start_time: new Date(T0 + week * 7 * DAY).toISOString(),
+      duration: 30,
+    });
+    const page = pageOccurrenceTimeline([], [at(5, 'x'), at(6, 'y'), at(6, 'z'), at(7, 'w')], { limit: 2, direction: 'future' });
+
+    expect(page.future.map((o) => o.occurrence_id)).toEqual(['x', 'y', 'z']);
+    expect(page.future_has_more).toBe(true);
+  });
+
+  it('leaves out an occurrence whose start cannot be read, so no cursor is NaN', () => {
+    const page = pageOccurrenceTimeline([{ meeting_and_occurrence_id: 'bad', scheduled_start_time: 'not a date' }, ...past], [], { limit: 10 });
+
+    expect(page.past.map((o) => o.meeting_and_occurrence_id)).not.toContain('bad');
+    expect(page.past).toHaveLength(5);
   });
 
   it('reports no more when a side fits in one page', () => {

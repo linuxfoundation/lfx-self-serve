@@ -7,29 +7,27 @@ import { Request } from 'express';
 
 import { ServiceValidationError } from '../errors';
 
-const OPERATION = 'get_public_meeting_occurrences';
-
 /**
- * Reads the paging parameters of `GET /public/api/meetings/:id/occurrences` (E6-02, #3585): `limit`
- * (1 to `MEETING_OCCURRENCES_PAGE_MAX_LIMIT`, default `MEETING_OCCURRENCES_PAGE_DEFAULT_LIMIT`),
+ * Reads the paging parameters of `GET /public/api/meetings/:id/occurrences` (E6-02, #3585): `page_size`
+ * (occurrences per side, 1 to `MEETING_OCCURRENCES_PAGE_MAX_LIMIT`, default `MEETING_OCCURRENCES_PAGE_DEFAULT_LIMIT`),
  * `direction` (`past` | `future`) and `cursor` (a 13-digit millisecond start, which needs a
  * direction). Null when none is present, so the caller keeps the whole-timeline response V1 reads.
  * Throws a `ServiceValidationError` (400) for a malformed value rather than guessing.
  */
 export function parseOccurrencesPageRequest(req: Request): MeetingOccurrencesPageRequest | null {
-  const { limit, direction, cursor } = req.query;
-  if (limit === undefined && direction === undefined && cursor === undefined) {
+  const { page_size: pageSize, direction, cursor } = req.query;
+  if (pageSize === undefined && direction === undefined && cursor === undefined) {
     return null;
   }
 
   const invalid = (field: string, message: string): ServiceValidationError =>
-    ServiceValidationError.forField(field, message, { operation: OPERATION, service: 'public_meeting_controller', path: req.path });
+    ServiceValidationError.forField(field, message, { operation: 'get_public_meeting_occurrences', service: 'public_meeting_controller', path: req.path });
 
   let pageLimit = MEETING_OCCURRENCES_PAGE_DEFAULT_LIMIT;
-  if (limit !== undefined) {
-    const parsed = typeof limit === 'string' && /^\d+$/.test(limit) ? Number(limit) : NaN;
+  if (pageSize !== undefined) {
+    const parsed = typeof pageSize === 'string' && /^\d+$/.test(pageSize) ? Number(pageSize) : NaN;
     if (!(parsed >= 1 && parsed <= MEETING_OCCURRENCES_PAGE_MAX_LIMIT)) {
-      throw invalid('limit', `limit must be a whole number from 1 to ${MEETING_OCCURRENCES_PAGE_MAX_LIMIT}`);
+      throw invalid('page_size', `page_size must be a whole number from 1 to ${MEETING_OCCURRENCES_PAGE_MAX_LIMIT}`);
     }
     pageLimit = parsed;
   }
@@ -55,8 +53,9 @@ export function parseOccurrencesPageRequest(req: Request): MeetingOccurrencesPag
 /**
  * Cuts one page out of a series timeline (E6-02, #3585). Without a direction it is the window around
  * now: the latest `limit` past occurrences and the first `limit` upcoming ones. With one, it reads that
- * side only, older than the cursor for `past` and later than it for `future`. Both sides stay
- * ascending. Each side reports whether more exist and, when they do, the cursor for the next page.
+ * side only, older than the cursor for `past` and later than it for `future`. Both sides come back
+ * ascending. Each side reports whether more exist and, when they do, the cursor for the next page. A
+ * page can exceed `limit` by the occurrences that share its boundary start time.
  */
 export function pageOccurrenceTimeline(
   past: PastOccurrenceSummary[],
@@ -66,22 +65,29 @@ export function pageOccurrenceTimeline(
   const pastStart = (occurrence: PastOccurrenceSummary): number => Date.parse(occurrence.scheduled_start_time);
   const futureStart = (occurrence: MeetingTimelineOccurrence): number => Date.parse(occurrence.start_time);
 
+  // An unreadable start can be neither ordered nor used as a cursor, so it is left out of a page.
+  // The cursor is a bare start time, so a page never splits occurrences that share one: the cut
+  // moves outward to take the whole group, or the next page's strict comparison would skip the rest.
   let pastPage: PastOccurrenceSummary[] = [];
   let pastHasMore = false;
   if (page.direction !== 'future') {
-    const sorted = [...past].sort((a, b) => pastStart(a) - pastStart(b));
+    const sorted = past.filter((occurrence) => !Number.isNaN(pastStart(occurrence))).sort((a, b) => pastStart(a) - pastStart(b));
     const eligible = page.cursor === undefined ? sorted : sorted.filter((occurrence) => pastStart(occurrence) < (page.cursor as number));
-    pastPage = eligible.slice(-page.limit);
-    pastHasMore = eligible.length > pastPage.length;
+    let from = Math.max(eligible.length - page.limit, 0);
+    while (from > 0 && pastStart(eligible[from - 1]) === pastStart(eligible[from])) from--;
+    pastPage = eligible.slice(from);
+    pastHasMore = from > 0;
   }
 
   let futurePage: MeetingTimelineOccurrence[] = [];
   let futureHasMore = false;
   if (page.direction !== 'past') {
-    const sorted = [...future].sort((a, b) => futureStart(a) - futureStart(b));
+    const sorted = future.filter((occurrence) => !Number.isNaN(futureStart(occurrence))).sort((a, b) => futureStart(a) - futureStart(b));
     const eligible = page.cursor === undefined ? sorted : sorted.filter((occurrence) => futureStart(occurrence) > (page.cursor as number));
-    futurePage = eligible.slice(0, page.limit);
-    futureHasMore = eligible.length > futurePage.length;
+    let to = Math.min(page.limit, eligible.length);
+    while (to < eligible.length && to > 0 && futureStart(eligible[to]) === futureStart(eligible[to - 1])) to++;
+    futurePage = eligible.slice(0, to);
+    futureHasMore = to < eligible.length;
   }
 
   return {

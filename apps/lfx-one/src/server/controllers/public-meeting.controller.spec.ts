@@ -1054,12 +1054,12 @@ describe('PublicMeetingController.getMeetingOccurrences', () => {
       expect(payload.future).toHaveLength(3);
       expect(payload.past).toEqual(pastSummaries);
       expect(Object.keys(payload).sort()).toEqual(['cancelled_occurrences', 'future', 'past']);
-      expect(meetingSvc.getPastOccurrencesForMeeting).toHaveBeenCalledWith(req, MEETING_ID, { throwOnFailure: true });
+      expect(meetingSvc.getPastOccurrencesForMeeting).toHaveBeenCalledWith(req, MEETING_ID, { throwOnFailure: false });
     });
 
-    it('returns one bounded page with a cursor when a limit is sent', async () => {
+    it('returns one bounded page with a cursor when a page size is sent', async () => {
       const { req, res, next } = buildReqRes(false);
-      req.query = { limit: '2' };
+      req.query = { page_size: '2' };
 
       await controller.getMeetingOccurrences(req, res, next);
 
@@ -1072,7 +1072,7 @@ describe('PublicMeetingController.getMeetingOccurrences', () => {
 
     it('refuses a malformed parameter with a 400 before reading the history', async () => {
       const { req, res, next } = buildReqRes(false);
-      req.query = { limit: '500' };
+      req.query = { page_size: '500' };
 
       await controller.getMeetingOccurrences(req, res, next);
 
@@ -1081,9 +1081,10 @@ describe('PublicMeetingController.getMeetingOccurrences', () => {
       expect(meetingSvc.getPastOccurrencesForMeeting).not.toHaveBeenCalled();
     });
 
-    it('flags an unreadable history instead of returning a silent prefix', async () => {
+    it('flags an unreadable history on a paged request instead of returning a silent prefix', async () => {
       meetingSvc.getPastOccurrencesForMeeting.mockRejectedValue(new Error('page 2 failed'));
       const { req, res, next } = buildReqRes(false);
+      req.query = { page_size: '12' };
 
       await controller.getMeetingOccurrences(req, res, next);
 
@@ -1092,6 +1093,16 @@ describe('PublicMeetingController.getMeetingOccurrences', () => {
       expect(payload.past).toEqual([]);
       expect(payload.past_incomplete).toBe(true);
       expect(payload.future).toHaveLength(3);
+      expect(meetingSvc.getPastOccurrencesForMeeting).toHaveBeenCalledWith(req, MEETING_ID, { throwOnFailure: true });
+    });
+
+    it('keeps the old degradation for an unpaged (V1) request: no throw, no flag', async () => {
+      const { req, res, next } = buildReqRes(false);
+
+      await controller.getMeetingOccurrences(req, res, next);
+
+      expect(meetingSvc.getPastOccurrencesForMeeting).toHaveBeenCalledWith(req, MEETING_ID, { throwOnFailure: false });
+      expect(res.json.mock.calls[0][0]).not.toHaveProperty('past_incomplete');
     });
   });
 
