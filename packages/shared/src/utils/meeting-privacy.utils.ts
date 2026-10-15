@@ -76,12 +76,21 @@ export function isHostKeyVisibleForJoinWindow(meeting: Meeting | null | undefine
  * Prefers `next_occurrence_start_time` over `start_time` for recurring meetings (the series origin can be far past); fail-closed on missing/unparseable start. Mirrors PCC.
  */
 export function isWithinHostKeyWindow(meeting: Pick<Meeting, 'start_time' | 'duration' | 'next_occurrence_start_time'>, now = new Date()): boolean {
-  const effectiveStart = meeting.next_occurrence_start_time || meeting.start_time;
-  if (!effectiveStart) return false;
-  const startMs = Date.parse(effectiveStart);
-  if (isNaN(startMs)) return false;
-  const windowStart = startMs - HOST_KEY_EARLY_MINUTES * 60_000;
+  const windowStart = getHostKeyWindowStartMs(meeting);
+  if (windowStart === null) return false;
+  const startMs = windowStart + HOST_KEY_EARLY_MINUTES * 60_000;
   const windowEnd = startMs + (meeting.duration ?? 0) * 60_000 + HOST_KEY_LATE_MINUTES * 60_000;
   const nowMs = now.getTime();
   return nowMs >= windowStart && nowMs < windowEnd;
+}
+
+/**
+ * When the host-key window opens (Unix ms): 70 minutes before the effective start, the same start
+ * {@link isWithinHostKeyWindow} reads (`next_occurrence_start_time` over `start_time`); `null` on a
+ * missing or unparseable start.
+ */
+export function getHostKeyWindowStartMs(meeting: Pick<Meeting, 'start_time' | 'next_occurrence_start_time'>): number | null {
+  const effectiveStart = meeting.next_occurrence_start_time || meeting.start_time;
+  const startMs = effectiveStart ? Date.parse(effectiveStart) : NaN;
+  return Number.isNaN(startMs) ? null : startMs - HOST_KEY_EARLY_MINUTES * 60_000;
 }

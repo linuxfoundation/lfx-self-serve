@@ -111,6 +111,11 @@
       @if (state.visibleSections()?.agenda) {
         <lfx-meeting-agenda />
       }
+      <!-- E7-01/E7-02: join details, for now the host key alone; the component renders only rows it has data for.
+           Only once the page is ready: during a navigation's skeleton the state still holds the previous meeting. -->
+      @if (state.status() === 'ready') {
+        <lfx-meeting-join-details class="empty:hidden" />
+      }
       <!-- E3-04: only for a viewer with a roster (state.rosterRequest): upcoming or live, an organizer or a
            registrant of a meeting whose guest list is shared. -->
       @if (state.rosterRequest()) {

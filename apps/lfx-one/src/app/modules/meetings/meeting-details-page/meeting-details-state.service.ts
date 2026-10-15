@@ -412,6 +412,14 @@ export class MeetingDetailsStateService {
     });
   }
 
+  /**
+   * Re-reads the meeting in the background, the page left as it is until the answer lands (e.g. when
+   * the host-key window opens, so the server can return the key): unlike `refresh`, no retry state.
+   */
+  public reload(): void {
+    this.refresh$.next();
+  }
+
   /** Re-runs the lookup for the current route, e.g. from the error state's retry. */
   public refresh(): void {
     this.retrying.set(true);
