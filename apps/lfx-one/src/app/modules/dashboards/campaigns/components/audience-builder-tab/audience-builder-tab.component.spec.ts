@@ -114,6 +114,7 @@ describe('AudienceBuilderTabComponent', () => {
             preview: vi.fn(() => NEVER),
             create: vi.fn(() => NEVER),
             inFlightCreate: vi.fn(() => null),
+            createOutcome: vi.fn(() => null),
             takeCreateOutcome: vi.fn(() => null),
           },
         },
@@ -2948,6 +2949,20 @@ describe('AudienceBuilderTabComponent', () => {
 
       expect(host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-discover"]')?.disabled).toBe(true);
       expect(discoverAudience, "discovery's reset would discard the create's reply").not.toHaveBeenCalled();
+    });
+
+    it('rescopes after a portfolio-wide load that found no rows', async () => {
+      await render();
+      const generic = new Subject<AudienceSuppressionList[]>();
+      getAudienceSuppressionLists.mockReturnValueOnce(generic);
+      builder().created.emit({ listId: '7777', name: 'Seoul', hubspotUrl: 'https://app.hubspot.com/x/7777' });
+      fixture.detectChanges();
+      builder().eventPlanned.emit({ eventName: 'Synthetic Summit 2026', brandShort: 'SYN', eventDates: [] });
+      generic.next([]);
+      generic.complete();
+      fixture.detectChanges();
+
+      expect(getAudienceSuppressionLists).toHaveBeenLastCalledWith('tlf', 'SYN', 'Synthetic Summit 2026');
     });
 
     it('sends a typed master name with the compose', async () => {

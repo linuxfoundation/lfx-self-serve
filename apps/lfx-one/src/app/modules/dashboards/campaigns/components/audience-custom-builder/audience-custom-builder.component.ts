@@ -151,6 +151,8 @@ export class AudienceCustomBuilderComponent {
   protected readonly busy = computed(() => this.interpreting() || this.previewing() || this.creating());
   protected readonly locked = computed(() => this.disabled() || this.busy());
   /** Create stays disabled until a preview of the CURRENT criteria exists. */
+  /** The unclaimed outcome of this project's last create, held by the service. */
+  private readonly strandedOutcome = computed(() => this.customService.createOutcome(this.projectSlug()));
   /** A create for this project still in flight from a builder that has since gone (navigation). */
   protected readonly createInFlightElsewhere = computed(() => (this.creating() ? null : this.customService.inFlightCreate(this.projectSlug())));
   /** The model's questions are blocking: a draft with any unanswered is provisional, and only preview may use it. */
@@ -194,10 +196,19 @@ export class AudienceCustomBuilderComponent {
       )
       .subscribe((preset) => this.applyPreset(preset));
 
-    // A create whose builder was destroyed before it settled left its outcome with the service.
-    toObservable(this.projectSlug)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((project) => this.claimStrandedOutcome(project));
+    // A create whose builder was destroyed before it settled leaves its outcome with the service --
+    // possibly after this builder mounted, so the outcome is watched, not read once. A create this
+    // builder is running itself takes its own outcome in its reply handler first.
+    toObservable(this.strandedOutcome)
+      .pipe(
+        filter((outcome) => outcome !== null),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(() => {
+        if (!this.creating()) {
+          this.claimStrandedOutcome(this.projectSlug());
+        }
+      });
 
     toObservable(this.resetKey)
       .pipe(skip(1), takeUntilDestroyed(this.destroyRef))
@@ -416,12 +427,7 @@ export class AudienceCustomBuilderComponent {
       });
   }
 
-  /**
-   * The container's run reset (a new project or event). Everything belongs to the old context, so
-   * the builder starts over -- but a create caught in flight is recorded as unconfirmed, exactly as
-   * the tab does for a stranded compose: its reply is about to be discarded, and losing it silently
-   * is how a duplicate gets created later.
-   */
+  /** Picks up the outcome of a create whose builder was destroyed before it settled. */
   private claimStrandedOutcome(project: string): void {
     const outcome = this.customService.takeCreateOutcome(project);
     if (outcome?.kind === 'unconfirmed') {
@@ -431,6 +437,12 @@ export class AudienceCustomBuilderComponent {
     }
   }
 
+  /**
+   * The container's run reset (a new project or event). Everything belongs to the old context, so
+   * the builder starts over -- but a create caught in flight is recorded as unconfirmed, exactly as
+   * the tab does for a stranded compose: its reply is about to be discarded, and losing it silently
+   * is how a duplicate gets created later.
+   */
   private onContextReset(): void {
     const stranded = this.creating() ? this.nameControl.value.trim() || this.preview()?.name || 'the custom list' : null;
     this.onStartOver();

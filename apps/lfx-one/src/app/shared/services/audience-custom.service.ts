@@ -38,12 +38,23 @@ export class AudienceCustomService {
    * reply itself takes it at once; one that was destroyed first never does, so a remounted builder
    * finds it here instead of offering a second create.
    */
-  private readonly outcomes = new Map<string, AudienceCustomCreateOutcome>();
+  private readonly outcomes = signal<ReadonlyMap<string, AudienceCustomCreateOutcome>>(new Map());
+
+  /** The unclaimed outcome of this project's last create, if any. A signal, so a builder mounted while it was still in flight sees it land. */
+  public createOutcome(projectSlug: string): AudienceCustomCreateOutcome | null {
+    return this.outcomes().get(projectSlug) ?? null;
+  }
 
   /** Takes (and forgets) the unclaimed outcome of this project's last create, if any. */
   public takeCreateOutcome(projectSlug: string): AudienceCustomCreateOutcome | null {
-    const outcome = this.outcomes.get(projectSlug) ?? null;
-    this.outcomes.delete(projectSlug);
+    const outcome = this.createOutcome(projectSlug);
+    if (outcome) {
+      this.outcomes.update((all) => {
+        const next = new Map(all);
+        next.delete(projectSlug);
+        return next;
+      });
+    }
     return outcome;
   }
 
@@ -69,12 +80,13 @@ export class AudienceCustomService {
       return this.http.post<AudienceComposedList>('/api/campaigns/audience-builder/custom/create', request, { params: { project: projectSlug } });
     }).pipe(
       tap({
-        next: (list) => this.outcomes.set(projectSlug, { kind: 'created', list }),
+        next: (list) => this.outcomes.update((all) => new Map(all).set(projectSlug, { kind: 'created', list })),
         error: (err: unknown) => {
           const status = err instanceof HttpErrorResponse ? err.status : 0;
           if (!AUDIENCE_CUSTOM_CREATE_DEFINITE_FAILURES.includes(status)) {
             const body = status === 502 && err instanceof HttpErrorResponse ? (err.error as { masterName?: string } | null) : null;
-            this.outcomes.set(projectSlug, { kind: 'unconfirmed', name: body?.masterName || request.name || 'the custom list' });
+            const outcome: AudienceCustomCreateOutcome = { kind: 'unconfirmed', name: body?.masterName || request.name || 'the custom list' };
+            this.outcomes.update((all) => new Map(all).set(projectSlug, outcome));
           }
         },
       }),

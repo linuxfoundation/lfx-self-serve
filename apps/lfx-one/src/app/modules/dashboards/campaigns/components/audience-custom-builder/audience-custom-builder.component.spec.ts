@@ -2,12 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
+import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { AudienceCustomService } from '@services/audience-custom.service';
 import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { AudienceComposedList, AudienceCustomCriteria, AudienceCustomInterpretResult, AudienceCustomPreview } from '@lfx-one/shared/interfaces';
+import type {
+  AudienceComposedList,
+  AudienceCustomCreateOutcome,
+  AudienceCustomCriteria,
+  AudienceCustomInterpretResult,
+  AudienceCustomPreview,
+} from '@lfx-one/shared/interfaces';
 
 import { AudienceCustomBuilderComponent } from './audience-custom-builder.component';
 
@@ -61,12 +68,26 @@ const created: AudienceComposedList = { listId: '7777', name: preview.name, hubs
 
 describe('AudienceCustomBuilderComponent', () => {
   let fixture: ComponentFixture<AudienceCustomBuilderComponent>;
-  const service = { interpret: vi.fn(), preview: vi.fn(), create: vi.fn(), inFlightCreate: vi.fn(), takeCreateOutcome: vi.fn() };
+  // The stranded outcome is a signal in the real service; the mock keeps one so a test can land it after mount.
+  const outcome = signal<AudienceCustomCreateOutcome | null>(null);
+  const inFlight = signal<string | null>(null);
+  const service = {
+    interpret: vi.fn(),
+    preview: vi.fn(),
+    create: vi.fn(),
+    inFlightCreate: vi.fn(() => inFlight()),
+    createOutcome: vi.fn(() => outcome()),
+    takeCreateOutcome: vi.fn(() => {
+      const taken = outcome();
+      outcome.set(null);
+      return taken;
+    }),
+  };
 
   beforeEach(async () => {
     service.interpret.mockReset().mockReturnValue(of(settled));
-    service.inFlightCreate.mockReset().mockReturnValue(null);
-    service.takeCreateOutcome.mockReset().mockReturnValue(null);
+    inFlight.set(null);
+    outcome.set(null);
     service.preview.mockReset().mockReturnValue(of(preview));
     service.create.mockReset().mockReturnValue(of(created));
     await TestBed.configureTestingModule({
@@ -275,7 +296,7 @@ describe('AudienceCustomBuilderComponent', () => {
   });
 
   it('holds Create while a create for this project is still in flight from a builder that has gone', () => {
-    service.inFlightCreate.mockReturnValue('Seoul audience');
+    inFlight.set('Seoul audience');
     fixture.componentRef.setInput('projectSlug', 'tlf2');
     fixture.detectChanges();
     interpretSeoul();
@@ -303,8 +324,7 @@ describe('AudienceCustomBuilderComponent', () => {
   });
 
   it('picks up an unconfirmed create left by a builder that was destroyed, and holds Create', () => {
-    service.takeCreateOutcome.mockReturnValue({ kind: 'unconfirmed', name: 'Seoul (left behind)' });
-    fixture.componentRef.setInput('projectSlug', 'tlf3');
+    outcome.set({ kind: 'unconfirmed', name: 'Seoul (left behind)' });
     fixture.detectChanges();
 
     expect(el('audience-custom-builder-unconfirmed').textContent).toContain('Seoul (left behind)');
@@ -314,8 +334,7 @@ describe('AudienceCustomBuilderComponent', () => {
   });
 
   it('says a list was created after the builder was gone, instead of offering it again silently', () => {
-    service.takeCreateOutcome.mockReturnValue({ kind: 'created', list: created });
-    fixture.componentRef.setInput('projectSlug', 'tlf4');
+    outcome.set({ kind: 'created', list: created });
     fixture.detectChanges();
 
     expect(el('audience-custom-builder-stranded-created').textContent).toContain(created.name);
@@ -339,6 +358,21 @@ describe('AudienceCustomBuilderComponent', () => {
     click('audience-custom-builder-preview');
 
     expect(el<HTMLButtonElement>('audience-custom-builder-create').disabled, 'the hand-filled draft can be created').toBe(false);
+  });
+
+  it('sees a stranded outcome that lands after it mounted, and holds Create', () => {
+    inFlight.set('Seoul');
+    interpretSeoul();
+    click('audience-custom-builder-preview');
+    expect(el<HTMLButtonElement>('audience-custom-builder-create').disabled, 'held while the other create is in flight').toBe(true);
+
+    // The other builder's create settles unconfirmed after this one mounted.
+    inFlight.set(null);
+    outcome.set({ kind: 'unconfirmed', name: 'Seoul' });
+    fixture.detectChanges();
+
+    expect(el('audience-custom-builder-unconfirmed').textContent).toContain('Seoul');
+    expect(host().querySelector('[data-testid="audience-custom-builder-create"]'), 'no button may offer a second create').toBeNull();
   });
 
   it('applies a deterministic preset without calling the model', () => {

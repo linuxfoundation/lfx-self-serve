@@ -2040,15 +2040,16 @@ export class AudienceBuilderTabComponent {
     const brand = event?.brandShort ?? '';
     const name = event?.eventName ?? '';
     const scope = this.plannedSuppressionScope();
-    if (this.suppressionLists().length > 0 && scope === this.suppressionScope) {
+    if (this.suppressionSeeded() && scope === this.suppressionScope) {
       return;
     }
-    const previousKeys = this.suppressionLists().length > 0 ? new Set(this.suppressionLists().map((l) => l.key)) : null;
+    // Once a load has seeded (even an empty one), a rescope keeps the operator's ticks and
+    // pre-ticks only the rows it adds.
+    const previousKeys = this.suppressionSeeded() ? new Set(this.suppressionLists().map((l) => l.key)) : null;
     this.suppressionScope = scope;
     this.loadSuppression(brand, name, previousKeys);
   }
 
-  /** Fetches the suppression lists. Safe with empty scope: the hygiene rows are portfolio-wide. */
   /** The scope the no-discovery suppression rows should have: the planned event's, else portfolio-wide. */
   private plannedSuppressionScope(): string {
     const event = this.plannedEvent();
@@ -2061,11 +2062,14 @@ export class AudienceBuilderTabComponent {
    * Only on a scope change, never to retry a failure, so a failing endpoint cannot loop.
    */
   private reconcileSuppressionScope(): void {
-    if (!this.hasDiscovered() && this.suppressionLists().length > 0 && this.plannedSuppressionScope() !== this.suppressionScope) {
+    // Runs after a SUCCESSFUL load only, so an empty result still rescopes: no rows from the generic
+    // scope says nothing about the brand and event rows.
+    if (!this.hasDiscovered() && this.plannedSuppressionScope() !== this.suppressionScope) {
       this.ensureSuppressionLoaded();
     }
   }
 
+  /** Fetches the suppression lists. Safe with empty scope: the hygiene rows are portfolio-wide. */
   private loadSuppression(brandShort: string, eventName: string, previousKeys: ReadonlySet<string> | null = null): void {
     this.suppressionLoading.set(true);
     const run = this.runGeneration;
