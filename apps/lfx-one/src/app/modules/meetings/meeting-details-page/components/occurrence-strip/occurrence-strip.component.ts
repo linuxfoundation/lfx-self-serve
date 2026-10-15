@@ -191,17 +191,21 @@ export class MeetingOccurrenceStripComponent {
       this.moveTo(immediate);
       return;
     }
-    // At a loaded end: read the next page first. The step is dropped if that fails, or if meanwhile the
-    // run moved on (a new series or password, or the strip went away) or the page moved elsewhere.
+    // At a read end: read further pages until the neighbour is known (a bounded number). The step is
+    // dropped if a read fails, or if meanwhile the run moved on (a new series or password, or the strip
+    // went away) or the page moved elsewhere.
     const run = this.runId;
     const from = this.selected()?.startMs;
-    const paged = await this.loadMore(run, direction < 0 ? 'past' : 'future', MEETING_OCCURRENCE_STRIP_PAGE_SIZE);
-    if (!paged || run !== this.runId || from === undefined || this.selected()?.startMs !== from) {
-      return;
-    }
-    const target = this.neighbour(direction);
-    if (target) {
-      this.moveTo(target);
+    for (let read = 0; read < MEETING_OCCURRENCE_STRIP_MAX_CHASE_PAGES; read++) {
+      const paged = await this.loadMore(run, direction < 0 ? 'past' : 'future', MEETING_OCCURRENCE_STRIP_PAGE_SIZE);
+      if (!paged || run !== this.runId || from === undefined || this.selected()?.startMs !== from) {
+        return;
+      }
+      const target = this.neighbour(direction);
+      if (target) {
+        this.moveTo(target);
+        return;
+      }
     }
   }
 
@@ -226,19 +230,42 @@ export class MeetingOccurrenceStripComponent {
     this.state.navigateToOccurrence(item);
   }
 
-  /** The adjacent selectable occurrence among those loaded, skipping cancelled ones; null at a loaded end. */
+  /**
+   * The adjacent selectable occurrence among those loaded, skipping cancelled ones; null at a loaded end.
+   * Also null when the nearest one lies beyond its side's read pages while that side has more: the live
+   * list can still carry an ended occurrence weeks older than the past page, and the unread weeks
+   * between come first.
+   */
   private neighbour(direction: -1 | 1): MeetingOccurrenceStripItem | null {
     const items = this.items();
     const selected = this.selected();
-    if (!selected) {
+    const loaded = this.loaded();
+    if (!selected || !loaded) {
       return null;
     }
+    const { oldestPast, latestFuture } = this.readEdges(loaded);
     for (let index = items.indexOf(selected) + direction; index >= 0 && index < items.length; index += direction) {
-      if (!items[index].cancelled) {
-        return items[index];
+      const candidate = items[index];
+      const beyondPast = direction < 0 && loaded.pastHasMore && (oldestPast === undefined || candidate.startMs < oldestPast);
+      const beyondFuture = direction > 0 && loaded.futureHasMore && (latestFuture === undefined || candidate.startMs > latestFuture);
+      if (beyondPast || beyondFuture) {
+        return null;
+      }
+      if (!candidate.cancelled) {
+        return candidate;
       }
     }
     return null;
+  }
+
+  /** Each side's read end: the oldest past record and the latest upcoming occurrence the pages hold. */
+  private readEdges(loaded: MeetingOccurrenceStripPages): { oldestPast?: number; latestFuture?: number } {
+    const pastStarts = loaded.past.map((record) => compositeIdToStartMs(record.meeting_and_occurrence_id)).filter((ms): ms is number => ms !== null);
+    const futureStarts = loaded.future.map((occurrence) => new Date(occurrence.start_time).getTime()).filter((ms) => Number.isFinite(ms));
+    return {
+      oldestPast: pastStarts.length > 0 ? Math.min(...pastStarts) : undefined,
+      latestFuture: futureStarts.length > 0 ? Math.max(...futureStarts) : undefined,
+    };
   }
 
   /**
@@ -329,10 +356,7 @@ export class MeetingOccurrenceStripComponent {
    * across both sides, since the live list can still carry ended occurrences older than the past page.
    */
   private chaseDirection(target: number, loaded: MeetingOccurrenceStripPages): MeetingOccurrenceDirection | null {
-    const pastStarts = loaded.past.map((record) => compositeIdToStartMs(record.meeting_and_occurrence_id)).filter((ms): ms is number => ms !== null);
-    const futureStarts = loaded.future.map((occurrence) => new Date(occurrence.start_time).getTime()).filter((ms) => Number.isFinite(ms));
-    const oldest = pastStarts.length > 0 ? Math.min(...pastStarts) : undefined;
-    const latest = futureStarts.length > 0 ? Math.max(...futureStarts) : undefined;
+    const { oldestPast: oldest, latestFuture: latest } = this.readEdges(loaded);
     if (loaded.pastHasMore && (oldest === undefined || target < oldest)) {
       return 'past';
     }

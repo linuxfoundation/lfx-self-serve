@@ -337,6 +337,20 @@ describe('MeetingOccurrenceStripComponent', () => {
     expect(chip(-5)?.getAttribute('data-selected')).toBe('true');
   });
 
+  it('reads the unread past weeks before stepping back past an older ended live entry', async () => {
+    await render(page({ past: [past(-2), past(-1)], future: [future(-10), future(1)], past_has_more: true, past_cursor: String(at(-2)) }), {
+      selected: at(-2),
+      pastPage: true,
+      pages: [page({ past: [past(-4), past(-3)], future: [], past_has_more: true, past_cursor: String(at(-4)) })],
+    });
+
+    button('occurrence-strip-prev')?.click();
+    await settle();
+
+    expect(getPage).toHaveBeenLastCalledWith(SERIES, 'pw', { pageSize: 12, direction: 'past', cursor: String(at(-2)) });
+    expect(navigatedTo()).toBe(at(-3));
+  });
+
   it("applies a later page's cancellations to chips already shown", async () => {
     await render(page({ past: [past(-1)], past_has_more: true, past_cursor: String(at(-1)), cancelled_occurrences: [] }), {
       selected: at(-1),
