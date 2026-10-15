@@ -5536,12 +5536,6 @@ describe('ImplementationTabComponent reddit results notice', () => {
 });
 
 /**
- * The Google geo chips.
- *
- * The control is a `<select>` over the supported map's own keys, so the only guards left are the
- * ones a select cannot express — the cap, and not adding a code twice.
- */
-/**
  * campaign-service platform rows whose `error` is one of issue #208's fixed dispatch-failure
  * sentences (`DispatchFailureMessage`). The row must turn a known connection reason into a next
  * step, mark a proven pre-create failure as nothing sent, and keep "could not be confirmed" for
@@ -5573,17 +5567,20 @@ describe('ImplementationTabComponent dispatch failure reasons', () => {
     `this project's ${provider} connection cannot be used as configured (reason: ${token}); nothing was sent`;
 
   it.each([
-    ['account_not_selected', "Choose an ad account on this project's Meta Ads connection, then create again."],
-    ['connection_inactive', "Reactivate this project's Meta Ads connection, then create again."],
-    ['credentials_undecodable', "Reconnect this project's Meta Ads connection to save fresh credentials, then create again."],
-    ['credentials_incomplete', "Reconnect this project's Meta Ads connection to save fresh credentials, then create again."],
-    ['credentials_expired', "Re-authorize this project's Meta Ads connection, then create again."],
+    ['account_not_selected', "Ask an LFX administrator to choose an ad account on this project's Meta Ads connection, then create again."],
+    ['connection_inactive', "Ask an LFX administrator to reactivate this project's Meta Ads connection, then create again."],
+    ['credentials_undecodable', "Ask an LFX administrator to reconnect this project's Meta Ads connection to save fresh credentials, then create again."],
+    ['credentials_incomplete', "Ask an LFX administrator to reconnect this project's Meta Ads connection to save fresh credentials, then create again."],
+    ['credentials_expired', "Ask an LFX administrator to re-authorize this project's Meta Ads connection, then create again."],
   ])('renders the next step for %s in place of the raw reason', (token, step) => {
     const el = row(atResults([{ platform: 'meta-ads', ok: false, error: notUsable('meta-ads', token) }]), 'meta-ads');
     expect(el.querySelector('[data-testid="implementation-platform-result-next-step"]')?.textContent?.trim()).toBe(step);
     expect(el.textContent).not.toContain('(reason:');
     expect(el.textContent).toContain('cannot be used as configured; nothing was sent');
-    expect(el.textContent).toContain('not created — nothing was created on the platform, safe to retry once the cause is fixed');
+    expect(el.textContent).toContain('not created');
+    expect(el.querySelector('[data-testid="implementation-platform-result-nothing-created"]')?.textContent?.trim()).toBe(
+      'Nothing was created on the platform.'
+    );
     expect(el.textContent).not.toContain('could not be confirmed');
   });
 
@@ -5608,6 +5605,8 @@ describe('ImplementationTabComponent dispatch failure reasons', () => {
     expect(el.querySelector('[data-testid="implementation-platform-result-nothing-created"]')).not.toBeNull();
     expect(el.querySelector('[data-testid="implementation-platform-result-next-step"]')).toBeNull();
     expect(el.textContent).not.toContain('could not be confirmed');
+    // No operator fix exists for a service defect, so the row states the fact and offers no retry advice.
+    expect(el.textContent).not.toMatch(/retry|create again/i);
   });
 
   it('keeps "could not be confirmed" for an unclassified failure and a skip', () => {
@@ -5642,6 +5641,12 @@ describe('ImplementationTabComponent dispatch failure reasons', () => {
   });
 });
 
+/**
+ * The Google geo chips.
+ *
+ * The control is a `<select>` over the supported map's own keys, so the only guards left are the
+ * ones a select cannot express — the cap, and not adding a code twice.
+ */
 describe('ImplementationTabComponent google geo targets', () => {
   let fixture: ComponentFixture<ImplementationTabComponent>;
 

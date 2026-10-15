@@ -270,13 +270,29 @@ describe('describeCampaignDispatchFailure', () => {
     `this project's ${provider} connection cannot be used as configured (reason: ${token}); nothing was sent`;
 
   it.each([
-    ['account_not_selected', 'meta-ads', "Choose an ad account on this project's Meta Ads connection, then create again."],
-    ['connection_inactive', 'reddit-ads', "Reactivate this project's Reddit Ads connection, then create again."],
-    ['credentials_undecodable', 'linkedin-ads', "Reconnect this project's LinkedIn Ads connection to save fresh credentials, then create again."],
-    ['credentials_incomplete', 'microsoft-ads', "Reconnect this project's Microsoft Ads connection to save fresh credentials, then create again."],
-    ['credential_blob_malformed', 'google-ads', "Reconnect this project's Google Ads connection to save fresh credentials, then create again."],
-    ['credentials_absent', 'meta-ads', "Reconnect this project's Meta Ads connection to save fresh credentials, then create again."],
-    ['credentials_expired', 'linkedin-ads', "Re-authorize this project's LinkedIn Ads connection, then create again."],
+    ['account_not_selected', 'meta-ads', "Ask an LFX administrator to choose an ad account on this project's Meta Ads connection, then create again."],
+    ['connection_inactive', 'reddit-ads', "Ask an LFX administrator to reactivate this project's Reddit Ads connection, then create again."],
+    [
+      'credentials_undecodable',
+      'linkedin-ads',
+      "Ask an LFX administrator to reconnect this project's LinkedIn Ads connection to save fresh credentials, then create again.",
+    ],
+    [
+      'credentials_incomplete',
+      'microsoft-ads',
+      "Ask an LFX administrator to reconnect this project's Microsoft Ads connection to save fresh credentials, then create again.",
+    ],
+    [
+      'credential_blob_malformed',
+      'google-ads',
+      "Ask an LFX administrator to reconnect this project's Google Ads connection to save fresh credentials, then create again.",
+    ],
+    [
+      'credentials_absent',
+      'meta-ads',
+      "Ask an LFX administrator to reconnect this project's Meta Ads connection to save fresh credentials, then create again.",
+    ],
+    ['credentials_expired', 'linkedin-ads', "Ask an LFX administrator to re-authorize this project's LinkedIn Ads connection, then create again."],
   ])('maps %s on %s to a next step and drops the raw reason fragment', (token, provider, step) => {
     const d = describeCampaignDispatchFailure(notUsable(provider, token));
     expect(d.nextStep).toBe(step);
@@ -286,7 +302,7 @@ describe('describeCampaignDispatchFailure', () => {
 
   it('falls back to the raw platform id when the provider has no label', () => {
     expect(describeCampaignDispatchFailure(notUsable('hubspot', 'connection_inactive')).nextStep).toBe(
-      "Reactivate this project's hubspot connection, then create again."
+      "Ask an LFX administrator to reactivate this project's hubspot connection, then create again."
     );
   });
 

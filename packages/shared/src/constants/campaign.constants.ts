@@ -3652,15 +3652,19 @@ export const CAMPAIGN_DISPATCH_CONNECTION_NOT_USABLE_PATTERN =
  * probes) and the ambiguous ones (`provider_config_invalid`, `application_credentials_invalid`)
  * are left out on purpose: a missing entry renders the backend's sentence verbatim, which is the
  * honest answer when this application has no remedy to offer.
+ *
+ * Every step is a handoff naming who can apply it: campaign users have no controls for project
+ * connections in this application, so each one reads "Ask an LFX administrator to …" — the same
+ * phrasing the Monitoring tab's connection notices use (`monitoring-tab.component.ts`).
  */
 export const CAMPAIGN_DISPATCH_CONNECTION_REASON_NEXT_STEPS: Readonly<Record<string, string>> = {
-  account_not_selected: "Choose an ad account on this project's {platform} connection, then create again.",
-  connection_inactive: "Reactivate this project's {platform} connection, then create again.",
-  credentials_undecodable: "Reconnect this project's {platform} connection to save fresh credentials, then create again.",
-  credentials_incomplete: "Reconnect this project's {platform} connection to save fresh credentials, then create again.",
-  credential_blob_malformed: "Reconnect this project's {platform} connection to save fresh credentials, then create again.",
-  credentials_absent: "Reconnect this project's {platform} connection to save fresh credentials, then create again.",
-  credentials_expired: "Re-authorize this project's {platform} connection, then create again.",
+  account_not_selected: "Ask an LFX administrator to choose an ad account on this project's {platform} connection, then create again.",
+  connection_inactive: "Ask an LFX administrator to reactivate this project's {platform} connection, then create again.",
+  credentials_undecodable: "Ask an LFX administrator to reconnect this project's {platform} connection to save fresh credentials, then create again.",
+  credentials_incomplete: "Ask an LFX administrator to reconnect this project's {platform} connection to save fresh credentials, then create again.",
+  credential_blob_malformed: "Ask an LFX administrator to reconnect this project's {platform} connection to save fresh credentials, then create again.",
+  credentials_absent: "Ask an LFX administrator to reconnect this project's {platform} connection to save fresh credentials, then create again.",
+  credentials_expired: "Ask an LFX administrator to re-authorize this project's {platform} connection, then create again.",
 };
 
 /**

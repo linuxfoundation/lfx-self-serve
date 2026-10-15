@@ -611,14 +611,15 @@ export class ImplementationTabComponent implements OnInit {
    * being spent, so calling it a plain failure is wrong in the expensive direction: the reader's
    * next move is to create it again.
    *
-   * The fallback state for an id-less failure is `unconfirmed`, NOT "not created", and the absence of a `campaign_id` is
-   * not evidence that nothing was created. `orchestrator.go` emits `ok: false` with no id for at
-   * least four distinct situations: a genuine upstream rejection (:869), a concurrent dispatch
-   * that skipped this platform (:780 — which campaign-service explicitly calls a skip, not a
-   * failure), and two responses in which an upstream campaign may well exist but its id did not
-   * survive — "dispatcher returned no campaign" (:879) and "dispatcher returned no upstream
-   * campaign id" (:887). Rendering all four as a definite "not created" tells an ED that no paid
-   * artifact exists, and their next move is to create a second one that really does spend money.
+   * The fallback state for an id-less failure is `unconfirmed`, NOT "not created", and the
+   * absence of a `campaign_id` is not evidence that nothing was created. `orchestrator.go` emits
+   * `ok: false` with no id for at least four distinct situations: a genuine upstream rejection
+   * (:869), a concurrent dispatch that skipped this platform (:780 — which campaign-service
+   * explicitly calls a skip, not a failure), and two responses in which an upstream campaign may
+   * well exist but its id did not survive — "dispatcher returned no campaign" (:879) and
+   * "dispatcher returned no upstream campaign id" (:887). Rendering all four as a definite "not
+   * created" tells an ED that no paid artifact exists, and their next move is to create a second
+   * one that really does spend money.
    *
    * So the row states what is known — this platform's campaign could not be confirmed — and
    * leaves the reader to check. That over-warns on the genuine-rejection and skip cases, which is
