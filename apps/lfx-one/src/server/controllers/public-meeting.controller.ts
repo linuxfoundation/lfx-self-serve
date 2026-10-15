@@ -617,7 +617,7 @@ export class PublicMeetingController {
 
       // A projection, never the ITX payload, which carries sensitive fields (e.g. password). The
       // registrant count goes only to a caller the gate let in as a registrant or organizer (spec 011
-      // § Counts). A caller let in because the meeting is public, or by its passcode, has not shown
+      // § Counts). A caller let in because the meeting is public, or by its passcode alone, has not shown
       // they are registered; that includes a signed-in registrant of a public meeting, since the open
       // gate checks nothing further and proving it here would add an upstream call (#3584).
       const showsRegistrantCount = access === 'registrant' || access === 'organizer';
@@ -1177,7 +1177,8 @@ export class PublicMeetingController {
     m2mToken: string,
     originalToken: string | undefined
   ): Promise<MeetingContentAccess | null> {
-    return this.resolveMeetingContentAccess(req, meeting, m2mToken, originalToken, 'get_public_meeting_occurrences');
+    // Identity first: a registrant or organizer whose client also sends the passcode still gets counts.
+    return this.resolveMeetingContentAccess(req, meeting, m2mToken, originalToken, 'get_public_meeting_occurrences', true);
   }
 
   /**
@@ -1200,13 +1201,19 @@ export class PublicMeetingController {
    * M2M, as getMeetingById checks), or an organizer relation (checked with the user's own token,
    * passed per call, never the M2M identity). An open meeting is not checked further, so `public`
    * says nothing about whether the caller is registered.
+   *
+   * A valid passcode normally ends the chain as `password`. With `identityFirst`, a signed-in caller's
+   * registrant and organizer checks run first and `password` is the fallback, for a caller that needs
+   * to know who the viewer is rather than only whether they may see the meeting; it costs those
+   * lookups for a signed-in passcode holder.
    */
   private async resolveMeetingContentAccess(
     req: Request,
     meeting: Meeting,
     m2mToken: string,
     originalToken: string | undefined,
-    operation: string
+    operation: string,
+    identityFirst = false
   ): Promise<MeetingContentAccess | null> {
     if (meeting.visibility === MeetingVisibility.PUBLIC && !meeting.restricted) {
       return 'public';
@@ -1215,11 +1222,13 @@ export class PublicMeetingController {
     // The passcode arrives in a request header (never the GET query string, which lands
     // in access logs and caches — CodeQL js/sensitive-get-query).
     const password = req.headers[MEETING_PASSWORD_HEADER];
-    if (typeof password === 'string' && password && validatePassword(password, meeting.password as string)) {
+    const hasValidPassword = typeof password === 'string' && !!password && validatePassword(password, meeting.password as string);
+    const isAuthenticated = !!req.oidc?.isAuthenticated();
+    if (hasValidPassword && (!identityFirst || !isAuthenticated)) {
       return 'password';
     }
 
-    if (!req.oidc?.isAuthenticated()) {
+    if (!isAuthenticated) {
       return null;
     }
 
@@ -1269,7 +1278,7 @@ export class PublicMeetingController {
       }
     }
 
-    return null;
+    return hasValidPassword ? 'password' : null;
   }
 
   /**

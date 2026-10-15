@@ -985,6 +985,47 @@ describe('PublicMeetingController.getMeetingOccurrences', () => {
       expect(occurrence).not.toHaveProperty('registrant_count');
     });
 
+    it('gives it to a registrant found only by the direct email lookup', async () => {
+      meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE, occurrences: [liveOccurrence] } as Partial<Meeting>));
+      meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([]);
+      meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([{ email: 'user@example.com' }]);
+      const { req, res, next } = buildReqRes(true);
+
+      await controller.getMeetingOccurrences(req, res, next);
+
+      expect(meetingSvc.getMeetingRegistrantsByEmail).toHaveBeenCalled();
+      expect(res.json.mock.calls[0][0].future[0].registrant_count).toBe(12);
+    });
+
+    it('gives it to a signed-in organizer whose client also sends the passcode', async () => {
+      meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE, occurrences: [liveOccurrence] } as Partial<Meeting>));
+      validatePasswordMock.mockReturnValue(true);
+      meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([]);
+      meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
+      addAccessToResourceMock.mockImplementation(async (_req: any, resource: any) => ({ ...resource, organizer: true }));
+      const { req, res, next } = buildReqRes(true);
+      req.headers['x-meeting-password'] = 'pw';
+
+      await controller.getMeetingOccurrences(req, res, next);
+
+      expect(res.json.mock.calls[0][0].future[0].registrant_count).toBe(12);
+    });
+
+    it('falls back to the passcode for a signed-in caller who is neither, without a count', async () => {
+      meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE, occurrences: [liveOccurrence] } as Partial<Meeting>));
+      validatePasswordMock.mockReturnValue(true);
+      meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([]);
+      meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
+      addAccessToResourceMock.mockImplementation(async (_req: any, resource: any) => ({ ...resource, organizer: false }));
+      const { req, res, next } = buildReqRes(true);
+      req.headers['x-meeting-password'] = 'pw';
+
+      await controller.getMeetingOccurrences(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.json.mock.calls[0][0].future[0]).not.toHaveProperty('registrant_count');
+    });
+
     // The open gate checks nothing further, so a registrant of a public meeting is not told apart
     // from any visitor here; proving it would add an upstream call (#3584).
     it('withholds it from a signed-in registrant of a public meeting', async () => {
