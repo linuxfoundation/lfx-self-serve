@@ -11,6 +11,7 @@ import {
   MKTG_STARTED_RUN_SCHEMA,
   MKTG_STARTED_RUN_STATE_ORDER,
   MKTG_STARTED_RUN_POLL_WINDOW_MS,
+  MKTG_STARTED_RUN_READ_CONCURRENCY,
 } from '@lfx-one/shared/constants';
 import {
   MktgDocumentAgentKey,
@@ -59,17 +60,23 @@ export class MktgDocumentRunService {
     if (!project.writer || !MKTG_ARTIFACT_PARTITION_REGEX.test(project.uid)) {
       throw new AuthorizationError('You need write access to this project to run its Marketing OS agents.');
     }
+    let ready = false;
+    let storageFailure: unknown;
     try {
       await this.store.ensureBucket('marketing-os-artifacts', { degradable: true });
-      if (!(await this.store.readiness('marketing-os-artifacts'))) {
-        throw new MicroserviceError('Document run storage is unavailable.', 503, 'DOCUMENT_RUN_STORAGE_UNAVAILABLE');
-      }
+      ready = await this.store.readiness('marketing-os-artifacts');
     } catch (error) {
-      logger.warning(req, 'mktg_run_preflight', 'Tracking storage is unavailable; no Guild session will be started', { project: project.uid, err: error });
+      storageFailure = error;
+    }
+    if (!ready) {
+      logger.warning(req, 'mktg_run_preflight', 'Tracking storage is unavailable; no Guild session will be started', {
+        project: project.uid,
+        err: storageFailure,
+      });
       throw new MicroserviceError('Document run storage is unavailable. Try again later.', 503, 'DOCUMENT_RUN_STORAGE_UNAVAILABLE', {
         service: 'object_store',
         operation: 'mktg_run_preflight',
-        originalError: error instanceof Error ? error : undefined,
+        originalError: storageFailure instanceof Error ? storageFailure : undefined,
       });
     }
     logger.debug(req, 'mktg_run_preflight', 'Project and tracking store are ready', { project: project.uid });
@@ -115,7 +122,7 @@ export class MktgDocumentRunService {
       }
       body = old.body;
     }
-    // An explicit new intake renews failed/in-flight metadata even if no newer draft exists.
+    // An explicit new intake renews failed/superseded/in-flight metadata without a newer draft.
     // Completed duplicate acknowledgements remain no-ops unless the prior version advances.
     await this.store.putContentAddressedObject(
       req,
@@ -133,11 +140,11 @@ export class MktgDocumentRunService {
         refreshMetadataWhen: (stored) => {
           const previousVersion = Number(stored['prior-version'] ?? 0);
           const newerStart = Date.parse(startedAt) > Date.parse(stored['started-at'] ?? startedAt);
-          return (
-            priorVersion > previousVersion ||
-            (priorVersion === previousVersion &&
-              (stored['state'] === 'failed' || (newerStart && (stored['state'] === 'writing' || stored['state'] === 'storing'))))
-          );
+          const renewable =
+            stored['state'] === 'failed' ||
+            stored['state'] === 'superseded' ||
+            (newerStart && (stored['state'] === 'writing' || stored['state'] === 'storing'));
+          return priorVersion > previousVersion || (priorVersion === previousVersion && renewable);
         },
       }
     );
@@ -167,27 +174,38 @@ export class MktgDocumentRunService {
     logger.debug(req, 'mktg_run_reconcile', 'Checking recorded document runs', { project, agent: agentKey, document: documentId, poll });
     const listed = await this.store.listObjects(req, 'marketing-os-artifacts', this.prefix(project));
     const storedRuns: MktgStoredStartedRun[] = [];
-    for (const entry of listed) {
-      const modifiedAt = entry.lastModified?.getTime();
-      // Timer reads are bounded; navigation reads still discover unfinished sessions of any age.
-      if (poll && (modifiedAt === undefined || !Number.isFinite(modifiedAt) || Date.now() - modifiedAt > MKTG_STARTED_RUN_POLL_WINDOW_MS)) {
-        continue;
+    for (let offset = 0; offset < listed.length; offset += MKTG_STARTED_RUN_READ_CONCURRENCY) {
+      const batch = listed.slice(offset, offset + MKTG_STARTED_RUN_READ_CONCURRENCY);
+      const fetched = await Promise.all(
+        batch.map(async (entry) => {
+          const modifiedAt = entry.lastModified?.getTime();
+          // Timer reads are bounded; navigation reads discover unfinished sessions of any age.
+          if (poll && (modifiedAt === undefined || !Number.isFinite(modifiedAt) || Date.now() - modifiedAt > MKTG_STARTED_RUN_POLL_WINDOW_MS)) {
+            return null;
+          }
+          const metadata = await this.store.headObject(req, 'marketing-os-artifacts', entry.key);
+          if (metadata === null || metadata['state'] === 'completed' || metadata['state'] === 'superseded') {
+            return null;
+          }
+          const object = await this.store.getObject(req, 'marketing-os-artifacts', entry.key);
+          const stored = object ? this.parse(req, entry.key, object.body, object.metadata, project) : null;
+          // Keys identify project/session, not agent; reject other agents before any Guild check.
+          if (
+            !stored ||
+            this.isTerminal(stored.record.state) ||
+            (agentKey && stored.record.agentKey !== agentKey) ||
+            (documentId && stored.record.documentId !== documentId)
+          ) {
+            return null;
+          }
+          return stored;
+        })
+      );
+      for (const stored of fetched) {
+        if (stored) {
+          storedRuns.push(stored);
+        }
       }
-      const metadata = await this.store.headObject(req, 'marketing-os-artifacts', entry.key);
-      if (metadata === null || metadata['state'] === 'completed' || metadata['state'] === 'superseded') {
-        continue;
-      }
-      const object = await this.store.getObject(req, 'marketing-os-artifacts', entry.key);
-      const stored = object ? this.parse(req, entry.key, object.body, object.metadata, project) : null;
-      if (
-        !stored ||
-        this.isTerminal(stored.record.state) ||
-        (agentKey && stored.record.agentKey !== agentKey) ||
-        (documentId && stored.record.documentId !== documentId)
-      ) {
-        continue;
-      }
-      storedRuns.push(stored);
     }
     // Finish active work before deciding whether a prior failure is superseded.
     storedRuns.sort((a, b) => Number(a.record.state === 'failed') - Number(b.record.state === 'failed'));

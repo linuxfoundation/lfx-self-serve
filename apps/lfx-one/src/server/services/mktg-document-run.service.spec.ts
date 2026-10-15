@@ -4,11 +4,12 @@
 import { createHash } from 'node:crypto';
 import type { Request } from 'express';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+import { MKTG_STARTED_RUN_READ_CONCURRENCY } from '@lfx-one/shared/constants';
 
 const objects = vi.hoisted(() => new Map<string, { body: string; metadata: Record<string, string>; lastModified: Date }>());
 const flows = vi.hoisted(() => ({ getResult: vi.fn(), getProjectById: vi.fn(), getDocument: vi.fn(), ensureBucket: vi.fn(), readiness: vi.fn() }));
 const logs = vi.hoisted(() => ({ warning: vi.fn(), debug: vi.fn(), info: vi.fn() }));
-const io = vi.hoisted(() => ({ get: vi.fn(), head: vi.fn(), put: vi.fn(), writes: 0, dropAfterWrite: false }));
+const io = vi.hoisted(() => ({ get: vi.fn(), head: vi.fn(), put: vi.fn(), writes: 0, dropAfterWrite: false, activeReads: 0, maxReads: 0 }));
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-document-store.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-artifact.constants')),
@@ -47,10 +48,18 @@ vi.mock('./object-store.service', () => ({
     public readiness = flows.readiness;
     public async headObject(_req: unknown, _purpose: string, key: string) {
       io.head(key);
+      io.activeReads++;
+      io.maxReads = Math.max(io.maxReads, io.activeReads);
+      await Promise.resolve();
+      io.activeReads--;
       return objects.get(key)?.metadata ?? null;
     }
     public async getObject(_req: unknown, _purpose: string, key: string) {
       io.get(key);
+      io.activeReads++;
+      io.maxReads = Math.max(io.maxReads, io.activeReads);
+      await Promise.resolve();
+      io.activeReads--;
       return objects.get(key) ?? null;
     }
     public async listObjects(_req: unknown, _purpose: string, prefix: string) {
@@ -108,6 +117,8 @@ describe('MktgDocumentRunService', () => {
     objects.clear();
     io.writes = 0;
     io.dropAfterWrite = false;
+    io.activeReads = 0;
+    io.maxReads = 0;
     flows.getResult.mockResolvedValue({ status: 'pending' });
     flows.getProjectById.mockResolvedValue({ uid: project, writer: true });
     flows.getDocument.mockResolvedValue(null);
@@ -137,6 +148,9 @@ describe('MktgDocumentRunService', () => {
     const resolution = service.resolveProject(req, project);
     await expect(resolution).rejects.toBeInstanceOf(MicroserviceError);
     await expect(resolution).rejects.toMatchObject({ statusCode: 503, code: 'DOCUMENT_RUN_STORAGE_UNAVAILABLE' });
+    if (failure === 'unreachable store') {
+      await expect(resolution).rejects.toHaveProperty('originalError', undefined);
+    }
     expect(flows.getResult).not.toHaveBeenCalled();
     expect(objects.size).toBe(0);
   });
@@ -278,6 +292,46 @@ describe('MktgDocumentRunService', () => {
     expect(flows.getResult).toHaveBeenCalledTimes(2);
     expect(flows.getDocument).toHaveBeenCalledOnce();
     expect(Math.max(...flows.getResult.mock.invocationCallOrder)).toBeLessThan(Math.max(...flows.getDocument.mock.invocationCallOrder));
+  });
+
+  it('renews a superseded session at the same prior version so a left re-intake stays discoverable', async () => {
+    await service.start(req, project, 'brand-kit', 'synthetic-session');
+    vi.setSystemTime('2026-10-15T12:11:00.000Z');
+    await service.reconcile(req, project);
+    await service.start(req, project, 'brand-kit', 'later-session');
+    vi.setSystemTime('2026-10-15T12:12:00.000Z');
+    flows.getResult.mockImplementation(async (_req: unknown, session: string) => (session === 'later-session' ? ready : { status: 'pending' }));
+    flows.getDocument.mockResolvedValue({ revisions: [{ createdAt: '2026-10-15T12:12:00.000Z' }] });
+    expect(await service.reconcile(req, project)).toEqual([]);
+    expect(stored().metadata['state']).toBe('superseded');
+    const body = stored().body;
+    vi.setSystemTime('2026-10-15T12:13:00.000Z');
+    await service.start(req, project, 'brand-kit', 'synthetic-session', 0);
+    expect(stored().body).toBe(body);
+    const progress = await new MktgDocumentRunService().reconcile(req, project);
+    expect(progress).toMatchObject([{ runId, state: 'writing', startedAt: '2026-10-15T12:13:00.000Z' }]);
+  });
+
+  it('overlaps metadata/body reads but never exceeds the bounded per-entry batch size', async () => {
+    const count = MKTG_STARTED_RUN_READ_CONCURRENCY * 2 + 1;
+    for (let index = 0; index < count; index++) {
+      await service.start(req, project, 'brand-kit', `parallel-session-${index}`);
+    }
+    io.head.mockClear();
+    io.get.mockClear();
+    io.maxReads = 0;
+    expect(await service.reconcile(req, project)).toHaveLength(count);
+    expect(io.head).toHaveBeenCalledTimes(count);
+    expect(io.get).toHaveBeenCalledTimes(count);
+    expect(io.maxReads).toBeGreaterThan(1);
+    expect(io.maxReads).toBeLessThanOrEqual(MKTG_STARTED_RUN_READ_CONCURRENCY);
+    expect(io.activeReads).toBe(0);
+  });
+
+  it('filters other agents after the session-keyed read and before any Guild call', async () => {
+    await service.start(req, project, 'brand-kit', 'synthetic-session');
+    expect(await service.reconcile(req, project, 'icp', 'living')).toEqual([]);
+    expect(flows.getResult).not.toHaveBeenCalled();
   });
 
   it('finishes a storing run when a later read obtains the real revision receipt', async () => {

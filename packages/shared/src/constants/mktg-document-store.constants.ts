@@ -18,10 +18,14 @@ export const MKTG_DOCUMENTS_API_PATH = '/api/mktg-agents/documents';
 /**
  * Session-keyed runs. Initial/navigation reads discover all ages; timer reads
  * use the recent poll window below. start/mark refresh the listed mtime.
+ * Metadata/body reads use small bounded batches. Session-hash keys contain no
+ * agent key, so agent filtering occurs after the body read, before Guild.
  */
 export const MKTG_STARTED_RUN_PREFIX = 'document-runs';
 /** Only automatic poll reads skip entries older than one hour; this is NOT a discovery/retention limit. */
 export const MKTG_STARTED_RUN_POLL_WINDOW_MS = 6 * MKTG_RUN_POLL.timeoutMs;
+/** Maximum concurrent per-entry HEAD/GET workers; navigation discovery remains unbounded by age. */
+export const MKTG_STARTED_RUN_READ_CONCURRENCY = 4;
 export const MKTG_STARTED_RUN_SCHEMA = 'mktg-started-run/v1';
 export const MKTG_STARTED_RUN_ID_REGEX = /^[0-9a-f]{64}$/;
 /** Metadata transitions within one attempt only move forward; an explicit retry has a newer retry-at. */

@@ -443,11 +443,14 @@ describe('ObjectStoreService', () => {
       await expect(service.headObject(buildReq(), 'marketing-os-artifacts', 'missing.json')).resolves.toBeNull();
     });
 
-    it('logs and rethrows a metadata permission error, never masquerading as missing', async () => {
-      sendMock.mockRejectedValueOnce(buildForbiddenError());
+    it('logs and rethrows a metadata permission error, preserving its stack and custom properties', async () => {
+      const failure = buildForbiddenError();
+      sendMock.mockRejectedValueOnce(failure);
       const req = buildReq();
       await expect(service.headObject(req, 'marketing-os-artifacts', 'private.json')).rejects.toThrow('Forbidden');
-      expect(logger.warning).toHaveBeenCalledWith(req, 'object_store_head_object', expect.any(String), expect.objectContaining({ error: 'Forbidden' }));
+      expect(logger.warning).toHaveBeenCalledWith(req, 'object_store_head_object', expect.any(String), expect.objectContaining({ err: failure }));
+      const metadata = vi.mocked(logger.warning).mock.calls.at(-1)?.[3];
+      expect(metadata).not.toHaveProperty('error');
     });
   });
 

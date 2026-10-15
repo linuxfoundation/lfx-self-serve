@@ -199,7 +199,7 @@ export class ObjectStoreService {
         purpose,
         key,
         duration: Date.now() - startTime,
-        error: error instanceof Error ? error.message : String(error),
+        err: error,
       });
       throw error;
     }
