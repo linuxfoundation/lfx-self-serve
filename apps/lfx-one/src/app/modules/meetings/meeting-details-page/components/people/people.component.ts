@@ -70,6 +70,13 @@ export class MeetingPeopleComponent {
   private readonly addedPad = signal(0);
   /** The confirmed roster length the pad is measured from; `null` without one. */
   private readonly addedPadBaseline = signal<number | null>(null);
+  /**
+   * Guests the organizer removed that the roster still shows (O-04, #3607): the index drops them after
+   * the delete returns. Counted off the invited total until fetches catch up, as added guests are padded.
+   */
+  private readonly removedPad = signal(0);
+  /** The confirmed roster length the removals are measured from; `null` without one. */
+  private readonly removedPadBaseline = signal<number | null>(null);
   /** The last roster fetched, and what for. */
   private lastFetched: { key: MeetingRosterRequest; registrants: MeetingRegistrant[] } | null = null;
   /** The view the roster was last requested for, which the optimistic pad belongs to. */
@@ -88,7 +95,7 @@ export class MeetingPeopleComponent {
   /** A committee meeting's roster is its members, as V1's drawer titles it; otherwise its guests. */
   protected readonly committeeMeeting = computed(() => !!this.meeting()?.committees?.length);
   /** Everyone invited: the roster's rows plus any added guests it has not caught up with. */
-  protected readonly invitedCount = computed(() => this.rows().length + this.addedPad());
+  protected readonly invitedCount = computed(() => Math.max(0, this.rows().length + this.addedPad() - this.removedPad()));
 
   public constructor() {
     // Hand focus back on every close path: PrimeNG emits `onHide` only for its own Escape and mask
@@ -126,15 +133,19 @@ export class MeetingPeopleComponent {
 
   /**
    * The drawer reports guests added (a positive count) or removed (negative): refetch the roster, and
-   * count added guests until the roster includes them. The baseline is only a roster confirmed for
+   * count added guests until the roster includes them, and removed ones off until it drops them. The baseline is only a roster confirmed for
    * this meeting and occurrence; anything else would read as guests already absorbed.
    */
   public onRosterChanged(delta: number): void {
+    const key = this.state.rosterRequest();
+    const confirmed = !!key && this.isLastFetched(key) && this.roster().status === 'ready';
+    const baseline = confirmed && this.lastFetched ? this.lastFetched.registrants.length : null;
     if (delta > 0) {
-      const key = this.state.rosterRequest();
-      const confirmed = !!key && this.isLastFetched(key) && this.roster().status === 'ready';
-      this.addedPadBaseline.set(confirmed && this.lastFetched ? this.lastFetched.registrants.length : null);
+      this.addedPadBaseline.set(baseline);
       this.addedPad.update((pad) => pad + delta);
+    } else if (delta < 0) {
+      this.removedPadBaseline.set(baseline);
+      this.removedPad.update((pad) => pad - delta);
     }
     this.retry();
   }
@@ -156,6 +167,8 @@ export class MeetingPeopleComponent {
           if (!this.isSameRequest(key, this.lastRequested)) {
             this.addedPad.set(0);
             this.addedPadBaseline.set(null);
+            this.removedPad.set(0);
+            this.removedPadBaseline.set(null);
           }
           this.lastRequested = key;
           if (!key) {
@@ -167,6 +180,10 @@ export class MeetingPeopleComponent {
               const next = reconcileOptimisticPad({ pad: this.addedPad(), before: this.addedPadBaseline(), current: registrants.length });
               this.addedPad.set(next.pad);
               this.addedPadBaseline.set(next.before);
+              // The same drain for removals, mirrored: the roster catching up shrinks it.
+              const removed = reconcileOptimisticPad({ pad: this.removedPad(), before: this.negate(this.removedPadBaseline()), current: -registrants.length });
+              this.removedPad.set(removed.pad);
+              this.removedPadBaseline.set(this.negate(removed.before));
               return { status: 'ready', registrants };
             }),
             catchError((error: unknown) => {
@@ -191,6 +208,10 @@ export class MeetingPeopleComponent {
         viewerRsvp: this.state.myRsvp() ?? null,
       })
     );
+  }
+
+  private negate(value: number | null): number | null {
+    return value === null ? null : -value;
   }
 
   private restoreFocus(): void {

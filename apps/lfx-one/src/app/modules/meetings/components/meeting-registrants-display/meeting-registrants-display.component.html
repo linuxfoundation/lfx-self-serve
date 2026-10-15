@@ -163,6 +163,11 @@
               </a>
             }
           </div>
+          @if (showEmail() && registrant.email) {
+            <p class="text-gray-500 text-sm leading-relaxed tracking-tight truncate" [attr.data-testid]="'registrant-email-' + registrant.uid">
+              {{ registrant.email }}
+            </p>
+          }
           @if (registrant.job_title || registrant.org_name) {
             <p class="text-gray-500 text-sm leading-relaxed tracking-tight truncate">
               @if (registrant.job_title && registrant.org_name) {

@@ -83,6 +83,11 @@ export class MeetingRegistrantsDisplayComponent {
   public readonly myMeetingRegistrants: InputSignal<boolean> = input<boolean>(false);
   public readonly initialRegistrants: InputSignal<MeetingRegistrant[] | null> = input<MeetingRegistrant[] | null>(null);
   public readonly initialRegistrantsLoading: InputSignal<boolean> = input<boolean>(false);
+  /**
+   * Shows each guest's email under the name. Off by default, so V1's surfaces are unchanged; the V2
+   * page turns it on for organizers only (E7-04 / O-04, #3607), never for other viewers of the list.
+   */
+  public readonly showEmail: InputSignal<boolean> = input<boolean>(false);
   /** The occurrence the host is showing; lets a guest be invited to that date only. */
   public readonly occurrence: InputSignal<MeetingOccurrence | null> = input<MeetingOccurrence | null>(null);
 

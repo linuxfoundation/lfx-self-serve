@@ -304,6 +304,7 @@ the row's contents.
 | `people-section`                         | The roster section                                                                              |
 | `people-section-count`                   | "{n} invited", the fetched roster's length                                                      |
 | `people-section-add`                     | Add guest (organizers, upcoming only)                                                           |
+| `registrant-email-${uid}`                | In the guest list drawer, a guest's email: organizers only (O-04); never on V1's surfaces       |
 | `people-section-loading`                 | The roster's first load                                                                         |
 | `people-section-error`                   | The roster failed to load, with nothing to fall back on                                         |
 | `people-section-retry`                   | Its Try again                                                                                   |
