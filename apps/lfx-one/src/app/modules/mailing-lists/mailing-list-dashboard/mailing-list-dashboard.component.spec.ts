@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { signal } from '@angular/core';
+import { NO_ERRORS_SCHEMA, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { GroupsIOMailingList, GroupsIOService } from '@lfx-one/shared/interfaces';
@@ -23,7 +23,7 @@ describe('MailingListDashboardComponent service visibility', () => {
   ] as GroupsIOMailingList[];
   const service = { uid: 'svc-1' } as GroupsIOService;
 
-  function createComponent(options: { services: GroupsIOService[]; lists: GroupsIOMailingList[]; canWrite?: boolean }) {
+  async function createComponent(options: { services: GroupsIOService[]; lists: GroupsIOMailingList[]; canWrite?: boolean }) {
     const getServicesByProject = vi.fn(() => of(options.services));
     const getMailingListsByProject = vi.fn(() => of(options.lists));
     TestBed.configureTestingModule({
@@ -41,47 +41,63 @@ describe('MailingListDashboardComponent service visibility', () => {
       ],
     });
 
-    const component = TestBed.runInInjectionContext(() => new MailingListDashboardComponent());
-    // `toObservable` bridges emit on effect flush.
-    TestBed.tick();
+    // Keep the real dashboard template while shallow-rendering its child components.
+    TestBed.overrideComponent(MailingListDashboardComponent, { set: { imports: [], schemas: [NO_ERRORS_SCHEMA] } });
+    await TestBed.compileComponents();
+    const fixture = TestBed.createComponent(MailingListDashboardComponent);
+    await fixture.whenStable();
+    const component = fixture.componentInstance;
+    const element = fixture.nativeElement as HTMLElement;
 
     expect(getMailingListsByProject).toHaveBeenCalledWith('p-1');
     expect(getServicesByProject).toHaveBeenCalledWith('p-1');
-    return { component, getServicesByProject };
+    return { component, getServicesByProject, element };
   }
 
-  it('shows readable lists when no service is visible to the caller', () => {
-    const { component, getServicesByProject } = createComponent({ services: [], lists });
+  it('shows readable lists when no service is visible to the caller', async () => {
+    const { component, getServicesByProject, element } = await createComponent({ services: [], lists });
 
     expect(getServicesByProject).toHaveBeenCalledWith('parent-1');
     expect(component.hasNoServices()).toBe(true);
     expect(component.totalMailingLists()).toBe(2);
     expect(component.showNoServicesState()).toBe(false);
+    expect(element.querySelector('lfx-mailing-list-table')).not.toBeNull();
+    expect(element.querySelector('[data-testid="mailing-lists-foundation-stats"]')).not.toBeNull();
+    expect(element.querySelector('[data-testid="mailing-list-no-services-card"]')).toBeNull();
+    expect(element.querySelector('[data-testid="mailing-list-new-cta"]')).toBeNull();
   });
 
-  it('shows the no-services state when neither a service nor any list is visible', () => {
+  it('shows the no-services state when neither a service nor any list is visible', async () => {
     // A failed list fetch also resolves to [] and lands here.
-    const { component } = createComponent({ services: [], lists: [] });
+    const { component, element } = await createComponent({ services: [], lists: [] });
 
     expect(component.showNoServicesState()).toBe(true);
+    expect(element.querySelector('[data-testid="mailing-list-no-services-card"]')).not.toBeNull();
+    expect(element.querySelector('lfx-mailing-list-table')).toBeNull();
+    expect(element.querySelector('[data-testid="mailing-list-new-cta"]')).toBeNull();
   });
 
-  it('keeps the inner empty state path when a service exists but has no lists', () => {
-    const { component } = createComponent({ services: [service], lists: [] });
+  it('keeps the inner empty state path when a service exists but has no lists', async () => {
+    const { component, element } = await createComponent({ services: [service], lists: [] });
 
     expect(component.hasNoServices()).toBe(false);
     expect(component.showNoServicesState()).toBe(false);
+    expect(element.querySelector('[data-testid="mailing-list-project-empty-state"]')).not.toBeNull();
+    expect(element.querySelector('[data-testid="mailing-list-no-services-card"]')).toBeNull();
   });
 
-  it('hides list creation from writers when no service is visible', () => {
-    const { component } = createComponent({ services: [], lists, canWrite: true });
+  it('hides list creation from writers when no service is visible', async () => {
+    const { component, element } = await createComponent({ services: [], lists, canWrite: true });
 
     expect(component['canCreateMailingList']()).toBe(false);
+    expect(element.querySelector('lfx-mailing-list-table')).not.toBeNull();
+    expect(element.querySelector('[data-testid="mailing-list-new-cta"]')).toBeNull();
   });
 
-  it('allows list creation for writers when a service is visible', () => {
-    const { component } = createComponent({ services: [service], lists, canWrite: true });
+  it('allows list creation for writers when a service is visible', async () => {
+    const { component, element } = await createComponent({ services: [service], lists, canWrite: true });
 
     expect(component['canCreateMailingList']()).toBe(true);
+    expect(element.querySelector('[data-testid="mailing-list-new-cta"]')).not.toBeNull();
   });
 });
