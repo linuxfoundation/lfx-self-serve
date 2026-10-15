@@ -1,8 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-/** Rolling deadline window for the My Votes summary. */
-export const MY_VOTES_STATS_WINDOW_DAYS = 7;
+/** Rolling deadline window shared by personal and management vote summaries. */
+export const VOTES_STATS_WINDOW_DAYS = 7;
+
+/** Compatibility alias for the My Votes summary. */
+export const MY_VOTES_STATS_WINDOW_DAYS = VOTES_STATS_WINDOW_DAYS;
 
 /** Sentinel thrown by `submitMyResponse` when the user has no pre-allocated vote_response row. */
 export const INVITATION_NOT_FOUND = 'INVITATION_NOT_FOUND';

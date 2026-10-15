@@ -9,8 +9,8 @@ import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { PollStatus, VOTE_LABEL, VOTES_PAGE_WALK_LIMIT, VoteResponseStatus } from '@lfx-one/shared';
-import { MY_VOTES_STATS_WINDOW_DAYS } from '@lfx-one/shared/constants';
-import { Committee, Lens, MyVotesQuickFilter, PaginatedResponse, ProjectContext, StatCardItem, Vote, VoteFilterState } from '@lfx-one/shared/interfaces';
+import { MY_VOTES_STATS_WINDOW_DAYS, VOTES_STATS_WINDOW_DAYS } from '@lfx-one/shared/constants';
+import { Committee, MyVotesQuickFilter, ProjectContext, StatCardItem, Vote, VoteFilterState, VoteListResponse, VoteSummary } from '@lfx-one/shared/interfaces';
 import { findCursorWalkStartIndex, getUserTimezone, matchesMyVotesQuickFilter, recordPageToken, resolveCursorWalkOutcome } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
@@ -19,7 +19,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { VoteService } from '@services/vote.service';
 import { formatInTimeZone } from 'date-fns-tz';
 import { SkeletonModule } from 'primeng/skeleton';
-import { BehaviorSubject, catchError, combineLatest, EMPTY, expand, filter, finalize, last, map, Observable, of, switchMap, take, tap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, EMPTY, expand, filter, finalize, last, map, Observable, of, startWith, switchMap, take, tap } from 'rxjs';
 
 import { VoteCastDrawerComponent } from '../components/vote-cast-drawer/vote-cast-drawer.component';
 import { VoteResultsDrawerComponent } from '../components/vote-results-drawer/vote-results-drawer.component';
@@ -60,6 +60,7 @@ export class VotesDashboardComponent {
   protected readonly refresh$ = new BehaviorSubject<void>(undefined);
   // fetch$ triggers votes list re-fetch (pagination, manual refresh)
   private readonly fetch$ = new BehaviorSubject<void>(undefined);
+  private readonly managementSummaryRefresh$ = new BehaviorSubject<void>(undefined);
 
   // === Writable Signals ===
   protected readonly loading = signal<boolean>(true);
@@ -70,6 +71,7 @@ export class VotesDashboardComponent {
   protected readonly rowsPerPage = signal<number>(10);
   protected readonly currentFirst = signal<number>(0);
   protected readonly totalRecords = signal<number>(0);
+  protected readonly totalCountReady = signal(false);
   protected readonly myVotesLoading = signal<boolean>(true);
   protected readonly foundationFilter = signal<string | null>(null);
   protected readonly projectFilter = signal<string | null>(null);
@@ -77,6 +79,9 @@ export class VotesDashboardComponent {
   protected readonly myVotesStatusTab = signal<string>('all');
   protected readonly myVotesNowMs = signal(Date.now());
   protected readonly myVotesError = signal(false);
+  protected readonly managementClosingOnly = signal(false);
+  protected readonly managementSummaryLoading = signal(true);
+  protected readonly managementSummaryError = signal(false);
 
   // === Lens ===
   protected readonly isMeLens: Signal<boolean> = computed(() => this.lensService.activeLens() === 'me');
@@ -85,7 +90,10 @@ export class VotesDashboardComponent {
   public showProjectFilter: Signal<boolean> = computed(() => this.isMeLens() && this.personaService.hasProjectRole() && this.projectOptions().length > 1);
 
   // === Filter State ===
-  protected readonly filters = signal<VoteFilterState>({ search: '', status: null, group: null });
+  protected readonly filters = signal<VoteFilterState>(
+    { search: '', status: null, group: null },
+    { equal: (a, b) => a.search === b.search && a.status === b.status && a.group === b.group }
+  );
 
   // === Page Tokens ===
   // Sequential token array: index 0 = token for page 2, index 1 = token for page 3, etc.
@@ -95,6 +103,11 @@ export class VotesDashboardComponent {
   protected readonly project: Signal<ProjectContext | null> = this.initProject();
   protected readonly searchQuery: Signal<string> = this.initSearchQuery();
   protected readonly groupOptions: Signal<{ label: string; value: string | null }[]> = this.initGroupOptions();
+  protected readonly isManagementVotesLens = computed(() => ['project', 'foundation'].includes(this.lensService.activeLens()) && !!this.project()?.uid);
+  protected readonly managementSummaryScope = this.initManagementSummaryScope();
+  protected readonly managementSummary = this.initManagementSummary();
+  protected readonly managementVoteStatCards = this.initManagementVoteStatCards();
+  private readonly voteRequestScope = this.initVoteRequestScope();
   protected readonly votes: Signal<Vote[]> = this.initVotes();
   protected readonly selectedListVote: Signal<Vote | null> = this.initSelectedListVote();
   protected readonly myVotes: Signal<Vote[]> = this.initMyVotes();
@@ -108,7 +121,7 @@ export class VotesDashboardComponent {
   // Trims `search` so whitespace-only input doesn't count as an active filter.
   protected readonly hasActiveFilters: Signal<boolean> = computed(() => {
     const f = this.filters();
-    return !!(f.search?.trim() || f.status || f.group);
+    return !!(f.search?.trim() || f.status || f.group || this.managementClosingOnly());
   });
 
   public constructor() {
@@ -123,6 +136,23 @@ export class VotesDashboardComponent {
       });
   }
 
+  protected onManagementVoteStatClick(action: string): void {
+    if (!this.isManagementVotesLens() || this.managementSummaryLoading() || this.managementSummaryError()) return;
+    if (action !== 'closing-soon' && action !== 'active') return;
+    const scopeChanged = action === 'closing-soon' || this.managementClosingOnly() || this.filters().status !== PollStatus.ACTIVE;
+    this.managementClosingOnly.set(action === 'closing-soon' && !this.managementClosingOnly());
+    this.myVotesStatusTab.set(PollStatus.ACTIVE);
+    this.filters.update((state) => ({ ...state, status: PollStatus.ACTIVE }));
+    this.pageTokens = [];
+    this.currentFirst.set(0);
+    if (!scopeChanged) this.fetch$.next();
+    if (action === 'closing-soon') this.retryManagementSummary();
+  }
+
+  protected retryManagementSummary(): void {
+    this.managementSummaryRefresh$.next();
+  }
+
   protected onMyVoteStatClick(action: string): void {
     if (!this.isMeLens() || this.myVotesLoading() || this.myVotesError()) return;
     if (action !== 'closing-soon' && action !== 'needs-vote') return;
@@ -132,8 +162,14 @@ export class VotesDashboardComponent {
     this.currentFirst.set(0);
   }
 
-  protected onStatusTabSelected(): void {
+  protected onStatusTabSelected(tab: string): void {
     this.myVotesQuickFilter.set(null);
+    if (this.managementClosingOnly()) {
+      this.managementClosingOnly.set(false);
+      this.filters.update((state) => ({ ...state, status: tab === 'all' ? null : (tab as PollStatus) }));
+      this.pageTokens = [];
+      this.currentFirst.set(0);
+    }
     if (this.isMeLens()) {
       this.currentFirst.set(0);
     }
@@ -141,6 +177,8 @@ export class VotesDashboardComponent {
 
   protected onFiltersReset(): void {
     this.myVotesQuickFilter.set(null);
+    this.managementClosingOnly.set(false);
+    this.pageTokens = [];
     this.currentFirst.set(0);
   }
 
@@ -230,6 +268,68 @@ export class VotesDashboardComponent {
   }
 
   // === Private Initializers ===
+  private initManagementSummaryScope() {
+    return computed(
+      () => {
+        const lens = this.lensService.activeLens();
+        const uid = this.project()?.uid;
+        if ((lens !== 'project' && lens !== 'foundation') || !uid) return null;
+        return { uid, lens, group: this.filters().group };
+      },
+      { equal: (a, b) => a?.uid === b?.uid && a?.lens === b?.lens && a?.group === b?.group }
+    );
+  }
+
+  private initManagementSummary(): Signal<VoteSummary | null> {
+    return toSignal(
+      combineLatest([toObservable(this.managementSummaryScope), this.refresh$, this.managementSummaryRefresh$]).pipe(
+        switchMap(([scope]) => {
+          this.managementSummaryLoading.set(!!scope);
+          this.managementSummaryError.set(false);
+          if (!scope) return of(null);
+          return this.voteService.getVotesSummaryByProject(scope.uid, scope.group || undefined).pipe(
+            catchError(() => {
+              if (this.managementSummaryScope() === scope) this.managementSummaryError.set(true);
+              return of(null);
+            }),
+            finalize(() => {
+              if (this.managementSummaryScope() === scope) this.managementSummaryLoading.set(false);
+            }),
+            startWith(null)
+          );
+        })
+      ),
+      { initialValue: null }
+    );
+  }
+
+  private initManagementVoteStatCards(): Signal<StatCardItem[]> {
+    return computed(() => {
+      const summary = this.managementSummary();
+      const disabled = this.managementSummaryLoading() || this.managementSummaryError();
+      return [
+        {
+          value: summary?.closing_soon ?? '—',
+          label: `Votes Closing in the Next ${VOTES_STATS_WINDOW_DAYS} Days`,
+          icon: 'fa-light fa-calendar-clock',
+          iconContainerClass: 'bg-blue-100 text-blue-600',
+          action: 'closing-soon',
+          selected: this.managementClosingOnly(),
+          disabled,
+        },
+        {
+          value: summary?.active_votes ?? '—',
+          label: 'Active Votes',
+          icon: 'fa-light fa-check-to-slot',
+          iconContainerClass: 'bg-gray-100 text-gray-600',
+          action: 'active',
+          selected: this.myVotesStatusTab() === PollStatus.ACTIVE && !this.managementClosingOnly(),
+          disabled,
+        },
+      ];
+    });
+  }
+
   private initProject(): Signal<ProjectContext | null> {
     return computed(() => this.projectContextService.activeContext());
   }
@@ -271,15 +371,24 @@ export class VotesDashboardComponent {
     });
   }
 
+  private initVoteRequestScope() {
+    // One signal snapshot coalesces status and closing-only updates from the same action.
+    return computed(() => ({
+      project: this.project(),
+      filters: this.filters(),
+      lens: this.lensService.activeLens(),
+      closingOnly: this.managementClosingOnly(),
+    }));
+  }
+
   private initTotalCount(): Signal<number> {
-    const project$ = toObservable(this.project);
-    const filters$ = toObservable(this.filters);
-    const lens$ = toObservable(this.lensService.activeLens);
+    const scope$ = toObservable(this.voteRequestScope);
 
     return toSignal(
-      combineLatest([project$, filters$, this.refresh$, lens$]).pipe(
-        switchMap(([project, , , lens]) => {
-          if (lens === 'me') {
+      combineLatest([scope$, this.refresh$]).pipe(
+        switchMap(([{ project, lens, closingOnly }]) => {
+          this.totalCountReady.set(false);
+          if (lens === 'me' || closingOnly) {
             return of(0);
           }
           if (!project?.uid) {
@@ -288,7 +397,12 @@ export class VotesDashboardComponent {
           const searchName = this.searchQuery();
           const queryFilters = this.buildFilters();
           return this.voteService.getVotesCountByProject(project.uid, searchName || undefined, queryFilters.length ? queryFilters : undefined).pipe(
-            tap((count) => this.totalRecords.set(count)),
+            tap((count) => {
+              if (!this.managementClosingOnly() && this.project()?.uid === project.uid) {
+                this.totalRecords.set(count);
+                this.totalCountReady.set(true);
+              }
+            }),
             catchError(() => of(0))
           );
         })
@@ -298,28 +412,28 @@ export class VotesDashboardComponent {
   }
 
   private initVotes(): Signal<Vote[]> {
-    const project$ = toObservable(this.project);
-    const filters$ = toObservable(this.filters);
-    const lens$ = toObservable(this.lensService.activeLens);
+    const scope$ = toObservable(this.voteRequestScope);
 
     // Lens-change pagination reset lives inside the pipeline, before the switchMap reads
     // currentFirst/pageTokens (previously a constructor subscription — but a toObservable's
     // initial emission also ran it, so every landing paid a fetch$.next() that aborted the
     // in-flight first fetch and re-issued it; observed in the network log as duplicate aborted
     // GET /api/votes requests on arrival, GH-2826).
-    let previousLens: Lens | undefined;
+    let previousScope: string | undefined;
 
     return toSignal(
-      combineLatest([project$, filters$, this.fetch$, lens$]).pipe(
+      combineLatest([scope$, this.fetch$]).pipe(
         tap(() => this.loading.set(true)),
-        tap(([, , , lens]) => {
-          if (lens !== previousLens) {
-            previousLens = lens;
+        tap(([{ project, lens }]) => {
+          const scope = `${lens}:${project?.uid ?? ''}`;
+          if (scope !== previousScope) {
+            previousScope = scope;
+            this.managementClosingOnly.set(false);
             this.pageTokens = [];
             this.currentFirst.set(0);
           }
         }),
-        switchMap(([project, filterState, , lens]) => {
+        switchMap(([{ project, filters: filterState, lens }]) => {
           if (lens === 'me' || !project?.uid) {
             this.loading.set(false);
             return of([]);
@@ -332,7 +446,10 @@ export class VotesDashboardComponent {
 
           return this.fetchVotePage(project.uid, rows, pageIndex, searchName || undefined, queryFilters.length ? queryFilters : undefined).pipe(
             tap(() => this.loading.set(false)),
-            map((response: PaginatedResponse<Vote>) => response.data),
+            tap((response) => {
+              if (this.managementClosingOnly() && response.total_records !== undefined) this.totalRecords.set(response.total_records);
+            }),
+            map((response: VoteListResponse) => response.data),
             // Optimistic merge (GH-2730): overlay just-opened votes' known-active status over stale
             // index rows. Skipped under a server-side `status:` filter — the filtered response can't
             // contain the just-opened row (Active tab: absent until convergence) and mustn't re-badge
@@ -357,30 +474,33 @@ export class VotesDashboardComponent {
    * clamps to the last reached page; on cursor exhaustion (data shrank after tokens were cached) it restarts from page 1
    * with a fresh token chain. HTTP errors propagate to the caller so a failed request is never mistaken for exhaustion.
    */
-  private fetchVotePage(projectUid: string, rows: number, pageIndex: number, searchName?: string, filters?: string[]): Observable<PaginatedResponse<Vote>> {
+  private fetchVotePage(projectUid: string, rows: number, pageIndex: number, searchName?: string, filters?: string[]): Observable<VoteListResponse> {
+    const closingOnly = this.managementClosingOnly();
     const startIndex = findCursorWalkStartIndex(this.pageTokens, pageIndex);
 
     // Index of the last successfully fetched page — fetchSingle's tap runs before expand's projector sees each response.
     let fetchedIndex = startIndex;
 
-    const fetchSingle = (index: number): Observable<PaginatedResponse<Vote>> =>
-      this.voteService.getVotesByProjectPaginated(projectUid, rows, index > 0 ? this.pageTokens[index - 1] : undefined, searchName, filters).pipe(
-        tap((response: PaginatedResponse<Vote>) => {
-          fetchedIndex = index;
-          // Cache the next-page cursor; when the cursor exhausts, stale tokens beyond this page are dropped.
-          this.pageTokens = recordPageToken(this.pageTokens, index, response.page_token);
-        })
-      );
+    const fetchSingle = (index: number): Observable<VoteListResponse> =>
+      this.voteService
+        .getVotesByProjectPaginated(projectUid, rows, index > 0 ? this.pageTokens[index - 1] : undefined, searchName, filters, closingOnly || undefined)
+        .pipe(
+          tap((response: VoteListResponse) => {
+            fetchedIndex = index;
+            // Cache the next-page cursor; when the cursor exhausts, stale tokens beyond this page are dropped.
+            this.pageTokens = recordPageToken(this.pageTokens, index, response.page_token);
+          })
+        );
 
     return fetchSingle(startIndex).pipe(
       // Walk forward one page per request until the target page is fetched or the cursor exhausts.
-      expand((response: PaginatedResponse<Vote>) => (fetchedIndex === pageIndex || !response.page_token ? EMPTY : fetchSingle(fetchedIndex + 1))),
+      expand((response: VoteListResponse) => (fetchedIndex === pageIndex || !response.page_token ? EMPTY : fetchSingle(fetchedIndex + 1))),
       // Hard request ceiling: the start page plus VOTES_PAGE_WALK_LIMIT hops (matches the meetings-dashboard walk bound).
       take(VOTES_PAGE_WALK_LIMIT + 1),
       // Only the final page's response reaches the subscriber — intermediate walk pages just cache tokens. Terminal
       // handling lives after take() because expand's projector never runs for the emission take() cuts off at.
       last(),
-      switchMap((response: PaginatedResponse<Vote>) => {
+      switchMap((response: VoteListResponse) => {
         const outcome = resolveCursorWalkOutcome(response, fetchedIndex, pageIndex);
 
         // Data shrank after tokens were cached (empty target page or exhausted cursor) — restart from

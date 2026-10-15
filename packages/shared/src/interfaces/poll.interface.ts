@@ -2,7 +2,21 @@
 // SPDX-License-Identifier: MIT
 
 import type { IndexedVoteResponseStatus, IndividualVoteStatus, PollStatus, PollType, VoteResponseStatus } from '../enums/poll.enum';
+import type { PaginatedResponse } from './api.interface';
 import type { CommitteeReference } from './committee.interface';
+
+/** Complete authorization-scoped management totals at one server time snapshot. */
+export interface VoteSummary {
+  active_votes: number;
+  closing_soon: number;
+  /** RFC3339 snapshot used to evaluate the closing window. */
+  as_of: string;
+}
+
+/** Closing-filtered lists carry their authoritative pre-pagination count. */
+export interface VoteListResponse extends PaginatedResponse<Vote> {
+  total_records?: number;
+}
 
 /**
  * Filter state for the votes dashboard table
