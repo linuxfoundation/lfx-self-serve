@@ -446,6 +446,22 @@ describe('PendingActionsDrawerComponent — section grouping', () => {
       expect(rowElement.textContent).not.toContain('·');
     });
 
+    it('normalizes owner names in computed rows without mutating inputs and refreshes them on replacement feeds', async () => {
+      const action = applicationRow({ applicationProjectName: '  Synthetic Project  ' });
+      await render([action]);
+
+      expect(fixture.componentInstance['visibleRows']()[0].applicationProjectName).toBe('Synthetic Project');
+      expect(byTestId('pending-actions-drawer-application-project')?.textContent).toBe('Synthetic Project');
+      expect(action.applicationProjectName).toBe('  Synthetic Project  ');
+
+      fixture.componentRef.setInput('pendingActions', [applicationRow({ applicationProjectName: '   ' })]);
+      fixture.detectChanges();
+
+      expect(fixture.componentInstance['visibleRows']()[0].applicationProjectName).toBeUndefined();
+      expect(byTestId('pending-actions-drawer-application-project')).toBeNull();
+      expect(normalized(byTestId('pending-actions-drawer-application-group'))).toBe('Group Alpha');
+    });
+
     it('keeps long owner and group names inside the wrapping identity column beside the review controls', async () => {
       const longOwner = `Synthetic Foundation ${'Extended '.repeat(20)}`.trim();
       const longGroup = `Working Group ${'Subcommittee '.repeat(20)}`.trim();

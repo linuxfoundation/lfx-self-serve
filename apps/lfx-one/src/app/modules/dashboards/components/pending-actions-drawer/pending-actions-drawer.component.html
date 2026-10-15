@@ -66,7 +66,7 @@
                         <span class="text-sm text-gray-900" data-testid="pending-actions-drawer-application-email">{{ item.applicationApplicantEmail }}</span>
                         <!-- Owning Project/Foundation · Group, so same-named groups under different owners stay distinguishable. -->
                         <span class="text-xs text-gray-500" data-testid="pending-actions-drawer-application-group">
-                          @if (item.applicationProjectName?.trim()) {
+                          @if (item.applicationProjectName) {
                             <span data-testid="pending-actions-drawer-application-project">{{ item.applicationProjectName }}</span> ·
                           }
                           {{ item.badge }}

@@ -298,6 +298,7 @@ export class PendingActionsDrawerComponent {
           return {
             ...item,
             rowKey,
+            applicationProjectName: item.applicationProjectName?.trim() || undefined,
             isRsvpInline,
             isVoteInline,
             meeting: item.meetingUid ? (cache[item.meetingUid] ?? null) : null,
