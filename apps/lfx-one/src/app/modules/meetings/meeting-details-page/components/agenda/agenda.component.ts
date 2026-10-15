@@ -2,15 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { DOCUMENT } from '@angular/common';
-import { Component, computed, ElementRef, inject } from '@angular/core';
+import { Component, computed, ElementRef, inject, Signal } from '@angular/core';
 import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
 import { MEETING_AGENDA_COLLAPSED_HEIGHT_PX } from '@lfx-one/shared/constants';
-import { MeetingEditAgendaDialogData, MeetingEditAgendaDialogResult } from '@lfx-one/shared/interfaces';
+import { MeetingEditAgendaDialogData } from '@lfx-one/shared/interfaces';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { nameDynamicDialog } from '@shared/utils/name-dynamic-dialog';
 import { restoreFocusOnDialogClose } from '@shared/utils/restore-dialog-focus.util';
 import { DialogService } from 'primeng/dynamicdialog';
-import { take } from 'rxjs';
 
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
 import { MeetingEditAgendaDialogComponent } from '../edit-agenda-dialog/edit-agenda-dialog.component';
@@ -44,25 +43,10 @@ export class MeetingAgendaComponent {
    * The selected occurrence's own agenda first, else the series', as V1 reads it. Each is trimmed
    * before the choice, so a blank occurrence description never hides the series' agenda.
    */
-  protected readonly description = computed(() => {
-    const override = this.state.agendaOverride();
-    const meeting = this.state.meeting();
-    const occurrence = this.state.selectedOccurrence();
-    const own = occurrence?.description?.trim() || '';
-    // A just-saved agenda, for what it edited, until the next read replaces it.
-    if (override && override.meetingId === meeting?.id) {
-      if (override.occurrenceId !== null && override.occurrenceId === occurrence?.occurrence_id) {
-        return override.description;
-      }
-      if (override.occurrenceId === null && !own) {
-        return override.description;
-      }
-    }
-    return own || meeting?.description?.trim() || '';
-  });
+  protected readonly description: Signal<string> = this.initDescription();
   /**
    * Edit agenda: organizers only, and not once the meeting has ended (as V1 hides organizer edits on a
-   * past meeting): a past record's id is not the series the edit page edits.
+   * past meeting): a past record's id is not the series the agenda dialog saves to.
    */
   protected readonly canEdit = computed(() => this.state.meeting()?.organizer === true && this.state.timeState() !== 'ended');
   /**
@@ -82,6 +66,11 @@ export class MeetingAgendaComponent {
       occurrence: ownAgenda && occurrence ? { occurrenceId: occurrence.occurrence_id, startTime: occurrence.start_time, duration: occurrence.duration } : null,
       recurring: !!meeting.recurrence,
       original: this.description(),
+      // Shown at once, and the page re-reads: also when the dialog was dismissed mid-save.
+      onApplied: (description) => {
+        this.state.agendaOverride.set({ meetingId: meeting.id, occurrenceId: ownAgenda && occurrence ? occurrence.occurrence_id : null, description });
+        this.state.reload();
+      },
     };
     const trigger = this.document.activeElement;
     const ref = this.dialogService.open(MeetingEditAgendaDialogComponent, {
@@ -102,12 +91,28 @@ export class MeetingAgendaComponent {
     }
     nameDynamicDialog(this.dialogService, ref, MeetingEditAgendaDialogComponent.headingId);
     restoreFocusOnDialogClose(ref, trigger);
-    ref.onClose.pipe(take(1)).subscribe((result?: MeetingEditAgendaDialogResult) => {
-      if (!result) {
-        return;
+  }
+
+  /**
+   * The selected occurrence's own agenda first, else the series', as V1 reads it, each trimmed before the
+   * choice so a blank occurrence description never hides the series' agenda. A just-saved agenda (O-01)
+   * shows for what it edited until the next read replaces it; a series one never over an occurrence's own.
+   */
+  private initDescription(): Signal<string> {
+    return computed(() => {
+      const override = this.state.agendaOverride();
+      const meeting = this.state.meeting();
+      const occurrence = this.state.selectedOccurrence();
+      const own = occurrence?.description?.trim() || '';
+      if (override && override.meetingId === meeting?.id) {
+        if (override.occurrenceId !== null && override.occurrenceId === occurrence?.occurrence_id) {
+          return override.description;
+        }
+        if (override.occurrenceId === null && !own) {
+          return override.description;
+        }
       }
-      this.state.agendaOverride.set({ meetingId: meeting.id, occurrenceId: data.occurrence?.occurrenceId ?? null, description: result.description });
-      this.state.reload();
+      return own || meeting?.description?.trim() || '';
     });
   }
 }

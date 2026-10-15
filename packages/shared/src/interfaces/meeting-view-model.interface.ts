@@ -518,11 +518,11 @@ export interface MeetingEditAgendaDialogData {
   recurring: boolean;
   /** The agenda as the page showed it when the dialog opened, trimmed: the conflict check's baseline */
   original: string;
-}
-
-/** The agenda the dialog saved (or adopted from a newer save), for the page to show at once. */
-export interface MeetingEditAgendaDialogResult {
-  description: string;
+  /**
+   * Called with the agenda the page should now show: the one saved, or a newer one the organizer chose
+   * to keep. Called even if the dialog was dismissed while the save was in flight.
+   */
+  onApplied: (description: string) => void;
 }
 
 /** An agenda the page shows ahead of its next read, after an edit (O-01): keyed to what it edited. */

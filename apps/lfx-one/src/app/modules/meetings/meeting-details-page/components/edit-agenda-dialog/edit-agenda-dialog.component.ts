@@ -7,7 +7,8 @@ import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { ButtonComponent } from '@components/button/button.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { MEETING_AGENDA_MAX_LENGTH, MEETING_AGENDA_WARNING_LENGTH } from '@lfx-one/shared/constants';
-import { Meeting, MeetingEditAgendaDialogData, MeetingEditAgendaDialogResult } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingEditAgendaDialogData, MeetingOccurrence } from '@lfx-one/shared/interfaces';
+import { buildMeetingUpdateRequest } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -21,11 +22,14 @@ import { firstValueFrom } from 'rxjs';
  * occurrence). No new endpoint, and the server and upstream decide who may save.
  *
  * Saving first re-reads the meeting with the viewer's own token. That read is the conflict check (the
- * upstream API has no version or ETag): if the agenda changed since the dialog opened, the dialog shows
- * the newer one and asks, rather than overwriting it. It is also the body of a series save, which
- * replaces the whole meeting: built from that full record with only the agenda changed, never from the
- * page's public payload, which lacks fields a save must keep. A save in the moment between that read and
- * the write would still win; the API offers nothing narrower.
+ * upstream API has no version or ETag): if the agenda changed since the dialog opened (or since the
+ * organizer last saw it), the dialog shows the newer one and asks, rather than overwriting it; a second
+ * Save then replaces the agenda the organizer has seen, and a third party's later change is caught again.
+ * The read is also the source of what is sent: a series save is built from that full record with only the
+ * agenda changed (`buildMeetingUpdateRequest`, never the page's public payload), and an occurrence save
+ * sends the occurrence's current start and duration, so another organizer's change to them is kept. An
+ * occurrence that has moved or been cancelled meanwhile is said so, and not saved to. A save in the
+ * moment between that read and the write would still win; the API offers nothing narrower.
  */
 @Component({
   selector: 'lfx-meeting-edit-agenda-dialog',
@@ -54,7 +58,11 @@ export class MeetingEditAgendaDialogComponent {
   protected readonly saving = signal(false);
   /** A newer agenda found on save: shown, with the choice to keep it or save over it. */
   protected readonly conflict = signal<string | null>(null);
+  /** The occurrence being edited is no longer in the series (moved or cancelled): nothing to save to. */
+  protected readonly moved = signal(false);
   protected readonly failed = signal(false);
+  /** What a save is checked against: the agenda as opened, then any newer one the organizer has seen. */
+  private readonly baseline = signal(this.data.original);
 
   private readonly value = toSignal(this.form.controls.agenda.valueChanges, { initialValue: this.data.original });
   protected readonly length = computed(() => this.value().length);
@@ -67,11 +75,11 @@ export class MeetingEditAgendaDialogComponent {
   /** An occurrence's own agenda cannot be emptied: upstream drops an empty value. */
   protected readonly emptyOccurrence = computed(() => this.data.scope === 'occurrence' && !this.value().trim());
   protected readonly canSave = computed(
-    () => !this.saving() && this.value().trim() !== this.data.original && this.length() <= MEETING_AGENDA_MAX_LENGTH && !this.emptyOccurrence()
+    () => !this.saving() && !this.moved() && this.length() <= MEETING_AGENDA_MAX_LENGTH && !this.emptyOccurrence() && this.value().trim() !== this.baseline()
   );
 
-  protected async save(force = false): Promise<void> {
-    if (!force && !this.canSave()) {
+  protected async save(): Promise<void> {
+    if (!this.canSave()) {
       return;
     }
     const description = this.value().trim();
@@ -79,41 +87,55 @@ export class MeetingEditAgendaDialogComponent {
     this.failed.set(false);
     try {
       const fresh = await firstValueFrom(this.meetingService.getMeetingDetail(this.data.meetingId, { skipCache: true }));
-      const current = this.currentAgenda(fresh);
-      if (!force && current !== this.data.original) {
-        this.conflict.set(current);
+      const occurrence = this.freshOccurrence(fresh);
+      if (this.data.scope === 'occurrence' && !occurrence) {
+        this.moved.set(true);
         return;
       }
-      if (this.data.scope === 'occurrence' && this.data.occurrence) {
-        const { occurrenceId, startTime, duration } = this.data.occurrence;
-        await firstValueFrom(this.meetingService.updateOccurrence(this.data.meetingId, occurrenceId, { start_time: startTime, duration, description }));
-      } else {
-        await firstValueFrom(this.meetingService.updateMeeting(this.data.meetingId, { ...fresh, description }));
+      const current = (occurrence ? occurrence.description : fresh.description)?.trim() ?? '';
+      if (current !== this.baseline()) {
+        // Shown, and from now on the baseline: a second Save replaces this one, knowingly.
+        this.conflict.set(current);
+        this.baseline.set(current);
+        return;
       }
+      if (occurrence) {
+        await firstValueFrom(
+          this.meetingService.updateOccurrence(this.data.meetingId, occurrence.occurrence_id, {
+            start_time: occurrence.start_time,
+            duration: occurrence.duration,
+            description,
+          })
+        );
+      } else {
+        await firstValueFrom(this.meetingService.updateMeeting(this.data.meetingId, buildMeetingUpdateRequest(fresh, { description })));
+      }
+      this.data.onApplied(description);
       this.messageService.add({ severity: 'success', summary: 'Agenda saved', detail: 'The agenda has been updated.' });
-      this.ref.close({ description } satisfies MeetingEditAgendaDialogResult);
-    } catch {
+      this.ref.close();
+    } catch (error) {
+      console.error('Failed to save the meeting agenda', this.data.meetingId, error);
       this.failed.set(true);
     } finally {
       this.saving.set(false);
     }
   }
 
-  /** Keep the newer agenda someone else saved: the dialog closes and the page shows it. */
+  /** Keep the newer agenda someone else saved: the page shows it and the dialog closes. */
   protected useTheirs(): void {
-    this.ref.close({ description: this.conflict() ?? '' } satisfies MeetingEditAgendaDialogResult);
-  }
-
-  protected close(): void {
+    this.data.onApplied(this.conflict() ?? '');
     this.ref.close();
   }
 
-  /** The agenda this dialog edits, as the fresh record holds it, trimmed. */
-  private currentAgenda(meeting: Meeting): string {
-    if (this.data.scope === 'occurrence' && this.data.occurrence) {
-      const occurrenceId = this.data.occurrence.occurrenceId;
-      return (meeting.occurrences ?? []).find((occurrence) => occurrence.occurrence_id === occurrenceId)?.description?.trim() ?? '';
+  protected close(): void {
+    if (!this.saving()) {
+      this.ref.close();
     }
-    return meeting.description?.trim() ?? '';
+  }
+
+  /** The occurrence this dialog edits, as the fresh record holds it; `null` for a series edit. */
+  private freshOccurrence(meeting: Meeting): MeetingOccurrence | null {
+    const occurrenceId = this.data.scope === 'occurrence' ? this.data.occurrence?.occurrenceId : null;
+    return occurrenceId ? ((meeting.occurrences ?? []).find((occurrence) => occurrence.occurrence_id === occurrenceId) ?? null) : null;
   }
 }

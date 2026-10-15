@@ -22,6 +22,7 @@ describe('MeetingEditAgendaDialogComponent', () => {
   let getMeetingDetail: ReturnType<typeof vi.fn>;
   let updateMeeting: ReturnType<typeof vi.fn>;
   let updateOccurrence: ReturnType<typeof vi.fn>;
+  let onApplied: ReturnType<typeof vi.fn>;
 
   /** The full record the authenticated read returns, with fields the public payload lacks. */
   const fresh = (extra: Partial<Meeting> = {}): Meeting =>
@@ -29,6 +30,7 @@ describe('MeetingEditAgendaDialogComponent', () => {
 
   async function render(data: Partial<MeetingEditAgendaDialogData> = {}, record: Meeting = fresh()): Promise<void> {
     close = vi.fn();
+    onApplied = vi.fn();
     add = vi.fn();
     getMeetingDetail = vi.fn().mockReturnValue(of(record));
     updateMeeting = vi.fn().mockReturnValue(of(undefined));
@@ -39,7 +41,7 @@ describe('MeetingEditAgendaDialogComponent', () => {
         { provide: DynamicDialogRef, useValue: { close } },
         {
           provide: DynamicDialogConfig,
-          useValue: { data: { meetingId: 'meeting-1', scope: 'series', occurrence: null, recurring: false, original: ORIGINAL, ...data } },
+          useValue: { data: { meetingId: 'meeting-1', scope: 'series', occurrence: null, recurring: false, original: ORIGINAL, onApplied, ...data } },
         },
         { provide: MeetingService, useValue: { getMeetingDetail, updateMeeting, updateOccurrence } },
         { provide: MessageService, useValue: { add } },
@@ -82,15 +84,21 @@ describe('MeetingEditAgendaDialogComponent', () => {
     await settle();
 
     expect(getMeetingDetail).toHaveBeenCalledWith('meeting-1', { skipCache: true });
-    expect(updateMeeting).toHaveBeenCalledWith('meeting-1', expect.objectContaining({ password: 'secret', title: 'Weekly Sync', description: 'New agenda' }));
+    const body = updateMeeting.mock.calls[0][1];
+    expect(body).toEqual(expect.objectContaining({ title: 'Weekly Sync', description: 'New agenda' }));
+    // Built from the update request's own keys: nothing read-only or sensitive travels back.
+    expect(body).not.toHaveProperty('password');
+    expect(body).not.toHaveProperty('occurrences');
     expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Agenda saved' }));
-    expect(close).toHaveBeenCalledWith({ description: 'New agenda' });
+    expect(onApplied).toHaveBeenCalledWith('New agenda');
+    expect(close).toHaveBeenCalled();
   });
 
   it("saves an occurrence's own agenda through the occurrence API", async () => {
+    // Another organizer lengthened it to 60 minutes since the dialog opened: that is kept.
     await render(
       { scope: 'occurrence', occurrence: OCCURRENCE },
-      fresh({ occurrences: [{ occurrence_id: OCCURRENCE.occurrenceId, start_time: OCCURRENCE.startTime, duration: 45, description: ORIGINAL }] })
+      fresh({ occurrences: [{ occurrence_id: OCCURRENCE.occurrenceId, start_time: OCCURRENCE.startTime, duration: 60, description: ORIGINAL }] })
     );
     type('Occurrence agenda');
 
@@ -99,10 +107,23 @@ describe('MeetingEditAgendaDialogComponent', () => {
 
     expect(updateOccurrence).toHaveBeenCalledWith('meeting-1', OCCURRENCE.occurrenceId, {
       start_time: OCCURRENCE.startTime,
-      duration: 45,
+      duration: 60,
       description: 'Occurrence agenda',
     });
     expect(updateMeeting).not.toHaveBeenCalled();
+  });
+
+  it('says an occurrence moved or cancelled meanwhile, and saves nothing to it', async () => {
+    await render({ scope: 'occurrence', occurrence: OCCURRENCE }, fresh({ occurrences: [] }));
+    type('Occurrence agenda');
+
+    saveButton().click();
+    await settle();
+
+    expect(query('edit-agenda-moved')).not.toBeNull();
+    expect(query('edit-agenda-conflict')).toBeNull();
+    expect(updateOccurrence).not.toHaveBeenCalled();
+    expect(saveButton().disabled).toBe(true);
   });
 
   it("won't empty an occurrence's own agenda, which the API cannot clear", async () => {
@@ -128,12 +149,15 @@ describe('MeetingEditAgendaDialogComponent', () => {
   });
 
   describe('when someone else changed the agenda since it opened', () => {
-    it('shows theirs and saves nothing', async () => {
+    const conflicted = async (): Promise<void> => {
       await render({}, fresh({ description: 'Their agenda' }));
       type('My agenda');
-
       saveButton().click();
       await settle();
+    };
+
+    it('shows theirs and saves nothing', async () => {
+      await conflicted();
 
       expect(updateMeeting).not.toHaveBeenCalled();
       expect(query('edit-agenda-conflict-theirs')?.textContent).toContain('Their agenda');
@@ -141,29 +165,72 @@ describe('MeetingEditAgendaDialogComponent', () => {
     });
 
     it('keeps theirs on request', async () => {
-      await render({}, fresh({ description: 'Their agenda' }));
-      type('My agenda');
-      saveButton().click();
-      await settle();
+      await conflicted();
 
       (query('edit-agenda-use-theirs')?.querySelector('button') as HTMLButtonElement).click();
 
-      expect(close).toHaveBeenCalledWith({ description: 'Their agenda' });
+      expect(onApplied).toHaveBeenCalledWith('Their agenda');
       expect(updateMeeting).not.toHaveBeenCalled();
     });
 
-    it('saves over theirs only when asked', async () => {
-      await render({}, fresh({ description: 'Their agenda' }));
-      type('My agenda');
+    it('replaces theirs on a second Save, knowingly', async () => {
+      await conflicted();
+
       saveButton().click();
       await settle();
 
-      (query('edit-agenda-overwrite')?.querySelector('button') as HTMLButtonElement).click();
+      expect(updateMeeting).toHaveBeenCalledWith('meeting-1', expect.objectContaining({ description: 'My agenda' }));
+      expect(onApplied).toHaveBeenCalledWith('My agenda');
+    });
+
+    it('still checks for a third change before that second Save', async () => {
+      await conflicted();
+      getMeetingDetail.mockReturnValue(of(fresh({ description: 'A third agenda' })));
+
+      saveButton().click();
       await settle();
 
-      expect(updateMeeting).toHaveBeenCalledWith('meeting-1', expect.objectContaining({ description: 'My agenda' }));
-      expect(close).toHaveBeenCalledWith({ description: 'My agenda' });
+      expect(updateMeeting).not.toHaveBeenCalled();
+      expect(query('edit-agenda-conflict-theirs')?.textContent).toContain('A third agenda');
     });
+
+    it('never saves an invalid agenda over theirs', async () => {
+      await render(
+        { scope: 'occurrence', occurrence: OCCURRENCE },
+        fresh({ occurrences: [{ occurrence_id: OCCURRENCE.occurrenceId, start_time: OCCURRENCE.startTime, duration: 45, description: 'Their notes' }] })
+      );
+      type('Mine');
+      saveButton().click();
+      await settle();
+      type('   ');
+
+      expect(saveButton().disabled).toBe(true);
+    });
+  });
+
+  it('shows the saved agenda even when the dialog was dismissed mid-save', async () => {
+    await render();
+    type('New agenda');
+
+    saveButton().click();
+    fixture.detectChanges();
+    // Cancel is disabled while saving.
+    expect((query('edit-agenda-cancel')?.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
+    await settle();
+
+    expect(onApplied).toHaveBeenCalledWith('New agenda');
+  });
+
+  it('says when the read before saving fails', async () => {
+    await render();
+    getMeetingDetail.mockReturnValue(throwError(() => new Error('boom')));
+    type('New agenda');
+
+    saveButton().click();
+    await settle();
+
+    expect(query('edit-agenda-error')).not.toBeNull();
+    expect(updateMeeting).not.toHaveBeenCalled();
   });
 
   it('keeps the dialog open with an error when the save fails', async () => {

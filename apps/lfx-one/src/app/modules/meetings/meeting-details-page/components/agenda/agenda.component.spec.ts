@@ -146,6 +146,7 @@ describe('MeetingAgendaComponent', () => {
     it("opens a dialog on the page for the series' agenda", () => {
       expect(query('agenda-section-edit')?.getAttribute('aria-haspopup')).toBe('dialog');
       expect(openEditor()).toEqual({
+        onApplied: expect.any(Function),
         meetingId: 'meeting-1',
         scope: 'series',
         occurrence: null,
@@ -168,8 +169,7 @@ describe('MeetingAgendaComponent', () => {
     });
 
     it('shows a saved agenda at once and re-reads the meeting', () => {
-      openEditor();
-      closed.next({ description: 'New agenda' });
+      openEditor().onApplied('New agenda');
       fixture.detectChanges();
 
       expect(agendaOverride()).toEqual({ meetingId: 'meeting-1', occurrenceId: null, description: 'New agenda' });
@@ -184,6 +184,20 @@ describe('MeetingAgendaComponent', () => {
 
       expect(agendaOverride()).toBeNull();
       expect(reload).not.toHaveBeenCalled();
+    });
+
+    it('shows a saved occurrence agenda for that occurrence only', () => {
+      selectedOccurrence.set({ occurrence_id: '1700000000', start_time: '2023-11-14T22:13:20Z', duration: 45, description: 'Occurrence notes' });
+      fixture.detectChanges();
+      openEditor().onApplied('New occurrence notes');
+      fixture.detectChanges();
+
+      expect(agendaOverride()).toEqual({ meetingId: 'meeting-1', occurrenceId: '1700000000', description: 'New occurrence notes' });
+      expect(query('agenda-section-description')?.textContent).toContain('New occurrence notes');
+
+      selectedOccurrence.set({ occurrence_id: '1700604800', start_time: '2023-11-21T22:13:20Z', duration: 45 });
+      fixture.detectChanges();
+      expect(query('agenda-section-description')?.textContent).toContain('Review the roadmap');
     });
 
     it("never shows a series override over an occurrence's own agenda", () => {
