@@ -541,17 +541,25 @@ export function detectBrowserTimezoneOption(now: Date = new Date(), reportedZone
 }
 
 /**
- * Pass 3 of {@link detectBrowserTimezoneOption}: the first listed zone whose UTC offset equals `zone`'s at
- * every probe instant of `year` — noon UTC daily, plus one minute before and at each of `zone`'s clock
- * changes. Candidates are checked lazily and drop out at their first mismatch, so the full set of probes
- * only runs for zones that already agree on the first ones.
+ * Pass 3 of {@link detectBrowserTimezoneOption}: the first of `candidates` whose UTC offset equals `zone`'s at
+ * every probe instant of `year` — noon UTC daily, plus one minute before and at each of `zone`'s clock changes
+ * (located to the minute). Candidates are checked lazily and drop out at their first mismatch, so the full set
+ * of probes only runs for zones that already agree on the first ones.
+ * @param candidates zone ids to try, in order; defaults to the {@link TIMEZONES} picker options.
+ * @param offsetAt UTC offset (ms) of a zone at an instant; defaults to the runtime's tzdata. Injectable so the
+ * matching can be tested against fixed transitions rather than whatever tzdata the runtime ships.
  */
-function findSameWallClockZone(zone: string, year: number): string | null {
+export function findSameWallClockZone(
+  zone: string,
+  year: number,
+  candidates: readonly string[] = TIMEZONES.map((tz) => tz.value),
+  offsetAt: (zone: string, time: number) => number = (target, time) => getTimezoneOffset(target, new Date(time))
+): string | null {
   const minute = 60 * 1000;
   const days = Array.from({ length: 366 }, (_, index) => Date.UTC(year, 0, 1 + index, 12)).filter((time) => new Date(time).getUTCFullYear() === year);
-  const offsetAt = (time: number): number => getTimezoneOffset(zone, new Date(time));
+  const zoneOffsetAt = (time: number): number => offsetAt(zone, time);
   const probes: number[] = [];
-  let previousOffset = offsetAt(days[0]);
+  let previousOffset = zoneOffsetAt(days[0]);
 
   if (Number.isNaN(previousOffset)) {
     return null;
@@ -559,7 +567,7 @@ function findSameWallClockZone(zone: string, year: number): string | null {
 
   probes.push(days[0]);
   for (let index = 1; index < days.length; index++) {
-    const offset = offsetAt(days[index]);
+    const offset = zoneOffsetAt(days[index]);
     probes.push(days[index]);
 
     if (offset !== previousOffset) {
@@ -568,7 +576,7 @@ function findSameWallClockZone(zone: string, year: number): string | null {
       let high = days[index];
       while (high - low > minute) {
         const middle = low + Math.floor((high - low) / 2 / minute) * minute;
-        if (offsetAt(middle) === previousOffset) {
+        if (zoneOffsetAt(middle) === previousOffset) {
           low = middle;
         } else {
           high = middle;
@@ -580,9 +588,9 @@ function findSameWallClockZone(zone: string, year: number): string | null {
     previousOffset = offset;
   }
 
-  const expected = probes.map(offsetAt);
+  const expected = probes.map(zoneOffsetAt);
 
-  return TIMEZONES.find((tz) => probes.every((time, index) => getTimezoneOffset(tz.value, new Date(time)) === expected[index]))?.value ?? null;
+  return candidates.find((candidate) => probes.every((time, index) => offsetAt(candidate, time) === expected[index])) ?? null;
 }
 
 /**

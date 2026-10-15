@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   daysUntilInTimezone,
   detectBrowserTimezoneOption,
+  findSameWallClockZone,
   formatIsoDateLabel,
   formatIsoDateShortLabel,
   formatMemberSince,
@@ -492,14 +493,6 @@ describe('detectBrowserTimezoneOption', () => {
     expect(detectBrowserTimezoneOption(june2026, 'Africa/Abidjan')).toBe('UTC');
   });
 
-  it('does not pair zones whose clocks change on a different day or hour', () => {
-    // Each agrees with Europe/Athens on most days but changes its clocks at a different moment, under
-    // long-stable rules (Beirut: midnight local; Chisinau: 02:00 local; Athens: 01:00 UTC). Zones whose DST
-    // dates are set year by year (e.g. Asia/Gaza) are left out: their result depends on the runtime's tzdata.
-    expect(detectBrowserTimezoneOption(june2026, 'Asia/Beirut')).not.toBe('Europe/Athens');
-    expect(detectBrowserTimezoneOption(june2026, 'Europe/Chisinau')).not.toBe('Europe/Athens');
-  });
-
   it('returns null when no zone is reported', () => {
     expect(detectBrowserTimezoneOption(june2026, '')).toBeNull();
   });
@@ -511,5 +504,27 @@ describe('detectBrowserTimezoneOption', () => {
   it('reads the browser zone when none is passed', () => {
     const reported = Intl.DateTimeFormat().resolvedOptions().timeZone;
     expect(detectBrowserTimezoneOption(june2026)).toBe(detectBrowserTimezoneOption(june2026, reported));
+  });
+});
+
+describe('findSameWallClockZone', () => {
+  // Fixed, synthetic zones so the matching is tested independently of the runtime's tzdata: each is UTC+2 in
+  // winter and UTC+3 in summer, differing only in the instant the clocks change.
+  const hour = 60 * 60 * 1000;
+  const reference = Date.UTC(2026, 2, 29, 1); // last Sunday of March, 01:00 UTC
+  const springForward: Record<string, number> = {
+    REF: reference,
+    SAME: reference,
+    HOUR_LATER: reference + hour,
+    DAY_LATER: reference + 24 * hour,
+  };
+  const offsetAt = (zone: string, time: number): number => (time >= springForward[zone] ? 3 : 2) * hour;
+
+  it('pairs a zone whose clocks change at the same instant', () => {
+    expect(findSameWallClockZone('REF', 2026, ['HOUR_LATER', 'DAY_LATER', 'SAME'], offsetAt)).toBe('SAME');
+  });
+
+  it('does not pair zones whose clocks change an hour or a day apart', () => {
+    expect(findSameWallClockZone('REF', 2026, ['HOUR_LATER', 'DAY_LATER'], offsetAt)).toBeNull();
   });
 });
