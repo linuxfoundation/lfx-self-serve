@@ -24,7 +24,6 @@ import {
   GOOGLE_CREATIVE_SECTION_TITLES,
   META_OBJECTIVE_LABELS,
   REDDIT_CALL_TO_ACTIONS,
-  REDDIT_OBJECTIVE_LABELS,
 } from '@lfx-one/shared/constants';
 import type {
   CampaignBriefOutput,
@@ -2221,63 +2220,41 @@ describe('ImplementationTabComponent reddit objective', () => {
   it('renders exactly the selectable objectives, in order', async () => {
     const f = await restoredWithObjective('conversions');
 
-    expect(Array.from(objectiveSelect(f).options).map((o) => o.value)).toEqual(['awareness', 'traffic', 'conversions']);
+    expect(Array.from(objectiveSelect(f).options).map((o) => o.value)).toEqual(['awareness', 'traffic', 'conversions', 'video_views']);
   });
 
   /**
-   * `video_views` cannot succeed on either arm today. Reddit has no bare `VIDEO_VIEWS`
-   * optimization goal, so both creators require a companion `videoGoal` and refuse the request
-   * without one — and no control in this tier can set one, so offering the objective would
-   * guarantee a refused create.
+   * `video_views` is offered now that a goal picker collects the `videoGoal` both creators require
+   * for it — and offered as an ordinary, choosable option, not the disabled restore affordance.
    */
-  it('does not offer video_views', async () => {
-    const f = await restoredWithObjective('conversions');
+  it('offers video_views as a choosable objective', async () => {
+    const select = objectiveSelect(await restoredWithObjective('conversions'));
+    const option = Array.from(select.options).find((o) => o.value === 'video_views');
 
-    expect(Array.from(objectiveSelect(f).options).map((o) => o.value)).not.toContain('video_views');
-  });
-
-  /** The label survives the option's removal — a restored draft must still render a name. */
-  it('keeps a label for the withheld video_views objective', () => {
-    expect(REDDIT_OBJECTIVE_LABELS['video_views']).toBe('Video Views');
+    expect(option?.text).toBe('Video Views');
+    expect(option?.disabled).toBe(false);
   });
 
   /**
    * Driven through the REAL draft input rather than by setting the signal: a signal-only test
-   * leaves `applyDraft` unexercised, and a coercion added there — mapping the unrenderable value
-   * onto the first option — would silently discard the stored objective while passing.
+   * leaves `applyDraft` unexercised, and a coercion added there would silently discard the stored
+   * objective while passing.
    */
-  it('restores video_views from a persisted draft', async () => {
+  it('restores video_views from a persisted draft, selected and enabled', async () => {
     const f = await restoredWithObjective('video_views');
+    const select = objectiveSelect(f);
 
     expect((f.componentInstance as unknown as Record<string, any>)['redditObjective']()).toBe('video_views');
-  });
-
-  /**
-   * The DOM half the signal assertion cannot cover, and the worse symptom: the template selects
-   * per-`<option>` via `[selected]`, so without the disabled legacy option Angular applies the
-   * binding while no matching option exists and the browser falls back to index 0 — the field
-   * would read `Awareness` while the signal held `video_views`, a wrong value the operator could
-   * submit without noticing.
-   */
-  it('shows the restored video_views objective rather than the first selectable one', async () => {
-    const select = objectiveSelect(await restoredWithObjective('video_views'));
-
     expect(select.value).toBe('video_views');
-    expect(select.options[select.selectedIndex].text).toContain('Video Views');
+    expect(select.options[select.selectedIndex].disabled).toBe(false);
   });
 
-  /** Visible, but NOT newly choosable — the whole point of withholding it. */
-  it('renders the restored video_views objective as disabled', async () => {
-    const select = objectiveSelect(await restoredWithObjective('video_views'));
-
-    expect(Array.from(select.options).find((o) => o.value === 'video_views')?.disabled).toBe(true);
-  });
-
-  /** A restore affordance, not a permanent fourth option — absent for a normal draft. */
+  /** A restore affordance, not a permanent extra option — absent for a normal draft. */
   it('does not render the legacy option when the objective is selectable', async () => {
     const select = objectiveSelect(await restoredWithObjective('traffic'));
 
-    expect(Array.from(select.options).map((o) => o.value)).toEqual(['awareness', 'traffic', 'conversions']);
+    expect(Array.from(select.options).map((o) => o.value)).toEqual(['awareness', 'traffic', 'conversions', 'video_views']);
+    expect(Array.from(select.options).some((o) => o.text.includes('(no longer available)'))).toBe(false);
   });
 
   /** And the selectable value still round-trips, so the assertion above cannot pass by ignoring the draft. */
@@ -2294,10 +2271,9 @@ describe('ImplementationTabComponent reddit objective', () => {
  *
  * The exposure is identical — a restored value that matches no `<option>` makes the browser fall
  * back to index 0, so the control reads "Default (Learn More)" while the signal still holds and
- * still sends the stored label. It differs only in how it is reached: `REDDIT_SELECTABLE_OBJECTIVES`
- * deliberately withholds `video_views`, so an unavailable objective is reachable by design, while
- * `REDDIT_CALL_TO_ACTIONS` is the whole upstream set and a stale CTA only becomes possible once
- * Reddit retires a label. Latent, then — and pinned anyway, so the two siblings cannot drift.
+ * still sends the stored label. Latent, like the objective's guard now that every objective is
+ * selectable: `REDDIT_CALL_TO_ACTIONS` is the whole upstream set and a stale CTA only becomes
+ * possible once Reddit retires a label. Pinned anyway, so the two siblings cannot drift.
  */
 describe('ImplementationTabComponent reddit call to action', () => {
   /**
@@ -3217,6 +3193,18 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     f.detectChanges();
   }
 
+  /** Returns null when the objective is not Video Views, which the show/hide tests assert on. */
+  function redditVideoGoalSelect(f: ComponentFixture<ImplementationTabComponent>): HTMLSelectElement | null {
+    return f.nativeElement.querySelector('[data-testid="implementation-reddit-video-goal"]') as HTMLSelectElement | null;
+  }
+
+  function pickRedditVideoGoal(f: ComponentFixture<ImplementationTabComponent>, value: string): void {
+    const select = redditVideoGoalSelect(f) as HTMLSelectElement;
+    select.value = value;
+    select.dispatchEvent(new Event('change'));
+    f.detectChanges();
+  }
+
   function typeRedditPostUrl(f: ComponentFixture<ImplementationTabComponent>, value: string): void {
     const input = f.nativeElement.querySelector('[data-testid="implementation-reddit-post-url"]') as HTMLInputElement;
     input.value = value;
@@ -3395,6 +3383,86 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     at(f).submit();
 
     expect('postUrl' in sentConfig('redditConfig')).toBe(false);
+  });
+
+  // === Reddit: the video goal ===
+
+  /** Shown only for Video Views — the one objective that takes a goal. */
+  it('shows the reddit video goal only while the objective is video_views', async () => {
+    const f = (await mount(null)).fixture;
+
+    expect(redditVideoGoalSelect(f)).toBeNull();
+
+    pickRedditObjective(f, 'video_views');
+    const select = redditVideoGoalSelect(f);
+    expect(select).not.toBeNull();
+    expect(Array.from(select!.options).map((o) => [o.value, o.text.trim()])).toEqual([
+      ['', 'Select a video goal'],
+      ['VIDEO_VIEW_6S', '6-second video views'],
+      ['VIDEO_VIEW_15S', '15-second video views'],
+    ]);
+
+    pickRedditObjective(f, 'traffic');
+    expect(redditVideoGoalSelect(f)).toBeNull();
+  });
+
+  /**
+   * Both creators refuse `video_views` without a goal, and creation is async, so an unguarded
+   * submit would end as a dead job. The create must be blocked, with the reason on screen.
+   */
+  it('cannot submit video_views without a video goal', async () => {
+    const f = (await mount(null)).fixture;
+    at(f).selectedPlatforms.set(['reddit-ads']);
+    makeSubmittable(f);
+    pickRedditObjective(f, 'video_views');
+
+    expect(at(f).canSubmit()).toBe(false);
+    expect(f.nativeElement.querySelector('[data-testid="implementation-reddit-video-goal-error"]')?.textContent).toContain('Choose a video goal');
+
+    at(f).submit();
+    expect(createCampaign).not.toHaveBeenCalled();
+
+    pickRedditVideoGoal(f, 'VIDEO_VIEW_6S');
+    expect(at(f).canSubmit()).toBe(true);
+    expect(f.nativeElement.querySelector('[data-testid="implementation-reddit-video-goal-error"]')).toBeNull();
+  });
+
+  /** The chosen goal reaches `redditConfig`, picked through the template and carried across a tab round-trip. */
+  it('carries the reddit video goal through a tab round-trip and into the request', async () => {
+    const first = await mount(null);
+    pickRedditObjective(first.fixture, 'video_views');
+    pickRedditVideoGoal(first.fixture, 'VIDEO_VIEW_15S');
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    expect(draft?.redditVideoGoal).toBe('VIDEO_VIEW_15S');
+
+    const second = await mount(draft);
+    at(second.fixture).selectedPlatforms.set(['reddit-ads']);
+    makeSubmittable(second.fixture);
+    second.fixture.detectChanges();
+
+    expect(redditVideoGoalSelect(second.fixture)?.value).toBe('VIDEO_VIEW_15S');
+
+    at(second.fixture).submit();
+
+    expect(sentConfig('redditConfig')).toMatchObject({ objective: 'video_views', videoGoal: 'VIDEO_VIEW_15S' });
+  });
+
+  /** A goal left over from an earlier Video Views choice is not sent with another objective. */
+  it('omits the reddit video goal for any other objective', async () => {
+    const f = (await mount(null)).fixture;
+    pickRedditObjective(f, 'video_views');
+    pickRedditVideoGoal(f, 'VIDEO_VIEW_6S');
+    pickRedditObjective(f, 'awareness');
+    at(f).selectedPlatforms.set(['reddit-ads']);
+    makeSubmittable(f);
+    f.detectChanges();
+    at(f).submit();
+
+    const config = sentConfig('redditConfig');
+    expect(config['objective']).toBe('awareness');
+    expect('videoGoal' in config).toBe(false);
   });
 
   /**

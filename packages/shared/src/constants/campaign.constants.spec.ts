@@ -48,6 +48,7 @@ import {
   REDDIT_OBJECTIVE_LABELS,
   REDDIT_OBJECTIVE_PARAMS,
   REDDIT_SELECTABLE_OBJECTIVES,
+  REDDIT_VIDEO_GOAL_LABELS,
   REDDIT_VIDEO_GOALS,
   campaignToggleAction,
   canonicalMicrosoftMatchType,
@@ -844,6 +845,11 @@ describe('Reddit promoted-post contract', () => {
    */
   it('offers exactly the video goals upstream accepts', () => {
     expect([...REDDIT_VIDEO_GOALS]).toEqual(['VIDEO_VIEW_6S', 'VIDEO_VIEW_15S']);
+  });
+
+  /** Every goal the picker offers has a readable name, and nothing else does. */
+  it('labels exactly the video goals upstream accepts', () => {
+    expect(Object.keys(REDDIT_VIDEO_GOAL_LABELS)).toEqual([...REDDIT_VIDEO_GOALS]);
   });
 
   /**
