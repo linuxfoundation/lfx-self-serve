@@ -35,7 +35,7 @@ function row(
   revenueUsd: number | null,
   newMemberCount = 0
 ): HealthMetricsMembersTierYear {
-  return { year, tier, sortRank, memberCount, newMemberCount, revenueUsd, isPartialYear: year === 2026 };
+  return { year, tier, sortRank, memberCount, newMemberCount, activeNewMemberCount: newMemberCount, revenueUsd, isPartialYear: year === 2026 };
 }
 
 const TIERS: HealthMetricsMembersTiers = {

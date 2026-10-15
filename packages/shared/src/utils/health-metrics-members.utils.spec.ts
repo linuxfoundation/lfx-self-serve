@@ -183,12 +183,21 @@ describe('buildHealthMetricsMembersDirectorySearchPlaceholder', () => {
 });
 
 describe('buildHealthMetricsMembersTiersView', () => {
-  const row = (year: number, tier: string, sortRank: number, memberCount: number | null, revenueUsd: number | null, newMemberCount: number | null = 0) => ({
+  const row = (
+    year: number,
+    tier: string,
+    sortRank: number,
+    memberCount: number | null,
+    revenueUsd: number | null,
+    newMemberCount: number | null = 0,
+    activeNewMemberCount: number | null = newMemberCount
+  ) => ({
     year,
     tier,
     sortRank,
     memberCount,
     newMemberCount,
+    activeNewMemberCount,
     revenueUsd,
     isPartialYear: year === 2026,
   });
@@ -196,11 +205,11 @@ describe('buildHealthMetricsMembersTiersView', () => {
     rows: [
       row(2024, 'Gold', 2, 10, 500_000),
       row(2024, 'Platinum', 1, 5, 1_000_000),
-      row(2025, 'Gold', 2, 15, 750_000, 6),
-      row(2025, 'Platinum', 1, 5, 1_000_000, 1),
+      row(2025, 'Gold', 2, 15, 750_000, 6, 0),
+      row(2025, 'Platinum', 1, 5, 1_000_000, 1, 0),
       row(2025, 'Silver', 3, 0, 0),
-      row(2026, 'Gold', 2, 16, 800_000, 2),
-      row(2026, 'Platinum', 1, 6, 1_200_000, 1),
+      row(2026, 'Gold', 2, 16, 800_000, 2, 1),
+      row(2026, 'Platinum', 1, 6, 1_200_000, 1, 0),
     ],
     foundationRevenue: [
       { range: 'YTD', totalUsd: 4_000_000 },
@@ -263,6 +272,7 @@ describe('buildHealthMetricsMembersTiersView', () => {
 
     expect(view.headline).toMatchObject({ value: '22', delta: 'not available', deltaDirection: 'neutral', baseline: null });
     expect(view.side[1].label).toBe('New this year');
+    expect(view.side[1].value).toBe('1');
     expect(view.side[2].value).toBe('50%');
   });
 

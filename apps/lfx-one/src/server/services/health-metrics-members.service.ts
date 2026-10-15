@@ -107,6 +107,7 @@ interface TierYearRow {
   TIER_SORT_RANK: number | null;
   MEMBER_COUNT: number | null;
   NEW_MEMBER_COUNT: number | null;
+  ACTIVE_NEW_MEMBER_COUNT: number | null;
   TIER_REVENUE_USD: number | null;
   IS_PARTIAL_YEAR: boolean | null;
 }
@@ -810,6 +811,7 @@ export class HealthMetricsMembersService {
         tier_sort_rank,
         member_count,
         new_member_count,
+        active_new_member_count,
         tier_revenue_usd,
         is_partial_year
       FROM ${MEMBERSHIP_TIER_YEAR_VIEW}
@@ -1078,6 +1080,7 @@ function mapTierYear(row: TierYearRow): HealthMetricsMembersTierYear | null {
     sortRank: toNullableNumber(row.TIER_SORT_RANK) ?? Number.MAX_SAFE_INTEGER,
     memberCount: toNullableNumber(row.MEMBER_COUNT),
     newMemberCount: toNullableNumber(row.NEW_MEMBER_COUNT),
+    activeNewMemberCount: toNullableNumber(row.ACTIVE_NEW_MEMBER_COUNT),
     revenueUsd: toNullableNumber(row.TIER_REVENUE_USD),
     isPartialYear: row.IS_PARTIAL_YEAR === true,
   };

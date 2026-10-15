@@ -37,6 +37,8 @@ export interface HealthMetricsMembersTierYear {
   sortRank: number;
   memberCount: number | null;
   newMemberCount: number | null;
+  /** Joiners still in the closing stock. The partial-year hero uses this instead of `newMemberCount`. */
+  activeNewMemberCount: number | null;
   revenueUsd: number | null;
   isPartialYear: boolean;
 }

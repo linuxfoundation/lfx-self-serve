@@ -47,6 +47,7 @@ function tierRow(overrides: Record<string, unknown> = {}) {
     TIER_SORT_RANK: 2,
     MEMBER_COUNT: 12,
     NEW_MEMBER_COUNT: 3,
+    ACTIVE_NEW_MEMBER_COUNT: 2,
     TIER_REVENUE_USD: 600000,
     IS_PARTIAL_YEAR: false,
     ...overrides,
@@ -92,6 +93,7 @@ describe('HealthMetricsMembersService.getTiers', () => {
     const [sql, binds] = readOf('MEMBERSHIP_TIER_YEAR');
     expect(binds).toEqual(['acme']);
     expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_TIER_YEAR');
+    expect(sql).toContain('active_new_member_count');
     expect(sql).toContain('AND year IS NOT NULL');
     expect(sql).toContain('AND membership_tier IS NOT NULL');
     expect(sql).toContain('ORDER BY year DESC, tier_sort_rank ASC NULLS LAST, membership_tier ASC');
@@ -113,7 +115,9 @@ describe('HealthMetricsMembersService.getTiers', () => {
   it('maps tier rows and leaves out a period with no foundation total', async () => {
     const response = await new HealthMetricsMembersService().getTiers(req, { foundationSlug: 'acme' });
 
-    expect(response.rows).toEqual([{ year: 2025, tier: 'Gold', sortRank: 2, memberCount: 12, newMemberCount: 3, revenueUsd: 600000, isPartialYear: false }]);
+    expect(response.rows).toEqual([
+      { year: 2025, tier: 'Gold', sortRank: 2, memberCount: 12, newMemberCount: 3, activeNewMemberCount: 2, revenueUsd: 600000, isPartialYear: false },
+    ]);
     expect(response.foundationRevenue).toEqual([
       { range: 'COMPLETED_YEAR_3', totalUsd: 2000000 },
       { range: 'COMPLETED_YEAR', totalUsd: 3500000 },
