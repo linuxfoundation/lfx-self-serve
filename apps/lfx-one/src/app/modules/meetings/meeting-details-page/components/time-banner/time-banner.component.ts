@@ -38,6 +38,8 @@ export class MeetingTimeBannerComponent {
    */
   protected readonly window: Signal<MeetingTimeWindow | null> = this.initWindow();
   protected readonly timeState: Signal<MeetingTimeState | null> = this.state.timeState;
+  /** A cancelled occurrence (E6-05): its date struck through, and "cancelled" in place of the phase. */
+  protected readonly cancelled = computed(() => !!this.state.cancelledOccurrence());
   /** True inside the join window before the scheduled start: the pill's "Starting soon". */
   protected readonly startingSoon = computed(() => this.state.meetingStatus() === 'starting-soon');
   /** The occurrence's calendar day in the viewer's zone, as a local-noon carrier for DatePipe. */

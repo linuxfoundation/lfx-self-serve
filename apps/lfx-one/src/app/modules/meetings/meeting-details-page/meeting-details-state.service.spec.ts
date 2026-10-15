@@ -7,7 +7,7 @@ import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
 import { environment } from '@environments/environment';
 import { MEETING_JOIN_STATE_KEY } from '@lfx-one/shared/constants';
-import { Meeting, MeetingJoinPageState, MeetingOccurrenceStripItem, MeetingRsvp, PublicMeetingProject } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingJoinPageState, MeetingOccurrence, MeetingOccurrenceStripItem, MeetingRsvp, PublicMeetingProject } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { BehaviorSubject, of, Subject, throwError } from 'rxjs';
@@ -526,13 +526,70 @@ describe('MeetingDetailsStateService', () => {
       expect(state.timeState()).toBe('before');
     });
 
-    it('falls back to the current or next occurrence without one, or for a cancelled one', async () => {
-      queryParamMap$.next(convertToParamMap({ occurrence: String(second.getTime()) }));
-      getPublicMeeting.mockReturnValue(of({ meeting: series(['2']), project }));
+    it('falls back to the current or next occurrence without one', async () => {
+      getPublicMeeting.mockReturnValue(of({ meeting: series(), project }));
       const state = create();
       await settle();
 
       expect(state.selectedOccurrence()?.occurrence_id).toBe('1');
+      expect(state.cancelledOccurrence()).toBeNull();
+    });
+
+    describe('a link to a cancelled occurrence (E6-05)', () => {
+      const expectCancelledState = (state: MeetingDetailsStateService) => {
+        // It stays the page's occurrence, so its own date shows rather than another.
+        expect(state.selectedOccurrence()?.occurrence_id).toBe('2');
+        expect(state.cancelledOccurrence()?.occurrence_id).toBe('2');
+        expect(state.selectedOccurrenceStartMs()).toBe(second.getTime());
+        expect(state.nextActiveOccurrence()?.occurrence_id).toBe('1');
+        // Nothing to join, answer or list for it.
+        expect(state.actionSlot()).toBe('none');
+        expect(state.joinsInWindow()).toBe(false);
+        expect(state.meetingStatus()).toBeNull();
+        expect(state.rosterRequest()).toBeNull();
+      };
+
+      beforeEach(() => queryParamMap$.next(convertToParamMap({ occurrence: String(second.getTime()) })));
+
+      it('keeps one listed in cancelled_occurrences', async () => {
+        getPublicMeeting.mockReturnValue(of({ meeting: series(['2']), project }));
+        const state = create();
+        await settle();
+
+        expectCancelledState(state);
+      });
+
+      it("keeps one whose entry says status 'cancel'", async () => {
+        const meeting = series();
+        meeting.occurrences![1] = { ...meeting.occurrences![1], status: 'cancel' };
+        getPublicMeeting.mockReturnValue(of({ meeting, project }));
+        const state = create();
+        await settle();
+
+        expectCancelledState(state);
+      });
+
+      it('keeps one when both signals say so', async () => {
+        const meeting = series(['2']);
+        meeting.occurrences![1] = { ...meeting.occurrences![1], status: 'cancel' };
+        getPublicMeeting.mockReturnValue(of({ meeting, project }));
+        const state = create();
+        await settle();
+
+        expectCancelledState(state);
+      });
+
+      it('opens the next active occurrence from it', async () => {
+        getPublicMeeting.mockReturnValue(of({ meeting: series(['2']), project }));
+        const state = create();
+        await settle();
+        const next = state.nextActiveOccurrence();
+        expect(next).not.toBeNull();
+
+        state.openOccurrence(next as MeetingOccurrence);
+
+        expect(navigate).toHaveBeenLastCalledWith(['/meetings', MEETING_ID], expect.objectContaining({ queryParams: { occurrence: String(first.getTime()) } }));
+      });
     });
 
     it('is null for a past occurrence opened by its composite id, which is the occurrence itself', async () => {
