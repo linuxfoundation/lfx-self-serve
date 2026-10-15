@@ -47,6 +47,10 @@ test.describe('Marketing OS run/document structure and access states', () => {
         })
         .toBe(true);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      const revisionLabel = page.getByTestId(/^mktg-document-view-revision-label-/).first();
+      await expect(revisionLabel).toHaveCSS('text-align', 'left');
+      await expect(revisionLabel).toHaveCSS('white-space', 'nowrap');
+      await expect(revisionLabel).toHaveCSS('text-overflow', 'ellipsis');
     };
 
     for (const width of [1440, 1280, 1100, 1024, 768]) {

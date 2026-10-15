@@ -847,6 +847,8 @@ export interface MktgStoredAgentRun {
  * version the session will not produce.
  */
 export interface MktgRunAttempt {
+  /** Original Generate time, retained on reload/retry for the document view's Started label. */
+  startedAt?: string;
   /** The Guild session whose result endpoint the document poll queries. */
   session: MktgSessionInfo;
   /** Version the polled envelope must exceed; 0 on a fresh session. */
@@ -910,6 +912,8 @@ export interface MktgPreparedGeneration {
 
 /** Request to generate (or regenerate) an agent document from intake answers. */
 export interface MktgGenerateRequest {
+  /** When Generate was pressed; presentation metadata, not a generation/version directive. */
+  startedAt?: string;
   /** Catalog agent id — must be an `active` agent. */
   agentId: string;
   /** LFX project uid the run is scoped to. */

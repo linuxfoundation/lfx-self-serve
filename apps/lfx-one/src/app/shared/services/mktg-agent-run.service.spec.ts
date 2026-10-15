@@ -147,6 +147,17 @@ describe('MktgAgentRunService', () => {
     expect(service.resumeGeneration('proj-1', 'brand-kit', BRAND_KIT_INTAKE)).toBeNull();
   });
 
+  it('retains the original Generate time in the pending attempt across a reload and resume', () => {
+    const startedAt = '2026-10-15T08:40:00.000Z';
+    const subscription = service.generate({ ...generateRequest(), startedAt }).subscribe();
+    expect(service.loadRun('proj-1', 'brand-kit')?.pendingAttempt?.startedAt).toBe(startedAt);
+    subscription.unsubscribe();
+    const reloaded = TestBed.runInInjectionContext(() => new MktgAgentRunService());
+    const resumed = reloaded.resumeGeneration('proj-1', 'brand-kit', BRAND_KIT_INTAKE)?.subscribe();
+    expect(reloaded.loadRun('proj-1', 'brand-kit')?.pendingAttempt?.startedAt).toBe(startedAt);
+    resumed?.unsubscribe();
+  });
+
   it.each([403, 422])('does not automatically resume a terminal HTTP %s failure, but allows an explicit retry', async (status) => {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(storedV1Run()));
     resultResponses = [new HttpErrorResponse({ status })];

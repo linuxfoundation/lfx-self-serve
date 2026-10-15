@@ -166,6 +166,7 @@ export class MktgAgentRunService {
    */
   public generate(request: MktgGenerateRequest): Observable<MktgGenerateProgress> {
     const stored = this.loadRun(request.projectUid, request.agentId);
+    const startedAt = request.startedAt ?? new Date().toISOString();
     let attempt$: Observable<MktgRunAttempt>;
     if (!stored || request.intake.freshRunPerSubmission) {
       // `freshRunPerSubmission` intakes (the Messaging Document) carry no
@@ -180,6 +181,7 @@ export class MktgAgentRunService {
 
     return attempt$.pipe(
       switchMap((attempt) => {
+        const pendingAttempt = { ...attempt, startedAt };
         this.saveRun({
           agentId: request.agentId,
           projectUid: request.projectUid,
@@ -187,10 +189,10 @@ export class MktgAgentRunService {
           sessionId: attempt.session.sessionId,
           ownerToken: attempt.session.ownerToken,
           versions: this.loadRun(request.projectUid, request.agentId)?.versions ?? [],
-          pendingAttempt: attempt,
+          pendingAttempt,
           savedAt: new Date().toISOString(),
         });
-        return this.finishAttempt(request, attempt);
+        return this.finishAttempt(request, pendingAttempt);
       })
     );
   }

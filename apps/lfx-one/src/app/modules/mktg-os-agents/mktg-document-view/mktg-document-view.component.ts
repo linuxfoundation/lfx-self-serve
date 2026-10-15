@@ -48,7 +48,8 @@ export class MktgDocumentViewComponent {
   protected readonly view = signal<MktgRevisionResponse | null>(null);
   protected readonly restoringId = signal<string | null>(null);
   protected readonly generating = signal(false);
-  protected readonly generationStage = signal('Submitting your intake…');
+  protected readonly generationProgress = signal<MktgGenerateProgress['type'] | null>(null);
+  protected readonly generationStartedAt = signal<string | null>(null);
   protected readonly retry = signal(0);
   protected readonly canResume = signal(false);
   protected readonly retryRun = signal(false);
@@ -63,6 +64,8 @@ export class MktgDocumentViewComponent {
   // === Computed ===
   protected readonly intakeAgentId = computed(() => findMktgDocumentType(this.params().agentKey)?.catalogAgentId ?? null);
   protected readonly title: Signal<string> = this.initTitle();
+  protected readonly nextRevisionNumber = computed(() => (this.view()?.revisions[0]?.number ?? 0) + 1);
+  protected readonly storing = computed(() => this.generationProgress() !== null && this.generationProgress() !== 'submitted');
   protected readonly revisionRows: Signal<MktgRevisionRow[]> = computed(() => {
     const view = this.view();
     return view ? view.revisions.map((revision) => ({ revision, how: describeMktgRevision(revision, view.type) })) : [];
@@ -195,14 +198,14 @@ export class MktgDocumentViewComponent {
   // === Private initializers ===
   private initTitle(): Signal<string> {
     return computed(() => {
-      const view = this.view();
-      if (!view) {
-        return findMktgDocumentType(this.params().agentKey)?.itemLabel ?? '';
+      const type = this.view()?.type ?? findMktgDocumentType(this.params().agentKey);
+      if (!type) {
+        return '';
       }
-      if (view.type.kind === 'living') {
-        return `${this.projectContext.activeContext()?.name ?? ''} ${view.type.label}`.trim();
+      if (type.kind === 'living') {
+        return `${this.projectContext.activeContext()?.name ?? ''} ${type.label}`.trim();
       }
-      return view.type.itemLabel;
+      return type.itemLabel;
     });
   }
 
@@ -230,8 +233,10 @@ export class MktgDocumentViewComponent {
     const stored = this.runService.loadRun(project, agentId);
     this.retryRun.set(!revisionId && !!(stored?.pendingAttempt || stored?.failedAttempt));
     this.canResume.set(!revisionId && !!stored?.failedAttempt);
+    const startedAt = prepared?.startedAt ?? stored?.pendingAttempt?.startedAt ?? stored?.failedAttempt?.startedAt ?? stored?.savedAt;
+    this.generationStartedAt.set(startedAt && !Number.isNaN(Date.parse(startedAt)) ? startedAt : new Date().toISOString());
     this.generating.set(!!generation$);
-    this.generationStage.set('Submitting your intake…');
+    this.generationProgress.set(null);
 
     const revision$ = revisionId
       ? this.documentStore.getRevision(project, agentKey, documentId, revisionId)
@@ -263,7 +268,7 @@ export class MktgDocumentViewComponent {
       progress$.pipe(
         switchMap((progress) => {
           this.loading.set(false);
-          this.generationStage.set(progress.type === 'submitted' ? 'Agent drafting the document…' : 'Saving the document…');
+          this.generationProgress.set(progress.type);
           if (progress.type === 'submitted') {
             return EMPTY;
           }

@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { DatePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { computed, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
@@ -11,7 +12,7 @@ import { BRAND_KIT_INTAKE, MKTG_DOCUMENT_TYPES, MKTG_README_SKIP_NOTES } from '@
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { UserService } from '@services/user.service';
-import { MktgGenerateProgress } from '@lfx-one/shared/interfaces';
+import { MktgGenerateProgress, MktgStoredAgentRun } from '@lfx-one/shared/interfaces';
 import { MktgDocumentDetailResponse, MktgDocumentType, MktgRevisionResponse, MktgRevisionSummary, ProjectContext } from '@lfx-one/shared/interfaces';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -129,6 +130,41 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-sidebar')?.contains(query('mktg-document-view-about'))).toBe(true);
   });
 
+  it('uses the design card text, stored local start time and only known writing/storing phases on resume', async () => {
+    const startedAt = '2026-10-15T08:40:00.000Z';
+    const run: MktgStoredAgentRun = {
+      agentId: 'brand-kit',
+      projectUid: PROJECT.uid,
+      sessionId: 'synthetic-session',
+      ownerToken: 'synthetic-token',
+      answers: {},
+      versions: [{ version: 1, document: '# Next document', createdAt: startedAt }],
+      savedAt: startedAt,
+      pendingAttempt: { session: { agentId: 'brand-kit', sessionId: 'synthetic-session', ownerToken: 'synthetic-token' }, priorVersion: 0, startedAt },
+    };
+    runService.loadRun.mockReturnValue(run);
+    runService.resumeGeneration.mockReturnValue(generation);
+    await render('/documents/brand-kit/living');
+    generation.next({ type: 'submitted' });
+    await settle();
+    expect(query('mktg-document-view-generating-title')?.textContent).toBe('Writing the TestOrbit Brand Kit');
+    expect(query('mktg-document-view-generating-meta')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+      `Started ${new DatePipe('en-US').transform(startedAt, 'HH:mm')} · usually three to five minutes · you can leave this page; the result lands in Documents`
+    );
+    expect(query('mktg-document-view-writing-step')?.textContent).toContain('●');
+    expect(query('mktg-document-view-writing-step')?.getAttribute('aria-current')).toBe('step');
+    expect(query('mktg-document-view-generating-note')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+      'Below this card, revision 2 stays readable until revision 3 lands.'
+    );
+    generation.next({ type: 'document', run });
+    await settle();
+    expect(query('mktg-document-view-writing-step')?.textContent).toContain('✓');
+    expect(query('mktg-document-view-storing-step')?.getAttribute('aria-current')).toBe('step');
+    expect(query('mktg-document-view-storing-step')?.textContent?.replace(/\s+/g, ' ').trim()).toBe('● Storing revision 3');
+    expect(query('mktg-document-view-generating')?.textContent).not.toContain('Sources read');
+    expect(query('mktg-document-view-generating')?.textContent).not.toContain('Building the slides');
+  });
+
   it('shows only progress on a first run and opens the exact receipt revision when it lands', async () => {
     const request = { projectUid: PROJECT.uid, agentId: 'brand-kit', intake: BRAND_KIT_INTAKE, answers: {} };
     runService.takePreparedGeneration.mockReturnValueOnce(request);
@@ -137,6 +173,10 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-generating')).not.toBeNull();
     expect(query('mktg-document-view-document')).toBeNull();
     expect(query('mktg-document-view-about')).toBeNull();
+    expect(query('mktg-document-view-generating-title')?.textContent).toBe('Writing the TestOrbit Brand Kit');
+    expect(query('mktg-document-view-generating-note')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+      'On a first run there is nothing below this card until the revision lands.'
+    );
     expect(query('mktg-document-view-error')).toBeNull();
     generation.next({ type: 'persisted', location: { agentKey: 'brand-kit', documentId: 'living', revisionId: LATEST.id } });
     generation.complete();
@@ -254,6 +294,9 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-revision-chip')?.textContent).toContain('Revision 2 of 2');
     expect(query('mktg-document-view-revision-chip')?.textContent).toContain('latest');
     expect(query('mktg-document-view-restore-current')).toBeNull();
+    expect(query('mktg-document-view-revision-label-2')?.classList.contains('truncate')).toBe(true);
+    expect(query('mktg-document-view-revision-label-2')?.classList.contains('text-left')).toBe(true);
+    expect(query('mktg-document-view-revision-2')?.classList.contains('justify-between')).toBe(false);
   });
 
   it('opens the revision in ?revision= and offers to restore it', async () => {

@@ -61,7 +61,10 @@ async function json(route: Route, body: unknown, status = 200): Promise<void> {
 }
 
 /** Synthetic project, flag and every Marketing OS request are stubbed; no live Guild session or write is possible. */
-export async function setupRunPage(page: Page, options: { existing?: boolean; writer?: boolean; fail?: boolean; holdRead?: boolean } = {}) {
+export async function setupRunPage(
+  page: Page,
+  options: { existing?: boolean; writer?: boolean; fail?: boolean; holdRead?: boolean; holdPersistence?: boolean } = {}
+) {
   const writer = options.writer ?? true;
   mockProjects[RUN_PROJECT.slug] = {
     ...RUN_PROJECT,
@@ -95,6 +98,7 @@ export async function setupRunPage(page: Page, options: { existing?: boolean; wr
     });
   });
   let generated = false;
+  let persisted = !options.holdPersistence;
   let submitted: Record<string, unknown> | null = null;
   let releaseRead: () => void = () => undefined;
   const readGate = new Promise<void>((resolve) => {
@@ -112,6 +116,15 @@ export async function setupRunPage(page: Page, options: { existing?: boolean; wr
         return json(route, { message: 'Synthetic run failure' }, 422);
       }
       const response = runRevision('brand-kit', options.existing ? 2 : 1);
+      const persistence = persisted
+        ? {
+            s3_key: 'synthetic-key',
+            content_sha256: response.revision.contentSha256,
+            version: response.revision.number,
+            project: RUN_PROJECT.uid,
+            document: { agentKey: 'brand-kit', documentId: 'living', revisionId: response.revision.id },
+          }
+        : undefined;
       return json(
         route,
         generated
@@ -119,13 +132,7 @@ export async function setupRunPage(page: Page, options: { existing?: boolean; wr
               status: 'ready',
               documentMarkdown: response.markdown,
               version: response.revision.number,
-              persistence: {
-                s3_key: 'synthetic-key',
-                content_sha256: response.revision.contentSha256,
-                version: response.revision.number,
-                project: RUN_PROJECT.uid,
-                document: { agentKey: 'brand-kit', documentId: 'living', revisionId: response.revision.id },
-              },
+              ...(persistence && { persistence }),
             }
           : { status: 'pending' }
       );
@@ -137,11 +144,11 @@ export async function setupRunPage(page: Page, options: { existing?: boolean; wr
       if (!writer) {
         return json(route, { message: 'Write access required' }, 403);
       }
-      if (!options.existing && !generated) {
+      if (!options.existing && !(generated && persisted)) {
         return json(route, { message: 'Not generated yet' }, 404);
       }
       const agentKey = path.split('/documents/')[1].split('/')[0];
-      const response = runRevision(agentKey, generated && options.existing ? 2 : 1);
+      const response = runRevision(agentKey, generated && persisted && options.existing ? 2 : 1);
       return json(route, response);
     }
     // Neither live dependencies nor accidental unmocked Marketing OS routes may escape this helper.
@@ -153,6 +160,9 @@ export async function setupRunPage(page: Page, options: { existing?: boolean; wr
   return {
     finish: () => {
       generated = true;
+    },
+    persist: () => {
+      persisted = true;
     },
     releaseRead: () => releaseRead(),
     submitted: () => submitted,
