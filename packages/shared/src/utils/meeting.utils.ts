@@ -658,12 +658,10 @@ export function canJoinMeeting(meeting: Meeting, occurrence?: MeetingOccurrence 
  */
 export function hasMeetingEnded(meeting: Meeting, occurrence?: MeetingOccurrence): boolean {
   const now = new Date();
-  const buffer = MEETING_END_BUFFER_MS;
-
   // For recurring meetings with occurrence
   if (occurrence) {
     const startTime = new Date(occurrence.start_time);
-    const endTime = new Date(startTime.getTime() + occurrence.duration * 60000 + buffer);
+    const endTime = new Date(startTime.getTime() + occurrence.duration * 60000 + MEETING_END_BUFFER_MS);
     return now > endTime;
   }
 
@@ -673,11 +671,11 @@ export function hasMeetingEnded(meeting: Meeting, occurrence?: MeetingOccurrence
   }
 
   const startTime = new Date(meeting.start_time);
-  const endTime = new Date(startTime.getTime() + meeting.duration * 60000 + buffer);
+  const endTime = new Date(startTime.getTime() + meeting.duration * 60000 + MEETING_END_BUFFER_MS);
   return now > endTime;
 }
 
-/** Post-meeting buffer before an occurrence is treated as past (matches {@link hasMeetingEnded}). */
+/** Post-meeting buffer before an occurrence is treated as past, and the join window's end (40 minutes). */
 export const MEETING_END_BUFFER_MS = 40 * 60_000;
 
 /**
