@@ -1718,6 +1718,36 @@ describe('AudienceBuilderTabComponent', () => {
       expect(host().querySelector('[data-testid="campaigns-audience-compose-result"]')).not.toBeNull();
     });
 
+    it('links the created lists to HubSpot only when they carry a URL, and names them either way', async () => {
+      // A blank URL renders href="", which opens this app instead of the list.
+      const masterUrl = 'https://app.hubspot.com/contacts/1/objectLists/901';
+      const resultBlock = (): HTMLElement | null => host().querySelector<HTMLElement>('[data-testid="campaigns-audience-compose-result"]');
+      const compose = async (url: string): Promise<void> => {
+        await renderWithDiscovery();
+        click('audience-card-grid-toggle-101');
+        composeAudienceMaster.mockReturnValue(
+          of({
+            master: { listId: '901', name: '26Q1 - SYN - Synthetic Summit 2026 - Master', hubspotUrl: url },
+            suppression: { listId: '902', name: 'Combined Suppression', hubspotUrl: url && 'https://app.hubspot.com/contacts/1/objectLists/902' },
+            sourceListIds: ['101'],
+          })
+        );
+        click('campaigns-audience-compose');
+      };
+
+      await compose(masterUrl);
+      expect(resultBlock()?.querySelector(`a[href="${masterUrl}"]`)?.textContent?.trim()).toBe('26Q1 - SYN - Synthetic Summit 2026 - Master');
+      expect(resultBlock()?.querySelector('[data-testid="campaigns-audience-compose-result-master-name"]')).toBeNull();
+
+      await compose('');
+      const block = resultBlock();
+      expect(block?.querySelectorAll('a').length, 'a blank URL rendered a link back to this app').toBe(0);
+      expect(block?.querySelector('[data-testid="campaigns-audience-compose-result-master-name"]')?.textContent?.trim()).toBe(
+        '26Q1 - SYN - Synthetic Summit 2026 - Master'
+      );
+      expect(block?.textContent).toContain('Combined Suppression (combined suppression)');
+    });
+
     it('will not compose with nothing selected', async () => {
       await renderWithDiscovery();
 

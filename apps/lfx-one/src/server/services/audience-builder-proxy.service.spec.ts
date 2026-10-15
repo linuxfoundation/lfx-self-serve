@@ -99,23 +99,33 @@ describe('AudienceBuilderProxyService wire mapping', () => {
     await expect(service.getSuppressionLists(req, 'tlf', 'LF', 'Synthetic Summit')).rejects.toThrow(/lists/);
   });
 
-  it('fails a compose whose response is missing the master it claims to have created', async () => {
-    // A non-idempotent create reported as success over unusable data: `{ master: {} }` rendered
-    // "Master list created" with no list id the operator could act on.
+  // A 2xx compose means the master EXISTS, so an unusable reply is a do-not-retry partial, never a
+  // plain error: the client lets an operator retry a plain error, and a retry composes a second
+  // master list (the orphaned duplicates of the blank-portal-id incident).
+  it('turns a compose reply missing its master into a partial, never a retryable error', async () => {
+    // `{ master: {} }` rendered "Master list created" with no list id the operator could act on.
     proxyRequest.mockResolvedValue({ master: {}, source_list_ids: [] });
 
-    await expect(service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [] })).rejects.toThrow(/master/);
+    const error = await service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [], name: 'Requested' }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(AudienceComposePartialError);
+    expect((error as AudienceComposePartialError).masterName, 'the requested name is the one to search by').toBe('Requested');
+    expect((error as AudienceComposePartialError).master).toBeUndefined();
   });
 
-  it('fails a compose whose master id is blank, not just missing', async () => {
+  it('turns a compose whose master id is blank into a partial carrying the name to search by', async () => {
     // A blank string passes every null check and then reaches "Master list created" as a list
     // with nothing to open or search — the same unusable create, through a narrower door.
     proxyRequest.mockResolvedValue({ master: { list_id: '  ', name: 'M', hubspot_url: 'https://app.hubspot.com/l/1' }, source_list_ids: [] });
 
-    await expect(service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [] })).rejects.toThrow(/blank/);
+    const error = await service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [] }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(AudienceComposePartialError);
+    expect((error as AudienceComposePartialError).masterName).toBe('M');
+    expect((error as AudienceComposePartialError).master, 'an unconfirmed master is never passed as a list').toBeUndefined();
   });
 
-  it('fails a compose whose SUPPRESSION list is blank, not just the master', async () => {
+  it('turns a compose whose SUPPRESSION name is blank into a partial that keeps the confirmed lists', async () => {
     // The suppression object was passed through unchecked beside a validated master, so a
     // create with a blank suppression name still rendered as confirmed and actionable.
     proxyRequest.mockResolvedValue({
@@ -124,7 +134,13 @@ describe('AudienceBuilderProxyService wire mapping', () => {
       source_list_ids: [],
     });
 
-    await expect(service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [] })).rejects.toThrow(/suppression\.name/);
+    const error = await service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [] }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(AudienceComposePartialError);
+    const partial = error as AudienceComposePartialError;
+    expect(partial.master?.listId).toBe('900');
+    expect(partial.masterName, 'never beside a confirmed master').toBeUndefined();
+    expect(partial.suppression?.listId).toBe('901');
   });
 
   it('does NOT apply that strictness to the partial path', async () => {
@@ -195,7 +211,10 @@ describe('AudienceBuilderProxyService wire mapping', () => {
       audience: {},
     });
 
-    await expect(service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [], briefId: 'brief-1' })).rejects.toThrow(/audience/);
+    // The master exists, so this is a do-not-retry partial pointing at it, never a retryable error.
+    const error = await service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [], briefId: 'brief-1' }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AudienceComposePartialError);
+    expect((error as AudienceComposePartialError).master?.listId).toBe('900');
   });
 
   it('coerces an unrecognised recorded status to failed rather than trusting it', async () => {
@@ -299,10 +318,18 @@ describe('AudienceBuilderProxyService wire mapping', () => {
     expect(email.includedLists[0]?.hubspotUrl, 'a data: url survived the mapper').toBeUndefined();
   });
 
-  it('fails a created list whose hubspot_url is not http(s), the same as a blank one', async () => {
-    proxyRequest.mockResolvedValue({ master: { list_id: '900', name: 'Master', hubspot_url: 'javascript:void(0)' }, source_list_ids: [] });
+  // The link is not an identifying field: the list is found by its id and name. Upstream returns a
+  // blank hubspot_url when the portal id is unknown, and failing on it reported a created master
+  // as an error and invited the retry that orphaned a duplicate.
+  it.each([
+    ['blank', ''],
+    ['non-http', 'javascript:void(0)'],
+  ])('reports a created master with a %s link as created, without the link', async (_label, url) => {
+    proxyRequest.mockResolvedValue({ master: { list_id: '900', name: 'Master', hubspot_url: url }, source_list_ids: [] });
 
-    await expect(service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [] })).rejects.toThrow('master.hubspot_url');
+    const result = await service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [] });
+
+    expect(result.master).toEqual({ listId: '900', name: 'Master', hubspotUrl: '', size: undefined });
   });
 
   it('posts an attach with the wire field names and maps the recorded audience', async () => {
@@ -448,16 +475,24 @@ describe('AudienceBuilderProxyService custom audiences', () => {
 
   // Upstream answered 2xx, so the list exists: an unusable reply is a do-not-retry partial, never a
   // plain error the client would let the operator retry into a second list.
-  it.each([
-    ['no id', { list_id: '', name: 'Seoul', hubspot_url: 'https://app.hubspot.com/x' }],
-    ['a non-http link', { list_id: '7', name: 'Seoul', hubspot_url: 'javascript:alert(1)' }],
-  ])('turns a created list with %s into a partial carrying its name', async (_label, wire) => {
-    proxyRequest.mockResolvedValue(wire);
+  it.each([['no id', { list_id: '', name: 'Seoul', hubspot_url: 'https://app.hubspot.com/x' }]])(
+    'turns a created list with %s into a partial carrying its name',
+    async (_label, wire) => {
+      proxyRequest.mockResolvedValue(wire);
 
-    const error = await service.createCustom(req, 'tlf', { criteria }).catch((e: unknown) => e);
+      const error = await service.createCustom(req, 'tlf', { criteria }).catch((e: unknown) => e);
 
-    expect(error).toBeInstanceOf(AudienceComposePartialError);
-    expect((error as AudienceComposePartialError).masterName).toBe('Seoul');
+      expect(error).toBeInstanceOf(AudienceComposePartialError);
+      expect((error as AudienceComposePartialError).masterName).toBe('Seoul');
+    }
+  );
+
+  it('reports a created custom list with a non-http link as created, without the link', async () => {
+    proxyRequest.mockResolvedValue({ list_id: '7', name: 'Seoul', hubspot_url: 'javascript:alert(1)' });
+
+    const list = await service.createCustom(req, 'tlf', { criteria });
+
+    expect(list).toEqual({ listId: '7', name: 'Seoul', hubspotUrl: '', size: undefined });
   });
 
   it('names a malformed create by the requested name when the reply carries none', async () => {
