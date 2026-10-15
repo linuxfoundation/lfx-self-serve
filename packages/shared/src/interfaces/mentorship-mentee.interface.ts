@@ -414,11 +414,7 @@ export interface MentorshipMenteeApplyTarget {
   /** Empty when upstream has no LF project on the program. */
   projectName: string;
   termName: string;
-  /**
-   * Whether the term takes applications today, by the same rule upstream applies on submit: the
-   * term is `open` and today is inside its application window. A missing window date leaves that
-   * side open.
-   */
+  /** Whether upstream says the term takes applications now (`accepting_applications` on its apply-target read). */
   acceptingApplications: boolean;
 }
 
