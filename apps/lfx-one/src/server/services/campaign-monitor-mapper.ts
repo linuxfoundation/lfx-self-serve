@@ -6,6 +6,7 @@ import {
   ACCOUNT_MONITOR_METRICS_DISABLED_CODE,
   ACCOUNT_MONITOR_NO_CONNECTION_CODE,
   ACCOUNT_MONITOR_UNSUPPORTED_UPSTREAM_MESSAGE,
+  META_ADS_MONITOR_ACCOUNT_ID_PATTERN,
 } from '@lfx-one/shared/constants';
 import type {
   AccountMonitorConflictReason,
@@ -15,6 +16,7 @@ import type {
   CampaignServiceHubSpotEmailMonitor,
   CampaignServiceHubSpotEmailMonitorEmail,
   CampaignServiceHubSpotEmailMonitorTotals,
+  CampaignServiceMonitorProvider,
   HubSpotEmailMonitorResponse,
   HubSpotEmailMonitorRow,
   HubSpotEmailMonitorTotals,
@@ -268,13 +270,22 @@ export function toHubSpotEmailMonitorResponse(payload: CampaignServiceHubSpotEma
  * An empty or blank `account_id` is a connection with no account bound (Meta lets a connection be
  * created credentials-first): the picker has nothing to offer, and saying "connected" would send
  * the panel to read an account that does not exist. The id is trimmed only to decide that — a
- * non-blank id is offered exactly as stored, since it is what campaign-service compares against.
+ * non-blank id is offered as stored, since it is what campaign-service compares against.
+ *
+ * The one exception is a legacy Meta connection that stored the BARE numeric ad account id.
+ * campaign-service's Meta monitor matches the connection in either form but takes the id only
+ * `act_`-prefixed (`META_ADS_MONITOR_ACCOUNT_ID_PATTERN`), so a bare id offered verbatim would be
+ * refused by the BFF's own shape check. A bare Meta id whose `act_<id>` form passes that same
+ * pattern is therefore offered prefixed (an already-prefixed id cannot pass it twice);
+ * every other provider's id, and any Meta id that is not purely numeric, is left exactly as stored.
  */
-export function toMonitorConnectionAccount(connection: CampaignServiceConnection): MonitorConnectionAccount {
-  const accountId = typeof connection.account_id === 'string' ? connection.account_id : '';
-  if (accountId.trim() === '') {
+export function toMonitorConnectionAccount(connection: CampaignServiceConnection, provider: CampaignServiceMonitorProvider): MonitorConnectionAccount {
+  const storedId = typeof connection.account_id === 'string' ? connection.account_id : '';
+  if (storedId.trim() === '') {
     return { state: 'no_account', accountId: null, label: null };
   }
+  const prefixed = `act_${storedId}`;
+  const accountId = provider === 'meta-ads' && META_ADS_MONITOR_ACCOUNT_ID_PATTERN.test(prefixed) ? prefixed : storedId;
   const label = typeof connection.label === 'string' && connection.label.trim() !== '' ? connection.label.trim() : accountId;
   return { state: 'connected', accountId, label };
 }

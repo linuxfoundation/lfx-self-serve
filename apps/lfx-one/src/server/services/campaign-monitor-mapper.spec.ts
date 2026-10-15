@@ -468,7 +468,7 @@ describe('toMonitorConnectionAccount', () => {
   }
 
   it("offers the connection's bound account under its own label", () => {
-    expect(toMonitorConnectionAccount(connection({ label: ' CNCF Meta ' }))).toEqual({
+    expect(toMonitorConnectionAccount(connection({ label: ' CNCF Meta ' }), 'meta-ads')).toEqual({
       state: 'connected',
       accountId: 'act_100000000000001',
       label: 'CNCF Meta',
@@ -476,7 +476,7 @@ describe('toMonitorConnectionAccount', () => {
   });
 
   it('falls back to the account id when the connection has no label', () => {
-    expect(toMonitorConnectionAccount(connection({ label: '' }))).toEqual({
+    expect(toMonitorConnectionAccount(connection({ label: '' }), 'meta-ads')).toEqual({
       state: 'connected',
       accountId: 'act_100000000000001',
       label: 'act_100000000000001',
@@ -484,10 +484,30 @@ describe('toMonitorConnectionAccount', () => {
   });
 
   it.each(['', '   ', undefined])('reads account_id %j as a connection with no account bound', (accountId) => {
-    expect(toMonitorConnectionAccount(connection({ account_id: accountId as unknown as string }))).toEqual({
+    expect(toMonitorConnectionAccount(connection({ account_id: accountId as unknown as string }), 'meta-ads')).toEqual({
       state: 'no_account',
       accountId: null,
       label: null,
+    });
+  });
+
+  it('offers a legacy bare numeric Meta id in the act_ form the Meta monitor takes', () => {
+    expect(toMonitorConnectionAccount(connection({ account_id: '100000000000001', label: '' }), 'meta-ads')).toEqual({
+      state: 'connected',
+      accountId: 'act_100000000000001',
+      label: 'act_100000000000001',
+    });
+  });
+
+  it('leaves a Meta id that is not purely numeric as stored', () => {
+    expect(toMonitorConnectionAccount(connection({ account_id: 'act_x1' }), 'meta-ads')).toEqual({ state: 'connected', accountId: 'act_x1', label: 'act_x1' });
+  });
+
+  it.each(['linkedin-ads', 'reddit-ads', 'microsoft-ads', 'twitter-ads'] as const)('leaves a numeric %s id unprefixed', (provider) => {
+    expect(toMonitorConnectionAccount(connection({ account_id: '187654321' }), provider)).toEqual({
+      state: 'connected',
+      accountId: '187654321',
+      label: '187654321',
     });
   });
 });

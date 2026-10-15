@@ -1142,9 +1142,19 @@ export const MONITOR_KEYWORD_PAGE_SIZE = 10;
  */
 export const MONITOR_ACCOUNT_SOURCE_PARAM = 'accountSource';
 export const MONITOR_ACCOUNT_SOURCE_CONNECTION = 'connection';
+/**
+ * The inverse marker: the Monitor tab's read whose account came from a LEGACY picker, i.e. from a
+ * pod with the cutover OFF (or before discovery settled). A pod with it ON refuses such a read with
+ * `MONITOR_CUTOVER_LEGACY_MISMATCH_CODE` rather than hand the allowlist account to campaign-service,
+ * which reads only the project's own connection's account and would refuse it. Other callers of the
+ * monitor reads (the Optimize tab) send no marker and are served exactly as before.
+ */
+export const MONITOR_ACCOUNT_SOURCE_LEGACY = 'legacy';
 
 /** The error `code` (HTTP 409) of that refusal; retryable once the rollout settles. */
 export const MONITOR_CUTOVER_MISMATCH_CODE = 'MONITOR_CUTOVER_MISMATCH';
+/** The error `code` (HTTP 409) of the inverse refusal, by a pod with the cutover ON; also retryable. */
+export const MONITOR_CUTOVER_LEGACY_MISMATCH_CODE = 'MONITOR_CUTOVER_LEGACY_MISMATCH';
 export const MONITOR_CUTOVER_MISMATCH_MESSAGE = 'The monitor is switching data sources; refresh in a moment.';
 
 /** HubSpot's brand orange, for the Monitor tab's email button (HubSpot is not a `CampaignPlatform`). */
