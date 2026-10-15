@@ -38,6 +38,15 @@ export class MktgDocumentText {
    * @param hints - The file name or the response's content type, and for HTML the URL relative links resolve against
    */
   public static read(bytes: Buffer, hints: { fileName?: string; contentType?: string; baseUrl?: string }): MktgReadText {
+    try {
+      return MktgDocumentText.readBytes(bytes, hints);
+    } catch {
+      // Each reader bounds its own work; this keeps the never-throws promise for anything they did not foresee.
+      return MktgDocumentText.none('unsupported');
+    }
+  }
+
+  private static readBytes(bytes: Buffer, hints: { fileName?: string; contentType?: string; baseUrl?: string }): MktgReadText {
     const name = (hints.fileName ?? '').toLowerCase();
     const type = hints.contentType ?? '';
     const head = bytes.subarray(0, 1024).toString('latin1');

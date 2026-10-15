@@ -49,6 +49,41 @@ interface PdfFontDecoder {
   single: ((code: number) => string) | null;
 }
 
+/** Thrown when a PDF needs more work than any real document does; `PdfTextReader.read` reports it as `too-complex`. */
+class PdfTooComplexError extends Error {}
+
+/**
+ * The work one PDF may cost: one unit per byte the lexer moves over, per byte
+ * a filter reads or writes, per code decoded and per CMap entry expanded,
+ * with a wall-clock limit as the backstop. The reader runs on the BFF's event
+ * loop, so a hostile file must stop here rather than run for minutes.
+ */
+class PdfWorkBudget {
+  private spent = 0;
+  private nextClockCheck = 0;
+  private readonly deadline: number;
+
+  public constructor(
+    private readonly maxUnits: number,
+    maxMillis: number
+  ) {
+    this.deadline = Date.now() + maxMillis;
+  }
+
+  public spend(units: number): void {
+    this.spent += units;
+    if (this.spent > this.maxUnits) {
+      throw new PdfTooComplexError('PDF work budget exhausted');
+    }
+    if (this.spent >= this.nextClockCheck) {
+      this.nextClockCheck = this.spent + 65_536;
+      if (Date.now() > this.deadline) {
+        throw new PdfTooComplexError('PDF read deadline passed');
+      }
+    }
+  }
+}
+
 /**
  * Extracts the readable text of a PDF without a third-party parser, for the
  * Messaging Document's existing documents (the agent cannot read files; LFX
@@ -72,6 +107,22 @@ export class PdfTextReader {
   /** Deepest Form XObject nesting followed. */
   private static readonly maxFormDepth = 4;
 
+  /** Deepest page-tree nesting followed (real trees are a few levels deep). */
+  private static readonly maxPageTreeDepth = 64;
+
+  /**
+   * Work units one PDF may cost (see `PdfWorkBudget`): about three passes over
+   * the 64 MB inflate cap, so the largest real document fits and a crafted one
+   * that re-reads the same bytes stops.
+   */
+  private static readonly maxWorkUnits = 200_000_000;
+
+  /** Wall-clock limit for one PDF, the backstop to the unit budget. */
+  private static readonly maxMillis = 5_000;
+
+  /** Most ToUnicode entries expanded across every font of one PDF; a subset font needs a few hundred. */
+  private static readonly maxCMapEntries = 131_072;
+
   /** WinAnsiEncoding's 0x80–0x9F block (the rest is Latin-1). */
   // prettier-ignore
   private static readonly winAnsiHigh: Record<number, string> = {
@@ -91,55 +142,68 @@ export class PdfTextReader {
   };
 
   private readonly src: string;
+  private readonly budget = new PdfWorkBudget(PdfTextReader.maxWorkUnits, PdfTextReader.maxMillis);
   private readonly objects = new Map<number, PdfValue>();
-  private readonly fonts = new Map<PdfValue, PdfFontDecoder>();
+  private readonly fonts = new Map<PdfDict, PdfFontDecoder>();
+  /** Where the last `endstream` keyword starts, so a stream with no end is known without scanning to EOF again. */
+  private readonly lastEndstream: number;
   private inflatedBytes = 0;
+  private cmapEntries = 0;
 
   private constructor(bytes: Buffer) {
     this.src = bytes.toString('latin1');
+    this.lastEndstream = this.src.lastIndexOf('endstream');
   }
 
   /**
    * The text of a PDF, or a reason it has none: `encrypted` (password or
-   * permissions encryption — the strings are ciphertext) or `no-text` (a scan,
-   * or fonts with no way back to Unicode).
+   * permissions encryption — the strings are ciphertext), `no-text` (a scan,
+   * or fonts with no way back to Unicode) or `too-complex` (it needs more work
+   * than the reader's budget allows, which no ordinary export does). Never throws.
    */
-  public static read(bytes: Buffer): { text: string } | { reason: 'encrypted' | 'no-text' } {
-    const reader = new PdfTextReader(bytes);
-    if (/\/Encrypt\s*[\d<]/.test(reader.src)) {
-      return { reason: 'encrypted' };
+  public static read(bytes: Buffer): { text: string } | { reason: 'encrypted' | 'no-text' | 'too-complex' } {
+    try {
+      const reader = new PdfTextReader(bytes);
+      if (/\/Encrypt\s*[\d<]/.test(reader.src)) {
+        return { reason: 'encrypted' };
+      }
+      reader.scanObjects();
+      const text = reader
+        .pages()
+        .map((page) => reader.pageText(page))
+        .join('\n\n')
+        .split('\n')
+        .map((line) => line.replace(/[ \t]+/g, ' ').trim())
+        .join('\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+      return /[\p{L}\p{N}]/u.test(text) ? { text } : { reason: 'no-text' };
+    } catch {
+      // The budget ran out, or a structure too deep for the stack (RangeError): either way, not a document we can read.
+      return { reason: 'too-complex' };
     }
-    reader.scanObjects();
-    const text = reader
-      .pages()
-      .map((page) => reader.pageText(page))
-      .join('\n\n')
-      .split('\n')
-      .map((line) => line.replace(/[ \t]+/g, ' ').trim())
-      .join('\n')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
-    return /[\p{L}\p{N}]/u.test(text) ? { text } : { reason: 'no-text' };
   }
 
   // === Objects ===
 
-  /** Finds every `N G obj`, including those packed in object streams; a later definition wins. */
+  /**
+   * Finds every `N G obj`, including those packed in object streams; a later
+   * definition wins. Scanning always resumes after the value just parsed, so
+   * no byte is lexed twice (an unterminated string or array would otherwise
+   * make every header inside it re-parse to EOF). The lookbehind keeps a long
+   * digit run from being retried at every offset.
+   */
   private scanObjects(): void {
-    const header = /(\d+)\s+\d+\s+obj\b/g;
+    const header = /(?<!\d)(\d+)\s+\d+\s+obj\b/g;
     const objectStreams: PdfDict[] = [];
     let match: RegExpExecArray | null;
     while ((match = header.exec(this.src)) !== null) {
-      const lexer = new PdfLexer(this.src, header.lastIndex);
+      const lexer = new PdfLexer(this.src, header.lastIndex, this.budget);
       const value = lexer.parseValue();
-      if (isDict(value)) {
-        const end = this.attachStream(value, lexer);
-        if (end > header.lastIndex) {
-          header.lastIndex = end;
-        }
-        if (nameOf(value.entries['Type']) === 'ObjStm') {
-          objectStreams.push(value);
-        }
+      const end = isDict(value) ? this.attachStream(value, lexer) : lexer.pos;
+      header.lastIndex = Math.max(header.lastIndex, end);
+      if (isDict(value) && nameOf(value.entries['Type']) === 'ObjStm') {
+        objectStreams.push(value);
       }
       this.objects.set(Number(match[1]), value === undefined ? null : value);
     }
@@ -157,7 +221,7 @@ export class PdfTextReader {
     const start = lexer.pos + at[0].length;
     const length = dict.entries['Length'];
     let end = typeof length === 'number' && /^\s*endstream/.test(this.src.slice(start + length, start + length + 32)) ? start + length : -1;
-    if (end < 0) {
+    if (end < 0 && start <= this.lastEndstream) {
       end = this.src.indexOf('endstream', start);
     }
     if (end < 0) {
@@ -174,7 +238,7 @@ export class PdfTextReader {
     if (data === null || typeof count !== 'number' || typeof first !== 'number') {
       return;
     }
-    const pairs = new PdfLexer(data, 0);
+    const pairs = new PdfLexer(data, 0, this.budget);
     for (let i = 0; i < count; i++) {
       const num = pairs.parseValue();
       const offset = pairs.parseValue();
@@ -182,7 +246,7 @@ export class PdfTextReader {
         return;
       }
       if (!this.objects.has(num)) {
-        const value = new PdfLexer(data, first + offset).parseValue();
+        const value = new PdfLexer(data, first + offset, this.budget).parseValue();
         this.objects.set(num, value === undefined ? null : value);
       }
     }
@@ -207,6 +271,8 @@ export class PdfTextReader {
     }
     const filter = this.resolve(dict.entries['Filter']);
     const filters = (Array.isArray(filter) ? filter : [filter]).map((entry) => nameOf(this.resolve(entry))).filter((entry) => entry !== null);
+    // A stream drawn many times (a Form XObject) is decoded each time; every pass is paid for.
+    this.budget.spend(dict.stream.length);
     let data: Buffer = Buffer.from(dict.stream, 'latin1');
     for (const name of filters) {
       if (name === 'ASCII85Decode' || name === 'A85') {
@@ -234,6 +300,7 @@ export class PdfTextReader {
         return null;
       }
       this.inflatedBytes += data.length;
+      this.budget.spend(data.length);
     }
     return data.toString('latin1');
   }
@@ -281,8 +348,8 @@ export class PdfTextReader {
     const root = catalog ? this.dictOf(catalog.entries['Pages']) : null;
     const pages: { page: PdfDict; resources: PdfDict | null }[] = [];
     const seen = new Set<PdfDict>();
-    const walk = (node: PdfDict, inherited: PdfDict | null): void => {
-      if (seen.has(node) || pages.length > 5000) {
+    const walk = (node: PdfDict, inherited: PdfDict | null, depth: number): void => {
+      if (seen.has(node) || pages.length > 5000 || depth > PdfTextReader.maxPageTreeDepth) {
         return;
       }
       seen.add(node);
@@ -295,12 +362,12 @@ export class PdfTextReader {
       for (const kid of Array.isArray(kids) ? kids : []) {
         const child = this.dictOf(kid);
         if (child) {
-          walk(child, resources);
+          walk(child, resources, depth + 1);
         }
       }
     };
     if (root) {
-      walk(root, null);
+      walk(root, null, 0);
     }
     if (pages.length === 0) {
       // No usable page tree: every page object, in object-number order.
@@ -325,7 +392,7 @@ export class PdfTextReader {
 
   /** Runs the text operators of one content stream; a line break whenever the baseline moves. */
   private interpret(content: string, resources: PdfDict | null, depth: number): string {
-    const lexer = new PdfLexer(content, 0);
+    const lexer = new PdfLexer(content, 0, this.budget);
     const out: string[] = [];
     let operands: PdfValue[] = [];
     let font: PdfFontDecoder | null = null;
@@ -424,6 +491,7 @@ export class PdfTextReader {
   // === Fonts ===
 
   private decodeText(bytes: string, font: PdfFontDecoder): string {
+    this.budget.spend(bytes.length * font.codeLengths.length);
     let text = '';
     for (let i = 0; i < bytes.length; ) {
       let consumed = 0;
@@ -452,22 +520,21 @@ export class PdfTextReader {
     if (ref === undefined) {
       return null;
     }
-    const cached = this.fonts.get(ref);
-    if (cached) {
-      return cached;
-    }
     const fontDict = this.dictOf(ref);
     if (!fontDict) {
       return null;
+    }
+    // Keyed by the font object, not the reference to it: every page's resources name the same font, and its CMap is parsed once.
+    const cached = this.fonts.get(fontDict);
+    if (cached) {
+      return cached;
     }
     const toUnicode = this.dictOf(fontDict.entries['ToUnicode']);
     const cmap = toUnicode ? this.decodeStream(toUnicode) : null;
     const isType0 = nameOf(fontDict.entries['Subtype']) === 'Type0';
     const simple = isType0 ? null : this.simpleEncoding(fontDict);
-    const decoder: PdfFontDecoder = cmap
-      ? { ...PdfTextReader.parseCMap(cmap), single: simple }
-      : { codeLengths: isType0 ? [2] : [1], map: null, single: simple };
-    this.fonts.set(ref, decoder);
+    const decoder: PdfFontDecoder = cmap ? { ...this.parseCMap(cmap), single: simple } : { codeLengths: isType0 ? [2] : [1], map: null, single: simple };
+    this.fonts.set(fontDict, decoder);
     return decoder;
   }
 
@@ -505,46 +572,95 @@ export class PdfTextReader {
     return PdfTextReader.glyphNames[name] ?? null;
   }
 
-  /** A ToUnicode CMap: its code lengths (codespace ranges) and its bfchar / bfrange mappings. */
-  private static parseCMap(cmap: string): { codeLengths: number[]; map: Map<string, string> } {
+  /**
+   * A ToUnicode CMap: its code lengths (codespace ranges) and its bfchar /
+   * bfrange mappings. A bfrange can name 65,536 codes in 20 bytes, so every
+   * code expanded counts against one cap for the whole PDF (`maxCMapEntries`):
+   * past it, ranges stop expanding and the codes they would have mapped read
+   * as unknown.
+   */
+  private parseCMap(cmap: string): { codeLengths: number[]; map: Map<string, string> } {
     const map = new Map<string, string>();
     const lengths = new Set<number>();
     const hex = (value: string): string => (value.length % 2 === 1 ? `${value}0` : value);
     const bytesOf = (value: string): string => Buffer.from(hex(value), 'hex').toString('latin1');
     const unicode = (value: string): string => PdfTextReader.utf16be(Buffer.from(hex(value), 'hex'));
-    for (const block of cmap.matchAll(/begincodespacerange([\s\S]*?)endcodespacerange/g)) {
-      for (const range of block[1].matchAll(/<([0-9A-Fa-f]+)>\s*<[0-9A-Fa-f]+>/g)) {
+    const room = (): number => PdfTextReader.maxCMapEntries - this.cmapEntries;
+    for (const block of PdfTextReader.cmapBlocks(cmap, 'codespacerange')) {
+      for (const range of block.matchAll(/<([0-9A-Fa-f]+)>\s*<[0-9A-Fa-f]+>/g)) {
         lengths.add(Math.ceil(range[1].length / 2));
       }
     }
-    for (const block of cmap.matchAll(/beginbfchar([\s\S]*?)endbfchar/g)) {
-      for (const pair of block[1].matchAll(/<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]*)>/g)) {
+    for (const block of PdfTextReader.cmapBlocks(cmap, 'bfchar')) {
+      for (const pair of block.matchAll(/<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]*)>/g)) {
+        if (room() <= 0) {
+          break;
+        }
+        this.cmapEntries++;
         map.set(bytesOf(pair[1]), PdfTextReader.safeUnicode(unicode, pair[2]));
       }
     }
-    for (const block of cmap.matchAll(/beginbfrange([\s\S]*?)endbfrange/g)) {
-      for (const range of block[1].matchAll(/<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*(<[0-9A-Fa-f]*>|\[[^\]]*\])/g)) {
+    for (const block of PdfTextReader.cmapBlocks(cmap, 'bfrange')) {
+      // `[^\][]` rather than `[^\]]`: an unclosed `[` then fails at the next `[`, not at the end of the block for every range before it.
+      for (const range of block.matchAll(/<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*(<[0-9A-Fa-f]*>|\[[^\][]*\])/g)) {
         const width = Math.ceil(range[1].length / 2);
+        if (width > 4 || room() <= 0) {
+          continue;
+        }
         const low = parseInt(range[1], 16);
-        const high = Math.min(parseInt(range[2], 16), low + 65535);
         const targets = range[3].startsWith('[') ? [...range[3].matchAll(/<([0-9A-Fa-f]*)>/g)].map((target) => target[1]) : null;
         const base = targets === null ? Buffer.from(hex(range[3].slice(1, -1)), 'hex') : null;
+        if (base !== null && base.length < 2) {
+          continue;
+        }
+        // An array maps only as many codes as it lists; every range stays inside its code width and the PDF's remaining room.
+        const listed = targets === null ? 65_536 : targets.length;
+        const high = Math.min(parseInt(range[2], 16), 256 ** width - 1, low + listed - 1, low + 65_535, low + room() - 1);
+        if (high < low) {
+          continue;
+        }
+        this.budget.spend(high - low + 1);
+        this.cmapEntries += high - low + 1;
+        // Base target: its leading code units fixed, the last one counting up with the code (odd-length targets are malformed and map to nothing).
+        const prefix = base !== null && base.length % 2 === 0 ? PdfTextReader.utf16be(base.subarray(0, base.length - 2)) : null;
+        const lastUnit = base !== null ? base.readUInt16BE(base.length - 2) : 0;
         for (let code = low; code <= high; code++) {
-          const key = Buffer.from(code.toString(16).padStart(width * 2, '0'), 'hex').toString('latin1');
+          const key = PdfTextReader.codeKey(code, width);
           if (targets !== null) {
-            if (targets[code - low] !== undefined) {
-              map.set(key, PdfTextReader.safeUnicode(unicode, targets[code - low]));
-            }
-          } else if (base !== null && base.length >= 2) {
-            const target = Buffer.from(base);
-            target.writeUInt16BE((target.readUInt16BE(target.length - 2) + code - low) & 0xffff, target.length - 2);
-            map.set(key, PdfTextReader.utf16be(target));
+            map.set(key, PdfTextReader.safeUnicode(unicode, targets[code - low]));
+          } else {
+            map.set(key, prefix === null ? '' : prefix + String.fromCharCode((lastUnit + code - low) & 0xffff));
           }
         }
       }
     }
     const codeLengths = (lengths.size > 0 ? [...lengths] : [2]).sort((a, b) => b - a);
     return { codeLengths, map };
+  }
+
+  /** The bodies of a CMap's `begin<name>` … `end<name>` blocks, found with `indexOf` so an unclosed block costs one scan, not one per opener. */
+  private static cmapBlocks(cmap: string, name: string): string[] {
+    const blocks: string[] = [];
+    const open = `begin${name}`;
+    const close = `end${name}`;
+    for (let at = cmap.indexOf(open); at >= 0; at = cmap.indexOf(open, at)) {
+      const end = cmap.indexOf(close, at + open.length);
+      if (end < 0) {
+        break;
+      }
+      blocks.push(cmap.slice(at + open.length, end));
+      at = end + close.length;
+    }
+    return blocks;
+  }
+
+  /** A code as the latin1 byte string a shown string carries (`width` bytes, big-endian). */
+  private static codeKey(code: number, width: number): string {
+    let key = '';
+    for (let shift = width - 1; shift >= 0; shift--) {
+      key += String.fromCharCode(Math.floor(code / 256 ** shift) % 256);
+    }
+    return key;
   }
 
   private static safeUnicode(unicode: (value: string) => string, value: string): string {
@@ -557,15 +673,79 @@ export class PdfTextReader {
   }
 }
 
-/** Tokenizer and value parser for PDF syntax, over a latin1 string (one char per byte). */
+/**
+ * Tokenizer and value parser for PDF syntax, over a latin1 string (one char
+ * per byte). Every token is paid for in the reader's budget (its bytes plus
+ * one), and dictionaries and arrays nest at most `maxNesting` deep — deeper
+ * openers are read as empty, so no input can overflow the stack.
+ */
 class PdfLexer {
+  /** Deepest dictionary / array nesting parsed; real files stay in single digits. */
+  private static readonly maxNesting = 64;
+
+  private depth = 0;
+
   public constructor(
     private readonly s: string,
-    public pos: number
+    public pos: number,
+    private readonly budget: PdfWorkBudget
   ) {}
 
   /** The next token, or undefined at the end. Strings are latin1 byte strings. */
   public next(): PdfToken | undefined {
+    const from = this.pos;
+    const token = this.read();
+    this.budget.spend(this.pos - from + 1);
+    return token;
+  }
+
+  /** One complete value (dictionary, array, reference or scalar), or undefined at the end. */
+  public parseValue(): PdfValue | undefined {
+    const token = this.next();
+    if (token === undefined) {
+      return undefined;
+    }
+    if (isDelim(token)) {
+      return this.finishCompound(token.value);
+    }
+    if (isOp(token)) {
+      return null;
+    }
+    if (typeof token === 'number' && Number.isInteger(token)) {
+      const saved = this.pos;
+      const generation = this.next();
+      const keyword = this.next();
+      if (typeof generation === 'number' && isOp(keyword) && keyword.op === 'R') {
+        return { kind: 'ref', num: token };
+      }
+      this.pos = saved;
+    }
+    return token as PdfValue;
+  }
+
+  /** Completes the dictionary or array an opening delimiter started. */
+  public finishCompound(open: string): PdfValue {
+    if (this.depth >= PdfLexer.maxNesting) {
+      return null;
+    }
+    this.depth++;
+    try {
+      return this.compound(open);
+    } finally {
+      this.depth--;
+    }
+  }
+
+  /** Skips an inline image's binary data (`ID` … `EI`), paying for the bytes skipped. */
+  public skipInlineImage(): void {
+    const from = this.pos;
+    const id = this.s.indexOf('ID', this.pos);
+    const end = id < 0 ? -1 : this.s.slice(id + 3).search(/\sEI(\s|$)/);
+    this.pos = id < 0 || end < 0 ? this.s.length : id + 3 + end + 3;
+    this.budget.spend(this.pos - from);
+  }
+
+  private read(): PdfToken | undefined {
     this.skipSpace();
     if (this.pos >= this.s.length) {
       return undefined;
@@ -609,32 +789,7 @@ class PdfLexer {
     return { kind: 'op', op: word };
   }
 
-  /** One complete value (dictionary, array, reference or scalar), or undefined at the end. */
-  public parseValue(): PdfValue | undefined {
-    const token = this.next();
-    if (token === undefined) {
-      return undefined;
-    }
-    if (isDelim(token)) {
-      return this.finishCompound(token.value);
-    }
-    if (isOp(token)) {
-      return null;
-    }
-    if (typeof token === 'number' && Number.isInteger(token)) {
-      const saved = this.pos;
-      const generation = this.next();
-      const keyword = this.next();
-      if (typeof generation === 'number' && isOp(keyword) && keyword.op === 'R') {
-        return { kind: 'ref', num: token };
-      }
-      this.pos = saved;
-    }
-    return token as PdfValue;
-  }
-
-  /** Completes the dictionary or array an opening delimiter started. */
-  public finishCompound(open: string): PdfValue {
+  private compound(open: string): PdfValue {
     if (open === '<<') {
       const entries: Record<string, PdfValue> = {};
       for (let key = this.parseValue(); key !== undefined; key = this.parseValue()) {
@@ -660,13 +815,6 @@ class PdfLexer {
       return items;
     }
     return { kind: 'name', name: `__close${open}` };
-  }
-
-  /** Skips an inline image's binary data (`ID` … `EI`). */
-  public skipInlineImage(): void {
-    const id = this.s.indexOf('ID', this.pos);
-    const end = id < 0 ? -1 : this.s.slice(id + 3).search(/\sEI(\s|$)/);
-    this.pos = id < 0 || end < 0 ? this.s.length : id + 3 + end + 3;
   }
 
   private skipSpace(): void {

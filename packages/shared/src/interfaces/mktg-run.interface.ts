@@ -223,7 +223,7 @@ export interface MktgDocumentExtractResponse {
  * remedy (upload instead of link, share the document, export without a
  * password), which is why they are told apart.
  */
-export type MktgReadTextReason = 'unsupported' | 'encrypted' | 'no-text' | 'not-shared' | 'fetch-failed' | 'too-large';
+export type MktgReadTextReason = 'unsupported' | 'encrypted' | 'no-text' | 'too-complex' | 'not-shared' | 'fetch-failed' | 'too-large';
 
 /** What reading one file or page to text produced on the server. */
 export interface MktgReadText {

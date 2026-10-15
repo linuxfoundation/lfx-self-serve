@@ -297,6 +297,7 @@ export const FOUNDATION_MESSAGE_READ_REASONS = {
   unsupported: 'Not a PDF, Word (.docx), Markdown or text file.',
   encrypted: 'The PDF is password-protected or encrypted. Export it without a password and upload it again.',
   'no-text': 'No text found — a scanned PDF or an image cannot be read. Upload a text version.',
+  'too-complex': 'This PDF is too complex to read here. Export it again (Print to PDF), or upload a Word or text version.',
   'not-shared': 'The document isn’t shared publicly. Share it as “Anyone with the link”, or upload it as a file.',
   'fetch-failed': 'LFX One couldn’t fetch this link. It goes to the agent as “not read”; upload the file instead if you have it.',
   'too-large': 'The file is larger than 20 MB.',
