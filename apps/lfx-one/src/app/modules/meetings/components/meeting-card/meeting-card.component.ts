@@ -250,9 +250,10 @@ export class MeetingCardComponent implements OnInit {
   });
   // An organizer's invitation is a registrant row like anyone else's, but organizer access does not depend on it, so
   // an organizer may have none. `my_registrant_ids` is the authoritative list where the feed provides it; otherwise
-  // `invited` comes from the registrant lookup.
+  // `invited` comes from the registrant lookup. It is read from the input, not the local snapshot, which is only
+  // seeded once, so a feed refresh that adds or drops the viewer's registration is picked up.
   private readonly hasOwnRegistration: Signal<boolean> = computed(() => {
-    const registrantIds = this.meeting().my_registrant_ids;
+    const registrantIds = this.meetingInput().my_registrant_ids;
     return registrantIds ? registrantIds.length > 0 : this.effectivelyInvited();
   });
   public readonly canLeaveMeeting: Signal<boolean> = computed(() => {

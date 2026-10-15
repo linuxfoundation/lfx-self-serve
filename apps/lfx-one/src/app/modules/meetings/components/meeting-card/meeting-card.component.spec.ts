@@ -702,6 +702,19 @@ describe('MeetingCardComponent — remove myself', () => {
     expect(component.userAttended()).toBe(true);
   });
 
+  it('follows a refreshed input when an organizer gains or loses a registration of their own', async () => {
+    const component = await mount({ ...INVITEE, organizer: true, my_registrant_ids: [] } as Meeting);
+    expect(component.canLeaveMeeting()).toBe(false);
+
+    mountedFixture!.componentRef.setInput('meetingInput', { ...INVITEE, organizer: true, my_registrant_ids: ['reg-1'] } as Meeting);
+    mountedFixture!.detectChanges();
+    expect(component.canLeaveMeeting()).toBe(true);
+
+    mountedFixture!.componentRef.setInput('meetingInput', { ...INVITEE, organizer: true, my_registrant_ids: [] } as Meeting);
+    mountedFixture!.detectChanges();
+    expect(component.canLeaveMeeting()).toBe(false);
+  });
+
   it('keeps the action hidden on a card rebuilt after the list refetched a stale invited flag', async () => {
     removedIds.set(new Set(['meeting-1']));
 
