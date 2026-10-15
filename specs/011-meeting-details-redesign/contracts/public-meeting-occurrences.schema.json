@@ -51,7 +51,7 @@
         "registrant_count": {
           "type": "integer",
           "minimum": 0,
-          "description": "Registrants for this occurrence. Present only for a caller the gate let in as a registrant or organizer (a signed-in passcode holder is checked for both first). Absent for anyone let in by a public meeting's open gate, a signed-in registrant included, or by the passcode alone."
+          "description": "Registrants for this occurrence. Present only for a caller the gate let in as a registrant or organizer. Absent for anyone let in by a public meeting's open gate or by the passcode, a signed-in registrant or organizer included: both gates skip the identity lookups."
         }
       }
     }
