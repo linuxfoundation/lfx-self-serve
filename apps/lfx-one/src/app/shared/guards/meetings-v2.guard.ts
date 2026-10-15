@@ -16,14 +16,19 @@ import { FeatureFlagService } from '../services/feature-flag.service';
  * keeps both directions of the flag a pure LaunchDarkly change: turning it off sends the same URL back
  * to the wizard with no deploy.
  *
- * Whenever the flag has no answer — SSR (LaunchDarkly is browser-only), an unready provider, a
- * readiness timeout — this returns {@link MEETING_V2_ENABLED_DEFAULT}, the same fallback every
- * component read of the flag uses, so a deep link and the in-app entry points never disagree.
- * A locally pinned override decides first (non-production builds only).
+ * SSR always matches the composer entry, like the other flag guards defer to the browser: the composer
+ * route does nothing on the server (no drawer, no redirect), so the server paints an empty outlet and
+ * the browser run decides. Rendering the wizard on the server instead would put a typeable form on
+ * screen that the browser then swaps for the composer, dropping whatever was typed meanwhile.
+ *
+ * In the browser, a locally pinned override decides first (non-production builds only); with no answer
+ * from LaunchDarkly (unready, timed out) this returns {@link MEETING_V2_ENABLED_DEFAULT}, the same
+ * fallback every component read of the flag uses, so a deep link and the in-app entry points never
+ * disagree.
  */
 export const meetingsV2Guard: CanMatchFn = async () => {
   if (!isPlatformBrowser(inject(PLATFORM_ID))) {
-    return MEETING_V2_ENABLED_DEFAULT;
+    return true;
   }
 
   const featureFlagService = inject(FeatureFlagService);

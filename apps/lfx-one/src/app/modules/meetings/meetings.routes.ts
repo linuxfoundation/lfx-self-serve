@@ -17,6 +17,8 @@ export const MEETING_ROUTES: Routes = [
   // v2 composer and only matches while `MEETING_V2_ENABLED_FLAG` is on (`meetingsV2Guard`, a CanMatch);
   // when it doesn't match, the router falls through to the second entry, the pre-v2 wizard. So the
   // flag alone decides which one a bookmark or emailed link opens, in both directions, with no deploy.
+  // On the server the composer entry always matches (LaunchDarkly is browser-only) and renders
+  // nothing, so the browser run makes the real choice — see `meetingsV2Guard`.
   // Both entries carry the same title, guards and data, so authorization never depends on the flag.
   // Retiring the wizard means dropping each pair's second entry and the guard.
   {

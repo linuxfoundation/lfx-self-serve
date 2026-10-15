@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { Component, inject, PLATFORM_ID } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 
 import { MeetingComposerService } from './meeting-composer.service';
@@ -25,6 +26,16 @@ export class MeetingComposerRouteComponent {
   private readonly composer = inject(MeetingComposerService);
 
   public constructor() {
+    // Browser only. `meetingsV2Guard` always matches this route during SSR (LaunchDarkly is
+    // browser-only), and the server must neither open the composer (it would mount the whole drawer
+    // there) nor redirect: `@angular/ssr` answers a navigation that ends on another URL with an HTTP
+    // redirect, which would drop this deep link before the browser ever saw it. So the server paints
+    // an empty outlet, and the browser's initial navigation re-runs the guard with the real flag value
+    // and lands either here (composer) or on the wizard.
+    if (!isPlatformBrowser(inject(PLATFORM_ID))) {
+      return;
+    }
+
     const snapshot = this.route.snapshot;
     const meetingUid = snapshot.paramMap.get('id');
 
@@ -44,7 +55,6 @@ export class MeetingComposerRouteComponent {
     // authorised. `create` contributes one URL segment, `:id/edit` two.
     const segments = this.route.pathFromRoot.flatMap((route) => route.snapshot.url.map((segment) => segment.path));
     const listSegments = segments.slice(0, meetingUid ? -2 : -1);
-
     void this.router.navigate(['/', ...listSegments], { queryParams: snapshot.queryParams, replaceUrl: true });
   }
 }

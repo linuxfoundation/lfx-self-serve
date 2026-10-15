@@ -45,10 +45,10 @@ describe('meetingsV2Guard', () => {
     expect(await runGuard()).toBe(false);
   });
 
-  it('uses the code default on the server, without evaluating the flag', async () => {
+  it('matches on the server without evaluating the flag, so SSR paints the list and the browser decides', async () => {
     TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
 
-    expect(await runGuard()).toBe(MEETING_V2_ENABLED_DEFAULT);
+    expect(await runGuard()).toBe(true);
     expect(getBooleanFlag).not.toHaveBeenCalled();
   });
 
