@@ -623,6 +623,10 @@ export class PublicMeetingController {
       // pages read so far, or none.
       let pastIncomplete = false;
       const past = await this.meetingService.getPastOccurrencesForMeeting(req, id, { throwOnFailure: !!page }).catch((error: unknown) => {
+        // Unpaged, the service already swallows a fetch failure; anything else still goes to the error handler.
+        if (!page) {
+          throw error;
+        }
         logger.warning(req, 'get_public_meeting_occurrences', 'Past occurrences unavailable, returning none and flagging it', {
           meeting_id: id,
           err: error,

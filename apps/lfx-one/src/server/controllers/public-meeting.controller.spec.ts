@@ -1096,6 +1096,16 @@ describe('PublicMeetingController.getMeetingOccurrences', () => {
       expect(meetingSvc.getPastOccurrencesForMeeting).toHaveBeenCalledWith(req, MEETING_ID, { throwOnFailure: true });
     });
 
+    it('still sends an unexpected history error to the error handler on an unpaged (V1) request', async () => {
+      meetingSvc.getPastOccurrencesForMeeting.mockRejectedValue(new Error('mapping failed'));
+      const { req, res, next } = buildReqRes(false);
+
+      await controller.getMeetingOccurrences(req, res, next);
+
+      expect(res.json).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ message: 'mapping failed' }));
+    });
+
     it('keeps the old degradation for an unpaged (V1) request: no throw, no flag', async () => {
       const { req, res, next } = buildReqRes(false);
 

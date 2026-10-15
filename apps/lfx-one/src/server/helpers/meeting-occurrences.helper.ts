@@ -68,6 +68,8 @@ export function pageOccurrenceTimeline(
   // An unreadable start can be neither ordered nor used as a cursor, so it is left out of a page.
   // The cursor is a bare start time, so a page never splits occurrences that share one: the cut
   // moves outward to take the whole group, or the next page's strict comparison would skip the rest.
+  // The widening is unbounded only in theory: a series has one occurrence per start (a live
+  // occurrence's id is its start second), so a tie means duplicate past records, a handful at most.
   let pastPage: PastOccurrenceSummary[] = [];
   let pastHasMore = false;
   if (page.direction !== 'future') {
