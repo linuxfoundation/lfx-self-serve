@@ -183,7 +183,8 @@ export class MeetingDetailsStateService {
   public readonly matchesRoute: Signal<boolean> = computed(() => this.routeId() === this.resolvedRouteId());
   /**
    * The occurrence the page is about, for every section to share (data-model.md § View-scoped state).
-   * @description `?occurrence=<start ms>` first, among active (non-cancelled) occurrences; otherwise the
+   * @description `?occurrence=<start ms>` first: an active occurrence, or a cancelled one, kept so the page
+   * says it was cancelled (E6-05, `cancelledOccurrence`) rather than showing another date; otherwise the
    * current or next one, re-selected on each clock tick so a series left open moves on; once a series
    * is exhausted, its last occurrence. `null` for a one-off meeting and for a past occurrence opened
    * by its composite id, where the meeting payload is the occurrence itself.
@@ -380,20 +381,6 @@ export class MeetingDetailsStateService {
    * already in the address bar goes into the URL; one the composer handed over in navigation state is
    * handed on the same way, so a private meeting's next lookup still has it and it never reaches a URL.
    */
-  /** Opens an active occurrence of this series by its start, as a strip chip does (the cancelled state's offer). */
-  public openOccurrence(occurrence: MeetingOccurrence): void {
-    const startMs = new Date(occurrence.start_time).getTime();
-    this.navigateToOccurrence({
-      startMs,
-      startTime: occurrence.start_time,
-      duration: occurrence.duration,
-      endKnown: occurrence.duration > 0,
-      occurrenceId: occurrence.occurrence_id,
-      isPast: false,
-      cancelled: false,
-    });
-  }
-
   public navigateToOccurrence(item: MeetingOccurrenceStripItem): void {
     const seriesUid = this.seriesUid();
     if (!seriesUid || item.cancelled) {
@@ -409,6 +396,20 @@ export class MeetingDetailsStateService {
       return;
     }
     void this.router.navigate(['/meetings', seriesUid], { ...extras, queryParams: { ...queryParams, occurrence: String(item.startMs) } });
+  }
+
+  /** Opens an active occurrence of this series by its start, as a strip chip does (the cancelled state's offer). */
+  public openOccurrence(occurrence: MeetingOccurrence): void {
+    const startMs = new Date(occurrence.start_time).getTime();
+    this.navigateToOccurrence({
+      startMs,
+      startTime: occurrence.start_time,
+      duration: occurrence.duration,
+      endKnown: occurrence.duration > 0,
+      occurrenceId: occurrence.occurrence_id,
+      isPast: false,
+      cancelled: false,
+    });
   }
 
   /** Re-runs the lookup for the current route, e.g. from the error state's retry. */
@@ -495,7 +496,7 @@ export class MeetingDetailsStateService {
       if (!meeting || !timeState || !viewerRole) {
         return null;
       }
-      return resolveVisibleSections({
+      const sections = resolveVisibleSections({
         fullAccess: this.pastMeetingFullAccess(),
         inviteResponsesEnabled: isMeetingInviteResponsesEnabled(meeting),
         // A past occurrence's payload can omit `recurrence`: it is part of a series when its series
@@ -504,6 +505,8 @@ export class MeetingDetailsStateService {
         timeState,
         viewerRole,
       });
+      // A cancelled occurrence has no recording to come: no "pending" section contradicting its banner.
+      return this.cancelledOccurrence() ? { ...sections, tools: false } : sections;
     });
   }
 

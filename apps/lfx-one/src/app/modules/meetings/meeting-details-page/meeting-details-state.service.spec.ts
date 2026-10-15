@@ -579,6 +579,37 @@ describe('MeetingDetailsStateService', () => {
         expectCancelledState(state);
       });
 
+      it('fetches no RSVP and lists no roster for an invited organizer, and shows no recording section', async () => {
+        const meeting = {
+          ...series(['2']),
+          invited: true,
+          organizer: true,
+          is_invite_responses_enabled: true,
+          show_meeting_attendees: true,
+        } as Meeting;
+        getPublicMeeting.mockReturnValue(of({ meeting, project }));
+        const state = create();
+        await settle();
+
+        expectCancelledState(state);
+        expect(getMyRsvp).not.toHaveBeenCalled();
+        expect(state.visibleSections()?.tools).toBe(false);
+      });
+
+      it('rebuilds one the payload no longer lists from its id in cancelled_occurrences', async () => {
+        const start = new Date(Date.now() + 16 * DAY);
+        start.setMilliseconds(0);
+        const id = String(start.getTime() / 1000);
+        queryParamMap$.next(convertToParamMap({ occurrence: String(start.getTime()) }));
+        getPublicMeeting.mockReturnValue(of({ meeting: series([id]), project }));
+        const state = create();
+        await settle();
+
+        expect(state.cancelledOccurrence()).toEqual(expect.objectContaining({ occurrence_id: id, status: 'cancel', duration: 60 }));
+        expect(state.selectedOccurrenceStartMs()).toBe(start.getTime());
+        expect(state.actionSlot()).toBe('none');
+      });
+
       it('opens the next active occurrence from it', async () => {
         getPublicMeeting.mockReturnValue(of({ meeting: series(['2']), project }));
         const state = create();
