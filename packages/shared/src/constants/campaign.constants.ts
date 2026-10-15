@@ -1460,6 +1460,118 @@ export const GOOGLE_ADS_MIN_BID_MODIFIER = 0.1;
 export const GOOGLE_ADS_MAX_BID_MODIFIER = 10.0;
 
 /**
+ * The Google channels whose campaign-level criteria accept a device bid modifier.
+ *
+ * THREE channels, not the four that take languages and ad schedules. `validateCriteriaPlan` refuses
+ * the whole non-location set on Demand Gen, then SPLITS the remainder on Performance Max: languages
+ * and ad schedules stay (Google documents both as PMax campaign criteria), while device bid
+ * modifiers are refused by their own branch, because Performance Max's automated bidding owns the
+ * bid and sets no device adjustment.
+ *
+ * Keeping this list separate from {@link GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS} mirrors the
+ * two separate upstream branches rather than the one answer they happen to give today. Upstream
+ * refuses them with different messages for different reasons — a bid Performance Max does not set,
+ * against demographics it takes as asset-group signals — and either could move without the other.
+ *
+ * NOT a rule about automated bidding, which is a different rule with a different shape: an automated
+ * SEARCH campaign ignores a device adjustment too, and that belongs to the bidding plan, where the
+ * strategy is known. Widening this fence to every automated channel would refuse the device
+ * EXCLUSIONS (the 0 opt-out) that Google honours.
+ *
+ * Video is listed because upstream accepts it there, not because this client can reach it — the
+ * Google Ads API has no mutate that creates a Video campaign, so the create is refused earlier.
+ */
+export const GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS = ['search', 'video', 'display'] as const;
+
+/**
+ * The Google channels whose campaign-level criteria accept a demographic exclusion.
+ *
+ * The same three as {@link GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS} today, and a separate constant
+ * for the reason given there: upstream fences the two in separate branches, for separate reasons.
+ * Performance Max excludes demographics through asset-group signals, which this client does not
+ * create, so a campaign-level exclusion is refused rather than silently absent from a paid campaign.
+ */
+export const GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS = ['search', 'video', 'display'] as const;
+
+/**
+ * Upstream's bound on a device bid modifier list (`campaign_criteria.go`'s
+ * `maxDeviceBidModifiers`).
+ *
+ * It tracks the SIZE OF {@link GOOGLE_ADS_DEVICES} rather than Google's own enum size, and upstream
+ * holds a test asserting the two agree. The cap's whole claim is "a longer list must contain a
+ * duplicate", which stops being true the moment the accepted vocabulary and this number drift — so
+ * a device added below must raise this, and a spec here pins them together.
+ */
+export const GOOGLE_ADS_MAX_DEVICE_BID_MODIFIERS = 3;
+
+/**
+ * The `Device` enum this client accepts on a bid modifier (`campaign_criteria.go`'s `deviceTypes`).
+ *
+ * Compared after trimming and upper-casing, so `" mobile "` is MOBILE.
+ *
+ * Two of Google's values are deliberately absent. `OTHER` is a reporting bucket rather than
+ * something a campaign bids on. `CONNECTED_TV` is a NAMED GAP: Google accepts TV screens on Display
+ * and Video campaigns, so on those two the omission is this client's limitation rather than
+ * Google's, and upstream states it as one. It stays closed because opening it is a live-API
+ * question — whether a `CONNECTED_TV` criterion carries a bid modifier at all — and guessing wrong
+ * lands at the criteria mutate, AFTER the budget and campaign are committed.
+ */
+export const GOOGLE_ADS_DEVICES = ['MOBILE', 'DESKTOP', 'TABLET'] as const;
+
+/**
+ * Upstream's bound on EACH demographic exclusion list
+ * (`campaign_criteria.go`'s `maxDemographicExclusions`).
+ *
+ * Both vocabularies are closed enums far smaller than this, so the cap refuses nothing a sane caller
+ * writes; it exists so a malformed one cannot push an unbounded payload into the mutate. Applied to
+ * each list on its own, not to the two added together.
+ */
+export const GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS = 20;
+
+/**
+ * The age ranges accepted on a campaign-level exclusion, mapped to Google's `AgeRangeType` enum
+ * (`campaign_criteria.go`'s `ageRangeTypes`).
+ *
+ * BOTH SPELLINGS are keys — the friendly `18-24` a human writes into a brief and Google's own
+ * `AGE_RANGE_18_24` — because upstream accepts both, and `18-24` failing while `AGE_RANGE_18_24`
+ * succeeds is a trap with no upside. Looked up after trimming and upper-casing; every key here is
+ * already upper-case, so the friendly spellings survive that unchanged.
+ *
+ * `UNDETERMINED` is the bucket Google puts users it could not classify into. Excluding it is a real
+ * choice a campaign makes, so it is a member rather than a non-value.
+ */
+export const GOOGLE_ADS_AGE_RANGE_MAP = {
+  '18-24': 'AGE_RANGE_18_24',
+  AGE_RANGE_18_24: 'AGE_RANGE_18_24',
+  '25-34': 'AGE_RANGE_25_34',
+  AGE_RANGE_25_34: 'AGE_RANGE_25_34',
+  '35-44': 'AGE_RANGE_35_44',
+  AGE_RANGE_35_44: 'AGE_RANGE_35_44',
+  '45-54': 'AGE_RANGE_45_54',
+  AGE_RANGE_45_54: 'AGE_RANGE_45_54',
+  '55-64': 'AGE_RANGE_55_64',
+  AGE_RANGE_55_64: 'AGE_RANGE_55_64',
+  '65+': 'AGE_RANGE_65_UP',
+  AGE_RANGE_65_UP: 'AGE_RANGE_65_UP',
+  UNDETERMINED: 'AGE_RANGE_UNDETERMINED',
+  AGE_RANGE_UNDETERMINED: 'AGE_RANGE_UNDETERMINED',
+} as const;
+
+/**
+ * The friendly age-range spellings, for a message that offers a caller the shorter vocabulary rather
+ * than reciting both halves of {@link GOOGLE_ADS_AGE_RANGE_MAP}. Derived from the map so a range
+ * added there cannot be missed here.
+ */
+export const GOOGLE_ADS_AGE_RANGES = Object.keys(GOOGLE_ADS_AGE_RANGE_MAP).filter((range) => !range.startsWith('AGE_RANGE_'));
+
+/**
+ * The `Gender` enum accepted on a campaign-level exclusion (`campaign_criteria.go`'s `genderTypes`).
+ *
+ * `UNDETERMINED` is a member for the same reason it is one in {@link GOOGLE_ADS_AGE_RANGE_MAP}.
+ */
+export const GOOGLE_ADS_GENDERS = ['MALE', 'FEMALE', 'UNDETERMINED'] as const;
+
+/**
  * Upstream's own bound on a Google Ads callout list (`assets.go`'s `maxCallouts`).
  *
  * Unlike {@link GOOGLE_ADS_MAX_GEO_TARGETS}, this one is checked BEFORE any entry: `validateCallouts`

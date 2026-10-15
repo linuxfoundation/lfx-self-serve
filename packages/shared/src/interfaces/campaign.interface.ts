@@ -9,6 +9,9 @@ import type {
   CAMPAIGN_EMAIL_STAGES,
   CAMPAIGN_EMAIL_VARIANTS,
   CAMPAIGN_METRICS_WINDOWS,
+  GOOGLE_ADS_AGE_RANGE_MAP,
+  GOOGLE_ADS_DEVICES,
+  GOOGLE_ADS_GENDERS,
   GOOGLE_ADS_RADIUS_UNITS,
   GOOGLE_ADS_SCHEDULE_DAYS,
   GOOGLE_ADS_SCHEDULE_MINUTES,
@@ -1862,6 +1865,46 @@ export interface CampaignAdSchedule {
   bidModifier?: number;
 }
 
+/**
+ * A device a campaign may adjust its bid on.
+ *
+ * Derived from {@link GOOGLE_ADS_DEVICES} rather than written out again, so a device added to the
+ * accepted vocabulary cannot leave this type behind.
+ */
+export type GoogleAdsDevice = (typeof GOOGLE_ADS_DEVICES)[number];
+
+/**
+ * An age range a campaign may exclude, in either spelling upstream accepts — the friendly `18-24`
+ * or Google's own `AGE_RANGE_18_24`. Derived from {@link GOOGLE_ADS_AGE_RANGE_MAP}'s keys, so the
+ * type admits exactly what the lookup resolves.
+ */
+export type GoogleAdsAgeRange = keyof typeof GOOGLE_ADS_AGE_RANGE_MAP;
+
+/**
+ * A gender a campaign may exclude. Derived from {@link GOOGLE_ADS_GENDERS}.
+ */
+export type GoogleAdsGender = (typeof GOOGLE_ADS_GENDERS)[number];
+
+/**
+ * One "bid this much more, or less, on this device" adjustment.
+ *
+ * `bidModifier` is REQUIRED here, and the contrast with {@link CampaignAdSchedule}'s optional one is
+ * deliberate rather than an inconsistency. Upstream carries the schedule modifier as a `*float64`,
+ * so an omitted one stays distinguishable from `0`; it carries THIS one as a plain `float64`, where
+ * an omitted key decodes to `0` — and `0` is the -100% "do not serve on this device at all" opt-out.
+ * A caller who forgets the field would be asking, in upstream's reading, for the device to be
+ * switched off entirely on a paid campaign, and would be told the create succeeded.
+ *
+ * So there is no safe default to supply and nothing to omit on the wire: the field is required, and
+ * the BFF refuses an entry that leaves it out rather than guessing which of the two the caller
+ * meant. Any value other than the `0` opt-out must be between {@link GOOGLE_ADS_MIN_BID_MODIFIER}
+ * and {@link GOOGLE_ADS_MAX_BID_MODIFIER}.
+ */
+export interface CampaignDeviceBidModifier {
+  device: GoogleAdsDevice;
+  bidModifier: number;
+}
+
 export interface CampaignCreateRequest {
   eventName: string;
   eventSlug: string;
@@ -1959,6 +2002,49 @@ export interface CampaignCreateRequest {
    * two spellings could disagree about.
    */
   adSchedules?: CampaignAdSchedule[];
+  /**
+   * How much more, or less, the Google campaign bids on each device. Left unset it bids the same
+   * everywhere, which is Google's own default — so this list is an adjustment and an absent key
+   * means the same as an empty one, exactly as {@link adSchedules} does.
+   *
+   * Accepted on THREE channels — see {@link GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS} — one fewer
+   * than {@link adSchedules}: Demand Gen takes no campaign-level criteria at all, and Performance
+   * Max's automated bidding owns the bid and sets no device adjustment. Upstream refuses both rather
+   * than dropping the list, so the BFF refuses such a create by name.
+   *
+   * Bounded by {@link GOOGLE_ADS_MAX_DEVICE_BID_MODIFIERS}, which is the size of the accepted device
+   * vocabulary: a longer list necessarily REPEATS a device, and a repeat is refused rather than
+   * collapsed, because Google accepts one criterion per device and the second value would be the one
+   * silently dropped. That is the same rule {@link adSchedules} applies to a repeated interval with
+   * a different modifier — here every repeat qualifies, since a device has nothing else to agree on.
+   */
+  deviceBidModifiers?: CampaignDeviceBidModifier[];
+  /**
+   * The age ranges the Google campaign excludes. Left unset it serves to every age, which is
+   * Google's own default, so an absent key and an empty list agree.
+   *
+   * EXCLUSION-ONLY is Google's shape rather than a narrowing here: campaign-level demographic
+   * criteria are negative. Positive demographic targeting lives on the ad group, which this client
+   * does not expose, so this field cannot be mistaken for one that targets.
+   *
+   * Accepted on the channels in {@link GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS}; Performance Max
+   * takes demographics as asset-group signals, which this client does not create, so upstream
+   * refuses rather than leaving an operator to read "campaign created" with their exclusion nowhere.
+   * Bounded by {@link GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS}, applied to this list on its own.
+   *
+   * A repeated range is COLLAPSED, not refused — an exclusion carries no second field two spellings
+   * could disagree about, so the same range written twice says one thing twice.
+   */
+  excludedAgeRanges?: GoogleAdsAgeRange[];
+  /**
+   * The genders the Google campaign excludes, on the same terms as {@link excludedAgeRanges}:
+   * exclusion-only, the same channel fence, its own copy of
+   * {@link GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS}, and a repeat collapsed rather than refused.
+   *
+   * `UNDETERMINED` — the bucket Google puts users it could not classify into — is an ordinary
+   * member: excluding it is a real choice a campaign makes.
+   */
+  excludedGenders?: GoogleAdsGender[];
   /**
    * The Google campaign's callout extensions — short claims appended to the text ad, carrying no
    * link of their own.

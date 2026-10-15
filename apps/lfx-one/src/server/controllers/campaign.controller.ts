@@ -14,6 +14,7 @@ import { NextFunction, Request, Response } from 'express';
 import type {
   BulkKeywordActionRequest,
   CampaignAdSchedule,
+  CampaignDeviceBidModifier,
   CampaignBidType,
   CampaignBidUpdateRequest,
   CampaignBidUpdateResult,
@@ -55,6 +56,10 @@ import {
   CAMPAIGN_METRICS_WINDOWS,
   CAMPAIGN_PLATFORMS,
   DEFAULT_CAMPAIGN_BID_TYPE,
+  GOOGLE_ADS_AGE_RANGES,
+  GOOGLE_ADS_AGE_RANGE_MAP,
+  GOOGLE_ADS_DEVICES,
+  GOOGLE_ADS_GENDERS,
   GOOGLE_ADS_GEO_TARGET_ID_PATTERN,
   GOOGLE_ADS_GEO_TARGET_MAP,
   GOOGLE_ADS_LANGUAGE_ID_PATTERN,
@@ -64,6 +69,8 @@ import {
   GOOGLE_ADS_MAX_BID_MODIFIER,
   GOOGLE_ADS_MAX_CALLOUTS,
   GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
+  GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS,
+  GOOGLE_ADS_MAX_DEVICE_BID_MODIFIERS,
   GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS,
   GOOGLE_ADS_MAX_FINAL_URL_BYTES,
   GOOGLE_ADS_MAX_GEO_TARGETS,
@@ -84,6 +91,8 @@ import {
   GOOGLE_CHANNELS_WITH_AD_EXTENSIONS,
   GOOGLE_CHANNELS_WITH_AD_SCHEDULES,
   GOOGLE_CHANNELS_WITH_CREATIVE,
+  GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS,
+  GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS,
   GOOGLE_CHANNELS_WITH_LANGUAGES,
   GOOGLE_CHANNELS_WITH_PROXIMITY,
   GOOGLE_CREATIVE_FIELD_SPECS,
@@ -198,6 +207,27 @@ type NormalizedAdSchedule = Omit<CampaignAdSchedule, 'dayOfWeek' | 'startMinute'
   dayOfWeek: string;
   startMinute: number;
   endMinute: number;
+};
+
+/**
+ * One device bid modifier as normalized for judgement and dispatch.
+ *
+ * `device` is widened from {@link CampaignDeviceBidModifier}'s enum to the caller's own string, for
+ * the same reason {@link NormalizedAdSchedule} widens its day of week: the body is unvalidated here
+ * and narrowing a type before the value has been judged would mean casting a lie.
+ *
+ * `bidModifier` is widened the other way — from REQUIRED to optional — and that is the one place
+ * this type must not be read as a copy of its ad-schedule sibling. There an absent modifier is the
+ * ordinary case and must survive all the way to the wire; here an absent modifier is a REFUSAL, and
+ * it is optional only so {@link googleDeviceBidModifierRefusal} can see the absence and name it.
+ * Upstream's wire type carries a `*float64` for exactly this reason and `googleAdsDeviceBidModifiers`
+ * (`internal/dispatch/googleads.go`) refuses the nil, because the client type it maps onto holds a
+ * plain `float64` where `0` is the -100% opt-out — so an omitted modifier flattened to a zero would
+ * stop the campaign serving on that device while reporting a successful create.
+ */
+type NormalizedDeviceBidModifier = Omit<CampaignDeviceBidModifier, 'device' | 'bidModifier'> & {
+  device: string;
+  bidModifier?: number;
 };
 
 /**
@@ -992,6 +1022,164 @@ export class CampaignController {
             if (scheduleRefusal) {
               refuseAdSchedules(scheduleRefusal);
               return;
+            }
+          }
+        }
+
+        // Device bid modifiers then the two demographic exclusion lists, in `validateCriteriaPlan`'s
+        // own order — languages, ad schedules, devices, age ranges, genders. Same reason as every
+        // guard above: an entry Go refuses comes back as the orchestrator's opaque "platform
+        // campaign creation failed", so every refusal is made here first, by name.
+        const rawDeviceBidModifiers = body?.deviceBidModifiers;
+        if (rawDeviceBidModifiers !== undefined && rawDeviceBidModifiers !== null) {
+          const refuseDevices = (message: string): void =>
+            next(ServiceValidationError.forField('deviceBidModifiers', message, { operation: 'campaign_create', service: 'campaign_controller' }));
+          // The Go decode into `[]googleAdsDeviceBidModifierConfig` refuses a non-list, a non-object
+          // entry, a non-string device or a non-numeric bid modifier. A null MODIFIER is accepted by
+          // the decode because Go reads it as the same nil pointer an omitted key gives — the
+          // omitted-modifier check below is what refuses both. A null ENTRY is refused here instead,
+          // on the same reasoning as {@link isAdScheduleShape}: upstream refuses it too, as an entry
+          // that omits its modifier, so only the wording differs — and this wording says the entry is
+          // malformed rather than blaming a device the caller never wrote.
+          if (!Array.isArray(rawDeviceBidModifiers) || !rawDeviceBidModifiers.every((entry) => this.isDeviceBidModifierShape(entry))) {
+            refuseDevices('Google Ads device bid modifiers must be a list of objects with a device and a numeric bid modifier.');
+            return;
+          }
+
+          const devices = this.googleDeviceBidModifierList(rawDeviceBidModifiers);
+          // OUTSIDE the channel fence, and before it, because upstream checks it outside its own:
+          // `googleAdsDeviceBidModifiers` runs in the DISPATCHER, before the channel switch, so that
+          // the create and adoption paths refuse a malformed entry identically. An entry that omits
+          // its modifier is therefore named even on a channel that would have refused the whole list
+          // a moment later.
+          for (const [index, device] of devices.entries()) {
+            if (device.bidModifier === undefined) {
+              refuseDevices(
+                `The Google Ads device bid modifier ${index + 1} names ${googleAdsEchoed(device.device)} but no bid modifier. Supply one — 0 is not "no adjustment" but a -100% modifier that stops the campaign serving on that device — then create again.`
+              );
+              return;
+            }
+          }
+
+          const googleDeviceChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
+          if (devices.length > 0 && typeof googleDeviceChannel === 'string') {
+            // REFUSED by name, not withheld, and on one channel FEWER than ad schedules.
+            // `validateCriteriaPlan` fails the whole Demand Gen create on any of these criteria, then
+            // SPLITS Performance Max in two: it keeps the languages and ad schedules Google documents
+            // as Performance Max campaign criteria, and refuses device bid modifiers, because that
+            // channel's automated bidding owns the bid and sets no device adjustment.
+            if (!(GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS as readonly string[]).includes(googleDeviceChannel)) {
+              refuseDevices(
+                `Google Ads does not accept device bid modifiers on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleDeviceChannel as GoogleCampaignChannel] ?? googleDeviceChannel} campaigns. Remove them or pick a different channel, then create again.`
+              );
+              return;
+            }
+
+            // Upstream's cap, checked against the SUBMITTED count exactly where
+            // `validateDeviceBidModifiers` checks its own. It is one entry per device this client
+            // accepts, so a longer list necessarily repeats one — the per-entry pass would refuse it
+            // anyway, but upstream names the cap first and so does this.
+            if (devices.length > GOOGLE_ADS_MAX_DEVICE_BID_MODIFIERS) {
+              refuseDevices(
+                `Google Ads accepts at most ${GOOGLE_ADS_MAX_DEVICE_BID_MODIFIERS} device bid modifiers on one campaign, one per device, and this one has ${devices.length}. Remove some and create again.`
+              );
+              return;
+            }
+
+            // One call, not a per-entry loop: the repeated-device refusal is about an entry's
+            // relationship to the entries before it and cannot be decided from the entry alone.
+            const deviceRefusal = this.googleDeviceBidModifierRefusal(devices);
+            if (deviceRefusal) {
+              refuseDevices(deviceRefusal);
+              return;
+            }
+          }
+        }
+
+        // Age ranges then genders. Both lists are capped INDEPENDENTLY at the same number, and both
+        // COLLAPSE a repeat rather than refusing it — the opposite of the device list above. The
+        // asymmetry is upstream's and it is about what a repeat costs: a repeated device carries a
+        // second bid modifier, one of which Google would silently drop, while a repeated exclusion
+        // asks twice for the one thing it already said.
+        const rawExcludedAgeRanges = body?.excludedAgeRanges;
+        if (rawExcludedAgeRanges !== undefined && rawExcludedAgeRanges !== null) {
+          const refuseAgeRanges = (message: string): void =>
+            next(ServiceValidationError.forField('excludedAgeRanges', message, { operation: 'campaign_create', service: 'campaign_controller' }));
+          // Upstream decodes the field into a Go `[]string`, so a non-array or a non-string entry is
+          // refused before any validator runs.
+          if (!Array.isArray(rawExcludedAgeRanges) || rawExcludedAgeRanges.some((a) => typeof a !== 'string')) {
+            refuseAgeRanges('Google Ads excluded age ranges must be a list of age range names.');
+            return;
+          }
+
+          const ageRanges = this.googleUpperCodeList(rawExcludedAgeRanges);
+          const googleAgeRangeChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
+          if (ageRanges.length > 0 && typeof googleAgeRangeChannel === 'string') {
+            // The second half of Performance Max's split: it takes demographics as asset-group
+            // signals, which this client does not create, so a campaign-level exclusion there is
+            // refused rather than created somewhere the operator cannot see it.
+            if (!(GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS as readonly string[]).includes(googleAgeRangeChannel)) {
+              refuseAgeRanges(
+                `Google Ads does not accept campaign-level demographic exclusions on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleAgeRangeChannel as GoogleCampaignChannel] ?? googleAgeRangeChannel} campaigns. Remove the excluded age ranges or pick a different channel, then create again.`
+              );
+              return;
+            }
+
+            // Upstream's cap, checked against the SUBMITTED count before any repeat is collapsed,
+            // exactly where `validateExcludedAgeRanges` checks its own.
+            if (ageRanges.length > GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS) {
+              refuseAgeRanges(
+                `Google Ads accepts at most ${GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS} excluded age ranges on one campaign, and this one has ${ageRanges.length}. Remove some and create again.`
+              );
+              return;
+            }
+
+            // Entry by entry, refusing on the FIRST bad one, as `validateExcludedAgeRanges` does.
+            for (const ageRange of ageRanges) {
+              const refusal = this.googleExcludedAgeRangeRefusal(ageRange);
+              if (refusal) {
+                refuseAgeRanges(refusal);
+                return;
+              }
+            }
+          }
+        }
+
+        const rawExcludedGenders = body?.excludedGenders;
+        if (rawExcludedGenders !== undefined && rawExcludedGenders !== null) {
+          const refuseGenders = (message: string): void =>
+            next(ServiceValidationError.forField('excludedGenders', message, { operation: 'campaign_create', service: 'campaign_controller' }));
+          if (!Array.isArray(rawExcludedGenders) || rawExcludedGenders.some((g) => typeof g !== 'string')) {
+            refuseGenders('Google Ads excluded genders must be a list of gender names.');
+            return;
+          }
+
+          const genders = this.googleUpperCodeList(rawExcludedGenders);
+          const googleGenderChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
+          if (genders.length > 0 && typeof googleGenderChannel === 'string') {
+            if (!(GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS as readonly string[]).includes(googleGenderChannel)) {
+              refuseGenders(
+                `Google Ads does not accept campaign-level demographic exclusions on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleGenderChannel as GoogleCampaignChannel] ?? googleGenderChannel} campaigns. Remove the excluded genders or pick a different channel, then create again.`
+              );
+              return;
+            }
+
+            // The cap is PER LIST upstream, not shared with the age ranges: `validateExcludedGenders`
+            // checks `maxDemographicExclusions` against its own length. A request at the cap on both
+            // lists is accepted.
+            if (genders.length > GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS) {
+              refuseGenders(
+                `Google Ads accepts at most ${GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS} excluded genders on one campaign, and this one has ${genders.length}. Remove some and create again.`
+              );
+              return;
+            }
+
+            for (const gender of genders) {
+              const refusal = this.googleExcludedGenderRefusal(gender);
+              if (refusal) {
+                refuseGenders(refusal);
+                return;
+              }
             }
           }
         }
@@ -3850,6 +4038,11 @@ export class CampaignController {
         ...this.googleExcludedGeoTargets(body),
         ...this.googleProximityTargets(body, selectedChannels[0]),
         ...this.googleAdSchedules(body, selectedChannels[0]),
+        // The two halves of Performance Max's split, gated separately because upstream fences them
+        // in two branches for two different reasons — either could move without the other. Both
+        // normalized only; `createCampaign` names every refusal first.
+        ...this.googleDeviceBidModifiers(body, selectedChannels[0]),
+        ...this.googleDemographicExclusions(body, selectedChannels[0]),
         ...languages,
         ...creative,
       };
@@ -3910,6 +4103,12 @@ export class CampaignController {
       ...this.googleExcludedGeoTargets(body),
       ...this.googleProximityTargets(body, 'search'),
       ...this.googleAdSchedules(body, 'search'),
+      // Search takes both halves of the criteria set — it is the channel upstream's own header calls
+      // the one these criteria were written for — so the gates inside the helpers can only pass
+      // here. The calls are still made through the same helpers so the two branches cannot normalize
+      // differently.
+      ...this.googleDeviceBidModifiers(body, 'search'),
+      ...this.googleDemographicExclusions(body, 'search'),
       ...searchLanguages,
       ...callouts,
       ...sitelinks,
@@ -3993,15 +4192,19 @@ export class CampaignController {
     const candidates: [string, unknown][] = Object.values(GOOGLE_CREATIVE_REQUEST_KEYS).map((key) => [key, raw[key]]);
     candidates.push(['conversionActions', raw['conversionActions']]);
     candidates.push(['callouts', raw['callouts']]);
-    // The two geo lists and the ad schedules are bounded here and not only by their own caps
-    // further down, because `createConfigEnvelope` runs BEFORE those caps and normalizes whatever
-    // it is handed — `googleProximityList` and `googleAdScheduleList` each allocating a fresh
-    // object per entry as they go. The named caps (60 exclusions, 20 radius targets, 42 schedules)
+    // The geo lists, the ad schedules and the three criteria lists are bounded here and not only by
+    // their own caps further down, because `createConfigEnvelope` runs BEFORE those caps and
+    // normalizes whatever it is handed — `googleProximityList`, `googleAdScheduleList` and
+    // `googleDeviceBidModifierList` each allocating a fresh object per entry as they go. The named
+    // caps (60 exclusions, 20 radius targets, 42 schedules, 3 devices, 20 per demographic list)
     // still make the refusal an operator can act on; this one only stops a 15mb body from being
     // walked before they are reached.
     candidates.push(['excludedGeoTargets', raw['excludedGeoTargets']]);
     candidates.push(['proximityTargets', raw['proximityTargets']]);
     candidates.push(['adSchedules', raw['adSchedules']]);
+    candidates.push(['deviceBidModifiers', raw['deviceBidModifiers']]);
+    candidates.push(['excludedAgeRanges', raw['excludedAgeRanges']]);
+    candidates.push(['excludedGenders', raw['excludedGenders']]);
 
     for (const [key, source] of candidates) {
       // A creative key holds an object of fields; `conversionActions` and `callouts` are bare lists.
@@ -4191,9 +4394,10 @@ export class CampaignController {
   }
 
   /**
-   * One list of upper-cased codes as judged and dispatched — languages, and both halves of the geo
-   * plan. `resolveLanguageList` and `resolveGeoList` normalize identically, so this is one helper
-   * rather than a copy per field; the per-field reasons live on the callers.
+   * One list of upper-cased codes as judged and dispatched — languages, both halves of the geo plan,
+   * and both demographic exclusion lists. `resolveLanguageList`, `resolveGeoList`,
+   * `validateExcludedAgeRanges` and `validateExcludedGenders` normalize identically, so this is one
+   * helper rather than a copy per field; the per-field reasons live on the callers.
    *
    * Strings only — `createCampaign` refuses anything else first. Blanks are KEPT: upstream counts a
    * blank toward the cap and then refuses it by name, so dropping one here would turn `['']` into
@@ -4425,6 +4629,51 @@ export class CampaignController {
   }
 
   /**
+   * The campaign's device bid modifiers, spread-ready, or `{}` when the request names none or the
+   * channel cannot take them.
+   *
+   * CHANNEL-GATED on {@link GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS}, which is one channel fewer
+   * than the ad-schedule and language gates: `validateCriteriaPlan` refuses the whole criteria set
+   * on Demand Gen and then refuses THIS half of it again on Performance Max, whose automated bidding
+   * owns the bid and sets no device adjustment. The `{}` returned there is never dispatched either —
+   * `createCampaign` reads the request's own list and refuses such a create by name first, on
+   * upstream's "refused, never silently dropped" rule.
+   *
+   * NORMALIZES ONLY, and does not collapse a repeated device: upstream refuses a repeat rather than
+   * collapsing it, and `createCampaign` names that refusal before this is dispatched.
+   */
+  private googleDeviceBidModifiers(body: CampaignCreateRequest, channel: GoogleCampaignChannel): Record<string, unknown> {
+    if (!(GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS as readonly string[]).includes(channel)) return {};
+    const clean = this.googleDeviceBidModifierList(body?.deviceBidModifiers);
+    return clean.length > 0 ? { deviceBidModifiers: clean } : {};
+  }
+
+  /**
+   * The campaign's demographic EXCLUSIONS, spread-ready, or `{}` when the request names none or the
+   * channel cannot take them. One helper for both lists because upstream normalizes them identically
+   * — trim, upper-case, and nothing else — and the per-list reasons live on the callers.
+   *
+   * Exclusion-only is Google's own shape at campaign level, not a narrowing this application chose:
+   * positive demographic targeting lives on the ad group, which this client does not create.
+   *
+   * CHANNEL-GATED on {@link GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS}, the other half of
+   * Performance Max's split — it takes demographics as asset-group signals, which this client does
+   * not create. Same `{}`-is-never-dispatched reasoning as {@link googleDeviceBidModifiers}.
+   *
+   * NORMALIZES ONLY, and does not collapse a repeated entry: upstream collapses repeats itself, and
+   * doing it here as well would make the dispatched list disagree with the one judged.
+   */
+  private googleDemographicExclusions(body: CampaignCreateRequest, channel: GoogleCampaignChannel): Record<string, unknown> {
+    if (!(GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS as readonly string[]).includes(channel)) return {};
+    const ageRanges = this.googleUpperCodeList(body?.excludedAgeRanges);
+    const genders = this.googleUpperCodeList(body?.excludedGenders);
+    return {
+      ...(ageRanges.length > 0 ? { excludedAgeRanges: ageRanges } : {}),
+      ...(genders.length > 0 ? { excludedGenders: genders } : {}),
+    };
+  }
+
+  /**
    * Whether one raw ad-schedule entry survives the Go decode into `googleAdsAdScheduleConfig`: an
    * object carrying a string `dayOfWeek`, four INTEGER hour and minute fields, and a `bidModifier`
    * that is absent, null or a number.
@@ -4586,15 +4835,133 @@ export class CampaignController {
   }
 
   /**
+   * Whether one raw device-bid-modifier entry survives the Go decode into
+   * `googleAdsDeviceBidModifierConfig`: an object carrying a string `device` and a `bidModifier`
+   * that is absent, null or a number.
+   *
+   * `null` is accepted for the modifier for the same reason {@link isAdScheduleShape} accepts it —
+   * Go decodes it to the same nil pointer an omitted key gives — but what happens NEXT is the
+   * opposite: there an absent modifier is the ordinary case and reaches the wire untouched, here it
+   * is a refusal. The pointer exists on both wire types; only one of them is allowed to stay nil.
+   *
+   * A null ENTRY is refused, as it is for an ad schedule and for the same reason: upstream refuses
+   * it too — a null entry decodes to a zero struct whose nil modifier `googleAdsDeviceBidModifiers`
+   * names — so only the wording differs, and saying the entry is malformed beats blaming a device
+   * the caller never wrote.
+   */
+  private isDeviceBidModifierShape(entry: unknown): boolean {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) return false;
+    const fields = entry as Record<string, unknown>;
+    if (typeof fields['device'] !== 'string') return false;
+    return fields['bidModifier'] === undefined || fields['bidModifier'] === null || typeof fields['bidModifier'] === 'number';
+  }
+
+  /**
+   * The device bid modifiers as judged and dispatched, with `bidModifier` carried through as
+   * `undefined` when the caller omitted it. Callers have checked the shape with
+   * {@link isDeviceBidModifierShape}.
+   *
+   * The device is left exactly as the caller wrote it; {@link googleDeviceBidModifierRefusal} trims
+   * and upper-cases it the way `validateDeviceBidModifiers` does before comparing.
+   *
+   * An absent modifier is NOT zero-filled, and the asymmetry with every other normalizer here is the
+   * whole point: `0` is the -100% opt-out, so filling it would switch the campaign off for a device
+   * the caller only meant to list — a successful create that serves on one device fewer.
+   * {@link googleDeviceBidModifierRefusal}'s caller refuses the absence instead, as
+   * `googleAdsDeviceBidModifiers` does upstream.
+   */
+  private googleDeviceBidModifierList(raw: unknown): NormalizedDeviceBidModifier[] {
+    if (!Array.isArray(raw)) return [];
+    return raw.map((entry) => {
+      const fields = (entry ?? {}) as Record<string, unknown>;
+      const modifier = fields['bidModifier'];
+      return {
+        device: typeof fields['device'] === 'string' ? fields['device'] : '',
+        ...(typeof modifier === 'number' ? { bidModifier: modifier } : {}),
+      };
+    });
+  }
+
+  /**
+   * Why upstream would refuse a normalized device-bid-modifier LIST, or `null` when it would not.
+   *
+   * A list-level guard rather than a per-entry one, because one of `validateDeviceBidModifiers`'
+   * branches — a device named twice — is about an entry's relationship to the ones before it and is
+   * not decidable from a single entry. The cap is checked by the caller against the SUBMITTED
+   * length, as upstream does.
+   *
+   * Mirrors the per-entry branches in upstream's order: the device vocabulary, then the repeat, then
+   * the bid modifier. A caller who writes `TABLET` twice with two different adjustments is refused
+   * on the repeat and never reaches the range check, exactly as upstream.
+   *
+   * Entries reaching here have a modifier — the caller refuses an absent one first, where upstream
+   * does, in the dispatcher and before the channel is known.
+   *
+   * `index` is reported from 1 so it matches what an operator counts; upstream's message numbers
+   * from 0.
+   */
+  private googleDeviceBidModifierRefusal(devices: NormalizedDeviceBidModifier[]): string | null {
+    const seen = new Set<string>();
+    for (const [index, entry] of devices.entries()) {
+      const shown = `device bid modifier ${index + 1}`;
+      const device = googleAdsTrimSpace(entry.device).toUpperCase();
+      if (!(GOOGLE_ADS_DEVICES as readonly string[]).includes(device)) {
+        return `The Google Ads ${shown} names ${googleAdsEchoed(entry.device)}, which is not one of ${GOOGLE_ADS_DEVICES.join(', ')}. Fix it and create again.`;
+      }
+      if (seen.has(device)) {
+        return `The Google Ads device bid modifiers name ${device} more than once. Google accepts one criterion per device, so the second adjustment would be the one silently dropped — remove one and create again.`;
+      }
+      seen.add(device);
+      if (entry.bidModifier !== undefined) {
+        const refusal = this.googleBidModifierRefusal(shown, entry.bidModifier);
+        if (refusal) return refusal;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Why upstream would refuse one normalized excluded age range, or `null` when it would not.
+   *
+   * Mirrors `validateExcludedAgeRanges`' single per-entry branch: membership in
+   * {@link GOOGLE_ADS_AGE_RANGE_MAP}, which carries BOTH the friendly spelling and Google's own
+   * `AGE_RANGE_*` enum name for every value. A blank entry has no branch of its own, upstream or
+   * here — it is simply not in the map, and the vocabulary message names what to write instead.
+   *
+   * A repeat is NOT refused: upstream collapses it. The echo is cut short, as every echo of an
+   * unvalidated body is.
+   */
+  private googleExcludedAgeRangeRefusal(ageRange: string): string | null {
+    if (Object.hasOwn(GOOGLE_ADS_AGE_RANGE_MAP, ageRange)) return null;
+    return `Google Ads cannot exclude the age range ${googleAdsEchoed(ageRange)}. Pick one of ${GOOGLE_ADS_AGE_RANGES.join(', ')} — Google's AGE_RANGE_* enum names are accepted too — and create again.`;
+  }
+
+  /**
+   * Why upstream would refuse one normalized excluded gender, or `null` when it would not.
+   *
+   * Mirrors `validateExcludedGenders`' single per-entry branch. UNDETERMINED is an ordinary member
+   * of the vocabulary, not a non-value: it is the bucket Google puts users it could not classify
+   * into, and excluding it is a real choice a campaign makes. A repeat is NOT refused — upstream
+   * collapses it.
+   */
+  private googleExcludedGenderRefusal(gender: string): string | null {
+    if ((GOOGLE_ADS_GENDERS as readonly string[]).includes(gender)) return null;
+    return `Google Ads cannot exclude the gender ${googleAdsEchoed(gender)}. Pick one of ${GOOGLE_ADS_GENDERS.join(', ')} and create again.`;
+  }
+
+  /**
    * Why upstream would refuse one bid modifier, or `null` when it would not. Mirrors
-   * `validateBidModifier`'s branches in order: finite, then the 0 opt-out, then the range.
+   * `validateBidModifier`'s branches in order: finite, then the 0 opt-out, then the range. One
+   * helper for both callers because upstream calls the one `validateBidModifier` from both
+   * `validateAdSchedules` and `validateDeviceBidModifiers`.
    *
    * 0 RETURNS EARLY and is accepted. It is not a value below the minimum but the -100% opt-out —
    * "do not serve here at all" — which is how a day-parted campaign switches off the hours it does
-   * not want. A guard that tested the range first would refuse the one modifier such a campaign is
-   * certain to carry.
+   * not want, and how a campaign stops serving on tablets. A guard that tested the range first would
+   * refuse the one modifier such a campaign is certain to carry.
    *
-   * `noun` names the entry the caller wrote, so the message points at it rather than at the number.
+   * `noun` names the entry the caller wrote — an ad schedule or a device bid modifier — so the
+   * message points at it rather than at the number.
    */
   private googleBidModifierRefusal(noun: string, modifier: number): string | null {
     if (!Number.isFinite(modifier)) {
