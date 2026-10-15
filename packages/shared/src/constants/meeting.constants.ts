@@ -1318,8 +1318,10 @@ export const MEETING_OCCURRENCES_PAGE_DEFAULT_LIMIT = 12;
 export const MEETING_OCCURRENCES_PAGE_MAX_LIMIT = 50;
 
 /**
- * The V2 occurrence strip (E6-03, #3586): pages it reads per side, and how many further pages it reads
- * toward a selected occurrence outside the first window before giving up on showing it selected.
+ * The V2 occurrence strip (E6-03, #3586): occurrences per side in each page it reads; how many pages
+ * of the largest size it reads toward a selected occurrence outside the first window before giving up
+ * on showing it selected (the endpoint pages a past side only backwards, so it walks rather than
+ * jumps).
  */
 export const MEETING_OCCURRENCE_STRIP_PAGE_SIZE = 12;
 export const MEETING_OCCURRENCE_STRIP_MAX_CHASE_PAGES = 5;

@@ -5,7 +5,8 @@
      a header row 14px above the chips; 32px round Previous / Next either side of a row of chips 10px
      apart, each 11px by 6px padded with the chip radius (13px; the prototype has 12px) around an 11px weekday, a 20px day and an 11px
      month. The chips scroll sideways instead of the prototype's fixed nine-chip window. -->
-@if (status() !== 'hidden') {
+<!-- Loading shows the placeholder only where the meeting is known to recur (reservesSpace). -->
+@if (status() === 'ready' || (status() === 'loading' && reservesSpace())) {
   <section
     class="flex flex-col gap-[14px]"
     aria-labelledby="meeting-occurrences-heading"
@@ -43,31 +44,28 @@
           aria-label="Occurrences"
           class="flex min-w-0 flex-1 gap-[10px] overflow-x-auto p-[2px] [scrollbar-width:thin]"
           data-testid="occurrence-strip-chips">
-          @for (item of items(); track item.startMs) {
-            @let isSelected = item.startMs === selected()?.startMs;
-            @let isNextUp = item.startMs === nextUp()?.startMs;
+          @for (chip of chips(); track chip.item.startMs) {
             <button
               type="button"
               class="relative flex min-w-[64px] flex-[1_0_64px] flex-col items-center gap-[3px] rounded-[var(--md-radius-chip)] border px-[6px] py-[11px] focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
-              [class]="chipClass(item, isSelected)"
-              [attr.tabindex]="item.startMs === tabStopMs() ? 0 : -1"
-              [attr.aria-label]="chipLabel(item)"
-              [attr.aria-current]="isSelected ? 'date' : null"
-              [attr.aria-disabled]="item.cancelled ? 'true' : null"
-              [attr.data-start-ms]="item.startMs"
-              [attr.data-selected]="isSelected"
-              [attr.data-cancelled]="item.cancelled"
-              [attr.data-nextup]="isNextUp"
-              [attr.data-testid]="'occurrence-chip-' + item.occurrenceId"
-              (click)="select(item)"
-              (keydown)="onChipKeydown($event, item)"
-              (focus)="onChipFocus(item)">
-              @if (isNextUp) {
-                <span class="absolute right-[6px] top-[6px] h-[7px] w-[7px] rounded-full bg-[var(--md-accent)]" aria-hidden="true"></span>
+              [class]="chip.cssClass"
+              [attr.tabindex]="chip.tabIndex"
+              [attr.aria-label]="chip.label"
+              [attr.aria-current]="chip.selected ? 'date' : null"
+              [attr.aria-disabled]="chip.item.cancelled ? 'true' : null"
+              [attr.data-start-ms]="chip.item.startMs"
+              [attr.data-selected]="chip.selected"
+              [attr.data-cancelled]="chip.item.cancelled"
+              [attr.data-nextup]="chip.nextUp"
+              [attr.data-testid]="'occurrence-chip-' + chip.item.occurrenceId"
+              (click)="select(chip.item)"
+              (keydown)="onChipKeydown($event, chip.item)">
+              @if (chip.nextUp) {
+                <span class="absolute right-[6px] top-[6px] h-[7px] w-[7px] rounded-[var(--md-radius-circle)] bg-[var(--md-accent)]" aria-hidden="true"></span>
               }
-              <span class="text-[11px] font-semibold uppercase leading-[1.2] tracking-[.04em] opacity-[.72]" aria-hidden="true">{{ weekday(item) }}</span>
-              <span class="text-[20px] font-bold leading-none tabular-nums" [class.line-through]="item.cancelled" aria-hidden="true">{{ day(item) }}</span>
-              <span class="text-[11px] font-semibold leading-[1.2] opacity-[.72]" aria-hidden="true">{{ month(item) }}</span>
+              <span class="text-[11px] font-semibold uppercase leading-[1.2] tracking-[.04em] opacity-[.72]" aria-hidden="true">{{ chip.weekday }}</span>
+              <span class="text-[20px] font-bold leading-none tabular-nums" [class.line-through]="chip.item.cancelled" aria-hidden="true">{{ chip.day }}</span>
+              <span class="text-[11px] font-semibold leading-[1.2] opacity-[.72]" aria-hidden="true">{{ chip.month }}</span>
             </button>
           }
         </div>

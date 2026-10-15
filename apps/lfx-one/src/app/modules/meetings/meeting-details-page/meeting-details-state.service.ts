@@ -329,8 +329,10 @@ export class MeetingDetailsStateService {
   }
 
   /**
-   * Moves the page to another occurrence of its series (E6-03), on the URL contract: an upcoming one
-   * as `/meetings/{seriesUid}?occurrence={start ms}`, a past one as its composite id. Only a password
+   * Moves the page to another occurrence of its series (E6-03), on the URL contract: a past record as
+   * its composite id, anything else as `/meetings/{seriesUid}?occurrence={start ms}`, including an
+   * occurrence that has ended on the clock but has no past record yet, whose composite id would not
+   * resolve (the upcoming page resolves an ended occurrence itself). Only a password
    * already in the address bar goes into the URL; one the composer handed over in navigation state is
    * handed on the same way, so a private meeting's next lookup still has it and it never reaches a URL.
    */
@@ -343,8 +345,8 @@ export class MeetingDetailsStateService {
     const statePassword = urlPassword ? null : this.password();
     const queryParams: Record<string, string> = urlPassword ? { password: urlPassword } : {};
     const extras = { queryParams, ...(statePassword && { state: { password: statePassword } }) };
-    if (item.isPast) {
-      void this.router.navigate(['/meetings', item.pastResourceId ?? `${seriesUid}-${item.startMs}`], extras);
+    if (item.pastResourceId) {
+      void this.router.navigate(['/meetings', item.pastResourceId], extras);
       return;
     }
     void this.router.navigate(['/meetings', seriesUid], { ...extras, queryParams: { ...queryParams, occurrence: String(item.startMs) } });

@@ -396,6 +396,26 @@ export interface MeetingOccurrenceStripPages {
   futureHasMore: boolean;
   pastCursor?: string;
   futureCursor?: string;
+  /** The endpoint could not read the past history: the past side is unknown, not empty */
+  pastIncomplete: boolean;
+}
+
+/** One chip as the strip renders it: an item with everything its template shows, computed once. */
+export interface MeetingOccurrenceStripChip {
+  item: MeetingOccurrenceStripItem;
+  /** Upper-case short weekday ("THU") in the viewer's timezone */
+  weekday: string;
+  /** Two-digit day ("09") */
+  day: string;
+  /** Short month ("Jul") */
+  month: string;
+  /** The full date and its notes, for a screen reader ("Thursday, July 16, 2026, next meeting") */
+  label: string;
+  cssClass: string;
+  selected: boolean;
+  nextUp: boolean;
+  /** 0 for the strip's one tab stop, -1 for every other chip */
+  tabIndex: number;
 }
 
 /** Where the strip's request goes: the series, and the password the page holds for it. */

@@ -296,8 +296,8 @@ export class MeetingService {
   /**
    * One page of the series timeline for the V2 occurrence strip (E6-02 paging, E6-03). Unlike
    * {@link getPublicMeetingOccurrences}, which V1 reads whole and which degrades to empty, errors
-   * propagate, so the strip can tell a refusal (403: hidden) from an empty timeline. The password
-   * travels in its header.
+   * propagate, so the strip can tell a refusal (400 / 403: hidden silently) from an empty timeline.
+   * Any other failure is logged here and rethrown. The password travels in its header.
    */
   public getPublicMeetingOccurrencesPage(
     id: string,
@@ -312,7 +312,15 @@ export class MeetingService {
     if (page.cursor) {
       params = params.set('cursor', page.cursor);
     }
-    return this.http.get<PublicMeetingOccurrencesResponse>(`/public/api/meetings/${id}/occurrences`, { headers, params });
+    return this.http.get<PublicMeetingOccurrencesResponse>(`/public/api/meetings/${encodeURIComponent(id)}/occurrences`, { headers, params }).pipe(
+      catchError((error: unknown) => {
+        // A refusal is the endpoint gating the series, not a failure.
+        if (!(error instanceof HttpErrorResponse && (error.status === 400 || error.status === 403))) {
+          console.error('Failed to load the meeting occurrences', id, error);
+        }
+        return throwError(() => error);
+      })
+    );
   }
 
   /**

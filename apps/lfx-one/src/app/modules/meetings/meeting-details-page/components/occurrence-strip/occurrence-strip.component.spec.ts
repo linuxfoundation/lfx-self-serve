@@ -7,13 +7,14 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import {
   Meeting,
   MeetingOccurrenceStripItem,
+  MeetingRecurrence,
   MeetingTimelineOccurrence,
   PastOccurrenceSummary,
   PublicMeetingOccurrencesResponse,
 } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
-import { of, throwError } from 'rxjs';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Observable, of, Subject, throwError } from 'rxjs';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
 import { MeetingOccurrenceStripComponent } from './occurrence-strip.component';
@@ -26,9 +27,10 @@ const SERIES = '99152950841';
 describe('MeetingOccurrenceStripComponent', () => {
   let fixture: ComponentFixture<MeetingOccurrenceStripComponent>;
   let selectedStartMs: WritableSignal<number | null>;
+  let password: WritableSignal<string | null>;
   let navigateToOccurrence: ReturnType<typeof vi.fn>;
   let getPage: ReturnType<typeof vi.fn>;
-  // A weekly series: two weeks back, now, and two weeks on, at a fixed hour.
+  // A weekly series around now, at a fixed hour.
   const base = Math.floor(Date.now() / WEEK) * WEEK + 9 * 60 * 60 * 1000;
   const at = (week: number): number => base + week * WEEK;
 
@@ -49,11 +51,24 @@ describe('MeetingOccurrenceStripComponent', () => {
     future_has_more: false,
     ...overrides,
   });
+  const reply = (response: PublicMeetingOccurrencesResponse | HttpErrorResponse): Observable<PublicMeetingOccurrencesResponse> =>
+    response instanceof HttpErrorResponse ? throwError(() => response) : of(response);
 
-  async function render(first: PublicMeetingOccurrencesResponse | HttpErrorResponse, selected: number | null = at(1)): Promise<void> {
-    selectedStartMs = signal(selected);
+  interface RenderOptions {
+    selected?: number | null;
+    recurrence?: MeetingRecurrence | null;
+    pastPage?: boolean;
+    pages?: (PublicMeetingOccurrencesResponse | HttpErrorResponse | Observable<PublicMeetingOccurrencesResponse>)[];
+  }
+
+  async function render(first: PublicMeetingOccurrencesResponse | HttpErrorResponse, options: RenderOptions = {}): Promise<void> {
+    selectedStartMs = signal(options.selected === undefined ? at(1) : options.selected);
+    password = signal('pw');
     navigateToOccurrence = vi.fn();
-    getPage = vi.fn().mockReturnValue(first instanceof HttpErrorResponse ? throwError(() => first) : of(first));
+    getPage = vi.fn();
+    for (const response of [first, ...(options.pages ?? [])]) {
+      getPage.mockReturnValueOnce(response instanceof Observable ? response : reply(response));
+    }
 
     await TestBed.configureTestingModule({
       imports: [MeetingOccurrenceStripComponent],
@@ -62,12 +77,11 @@ describe('MeetingOccurrenceStripComponent', () => {
         {
           provide: MeetingDetailsStateService,
           useValue: {
-            meeting: signal({ id: SERIES, duration: 30 } as Meeting),
+            meeting: signal({ id: SERIES, duration: 30, recurrence: options.recurrence === undefined ? { type: 2 } : options.recurrence } as Meeting),
             now: signal(new Date()),
             seriesUid: signal(SERIES),
-            matchesRoute: signal(true),
-            loadedViaPastMeetingId: signal(false),
-            password: signal('pw'),
+            loadedViaPastMeetingId: signal(!!options.pastPage),
+            password,
             selectedOccurrenceStartMs: selectedStartMs,
             navigateToOccurrence,
           },
@@ -81,7 +95,7 @@ describe('MeetingOccurrenceStripComponent', () => {
   }
 
   async function settle(): Promise<void> {
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 8; i++) {
       await fixture.whenStable();
       await Promise.resolve();
       fixture.detectChanges();
@@ -96,23 +110,27 @@ describe('MeetingOccurrenceStripComponent', () => {
   afterEach(() => vi.restoreAllMocks());
 
   describe('with a loaded series', () => {
-    beforeEach(async () => render(page({ cancelled_occurrences: [] }), at(-1)));
+    const loaded = async (): Promise<void> => render(page({ cancelled_occurrences: [] }), { selected: at(-1) });
 
-    it('reads the window around now from the paged endpoint, with the password', () => {
+    it('reads the window around now from the paged endpoint, with the password', async () => {
+      await loaded();
       expect(getPage).toHaveBeenCalledWith(SERIES, 'pw', { pageSize: 12 });
     });
 
-    it('shows one chip per occurrence, past and upcoming, with the state attributes', () => {
+    it('shows one chip per occurrence, past and upcoming, with the state attributes', async () => {
+      await loaded();
       expect(fixture.nativeElement.querySelectorAll('[data-testid^="occurrence-chip-"]')).toHaveLength(4);
       expect(chip(-1)?.getAttribute('data-selected')).toBe('true');
       expect(chip(-1)?.getAttribute('aria-current')).toBe('date');
       expect(chip(1)?.getAttribute('data-nextup')).toBe('true');
       expect(chip(1)?.getAttribute('data-selected')).toBe('false');
       expect(chip(1)?.getAttribute('aria-current')).toBeNull();
+      expect(chip(1)?.getAttribute('aria-label')).toContain('next meeting');
       expect(chip(2)?.getAttribute('data-cancelled')).toBe('false');
     });
 
-    it('moves the page to a chip, and offers a jump to the next meeting from another one', () => {
+    it('moves the page to a chip, and offers a jump to the next meeting from another one', async () => {
+      await loaded();
       chip(2)?.click();
       expect(navigatedTo()).toBe(at(2));
 
@@ -121,18 +139,21 @@ describe('MeetingOccurrenceStripComponent', () => {
       expect(navigatedTo()).toBe(at(1));
     });
 
-    it('says the position once the whole series is loaded', () => {
+    it('says the position once the whole series is loaded', async () => {
+      await loaded();
       expect(query('[data-testid="occurrence-strip-position"]')?.textContent?.trim()).toBe('Occurrence 2 of 4');
     });
 
-    it('steps to the neighbouring occurrence with Previous and Next', () => {
+    it('steps to the neighbouring occurrence with Previous and Next', async () => {
+      await loaded();
       button('occurrence-strip-prev')?.click();
       expect(navigatedTo()).toBe(at(-2));
       button('occurrence-strip-next')?.click();
       expect(navigatedTo()).toBe(at(1));
     });
 
-    it('holds one tab stop, on the selected chip, moved by the arrow keys', () => {
+    it('holds one tab stop, on the selected chip, moved by the arrow keys and handed back on a move', async () => {
+      await loaded();
       expect(chip(-1)?.getAttribute('tabindex')).toBe('0');
       expect(chip(1)?.getAttribute('tabindex')).toBe('-1');
 
@@ -144,11 +165,18 @@ describe('MeetingOccurrenceStripComponent', () => {
       chip(1)?.dispatchEvent(new KeyboardEvent('keydown', { key: 'End' }));
       fixture.detectChanges();
       expect(chip(2)?.getAttribute('tabindex')).toBe('0');
+
+      // A move through Previous returns the tab stop to the page's selection.
+      button('occurrence-strip-prev')?.click();
+      selectedStartMs.set(at(-2));
+      fixture.detectChanges();
+      expect(chip(-2)?.getAttribute('tabindex')).toBe('0');
+      expect(chip(2)?.getAttribute('tabindex')).toBe('-1');
     });
   });
 
   it('shows a cancelled occurrence, struck through, and never moves the page to it', async () => {
-    await render(page({ future: [future(1, { status: 'cancel' }), future(2)] }), at(2));
+    await render(page({ future: [future(1, { status: 'cancel' }), future(2)] }), { selected: at(2) });
 
     expect(chip(1)?.getAttribute('data-cancelled')).toBe('true');
     expect(chip(1)?.getAttribute('aria-disabled')).toBe('true');
@@ -162,12 +190,13 @@ describe('MeetingOccurrenceStripComponent', () => {
     expect(navigatedTo()).toBe(at(-1));
   });
 
-  it('hides itself silently when the endpoint refuses the series', async () => {
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  it('hides itself when the endpoint refuses the series, or fails', async () => {
     await render(new HttpErrorResponse({ status: 403 }));
-
     expect(query('[data-testid="occurrence-strip-section"]')).toBeNull();
-    expect(consoleError).not.toHaveBeenCalled();
+
+    TestBed.resetTestingModule();
+    await render(new HttpErrorResponse({ status: 500 }));
+    expect(query('[data-testid="occurrence-strip-section"]')).toBeNull();
   });
 
   it('hides itself for a series with a single occurrence', async () => {
@@ -176,11 +205,35 @@ describe('MeetingOccurrenceStripComponent', () => {
     expect(query('[data-testid="occurrence-strip-section"]')).toBeNull();
   });
 
+  it('holds the placeholder while loading only for a meeting known to recur', async () => {
+    await renderPending(new Subject(), { type: 2 } as MeetingRecurrence);
+    expect(query('[data-testid="occurrence-strip-loading"]')).not.toBeNull();
+
+    TestBed.resetTestingModule();
+    await renderPending(new Subject(), null);
+    expect(query('[data-testid="occurrence-strip-section"]')).toBeNull();
+  });
+
+  it("reads with the page password on a past occurrence's page too", async () => {
+    await render(page(), { pastPage: true, selected: at(-1) });
+
+    expect(getPage).toHaveBeenCalledWith(SERIES, 'pw', { pageSize: 12 });
+  });
+
+  it('claims no position, and no past end, when the past history could not be read', async () => {
+    await render(page({ past: [], future: [future(1), future(2)], past_incomplete: true }));
+
+    expect(query('[data-testid="occurrence-strip-section"]')).not.toBeNull();
+    expect(query('[data-testid="occurrence-strip-position"]')).toBeNull();
+  });
+
   it('leaves out the position while more of the series is unread, and pages in at a loaded end', async () => {
-    await render(page({ past: [past(-1)], past_has_more: true, past_cursor: String(at(-1)) }), at(-1));
+    await render(page({ past: [past(-1)], past_has_more: true, past_cursor: String(at(-1)) }), {
+      selected: at(-1),
+      pages: [page({ past: [past(-2)], future: [], past_has_more: false })],
+    });
     expect(query('[data-testid="occurrence-strip-position"]')).toBeNull();
 
-    getPage.mockReturnValue(of(page({ past: [past(-2)], future: [], past_has_more: false })));
     button('occurrence-strip-prev')?.click();
     await settle();
 
@@ -189,15 +242,68 @@ describe('MeetingOccurrenceStripComponent', () => {
     expect(chip(-2)).not.toBeNull();
   });
 
-  it('pages back toward a selected occurrence older than the first window, so it shows selected', async () => {
-    selectedStartMs = signal(at(-5));
-    navigateToOccurrence = vi.fn();
-    getPage = vi
-      .fn()
-      .mockReturnValueOnce(of(page({ past: [past(-2), past(-1)], past_has_more: true, past_cursor: String(at(-2)) })))
-      .mockReturnValueOnce(of(page({ past: [past(-4), past(-3)], future: [], past_has_more: true, past_cursor: String(at(-4)) })))
-      .mockReturnValueOnce(of(page({ past: [past(-6), past(-5)], future: [], past_has_more: false })));
+  it('pages back in the largest pages toward a selected occurrence older than the window', async () => {
+    await render(page({ past: [past(-2), past(-1)], past_has_more: true, past_cursor: String(at(-2)) }), {
+      selected: at(-5),
+      pastPage: true,
+      pages: [
+        page({ past: [past(-4), past(-3)], future: [], past_has_more: true, past_cursor: String(at(-4)) }),
+        page({ past: [past(-6), past(-5)], future: [], past_has_more: false }),
+      ],
+    });
 
+    expect(getPage).toHaveBeenCalledTimes(3);
+    expect(getPage).toHaveBeenNthCalledWith(2, SERIES, 'pw', { pageSize: 50, direction: 'past', cursor: String(at(-2)) });
+    expect(chip(-5)?.getAttribute('data-selected')).toBe('true');
+  });
+
+  it('stops chasing after the page limit, still showing what it has', async () => {
+    const more = (week: number) => page({ past: [past(week)], future: [], past_has_more: true, past_cursor: String(at(week)) });
+    await render(page({ past: [past(-1)], past_has_more: true, past_cursor: String(at(-1)) }), {
+      selected: at(-100),
+      pastPage: true,
+      pages: [more(-2), more(-3), more(-4), more(-5), more(-6), more(-7)],
+    });
+
+    expect(getPage).toHaveBeenCalledTimes(6);
+    expect(query('[data-testid="occurrence-strip-section"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-selected="true"]')).toBeNull();
+  });
+
+  it('drops a read the strip has moved on from, whatever order the replies arrive in', async () => {
+    const stale = new Subject<PublicMeetingOccurrencesResponse>();
+    const fresh = new Subject<PublicMeetingOccurrencesResponse>();
+    await renderPending(stale, { type: 2 } as MeetingRecurrence, [fresh]);
+
+    // The password changes while the first window is still being read: a new run reads it again.
+    password.set('other');
+    fixture.detectChanges();
+    await settle();
+    fresh.next(page({ past: [past(-3)], future: [future(3), future(4)] }));
+    fresh.complete();
+    await settle();
+    // The superseded read now fails, then would succeed: it must neither hide the strip nor replace
+    // the newer chips.
+    stale.error(new HttpErrorResponse({ status: 500 }));
+    await settle();
+
+    expect(getPage).toHaveBeenLastCalledWith(SERIES, 'other', { pageSize: 12 });
+    expect(query('[data-testid="occurrence-strip-section"]')).not.toBeNull();
+    expect(chip(3)).not.toBeNull();
+    expect(chip(-1)).toBeNull();
+  });
+
+  /** Renders with the first read (and any later ones) left to the test to settle. */
+  async function renderPending(
+    first: Subject<PublicMeetingOccurrencesResponse>,
+    recurrence: MeetingRecurrence | null,
+    later: Subject<PublicMeetingOccurrencesResponse>[] = []
+  ): Promise<void> {
+    selectedStartMs = signal(at(1));
+    password = signal('pw');
+    navigateToOccurrence = vi.fn();
+    getPage = vi.fn();
+    [first, ...later].forEach((subject) => getPage.mockReturnValueOnce(subject));
     await TestBed.configureTestingModule({
       imports: [MeetingOccurrenceStripComponent],
       providers: [
@@ -205,12 +311,11 @@ describe('MeetingOccurrenceStripComponent', () => {
         {
           provide: MeetingDetailsStateService,
           useValue: {
-            meeting: signal({ id: SERIES, duration: 30 } as Meeting),
+            meeting: signal({ id: SERIES, duration: 30, recurrence } as Meeting),
             now: signal(new Date()),
             seriesUid: signal(SERIES),
-            matchesRoute: signal(true),
-            loadedViaPastMeetingId: signal(true),
-            password: signal(null),
+            loadedViaPastMeetingId: signal(recurrence === null),
+            password,
             selectedOccurrenceStartMs: selectedStartMs,
             navigateToOccurrence,
           },
@@ -220,9 +325,5 @@ describe('MeetingOccurrenceStripComponent', () => {
     fixture = TestBed.createComponent(MeetingOccurrenceStripComponent);
     fixture.detectChanges();
     await settle();
-
-    expect(getPage).toHaveBeenCalledTimes(3);
-    expect(getPage).toHaveBeenNthCalledWith(1, SERIES, null, { pageSize: 12 });
-    expect(chip(-5)?.getAttribute('data-selected')).toBe('true');
-  });
+  }
 });

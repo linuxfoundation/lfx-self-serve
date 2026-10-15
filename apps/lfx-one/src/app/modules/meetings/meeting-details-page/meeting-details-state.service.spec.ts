@@ -333,15 +333,16 @@ describe('MeetingDetailsStateService', () => {
       expect(navigate).toHaveBeenCalledWith(['/meetings', MEETING_ID], { queryParams: { occurrence: String(startMs) } });
     });
 
-    it('moves to a past occurrence by its composite id, or one built from the series and start', async () => {
+    it('moves to a past record by its composite id, and to an ended one without a record by ?occurrence=', async () => {
       const state = create();
       await settle();
 
-      state.navigateToOccurrence(item({ isPast: true, pastResourceId: `${MEETING_ID}-${startMs}` }));
-      expect(navigate).toHaveBeenLastCalledWith(['/meetings', `${MEETING_ID}-${startMs}`], { queryParams: {} });
+      state.navigateToOccurrence(item({ isPast: true, pastResourceId: `99152950841-${startMs}` }));
+      expect(navigate).toHaveBeenLastCalledWith(['/meetings', `99152950841-${startMs}`], { queryParams: {} });
 
+      // No record yet: its composite id would 404 and send the viewer to not-found.
       state.navigateToOccurrence(item({ isPast: true }));
-      expect(navigate).toHaveBeenLastCalledWith(['/meetings', `${MEETING_ID}-${startMs}`], { queryParams: {} });
+      expect(navigate).toHaveBeenLastCalledWith(['/meetings', MEETING_ID], { queryParams: { occurrence: String(startMs) } });
     });
 
     it('keeps a URL password in the URL, and hands a navigation-state one on in state, never the URL', async () => {
