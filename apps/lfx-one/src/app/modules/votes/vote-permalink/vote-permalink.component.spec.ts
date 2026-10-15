@@ -107,6 +107,17 @@ describe('VotePermalinkComponent', () => {
       expect(voteService.getMyVoteResponse).not.toHaveBeenCalled();
     });
 
+    it('stops after the vote fetch on the server, leaving the drawer target to the browser', async () => {
+      await setup('server');
+
+      expect(stateOf()).toEqual({ loading: true, notFound: false, error: false, target: null });
+      expect(voteService.fetchVote).toHaveBeenCalledWith('vote-1');
+      expect(reqContext.notFound).toBeUndefined();
+      expect(voteService.getMyVoteResponse).not.toHaveBeenCalled();
+      expect(projectService.getProjectStrict).not.toHaveBeenCalled();
+      expect(committeeService.fetchCommittee).not.toHaveBeenCalled();
+    });
+
     it('does not set reqContext.notFound in the browser', async () => {
       voteService.fetchVote.mockReturnValue(httpError(404));
       await setup('browser');

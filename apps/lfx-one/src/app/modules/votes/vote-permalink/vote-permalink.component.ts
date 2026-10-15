@@ -26,7 +26,8 @@ import { VotesDashboardComponent } from '../votes-dashboard/votes-dashboard.comp
  * awaiting their ballot on an active vote, otherwise the results drawer — as `creator` for a
  * project or committee writer, as `voter` for everyone else. A vote the user can't view (400/403/404)
  * renders the shared not-found page in place, and SSR returns HTTP 404, so a missing vote and a
- * forbidden one look identical. Any other failure is transient: a retry card, HTTP 200.
+ * forbidden one look identical. Any other failure is transient: a retry card, HTTP 200. SSR stops
+ * after the vote fetch (it renders the skeleton); the drawer target is resolved in the browser.
  */
 @Component({
   selector: 'lfx-vote-permalink',
@@ -81,6 +82,11 @@ export class VotePermalinkComponent {
             catchError((err) => (this.isNotFoundStatus(err?.status) ? of(null) : throwError(() => err))),
             switchMap((vote) => {
               if (!vote) return of(notFoundState);
+              // SSR only needs the vote fetch to decide the HTTP status. Resolving the drawer here
+              // would also mount the dashboard on the server and hold the response until its My
+              // Votes feed, the writer checks and the drawer's own fetches all settle — the browser
+              // resolves the target after hydration instead.
+              if (isPlatformServer(this.platformId)) return of(loadingState);
               return this.resolveTarget(vote).pipe(map((target): VotePermalinkState => ({ loading: false, notFound: false, error: false, target })));
             }),
             catchError((err) => {
