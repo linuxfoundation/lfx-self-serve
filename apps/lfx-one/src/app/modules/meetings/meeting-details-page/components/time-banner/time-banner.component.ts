@@ -61,6 +61,12 @@ export class MeetingTimeBannerComponent {
     ended: { icon: 'fa-light fa-clock-rotate-left mt-[2px] text-[var(--md-text-muted)]', text: 'text-[var(--md-text-body)]' },
   };
 
+  /** The cancelled state's icon and text colour (E6-05). */
+  protected readonly cancelledStyle = {
+    icon: 'fa-light fa-calendar-xmark mt-[2px] text-[var(--md-status-warn)]',
+    text: 'font-semibold text-[var(--md-status-warn)]',
+  };
+
   public constructor() {
     afterNextRender(() => this.userTimezone.set(getUserTimezone()));
   }
@@ -116,12 +122,15 @@ export class MeetingTimeBannerComponent {
       const window = this.window();
       // Read so the relative start moves on with the clock.
       this.state.now();
-      return window && this.timeState() === 'before' ? `Starts ${formatFutureRelativeTime(window.start)}.` : '';
+      return window && this.timeState() === 'before' && !this.cancelled() ? `Starts ${formatFutureRelativeTime(window.start)}.` : '';
     });
   }
 
   private initPhaseMessage(): Signal<string> {
     return computed(() => {
+      if (this.cancelled()) {
+        return 'This occurrence was cancelled.';
+      }
       switch (this.timeState()) {
         case 'ended':
           return 'This meeting has ended.';
