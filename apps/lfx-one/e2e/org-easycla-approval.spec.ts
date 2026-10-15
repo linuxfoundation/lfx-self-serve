@@ -72,7 +72,7 @@ test.describe('Org Lens EasyCLA approval — content', () => {
     await expect(page.getByTestId('org-easycla-approval-value')).toHaveText(NEXT_DOMAIN);
   });
 
-  test('warns that the previous value must be acknowledged again, then invalidates it', async ({ page }) => {
+  test('warns that the previous value will show as Not Authorized, then removes it', async ({ page }) => {
     const afterEdit = approvalList({ entries: [{ kind: 'domain', value: NEXT_DOMAIN }] });
 
     await gotoApproval(page, { get: EXISTING, put: afterEdit });
@@ -82,7 +82,7 @@ test.describe('Org Lens EasyCLA approval — content', () => {
     await page.getByTestId('org-easycla-approval-edit').locator('button').click();
     await expect(page.getByTestId('org-easycla-approval-dialog-edit-warning')).toBeVisible();
     await expect(page.getByTestId('org-easycla-approval-dialog-edit-warning')).toContainText(
-      'Contributors covered only by the previous value will need to acknowledge this CLA again.'
+      'Contributors covered only by the previous value will show as Not Authorized until you add it back.'
     );
     await expect(page.getByTestId('org-easycla-approval-dialog-edit-warning')).not.toContainText('invalidated');
 
