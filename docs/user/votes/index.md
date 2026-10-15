@@ -46,6 +46,7 @@ While the summary loads, counts show dashes and the cells are disabled. A succes
 While a replacement list or its total is loading, pagination is hidden so the previous mode's count is not presented as current. Search, Group, and status controls remain available. Pagination returns once the matching rows and total are available.
 
 Changing context or Group, refreshing the list, or returning after creating/editing a vote reloads the totals. Closing selection also refreshes the summary. Totals and list pages use separate time snapshots and may differ near a deadline; they do not update continuously while idle. Changes may take time to appear in the search index. My Votes and existing creation, voting, and result permissions are unchanged.
+
 ### Sharing a link to a vote
 
 Select **⋮ → Copy link** on an active or ended vote to copy a direct link to it, which you can paste into an email, a chat or a mailing list. Draft votes have no link.
