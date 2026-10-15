@@ -89,6 +89,7 @@ router.get('/meta/campaign-ref', (req, res, next) => optimizeController.resolveP
 router.get('/reddit/campaign-ref', (req, res, next) => optimizeController.resolvePlatformCampaign(req, res, next, 'reddit-ads'));
 router.get('/twitter/campaign-ref', (req, res, next) => optimizeController.resolvePlatformCampaign(req, res, next, 'twitter-ads'));
 router.get('/linkedin/campaign-ref', (req, res, next) => optimizeController.resolvePlatformCampaign(req, res, next, 'linkedin-ads'));
+router.get('/microsoft/campaign-ref', (req, res, next) => optimizeController.resolvePlatformCampaign(req, res, next, 'microsoft-ads'));
 // Reddit keyword performance, read-only (campaign-service #331). Takes `?window=` like the Microsoft keyword read.
 router.get('/reddit/keywords', (req, res, next) => optimizeController.getRedditKeywords(req, res, next));
 // Binds a campaign that already exists on its platform to a brief; creates nothing upstream.
