@@ -153,8 +153,9 @@ export class VoteService {
    * Client `page_size`/`page_token`/`order` never go upstream: `page_token` is the BFF's own opaque
    * `offset:<n>` cursor (clients already treat the token as opaque) and `order` is the legacy param
    * the query-service ignores. `filters`/`filters_or`/`parent`/`tags`/`name` still narrow the
-   * drained set upstream, so the sorted set is exactly the filtered set and ordering holds across
-   * pagination and filters. Recently-opened interplay (GH-2730/GH-1558 review): a vote opened inside
+   * drained set upstream, except `filters=status:active`: that predicate runs locally with the
+   * same status normalization as the summary. Ordering holds across pagination and filters.
+   * Recently-opened interplay (GH-2730/GH-1558 review): a vote opened inside
    * the index-lag window still reads `disabled` in the drained set, so the status tier places it after
    * the active block and the client's `mergeRecentlyOpenedVotes` rebadge can't reposition it (or
    * surface it on page 1 when more than a page of active votes exists). Accepted: tier-2's
@@ -268,6 +269,15 @@ export class VoteService {
     logger.debug(req, 'get_votes_count', 'Fetching vote count', {
       query_params: Object.keys(query),
     });
+
+    // The summary accepts legacy mixed-case active statuses; an exact upstream count would miss them.
+    if (this.hasActiveStatusFilter(query)) {
+      // Count is scope-wide even if a caller supplies list pagination parameters.
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { page_size: _pageSize, page_token: _pageToken, ...scope } = query;
+      const votes = await this.fetchScopedIndexedVotes(req, scope);
+      return votes.length;
+    }
 
     const params = {
       ...query,
@@ -738,20 +748,37 @@ export class VoteService {
     });
   }
 
+  private hasActiveStatusFilter(query: Record<string, unknown>): boolean {
+    const filters = query['filters'];
+    const active = `status:${PollStatus.ACTIVE}`;
+    return filters === active || (Array.isArray(filters) && filters.includes(active));
+  }
+
   /** Offset pages and totals must reject incomplete scans rather than silently undercount. */
   private async fetchScopedIndexedVotes(req: Request, upstreamParams: Record<string, unknown>): Promise<Vote[]> {
+    const activeOnly = this.hasActiveStatusFilter(upstreamParams);
+    const params = { ...upstreamParams };
+    if (activeOnly) {
+      // Preserve every other upstream filter, but do not discard mixed-case active rows before normalization.
+      const rawFilters = params['filters'];
+      const filters = Array.isArray(rawFilters) ? rawFilters : [rawFilters];
+      const remaining = filters.filter((clause) => clause !== `status:${PollStatus.ACTIVE}`);
+      if (remaining.length) params['filters'] = remaining;
+      else delete params['filters'];
+    }
     const drained = await fetchAllQueryResources<IndexedVote>(
       req,
       (pageToken) =>
         this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVote>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          ...upstreamParams,
+          ...params,
           type: 'vote',
           page_size: VoteService.voteListUpstreamPageSize,
           ...(pageToken && { page_token: pageToken }),
         }),
       { failOnPartial: true }
     );
-    return drained.map((vote) => this.normalizeIndexedVote(req, vote));
+    const votes = drained.map((vote) => this.normalizeIndexedVote(req, vote));
+    return activeOnly ? votes.filter((vote) => normalizePollStatus(vote.status) === PollStatus.ACTIVE) : votes;
   }
 
   /**

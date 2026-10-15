@@ -102,6 +102,14 @@ snapshot as the returned page; the dashboard skips the separate count request in
 False/omitted flags preserve the ordinary response shape. Summary and list both require
 `failOnPartial: true`, so a failed scan is unavailable, never a partial total.
 
+The canonical `filters=status:active` clause is evaluated locally with normalized status for
+both `GET /api/votes` and `GET /api/votes/count`. Forwarding it as an exact upstream term would
+exclude legacy mixed-case active votes that the summary counts. The BFF removes only that
+clause, keeps other filters/search/scope upstream, and applies normalized active matching to
+the complete authorized scan. The Active count therefore drains pages rather than using the
+upstream exact-value count; it ignores list pagination and rejects incomplete scans. Other
+count queries and the internal upstream-cursor passthrough retain their existing behavior.
+
 Closing means `now < end_time <= now + 7 × 24 hours`. Active totals still include indexed-active
 votes whose deadlines are past or invalid. The summary's RFC3339 `as_of` describes its snapshot;
 list pagination takes a fresh snapshot, so counts can legitimately differ at a deadline.

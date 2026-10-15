@@ -102,7 +102,14 @@ export class VoteService {
   public getVotesSummaryByProject(projectUid: string, group?: string): Observable<VoteSummary> {
     let params = new HttpParams().set('parent', `project:${projectUid}`);
     if (group) params = params.set('group', group);
-    return this.http.get<VoteSummary>('/api/votes/summary', { params });
+    return this.http.get<VoteSummary>('/api/votes/summary', { params }).pipe(
+      catchError((error: unknown) => {
+        console.error('Failed to load vote summary', {
+          status: error instanceof HttpErrorResponse ? error.status : undefined,
+        });
+        return throwError(() => error);
+      })
+    );
   }
 
   public getVotesCountByProject(projectUid: string, searchName?: string, filters?: string[]): Observable<number> {

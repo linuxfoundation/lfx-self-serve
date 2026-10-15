@@ -1036,7 +1036,6 @@ describe('VoteService', () => {
         expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
           parent: query.parent,
           name: query.name,
-          filters: query.filters,
           type: 'vote',
           page_size: 1000,
         });
@@ -1045,6 +1044,104 @@ describe('VoteService', () => {
         expect(ordinary).not.toHaveProperty('total_records');
       } finally {
         vi.restoreAllMocks();
+      }
+    });
+
+    it.each(['status:active', ['status:active']])('keeps summary, Active count and paginated shortcuts aligned for filter %j', async (filters) => {
+      vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-09T12:00:00Z'));
+      drainPages();
+      const indexed = [
+        { ...indexRow, vote_uid: 'canonical', committee_name: 'Synthetic Board', creation_time: '2026-10-02T00:00:00Z', end_time: '2026-10-10T12:00:00Z' },
+        {
+          ...indexRow,
+          vote_uid: 'mixed',
+          committee_name: 'Synthetic Board',
+          status: 'AcTiVe',
+          creation_time: '2026-10-03T00:00:00Z',
+          end_time: '2026-10-11T12:00:00Z',
+        },
+        { ...indexRow, vote_uid: 'overdue', committee_name: 'Synthetic Board', creation_time: '2026-10-01T00:00:00Z', end_time: '2026-10-01T12:00:00Z' },
+        { ...indexRow, vote_uid: 'draft', committee_name: 'Synthetic Board', status: 'disabled' },
+        { ...indexRow, vote_uid: 'ended', committee_name: 'Synthetic Board', status: 'ended' },
+        { ...indexRow, vote_uid: 'other-group', committee_name: 'Other Board' },
+        { ...indexRow, vote_uid: 'other-project', project_uid: 'synthetic-other-project', committee_name: 'Synthetic Board' },
+        { ...indexRow, vote_uid: 'other-name', name: 'Budget', committee_name: 'Synthetic Board', status: 'disabled' },
+      ];
+      // Enforce the upstream's exact term semantics; returning preselected rows would miss F1.
+      proxyRequest.mockImplementation(async (_req: Request, _service: string, path: string, _method: string, params: Record<string, unknown>) => {
+        const clauses = [params['filters'], params['filters_all']].flat().filter((clause): clause is string => typeof clause === 'string');
+        const matches = indexed.filter((row) => {
+          if (params['parent'] !== `project:${row.project_uid}`) return false;
+          if (typeof params['name'] === 'string' && !row.name.includes(params['name'])) return false;
+          return clauses.every((clause) => {
+            const separator = clause.indexOf(':');
+            const field = clause.slice(0, separator);
+            return row[field as keyof typeof row] === clause.slice(separator + 1);
+          });
+        });
+        if (path === '/query/resources/count') return { count: matches.length };
+        const offset = Number(params['page_token'] ?? 0);
+        const nextOffset = offset + 2;
+        return {
+          resources: matches.slice(offset, nextOffset).map((data) => ({ data })),
+          page_token: nextOffset < matches.length ? String(nextOffset) : undefined,
+        };
+      });
+      try {
+        const query = { parent: `project:${PROJECT_UID}`, name: 'Steering', filters, filters_all: ['committee_name:Synthetic Board'] };
+        const originalQuery = structuredClone(query);
+        expect(await service.getVotesSummary(req, query.parent, 'Synthetic Board')).toMatchObject({ active_votes: 3, closing_soon: 2 });
+        expect(await service.getVotesCount(req, { ...query, page_token: '2', page_size: '1' })).toBe(3);
+        const active = await service.getVotes(req, { ...query, page_size: '2' }, { includeProject: false });
+        expect(active.data.map((vote) => vote.uid)).toEqual(['mixed', 'canonical']);
+        expect(active).not.toHaveProperty('total_records');
+        const activeTail = await service.getVotes(req, { ...query, page_size: '2', page_token: active.page_token }, { includeProject: false });
+        expect(activeTail.data.map((vote) => vote.uid)).toEqual(['overdue']);
+        const closing = await service.getVotes(req, { ...query, closing_soon: 'true', page_size: '1' }, { includeProject: false });
+        expect(closing.data.map((vote) => vote.uid)).toEqual(['mixed']);
+        expect(closing.total_records).toBe(2);
+        const closingTail = await service.getVotes(
+          req,
+          { ...query, closing_soon: 'true', page_size: '1', page_token: closing.page_token },
+          { includeProject: false }
+        );
+        expect(closingTail.data.map((vote) => vote.uid)).toEqual(['canonical']);
+        expect(closingTail.total_records).toBe(2);
+        expect(closingTail.page_token).toBeUndefined();
+        expect(query).toEqual(originalQuery);
+        expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          parent: query.parent,
+          name: query.name,
+          filters_all: query.filters_all,
+          type: 'vote',
+          page_size: 1000,
+        });
+        expect(proxyRequest.mock.calls.every((call) => call[2] === '/query/resources')).toBe(true);
+        expect(getProjectsByIds).not.toHaveBeenCalled();
+      } finally {
+        vi.restoreAllMocks();
+        proxyRequest.mockReset();
+        fetchAllQueryResources.mockReset();
+      }
+    });
+
+    it.each([undefined, 'status:ended', ['status:disabled']])('retains the ordinary upstream count path for filters %j', async (filters) => {
+      proxyRequest.mockResolvedValueOnce({ count: 7 });
+      const query = { parent: `project:${PROJECT_UID}`, ...(filters && { filters }) };
+      expect(await service.getVotesCount(req, query)).toBe(7);
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/query/resources/count', 'GET', { ...query, type: 'vote' });
+      expect(fetchAllQueryResources).not.toHaveBeenCalled();
+    });
+
+    it('rejects an incomplete Active count instead of returning a partial normalized total', async () => {
+      drainPages();
+      proxyRequest.mockResolvedValueOnce({ resources: [{ data: indexRow }], page_token: 'next' }).mockRejectedValueOnce(new Error('later page failed'));
+      try {
+        await expect(service.getVotesCount(req, { parent: `project:${PROJECT_UID}`, filters: ['status:active'] })).rejects.toThrow('later page failed');
+        expect(fetchAllQueryResources).toHaveBeenCalledWith(req, expect.any(Function), { failOnPartial: true });
+      } finally {
+        proxyRequest.mockReset();
+        fetchAllQueryResources.mockReset();
       }
     });
 
@@ -1171,7 +1268,7 @@ describe('VoteService', () => {
         parent: 'project:abc',
         tags: 'committee_uid:c1',
         name: 'steering',
-        filters: ['status:active'],
+        filters: ['status:active', 'committee_name:Synthetic Board'],
         filters_or: ['user_email:a@example.org'],
         page_size: '10',
         page_token: 'offset:20',
@@ -1182,7 +1279,7 @@ describe('VoteService', () => {
         parent: 'project:abc',
         tags: 'committee_uid:c1',
         name: 'steering',
-        filters: ['status:active'],
+        filters: ['committee_name:Synthetic Board'],
         filters_or: ['user_email:a@example.org'],
         type: 'vote',
         page_size: 1000,

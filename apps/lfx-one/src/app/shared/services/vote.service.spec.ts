@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient, HttpHeaders, HttpResponse } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpHeaders, HttpResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import {
   RECENTLY_OPENED_VOTE_TTL_MS,
@@ -63,13 +63,25 @@ describe('VoteService', () => {
     expect(next).toHaveBeenCalledWith(result);
   });
 
-  it('propagates summary errors without substituting zero', () => {
-    const failure = new Error('Summary unavailable');
-    http.get.mockReturnValue(throwError(() => failure));
-    const error = vi.fn();
-    service.getVotesSummaryByProject('synthetic-project').subscribe({ error });
-    expect(error).toHaveBeenCalledWith(failure);
-  });
+  it.each([new HttpErrorResponse({ status: 503, error: { message: 'Synthetic private upstream detail' } }), new Error('Synthetic network failure')])(
+    'logs only the summary failure status once and propagates the original error: %s',
+    (failure) => {
+      const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      try {
+        http.get.mockReturnValue(throwError(() => failure));
+        const error = vi.fn();
+        const next = vi.fn();
+        service.getVotesSummaryByProject('synthetic-project').subscribe({ next, error });
+        expect(next).not.toHaveBeenCalled();
+        expect(error).toHaveBeenCalledExactlyOnceWith(failure);
+        expect(log).toHaveBeenCalledExactlyOnceWith('Failed to load vote summary', {
+          status: failure instanceof HttpErrorResponse ? failure.status : undefined,
+        });
+      } finally {
+        log.mockRestore();
+      }
+    }
+  );
 
   it.each([undefined, false, true])('adds only the optional closing flag and forwards authoritative totals: %s', (closingOnly) => {
     const result = { data: [], total_records: 0 };
