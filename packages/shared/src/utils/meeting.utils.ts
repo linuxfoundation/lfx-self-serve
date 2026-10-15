@@ -858,7 +858,7 @@ export function buildOccurrenceStripItems(
       occurrenceId: startMsToOccurrenceId(startMs),
       pastResourceId: past.meeting_and_occurrence_id,
       isPast: true,
-      cancelled: false,
+      cancelled: cancelledIds.has(startMsToOccurrenceId(startMs)),
     });
   }
 

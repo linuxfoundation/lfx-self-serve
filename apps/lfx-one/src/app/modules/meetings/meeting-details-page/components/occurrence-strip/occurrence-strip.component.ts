@@ -10,7 +10,6 @@ import {
   MeetingOccurrenceDirection,
   MeetingOccurrenceStripChip,
   MeetingOccurrenceStripItem,
-  MeetingOccurrenceStripPages,
   MeetingOccurrenceStripRequest,
   MeetingOccurrenceStripTimeline,
   PublicMeetingOccurrencesResponse,
@@ -38,8 +37,11 @@ import { MeetingDetailsStateService } from '../../meeting-details-state.service'
  * nothing it returns is applied after that.
  *
  * Selecting a chip moves the page through {@link MeetingDetailsStateService.navigateToOccurrence},
- * which keeps the URL contract and the password rules. The strip stays mounted across that move, its
- * pages and scroll kept, since its request is keyed on the series and password, not on the route.
+ * which keeps the URL contract and the password rules. A move within the route (`?occurrence=`) keeps
+ * the strip as it is. A move to a past occurrence changes the route id, and the page shows its skeleton
+ * until that lookup settles (it never shows one meeting's content under another's URL), so the strip
+ * is created again: it resumes from the pages the state service holds instead of reading them again,
+ * and puts focus back on the selected chip when the move left none.
  * Cancelled occurrences are shown, struck through, and cannot be selected (the page never selects one);
  * their full state is E6-05's (#3588). The chips scroll sideways rather than the prototype's fixed
  * nine-chip window, which is unreadable on a phone. "Occurrence N of M" appears only once the whole
@@ -66,7 +68,8 @@ export class MeetingOccurrenceStripComponent {
 
   /** `loading` until the first page settles; `hidden` for a refusal, a failure, or a single occurrence. */
   protected readonly status = signal<'loading' | 'ready' | 'hidden'>('loading');
-  private readonly loaded = signal<MeetingOccurrenceStripPages | null>(null);
+  /** The loaded pages, held by the state service so a strip created again by a move resumes from them. */
+  private readonly loaded = this.state.occurrenceStripPages;
   /** The chip holding the strip's one tab stop after an arrow key; the selected one otherwise. */
   private readonly focusStartMs = signal<number | null>(null);
   /** The run whose page is being read, so Previous / Next at a loaded end do not read it twice. */
@@ -132,6 +135,25 @@ export class MeetingOccurrenceStripComponent {
       if (chip) {
         scroller.scrollLeft = chip.offsetLeft - scroller.clientWidth / 2 + chip.clientWidth / 2;
       }
+    });
+
+    // After the strip moved the page: a strip created again by that move takes focus back to the
+    // chip, when the move left none (the old strip's control went with its view). A move that kept
+    // the strip kept its focus too, so the request is only cleared.
+    afterRenderEffect(() => {
+      const focusMs = this.state.occurrenceStripFocusMs();
+      const { startMs } = this.centerKey();
+      const scroller = this.scroller()?.nativeElement;
+      // Only on the loaded page: the skeleton the page shows meanwhile lays out the columns too, and a
+      // strip there is discarded with it.
+      if (focusMs === null || focusMs !== startMs || !scroller || !this.state.matchesRoute()) {
+        return;
+      }
+      const active = scroller.ownerDocument.activeElement;
+      if (!active || active === scroller.ownerDocument.body) {
+        scroller.querySelector<HTMLElement>(`[data-start-ms="${startMs}"]`)?.focus();
+      }
+      this.state.occurrenceStripFocusMs.set(null);
     });
   }
 
@@ -218,40 +240,44 @@ export class MeetingOccurrenceStripComponent {
    */
   private async loadWindow(request: MeetingOccurrenceStripRequest | null): Promise<void> {
     const run = ++this.runId;
-    this.loaded.set(null);
+    const key = request ? `${request.seriesUid}:${request.password ?? ''}` : null;
     this.focusStartMs.set(null);
     this.pagingRun.set(null);
     this.status.set('loading');
-    if (!request) {
+    if (!request || !key) {
       return;
     }
 
-    let page: PublicMeetingOccurrencesResponse;
-    try {
-      page = await firstValueFrom(
-        this.meetingService.getPublicMeetingOccurrencesPage(request.seriesUid, request.password, { pageSize: MEETING_OCCURRENCE_STRIP_PAGE_SIZE })
-      );
-    } catch {
-      // The service has logged anything but a refusal, which hides the strip silently, as V1's.
-      if (run === this.runId) {
-        this.status.set('hidden');
+    // Pages this series was already read into (by a strip a move replaced) are resumed, not read again.
+    if (this.loaded()?.key !== key) {
+      this.loaded.set(null);
+      let page: PublicMeetingOccurrencesResponse;
+      try {
+        page = await firstValueFrom(
+          this.meetingService.getPublicMeetingOccurrencesPage(request.seriesUid, request.password, { pageSize: MEETING_OCCURRENCE_STRIP_PAGE_SIZE })
+        );
+      } catch {
+        // The service has logged anything but a refusal, which hides the strip silently, as V1's.
+        if (run === this.runId) {
+          this.status.set('hidden');
+        }
+        return;
       }
-      return;
+      if (run !== this.runId) {
+        return;
+      }
+      this.loaded.set({
+        key,
+        past: page.past ?? [],
+        future: page.future ?? [],
+        cancelled: page.cancelled_occurrences ?? [],
+        pastHasMore: !!page.past_has_more,
+        futureHasMore: !!page.future_has_more,
+        pastCursor: page.past_cursor,
+        futureCursor: page.future_cursor,
+        pastIncomplete: !!page.past_incomplete,
+      });
     }
-    if (run !== this.runId) {
-      return;
-    }
-    this.loaded.set({
-      key: `${request.seriesUid}:${request.password ?? ''}`,
-      past: page.past ?? [],
-      future: page.future ?? [],
-      cancelled: page.cancelled_occurrences ?? [],
-      pastHasMore: !!page.past_has_more,
-      futureHasMore: !!page.future_has_more,
-      pastCursor: page.past_cursor,
-      futureCursor: page.future_cursor,
-      pastIncomplete: !!page.past_incomplete,
-    });
 
     for (let chased = 0; chased < MEETING_OCCURRENCE_STRIP_MAX_CHASE_PAGES; chased++) {
       const target = this.state.selectedOccurrenceStartMs();

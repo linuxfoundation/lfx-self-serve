@@ -7,6 +7,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import {
   Meeting,
   MeetingOccurrenceStripItem,
+  MeetingOccurrenceStripPages,
   MeetingRecurrence,
   MeetingTimelineOccurrence,
   PastOccurrenceSummary,
@@ -80,10 +81,13 @@ describe('MeetingOccurrenceStripComponent', () => {
             meeting: signal({ id: SERIES, duration: 30, recurrence: options.recurrence === undefined ? { type: 2 } : options.recurrence } as Meeting),
             now: signal(new Date()),
             seriesUid: signal(SERIES),
+            matchesRoute: signal(true),
             loadedViaPastMeetingId: signal(!!options.pastPage),
             password,
             selectedOccurrenceStartMs: selectedStartMs,
             navigateToOccurrence,
+            occurrenceStripPages: signal(null),
+            occurrenceStripFocusMs: signal(null),
           },
         },
       ],
@@ -293,6 +297,52 @@ describe('MeetingOccurrenceStripComponent', () => {
     expect(chip(-1)).toBeNull();
   });
 
+  it('resumes from the pages the state service holds, and takes focus back after a move that rebuilt it', async () => {
+    const held = signal<MeetingOccurrenceStripPages | null>({
+      key: `${SERIES}:pw`,
+      past: [past(-2), past(-1)],
+      future: [future(1), future(2)],
+      cancelled: [],
+      pastHasMore: false,
+      futureHasMore: false,
+      pastIncomplete: false,
+    });
+    const focusMs = signal<number | null>(at(-1));
+    getPage = vi.fn();
+    await TestBed.configureTestingModule({
+      imports: [MeetingOccurrenceStripComponent],
+      providers: [
+        { provide: MeetingService, useValue: { getPublicMeetingOccurrencesPage: getPage } },
+        {
+          provide: MeetingDetailsStateService,
+          useValue: {
+            meeting: signal({ id: SERIES, duration: 30, recurrence: null } as Meeting),
+            now: signal(new Date()),
+            seriesUid: signal(SERIES),
+            matchesRoute: signal(true),
+            loadedViaPastMeetingId: signal(true),
+            password: signal('pw'),
+            selectedOccurrenceStartMs: signal(at(-1)),
+            navigateToOccurrence: vi.fn(),
+            occurrenceStripPages: held,
+            occurrenceStripFocusMs: focusMs,
+          },
+        },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(MeetingOccurrenceStripComponent);
+    document.body.appendChild(fixture.nativeElement);
+    (document.activeElement as HTMLElement | null)?.blur();
+    fixture.detectChanges();
+    await settle();
+
+    expect(getPage).not.toHaveBeenCalled();
+    expect(chip(-1)?.getAttribute('data-selected')).toBe('true');
+    expect(document.activeElement).toBe(chip(-1));
+    expect(focusMs()).toBeNull();
+    fixture.nativeElement.remove();
+  });
+
   /** Renders with the first read (and any later ones) left to the test to settle. */
   async function renderPending(
     first: Subject<PublicMeetingOccurrencesResponse>,
@@ -314,10 +364,13 @@ describe('MeetingOccurrenceStripComponent', () => {
             meeting: signal({ id: SERIES, duration: 30, recurrence } as Meeting),
             now: signal(new Date()),
             seriesUid: signal(SERIES),
+            matchesRoute: signal(true),
             loadedViaPastMeetingId: signal(recurrence === null),
             password,
             selectedOccurrenceStartMs: selectedStartMs,
             navigateToOccurrence,
+            occurrenceStripPages: signal(null),
+            occurrenceStripFocusMs: signal(null),
           },
         },
       ],

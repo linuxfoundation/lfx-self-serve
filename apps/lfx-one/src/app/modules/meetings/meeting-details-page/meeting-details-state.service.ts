@@ -14,6 +14,7 @@ import {
   MeetingJoinPageState,
   MeetingOccurrence,
   MeetingOccurrenceStripItem,
+  MeetingOccurrenceStripPages,
   MeetingPrivacyState,
   MeetingRosterRequest,
   MeetingRsvp,
@@ -203,6 +204,18 @@ export class MeetingDetailsStateService {
     const occurrence = this.selectedOccurrence();
     return occurrence ? new Date(occurrence.start_time).getTime() : null;
   });
+  /**
+   * The occurrence strip's loaded pages (E6-03), held here because the strip does not outlive a move
+   * that changes the route id (a past occurrence's composite id): the page shows its skeleton until
+   * that lookup settles, and the strip is created again. Keyed on series and password, so the new one
+   * resumes without reading the series again.
+   */
+  public readonly occurrenceStripPages = signal<MeetingOccurrenceStripPages | null>(null);
+  /**
+   * The start (Unix ms) of the occurrence the strip last moved the page to, until the strip has shown
+   * it: a strip created again by that move puts focus back on its chip when the move left none.
+   */
+  public readonly occurrenceStripFocusMs = signal<number | null>(null);
   /** The selected occurrence's time state on the clock; `null` until the meeting has loaded. */
   public readonly timeState: Signal<MeetingTimeState | null> = this.initTimeState();
   /**
@@ -341,6 +354,7 @@ export class MeetingDetailsStateService {
     if (!seriesUid || item.cancelled) {
       return;
     }
+    this.occurrenceStripFocusMs.set(item.startMs);
     const urlPassword = this.urlPassword();
     const statePassword = urlPassword ? null : this.password();
     const queryParams: Record<string, string> = urlPassword ? { password: urlPassword } : {};

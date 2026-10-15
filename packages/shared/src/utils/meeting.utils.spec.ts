@@ -1470,6 +1470,21 @@ describe('buildOccurrenceStripItems (E6-03)', () => {
     expect(items[1]).toEqual(expect.objectContaining({ isPast: false, cancelled: false }));
   });
 
+  it('flags a past record whose id is listed as cancelled', () => {
+    const items = buildOccurrenceStripItems(
+      [],
+      {
+        past: [{ meeting_and_occurrence_id: `99152950841-${at(16)}`, scheduled_start_time: new Date(at(16)).toISOString() }],
+        future: [],
+        cancelled_occurrences: [String(at(16) / 1000)],
+      },
+      30,
+      now
+    );
+
+    expect(items).toEqual([expect.objectContaining({ startMs: at(16), pastResourceId: `99152950841-${at(16)}`, cancelled: true })]);
+  });
+
   it('keeps cancelled occurrences, flagged, by status or by listed id, including one with no occurrence left', () => {
     const items = buildOccurrenceStripItems(
       [],
