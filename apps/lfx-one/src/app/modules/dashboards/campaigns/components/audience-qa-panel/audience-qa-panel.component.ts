@@ -39,6 +39,14 @@ export class AudienceQaPanelComponent {
    * previous suggestion — a ref the operator typed is never overwritten.
    */
   public readonly suggestedListRef = input('');
+  /**
+   * The discovered event's name. Sent with the run so upstream can check that THIS edition's own
+   * registrants are suppressed rather than included; blank skips that check (it is then absent
+   * from the report, never shown as a pass).
+   */
+  public readonly eventName = input('');
+  /** Suppression lists this send applies at send time; counted with the list's own exclusions. */
+  public readonly sendSuppressionIds = input<readonly string[]>([]);
 
   // === Forms ===
   protected readonly listRefControl = new FormControl('', { nonNullable: true });
@@ -113,6 +121,9 @@ export class AudienceQaPanelComponent {
     return report === null ? '' : this.verdictClass(report.overall);
   });
 
+  /** What besides the list QA audits against: the event and the send-time suppressions, order-free. */
+  private readonly auditScopeKey = computed(() => `${this.eventName().trim()}|${[...this.sendSuppressionIds()].sort().join(',')}`);
+
   public constructor() {
     // A project change invalidates any in-flight QA request and clears the verdict, for the
     // same reason the parent resets its run state: the container stays mounted, so portal A's
@@ -125,6 +136,18 @@ export class AudienceQaPanelComponent {
         this.error.set(null);
         this.running.set(false);
         this.listRefControl.setValue('', { emitEvent: false });
+      });
+
+    // The event and the send-time suppressions are part of what QA audits. A change to either
+    // makes a shown verdict describe an audit that no longer matches, and a reply still in flight
+    // was asked about the old inputs -- so both are dropped, as on a project change.
+    toObservable(this.auditScopeKey)
+      .pipe(distinctUntilChanged(), skip(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.runGeneration += 1;
+        this.result.set(null);
+        this.error.set(null);
+        this.running.set(false);
       });
 
     toObservable(this.suggestedListRef)
@@ -177,7 +200,13 @@ export class AudienceQaPanelComponent {
     const targetsCa = this.targetsCaControl.value;
     this.submitted.set({ listRef: ref, targetsEu, targetsCa });
     this.campaignService
-      .runAudienceQa(this.projectSlug(), { listRef: ref, targetsEu, targetsCa })
+      .runAudienceQa(this.projectSlug(), {
+        listRef: ref,
+        targetsEu,
+        targetsCa,
+        ...(this.eventName().trim() ? { eventName: this.eventName().trim() } : {}),
+        ...(this.sendSuppressionIds().length ? { sendSuppressionListIds: [...this.sendSuppressionIds()] } : {}),
+      })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result) => {
@@ -286,8 +315,27 @@ export class AudienceQaPanelComponent {
         name: 'Exclusion completeness',
         verdict: report.checks.exclusionCompleteness.verdict,
         findings: report.checks.exclusionCompleteness.findings,
-        note: `${report.checks.exclusionCompleteness.exclusionCount} exclusion filter(s) on the list`,
+        note: this.exclusionNote(report.checks.exclusionCompleteness.exclusionCount, report.checks.exclusionCompleteness.sendTimeCount ?? 0),
       },
+      // Present only when upstream could run it; an absent check is "not run", never a row.
+      ...(report.checks.currentRegistrants
+        ? [
+            {
+              key: 'currentRegistrants' as const,
+              name: 'Current registrants',
+              verdict: report.checks.currentRegistrants.verdict,
+              findings: report.checks.currentRegistrants.findings,
+              note: "This edition's own registrants should be suppressed, not included",
+            },
+          ]
+        : []),
     ];
+  }
+
+  private exclusionNote(total: number, sendTime: number): string {
+    if (sendTime === 0) {
+      return `${total} exclusion filter(s) on the list`;
+    }
+    return `${total} exclusion(s): ${total - sendTime} on the list, ${sendTime} applied at send time`;
   }
 }

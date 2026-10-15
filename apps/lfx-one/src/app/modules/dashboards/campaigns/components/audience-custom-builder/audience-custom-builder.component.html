@@ -1,0 +1,517 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="audience-custom-builder">
+  @if (createdList(); as list) {
+    <div class="flex flex-col gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3" data-testid="audience-custom-builder-created">
+      <div class="flex items-center gap-2 text-sm font-semibold text-emerald-800">
+        <i class="fa-light fa-circle-check" aria-hidden="true"></i>
+        List created and added to step 2
+      </div>
+      <p class="text-xs text-emerald-800">
+        {{ list.name }}
+        @if (list.hubspotUrl) {
+          ·
+          <a
+            [href]="list.hubspotUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-blue-600 hover:underline"
+            data-testid="audience-custom-builder-created-link"
+            >Open in HubSpot</a
+          >
+        }
+      </p>
+      <p class="text-xs text-emerald-700">HubSpot fills a new list in the background; its size appears after it finishes processing.</p>
+      <div>
+        <button
+          type="button"
+          (click)="onStartOver()"
+          class="rounded border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+          data-testid="audience-custom-builder-another">
+          Build another
+        </button>
+      </div>
+    </div>
+  } @else {
+    <!-- Describe -->
+    <div class="flex flex-col gap-2" data-testid="audience-custom-builder-describe">
+      <label for="audience-custom-request" class="text-xs font-semibold text-gray-900">Describe the audience</label>
+      <textarea
+        id="audience-custom-request"
+        rows="3"
+        [formControl]="requestControl"
+        placeholder="e.g. All mailable contacts in Seoul, for OSS Korea and MCP Dev Summit Seoul"
+        class="w-full rounded-md border border-gray-300 p-2 text-sm disabled:bg-gray-50"
+        data-testid="audience-custom-builder-request"></textarea>
+      <div class="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          (click)="onInterpret()"
+          [disabled]="locked() || !requestControl.value.trim()"
+          class="rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          data-testid="audience-custom-builder-interpret">
+          @if (interpreting()) {
+            <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+            Drafting criteria...
+          } @else {
+            Draft the criteria
+          }
+        </button>
+        @if (!editing()) {
+          <button
+            type="button"
+            (click)="onFillByHand()"
+            [disabled]="locked()"
+            class="rounded border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            data-testid="audience-custom-builder-manual">
+            Fill in by hand
+          </button>
+        }
+      </div>
+      <p class="text-xs text-gray-500">The description only drafts the criteria below. Nothing is created until you preview it and confirm.</p>
+      @if (interpretError(); as message) {
+        <p class="text-xs text-red-700" role="alert" data-testid="audience-custom-builder-interpret-error">{{ message }}</p>
+      }
+    </div>
+
+    <!-- Questions -->
+    @if (questions().length > 0) {
+      <div class="flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3" data-testid="audience-custom-builder-questions">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <h5 class="text-xs font-semibold text-gray-900">Answer these to finish the draft</h5>
+          <button
+            type="button"
+            (click)="onLeaveQuestions()"
+            [disabled]="locked()"
+            class="rounded border border-gray-300 bg-white px-2 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            data-testid="audience-custom-builder-leave-questions">
+            Finish by hand instead
+          </button>
+        </div>
+        @for (q of questions(); track q.id) {
+          <div class="flex flex-col gap-1.5" [attr.data-testid]="'audience-custom-builder-question-' + q.id">
+            <p class="text-xs font-medium text-gray-900">{{ q.question }}</p>
+            @if (q.why) {
+              <p class="text-xs text-gray-600">{{ q.why }}</p>
+            }
+            <div class="flex flex-wrap gap-1.5">
+              @for (option of q.options; track option) {
+                <button
+                  type="button"
+                  (click)="onAnswer(q, option)"
+                  [disabled]="locked()"
+                  class="rounded border border-amber-300 bg-white px-2 py-1 text-xs text-gray-800 hover:bg-amber-100 disabled:opacity-50"
+                  [attr.data-testid]="'audience-custom-builder-option-' + q.id + '-' + $index">
+                  {{ option }}
+                </button>
+              }
+            </div>
+            <div class="flex items-center gap-1.5">
+              <input
+                type="text"
+                [value]="otherAnswers()[q.id] ?? ''"
+                (input)="onOtherInput(q.id, $any($event.target).value)"
+                placeholder="Other answer"
+                [attr.aria-label]="'Other answer to: ' + q.question"
+                class="min-w-0 flex-1 rounded-md border border-gray-300 px-2 py-1 text-xs"
+                [attr.data-testid]="'audience-custom-builder-other-' + q.id" />
+              <button
+                type="button"
+                (click)="onAnswer(q, otherAnswers()[q.id] ?? '')"
+                [disabled]="locked() || !(otherAnswers()[q.id] ?? '').trim()"
+                class="rounded border border-gray-300 bg-white px-2 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                [attr.data-testid]="'audience-custom-builder-other-submit-' + q.id">
+                Answer
+              </button>
+            </div>
+          </div>
+        }
+      </div>
+    }
+
+    @if (notes().length > 0) {
+      <ul class="flex flex-col gap-1 text-xs text-gray-600" data-testid="audience-custom-builder-notes">
+        @for (note of notes(); track $index) {
+          <li class="flex gap-1.5"><i class="fa-light fa-circle-info mt-0.5 text-gray-400" aria-hidden="true"></i>{{ note }}</li>
+        }
+      </ul>
+    }
+
+    <!-- Reuse before create -->
+    @if (similar().length > 0) {
+      <div class="flex flex-col gap-2 rounded-lg border border-violet-200 bg-violet-50 p-3" data-testid="audience-custom-builder-similar">
+        <h5 class="text-xs font-semibold text-gray-900">Lists that may already be this audience</h5>
+        <p class="text-xs text-gray-600">Reusing one avoids a duplicate list. The assessment is a suggestion — open the list in HubSpot to check.</p>
+        <div class="grid grid-cols-1 gap-2 lg:grid-cols-2">
+          @for (row of similarRows(); track row.item.list.listId) {
+            @let item = row.item;
+            <div
+              class="flex flex-col gap-1 rounded-md border border-violet-100 bg-white p-2"
+              [attr.data-testid]="'audience-custom-builder-similar-' + item.list.listId">
+              <span class="text-xs font-medium break-words text-gray-900">{{ item.list.name }}</span>
+              <span class="text-xs text-violet-700">{{ row.label }}</span>
+              @if (item.reason) {
+                <span class="text-xs text-gray-600">{{ item.reason }}</span>
+              }
+              <div class="flex flex-wrap items-center gap-2">
+                @if (item.list.hubspotUrl) {
+                  <a [href]="item.list.hubspotUrl" target="_blank" rel="noopener noreferrer" class="text-xs text-blue-600 hover:underline">Open in HubSpot</a>
+                }
+                <button
+                  type="button"
+                  (click)="onReuse(item)"
+                  [disabled]="disabled() || reusedIds().has(item.list.listId)"
+                  class="rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  [attr.data-testid]="'audience-custom-builder-reuse-' + item.list.listId">
+                  {{ reusedIds().has(item.list.listId) ? 'Added to step 2' : 'Use this list' }}
+                </button>
+              </div>
+            </div>
+          }
+        </div>
+      </div>
+    }
+
+    <!-- Criteria -->
+    @if (editing()) {
+      <form
+        [formGroup]="form"
+        class="flex flex-col gap-4 rounded-lg border border-gray-200 p-3"
+        data-testid="audience-custom-builder-criteria"
+        (submit)="$event.preventDefault()">
+        <h5 class="text-xs font-semibold text-gray-900">Criteria</h5>
+
+        <fieldset class="flex flex-col gap-2" [disabled]="locked()">
+          <legend class="mb-1 text-xs font-semibold text-gray-700">Location</legend>
+          <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
+            <label class="flex flex-col gap-1 text-xs text-gray-700">
+              Cities, one per line
+              <textarea
+                rows="2"
+                formControlName="cities"
+                class="rounded-md border border-gray-300 px-2 py-1 text-sm"
+                data-testid="audience-custom-builder-cities"></textarea>
+            </label>
+            <label class="flex flex-col gap-1 text-xs text-gray-700">
+              Countries, one per line — widens the reach (optional)
+              <textarea
+                rows="2"
+                formControlName="countries"
+                class="rounded-md border border-gray-300 px-2 py-1 text-sm"
+                data-testid="audience-custom-builder-countries"></textarea>
+            </label>
+          </div>
+          <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-700">
+            <label class="flex items-center gap-1.5"
+              ><input type="checkbox" formControlName="contactLocation" data-testid="audience-custom-builder-contact-location" /> Contacts located there</label
+            >
+            <label class="flex items-center gap-1.5"
+              ><input type="checkbox" formControlName="eventRegistered" data-testid="audience-custom-builder-event-registered" /> Registered for an event held
+              there</label
+            >
+            <label class="flex items-center gap-1.5"
+              ><input type="checkbox" formControlName="educationEnrolled" data-testid="audience-custom-builder-education" /> Enrolled in education from
+              there</label
+            >
+          </div>
+        </fieldset>
+
+        <fieldset class="flex flex-col gap-2" [disabled]="locked()">
+          <legend class="mb-1 text-xs font-semibold text-gray-700">Mailability gate</legend>
+          <label class="flex flex-col gap-1 text-xs text-gray-700">
+            Brand master list id — location contacts must be in it
+            <input
+              type="text"
+              formControlName="gateListId"
+              class="rounded-md border border-gray-300 px-2 py-1 text-sm"
+              data-testid="audience-custom-builder-gate" />
+          </label>
+          @if (gate(); as g) {
+            <p class="text-xs text-gray-500" data-testid="audience-custom-builder-gate-found">Suggested: {{ g.name }}</p>
+          }
+          <label class="flex items-center gap-1.5 text-xs text-gray-700"
+            ><input type="checkbox" formControlName="gateEventHistory" data-testid="audience-custom-builder-gate-history" /> Also require event-history contacts
+            to be in it (stricter)</label
+          >
+        </fieldset>
+
+        <fieldset class="flex flex-col gap-2" [disabled]="locked()">
+          <legend class="mb-1 text-xs font-semibold text-gray-700">Education courses (optional)</legend>
+          <label class="flex flex-col gap-1 text-xs text-gray-700">
+            Course topics, one per line — limits education enrolment to the brand's own courses
+            <textarea
+              rows="2"
+              formControlName="educationTopics"
+              class="rounded-md border border-gray-300 px-2 py-1 text-sm"
+              data-testid="audience-custom-builder-topics"></textarea>
+          </label>
+          @if (topicCandidates().length > 1) {
+            <label class="flex flex-col gap-1 text-xs text-gray-700">
+              Course property the topics are matched on — pick the one that holds course names
+              <select
+                formControlName="educationTopicProperty"
+                class="rounded-md border border-gray-300 px-2 py-1 text-sm"
+                data-testid="audience-custom-builder-topic-property-select">
+                @for (candidate of topicCandidates(); track candidate) {
+                  <option [value]="candidate">{{ candidate }}</option>
+                }
+              </select>
+            </label>
+          } @else if (topicProperty(); as prop) {
+            <p class="text-xs text-gray-500" data-testid="audience-custom-builder-topic-property">Matched on the course property "{{ prop }}".</p>
+          }
+        </fieldset>
+
+        <fieldset class="flex flex-col gap-2" [disabled]="locked()">
+          <legend class="mb-1 text-xs font-semibold text-gray-700">Web visitors (optional)</legend>
+          <label class="flex flex-col gap-1 text-xs text-gray-700">
+            Page URLs, one per line — anyone who viewed a matching page
+            <textarea
+              rows="2"
+              formControlName="pageViewUrls"
+              class="rounded-md border border-gray-300 px-2 py-1 text-sm"
+              data-testid="audience-custom-builder-page-urls"></textarea>
+          </label>
+        </fieldset>
+
+        <fieldset class="flex flex-col gap-2" [disabled]="locked()">
+          <legend class="mb-1 text-xs font-semibold text-gray-700">Registrants of specific events (optional)</legend>
+          <label class="flex flex-col gap-1 text-xs text-gray-700">
+            Exact event names, one per line
+            <textarea
+              rows="2"
+              formControlName="registeredFor"
+              class="rounded-md border border-gray-300 px-2 py-1 text-sm"
+              data-testid="audience-custom-builder-registered-for"></textarea>
+          </label>
+        </fieldset>
+
+        <fieldset class="flex flex-col gap-2" [disabled]="locked()">
+          <legend class="mb-1 text-xs font-semibold text-gray-700">Restrict to a role</legend>
+          <label class="flex items-center gap-1.5 text-xs text-gray-700"
+            ><input type="checkbox" formControlName="speakersOn" data-testid="audience-custom-builder-speakers" /> Event speakers only</label
+          >
+          @if (speakersOn()) {
+            <div class="grid grid-cols-1 gap-2 pl-5 md:grid-cols-3">
+              <label class="flex flex-col gap-1 text-xs text-gray-700">
+                Scope
+                <select
+                  formControlName="speakerScope"
+                  class="rounded-md border border-gray-300 px-2 py-1 text-sm"
+                  data-testid="audience-custom-builder-speaker-scope">
+                  @for (scope of speakerScopes; track scope.key) {
+                    <option [value]="scope.key">{{ scope.label }}</option>
+                  }
+                </select>
+              </label>
+              <label class="flex flex-col gap-1 text-xs text-gray-700">
+                Existing speakers list id (preferred)
+                <input
+                  type="text"
+                  formControlName="speakerListId"
+                  class="rounded-md border border-gray-300 px-2 py-1 text-sm"
+                  data-testid="audience-custom-builder-speaker-list" />
+              </label>
+              <label class="flex flex-col gap-1 text-xs text-gray-700">
+                Or exact event names, one per line, incl. co-located tracks
+                <textarea
+                  rows="2"
+                  formControlName="speakerEventNames"
+                  class="rounded-md border border-gray-300 px-2 py-1 text-sm"
+                  data-testid="audience-custom-builder-speaker-events"></textarea>
+              </label>
+            </div>
+          }
+          <label class="flex items-center gap-1.5 text-xs text-gray-700"
+            ><input type="checkbox" formControlName="ambassadors" data-testid="audience-custom-builder-ambassadors" /> Community ambassadors only</label
+          >
+        </fieldset>
+
+        <fieldset class="flex flex-col gap-2" [disabled]="locked()" formArrayName="propertyFilters">
+          <legend class="mb-1 text-xs font-semibold text-gray-700">More filters (applied to everyone in the list)</legend>
+          @for (row of filterRows.controls; track row; let i = $index) {
+            <div class="flex flex-wrap items-end gap-2" [formGroupName]="i" [attr.data-testid]="'audience-custom-builder-filter-' + i">
+              <label class="flex flex-col gap-1 text-xs text-gray-700">
+                Property (internal name)
+                <input type="text" formControlName="property" placeholder="jobtitle" class="rounded-md border border-gray-300 px-2 py-1 text-sm" />
+              </label>
+              <label class="flex flex-col gap-1 text-xs text-gray-700">
+                Operator
+                <select formControlName="operator" class="rounded-md border border-gray-300 px-2 py-1 text-sm">
+                  @for (op of operators; track op.value) {
+                    <option [value]="op.value">{{ op.label }}</option>
+                  }
+                </select>
+              </label>
+              @if (filterTakesValues()[i] !== false) {
+                <label class="flex min-w-[12rem] flex-1 flex-col gap-1 text-xs text-gray-700">
+                  Values, one per line
+                  <textarea rows="2" formControlName="values" class="rounded-md border border-gray-300 px-2 py-1 text-sm"></textarea>
+                </label>
+              }
+              <button
+                type="button"
+                (click)="onRemoveFilter(i)"
+                class="rounded border border-gray-300 bg-white px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                [attr.aria-label]="'Remove filter ' + (i + 1)"
+                [attr.data-testid]="'audience-custom-builder-filter-remove-' + i">
+                <i class="fa-light fa-xmark" aria-hidden="true"></i>
+              </button>
+            </div>
+          }
+          <div>
+            <button
+              type="button"
+              (click)="onAddFilter()"
+              class="rounded border border-gray-300 bg-white px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+              data-testid="audience-custom-builder-filter-add">
+              <i class="fa-light fa-plus" aria-hidden="true"></i> Add a filter
+            </button>
+          </div>
+        </fieldset>
+
+        <fieldset class="flex flex-col gap-2" [disabled]="locked()">
+          <legend class="mb-1 text-xs font-semibold text-gray-700">Naming</legend>
+          <label class="flex flex-col gap-1 text-xs text-gray-700">
+            The event(s) this audience is for
+            <input
+              type="text"
+              formControlName="label"
+              class="rounded-md border border-gray-300 px-2 py-1 text-sm"
+              data-testid="audience-custom-builder-label" />
+          </label>
+        </fieldset>
+
+        <div class="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            (click)="onPreview()"
+            [disabled]="locked()"
+            class="rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            data-testid="audience-custom-builder-preview">
+            @if (previewing()) {
+              <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+              Checking against HubSpot...
+            } @else {
+              Preview
+            }
+          </button>
+          <button
+            type="button"
+            (click)="onStartOver()"
+            [disabled]="creating()"
+            class="rounded border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            data-testid="audience-custom-builder-reset">
+            Start over
+          </button>
+        </div>
+        @if (previewError(); as message) {
+          <p class="text-xs text-red-700" role="alert" data-testid="audience-custom-builder-preview-error">{{ message }}</p>
+        }
+      </form>
+    }
+
+    <!-- Preview & create -->
+    @if (preview(); as p) {
+      <div class="flex flex-col gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3" data-testid="audience-custom-builder-preview-result">
+        <!-- Locked with the rest of the form: the name sent to create is the one shown here. -->
+        <fieldset class="flex flex-col gap-1" [disabled]="locked()">
+          <label class="flex flex-col gap-1 text-xs text-gray-700">
+            List name
+            <input
+              type="text"
+              [formControl]="nameControl"
+              class="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm"
+              data-testid="audience-custom-builder-name" />
+          </label>
+        </fieldset>
+        <ul class="flex flex-col gap-1 text-xs text-gray-700">
+          <li>{{ p.branchCount }} filter branches</li>
+          @if (p.gate; as g) {
+            <li>Gated by {{ g.name }}</li>
+          }
+          @if (upperBoundText(); as bound) {
+            <li data-testid="audience-custom-builder-upper-bound">At most {{ bound }} contacts (the gate list's size)</li>
+          } @else {
+            <li>Size is known once HubSpot has processed the new list.</li>
+          }
+        </ul>
+        @for (warning of p.warnings; track $index) {
+          <p class="text-xs text-amber-700" data-testid="audience-custom-builder-warning">
+            <i class="fa-light fa-triangle-exclamation" aria-hidden="true"></i> {{ warning }}
+          </p>
+        }
+
+        @if (!unconfirmedName() && confirming()) {
+          <div class="flex flex-col gap-2 rounded-md border border-amber-300 bg-white p-2" data-testid="audience-custom-builder-confirm">
+            <p class="text-xs text-gray-800">
+              This creates a real contact list named <span class="font-semibold">{{ nameControl.value || p.name }}</span> in HubSpot.
+            </p>
+            <div class="flex gap-2">
+              <button
+                type="button"
+                (click)="onCreate()"
+                [disabled]="creating()"
+                class="rounded bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                data-testid="audience-custom-builder-confirm-create">
+                @if (creating()) {
+                  <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+                  Creating...
+                } @else {
+                  Create list
+                }
+              </button>
+              <button
+                type="button"
+                (click)="onCancelConfirm()"
+                [disabled]="creating()"
+                class="rounded border border-gray-300 bg-white px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                data-testid="audience-custom-builder-confirm-cancel">
+                Cancel
+              </button>
+            </div>
+          </div>
+        } @else if (!unconfirmedName()) {
+          @if (questionsOpen()) {
+            <p class="text-xs text-amber-800" data-testid="audience-custom-builder-questions-open">Answer the questions above before creating the list.</p>
+          }
+          <div>
+            <button
+              type="button"
+              (click)="onAskConfirm()"
+              [disabled]="!canCreate()"
+              class="rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              data-testid="audience-custom-builder-create">
+              Create in HubSpot…
+            </button>
+          </div>
+        }
+      </div>
+    }
+
+    @if (createInFlightElsewhere(); as name) {
+      <p class="text-xs text-amber-800" role="status" data-testid="audience-custom-builder-in-flight">
+        A list{{ name ? ' named "' + name + '"' : '' }} is still being created for this project. Wait for it to finish before creating another.
+      </p>
+    }
+    @if (strandedCreated(); as list) {
+      <p class="text-xs text-amber-800" role="status" data-testid="audience-custom-builder-stranded-created">
+        "{{ list.name }}" was created after you left this page and was not added to step 2. Use "Or use an existing list" to add it instead of creating another.
+      </p>
+    }
+    <!-- Outside the preview block, so nothing that drops the preview can hide a create's outcome. -->
+    @if (unconfirmedName(); as name) {
+      <div
+        class="flex flex-col gap-1 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-800"
+        role="alert"
+        data-testid="audience-custom-builder-unconfirmed">
+        <span class="font-semibold">HubSpot did not confirm the list was created.</span>
+        <span>Search HubSpot for "{{ name }}" before trying again. It may already exist, and a retry could create a second one.</span>
+      </div>
+    }
+    @if (createError(); as message) {
+      <p class="text-xs text-red-700" role="alert" data-testid="audience-custom-builder-create-error">{{ message }}</p>
+    }
+  }
+</div>

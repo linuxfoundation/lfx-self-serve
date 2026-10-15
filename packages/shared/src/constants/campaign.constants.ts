@@ -2,6 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  AudienceBuildMode,
+  AudienceCustomOperator,
+  AudienceCustomReuseRecommendation,
+  AudienceLastSentMatchReason,
   AudienceSignal,
   AudienceSpeakerScope,
   BriefMetricsActionRule,
@@ -2940,6 +2944,59 @@ export const AUDIENCE_SPEAKER_SCOPES: readonly { key: AudienceSpeakerScope; labe
   { key: 'past', label: 'Past event speakers' },
   { key: 'current_past', label: 'Current + Past event speakers' },
 ] as const;
+
+/**
+ * Missing signals the custom builder can be opened for — every classified signal, as in the legacy
+ * builder. Speakers, registrants and page views are deterministic presets; education enrolment and
+ * the two opt-ins are drafted by the model, and the service verifies every property it names.
+ */
+export const AUDIENCE_CUSTOM_CREATABLE_SIGNALS: readonly AudienceSignal[] = [
+  'event_speakers',
+  'event_registration',
+  'page_view',
+  'education_enrollment',
+  'project_opt_in',
+  'lf_newsletter_opt_in',
+] as const;
+
+/** The Audience tab's three modes, in the legacy builder's order. */
+export const AUDIENCE_BUILD_MODES: readonly { mode: AudienceBuildMode; label: string }[] = [
+  { mode: 'event', label: 'Event Audience' },
+  { mode: 'custom', label: 'Custom Audience' },
+  { mode: 'reuse', label: 'Reuse or Discover Existing Audience' },
+] as const;
+
+/** Operators the custom-audience builder offers for an extra property filter, in display order. */
+export const AUDIENCE_CUSTOM_OPERATORS: readonly { value: AudienceCustomOperator; label: string }[] = [
+  { value: 'is_equal_to', label: 'is equal to' },
+  { value: 'contains', label: 'contains' },
+  { value: 'is_any_of', label: 'is any of' },
+  { value: 'is_not_any_of', label: 'is not any of' },
+  { value: 'is_known', label: 'is known' },
+  { value: 'is_unknown', label: 'is unknown' },
+] as const;
+
+/**
+ * HTTP statuses that prove a custom-audience create did nothing: the request itself was refused.
+ * Every other outcome (a 502 partial, a timeout, a lost connection, any 5xx) may mean HubSpot
+ * created the list, so it is unconfirmed and must not be retried.
+ */
+export const AUDIENCE_CUSTOM_CREATE_DEFINITE_FAILURES: readonly number[] = [400, 401, 403, 404, 409, 422];
+
+/** How the model judged an existing list against the audience being built, with its label. */
+export const AUDIENCE_CUSTOM_REUSE_RECOMMENDATIONS: Readonly<Record<AudienceCustomReuseRecommendation, string>> = {
+  reuse: 'Likely the same audience',
+  update: 'Close — consider building a new version',
+  unrelated: 'Probably a different audience',
+};
+
+/** Why a prior send is listed, with its label; brand-only and related-word rows are weaker precedent. */
+export const AUDIENCE_LAST_SENT_MATCH_REASONS: Readonly<Record<AudienceLastSentMatchReason, string>> = {
+  event_name: 'Matched on the event name',
+  subject: 'Matched on the subject line',
+  related_words: 'Matched on related words only — check it',
+  brand_only: 'Matched on the brand only — check it',
+};
 
 /**
  * Above this combined estimated size, an exact union count is refused.

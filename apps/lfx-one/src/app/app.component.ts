@@ -5,7 +5,7 @@ import { isPlatformBrowser, Location } from '@angular/common';
 import { Component, computed, DestroyRef, effect, inject, makeStateKey, PLATFORM_ID, REQUEST_CONTEXT, Signal, signal, TransferState } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
-import { MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import { MEETING_V2_ENABLED_DEFAULT, MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { AuthContext, User } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { ToastModule } from 'primeng/toast';
@@ -59,7 +59,7 @@ export class AppComponent {
    * or unreachable provider leaves the tree exactly as pre-v2 — the entry points are gated on the
    * same flag, so with it off nothing can ask the composer to open. See `MEETING_V2_ENABLED_FLAG`.
    */
-  protected readonly meetingsV2Enabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MEETING_V2_ENABLED_FLAG, false);
+  protected readonly meetingsV2Enabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MEETING_V2_ENABLED_FLAG, MEETING_V2_ENABLED_DEFAULT);
   // Mirrors writerGuard's cheap paths so the composer chunk is prefetched for the personas that
   // actually open it. Meeting-coordinator and committee-writer grants aren't known this early, so
   // those users fall back to the `when` trigger and download the chunk on click. Gated on the flag

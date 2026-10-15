@@ -3,7 +3,7 @@
 
 import { Component, computed, input, output } from '@angular/core';
 
-import type { AudienceCardBucket, AudienceDiscoveredList } from '@lfx-one/shared/interfaces';
+import type { AudienceCardBucket, AudienceDiscoveredList, AudienceListRef } from '@lfx-one/shared/interfaces';
 
 /**
  * The review grid: one accented card per signal, each holding the lists classified into it.
@@ -30,6 +30,10 @@ export class AudienceCardGridComponent {
   public readonly toggleList = output<string>();
   /** Marks or unmarks a list as an exclusion -- contacts on it are kept OFF the send. */
   public readonly toggleExclude = output<string>();
+  /** Include every list shown that is not marked Exclude. */
+  public readonly selectAll = output<AudienceListRef[]>();
+  /** Un-include every list shown. Exclusions are left as they are. */
+  public readonly clearAll = output<string[]>();
 
   // === Computed Signals ===
   /**
@@ -72,6 +76,26 @@ export class AudienceCardGridComponent {
     if (!this.disabled()) {
       this.toggleList.emit(listId);
     }
+  }
+
+  protected onSelectAll(): void {
+    if (this.disabled()) return;
+    // "Uncertain" lists need a human look each, so they are never swept in wholesale.
+    const refs = this.populated()
+      .filter((bucket) => bucket.signal !== 'uncertain')
+      .flatMap((bucket) => bucket.lists)
+      .filter((list) => !list.excluded && !list.selected)
+      .map((list) => ({ listId: list.listId, name: list.name }));
+    if (refs.length > 0) this.selectAll.emit(refs);
+  }
+
+  protected onClearAll(): void {
+    if (this.disabled()) return;
+    const ids = this.populated()
+      .flatMap((bucket) => bucket.lists)
+      .filter((list) => list.selected)
+      .map((list) => list.listId);
+    if (ids.length > 0) this.clearAll.emit(ids);
   }
 
   protected onToggleExclude(listId: string): void {

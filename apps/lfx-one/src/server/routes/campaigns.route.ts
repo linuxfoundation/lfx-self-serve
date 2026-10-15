@@ -127,5 +127,8 @@ router.post('/audience-builder/compose-master', (req, res, next) => audienceBuil
 // send's selection, or a master built before) as the brief's send audience.
 router.post('/audience-builder/attach-existing', (req, res, next) => audienceBuilderController.attachExisting(req, res, next));
 router.post('/audience-builder/qa/run', (req, res, next) => audienceBuilderController.runQa(req, res, next));
+router.post('/audience-builder/custom/interpret', (req, res, next) => audienceBuilderController.interpretCustom(req, res, next));
+router.post('/audience-builder/custom/preview', (req, res, next) => audienceBuilderController.previewCustom(req, res, next));
+router.post('/audience-builder/custom/create', (req, res, next) => audienceBuilderController.createCustom(req, res, next));
 
 export default router;

@@ -2175,6 +2175,11 @@ export interface CampaignPlatformResult {
   campaignId?: string;
   /** HubSpot app link to the created draft. Absent when campaign-service could not build one (unknown portal id). */
   hubspotUrl?: string;
+  /**
+   * Operator-readable notes about best-effort steps of a SUCCESSFUL create that did not apply. For the email
+   * channel this reports a hero image that could not be re-hosted: the draft exists but has no hero banner.
+   */
+  warnings?: string[];
   error?: string;
 }
 
@@ -4945,7 +4950,12 @@ export interface AudienceLastSentEmail {
    * identical shape, and an outage reads as verified precedent for the operator's own selection.
    */
   listsUnavailable?: boolean;
+  subject?: string;
+  /** Why this send is listed — a brand-only row is weaker precedent than one named for the event. */
+  matchReason?: AudienceLastSentMatchReason;
 }
+
+export type AudienceLastSentMatchReason = 'event_name' | 'subject' | 'related_words' | 'brand_only';
 
 /** A master list already built for this event, offered for reuse instead of a rebuild. */
 export interface AudienceMasterListBrief {
@@ -5187,8 +5197,18 @@ export interface AudienceQaChecks {
   signalMapping: AudienceQaCheck;
   /** Are the GDPR / global-opt-out suppressions actually applied as exclusions? */
   suppression: AudienceQaCheck & { applied: { gdpr: boolean; optOut: boolean } };
-  /** Does the list exclude anything at all? */
-  exclusionCompleteness: AudienceQaCheck & { exclusionCount: number };
+  /**
+   * Does the list exclude anything at all?
+   *
+   * `exclusionCount` includes send-time suppressions; `sendTimeCount` is their share, when any were counted.
+   */
+  exclusionCompleteness: AudienceQaCheck & { exclusionCount: number; sendTimeCount?: number };
+  /**
+   * Is this edition's own registration list suppressed rather than included? Absent when the
+   * request named no event or the event name could not decide it — absent is "not checked",
+   * never a pass.
+   */
+  currentRegistrants?: AudienceQaCheck;
 }
 
 export interface AudienceQaCandidate {
@@ -5242,6 +5262,151 @@ export interface AudienceQaRunRequest {
   listRef: string;
   targetsEu?: boolean;
   targetsCa?: boolean;
+  /** This edition's event name; enables the current-registrants check. */
+  eventName?: string;
+  /**
+   * Suppression lists the send applies on top of the list. Custom lists and directly attached
+   * lists carry none of their own, so without these QA judges them on their filters alone.
+   */
+  sendSuppressionListIds?: string[];
+}
+
+// --- Custom audiences --------------------------------------------------------
+
+/** Operators an extra property filter can use. */
+export type AudienceCustomOperator = 'is_equal_to' | 'contains' | 'is_any_of' | 'is_not_any_of' | 'is_known' | 'is_unknown';
+
+/** One extra condition ANDed into every branch of a custom list. */
+export interface AudienceCustomPropertyFilter {
+  /** HubSpot internal contact property name; the service verifies it exists. */
+  property: string;
+  operator: AudienceCustomOperator;
+  /** Ignored for `is_known` / `is_unknown`. */
+  values: string[];
+}
+
+/** Restricts a custom audience to event speakers. */
+export interface AudienceCustomSpeakers {
+  scope: AudienceSpeakerScope;
+  /** An existing speakers list; preferred over `eventNames` when set. */
+  listId?: string;
+  /** Exact event names, including co-located tracks. */
+  eventNames: string[];
+}
+
+/**
+ * The reviewed definition of a custom audience. The service builds the HubSpot filter from this
+ * — no endpoint accepts filter JSON.
+ */
+export interface AudienceCustomCriteria {
+  cities: string[];
+  countries: string[];
+  /** City/country contact branches; always gated by `gateListId`. */
+  contactLocation: boolean;
+  /** Registered for an event held in the location. */
+  eventRegistered: boolean;
+  /** Enrolled in education from the location. */
+  educationEnrolled: boolean;
+  /** Exact event names: contacts registered for any of them. */
+  registeredFor: string[];
+  /** Also gate the event-history branches by the brand master list. */
+  gateEventHistory: boolean;
+  /** The brand master list gated branches must be in. */
+  gateListId?: string;
+  propertyFilters: AudienceCustomPropertyFilter[];
+  speakers?: AudienceCustomSpeakers;
+  ambassadors: boolean;
+  /** Course/topic keywords narrowing education enrolment to the brand's own courses. */
+  educationTopics: string[];
+  /**
+   * The education event's course/topic property. The service resolves it; a value sent back is
+   * honoured only when it is one of the portal's own candidates.
+   */
+  educationTopicProperty?: string;
+  /** Contacts who viewed a page whose URL contains any of these. */
+  pageViewUrls: string[];
+  /** The event(s) the audience is for; feeds the list name. */
+  label?: string;
+}
+
+/** What the model suggests doing with an existing list that resembles the request. */
+export type AudienceCustomReuseRecommendation = 'reuse' | 'update' | 'unrelated';
+
+/** An existing list that may already be the requested audience. */
+export interface AudienceCustomSimilarList {
+  list: AudienceListSearchResult;
+  /** Absent when the model could not assess it. */
+  recommendation?: AudienceCustomReuseRecommendation;
+  reason?: string;
+}
+
+export interface AudienceCustomAnswer {
+  questionId?: string;
+  question?: string;
+  answer: string;
+}
+
+export interface AudienceCustomQuestion {
+  id: string;
+  question: string;
+  why?: string;
+  options: string[];
+}
+
+export interface AudienceCustomInterpretRequest {
+  request: string;
+  answers?: AudienceCustomAnswer[];
+  /** An event page: makes this an event audience planned from the page itself. */
+  eventUrl?: string;
+}
+
+export interface AudienceCustomInterpretResult {
+  criteria: AudienceCustomCriteria;
+  brandShort?: string;
+  /** The brand master list found for the gate; already filled into `criteria.gateListId`. */
+  gate?: AudienceListSearchResult;
+  /** An existing speakers list; already filled into `criteria.speakers.listId`. */
+  speakersList?: AudienceListSearchResult;
+  questions: AudienceCustomQuestion[];
+  notes: string[];
+  /** Existing lists found by name search and ranked by the model; it never adds one. */
+  similar: AudienceCustomSimilarList[];
+  /** The event an event audience was planned from; absent for a plain custom request. */
+  event?: AudienceDiscoveredEvent;
+}
+
+export interface AudienceCustomRequest {
+  criteria: AudienceCustomCriteria;
+  /** Explicit list name; derived when omitted. A taken name is versioned, never reused. */
+  name?: string;
+}
+
+/** How the Audience tab builds the send audience — the legacy builder's three modes. */
+export type AudienceBuildMode = 'event' | 'custom' | 'reuse';
+
+/** Opens the custom-audience builder pre-filled, e.g. from a missing-signal "Create list" action. */
+export interface AudienceCustomPreset {
+  /** Free text to interpret, when the preset needs the model (e.g. an opt-in signal). */
+  request?: string;
+  /** Criteria to start from directly, when the preset is fully deterministic. */
+  criteria?: Partial<AudienceCustomCriteria>;
+  /** An event page: the request is planned as an event audience from this page. */
+  eventUrl?: string;
+  /** Bumped by the container so the same preset can be applied twice. */
+  version: number;
+}
+
+export interface AudienceCustomPreview {
+  /** The name the list would be created under. */
+  name: string;
+  criteria: AudienceCustomCriteria;
+  branchCount: number;
+  /** Education event properties that could hold a course topic, best first. */
+  educationTopicCandidates: string[];
+  gate?: AudienceListSearchResult;
+  /** The gate list's size when every branch is gated, so the list can only be smaller. */
+  upperBound?: number;
+  warnings: string[];
 }
 
 // --- Discovery stream ------------------------------------------------------
@@ -5279,6 +5444,8 @@ export interface AudienceDiscoveryResult {
   lists: AudienceDiscoveredList[];
   /** Signals for which nothing qualified — drives the "not found" section. */
   missingSignals: AudienceSignal[];
+  /** Lists found but never offered for inclusion: suppressions, masters, test and staff lists. */
+  hidden?: number;
 }
 
 export interface AudienceDiscoverRequest {
@@ -5303,3 +5470,10 @@ export interface AudienceBuilderCapabilities {
    */
   detail?: string;
 }
+
+/**
+ * How a custom-audience create settled, kept per project by the client service so a builder
+ * remounted after navigation still knows: `created` (the list exists but was never added to step 2)
+ * or `unconfirmed` (it may exist; search before creating again).
+ */
+export type AudienceCustomCreateOutcome = { kind: 'created'; list: AudienceComposedList } | { kind: 'unconfirmed'; name: string };
