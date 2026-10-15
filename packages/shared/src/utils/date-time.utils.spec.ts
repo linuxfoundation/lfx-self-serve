@@ -472,7 +472,7 @@ describe('wallTimeExistsInTimezone', () => {
 });
 
 describe('detectBrowserTimezoneOption', () => {
-  // The reported zone is passed in, so no \`Intl\` stub is needed; \`now\` pins the sampled year.
+  // The reported zone is passed in, so no `Intl` stub is needed; `now` pins the sampled year.
   const june2026 = new Date('2026-06-01T00:00:00Z');
 
   it('returns the reported zone when it is one of the picker options', () => {
