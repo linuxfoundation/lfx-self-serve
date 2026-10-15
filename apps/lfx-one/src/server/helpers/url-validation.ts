@@ -354,27 +354,10 @@ export async function validateScrapeUrl(url: string): Promise<string> {
 const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
 
 export async function fetchSafeUrl(url: string, signal: AbortSignal): Promise<{ html: string; ok: boolean; status: number; finalUrl: string }> {
-  const { body, ok, status, finalUrl } = await fetchSafeUrlBytes(url, signal);
-  return { html: ok ? body.toString('utf-8') : '', ok, status, finalUrl };
-}
-
-/**
- * {@link fetchSafeUrl} with the body kept as BYTES, its content type, and a caller-chosen size cap —
- * for callers that read documents rather than HTML (a linked PDF or Word file is binary, and decoding
- * it as UTF-8 destroys it). Every SSRF guard is the same: HTTPS only, the shared port and host
- * rules, DNS-resolved addresses judged and connected to directly, every redirect hop re-validated.
- *
- * @param maxBytes - Size cap for the body; the request is destroyed on breach, never truncated
- */
-export async function fetchSafeUrlBytes(
-  url: string,
-  signal: AbortSignal,
-  maxBytes: number = MAX_RESPONSE_BYTES
-): Promise<{ body: Buffer; ok: boolean; status: number; finalUrl: string; contentType: string }> {
   const https = await import('node:https');
   const combinedSignal = AbortSignal.any([signal, AbortSignal.timeout(15_000)]);
 
-  const doRequest = (t: SsrfSafeTarget): Promise<{ body: Buffer; statusCode: number; location?: string; contentType: string }> =>
+  const doRequest = (t: SsrfSafeTarget): Promise<{ body: string; statusCode: number; location?: string }> =>
     new Promise((resolve, reject) => {
       const req = https.request(
         {
@@ -391,24 +374,19 @@ export async function fetchSafeUrlBytes(
           let received = 0;
           res.on('data', (chunk: Buffer) => {
             received += chunk.length;
-            if (received > maxBytes) {
+            if (received > MAX_RESPONSE_BYTES) {
               // Destroy the REQUEST, not just the response: this stops the transfer at the socket
               // rather than letting the remote keep streaming into a buffer nobody will read. The
               // reject lands before the 'end' handler can resolve, so no partial body escapes.
               req.destroy();
-              reject(new Error(`Response exceeded ${maxBytes} bytes`));
+              reject(new Error(`Response exceeded ${MAX_RESPONSE_BYTES} bytes`));
               return;
             }
             chunks.push(chunk);
           });
           res.on('end', () => {
             const loc = res.headers['location'];
-            resolve({
-              body: Buffer.concat(chunks),
-              statusCode: res.statusCode ?? 0,
-              location: Array.isArray(loc) ? loc[0] : loc,
-              contentType: (res.headers['content-type'] ?? '').toLowerCase(),
-            });
+            resolve({ body: Buffer.concat(chunks).toString('utf-8'), statusCode: res.statusCode ?? 0, location: Array.isArray(loc) ? loc[0] : loc });
           });
           res.on('error', reject);
         }
@@ -440,8 +418,8 @@ export async function fetchSafeUrlBytes(
   const finalUrl = `https://${target.host}${target.path}`;
 
   if (result.statusCode < 200 || result.statusCode >= 300) {
-    return { body: Buffer.alloc(0), ok: false, status: result.statusCode, finalUrl, contentType: result.contentType };
+    return { html: '', ok: false, status: result.statusCode, finalUrl };
   }
 
-  return { body: result.body, ok: true, status: result.statusCode, finalUrl, contentType: result.contentType };
+  return { html: result.body, ok: true, status: result.statusCode, finalUrl };
 }

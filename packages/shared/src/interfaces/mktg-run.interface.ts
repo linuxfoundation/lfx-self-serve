@@ -131,8 +131,8 @@ export interface MktgIntakeField {
 
 /**
  * A titled group of intake fields on the run page (e.g. the Messaging
- * Document's "Sources" and "Paul's ten questions"). Intakes without groups
- * render their fields as one flat list.
+ * Document's "Sources"). Intakes without groups render their fields as one
+ * flat list.
  */
 export interface MktgIntakeFieldGroup {
   /** Stable id; the `@for` track key and the test id suffix. */
@@ -228,12 +228,10 @@ export interface MktgDocumentExtractResponse {
  */
 export type MktgReadTextReason = 'unsupported' | 'encrypted' | 'no-text' | 'too-complex' | 'too-large' | 'busy';
 
-/** What reading one file or page to text produced on the server. */
+/** What reading one uploaded file to text produced on the server. */
 export interface MktgReadText {
   /** The text, or null when nothing could be read. */
   text: string | null;
-  /** A title found in the content (an HTML `<title>`), or null. */
-  title: string | null;
   /** True when the text was cut at its size cap. */
   truncated: boolean;
   /** Why nothing was read, when nothing was. */

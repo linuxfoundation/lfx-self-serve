@@ -2,18 +2,17 @@
 // SPDX-License-Identifier: MIT
 
 import { MktgPdfWorkerReply, MktgReadText } from '@lfx-one/shared/interfaces';
-import { Tokenizer } from 'htmlparser2';
 import JSZip from 'jszip';
 import mammoth from 'mammoth';
 import { Worker } from 'node:worker_threads';
 
 /**
- * Turns a file or a fetched page into the text an agent with no file or web
- * access reads (the Messaging Document's sources and existing documents):
- * PDF (Mozilla's pdf.js, through unpdf), Word .docx (mammoth), HTML, Markdown
- * and plain text, told apart by their bytes first and their name or content
- * type second. Nothing here fetches; nothing throws — what cannot be read
- * comes back with its reason.
+ * Turns an uploaded file into the text an agent with no file access reads
+ * (the Messaging Document's existing documents): PDF (Mozilla's pdf.js,
+ * through unpdf), Word .docx (mammoth), Markdown and plain text, told apart
+ * by their bytes. No source or link is read here — the agent fetches its own
+ * sources. Nothing here fetches; nothing throws — what cannot be read comes
+ * back with its reason.
  */
 export class MktgDocumentText {
   /** Wall-clock limit for one PDF; a caller whose own budget has less left may only lower it. */
@@ -56,9 +55,6 @@ export class MktgDocumentText {
     }, () => parentPort.postMessage({ reason: 'unsupported' }));
   `;
 
-  /** Most HTML characters tokenized: a page's header, navigation and body copy sit well inside this. */
-  private static readonly maxHtmlChars = 2_000_000;
-
   /** Wall-clock limit for one .docx; a caller whose own budget has less left may only lower it. */
   public static readonly maxDocxMillis = 500;
 
@@ -74,47 +70,28 @@ export class MktgDocumentText {
    */
   private static readonly maxDocxMarkupBytes = 2 * 1024 * 1024;
 
-  /** Block-level elements: each starts and ends a line. */
-  // prettier-ignore
-  private static readonly blockTags = new Set([
-    'address', 'article', 'aside', 'blockquote', 'dd', 'div', 'dl', 'dt', 'figcaption', 'figure', 'footer', 'form', 'header', 'hr', 'li',
-    'main', 'nav', 'ol', 'p', 'pre', 'section', 'table', 'tbody', 'td', 'th', 'thead', 'tr', 'ul', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'br',
-  ]);
-
-  /** Elements whose content is never page text. */
-  private static readonly skipTags = new Set(['script', 'style', 'noscript', 'template', 'svg', 'iframe', 'canvas', 'object', 'select', 'textarea']);
-
   /**
-   * The text of a file or a response body.
+   * The text of an uploaded file. The format is told from the bytes, not the
+   * file name: a PDF by its header, a Word file by its zip signature, and
+   * anything else without a NUL byte as text (Markdown is kept as written).
    *
    * @param bytes - The raw bytes
-   * @param hints - The file name or the response's content type, and for HTML the URL relative links resolve against
    * @param maxMillis - A tighter wall-clock limit than the format's own (`maxPdfMillis`, `maxDocxMillis`)
    */
-  public static async read(
-    bytes: Buffer,
-    hints: { fileName?: string; contentType?: string; baseUrl?: string },
-    maxMillis = Number.POSITIVE_INFINITY
-  ): Promise<MktgReadText> {
+  public static async read(bytes: Buffer, maxMillis = Number.POSITIVE_INFINITY): Promise<MktgReadText> {
     try {
-      return await MktgDocumentText.readBytes(bytes, hints, maxMillis);
+      return await MktgDocumentText.readBytes(bytes, maxMillis);
     } catch {
       // Each reader maps its own failures; this keeps the never-throws promise for anything they did not foresee.
       return MktgDocumentText.none('unsupported');
     }
   }
 
-  private static async readBytes(
-    bytes: Buffer,
-    hints: { fileName?: string; contentType?: string; baseUrl?: string },
-    maxMillis: number
-  ): Promise<MktgReadText> {
-    const name = (hints.fileName ?? '').toLowerCase();
-    const type = hints.contentType ?? '';
+  private static async readBytes(bytes: Buffer, maxMillis: number): Promise<MktgReadText> {
     const head = bytes.subarray(0, 1024).toString('latin1');
 
     // A PDF reader accepts the header anywhere in the first kilobyte (some generators write junk before it).
-    if (head.includes('%PDF-') || type.includes('application/pdf')) {
+    if (head.includes('%PDF-')) {
       return MktgDocumentText.pdfText(bytes, Math.min(maxMillis, MktgDocumentText.maxPdfMillis));
     }
     if (head.startsWith('PK\u0003\u0004')) {
@@ -124,21 +101,16 @@ export class MktgDocumentText {
       return MktgDocumentText.none('unsupported');
     }
     const text = bytes.toString('utf8').replace(/^\uFEFF/, '');
-    const looksHtml = type.includes('html') || /^\s*(<!doctype html|<html|<head|<body)/i.test(text.slice(0, 512));
-    if (looksHtml && !name.endsWith('.md') && !name.endsWith('.txt')) {
-      const page = MktgDocumentText.htmlText(text.slice(0, MktgDocumentText.maxHtmlChars), hints.baseUrl);
-      return { ...MktgDocumentText.ok(page.text), title: page.title };
-    }
     return MktgDocumentText.ok(text.replace(/\r\n?/g, '\n'));
   }
 
   private static ok(text: string): MktgReadText {
     const trimmed = text.trim();
-    return /[\p{L}\p{N}]/u.test(trimmed) ? { text: trimmed, title: null, truncated: false } : MktgDocumentText.none('no-text');
+    return /[\p{L}\p{N}]/u.test(trimmed) ? { text: trimmed, truncated: false } : MktgDocumentText.none('no-text');
   }
 
   private static none(reason: MktgReadText['reason']): MktgReadText {
-    return { text: null, title: null, truncated: false, reason };
+    return { text: null, truncated: false, reason };
   }
 
   // === PDF ===
@@ -289,150 +261,5 @@ export class MktgDocumentText {
       }
     }
     return true;
-  }
-
-  // === HTML ===
-
-  /**
-   * A page as Markdown-flavoured text: headings, list items and paragraphs on
-   * their own lines, links as `[text](url)` and images as `![alt](url)` with
-   * absolute URLs — the agent finds the project's logo in those, so they are
-   * kept rather than stripped. Scripts, styles and other non-text content are
-   * dropped. Built on htmlparser2's linear TOKENIZER, not a tree builder,
-   * which hostile markup makes quadratic (see `event-links.helper.ts`).
-   */
-  private static htmlText(html: string, baseUrl?: string): { text: string; title: string | null } {
-    const out: string[] = [];
-    let tag = '';
-    let attrName = '';
-    let attrValue = '';
-    let attrs: Record<string, string> = {};
-    let skipDepth = 0;
-    let inTitle = false;
-    let title = '';
-    let link: { start: number; href: string | null } | null = null;
-
-    const absolute = (url: string | undefined): string | null => {
-      if (!url) {
-        return null;
-      }
-      try {
-        const resolved = new URL(url.trim(), baseUrl);
-        return resolved.protocol === 'http:' || resolved.protocol === 'https:' ? resolved.href : null;
-      } catch {
-        return null;
-      }
-    };
-    const text = (value: string): void => {
-      if (inTitle) {
-        title += value;
-      } else if (skipDepth === 0) {
-        out.push(value);
-      }
-    };
-    const openTag = (selfClosing: boolean): void => {
-      if (MktgDocumentText.skipTags.has(tag)) {
-        skipDepth += selfClosing ? 0 : 1;
-        return;
-      }
-      if (tag === 'title') {
-        inTitle = !selfClosing;
-        return;
-      }
-      if (skipDepth > 0) {
-        return;
-      }
-      if (MktgDocumentText.blockTags.has(tag)) {
-        out.push('\n');
-      }
-      if (/^h[1-6]$/.test(tag)) {
-        out.push(`${'#'.repeat(Number(tag[1]))} `);
-      } else if (tag === 'li') {
-        out.push('- ');
-      } else if (tag === 'img') {
-        const src = absolute(attrs['src']);
-        if (src) {
-          out.push(` ![${(attrs['alt'] ?? '').replace(/[[\]\n]/g, ' ').trim()}](${src}) `);
-        }
-      } else if (tag === 'a' && !selfClosing) {
-        link = { start: out.length, href: absolute(attrs['href']) };
-      }
-    };
-    const closeTag = (name: string): void => {
-      if (MktgDocumentText.skipTags.has(name)) {
-        skipDepth = Math.max(0, skipDepth - 1);
-        return;
-      }
-      if (name === 'title') {
-        inTitle = false;
-        return;
-      }
-      if (skipDepth > 0) {
-        return;
-      }
-      if (name === 'a' && link !== null) {
-        const label = out.splice(link.start).join('').replace(/\s+/g, ' ').trim();
-        out.push(link.href && label ? `[${label.replace(/[[\]]/g, '')}](${link.href})` : label);
-        link = null;
-      }
-      if (MktgDocumentText.blockTags.has(name)) {
-        out.push('\n');
-      }
-    };
-
-    const tokenizer = new Tokenizer(
-      { xmlMode: false, decodeEntities: true },
-      {
-        onopentagname(start, end) {
-          tag = html.slice(start, end).toLowerCase();
-          attrs = {};
-        },
-        onattribname(start, end) {
-          attrName = html.slice(start, end).toLowerCase();
-          attrValue = '';
-        },
-        onattribdata(start, end) {
-          attrValue += html.slice(start, end);
-        },
-        onattribentity(codepoint) {
-          attrValue += String.fromCodePoint(codepoint);
-        },
-        onattribend() {
-          if (!(attrName in attrs)) {
-            attrs[attrName] = attrValue;
-          }
-        },
-        onopentagend() {
-          openTag(false);
-        },
-        onselfclosingtag() {
-          openTag(true);
-        },
-        onclosetag(start, end) {
-          closeTag(html.slice(start, end).toLowerCase());
-        },
-        ontext(start, end) {
-          text(html.slice(start, end));
-        },
-        ontextentity(codepoint) {
-          text(String.fromCodePoint(codepoint));
-        },
-        oncdata: (): void => undefined,
-        oncomment: (): void => undefined,
-        ondeclaration: (): void => undefined,
-        onend: (): void => undefined,
-        onprocessinginstruction: (): void => undefined,
-      }
-    );
-    tokenizer.write(html);
-    tokenizer.end();
-
-    const body = out
-      .join('')
-      .split('\n')
-      .map((line) => line.replace(/\s+/g, ' ').trim())
-      .join('\n')
-      .replace(/\n{3,}/g, '\n\n');
-    return { text: body, title: title.replace(/\s+/g, ' ').trim() || null };
   }
 }

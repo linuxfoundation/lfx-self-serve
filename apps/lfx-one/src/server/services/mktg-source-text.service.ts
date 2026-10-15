@@ -36,7 +36,7 @@ export class MktgSourceTextService {
     if (bytes.byteLength > FOUNDATION_MESSAGE_MAX_FILE_BYTES) {
       return this.none('too-large');
     }
-    const read = await MktgSourceTextService.gate.withSlot(this.user(req), async () => this.cap(await this.parse(bytes, fileName), maxChars));
+    const read = await MktgSourceTextService.gate.withSlot(this.user(req), async () => this.cap(await this.parse(bytes), maxChars));
     if (read === null) {
       logger.debug(req, 'mktg_source_text', 'Refused a file read as busy — the user has too many waiting', {});
       return this.none('busy');
@@ -45,8 +45,8 @@ export class MktgSourceTextService {
   }
 
   /** Parse bytes to text through the gate, one document at a time on the event loop. */
-  private async parse(bytes: Buffer, fileName: string): Promise<MktgReadText> {
-    return MktgSourceTextService.gate.parse(() => MktgDocumentText.read(bytes, { fileName }));
+  private async parse(bytes: Buffer): Promise<MktgReadText> {
+    return MktgSourceTextService.gate.parse(() => MktgDocumentText.read(bytes));
   }
 
   /** Whose slots a read takes: the signed-in user, else the client address. */
@@ -62,6 +62,6 @@ export class MktgSourceTextService {
   }
 
   private none(reason: MktgReadText['reason']): MktgReadText {
-    return { text: null, title: null, truncated: false, reason };
+    return { text: null, truncated: false, reason };
   }
 }

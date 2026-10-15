@@ -541,7 +541,7 @@ describe('MktgAgentsController', () => {
       ({ path: '/api/mktg-agents/foundation-message/documents/file', headers, body }) as unknown as Request;
 
     it('reads an uploaded file and returns its text, word count and decoded name', async () => {
-      sourceTextMocks.readFile.mockResolvedValue({ text: 'Vision and mission notes.', title: null, truncated: false });
+      sourceTextMocks.readFile.mockResolvedValue({ text: 'Vision and mission notes.', truncated: false });
       const res = buildRes();
 
       await controller.readFoundationMessageFile(fileReq({ 'x-file-name': encodeURIComponent('Brand guide.pdf') }, Buffer.from('%PDF-1.7')), res, next);
@@ -551,7 +551,7 @@ describe('MktgAgentsController', () => {
     });
 
     it('says why a file could not be read', async () => {
-      sourceTextMocks.readFile.mockResolvedValue({ text: null, title: null, truncated: false, reason: 'encrypted' });
+      sourceTextMocks.readFile.mockResolvedValue({ text: null, truncated: false, reason: 'encrypted' });
       const res = buildRes();
 
       await controller.readFoundationMessageFile(fileReq({ 'x-file-name': 'locked.pdf' }, Buffer.from('%PDF-1.7')), res, next);

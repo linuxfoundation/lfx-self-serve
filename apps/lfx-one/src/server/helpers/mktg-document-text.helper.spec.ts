@@ -83,42 +83,38 @@ describe('MktgDocumentText.read — PDF', () => {
     const note = fixture('mktg-document-note.pdf');
     const expected = 'Example Search messaging note\nVision: search, in the open.\nPillars: fast, open, trusted.';
 
-    expect(await MktgDocumentText.read(note, { fileName: 'note.pdf' })).toEqual({ text: expected, title: null, truncated: false });
-    expect((await MktgDocumentText.read(Buffer.concat([Buffer.from('\r\n'.repeat(60)), note]), {})).text).toBe(expected);
+    expect(await MktgDocumentText.read(note)).toEqual({ text: expected, truncated: false });
+    expect((await MktgDocumentText.read(Buffer.concat([Buffer.from('\r\n'.repeat(60)), note]))).text).toBe(expected);
   });
 
   it('reads every page, a blank line between two', async () => {
     const pdf = await pdfkitPdf(['OpenSearch messaging note: vision first.', 'Second page — pillars and proof points.']);
 
-    expect((await MktgDocumentText.read(pdf, { fileName: 'note.pdf' })).text).toBe(
-      'OpenSearch messaging note: vision first.\n\nSecond page — pillars and proof points.'
-    );
+    expect((await MktgDocumentText.read(pdf)).text).toBe('OpenSearch messaging note: vision first.\n\nSecond page — pillars and proof points.');
   });
 
   it('refuses a password-protected PDF as encrypted, and reports no text for one with nothing to read (a scan)', async () => {
-    expect(await MktgDocumentText.read(await pdfkitPdf(['Secret pillars'], 'secret'), { fileName: 'locked.pdf' })).toEqual({
+    expect(await MktgDocumentText.read(await pdfkitPdf(['Secret pillars'], 'secret'))).toEqual({
       text: null,
-      title: null,
       truncated: false,
       reason: 'encrypted',
     });
-    expect((await MktgDocumentText.read(await pdfkitPdf(['']), { fileName: 'scan.pdf' })).reason).toBe('no-text');
+    expect((await MktgDocumentText.read(await pdfkitPdf(['']))).reason).toBe('no-text');
   });
 
   it('reports a corrupt PDF as too complex, whose message asks for a fresh export', async () => {
     const corrupt = Buffer.concat([fixture('mktg-document-note.pdf').subarray(0, 600), Buffer.from('garbage')]);
 
-    expect((await MktgDocumentText.read(corrupt, { fileName: 'broken.pdf' })).reason).toBe('too-complex');
-    expect((await MktgDocumentText.read(Buffer.from('not a pdf at all'), { contentType: 'application/pdf' })).reason).toBe('too-complex');
+    expect((await MktgDocumentText.read(corrupt)).reason).toBe('too-complex');
   });
 
   it('refuses a PDF over the page cap before reading a page, and stops one at the deadline', async () => {
     const tooLong = await pdfkitPdf(Array.from({ length: 301 }, (_, page) => `Page ${page + 1}`));
     const slow = await pdfkitPdf(Array.from({ length: 200 }, () => 'lorem ipsum dolor sit amet '.repeat(120)));
 
-    expect((await MktgDocumentText.read(tooLong, { fileName: 'long.pdf' })).reason).toBe('too-complex');
+    expect((await MktgDocumentText.read(tooLong)).reason).toBe('too-complex');
     const start = performance.now();
-    expect((await MktgDocumentText.read(slow, { fileName: 'slow.pdf' }, 1)).reason).toBe('too-complex');
+    expect((await MktgDocumentText.read(slow, 1)).reason).toBe('too-complex');
     expect(performance.now() - start).toBeLessThan(1000);
   }, 20_000);
 
@@ -128,26 +124,26 @@ describe('MktgDocumentText.read — PDF', () => {
 
     expect(heavy.length).toBeLessThan(200 * 1024);
     const stall = await longestStall(async () => {
-      read = await MktgDocumentText.read(heavy, { fileName: 'heavy.pdf' });
+      read = await MktgDocumentText.read(heavy);
     });
     expect(read?.reason).toBe('too-complex');
     expect(stall).toBeLessThan(300);
   }, 20_000);
 });
 
-describe('MktgDocumentText.read — Word, HTML and text', () => {
+describe('MktgDocumentText.read — Word and text', () => {
   it('reads a real .docx body, a blank line between paragraphs, tabs kept', async () => {
-    const read = await MktgDocumentText.read(fixture('mktg-document-brief.docx'), { fileName: 'brief.docx' });
+    const read = await MktgDocumentText.read(fixture('mktg-document-brief.docx'));
 
-    expect(read).toEqual({ text: 'Example Search positioning brief\n\nVision & mission\n\nPillar\tone', title: null, truncated: false });
+    expect(read).toEqual({ text: 'Example Search positioning brief\n\nVision & mission\n\nPillar\tone', truncated: false });
   });
 
   it('refuses a corrupt zip, and a zip that is not a Word document', async () => {
     const corrupt = Buffer.concat([Buffer.from('PK\u0003\u0004', 'latin1'), Buffer.from('garbage')]);
     const notWord = await zip({ 'ppt/presentation.xml': '<p:presentation/>' });
 
-    expect((await MktgDocumentText.read(corrupt, { fileName: 'brief.docx' })).reason).toBe('unsupported');
-    expect((await MktgDocumentText.read(notWord, { fileName: 'deck.pptx' })).reason).toBe('unsupported');
+    expect((await MktgDocumentText.read(corrupt)).reason).toBe('unsupported');
+    expect((await MktgDocumentText.read(notWord)).reason).toBe('unsupported');
   });
 
   it('refuses a .docx whose markup inflates past the cap (a compression bomb) before mammoth reads it', async () => {
@@ -156,8 +152,8 @@ describe('MktgDocumentText.read — Word, HTML and text', () => {
     const tooLong = await wordZip(60_000);
 
     expect(bomb.length).toBeLessThan(1024 * 1024);
-    expect((await MktgDocumentText.read(bomb, { fileName: 'bomb.docx' })).reason).toBe('too-complex');
-    expect((await MktgDocumentText.read(tooLong, { fileName: 'long.docx' })).reason).toBe('too-complex');
+    expect((await MktgDocumentText.read(bomb)).reason).toBe('too-complex');
+    expect((await MktgDocumentText.read(tooLong)).reason).toBe('too-complex');
     expect(parse).not.toHaveBeenCalled();
     parse.mockRestore();
   }, 20_000);
@@ -168,7 +164,7 @@ describe('MktgDocumentText.read — Word, HTML and text', () => {
     const manyParts = await wordZip(3, Object.fromEntries(Array.from({ length: 1_500 }, (_, part) => [`word/empty${part}.xml`, ''])));
 
     const start = performance.now();
-    expect((await MktgDocumentText.read(manyParts, { fileName: 'brief.docx' })).reason).toBe('too-complex');
+    expect((await MktgDocumentText.read(manyParts)).reason).toBe('too-complex');
     expect(performance.now() - start).toBeLessThan(MktgDocumentText.maxDocxMillis);
     expect(load).not.toHaveBeenCalled();
     expect(parse).not.toHaveBeenCalled();
@@ -180,8 +176,8 @@ describe('MktgDocumentText.read — Word, HTML and text', () => {
     const imageBomb = await wordZip(3, { 'word/media/image1.png': Buffer.alloc(40 * 1024 * 1024) });
     const hidden = await wordZip(3, {}, 'word/media/image1.png');
 
-    expect((await MktgDocumentText.read(imageBomb, { fileName: 'brief.docx' })).text).toBe('Pillar\n\nPillar\n\nPillar');
-    expect((await MktgDocumentText.read(hidden, { fileName: 'brief.docx' })).reason).toBe('unsupported');
+    expect((await MktgDocumentText.read(imageBomb)).text).toBe('Pillar\n\nPillar\n\nPillar');
+    expect((await MktgDocumentText.read(hidden)).reason).toBe('unsupported');
   }, 20_000);
 
   it('reads a .docx just under the markup cap within the deadline, and stops one at a spent deadline before mammoth starts', async () => {
@@ -189,46 +185,19 @@ describe('MktgDocumentText.read — Word, HTML and text', () => {
     const parse = vi.spyOn(mammoth, 'extractRawText');
 
     const start = performance.now();
-    const read = await MktgDocumentText.read(nearCap, { fileName: 'long.docx' });
+    const read = await MktgDocumentText.read(nearCap);
     expect(performance.now() - start).toBeLessThan(MktgDocumentText.maxDocxMillis + 1000);
     expect(read.text === null ? read.reason : 'read').toMatch(/^(read|too-complex)$/);
 
     parse.mockClear();
-    expect((await MktgDocumentText.read(nearCap, { fileName: 'long.docx' }, 1)).reason).toBe('too-complex');
+    expect((await MktgDocumentText.read(nearCap, 1)).reason).toBe('too-complex');
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(parse).not.toHaveBeenCalled();
     parse.mockRestore();
   }, 20_000);
 
-  it('turns a page into Markdown-flavoured text, keeping absolute link and image URLs and dropping scripts', async () => {
-    const html =
-      '<!doctype html><html><head><title>Example Search — Home</title><style>h1{}</style></head><body>' +
-      '<header><img src="/logo.svg" alt="Example Search"></header><script>var x = 1;</script>' +
-      '<h1>Search, in the open</h1><p>Read the <a href="docs/start">getting started guide</a>.</p>' +
-      '<ul><li>Fast</li><li>Open</li></ul></body></html>';
-
-    const read = await MktgDocumentText.read(Buffer.from(html, 'utf8'), { contentType: 'text/html; charset=utf-8', baseUrl: 'https://search.example.org/en/' });
-
-    expect(read.title).toBe('Example Search — Home');
-    expect(read.text).toBe(
-      [
-        '![Example Search](https://search.example.org/logo.svg)',
-        '',
-        '# Search, in the open',
-        '',
-        'Read the [getting started guide](https://search.example.org/en/docs/start).',
-        '',
-        '- Fast',
-        '',
-        '- Open',
-      ].join('\n')
-    );
-  });
-
   it('keeps Markdown and plain text as written, and refuses binary data', async () => {
-    expect((await MktgDocumentText.read(Buffer.from('﻿# Notes\r\n\r\nKeep <b>this</b>.', 'utf8'), { fileName: 'notes.md' })).text).toBe(
-      '# Notes\n\nKeep <b>this</b>.'
-    );
-    expect((await MktgDocumentText.read(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01]), { fileName: 'logo.txt' })).reason).toBe('unsupported');
+    expect((await MktgDocumentText.read(Buffer.from('﻿# Notes\r\n\r\nKeep <b>this</b>.', 'utf8'))).text).toBe('# Notes\n\nKeep <b>this</b>.');
+    expect((await MktgDocumentText.read(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01]))).reason).toBe('unsupported');
   });
 });
