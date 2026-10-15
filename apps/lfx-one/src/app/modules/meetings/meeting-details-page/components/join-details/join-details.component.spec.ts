@@ -200,6 +200,16 @@ describe('MeetingJoinDetailsComponent', () => {
     expect(reload).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps the key through a live occurrence that inherits the series' duration", async () => {
+    // Started 50 minutes ago, 90 minutes long by the series: the window lasts until 80 minutes from now.
+    const start = new Date(Date.now() - 50 * 60_000).toISOString();
+    meeting.set(build({ host_key: KEY, can_view_host_key: true, start_time: start, duration: 90 }));
+    selectedOccurrence.set({ occurrence_id: '1', start_time: start, duration: 0 });
+    await update();
+
+    expect(query('join-details-host-key-toggle')).not.toBeNull();
+  });
+
   it('shows a key the server returned to a browser whose clock runs a few minutes behind', async () => {
     // The server, by its clock, is inside the window; the browser is 5 minutes before it opens.
     meeting.set(build({ host_key: KEY, can_view_host_key: true, start_time: new Date(Date.now() + 75 * 60_000).toISOString() }));

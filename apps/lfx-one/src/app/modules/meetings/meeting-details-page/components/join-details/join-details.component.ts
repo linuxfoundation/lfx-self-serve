@@ -136,7 +136,8 @@ export class MeetingJoinDetailsComponent {
   private windowTiming(meeting: Meeting): Pick<Meeting, 'start_time' | 'duration' | 'next_occurrence_start_time'> {
     const occurrence = this.state.selectedOccurrence();
     return occurrence?.start_time
-      ? { start_time: occurrence.start_time, duration: occurrence.duration }
+      ? // A zero or missing duration inherits the series', as the rest of the page reads it.
+        { start_time: occurrence.start_time, duration: occurrence.duration || meeting.duration }
       : { start_time: meeting.start_time, duration: meeting.duration, next_occurrence_start_time: meeting.next_occurrence_start_time };
   }
 
