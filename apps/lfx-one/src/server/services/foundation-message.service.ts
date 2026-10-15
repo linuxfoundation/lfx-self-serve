@@ -29,6 +29,7 @@ import {
 import { createHash } from 'node:crypto';
 import { Request } from 'express';
 
+import { MktgReadBudget } from '../helpers/mktg-document-read-gate.helper';
 import { GithubReadmeService } from './github-readme.service';
 import { GuildService } from './guild.service';
 import { logger } from './logger.service';
@@ -45,6 +46,8 @@ import { MktgSourceTextService } from './mktg-source-text.service';
  *    and every existing document given as a link. Uploaded files arrive
  *    already read. Nothing read here can fail the run: a source that could
  *    not be read goes to the agent as "not read", and the agent records it so.
+ *    The parses share one time budget per generate (`generateParseBudgetMs`)
+ *    and run one at a time through the process-wide read gate.
  * 2. The answers and texts become the agent's `messaging_document_intake_form`
  *    and are sent as the one rendered text message the agent parses back
  *    (`renderFoundationMessageFormText`, a verbatim mirror of its renderer;
@@ -72,6 +75,13 @@ export class FoundationMessageService {
   /** The foundation-message knobs for the shared persistence layer: key prefix, size cap, log namespace. */
   private readonly artifactSpec = MKTG_ARTIFACT_SPECS['foundation-message'];
 
+  /**
+   * Event-loop time one generate may spend parsing its sources and documents,
+   * together. Ordinary pages and files take milliseconds each; only crafted
+   * ones come near it, and those then stop rather than add up.
+   */
+  private readonly generateParseBudgetMs = 1_000;
+
   /** Structured `agent_input` transport, default OFF (Guild coerces objects to JSON text before the agent's preprocess). */
   private get structuredAgentInputEnabled(): boolean {
     return process.env['GUILD_STRUCTURED_AGENT_INPUT'] === 'true';
@@ -91,18 +101,19 @@ export class FoundationMessageService {
   ): Promise<FoundationMessageGenerationStart> {
     const url = (kind: FoundationMessageSourceKind): string | null => foundationMessageSourceUrl(answers[FOUNDATION_MESSAGE_SOURCE_FIELDS[kind].urlKey]);
     const githubUrl = url('readme');
+    const budget = new MktgReadBudget(this.generateParseBudgetMs);
     const page = async (kind: FoundationMessageSourceKind): Promise<string | undefined> => {
       const link = url(kind);
-      return link === null ? undefined : ((await this.sourceTextService.readLink(req, link, FOUNDATION_MESSAGE_SOURCE_MAX_CHARS)).text ?? undefined);
+      return link === null ? undefined : ((await this.sourceTextService.readLink(req, link, FOUNDATION_MESSAGE_SOURCE_MAX_CHARS, budget)).text ?? undefined);
     };
 
-    // Everything is read in parallel: the generate POST waits for all of it.
+    // Fetched in parallel (the read gate bounds how many at once), parsed one at a time: the generate POST waits for all of it.
     const [readme, website, pressRelease, brandPage, existingDocuments] = await Promise.all([
       githubUrl === null ? Promise.resolve(null) : this.githubReadmeService.fetchReadme(req, githubUrl),
       page('website'),
       page('press_release'),
       page('brand_page'),
-      Promise.all(documents.map((document) => this.readDocument(req, document))),
+      Promise.all(documents.map((document) => this.readDocument(req, document, budget))),
     ]);
 
     const payload = buildFoundationMessageFormPayload(answers, {
@@ -174,13 +185,13 @@ export class FoundationMessageService {
   }
 
   /** One existing document as the agent takes it: a link is (re-)read here, a file's text is passed through. */
-  private async readDocument(req: Request, document: MktgIntakeDocument): Promise<FoundationMessageExistingDocument> {
+  private async readDocument(req: Request, document: MktgIntakeDocument, budget: MktgReadBudget): Promise<FoundationMessageExistingDocument> {
     const title = document.title.trim();
     if (document.kind === 'file') {
       return { title, text: document.text ?? '' };
     }
     const url = (document.url ?? '').trim();
-    const read = await this.sourceTextService.readLink(req, url, FOUNDATION_MESSAGE_DOCUMENT_MAX_CHARS);
+    const read = await this.sourceTextService.readLink(req, url, FOUNDATION_MESSAGE_DOCUMENT_MAX_CHARS, budget);
     return read.text === null ? { title, url } : { title, url, text: read.text };
   }
 

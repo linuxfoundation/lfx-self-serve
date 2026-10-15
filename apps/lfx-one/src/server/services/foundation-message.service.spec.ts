@@ -243,7 +243,10 @@ describe('FoundationMessageService.startGeneration', () => {
       'foundation-message'
     );
 
-    expect(sourceTextMocks.readLink).toHaveBeenCalledWith(req, 'https://wiki.example.org/note', 60000);
+    expect(sourceTextMocks.readLink).toHaveBeenCalledWith(req, 'https://wiki.example.org/note', 60000, expect.any(Object));
+    // Every source and document of one generate draws on the same parse-time budget.
+    const budgets = new Set(sourceTextMocks.readLink.mock.calls.map((call) => call[3]));
+    expect(budgets.size).toBe(1);
     const message = sentParams().message ?? '';
     expect(message).toContain('FORM SHAPE: DOCUMENTS WITH ANSWERS');
     expect(message).toContain(

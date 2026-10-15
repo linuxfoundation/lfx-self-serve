@@ -283,6 +283,19 @@ export const FOUNDATION_MESSAGE_MAX_FILE_BYTES = 20 * 1024 * 1024;
 /** File types the existing-documents upload accepts: PDF, Word, Markdown and plain text. */
 export const FOUNDATION_MESSAGE_FILE_EXTENSIONS = ['.pdf', '.docx', '.md', '.txt'] as const;
 
+/**
+ * Response content types (the media type, parameters ignored) a linked source
+ * or document is read from, besides any `text/*`. Hosts often serve PDFs as
+ * `application/octet-stream`, so it is read too; the bytes then decide the
+ * format. Anything else — an image, a video, JSON — is refused unread.
+ */
+export const FOUNDATION_MESSAGE_LINK_CONTENT_TYPES: readonly string[] = [
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/xhtml+xml',
+  'application/octet-stream',
+];
+
 /** Content type of the raw upload body. */
 export const FOUNDATION_MESSAGE_FILE_UPLOAD_CONTENT_TYPE = 'application/octet-stream';
 
@@ -301,6 +314,7 @@ export const FOUNDATION_MESSAGE_READ_REASONS = {
   'not-shared': 'The document isn’t shared publicly. Share it as “Anyone with the link”, or upload it as a file.',
   'fetch-failed': 'LFX One couldn’t fetch this link. It goes to the agent as “not read”; upload the file instead if you have it.',
   'too-large': 'The file is larger than 20 MB.',
+  busy: 'LFX One is still reading your other documents. Try this one again in a moment.',
 } as const;
 
 /** BFF endpoints that turn an existing document into text before the run. */

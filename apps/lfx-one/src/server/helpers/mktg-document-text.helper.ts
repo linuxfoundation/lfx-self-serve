@@ -18,8 +18,12 @@ export class MktgDocumentText {
   /** Most HTML characters tokenized: a page's header, navigation and body copy sit well inside this. */
   private static readonly maxHtmlChars = 2_000_000;
 
-  /** Most bytes a .docx part may inflate to — a guard against compression bombs. */
-  private static readonly maxDocxXmlBytes = 64 * 1024 * 1024;
+  /**
+   * Most bytes a .docx part may inflate to — a guard against compression bombs,
+   * and the bound on the time it takes to read (about 120 ms at the cap; the
+   * body of a 300-page document is a few megabytes).
+   */
+  private static readonly maxDocxXmlBytes = 16 * 1024 * 1024;
 
   /** Block-level elements: each starts and ends a line. */
   // prettier-ignore
@@ -36,24 +40,25 @@ export class MktgDocumentText {
    *
    * @param bytes - The raw bytes
    * @param hints - The file name or the response's content type, and for HTML the URL relative links resolve against
+   * @param maxMillis - A tighter wall-clock limit for a PDF than its reader's own
    */
-  public static read(bytes: Buffer, hints: { fileName?: string; contentType?: string; baseUrl?: string }): MktgReadText {
+  public static read(bytes: Buffer, hints: { fileName?: string; contentType?: string; baseUrl?: string }, maxMillis = PdfTextReader.maxMillis): MktgReadText {
     try {
-      return MktgDocumentText.readBytes(bytes, hints);
+      return MktgDocumentText.readBytes(bytes, hints, maxMillis);
     } catch {
       // Each reader bounds its own work; this keeps the never-throws promise for anything they did not foresee.
       return MktgDocumentText.none('unsupported');
     }
   }
 
-  private static readBytes(bytes: Buffer, hints: { fileName?: string; contentType?: string; baseUrl?: string }): MktgReadText {
+  private static readBytes(bytes: Buffer, hints: { fileName?: string; contentType?: string; baseUrl?: string }, maxMillis: number): MktgReadText {
     const name = (hints.fileName ?? '').toLowerCase();
     const type = hints.contentType ?? '';
     const head = bytes.subarray(0, 1024).toString('latin1');
 
     // A PDF reader accepts the header anywhere in the first kilobyte (some generators write junk before it).
     if (head.includes('%PDF-') || type.includes('application/pdf')) {
-      const pdf = PdfTextReader.read(bytes);
+      const pdf = PdfTextReader.read(bytes, maxMillis);
       return 'text' in pdf ? MktgDocumentText.ok(pdf.text) : MktgDocumentText.none(pdf.reason);
     }
     if (head.startsWith('PK\u0003\u0004')) {

@@ -519,7 +519,7 @@ export class MktgAgentsController {
         throw ServiceValidationError.forField('file', `The file must be a non-empty ${FOUNDATION_MESSAGE_FILE_UPLOAD_CONTENT_TYPE} body.`, { operation });
       }
 
-      const read = this.mktgSourceTextService.readFile(fileName, file, FOUNDATION_MESSAGE_DOCUMENT_MAX_CHARS);
+      const read = await this.mktgSourceTextService.readFile(req, fileName, file, FOUNDATION_MESSAGE_DOCUMENT_MAX_CHARS);
       const response = this.extractResponse(fileName, read, true);
       logger.success(req, operation, startTime, { extension: fileName.slice(fileName.lastIndexOf('.')), size_bytes: file.byteLength, read: response.read });
       res.json(response);

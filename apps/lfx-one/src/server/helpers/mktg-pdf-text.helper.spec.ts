@@ -9,7 +9,7 @@ import { PdfTextReader } from './mktg-pdf-text.helper';
 /**
  * The reader runs on the BFF's event loop for any signed-in user's upload,
  * link or source URL, so a crafted PDF must cost time in proportion to its
- * size and stop at the work budget. Every input here took seconds to hours
+ * size and stop at the work budget (about 200 ms). Every input here took seconds to hours
  * before the bounds (bfrange expansion, object rescans, unclosed blocks,
  * stack depth, repeated Form XObjects); the time limits are far above what
  * the bounded reader needs, and far below what the unbounded one took.
@@ -116,7 +116,13 @@ describe('PdfTextReader — bounded work on hostile input', () => {
     const { result, ms } = timed(() => PdfTextReader.read(fanOut));
 
     expect(result).toEqual({ reason: 'too-complex' });
-    // The unit budget stops it in about 2 s; the wall-clock backstop is 5 s.
-    expect(ms).toBeLessThan(8000);
+    // The budget stops it in about 200 ms; the margin is for a slow CI machine.
+    expect(ms).toBeLessThan(1000);
+
+    // A caller whose own budget has less left lowers the wall-clock limit further, and can never raise it.
+    const capped = timed(() => PdfTextReader.read(fanOut, 20));
+    expect(capped.result).toEqual({ reason: 'too-complex' });
+    expect(capped.ms).toBeLessThan(ms);
+    expect(timed(() => PdfTextReader.read(fanOut, 60_000)).ms).toBeLessThan(1000);
   }, 20_000);
 });

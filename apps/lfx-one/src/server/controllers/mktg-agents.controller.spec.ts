@@ -478,12 +478,12 @@ describe('MktgAgentsController', () => {
       ({ path: '/api/mktg-agents/foundation-message/documents/file', headers, body }) as unknown as Request;
 
     it('reads an uploaded file and returns its text, word count and decoded name', async () => {
-      sourceTextMocks.readFile.mockReturnValue({ text: 'Vision and mission notes.', title: null, truncated: false });
+      sourceTextMocks.readFile.mockResolvedValue({ text: 'Vision and mission notes.', title: null, truncated: false });
       const res = buildRes();
 
       await controller.readFoundationMessageFile(fileReq({ 'x-file-name': encodeURIComponent('Brand guide.pdf') }, Buffer.from('%PDF-1.7')), res, next);
 
-      expect(sourceTextMocks.readFile.mock.calls[0][0]).toBe('Brand guide.pdf');
+      expect(sourceTextMocks.readFile.mock.calls[0][1]).toBe('Brand guide.pdf');
       expect(res.json).toHaveBeenCalledWith({ title: 'Brand guide.pdf', read: true, words: 4, truncated: false, text: 'Vision and mission notes.' });
     });
 

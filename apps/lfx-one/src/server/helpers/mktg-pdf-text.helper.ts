@@ -56,7 +56,8 @@ class PdfTooComplexError extends Error {}
  * The work one PDF may cost: one unit per byte the lexer moves over, per byte
  * a filter reads or writes, per code decoded and per CMap entry expanded,
  * with a wall-clock limit as the backstop. The reader runs on the BFF's event
- * loop, so a hostile file must stop here rather than run for minutes.
+ * loop, so a hostile file must stop here — within a fifth of a second — rather
+ * than hold every other request for seconds.
  */
 class PdfWorkBudget {
   private spent = 0;
@@ -101,8 +102,8 @@ class PdfWorkBudget {
  * caller reports the document as not read.
  */
 export class PdfTextReader {
-  /** Most bytes any one stream may inflate to — a guard against compression bombs. */
-  private static readonly maxStreamBytes = 64 * 1024 * 1024;
+  /** Most bytes the streams of one PDF may inflate to, together — a guard against compression bombs. */
+  private static readonly maxStreamBytes = 16 * 1024 * 1024;
 
   /** Deepest Form XObject nesting followed. */
   private static readonly maxFormDepth = 4;
@@ -111,14 +112,14 @@ export class PdfTextReader {
   private static readonly maxPageTreeDepth = 64;
 
   /**
-   * Work units one PDF may cost (see `PdfWorkBudget`): about three passes over
-   * the 64 MB inflate cap, so the largest real document fits and a crafted one
-   * that re-reads the same bytes stops.
+   * Work units one PDF may cost (see `PdfWorkBudget`): about 200 ms of work,
+   * just over the 16 MB inflate cap, so a long real export fits and a crafted
+   * one that re-reads the same bytes stops.
    */
-  private static readonly maxWorkUnits = 200_000_000;
+  private static readonly maxWorkUnits = 20_000_000;
 
-  /** Wall-clock limit for one PDF, the backstop to the unit budget. */
-  private static readonly maxMillis = 5_000;
+  /** Wall-clock limit for one PDF, the backstop to the unit budget; a caller may only lower it. */
+  public static readonly maxMillis = 200;
 
   /** Most ToUnicode entries expanded across every font of one PDF; a subset font needs a few hundred. */
   private static readonly maxCMapEntries = 131_072;
@@ -142,7 +143,7 @@ export class PdfTextReader {
   };
 
   private readonly src: string;
-  private readonly budget = new PdfWorkBudget(PdfTextReader.maxWorkUnits, PdfTextReader.maxMillis);
+  private readonly budget: PdfWorkBudget;
   private readonly objects = new Map<number, PdfValue>();
   private readonly fonts = new Map<PdfDict, PdfFontDecoder>();
   /** Where the last `endstream` keyword starts, so a stream with no end is known without scanning to EOF again. */
@@ -150,7 +151,8 @@ export class PdfTextReader {
   private inflatedBytes = 0;
   private cmapEntries = 0;
 
-  private constructor(bytes: Buffer) {
+  private constructor(bytes: Buffer, maxMillis: number) {
+    this.budget = new PdfWorkBudget(PdfTextReader.maxWorkUnits, Math.min(maxMillis, PdfTextReader.maxMillis));
     this.src = bytes.toString('latin1');
     this.lastEndstream = this.src.lastIndexOf('endstream');
   }
@@ -160,10 +162,12 @@ export class PdfTextReader {
    * permissions encryption — the strings are ciphertext), `no-text` (a scan,
    * or fonts with no way back to Unicode) or `too-complex` (it needs more work
    * than the reader's budget allows, which no ordinary export does). Never throws.
+   *
+   * @param maxMillis - A tighter wall-clock limit, when the caller's own budget has less left than `maxMillis`
    */
-  public static read(bytes: Buffer): { text: string } | { reason: 'encrypted' | 'no-text' | 'too-complex' } {
+  public static read(bytes: Buffer, maxMillis: number = PdfTextReader.maxMillis): { text: string } | { reason: 'encrypted' | 'no-text' | 'too-complex' } {
     try {
-      const reader = new PdfTextReader(bytes);
+      const reader = new PdfTextReader(bytes, maxMillis);
       if (/\/Encrypt\s*[\d<]/.test(reader.src)) {
         return { reason: 'encrypted' };
       }
