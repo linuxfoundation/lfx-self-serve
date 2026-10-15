@@ -537,6 +537,21 @@ describe('PublicMeetingController.getMeetingById registrant count', () => {
     expect(meeting.registrant_count).toBe(12);
   });
 
+  it("strips each occurrence's registrant count unless the viewer is invited or an organizer", async () => {
+    const occurrences = [{ occurrence_id: '1784323800', start_time: '2026-07-16T09:30:00Z', duration: 30, registrant_count: 7 }];
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ occurrences } as Partial<Meeting>));
+    addInvitedStatusToMeetingMock.mockImplementation(async (_req: any, meeting: Meeting) => ({ ...meeting, invited: false }));
+    const visitor = buildReqRes(false);
+    await controller.getMeetingById(visitor.req, visitor.res, visitor.next);
+    expect(visitor.res.json.mock.calls[0][0].meeting.occurrences).toEqual([{ occurrence_id: '1784323800', start_time: '2026-07-16T09:30:00Z', duration: 30 }]);
+
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ occurrences } as Partial<Meeting>));
+    addInvitedStatusToMeetingMock.mockImplementation(async (_req: any, meeting: Meeting) => ({ ...meeting, invited: true }));
+    const invitee = buildReqRes(true);
+    await controller.getMeetingById(invitee.req, invitee.res, invitee.next);
+    expect(invitee.res.json.mock.calls[0][0].meeting.occurrences[0].registrant_count).toBe(7);
+  });
+
   it('still serves the meeting when the count is unavailable', async () => {
     meetingSvc.getMeetingRegistrantCount.mockRejectedValue(new Error('query service down'));
     const { req, res, next } = buildReqRes(true);
@@ -927,36 +942,61 @@ describe('PublicMeetingController.getMeetingOccurrences', () => {
     expect(JSON.stringify(payload)).not.toContain('should not leak');
   });
 
-  it('gives the registrant count to a registrant and an organizer, never to a passcode holder', async () => {
-    meetingSvc.getPastOccurrencesForMeeting.mockResolvedValue([]);
-    validatePasswordMock.mockReturnValue(false);
-    getEffectiveEmailMock.mockReturnValue('user@example.com');
-    getUsernameFromAuthMock.mockResolvedValue('user');
+  describe('registrant count on future occurrences', () => {
+    beforeEach(() => {
+      meetingSvc.getPastOccurrencesForMeeting.mockResolvedValue([]);
+      validatePasswordMock.mockReturnValue(false);
+      getEffectiveEmailMock.mockReturnValue('user@example.com');
+      getUsernameFromAuthMock.mockResolvedValue('user');
+    });
 
-    // A registrant of a restricted meeting.
-    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ restricted: true, occurrences: [liveOccurrence] } as Partial<Meeting>));
-    meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([{ email: 'user@example.com' }]);
-    const registrant = buildReqRes(true);
-    await controller.getMeetingOccurrences(registrant.req, registrant.res, registrant.next);
-    expect(registrant.res.json.mock.calls[0][0].future[0]).toEqual(expect.objectContaining({ title: 'Weekly sync', registrant_count: 12 }));
+    it('gives it to a registrant of a restricted meeting', async () => {
+      meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ restricted: true, occurrences: [liveOccurrence] } as Partial<Meeting>));
+      meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([{ email: 'user@example.com' }]);
+      const { req, res, next } = buildReqRes(true);
 
-    // An organizer of a private meeting who is not a registrant.
-    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE, occurrences: [liveOccurrence] } as Partial<Meeting>));
-    meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([]);
-    meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
-    addAccessToResourceMock.mockImplementation(async (_req: any, resource: any) => ({ ...resource, organizer: true }));
-    const organizer = buildReqRes(true);
-    await controller.getMeetingOccurrences(organizer.req, organizer.res, organizer.next);
-    expect(organizer.res.json.mock.calls[0][0].future[0].registrant_count).toBe(12);
+      await controller.getMeetingOccurrences(req, res, next);
 
-    // A visitor let in by the passcode alone.
-    validatePasswordMock.mockReturnValue(true);
-    const passcode = buildReqRes(false);
-    passcode.req.headers['x-meeting-password'] = 'pw';
-    await controller.getMeetingOccurrences(passcode.req, passcode.res, passcode.next);
-    const passcodeOccurrence = passcode.res.json.mock.calls[0][0].future[0];
-    expect(passcodeOccurrence.title).toBe('Weekly sync');
-    expect(passcodeOccurrence).not.toHaveProperty('registrant_count');
+      expect(res.json.mock.calls[0][0].future[0]).toEqual(expect.objectContaining({ title: 'Weekly sync', registrant_count: 12 }));
+    });
+
+    it('gives it to an organizer of a private meeting who is not a registrant', async () => {
+      meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE, occurrences: [liveOccurrence] } as Partial<Meeting>));
+      meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([]);
+      meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
+      addAccessToResourceMock.mockImplementation(async (_req: any, resource: any) => ({ ...resource, organizer: true }));
+      const { req, res, next } = buildReqRes(true);
+
+      await controller.getMeetingOccurrences(req, res, next);
+
+      expect(res.json.mock.calls[0][0].future[0].registrant_count).toBe(12);
+    });
+
+    it('withholds it from a visitor let in by the passcode alone', async () => {
+      meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE, occurrences: [liveOccurrence] } as Partial<Meeting>));
+      validatePasswordMock.mockReturnValue(true);
+      const { req, res, next } = buildReqRes(false);
+      req.headers['x-meeting-password'] = 'pw';
+
+      await controller.getMeetingOccurrences(req, res, next);
+
+      const occurrence = res.json.mock.calls[0][0].future[0];
+      expect(occurrence.title).toBe('Weekly sync');
+      expect(occurrence).not.toHaveProperty('registrant_count');
+    });
+
+    // The open gate checks nothing further, so a registrant of a public meeting is not told apart
+    // from any visitor here; proving it would add an upstream call (#3584).
+    it('withholds it from a signed-in registrant of a public meeting', async () => {
+      meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ occurrences: [liveOccurrence] } as Partial<Meeting>));
+      meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([{ email: 'user@example.com' }]);
+      const { req, res, next } = buildReqRes(true);
+
+      await controller.getMeetingOccurrences(req, res, next);
+
+      expect(res.json.mock.calls[0][0].future[0]).not.toHaveProperty('registrant_count');
+      expect(meetingSvc.getMeetingRegistrantsForUser).not.toHaveBeenCalled();
+    });
   });
 
   it('fails closed when the live series fetch fails (visibility cannot be verified)', async () => {

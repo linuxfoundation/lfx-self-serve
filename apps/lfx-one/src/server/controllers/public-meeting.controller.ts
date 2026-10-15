@@ -149,6 +149,17 @@ export class PublicMeetingController {
 
       await this.addInviteeRegistrantCount(req, meeting, id, m2mToken);
 
+      // The ITX payload also carries a registrant count per occurrence. It follows the meeting
+      // count's rule, registrants and organizers only (spec 011 § Counts). An invite proved late by
+      // the email fallback below keeps the meeting count but not these, which nothing renders.
+      if (!meeting.invited && !meeting.organizer && meeting.occurrences) {
+        meeting.occurrences = meeting.occurrences.map((occurrence) => {
+          const withoutCount = { ...occurrence };
+          delete withoutCount.registrant_count;
+          return withoutCount;
+        });
+      }
+
       // Organizer identity is authenticated-visible info (LFXV2-2802). For authenticated callers,
       // enrich created_by/owner from the live v1_meeting index (the ITX detail payload omits created_by);
       // for anonymous callers, skip that query and strip all three identity fields so we neither expose
@@ -605,9 +616,10 @@ export class PublicMeetingController {
       const past = await this.meetingService.getPastOccurrencesForMeeting(req, id);
 
       // A projection, never the ITX payload, which carries sensitive fields (e.g. password). The
-      // registrant count goes only to the viewers the details page already gives one (spec 011
-      // § Registrant counts): a caller let in because the meeting is public, or by its passcode, has
-      // not shown they are registered.
+      // registrant count goes only to a caller the gate let in as a registrant or organizer (spec 011
+      // § Counts). A caller let in because the meeting is public, or by its passcode, has not shown
+      // they are registered; that includes a signed-in registrant of a public meeting, since the open
+      // gate checks nothing further and proving it here would add an upstream call (#3584).
       const showsRegistrantCount = access === 'registrant' || access === 'organizer';
       const future: MeetingTimelineOccurrence[] = (liveMeeting?.occurrences ?? []).map((o) => ({
         occurrence_id: o.occurrence_id,
@@ -1156,7 +1168,8 @@ export class PublicMeetingController {
   }
 
   /**
-   * Access gate for the public series-timeline endpoint: {@link canViewMeetingContent}.
+   * Access gate for the public series-timeline endpoint: {@link resolveMeetingContentAccess}, returning
+   * the gate the caller passed, which decides whether the response carries registrant counts.
    */
   private async canViewSeriesTimeline(
     req: Request,

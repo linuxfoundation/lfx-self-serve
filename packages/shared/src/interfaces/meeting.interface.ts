@@ -1062,9 +1062,9 @@ export type MeetingOccurrenceSummary = Pick<MeetingOccurrence, 'occurrence_id' |
  * A live occurrence on the public occurrences endpoint, for the occurrence strip and the
  * browse-all dialog (E6-01, #3584)
  * @description Adds the occurrence `title` (any caller who passes the meeting gate sees the series
- * itself) and `registrant_count`, which is set only for a registrant or organizer, the viewers the
- * details page already gives a registrant count. `description` stays excluded: unused, and the
- * largest field.
+ * itself) and `registrant_count`, set only for a caller the gate let in as a registrant or
+ * organizer; a signed-in registrant of a public meeting, let in by the open gate, gets none.
+ * `description` stays excluded: unused, and the largest field.
  */
 export type MeetingTimelineOccurrence = Pick<MeetingOccurrence, 'occurrence_id' | 'start_time' | 'duration' | 'status' | 'title' | 'registrant_count'>;
 
@@ -1073,8 +1073,9 @@ export type MeetingContentAccess = 'public' | 'password' | 'registrant' | 'organ
 
 /**
  * Series timeline for the public meeting occurrences endpoint
- * @description Past occurrences from v1_past_meeting records plus a minimal
- * projection of the live series' current/future occurrences
+ * @description Past occurrences from v1_past_meeting records (timestamps only) plus a projection
+ * of the live series' current/future occurrences: timestamps, status and title, and the registrant
+ * count for a registrant or organizer only
  */
 export interface PublicMeetingOccurrencesResponse {
   /** Past occurrences, ascending by scheduled start time */
@@ -2140,7 +2141,8 @@ export interface MeetingAttendeePreviewPerson {
  * builds this shape field-by-field rather than deleting known-sensitive keys off a full `Meeting`, so
  * credentials (`password`, `passcode`, `host_key`, `zoom_config`) and organizer PII (`created_by`,
  * `owner`, `organizers`) stay out of the anonymous payload even as new `Meeting` fields land upstream
- * (LFXV2-2802). Mirrors the minimal-projection contract of `PublicMeetingOccurrencesResponse`.
+ * (LFXV2-2802). Its occurrences use the timestamps-only `MeetingOccurrenceSummary`, stricter than the
+ * occurrences endpoint's `MeetingTimelineOccurrence`.
  */
 export interface PublicCalendarMeeting {
   /** Meeting UID of the live series, or of the originating series for a past-meeting row */
