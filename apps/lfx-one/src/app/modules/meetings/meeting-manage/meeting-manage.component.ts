@@ -85,10 +85,12 @@ import {
   Observable,
   of,
   pairwise,
+  retry,
   startWith,
   Subject,
   switchMap,
   take,
+  timer,
   toArray,
 } from 'rxjs';
 
@@ -100,6 +102,11 @@ import { MeetingTypeSelectionComponent } from '../components/meeting-type-select
 import { evictOnWriteAccessLoss } from '@shared/utils/evict-on-write-access-loss.util';
 import { syncEntityProjectContext, syncEntityProjectContextFallback } from '@shared/utils/entity-project-context.util';
 import { meetingWriteAccessState, resolveEntityWriteSlug } from '@shared/utils/write-access.util';
+
+// Backoff schedule (ms) for retrying the edit-mode meeting fetch on 403/404 — covers the ITX
+// index / FGA organizer tuple propagation lag after a create (#501), before treating the
+// error as permanent.
+const MEETING_LOAD_RETRY_DELAYS_MS = [1000, 2000, 4000];
 
 @Component({
   selector: 'lfx-meeting-manage',
@@ -1004,6 +1011,19 @@ export class MeetingManageComponent {
             this.meetingId.set(meetingId);
             this.meetingLoadError.set(false);
             return this.meetingService.getMeeting(meetingId).pipe(
+              // A meeting just created by this user can 403/404 for a few seconds while the
+              // ITX index and FGA organizer tuple it reads from catch up with the write (#501) —
+              // retry with backoff before treating it as the permanent, un-retryable loss of
+              // access the catchError below assumes it is.
+              retry({
+                count: MEETING_LOAD_RETRY_DELAYS_MS.length,
+                delay: (error, retryIndex) => {
+                  if (error instanceof HttpErrorResponse && (error.status === 403 || error.status === 404)) {
+                    return timer(MEETING_LOAD_RETRY_DELAYS_MS[retryIndex - 1]);
+                  }
+                  throw error;
+                },
+              }),
               catchError((error) => {
                 console.error('Error getting meeting:', error);
                 // Only a 404/403 ejects (GH-2037) — this fetch is load-bearing (it pre-populates
