@@ -39,13 +39,18 @@ import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, combineLatest, distinctUntilChanged, filter, finalize, map, of, startWith, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, defer, distinctUntilChanged, EMPTY, filter, finalize, map, Observable, of, startWith, switchMap, tap } from 'rxjs';
 
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
 import { BrandKitWebViewComponent } from '../brand-kit-web-view/brand-kit-web-view.component';
 import { MktgBoilerplatesViewComponent } from '../mktg-boilerplates-view/mktg-boilerplates-view.component';
 import { MktgFaqViewComponent } from '../mktg-faq-view/mktg-faq-view.component';
 import { MktgFrameworkViewComponent } from '../mktg-framework-view/mktg-framework-view.component';
+import { MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
+import { MktgDocumentListItem } from '@lfx-one/shared/interfaces';
+import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
+import { Member360Service } from '@services/member-360.service';
+import { Member360ResultComponent } from '../components/member-360-result/member-360-result.component';
 
 // One revision of a Marketing OS document (design of record: "Document
 // store", DocumentView board): the header says which revision of how many,
@@ -75,6 +80,7 @@ import { MktgFrameworkViewComponent } from '../mktg-framework-view/mktg-framewor
     MktgFaqViewComponent,
     MktgFrameworkViewComponent,
     TooltipModule,
+    Member360ResultComponent,
   ],
   templateUrl: './mktg-document-view.component.html',
 })
@@ -83,6 +89,7 @@ export class MktgDocumentViewComponent {
   private readonly dependencyService = inject(MktgDependencyService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly documentStore = inject(MktgDocumentStoreService);
+  private readonly member360 = inject(Member360Service);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly projectContext = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
@@ -94,6 +101,10 @@ export class MktgDocumentViewComponent {
 
   // === Signals ===
   protected readonly loading = signal(true);
+  protected readonly generating = signal(false);
+  protected readonly runHistory = signal<MktgDocumentListItem[]>([]);
+  protected readonly historyError = signal('');
+  protected readonly reload = signal(0);
   protected readonly errorText = signal('');
   protected readonly notice = signal('');
   protected readonly view = signal<MktgRevisionResponse | null>(null);
@@ -112,7 +123,12 @@ export class MktgDocumentViewComponent {
 
   // === Computed ===
   protected readonly writePending = computed(() => this.approvingId() !== null || this.restoringId() !== null);
+  protected readonly proseView = computed(() => (this.view()?.member360 ? null : this.view()));
   protected readonly title: Signal<string> = this.initTitle();
+  protected readonly generatingLabel = computed(
+    () =>
+      `Generating ${MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.itemLabel ?? 'the document'}… This run will appear here when it is stored.`
+  );
   protected readonly revisionRows: Signal<MktgRevisionRow[]> = computed(() => {
     const view = this.view();
     return view
@@ -243,12 +259,15 @@ export class MktgDocumentViewComponent {
     computed(() => ({
       project: this.projectContext.activeContextUid(),
       slug: this.projectContext.activeContext()?.slug ?? '',
+      user: this.params().agentKey === 'member-360' ? this.userService.user()?.sub : undefined,
       ...this.params(),
       revisionId: this.revisionParam(),
+      reload: this.reload(),
     }))
   );
 
   public constructor() {
+    bindLfxDocumentTitle(computed(() => (this.view()?.member360 ? this.title() : '')));
     if (isPlatformBrowser(this.platformId)) {
       let shownDocument = '';
       // Action rights follow user context without cancelling document or last-export reads.
@@ -262,7 +281,6 @@ export class MktgDocumentViewComponent {
         .subscribe((project) => this.writer.set(!!project?.writer));
       this.request$
         .pipe(
-          filter((request) => !!request.project && !!request.agentKey && !!request.documentId),
           distinctUntilChanged((previous, current) => JSON.stringify(previous) === JSON.stringify(current)),
           tap((request) => {
             const documentKey = JSON.stringify([request.project, request.agentKey, request.documentId]);
@@ -276,26 +294,53 @@ export class MktgDocumentViewComponent {
             this.notice.set('');
             this.approvalError.set('');
             this.approvalAnnouncement.set('');
+            this.runHistory.set([]);
+            this.historyError.set('');
           }),
           switchMap((request) => {
+            if (!request.project || !request.agentKey || !request.documentId || (request.agentKey === 'member-360' && !request.user)) {
+              this.generating.set(false);
+              return EMPTY;
+            }
+            const pending = request.agentKey === 'member-360' && this.member360.isPending(request.project, request.documentId);
+            this.generating.set(pending);
+            const ready$: Observable<unknown> = pending ? this.member360.waitForStored(request.project, request.documentId) : of(null);
             // Without `?revision=`, open current, which may not be newest.
-            const revision$ = request.revisionId
-              ? this.documentStore.getRevision(request.project, request.agentKey, request.documentId, request.revisionId)
-              : this.documentStore
-                  .getDocument(request.project, request.agentKey, request.documentId)
-                  .pipe(
-                    switchMap((detail) =>
-                      this.documentStore.getRevision(
-                        request.project,
-                        request.agentKey,
-                        request.documentId,
-                        detail.current?.revisionId ?? (detail.revisions.find((revision) => revision.latest) ?? detail.revisions[0]).id
+            const revision$ = defer(() =>
+              request.revisionId
+                ? this.documentStore.getRevision(request.project, request.agentKey, request.documentId, request.revisionId)
+                : this.documentStore
+                    .getDocument(request.project, request.agentKey, request.documentId)
+                    .pipe(
+                      switchMap((detail) =>
+                        this.documentStore.getRevision(
+                          request.project,
+                          request.agentKey,
+                          request.documentId,
+                          detail.current?.revisionId ?? (detail.revisions.find((revision) => revision.latest) ?? detail.revisions[0]).id
+                        )
                       )
                     )
-                  );
-            return revision$.pipe(
+            );
+            return ready$.pipe(
+              switchMap(() => revision$),
+              switchMap((view) => {
+                if (!view.member360) return of(view);
+                return this.documentStore.listDocuments(request.project).pipe(
+                  tap((listing) => this.runHistory.set(listing.groups.find((group) => group.type.agentKey === 'member-360')?.documents ?? [])),
+                  map(() => view),
+                  catchError(() => {
+                    this.historyError.set('Run history could not be loaded.');
+                    return of(view);
+                  })
+                );
+              }),
               catchError((error: HttpErrorResponse) => {
-                this.errorText.set(this.loadErrorText(error.status, error.error?.code));
+                this.errorText.set(
+                  pending
+                    ? 'This run could not be loaded yet. Retry to check the same run; nothing is overwritten.'
+                    : this.loadErrorText(error.status, error.error?.code)
+                );
                 return of(null);
               })
             );
@@ -305,6 +350,7 @@ export class MktgDocumentViewComponent {
         .subscribe((view) => {
           this.view.set(view);
           this.loading.set(false);
+          this.generating.set(false);
         });
     }
   }
@@ -344,6 +390,10 @@ export class MktgDocumentViewComponent {
           }
         },
       });
+  }
+
+  protected retryLoad(): void {
+    this.reload.update((value) => value + 1);
   }
 
   protected onRestore(revision: MktgRevisionSummary): void {
@@ -455,6 +505,7 @@ export class MktgDocumentViewComponent {
       if (!view) {
         return '';
       }
+      if (view.member360) return `Member 360 · ${view.member360.period.label}`;
       if (view.type.kind === 'living') {
         return `${this.projectContext.activeContext()?.name ?? ''} ${view.type.label}`.trim();
       }

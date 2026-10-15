@@ -42,6 +42,7 @@
 
     @if (errorText()) {
       <lfx-message severity="error" [text]="errorText()" data-testid="mktg-document-view-error" />
+      <lfx-button label="Retry" [text]="true" (onClick)="retryLoad()" data-testid="mktg-document-view-retry" />
     }
     @if (notice()) {
       <lfx-message severity="success" [text]="notice()" data-testid="mktg-document-view-notice" />
@@ -49,9 +50,9 @@
 
     @if (loading()) {
       <div class="rounded-xl border border-gray-200 bg-white px-6 py-10 text-sm text-gray-500" role="status" data-testid="mktg-document-view-loading">
-        Loading the document…
+        {{ generating() ? generatingLabel() : 'Loading the document…' }}
       </div>
-    } @else if (view(); as current) {
+    } @else if (proseView(); as current) {
       <ng-template #approveActions>
         @if (runAgainLink(); as link) {
           <a
@@ -318,6 +319,16 @@
           </div>
         </section>
       </div>
+    }
+    @if (!loading()) {
+      @if (view(); as current) {
+        @if (current.member360; as envelope) {
+          @if (historyError()) {
+            <lfx-message severity="warn" [text]="historyError()" data-testid="mktg-document-view-history-error" />
+          }
+          <lfx-member-360-result [envelope]="envelope" [history]="runHistory()" [documentId]="current.documentId" [project]="current.project" />
+        }
+      }
     }
   </div>
 </div>
