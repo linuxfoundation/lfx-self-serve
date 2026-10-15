@@ -448,6 +448,36 @@ describe('MeetingOccurrenceStripComponent', () => {
       expect(lastMove()).toEqual(expect.objectContaining({ startMs: at(-3) }));
     });
 
+    it('ignores a repeat click on the chip being opened, keeping its record read', async () => {
+      const older = new Subject<PublicMeetingOccurrencesResponse>();
+      await render(window, { selected: at(-1), pages: [older] });
+
+      chip(-10)?.click();
+      await settle();
+      chip(-10)?.click();
+      await settle();
+      older.next(page({ past: [past(-10)], future: [], past_has_more: false }));
+      older.complete();
+      await settle();
+
+      expect(navigateToOccurrence).toHaveBeenCalledTimes(1);
+      expect(lastMove()).toEqual(expect.objectContaining({ startMs: at(-10), pastResourceId: `${SERIES}-${at(-10)}` }));
+    });
+
+    it("keeps the click when its read only brings the page's own occurrence into the strip", async () => {
+      // The page shows week -12, outside the first window, and the chase toward it failed: no chip is
+      // selected. The click's read then brings week -12 in, though the page itself has not moved.
+      await render(window, {
+        selected: at(-12),
+        pages: [new HttpErrorResponse({ status: 500 }), page({ past: [past(-12), past(-11), past(-10)], future: [], past_has_more: false })],
+      });
+      expect(fixture.nativeElement.querySelector('[data-selected="true"]')).toBeNull();
+      chip(-10)?.click();
+      await settle();
+
+      expect(lastMove()).toEqual(expect.objectContaining({ startMs: at(-10), pastResourceId: `${SERIES}-${at(-10)}` }));
+    });
+
     it('stops after the page limit and opens it by ?occurrence=', async () => {
       const more = (week: number) => page({ past: [past(week)], future: [], past_has_more: true, past_cursor: String(at(week)) });
       // Each page stays newer than the chip, so its record is never reached within the limit.
