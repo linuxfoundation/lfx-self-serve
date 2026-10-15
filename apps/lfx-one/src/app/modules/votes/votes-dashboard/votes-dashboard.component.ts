@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, LowerCasePipe } from '@angular/common';
-import { Component, computed, effect, inject, input, output, PLATFORM_ID, signal, Signal, untracked } from '@angular/core';
+import { Component, computed, inject, input, output, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -121,7 +121,6 @@ export class VotesDashboardComponent {
   // The uid the permalink drawer was opened for — opening once keeps a later target re-emission
   // from reopening a drawer the user closed.
   private openedPermalinkUid: string | null = null;
-  private permalinkCloseEmitted = false;
 
   // === Computed Signals ===
   protected readonly project: Signal<ProjectContext | null> = this.initProject();
@@ -233,7 +232,7 @@ export class VotesDashboardComponent {
   }
 
   // Hiding the results drawer and showing the cast drawer in one synchronous handler means the
-  // permalink close effect never sees both hidden, so this switch is not reported as a close.
+  // combined visibility signal never emits both hidden, so this switch is not reported as a close.
   protected onCastFromResults(voteId: string): void {
     this.selectedVoteId.set(voteId);
     this.resultsDrawerVisible.set(false);
@@ -372,23 +371,29 @@ export class VotesDashboardComponent {
 
   /** Opens the permalink target's drawer once, then reports when every drawer has closed again. */
   private initPermalinkDrawer(): void {
-    effect(() => {
-      const target = this.permalinkTarget();
-      if (!target || target.uid === this.openedPermalinkUid) return;
-      untracked(() => {
+    toObservable(this.permalinkTarget)
+      .pipe(
+        filter((target): target is VotePermalinkTarget => target !== null),
+        takeUntilDestroyed()
+      )
+      .subscribe((target) => {
+        if (target.uid === this.openedPermalinkUid) return;
         this.openedPermalinkUid = target.uid;
         this.selectedVoteId.set(target.uid);
         this.castDrawerVisible.set(target.drawer === 'cast');
         this.resultsDrawerVisible.set(target.drawer === 'results');
       });
-    });
 
-    effect(() => {
-      const anyDrawerOpen = this.castDrawerVisible() || this.resultsDrawerVisible();
-      if (anyDrawerOpen || !this.openedPermalinkUid || this.permalinkCloseEmitted) return;
-      this.permalinkCloseEmitted = true;
-      untracked(() => this.permalinkClosed.emit());
-    });
+    // Observe the combined signal, not separate streams: a synchronous results → cast switch
+    // must not transiently report both drawers closed while their emissions settle.
+    const anyDrawerOpen = computed(() => this.castDrawerVisible() || this.resultsDrawerVisible());
+    toObservable(anyDrawerOpen)
+      .pipe(
+        filter((open) => !open && this.openedPermalinkUid !== null),
+        take(1),
+        takeUntilDestroyed()
+      )
+      .subscribe(() => this.permalinkClosed.emit());
   }
 
   private initProject(): Signal<ProjectContext | null> {

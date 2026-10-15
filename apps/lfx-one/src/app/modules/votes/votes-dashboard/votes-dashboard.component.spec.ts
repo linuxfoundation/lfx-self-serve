@@ -531,6 +531,35 @@ describe('VotesDashboardComponent personal summary', () => {
       expect(drawers()).toEqual({ cast: true, results: false });
     });
 
+    it('opens an initial target without reporting a close before the first render', () => {
+      const initialFixture = TestBed.createComponent(VotesDashboardComponent);
+      const closed = vi.fn();
+      initialFixture.componentInstance.permalinkClosed.subscribe(closed);
+      initialFixture.componentRef.setInput('permalinkTarget', { uid: 'soon', drawer: 'cast', audience: 'voter' });
+      try {
+        initialFixture.detectChanges();
+        TestBed.tick();
+
+        expect(initialFixture.componentInstance['castDrawerVisible']()).toBe(true);
+        expect(initialFixture.componentInstance['resultsDrawerVisible']()).toBe(false);
+        expect(closed).not.toHaveBeenCalled();
+      } finally {
+        initialFixture.destroy();
+      }
+    });
+
+    it('tears down permalink visibility subscriptions when the dashboard is destroyed', async () => {
+      const closed = vi.fn();
+      dashboard.permalinkClosed.subscribe(closed);
+      await openTarget({ uid: 'soon', drawer: 'cast', audience: 'voter' });
+
+      fixture.destroy();
+      dashboard['castDrawerVisible'].set(false);
+      TestBed.tick();
+
+      expect(closed).not.toHaveBeenCalled();
+    });
+
     it('opens the results drawer as creator for a results/creator target, in the Me lens', async () => {
       await openTarget({ uid: 'not-in-feed', drawer: 'results', audience: 'creator' });
 

@@ -174,8 +174,28 @@ describe('VotePermalinkComponent', () => {
       expect(committeeService.fetchCommittee).toHaveBeenCalledWith('committee-1');
     });
 
-    it('checks only the committee when the vote carries no project slug', async () => {
+    it.each([undefined, ''])('uses the project UID when the enriched slug is %s', async (projectSlug) => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ project_slug: projectSlug })));
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      await setup();
+
+      expect(stateOf().target).toEqual({ uid: 'vote-1', drawer: 'results', audience: 'creator' });
+      expect(projectService.getProjectStrict).toHaveBeenCalledWith('proj-1');
+      expect(committeeService.fetchCommittee).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the committee when the UID-resolved project is not writable', async () => {
       voteService.fetchVote.mockReturnValue(of(makeVote({ project_slug: undefined })));
+      committeeService.fetchCommittee.mockReturnValue(of({ writer: true }));
+      await setup();
+
+      expect(stateOf().target?.audience).toBe('creator');
+      expect(projectService.getProjectStrict).toHaveBeenCalledWith('proj-1');
+      expect(committeeService.fetchCommittee).toHaveBeenCalledWith('committee-1');
+    });
+
+    it('checks only the committee when the vote carries no project identifier', async () => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ project_slug: undefined, project_uid: '' })));
       committeeService.fetchCommittee.mockReturnValue(of({ writer: true }));
       await setup();
 
@@ -196,12 +216,19 @@ describe('VotePermalinkComponent', () => {
       expect(stateOf().target).toEqual({ uid: 'vote-1', drawer: 'results', audience: 'voter' });
     });
 
-    it('treats a failed writer check as the voter view, never not-found', async () => {
-      projectService.getProjectStrict.mockReturnValue(httpError(500));
+    it('logs a failed project writer check and keeps the voter view, never not-found', async () => {
+      const error = new HttpErrorResponse({ status: 500 });
+      const logError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      projectService.getProjectStrict.mockReturnValue(throwError(() => error));
       committeeService.fetchCommittee.mockReturnValue(httpError(500));
-      await setup();
+      try {
+        await setup();
 
-      expect(stateOf()).toEqual({ loading: false, notFound: false, error: false, target: { uid: 'vote-1', drawer: 'results', audience: 'voter' } });
+        expect(stateOf()).toEqual({ loading: false, notFound: false, error: false, target: { uid: 'vote-1', drawer: 'results', audience: 'voter' } });
+        expect(logError).toHaveBeenCalledWith('Failed to check project write access for vote permalink', error);
+      } finally {
+        logError.mockRestore();
+      }
     });
   });
 

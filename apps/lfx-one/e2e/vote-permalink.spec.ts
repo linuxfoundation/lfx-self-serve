@@ -9,6 +9,8 @@
  *     shared not-found card, in place, with the URL kept — a missing vote and a forbidden one look
  *     identical, so the page never confirms that a vote exists
  *   - the My Votes table's row "More" (⋮) menu offers Copy link
+ *   - a view-only permalink shows the neutral non-participant panel on active and ended votes
+ *     (client-side navigation keeps synthetic vote requests inside page.route stubs)
  *
  * A forbidden-but-existing vote can't be faked end to end — `page.route` stubs don't intercept the
  * SSR fetch — so the 403 → not-found mapping is covered by vote-permalink.component.spec.ts.
@@ -123,4 +125,32 @@ test.describe('Vote permalink (#3659)', () => {
     // Opening the menu must not select the row, which would open the cast drawer.
     await expect(page.getByTestId('votes-dashboard-cast-drawer').getByRole('dialog')).toHaveCount(0);
   });
+
+  for (const status of ['active', 'ended']) {
+    test(`shows vote details without ballot or tallies to a non-participant (${status})`, async ({ page }) => {
+      const linkedVote = { ...buildMyVoteRow(), status, response_status: undefined, description: '<p>Review the proposed charter.</p>' };
+      await page.route(`**/api/votes/${VOTE_UID}`, (route) => fulfillJson(route, linkedVote));
+      await page.route(`**/api/votes/${VOTE_UID}/my-response`, (route) => route.fulfill({ status: 404, body: '{}' }));
+      await page.route(`**/api/votes/${VOTE_UID}/results`, (route) => fulfillJson(route, null));
+      await page.route(`**/api/projects/${PROJECT_SLUG}`, (route) =>
+        fulfillJson(route, { uid: PROJECT_UID, slug: PROJECT_SLUG, name: PROJECT_NAME, writer: false })
+      );
+      await gotoMyVotes(page);
+      await expect(page.getByTestId(`votes-more-${VOTE_UID}`)).toBeVisible({ timeout: RENDER_TIMEOUT });
+
+      // SPA navigation exercises the actual permalink route and drawer wiring without an SSR
+      // request for this synthetic vote (page.route cannot intercept the server-side fetch).
+      await page.evaluate((url) => {
+        window.history.pushState({}, '', url);
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      }, `/votes/${VOTE_UID}`);
+
+      await expect(page).toHaveURL(new RegExp(`/votes/${VOTE_UID}$`));
+      await expect(page.getByRole('heading', { name: "You're not a voter on this vote", exact: true })).toBeVisible({ timeout: RENDER_TIMEOUT });
+      await expect(page.getByTestId('vote-results-voter-description')).toContainText('Review the proposed charter.');
+      await expect(page.getByTestId('vote-results-voter-access-denied')).toHaveCount(0);
+      await expect(page.getByTestId('vote-results-drawer-cast-button')).toHaveCount(0);
+      await expect(page.getByTestId('vote-results-voter-final')).toHaveCount(0);
+    });
+  }
 });

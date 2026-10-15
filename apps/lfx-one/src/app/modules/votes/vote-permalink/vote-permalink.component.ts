@@ -12,7 +12,7 @@ import { normalizePollStatus } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectService } from '@services/project.service';
 import { VoteService } from '@services/vote.service';
-import { probeCommitteeWriters } from '@shared/utils/write-access.util';
+import { probeCommitteeWriters, resolveEntityWriteSlug } from '@shared/utils/write-access.util';
 import { SkeletonModule } from 'primeng/skeleton';
 import { BehaviorSubject, catchError, combineLatest, filter, map, Observable, of, startWith, switchMap, tap, throwError } from 'rxjs';
 
@@ -119,10 +119,14 @@ export class VotePermalinkComponent {
    * writer" (the voter view), never not-found: the vote itself already loaded.
    */
   private resolveCanManage(vote: Vote): Observable<boolean> {
-    const isProjectWriter$ = vote.project_slug
-      ? this.projectService.getProjectStrict(vote.project_slug).pipe(
+    const projectSlugOrUid = resolveEntityWriteSlug(vote, null);
+    const isProjectWriter$ = projectSlugOrUid
+      ? this.projectService.getProjectStrict(projectSlugOrUid).pipe(
           map((project) => project.writer === true),
-          catchError(() => of(false))
+          catchError((error) => {
+            console.error('Failed to check project write access for vote permalink', error);
+            return of(false);
+          })
         )
       : of(false);
 

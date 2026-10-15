@@ -218,7 +218,8 @@
       @if (audience() === 'voter') {
         <!-- VOTER PANEL (LFXV2-1917) — blind results until close, no creator note, no stats card.
              State A (not_voted) is a defensive fallback: the dashboard normally routes ACTIVE+AWAITING
-             voters to lfx-vote-cast-drawer instead. State D guards deep-links to non-participant votes. -->
+             voters to lfx-vote-cast-drawer instead. State D covers removed voters; never-invited
+             viewers use the neutral not_participant panel. -->
         @if (isLoading()) {
           <div class="flex flex-col gap-4" data-testid="vote-results-drawer-voter-loading">
             <p-skeleton width="60%" height="20px"></p-skeleton>
