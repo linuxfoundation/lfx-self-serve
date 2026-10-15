@@ -15,7 +15,6 @@ import {
   MKTG_REVISION_CONTENT_TYPE,
   MKTG_REVISION_SCHEMA,
   MKTG_REVISION_STATUS_METADATA_MAX_CHARS,
-  MKTG_RUN_DOCUMENT_ID_PREFIX,
 } from '@lfx-one/shared/constants';
 import { LINKEDIN_AGENT_KEY } from '@lfx-one/shared/constants/linkedin-post.constants';
 import {
@@ -62,11 +61,13 @@ import {
   parseMktgRevisionKey,
   readLinkedinDocumentContent,
 } from '@lfx-one/shared/utils';
+import { envelopeSchema as member360Schema } from '@lfx-one/shared/server';
 import { Request } from 'express';
 import { createHash } from 'node:crypto';
 
 import { AuthenticationError, ConflictError, MicroserviceError, PreconditionFailedError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { getEffectiveSub, isImpersonating } from '../utils/auth-helper';
+import { buildMktgRunDocumentId } from '../utils/mktg-document-store.util';
 import { LinkedinDocumentPresentationService } from './linkedin-document-presentation.service';
 import { logger } from './logger.service';
 import { MktgArtifactService } from './mktg-artifact.service';
@@ -161,7 +162,7 @@ export class MktgDocumentStoreService {
     envelope: MktgArtifactEnvelope | MktgRevisionContentSource,
     sessionId: string
   ): Promise<MktgStoredRevision> {
-    const documentId = type.kind === 'run' ? this.runDocumentId(sessionId) : MKTG_LIVING_DOCUMENT_ID;
+    const documentId = type.kind === 'run' ? buildMktgRunDocumentId(sessionId) : MKTG_LIVING_DOCUMENT_ID;
     const source = 'document_markdown' in envelope ? this.markdownSource(envelope) : envelope;
     return this.recordRevision(
       req,
@@ -252,7 +253,7 @@ export class MktgDocumentStoreService {
   }
 
   /** Navigation uses metadata, with bounded body fallback for historical writers. */
-  public async listDocuments(req: Request, project: string): Promise<MktgDocumentsResponse> {
+  public async listDocuments(req: Request, project: string, strictAgentKey?: string): Promise<MktgDocumentsResponse> {
     const prefix = buildMktgDocumentProjectPrefix(project);
     const listed = await this.objectStore.listObjects(req, 'marketing-os-artifacts', prefix);
     const groups: MktgDocumentGroup[] = [];
@@ -274,16 +275,20 @@ export class MktgDocumentStoreService {
           documentIds.slice(offset, offset + MKTG_DOCUMENT_READ_CONCURRENCY).map((id) =>
             this.getDocument(req, project, type, id, 1).catch((err: unknown) => {
               // Access failures must still fail the request, not masquerade as missing documents.
-              if (!(err instanceof MicroserviceError) || err.statusCode < 500) throw err;
+              if (type.agentKey === strictAgentKey || !(err instanceof MicroserviceError) || err.statusCode < 500) throw err;
               logger.warning(req, 'mktg_document_store_list', 'Document unreadable — omitting', { project, documentId: id, err });
               return null;
             })
           )
         );
         for (const detail of details) {
-          if (!detail) continue;
+          if (!detail) {
+            if (type.agentKey === strictAgentKey) throw new MicroserviceError('A listed document is unreadable.', 503, 'MKTG_DOCUMENT_UNREADABLE');
+            continue;
+          }
           const current = detail.revisions.find((revision) => revision.latest);
           if (!current) {
+            if (type.agentKey === strictAgentKey) throw new MicroserviceError('A listed document is unreadable.', 503, 'MKTG_DOCUMENT_UNREADABLE');
             logger.warning(req, 'mktg_document_store_list', 'Current revision is missing — omitting document', {
               project,
               agent: type.agentKey,
@@ -330,7 +335,17 @@ export class MktgDocumentStoreService {
     revisionId: string
   ): Promise<MktgRevisionResponse | null> {
     const detail = await this.getDocument(req, project, type, documentId);
-    return detail ? this.readRevision(req, detail, revisionId) : null;
+    const view = detail ? await this.readRevision(req, detail, revisionId) : null;
+    if (!view || type.agentKey !== 'member-360') return view;
+    const candidate = view.sidecar?.['member360'];
+    const parsed = member360Schema.safeParse(candidate);
+    const member360 =
+      parsed.success && this.sha256(JSON.stringify((candidate as typeof parsed.data).tabs)) === parsed.data.content_sha256
+        ? (candidate as typeof parsed.data)
+        : undefined;
+    const sidecar = { ...view.sidecar };
+    if (!member360) delete sidecar['member360'];
+    return { ...view, sidecar, member360 };
   }
 
   /** Compatibility endpoint name; the action moves current and never adds a revision. */
@@ -477,7 +492,7 @@ export class MktgDocumentStoreService {
 
   /** A run's document id: stable per Guild session, so repeated result polls address one document. */
   public runDocumentId(sessionId: string): string {
-    return `${MKTG_RUN_DOCUMENT_ID_PREFIX}${this.sha256(sessionId).slice(0, 24)}`;
+    return buildMktgRunDocumentId(sessionId);
   }
 
   /** Export approved current only; stale explicit selectors fail instead of silently selecting different bytes. */

@@ -51,7 +51,7 @@ describe('Marketing kit plan of record', () => {
     expect(MKTG_KIT_EXCLUDED_DOCUMENT_KEYS).toEqual(['icp']);
     expect(MKTG_KIT_EXCLUDED_AGENT_IDS).toEqual(['icp', 'website-builder']);
     const ids = MKTG_KIT_FAMILIES.flatMap((family) => family.agentIds);
-    expect(ids.filter((id) => !MKTG_AGENTS.some((agent) => agent.id === id))).toEqual(['member-360']);
+    expect(ids.filter((id) => !MKTG_AGENTS.some((agent) => agent.id === id))).toEqual([]);
     expect(ids.filter((id) => MKTG_AGENTS.some((agent) => agent.id === id)).sort()).toEqual(
       MKTG_AGENTS.filter((agent) => !MKTG_KIT_EXCLUDED_AGENT_IDS.includes(agent.id))
         .map((agent) => agent.id)
@@ -77,11 +77,11 @@ describe('Marketing kit plan of record', () => {
     expect(families[0].rows[1].asset.agentKey).toBe('boilerplates');
     expect(families[0].rows[2].asset.agentKey).toBe('faq');
   });
-  it('declares Member 360 but exposes no catalog run action or tile until it lands', () => {
+  it('declares the Member 360 catalog entry and its run document', () => {
     const family = resolveMktgKit(listing()).find((entry) => entry.family.id === 'member-sponsor');
     expect(family?.family.agentIds).toEqual(['member-360', 'pitch-deck']);
-    expect(MKTG_AGENTS.find((agent) => agent.id === family?.family.agentIds[0])).toBeUndefined();
-    expect(family?.agents.map((agent) => agent.id)).toEqual(['pitch-deck']);
+    expect(family?.agents[0]).toEqual(MKTG_AGENTS.find((agent) => agent.id === 'member-360'));
+    expect(family?.agents.map((agent) => agent.id)).toEqual(['member-360', 'pitch-deck']);
     expect(family?.rows.map((row) => row.asset.agentKey)).toContain('member-360');
   });
   it('derives Current from the latest sequence, never from revisionCount', () => {
