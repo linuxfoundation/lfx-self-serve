@@ -738,10 +738,11 @@ export interface MktgAgentIntake {
    */
   submitsProject?: boolean;
   /**
-   * Follow-ups (edit-inputs resubmit, feedback regeneration) go through the
-   * agent's generate endpoint as a full resubmit (`feedback` + `priorVersion`
-   * in the body, fresh Guild session) instead of a chat follow-up on the
-   * stored session. Required for agents whose batch payload is a structured
+   * Re-running the intake goes through the agent's generate endpoint as a
+   * full resubmit (`priorVersion` in the body, fresh Guild session) instead
+   * of a chat follow-up on the stored session. Optional `feedback` transport
+   * is retained for the later comments/Revise flow; no current UI sets it.
+   * Required for agents whose batch payload is a structured
    * `agent_input` object (server-side README fetch, typed form contract) —
    * a chat follow-up could carry neither.
    */
@@ -920,10 +921,10 @@ export interface MktgGenerateRequest {
   /** Existing documents, for intakes with a documents section. */
   documents?: MktgIntakeDocument[];
   /**
-   * Feedback on the prior draft; present only for "Request changes"
-   * regenerations. The prior draft's version is NOT part of the request — the
-   * run service derives it from the stored run so the follow-up message's
-   * version directive and the result poll gate can never disagree.
+   * Feedback on the prior draft, retained for the later comments/Revise flow;
+   * no current UI sets it. The prior draft's version is NOT part of the
+   * request — the run service derives it from the stored run so the follow-up
+   * message's version directive and the result poll gate can never disagree.
    */
   feedback?: string;
 }

@@ -304,10 +304,10 @@ export class MktgAgentRunService {
 
   /**
    * Follow-up for `regenerateViaGenerate` intakes (e.g. the Message
-   * Foundation): every edit-inputs resubmit or feedback regeneration is a
-   * FULL resubmit through the generate endpoint on a fresh Guild session —
-   * the BFF re-renders the agent's typed batch payload (re-fetching
-   * server-side inputs like the README) with `feedback` + `priorVersion`, so
+   * Foundation): re-running the intake is a full resubmit through the generate
+   * endpoint on a fresh Guild session. The BFF re-renders the typed batch
+   * payload (re-fetching server-side inputs like the README) with `priorVersion`
+   * and optional feedback reserved for the later comments/Revise flow, so
    * the agent finalizes as `priorVersion + 1`, which is exactly the version
    * the result poll's strictly-newer gate accepts. The stored run keeps the
    * version history; only its session is replaced by `appendVersion`.
@@ -334,11 +334,11 @@ export class MktgAgentRunService {
   }
 
   /**
-   * Follow-up on the run's existing Guild session (edit-inputs resubmit or
-   * "Request changes" regeneration): the full form — always with the
-   * prior-version directive so the agent finalizes as v+1, plus the feedback
-   * paragraph when regenerating — rendered as the agent's batch message and
-   * posted through the chat/session BFF contract.
+   * Re-run the intake on the run's existing Guild session: the full form is
+   * rendered as the agent's batch message with the prior-version directive
+   * so the agent finalizes as v+1, then posted through the chat/session BFF.
+   * Optional feedback is retained for the later comments/Revise flow; no
+   * current UI supplies it.
    *
    * The stored run's latest version is the single source of truth for BOTH the
    * message's "finalize as version N+1" directive and the result poll's gate —
