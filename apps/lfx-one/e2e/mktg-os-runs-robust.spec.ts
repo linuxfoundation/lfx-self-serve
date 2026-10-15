@@ -3,13 +3,14 @@
 
 import { expect, test } from '@playwright/test';
 
-import { setupRunPage } from './helpers/mktg-os-runs.helper';
+import { runRevision, setupRunPage } from './helpers/mktg-os-runs.helper';
 
 test.describe('Marketing OS run/document structure and access states', () => {
   test.use({ viewport: { width: 1440, height: 900 } });
   test.beforeEach(() => test.skip(!process.env['TEST_USERNAME'] || !process.env['TEST_PASSWORD'], 'Test session credentials are not configured.'));
 
   test('intake only, required fields, and responsive layout', async ({ page }, testInfo) => {
+    expect(() => runRevision('unregistered-fixture-type')).toThrow('Unknown Marketing OS document type in run fixture: unregistered-fixture-type');
     const run = await setupRunPage(page);
     await run.open();
     await expect(page.getByTestId('mktg-agent-run-form')).toBeVisible();

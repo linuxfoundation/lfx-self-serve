@@ -17,6 +17,7 @@ import { ApiMockHelper } from './api-mock.helper';
 
 export const RUN_PROJECT = { uid: 'p0000000-0000-0000-0000-000000000719', slug: 'synthetic-orbit', name: 'Synthetic Orbit' };
 export const RUN_REVISION_ID = `000001-${'a'.repeat(64)}`;
+export const DATA_LOAD_TIMEOUT = 20_000;
 
 function revision(number: number): MktgRevisionSummary {
   return {
@@ -34,7 +35,10 @@ function revision(number: number): MktgRevisionSummary {
 }
 
 export function runRevision(agentKey = 'brand-kit', number = 2): MktgRevisionResponse {
-  const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === agentKey)!;
+  const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === agentKey);
+  if (!type) {
+    throw new Error(`Unknown Marketing OS document type in run fixture: ${agentKey}`);
+  }
   const current = revision(number);
   return {
     project: RUN_PROJECT.uid,
@@ -144,7 +148,7 @@ export async function setupRunPage(page: Page, options: { existing?: boolean; wr
     return json(route, { message: 'No synthetic stored document' }, 404);
   });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByTestId('sidebar')).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId('sidebar')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   await page.context().addCookies(cookies);
   return {
     finish: () => {
