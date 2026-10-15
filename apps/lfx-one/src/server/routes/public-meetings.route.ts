@@ -43,9 +43,9 @@ router.get('/:id/attachments/:attachmentId/download', (req, res, next) => public
 router.get('/:id', (req, res, next) => publicMeetingController.getMeetingById(req, res, next));
 
 // POST /public/api/meetings/:id/join-url - get the join URL for a meeting. No session is required (a guest
-// posts the email to join with), but the meeting password must match when the meeting has one, the call
-// must fall inside the join window, and on a restricted meeting the caller (the session's username or
-// email, or the posted email) must match a registrant.
+// posts the email to join with), but every call must carry the meeting's password (header or `?password=`)
+// and come no earlier than the meeting's early-join time, and on a restricted meeting the caller (the
+// session's username or email, or the posted email) must match a registrant.
 router.post('/:id/join-url', (req, res, next) => publicMeetingController.postMeetingJoinUrl(req, res, next));
 
 export default router;
