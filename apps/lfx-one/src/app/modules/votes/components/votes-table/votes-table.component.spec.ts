@@ -7,9 +7,10 @@ import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { MyVotesQuickFilter, PollStatus, Vote, VoteResponseStatus } from '@lfx-one/shared';
+import { ClipboardShareService } from '@services/clipboard-share.service';
 import { VoteService } from '@services/vote.service';
 import { MessageService } from 'primeng/api';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { VotesTableComponent } from './votes-table.component';
 
@@ -240,5 +241,78 @@ describe('VotesTableComponent — personal summary filters', () => {
     expect(table.searchForm.controls.search.value).toBe('Board');
     await settle(true);
     expect(rows()).toEqual(['other']);
+  });
+});
+
+describe('VotesTableComponent — row More menu', () => {
+  let fixture: ComponentFixture<VotesTableComponent>;
+  let table: VotesTableComponent;
+  let copyLink: ReturnType<typeof vi.fn>;
+  const ROWS = [vote('active'), vote('ended', { status: PollStatus.ENDED }), vote('draft', { status: PollStatus.DISABLED })];
+  const moreButton = (uid: string): HTMLButtonElement | null => fixture.nativeElement.querySelector(`[data-testid="votes-more-${uid}"] button`);
+
+  beforeEach(async () => {
+    copyLink = vi.fn();
+    await TestBed.configureTestingModule({
+      imports: [VotesTableComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: VoteService, useValue: {} },
+        { provide: MessageService, useValue: {} },
+        { provide: ClipboardShareService, useValue: { copyLink } },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(VotesTableComponent);
+    table = fixture.componentInstance;
+    fixture.componentRef.setInput('votes', ROWS);
+  });
+  afterEach(() => fixture?.destroy());
+
+  async function settle(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+
+  it.each([false, true])('shows ⋮ on active and ended rows but not drafts (manager view: %s)', async (hasPMOAccess) => {
+    fixture.componentRef.setInput('hasPMOAccess', hasPMOAccess);
+    await settle();
+
+    expect(moreButton('active')).not.toBeNull();
+    expect(moreButton('ended')).not.toBeNull();
+    expect(moreButton('draft')).toBeNull();
+  });
+
+  it('opens the menu without selecting the row, and Copy link copies the absolute permalink', async () => {
+    await settle();
+    const viewed = vi.fn();
+    table.viewVote.subscribe(viewed);
+    table.viewResults.subscribe(viewed);
+
+    moreButton('active')!.click();
+    await settle();
+
+    expect(viewed).not.toHaveBeenCalled();
+    const items = table['rowActionMenuItems']();
+    expect(items.map((item) => item.label)).toEqual(['Copy link']);
+
+    items[0].command!({});
+
+    expect(copyLink).toHaveBeenCalledTimes(1);
+    const [url, detail] = copyLink.mock.calls[0];
+    expect(url).toBe(`${window.location.origin}/votes/active`);
+    expect(detail).toBe('Vote link copied to clipboard.');
+  });
+
+  it('rebuilds the menu for the clicked row', async () => {
+    await settle();
+
+    moreButton('active')!.click();
+    moreButton('ended')!.click();
+    await settle();
+    table['rowActionMenuItems']()[0].command!({});
+
+    expect(copyLink.mock.calls[0][0]).toMatch(/\/votes\/ended$/);
   });
 });

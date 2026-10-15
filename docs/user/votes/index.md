@@ -4,7 +4,7 @@ description: Create polls, cast votes, and view results for project governance d
 audience: [maintainer, board-member, executive-director]
 product_area: Votes
 tags: [votes, polls, governance, decisions, elections]
-last_updated: 2026-10-14
+last_updated: 2026-10-15
 intercom_collection: Votes
 ---
 
@@ -46,6 +46,11 @@ While the summary loads, counts show dashes and the cells are disabled. A succes
 While a replacement list or its total is loading, pagination is hidden so the previous mode's count is not presented as current. Search, Group, and status controls remain available. Pagination returns once the matching rows and total are available.
 
 Changing context or Group, refreshing the list, or returning after creating/editing a vote reloads the totals. Closing selection also refreshes the summary. Totals and list pages use separate time snapshots and may differ near a deadline; they do not update continuously while idle. Changes may take time to appear in the search index. My Votes and existing creation, voting, and result permissions are unchanged.
+### Sharing a link to a vote
+
+Select **⋮ → Copy link** on an active or ended vote to copy a direct link to it, which you can paste into an email, a chat or a mailing list. Draft votes have no link.
+
+Opening the link signs you in if needed and opens the vote in **My Votes**: you can cast your vote if you're invited and haven't voted yet, and otherwise you see the vote. Project and group managers see the same view they get from the Votes dashboard. People who don't have access to the vote see **Page not found**.
 
 ### My Votes summary
 

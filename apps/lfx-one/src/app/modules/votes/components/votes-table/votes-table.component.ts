@@ -10,20 +10,30 @@ import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.co
 import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { MenuComponent } from '@components/menu/menu.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PollStatus, VOTE_LABEL, VoteResponseStatus } from '@lfx-one/shared';
 import { FilterPillOption, MyVotesQuickFilter, Vote, VoteFilterState, VoteTableRow } from '@lfx-one/shared/interfaces';
-import { getEntityCommands, getUserTimezone, getVoteEndedEarlyDetailTooltip, isVoteEndedEarly, matchesMyVotesQuickFilter } from '@lfx-one/shared/utils';
+import {
+  getEntityCommands,
+  getUserTimezone,
+  getVoteEndedEarlyDetailTooltip,
+  isVoteEndedEarly,
+  matchesMyVotesQuickFilter,
+  toAbsoluteUrl,
+  votePermalinkPath,
+} from '@lfx-one/shared/utils';
 import { DueDateLabelColorPipe } from '@pipes/due-date-label-color.pipe';
 import { DueDateLabelPipe } from '@pipes/due-date-label.pipe';
 import { LongTimezonePipe } from '@pipes/long-timezone.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 import { VoteDeadlinePipe } from '@pipes/vote-deadline.pipe';
+import { ClipboardShareService } from '@services/clipboard-share.service';
 import { VoteService } from '@services/vote.service';
-import { ConfirmationService, MessageService } from 'primeng/api';
+import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { TooltipModule } from 'primeng/tooltip';
 import { combineLatest, debounceTime, distinctUntilChanged, map, startWith, take } from 'rxjs';
@@ -38,6 +48,7 @@ import { combineLatest, debounceTime, distinctUntilChanged, map, startWith, take
     ButtonComponent,
     ReactiveFormsModule,
     InputTextComponent,
+    MenuComponent,
     SelectComponent,
     PollStatusLabelPipe,
     PollStatusSeverityPipe,
@@ -57,6 +68,7 @@ export class VotesTableComponent {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly messageService = inject(MessageService);
   private readonly voteService = inject(VoteService);
+  private readonly clipboardShare = inject(ClipboardShareService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
 
@@ -112,6 +124,8 @@ export class VotesTableComponent {
 
   // === Writable Signals ===
   protected readonly isDeleting = signal(false);
+  /** Items for the shared row "More" (⋮) menu, rebuilt for the clicked row before it opens. */
+  protected readonly rowActionMenuItems = signal<MenuItem[]>([]);
   private readonly filterState = signal<VoteFilterState>({ search: '', status: null, group: null });
 
   // === Computed Signals ===
@@ -184,6 +198,13 @@ export class VotesTableComponent {
     } else {
       this.viewVote.emit(vote.uid);
     }
+  }
+
+  /** Opens the row "More" menu without selecting the row, which would open a drawer. */
+  protected toggleRowActionMenu(event: Event, vote: VoteTableRow, menu: MenuComponent): void {
+    event.stopPropagation();
+    this.rowActionMenuItems.set([{ label: 'Copy link', icon: 'fa-light fa-link', command: () => this.copyVoteLink(vote.uid) }]);
+    menu.toggle(event);
   }
 
   protected resetFilters(): void {
@@ -303,6 +324,11 @@ export class VotesTableComponent {
 
       return filtered.map((vote) => this.toVoteTableRow(vote));
     });
+  }
+
+  /** Copies the vote's lens-independent permalink; access is checked when the link is opened, so anyone who sees the row may share it. */
+  private copyVoteLink(uid: string): void {
+    this.clipboardShare.copyLink(toAbsoluteUrl(votePermalinkPath(uid), isPlatformBrowser(this.platformId)), 'Vote link copied to clipboard.');
   }
 
   private toVoteTableRow(vote: Vote): VoteTableRow {

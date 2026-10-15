@@ -95,9 +95,9 @@ export class VoteResultsDrawerComponent {
   protected readonly loadingVoteResults = signal<boolean>(false);
   /** True when the most recent getVoteResults call failed — voter State C uses this to distinguish "0 responses recorded" from "couldn't load results". */
   protected readonly voteResultsError = signal<boolean>(false);
-  /** Distinguishes "my-response request in flight" from "my-response loaded with no row"; without this, a non-participant deep-linking a closed vote would briefly route to State C instead of access-denied. */
+  /** Distinguishes "my-response request in flight" from "my-response loaded with no row"; without this, a non-participant deep-linking a closed vote would briefly route to State C instead of not-participant. */
   protected readonly myResponseLoading = signal<boolean>(false);
-  /** True when the most recent my-response call failed (non-404) — a transient failure must not collapse into access-denied. */
+  /** True when the most recent my-response call failed (non-404) — a transient failure must not collapse into not-participant. */
   protected readonly myResponseError = signal<boolean>(false);
   /** Per-prompt paginator state ({ first, rows }) for the comment-results lists, keyed by prompt_id. */
   protected readonly commentPaginatorState = signal<Map<string, PaginatorState>>(new Map());
@@ -108,7 +108,7 @@ export class VoteResultsDrawerComponent {
   // === Derived Signals (from API) ===
   protected readonly vote: Signal<Vote | null> = this.initVote();
   protected readonly voteResults: Signal<VoteResultsResponse | null> = this.initVoteResults();
-  /** Voter-scope vote_response row; null+loaded means non-participant (access-denied), null+loading means request in flight. */
+  /** Voter-scope vote_response row; null+loaded means non-participant (not_participant), null+loading means request in flight. */
   protected readonly myResponse: Signal<MyVoteResponse | null> = this.initMyResponse();
 
   // === Computed Signals ===
@@ -131,7 +131,7 @@ export class VoteResultsDrawerComponent {
   protected readonly rankedMethodDescription: Signal<string> = this.initRankedMethodDescription();
 
   // === Voter-state helpers ===
-  protected readonly voterState: Signal<'not_voted' | 'submitted' | 'closed' | 'access_denied'> = this.initVoterState();
+  protected readonly voterState: Signal<'not_voted' | 'submitted' | 'closed' | 'access_denied' | 'not_participant'> = this.initVoterState();
   protected readonly hasZeroVotes: Signal<boolean> = this.initHasZeroVotes();
   /** Header close-date treatment — countdown chip at ≤ 7 days, absolute date otherwise. */
   protected readonly closeDateDisplay: Signal<{ chip: string; absolute: string; isCountdown: boolean }> = this.initCloseDateDisplay();
@@ -428,7 +428,7 @@ export class VoteResultsDrawerComponent {
     });
   }
 
-  /** Fetches the current user's vote_response row in voter scope; tracks loading separately so initVoterState can distinguish "loaded null" (access-denied) from "still pending". visible is part of the key because hosts keep selectedVoteId set across close — a voteId-only key would make reopening the same vote a no-op and leave myResponseError latched, so the "Try reopening this vote" copy could never recover. The !visible branch returns EMPTY (not of(null)) so the last loaded response survives the close animation — vote/voteResults stay populated during close, so clearing my-response would flip voterState to access_denied while the drawer is still sliding out. Retention is keyed to the vote the response was loaded for: hosts update selectedVoteId before closing, so a row retained across a voteId change would paint the prior vote's "submitted" state onto the new vote. */
+  /** Fetches the current user's vote_response row in voter scope; tracks loading separately so initVoterState can distinguish "loaded null" (not_participant) from "still pending". visible is part of the key because hosts keep selectedVoteId set across close — a voteId-only key would make reopening the same vote a no-op and leave myResponseError latched, so the "Try reopening this vote" copy could never recover. The !visible branch returns EMPTY (not of(null)) so the last loaded response survives the close animation — vote/voteResults stay populated during close, so clearing my-response would flip voterState to not_participant while the drawer is still sliding out. Retention is keyed to the vote the response was loaded for: hosts update selectedVoteId before closing, so a row retained across a voteId change would paint the prior vote's "submitted" state onto the new vote. */
   private initMyResponse(): Signal<MyVoteResponse | null> {
     // Vote the retained response belongs to — close-with-same-vote keeps it; a voteId change clears it.
     let responseVoteId: string | null = null;
@@ -442,7 +442,7 @@ export class VoteResultsDrawerComponent {
             return of(null);
           }
           if (!visible) {
-            // Closing — reset flags but keep the last response when it belongs to the still-current vote; emitting null here would collapse voterState to access_denied mid-close-animation, while retaining another vote's row would show a false "submitted" state on the new vote.
+            // Closing — reset flags but keep the last response when it belongs to the still-current vote; emitting null here would collapse voterState to not_participant mid-close-animation, while retaining another vote's row would show a false "submitted" state on the new vote.
             this.myResponseLoading.set(false);
             this.myResponseError.set(false);
             return responseVoteId === id ? EMPTY : of(null);
@@ -451,7 +451,7 @@ export class VoteResultsDrawerComponent {
           this.myResponseError.set(false);
           return this.voteService.getMyVoteResponse(id).pipe(
             tap(() => (responseVoteId = id)),
-            // The service maps 404 to null; anything reaching this catch is a real failure — surface an error state instead of access-denied.
+            // The service maps 404 to null; anything reaching this catch is a real failure — surface an error state instead of not-participant.
             catchError(() => {
               this.myResponseError.set(true);
               return of(null);
@@ -464,17 +464,18 @@ export class VoteResultsDrawerComponent {
     );
   }
 
-  /** Derives the four-state panel value; for voter scope, a loaded-null my-response means non-participant and routes to access_denied (otherwise a deep-link to a closed vote would leak results). */
-  private initVoterState(): Signal<'not_voted' | 'submitted' | 'closed' | 'access_denied'> {
+  /** Derives the voter panel state. access_denied is for a removed voter; for voter scope, a loaded-null my-response means a viewer who was never invited (e.g. opened a vote permalink) and routes to the neutral not_participant panel — never to State C, so a deep-link to a closed vote can't leak results. */
+  private initVoterState(): Signal<'not_voted' | 'submitted' | 'closed' | 'access_denied' | 'not_participant'> {
     return computed(() => {
       const v = this.vote();
       if (!v) return 'not_voted';
       const my = this.myResponse();
       const isVoter = this.audience() === 'voter';
-      // Access-denied: voter_removed wins; voter with loaded-null row is a non-participant deep-link.
+      // Access-denied: voter_removed wins.
       if (my?.voter_removed) return 'access_denied';
-      // A failed my-response call (non-404) must not collapse into access-denied — the template shows the error state instead.
-      if (isVoter && !this.myResponseLoading() && !this.myResponseError() && !my) return 'access_denied';
+      // Loaded-null row: a viewer who was never invited. A failed my-response call (non-404) must not collapse
+      // into this state — the template shows the error state instead.
+      if (isVoter && !this.myResponseLoading() && !this.myResponseError() && !my) return 'not_participant';
       const closed = v.status === PollStatus.ENDED;
       const decoratedResponseStatus = this.listVote()?.response_status ?? v.response_status;
       const submitted = my?.vote_status === 'responded' || decoratedResponseStatus === VoteResponseStatus.RESPONDED;

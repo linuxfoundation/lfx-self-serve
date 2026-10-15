@@ -23,6 +23,7 @@ import {
   isVoteClosingSoon,
   mapVoteToFormValue,
   matchesMyVotesQuickFilter,
+  votePermalinkPath,
 } from './vote.utils';
 
 /** Minimal VoteFormValue fixture — the request builders only read the fields set here. */
@@ -374,5 +375,15 @@ describe('compareVotesByRecency', () => {
     ].sort(compareVotesByRecency);
 
     expect(uids(sorted)).toEqual(['aaa', 'bbb', 'ccc']);
+  });
+});
+
+describe('votePermalinkPath', () => {
+  it('builds the flat, lens-independent permalink path', () => {
+    expect(votePermalinkPath('abc')).toBe('/votes/abc');
+  });
+
+  it('encodes reserved characters so the uid stays one path segment', () => {
+    expect(votePermalinkPath('a/b?c#d')).toBe('/votes/a%2Fb%3Fc%23d');
   });
 });

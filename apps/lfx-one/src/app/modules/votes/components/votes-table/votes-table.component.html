@@ -254,6 +254,18 @@
                       </lfx-button>
                     }
                   }
+                  @if (vote.status !== PollStatus.DISABLED) {
+                    <lfx-button
+                      icon="fa-light fa-ellipsis-vertical"
+                      [text]="true"
+                      [rounded]="true"
+                      size="small"
+                      severity="secondary"
+                      ariaLabel="More actions"
+                      [attr.data-testid]="'votes-more-' + vote.uid"
+                      (onClick)="toggleRowActionMenu($event, vote, rowActionMenu)">
+                    </lfx-button>
+                  }
                 </div>
               </td>
             </tr>
@@ -272,5 +284,8 @@
     </div>
   }
 </lfx-card>
+
+<!-- One shared row "More" menu; toggleRowActionMenu rebuilds its items for the clicked row. -->
+<lfx-menu #rowActionMenu [model]="rowActionMenuItems()" [popup]="true" appendTo="body" data-testid="votes-row-action-menu"></lfx-menu>
 
 <p-confirmDialog></p-confirmDialog>

@@ -914,3 +914,29 @@ export interface RankedQuestionView {
  * - `clamp`: the walk hit its request ceiling before the target — clamp the paginator to `clampIndex`, the last fetched page
  */
 export type CursorWalkOutcome = { action: 'show' } | { action: 'restart'; refetch: boolean } | { action: 'clamp'; clampIndex: number };
+
+/**
+ * Drawer a `/votes/:id` permalink opens on the My Votes dashboard
+ * @description Chosen by VotePermalinkComponent from the vote, the viewer's response row and their write access:
+ * - `cast` + `voter`: active vote awaiting the viewer's ballot
+ * - `results` + `creator`: project or committee writer who is not awaiting a ballot
+ * - `results` + `voter`: any other viewer (submitted, closed or non-participant panels)
+ */
+export interface VotePermalinkTarget {
+  /** Vote identifier the drawer opens for */
+  uid: string;
+  /** Drawer to open */
+  drawer: 'cast' | 'results';
+  /** Results-drawer audience; the cast drawer is always `voter` */
+  audience: 'voter' | 'creator';
+}
+
+/** Single load-state emission for the vote permalink page — loading, in-place 404, transient error, or the drawer to open. */
+export interface VotePermalinkState {
+  loading: boolean;
+  /** Vote missing or not viewable (400/403/404) — rendered as the shared Not Found page, HTTP 404 under SSR */
+  notFound: boolean;
+  /** Transient failure — retry card, HTTP 200 */
+  error: boolean;
+  target: VotePermalinkTarget | null;
+}
