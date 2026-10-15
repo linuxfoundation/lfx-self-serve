@@ -578,6 +578,8 @@ export interface PendingActionItem {
   applicationApplicantEmail?: string;
   /** Optional applicant display name; the email remains visible when present. */
   applicationApplicantName?: string;
+  /** Optional display name of the join application group's owning Project/Foundation; `badge` stays the group name. */
+  applicationProjectName?: string;
   /** Committee/group display name (set on Invitation action types). Used for the "You've joined {Group}" toast and the accept/decline `aria-label`, so the copy doesn't have to be parsed back out of `text`. */
   inviteGroupName?: string;
   /** Owning project slug for the invited group (set on Invitation action types) — drives the `?project=` query param on the view link (GH-1566). */

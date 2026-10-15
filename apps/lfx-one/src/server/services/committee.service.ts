@@ -1740,10 +1740,16 @@ export class CommitteeService {
       const batch = await this.getCommitteesByIds(req, pendingCommitteeUids.slice(start, start + ACCESS_CHECK_BATCH_SIZE), requestOptions);
       for (const [uid, committee] of batch) committees.set(uid, committee);
     }
-    return pending.map((application) => ({
-      ...application,
-      committee_name: committees.get(application.committee_uid)?.name ?? application.committee_uid,
-    }));
+    const owners = await this.getManagedApplicationOwners(req, [...committees.values()], requestOptions);
+    return pending.map((application) => {
+      const committee = committees.get(application.committee_uid);
+      const projectName = (committee && owners.get(committee.project_uid)?.name?.trim()) || committee?.project_name?.trim();
+      return {
+        ...application,
+        committee_name: committee?.name ?? application.committee_uid,
+        ...(projectName && { project_name: projectName }),
+      };
+    });
   }
 
   /**
@@ -2210,6 +2216,34 @@ export class CommitteeService {
     }
 
     return byUid;
+  }
+
+  /**
+   * Optional owner-name decoration for managed applications: resolves each group's immediate owning
+   * Project/Foundation in sequential batches within the source's shared deadline. Never fails the
+   * already-authorized rows — skipped, failed or unresolved lookups leave the group-only fallback.
+   */
+  private async getManagedApplicationOwners(req: Request, committees: Committee[], requestOptions: ApiRequestOptions): Promise<Map<string, Project>> {
+    const projectUids = [...new Set(committees.map((committee) => committee.project_uid).filter(Boolean))];
+    const owners = new Map<string, Project>();
+    try {
+      for (let start = 0; start < projectUids.length; start += ACCESS_CHECK_BATCH_SIZE) {
+        if (requestOptions.deadlineAt !== undefined && Date.now() >= requestOptions.deadlineAt) {
+          logger.warning(req, 'get_managed_pending_applications', 'Owner lookup deadline reached, using group-only names', {
+            unresolved_projects: projectUids.length - start,
+          });
+          break;
+        }
+        const batch = await this.projectService.getProjectsByIds(req, projectUids.slice(start, start + ACCESS_CHECK_BATCH_SIZE), requestOptions);
+        for (const [uid, project] of batch) owners.set(uid, project);
+      }
+    } catch (error) {
+      logger.warning(req, 'get_managed_pending_applications', 'Owner lookup failed, using group-only names', {
+        project_count: projectUids.length,
+        err: error,
+      });
+    }
+    return owners;
   }
 
   /**

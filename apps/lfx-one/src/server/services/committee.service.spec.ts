@@ -8,6 +8,7 @@ import type {
   Committee,
   CommitteeInvite,
   CommitteeJoinApplication,
+  Project,
   QueryServiceResponse,
 } from '@lfx-one/shared/interfaces';
 import type { MockInstance } from 'vitest';
@@ -27,6 +28,7 @@ const {
   resolveAuditUserDisplayName,
   isImpersonating,
   enrichWithProjectData,
+  getProjectsByIds,
   getEffectiveEmail,
 } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
@@ -46,6 +48,10 @@ const {
   isImpersonating: vi.fn(() => false),
   // Default: pass items through unchanged — most tests don't exercise includeProjectMetadata.
   enrichWithProjectData: vi.fn((_req: unknown, items: unknown[]) => Promise.resolve(items)),
+  // Default: no owners resolve — managed applications keep their group-only names.
+  getProjectsByIds: vi.fn<(req: Request, uids: string[], options?: ApiRequestOptions) => Promise<Map<string, Partial<Project>>>>(() =>
+    Promise.resolve(new Map())
+  ),
   getEffectiveEmail: vi.fn<() => string | null>(() => 'user@example.com'),
 }));
 
@@ -91,6 +97,7 @@ vi.mock('./etag.service', () => ({
 vi.mock('./project.service', () => ({
   ProjectService: class {
     public enrichWithProjectData = enrichWithProjectData;
+    public getProjectsByIds = getProjectsByIds;
   },
 }));
 vi.mock('../helpers/query-service.helper', async () => {
@@ -1429,6 +1436,8 @@ describe('CommitteeService.getManagedPendingApplications', () => {
   beforeEach(async () => {
     proxyRequest.mockReset();
     checkAccessStrict.mockReset().mockResolvedValue(new Map());
+    getProjectsByIds.mockReset().mockResolvedValue(new Map());
+    vi.mocked(logger.warning).mockClear();
     const actual = await vi.importActual<typeof import('../helpers/query-service.helper')>('../helpers/query-service.helper');
     vi.mocked(fetchAllQueryResources).mockReset().mockImplementation(actual.fetchAllQueryResources);
     service = new CommitteeService();
@@ -1643,8 +1652,150 @@ describe('CommitteeService.getManagedPendingApplications', () => {
       await expect(service.getManagedPendingApplications(req)).rejects.toThrow('Batch deadline exceeded');
       expect(proxyRequest.mock.calls.filter((call) => call[2] !== '/query/resources')).toHaveLength(10);
       expect(proxyRequest.mock.calls.some((call) => call[4]?.['type'] === 'committee')).toBe(false);
+      expect(getProjectsByIds).not.toHaveBeenCalled();
     } finally {
       clock.mockRestore();
     }
+  });
+
+  describe('owner context', () => {
+    /** Like `prime`, but serves the given group records (with owners) for each batched group fetch. */
+    const primeOwned = (applications: CommitteeJoinApplication[], groups: Partial<Committee>[]) => {
+      prime(applications);
+      proxyRequest.mockImplementation((_req: Request, _service: string, path: string, _method: string, params?: Record<string, unknown>) => {
+        if (params?.['type'] === 'committee_application') return Promise.resolve(applicationPage(applications));
+        if (params?.['type'] === 'committee') {
+          const filters = params['filters_or'] as string[];
+          return Promise.resolve(pageOf(groups.filter((group) => filters.includes(`uid:${group.uid}`))));
+        }
+        return Promise.resolve(applications.find((app) => path === `/committees/${app.committee_uid}/applications/${app.uid}`));
+      });
+    };
+
+    it('names each immediate owner once, before same-named groups, with the source deadline', async () => {
+      const apps = [application('project-docs'), application('foundation-docs'), application('project-infra')];
+      primeOwned(apps, [
+        { uid: 'project-docs', name: 'Docs', project_uid: 'synthetic-project' },
+        { uid: 'foundation-docs', name: 'Docs', project_uid: 'synthetic-foundation' },
+        // Live project metadata wins over the group's stored owner name.
+        { uid: 'project-infra', name: 'Infra', project_uid: 'synthetic-project', project_name: 'Stale owner' },
+      ]);
+      getProjectsByIds.mockResolvedValue(
+        new Map([
+          ['synthetic-project', { uid: 'synthetic-project', name: '  Synthetic Project  ' }],
+          ['synthetic-foundation', { uid: 'synthetic-foundation', name: 'Synthetic Foundation' }],
+        ])
+      );
+
+      expect(await service.getManagedPendingApplications(req)).toEqual([
+        { ...apps[0], committee_name: 'Docs', project_name: 'Synthetic Project' },
+        { ...apps[1], committee_name: 'Docs', project_name: 'Synthetic Foundation' },
+        { ...apps[2], committee_name: 'Infra', project_name: 'Synthetic Project' },
+      ]);
+      expect(getProjectsByIds).toHaveBeenCalledOnce();
+      expect(getProjectsByIds.mock.calls[0][1]).toEqual(['synthetic-project', 'synthetic-foundation']);
+      // The same deadline-carrying options object every strict phase used.
+      expect(getProjectsByIds.mock.calls[0][2]).toBe(checkAccessStrict.mock.calls[0][2]);
+      expect(getProjectsByIds.mock.calls[0][2]).toEqual({ deadlineAt: expect.any(Number) });
+    });
+
+    it.each([
+      { scenario: 'unresolved owner falls back to the stored group owner', project: undefined, stored: '  Stored Owner ', expected: 'Stored Owner' },
+      { scenario: 'blank owner name falls back to the stored group owner', project: { name: '   ' }, stored: 'Stored Owner', expected: 'Stored Owner' },
+      { scenario: 'unresolved owner without stored metadata stays group-only', project: undefined, stored: undefined, expected: undefined },
+      { scenario: 'blank owner and blank stored metadata stay group-only', project: { name: ' ' }, stored: ' ', expected: undefined },
+    ])('$scenario', async ({ project, stored, expected }) => {
+      const app = application('group');
+      primeOwned([app], [{ uid: 'group', name: 'Group', project_uid: 'owner', project_name: stored }]);
+      getProjectsByIds.mockResolvedValue(project ? new Map([['owner', { uid: 'owner', ...project }]]) : new Map());
+
+      const [row] = await service.getManagedPendingApplications(req);
+
+      expect(row).toMatchObject({ ...app, committee_name: 'Group' });
+      if (expected) expect(row.project_name).toBe(expected);
+      else expect(row).not.toHaveProperty('project_name');
+    });
+
+    it('skips the owner lookup for groups without a project UID but keeps stored owner metadata', async () => {
+      const apps = [application('stored'), application('bare')];
+      primeOwned(apps, [
+        { uid: 'stored', name: 'Stored group', project_uid: '', project_name: 'Stored Owner' },
+        { uid: 'bare', name: 'Bare group', project_uid: '' },
+      ]);
+
+      const rows = await service.getManagedPendingApplications(req);
+
+      expect(getProjectsByIds).not.toHaveBeenCalled();
+      expect(rows[0]).toEqual({ ...apps[0], committee_name: 'Stored group', project_name: 'Stored Owner' });
+      expect(rows[1]).toEqual({ ...apps[1], committee_name: 'Bare group' });
+      expect(rows[1]).not.toHaveProperty('project_name');
+    });
+
+    it('keeps authorized live rows group-only when the optional owner lookup fails', async () => {
+      const app = application('group');
+      primeOwned([app], [{ uid: 'group', name: 'Group', project_uid: 'owner' }]);
+      getProjectsByIds.mockRejectedValue(new Error('owner lookup unavailable'));
+
+      const rows = await service.getManagedPendingApplications(req);
+
+      expect(rows).toEqual([{ ...app, committee_name: 'Group' }]);
+      expect(rows[0]).not.toHaveProperty('project_name');
+      expect(logger.warning).toHaveBeenCalledWith(req, 'get_managed_pending_applications', 'Owner lookup failed, using group-only names', {
+        project_count: 1,
+        err: expect.any(Error),
+      });
+    });
+
+    it('awaits owner batches of at most a hundred sequentially', async () => {
+      const apps = Array.from({ length: 205 }, (_, i) => application(`group-${i}`));
+      primeOwned(
+        apps,
+        apps.map((app, i) => ({ uid: app.committee_uid, name: `Group ${i}`, project_uid: `owner-${i}` }))
+      );
+      const batches: { ids: string[]; resolve: () => void }[] = [];
+      getProjectsByIds.mockImplementation(
+        (_req: Request, uids: string[]) =>
+          new Promise<Map<string, Partial<Project>>>((resolve) => {
+            batches.push({ ids: uids, resolve: () => resolve(new Map(uids.map((uid) => [uid, { uid, name: `Name ${uid}` }]))) });
+          })
+      );
+
+      const result = service.getManagedPendingApplications(req);
+      for (let index = 0; index < 3; index++) {
+        await vi.waitFor(() => expect(batches).toHaveLength(index + 1));
+        expect(batches[index].ids).toEqual(apps.slice(index * 100, (index + 1) * 100).map((_, i) => `owner-${index * 100 + i}`));
+        batches[index].resolve();
+      }
+
+      expect((await result).map((row) => row.project_name)).toEqual(apps.map((_, i) => `Name owner-${i}`));
+    });
+
+    it('starts no owner batch after the shared deadline and keeps the remaining rows group-only', async () => {
+      const apps = Array.from({ length: 101 }, (_, i) => application(`group-${i}`));
+      primeOwned(
+        apps,
+        apps.map((app, i) => ({ uid: app.committee_uid, name: `Group ${i}`, project_uid: `owner-${i}` }))
+      );
+      let now = 1000;
+      const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+      getProjectsByIds.mockImplementation((_req: Request, uids: string[]) => {
+        now = 1000 + PENDING_APPLICATION_DISCOVERY_TIMEOUT_MS;
+        return Promise.resolve(new Map(uids.map((uid) => [uid, { uid, name: `Name ${uid}` }])));
+      });
+      try {
+        const rows = await service.getManagedPendingApplications(req);
+
+        expect(getProjectsByIds).toHaveBeenCalledOnce();
+        expect(getProjectsByIds.mock.calls[0][2]).toEqual({ deadlineAt: 1000 + PENDING_APPLICATION_DISCOVERY_TIMEOUT_MS });
+        expect(rows).toHaveLength(101);
+        expect(rows[99].project_name).toBe('Name owner-99');
+        expect(rows[100]).toEqual({ ...apps[100], committee_name: 'Group 100' });
+        expect(logger.warning).toHaveBeenCalledWith(req, 'get_managed_pending_applications', 'Owner lookup deadline reached, using group-only names', {
+          unresolved_projects: 1,
+        });
+      } finally {
+        clock.mockRestore();
+      }
+    });
   });
 });

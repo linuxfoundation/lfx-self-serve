@@ -64,7 +64,13 @@
                           }}</span>
                         }
                         <span class="text-sm text-gray-900" data-testid="pending-actions-drawer-application-email">{{ item.applicationApplicantEmail }}</span>
-                        <span class="text-xs text-gray-500" data-testid="pending-actions-drawer-application-group">{{ item.badge }}</span>
+                        <!-- Owning Project/Foundation · Group, so same-named groups under different owners stay distinguishable. -->
+                        <span class="text-xs text-gray-500" data-testid="pending-actions-drawer-application-group">
+                          @if (item.applicationProjectName?.trim()) {
+                            <span data-testid="pending-actions-drawer-application-project">{{ item.applicationProjectName }}</span> ·
+                          }
+                          {{ item.badge }}
+                        </span>
                       </div>
                     } @else if (item.isFormationItem) {
                       <!-- Formation item (#2732): bold title over a gray meta line — project · due · required for Active. The

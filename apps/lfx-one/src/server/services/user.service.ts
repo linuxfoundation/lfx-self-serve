@@ -1841,20 +1841,24 @@ export class UserService {
     return buildInvitationActions(invitations);
   }
 
-  /** Emit only the applicant/group identity and review address; omit private application details. */
+  /** Emit only the applicant/group/owner identity and review address; omit private application details. */
   private transformApplicationsToActions(applications: ManagedPendingApplication[]): PendingActionItem[] {
-    return applications.map((application) => ({
-      type: 'JoinApplication',
-      badge: application.committee_name,
-      text: application.applicant_name ? `${application.applicant_name} (${application.applicant_email})` : application.applicant_email,
-      icon: PENDING_ACTION_BUTTON_ICON.JoinApplication,
-      severity: PENDING_ACTION_SEVERITY.JoinApplication,
-      buttonText: '',
-      committeeUid: application.committee_uid,
-      applicationUid: application.uid,
-      applicationApplicantEmail: application.applicant_email,
-      applicationApplicantName: application.applicant_name,
-    }));
+    return applications.map((application) => {
+      const projectName = application.project_name?.trim();
+      return {
+        type: 'JoinApplication',
+        badge: application.committee_name,
+        text: application.applicant_name ? `${application.applicant_name} (${application.applicant_email})` : application.applicant_email,
+        icon: PENDING_ACTION_BUTTON_ICON.JoinApplication,
+        severity: PENDING_ACTION_SEVERITY.JoinApplication,
+        buttonText: '',
+        committeeUid: application.committee_uid,
+        applicationUid: application.uid,
+        applicationApplicantEmail: application.applicant_email,
+        applicationApplicantName: application.applicant_name,
+        ...(projectName && { applicationProjectName: projectName }),
+      };
+    });
   }
 
   /**

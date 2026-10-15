@@ -1418,6 +1418,26 @@ describe('UserService.getPendingActions managed applications (GH-3131)', () => {
     }
   });
 
+  it('carries the trimmed owner name separately from the group badge and omits it when unavailable', async () => {
+    getManagedPendingApplications.mockResolvedValue([
+      { ...applications[0], project_name: '  Synthetic Foundation ' },
+      { ...applications[1], committee_name: 'Group 0', project_name: 'Synthetic Project' },
+      { ...applications[2], project_name: '   ' },
+    ]);
+    const actions = (await service.getPendingActions(req, undefined, email, undefined)).filter((action) => action.type === 'JoinApplication');
+
+    expect(actions.map((action) => [action.committeeUid, action.applicationUid])).toEqual(applications.map((row) => [row.committee_uid, row.uid]));
+    expect(actions.map((action) => action.badge)).toEqual(['Group 0', 'Group 0', 'Group 2']);
+    expect(actions.map((action) => action.applicationProjectName)).toEqual(['Synthetic Foundation', 'Synthetic Project', undefined]);
+    expect(actions[0].text).toBe('Applicant (applicant@example.com)');
+    expect(actions[2]).not.toHaveProperty('applicationProjectName');
+    for (const action of actions) {
+      expect(action).not.toHaveProperty('project_name');
+      for (const field of ['message', 'reviewer_notes', 'reason', 'buttonLink']) expect(action).not.toHaveProperty(field);
+    }
+    expect((await service.getPendingActions(req, undefined, email, undefined)).map((action) => action.type)).toEqual(expectedTypes);
+  });
+
   it.each([
     ['project', undefined],
     [undefined, 'project-slug'],

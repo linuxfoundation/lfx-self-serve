@@ -27,9 +27,11 @@ export interface CommitteeJoinApplication {
   updated_at?: string;
 }
 
-/** A pending application the caller can review, enriched with its group display name. */
+/** A pending application the caller can review, enriched with its group display name and, when resolvable, its owner's name. */
 export interface ManagedPendingApplication extends CommitteeJoinApplication {
   committee_name: string;
+  /** Display name of the group's owning Project/Foundation; absent when the optional owner lookup cannot resolve one. */
+  project_name?: string;
 }
 
 /** Request payload to approve a committee join application */

@@ -396,6 +396,71 @@ describe('PendingActionsDrawerComponent — section grouping', () => {
     expect(hiddenActions.dismissAction).not.toHaveBeenCalled();
   });
 
+  describe('join request owner context', () => {
+    const normalized = (element: Element | null | undefined): string | undefined => element?.textContent?.replace(/\s+/g, ' ').trim();
+    const applicationRows = (): HTMLElement[] =>
+      Array.from(
+        byTestId('pending-actions-drawer-section-applications')?.querySelectorAll<HTMLElement>('[data-testid="pending-actions-drawer-item-JoinApplication"]') ??
+          []
+      );
+    const identityOrder = (rowElement: HTMLElement): (string | null)[] =>
+      Array.from(rowElement.querySelector('[data-testid="pending-actions-drawer-application-email"]')?.parentElement?.children ?? []).map((child) =>
+        child.getAttribute('data-testid')
+      );
+
+    it('shows email first, then Project/Foundation · Group, keeping same-named groups distinguishable', async () => {
+      await render([
+        applicationRow({ badge: 'Docs', applicationProjectName: 'Synthetic Project' }),
+        applicationRow({
+          committeeUid: 'group-beta',
+          applicationUid: 'application-2',
+          badge: 'Docs',
+          applicationApplicantName: undefined,
+          applicationProjectName: 'Synthetic Foundation',
+        }),
+      ]);
+
+      const [named, unnamed] = applicationRows();
+      expect(identityOrder(named)).toEqual([
+        'pending-actions-drawer-application-name',
+        'pending-actions-drawer-application-email',
+        'pending-actions-drawer-application-group',
+      ]);
+      expect(identityOrder(unnamed)).toEqual(['pending-actions-drawer-application-email', 'pending-actions-drawer-application-group']);
+      expect(normalized(named.querySelector('[data-testid="pending-actions-drawer-application-group"]'))).toBe('Synthetic Project · Docs');
+      expect(normalized(unnamed.querySelector('[data-testid="pending-actions-drawer-application-group"]'))).toBe('Synthetic Foundation · Docs');
+      expect(normalized(named.querySelector('[data-testid="pending-actions-drawer-application-project"]'))).toBe('Synthetic Project');
+      for (const rowElement of [named, unnamed]) {
+        expect(rowElement.querySelectorAll('[data-testid="pending-actions-drawer-application-approve"]')).toHaveLength(1);
+        expect(rowElement.querySelectorAll('[data-testid="pending-actions-drawer-application-reject"]')).toHaveLength(1);
+      }
+      expect(byTestId('pending-actions-drawer-section-count-applications')?.textContent?.trim()).toBe('2');
+    });
+
+    it.each([undefined, '', '   '])('shows only the group without a separator when the owner name is %j', async (applicationProjectName) => {
+      await render([applicationRow({ applicationProjectName })]);
+
+      const [rowElement] = applicationRows();
+      expect(normalized(rowElement.querySelector('[data-testid="pending-actions-drawer-application-group"]'))).toBe('Group Alpha');
+      expect(rowElement.querySelector('[data-testid="pending-actions-drawer-application-project"]')).toBeNull();
+      expect(rowElement.textContent).not.toContain('·');
+    });
+
+    it('keeps long owner and group names inside the wrapping identity column beside the review controls', async () => {
+      const longOwner = `Synthetic Foundation ${'Extended '.repeat(20)}`.trim();
+      const longGroup = `Working Group ${'Subcommittee '.repeat(20)}`.trim();
+      await render([applicationRow({ badge: longGroup, applicationProjectName: longOwner })]);
+
+      const [rowElement] = applicationRows();
+      const group = rowElement.querySelector('[data-testid="pending-actions-drawer-application-group"]');
+      expect(normalized(group)).toBe(`${longOwner} · ${longGroup}`);
+      expect(group?.parentElement?.className).toContain('min-w-0');
+      expect(group?.parentElement?.className).toContain('break-words');
+      expect(rowElement.querySelector('[data-testid="pending-actions-drawer-application-approve"]')).not.toBeNull();
+      expect(rowElement.querySelector('[data-testid="pending-actions-drawer-application-reject"]')).not.toBeNull();
+    });
+  });
+
   it('retains rows and counts while only the matched approval loads and every review control is disabled', async () => {
     await render([applicationRow(), applicationRow({ committeeUid: 'group-beta', badge: 'Group Beta' })]);
     fixture.componentRef.setInput('processingApplicationKey', 'JoinApplication-group-alpha-application-1');

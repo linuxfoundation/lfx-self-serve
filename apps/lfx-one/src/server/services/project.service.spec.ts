@@ -2063,6 +2063,36 @@ describe('ProjectService — getProjectsByIds', () => {
     // The old page_size = 100 gets a cursor back on the full page, forcing a second (empty) call.
     expect(queryServicePage({ filters_or: filters, page_size: '100' }).page_token).toBe('next');
   });
+
+  it('forwards the caller request options to every batch and continued page', async () => {
+    const uids = Array.from({ length: 150 }, (_, i) => `uid-${i}`);
+    const options = { deadlineAt: 12345 };
+    proxyRequest
+      .mockResolvedValueOnce(pageOf([{ uid: 'uid-0', slug: 'first' }], 'next'))
+      .mockResolvedValueOnce(pageOf([{ uid: 'uid-1', slug: 'second' }]))
+      .mockResolvedValueOnce(pageOf([{ uid: 'uid-100', slug: 'third' }]));
+
+    const result = await service.getProjectsByIds(req, uids, options);
+
+    expect([...result.keys()].sort()).toEqual(['uid-0', 'uid-1', 'uid-100']);
+    expect(proxyRequest).toHaveBeenCalledTimes(3);
+    expect(proxyRequest.mock.calls.some((call) => (call[4] as { page_token?: string }).page_token === 'next')).toBe(true);
+    for (const call of proxyRequest.mock.calls) expect(call[7]).toBe(options);
+  });
+
+  it('keeps the no-options default and fail-soft fallback for existing callers', async () => {
+    proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'one', slug: 'one' }])).mockRejectedValueOnce(new Error('query failed'));
+
+    const uids = Array.from({ length: 101 }, (_, i) => (i === 0 ? 'one' : `uid-${i}`));
+    const result = await service.getProjectsByIds(req, uids);
+
+    expect([...result.keys()]).toEqual(['one']);
+    expect(proxyRequest.mock.calls.map((call) => call[7])).toEqual([undefined, undefined]);
+    expect(warning).toHaveBeenCalledWith(req, 'get_projects_by_ids', 'Batched project fetch failed for batch, skipping', {
+      batch_size: 1,
+      error: 'query failed',
+    });
+  });
 });
 
 describe('ProjectService — getProjectById / getProjectBySlug (GH-1955 auditor/meeting_coordinator gating)', () => {
