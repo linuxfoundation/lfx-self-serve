@@ -146,6 +146,8 @@ describe('MeetingDetailsPageComponent', () => {
     expect(skeleton?.getAttribute('aria-live')).toBe('polite');
     expect(query('meeting-content-column')).not.toBeNull();
     expect(query('meeting-header-section')).toBeNull();
+    // The skeleton's columns hold no join details: the state may still hold the previous meeting's key.
+    expect(query('join-details-stub')).toBeNull();
   });
 
   it('renders the shell with the meeting header once ready', () => {
@@ -154,6 +156,7 @@ describe('MeetingDetailsPageComponent', () => {
     expect(query('meeting-skeleton')).toBeNull();
     expect(query('meeting-header-section')?.querySelector('lfx-meeting-header')).not.toBeNull();
     expect(query('meeting-content-column')).not.toBeNull();
+    expect(query('join-details-stub')).not.toBeNull();
     // #3260: a labelled region (not an <aside> inside <main>), with its own sr-only h2 once loaded.
     const rail = query('meeting-rail');
     expect(rail?.tagName).toBe('SECTION');

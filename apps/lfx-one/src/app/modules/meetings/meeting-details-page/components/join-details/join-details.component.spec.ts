@@ -20,6 +20,7 @@ describe('MeetingJoinDetailsComponent', () => {
   let timeState: WritableSignal<MeetingTimeState | null>;
   let loadedViaPastMeetingId: WritableSignal<boolean>;
   let cancelledOccurrence: WritableSignal<MeetingOccurrence | null>;
+  let selectedOccurrence: WritableSignal<MeetingOccurrence | null>;
   let now: WritableSignal<Date>;
   let reload: ReturnType<typeof vi.fn>;
   let copy: ReturnType<typeof vi.fn>;
@@ -34,6 +35,7 @@ describe('MeetingJoinDetailsComponent', () => {
     timeState = signal<MeetingTimeState | null>('before');
     loadedViaPastMeetingId = signal(false);
     cancelledOccurrence = signal<MeetingOccurrence | null>(null);
+    selectedOccurrence = signal<MeetingOccurrence | null>(null);
     now = signal(new Date());
     reload = vi.fn();
     copy = vi.fn().mockReturnValue(true);
@@ -42,7 +44,7 @@ describe('MeetingJoinDetailsComponent', () => {
     await TestBed.configureTestingModule({
       imports: [MeetingJoinDetailsComponent],
       providers: [
-        { provide: MeetingDetailsStateService, useValue: { meeting, timeState, loadedViaPastMeetingId, cancelledOccurrence, now, reload } },
+        { provide: MeetingDetailsStateService, useValue: { meeting, timeState, loadedViaPastMeetingId, cancelledOccurrence, selectedOccurrence, now, reload } },
         { provide: Clipboard, useValue: { copy } },
         { provide: MessageService, useValue: { add } },
         { provide: PLATFORM_ID, useValue: platform },
@@ -158,11 +160,15 @@ describe('MeetingJoinDetailsComponent', () => {
       expect(query('join-details-section')).toBeNull();
     });
 
-    it('still reads the meeting when the clock catches up past the first read (a sleeping laptop)', async () => {
-      now.set(new Date(opensAt() + 120_000));
+    it('reads on waking inside the window, then retries 90s after that read (a sleeping laptop)', async () => {
+      now.set(new Date(opensAt() + 10 * 60_000));
       await update();
-
       expect(reload).toHaveBeenCalledTimes(1);
+      expect(query('join-details-host-key-pending')).not.toBeNull();
+
+      now.set(new Date(opensAt() + 10 * 60_000 + 95_000));
+      await update();
+      expect(reload).toHaveBeenCalledTimes(2);
     });
 
     it('shows the key once a read returns it, and reads no more', async () => {
@@ -176,6 +182,16 @@ describe('MeetingJoinDetailsComponent', () => {
       expect(reload).toHaveBeenCalledTimes(1);
       expect(query('join-details-host-key-toggle')).not.toBeNull();
     });
+  });
+
+  it("times the window from the page's selected occurrence, not the series' next one", async () => {
+    // Today's occurrence is inside its window and the server returned its key; the page shows next week's.
+    meeting.set(build({ organizer: true, host_key: KEY, can_view_host_key: true }));
+    selectedOccurrence.set({ occurrence_id: '2', start_time: new Date(Date.now() + 7 * 24 * HOUR).toISOString(), duration: 60 });
+    await update();
+
+    expect(query('join-details-host-key-toggle')).toBeNull();
+    expect(query('join-details-host-key-pending')).not.toBeNull();
   });
 
   it('reads nothing for a page opened inside the window without a key: its own read had the answer', async () => {

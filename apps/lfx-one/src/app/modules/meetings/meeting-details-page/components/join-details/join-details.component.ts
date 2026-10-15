@@ -4,14 +4,13 @@
 import { _IdGenerator } from '@angular/cdk/a11y';
 import { Clipboard } from '@angular/cdk/clipboard';
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, DestroyRef, inject, linkedSignal, PLATFORM_ID, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, linkedSignal, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { HOST_KEY_EARLY_MINUTES, MEETING_HOST_KEY_RETRY_MS } from '@lfx-one/shared/constants';
-import { MeetingHostKeyWait } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingHostKeyWait } from '@lfx-one/shared/interfaces';
 import { getHostKeyWindowStartMs, isHostKeyVisible, isWithinHostKeyWindow } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
-import { pairwise } from 'rxjs';
 
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
 
@@ -50,6 +49,12 @@ export class MeetingJoinDetailsComponent {
 
   /** The key the server returned for this viewer, on an upcoming or live occurrence, while its window lasts. */
   protected readonly hostKey: Signal<string | null> = this.initHostKey();
+  /**
+   * The meetings whose window this browser page saw closed, and the times it then read each one again.
+   * Only a page that waited reads: one opened inside the window already had the server's answer.
+   */
+  private readonly sawClosed = signal<ReadonlySet<string>>(new Set());
+  private readonly reads = signal<Readonly<Record<string, number[]>>>({});
   /** An organizer's page with no key yet, against the window; `null` when it is not waiting for one. */
   private readonly hostKeyWait: Signal<MeetingHostKeyWait | null> = this.initHostKeyWait();
   /** The row says when the key becomes available: before the window, and while the page reads it. */
@@ -86,7 +91,7 @@ export class MeetingJoinDetailsComponent {
   private initHostKey(): Signal<string | null> {
     return computed(() => {
       const meeting = this.state.meeting();
-      if (!meeting || !this.upcoming() || !isHostKeyVisible(meeting) || !isWithinHostKeyWindow(meeting, this.state.now())) {
+      if (!meeting || !this.upcoming() || !isHostKeyVisible(meeting) || !isWithinHostKeyWindow(this.windowTiming(meeting), this.state.now())) {
         return null;
       }
       return meeting.host_key ?? null;
@@ -96,22 +101,41 @@ export class MeetingJoinDetailsComponent {
   private initHostKeyWait(): Signal<MeetingHostKeyWait | null> {
     return computed(() => {
       const meeting = this.state.meeting();
-      const windowStart = meeting ? getHostKeyWindowStartMs(meeting) : null;
-      if (!meeting || meeting.organizer !== true || windowStart === null || this.hostKey() || !this.upcoming()) {
+      const timing = meeting ? this.windowTiming(meeting) : null;
+      const windowStart = timing ? getHostKeyWindowStartMs(timing) : null;
+      if (!meeting || !timing || meeting.organizer !== true || windowStart === null || this.hostKey() || !this.upcoming()) {
         return null;
       }
-      const sinceOpen = this.state.now().getTime() - windowStart;
-      if (sinceOpen < 0) {
+      const now = this.state.now();
+      if (now.getTime() < windowStart) {
         return 'closed';
       }
-      if (!isWithinHostKeyWindow(meeting, this.state.now())) {
+      if (!isWithinHostKeyWindow(timing, now) || !this.sawClosed().has(meeting.id)) {
         return null;
       }
-      if (sinceOpen < MEETING_HOST_KEY_RETRY_MS) {
+      const reads = this.reads()[meeting.id] ?? [];
+      if (reads.length === 0) {
         return 'opening';
       }
-      return sinceOpen < 2 * MEETING_HOST_KEY_RETRY_MS ? 'retry' : 'settled';
+      // The second read comes 90s after the first actually ran, however late a sleeping tab woke.
+      const sinceRead = now.getTime() - reads[reads.length - 1];
+      if (reads.length === 1) {
+        return sinceRead < MEETING_HOST_KEY_RETRY_MS ? 'opening' : 'retry';
+      }
+      return sinceRead < MEETING_HOST_KEY_RETRY_MS ? 'retry' : 'settled';
     });
+  }
+
+  /**
+   * The occurrence the page shows, as the window's timing: its own start and duration when it has one,
+   * else the meeting's next-occurrence/start chain, as V1's host-key popover reads it. Timing only; the
+   * server's `can_view_host_key` stays the authority.
+   */
+  private windowTiming(meeting: Meeting): Pick<Meeting, 'start_time' | 'duration' | 'next_occurrence_start_time'> {
+    const occurrence = this.state.selectedOccurrence();
+    return occurrence?.start_time
+      ? { start_time: occurrence.start_time, duration: occurrence.duration }
+      : { start_time: meeting.start_time, duration: meeting.duration, next_occurrence_start_time: meeting.next_occurrence_start_time };
   }
 
   /** An upcoming or live occurrence of a meeting the page loaded as such, not cancelled. */
@@ -120,22 +144,28 @@ export class MeetingJoinDetailsComponent {
   }
 
   /**
-   * In the browser only, and only as the window opens on this page (not on a page opened inside it, whose
-   * read already had its answer): read the meeting when it moves from `closed` to `opening`, and again
-   * as it moves on from `opening` if the key has still not come.
+   * In the browser only. A page that saw the window closed reads the meeting as it opens (or on waking
+   * inside it), and once more {@link MEETING_HOST_KEY_RETRY_MS} after that read if the key has not come.
    */
   private readKeyWhenWindowOpens(): void {
     if (!isPlatformBrowser(this.platformId)) {
       return;
     }
     toObservable(this.hostKeyWait)
-      .pipe(pairwise(), takeUntilDestroyed(this.destroyRef))
-      .subscribe(([previous, current]) => {
-        // From before the window to anywhere in it, even past `opening` when the clock catches up late
-        // (a sleeping laptop, a throttled tab); then once more from the first read's stage on.
-        const opened = previous === 'closed' && (current === 'opening' || current === 'retry' || current === 'settled');
-        const retried = previous === 'opening' && (current === 'retry' || current === 'settled');
-        if (opened || retried) {
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((wait) => {
+        const id = this.state.meeting()?.id;
+        if (!id) {
+          return;
+        }
+        if (wait === 'closed' && !this.sawClosed().has(id)) {
+          this.sawClosed.update((ids) => new Set([...ids, id]));
+          return;
+        }
+        const count = (this.reads()[id] ?? []).length;
+        if ((wait === 'opening' && count === 0) || (wait === 'retry' && count === 1)) {
+          const at = this.state.now().getTime();
+          this.reads.update((reads) => ({ ...reads, [id]: [...(reads[id] ?? []), at] }));
           this.state.reload();
         }
       });
