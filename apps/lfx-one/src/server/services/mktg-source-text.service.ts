@@ -110,12 +110,12 @@ export class MktgSourceTextService {
    * budget is spent gets its remaining documents back as too complex, unread.
    */
   private async parse(bytes: Buffer, hints: { fileName?: string; contentType?: string; baseUrl?: string }, budget?: MktgReadBudget): Promise<MktgReadText> {
-    return MktgSourceTextService.gate.parse(() => {
+    return MktgSourceTextService.gate.parse(async () => {
       if (budget && budget.remainingMillis <= 0) {
         return this.none('too-complex');
       }
       const start = performance.now();
-      const read = budget ? MktgDocumentText.read(bytes, hints, budget.remainingMillis) : MktgDocumentText.read(bytes, hints);
+      const read = budget ? await MktgDocumentText.read(bytes, hints, budget.remainingMillis) : await MktgDocumentText.read(bytes, hints);
       budget?.spend(performance.now() - start);
       return read;
     });

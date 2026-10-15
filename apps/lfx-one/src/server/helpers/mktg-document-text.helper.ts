@@ -3,27 +3,34 @@
 
 import { MktgReadText } from '@lfx-one/shared/interfaces';
 import { Tokenizer } from 'htmlparser2';
-import { inflateRawSync } from 'node:zlib';
-
-import { PdfTextReader } from './mktg-pdf-text.helper';
+import JSZip from 'jszip';
+import mammoth from 'mammoth';
+import { getResolvedPDFJS } from 'unpdf';
 
 /**
  * Turns a file or a fetched page into the text an agent with no file or web
  * access reads (the Messaging Document's sources and existing documents):
- * PDF, Word (.docx), HTML, Markdown and plain text, told apart by their bytes
- * first and their name or content type second. Nothing here fetches; nothing
- * throws — what cannot be read comes back with its reason.
+ * PDF (Mozilla's pdf.js, through unpdf), Word .docx (mammoth), HTML, Markdown
+ * and plain text, told apart by their bytes first and their name or content
+ * type second. Nothing here fetches; nothing throws — what cannot be read
+ * comes back with its reason.
  */
 export class MktgDocumentText {
+  /** Wall-clock limit for one PDF; a caller whose own budget has less left may only lower it. */
+  public static readonly maxPdfMillis = 200;
+
+  /** Most pages one PDF may have; a longer one is refused as too complex before any page is read. */
+  private static readonly maxPdfPages = 300;
+
   /** Most HTML characters tokenized: a page's header, navigation and body copy sit well inside this. */
   private static readonly maxHtmlChars = 2_000_000;
 
   /**
-   * Most bytes a .docx part may inflate to — a guard against compression bombs,
-   * and the bound on the time it takes to read (about 120 ms at the cap; the
-   * body of a 300-page document is a few megabytes).
+   * Most bytes the parts of a .docx may inflate to beyond the file's own size
+   * — a guard against compression bombs (the body of a 300-page document is a
+   * few megabytes; images inflate to about their stored size).
    */
-  private static readonly maxDocxXmlBytes = 16 * 1024 * 1024;
+  private static readonly maxDocxInflatedBytes = 16 * 1024 * 1024;
 
   /** Block-level elements: each starts and ends a line. */
   // prettier-ignore
@@ -40,30 +47,36 @@ export class MktgDocumentText {
    *
    * @param bytes - The raw bytes
    * @param hints - The file name or the response's content type, and for HTML the URL relative links resolve against
-   * @param maxMillis - A tighter wall-clock limit for a PDF than its reader's own
+   * @param maxMillis - A tighter wall-clock limit for a PDF than `maxPdfMillis`
    */
-  public static read(bytes: Buffer, hints: { fileName?: string; contentType?: string; baseUrl?: string }, maxMillis = PdfTextReader.maxMillis): MktgReadText {
+  public static async read(
+    bytes: Buffer,
+    hints: { fileName?: string; contentType?: string; baseUrl?: string },
+    maxMillis = MktgDocumentText.maxPdfMillis
+  ): Promise<MktgReadText> {
     try {
-      return MktgDocumentText.readBytes(bytes, hints, maxMillis);
+      return await MktgDocumentText.readBytes(bytes, hints, maxMillis);
     } catch {
-      // Each reader bounds its own work; this keeps the never-throws promise for anything they did not foresee.
+      // Each reader maps its own failures; this keeps the never-throws promise for anything they did not foresee.
       return MktgDocumentText.none('unsupported');
     }
   }
 
-  private static readBytes(bytes: Buffer, hints: { fileName?: string; contentType?: string; baseUrl?: string }, maxMillis: number): MktgReadText {
+  private static async readBytes(
+    bytes: Buffer,
+    hints: { fileName?: string; contentType?: string; baseUrl?: string },
+    maxMillis: number
+  ): Promise<MktgReadText> {
     const name = (hints.fileName ?? '').toLowerCase();
     const type = hints.contentType ?? '';
     const head = bytes.subarray(0, 1024).toString('latin1');
 
     // A PDF reader accepts the header anywhere in the first kilobyte (some generators write junk before it).
     if (head.includes('%PDF-') || type.includes('application/pdf')) {
-      const pdf = PdfTextReader.read(bytes, maxMillis);
-      return 'text' in pdf ? MktgDocumentText.ok(pdf.text) : MktgDocumentText.none(pdf.reason);
+      return MktgDocumentText.pdfText(bytes, Math.min(maxMillis, MktgDocumentText.maxPdfMillis));
     }
     if (head.startsWith('PK\u0003\u0004')) {
-      const xml = MktgDocumentText.zipEntry(bytes, 'word/document.xml');
-      return xml === null ? MktgDocumentText.none('unsupported') : MktgDocumentText.ok(MktgDocumentText.docxText(xml));
+      return MktgDocumentText.docxText(bytes);
     }
     if (bytes.includes(0)) {
       return MktgDocumentText.none('unsupported');
@@ -86,100 +99,94 @@ export class MktgDocumentText {
     return { text: null, title: null, truncated: false, reason };
   }
 
-  // === Word (.docx) ===
+  // === PDF ===
 
-  /** One entry of a zip archive (stored or deflated; no ZIP64), or null when it is not there. */
-  private static zipEntry(zip: Buffer, entryName: string): Buffer | null {
+  /**
+   * A PDF's text, page by page, with a line break wherever pdf.js ends a line.
+   * pdf.js yields to the event loop as it works, so the deadline is a race:
+   * when it passes, the document is destroyed (pdf.js stops; its pending pages
+   * never settle) and reported `too-complex`, as is one of more than
+   * `maxPdfPages` pages or one pdf.js cannot parse (its message asks for a
+   * fresh export). A password-protected PDF is `encrypted`; a scan is `no-text`.
+   */
+  private static async pdfText(bytes: Buffer, maxMillis: number): Promise<MktgReadText> {
+    // Resolved before the clock starts: the first call loads the pdf.js module.
+    const { getDocument } = await getResolvedPDFJS();
+    const task = getDocument({ data: new Uint8Array(bytes), disableFontFace: true, verbosity: 0 });
+    let timer: NodeJS.Timeout | undefined;
+    const expiry = new Promise<MktgReadText>((resolve) => {
+      timer = setTimeout(() => resolve(MktgDocumentText.none('too-complex')), maxMillis);
+    });
+    const extraction = (async (): Promise<MktgReadText> => {
+      const pdf = await task.promise;
+      if (pdf.numPages > MktgDocumentText.maxPdfPages) {
+        return MktgDocumentText.none('too-complex');
+      }
+      const pages: string[] = [];
+      for (let number = 1; number <= pdf.numPages; number++) {
+        const content = await (await pdf.getPage(number)).getTextContent();
+        pages.push(content.items.map((item) => ('str' in item ? `${item.str}${item.hasEOL ? '\n' : ''}` : '')).join(''));
+      }
+      const text = pages
+        .join('\n\n')
+        .split('\n')
+        .map((line) => line.replace(/[ \t]+/g, ' ').trim())
+        .join('\n')
+        .replace(/\n{3,}/g, '\n\n');
+      return MktgDocumentText.ok(text);
+    })().catch((error: unknown) => MktgDocumentText.none(error instanceof Error && error.name === 'PasswordException' ? 'encrypted' : 'too-complex'));
     try {
-      const searchFrom = Math.max(0, zip.length - 65557);
-      const eocd = zip.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
-      if (eocd < searchFrom) {
-        return null;
-      }
-      const count = zip.readUInt16LE(eocd + 10);
-      let at = zip.readUInt32LE(eocd + 16);
-      for (let i = 0; i < count && zip.readUInt32LE(at) === 0x02014b50; i++) {
-        const method = zip.readUInt16LE(at + 10);
-        const compressedSize = zip.readUInt32LE(at + 20);
-        const nameLength = zip.readUInt16LE(at + 28);
-        const extraLength = zip.readUInt16LE(at + 30);
-        const commentLength = zip.readUInt16LE(at + 32);
-        const localOffset = zip.readUInt32LE(at + 42);
-        const name = zip.toString('utf8', at + 46, at + 46 + nameLength);
-        at += 46 + nameLength + extraLength + commentLength;
-        if (name !== entryName || zip.readUInt32LE(localOffset) !== 0x04034b50) {
-          continue;
-        }
-        const dataStart = localOffset + 30 + zip.readUInt16LE(localOffset + 26) + zip.readUInt16LE(localOffset + 28);
-        const data = zip.subarray(dataStart, dataStart + compressedSize);
-        if (method === 0) {
-          return data;
-        }
-        return method === 8 ? inflateRawSync(data, { maxOutputLength: MktgDocumentText.maxDocxXmlBytes }) : null;
-      }
-      return null;
-    } catch {
-      return null;
+      return await Promise.race([extraction, expiry]);
+    } finally {
+      clearTimeout(timer);
+      await task.destroy();
     }
   }
 
-  /** The paragraphs of a WordprocessingML body: `w:t` runs, tabs and breaks, one line per `w:p`. */
-  private static docxText(xml: Buffer): string {
-    const source = xml.toString('utf8');
-    const out: string[] = [];
-    let tag = '';
-    let inText = false;
-    const tokenizer = new Tokenizer(
-      { xmlMode: true, decodeEntities: true },
-      {
-        onopentagname(start, end) {
-          tag = source.slice(start, end);
-        },
-        onopentagend() {
-          inText = tag === 'w:t';
-          if (tag === 'w:tab') {
-            out.push('\t');
-          }
-        },
-        onselfclosingtag() {
-          if (tag === 'w:tab') {
-            out.push('\t');
-          } else if (tag === 'w:br' || tag === 'w:cr') {
-            out.push('\n');
-          }
-        },
-        onclosetag(start, end) {
-          const name = source.slice(start, end);
-          if (name === 'w:t') {
-            inText = false;
-          } else if (name === 'w:p') {
-            out.push('\n');
-          }
-        },
-        ontext(start, end) {
-          if (inText) {
-            out.push(source.slice(start, end));
-          }
-        },
-        ontextentity(codepoint) {
-          if (inText) {
-            out.push(String.fromCodePoint(codepoint));
-          }
-        },
-        onattribname: (): void => undefined,
-        onattribdata: (): void => undefined,
-        onattribentity: (): void => undefined,
-        onattribend: (): void => undefined,
-        oncdata: (): void => undefined,
-        oncomment: (): void => undefined,
-        ondeclaration: (): void => undefined,
-        onend: (): void => undefined,
-        onprocessinginstruction: (): void => undefined,
+  // === Word (.docx) ===
+
+  /**
+   * A .docx body's text through mammoth, a blank line between paragraphs.
+   * The archive is inflated and counted first, without keeping the bytes, so a
+   * compression bomb is refused before mammoth inflates it whole. An archive
+   * over the cap, a broken one, or one that is not a Word document is `unsupported`.
+   */
+  private static async docxText(bytes: Buffer): Promise<MktgReadText> {
+    try {
+      if (!(await MktgDocumentText.docxWithinCap(bytes))) {
+        return MktgDocumentText.none('unsupported');
       }
-    );
-    tokenizer.write(source);
-    tokenizer.end();
-    return out.join('').replace(/\n{3,}/g, '\n\n');
+      const { value } = await mammoth.extractRawText({ buffer: bytes });
+      return MktgDocumentText.ok(value.replace(/\n{3,}/g, '\n\n'));
+    } catch {
+      return MktgDocumentText.none('unsupported');
+    }
+  }
+
+  /** Whether every entry of a zip inflates, together, to at most `maxDocxInflatedBytes` beyond the zip's own size; stops counting at the cap. */
+  private static async docxWithinCap(bytes: Buffer): Promise<boolean> {
+    const zip = await JSZip.loadAsync(bytes);
+    const cap = bytes.length + MktgDocumentText.maxDocxInflatedBytes;
+    let inflated = 0;
+    for (const entry of Object.values(zip.files).filter((file) => !file.dir)) {
+      const within = await new Promise<boolean>((resolve, reject) => {
+        const stream = entry.nodeStream('nodebuffer');
+        stream.on('data', (chunk: Buffer) => {
+          inflated += chunk.length;
+          if (inflated > cap) {
+            stream.pause();
+            stream.removeAllListeners();
+            resolve(false);
+          }
+        });
+        stream.on('error', reject);
+        stream.on('end', () => resolve(true));
+      });
+      if (!within) {
+        return false;
+      }
+    }
+    return true;
   }
 
   // === HTML ===

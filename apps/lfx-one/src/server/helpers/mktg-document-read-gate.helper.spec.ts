@@ -92,6 +92,21 @@ describe('MktgDocumentReadGate parses', () => {
     expect(order).toEqual(['parse 1', 'other request', 'parse 2']);
   });
 
+  it('starts the next parse only once an async parse has settled', async () => {
+    const gate = new MktgDocumentReadGate(4, 4, 4);
+    const order: string[] = [];
+
+    const first = gate.parse(async () => {
+      order.push('parse 1 starts');
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      order.push('parse 1 ends');
+    });
+    const second = gate.parse(() => order.push('parse 2'));
+    await Promise.all([first, second]);
+
+    expect(order).toEqual(['parse 1 starts', 'parse 1 ends', 'parse 2']);
+  });
+
   it('rejects a parse that throws without stopping the ones after it', async () => {
     const gate = new MktgDocumentReadGate(4, 4, 4);
 

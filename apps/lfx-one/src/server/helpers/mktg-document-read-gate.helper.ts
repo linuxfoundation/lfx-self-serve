@@ -28,7 +28,7 @@ export class MktgReadBudget {
 /**
  * Bounds the document reading LFX One does for Marketing OS agents, which
  * cannot fetch or open files themselves. A read is a fetch (I/O) followed by
- * a synchronous parse (PDF, Word, HTML), so the gate bounds both:
+ * a parse (PDF, Word, HTML), so the gate bounds both:
  *
  * - Slots bound memory and fairness. A read (fetch and parse) holds a slot; a
  *   user holds at most `maxPerUser` at once and the process `maxPerProcess`,
@@ -36,10 +36,9 @@ export class MktgReadBudget {
  *   one user cannot take every slot. Waiters start in arrival order; a user
  *   with `maxWaitingPerUser` reads already waiting is refused at once.
  * - Parses run one at a time across the process, each after a turn of the
- *   event loop. Every parse is bounded on its own (the PDF reader's budget,
- *   the Word inflate cap, the HTML size cap), so the loop is never held for
- *   longer than one document's budget, and other requests run between two
- *   documents instead of waiting for a whole batch.
+ *   event loop. Every parse is bounded on its own (the PDF deadline and page
+ *   cap, the Word inflate cap, the HTML size cap), so other requests run
+ *   between two documents instead of waiting for a whole batch.
  */
 export class MktgDocumentReadGate {
   private readonly activeByUser = new Map<string, number>();
@@ -74,8 +73,8 @@ export class MktgDocumentReadGate {
     }
   }
 
-  /** Run one synchronous parse alone on the event loop, after a turn of it. */
-  public parse<T>(work: () => T): Promise<T> {
+  /** Run one parse alone, after a turn of the event loop; the next starts once it has settled. */
+  public parse<T>(work: () => T | Promise<T>): Promise<T> {
     const run = this.parsing.then(
       () =>
         new Promise<T>((resolve, reject) => {
