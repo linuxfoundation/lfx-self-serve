@@ -3,6 +3,7 @@
 
 import {
   ACCOUNT_MONITOR_CONFLICT_REASONS,
+  ACCOUNT_MONITOR_CURRENCY_PATTERN,
   ACCOUNT_MONITOR_METRICS_DISABLED_CODE,
   ACCOUNT_MONITOR_NO_CONNECTION_CODE,
   ACCOUNT_MONITOR_UNSUPPORTED_UPSTREAM_MESSAGE,
@@ -50,7 +51,19 @@ import { isCampaignServiceNotFound } from './campaign-service.service';
 // ---------------------------------------------------------------------------
 
 /** The rows, totals and action items of one platform's monitor, in the legacy shape both platforms share. */
-type LegacyMonitorBody = Pick<RedditMonitorResponse, 'campaigns' | 'accountTotals' | 'actionItems' | 'dateRange'>;
+type LegacyMonitorBody = Pick<RedditMonitorResponse, 'campaigns' | 'accountTotals' | 'actionItems' | 'dateRange' | 'currency'>;
+
+/**
+ * campaign-service's optional `currency`, as `{ currency }` only when it is an ISO 4217-shaped code
+ * (three uppercase letters) — otherwise `{}`, so the key is absent exactly as it is on the legacy
+ * path and the panel stays currency-neutral. A lowercase or otherwise malformed value is dropped,
+ * not repaired: the field is a statement about the account, and a guess would put a symbol on
+ * amounts nobody vouched for.
+ */
+function accountCurrency(payload: CampaignServiceAccountMonitor): Pick<LegacyMonitorBody, 'currency'> {
+  const currency: unknown = payload.currency;
+  return typeof currency === 'string' && ACCOUNT_MONITOR_CURRENCY_PATTERN.test(currency) ? { currency } : {};
+}
 
 function toLegacyCampaign(row: CampaignServiceAccountMonitorCampaign): RedditMonitorResponse['campaigns'][number] {
   const conversionsMeasured = typeof row.conversions === 'number';
@@ -103,6 +116,7 @@ function toLegacyMonitorBody(payload: CampaignServiceAccountMonitor): LegacyMoni
       issue: item.issue,
       action: item.action,
     })),
+    ...accountCurrency(payload),
   };
 }
 

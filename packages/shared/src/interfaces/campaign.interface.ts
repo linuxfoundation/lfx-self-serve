@@ -1430,6 +1430,11 @@ export interface MetaMonitorResponse {
   campaigns: MetaCampaignMetrics[];
   accountTotals: MetaAccountTotals;
   actionItems: MetaActionItem[];
+  /**
+   * Campaign-service path only: the ad account's ISO 4217 code, set only when campaign-service
+   * named one in the expected shape. ABSENT on the legacy path and whenever it is unknown.
+   */
+  currency?: string;
 }
 
 export interface CampaignBriefRefineRequest {
@@ -2670,6 +2675,11 @@ export interface CampaignServiceAccountMonitor {
   metrics_window_end?: string;
   /** Report-backed platforms only: a newer report is building. */
   metrics_pending?: boolean;
+  /**
+   * The ad account's ISO 4217 code (`^[A-Z]{3}$`): spend and budgets are in it, unconverted.
+   * ABSENT when the platform did not report one (always on Google Ads) — unknown, never a default.
+   */
+  currency?: string;
 }
 
 /** campaign-service `hubspot-email-monitor-email`. Rates are FRACTIONS, absent on a zero denominator. */
@@ -2833,6 +2843,8 @@ export interface ReportBackedMonitorResponse {
   metricsWindowEnd: string | null;
   /** A newer report is building on the platform, so a later refresh returns newer (or the first) metrics. */
   metricsPending: boolean;
+  /** The ad account's ISO 4217 code when campaign-service named one in the expected shape; ABSENT when unknown. */
+  currency?: string;
 }
 
 /** One HubSpot marketing email on the Monitor tab. Rates are FRACTIONS (0.3 = 30%), NULL when their denominator is 0 — unknown, not 0. */
@@ -3272,6 +3284,11 @@ export interface LinkedInMonitorResponse {
   campaigns: LinkedInCampaignMetrics[];
   accountTotals: LinkedInAccountTotals;
   actionItems: LinkedInActionItem[];
+  /**
+   * Campaign-service path only: the ad account's ISO 4217 code, set only when campaign-service
+   * named one in the expected shape. ABSENT on the legacy path and whenever it is unknown.
+   */
+  currency?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -3342,6 +3359,11 @@ export interface RedditMonitorResponse {
   campaigns: RedditCampaignMetrics[];
   accountTotals: RedditAccountTotals;
   actionItems: RedditActionItem[];
+  /**
+   * Campaign-service path only: the ad account's ISO 4217 code, set only when campaign-service
+   * named one in the expected shape. ABSENT on the legacy path and whenever it is unknown.
+   */
+  currency?: string;
 }
 
 // ---------------------------------------------------------------------------

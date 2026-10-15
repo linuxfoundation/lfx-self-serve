@@ -171,6 +171,37 @@ describe('toLinkedInMonitorResponse', () => {
   });
 });
 
+/**
+ * campaign-service's optional `currency` (`^[A-Z]{3}$`, campaign-service#338): passed on to every
+ * account-monitor shape only as a well-formed ISO 4217 code. Anything else is absent — exactly as
+ * before the field existed — so the panel stays currency-neutral rather than guessing a symbol.
+ */
+describe('account-monitor currency', () => {
+  const mappers = [
+    ['Meta', (p: CampaignServiceAccountMonitor) => toMetaMonitorResponse(p, 'LF', PULLED_AT)],
+    ['Reddit', (p: CampaignServiceAccountMonitor) => toRedditMonitorResponse(p, 'LF', PULLED_AT)],
+    ['LinkedIn', (p: CampaignServiceAccountMonitor) => toLinkedInMonitorResponse(p, 'LF', PULLED_AT)],
+    ['report-backed', (p: CampaignServiceAccountMonitor) => toReportBackedMonitorResponse(p, PULLED_AT)],
+  ] as const;
+
+  it.each(mappers)('%s: passes a valid ISO 4217 code through', (_name, map) => {
+    expect(map(payload({ currency: 'EUR' })).currency).toBe('EUR');
+  });
+
+  it.each(mappers)('%s: leaves the key out when campaign-service sent none', (_name, map) => {
+    expect(map(payload())).not.toHaveProperty('currency');
+  });
+
+  it.each([['eur'], ['Eur'], ['EURO'], ['US'], [''], [' EUR'], ['E1R'], [42], [null], [{ code: 'EUR' }]])(
+    'drops a malformed currency (%j) rather than repairing it',
+    (bad) => {
+      for (const [, map] of mappers) {
+        expect(map(payload({ currency: bad as unknown as string }))).not.toHaveProperty('currency');
+      }
+    }
+  );
+});
+
 describe('toAccountMonitorClientError', () => {
   function upstream(status: number, body: Record<string, unknown>): MicroserviceError {
     return MicroserviceError.fromMicroserviceResponse(status, 'upstream', body, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/connection-meta-ads/account-monitor');

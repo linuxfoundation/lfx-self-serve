@@ -520,6 +520,10 @@
           <p class="text-sm text-gray-500">No active LinkedIn campaigns found for this account.</p>
         </div>
       } @else if (linkedInView(); as view) {
+        @if (linkedInCurrencyNote()) {
+          <!-- campaign-service reported a connection's LinkedIn amounts in the account's currency and did not say which. -->
+          <p class="text-xs text-gray-500" data-testid="linkedin-currency-note">Spend and budgets are in the ad account's own currency.</p>
+        }
         <ng-container
           [ngTemplateOutlet]="accountPanel"
           [ngTemplateOutletContext]="{ $implicit: view, panel: 'linkedin', actPlatform: 'linkedin-ads', note: linkedInTotalsNote() }" />
@@ -650,8 +654,8 @@
           <p class="text-sm text-gray-500">No active Meta campaigns found for this account.</p>
         </div>
       } @else if (metaView(); as view) {
-        @if (metaAmountsInAccountCurrency()) {
-          <!-- campaign-service reports a connection's Meta amounts unconverted and does not say in which currency. -->
+        @if (metaCurrencyNote()) {
+          <!-- campaign-service reported a connection's Meta amounts unconverted and did not say in which currency. -->
           <p class="text-xs text-gray-500" data-testid="meta-currency-note">Spend and budgets are in the ad account's own currency.</p>
         }
         <ng-container
@@ -714,8 +718,12 @@
         @if (reportBackedFreshness(); as freshness) {
           <p class="text-xs text-gray-500" [attr.data-testid]="reportBackedPanel() + '-freshness'">{{ freshness }}</p>
         }
-        <!-- campaign-service reports these amounts unconverted and does not say in which currency. -->
-        <p class="text-xs text-gray-500" [attr.data-testid]="reportBackedPanel() + '-currency-note'">Spend and budgets are in the ad account's own currency.</p>
+        @if (reportBackedCurrencyNote()) {
+          <!-- campaign-service reported these amounts unconverted and did not say in which currency. -->
+          <p class="text-xs text-gray-500" [attr.data-testid]="reportBackedPanel() + '-currency-note'">
+            Spend and budgets are in the ad account's own currency.
+          </p>
+        }
         @if (view.rows.length === 0) {
           <div
             class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-12"
