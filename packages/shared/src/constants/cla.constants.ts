@@ -656,8 +656,8 @@ export const ORG_CLA_APPROVAL_HEADING = 'Approved List of Contributors from My O
 /** Toast copy for a completed approval-list write. */
 export const ORG_CLA_APPROVAL_RECEIPT = {
   added: { summary: 'Approval list updated', detail: (count: number) => (count === 1 ? 'The entry was added.' : `${count} entries were added.`) },
-  edited: { summary: 'Approval list updated', detail: () => 'The entry was updated. Acknowledgements matching the previous value now show as Not Authorized.' },
-  removed: { summary: 'Entry removed', detail: () => 'The entry was removed. Acknowledgements it covered now show as Not Authorized.' },
+  edited: { summary: 'Approval list updated', detail: () => 'The entry was updated. Acknowledgments matching the previous value now show as Not Authorized.' },
+  removed: { summary: 'Entry removed', detail: () => 'The entry was removed. Acknowledgments it covered now show as Not Authorized.' },
 } as const;
 
 export const ORG_CLA_MANAGER_REFUSALS = ['no-lf-login', 'lf-username-required', 'not-authorized', 'last-manager', 'already-manager', 'unknown'] as const;
@@ -870,7 +870,7 @@ export const ORG_CLA_INVALIDATE_DIALOG_COPY = {
     " as no longer covered by this CCLA. It's assumed they've already lost access to any email domain, GitHub org, or GitLab group this CCLA's approval list checks against.",
   reacknowledge: (contributor: string): string => `If ${contributor} still matches the approval list, they can acknowledge again themselves`,
   noAutoReadd: ". Auto ECLA won't re-add them.",
-  removeCriteria: ' Remove the matching entries below to prevent this.',
+  removeEntries: ' Remove the matching entries below to prevent this.',
   matchedBy: (count: number): string => ` was approved by ${count > 1 ? 'entries' : 'an entry'} added specifically for them.`,
   alsoRemove: (contributor: string, count: number): string =>
     `Also remove ${count > 1 ? 'these entries' : 'this entry'} from the Approval List so ${contributor} can't acknowledge this CCLA again later.`,

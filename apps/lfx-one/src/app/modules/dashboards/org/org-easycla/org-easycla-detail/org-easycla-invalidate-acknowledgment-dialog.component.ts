@@ -53,7 +53,7 @@ export class OrgEasyclaInvalidateAcknowledgmentDialogComponent {
   protected readonly matchedBy = computed(() => this.copy.matchedBy(this.matchRows().length));
   protected readonly alsoRemoveLabel = computed(() => this.copy.alsoRemove(this.contributor, this.matchRows().length));
   protected readonly checking = computed(() => this.matchingEntries() === undefined);
-  protected readonly reacknowledgeSuffix = computed(() => (this.matchRows().length > 0 && this.canRemoveEntries() ? this.copy.removeCriteria : ''));
+  protected readonly reacknowledgeSuffix = computed(() => (this.matchRows().length > 0 && this.canRemoveEntries() ? this.copy.removeEntries : ''));
 
   protected onConfirm(): void {
     if (this.checking()) return;

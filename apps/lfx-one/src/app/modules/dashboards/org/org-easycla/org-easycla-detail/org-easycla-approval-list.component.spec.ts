@@ -490,7 +490,7 @@ describe('OrgEasyclaApprovalListComponent', () => {
       });
     });
 
-    it("says the previous value's acknowledgements show as Not Authorized", async () => {
+    it("says the previous value's acknowledgments show as Not Authorized", async () => {
       const fixture = await render();
       click(fixture, 'org-easycla-approval-edit');
 
@@ -542,7 +542,7 @@ describe('OrgEasyclaApprovalListComponent', () => {
       confirmations[0].accept?.();
 
       expect(addMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ severity: 'success', detail: 'The entry was removed. Acknowledgements it covered now show as Not Authorized.' })
+        expect.objectContaining({ severity: 'success', detail: 'The entry was removed. Acknowledgments it covered now show as Not Authorized.' })
       );
     });
   });

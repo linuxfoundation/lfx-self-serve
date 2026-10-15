@@ -125,7 +125,7 @@ test.describe('Org Lens EasyCLA approval — content', () => {
     const body = (await (await pending).postDataJSON()) as { add: unknown; remove: unknown };
     expect(body).toEqual({ add: [], remove: [{ kind: 'domain', value: DOMAIN }] });
 
-    await expect(page.locator('.p-toast')).toContainText('Acknowledgements it covered now show as Not Authorized.');
+    await expect(page.locator('.p-toast')).toContainText('Acknowledgments it covered now show as Not Authorized.');
     await expect(page.getByTestId('org-easycla-approval-empty')).toBeVisible();
   });
 
