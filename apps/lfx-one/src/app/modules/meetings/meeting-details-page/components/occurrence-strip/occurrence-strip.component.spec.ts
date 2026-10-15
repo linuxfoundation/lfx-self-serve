@@ -464,6 +464,27 @@ describe('MeetingOccurrenceStripComponent', () => {
       expect(lastMove()).toEqual(expect.objectContaining({ startMs: at(-10), pastResourceId: `${SERIES}-${at(-10)}` }));
     });
 
+    it('opens a chip clicked again after the page moved while its read was pending', async () => {
+      const older = new Subject<PublicMeetingOccurrencesResponse>();
+      await render(window, { selected: at(-1), pages: [older] });
+
+      chip(-10)?.click();
+      await settle();
+      // Back to another occurrence of the series (same run), then the same chip again.
+      selectedStartMs.set(at(1));
+      fixture.detectChanges();
+      chip(-10)?.click();
+      await settle();
+      older.next(page({ past: [past(-10)], future: [], past_has_more: false }));
+      older.complete();
+      await settle();
+
+      // The new click lands once (the read slot was busy, so by what is known); the first move, whose
+      // page moved, does not.
+      expect(navigateToOccurrence).toHaveBeenCalledTimes(1);
+      expect(lastMove()).toEqual(expect.objectContaining({ startMs: at(-10) }));
+    });
+
     it("opens a chip clicked again in a new run while the old run's read is still pending", async () => {
       const older = new Subject<PublicMeetingOccurrencesResponse>();
       await render(window, { selected: at(-1), pages: [older] });

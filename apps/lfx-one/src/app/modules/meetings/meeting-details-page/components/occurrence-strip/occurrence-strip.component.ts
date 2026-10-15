@@ -82,10 +82,11 @@ export class MeetingOccurrenceStripComponent {
   /** Bumped by each move: a move superseded by a later one, while its reads were in flight, is dropped. */
   private moveId = 0;
   /**
-   * The chip a move is opening, while it reads, and the run it reads for: a repeat click on it is
-   * ignored. A marker from an earlier run never blocks a click, since that move drops itself as stale.
+   * The chip a move is opening, while it reads, with the run it reads for and the page's occurrence it
+   * started from: a repeat click on it is ignored only while all three still hold. Otherwise that move
+   * drops itself as stale, so the marker must not block the new click either.
    */
-  private pendingMove: { startMs: number; run: number } | null = null;
+  private pendingMove: { startMs: number; run: number; from: number | null } | null = null;
 
   // One formatter per field, in the viewer's zone; the strip only renders its chips on the browser.
   private readonly timezone = isPlatformBrowser(this.platformId) ? getUserTimezone() : 'UTC';
@@ -239,16 +240,17 @@ export class MeetingOccurrenceStripComponent {
   private async moveTo(item: MeetingOccurrenceStripItem): Promise<void> {
     // A repeat click on the chip already being opened changes nothing: it would only cut short the read
     // for its record.
-    if (this.pendingMove?.startMs === item.startMs && this.pendingMove.run === this.runId) {
+    // The page's own occurrence, not the selected chip: a read can bring that chip in without the page
+    // having moved at all.
+    const from = this.state.selectedOccurrenceStartMs();
+    const pending = this.pendingMove;
+    if (pending?.startMs === item.startMs && pending.run === this.runId && pending.from === from) {
       return;
     }
     this.focusStartMs.set(null);
     const move = ++this.moveId;
     const run = this.runId;
-    this.pendingMove = { startMs: item.startMs, run };
-    // The page's own occurrence, not the selected chip: a read can bring that chip in without the page
-    // having moved at all.
-    const from = this.state.selectedOccurrenceStartMs();
+    this.pendingMove = { startMs: item.startMs, run, from };
     let target = item;
     try {
       for (let read = 0; read < MEETING_OCCURRENCE_STRIP_MAX_CHASE_PAGES && this.recordMayBeUnread(target); read++) {
