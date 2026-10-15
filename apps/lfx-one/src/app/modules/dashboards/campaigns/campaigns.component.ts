@@ -3863,8 +3863,19 @@ export class CampaignsComponent {
       });
   }
 
-  /** The Implementation tab's Retry for a failed bidding-capability read (#3299). */
+  /**
+   * The Implementation tab's Retry for a failed bidding-capability read (#3299).
+   *
+   * Never a silent no-op: the read needs a brief id, and without one it would return at once and
+   * leave the tab showing a Retry that did nothing. The tab offers no Retry in that state, but if
+   * this is reached anyway the state is set to `unknown`, which the tab answers with the "save the
+   * brief" guidance — a successful save is what starts the read (see the persist success arm).
+   */
   protected retryBiddingCapability(): void {
+    if (!this.briefPersistence().briefId) {
+      this.briefCampaignsBiddingRead.set('unknown');
+      return;
+    }
     this.loadCreateCapabilities();
   }
 

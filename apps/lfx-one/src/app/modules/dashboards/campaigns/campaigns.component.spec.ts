@@ -43,9 +43,11 @@ import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { NEVER, Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { MockInstance } from 'vitest';
 
 import { CampaignsComponent } from './campaigns.component';
 import { AudienceBuilderTabComponent } from './components/audience-builder-tab/audience-builder-tab.component';
+import { ImplementationTabComponent } from './components/implementation-tab/implementation-tab.component';
 
 /**
  * The controller spec covers what the server does with a brief. What is only observable here is
@@ -9942,5 +9944,174 @@ describe('CampaignsComponent email monitor', () => {
     fixture.detectChanges();
 
     expect(internals().canRefreshEmailMetrics()).toBe(false);
+  });
+});
+
+/**
+ * Recovering a retained Manual bidding choice the deployment cannot confirm yet (#3299), proven at
+ * the PAGE level: the real Implementation tab under the real page, with only the service's
+ * `persistBrief` and `listBriefCampaigns` replaced. Asserting that the tab EMITTED a retry is not
+ * enough — the page must actually read the capability and the tab must then let Create through
+ * with the Manual bid intact.
+ */
+describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
+  let fixture: ComponentFixture<CampaignsComponent>;
+  let listBriefCampaigns: MockInstance<CampaignService['listBriefCampaigns']>;
+
+  const brief = {
+    eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'US', registrationUrl: 'https://example.com/kubecon' },
+    totalBudget: 500,
+    selectedPlatforms: ['meta-ads'],
+    structuredCopy: { google_search: { headlines: ['Attend KubeCon'], descriptions: ['Join us in September'] } },
+    metaCopy: {
+      variants: [{ primaryText: 'Brief primary', headline: 'Brief meta headline', description: 'Brief description' }],
+      recommendedGeos: ['US'],
+    },
+    keywords: [],
+    hsUtm: null,
+    driveFolderUrl: '',
+  } as unknown as CampaignBriefOutput;
+
+  const capability = (biddingEnabled: boolean): Observable<CampaignListResult> =>
+    of({
+      campaigns: [],
+      possiblyStale: false,
+      statusToggleEnabled: false,
+      demandGenEnabled: false,
+      googleChannelsEnabled: false,
+      googleCreativeEnabled: false,
+      redditCreativeEnabled: false,
+      biddingEnabled,
+    });
+
+  const saved = () => of({ enabled: true, briefId: 'brief-1', etag: '"1"', created: true, approved: true });
+
+  interface PageInternals {
+    onProceedToImplementation(b: CampaignBriefOutput): void;
+    briefPersistence(): CampaignBriefPersistenceState;
+    briefCampaignsBiddingEnabled(): boolean | null;
+    briefCampaignsBiddingRead(): string;
+  }
+  const page = (): PageInternals => fixture.componentInstance as unknown as PageInternals;
+  const tab = (): Record<string, any> => fixture.debugElement.query(By.directive(ImplementationTabComponent)).componentInstance as Record<string, any>;
+  const q = (testId: string): HTMLElement | null => (fixture.nativeElement as HTMLElement).querySelector(`[data-testid="${testId}"]`);
+
+  function selectFoundation(slug: string): void {
+    const ctx = TestBed.inject(ProjectContextService);
+    ctx.setRouteLensKind('foundation');
+    ctx.setFoundation({ uid: `uid-${slug}`, slug, name: slug } as ProjectContext, false);
+  }
+
+  /**
+   * Two rounds, each draining a macrotask too. The brief save runs on a promise chain the page does
+   * not hand to Angular (`persistChain`), so its outcome — the saved id, the capability read it
+   * starts, and the in-flight flag it clears last — can land after one round's change detection;
+   * the second round carries it into the tab's inputs.
+   */
+  async function settle(): Promise<void> {
+    for (let round = 0; round < 2; round++) {
+      fixture.detectChanges();
+      await fixture.whenStable();
+      await new Promise((resolve) => setTimeout(resolve));
+    }
+    fixture.detectChanges();
+  }
+
+  /** Proceed (which saves the brief), fill the form, and choose Manual for Meta at 1.00. */
+  async function proceedWithManualMeta(): Promise<void> {
+    page().onProceedToImplementation(brief);
+    await settle();
+    const t = tab();
+    t['campaignForm'].controls['startDate'].setValue('2026-09-01');
+    t['campaignForm'].controls['endDate'].setValue('2026-09-30');
+    await settle();
+    const control = fixture.debugElement.query(By.css('lfx-campaign-bidding-control')).componentInstance;
+    control.form.controls.strategy.setValue('manual');
+    await settle();
+    const input = q('implementation-bidding-meta-ads-amount')?.querySelector('input') as HTMLInputElement;
+    input.value = '1';
+    input.dispatchEvent(new Event('input'));
+    await settle();
+  }
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [CampaignsComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+      ],
+    }).compileComponents();
+    const service = TestBed.inject(CampaignService);
+    vi.spyOn(service, 'persistBrief').mockReturnValue(saved() as never);
+    listBriefCampaigns = vi.spyOn(service, 'listBriefCampaigns').mockReturnValue(capability(true));
+    fixture = TestBed.createComponent(CampaignsComponent);
+    TestBed.inject(PersonaService).currentPersona.set('executive-director');
+    selectFoundation('tlf');
+    await settle();
+  });
+
+  it('after a foundation switch offers no Retry, only "save the brief", and saving recovers the Manual bid', async () => {
+    await proceedWithManualMeta();
+    expect(tab()['canSubmit']()).toBe(true);
+
+    selectFoundation('cncf');
+    await settle();
+
+    expect(page().briefPersistence().briefId).toBeNull();
+    expect(page().briefCampaignsBiddingRead()).toBe('unknown');
+    expect(tab()['canSubmit']()).toBe(false);
+    expect(q('implementation-bidding-capability-unsaved')?.textContent).toContain("Bidding support can't be checked until this brief is saved.");
+    expect(q('implementation-bidding-capability-retry')).toBeNull();
+
+    // Save the brief (Proceed is the save). Its success arm is what reads the capability.
+    listBriefCampaigns.mockClear();
+    page().onProceedToImplementation(brief);
+    await settle();
+
+    expect(listBriefCampaigns).toHaveBeenCalledTimes(1);
+    expect(page().briefCampaignsBiddingEnabled()).toBe(true);
+    expect(q('implementation-bidding-capability-unsaved')).toBeNull();
+    expect(tab()['biddingDrafts']()['meta-ads']).toEqual({ strategy: 'manual', bidAmount: 1 });
+    expect(tab()['canSubmit']()).toBe(true);
+  });
+
+  it('after a failed read with a brief id, Retry reads the capability again and Create unblocks', async () => {
+    await proceedWithManualMeta();
+    expect(page().briefCampaignsBiddingEnabled()).toBe(true);
+
+    // The next read fails: leave and re-enter the tab so it runs.
+    listBriefCampaigns.mockReturnValue(throwError(() => new Error('query service down')));
+    (fixture.componentInstance as unknown as { loadCreateCapabilities(): void }).loadCreateCapabilities();
+    await settle();
+
+    expect(page().briefPersistence().briefId).toBe('brief-1');
+    expect(page().briefCampaignsBiddingRead()).toBe('failed');
+    expect(tab()['canSubmit']()).toBe(false);
+    const retry = q('implementation-bidding-capability-retry')?.querySelector('button') as HTMLButtonElement | null;
+    expect(retry).not.toBeNull();
+
+    listBriefCampaigns.mockClear();
+    listBriefCampaigns.mockReturnValue(capability(true));
+    retry!.click();
+    await settle();
+
+    expect(listBriefCampaigns).toHaveBeenCalledTimes(1);
+    expect(page().briefCampaignsBiddingRead()).toBe('ready');
+    expect(tab()['biddingDrafts']()['meta-ads']).toEqual({ strategy: 'manual', bidAmount: 1 });
+    expect(tab()['canSubmit']()).toBe(true);
+  });
+
+  it('a retry reached without a brief id reads nothing and leaves the state unknown', async () => {
+    (fixture.componentInstance as unknown as { briefCampaignsBiddingRead: { set(v: string): void } }).briefCampaignsBiddingRead.set('failed');
+    listBriefCampaigns.mockClear();
+
+    (fixture.componentInstance as unknown as { retryBiddingCapability(): void }).retryBiddingCapability();
+
+    expect(listBriefCampaigns).not.toHaveBeenCalled();
+    expect(page().briefCampaignsBiddingRead()).toBe('unknown');
   });
 });
