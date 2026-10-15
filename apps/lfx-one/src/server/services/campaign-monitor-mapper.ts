@@ -6,6 +6,7 @@ import {
   ACCOUNT_MONITOR_METRICS_DISABLED_CODE,
   ACCOUNT_MONITOR_NO_CONNECTION_CODE,
   ACCOUNT_MONITOR_UNSUPPORTED_UPSTREAM_MESSAGE,
+  META_ADS_MONITOR_ACCOUNT_ID_PATTERN,
 } from '@lfx-one/shared/constants';
 import type {
   AccountMonitorConflictReason,
@@ -274,7 +275,8 @@ export function toHubSpotEmailMonitorResponse(payload: CampaignServiceHubSpotEma
  * The one exception is a legacy Meta connection that stored the BARE numeric ad account id.
  * campaign-service's Meta monitor matches the connection in either form but takes the id only
  * `act_`-prefixed (`META_ADS_MONITOR_ACCOUNT_ID_PATTERN`), so a bare id offered verbatim would be
- * refused by the BFF's own shape check. A valid bare Meta id is therefore offered as `act_<id>`;
+ * refused by the BFF's own shape check. A bare Meta id whose `act_<id>` form passes that same
+ * pattern is therefore offered prefixed (an already-prefixed id cannot pass it twice);
  * every other provider's id, and any Meta id that is not purely numeric, is left exactly as stored.
  */
 export function toMonitorConnectionAccount(connection: CampaignServiceConnection, provider: CampaignServiceMonitorProvider): MonitorConnectionAccount {
@@ -282,13 +284,11 @@ export function toMonitorConnectionAccount(connection: CampaignServiceConnection
   if (storedId.trim() === '') {
     return { state: 'no_account', accountId: null, label: null };
   }
-  const accountId = provider === 'meta-ads' && META_BARE_ACCOUNT_ID_PATTERN.test(storedId) ? `act_${storedId}` : storedId;
+  const prefixed = `act_${storedId}`;
+  const accountId = provider === 'meta-ads' && META_ADS_MONITOR_ACCOUNT_ID_PATTERN.test(prefixed) ? prefixed : storedId;
   const label = typeof connection.label === 'string' && connection.label.trim() !== '' ? connection.label.trim() : accountId;
   return { state: 'connected', accountId, label };
 }
-
-/** A Meta ad account id stored without its `act_` prefix: the digits `META_ADS_MONITOR_ACCOUNT_ID_PATTERN` allows after it. */
-const META_BARE_ACCOUNT_ID_PATTERN = /^[0-9]{1,60}$/;
 
 function isConflictReason(value: unknown): value is AccountMonitorConflictReason {
   return typeof value === 'string' && (ACCOUNT_MONITOR_CONFLICT_REASONS as readonly string[]).includes(value);
