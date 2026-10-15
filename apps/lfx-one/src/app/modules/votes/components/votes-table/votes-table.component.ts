@@ -70,6 +70,7 @@ export class VotesTableComponent {
   public readonly hasPMOAccess = input<boolean>(false);
   public readonly loading = input<boolean>(false);
   public readonly totalRecords = input<number>(0);
+  public readonly paginationLoading = input<boolean>(false);
   public readonly rowsPerPage = input<number>(10);
   public readonly first = input<number>(0);
   public readonly lazy = input<boolean>(false);

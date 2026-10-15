@@ -23,7 +23,7 @@ describe('VoteController management reads', () => {
   const res = { json } as unknown as Response;
   const next = vi.fn();
   const request = (query: Record<string, unknown>) => ({ query }) as unknown as Request;
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => vi.resetAllMocks());
 
   it.each([
     {},
@@ -46,12 +46,12 @@ describe('VoteController management reads', () => {
     expect(json).not.toHaveBeenCalled();
   });
 
-  it.each([undefined, 'Synthetic Board'])('forwards only the validated scope and summary: %s', async (group) => {
+  it.each([undefined, 'Synthetic Board', ' Synthetic Board '])('forwards only the validated scope and summary: %s', async (group) => {
     const summary = { active_votes: 3, closing_soon: 1, as_of: '2026-10-09T12:00:00Z' };
     getVotesSummary.mockResolvedValue(summary);
     const req = request({ parent: 'project:synthetic', ...(group && { group }) });
     await controller.getVotesSummary(req, res, next);
-    expect(getVotesSummary).toHaveBeenCalledWith(req, 'project:synthetic', group);
+    expect(getVotesSummary).toHaveBeenCalledWith(req, 'project:synthetic', group?.trim());
     expect(json).toHaveBeenCalledWith(summary);
     expect(next).not.toHaveBeenCalled();
   });
@@ -64,10 +64,14 @@ describe('VoteController management reads', () => {
     expect(json).not.toHaveBeenCalled();
   });
 
-  it.each(['invalid', '', ['true'], ['true', 'false'], {}])('rejects malformed closing flag %j before calling the service', async (closingSoon) => {
-    await controller.getVotes(request({ closing_soon: closingSoon }), res, next);
-    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
-    expect(getVotes).not.toHaveBeenCalled();
+  it('propagates closing flag validation errors from the service', async () => {
+    const req = request({ closing_soon: 'invalid' });
+    const error = ServiceValidationError.forField('closing_soon', 'Expected a single true or false value', { operation: 'get_votes', service: 'vote_service' });
+    getVotes.mockRejectedValueOnce(error);
+    await controller.getVotes(req, res, next);
+    expect(getVotes).toHaveBeenCalledWith(req, req.query);
+    expect(next).toHaveBeenCalledWith(error);
+    expect(json).not.toHaveBeenCalled();
   });
 
   it.each([undefined, 0, 25])('forwards optional total_records without changing ordinary responses: %s', async (totalRecords) => {

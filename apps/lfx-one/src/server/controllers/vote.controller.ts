@@ -38,10 +38,6 @@ export class VoteController {
     });
 
     try {
-      const { closing_soon } = req.query;
-      if (closing_soon !== undefined && closing_soon !== 'true' && closing_soon !== 'false') {
-        throw ServiceValidationError.forField('closing_soon', 'Expected a single true or false value', { operation: 'get_votes', service: 'vote_controller' });
-      }
       const { data: votes, page_token, total_records } = await this.voteService.getVotes(req, req.query);
 
       logger.success(req, 'get_votes', startTime, {
@@ -69,7 +65,7 @@ export class VoteController {
       if (group !== undefined && (typeof group !== 'string' || !group.trim())) {
         throw ServiceValidationError.forField('group', 'Expected one nonempty group name', context);
       }
-      const summary = await this.voteService.getVotesSummary(req, parent, group);
+      const summary = await this.voteService.getVotesSummary(req, parent, group?.trim());
       logger.success(req, 'get_votes_summary', startTime, { active_votes: summary.active_votes, closing_soon: summary.closing_soon });
       res.json(summary);
     } catch (error) {

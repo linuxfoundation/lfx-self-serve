@@ -200,6 +200,22 @@ describe('VotesTableComponent — personal summary filters', () => {
     expect(rows()).toEqual(VOTES.map((v) => v.uid));
   });
 
+  it('hides pending pagination without hiding filters or loaded rows', async () => {
+    await render();
+    fixture.componentRef.setInput('lazy', true);
+    fixture.componentRef.setInput('totalRecords', 20);
+    await settle();
+    expect(fixture.nativeElement.querySelector('.p-paginator')).toBeTruthy();
+    fixture.componentRef.setInput('paginationLoading', true);
+    await settle();
+    expect(fixture.nativeElement.querySelector('.p-paginator')).toBeNull();
+    expect(rows()).toEqual(VOTES.map((v) => v.uid));
+    expect(fixture.nativeElement.querySelector('[data-testid="votes-search-input"]')).toBeTruthy();
+    fixture.componentRef.setInput('paginationLoading', false);
+    await settle();
+    expect(fixture.nativeElement.querySelector('.p-paginator')).toBeTruthy();
+  });
+
   it('clears an unavailable group only after loading, preserving search and summary', async () => {
     await render();
     fixture.componentRef.setInput('quickFilter', 'needs-vote');

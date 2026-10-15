@@ -785,6 +785,7 @@ export class VoteService {
    * Normalizes a vote from the query service indexer shape (vote_uid) to the
    * canonical REST shape (uid). The voting service indexes votes with `vote_uid`
    * while the REST API returns `uid` — these are the same value, different field names.
+   * Canonicalizes recognized statuses so row actions agree with normalized filtering.
    */
   private normalizeIndexedVote(req: Request, raw: IndexedVote): Vote {
     const uid = raw.uid || raw.vote_uid;
@@ -795,7 +796,7 @@ export class VoteService {
     }
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { vote_uid: _discard, ...rest } = raw;
-    return { ...rest, uid: uid ?? '' };
+    return { ...rest, uid: uid ?? '', status: normalizePollStatus(rest.status) ?? rest.status };
   }
 
   // encodeURIComponent leaves `.` untouched, so reject exact dot segments — otherwise

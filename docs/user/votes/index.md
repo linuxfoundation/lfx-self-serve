@@ -35,13 +35,15 @@ Two summary cells appear above the status tabs:
 - **Votes Closing in the Next 7 Days** counts active votes with a deadline strictly after now and within the next seven 24-hour periods. Draft and ended votes do not count.
 - **Active Votes** counts all indexed-active votes you can access in the selected context, not only those you were invited to. An overdue or invalid deadline does not remove an otherwise active vote from this total.
 
-Active status is matched without regard to letter case in both summaries and their matching lists, including legacy votes with inconsistent status casing.
+Active status is matched without regard to letter case in both summaries and their matching lists, including legacy votes with inconsistent status casing. These votes retain the same actions as other active votes.
 
 Both counts respect **Group**, cover every matching vote rather than only the visible page, and ignore search, status tabs, and pagination. A Foundation summary uses that foundation's selected context; it does not combine descendant projects.
 
 Select **Votes Closing in the Next 7 Days** to switch to **Active** and show only closing-soon votes. Select it again to clear only the shortcut and keep **Active** selected. Select **Active Votes** to clear closing-only mode and show active votes from page one, even if Active was already selected. Search, Group, and rows per page are preserved. Selecting any status tab clears closing-only mode; **Reset filters** clears it and the table filters. Empty filtered lists retain the controls and Reset action.
 
 While the summary loads, counts show dashes and the cells are disabled. A successful empty scope shows zero. A failed summary shows unavailable counts and **Unable to load vote summary** with **Retry**; the list remains usable, and Retry reloads only the summary.
+
+While a replacement list or its total is loading, pagination is hidden so the previous mode's count is not presented as current. Search, Group, and status controls remain available. Pagination returns once the matching rows and total are available.
 
 Changing context or Group, refreshing the list, or returning after creating/editing a vote reloads the totals. Closing selection also refreshes the summary. Totals and list pages use separate time snapshots and may differ near a deadline; they do not update continuously while idle. Changes may take time to appear in the search index. My Votes and existing creation, voting, and result permissions are unchanged.
 

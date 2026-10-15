@@ -1094,11 +1094,13 @@ describe('VoteService', () => {
         expect(await service.getVotesCount(req, { ...query, page_token: '2', page_size: '1' })).toBe(3);
         const active = await service.getVotes(req, { ...query, page_size: '2' }, { includeProject: false });
         expect(active.data.map((vote) => vote.uid)).toEqual(['mixed', 'canonical']);
+        expect(active.data.map((vote) => vote.status)).toEqual(['active', 'active']);
         expect(active).not.toHaveProperty('total_records');
         const activeTail = await service.getVotes(req, { ...query, page_size: '2', page_token: active.page_token }, { includeProject: false });
         expect(activeTail.data.map((vote) => vote.uid)).toEqual(['overdue']);
         const closing = await service.getVotes(req, { ...query, closing_soon: 'true', page_size: '1' }, { includeProject: false });
         expect(closing.data.map((vote) => vote.uid)).toEqual(['mixed']);
+        expect(closing.data[0].status).toBe('active');
         expect(closing.total_records).toBe(2);
         const closingTail = await service.getVotes(
           req,
@@ -1123,6 +1125,17 @@ describe('VoteService', () => {
         proxyRequest.mockReset();
         fetchAllQueryResources.mockReset();
       }
+    });
+
+    it.each([
+      ['AcTiVe', 'active'],
+      ['ENDED', 'ended'],
+      ['DiSaBlEd', 'disabled'],
+      ['unrecognized', 'unrecognized'],
+    ])('normalizes recognized indexed status %s to %s without inventing unknown statuses', async (status, expected) => {
+      fetchAllQueryResources.mockResolvedValueOnce([{ ...indexRow, status }]);
+      const result = await service.getVotes(req, { parent: `project:${PROJECT_UID}` }, { includeProject: false });
+      expect(result.data[0]).toMatchObject({ uid: INDEX_VOTE_UID, status: expected });
     });
 
     it.each([undefined, 'status:ended', ['status:disabled']])('retains the ordinary upstream count path for filters %j', async (filters) => {

@@ -7,7 +7,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import { PollStatus, VoteResponseStatus } from '@lfx-one/shared';
-import { Lens, ProjectContext, Vote, VoteSummary } from '@lfx-one/shared/interfaces';
+import { Lens, ProjectContext, Vote, VoteListResponse, VoteSummary } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
@@ -183,6 +183,73 @@ describe('VotesDashboardComponent personal summary', () => {
     expect(table.first()).toBe(0);
     expect(rows()).toEqual(['first-page']);
   });
+
+  it.each<Lens>(['project', 'foundation'])('only requests the selected status when leaving %s Closing Soon', async (lens) => {
+    await management(lens);
+    const service = TestBed.inject(VoteService);
+    const list = vi.mocked(service.getVotesByProjectPaginated);
+    const count = vi.mocked(service.getVotesCountByProject);
+    for (const status of [PollStatus.ENDED, PollStatus.DISABLED, 'all']) {
+      await selectSummary('closing-soon');
+      list.mockClear();
+      count.mockClear();
+      table['onStatusTabChange'](status);
+      await settle();
+      const filters = status === 'all' ? undefined : [`status:${status}`];
+      expect(list, status).toHaveBeenCalledExactlyOnceWith('project-a', 10, undefined, undefined, filters, undefined);
+      expect(count, status).toHaveBeenCalledExactlyOnceWith('project-a', undefined, filters);
+      expect(dashboard['managementClosingOnly']()).toBe(false);
+      expect(table.first()).toBe(0);
+    }
+  });
+
+  it.each<Lens>(['project', 'foundation'])('hides the %s paginator until the closing list supplies its total', async (lens) => {
+    await management(lens);
+    const pending = new Subject<VoteListResponse>();
+    vi.mocked(TestBed.inject(VoteService).getVotesByProjectPaginated).mockReturnValueOnce(pending);
+    expect(fixture.nativeElement.querySelector('.p-paginator')).not.toBeNull();
+    await selectSummary('closing-soon');
+    expect(fixture.nativeElement.querySelector('.p-paginator')).toBeNull();
+    expect(element('votes-search-input')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="votes-row-first-page"]')).toBeNull();
+    pending.next({ data: [vote('closing', 1)], total_records: 1 });
+    pending.complete();
+    await settle();
+    expect(table.totalRecords()).toBe(1);
+    expect(fixture.nativeElement.querySelector('.p-paginator')).not.toBeNull();
+  });
+
+  for (const lens of ['project', 'foundation'] as const) {
+    it.each(['list', 'count'] as const)(`waits for both %s-first responses before restoring the ${lens} Active paginator`, async (first) => {
+      await management(lens);
+      await selectSummary('closing-soon');
+      const service = TestBed.inject(VoteService);
+      const list = new Subject<VoteListResponse>();
+      const count = new Subject<number>();
+      vi.mocked(service.getVotesByProjectPaginated).mockReturnValueOnce(list);
+      vi.mocked(service.getVotesCountByProject).mockReturnValueOnce(count);
+      table['onStatusTabChange'](PollStatus.ACTIVE);
+      await settle();
+      expect(fixture.nativeElement.querySelector('.p-paginator')).toBeNull();
+      const finishList = () => {
+        list.next({ data: [vote('active', 1)] });
+        list.complete();
+      };
+      const finishCount = () => {
+        count.next(20);
+        count.complete();
+      };
+      if (first === 'list') finishList();
+      else finishCount();
+      await settle();
+      expect(fixture.nativeElement.querySelector('.p-paginator')).toBeNull();
+      if (first === 'list') finishCount();
+      else finishList();
+      await settle();
+      expect(table.totalRecords()).toBe(20);
+      expect(fixture.nativeElement.querySelector('.p-paginator')).not.toBeNull();
+    });
+  }
 
   it('uses closing server rows/totals without count requests, retains pending controls and clears on explicit Active', async () => {
     await management();

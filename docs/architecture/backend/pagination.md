@@ -89,9 +89,9 @@ The `page_token` from the query service passes through unchanged.
 ### Management vote summaries and closing-only lists
 
 `GET /api/votes/summary` accepts exactly one nonempty `parent=project:<uid>` and an optional
-nonempty `group` committee name. Other keys and repeated values are rejected. It drains the
-same caller-authorized indexed scope as the list, using `committee_name:<group>` when supplied,
-and returns `{ active_votes, closing_soon, as_of }`. No invitation lookup or project enrichment
+nonempty `group` committee name. Other keys and repeated values are rejected. Accepted Group
+names are trimmed before the caller-authorized indexed scan uses `committee_name:<group>`.
+The endpoint returns `{ active_votes, closing_soon, as_of }`. No invitation lookup or project enrichment
 is needed. Search, status, and pagination never affect these totals; foundation scope is the
 selected foundation's project UID, not an expansion into descendants.
 
@@ -109,6 +109,8 @@ clause, keeps other filters/search/scope upstream, and applies normalized active
 the complete authorized scan. The Active count therefore drains pages rather than using the
 upstream exact-value count; it ignores list pagination and rejects incomplete scans. Other
 count queries and the internal upstream-cursor passthrough retain their existing behavior.
+Recognized indexed statuses are canonicalized in returned rows so status-dependent actions
+agree with the normalized predicates; unrecognized values are preserved.
 
 Closing means `now < end_time <= now + 7 × 24 hours`. Active totals still include indexed-active
 votes whose deadlines are past or invalid. The summary's RFC3339 `as_of` describes its snapshot;

@@ -71,6 +71,7 @@ export class VotesDashboardComponent {
   protected readonly rowsPerPage = signal<number>(10);
   protected readonly currentFirst = signal<number>(0);
   protected readonly totalRecords = signal<number>(0);
+  protected readonly totalCountReady = signal(false);
   protected readonly myVotesLoading = signal<boolean>(true);
   protected readonly foundationFilter = signal<string | null>(null);
   protected readonly projectFilter = signal<string | null>(null);
@@ -161,10 +162,11 @@ export class VotesDashboardComponent {
     this.currentFirst.set(0);
   }
 
-  protected onStatusTabSelected(): void {
+  protected onStatusTabSelected(tab: string): void {
     this.myVotesQuickFilter.set(null);
     if (this.managementClosingOnly()) {
       this.managementClosingOnly.set(false);
+      this.filters.update((state) => ({ ...state, status: tab === 'all' ? null : (tab as PollStatus) }));
       this.pageTokens = [];
       this.currentFirst.set(0);
     }
@@ -385,6 +387,7 @@ export class VotesDashboardComponent {
     return toSignal(
       combineLatest([scope$, this.refresh$]).pipe(
         switchMap(([{ project, lens, closingOnly }]) => {
+          this.totalCountReady.set(false);
           if (lens === 'me' || closingOnly) {
             return of(0);
           }
@@ -395,7 +398,10 @@ export class VotesDashboardComponent {
           const queryFilters = this.buildFilters();
           return this.voteService.getVotesCountByProject(project.uid, searchName || undefined, queryFilters.length ? queryFilters : undefined).pipe(
             tap((count) => {
-              if (!this.managementClosingOnly() && this.project()?.uid === project.uid) this.totalRecords.set(count);
+              if (!this.managementClosingOnly() && this.project()?.uid === project.uid) {
+                this.totalRecords.set(count);
+                this.totalCountReady.set(true);
+              }
             }),
             catchError(() => of(0))
           );
