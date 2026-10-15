@@ -368,24 +368,6 @@ export class MeetingCommitteeManagerComponent {
     control?.setValue(this.selectedCommitteeIds().filter((id) => id !== uid));
   }
 
-  /** Records whether a chip's label is cut off, so its tooltip only shows when it adds something. */
-  protected onChipLabelEnter(uid: string, event: Event): void {
-    const label = event.currentTarget as HTMLElement;
-    const truncated = label.scrollWidth > label.clientWidth;
-
-    if (truncated === this.truncatedChips().has(uid)) {
-      return;
-    }
-
-    const next = new Set(this.truncatedChips());
-    if (truncated) {
-      next.add(uid);
-    } else {
-      next.delete(uid);
-    }
-    this.truncatedChips.set(next);
-  }
-
   /**
    * Re-runs the member fetch for the current selection, behind the error banner's Try again.
    * @description Deliberately not a re-selection: the locked group of a scoped create is exactly the
@@ -407,6 +389,24 @@ export class MeetingCommitteeManagerComponent {
   /**
    * Initialize the component state from the selected committees input
    */
+  /** Records whether a chip's label is cut off, so its tooltip only shows when it adds something. */
+  protected onChipLabelEnter(uid: string, event: Event): void {
+    const label = event.currentTarget as HTMLElement;
+    const truncated = label.scrollWidth > label.clientWidth;
+
+    if (truncated === this.truncatedChips().has(uid)) {
+      return;
+    }
+
+    const next = new Set(this.truncatedChips());
+    if (truncated) {
+      next.add(uid);
+    } else {
+      next.delete(uid);
+    }
+    this.truncatedChips.set(next);
+  }
+
   private initializeFromSelectedCommittees(committees: MeetingCommittee[]): void {
     this.selectionApplied = true;
 
