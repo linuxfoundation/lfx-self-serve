@@ -77,8 +77,9 @@
        the group settings apart from the guest fields around them (series settings, so absent when
        editing one occurrence) -->
   @if (!isOccurrenceEdit()) {
-    <aside
+    <div
       class="flex min-w-0 flex-col gap-4 rounded-xl bg-gray-50 p-4 lg:col-start-2 lg:row-span-3 lg:row-start-1 lg:rounded-none lg:border-l lg:border-gray-200 lg:bg-transparent lg:py-0 lg:pl-6 lg:pr-0"
+      role="group"
       aria-label="Groups">
       <lfx-meeting-committee-manager
         [selectedCommittees]="selectedCommittees()"
@@ -93,7 +94,7 @@
         (committeeMembersChange)="onCommitteeMembersChange($event)"
         (committeeMembersResolvedChange)="formService.setResolvedCommitteeUids($event)"
         (retryContext)="formService.retryLoadCommitteeContext()" />
-    </aside>
+    </div>
   }
 
   <!-- Invited list: one card holding the count, a filter over the list, and the list itself. Its grid row takes all
@@ -203,8 +204,11 @@
                   <span class="truncate text-xs text-gray-500">{{ row.secondaryLine }}</span>
                 </div>
                 @if (row.guest.committee_name) {
+                  <!-- Capped at 260px (exact px: the 14px root shrinks the rem scale; ~40 characters) or 40% of the row,
+                       whichever is smaller, so a long group name never crowds out the guest's name and email. The
+                       tooltip only shows when the name is actually cut off (measured on hover/focus). -->
                   <span
-                    class="max-w-[260px] shrink truncate rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600"
+                    class="max-w-[min(260px,40%)] shrink truncate rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600"
                     [pTooltip]="truncatedGroupChips().has(row.trackId) ? row.guest.committee_name : ''"
                     tooltipEvent="both"
                     tooltipPosition="top"

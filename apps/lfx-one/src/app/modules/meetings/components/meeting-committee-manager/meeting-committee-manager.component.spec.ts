@@ -8,7 +8,7 @@ import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { syncShowMeetingAttendeesLock } from '@lfx-one/shared/utils';
 import { merge, Observable, of, Subject, throwError } from 'rxjs';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingCommitteeManagerComponent } from './meeting-committee-manager.component';
 
@@ -1208,5 +1208,40 @@ describe('MeetingCommitteeManagerComponent — selected group chips', () => {
     await fixture.whenStable();
 
     expect(component.selectedCommitteeChips()).toEqual([{ uid: 'committee-unknown', name: 'committee-unknown' }]);
+  });
+});
+
+describe('MeetingCommitteeManagerComponent — layout switches by width and surface', () => {
+  const mockViewport = (wide: boolean): void => {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      writable: true,
+      value: (query: string) => ({ matches: wide, media: query, addEventListener: () => undefined, removeEventListener: () => undefined }),
+    });
+  };
+  const flags = async (wide: boolean, composerLayout: boolean, groupChips: boolean) => {
+    mockViewport(wide);
+    const { component, fixture } = await mount([], {}, [BOARD]);
+    fixture.componentRef.setInput('composerLayout', composerLayout);
+    fixture.componentRef.setInput('groupChips', groupChips);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    return { chips: component['showGroupChips'](), radios: component['showRemovalRadios']() };
+  };
+
+  afterEach(() => {
+    delete (window as { matchMedia?: unknown }).matchMedia;
+  });
+
+  it('uses chips and removal radios only in the guests step at lg and up', async () => {
+    expect(await flags(true, true, true)).toEqual({ chips: true, radios: true });
+  });
+
+  it('keeps quick create on the dropdown and in-field picks even on a wide window', async () => {
+    expect(await flags(true, true, false)).toEqual({ chips: false, radios: false });
+  });
+
+  it('falls back to the stacked layout below lg', async () => {
+    expect(await flags(false, true, true)).toEqual({ chips: false, radios: false });
   });
 });

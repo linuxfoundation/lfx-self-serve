@@ -20,6 +20,7 @@ import {
 } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { controlValueSignal } from '@shared/utils/form-control-signals.util';
+import { updateTruncatedKeys } from '@shared/utils/truncation.util';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -319,20 +320,7 @@ export class ComposerGuestsComponent {
 
   /** Records whether a group chip's label is cut off, so its tooltip only shows when it adds something. */
   protected onGroupChipEnter(trackId: string, event: Event): void {
-    const chip = event.currentTarget as HTMLElement;
-    const truncated = chip.scrollWidth > chip.clientWidth;
-
-    if (truncated === this.truncatedGroupChips().has(trackId)) {
-      return;
-    }
-
-    const next = new Set(this.truncatedGroupChips());
-    if (truncated) {
-      next.add(trackId);
-    } else {
-      next.delete(trackId);
-    }
-    this.truncatedGroupChips.set(next);
+    this.truncatedGroupChips.set(updateTruncatedKeys(this.truncatedGroupChips(), trackId, event.currentTarget as HTMLElement));
   }
 
   /**

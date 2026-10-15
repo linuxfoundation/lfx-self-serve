@@ -3,6 +3,7 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import {
+  afterNextRender,
   Component,
   computed,
   DestroyRef,
@@ -35,6 +36,7 @@ import {
 } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { updateTruncatedKeys } from '@shared/utils/truncation.util';
 import { TooltipModule } from 'primeng/tooltip';
 import { catchError, combineLatest, EMPTY, filter, forkJoin, ignoreElements, map, merge, Observable, of, startWith, switchMap, tap } from 'rxjs';
 
@@ -229,8 +231,8 @@ export class MeetingCommitteeManagerComponent {
   protected readonly isWideViewport: Signal<boolean> = this.initWideViewport();
   /** Composer guests step at `lg`+: picks render as chips under a field that keeps its placeholder. */
   protected readonly showGroupChips: Signal<boolean> = computed(() => this.composerLayout() && this.groupChips() && this.isWideViewport());
-  /** Composer guests step at `lg`+: registration-on-removal as radios; a dropdown otherwise. */
-  protected readonly showRemovalRadios: Signal<boolean> = computed(() => this.composerLayout() && this.isWideViewport());
+  /** Composer guests step at `lg`+: registration-on-removal as radios; a dropdown otherwise (quick create included). */
+  protected readonly showRemovalRadios: Signal<boolean> = computed(() => this.composerLayout() && this.groupChips() && this.isWideViewport());
 
   // Reactive committee members loading
   public committeeMembers: Signal<CommitteeMemberDisplay[]> = this.initCommitteeMembers();
@@ -386,27 +388,14 @@ export class MeetingCommitteeManagerComponent {
     this.optionsRetryToken.update((token) => token + 1);
   }
 
+  /** Records whether a chip's label is cut off, so its tooltip only shows when it adds something. */
+  protected onChipLabelEnter(uid: string, event: Event): void {
+    this.truncatedChips.set(updateTruncatedKeys(this.truncatedChips(), uid, event.currentTarget as HTMLElement));
+  }
+
   /**
    * Initialize the component state from the selected committees input
    */
-  /** Records whether a chip's label is cut off, so its tooltip only shows when it adds something. */
-  protected onChipLabelEnter(uid: string, event: Event): void {
-    const label = event.currentTarget as HTMLElement;
-    const truncated = label.scrollWidth > label.clientWidth;
-
-    if (truncated === this.truncatedChips().has(uid)) {
-      return;
-    }
-
-    const next = new Set(this.truncatedChips());
-    if (truncated) {
-      next.add(uid);
-    } else {
-      next.delete(uid);
-    }
-    this.truncatedChips.set(next);
-  }
-
   private initializeFromSelectedCommittees(committees: MeetingCommittee[]): void {
     this.selectionApplied = true;
 
@@ -436,9 +425,6 @@ export class MeetingCommitteeManagerComponent {
   }
 
   /**
-   * Fetches committee options from API reactively based on project context
-   */
-  /**
    * Names come from the loaded options, falling back to the meeting's own saved committees and finally the uid,
    * so a chip still renders while the option list is loading or failed.
    */
@@ -457,18 +443,29 @@ export class MeetingCommitteeManagerComponent {
   private initWideViewport(): Signal<boolean> {
     const wide = signal(false);
 
-    if (isPlatformBrowser(inject(PLATFORM_ID)) && typeof window.matchMedia === 'function') {
-      const query = window.matchMedia('(min-width: 1024px)');
-      const onChange = (event: MediaQueryListEvent): void => wide.set(event.matches);
+    if (isPlatformBrowser(inject(PLATFORM_ID))) {
+      const destroyRef = inject(DestroyRef);
+      // Read after the first browser render, not in the constructor, so the client's first pass matches the
+      // server's stacked markup and hydration doesn't see a different tree.
+      afterNextRender(() => {
+        if (typeof window.matchMedia !== 'function') {
+          return;
+        }
+        const query = window.matchMedia('(min-width: 1024px)');
+        const onChange = (event: MediaQueryListEvent): void => wide.set(event.matches);
 
-      wide.set(query.matches);
-      query.addEventListener('change', onChange);
-      inject(DestroyRef).onDestroy(() => query.removeEventListener('change', onChange));
+        wide.set(query.matches);
+        query.addEventListener('change', onChange);
+        destroyRef.onDestroy(() => query.removeEventListener('change', onChange));
+      });
     }
 
     return wide.asReadonly();
   }
 
+  /**
+   * Fetches committee options from API reactively based on project context
+   */
   private initCommitteeOptions(): Signal<Committee[]> {
     // A fresh object per recompute, so a retry that leaves the project untouched still reaches the
     // pipe: `computed` settles on `Object.is`, and the uid would be the very same reference.

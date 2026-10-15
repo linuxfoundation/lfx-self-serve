@@ -124,14 +124,20 @@
               <li
                 class="inline-flex max-w-full items-center gap-1.5 rounded-full border border-blue-200 bg-blue-100 py-1 pl-3 pr-1.5 text-sm font-medium text-blue-800"
                 [attr.data-testid]="'meeting-committee-chip-' + chip.uid">
-                <!-- Full name as a tooltip only when the chip actually cuts it off (measured on hover/focus) -->
+                <!-- Full name as a tooltip only when the chip actually cuts it off (measured on hover/focus). `min-w-0` lets
+                     the flex item shrink so `truncate` can take effect; focusable so keyboard users reach the tooltip. -->
                 <span
-                  class="truncate"
+                  class="min-w-0 truncate"
+                  role="note"
+                  tabindex="0"
+                  [attr.aria-label]="chip.name"
                   [pTooltip]="truncatedChips().has(chip.uid) ? chip.name : ''"
+                  tooltipEvent="both"
                   tooltipPosition="top"
                   [showDelay]="150"
                   tooltipStyleClass="!max-w-none [&_.p-tooltip-text]:whitespace-nowrap"
                   (mouseenter)="onChipLabelEnter(chip.uid, $event)"
+                  (focus)="onChipLabelEnter(chip.uid, $event)"
                   >{{ chip.name }}</span
                 >
                 <button
@@ -198,7 +204,10 @@
                `lg`, where the step stacks, a dropdown keeps the stacked form short. Only one is ever rendered,
                switched by a viewport signal, so the control has a single value accessor. -->
           <div class="flex flex-col gap-1.5">
-            <label id="cancel-on-committee-removal-label" for="cancel-on-committee-removal" class="text-sm font-medium text-gray-900">
+            <label
+              id="cancel-on-committee-removal-label"
+              [attr.for]="showRemovalRadios() ? null : 'cancel-on-committee-removal'"
+              class="text-sm font-medium text-gray-900">
               Registration on {{ committeeLabelSingularLower }} removal
             </label>
             <p class="text-xs text-gray-500">
