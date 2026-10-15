@@ -1536,6 +1536,76 @@ describe('CommitteeService.getManagedPendingApplications', () => {
     expect(proxyRequest.mock.calls.at(-1)?.[4]).toMatchObject({ filters_or: ['uid:healthy'] });
   });
 
+  describe('reviewer context enrichment', () => {
+    const withGroupDetails = () => {
+      const base = proxyRequest.getMockImplementation()!;
+      proxyRequest.mockImplementation((...args: Parameters<typeof base>) =>
+        args[4]?.['type'] === 'committee'
+          ? Promise.resolve(pageOf([{ uid: 'manager', name: 'Group manager', category: 'Technical Steering Committee' }]))
+          : base(...args)
+      );
+    };
+
+    it('adds the project name, slug, tier and the group category', async () => {
+      const app = application('manager');
+      prime([app]);
+      withGroupDetails();
+      enrichWithProjectData.mockImplementationOnce((_req: unknown, items: unknown[]) =>
+        Promise.resolve(
+          (items as { uid: string }[]).map((item) => ({ ...item, project_name: 'Project Alpha', project_slug: 'project-alpha', is_foundation: false }))
+        )
+      );
+
+      const result = await service.getManagedPendingApplications(req);
+      // The discovery deadline must reach the project lookup so a slow upstream stops, not just stops being awaited.
+      expect(enrichWithProjectData).toHaveBeenCalledWith(req, expect.any(Array), { deadlineAt: expect.any(Number) });
+      expect(result).toEqual([
+        {
+          ...app,
+          committee_name: 'Group manager',
+          project_name: 'Project Alpha',
+          project_slug: 'project-alpha',
+          is_foundation: false,
+          committee_category: 'Technical Steering Committee',
+        },
+      ]);
+    });
+
+    it('treats an empty project name from a failed per-project lookup as absent', async () => {
+      prime([application('manager')]);
+      enrichWithProjectData.mockImplementationOnce((_req: unknown, items: unknown[]) =>
+        Promise.resolve((items as { uid: string }[]).map((item) => ({ ...item, project_name: '' })))
+      );
+
+      const [row] = await service.getManagedPendingApplications(req);
+      expect(row.project_name).toBeUndefined();
+    });
+
+    it('still returns the request, without a project name, when project enrichment fails', async () => {
+      const app = application('manager');
+      prime([app]);
+      enrichWithProjectData.mockRejectedValueOnce(new Error('project lookup down'));
+
+      expect(await service.getManagedPendingApplications(req)).toEqual([{ ...app, committee_name: 'Group manager' }]);
+    });
+
+    it('returns the request without a project name when enrichment outlasts the discovery budget', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        const app = application('manager');
+        prime([app]);
+        enrichWithProjectData.mockImplementationOnce(() => new Promise(() => undefined));
+
+        const result = service.getManagedPendingApplications(req);
+        await vi.runAllTimersAsync();
+
+        expect(await result).toEqual([{ ...app, committee_name: 'Group manager' }]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
   it.each(['statusCode', 'status'])('propagates live 500 using %s instead of returning stale indexed data', async (statusField) => {
     const app = application('manager');
     prime([app]);

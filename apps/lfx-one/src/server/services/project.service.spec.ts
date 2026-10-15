@@ -1999,6 +1999,16 @@ describe('ProjectService — getProjectsByIds', () => {
     });
   });
 
+  it('passes request options (e.g. a deadline) to every upstream project query', async () => {
+    proxyRequest.mockResolvedValue(pageOf([{ uid: 'one', slug: 'one' }]));
+    const options = { deadlineAt: Date.now() + 5000 };
+
+    await service.getProjectsByIds(req, ['one'], options);
+
+    expect(proxyRequest).toHaveBeenCalledOnce();
+    expect(proxyRequest.mock.calls[0][7]).toBe(options);
+  });
+
   it('does not warn when every requested UID resolves', async () => {
     proxyRequest.mockResolvedValueOnce(
       pageOf([
@@ -2950,7 +2960,16 @@ describe('ProjectService — enrichWithProjectData', () => {
     await service.enrichWithProjectData(req, [{ project_uid: 'a' }, { project_uid: 'a' }, { project_uid: 'b' }]);
 
     expect(getProjectsByIds).toHaveBeenCalledTimes(1);
-    expect(getProjectsByIds).toHaveBeenCalledWith(req, ['a', 'b']);
+    expect(getProjectsByIds).toHaveBeenCalledWith(req, ['a', 'b'], undefined);
+  });
+
+  it('forwards request options (e.g. a deadline) to the batched lookup', async () => {
+    const getProjectsByIds = vi.spyOn(service, 'getProjectsByIds').mockResolvedValue(new Map());
+    const options = { deadlineAt: Date.now() + 5000 };
+
+    await service.enrichWithProjectData(req, [{ project_uid: 'a' }], options);
+
+    expect(getProjectsByIds).toHaveBeenCalledWith(req, ['a'], options);
   });
 
   it('prefers freshly fetched project fields over the item payload and computes is_foundation from the fresh project', async () => {

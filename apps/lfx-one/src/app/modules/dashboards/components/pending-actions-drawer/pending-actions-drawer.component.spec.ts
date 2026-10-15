@@ -361,7 +361,7 @@ describe('PendingActionsDrawerComponent — section grouping', () => {
       ...overrides,
     });
 
-  it('places independent same-email applications after invitations and before formation, without links or Dismiss', async () => {
+  it('places independent same-email applications after invitations and before formation, linking only to the group (never a buttonLink), each with a Dismiss control', async () => {
     const first = applicationRow({ buttonLink: '/must-not-navigate' });
     const second = applicationRow({ committeeUid: 'group-beta', badge: 'Group Beta', applicationApplicantName: undefined });
     await render([formationRow(), second, row('Invitation', 'Invite A'), first]);
@@ -380,8 +380,12 @@ describe('PendingActionsDrawerComponent — section grouping', () => {
     expect(rows?.[1].textContent).toContain('Applicant Name');
     expect(rows?.[1].textContent).toContain('applicant@example.com');
     expect(rows?.[1].textContent).toContain('Group Alpha');
-    expect(applications?.querySelector('a')).toBeNull();
-    expect(applications?.querySelector('[data-testid^="pending-actions-drawer-dismiss-"]')).toBeNull();
+    // The only links are the group-name links to the group's own page; a stray buttonLink must never become one.
+    const anchors = Array.from(applications?.querySelectorAll('a') ?? []);
+    expect(anchors).toHaveLength(2);
+    expect(anchors.every((a) => a.getAttribute('data-testid') === 'pending-actions-drawer-application-group')).toBe(true);
+    expect(anchors.some((a) => a.getAttribute('href')?.includes('must-not-navigate'))).toBe(false);
+    expect(applications?.querySelectorAll('[data-testid="pending-actions-drawer-dismiss-JoinApplication"]')).toHaveLength(2);
     expect(byTestId('pending-actions-drawer-section-count-applications')?.textContent?.trim()).toBe('2');
     expect(byTestId('pending-actions-drawer-count')?.textContent).toContain('(4)');
 
@@ -396,6 +400,37 @@ describe('PendingActionsDrawerComponent — section grouping', () => {
     expect(hiddenActions.dismissAction).not.toHaveBeenCalled();
   });
 
+  it('dismisses one request for this reviewer without reviewing it, keeps the others, and tells the parent to refresh', async () => {
+    await render([applicationRow(), applicationRow({ committeeUid: 'group-beta', badge: 'Group Beta' })]);
+    const completed = vi.fn();
+    const approve = vi.fn();
+    const reject = vi.fn();
+    fixture.componentInstance.actionCompleted.subscribe(completed);
+    fixture.componentInstance.approveApplicationRequested.subscribe(approve);
+    fixture.componentInstance.rejectApplicationRequested.subscribe(reject);
+
+    byTestId('pending-actions-drawer-section-applications')
+      ?.querySelector<HTMLButtonElement>('[data-testid="pending-actions-drawer-dismiss-JoinApplication"]')
+      ?.click();
+    fixture.detectChanges();
+
+    expect(hiddenActions.dismissAction).toHaveBeenCalledTimes(1);
+    expect(hiddenActions.hideAction).not.toHaveBeenCalled();
+    expect(completed).toHaveBeenCalledTimes(1);
+    expect(approve).not.toHaveBeenCalled();
+    expect(reject).not.toHaveBeenCalled();
+    const section = byTestId('pending-actions-drawer-section-applications');
+    expect(section?.querySelectorAll('[data-testid="pending-actions-drawer-item-JoinApplication"]')).toHaveLength(1);
+    expect(section?.textContent).toContain('Group Beta');
+    expect(section?.textContent).not.toContain('Group Alpha');
+  });
+
+  it('renders Reject as a danger-severity control so it reads differently from the grey Dismiss text', async () => {
+    await render([applicationRow()]);
+    const reject = byTestId('pending-actions-drawer-section-applications')?.querySelector('[data-testid="pending-actions-drawer-application-reject"] button');
+    expect(reject?.className).toContain('p-button-danger');
+  });
+
   it('retains rows and counts while only the matched approval loads and every review control is disabled', async () => {
     await render([applicationRow(), applicationRow({ committeeUid: 'group-beta', badge: 'Group Beta' })]);
     fixture.componentRef.setInput('processingApplicationKey', 'JoinApplication-group-alpha-application-1');
@@ -406,7 +441,7 @@ describe('PendingActionsDrawerComponent — section grouping', () => {
     expect(approvals?.[0].textContent).toContain('Saving');
     expect(approvals?.[1].textContent).toContain('Approve');
     const controls = Array.from(section?.querySelectorAll<HTMLButtonElement>('button') ?? []);
-    expect(controls).toHaveLength(4);
+    expect(controls).toHaveLength(6);
     expect(controls.every((button) => button.disabled)).toBe(true);
     const loadingButtons = fixture.debugElement
       .queryAll(By.directive(ButtonComponent))
@@ -429,7 +464,7 @@ describe('PendingActionsDrawerComponent — section grouping', () => {
     async (field) => {
       await render([applicationRow({ [field]: undefined })]);
       const controls = Array.from(byTestId('pending-actions-drawer-section-applications')?.querySelectorAll<HTMLButtonElement>('button') ?? []);
-      expect(controls).toHaveLength(2);
+      expect(controls).toHaveLength(3);
       expect(controls.every((button) => button.disabled)).toBe(true);
       expect(byTestId('pending-actions-drawer-count')?.textContent).toContain('(1)');
     }
@@ -469,12 +504,11 @@ describe('PendingActionsDrawerComponent — section grouping', () => {
     ).toBe(true);
   });
 
-  it('cannot cookie-complete or dismiss an application through generic row handlers', async () => {
+  it('cannot cookie-complete an application through the generic completion handlers (only explicit Dismiss hides it)', async () => {
     await render([applicationRow()]);
     const component = fixture.componentInstance;
     const application = component['visibleRows']()[0];
     component['handleAgendaOrOtherClick'](application);
-    component['handleDismiss'](application);
     component['startCompletion'](application);
     fixture.detectChanges();
 

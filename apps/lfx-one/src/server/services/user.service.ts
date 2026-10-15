@@ -1841,7 +1841,7 @@ export class UserService {
     return buildInvitationActions(invitations);
   }
 
-  /** Emit only the applicant/group identity and review address; omit private application details. */
+  /** Emit the applicant, the group and its project, and the applicant's own message — what a group writer needs to decide. */
   private transformApplicationsToActions(applications: ManagedPendingApplication[]): PendingActionItem[] {
     return applications.map((application) => ({
       type: 'JoinApplication',
@@ -1854,6 +1854,12 @@ export class UserService {
       applicationUid: application.uid,
       applicationApplicantEmail: application.applicant_email,
       applicationApplicantName: application.applicant_name,
+      applicationProjectName: application.project_name,
+      applicationGroupCategory: application.committee_category,
+      applicationProjectSlug: application.project_slug,
+      applicationIsFoundation: application.is_foundation,
+      applicationMessage: application.message,
+      applicationSubmittedAt: application.created_at,
     }));
   }
 

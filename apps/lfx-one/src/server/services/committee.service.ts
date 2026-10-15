@@ -1740,10 +1740,60 @@ export class CommitteeService {
       const batch = await this.getCommitteesByIds(req, pendingCommitteeUids.slice(start, start + ACCESS_CHECK_BATCH_SIZE), requestOptions);
       for (const [uid, committee] of batch) committees.set(uid, committee);
     }
-    return pending.map((application) => ({
-      ...application,
-      committee_name: committees.get(application.committee_uid)?.name ?? application.committee_uid,
-    }));
+
+    // Project context is best-effort: a failed or slow lookup must not hide a request the caller can still review, nor push
+    // the dashboard past the discovery budget the live reads above already honour.
+    let projects = new Map<string, { name: string; slug?: string; isFoundation?: boolean }>();
+    const remainingMs = deadlineAt - Date.now();
+    if (remainingMs > 0) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const enriched = await Promise.race([
+          this.projectService.enrichWithProjectData(req, Array.from(committees.values()), requestOptions),
+          new Promise<null>((resolve) => {
+            timer = setTimeout(() => resolve(null), remainingMs);
+          }),
+        ]);
+        if (enriched) {
+          projects = new Map(
+            enriched
+              .filter((committee) => committee.project_name)
+              .map((committee) => [
+                committee.uid,
+                { name: committee.project_name, slug: committee.project_slug || undefined, isFoundation: committee.is_foundation },
+              ])
+          );
+        } else {
+          logger.warning(
+            req,
+            'get_managed_pending_applications',
+            'Project enrichment exceeded the discovery budget, returning applications without project names',
+            {
+              committee_count: committees.size,
+            }
+          );
+        }
+      } catch (error) {
+        logger.warning(req, 'get_managed_pending_applications', 'Project enrichment failed, returning applications without project names', {
+          committee_count: committees.size,
+          err: error,
+        });
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    return pending.map((application) => {
+      const committee = committees.get(application.committee_uid);
+      return {
+        ...application,
+        committee_name: committee?.name ?? application.committee_uid,
+        project_name: projects.get(application.committee_uid)?.name,
+        project_slug: projects.get(application.committee_uid)?.slug,
+        is_foundation: projects.get(application.committee_uid)?.isFoundation,
+        committee_category: committee?.category || undefined,
+      };
+    });
   }
 
   /**
