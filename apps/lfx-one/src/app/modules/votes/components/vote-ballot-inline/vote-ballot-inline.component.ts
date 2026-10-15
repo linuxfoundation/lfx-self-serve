@@ -8,7 +8,7 @@ import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { ButtonComponent } from '@components/button/button.component';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
-import { INVITATION_NOT_FOUND, VOTE_COMMENT_RESPONSE_MAX_LENGTH } from '@lfx-one/shared/constants';
+import { IMPERSONATION_READ_ONLY_ERROR_CODE, INVITATION_NOT_FOUND, VOTE_COMMENT_RESPONSE_MAX_LENGTH } from '@lfx-one/shared/constants';
 import { CommentResponseFormData, PollCommentPrompt, PollQuestion, Vote, VoteAnswerInput } from '@lfx-one/shared/interfaces';
 import { buildCommentResponses, getCommentPromptsData, reconcileCommentFormControls } from '@lfx-one/shared/utils';
 import { VoteService } from '@services/vote.service';
@@ -97,6 +97,18 @@ export class VoteBallotInlineComponent {
           this.voteSubmitted.emit(vote.uid);
         },
         error: (err: unknown) => {
+          // The BFF refuses ballot writes while an admin is impersonating the voter (#148).
+          const isImpersonationReadOnly = err instanceof HttpErrorResponse && err.status === 403 && err.error?.code === IMPERSONATION_READ_ONLY_ERROR_CODE;
+          if (isImpersonationReadOnly) {
+            this.messageService.add({
+              severity: 'error',
+              summary: 'Unable to submit vote',
+              detail: 'Ballots cannot be submitted while impersonating another user.',
+              life: 5000,
+            });
+            return;
+          }
+
           const isInvitationMissing = err instanceof Error && !(err instanceof HttpErrorResponse) && err.message === INVITATION_NOT_FOUND;
           this.messageService.add({
             severity: 'error',

@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
@@ -8,7 +9,7 @@ import { PollStatus } from '@lfx-one/shared/enums';
 import { Vote } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
 import { MessageService } from 'primeng/api';
-import { Subject, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteCastDrawerComponent } from './vote-cast-drawer.component';
@@ -46,7 +47,7 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
-async function setup(getVoteImpl: ReturnType<typeof vi.fn>): Promise<void> {
+async function setup(getVoteImpl: ReturnType<typeof vi.fn>, submitMyResponse: ReturnType<typeof vi.fn> = vi.fn()): Promise<void> {
   getVote = getVoteImpl;
 
   TestBed.resetTestingModule();
@@ -55,7 +56,7 @@ async function setup(getVoteImpl: ReturnType<typeof vi.fn>): Promise<void> {
     providers: [
       provideNoopAnimations(),
       provideRouter([]),
-      { provide: VoteService, useValue: { getVote } },
+      { provide: VoteService, useValue: { getVote, submitMyResponse } },
       { provide: MessageService, useValue: { add: vi.fn() } },
     ],
   }).compileComponents();
@@ -220,5 +221,48 @@ describe('VoteCastDrawerComponent — description rendering (GH-2326)', () => {
     // Benign content survives sanitization.
     expect(description!.querySelector('p')?.textContent).toBe('ok');
     expect(description!.textContent).toContain('link');
+  });
+});
+
+/**
+ * #148: the BFF refuses ballot writes while an admin is impersonating the voter. The drawer must
+ * say so instead of the generic failure toast, and a 403 without that code (a real permission
+ * refusal) must keep the generic message.
+ */
+describe('VoteCastDrawerComponent — impersonation read-only submit (#148)', () => {
+  async function submitAbstentionFailingWith(error: HttpErrorResponse): Promise<ReturnType<typeof vi.fn>> {
+    await setup(vi.fn().mockReturnValue(of({ ...VOTE, allow_abstain: true })), vi.fn().mockReturnValue(throwError(() => error)));
+    await openWithoutListVote();
+    fixture.componentInstance.abstainControl.setValue(true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const submit = document.querySelector('[data-testid="vote-cast-submit-button"] button') as HTMLButtonElement | null;
+    if (!submit) throw new Error('submit button not rendered');
+    submit.click();
+
+    return TestBed.inject(MessageService).add as ReturnType<typeof vi.fn>;
+  }
+
+  it('shows the impersonation toast for a 403 IMPERSONATION_READ_ONLY', async () => {
+    const add = await submitAbstentionFailingWith(new HttpErrorResponse({ status: 403, error: { code: 'IMPERSONATION_READ_ONLY' } }));
+
+    expect(add).toHaveBeenCalledWith({
+      severity: 'error',
+      summary: 'Unable to submit vote',
+      detail: 'Ballots cannot be submitted while impersonating another user.',
+      life: 5000,
+    });
+  });
+
+  it('keeps the generic toast for a 403 without the impersonation code', async () => {
+    const add = await submitAbstentionFailingWith(new HttpErrorResponse({ status: 403, error: { code: 'FORBIDDEN' } }));
+
+    expect(add).toHaveBeenCalledWith({
+      severity: 'error',
+      summary: 'Unable to submit vote',
+      detail: 'Something went wrong submitting your ballot. Please try again.',
+      life: 5000,
+    });
   });
 });

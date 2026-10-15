@@ -4,11 +4,16 @@
 import { Router } from 'express';
 
 import { VoteController } from '../controllers/vote.controller';
+import { blockDuringImpersonation } from '../middleware/impersonation-readonly.middleware';
 import { voteWriteRateLimiter } from '../middleware/rate-limit.middleware';
 
 const router = Router();
 
 const voteController = new VoteController();
+
+// Every write is blocked while impersonating: upstream records ballots and vote changes as the
+// target, with no actor identity in the payload. The guard runs before voteWriteRateLimiter so a
+// refused write doesn't spend the authenticated caller's vote-write budget. Reads, including /:uid/my-response, stay open.
 
 // GET /votes - get all votes
 router.get('/', (req, res, next) => voteController.getVotes(req, res, next));
@@ -22,7 +27,7 @@ router.get('/my-votes', (req, res, next) => voteController.getMyVotes(req, res, 
 // POST /votes/responses - submit a vote response (ballot)
 // Note: literal-segment routes must precede '/:uid' handlers so Express
 // doesn't accidentally match 'responses' as a uid for any future POST /:uid/* route.
-router.post('/responses', (req, res, next) => voteController.createVoteResponse(req, res, next));
+router.post('/responses', blockDuringImpersonation, (req, res, next) => voteController.createVoteResponse(req, res, next));
 
 // GET /votes/:uid/my-response - current user's pre-allocated vote_response (Me lens cast drawer)
 router.get('/:uid/my-response', (req, res, next) => voteController.getMyVoteResponse(req, res, next));
@@ -34,15 +39,15 @@ router.get('/:uid/results', (req, res, next) => voteController.getVoteResults(re
 router.get('/:uid', (req, res, next) => voteController.getVoteById(req, res, next));
 
 // POST /votes - create a new vote
-router.post('/', voteWriteRateLimiter, (req, res, next) => voteController.createVote(req, res, next));
+router.post('/', blockDuringImpersonation, voteWriteRateLimiter, (req, res, next) => voteController.createVote(req, res, next));
 
 // PUT /votes/:uid - update a vote
-router.put('/:uid', (req, res, next) => voteController.updateVote(req, res, next));
+router.put('/:uid', blockDuringImpersonation, (req, res, next) => voteController.updateVote(req, res, next));
 
 // DELETE /votes/:uid - delete a vote
-router.delete('/:uid', (req, res, next) => voteController.deleteVote(req, res, next));
+router.delete('/:uid', blockDuringImpersonation, (req, res, next) => voteController.deleteVote(req, res, next));
 
 // PUT /votes/:uid/enable - enable a vote
-router.put('/:uid/enable', voteWriteRateLimiter, (req, res, next) => voteController.enableVote(req, res, next));
+router.put('/:uid/enable', blockDuringImpersonation, voteWriteRateLimiter, (req, res, next) => voteController.enableVote(req, res, next));
 
 export default router;
