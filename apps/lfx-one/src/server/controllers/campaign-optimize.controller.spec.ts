@@ -206,6 +206,46 @@ describe('CampaignOptimizeController.resolvePlatformCampaign LinkedIn int64 rang
   });
 });
 
+describe('CampaignOptimizeController.resolvePlatformCampaign Microsoft Ads', () => {
+  it('serves Microsoft with the optimize-reads flag OFF and answers the resolution as is', async () => {
+    const resolution = { platform_campaign_id: '413296582', matches: [], match_count: 0 };
+    resolvePlatformCampaign.mockResolvedValue(resolution);
+
+    await controller.resolvePlatformCampaign(buildReq({ query: { project: 'tlf', platformCampaignId: '413296582' } }), res, next, 'microsoft-ads');
+
+    expect(resolvePlatformCampaign).toHaveBeenCalledWith(expect.anything(), 'tlf', 'microsoft-ads', '413296582');
+    expect(res.json).toHaveBeenCalledWith(resolution);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('passes an upstream 404 to the error handler rather than answering', async () => {
+    const notFound = new ResourceNotFoundError('Campaign');
+    resolvePlatformCampaign.mockRejectedValue(notFound);
+
+    await controller.resolvePlatformCampaign(buildReq({ query: { project: 'tlf', platformCampaignId: '413296582' } }), res, next, 'microsoft-ads');
+
+    expect(next).toHaveBeenCalledWith(notFound);
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('passes any other upstream failure to the error handler', async () => {
+    const failure = new Error('upstream down');
+    resolvePlatformCampaign.mockRejectedValue(failure);
+
+    await controller.resolvePlatformCampaign(buildReq({ query: { project: 'tlf', platformCampaignId: '413296582' } }), res, next, 'microsoft-ads');
+
+    expect(next).toHaveBeenCalledWith(failure);
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it.each(['0413296582', '9223372036854775808', 'abc', ''])('refuses %s, outside the Microsoft int64 id rule, before any upstream call', async (id) => {
+    await controller.resolvePlatformCampaign(buildReq({ query: { project: 'tlf', platformCampaignId: id } }), res, next, 'microsoft-ads');
+
+    expectFieldError(next, 'platformCampaignId');
+    expect(resolvePlatformCampaign).not.toHaveBeenCalled();
+  });
+});
+
 describe('CampaignOptimizeController.getRedditKeywords', () => {
   // campaign-service serves the read now (#331): no flag, with OPTIMIZE_READS off as the default here.
   it('reads and maps the rows with the flag OFF', async () => {

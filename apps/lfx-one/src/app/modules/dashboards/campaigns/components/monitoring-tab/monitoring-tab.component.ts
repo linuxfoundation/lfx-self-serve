@@ -287,6 +287,10 @@ export class MonitoringTabComponent implements OnInit {
   /** Which of the two report-backed platforms the shared panel is showing. */
   protected readonly reportBackedPanel = computed<'microsoft' | 'twitter'>(() => (this.selectedPlatform() === 'twitter' ? 'twitter' : 'microsoft'));
   protected readonly reportBackedLabel = computed(() => (this.reportBackedPanel() === 'twitter' ? 'X Ads' : 'Microsoft Ads'));
+  /** Only Microsoft's rows offer actions: X shares the panel, but its toggle and budget levers are not offered yet. */
+  protected readonly reportBackedActPlatform = computed<CampaignMonitorActPlatform | null>(() =>
+    this.reportBackedPanel() === 'microsoft' ? 'microsoft-ads' : null
+  );
   protected readonly reportBackedFreshness: Signal<string | null> = this.initReportBackedFreshness();
   protected readonly hubSpotFreshness: Signal<string | null> = this.initHubSpotFreshness();
   protected readonly hubSpotCoverageNote: Signal<string | null> = this.initHubSpotCoverageNote();

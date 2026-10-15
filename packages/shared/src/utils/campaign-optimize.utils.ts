@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  CAMPAIGN_REF_INT64_PLATFORMS,
   CAMPAIGN_SETTINGS_BID_AMOUNT_FIELD,
   CAMPAIGN_SETTINGS_BID_CURRENCY_FIELD,
   CAMPAIGN_SETTINGS_FIELD_LABELS,
@@ -100,8 +101,9 @@ export function readCampaignRefResolution(resolution: unknown, requestedId: stri
 /**
  * Whether the id the UI asked about and the id campaign-service echoed name the same campaign.
  *
- * Compared as trimmed exact strings first. Only where an id IS an integer — LinkedIn, whose campaign
- * ids are int64s, or either side arriving as a JSON number — are two all-digit ids also compared as
+ * Compared as trimmed exact strings first. Only where an id IS an integer — LinkedIn and Microsoft
+ * Ads (`CAMPAIGN_REF_INT64_PLATFORMS`), whose campaign ids are int64s, or either side arriving as a
+ * JSON number — are two all-digit ids also compared as
  * integers (leading zeros ignored). Elsewhere `0123` and `123` are different ids: a Reddit or Meta id
  * is an opaque string, and treating them as one would act on a campaign nobody named.
  */
@@ -114,7 +116,7 @@ export function sameCampaignId(requested: unknown, echoed: unknown, platform: st
   if (a === b) {
     return true;
   }
-  const integerIds = platform === 'linkedin-ads' || typeof requested === 'number' || typeof echoed === 'number';
+  const integerIds = (CAMPAIGN_REF_INT64_PLATFORMS as ReadonlySet<string>).has(platform) || typeof requested === 'number' || typeof echoed === 'number';
   return integerIds && ALL_DIGITS.test(a) && ALL_DIGITS.test(b) && stripLeadingZeros(a) === stripLeadingZeros(b);
 }
 

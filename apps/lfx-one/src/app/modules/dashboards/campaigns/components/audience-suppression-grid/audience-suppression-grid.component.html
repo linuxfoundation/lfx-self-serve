@@ -58,14 +58,16 @@
                          for and not found. It must not offer a link to nothing, and must not read
                          as an exclusion that is available to apply. -->
                     @if (!list.unresolved) {
-                      <a
-                        [href]="list.hubspotUrl"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="text-blue-600 hover:underline"
-                        [attr.data-testid]="'audience-suppression-grid-link-' + list.listId">
-                        Open in HubSpot
-                      </a>
+                      @if (list.hubspotUrl) {
+                        <a
+                          [href]="list.hubspotUrl"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          class="text-blue-600 hover:underline"
+                          [attr.data-testid]="'audience-suppression-grid-link-' + list.listId">
+                          Open in HubSpot
+                        </a>
+                      }
                     } @else {
                       <span
                         class="rounded bg-amber-50 px-1.5 py-0.5 text-amber-700 ring-1 ring-amber-200"

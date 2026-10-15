@@ -79,14 +79,16 @@
               <span class="text-xs font-medium break-words text-gray-900">{{ list.name }}</span>
               <div class="flex flex-wrap items-center gap-2 text-xs text-gray-500">
                 <span>{{ list.sizeText }}</span>
-                <a
-                  [href]="list.hubspotUrl"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="text-blue-600 hover:underline"
-                  [attr.data-testid]="'audience-missing-signals-link-' + list.listId">
-                  Open in HubSpot
-                </a>
+                @if (list.hubspotUrl) {
+                  <a
+                    [href]="list.hubspotUrl"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="text-blue-600 hover:underline"
+                    [attr.data-testid]="'audience-missing-signals-link-' + list.listId">
+                    Open in HubSpot
+                  </a>
+                }
               </div>
             </div>
             <div class="flex shrink-0 items-center gap-1">

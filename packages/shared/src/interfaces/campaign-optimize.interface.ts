@@ -406,7 +406,7 @@ export interface NegativeKeywordsRevisionState {
 }
 
 /** A platform whose campaign-ref resolve the BFF exposes. */
-export type CampaignRefPlatform = 'meta-ads' | 'reddit-ads' | 'twitter-ads' | 'linkedin-ads';
+export type CampaignRefPlatform = 'meta-ads' | 'reddit-ads' | 'twitter-ads' | 'linkedin-ads' | 'microsoft-ads';
 
 /** The reporting windows the Reddit keyword read accepts: the Microsoft set (`yesterday` and `last_14_days` are 400 upstream). */
 export type RedditKeywordsWindow = MicrosoftKeywordsWindow;
@@ -766,7 +766,7 @@ export interface CampaignAdoptableBriefsResponse {
 }
 
 /** The platforms whose Monitor rows offer actions: each has a campaign-ref resolve and adoption. */
-export type CampaignMonitorActPlatform = 'linkedin-ads' | 'reddit-ads' | 'meta-ads';
+export type CampaignMonitorActPlatform = 'linkedin-ads' | 'reddit-ads' | 'meta-ads' | 'microsoft-ads';
 
 /** The lever a Monitor row action opens. */
 export type CampaignMonitorActLever = 'pause_resume' | 'budget' | 'bid';

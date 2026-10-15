@@ -112,6 +112,7 @@ describe('readCampaignRefResolution', () => {
     ['a LinkedIn id passed as a string', 'linkedin-ads', '5123456789', '5123456789'],
     ['a LinkedIn id with leading zeros', 'linkedin-ads', '005123456789', '5123456789'],
     ['a LinkedIn id echoed as a number', 'linkedin-ads', '5123456789', 5123456789],
+    ['a Microsoft id with leading zeros', 'microsoft-ads', '00413296582', '413296582'],
     ['a Meta id passed as a number', 'meta-ads', 120210000000555, '120210000000555'],
     ['an id with surrounding spaces', 'reddit-ads', ' t2_abc ', 't2_abc'],
   ])('matches %s against its echo', (_label, platform, requested, echoed) => {

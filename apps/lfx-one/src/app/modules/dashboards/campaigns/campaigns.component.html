@@ -749,14 +749,17 @@
                       size="small"
                       (onClick)="selectTab('audience', 'email')"
                       data-testid="campaigns-email-audience-unattached-open-audience" />
-                    <a
-                      class="text-sm text-amber-900 underline"
-                      [href]="loose.hubspotUrl"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      data-testid="campaigns-email-audience-unattached-link">
-                      Open {{ loose.name }} in HubSpot
-                    </a>
+                    <!-- A blank link renders href="", which opens this app, not the list. -->
+                    @if (loose.hubspotUrl) {
+                      <a
+                        class="text-sm text-amber-900 underline"
+                        [href]="loose.hubspotUrl"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        data-testid="campaigns-email-audience-unattached-link">
+                        Open {{ loose.name }} in HubSpot
+                      </a>
+                    }
                   </div>
                 }
 

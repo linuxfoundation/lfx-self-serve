@@ -3663,3 +3663,77 @@ export const GOOGLE_ADS_BIDDING_BOUNDS = {
   targetCpa: { min: 0.01, max: 1_000_000 },
   targetRoas: { min: 0.01, max: 1000 },
 } as const;
+
+/**
+ * The one dispatch-failure sentence whose reason token this application turns into a next step:
+ * a PROJECT connection that exists but cannot be used. Mirrors the `ErrConnectionNotUsable` arm
+ * of `DispatchFailureMessage` (`internal/service/dispatch_failure.go` in
+ * lfx-v2-campaign-service, issue #208) completed by `reasonSuffix`:
+ * `this project's <provider> connection cannot be used as configured (reason: <token>); nothing was sent`.
+ *
+ * Anchored at both ends and the token restricted to `[a-z_]`, so only that fixed sentence
+ * matches. The backend builds it from a fixed format, its own provider name and a token from
+ * `unusableConnectionReason`'s fixed vocabulary (`internal/service/connection.go`) — never from
+ * upstream text — so nothing a platform said can reach the capture groups. The LF SYSTEM
+ * connection's sentence is deliberately not matched: that connection is not the project's to
+ * repair, so a project-level next step would send the operator to the wrong place.
+ */
+export const CAMPAIGN_DISPATCH_CONNECTION_NOT_USABLE_PATTERN =
+  /^this project's ([a-z][a-z-]*) connection cannot be used as configured \(reason: ([a-z_]+)\); nothing was sent$/;
+
+/**
+ * Operator next step per connection reason token, `{platform}` standing for the platform's label.
+ *
+ * Covers only the tokens whose remedy an operator can apply to the project connection. The
+ * service-side tokens (`token_request_rejected`, `account_discovery_rejected`, the `*_unwired`
+ * probes) and the ambiguous ones (`provider_config_invalid`, `application_credentials_invalid`)
+ * are left out on purpose: a missing entry renders the backend's sentence verbatim, which is the
+ * honest answer when this application has no remedy to offer.
+ *
+ * Every step is a handoff naming who can apply it: campaign users have no controls for project
+ * connections in this application, so each one reads "Ask an LFX administrator to …" — the same
+ * phrasing the Monitoring tab's connection notices use (`monitoring-tab.component.ts`).
+ */
+export const CAMPAIGN_DISPATCH_CONNECTION_REASON_NEXT_STEPS: Readonly<Record<string, string>> = {
+  account_not_selected: "Ask an LFX administrator to choose an ad account on this project's {platform} connection, then create again.",
+  connection_inactive: "Ask an LFX administrator to reactivate this project's {platform} connection, then create again.",
+  credentials_undecodable: "Ask an LFX administrator to reconnect this project's {platform} connection to save fresh credentials, then create again.",
+  credentials_incomplete: "Ask an LFX administrator to reconnect this project's {platform} connection to save fresh credentials, then create again.",
+  credential_blob_malformed: "Ask an LFX administrator to reconnect this project's {platform} connection to save fresh credentials, then create again.",
+  credentials_absent: "Ask an LFX administrator to reconnect this project's {platform} connection to save fresh credentials, then create again.",
+  credentials_expired: "Ask an LFX administrator to re-authorize this project's {platform} connection, then create again.",
+};
+
+/**
+ * Endings of the dispatch-failure sentences that campaign-service emits ONLY once it has proved
+ * nothing was created on the platform and released the claim (`preCreate` in
+ * `DispatchFailureMessage`, `internal/service/dispatch_failure.go` in lfx-v2-campaign-service).
+ * Each is the fixed tail of a `fmt.Sprintf` format whose only variables are the provider name, a
+ * reason token and an HTTP status number — never upstream text:
+ *
+ * - `; nothing was sent` — no project connection, undecryptable credentials, an unusable project
+ *   or LF system connection, a missing LF system connection;
+ * - `so nothing was sent; the connection may need re-authorizing` — a token refresh failure;
+ * - `; nothing was created` — the platform answered a non-2xx before anything was created;
+ * - `; the connection is not at fault` — a defect in campaign-service stopped the create before
+ *   anything was sent.
+ *
+ * The one verbatim text that arm can return, a service-authored pre-flight refusal, is likewise
+ * returned only on the `preCreate` path, so even a refusal that happened to end in one of these
+ * still describes a create that never happened. Every sentence for the opposite case (`preCreate`
+ * false) reads "could not be confirmed … verify on the platform before retrying" and matches none
+ * of them, and none of the orchestrator's other fixed `res.Error` strings does either.
+ *
+ * A match is a FACT (nothing was created), not advice: whether the operator can fix the cause is
+ * what `CAMPAIGN_DISPATCH_CONNECTION_REASON_NEXT_STEPS` answers, row by row.
+ *
+ * Text, not a field: the wire carries no machine-readable pre-create flag yet. A reworded
+ * backend sentence stops matching and the row falls back to "could not be confirmed" — the
+ * over-warning direction — so drift can never upgrade an unconfirmed row to "nothing created".
+ */
+export const CAMPAIGN_DISPATCH_NOTHING_CREATED_SUFFIXES: readonly string[] = [
+  '; nothing was sent',
+  'so nothing was sent; the connection may need re-authorizing',
+  '; nothing was created',
+  '; the connection is not at fault',
+];
