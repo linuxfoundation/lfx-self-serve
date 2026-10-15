@@ -31,6 +31,9 @@ export * from './auth.interface';
 // Session store interfaces
 export * from './session-store.interface';
 
+// Object store (S3 or file-backed) interfaces
+export * from './object-store.interface';
+
 // Auth-state (Flow C CSRF nonce) interfaces
 export * from './auth-state.interface';
 
