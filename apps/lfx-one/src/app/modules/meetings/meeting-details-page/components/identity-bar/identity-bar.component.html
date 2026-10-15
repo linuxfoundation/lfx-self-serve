@@ -91,7 +91,7 @@
           <!-- Appended inside the bar, so the overlay stays within the V2 token scope (styling-system.md). -->
           <lfx-menu
             #userMenu
-            [model]="userMenuItems"
+            [model]="userMenuItems()"
             [popup]="true"
             [appendTo]="bar"
             ariaLabel="Account"

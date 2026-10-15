@@ -42,11 +42,12 @@ export class MeetingIdentityBarComponent {
   /** Whether the account menu is open, for the trigger's `aria-expanded`. */
   protected readonly accountMenuOpen = signal(false);
 
-  protected readonly userMenuItems: MenuItem[] = [
-    { label: 'Profile', icon: 'fa-light fa-user', routerLink: '/profile' },
-    { separator: true },
-    { label: 'Logout', icon: 'fa-light fa-sign-out', url: '/logout', target: '_self' },
-  ];
+  /**
+   * The account menu (E10-03, #3603): who is signed in, then Manage identities, Profile and Logout. No
+   * account switcher and no credential input: an identity links to one LFX account, so the remedy for a
+   * second address is linking it on the identities page, and sign-in stays with Auth0.
+   */
+  protected readonly userMenuItems: Signal<MenuItem[]> = this.initUserMenuItems();
 
   protected readonly meeting = computed(() => (this.state.status() === 'ready' ? this.state.meeting() : undefined));
   /** Start of the page's selected occurrence (the state service's), else of the meeting itself. */
@@ -78,6 +79,22 @@ export class MeetingIdentityBarComponent {
       const status = this.state.meetingStatus();
       const label = status ? MEETING_STATUS_LABELS[status] : null;
       return [meeting.project?.name, label].filter(Boolean).join(' · ');
+    });
+  }
+
+  private initUserMenuItems(): Signal<MenuItem[]> {
+    return computed(() => {
+      const email = this.userService.user()?.email;
+      return [
+        // Not an action: who is signed in, read out with the menu.
+        ...(email
+          ? [{ label: `Signed in as ${email}`, icon: 'fa-light fa-circle-user', disabled: true, id: 'meeting-identity-bar-signed-in-as' }, { separator: true }]
+          : []),
+        { label: 'Manage identities', icon: 'fa-light fa-id-card', routerLink: '/profile/identities', id: 'meeting-identity-bar-manage-identities' },
+        { label: 'Profile', icon: 'fa-light fa-user', routerLink: '/profile' },
+        { separator: true },
+        { label: 'Logout', icon: 'fa-light fa-sign-out', url: '/logout', target: '_self' },
+      ];
     });
   }
 }

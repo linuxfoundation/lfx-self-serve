@@ -111,6 +111,21 @@ describe('MeetingIdentityBarComponent', () => {
       expect(account?.getAttribute('aria-expanded')).toBe('true');
     });
 
+    it('says who is signed in and links to Manage identities, with no switcher and no credential input', async () => {
+      await create();
+      query('meeting-identity-bar-account')?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const menu: HTMLElement = fixture.nativeElement.querySelector('[data-testid="meeting-identity-bar"]');
+      const text = menu.textContent ?? '';
+      expect(text).toContain('Signed in as ada@acme-motors.example');
+      const manage = Array.from(menu.querySelectorAll('a')).find((link) => link.textContent?.includes('Manage identities'));
+      expect(manage?.getAttribute('href')).toBe('/profile/identities');
+      expect(text).not.toMatch(/switch account/i);
+      expect(fixture.nativeElement.querySelector('input[type="password"], input[type="email"]')).toBeNull();
+    });
+
     it('sends My Meetings to the meetings list under the Me lens', async () => {
       await create();
       const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);

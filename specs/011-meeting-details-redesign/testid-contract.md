@@ -41,6 +41,8 @@ own namespace; the two never share a value.
 | `meeting-identity-bar-subtitle`             | `{group} · {status}`                                                                                                  |
 | `meeting-identity-bar-my-meetings`          | Signed in: My Meetings                                                                                                |
 | `meeting-identity-bar-account`              | Signed in: the account menu button                                                                                    |
+| `meeting-identity-bar-signed-in-as`         | Account menu item (`id`): "Signed in as {email}", not an action (E10-03)                                              |
+| `meeting-identity-bar-manage-identities`    | Account menu item (`id`): Manage identities, to `/profile/identities`; there is no account switcher (E10-03)          |
 | `meeting-identity-bar-visitor-prompt`       | Visitor: the sign-in prompt                                                                                           |
 | `meeting-identity-bar-create-account`       | Visitor: Create LFX account                                                                                           |
 | `meeting-identity-bar-sign-in`              | Visitor: Sign in                                                                                                      |
