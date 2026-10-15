@@ -4,8 +4,15 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { META_AD_SET_DELIBERATE_PAUSE_ADVICE, META_AD_SET_DELIBERATE_RESUME_ADVICE, META_AD_SET_RESUME_ELSEWHERE_REASON } from '@lfx-one/shared/constants';
+import {
+  META_AD_SET_CHANGE_BLOCKED_CAMPAIGN_STATE_REASON,
+  META_AD_SET_DELIBERATE_PAUSE_ADVICE,
+  META_AD_SET_DELIBERATE_RESUME_ADVICE,
+  META_AD_SET_RESUME_BLOCKED_DEGRADED_REASON,
+  META_AD_SET_RESUME_ELSEWHERE_REASON,
+} from '@lfx-one/shared/constants';
 import type { CampaignServiceMetaAdSet, CampaignServiceMetaAdSets, MetaAdSetToggleOutcome, MetaAdSetToggleRequest } from '@lfx-one/shared/interfaces';
+import { metaAdSetCampaignEligibility } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
 import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -65,6 +72,8 @@ describe('MetaAdSetsPanelComponent', () => {
     fixture.componentRef.setInput('briefId', 'b-1');
     fixture.componentRef.setInput('campaignId', 'c-1');
     fixture.componentRef.setInput('campaignName', 'KubeCon EU');
+    // A toggleable campaign unless a test says otherwise; the input itself defaults to refusing both.
+    fixture.componentRef.setInput('eligibility', metaAdSetCampaignEligibility('active'));
     for (const [key, value] of Object.entries(inputs)) {
       fixture.componentRef.setInput(key, value);
     }
@@ -91,7 +100,8 @@ describe('MetaAdSetsPanelComponent', () => {
     expect(q('meta-ad-set-budget-111')!.textContent).toContain('900.00 EUR lifetime');
     expect(q('meta-ad-set-deliberately-paused-111')).not.toBeNull();
     // An ad set with no budget of its own (Campaign Budget Optimization) and no name.
-    expect(q('meta-ad-set-budget-222')!.textContent).toContain('No ad set budget');
+    // A null budget is not proof of no budget: the note says what is missing, never "no budget".
+    expect(q('meta-ad-set-budget-222')!.textContent).toContain('No ad set budget reported (it may use the campaign budget)');
     expect(q('meta-ad-set-row-222')!.textContent).toContain('222');
     expect(q('meta-ad-set-deliberately-paused-222')).toBeNull();
   });
@@ -271,5 +281,63 @@ describe('MetaAdSetsPanelComponent', () => {
     (q('meta-ad-sets-retry')!.querySelector('button') as HTMLButtonElement).click();
     fixture.detectChanges();
     expect(q('meta-ad-sets-empty')).not.toBeNull();
+  });
+
+  describe('campaign-state directions', () => {
+    it('under created_degraded keeps Pause and Pause again (record) usable and disables Resume with the reconciliation reason', () => {
+      listMetaAdSets.mockReturnValue(of(list([adSet({ id: '111', status: 'ACTIVE' }), adSet({ id: '222', status: 'PAUSED', deliberately_paused: false })])));
+      render({ eligibility: metaAdSetCampaignEligibility('created_degraded') });
+
+      expect(q('meta-ad-sets-campaign-state')!.textContent).toContain(META_AD_SET_RESUME_BLOCKED_DEGRADED_REASON);
+      const pause = q('meta-ad-set-toggle-111') as HTMLButtonElement;
+      const resume = q('meta-ad-set-toggle-222') as HTMLButtonElement;
+      const record = q('meta-ad-set-record-action-222') as HTMLButtonElement;
+      expect(pause.disabled).toBe(false);
+      expect(record.disabled).toBe(false);
+      expect(resume.disabled).toBe(true);
+      expect(resume.getAttribute('aria-describedby')).toBe('meta-ad-sets-campaign-state-c-1');
+
+      resume.click();
+      expect(emitted).toEqual([]);
+      record.click();
+      pause.click();
+      expect(emitted.map((request) => request.status)).toEqual(['PAUSED', 'PAUSED']);
+    });
+
+    it('under created_degraded disables Resume again (clear record) too', () => {
+      listMetaAdSets.mockReturnValue(of(list([adSet({ status: 'ACTIVE', deliberately_paused: true })])));
+      render({ eligibility: metaAdSetCampaignEligibility('created_degraded') });
+
+      const clear = q('meta-ad-set-record-action-111') as HTMLButtonElement;
+      expect(clear.textContent).toContain('Resume again (clear record)');
+      expect(clear.disabled).toBe(true);
+      clear.click();
+      expect(emitted).toEqual([]);
+      expect((q('meta-ad-set-toggle-111') as HTMLButtonElement).disabled).toBe(false);
+    });
+
+    it('on a campaign still provisioning disables every action but keeps the ad sets readable', () => {
+      listMetaAdSets.mockReturnValue(of(list([adSet({ id: '111', status: 'ACTIVE' }), adSet({ id: '222', status: 'PAUSED', deliberately_paused: false })])));
+      render({ eligibility: metaAdSetCampaignEligibility('pending') });
+
+      expect(q('meta-ad-sets-campaign-state')!.textContent).toContain(META_AD_SET_CHANGE_BLOCKED_CAMPAIGN_STATE_REASON);
+      expect(q('meta-ad-set-row-111')!.textContent).toContain('Leads — US');
+      for (const id of ['meta-ad-set-toggle-111', 'meta-ad-set-toggle-222', 'meta-ad-set-record-action-222']) {
+        expect((q(id) as HTMLButtonElement).disabled).toBe(true);
+      }
+    });
+
+    it('fails closed when no eligibility is passed', () => {
+      listMetaAdSets.mockReturnValue(of(list([adSet()])));
+      fixture = TestBed.createComponent(MetaAdSetsPanelComponent);
+      fixture.componentRef.setInput('projectSlug', 'tlf');
+      fixture.componentRef.setInput('briefId', 'b-1');
+      fixture.componentRef.setInput('campaignId', 'c-1');
+      fixture.componentRef.setInput('campaignName', 'KubeCon EU');
+      fixture.detectChanges();
+      fixture.detectChanges();
+
+      expect((q('meta-ad-set-toggle-111') as HTMLButtonElement).disabled).toBe(true);
+    });
   });
 });

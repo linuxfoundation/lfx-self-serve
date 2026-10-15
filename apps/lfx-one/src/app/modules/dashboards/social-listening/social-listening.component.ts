@@ -230,9 +230,9 @@ export class SocialListeningComponent {
 
   // === Request pipelines ===
   private readonly searchQuery: Signal<string> = this.initSearchQuery();
-  /** The live feed predicate as a request fragment — drives the feed, the count, and (via `analyticsFilters`) the analytics tab. */
+  /** Live feed/count predicate; its read-blind form also feeds Mentions by Tag and the governed scope selectors. */
   public readonly currentFilters: Signal<MentionFilters> = this.initCurrentFilters();
-  /** Analytics never filter by bookmark or read state — `mentionIds` and the unread params are feed+count only, so the analytics input strips them. */
+  /** Read-blind predicate: the analytics child uses project/platform for governed panels and the full predicate for Mentions by Tag. */
   public readonly analyticsFilters: Signal<MentionFilters> = this.initAnalyticsFilters();
   private readonly feedRequest: Signal<SocialListeningFeedRequest | null> = this.initFeedRequest();
   /** The token this window's request chains off — undefined while the previous window fills, null when it completed at the feed's end. */
@@ -825,7 +825,7 @@ export class SocialListeningComponent {
 
   private initAnalyticsFilters(): Signal<MentionFilters> {
     return computed(() => {
-      // Analytics stays bookmark- and read-state-blind: strip both per-user filter sets.
+      // Strip per-user state; the child narrows this predicate to scope except for Mentions by Tag.
       const filters = { ...this.currentFilters() };
       delete filters.mentionIds;
       delete filters.unreadOnly;

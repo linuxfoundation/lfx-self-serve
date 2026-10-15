@@ -6,6 +6,7 @@ import { Component, computed, inject, PLATFORM_ID, Signal, signal } from '@angul
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, NavigationEnd, Router } from '@angular/router';
+import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -28,7 +29,7 @@ import { distinctUntilChanged, filter, map, merge, Observable, of, switchMap } f
 // run shell that replaced the earlier in-page chat-panel approach.
 @Component({
   selector: 'lfx-mktg-os-agents',
-  imports: [NgClass, ReactiveFormsModule, InputTextComponent, TagComponent, EmptyStateComponent],
+  imports: [NgClass, ReactiveFormsModule, ButtonComponent, InputTextComponent, TagComponent, EmptyStateComponent],
   templateUrl: './mktg-os-agents.component.html',
 })
 export class MktgOsAgentsComponent {
@@ -147,6 +148,11 @@ export class MktgOsAgentsComponent {
       return;
     }
     this.router.navigate([tile.agent.id], { relativeTo: this.route, queryParamsHandling: 'preserve' });
+  }
+
+  /** The Documents area: every stored output of the active project, with revisions. */
+  protected onOpenDocuments(): void {
+    this.router.navigate(['documents'], { relativeTo: this.route, queryParamsHandling: 'preserve' });
   }
 
   // === Private initializers ===

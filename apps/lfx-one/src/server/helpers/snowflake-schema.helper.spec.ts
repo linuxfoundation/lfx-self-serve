@@ -18,7 +18,7 @@ vi.mock('@lfx-one/shared/constants', async () => {
   return { DEFAULT_LFX_ONE_PLATINUM_SCHEMA: actual.DEFAULT_LFX_ONE_PLATINUM_SCHEMA };
 });
 
-import { resolveLfxOnePlatinumSchema, socialListeningFeedTable } from './snowflake-schema.helper';
+import { resolveLfxOnePlatinumSchema, socialListeningAnalyticsTable, socialListeningFeedTable } from './snowflake-schema.helper';
 
 const ENV_KEY = 'LFX_ONE_PLATINUM_SCHEMA';
 const originalValue = process.env[ENV_KEY];
@@ -71,6 +71,44 @@ describe('resolveLfxOnePlatinumSchema', () => {
     process.env[ENV_KEY] = '   ';
     expect(resolveLfxOnePlatinumSchema()).toBe('ANALYTICS.PLATINUM_LFX_ONE');
   });
+});
+
+describe('socialListeningAnalyticsTable', () => {
+  beforeEach(() => {
+    delete process.env[ENV_KEY];
+  });
+
+  afterEach(() => {
+    if (originalValue === undefined) delete process.env[ENV_KEY];
+    else process.env[ENV_KEY] = originalValue;
+  });
+
+  it.each([
+    'SOCIAL_LISTENING_ANALYTICS_OVERVIEW',
+    'SOCIAL_LISTENING_ANALYTICS_OVER_TIME',
+    'SOCIAL_LISTENING_ANALYTICS_PLATFORM_DISTRIBUTION',
+    'SOCIAL_LISTENING_ANALYTICS_SENTIMENT_DISTRIBUTION',
+    'SOCIAL_LISTENING_ANALYTICS_TOP_PROJECTS',
+  ] as const)('qualifies %s with the default governed schema', (relation) => {
+    expect(socialListeningAnalyticsTable(relation)).toBe(`ANALYTICS.PLATINUM_LFX_ONE.${relation}`);
+  });
+
+  it('accepts the development database/schema override with whitespace and lowercase', () => {
+    process.env[ENV_KEY] = ' analytics_dev.dev_ayoung_platinum_lfx_one ';
+
+    expect(socialListeningAnalyticsTable('SOCIAL_LISTENING_ANALYTICS_OVERVIEW')).toBe(
+      'ANALYTICS_DEV.DEV_AYOUNG_PLATINUM_LFX_ONE.SOCIAL_LISTENING_ANALYTICS_OVERVIEW'
+    );
+  });
+
+  it.each(['DB.SCHEMA.TABLE', 'ANALYTICS', 'A B.C', 'DB.SCHEMA"; DROP TABLE X; --', '   '])(
+    'rejects unsafe or non-schema override %s before interpolating the analytics identifier',
+    (override) => {
+      process.env[ENV_KEY] = override;
+
+      expect(socialListeningAnalyticsTable('SOCIAL_LISTENING_ANALYTICS_OVERVIEW')).toBe('ANALYTICS.PLATINUM_LFX_ONE.SOCIAL_LISTENING_ANALYTICS_OVERVIEW');
+    }
+  );
 });
 
 const FEED_ENV_KEY = 'LFX_ONE_SOCIAL_LISTENING_FEED_TABLE';

@@ -92,6 +92,22 @@ describe('OrgClaPermissionsService', () => {
       await expect(service.check(req, COMPANY, 'approval-list-update', PROJECT, FOUNDATION)).resolves.toBe(true);
     });
 
+    // ACS answers with a map keyed on the exact permission string; a missing key means it did not
+    // evaluate that pair. The two cases below pin that an omitted key is treated as false — the
+    // other pair's explicit `true` still allows — so a producer that only returns answered keys
+    // cannot silently hide one half of the OR.
+    it('allows when the ACS payload is missing the foundation key but grants the project pair', async () => {
+      gatewayFetch.mockResolvedValue({ [APPROVAL_PAIR]: true });
+
+      await expect(service.check(req, COMPANY, 'approval-list-update', PROJECT, FOUNDATION)).resolves.toBe(true);
+    });
+
+    it('allows when the ACS payload is missing the project key but grants the foundation pair', async () => {
+      gatewayFetch.mockResolvedValue({ [APPROVAL_FOUNDATION_PAIR]: true });
+
+      await expect(service.check(req, COMPANY, 'approval-list-update', PROJECT, FOUNDATION)).resolves.toBe(true);
+    });
+
     it.each(['cla-manager-delete', 'ecla-invalidate', 'auto-ecla-update'] as const)('asks the foundation pair for %s', async (action) => {
       gatewayFetch.mockResolvedValue({});
 

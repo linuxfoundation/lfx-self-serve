@@ -8,6 +8,7 @@ import {
   MENTION_IDS_MAX_VALUES,
   MENTION_READ_IDS_MAX_VALUES,
   MENTION_TOP_TAGS_LIMIT,
+  SOCIAL_LISTENING_ANALYTICS_RELATIONS,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
 import {
@@ -34,7 +35,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
-import { socialListeningFeedTable } from '../helpers/snowflake-schema.helper';
+import { socialListeningAnalyticsTable, socialListeningFeedTable } from '../helpers/snowflake-schema.helper';
 import { encodeMentionFeedPageToken, MAX_ANALYTICS_LIMIT, MAX_FEED_LIMIT } from '../helpers/social-listening-params.helper';
 import { clampInteger, escapeSqlLikePattern } from '../helpers/validation.helper';
 import { logger } from './logger.service';
@@ -73,11 +74,6 @@ const FEED_COLUMNS = [
   'COMPUTED_AT',
 ].join(', ');
 
-/** Day-grain buckets stay readable up to roughly two months; anything longer rolls up to months. */
-const DAY_GRAIN_MAX_DAYS = 62;
-
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-
 /** `LIKE`/`ILIKE` escape char — must stay in sync with `escapeSqlLikePattern()`. `!` not `\`: the SQL literal needs no backslash doubling. */
 const LIKE_ESCAPE_CHAR = '!';
 
@@ -94,23 +90,12 @@ interface SqlFragment {
   discriminator: QueryBind[];
 }
 
-/** Aggregates without GROUP BY always emit one row, so an empty overview result is a driver-level anomaly — thrown through the cache wrapper so the zeroed fallback is never cached for the full TTL. */
+/** A missing governed overview row means neither window has mentions — thrown through the cache wrapper so the zeroed fallback is never cached during a materialization gap. */
 class OverviewNoRowsError extends Error {}
 
-/** Whitelisted `DATE_TRUNC` grain + `TO_CHAR` label format. Never derived from user input. */
-interface TimeGrain {
-  unit: 'DAY' | 'MONTH';
-  labelFormat: string;
-}
-
-const TIME_GRAINS: Record<'day' | 'month', TimeGrain> = {
-  day: { unit: 'DAY', labelFormat: 'MON DD' },
-  month: { unit: 'MONTH', labelFormat: 'MON YYYY' },
-};
-
 /**
- * Snowflake reads for the Social Listening page (LFXV2-3002, PCC port): explicit `PROJECT_SLUG` +
- * half-open `MENTION_TS` range instead of PCC's `IS_*` flags; analytics computed from the feed table.
+ * Snowflake reads for the Social Listening page (LFXV2-3002, PCC port): the feed uses an explicit
+ * half-open `MENTION_TS` range; analytics read the governed relations for linuxfoundation/lfx-self-serve#1873.
  */
 export class SocialListeningService {
   private readonly snowflakeService: SnowflakeService;
@@ -305,63 +290,25 @@ export class SocialListeningService {
     });
   }
 
-  /**
-   * Headline KPIs plus change vs. the preceding equal-length window; the change figure is suppressed
-   * (null) when the previous window holds < 20% of the current volume (PCC's partial-backfill guard).
-   */
+  /** Governed headline KPIs; modeled null changes remain suppressed for thin comparison windows. */
   public async getAnalyticsOverview(req: Request, params: SocialListeningAnalyticsParams): Promise<SocialListeningAnalyticsOverview> {
-    const previous = this.previousWindow(params.startDate, params.endDate);
-    // The base CTE spans previous-start → current-end so both windows are read in a single pass.
-    const base = this.buildScope({ ...params, startDate: previous.startDate, endDate: params.endDate });
-    const filters = this.buildFilters(req, params);
-
+    const scope = this.buildAnalyticsScope(params);
     const sql = `
-      WITH base AS (
-        SELECT SENTIMENT, SOURCE_PROJECT_ID, MENTION_TS
-        FROM ${socialListeningFeedTable()}
-        WHERE ${base.clause}${filters.clause}
-      ),
-      current_window AS (
-        SELECT COUNT(*) AS TOTAL,
-               COUNT(DISTINCT SOURCE_PROJECT_ID) AS CHILD_PROJECTS,
-               COUNT_IF(LOWER(TRIM(SENTIMENT)) = 'positive') AS POSITIVE,
-               COUNT_IF(LOWER(TRIM(SENTIMENT)) = 'negative') AS NEGATIVE
-        FROM base
-        WHERE MENTION_TS >= TO_DATE(?) AND MENTION_TS < TO_DATE(?)
-      ),
-      previous_window AS (
-        SELECT COUNT(*) AS TOTAL,
-               COUNT_IF(LOWER(TRIM(SENTIMENT)) = 'positive') AS POSITIVE,
-               COUNT_IF(LOWER(TRIM(SENTIMENT)) = 'negative') AS NEGATIVE
-        FROM base
-        WHERE MENTION_TS >= TO_DATE(?) AND MENTION_TS < TO_DATE(?)
-      )
-      SELECT c.TOTAL AS TOTAL_MENTIONS,
-             c.CHILD_PROJECTS AS CHILD_PROJECTS_COUNT,
-             CASE WHEN c.TOTAL = 0 THEN 0 ELSE ROUND(c.POSITIVE / c.TOTAL::FLOAT * 100, 1) END AS POSITIVE_SENTIMENT_PERCENT,
-             CASE WHEN c.TOTAL = 0 THEN 0 ELSE ROUND(c.NEGATIVE / c.TOTAL::FLOAT * 100, 1) END AS NEGATIVE_SENTIMENT_PERCENT,
-             CASE WHEN p.TOTAL = 0 OR p.TOTAL < c.TOTAL * 0.2 THEN NULL
-                  ELSE ROUND((c.TOTAL - p.TOTAL) / p.TOTAL::FLOAT * 100, 1) END AS TOTAL_MENTIONS_CHANGE_PCT,
-             CASE WHEN c.TOTAL = 0 OR p.TOTAL = 0 OR p.TOTAL < c.TOTAL * 0.2 THEN NULL
-                  ELSE ROUND(c.POSITIVE / c.TOTAL::FLOAT * 100 - p.POSITIVE / p.TOTAL::FLOAT * 100, 1) END AS POSITIVE_SENTIMENT_CHANGE_PCT,
-             CASE WHEN c.TOTAL = 0 OR p.TOTAL = 0 OR p.TOTAL < c.TOTAL * 0.2 THEN NULL
-                  ELSE ROUND(c.NEGATIVE / c.TOTAL::FLOAT * 100 - p.NEGATIVE / p.TOTAL::FLOAT * 100, 1) END AS NEGATIVE_SENTIMENT_CHANGE_PCT
-      FROM current_window c
-      CROSS JOIN previous_window p
+      SELECT TOTAL_MENTIONS,
+             TOTAL_MENTIONS_CHANGE_PCT,
+             CHILD_PROJECTS_COUNT,
+             POSITIVE_SENTIMENT_PERCENT,
+             NEGATIVE_SENTIMENT_PERCENT,
+             POSITIVE_SENTIMENT_CHANGE_PCT,
+             NEGATIVE_SENTIMENT_CHANGE_PCT,
+             COMPUTED_AT
+      FROM ${socialListeningAnalyticsTable(SOCIAL_LISTENING_ANALYTICS_RELATIONS.overview)}
+      WHERE ${scope.clause}
+      LIMIT 1
     `;
 
-    const binds: QueryBind[] = [...base.binds, ...filters.binds, params.startDate, params.endDate, previous.startDate, previous.endDate];
-    const discriminator: QueryBind[] = [
-      ...base.discriminator,
-      ...filters.discriminator,
-      params.startDate,
-      params.endDate,
-      previous.startDate,
-      previous.endDate,
-    ];
-
-    return this.cached(req, params.foundationSlug, 'analytics-overview', discriminator, async () => {
-      const result = await this.snowflakeService.execute<SocialListeningAnalyticsOverview>(sql, binds);
+    return this.cachedAnalytics(req, params.foundationSlug, 'governed-analytics-overview', scope.binds, async () => {
+      const result = await this.snowflakeService.execute<SocialListeningAnalyticsOverview>(sql, scope.binds);
       const row = result.rows?.[0];
 
       if (!row) {
@@ -374,7 +321,7 @@ export class SocialListeningService {
         throw error;
       }
 
-      logger.warning(req, 'social_listening_analytics_overview', 'Overview query returned no rows — serving zeroed overview', {
+      logger.debug(req, 'social_listening_analytics_overview', 'Overview query returned no rows — serving zeroed overview', {
         foundation_slug: params.foundationSlug,
       });
 
@@ -386,103 +333,87 @@ export class SocialListeningService {
         NEGATIVE_SENTIMENT_PERCENT: 0,
         POSITIVE_SENTIMENT_CHANGE_PCT: null,
         NEGATIVE_SENTIMENT_CHANGE_PCT: null,
+        COMPUTED_AT: null,
       };
     });
   }
 
-  /** Mention volume bucketed by day (windows up to ~2 months) or month (anything longer), split per sub-project. */
+  /** Modeled time buckets and labels, split per non-null project series. */
   public async getAnalyticsOverTime(req: Request, params: SocialListeningAnalyticsParams): Promise<SocialListeningOverTimePoint[]> {
-    const scope = this.buildScope(params);
-    const filters = this.buildFilters(req, params);
-    const grain = this.resolveGrain(params.startDate, params.endDate);
-
+    const scope = this.buildAnalyticsScope(params);
     const sql = `
-      SELECT TO_CHAR(DATE_TRUNC('${grain.unit}', MENTION_TS), 'YYYY-MM-DD') AS PERIOD_START,
-             TO_CHAR(DATE_TRUNC('${grain.unit}', MENTION_TS), '${grain.labelFormat}') AS PERIOD_LABEL,
+      SELECT TO_CHAR(BUCKET_START_DATE, 'YYYY-MM-DD') AS PERIOD_START,
+             BUCKET_LABEL AS PERIOD_LABEL,
              SOURCE_PROJECT_ID,
              SOURCE_PROJECT_NAME,
-             COUNT(*) AS TOTAL_MENTIONS
-      FROM ${socialListeningFeedTable()}
-      WHERE ${scope.clause}${filters.clause}
+             TOTAL_MENTIONS
+      FROM ${socialListeningAnalyticsTable(SOCIAL_LISTENING_ANALYTICS_RELATIONS.overTime)}
+      WHERE ${scope.clause}
         AND SOURCE_PROJECT_ID IS NOT NULL
         AND SOURCE_PROJECT_NAME IS NOT NULL
-      GROUP BY DATE_TRUNC('${grain.unit}', MENTION_TS), SOURCE_PROJECT_ID, SOURCE_PROJECT_NAME
-      ORDER BY DATE_TRUNC('${grain.unit}', MENTION_TS)
+      ORDER BY BUCKET_START_DATE, SOURCE_PROJECT_NAME
     `;
 
-    return this.cached(req, params.foundationSlug, `analytics-over-time-${grain.unit}`, [...scope.discriminator, ...filters.discriminator], async () => {
-      const result = await this.snowflakeService.execute<SocialListeningOverTimePoint>(sql, [...scope.binds, ...filters.binds]);
+    return this.cachedAnalytics(req, params.foundationSlug, 'governed-analytics-over-time', scope.binds, async () => {
+      const result = await this.snowflakeService.execute<SocialListeningOverTimePoint>(sql, scope.binds);
       return result.rows ?? [];
     });
   }
 
   public async getAnalyticsPlatformDistribution(req: Request, params: SocialListeningAnalyticsParams): Promise<SocialListeningPlatformDistribution[]> {
-    const scope = this.buildScope(params);
-    const filters = this.buildFilters(req, params);
-
+    const scope = this.buildAnalyticsScope(params);
     const sql = `
-      SELECT SOURCE_PLATFORM,
-             MAX(SOCIAL_NETWORK) AS SOCIAL_NETWORK,
-             COUNT(*) AS MENTIONS_COUNT,
-             ROUND(COUNT(*) / NULLIF(SUM(COUNT(*)) OVER (), 0)::FLOAT * 100, 1) AS PERCENT_OF_TOTAL
-      FROM ${socialListeningFeedTable()}
-      WHERE ${scope.clause}${filters.clause}
-        AND SOURCE_PLATFORM IS NOT NULL
-        AND SOURCE_PLATFORM != ''
-      GROUP BY SOURCE_PLATFORM
-      ORDER BY MENTIONS_COUNT DESC
+      SELECT SOURCE_PLATFORM, SOCIAL_NETWORK, MENTIONS_COUNT, PERCENT_OF_TOTAL
+      FROM ${socialListeningAnalyticsTable(SOCIAL_LISTENING_ANALYTICS_RELATIONS.platformDistribution)}
+      WHERE ${scope.clause}
+      ORDER BY MENTIONS_COUNT DESC, SOURCE_PLATFORM
     `;
 
-    return this.cached(req, params.foundationSlug, 'analytics-platform-distribution', [...scope.discriminator, ...filters.discriminator], async () => {
-      const result = await this.snowflakeService.execute<SocialListeningPlatformDistribution>(sql, [...scope.binds, ...filters.binds]);
+    return this.cachedAnalytics(req, params.foundationSlug, 'governed-analytics-platform-distribution', scope.binds, async () => {
+      const result = await this.snowflakeService.execute<SocialListeningPlatformDistribution>(sql, scope.binds);
       return result.rows ?? [];
     });
   }
 
-  /** Off-list upstream values (null, blank, mixed, unknown) bucket as neutral, matching the feed's normalizeSentiment. */
   public async getAnalyticsSentimentDistribution(req: Request, params: SocialListeningAnalyticsParams): Promise<SocialListeningSentimentDistribution[]> {
-    const scope = this.buildScope(params);
-    const filters = this.buildFilters(req, params);
-
+    const scope = this.buildAnalyticsScope(params);
     const sql = `
-      SELECT CASE WHEN LOWER(TRIM(SENTIMENT)) IN ('positive', 'negative') THEN LOWER(TRIM(SENTIMENT)) ELSE 'neutral' END AS SENTIMENT,
-             COUNT(*) AS MENTION_COUNT,
-             ROUND(COUNT(*) / NULLIF(SUM(COUNT(*)) OVER (), 0)::FLOAT * 100, 1) AS PERCENT_OF_TOTAL
-      FROM ${socialListeningFeedTable()}
-      WHERE ${scope.clause}${filters.clause}
-      GROUP BY CASE WHEN LOWER(TRIM(SENTIMENT)) IN ('positive', 'negative') THEN LOWER(TRIM(SENTIMENT)) ELSE 'neutral' END
-      ORDER BY MENTION_COUNT DESC
+      SELECT SENTIMENT, MENTION_COUNT, PERCENT_OF_TOTAL
+      FROM ${socialListeningAnalyticsTable(SOCIAL_LISTENING_ANALYTICS_RELATIONS.sentimentDistribution)}
+      WHERE ${scope.clause}
+      ORDER BY MENTION_COUNT DESC, SENTIMENT
     `;
 
-    return this.cached(req, params.foundationSlug, 'analytics-sentiment-distribution', [...scope.discriminator, ...filters.discriminator], async () => {
-      const result = await this.snowflakeService.execute<SocialListeningSentimentDistribution>(sql, [...scope.binds, ...filters.binds]);
+    return this.cachedAnalytics(req, params.foundationSlug, 'governed-analytics-sentiment-distribution', scope.binds, async () => {
+      const result = await this.snowflakeService.execute<SocialListeningSentimentDistribution>(sql, scope.binds);
       return result.rows ?? [];
     });
   }
 
   public async getAnalyticsTopProjects(req: Request, params: SocialListeningAnalyticsParams): Promise<SocialListeningTopProject[]> {
-    const scope = this.buildScope(params);
-    const filters = this.buildFilters(req, params);
+    const scope = this.buildAnalyticsScope(params);
     const limit = clampInteger(params.limit ?? ANALYTICS_TOP_PROJECTS_LIMIT, 1, MAX_ANALYTICS_LIMIT, 1);
-
+    const binds: QueryBind[] = [...scope.binds, limit];
     const sql = `
-      SELECT SOURCE_PROJECT_NAME, COUNT(*) AS TOTAL_MENTIONS
-      FROM ${socialListeningFeedTable()}
-      WHERE ${scope.clause}${filters.clause}
-        AND SOURCE_PROJECT_NAME IS NOT NULL
-        AND SOURCE_PROJECT_NAME != ''
-      GROUP BY SOURCE_PROJECT_NAME
-      ORDER BY TOTAL_MENTIONS DESC
-      LIMIT ${limit}
+      SELECT SOURCE_PROJECT_NAME, TOTAL_MENTIONS
+      FROM ${socialListeningAnalyticsTable(SOCIAL_LISTENING_ANALYTICS_RELATIONS.topProjects)}
+      WHERE ${scope.clause}
+        AND PROJECT_RANK <= ?
+      ORDER BY PROJECT_RANK
     `;
 
-    // `limit` is interpolated rather than bound, so it has to stay in the cache key explicitly.
-    const cacheBinds: QueryBind[] = [...scope.discriminator, ...filters.discriminator, limit];
-
-    return this.cached(req, params.foundationSlug, 'analytics-top-projects', cacheBinds, async () => {
-      const result = await this.snowflakeService.execute<SocialListeningTopProject>(sql, [...scope.binds, ...filters.binds]);
+    return this.cachedAnalytics(req, params.foundationSlug, 'governed-analytics-top-projects', binds, async () => {
+      const result = await this.snowflakeService.execute<SocialListeningTopProject>(sql, binds);
       return result.rows ?? [];
     });
+  }
+
+  /** Equality lookup against the modeled foundation/period/project/platform scope. */
+  private buildAnalyticsScope(params: SocialListeningAnalyticsParams): { clause: string; binds: QueryBind[] } {
+    return {
+      clause: 'PROJECT_SLUG = ? AND PERIOD_KEY = ? AND SOURCE_PROJECT_SCOPE = ? AND PLATFORM_SCOPE = ?',
+      binds: [params.foundationSlug, params.periodKey, params.sourceProjectId ?? 'all', params.platform?.toLowerCase() ?? 'all'],
+    };
   }
 
   /** Foundation + half-open date window + the two shared scope selects; `alias` prefixes columns for the one joining query (`getMentionsTags`). */
@@ -662,38 +593,18 @@ export class SocialListeningService {
     };
   }
 
-  /**
-   * The contiguous, equal-length window immediately before `[startDate, endDate)`. Month-aligned
-   * windows shift back by whole months; anything else falls back to a day shift.
-   */
-  private previousWindow(startDate: string, endDate: string): { startDate: string; endDate: string } {
-    const start = new Date(`${startDate}T00:00:00Z`);
-    const end = new Date(`${endDate}T00:00:00Z`);
-    const isMonthAligned = start.getUTCDate() === 1 && end.getUTCDate() === 1;
+  /** Governed analytics cache expires sooner than the feed's filter-option vocabulary. */
+  private cachedAnalytics<T>(req: Request, foundationSlug: string, resource: string, discriminator: QueryBind[], fetcher: () => Promise<T>): Promise<T> {
+    logger.debug(req, 'social_listening_cached_query', 'Resolving cached Social Listening query', {
+      foundation_slug: foundationSlug,
+      resource,
+    });
 
-    if (isMonthAligned) {
-      const months = (end.getUTCFullYear() - start.getUTCFullYear()) * 12 + (end.getUTCMonth() - start.getUTCMonth());
-      return {
-        startDate: this.toIsoDate(new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() - months, 1))),
-        endDate: startDate,
-      };
-    }
-
-    const spanMs = end.getTime() - start.getTime();
-    return { startDate: this.toIsoDate(new Date(start.getTime() - spanMs)), endDate: startDate };
-  }
-
-  private resolveGrain(startDate: string, endDate: string): TimeGrain {
-    const spanDays = (new Date(`${endDate}T00:00:00Z`).getTime() - new Date(`${startDate}T00:00:00Z`).getTime()) / MS_PER_DAY;
-    return spanDays <= DAY_GRAIN_MAX_DAYS ? TIME_GRAINS.day : TIME_GRAINS.month;
-  }
-
-  private toIsoDate(date: Date): string {
-    return date.toISOString().slice(0, 10);
+    return withSocialListeningCache(foundationSlug, resource, discriminator, VALKEY_CACHE.SOCIAL_LISTENING_ANALYTICS_TTL_SECONDS, fetcher);
   }
 
   /**
-   * Read-through cache for the filter-option and analytics queries (foundation-scoped, shared across
+   * Read-through cache for filter-option and tags queries (foundation-scoped, shared across
    * callers). The feed itself is never cached (near-zero hit rate); binds discriminate each entry.
    */
   private cached<T>(req: Request, foundationSlug: string, resource: string, discriminator: QueryBind[], fetcher: () => Promise<T>): Promise<T> {

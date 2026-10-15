@@ -1,0 +1,66 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!--
+  The bid error, announced. The region is ALWAYS mounted, outside both conditionals, and only its
+  text changes: an aria-live element inserted with its text already present is not reliably
+  announced (see the brief-status region in implementation-tab.component.html). The visible error
+  below stays the bid input's aria-describedby target.
+-->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" [attr.data-testid]="'implementation-bidding-' + view().platform + '-live'">
+  {{ liveMessage() }}
+</div>
+
+<fieldset class="flex flex-col gap-2" [formGroup]="form" [attr.data-testid]="'implementation-bidding-' + view().platform">
+  <legend class="mb-1 text-xs font-medium text-gray-700">Bidding</legend>
+
+  <div class="flex flex-col gap-1">
+    <lfx-radio-button
+      [form]="form"
+      control="strategy"
+      [name]="ids().name"
+      value="automatic"
+      label="Automatic (recommended)"
+      [inputId]="ids().automatic"
+      [attr.data-testid]="'implementation-bidding-' + view().platform + '-automatic'" />
+    <p class="ml-7 text-xs text-gray-500">{{ rule().automaticDescription }}</p>
+  </div>
+
+  <div class="flex flex-col gap-1">
+    <lfx-radio-button
+      [form]="form"
+      control="strategy"
+      [name]="ids().name"
+      value="manual"
+      label="Manual max CPC bid"
+      [inputId]="ids().manual"
+      [attr.data-testid]="'implementation-bidding-' + view().platform + '-manual'" />
+    <p class="ml-7 text-xs text-gray-500">{{ rule().manualDescription }}</p>
+  </div>
+
+  @if (isManual()) {
+    <div class="ml-7 flex flex-col gap-1">
+      <label class="text-xs font-medium text-gray-700" [for]="ids().amount">{{ amountLabel() }}</label>
+      <div class="w-48">
+        <lfx-input-number
+          [form]="form"
+          control="bidAmount"
+          size="small"
+          [inputId]="ids().amount"
+          placeholder="e.g. 1.25"
+          [describedBy]="amountDescribedBy()"
+          [invalid]="view().error !== null"
+          [attr.data-testid]="'implementation-bidding-' + view().platform + '-amount'" />
+      </div>
+      <p class="text-xs text-gray-500" [id]="ids().currency" [attr.data-testid]="'implementation-bidding-' + view().platform + '-currency'">
+        {{ rule().currencyHint }}
+      </p>
+      <p class="text-xs text-gray-500" [id]="ids().limit" [attr.data-testid]="'implementation-bidding-' + view().platform + '-limit'">{{ rule().limitText }}</p>
+      @if (view().error; as message) {
+        <p class="text-xs text-red-600" [id]="ids().error" [attr.data-testid]="'implementation-bidding-' + view().platform + '-error'">
+          {{ message }}
+        </p>
+      }
+    </div>
+  }
+</fieldset>

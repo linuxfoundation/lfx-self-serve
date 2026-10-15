@@ -13,12 +13,18 @@ import {
   DEFAULT_CAMPAIGN_EMAIL_TYPE_ID,
   DEFAULT_REDDIT_CALL_TO_ACTION,
   DEFAULT_REDDIT_OBJECTIVE,
+  GOOGLE_ADS_AGE_RANGE_MAP,
+  GOOGLE_ADS_AGE_RANGES,
   GOOGLE_ADS_BIDDING_BOUNDS,
   GOOGLE_ADS_CHANNEL_TYPE_ENUMS,
   GOOGLE_ADS_CONVERSION_ACTION_PATTERN,
+  GOOGLE_ADS_DEVICES,
+  GOOGLE_ADS_GENDERS,
   GOOGLE_ADS_LANGUAGE_LABELS,
   GOOGLE_ADS_LANGUAGE_MAP,
   GOOGLE_ADS_MAX_CONVERSION_ACTIONS,
+  GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS,
+  GOOGLE_ADS_MAX_DEVICE_BID_MODIFIERS,
   GOOGLE_BIDDING_CPA_STRATEGIES,
   GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
   GOOGLE_BIDDING_ROAS_STRATEGIES,
@@ -27,6 +33,8 @@ import {
   GOOGLE_BIDDING_TARGET_REQUIRED_STRATEGIES,
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
+  GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS,
+  GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS,
   GOOGLE_CONVERSION_ACTION_CHANNELS,
   GOOGLE_CREATIVE_EITHER_OR_RULES,
   GOOGLE_CREATIVE_FIELD_SPECS,
@@ -1051,5 +1059,51 @@ describe('MONITOR_PLATFORM_BUTTON_COLORS', () => {
 
   it('covers every platform the Monitor tab offers', () => {
     expect(Object.keys(MONITOR_PLATFORM_BUTTON_COLORS).sort()).toEqual(['google', 'hubspot', 'linkedin', 'meta', 'microsoft', 'reddit', 'twitter']);
+  });
+});
+
+describe('Google Ads campaign criteria vocabularies', () => {
+  it('caps the device bid modifier list at the number of devices it accepts, as upstream does', () => {
+    // The cap's whole claim is "a longer list must repeat a device", and `maxDeviceBidModifiers`
+    // upstream tracks `len(deviceTypes)` with a test of its own saying so. A device added to the
+    // vocabulary without raising the cap would refuse a list that repeats nothing.
+    expect(GOOGLE_ADS_MAX_DEVICE_BID_MODIFIERS).toBe(GOOGLE_ADS_DEVICES.length);
+  });
+
+  it('accepts both spellings of every age range, since upstream resolves them to the same enum', () => {
+    // `ageRangeTypes` carries the friendly spelling and Google's own `AGE_RANGE_*` name for each
+    // range deliberately. A friendly spelling without its enum twin — or an enum name that resolved
+    // somewhere else — would refuse here what upstream accepts.
+    for (const range of GOOGLE_ADS_AGE_RANGES) {
+      const enumName = GOOGLE_ADS_AGE_RANGE_MAP[range as keyof typeof GOOGLE_ADS_AGE_RANGE_MAP];
+
+      expect(enumName).toMatch(/^AGE_RANGE_/);
+      expect(GOOGLE_ADS_AGE_RANGE_MAP[enumName]).toBe(enumName);
+    }
+  });
+
+  it('offers only the friendly spellings in a refusal, so a message is not both halves of the map', () => {
+    expect(GOOGLE_ADS_AGE_RANGES).toEqual(['18-24', '25-34', '35-44', '45-54', '55-64', '65+', 'UNDETERMINED']);
+  });
+
+  it('keeps UNDETERMINED in both vocabularies, since it is an ordinary member of each', () => {
+    // Not a placeholder for "unset": excluding it is how a campaign skips the users Google could
+    // not classify, which is a real targeting choice and one Google accepts on both criteria.
+    expect(GOOGLE_ADS_AGE_RANGES).toContain('UNDETERMINED');
+    expect(GOOGLE_ADS_GENDERS).toContain('UNDETERMINED');
+  });
+
+  it('fences both criteria off the same two channels today, from two separate lists', () => {
+    // Separate constants because `validateCriteriaPlan` fences them in separate branches for
+    // separate reasons — a bid Performance Max does not set, against demographics it takes as
+    // asset-group signals — so either could move without the other.
+    expect(GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS).not.toContain('demand-gen');
+    expect(GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS).not.toContain('performance-max');
+    expect(GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS).not.toContain('demand-gen');
+    expect(GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS).not.toContain('performance-max');
+  });
+
+  it('caps each demographic exclusion list at 20, the per-list bound upstream checks twice', () => {
+    expect(GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS).toBe(20);
   });
 });

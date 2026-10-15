@@ -8,6 +8,7 @@ import type {
   BriefMetrics,
   CampaignBidChange,
   CampaignBidOutcome,
+  CampaignConfirmedBid,
   CampaignBudgetChange,
   CampaignBudgetOutcome,
   CampaignIndexDoc,
@@ -87,7 +88,15 @@ import {
   campaignToggleAction,
   normalizeCampaignStatus,
 } from '@lfx-one/shared/constants';
-import { campaignActionItemLever, campaignEtagVersion, keywordActionKey, keywordIdentityKey } from '@lfx-one/shared/utils';
+import {
+  campaignActionItemLever,
+  campaignBiddingSummary,
+  campaignEtagVersion,
+  keywordActionKey,
+  keywordIdentityKey,
+  metaAdSetCampaignEligibility,
+  metaAdSetDirectionAllowed,
+} from '@lfx-one/shared/utils';
 import { AdsCurrencyPipe, AdsPctPipe, EventLabelPipe, PacingClassPipe, PriorityClassPipe, QualityScoreClassPipe } from '@pipes/campaign-optimization.pipe';
 import { metaAdSetFailureOutcome, metaAdSetWriteLeftValidatorKnown } from '@shared/utils/campaign-ad-set-error.utils';
 import { campaignBidFailureOutcome } from '@shared/utils/campaign-bid-error.utils';
@@ -250,7 +259,7 @@ export class OptimizationTabComponent implements OnInit {
   /** The last non-success bid outcome per row; cleared when a new change is dispatched. */
   protected readonly bidOutcome = signal<Partial<Record<string, CampaignBidOutcome>>>({});
   /** The bid this session CONFIRMED per row. The index carries no bid, so this is the only one the row can show. */
-  protected readonly confirmedBid = signal<Partial<Record<string, CampaignBidChange>>>({});
+  protected readonly confirmedBid = signal<Partial<Record<string, CampaignConfirmedBid>>>({});
 
   /** Which Microsoft Advertising, Reddit and X rows have their negative-keyword editor open. */
   protected readonly negativesEditorOpen = signal<Record<string, boolean>>({});
@@ -601,6 +610,7 @@ export class OptimizationTabComponent implements OnInit {
     const conflictedIds = this.conflictedCampaignIds();
     const budgetPending = this.budgetPending();
     const bidPending = this.bidPending();
+    const confirmedBids = this.confirmedBid();
     const adSetPending = this.adSetPending();
     const deploymentDisabled = !this.statusToggleEnabled();
     return rows.map((campaign) => {
@@ -657,8 +667,13 @@ export class OptimizationTabComponent implements OnInit {
       const adSetBusy = adSetPending[campaign.id] !== undefined;
       const keywordTargetingOffered = typeof campaign.platform === 'string' && KEYWORD_TARGETING_CAMPAIGN_PLATFORMS.has(campaign.platform);
       const keywordTargetingUnavailableReason = keywordTargetingOffered ? this.keywordTargetingUnavailableReasonFor(campaign, status) : '';
+      const confirmedBidAmount = this.currentConfirmedBid(campaign, confirmedBids[campaign.id]);
       return {
         campaign,
+        // The bidding campaign-service RECORDED (#3299) — what the create asked for and the last bid
+        // it set, not a live read of the platform. Empty when the index records neither.
+        biddingSummary: this.biddingSummaryFor(campaign, confirmedBidAmount),
+        confirmedBidAmount,
         status,
         action,
         conflicted,
@@ -677,6 +692,8 @@ export class OptimizationTabComponent implements OnInit {
         adSetsOffered,
         adSetsAvailable: adSetsOffered && adSetsUnavailableReason === '',
         adSetsUnavailableReason,
+        // From the row's own status, not the overlay-free index: a confirmed pause leaves it `paused`, still toggleable.
+        adSetEligibility: metaAdSetCampaignEligibility(status),
         // Busy only while ANOTHER write is out: the panel itself shows its own pending ad set.
         adSetsBlockedReason: this.adSetsBlockedReasonFor(
           conflicted,
@@ -1291,6 +1308,12 @@ export class OptimizationTabComponent implements OnInit {
       this.adSetOutcome.update((o) => ({ ...o, [id]: outcomeOf('conflict', META_AD_SET_BLOCKED_STALE_REASON) }));
       return;
     }
+    // The campaign's state refuses this direction (e.g. a resume under `created_degraded`): upstream
+    // would answer 409, so nothing is sent. The panel disables such an action; this is the backstop.
+    if (!metaAdSetDirectionAllowed(row.adSetEligibility, request.status)) {
+      this.adSetOutcome.update((o) => ({ ...o, [id]: outcomeOf('failed', row.adSetEligibility.reason) }));
+      return;
+    }
     const etag = this.toggledEtag()[id] ?? campaign.etag ?? '';
     if (etag === '') {
       this.adSetOutcome.update((o) => ({ ...o, [id]: outcomeOf('failed', 'This campaign cannot be changed until it is re-indexed.') }));
@@ -1446,7 +1469,7 @@ export class OptimizationTabComponent implements OnInit {
             return;
           }
           this.bidPending.update((p) => this.omitKeys(p, [id]));
-          this.confirmedBid.update((c) => ({ ...c, [id]: { bid: result.bid } }));
+          this.confirmedBid.update((c) => ({ ...c, [id]: { bid: result.bid, version: campaignEtagVersion(result.etag) } }));
           this.returnFocusToDisclosure(`campaign-bid-edit-${id}`, `campaign-bid-panel-${id}`);
           this.bidEditorOpen.update((open) => this.omitKeys(open, [id]));
           // The change bumped the row's version upstream; the next write on the row needs this one.
@@ -2591,6 +2614,37 @@ export class OptimizationTabComponent implements OnInit {
       delete next[key];
     }
     return next;
+  }
+
+  /**
+   * The bid this session confirmed for the row, while it is still the newest thing known about the
+   * row's bid. The index is asynchronous, so right after a change it still holds the old bid — the
+   * confirmed one wins only while the indexed version is STRICTLY OLDER than the version the write
+   * returned. At that version the index has caught up with this write; past it, someone may have
+   * changed the bid since. Either way the indexed value wins. Either version unparseable: the confirmed bid stands, as it did before versions
+   * were compared. `confirmedBid` itself is cleared only when the project or brief changes.
+   */
+  private currentConfirmedBid(campaign: CampaignIndexDoc, confirmed: CampaignConfirmedBid | undefined): number | null {
+    if (confirmed === undefined) {
+      return null;
+    }
+    const indexed = campaignEtagVersion(campaign.etag);
+    if (confirmed.version !== null && indexed !== null && indexed >= confirmed.version) {
+      return null;
+    }
+    return confirmed.bid;
+  }
+
+  /**
+   * The row's recorded-bidding line. A current confirmed bid (see `currentConfirmedBid`) wins and
+   * reads as manual — the bid lever succeeds only on a manual per-click strategy. Otherwise the
+   * indexed `bidding_strategy` / `max_cpc_bid`.
+   */
+  private biddingSummaryFor(campaign: CampaignIndexDoc, confirmedBidAmount: number | null): string {
+    if (confirmedBidAmount !== null) {
+      return campaignBiddingSummary(campaign.platform, 'manual', confirmedBidAmount);
+    }
+    return campaignBiddingSummary(campaign.platform, campaign.bidding_strategy, campaign.max_cpc_bid);
   }
 
   /**

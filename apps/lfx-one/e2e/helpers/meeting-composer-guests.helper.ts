@@ -281,9 +281,9 @@ async function fillDetailsAccess(page: Page): Promise<void> {
 /**
  * Fills Date & Schedule.
  *
- * Only three controls are empty in create mode — duration, platform and early-join all arrive
- * defaulted — but `timezone` starts as `''` and is required, so it has to be picked even though
- * the UI reads as though it has a value.
+ * Only the date and time start empty in create mode — duration, platform and early-join arrive
+ * defaulted, and `timezone` is preselected from the browser's zone. It is still picked explicitly
+ * (UTC) so the run doesn't depend on the host machine's timezone.
  */
 async function fillDateSchedule(page: Page): Promise<void> {
   await page.locator('#composer-start-date').fill(FUTURE_DATE);

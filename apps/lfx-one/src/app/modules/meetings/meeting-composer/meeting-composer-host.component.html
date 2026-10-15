@@ -56,10 +56,12 @@
 <!-- `blockScroll` is on because the page behind a modal drawer must not move: PrimeNG appends overlays
      (the agenda popovers, the selects) to `body` and positions them in document coordinates, so a
      background scroll slides them off their anchor, which stays put inside the fixed drawer. -->
-<!-- The three dismissal controls are bound to `submitting()` rather than left at their PrimeNG defaults.
-     `submit()` snapshots the meeting payload before the request and the success handler closes the composer
-     unconditionally, so a backdrop click, an Escape or the X mid-save would either drop edits made after the
-     snapshot or read as a cancel that did not cancel anything. They come back the moment the save settles. -->
+<!-- A backdrop click never closes the composer: a stray click outside the drawer would throw away a
+     half-filled meeting, so only the X, Cancel or Escape close it. Those are bound to `submitting()` rather than
+     left at their PrimeNG defaults: `submit()` snapshots the meeting payload before the request and the success
+     handler closes the composer unconditionally, so an Escape or the X mid-save would either drop edits made
+     after the snapshot or read as a cancel that did not cancel anything. They come back once the save settles. -->
+<!-- Width: 90% of the window, capped at 1440px, never narrower than 1200px unless the window itself is. -->
 <p-drawer
   [visible]="composer.isOpen() && !composer.isQuickCreate()"
   (visibleChange)="onVisibleChange($event)"
@@ -67,9 +69,9 @@
   [modal]="true"
   [blockScroll]="true"
   [showCloseIcon]="!formService.submitting()"
-  [dismissible]="!formService.submitting()"
+  [dismissible]="false"
   [closeOnEscape]="!formService.submitting()"
-  styleClass="w-[1200px] max-w-full [&_.p-drawer-content]:py-0 [&_.p-drawer-header]:items-center [&_.p-drawer-header]:border-b [&_.p-drawer-header]:border-gray-200 [&_.p-drawer-footer]:border-t [&_.p-drawer-footer]:border-gray-200 [&_.p-drawer-footer]:pt-3">
+  styleClass="w-[min(90vw,1440px)] min-w-[min(1200px,100vw)] max-w-full [&_.p-drawer-content]:py-0 [&_.p-drawer-header]:items-center [&_.p-drawer-header]:py-3 [&_.p-drawer-header]:border-b [&_.p-drawer-header]:border-gray-200 [&_.p-drawer-footer]:border-t [&_.p-drawer-footer]:border-gray-200 [&_.p-drawer-footer]:pt-3">
   <ng-template #header>
     <div class="flex min-w-0 flex-col justify-center" data-testid="meeting-composer-header">
       <span class="truncate text-xl font-semibold text-gray-900">
@@ -133,10 +135,13 @@
            nearest named one — rounding up would leave the rail collapsed across the whole 820–1023px band
            the issue asks it to occupy.
            The column is hidden when the edit-mode fetch failed: there is no form behind the rail, so every row
-           would report empty and clicking one would swap a section the organizer can't see. -->
+           would report empty and clicking one would swap a section the organizer can't see.
+           `-ml-3.5 pl-3.5` (and the matching width) widen the scroll box into the drawer's own padding without
+           moving its content, so the stepper rows can bleed past the preview card's edges without being
+           clipped by `overflow-y-auto`. -->
       @if (!formService.meetingLoadFailed()) {
         <div
-          class="hidden w-[286px] shrink-0 flex-col gap-4 overflow-y-auto py-5 min-[820px]:flex min-[820px]:border-r min-[820px]:border-gray-200 min-[820px]:pr-6">
+          class="-ml-3.5 hidden w-[calc(286px+0.875rem)] shrink-0 flex-col gap-4 overflow-y-auto py-5 pl-3.5 min-[820px]:flex min-[820px]:border-r min-[820px]:border-gray-200 min-[820px]:pr-6">
           <lfx-meeting-composer-rail />
 
           @if (!isEditMode()) {
@@ -220,7 +225,8 @@
               <lfx-composer-platform-features [form]="formService.form()" (goToTitleSection)="onGoToTitleSection()" />
             }
             @case ('guests') {
-              <lfx-composer-guests [form]="formService.form()" />
+              <!-- Grows to fill the column so the invited card can take the remaining height -->
+              <lfx-composer-guests class="flex flex-1 flex-col" [form]="formService.form()" />
             }
             @case ('agenda-resources') {
               <lfx-composer-agenda-resources [form]="formService.form()" [showResources]="!isOccurrenceEdit()" />
