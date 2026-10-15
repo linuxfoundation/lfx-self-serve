@@ -584,15 +584,11 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     expect(updateCampaignStatus).not.toHaveBeenCalled();
   });
 
-  // Platform, not just status. X is `disabled: true` in CAMPAIGN_PLATFORMS, so the BFF's
-  // CAMPAIGN_SERVICE_STATUS_PLATFORMS refuses it outright — a `created` row of X's is pausable
-  // UPSTREAM but not through this app, and status alone would enable a doomed button.
-  //
-  // Microsoft was the other example until LFXV2-3312 ENABLED it. `TOGGLEABLE_CAMPAIGN_PLATFORMS`
-  // is derived from the same `!p.disabled` flag, so Microsoft now belongs in the companion test
-  // below rather than here — keeping it in this list would have asserted the opposite of the
-  // shipped behaviour.
-  it.each(['twitter-ads'])('disables the toggle for the unsupported platform %s', (platform) => {
+  // Platform, not just status. A platform outside TOGGLEABLE_CAMPAIGN_PLATFORMS is refused by the
+  // BFF's CAMPAIGN_SERVICE_STATUS_PLATFORMS outright, so status alone would enable a doomed
+  // button. Every paid platform is toggleable now that adopted X campaigns are, so the subject is
+  // a platform string this app does not know.
+  it.each(['tiktok-ads'])('disables the toggle for the unsupported platform %s', (platform) => {
     render([doc({ platform, status: 'created' })]);
 
     const button = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
@@ -608,16 +604,31 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     expect(updateCampaignStatus).not.toHaveBeenCalled();
   });
 
-  // The other half of the derivation (LFXV2-3312): Microsoft is now an offered platform, so a
-  // `created` Microsoft row must be pausable from this tab. Re-adding `disabled: true` to the
-  // shared constant would silently strand the channel — selectable in Plan, unpausable here —
-  // and this fails if that happens.
-  it('enables the toggle for microsoft-ads, which this app now offers', () => {
-    render([doc({ platform: 'microsoft-ads', status: 'created' })]);
+  // Microsoft (LFXV2-3312) and X are offered for pause. X's CREATE stays disabled, but an adopted
+  // X campaign is live and spending, so the toggle is decoupled from the create flag: a `created`
+  // X row must be pausable from this tab.
+  it.each(['microsoft-ads', 'twitter-ads'])('enables the toggle for %s', (platform) => {
+    render([doc({ platform, status: 'created' })]);
 
     const button = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
     expect(button.disabled).toBe(false);
     expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-unavailable-c-1"]')).toBeNull();
+  });
+
+  // Both directions for an X row. Upstream refuses ACTIVE on an adopted row with 409, but that is a
+  // per-row answer the toggle surfaces like any other 409, not a reason to hide Resume.
+  it.each([
+    ['created', 'Pause', 'PAUSED'],
+    ['paused', 'Resume', 'ACTIVE'],
+  ])('offers %s -> %s on an X row and dispatches %s', (status, label, wire) => {
+    render([doc({ platform: 'twitter-ads', status })]);
+
+    const button = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
+    expect(button.disabled).toBe(false);
+    expect(button.textContent).toContain(label);
+
+    button.click();
+    expect(updateCampaignStatus).toHaveBeenCalledWith(expect.objectContaining({ platform: 'twitter-ads', status: wire }));
   });
 
   // The platform guard must not swallow the platforms this app DOES offer — the mutation that

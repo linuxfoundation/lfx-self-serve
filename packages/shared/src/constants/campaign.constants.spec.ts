@@ -4,10 +4,12 @@
 import { describe, expect, it } from 'vitest';
 
 import { GoogleCreativeEitherOrRule, GoogleCreativeFieldSpec, RedditObjective } from '../interfaces/campaign.interface';
+import { CAMPAIGN_ADOPT_PLATFORMS } from './campaign-optimize.constants';
 import { lfxColors } from './colors.constants';
 import {
   isCanonicalGoogleAdsResourceId,
   CAMPAIGN_ALERT_THRESHOLDS,
+  CAMPAIGN_PLATFORMS,
   MONITOR_PLATFORM_BUTTON_COLORS,
   CAMPAIGN_EMAIL_TYPES,
   DEFAULT_CAMPAIGN_EMAIL_TYPE_ID,
@@ -49,6 +51,7 @@ import {
   REDDIT_OBJECTIVE_PARAMS,
   REDDIT_SELECTABLE_OBJECTIVES,
   REDDIT_VIDEO_GOALS,
+  TOGGLEABLE_CAMPAIGN_PLATFORMS,
   campaignToggleAction,
   canonicalMicrosoftMatchType,
   isMicrosoftMatchType,
@@ -61,6 +64,29 @@ import {
   googleAdsUrlGoParseFlaw,
   isGoSpaceCode,
 } from './campaign.constants';
+
+/**
+ * The toggle is decoupled from the CREATE flow's `disabled` flag. A campaign reaches this app by
+ * being created here or by being adopted, and an adopted campaign is live and spending, so it must
+ * be pausable whether or not its platform can be created. X is the case that proves it: create
+ * stays off, pause is on.
+ */
+describe('TOGGLEABLE_CAMPAIGN_PLATFORMS', () => {
+  it('is exactly the create-enabled platforms plus the adoptable ones', () => {
+    const createEnabled = CAMPAIGN_PLATFORMS.filter((p) => !p.disabled).map((p) => p.id);
+    const expected = [...new Set<string>([...createEnabled, ...CAMPAIGN_ADOPT_PLATFORMS])].sort();
+    expect([...TOGGLEABLE_CAMPAIGN_PLATFORMS].sort()).toEqual(expected);
+  });
+
+  it('pins the toggleable set, including X', () => {
+    expect([...TOGGLEABLE_CAMPAIGN_PLATFORMS].sort()).toEqual(['google-ads', 'linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads', 'twitter-ads']);
+  });
+
+  it('keeps X create disabled while its adopted campaigns are toggleable', () => {
+    expect(CAMPAIGN_PLATFORMS.find((p) => p.id === 'twitter-ads')?.disabled).toBe(true);
+    expect(TOGGLEABLE_CAMPAIGN_PLATFORMS.has('twitter-ads')).toBe(true);
+  });
+});
 
 describe('campaignToggleAction', () => {
   it('offers pause for the statuses that are running upstream', () => {
@@ -91,29 +117,18 @@ describe('campaignToggleAction', () => {
   });
 
   /**
-   * Narrowed to `twitter-ads` by LFXV2-3312, which ENABLED Microsoft.
-   * `TOGGLEABLE_CAMPAIGN_PLATFORMS` is derived from `CAMPAIGN_PLATFORMS.filter((p) => !p.disabled)`,
-   * so dropping that flag admits microsoft-ads here BY DESIGN. X stays disabled — a capability gap
-   * rather than missing plumbing — so it remains the subject and the guard still binds: make X
-   * toggleable and this goes red.
-   *
-   * Both statuses are still exercised, just both against X, so "at any status" stays true of the
-   * assertion rather than becoming a claim only the deleted line supported.
+   * A platform outside `TOGGLEABLE_CAMPAIGN_PLATFORMS` is refused at any status, because the BFF
+   * rejects it before the status is consulted. Every paid platform is toggleable now that X is
+   * (adopted X campaigns), so the subject is a platform string this app does not know at all.
    */
   it('refuses a platform this app does not offer, at any status', () => {
-    expect(campaignToggleAction('created', 'twitter-ads')).toBe('unavailable');
-    expect(campaignToggleAction('paused', 'twitter-ads')).toBe('unavailable');
+    expect(campaignToggleAction('created', 'tiktok-ads')).toBe('unavailable');
+    expect(campaignToggleAction('paused', 'tiktok-ads')).toBe('unavailable');
   });
 
-  /**
-   * The other half of the same derivation, and the reason the case above could be narrowed safely
-   * rather than simply deleted: Microsoft is now OFFERED, so its campaigns must be pausable. If
-   * `disabled: true` is ever restored to the shared constant, this fails — which is what stops the
-   * enablement from being silently reverted at the one site that has no other test.
-   */
-  it('offers pause and resume for microsoft-ads, which this app now enables', () => {
-    expect(campaignToggleAction('created', 'microsoft-ads')).toBe('pause');
-    expect(campaignToggleAction('paused', 'microsoft-ads')).toBe('resume');
+  it.each(['microsoft-ads', 'twitter-ads'])('offers pause and resume for %s', (platform) => {
+    expect(campaignToggleAction('created', platform)).toBe('pause');
+    expect(campaignToggleAction('paused', platform)).toBe('resume');
   });
 
   /** Optional so the status-only question stays askable; absence is not "unsupported". */
