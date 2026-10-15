@@ -25,6 +25,7 @@ import type {
   CampaignPlatform,
   CampaignPlatformOption,
   CampaignProgramTypeOption,
+  CampaignServiceMonitorProvider,
   CampaignStatus,
   CampaignTabOption,
   CampaignToggleAction,
@@ -39,6 +40,7 @@ import type {
   MetaPlacement,
   MicrosoftKeywordsWindow,
   MicrosoftKeywordsWindowOption,
+  MonitorConnectionPlatform,
   NegativeKeywordCampaignPlatform,
   ParsedCampaignName,
   RedditObjective,
@@ -1077,6 +1079,73 @@ export const ACCOUNT_MONITOR_DEFAULT_DAYS = 30;
  * so no other upstream text reaches the client.
  */
 export const ACCOUNT_MONITOR_CONFLICT_REASONS = ['account_too_many_active_campaigns', 'account_timezone_unsupported'] as const;
+
+/**
+ * The message campaign-service's account monitors answer their 400 with when the platform's
+ * metrics are switched off in that deployment (`MICROSOFT_METRICS_ENABLED` / `TWITTER_METRICS_ENABLED`
+ * not "true") or the platform has no monitor at all: `ErrAccountMetricsUnsupported`, classified by
+ * its `classifyDiscoveryError` as `"<operation> is not supported for this platform"`. The other
+ * 400s (an unusable connection, an account the connection does not manage) carry other text, so
+ * this exact string is what tells "not enabled" apart from "misconfigured".
+ */
+export const ACCOUNT_MONITOR_UNSUPPORTED_UPSTREAM_MESSAGE = 'account monitor is not supported for this platform';
+
+/** The `upstreamCode` the BFF puts on that 400, so the Monitor tab can show "not enabled" rather than an error. */
+export const ACCOUNT_MONITOR_METRICS_DISABLED_CODE = 'metrics_not_enabled';
+
+/**
+ * The `upstreamCode` the BFF puts on an account-monitor 404 only when it is campaign-service's own
+ * typed not-found (the project has no connection for the platform). Any other 404 — a gateway or
+ * routing miss — carries no code, so the Monitor tab shows it as a retryable error rather than
+ * claiming the connection is absent.
+ */
+export const ACCOUNT_MONITOR_NO_CONNECTION_CODE = 'connection_not_found';
+
+/**
+ * The Monitor tab's connection-backed platforms, each with the campaign-service provider whose
+ * connection binds its account. Ordered as the tab's buttons are.
+ */
+export const MONITOR_CONNECTION_PROVIDERS: Readonly<Record<MonitorConnectionPlatform, CampaignServiceMonitorProvider>> = {
+  linkedin: 'linkedin-ads',
+  reddit: 'reddit-ads',
+  meta: 'meta-ads',
+  microsoft: 'microsoft-ads',
+  twitter: 'twitter-ads',
+};
+
+/**
+ * Account-id shapes campaign-service's LIVE-read account monitors accept (`monitor-linkedin-ads-account`,
+ * `monitor-meta-ads-account`, `monitor-reddit-ads-account`). With the monitor cutover on, the picker
+ * offers the connection's bound account rather than an allowlist entry, so the BFF checks the id's
+ * shape instead — the same patterns, and the same 64-character cap the connections store.
+ */
+export const LINKEDIN_ADS_MONITOR_ACCOUNT_ID_PATTERN = /^[0-9]{1,64}$/;
+export const META_ADS_MONITOR_ACCOUNT_ID_PATTERN = /^act_[0-9]{1,60}$/;
+export const REDDIT_ADS_MONITOR_ACCOUNT_ID_PATTERN = /^[A-Za-z0-9_]{1,64}$/;
+
+/** The Monitor tab's date-range buttons, in trailing days. */
+export const MONITOR_DATE_RANGE_OPTIONS = [7, 14, 30] as const;
+
+/** Rows per page in the Monitor tab's Google Ads keyword table. */
+export const MONITOR_KEYWORD_PAGE_SIZE = 10;
+
+/**
+ * The query parameter, and its one value, the Monitor tab sends on a monitor read whose account (or
+ * panel) came from `/api/campaigns/monitor/connections` — i.e. from a pod with the monitor cutover
+ * ON. The flag is per pod and the two reads are separately load-balanced, so during a rolling flag
+ * change the monitor read can land on a pod with it OFF. That pod refuses the read with
+ * `MONITOR_CUTOVER_MISMATCH_CODE` rather than serve it from the legacy path, which would swap the
+ * account (LinkedIn's default) or refuse it as off the allowlist (Reddit, Meta).
+ */
+export const MONITOR_ACCOUNT_SOURCE_PARAM = 'accountSource';
+export const MONITOR_ACCOUNT_SOURCE_CONNECTION = 'connection';
+
+/** The error `code` (HTTP 409) of that refusal; retryable once the rollout settles. */
+export const MONITOR_CUTOVER_MISMATCH_CODE = 'MONITOR_CUTOVER_MISMATCH';
+export const MONITOR_CUTOVER_MISMATCH_MESSAGE = 'The monitor is switching data sources; refresh in a moment.';
+
+/** HubSpot's brand orange, for the Monitor tab's email button (HubSpot is not a `CampaignPlatform`). */
+export const HUBSPOT_BRAND_COLOR = '#FF7A59';
 
 /**
  * Zero-padded `YYYY-MM-DD` shape for a campaign flight date.

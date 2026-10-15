@@ -49,6 +49,7 @@ import type {
   CampaignServiceAudience,
   CampaignServiceCampaign,
   CampaignServiceCampaignResolution,
+  CampaignServiceConnection,
   CampaignServiceCreateResult,
   CampaignServiceHubSpotCampaign,
   CampaignServiceHubSpotCampaigns,
@@ -2268,6 +2269,31 @@ export class CampaignServiceClient {
       `/projects/${encodePathSegment(projectSlug)}/connection-hubspot/account-monitor`,
       'GET',
       { days }
+    );
+  }
+
+  /**
+   * The project's OWN connection for one ad provider (`get-<provider>` on campaign-service), read so
+   * the Monitor tab can offer the account it is bound to — the only account the account monitor
+   * will read for this project. Credentials are redacted upstream.
+   *
+   * campaign-service answers its typed 404 when the project has no connection of this provider;
+   * that is left to the caller to classify (see `isCampaignServiceNotFound`), because a gateway 404
+   * is not the same statement.
+   */
+  public async getConnection(req: Request, projectSlug: string, provider: CampaignServiceMonitorProvider): Promise<CampaignServiceConnection> {
+    if (projectSlug === '') {
+      // `/projects//connection-…` 404s at the gateway, which a caller would read as "no connection".
+      throw ServiceValidationError.forField('project', 'A connection read requires the project it belongs to.', {
+        operation: `get_${provider.replace('-', '_')}_connection`,
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceConnection>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/connection-${provider}`,
+      'GET'
     );
   }
 

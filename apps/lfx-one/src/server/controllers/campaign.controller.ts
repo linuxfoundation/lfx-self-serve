@@ -35,7 +35,9 @@ import type {
   CampaignProximityTarget,
   CampaignSitelink,
   CampaignSSEEventType,
+  CampaignMonitorConnections,
   CampaignServiceAccountMonitor,
+  CampaignServiceMonitorProvider,
   CampaignStatusUpdateRequest,
   CampaignStatusUpdateResult,
   CampaignToggleStatus,
@@ -45,6 +47,8 @@ import type {
   MicrosoftCampaignCreateRequest,
   MicrosoftKeyword,
   MicrosoftKeywordsWindow,
+  MonitorConnectionAccount,
+  MonitorConnectionPlatform,
 } from '@lfx-one/shared/interfaces';
 import {
   ACCOUNT_MONITOR_DEFAULT_DAYS,
@@ -101,6 +105,7 @@ import {
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   ISO_CALENDAR_DATE_PATTERN,
   KEYWORD_ACTION_PLATFORMS,
+  LINKEDIN_ADS_MONITOR_ACCOUNT_ID_PATTERN,
   LINKEDIN_MIN_DAILY_BUDGET_USD,
   LINKEDIN_MIN_LIFETIME_BUDGET_USD,
   MAX_BULK_KEYWORD_ACTIONS,
@@ -110,6 +115,7 @@ import {
   MAX_KEYWORD_TARGETING_REVISION_LENGTH,
   MAX_NEGATIVE_KEYWORD_TEXT_LENGTH,
   MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
+  META_ADS_MONITOR_ACCOUNT_ID_PATTERN,
   META_GEO_CODE_PATTERN,
   MICROSOFT_ADS_MONITOR_ACCOUNT_ID_PATTERN,
   MICROSOFT_CONTROL_CHAR_RE,
@@ -120,7 +126,13 @@ import {
   MICROSOFT_MAX_KEYWORDS,
   MICROSOFT_MAX_KEYWORD_TEXT_LENGTH,
   MICROSOFT_MIN_CPC_BID,
+  MONITOR_ACCOUNT_SOURCE_CONNECTION,
+  MONITOR_ACCOUNT_SOURCE_PARAM,
+  MONITOR_CONNECTION_PROVIDERS,
+  MONITOR_CUTOVER_MISMATCH_CODE,
+  MONITOR_CUTOVER_MISMATCH_MESSAGE,
   NEGATIVE_KEYWORD_TEXT_PATTERN,
+  REDDIT_ADS_MONITOR_ACCOUNT_ID_PATTERN,
   TWITTER_ADS_MONITOR_ACCOUNT_ID_PATTERN,
   VALID_CAMPAIGN_BID_TYPES,
   VALID_CAMPAIGN_BUDGET_TYPES,
@@ -144,9 +156,23 @@ import { getLinkedInConfig } from '../services/linkedin-ads.service';
 import { CampaignProxyService } from '../services/campaign-proxy.service';
 import { toAudienceDemographics, toKeywordMetricsResponse, toMicrosoftKeywordMetricsResponse, windowForDays } from '../services/campaign-insights-mapper';
 import { applyKeywordActionsViaCampaignService } from '../services/campaign-keyword-actions';
-import { toAccountMonitorClientError, toLinkedInMonitorResponse, toMetaMonitorResponse, toRedditMonitorResponse } from '../services/campaign-monitor-mapper';
+import {
+  toAccountMonitorClientError,
+  toHubSpotEmailMonitorResponse,
+  toLinkedInMonitorResponse,
+  toMetaMonitorResponse,
+  toMonitorConnectionAccount,
+  toRedditMonitorResponse,
+  toReportBackedMonitorResponse,
+} from '../services/campaign-monitor-mapper';
 import { toUtmCreateResult, toUtmLookupResult } from '../services/campaign-utm-mapper';
-import { CampaignServiceClient, canCreateWithBidding, deriveEventSlug, isCampaignServiceJobId } from '../services/campaign-service.service';
+import {
+  CampaignServiceClient,
+  canCreateWithBidding,
+  deriveEventSlug,
+  isCampaignServiceJobId,
+  isCampaignServiceNotFound,
+} from '../services/campaign-service.service';
 import { logger } from '../services/logger.service';
 import { addShutdownHook, isShuttingDown } from '../utils/shutdown';
 
@@ -2316,6 +2342,34 @@ export class CampaignController {
     const days = Number.isFinite(parsedDays) ? Math.min(Math.max(parsedDays, 7), 90) : 30;
     const rawKey = String(req.query['accountKey'] ?? '');
     const config = getLinkedInConfig();
+
+    // With the cutover on, the picker offers the project's OWN connection's account (#2519), which
+    // need not be in the configured list — and the legacy fallback to the first configured account
+    // would silently swap it for one campaign-service then refuses as not this connection's. So
+    // the id is checked by shape instead, and campaign-service decides whether it is this project's.
+    if (isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
+      const accountId = this.requireMonitorAccountId(req, next, 'linkedin_monitor', 'LinkedIn Ads', LINKEDIN_ADS_MONITOR_ACCOUNT_ID_PATTERN);
+      if (accountId === null) {
+        return;
+      }
+      const label = config.accounts.find((a) => a.accountId === accountId)?.label ?? accountId;
+      await this.serveLegacyShapedMonitor(req, res, next, {
+        operation: 'linkedin_monitor',
+        platformLabel: 'LinkedIn Ads',
+        days,
+        accountId,
+        read: (projectSlug) => this.campaignServiceClient.getLinkedInAdsAccountMonitor(req, projectSlug, accountId, days),
+        toResponse: (payload) => toLinkedInMonitorResponse(payload, label, new Date().toISOString()),
+      });
+      return;
+    }
+
+    // Flag OFF here. A read whose account came from the connection path was picked on a pod with it
+    // ON; serving it from the legacy path would swap or refuse that account, so it is refused instead.
+    if (this.refuseCutoverMismatch(req, next, 'linkedin_monitor')) {
+      return;
+    }
+
     const account = config.accounts.find((a) => a.accountId === rawKey) ?? config.accounts[0];
     if (!account) {
       next(
@@ -2328,20 +2382,6 @@ export class CampaignController {
       return;
     }
     const accountId = account.accountId;
-
-    // The configured account is resolved above on BOTH paths, exactly as before; campaign-service
-    // then also refuses one the project's own LinkedIn connection is not bound to.
-    if (isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
-      await this.serveLegacyShapedMonitor(req, res, next, {
-        operation: 'linkedin_monitor',
-        platformLabel: 'LinkedIn Ads',
-        days,
-        accountId,
-        read: (projectSlug) => this.campaignServiceClient.getLinkedInAdsAccountMonitor(req, projectSlug, accountId, days),
-        toResponse: (payload) => toLinkedInMonitorResponse(payload, account.label, new Date().toISOString()),
-      });
-      return;
-    }
 
     const startTime = logger.startOperation(req, 'linkedin_monitor', { days, accountKey: rawKey });
 
@@ -2542,6 +2582,31 @@ export class CampaignController {
     const parsedDays = /^\d+$/.test(rawDays) ? Number(rawDays) : NaN;
     const days = Number.isFinite(parsedDays) ? Math.min(Math.max(parsedDays, 7), 90) : 30;
     const rawKey = String(req.query['accountKey'] ?? '');
+
+    // Cutover on: the connection's account, checked by shape — see the LinkedIn route.
+    if (isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
+      const accountId = this.requireMonitorAccountId(req, next, 'reddit_monitor', 'Reddit Ads', REDDIT_ADS_MONITOR_ACCOUNT_ID_PATTERN);
+      if (accountId === null) {
+        return;
+      }
+      const label = REDDIT_ACCOUNTS.find((a) => a.accountId === accountId)?.label ?? accountId;
+      await this.serveLegacyShapedMonitor(req, res, next, {
+        operation: 'reddit_monitor',
+        platformLabel: 'Reddit Ads',
+        days,
+        accountId,
+        read: (projectSlug) => this.campaignServiceClient.getRedditAdsAccountMonitor(req, projectSlug, accountId, days),
+        toResponse: (payload) => toRedditMonitorResponse(payload, label, new Date().toISOString()),
+      });
+      return;
+    }
+
+    // Flag OFF here. A read whose account came from the connection path was picked on a pod with it
+    // ON; serving it from the legacy path would swap or refuse that account, so it is refused instead.
+    if (this.refuseCutoverMismatch(req, next, 'reddit_monitor')) {
+      return;
+    }
+
     const account = rawKey ? REDDIT_ACCOUNTS.find((a) => a.accountId === rawKey) : REDDIT_ACCOUNTS[0];
     if (!account) {
       next(
@@ -2554,21 +2619,6 @@ export class CampaignController {
       return;
     }
     const accountId = account.accountId;
-
-    // The account is still checked against the allowlist above on BOTH paths: the picker offers
-    // only those accounts, and campaign-service then also refuses one the project's own connection
-    // is not bound to.
-    if (isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
-      await this.serveLegacyShapedMonitor(req, res, next, {
-        operation: 'reddit_monitor',
-        platformLabel: 'Reddit Ads',
-        days,
-        accountId,
-        read: (projectSlug) => this.campaignServiceClient.getRedditAdsAccountMonitor(req, projectSlug, accountId, days),
-        toResponse: (payload) => toRedditMonitorResponse(payload, account.label, new Date().toISOString()),
-      });
-      return;
-    }
 
     const startTime = logger.startOperation(req, 'reddit_monitor', { days, accountKey: rawKey });
 
@@ -2592,6 +2642,31 @@ export class CampaignController {
     const parsedDays = /^\d+$/.test(rawDays) ? Number(rawDays) : NaN;
     const days = Number.isFinite(parsedDays) ? Math.min(Math.max(parsedDays, 7), 90) : 30;
     const rawKey = String(req.query['accountKey'] ?? '');
+
+    // Cutover on: the connection's account, checked by shape — see the LinkedIn route.
+    if (isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
+      const accountId = this.requireMonitorAccountId(req, next, 'meta_monitor', 'Meta Ads', META_ADS_MONITOR_ACCOUNT_ID_PATTERN);
+      if (accountId === null) {
+        return;
+      }
+      const label = META_ACCOUNTS.find((a) => a.accountId === accountId)?.label ?? accountId;
+      await this.serveLegacyShapedMonitor(req, res, next, {
+        operation: 'meta_monitor',
+        platformLabel: 'Meta Ads',
+        days,
+        accountId,
+        read: (projectSlug) => this.campaignServiceClient.getMetaAdsAccountMonitor(req, projectSlug, accountId, days),
+        toResponse: (payload) => toMetaMonitorResponse(payload, label, new Date().toISOString()),
+      });
+      return;
+    }
+
+    // Flag OFF here. A read whose account came from the connection path was picked on a pod with it
+    // ON; serving it from the legacy path would swap or refuse that account, so it is refused instead.
+    if (this.refuseCutoverMismatch(req, next, 'meta_monitor')) {
+      return;
+    }
+
     const account = rawKey ? META_ACCOUNTS.find((a) => a.accountId === rawKey) : META_ACCOUNTS[0];
     if (!account) {
       next(
@@ -2604,19 +2679,6 @@ export class CampaignController {
       return;
     }
     const accountId = account.accountId;
-
-    // Allowlist kept on both paths, as on the Reddit route.
-    if (isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
-      await this.serveLegacyShapedMonitor(req, res, next, {
-        operation: 'meta_monitor',
-        platformLabel: 'Meta Ads',
-        days,
-        accountId,
-        read: (projectSlug) => this.campaignServiceClient.getMetaAdsAccountMonitor(req, projectSlug, accountId, days),
-        toResponse: (payload) => toMetaMonitorResponse(payload, account.label, new Date().toISOString()),
-      });
-      return;
-    }
 
     const startTime = logger.startOperation(req, 'meta_monitor', { days, accountKey: rawKey });
 
@@ -2631,12 +2693,51 @@ export class CampaignController {
   }
 
   /**
+   * Which account each connection-backed Monitor panel offers, from the project's OWN connections
+   * (#2519), and whether the monitors are served by campaign-service at all.
+   *
+   * With `LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR` off this answers `viaCampaignService: false` and
+   * reads nothing, and the tab keeps its legacy account lists — a 200, not the 404 the
+   * campaign-service-only routes answer, because the tab must be able to tell "off" from "no
+   * connection". On, it reads the five providers' connections in parallel. One provider's failure
+   * is that provider's `unavailable` state, never the whole answer: the other panels still work.
+   */
+  public async getMonitorConnections(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'monitor_connections';
+    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
+      const off: CampaignMonitorConnections = { viaCampaignService: false, platforms: {} };
+      res.json(off);
+      return;
+    }
+    const projectSlug = this.requireMonitorProject(req, next, operation);
+    if (projectSlug === null) {
+      return;
+    }
+    const startTime = logger.startOperation(req, operation, { viaCampaignService: true });
+
+    try {
+      const entries = await Promise.all(
+        (Object.entries(MONITOR_CONNECTION_PROVIDERS) as [MonitorConnectionPlatform, CampaignServiceMonitorProvider][]).map(
+          async ([platform, provider]) => [platform, await this.readMonitorConnection(req, projectSlug, provider)] as const
+        )
+      );
+      const body: CampaignMonitorConnections = { viaCampaignService: true, platforms: Object.fromEntries(entries) };
+      logger.success(req, operation, startTime, {
+        states: Object.fromEntries(entries.map(([platform, account]) => [platform, account.state])),
+      });
+      res.json(body);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Microsoft Advertising account monitor, from campaign-service only (#2519).
    *
    * No legacy path exists, so with `LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR` off the route answers 404
-   * as if it were not mounted. On, it returns campaign-service's `account-monitor` body UNCHANGED:
-   * there is no legacy shape to fit, and the report-backed fields (`metrics_as_of`,
-   * `metrics_pending`, `metrics_window_*`) are what a renderer needs to say how fresh the figures are.
+   * as if it were not mounted. On, it maps campaign-service's `account-monitor` body onto
+   * `ReportBackedMonitorResponse`: the Reddit/Meta row shape, plus the report-backed freshness
+   * (`metricsAsOf`, `metricsPending`, `metricsWindow*`) a renderer needs to say how fresh the figures are.
    *
    * `accountKey` is the Microsoft account id itself — there is no LF allowlist for this platform —
    * so its shape is checked here, against the same pattern upstream enforces.
@@ -2666,13 +2767,15 @@ export class CampaignController {
 
   /**
    * HubSpot email monitor, from campaign-service only (#2519). PROJECT-scoped — there is no account
-   * to pick — so it takes only `?project=` and `?days=`. Gated, and returned unchanged, as the
-   * Microsoft route is.
+   * to pick — so it takes only `?project=` and `?days=`. Gated as the Microsoft route is, and mapped
+   * onto `HubSpotEmailMonitorResponse`.
    */
   public async getHubSpotMonitor(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'hubspot_monitor';
     if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
-      next(this.monitorDisabledError(operation));
+      if (!this.refuseCutoverMismatch(req, next, operation)) {
+        next(this.monitorDisabledError(operation));
+      }
       return;
     }
     const projectSlug = this.requireMonitorProject(req, next, operation);
@@ -2683,11 +2786,12 @@ export class CampaignController {
     const startTime = logger.startOperation(req, operation, { days, viaCampaignService: true });
 
     try {
-      const data = await this.campaignServiceClient.getHubSpotAccountMonitor(req, projectSlug, days);
+      const payload = await this.campaignServiceClient.getHubSpotAccountMonitor(req, projectSlug, days);
+      const data = toHubSpotEmailMonitorResponse(payload, new Date().toISOString());
       logger.success(req, operation, startTime, {
-        emails: data.emails?.length ?? 0,
-        actionItems: data.action_items?.length ?? 0,
-        truncated: data.emails_truncated,
+        emails: data.emails.length,
+        actionItems: data.actionItems.length,
+        truncated: data.emailsTruncated,
       });
       res.json(data);
     } catch (error) {
@@ -3421,7 +3525,7 @@ export class CampaignController {
     }
   }
 
-  /** The Microsoft and X routes: flag gate, account-id shape check, then the body unchanged. */
+  /** The Microsoft and X routes: flag gate, account-id shape check, then the body mapped with its freshness. */
   private async serveReportBackedMonitor(
     req: Request,
     res: Response,
@@ -3434,33 +3538,28 @@ export class CampaignController {
     }
   ): Promise<void> {
     if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
-      next(this.monitorDisabledError(opts.operation));
+      if (!this.refuseCutoverMismatch(req, next, opts.operation)) {
+        next(this.monitorDisabledError(opts.operation));
+      }
       return;
     }
     const projectSlug = this.requireMonitorProject(req, next, opts.operation);
     if (projectSlug === null) {
       return;
     }
-    const accountId = typeof req.query['accountKey'] === 'string' ? req.query['accountKey'].trim() : '';
-    if (!opts.accountIdPattern.test(accountId)) {
-      next(
-        ServiceValidationError.forField('accountKey', `A valid ${opts.platformLabel} account id is required`, {
-          operation: opts.operation,
-          service: 'campaign_controller',
-          path: req.path,
-        })
-      );
+    const accountId = this.requireMonitorAccountId(req, next, opts.operation, opts.platformLabel, opts.accountIdPattern);
+    if (accountId === null) {
       return;
     }
     const days = this.parseMonitorDays(req);
     const startTime = logger.startOperation(req, opts.operation, { days, accountId, viaCampaignService: true });
 
     try {
-      const data = await opts.read(projectSlug, accountId, days);
+      const data = toReportBackedMonitorResponse(await opts.read(projectSlug, accountId, days), new Date().toISOString());
       logger.success(req, opts.operation, startTime, {
-        campaigns: data.campaigns?.length ?? 0,
-        metricsAsOf: data.metrics_as_of,
-        metricsPending: data.metrics_pending,
+        campaigns: data.campaigns.length,
+        metricsAsOf: data.metricsAsOf,
+        metricsPending: data.metricsPending,
       });
       res.json(data);
     } catch (error) {
@@ -3497,6 +3596,67 @@ export class CampaignController {
       return null;
     }
     return projectSlug;
+  }
+
+  /**
+   * The `?accountKey=` a campaign-service monitor reads, or `null` after reporting a 400. Checked by
+   * the provider's own shape, the pattern campaign-service enforces, so a malformed id is a named
+   * 400 here rather than a Goa pattern error from upstream.
+   */
+  private requireMonitorAccountId(req: Request, next: NextFunction, operation: string, platformLabel: string, pattern: RegExp): string | null {
+    const accountId = typeof req.query['accountKey'] === 'string' ? req.query['accountKey'].trim() : '';
+    if (!pattern.test(accountId)) {
+      next(
+        ServiceValidationError.forField('accountKey', `A valid ${platformLabel} account id is required`, {
+          operation,
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return null;
+    }
+    return accountId;
+  }
+
+  /**
+   * One provider's connection as the Monitor tab's picker state. Never throws: campaign-service's
+   * own 404 is `no_connection`, and anything else — a gateway 404, a 403, a transport failure — is
+   * `unavailable`, because only the service's typed 404 says the connection does not exist.
+   */
+  private async readMonitorConnection(req: Request, projectSlug: string, provider: CampaignServiceMonitorProvider): Promise<MonitorConnectionAccount> {
+    try {
+      return toMonitorConnectionAccount(await this.campaignServiceClient.getConnection(req, projectSlug, provider));
+    } catch (error) {
+      if (error instanceof MicroserviceError && !error.transportFailure && error.statusCode === 404 && isCampaignServiceNotFound(error.errorBody)) {
+        return { state: 'no_connection', accountId: null, label: null };
+      }
+      logger.warning(req, 'monitor_connections', 'campaign-service connection read failed; reporting the platform as unavailable', {
+        provider,
+        status: error instanceof MicroserviceError ? error.statusCode : undefined,
+        err: error,
+      });
+      return { state: 'unavailable', accountId: null, label: null };
+    }
+  }
+
+  /**
+   * On a pod with the monitor cutover OFF: refuse, with a retryable 409, a read the client marked as
+   * coming from the connection path (`accountSource=connection`), and report whether it did.
+   *
+   * The marker means the tab learned its account — or that the panel exists at all — from a pod
+   * with the cutover ON. The flag is per pod, so during a rolling change the follow-up read can
+   * land here, where the legacy path would serve LinkedIn's DEFAULT account under the picked one's
+   * name, refuse Reddit's or Meta's as off the allowlist, or answer the campaign-service-only routes
+   * with a 404 the HubSpot panel would read as "no connection". None of that may be shown, so the
+   * read is refused with a fixed message instead, and no legacy fallback runs. Unmarked requests
+   * (a legacy picker) are untouched.
+   */
+  private refuseCutoverMismatch(req: Request, next: NextFunction, operation: string): boolean {
+    if (req.query[MONITOR_ACCOUNT_SOURCE_PARAM] !== MONITOR_ACCOUNT_SOURCE_CONNECTION) {
+      return false;
+    }
+    next(new MicroserviceError(MONITOR_CUTOVER_MISMATCH_MESSAGE, 409, MONITOR_CUTOVER_MISMATCH_CODE, { operation, service: 'campaign_controller' }));
+    return true;
   }
 
   /** A 404 for a campaign-service-only monitor route while its flag is off — as if it were not mounted. */

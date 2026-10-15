@@ -410,9 +410,12 @@ export enum ServerFeatureFlag {
    * IT CHANGES WHOSE CREDENTIAL READS THE ACCOUNT. The legacy LinkedIn/Meta/Reddit paths read the LF ad
    * account with this app's own environment credentials. Campaign-service resolves the PROJECT'S
    * OWN connection only — never the LF system fallback — and refuses an account that connection
-   * is not bound to. So a project with no LinkedIn/Meta/Reddit connection of its own reads a 404, and one
-   * whose connection is bound to a different account than the picker offers reads a 400. Verify
-   * the foundations that use these tabs have connections before turning this on.
+   * is not bound to. So on, the Monitor tab's account pickers are filled from those connections
+   * (`/api/campaigns/monitor/connections`) instead of the configured allowlists, and the monitor
+   * routes check the account id's SHAPE rather than allowlist membership. A project with no
+   * connection of its own for a platform, or whose connection has no account bound, sees that
+   * stated in the panel rather than an error. Verify the foundations that use these tabs have
+   * connections before turning this on.
    *
    * IT ALSO CHANGES THE NUMBERS, deliberately: campaign-service fixed the rule-engine bugs the
    * legacy LinkedIn and Reddit paths still have (#3018-#3022): MED items now sort between HIGH
@@ -422,9 +425,18 @@ export enum ServerFeatureFlag {
    * LinkedIn loses its creative breakdown and the "no ad creatives" item: campaign-service does not
    * read LinkedIn creative analytics.
    *
+   * A MIXED ROLLOUT IS SAFE. The flag is read per pod, and the tab's account picker
+   * (`/monitor/connections`) and its monitor read are separate, load-balanced requests, so during a
+   * rolling change the read can land on a pod whose flag differs from the one that chose the account.
+   * A read whose account came from the connection path carries `accountSource=connection`; a pod
+   * with the flag OFF refuses it with a 409 `MONITOR_CUTOVER_MISMATCH` ("The monitor is switching
+   * data sources; refresh in a moment.") instead of serving it from the legacy path — which would
+   * show LinkedIn's default account under the picked one's name, or refuse Reddit's or Meta's — and
+   * the tab's Retry re-checks the data source. An unmarked (legacy-picker) read reaching a pod with
+   * the flag ON is served as before; allowlist ids pass the shape check.
+   *
    * Reads only, no persisted state and no id space of their own, so flipping it back strands
-   * nothing, and an overlapping rollout only means two pods may answer the same tab from
-   * different backends. Same accepted values as the flags above.
+   * nothing. Same accepted values as the flags above.
    */
   CampaignServiceMonitor = 'LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR',
 
