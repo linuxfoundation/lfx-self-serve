@@ -127,7 +127,7 @@ export class MktgDocumentsComponent {
             return this.documentStore.listDocuments(request.project).pipe(
               expand((documents) =>
                 documents.runs?.some((run) => run.state !== 'failed')
-                  ? timer(MKTG_RUN_POLL.intervalMs).pipe(switchMap(() => this.documentStore.listDocuments(request.project)))
+                  ? timer(MKTG_RUN_POLL.intervalMs).pipe(switchMap(() => this.documentStore.listDocuments(request.project, true)))
                   : EMPTY
               ),
               catchError((error: HttpErrorResponse) => {

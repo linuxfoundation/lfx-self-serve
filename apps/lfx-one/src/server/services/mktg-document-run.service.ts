@@ -9,6 +9,8 @@ import {
   MKTG_STARTED_RUN_ID_REGEX,
   MKTG_STARTED_RUN_PREFIX,
   MKTG_STARTED_RUN_SCHEMA,
+  MKTG_STARTED_RUN_STATE_ORDER,
+  MKTG_STARTED_RUN_POLL_WINDOW_MS,
 } from '@lfx-one/shared/constants';
 import {
   MktgDocumentAgentKey,
@@ -24,17 +26,18 @@ import { findMktgDocumentType } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 import { createHash } from 'node:crypto';
 
-import { AuthorizationError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { BrandKitService } from './brand-kit.service';
 import { FoundationMessageService } from './foundation-message.service';
 import { IcpService } from './icp.service';
 import { logger } from './logger.service';
 import { ObjectStoreService } from './object-store.service';
 import { ProjectService } from './project.service';
+import { MktgDocumentStoreService } from './mktg-document-store.service';
 
 /**
  * Durable, session-keyed starts, reconciled on writer-authorized Documents reads.
- * Body bytes stay immutable; progress/completion live in the store's existing
+ * Session bodies stay stable (apart from legacy identity redaction); progress lives in the existing
  * mutable metadata. No tokens, new storage primitive or background worker.
  * The existing recordGeneration path dedupes repeated results. Its known rare
  * concurrent-completion race remains until the versioning storage change lands.
@@ -45,8 +48,9 @@ export class MktgDocumentRunService {
   private readonly brandKit = new BrandKitService();
   private readonly foundation = new FoundationMessageService();
   private readonly icp = new IcpService();
+  private readonly documents = new MktgDocumentStoreService();
 
-  /** Shape-gate before the authenticated project lookup, then use only its resolved uid. */
+  /** Resolve writer-authorized scope and preflight tracking storage before any Guild work. */
   public async resolveProject(req: Request, raw: unknown): Promise<string> {
     if (typeof raw !== 'string' || !MKTG_ARTIFACT_PARTITION_REGEX.test(raw.trim())) {
       throw ServiceValidationError.forField('project', 'A single-segment project uid is required to record this run.');
@@ -55,6 +59,20 @@ export class MktgDocumentRunService {
     if (!project.writer || !MKTG_ARTIFACT_PARTITION_REGEX.test(project.uid)) {
       throw new AuthorizationError('You need write access to this project to run its Marketing OS agents.');
     }
+    try {
+      await this.store.ensureBucket('marketing-os-artifacts', { degradable: true });
+      if (!(await this.store.readiness('marketing-os-artifacts'))) {
+        throw new MicroserviceError('Document run storage is unavailable.', 503, 'DOCUMENT_RUN_STORAGE_UNAVAILABLE');
+      }
+    } catch (error) {
+      logger.warning(req, 'mktg_run_preflight', 'Tracking storage is unavailable; no Guild session will be started', { project: project.uid, err: error });
+      throw new MicroserviceError('Document run storage is unavailable. Try again later.', 503, 'DOCUMENT_RUN_STORAGE_UNAVAILABLE', {
+        service: 'object_store',
+        operation: 'mktg_run_preflight',
+        originalError: error instanceof Error ? error : undefined,
+      });
+    }
+    logger.debug(req, 'mktg_run_preflight', 'Project and tracking store are ready', { project: project.uid });
     return project.uid;
   }
 
@@ -64,7 +82,6 @@ export class MktgDocumentRunService {
     project: string,
     agentKey: MktgDocumentAgentKey,
     sessionId: string,
-    starter: string,
     priorVersion = 0,
     readme?: MktgReadmeOutcome
   ): Promise<void> {
@@ -74,6 +91,7 @@ export class MktgDocumentRunService {
     }
     const runId = this.hash(sessionId);
     const key = `${this.prefix(project)}${runId}.json`;
+    logger.debug(req, 'mktg_run_start', 'Recording the session start', { project, agent: agentKey, run: runId, prior_version: priorVersion });
     const existing = await this.store.getObject(req, 'marketing-os-artifacts', key);
     const startedAt = new Date().toISOString();
     const record: MktgStartedRunRecord = {
@@ -83,25 +101,27 @@ export class MktgDocumentRunService {
       documentId: MKTG_LIVING_DOCUMENT_ID,
       runId,
       sessionId,
-      startedBy: this.hash(starter),
       startedAt,
       priorVersion,
       readme,
       state: 'writing',
       result: null,
     };
+    let body = JSON.stringify(record);
     if (existing) {
-      const old = this.parse(key, existing.body, existing.metadata, project);
+      const old = this.parse(req, key, existing.body, existing.metadata, project);
       if (!old || old.record.agentKey !== agentKey || old.record.sessionId !== sessionId) {
         throw ServiceValidationError.forField('run', 'Stored session does not match this run.');
       }
+      body = old.body;
     }
-    // Reused-session intake reruns advance labels, not the immutable session body.
+    // An explicit new intake renews failed/in-flight metadata even if no newer draft exists.
+    // Completed duplicate acknowledgements remain no-ops unless the prior version advances.
     await this.store.putContentAddressedObject(
       req,
       'marketing-os-artifacts',
       key,
-      Buffer.from(existing?.body ?? JSON.stringify(record)),
+      Buffer.from(body),
       'application/json; charset=utf-8',
       'private',
       {
@@ -109,63 +129,104 @@ export class MktgDocumentRunService {
         'started-at': startedAt,
         'prior-version': String(priorVersion),
       },
-      { refreshMetadataWhen: (stored) => priorVersion > Number(stored['prior-version'] ?? 0) }
+      {
+        refreshMetadataWhen: (stored) => {
+          const previousVersion = Number(stored['prior-version'] ?? 0);
+          const newerStart = Date.parse(startedAt) > Date.parse(stored['started-at'] ?? startedAt);
+          return (
+            priorVersion > previousVersion ||
+            (priorVersion === previousVersion &&
+              (stored['state'] === 'failed' || (newerStart && (stored['state'] === 'writing' || stored['state'] === 'storing'))))
+          );
+        },
+      }
     );
   }
 
   /** The creator's normal result poll may finish a run before a Documents read does. */
   public async recordResult(req: Request, sessionId: string, result: MktgRunResultResponse): Promise<void> {
+    logger.debug(req, 'mktg_run_record_result', 'Checking the returned session result', {
+      ready: result.status === 'ready',
+      has_receipt: !!result.persistence?.document,
+    });
     const receipt = result.persistence;
     if (!receipt?.document) {
       return;
     }
     const key = `${this.prefix(receipt.project)}${this.hash(sessionId)}.json`;
     const object = await this.store.getObject(req, 'marketing-os-artifacts', key);
-    const stored = object ? this.parse(key, object.body, object.metadata, receipt.project) : null;
-    if (stored && stored.record.state !== 'completed' && (result.version ?? 0) > stored.record.priorVersion) {
+    const stored = object ? this.parse(req, key, object.body, object.metadata, receipt.project) : null;
+    logger.debug(req, 'mktg_run_record_result', 'Checking the existing revision receipt', { project: receipt.project, run: this.hash(sessionId) });
+    if (stored && !this.isTerminal(stored.record.state) && (result.version ?? 0) > stored.record.priorVersion) {
       await this.mark(req, stored, 'completed', receipt.document);
     }
   }
 
   /** Caller has already resolved and writer-authorized project; sessions come only from stored records. */
-  public async reconcile(req: Request, project: string, agentKey?: string, documentId?: string): Promise<MktgDocumentRunProgress[]> {
+  public async reconcile(req: Request, project: string, agentKey?: string, documentId?: string, poll = false): Promise<MktgDocumentRunProgress[]> {
+    logger.debug(req, 'mktg_run_reconcile', 'Checking recorded document runs', { project, agent: agentKey, document: documentId, poll });
     const listed = await this.store.listObjects(req, 'marketing-os-artifacts', this.prefix(project));
-    const runs: MktgDocumentRunProgress[] = [];
+    const storedRuns: MktgStoredStartedRun[] = [];
     for (const entry of listed) {
+      const modifiedAt = entry.lastModified?.getTime();
+      // Timer reads are bounded; navigation reads still discover unfinished sessions of any age.
+      if (poll && (modifiedAt === undefined || !Number.isFinite(modifiedAt) || Date.now() - modifiedAt > MKTG_STARTED_RUN_POLL_WINDOW_MS)) {
+        continue;
+      }
+      const metadata = await this.store.headObject(req, 'marketing-os-artifacts', entry.key);
+      if (metadata === null || metadata['state'] === 'completed' || metadata['state'] === 'superseded') {
+        continue;
+      }
       const object = await this.store.getObject(req, 'marketing-os-artifacts', entry.key);
-      const stored = object ? this.parse(entry.key, object.body, object.metadata, project) : null;
+      const stored = object ? this.parse(req, entry.key, object.body, object.metadata, project) : null;
       if (
         !stored ||
-        stored.record.state === 'completed' ||
+        this.isTerminal(stored.record.state) ||
         (agentKey && stored.record.agentKey !== agentKey) ||
         (documentId && stored.record.documentId !== documentId)
       ) {
         continue;
       }
+      storedRuns.push(stored);
+    }
+    // Finish active work before deciding whether a prior failure is superseded.
+    storedRuns.sort((a, b) => Number(a.record.state === 'failed') - Number(b.record.state === 'failed'));
+    const runs: MktgDocumentRunProgress[] = [];
+    for (const stored of storedRuns) {
       let current = stored.record;
-      if (current.state !== 'failed') {
+      if (current.state === 'failed') {
+        const type = findMktgDocumentType(current.agentKey);
+        const document = type ? await this.documents.getDocument(req, project, type, current.documentId) : null;
+        const createdAt = document?.revisions[0]?.createdAt;
+        if (createdAt && Date.parse(createdAt) > Date.parse(current.retryAt ?? current.startedAt)) {
+          current = await this.mark(req, stored, 'superseded');
+        }
+      } else {
+        let result: MktgRunResultResponse | undefined;
         try {
-          const result = await this.result(req, current);
-          if (result.status === 'ready' && (result.version ?? 0) > current.priorVersion) {
-            const location = result.persistence?.document;
-            current = await this.mark(req, stored, location ? 'completed' : 'storing', location);
-          } else if (Date.now() - Date.parse(current.retryAt ?? current.startedAt) > MKTG_RUN_POLL.timeoutMs) {
-            // Check Guild before timing out: an old run may already have finished while nobody was looking.
-            current = await this.mark(req, stored, 'failed');
-          }
+          result = await this.result(req, current);
         } catch (error) {
-          logger.warning(req, 'mktg_run_reconcile', 'Could not check the stored run; keeping it available for the next read', {
-            project,
-            run: current.runId,
-            err: error,
-          });
-          if (Date.now() - Date.parse(current.retryAt ?? current.startedAt) > MKTG_RUN_POLL.timeoutMs) {
-            current = await this.mark(req, stored, 'failed');
+          logger.warning(req, 'mktg_run_reconcile', 'Could not check the stored run; the next read may retry it', { project, run: current.runId, err: error });
+        }
+        const expired = Date.now() - Date.parse(current.retryAt ?? current.startedAt) > MKTG_RUN_POLL.timeoutMs;
+        if (result?.status === 'ready' && (result.version ?? 0) > current.priorVersion) {
+          const location = result.persistence?.document;
+          let state: MktgStoredDocumentRunState = 'storing';
+          if (location) {
+            state = 'completed';
+          } else if (expired) {
+            state = 'failed';
           }
+          if (state !== current.state) {
+            current = await this.mark(req, stored, state, location);
+          }
+        } else if (expired) {
+          // Check Guild first; both unresolved writing and ready-but-unpersisted storing are bounded.
+          current = await this.mark(req, stored, 'failed');
         }
       }
-      if (current.state !== 'completed') {
-        // Explicit projection: session id, starter identity and capabilities never enter the response.
+      if (current.state !== 'completed' && current.state !== 'superseded') {
+        // Explicit projection: session ids and capabilities never enter the response.
         runs.push({
           runId: current.runId,
           project,
@@ -184,13 +245,15 @@ export class MktgDocumentRunService {
     if (!MKTG_STARTED_RUN_ID_REGEX.test(runId)) {
       throw ServiceValidationError.forField('runId', 'Invalid run id.');
     }
+    logger.debug(req, 'mktg_run_retry', 'Checking a recorded run for explicit retry', { project, run: runId });
     const key = `${this.prefix(project)}${runId}.json`;
     const object = await this.store.getObject(req, 'marketing-os-artifacts', key);
-    const stored = object ? this.parse(key, object.body, object.metadata, project) : null;
+    const stored = object ? this.parse(req, key, object.body, object.metadata, project) : null;
     if (!stored || stored.record.agentKey !== agentKey || stored.record.documentId !== documentId) {
       throw new ResourceNotFoundError('Marketing OS run', runId);
     }
     if (stored.record.state === 'failed') {
+      logger.debug(req, 'mktg_run_retry', 'Retrying the recorded session, not starting generation', { project, run: runId });
       await this.mark(req, stored, 'writing', undefined, new Date().toISOString());
     }
   }
@@ -205,7 +268,7 @@ export class MktgDocumentRunService {
       case 'icp':
         return this.icp.getResult(...args);
       default:
-        throw new Error('No live result flow for the stored run type.');
+        throw ServiceValidationError.forField('agentKey', 'No live result flow exists for this stored run type.');
     }
   }
 
@@ -216,7 +279,11 @@ export class MktgDocumentRunService {
     result?: MktgDocumentLocation,
     retryAt = stored.record.retryAt
   ): Promise<MktgStartedRunRecord> {
-    await this.store.putContentAddressedObject(
+    if (state === stored.record.state && retryAt === stored.record.retryAt) {
+      return stored.record;
+    }
+    logger.debug(req, 'mktg_run_mark', 'Advancing recorded run state', { project: stored.record.project, run: stored.record.runId, state });
+    const written = await this.store.putContentAddressedObject(
       req,
       'marketing-os-artifacts',
       stored.key,
@@ -230,19 +297,29 @@ export class MktgDocumentRunService {
         ...(result && { 'revision-id': result.revisionId }),
         ...(retryAt && { 'retry-at': retryAt }),
       },
-      { refreshMetadataWhen: (metadata) => Number(metadata['prior-version'] ?? 0) === stored.record.priorVersion && metadata['state'] !== 'completed' }
+      { refreshMetadataWhen: (metadata) => this.canAdvance(metadata, stored.record, state, retryAt) }
     );
     const fresh = await this.store.getObject(req, 'marketing-os-artifacts', stored.key);
-    const current = fresh ? this.parse(stored.key, fresh.body, fresh.metadata, stored.record.project) : null;
+    const current = fresh ? this.parse(req, stored.key, fresh.body, fresh.metadata, stored.record.project) : null;
     if (!current) {
-      throw new Error('Started run disappeared during its state update.');
+      throw new ResourceNotFoundError('Marketing OS run', stored.record.runId);
+    }
+    if (written && (this.isTerminal(current.record.state) || current.record.state === 'failed')) {
+      logger.info(req, 'mktg_run_state', 'Recorded run became terminal', {
+        project: current.record.project,
+        run: current.record.runId,
+        state: current.record.state,
+      });
     }
     return current.record;
   }
 
-  private parse(key: string, body: string, metadata: Record<string, string>, project: string): MktgStoredStartedRun | null {
+  private parse(req: Request, key: string, body: string, metadata: Record<string, string>, project: string): MktgStoredStartedRun | null {
     try {
-      const record = JSON.parse(body) as MktgStartedRunRecord;
+      const record = JSON.parse(body) as MktgStartedRunRecord & { startedBy?: unknown };
+      // Never carry the retired identity field into a future write of a legacy development record.
+      const hasLegacyIdentity = Object.hasOwn(record, 'startedBy');
+      delete record.startedBy;
       const startedAt = metadata['started-at'] ?? record.startedAt;
       const priorVersion = Number(metadata['prior-version'] ?? record.priorVersion);
       const state = metadata['state'] ?? record.state;
@@ -258,8 +335,10 @@ export class MktgDocumentRunService {
         Number.isNaN(Date.parse(startedAt)) ||
         !Number.isInteger(priorVersion) ||
         priorVersion < 0 ||
-        !['writing', 'storing', 'failed', 'completed'].includes(state)
+        !Object.hasOwn(MKTG_STARTED_RUN_STATE_ORDER, state) ||
+        (metadata['retry-at'] !== undefined && Number.isNaN(Date.parse(metadata['retry-at'])))
       ) {
+        logger.warning(req, 'mktg_run_read', 'Ignoring invalid started-run data or namespace', { project, key });
         return null;
       }
       const revisionId = metadata['revision-id'];
@@ -267,16 +346,46 @@ export class MktgDocumentRunService {
       if (state === 'completed' && !result) {
         return null;
       }
-      return { key, body, record: { ...record, startedAt, priorVersion, state: state as MktgStoredDocumentRunState, result, retryAt: metadata['retry-at'] } };
-    } catch (error) {
-      logger.warning(undefined, 'mktg_run_read', 'Ignoring malformed started-run record', { err: error });
+      return {
+        key,
+        body: hasLegacyIdentity ? JSON.stringify(record) : body,
+        record: { ...record, startedAt, priorVersion, state: state as MktgStoredDocumentRunState, result, retryAt: metadata['retry-at'] },
+      };
+    } catch {
+      logger.warning(req, 'mktg_run_read', 'Ignoring malformed started-run record', { key });
       return null;
     }
   }
 
+  private isTerminal(state: MktgStoredDocumentRunState): boolean {
+    return state === 'completed' || state === 'superseded';
+  }
+
+  /** Best-effort monotonic metadata guard; not a new atomic-write guarantee. */
+  private canAdvance(metadata: Record<string, string>, record: MktgStartedRunRecord, state: MktgStoredDocumentRunState, retryAt?: string): boolean {
+    const current = (metadata['state'] ?? record.state) as MktgStoredDocumentRunState;
+    if (
+      !Object.hasOwn(MKTG_STARTED_RUN_STATE_ORDER, current) ||
+      this.isTerminal(current) ||
+      Number(metadata['prior-version'] ?? record.priorVersion) !== record.priorVersion ||
+      (metadata['started-at'] ?? record.startedAt) !== record.startedAt
+    ) {
+      return false;
+    }
+    const previousRetry = metadata['retry-at'] === undefined ? 0 : Date.parse(metadata['retry-at']);
+    const nextRetry = retryAt === undefined ? 0 : Date.parse(retryAt);
+    if (!Number.isFinite(previousRetry) || !Number.isFinite(nextRetry) || nextRetry < previousRetry) {
+      return false;
+    }
+    if (nextRetry > previousRetry) {
+      return current === 'failed' && state === 'writing';
+    }
+    return MKTG_STARTED_RUN_STATE_ORDER[state] > MKTG_STARTED_RUN_STATE_ORDER[current];
+  }
+
   private prefix(project: string): string {
     if (!MKTG_ARTIFACT_PARTITION_REGEX.test(project)) {
-      throw new Error('Validated project uid required.');
+      throw ServiceValidationError.forField('project', 'A validated project uid is required.');
     }
     return `${MKTG_STARTED_RUN_PREFIX}/${project}/`;
   }

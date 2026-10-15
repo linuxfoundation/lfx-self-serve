@@ -40,7 +40,7 @@ export class MktgDocumentsController {
     const startTime = logger.startOperation(req, operation, {});
     try {
       const project = await this.resolveWritableProject(req, projectUid, operation);
-      const runs = await this.documentRuns.reconcile(req, project);
+      const runs = await this.documentRuns.reconcile(req, project, undefined, undefined, req.query['poll'] === '1');
       const documents = await this.documentStore.listDocuments(req, project);
       logger.success(req, operation, startTime, { project, groups: documents.groups.length });
       res.json({ ...documents, runs });
@@ -61,7 +61,7 @@ export class MktgDocumentsController {
     const startTime = logger.startOperation(req, operation, { agent: params.type.agentKey, document: params.documentId });
     try {
       const project = await this.resolveWritableProject(req, params.projectUid, operation);
-      const runs = await this.documentRuns.reconcile(req, project, params.type.agentKey, params.documentId);
+      const runs = await this.documentRuns.reconcile(req, project, params.type.agentKey, params.documentId, req.query['poll'] === '1');
       const detail = await this.documentStore.getDocument(req, project, params.type, params.documentId);
       if (!detail && runs.length === 0) {
         throw new ResourceNotFoundError('Marketing OS document', params.documentId, { operation, service: 'mktg_documents_controller', path: req.path });
@@ -90,7 +90,7 @@ export class MktgDocumentsController {
     const startTime = logger.startOperation(req, operation, { agent: params.type.agentKey, document: params.documentId });
     try {
       const project = await this.resolveWritableProject(req, params.projectUid, operation);
-      const runs = await this.documentRuns.reconcile(req, project, params.type.agentKey, params.documentId);
+      const runs = await this.documentRuns.reconcile(req, project, params.type.agentKey, params.documentId, req.query['poll'] === '1');
       const revision = await this.documentStore.getRevision(req, project, params.type, params.documentId, revisionId);
       if (!revision) {
         throw new ResourceNotFoundError('Marketing OS document revision', revisionId, { operation, service: 'mktg_documents_controller', path: req.path });

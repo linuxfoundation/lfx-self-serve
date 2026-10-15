@@ -5,8 +5,10 @@ import { createHash } from 'node:crypto';
 import type { Request } from 'express';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 
-const objects = vi.hoisted(() => new Map<string, { body: string; metadata: Record<string, string> }>());
-const flows = vi.hoisted(() => ({ getResult: vi.fn(), getProjectById: vi.fn() }));
+const objects = vi.hoisted(() => new Map<string, { body: string; metadata: Record<string, string>; lastModified: Date }>());
+const flows = vi.hoisted(() => ({ getResult: vi.fn(), getProjectById: vi.fn(), getDocument: vi.fn(), ensureBucket: vi.fn(), readiness: vi.fn() }));
+const logs = vi.hoisted(() => ({ warning: vi.fn(), debug: vi.fn(), info: vi.fn() }));
+const io = vi.hoisted(() => ({ get: vi.fn(), head: vi.fn(), put: vi.fn(), writes: 0, dropAfterWrite: false }));
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-document-store.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-artifact.constants')),
@@ -33,14 +35,26 @@ vi.mock('./project.service', () => ({
     public getProjectById = flows.getProjectById;
   },
 }));
-vi.mock('./logger.service', () => ({ logger: { warning: vi.fn() } }));
+vi.mock('./mktg-document-store.service', () => ({
+  MktgDocumentStoreService: class {
+    public getDocument = flows.getDocument;
+  },
+}));
+vi.mock('./logger.service', () => ({ logger: logs }));
 vi.mock('./object-store.service', () => ({
   ObjectStoreService: class {
+    public ensureBucket = flows.ensureBucket;
+    public readiness = flows.readiness;
+    public async headObject(_req: unknown, _purpose: string, key: string) {
+      io.head(key);
+      return objects.get(key)?.metadata ?? null;
+    }
     public async getObject(_req: unknown, _purpose: string, key: string) {
+      io.get(key);
       return objects.get(key) ?? null;
     }
     public async listObjects(_req: unknown, _purpose: string, prefix: string) {
-      return [...objects.keys()].filter((key) => key.startsWith(prefix)).map((key) => ({ key }));
+      return [...objects.entries()].filter(([key]) => key.startsWith(prefix)).map(([key, object]) => ({ key, lastModified: object.lastModified }));
     }
     public async putContentAddressedObject(
       _req: unknown,
@@ -52,22 +66,38 @@ vi.mock('./object-store.service', () => ({
       metadata: Record<string, string>,
       options: { refreshMetadataWhen?: (metadata: Record<string, string>) => boolean }
     ) {
+      io.put(key, metadata);
       const previous = objects.get(key);
       if (previous && !options.refreshMetadataWhen?.(previous.metadata)) {
         return false;
       }
-      objects.set(key, { body: body.toString('utf8'), metadata });
+      io.writes++;
+      objects.set(key, { body: body.toString('utf8'), metadata, lastModified: new Date() });
+      if (io.dropAfterWrite) {
+        objects.delete(key);
+      }
       return true;
     }
   },
 }));
 
 import { MktgDocumentRunService } from './mktg-document-run.service';
+import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import type { MktgStartedRunRecord } from '@lfx-one/shared/interfaces';
 const req = {} as Request;
 const project = 'synthetic-project';
 const runId = createHash('sha256').update('synthetic-session').digest('hex');
+const key = `document-runs/${project}/${runId}.json`;
 const location = { agentKey: 'brand-kit', documentId: 'living', revisionId: `000001-${'a'.repeat(64)}` };
 const ready = { status: 'ready', version: 1, documentMarkdown: '# Synthetic', persistence: { document: location } };
+
+function stored() {
+  const value = objects.get(key);
+  if (!value) {
+    throw new Error('Missing synthetic run fixture.');
+  }
+  return value;
+}
 
 describe('MktgDocumentRunService', () => {
   let service: MktgDocumentRunService;
@@ -76,72 +106,191 @@ describe('MktgDocumentRunService', () => {
     vi.setSystemTime('2026-10-15T12:00:00.000Z');
     vi.clearAllMocks();
     objects.clear();
+    io.writes = 0;
+    io.dropAfterWrite = false;
     flows.getResult.mockResolvedValue({ status: 'pending' });
     flows.getProjectById.mockResolvedValue({ uid: project, writer: true });
+    flows.getDocument.mockResolvedValue(null);
+    flows.ensureBucket.mockResolvedValue(undefined);
+    flows.readiness.mockResolvedValue(true);
     service = new MktgDocumentRunService();
   });
   afterEach(() => vi.useRealTimers());
 
-  it('shape-gates and requires writer access before returning a storage partition', async () => {
-    await expect(service.resolveProject(req, '../other')).rejects.toThrow();
+  it('shape-gates and requires writer access before storage preflight or a usable partition', async () => {
+    await expect(service.resolveProject(req, '../other')).rejects.toBeInstanceOf(ServiceValidationError);
     expect(flows.getProjectById).not.toHaveBeenCalled();
     flows.getProjectById.mockResolvedValueOnce({ uid: project, writer: false });
     await expect(service.resolveProject(req, project)).rejects.toThrow('write access');
+    expect(flows.ensureBucket).not.toHaveBeenCalled();
     await expect(service.resolveProject(req, ' supplied-project ')).resolves.toBe(project);
+    expect(flows.ensureBucket).toHaveBeenCalledWith('marketing-os-artifacts', { degradable: true });
+    expect(flows.readiness).toHaveBeenCalledWith('marketing-os-artifacts');
   });
 
-  it('records a session once and exposes only sanitized progress to a fresh reader', async () => {
-    await service.start(req, project, 'brand-kit', 'synthetic-session', 'opaque-subject');
-    const original = [...objects.values()][0].body;
-    await service.start(req, project, 'brand-kit', 'synthetic-session', 'opaque-subject');
-    expect(objects.size).toBe(1);
-    expect([...objects.values()][0].body).toBe(original);
+  it.each(['missing configuration', 'unreachable store'])('returns typed 503 on %s before Guild work', async (failure) => {
+    if (failure === 'missing configuration') {
+      flows.ensureBucket.mockRejectedValueOnce(new Error('Synthetic missing bucket'));
+    } else {
+      flows.readiness.mockResolvedValueOnce(false);
+    }
+    const resolution = service.resolveProject(req, project);
+    await expect(resolution).rejects.toBeInstanceOf(MicroserviceError);
+    await expect(resolution).rejects.toMatchObject({ statusCode: 503, code: 'DOCUMENT_RUN_STORAGE_UNAVAILABLE' });
+    expect(flows.getResult).not.toHaveBeenCalled();
+    expect(objects.size).toBe(0);
+  });
+
+  it('records no starter identity, session capability or linkable subject hash', async () => {
+    await service.start(req, project, 'brand-kit', 'synthetic-session');
+    const body = JSON.parse(stored().body);
+    expect(body).not.toHaveProperty('startedBy');
+    expect(body).not.toHaveProperty('ownerToken');
     const publicRuns = await new MktgDocumentRunService().reconcile(req, project);
     expect(publicRuns).toEqual([{ project, runId, agentKey: 'brand-kit', documentId: 'living', startedAt: '2026-10-15T12:00:00.000Z', state: 'writing' }]);
     expect(JSON.stringify(publicRuns)).not.toContain('synthetic-session');
-    expect(JSON.stringify(publicRuns)).not.toContain('opaque-subject');
-    expect(JSON.stringify(publicRuns)).not.toContain('ownerToken');
   });
 
-  it('records the finished revision through the existing result flow and skips later sequential completions', async () => {
-    await service.start(req, project, 'brand-kit', 'synthetic-session', 'opaque-subject');
+  it('drops a retired legacy identity field before reusing a record body', async () => {
+    await service.start(req, project, 'brand-kit', 'synthetic-session');
+    const value = stored();
+    value.body = JSON.stringify({ ...JSON.parse(value.body), startedBy: 'retired-synthetic-pseudonym' });
+    value.metadata['state'] = 'failed';
+    vi.advanceTimersByTime(1);
+    await service.start(req, project, 'brand-kit', 'synthetic-session');
+    expect(JSON.parse(stored().body)).not.toHaveProperty('startedBy');
+  });
+
+  it('records once, skips sequential completion checks, and logs terminal completion with request context', async () => {
+    await service.start(req, project, 'brand-kit', 'synthetic-session');
+    const original = stored().body;
+    await service.start(req, project, 'brand-kit', 'synthetic-session');
+    expect(objects.size).toBe(1);
+    expect(stored().body).toBe(original);
     flows.getResult.mockResolvedValue(ready);
     expect(await new MktgDocumentRunService().reconcile(req, project)).toEqual([]);
     expect(await new MktgDocumentRunService().reconcile(req, project)).toEqual([]);
     expect(flows.getResult).toHaveBeenCalledTimes(1);
-    expect([...objects.values()][0].metadata).toMatchObject({ state: 'completed', 'revision-id': location.revisionId });
+    expect(stored().metadata).toMatchObject({ state: 'completed', 'revision-id': location.revisionId });
+    expect(logs.info).toHaveBeenCalledWith(req, 'mktg_run_state', expect.any(String), expect.objectContaining({ state: 'completed' }));
   });
 
-  it('keeps storing visible without a receipt, then completes on a later browser read', async () => {
-    await service.start(req, project, 'brand-kit', 'synthetic-session', 'opaque-subject');
+  it('does not rewrite storing on every read and eventually exhausts ready-without-receipt persistence', async () => {
+    await service.start(req, project, 'brand-kit', 'synthetic-session');
+    flows.getResult.mockResolvedValue({ status: 'ready', version: 1 });
+    expect((await service.reconcile(req, project))[0].state).toBe('storing');
+    const calls = io.put.mock.calls.length;
+    expect((await service.reconcile(req, project))[0].state).toBe('storing');
+    expect(io.put).toHaveBeenCalledTimes(calls);
+    vi.setSystemTime('2026-10-15T12:11:00.000Z');
+    expect((await service.reconcile(req, project))[0].state).toBe('failed');
+    flows.getResult.mockClear();
+    await service.reconcile(req, project);
+    expect(flows.getResult).not.toHaveBeenCalled();
+    expect(logs.info).toHaveBeenCalledWith(req, 'mktg_run_state', expect.any(String), expect.objectContaining({ state: 'failed' }));
+  });
+
+  it('skips old writing records on timer polls but discovers a day-old finished session on navigation', async () => {
+    await service.start(req, project, 'brand-kit', 'synthetic-session');
+    vi.setSystemTime('2026-10-16T12:00:00.000Z');
+    flows.getResult.mockResolvedValue(ready);
+    io.get.mockClear();
+    io.head.mockClear();
+    expect(await service.reconcile(req, project, undefined, undefined, true)).toEqual([]);
+    expect(io.get).not.toHaveBeenCalled();
+    expect(io.head).not.toHaveBeenCalled();
+    expect(flows.getResult).not.toHaveBeenCalled();
+    expect(await new MktgDocumentRunService().reconcile(req, project)).toEqual([]);
+    expect(flows.getResult).toHaveBeenCalledOnce();
+    expect(io.get).toHaveBeenCalledTimes(2); // The unfinished body, then acknowledgement of its completed metadata.
+    expect(stored().metadata['state']).toBe('completed');
+  });
+
+  it.each([false, true])('skips completed record bodies after metadata HEAD with poll=%s', async (poll) => {
+    await service.start(req, project, 'brand-kit', 'synthetic-session');
+    flows.getResult.mockResolvedValue(ready);
+    await service.reconcile(req, project);
+    io.get.mockClear();
+    io.head.mockClear();
+    io.put.mockClear();
+    flows.getResult.mockClear();
+    expect(await service.reconcile(req, project, undefined, undefined, poll)).toEqual([]);
+    expect(io.head).toHaveBeenCalledExactlyOnceWith(key);
+    expect(io.get).not.toHaveBeenCalled();
+    expect(io.put).not.toHaveBeenCalled();
+    expect(flows.getResult).not.toHaveBeenCalled();
+  });
+
+  it('accepts a finished old session before applying the unresolved timeout', async () => {
+    await service.start(req, project, 'brand-kit', 'synthetic-session');
+    vi.setSystemTime('2026-10-16T12:00:00.000Z');
+    flows.getResult.mockResolvedValue(ready);
+    expect(await service.reconcile(req, project)).toEqual([]);
+    expect(flows.getResult).toHaveBeenCalledOnce();
+  });
+
+  it('does not let a stale failed write erase a newer explicit retry-at', async () => {
+    await service.start(req, project, 'brand-kit', 'synthetic-session');
+    vi.setSystemTime('2026-10-15T12:11:00.000Z');
+    flows.getResult.mockImplementationOnce(async () => {
+      stored().metadata['retry-at'] = '2026-10-15T12:11:00.000Z';
+      return { status: 'pending' };
+    });
+    const writes = io.writes;
+    expect((await service.reconcile(req, project))[0].state).toBe('writing');
+    expect(stored().metadata['retry-at']).toBe('2026-10-15T12:11:00.000Z');
+    expect(io.writes).toBe(writes);
+  });
+
+  it('renews an explicit retry budget without changing the original Started label', async () => {
+    await service.start(req, project, 'brand-kit', 'synthetic-session');
+    vi.setSystemTime('2026-10-15T12:11:00.000Z');
+    await service.reconcile(req, project);
+    await expect(service.retry(req, project, 'icp', 'living', runId)).rejects.toBeInstanceOf(ResourceNotFoundError);
+    await service.retry(req, project, 'brand-kit', 'living', runId);
+    expect((await service.reconcile(req, project))[0]).toMatchObject({ state: 'writing', startedAt: '2026-10-15T12:00:00.000Z' });
+  });
+
+  it('renews a failed or older in-flight intake on the same session without needing a newer prior version', async () => {
+    await service.start(req, project, 'brand-kit', 'synthetic-session');
+    const body = stored().body;
+    vi.setSystemTime('2026-10-15T12:11:00.000Z');
+    await service.reconcile(req, project);
+    await service.start(req, project, 'brand-kit', 'synthetic-session');
+    expect((await service.reconcile(req, project))[0]).toMatchObject({ state: 'writing', startedAt: '2026-10-15T12:11:00.000Z' });
+    vi.setSystemTime('2026-10-15T12:15:00.000Z');
+    await service.start(req, project, 'brand-kit', 'synthetic-session');
+    expect(stored().metadata['started-at']).toBe('2026-10-15T12:15:00.000Z');
+    expect(stored().body).toBe(body);
+    expect(objects.size).toBe(1);
+  });
+
+  it('retires a failed record once a later successful run has a stored document revision', async () => {
+    await service.start(req, project, 'brand-kit', 'synthetic-session');
+    vi.setSystemTime('2026-10-15T12:11:00.000Z');
+    await service.reconcile(req, project);
+    await service.start(req, project, 'brand-kit', 'later-session');
+    vi.setSystemTime('2026-10-15T12:12:00.000Z');
+    flows.getResult.mockResolvedValue(ready);
+    flows.getDocument.mockResolvedValue({ revisions: [{ createdAt: '2026-10-15T12:12:00.000Z' }] });
+    expect(await service.reconcile(req, project)).toEqual([]);
+    expect(stored().metadata['state']).toBe('superseded');
+    expect(flows.getResult).toHaveBeenCalledTimes(2);
+    expect(flows.getDocument).toHaveBeenCalledOnce();
+    expect(Math.max(...flows.getResult.mock.invocationCallOrder)).toBeLessThan(Math.max(...flows.getDocument.mock.invocationCallOrder));
+  });
+
+  it('finishes a storing run when a later read obtains the real revision receipt', async () => {
+    await service.start(req, project, 'brand-kit', 'synthetic-session');
     flows.getResult.mockResolvedValueOnce({ status: 'ready', version: 1 });
     expect((await service.reconcile(req, project))[0].state).toBe('storing');
     flows.getResult.mockResolvedValue(ready);
     expect(await new MktgDocumentRunService().reconcile(req, project)).toEqual([]);
   });
 
-  it('checks an old finished session before applying the pending timeout', async () => {
-    await service.start(req, project, 'brand-kit', 'synthetic-session', 'opaque-subject');
-    vi.setSystemTime('2026-10-16T12:00:00.000Z');
-    flows.getResult.mockResolvedValue(ready);
-    expect(await service.reconcile(req, project)).toEqual([]);
-  });
-
-  it('requires explicit retry after timeout, preserves start and never starts another session', async () => {
-    await service.start(req, project, 'brand-kit', 'synthetic-session', 'opaque-subject');
-    vi.setSystemTime('2026-10-15T13:00:00.000Z');
-    expect((await service.reconcile(req, project))[0].state).toBe('failed');
-    flows.getResult.mockClear();
-    await service.reconcile(req, project);
-    expect(flows.getResult).not.toHaveBeenCalled();
-    await expect(service.retry(req, project, 'icp', 'living', runId)).rejects.toThrow();
-    await service.retry(req, project, 'brand-kit', 'living', runId);
-    expect((await service.reconcile(req, project))[0]).toMatchObject({ state: 'writing', startedAt: '2026-10-15T12:00:00.000Z' });
-  });
-
-  it('marks the creator fast-path result complete even if a previous read marked the run failed', async () => {
-    await service.start(req, project, 'brand-kit', 'synthetic-session', 'opaque-subject');
-    vi.setSystemTime('2026-10-15T13:00:00.000Z');
+  it('allows a verified creator result receipt to complete a previously failed run', async () => {
+    await service.start(req, project, 'brand-kit', 'synthetic-session');
+    vi.setSystemTime('2026-10-15T12:11:00.000Z');
     await service.reconcile(req, project);
     await service.recordResult(req, 'synthetic-session', {
       status: 'ready',
@@ -151,14 +300,35 @@ describe('MktgDocumentRunService', () => {
     expect(await service.reconcile(req, project)).toEqual([]);
   });
 
-  it('advances a reused session only for a newer intake attempt, without replacing its body', async () => {
-    await service.start(req, project, 'brand-kit', 'synthetic-session', 'opaque-subject');
+  it('classifies missing state updates, invalid partitions and unsupported result flows', async () => {
+    await service.start(req, project, 'brand-kit', 'synthetic-session');
+    await expect(service.reconcile(req, '../bad')).rejects.toBeInstanceOf(ServiceValidationError);
+    const unsupported = { ...JSON.parse(stored().body), agentKey: 'aeo-geo' } as MktgStartedRunRecord;
+    await expect(service['result'](req, unsupported)).rejects.toBeInstanceOf(ServiceValidationError);
+    io.dropAfterWrite = true;
+    await expect(
+      service.recordResult(req, 'synthetic-session', {
+        status: 'ready',
+        version: 1,
+        persistence: { project, document: { ...location, agentKey: 'brand-kit' }, s3_key: 'synthetic-key', content_sha256: 'a'.repeat(64), version: 1 },
+      })
+    ).rejects.toBeInstanceOf(ResourceNotFoundError);
+  });
+
+  it('logs corrupt record warnings using the request context without the raw body', async () => {
+    await service.start(req, project, 'brand-kit', 'synthetic-session');
+    stored().body = '{not-json';
+    expect(await service.reconcile(req, project)).toEqual([]);
+    expect(logs.warning).toHaveBeenCalledWith(req, 'mktg_run_read', expect.any(String), { key });
+  });
+
+  it('retains existing completion and newer-draft behavior for reused sessions', async () => {
+    await service.start(req, project, 'brand-kit', 'synthetic-session');
     flows.getResult.mockResolvedValue(ready);
     await service.reconcile(req, project);
-    const body = [...objects.values()][0].body;
-    await service.start(req, project, 'brand-kit', 'synthetic-session', 'opaque-subject', 1);
-    expect(objects.size).toBe(1);
-    expect([...objects.values()][0].body).toBe(body);
+    const body = stored().body;
+    await service.start(req, project, 'brand-kit', 'synthetic-session', 1);
+    expect(stored().body).toBe(body);
     expect((await service.reconcile(req, project))[0].state).toBe('writing');
     expect(flows.getResult).toHaveBeenLastCalledWith(req, 'synthetic-session', project, undefined, 1);
   });

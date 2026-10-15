@@ -7,8 +7,8 @@ import type { MktgReadmeOutcome } from './mktg-run.interface';
 /** Observable phases of a server-recorded run; a completed run is represented by its stored revision. */
 export type MktgDocumentRunState = 'writing' | 'storing' | 'failed';
 
-/** Server-only terminal marker; completed sessions no longer appear as unfinished runs. */
-export type MktgStoredDocumentRunState = MktgDocumentRunState | 'completed';
+/** Server-only terminal markers: completed runs and superseded failures are no longer unfinished. */
+export type MktgStoredDocumentRunState = MktgDocumentRunState | 'completed' | 'superseded';
 
 /**
  * Writer-entitled progress returned with Documents list/detail reads.
@@ -38,8 +38,6 @@ export interface MktgStartedRunRecord {
   agentKey: MktgDocumentAgentKey;
   documentId: string;
   sessionId: string;
-  /** Opaque subject hash, not a display name, username or capability. Never sent to the browser. */
-  startedBy: string;
   startedAt: string;
   /** Only a strictly newer validated envelope can finish this attempt. */
   priorVersion: number;
@@ -52,7 +50,6 @@ export interface MktgStartedRunRecord {
   result: MktgDocumentLocation | null;
 }
 
-/** Body for an explicit retry of a failed server-recorded run, scoped by its document/run route. */
 /** Private fetched started-run record and the exact bytes used for metadata-only refreshes. */
 export interface MktgStoredStartedRun {
   key: string;
@@ -60,6 +57,7 @@ export interface MktgStoredStartedRun {
   record: MktgStartedRunRecord;
 }
 
+/** Body for an explicit retry of a failed server-recorded run, scoped by its document/run route. */
 export interface MktgRetryDocumentRunRequest {
   project: string;
 }

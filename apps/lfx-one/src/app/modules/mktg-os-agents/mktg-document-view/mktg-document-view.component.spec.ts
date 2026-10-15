@@ -261,7 +261,7 @@ describe('MktgDocumentViewComponent', () => {
     generation.next({ type: 'persisted', location: { agentKey: 'brand-kit', documentId: 'living', revisionId: LATEST.id } });
     generation.complete();
     await settle();
-    expect(store.getRevision).toHaveBeenLastCalledWith(PROJECT.uid, 'brand-kit', 'living', LATEST.id);
+    expect(store.getRevision).toHaveBeenLastCalledWith(PROJECT.uid, 'brand-kit', 'living', LATEST.id, false);
     expect(query('mktg-document-view-generating')).toBeNull();
     expect(query('mktg-document-view-document')?.textContent).toContain('Revision 2');
     expect(TestBed.inject(Router).url).not.toContain('generation=');
@@ -372,8 +372,8 @@ describe('MktgDocumentViewComponent', () => {
   it('opens the latest revision when no revision is asked for', async () => {
     await render('/documents/brand-kit/living');
 
-    expect(store.getDocument).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living');
-    expect(store.getRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', LATEST.id);
+    expect(store.getDocument).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', false);
+    expect(store.getRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', LATEST.id, false);
     expect(query('mktg-document-view-title')?.textContent).toContain('TestOrbit Brand Kit');
     expect(query('mktg-document-view-revision-chip')?.textContent).toContain('Revision 2 of 2');
     expect(query('mktg-document-view-revision-chip')?.textContent).toContain('latest');
@@ -404,7 +404,7 @@ describe('MktgDocumentViewComponent', () => {
     await render(`/documents/brand-kit/living?revision=${OLDER.id}`);
 
     expect(store.getDocument).not.toHaveBeenCalled();
-    expect(store.getRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', OLDER.id);
+    expect(store.getRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', OLDER.id, false);
     expect(query('mktg-document-view-revision-chip')?.textContent).toContain('Revision 1 of 2');
     expect(query('mktg-document-view-restore-current')?.textContent).toContain('Restore revision 1');
     expect(query('mktg-document-view-hash')?.textContent).toContain(OLDER.contentSha256);
@@ -434,7 +434,7 @@ describe('MktgDocumentViewComponent', () => {
 
     expect(store.restoreRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', OLDER.id);
     expect(TestBed.inject(Router).url).toContain(`revision=${RESTORED.id}`);
-    expect(store.getRevision).toHaveBeenLastCalledWith('proj-1', 'brand-kit', 'living', RESTORED.id);
+    expect(store.getRevision).toHaveBeenLastCalledWith('proj-1', 'brand-kit', 'living', RESTORED.id, false);
     expect(query('mktg-document-view-notice')?.textContent).toContain('Revision 1 restored as revision 3, now the latest.');
   });
 

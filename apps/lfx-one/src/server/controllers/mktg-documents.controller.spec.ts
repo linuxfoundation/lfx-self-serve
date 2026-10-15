@@ -86,7 +86,17 @@ describe('MktgDocumentsController', () => {
     expect(projectMocks.getProjectById).toHaveBeenCalledWith(expect.anything(), PROJECT, true);
     expect(storeMocks.listDocuments).toHaveBeenCalledWith(expect.anything(), 'resolved-uid');
     expect(res.json).toHaveBeenCalledWith({ project: 'resolved-uid', groups: [], runs: [] });
-    expect(runMocks.reconcile).toHaveBeenCalledWith(expect.anything(), 'resolved-uid');
+    expect(runMocks.reconcile).toHaveBeenCalledWith(expect.anything(), 'resolved-uid', undefined, undefined, false);
+  });
+
+  it.each(['listDocuments', 'getDocument', 'getRevision'] as const)('%s passes the explicit timer-poll mode after authorization', async (method) => {
+    storeMocks.listDocuments.mockResolvedValue({ project: PROJECT, groups: [] });
+    storeMocks.getDocument.mockResolvedValue({ revisions: [] });
+    storeMocks.getRevision.mockResolvedValue({ revision: { number: 1 } });
+    const req = buildReq({ agentKey: 'brand-kit', documentId: 'living', revisionId: REVISION_ID }, { project: PROJECT, poll: '1' });
+    await controller[method](req, buildRes(), next);
+    expect(next).not.toHaveBeenCalled();
+    expect(runMocks.reconcile.mock.calls[0][4]).toBe(true);
   });
 
   it('refuses a caller without the project writer grant', async () => {

@@ -114,8 +114,9 @@ export class MktgDocumentStoreService {
    * document. A revision write that fails drops the receipt exactly like a
    * failed artifact write, so the run shell keeps polling and the next poll
    * retries both: the artifact write is an idempotent no-op by then, and the
-   * revision write is skipped once the document holds a revision from this
-   * session with these bytes.
+   * revision write is skipped once a living document holds this session,
+   * draft version and document bytes. Run documents retain one revision per
+   * session.
    */
   public async recordPersisted<T extends MktgRunPersistReceipt>(
     req: Request,
@@ -147,7 +148,8 @@ export class MktgDocumentStoreService {
    * Record one generation as a revision of its document. Living documents get
    * a new latest revision (after materializing a pre-revision object as
    * revision 1); a run gets its own document, keyed by its session, with a
-   * single revision. Idempotent per session and document bytes. Throws on a
+   * single revision. Living generations dedupe per session, draft version
+   * and document bytes; run documents remain one per session. Throws on a
    * storage failure — the caller decides how to degrade.
    */
   public async recordGeneration(

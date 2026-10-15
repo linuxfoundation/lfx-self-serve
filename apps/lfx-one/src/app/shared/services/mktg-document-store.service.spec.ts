@@ -36,7 +36,21 @@ describe('MktgDocumentStoreService', () => {
     const request = http.expectOne((candidate) => candidate.url === '/api/mktg-agents/documents');
     expect(request.request.method).toBe('GET');
     expect(request.request.params.get('project')).toBe('proj-1');
+    expect(request.request.params.has('poll')).toBe(false);
     request.flush({ project: 'proj-1', groups: [] });
+  });
+
+  it('flags all timer read paths without limiting initial/navigation discovery', () => {
+    service.listDocuments('proj-1', true).subscribe();
+    service.getDocument('proj-1', 'brand-kit', 'living', true).subscribe();
+    service.getRevision('proj-1', 'brand-kit', 'living', REVISION_ID, true).subscribe();
+    const requests = http.match((request) => request.params.get('poll') === '1');
+    expect(requests).toHaveLength(3);
+    for (const request of requests) {
+      expect(request.request.method).toBe('GET');
+      expect(request.request.params.get('project')).toBe('proj-1');
+      request.flush({});
+    }
   });
 
   it('reads one document and one revision under the document’s path', () => {

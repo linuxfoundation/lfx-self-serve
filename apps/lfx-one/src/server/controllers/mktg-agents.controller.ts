@@ -150,7 +150,7 @@ export class MktgAgentsController {
         // New session: bind it to the creator via an opaque owner token.
         const newSessionId = await this.guildService.createSession(req, { message: message.trim(), handle: agent.guildAgentHandle });
         if (projectUid && documentType) {
-          await this.documentRuns.start(req, projectUid, documentType.agentKey, newSessionId, userId, priorVersion ?? 0);
+          await this.documentRuns.start(req, projectUid, documentType.agentKey, newSessionId, priorVersion ?? 0);
         }
         logger.success(req, 'mktg_agents_chat', startTime, { agent_id: trimmedAgentId, session_created: true });
         const response: MktgChatResponse = { sessionId: newSessionId, ownerToken: createSessionOwnerToken(userId, newSessionId) };
@@ -169,7 +169,7 @@ export class MktgAgentsController {
 
       await this.guildService.sendFollowUp(req, validSessionId, { message: message.trim(), handle: agent.guildAgentHandle });
       if (projectUid && documentType) {
-        await this.documentRuns.start(req, projectUid, documentType.agentKey, validSessionId, userId, priorVersion ?? 0);
+        await this.documentRuns.start(req, projectUid, documentType.agentKey, validSessionId, priorVersion ?? 0);
       }
       logger.success(req, 'mktg_agents_chat', startTime, { agent_id: trimmedAgentId, session_created: false });
       const response: MktgChatResponse = { success: true };
@@ -293,7 +293,7 @@ export class MktgAgentsController {
       // Safe: validateBrandKitIntakeAnswers guaranteed a complete string record.
       const trimmedAnswers = Object.fromEntries(Object.entries(answers as Record<string, string>).map(([key, value]) => [key, value.trim()]));
       const sessionId = await this.brandKitService.startGeneration(req, trimmedAnswers, agent.guildAgentHandle);
-      await this.documentRuns.start(req, projectUid, 'brand-kit', sessionId, userId);
+      await this.documentRuns.start(req, projectUid, 'brand-kit', sessionId);
       logger.success(req, 'brand_kit_generate', startTime, { session_created: true });
       const response: BrandKitGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId) };
       res.json(response);
@@ -521,7 +521,7 @@ export class MktgAgentsController {
         trimmedProject || undefined,
         agent.guildAgentHandle
       );
-      await this.documentRuns.start(req, projectUid, 'foundation-message', sessionId, userId, 0);
+      await this.documentRuns.start(req, projectUid, 'foundation-message', sessionId, 0);
       logger.success(req, 'foundation_message_generate', startTime, { session_created: true });
       const response: FoundationMessageGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId) };
       res.json(response);
@@ -820,7 +820,7 @@ export class MktgAgentsController {
           .filter(([, value]) => value !== '')
       );
       const { sessionId, readme } = await this.icpService.startGeneration(req, trimmedAnswers, { feedback, priorVersion }, agent.guildAgentHandle);
-      await this.documentRuns.start(req, projectUid, 'icp', sessionId, userId, priorVersion ?? 0, readme);
+      await this.documentRuns.start(req, projectUid, 'icp', sessionId, priorVersion ?? 0, readme);
       logger.success(req, 'icp_generate', startTime, { session_created: true, readme_fetched: readme.fetched, readme_source: readme.source });
       // The README outcome rides the response so the run shell can label a
       // document generated WITHOUT a README instead of leaving a thin document

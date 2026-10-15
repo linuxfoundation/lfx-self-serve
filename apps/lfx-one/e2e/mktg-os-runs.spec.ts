@@ -91,7 +91,12 @@ test.describe('Marketing OS runs land on documents', () => {
         [FEATURE_FLAG_OVERRIDE_STORAGE_KEY, MKTG_OS_AGENTS_ENABLED_FLAG]
       );
       const submissions: string[] = [];
+      const readModes: (string | null)[] = [];
       freshPage.on('request', (request) => {
+        const url = new URL(request.url());
+        if (request.method() === 'GET' && url.pathname.startsWith('/api/mktg-agents/documents')) {
+          readModes.push(url.searchParams.get('poll'));
+        }
         if (request.method() === 'POST' && /\/api\/mktg-agents\/(?:chat|[^/]+\/(?:generate|result))$/.test(new URL(request.url()).pathname)) {
           submissions.push(request.url());
         }
@@ -110,6 +115,8 @@ test.describe('Marketing OS runs land on documents', () => {
       await expect(freshPage.getByTestId('mktg-document-view-document')).toContainText('Synthetic revision 1', { timeout: DATA_LOAD_TIMEOUT });
       await expect(freshPage.getByTestId('mktg-document-view-generating')).toHaveCount(0);
       expect(submissions).toEqual([]);
+      expect(readModes).toContain(null); // Initial/navigation reads keep full discovery.
+      expect(readModes).toContain('1'); // Automatic reads use the bounded hot path.
       expect(await freshPage.evaluate((prefix) => Object.keys(localStorage).filter((key) => key.startsWith(prefix)), MKTG_RUN_STORAGE_KEY_PREFIX)).toEqual([]);
       await testInfo.attach('fresh-browser-landed', { body: await freshPage.screenshot({ fullPage: true }), contentType: 'image/png' });
     } finally {

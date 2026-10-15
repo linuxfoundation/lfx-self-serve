@@ -118,7 +118,7 @@ vi.mock('../utils/mktg-session-token.util', () => tokenMocks);
 
 import type { NextFunction, Request, Response } from 'express';
 
-import { AuthenticationError, AuthorizationError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { AuthenticationError, AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { MktgAgentsController } from './mktg-agents.controller';
 
 function buildReq(query: Record<string, unknown> = {}): Request {
@@ -195,14 +195,7 @@ describe('MktgAgentsController', () => {
     expect(next).not.toHaveBeenCalled();
     expect(runMocks.resolveProject).toHaveBeenCalledWith(req, 'supplied-project');
     expect(runMocks.resolveProject.mock.invocationCallOrder[0]).toBeLessThan(flow.startGeneration.mock.invocationCallOrder[0]);
-    expect(runMocks.start).toHaveBeenCalledWith(
-      req,
-      'tracked-project',
-      agentKey,
-      'new-session',
-      'auth0|user-1',
-      ...(agentKey === 'brand-kit' ? [] : [0, { fetched: true }])
-    );
+    expect(runMocks.start).toHaveBeenCalledWith(req, 'tracked-project', agentKey, 'new-session', ...(agentKey === 'brand-kit' ? [] : [0, { fetched: true }]));
     expect(runMocks.start.mock.invocationCallOrder[0]).toBeLessThan(res.json.mock.invocationCallOrder[0]);
   });
 
@@ -213,6 +206,18 @@ describe('MktgAgentsController', () => {
     expect(runMocks.start).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledWith(expect.any(AuthorizationError));
   });
+
+  it.each(['generateBrandKit', 'generateFoundationMessage', 'generateIcp'] as const)(
+    '%s starts no Guild work if tracking storage preflight fails',
+    async (method) => {
+      runMocks.resolveProject.mockRejectedValueOnce(new MicroserviceError('Storage unavailable', 503, 'DOCUMENT_RUN_STORAGE_UNAVAILABLE'));
+      await controller[method](buildResultReq({ project: 'supplied-project', answers: {} }), buildRes(), next);
+      expect(brandKitMocks.startGeneration).not.toHaveBeenCalled();
+      expect(foundationMessageMocks.startGeneration).not.toHaveBeenCalled();
+      expect(icpMocks.startGeneration).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 503 }));
+    }
+  );
 
   it('does not acknowledge a run whose durable start could not be recorded', async () => {
     const failure = new Error('Synthetic store unavailable');
@@ -238,7 +243,7 @@ describe('MktgAgentsController', () => {
     );
     expect(next).not.toHaveBeenCalled();
     expect(guildMocks.sendFollowUp).toHaveBeenCalled();
-    expect(runMocks.start).toHaveBeenCalledWith(expect.anything(), 'tracked-project', 'brand-kit', 'session-1', 'auth0|user-1', 1);
+    expect(runMocks.start).toHaveBeenCalledWith(expect.anything(), 'tracked-project', 'brand-kit', 'session-1', 1);
   });
 
   it.each([

@@ -428,6 +428,29 @@ describe('ObjectStoreService', () => {
     });
   });
 
+  describe('headObject', () => {
+    it('returns backend metadata without fetching bytes or creating a bucket', async () => {
+      sendMock.mockResolvedValueOnce({ Metadata: { state: 'completed' } });
+      const req = buildReq();
+      await expect(service.headObject(req, 'marketing-os-artifacts', 'document-runs/project/session.json')).resolves.toEqual({ state: 'completed' });
+      expect(sendMock).toHaveBeenCalledOnce();
+      expect(sendMock.mock.calls[0][0]).toBeInstanceOf(HeadObjectCommand);
+      expect(logger.success).toHaveBeenCalledWith(req, 'object_store_head_object', expect.any(Number), expect.objectContaining({ found: true }));
+    });
+
+    it('reports only a confirmed missing object as null', async () => {
+      sendMock.mockRejectedValueOnce(buildNotFoundError());
+      await expect(service.headObject(buildReq(), 'marketing-os-artifacts', 'missing.json')).resolves.toBeNull();
+    });
+
+    it('logs and rethrows a metadata permission error, never masquerading as missing', async () => {
+      sendMock.mockRejectedValueOnce(buildForbiddenError());
+      const req = buildReq();
+      await expect(service.headObject(req, 'marketing-os-artifacts', 'private.json')).rejects.toThrow('Forbidden');
+      expect(logger.warning).toHaveBeenCalledWith(req, 'object_store_head_object', expect.any(String), expect.objectContaining({ error: 'Forbidden' }));
+    });
+  });
+
   describe('getObject', () => {
     const key = 'brand-kit/testorbit/abc.md';
 

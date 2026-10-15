@@ -345,27 +345,29 @@ export class MktgDocumentViewComponent {
     revisionId: string,
     retryId: string
   ): Observable<MktgRevisionResponse | null> {
-    const revision = (detail: MktgDocumentDetailResponse) => {
+    const revision = (detail: MktgDocumentDetailResponse, poll = false) => {
       const id = revisionId || detail.revisions[0]?.id;
       if (!id) {
         return of({ detail, view: null as MktgRevisionResponse | null });
       }
-      return this.documentStore.getRevision(project, agentKey, documentId, id).pipe(
+      return this.documentStore.getRevision(project, agentKey, documentId, id, poll).pipe(
         switchMap((view) =>
           !revisionId && view.revisions[0]?.id && view.revisions[0].id !== view.revision.id
-            ? this.documentStore.getRevision(project, agentKey, documentId, view.revisions[0].id)
+            ? this.documentStore.getRevision(project, agentKey, documentId, view.revisions[0].id, poll)
             : of(view)
         ),
         map((view) => ({ detail: { ...detail, runs: view.runs ?? detail.runs }, view }))
       );
     };
-    const read = () =>
+    const read = (poll = false) =>
       revisionId
-        ? this.documentStore.getRevision(project, agentKey, documentId, revisionId).pipe(map((view) => ({ detail: view as MktgDocumentDetailResponse, view })))
-        : this.documentStore.getDocument(project, agentKey, documentId).pipe(switchMap(revision));
-    const first$ = retryId ? this.documentStore.retryRun(project, agentKey, documentId, retryId).pipe(switchMap(revision)) : read();
+        ? this.documentStore
+            .getRevision(project, agentKey, documentId, revisionId, poll)
+            .pipe(map((view) => ({ detail: view as MktgDocumentDetailResponse, view })))
+        : this.documentStore.getDocument(project, agentKey, documentId, poll).pipe(switchMap((detail) => revision(detail, poll)));
+    const first$ = retryId ? this.documentStore.retryRun(project, agentKey, documentId, retryId).pipe(switchMap((detail) => revision(detail))) : read();
     return first$.pipe(
-      expand((state) => (state.detail.runs?.some((run) => run.state !== 'failed') ? timer(MKTG_RUN_POLL.intervalMs).pipe(switchMap(read)) : EMPTY)),
+      expand((state) => (state.detail.runs?.some((run) => run.state !== 'failed') ? timer(MKTG_RUN_POLL.intervalMs).pipe(switchMap(() => read(true))) : EMPTY)),
       map(({ detail, view }) => {
         const run = detail.runs?.find((entry) => entry.state !== 'failed') ?? detail.runs?.[0] ?? null;
         this.serverRun.set(run);
