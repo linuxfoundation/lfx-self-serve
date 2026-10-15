@@ -51,6 +51,7 @@ import type {
   MetaAccountOption,
   MetaCampaignMetrics,
   MetaMonitorResponse,
+  MonitorAccountSource,
   MonitorCellView,
   MonitorConnectionAccount,
   MonitorConnectionPlatform,
@@ -144,6 +145,13 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly metaError = signal<string | null>(null);
   protected readonly metaCampaigns = computed(() => this.metaData()?.campaigns ?? []);
   protected readonly metaTotalsNote = computed(() => this.totalsCoverageNote(this.metaCampaigns()));
+  /**
+   * Whether the Meta figures on screen came from campaign-service (the connection's account). Its
+   * Meta monitor reports spend and budgets unconverted in the account's own currency, and the
+   * connection's account need not be a USD one, so those figures carry no `$` — see `initMetaView`.
+   * Recorded with the data it describes, not read from the live source flag.
+   */
+  protected readonly metaAmountsInAccountCurrency = signal(false);
   protected readonly metaPulledAt = computed(() => {
     const pulledAt = this.metaData()?.pulledAt;
     return pulledAt ? new Date(pulledAt).toLocaleString('en-US') : null;
@@ -155,11 +163,6 @@ export class MonitoringTabComponent implements OnInit {
   /** The in-flight legacy account-list reads; cancelled whenever the picker source changes. */
   private legacyAccountSubs: Subscription[] = [];
   protected readonly monitorViaCampaignService = signal(false);
-  /**
-   * The last connections read FAILED while the flag was not known to be on, so the legacy pickers are
-   * a fallback, not a confirmed "cutover off". A panel's Retry re-runs that discovery first.
-   */
-  private readonly monitorSourceUnknown = signal(false);
   protected readonly monitorConnections = signal<CampaignMonitorConnections['platforms']>({});
   protected readonly metricsDisabledPlatforms = signal<ReadonlySet<MonitorConnectionPlatform>>(new Set());
   /** X stays hidden while the app does not offer it (`disabled: true` in `CAMPAIGN_PLATFORMS`), whatever the flag says. */
@@ -446,36 +449,25 @@ export class MonitoringTabComponent implements OnInit {
   }
 
   /**
-   * The Retry on a panel's error. With the cutover on, the data source is re-checked first: a
-   * `MONITOR_CUTOVER_MISMATCH` means a pod with the flag OFF answered, and if the flag has since
-   * gone off everywhere the tab must fall back to the legacy pickers rather than retry the
-   * connection's account. Re-reading the connections re-fetches the selected panel once they land.
-   * When the source is UNKNOWN (the discovery read failed and the legacy lists are only a fallback),
-   * discovery is retried too, and the panel read again on whichever source it settles on. Flag
-   * confirmed off, it is the panel's own read, as before.
+   * The Retry on a panel's error. The data source is ALWAYS re-checked first, whichever source the
+   * tab is on, because the flag is per pod and a rolling change can go either way: a
+   * `MONITOR_CUTOVER_MISMATCH` means a flag-OFF pod refused a connection-path read, and a
+   * `MONITOR_CUTOVER_LEGACY_MISMATCH` means a flag-ON pod refused a legacy-picker read. Retrying the
+   * read on the source the tab already has would repeat either refusal; re-running discovery lets
+   * the tab settle on whichever source the deployment now serves, and the selected panel is read
+   * again on it (the cutover path re-reads it once the connections land; the legacy path is told to).
    */
-  protected retryPanelRead(panel: 'linkedin' | 'reddit' | 'meta' | 'reportBacked' | 'hubspot'): void {
-    if (this.monitorViaCampaignService()) {
-      this.loadMonitorConnections();
-      return;
-    }
-    if (this.monitorSourceUnknown()) {
-      this.loadMonitorConnections(true);
-      return;
-    }
-    if (panel === 'linkedin') {
-      this.fetchLinkedInData();
-    } else if (panel === 'reddit') {
-      this.fetchRedditData();
-    } else if (panel === 'meta') {
-      this.fetchMetaData();
-    }
+  protected retryPanelRead(): void {
+    this.loadMonitorConnections(true);
   }
 
   protected fetchReportBackedData(): void {
     const platform = this.selectedPlatform();
     if (platform !== 'microsoft' && platform !== 'twitter') return;
     this.reportBackedSub?.unsubscribe();
+    // A previous read's "metrics not enabled" must not outlive this one: if this read fails some
+    // other way, the notice would otherwise hide that error and its Retry. As `fetchHubSpotData` does.
+    this.setMetricsDisabled(platform, false);
     const accountId = this.reportBackedAccount()?.accountId;
     if (!accountId) {
       // No bound account: the panel shows the connection's empty state, and there is nothing to read.
@@ -552,8 +544,10 @@ export class MonitoringTabComponent implements OnInit {
     this.linkedInSub?.unsubscribe();
     this.linkedInLoading.set(true);
     this.linkedInError.set(null);
+    // Cleared per read, as `fetchReportBackedData` does: a stale "metrics not enabled" would hide a new error.
+    this.setMetricsDisabled('linkedin', false);
     this.linkedInSub = this.campaignService
-      .getLinkedInMonitorData(this.activeFoundationSlug(), accountKey, this.selectedDays(), this.monitorViaCampaignService())
+      .getLinkedInMonitorData(this.activeFoundationSlug(), accountKey, this.selectedDays(), this.monitorAccountSource())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
@@ -590,8 +584,10 @@ export class MonitoringTabComponent implements OnInit {
     this.redditSub?.unsubscribe();
     this.redditLoading.set(true);
     this.redditError.set(null);
+    // Cleared per read, as `fetchReportBackedData` does: a stale "metrics not enabled" would hide a new error.
+    this.setMetricsDisabled('reddit', false);
     this.redditSub = this.campaignService
-      .getRedditMonitorData(this.activeFoundationSlug(), accountKey, this.selectedDays(), this.monitorViaCampaignService())
+      .getRedditMonitorData(this.activeFoundationSlug(), accountKey, this.selectedDays(), this.monitorAccountSource())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
@@ -628,12 +624,16 @@ export class MonitoringTabComponent implements OnInit {
     this.metaSub?.unsubscribe();
     this.metaLoading.set(true);
     this.metaError.set(null);
+    // Cleared per read, as `fetchReportBackedData` does: a stale "metrics not enabled" would hide a new error.
+    this.setMetricsDisabled('meta', false);
+    const accountSource = this.monitorAccountSource();
     this.metaSub = this.campaignService
-      .getMetaMonitorData(this.activeFoundationSlug(), accountKey, this.selectedDays(), this.monitorViaCampaignService())
+      .getMetaMonitorData(this.activeFoundationSlug(), accountKey, this.selectedDays(), accountSource)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
           this.setMetricsDisabled('meta', false);
+          this.metaAmountsInAccountCurrency.set(accountSource === 'connection');
           this.metaData.set(data);
           this.metaLoading.set(false);
         },
@@ -724,7 +724,15 @@ export class MonitoringTabComponent implements OnInit {
   private initMetaView(): Signal<AccountMonitorPanelView | null> {
     return computed(() => {
       const data = this.metaData();
-      return data ? this.buildAccountPanelView(data.campaigns, data.accountTotals, { ...this.standardFormats, statusBadges: true }) : null;
+      if (!data) return null;
+      // The legacy path reads only the allowlisted (USD) LF accounts, so it keeps its `$` exactly as
+      // before. A connection's account can be in any currency and campaign-service passes its amounts
+      // unconverted without naming it, so those are currency-neutral, as Microsoft/X are, and the
+      // panel states the unit once.
+      const formats = this.metaAmountsInAccountCurrency()
+        ? { currency: (n: number): string => this.formatAccountAmount(n), pct: (n: number): string => this.formatPct(n) }
+        : this.standardFormats;
+      return this.buildAccountPanelView(data.campaigns, data.accountTotals, { ...formats, statusBadges: true });
     });
   }
 
@@ -1052,6 +1060,11 @@ export class MonitoringTabComponent implements OnInit {
     return platform === 'microsoft' || platform === 'twitter';
   }
 
+  /** The `accountSource` marker for a LinkedIn/Reddit/Meta read: where its picker's account came from. */
+  private monitorAccountSource(): MonitorAccountSource {
+    return this.monitorViaCampaignService() ? 'connection' : 'legacy';
+  }
+
   private connectedAccount(connection: MonitorConnectionAccount | undefined): { accountId: string; label: string } | null {
     if (connection?.state !== 'connected' || !connection.accountId) return null;
     return { accountId: connection.accountId, label: connection.label || connection.accountId };
@@ -1238,7 +1251,6 @@ export class MonitoringTabComponent implements OnInit {
       .subscribe({
         next: (result) => {
           if (slug !== this.activeFoundationSlug()) return;
-          this.monitorSourceUnknown.set(false);
           if (result?.viaCampaignService === true) {
             this.applyMonitorConnections(result.platforms ?? {});
           } else {
@@ -1257,7 +1269,6 @@ export class MonitoringTabComponent implements OnInit {
           } else {
             // Not "cutover off": nothing is known yet. The legacy lists fill in meanwhile, and a
             // panel's Retry re-runs this discovery before reading again.
-            this.monitorSourceUnknown.set(true);
             this.useLegacyAccounts(slug, readPanelOnLegacy);
           }
         },

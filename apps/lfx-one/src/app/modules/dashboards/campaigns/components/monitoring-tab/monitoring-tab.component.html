@@ -510,7 +510,7 @@
           <i class="fa-light fa-triangle-exclamation text-3xl text-red-400" aria-hidden="true"></i>
           <p class="text-sm font-medium text-red-700">Failed to load LinkedIn data</p>
           <p class="text-xs text-red-500">{{ linkedInError() }}</p>
-          <button type="button" (click)="retryPanelRead('linkedin')" class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700">
+          <button type="button" (click)="retryPanelRead()" class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700">
             Retry
           </button>
         </div>
@@ -575,7 +575,7 @@
           <i class="fa-light fa-triangle-exclamation text-3xl text-red-400" aria-hidden="true"></i>
           <p class="text-sm font-medium text-red-700">Failed to load Reddit data</p>
           <p class="text-xs text-red-500">{{ redditError() }}</p>
-          <button type="button" (click)="retryPanelRead('reddit')" class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700">
+          <button type="button" (click)="retryPanelRead()" class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700">
             Retry
           </button>
         </div>
@@ -640,7 +640,7 @@
           <i class="fa-light fa-triangle-exclamation text-3xl text-red-400" aria-hidden="true"></i>
           <p class="text-sm font-medium text-red-700">Failed to load Meta data</p>
           <p class="text-xs text-red-500">{{ metaError() }}</p>
-          <button type="button" (click)="retryPanelRead('meta')" class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700">
+          <button type="button" (click)="retryPanelRead()" class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700">
             Retry
           </button>
         </div>
@@ -650,6 +650,10 @@
           <p class="text-sm text-gray-500">No active Meta campaigns found for this account.</p>
         </div>
       } @else if (metaView(); as view) {
+        @if (metaAmountsInAccountCurrency()) {
+          <!-- campaign-service reports a connection's Meta amounts unconverted and does not say in which currency. -->
+          <p class="text-xs text-gray-500" data-testid="meta-currency-note">Spend and budgets are in the ad account's own currency.</p>
+        }
         <ng-container
           [ngTemplateOutlet]="accountPanel"
           [ngTemplateOutletContext]="{ $implicit: view, panel: 'meta', actPlatform: 'meta-ads', note: metaTotalsNote() }" />
@@ -702,10 +706,7 @@
           <i class="fa-light fa-triangle-exclamation text-3xl text-red-400" aria-hidden="true"></i>
           <p class="text-sm font-medium text-red-700">Failed to load {{ reportBackedLabel() }} data</p>
           <p class="text-xs text-red-500">{{ reportBackedError() }}</p>
-          <button
-            type="button"
-            (click)="retryPanelRead('reportBacked')"
-            class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700">
+          <button type="button" (click)="retryPanelRead()" class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700">
             Retry
           </button>
         </div>
@@ -766,7 +767,7 @@
           <i class="fa-light fa-triangle-exclamation text-3xl text-red-400" aria-hidden="true"></i>
           <p class="text-sm font-medium text-red-700">Failed to load HubSpot email data</p>
           <p class="text-xs text-red-500">{{ hubSpotError() }}</p>
-          <button type="button" (click)="retryPanelRead('hubspot')" class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700">
+          <button type="button" (click)="retryPanelRead()" class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700">
             Retry
           </button>
         </div>

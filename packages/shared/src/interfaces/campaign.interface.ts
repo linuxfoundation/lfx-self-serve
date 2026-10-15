@@ -2771,6 +2771,13 @@ export interface MonitorConnectionAccount {
   label: string | null;
 }
 
+/**
+ * Where the Monitor tab's LinkedIn/Reddit/Meta read got its account: the project's connection
+ * (`/monitor/connections`, a pod with the cutover ON) or a legacy allowlist picker (cutover OFF).
+ * Sent as `accountSource` so a pod whose flag disagrees refuses the read instead of misserving it.
+ */
+export type MonitorAccountSource = 'connection' | 'legacy';
+
 /** `GET /api/campaigns/monitor/connections`. */
 export interface CampaignMonitorConnections {
   /**

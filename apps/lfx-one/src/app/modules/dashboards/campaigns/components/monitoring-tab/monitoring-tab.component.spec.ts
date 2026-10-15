@@ -643,7 +643,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       select('linkedin');
 
       expect(options('linkedin-account-select')).toEqual(['512345678|LF LinkedIn (legacy)']);
-      expect(service['getLinkedInMonitorData']).toHaveBeenCalledWith('cncf', '512345678', 30, false);
+      expect(service['getLinkedInMonitorData']).toHaveBeenCalledWith('cncf', '512345678', 30, 'legacy');
       expect(el('linkedin-connection-notice')).toBeNull();
     });
   });
@@ -657,11 +657,11 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       expect(service['getRedditAccounts']).not.toHaveBeenCalled();
       expect(service['getMetaAccounts']).not.toHaveBeenCalled();
       expect(options('linkedin-account-select')).toEqual(['700000001|CNCF LinkedIn']);
-      expect(service['getLinkedInMonitorData']).toHaveBeenCalledWith('cncf', '700000001', 30, true);
+      expect(service['getLinkedInMonitorData']).toHaveBeenCalledWith('cncf', '700000001', 30, 'connection');
 
       select('meta');
       expect(options('meta-account-select')).toEqual(['act_700000001|CNCF Meta']);
-      expect(service['getMetaMonitorData']).toHaveBeenCalledWith('cncf', 'act_700000001', 30, true);
+      expect(service['getMetaMonitorData']).toHaveBeenCalledWith('cncf', 'act_700000001', 30, 'connection');
     });
 
     it('offers Microsoft Ads and HubSpot, and keeps X hidden while the app disables it', async () => {
@@ -704,7 +704,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
 
       expect(service['getMonitorConnections']).toHaveBeenCalledTimes(2);
       expect(el('linkedin-connection-notice')).toBeNull();
-      expect(service['getLinkedInMonitorData']).toHaveBeenCalledWith('cncf', '700000001', 30, true);
+      expect(service['getLinkedInMonitorData']).toHaveBeenCalledWith('cncf', '700000001', 30, 'connection');
     });
 
     it('shows "metrics not enabled" instead of an error for the 400 the BFF marks so', async () => {
@@ -735,7 +735,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       await setup(allConnected);
       select('reddit');
 
-      expect(service['getRedditMonitorData']).toHaveBeenCalledWith('cncf', 't2_cncf', 30, true);
+      expect(service['getRedditMonitorData']).toHaveBeenCalledWith('cncf', 't2_cncf', 30, 'connection');
     });
 
     /**
@@ -765,7 +765,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
 
       expect(service['getMonitorConnections']).toHaveBeenCalledTimes(2);
       expect(service['getLinkedInAccounts']).toHaveBeenCalledWith('cncf');
-      expect(service['getLinkedInMonitorData']).toHaveBeenLastCalledWith('cncf', '512345678', 30, false);
+      expect(service['getLinkedInMonitorData']).toHaveBeenLastCalledWith('cncf', '512345678', 30, 'legacy');
       expect(el('linkedin-error')).toBeNull();
       expect(options('linkedin-account-select')).toEqual(['512345678|LF LinkedIn (legacy)']);
     });
@@ -789,7 +789,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
         throwError(() => new HttpErrorResponse({ status: 400, error: { error: 'connection is not bound to this account' } }))
       );
       select('linkedin');
-      expect(service['getLinkedInMonitorData']).toHaveBeenCalledWith('cncf', '512345678', 30, false);
+      expect(service['getLinkedInMonitorData']).toHaveBeenCalledWith('cncf', '512345678', 30, 'legacy');
       expect(text('linkedin-error')).toContain('connection is not bound to this account');
 
       service['getMonitorConnections'].mockReturnValue(of(allConnected));
@@ -798,7 +798,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       fixture.detectChanges();
 
       expect(service['getMonitorConnections']).toHaveBeenCalledTimes(2);
-      expect(service['getLinkedInMonitorData']).toHaveBeenLastCalledWith('cncf', '700000001', 30, true);
+      expect(service['getLinkedInMonitorData']).toHaveBeenLastCalledWith('cncf', '700000001', 30, 'connection');
       expect(el('linkedin-error')).toBeNull();
       expect(options('linkedin-account-select')).toEqual(['700000001|CNCF LinkedIn']);
       expect(el('platform-microsoft')).not.toBeNull();
@@ -815,9 +815,165 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       fixture.detectChanges();
 
       expect(service['getMonitorConnections']).toHaveBeenCalledTimes(2);
-      expect(service['getLinkedInMonitorData']).toHaveBeenLastCalledWith('cncf', '512345678', 30, false);
+      expect(service['getLinkedInMonitorData']).toHaveBeenLastCalledWith('cncf', '512345678', 30, 'legacy');
       expect(el('linkedin-error')).toBeNull();
       expect(el('platform-microsoft')).toBeNull();
+    });
+  });
+
+  /**
+   * Both directions of a mixed rollout (#3637 review). Discovery can succeed on a pod with the flag
+   * OFF while the read lands on one with it ON, which refuses the legacy-picker read with its own
+   * typed 409. That discovery SUCCEEDED, so the panel's Retry must still re-run it — every Retry
+   * re-checks the source — and then read the connection's account.
+   */
+  describe('mixed rollout, legacy discovery then a flag-ON backend', () => {
+    const legacyMismatch = (): HttpErrorResponse =>
+      new HttpErrorResponse({
+        status: 409,
+        error: { error: 'The monitor is switching data sources; refresh in a moment.', code: 'MONITOR_CUTOVER_LEGACY_MISMATCH' },
+      });
+
+    it('marks a legacy-picker read as legacy', async () => {
+      await setup({ viaCampaignService: false, platforms: {} });
+      select('meta');
+
+      expect(service['getMetaMonitorData']).toHaveBeenCalledWith('cncf', 'act_1', 30, 'legacy');
+    });
+
+    it.each([
+      ['linkedin', 'getLinkedInMonitorData', '700000001'],
+      ['reddit', 'getRedditMonitorData', 't2_cncf'],
+      ['meta', 'getMetaMonitorData', 'act_700000001'],
+    ] as const)('recovers %s onto the connection path from Retry after a SUCCESSFUL flag-off discovery', async (platform, read, connectionAccount) => {
+      await setup({ viaCampaignService: false, platforms: {} });
+      service[read].mockReturnValue(throwError(legacyMismatch));
+      select(platform);
+      expect(text(`${platform}-error`)).toContain('The monitor is switching data sources; refresh in a moment.');
+
+      // The rollout settled with the flag ON: discovery now answers the project's connections.
+      service['getMonitorConnections'].mockReturnValue(of(allConnected));
+      service[read].mockReturnValue(of(null));
+      (el(`${platform}-error`)?.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      expect(service['getMonitorConnections']).toHaveBeenCalledTimes(2);
+      expect(service[read]).toHaveBeenLastCalledWith('cncf', connectionAccount, 30, 'connection');
+      expect(el(`${platform}-error`)).toBeNull();
+      expect(el('platform-microsoft')).not.toBeNull();
+    });
+
+    it('re-checks the source on Retry even while the flag stays off, then reads the legacy account again', async () => {
+      await setup({ viaCampaignService: false, platforms: {} });
+      service['getRedditMonitorData'].mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, error: { error: 'boom' } })));
+      select('reddit');
+      expect(el('reddit-error')).not.toBeNull();
+
+      service['getRedditMonitorData'].mockReturnValue(of(null));
+      (el('reddit-error')?.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      expect(service['getMonitorConnections']).toHaveBeenCalledTimes(2);
+      expect(service['getRedditMonitorData']).toHaveBeenLastCalledWith('cncf', 't2_legacy', 30, 'legacy');
+      expect(el('reddit-error')).toBeNull();
+    });
+  });
+
+  /**
+   * A "metrics not enabled" answer must not outlive the read that produced it (#3637 review): the
+   * next read — a header Refresh, or switching away and back — can fail another way, and a stale
+   * notice would hide that error and its Retry.
+   */
+  describe('metrics-disabled state is per read', () => {
+    const disabled = (): HttpErrorResponse => new HttpErrorResponse({ status: 400, error: { error: 'not enabled', upstreamCode: 'metrics_not_enabled' } });
+    const unavailable = (): HttpErrorResponse => new HttpErrorResponse({ status: 503, error: { error: 'temporarily unavailable' } });
+
+    it.each([
+      ['linkedin', 'getLinkedInMonitorData'],
+      ['reddit', 'getRedditMonitorData'],
+      ['meta', 'getMetaMonitorData'],
+      ['microsoft', 'getMicrosoftMonitorData'],
+    ] as const)('shows %s 503 after a disabled 400 on the panel Refresh, with its Retry', async (platform, read) => {
+      await setup(allConnected);
+      service[read].mockReturnValue(throwError(disabled));
+      select(platform);
+      expect(el(`${platform}-connection-notice`)?.getAttribute('data-state')).toBe('metrics_disabled');
+
+      service[read].mockReturnValue(throwError(unavailable));
+      (el(`${platform}-refresh`) as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      expect(el(`${platform}-connection-notice`)).toBeNull();
+      expect(el(`${platform}-error`)).not.toBeNull();
+      expect(el(`${platform}-error`)?.querySelector('button')?.textContent?.trim()).toBe('Retry');
+    });
+
+    it('shows the new error after switching away and back', async () => {
+      await setup(allConnected);
+      service['getMicrosoftMonitorData'].mockReturnValue(throwError(disabled));
+      select('microsoft');
+      expect(el('microsoft-connection-notice')?.getAttribute('data-state')).toBe('metrics_disabled');
+
+      select('google');
+      service['getMicrosoftMonitorData'].mockReturnValue(throwError(unavailable));
+      select('microsoft');
+
+      expect(el('microsoft-connection-notice')).toBeNull();
+      expect(el('microsoft-error')).not.toBeNull();
+    });
+  });
+
+  /**
+   * The connection's Meta account need not be in USD, and campaign-service passes its amounts
+   * unconverted without naming the currency (#3637 review). Those figures carry no `$`, as
+   * Microsoft's do; the legacy (allowlisted, USD) Meta panel keeps its `$` exactly as before.
+   */
+  describe('Meta amounts', () => {
+    const euroAccount = {
+      accountLabel: 'CNCF Meta',
+      pulledAt: '2026-10-13T00:00:00.000Z',
+      dateRange: { mode: 'last_30_days' },
+      campaigns: [
+        {
+          campaignId: '1',
+          campaignName: 'KubeCon EU 2027 - Awareness',
+          status: 'ACTIVE',
+          totalBudget: 250,
+          dailyBudget: 0,
+          spend: 100,
+          impressions: 9000,
+          clicks: 90,
+          ctr: 1,
+          conversions: 3,
+          pacingPct: 40,
+          pacingLabel: 'normal',
+          startDate: '2026-09-01',
+          endDate: '',
+        },
+      ],
+      accountTotals: { spend: 100, impressions: 9000, clicks: 90, conversions: 3, campaignCount: 1 },
+      actionItems: [],
+    };
+
+    it("shows a non-USD connection's amounts without a $ and says they are in the account currency", async () => {
+      await setup(allConnected);
+      service['getMetaMonitorData'].mockReturnValue(of(euroAccount));
+      select('meta');
+
+      expect(text('meta-kpi-spend')).toBe('100.00');
+      expect(text('meta-campaign-row-0')).toContain('250.00');
+      expect(text('meta-campaign-row-0')).not.toContain('$');
+      expect(text('meta-currency-note')).toBe("Spend and budgets are in the ad account's own currency.");
+    });
+
+    it('keeps the legacy Meta panel in dollars, with no currency note', async () => {
+      await setup({ viaCampaignService: false, platforms: {} });
+      service['getMetaMonitorData'].mockReturnValue(of(euroAccount));
+      select('meta');
+
+      expect(text('meta-kpi-spend')).toBe('$100.00');
+      expect(text('meta-campaign-row-0')).toContain('$250.00');
+      expect(el('meta-currency-note')).toBeNull();
     });
   });
 
@@ -958,7 +1114,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       expect(el('linkedin-campaign-row-0')).toBeNull();
       expect(el('linkedin-loading')).not.toBeNull();
       expect(options('linkedin-account-select')).toEqual(['700000002|CNCF LinkedIn B']);
-      expect(service['getLinkedInMonitorData']).toHaveBeenLastCalledWith('cncf', '700000002', 30, true);
+      expect(service['getLinkedInMonitorData']).toHaveBeenLastCalledWith('cncf', '700000002', 30, 'connection');
 
       accountB.next(adPanel('Account B campaign'));
       fixture.detectChanges();

@@ -12,7 +12,9 @@ import { SseService } from './sse.service';
 /**
  * The account-source marker on the Monitor tab's reads (#2519). A read whose account came from the
  * connection path carries `accountSource=connection`, so a pod with the monitor cutover OFF refuses
- * it instead of serving it from the legacy path. A legacy-picker read must stay exactly as it was.
+ * it instead of serving it from the legacy path; one from a legacy picker carries
+ * `accountSource=legacy`, so a pod with it ON refuses that. A read with no source (the Optimize tab's)
+ * must stay exactly as it was.
  */
 describe('CampaignService monitor reads — account source marker', () => {
   let service: CampaignService;
@@ -35,7 +37,7 @@ describe('CampaignService monitor reads — account source marker', () => {
     ['getLinkedInMonitorData', '/api/campaigns/linkedin/monitor'],
     ['getRedditMonitorData', '/api/campaigns/reddit/monitor'],
     ['getMetaMonitorData', '/api/campaigns/meta/monitor'],
-  ] as const)('%s sends no marker for a legacy-picker read', (method, url) => {
+  ] as const)('%s sends no marker when no source is given', (method, url) => {
     service[method]('cncf', 'acct', 14).subscribe();
 
     expect(get.mock.calls[0][0]).toBe(url);
@@ -45,9 +47,18 @@ describe('CampaignService monitor reads — account source marker', () => {
   it.each(['getLinkedInMonitorData', 'getRedditMonitorData', 'getMetaMonitorData'] as const)(
     '%s marks a read whose account came from the connection',
     (method) => {
-      service[method]('cncf', 'acct', 14, true).subscribe();
+      service[method]('cncf', 'acct', 14, 'connection').subscribe();
 
       expect(params()).toEqual({ project: 'cncf', days: 14, accountKey: 'acct', accountSource: 'connection' });
+    }
+  );
+
+  it.each(['getLinkedInMonitorData', 'getRedditMonitorData', 'getMetaMonitorData'] as const)(
+    '%s marks a read whose account came from a legacy picker',
+    (method) => {
+      service[method]('cncf', 'acct', 14, 'legacy').subscribe();
+
+      expect(params()).toEqual({ project: 'cncf', days: 14, accountKey: 'acct', accountSource: 'legacy' });
     }
   );
 

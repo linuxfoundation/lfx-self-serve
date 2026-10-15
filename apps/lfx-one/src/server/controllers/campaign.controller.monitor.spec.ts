@@ -563,6 +563,22 @@ describe('CampaignController.getMonitorConnections', () => {
    * (no `code`) is an outage or a routing miss, and calling it "no connection" would tell an
    * operator to connect something that is already connected.
    */
+  it("offers a legacy Meta connection's bare numeric id in the act_ form the Meta monitor takes", async () => {
+    flag(true);
+    svcConnection.mockImplementation(async (_req: unknown, _project: string, provider: string) =>
+      provider === 'meta-ads' ? connection('193556282970417', 'CNCF Meta') : connection('187654321')
+    );
+    const res = buildRes();
+
+    await new CampaignController().getMonitorConnections(buildReq({ project: 'cncf' }), res, vi.fn());
+
+    const body = vi.mocked(res.json).mock.calls[0][0] as CampaignMonitorConnections;
+    expect(body.platforms.meta).toEqual({ state: 'connected', accountId: 'act_193556282970417', label: 'CNCF Meta' });
+    // Every other provider's numeric id is offered exactly as stored.
+    expect(body.platforms.linkedin?.accountId).toBe('187654321');
+    expect(body.platforms.microsoft?.accountId).toBe('187654321');
+  });
+
   it('reports a bare gateway 404 as unavailable, not as a missing connection', async () => {
     flag(true);
     svcConnection.mockRejectedValue(MicroserviceError.fromMicroserviceResponse(404, 'Not Found', 'Not Found', 'LFX_V2_CAMPAIGN_SERVICE', '/p'));
@@ -633,6 +649,52 @@ describe('CampaignController monitor reads during a mixed rollout', () => {
     await new CampaignController().getRedditMonitor(buildReq({ accountKey: 't2_offlist', project: 'tlf', accountSource: 'connection' }), res, vi.fn());
 
     expect(svcReddit).toHaveBeenCalledWith(expect.anything(), 'tlf', 't2_offlist', 30);
+    expect(res.json).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * The inverse direction: the tab discovered its pickers on a flag-OFF pod (legacy allowlist
+   * accounts), and the read lands on a flag-ON pod. campaign-service would refuse the allowlist
+   * account as not this project's connection's, so the pod answers a typed 409 of its own, which
+   * the tab's Retry turns into a fresh discovery.
+   */
+  it.each([
+    ['getLinkedInMonitor', legacyLinkedIn, svcLinkedIn, '512345678'],
+    ['getRedditMonitor', legacyReddit, svcReddit, REDDIT_ACCOUNT],
+    ['getMetaMonitor', legacyMeta, svcMeta, META_ACCOUNT],
+  ] as const)('%s refuses a legacy-picker read on a flag-ON pod with the legacy mismatch 409', async (name, legacy, svc, account) => {
+    flag(true);
+    const next = vi.fn();
+    const res = buildRes();
+
+    await new CampaignController()[name](buildReq({ accountKey: account, project: 'tlf', accountSource: 'legacy' }), res, next);
+
+    const error = nextError(next) as MicroserviceError;
+    expect(error.statusCode).toBe(409);
+    expect(error.toResponse()).toMatchObject({ code: 'MONITOR_CUTOVER_LEGACY_MISMATCH', error: 'The monitor is switching data sources; refresh in a moment.' });
+    expect(svc).not.toHaveBeenCalled();
+    expect(legacy).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('serves a legacy-marked read normally on a flag-OFF pod', async () => {
+    legacyMeta.mockResolvedValueOnce({ campaigns: [] });
+    const res = buildRes();
+
+    await new CampaignController().getMetaMonitor(buildReq({ accountKey: META_ACCOUNT, project: 'tlf', accountSource: 'legacy' }), res, vi.fn());
+
+    expect(legacyMeta).toHaveBeenCalledWith(expect.anything(), META_ACCOUNT, 30);
+    expect(res.json).toHaveBeenCalledTimes(1);
+  });
+
+  it('serves an unmarked read (the Optimize tab) on a flag-ON pod as before', async () => {
+    flag(true);
+    svcLinkedIn.mockResolvedValueOnce(monitorPayload({ account_id: '512345678' }));
+    const res = buildRes();
+
+    await new CampaignController().getLinkedInMonitor(buildReq({ accountKey: '512345678', project: 'tlf' }), res, vi.fn());
+
+    expect(svcLinkedIn).toHaveBeenCalledWith(expect.anything(), 'tlf', '512345678', 30);
     expect(res.json).toHaveBeenCalledTimes(1);
   });
 

@@ -127,8 +127,10 @@ import {
   MICROSOFT_MAX_KEYWORD_TEXT_LENGTH,
   MICROSOFT_MIN_CPC_BID,
   MONITOR_ACCOUNT_SOURCE_CONNECTION,
+  MONITOR_ACCOUNT_SOURCE_LEGACY,
   MONITOR_ACCOUNT_SOURCE_PARAM,
   MONITOR_CONNECTION_PROVIDERS,
+  MONITOR_CUTOVER_LEGACY_MISMATCH_CODE,
   MONITOR_CUTOVER_MISMATCH_CODE,
   MONITOR_CUTOVER_MISMATCH_MESSAGE,
   NEGATIVE_KEYWORD_TEXT_PATTERN,
@@ -2348,6 +2350,10 @@ export class CampaignController {
     // would silently swap it for one campaign-service then refuses as not this connection's. So
     // the id is checked by shape instead, and campaign-service decides whether it is this project's.
     if (isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
+      // A read whose account came from a legacy picker was picked on a pod with the flag OFF; see `refuseLegacyReadOnCutover`.
+      if (this.refuseLegacyReadOnCutover(req, next, 'linkedin_monitor')) {
+        return;
+      }
       const accountId = this.requireMonitorAccountId(req, next, 'linkedin_monitor', 'LinkedIn Ads', LINKEDIN_ADS_MONITOR_ACCOUNT_ID_PATTERN);
       if (accountId === null) {
         return;
@@ -2585,6 +2591,10 @@ export class CampaignController {
 
     // Cutover on: the connection's account, checked by shape — see the LinkedIn route.
     if (isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
+      // A legacy picker's account, picked on a pod with the flag OFF, is refused — see the LinkedIn route.
+      if (this.refuseLegacyReadOnCutover(req, next, 'reddit_monitor')) {
+        return;
+      }
       const accountId = this.requireMonitorAccountId(req, next, 'reddit_monitor', 'Reddit Ads', REDDIT_ADS_MONITOR_ACCOUNT_ID_PATTERN);
       if (accountId === null) {
         return;
@@ -2645,6 +2655,10 @@ export class CampaignController {
 
     // Cutover on: the connection's account, checked by shape — see the LinkedIn route.
     if (isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
+      // A legacy picker's account, picked on a pod with the flag OFF, is refused — see the LinkedIn route.
+      if (this.refuseLegacyReadOnCutover(req, next, 'meta_monitor')) {
+        return;
+      }
       const accountId = this.requireMonitorAccountId(req, next, 'meta_monitor', 'Meta Ads', META_ADS_MONITOR_ACCOUNT_ID_PATTERN);
       if (accountId === null) {
         return;
@@ -3625,7 +3639,7 @@ export class CampaignController {
    */
   private async readMonitorConnection(req: Request, projectSlug: string, provider: CampaignServiceMonitorProvider): Promise<MonitorConnectionAccount> {
     try {
-      return toMonitorConnectionAccount(await this.campaignServiceClient.getConnection(req, projectSlug, provider));
+      return toMonitorConnectionAccount(await this.campaignServiceClient.getConnection(req, projectSlug, provider), provider);
     } catch (error) {
       if (error instanceof MicroserviceError && !error.transportFailure && error.statusCode === 404 && isCampaignServiceNotFound(error.errorBody)) {
         return { state: 'no_connection', accountId: null, label: null };
@@ -3656,6 +3670,25 @@ export class CampaignController {
       return false;
     }
     next(new MicroserviceError(MONITOR_CUTOVER_MISMATCH_MESSAGE, 409, MONITOR_CUTOVER_MISMATCH_CODE, { operation, service: 'campaign_controller' }));
+    return true;
+  }
+
+  /**
+   * The inverse of `refuseCutoverMismatch`, on a pod with the monitor cutover ON: refuse, with a
+   * retryable 409 of its own code, a LinkedIn/Reddit/Meta read the Monitor tab marked as coming from
+   * a LEGACY picker (`accountSource=legacy`), and report whether it did.
+   *
+   * That marker means the tab discovered its pickers on a pod with the cutover OFF, so the account is
+   * an allowlist entry, not necessarily the project's connection's. campaign-service reads only the
+   * connection's account, so serving it here would fail with an error that names the connection,
+   * and a plain Retry would repeat it. The typed code tells the tab to rediscover its source instead.
+   * Unmarked reads (the Optimize tab's) are served as before.
+   */
+  private refuseLegacyReadOnCutover(req: Request, next: NextFunction, operation: string): boolean {
+    if (req.query[MONITOR_ACCOUNT_SOURCE_PARAM] !== MONITOR_ACCOUNT_SOURCE_LEGACY) {
+      return false;
+    }
+    next(new MicroserviceError(MONITOR_CUTOVER_MISMATCH_MESSAGE, 409, MONITOR_CUTOVER_LEGACY_MISMATCH_CODE, { operation, service: 'campaign_controller' }));
     return true;
   }
 
