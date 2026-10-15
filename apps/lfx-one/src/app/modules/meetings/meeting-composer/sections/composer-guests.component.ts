@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, DestroyRef, inject, input, signal, type Signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { FormGroup } from '@angular/forms';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { FormControl, FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
+import { InputTextComponent } from '@components/input-text/input-text.component';
 import { ToggleComponent } from '@components/toggle/toggle.component';
 import { UserSearchComponent } from '@components/user-search/user-search.component';
 import { COMPOSER_ATTENDEE_LOCK, SHOW_MEETING_ATTENDEES_FEATURE } from '@lfx-one/shared/constants';
@@ -37,7 +38,7 @@ import { MeetingComposerFormService } from '../meeting-composer-form.service';
  */
 @Component({
   selector: 'lfx-composer-guests',
-  imports: [ButtonComponent, ConfirmDialogModule, ToggleComponent, UserSearchComponent, MeetingCommitteeManagerComponent, TooltipModule],
+  imports: [ButtonComponent, ConfirmDialogModule, InputTextComponent, ToggleComponent, UserSearchComponent, MeetingCommitteeManagerComponent, TooltipModule],
   providers: [ConfirmationService],
   templateUrl: './composer-guests.component.html',
 })
@@ -55,6 +56,12 @@ export class ComposerGuestsComponent {
 
   /** User selected from search but not yet added; cleared on confirm or dismiss. */
   protected readonly stagedGuest = signal<Record<string, unknown> | null>(null);
+
+  /** Free-text filter over the invited list; local to the view, never part of the meeting form. */
+  protected readonly guestFilterForm = new FormGroup({ query: new FormControl('', { nonNullable: true }) });
+  protected readonly guestFilter: Signal<string> = toSignal(this.guestFilterForm.controls.query.valueChanges, { initialValue: '' });
+  /** Group chips whose label is currently cut off, by row `trackId`; only those get a tooltip. */
+  protected readonly truncatedGroupChips = signal<ReadonlySet<string>>(new Set());
 
   protected readonly stagedGuestDisplayName: Signal<string> = computed(() => {
     const g = this.stagedGuest();
@@ -186,6 +193,8 @@ export class ComposerGuestsComponent {
    * guest, and only when the list itself changes.
    */
   protected readonly guestRows: Signal<ComposerGuestRow[]> = this.initGuestRows();
+  /** The invited rows narrowed by {@link guestFilter}, from the first character typed. */
+  protected readonly filteredGuestRows: Signal<ComposerGuestRow[]> = this.initFilteredGuestRows();
 
   /**
    * Grid for the step; see the template comment for the row/column placement.
@@ -195,37 +204,9 @@ export class ComposerGuestsComponent {
    */
   protected readonly layoutClass: Signal<string> = computed(() =>
     this.isOccurrenceEdit()
-      ? 'grid min-h-0 flex-1 grid-cols-1 grid-rows-[auto_minmax(320px,1fr)] gap-y-4'
-      : 'grid min-h-0 flex-1 grid-cols-1 grid-rows-[auto_auto_minmax(320px,1fr)_auto] gap-x-6 gap-y-4 lg:grid-cols-[minmax(0,1fr)_340px] lg:grid-rows-[auto_minmax(320px,1fr)_auto]'
+      ? 'grid flex-1 grid-cols-1 grid-rows-[auto_minmax(320px,1fr)] gap-y-4'
+      : 'grid flex-1 grid-cols-1 grid-rows-[auto_auto_minmax(320px,1fr)_auto] gap-x-6 gap-y-4 lg:grid-cols-[minmax(0,1fr)_340px] lg:grid-rows-[auto_minmax(320px,1fr)_auto]'
   );
-
-  /** Free-text filter over the invited list; local to the view, never part of the form. */
-  protected readonly guestFilter = signal('');
-
-  /**
-   * The invited rows narrowed by {@link guestFilter}, from the first character typed.
-   * @description Matches the start of any word in the name, the secondary line (email · title · org) or the
-   * email, so "a" narrows to Anna and Andre instead of every name with an "a" somewhere in it. Words split on
-   * spaces and common email/name punctuation.
-   */
-  protected readonly filteredGuestRows: Signal<ComposerGuestRow[]> = computed(() => {
-    const term = this.guestFilter().trim().toLowerCase();
-
-    if (!term) {
-      return this.guestRows();
-    }
-
-    const startsAnyWord = (value: string | null | undefined): boolean =>
-      (value ?? '')
-        .toLowerCase()
-        .split(/[\s@._\-·,()]+/)
-        .some((word) => word.startsWith(term));
-
-    return this.guestRows().filter(
-      (row) =>
-        startsAnyWord(row.displayName) || startsAnyWord(row.secondaryLine) || startsAnyWord(row.guest.email) || row.displayName.toLowerCase().startsWith(term)
-    );
-  });
 
   /** Accessible name for the compact attendees switch, carrying the lock note when there is one. */
   protected readonly showAttendeesAriaLabel: Signal<string> = computed(() => {
@@ -247,30 +228,6 @@ export class ComposerGuestsComponent {
           .map((guest) => guest.email?.toLowerCase() ?? '')
       )
   );
-
-  /** Group chips whose label is currently cut off, by row `trackId`; only those get a tooltip. */
-  protected readonly truncatedGroupChips = signal<ReadonlySet<string>>(new Set());
-
-  protected onGroupChipEnter(trackId: string, event: Event): void {
-    const chip = event.currentTarget as HTMLElement;
-    const truncated = chip.scrollWidth > chip.clientWidth;
-
-    if (truncated === this.truncatedGroupChips().has(trackId)) {
-      return;
-    }
-
-    const next = new Set(this.truncatedGroupChips());
-    if (truncated) {
-      next.add(trackId);
-    } else {
-      next.delete(trackId);
-    }
-    this.truncatedGroupChips.set(next);
-  }
-
-  protected onGuestFilterInput(event: Event): void {
-    this.guestFilter.set((event.target as HTMLInputElement).value);
-  }
 
   /**
    * Stages the person picked from search rather than adding immediately.
@@ -358,6 +315,46 @@ export class ComposerGuestsComponent {
 
   protected onCommitteeMembersChange(members: CommitteeMember[]): void {
     this.formService.syncCommitteeMembers(members);
+  }
+
+  /** Records whether a group chip's label is cut off, so its tooltip only shows when it adds something. */
+  protected onGroupChipEnter(trackId: string, event: Event): void {
+    const chip = event.currentTarget as HTMLElement;
+    const truncated = chip.scrollWidth > chip.clientWidth;
+
+    if (truncated === this.truncatedGroupChips().has(trackId)) {
+      return;
+    }
+
+    const next = new Set(this.truncatedGroupChips());
+    if (truncated) {
+      next.add(trackId);
+    } else {
+      next.delete(trackId);
+    }
+    this.truncatedGroupChips.set(next);
+  }
+
+  /**
+   * Matches the start of any word in the name, the secondary line (email · title · org) or the email — so "a"
+   * narrows to Anna and Andre rather than every name containing an "a" — and also the start of each whole
+   * value, so a typed or pasted email ("ada.byron@…") or hyphenated name still matches.
+   */
+  private initFilteredGuestRows(): Signal<ComposerGuestRow[]> {
+    return computed(() => {
+      const term = this.guestFilter().trim().toLowerCase();
+
+      if (!term) {
+        return this.guestRows();
+      }
+
+      const matches = (value: string | null | undefined): boolean => {
+        const text = (value ?? '').toLowerCase();
+        return text.startsWith(term) || text.split(/[\s@._\-·,()]+/).some((word) => word.startsWith(term));
+      };
+
+      return this.guestRows().filter((row) => matches(row.displayName) || matches(row.secondaryLine) || matches(row.guest.email));
+    });
   }
 
   private initGuestRows(): Signal<ComposerGuestRow[]> {

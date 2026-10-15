@@ -1181,3 +1181,32 @@ describe('MeetingCommitteeManagerComponent — attendee visibility default', () 
     expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
   });
 });
+
+describe('MeetingCommitteeManagerComponent — selected group chips', () => {
+  const OTHER = { ...BOARD, uid: 'committee-tac', name: 'Technical Advisory Committee', category: 'Technical' } as Committee;
+
+  it('names each picked group from the options and drops one on remove', async () => {
+    const { component, fixture } = await mount([], {}, [BOARD, OTHER]);
+    component.committeeForm.get('committees')?.setValue([BOARD.uid, OTHER.uid]);
+    await fixture.whenStable();
+
+    expect(component.selectedCommitteeChips()).toEqual([
+      { uid: BOARD.uid, name: 'Board' },
+      { uid: OTHER.uid, name: 'Technical Advisory Committee' },
+    ]);
+
+    component.removeCommittee(BOARD.uid);
+    await fixture.whenStable();
+
+    expect(component.selectedCommitteeIds()).toEqual([OTHER.uid]);
+    expect(component.selectedCommitteeChips().map((chip) => chip.uid)).toEqual([OTHER.uid]);
+  });
+
+  it('falls back to the uid when a picked group is in neither the options nor the saved list', async () => {
+    const { component, fixture } = await mount([], {}, [BOARD]);
+    component.committeeForm.get('committees')?.setValue(['committee-unknown']);
+    await fixture.whenStable();
+
+    expect(component.selectedCommitteeChips()).toEqual([{ uid: 'committee-unknown', name: 'committee-unknown' }]);
+  });
+});

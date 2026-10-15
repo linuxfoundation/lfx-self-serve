@@ -92,6 +92,29 @@ describe('UserSearchComponent', () => {
     await fixture.whenStable();
   };
 
+  describe('waitForSearchableQuery', () => {
+    const minLength = (): number => queryAutocomplete().minLength();
+
+    it('keeps the default one-character panel when not opted in', async () => {
+      await render();
+      expect(minLength()).toBe(1);
+    });
+
+    it('holds the panel until two characters for a directory search', async () => {
+      await render();
+      fixture.componentRef.setInput('waitForSearchableQuery', true);
+      await fixture.whenStable();
+      expect(minLength()).toBe(2);
+    });
+
+    it('ignores the option for a local candidate list', async () => {
+      await render({ candidates: [] });
+      fixture.componentRef.setInput('waitForSearchableQuery', true);
+      await fixture.whenStable();
+      expect(minLength()).toBe(1);
+    });
+  });
+
   // #2594: local mode — a caller-supplied list (the formation assignee picker's people on the
   // project) searched client-side, with rows that can be listed but not picked.
   describe('candidates (local mode)', () => {

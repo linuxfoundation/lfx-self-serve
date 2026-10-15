@@ -94,73 +94,46 @@
             as guests.
           </p>
         }
-        @if (composerLayout() && groupChips()) {
-          <!-- Composer guests step, from `lg` up (groups in the side rail): the field stays a search-and-pick box and the picked
-               groups sit below it as removable chips. Below `lg` it works as it always has, listing the picks in
-               the field itself. Both copies share one control, and the hidden one is `display: none`. -->
-          <div class="lg:hidden">
-            <lfx-multi-select
-              [form]="committeeForm"
-              control="committees"
-              [options]="committeeOptions()"
-              optionLabel="name"
-              optionValue="uid"
-              [placeholder]="
-                composerLayout() ? 'Select ' + committeeLabel.singular.toLowerCase() + '(s)' : 'Select one or more ' + committeeLabel.plural.toLowerCase()
-              "
-              [filter]="true"
-              [filterPlaceHolder]="'Search ' + committeeLabel.plural.toLowerCase()"
-              [showToggleAll]="true"
-              class="w-full"
-              appendTo="body"
-              data-testid="meeting-committee-multi-select"></lfx-multi-select>
-          </div>
-          <div class="hidden lg:block">
-            <lfx-multi-select
-              [placeholderOnly]="true"
-              [form]="committeeForm"
-              control="committees"
-              [options]="committeeOptions()"
-              optionLabel="name"
-              optionValue="uid"
-              [placeholder]="
-                composerLayout() ? 'Select ' + committeeLabel.singular.toLowerCase() + '(s)' : 'Select one or more ' + committeeLabel.plural.toLowerCase()
-              "
-              [filter]="true"
-              [filterPlaceHolder]="'Search ' + committeeLabel.plural.toLowerCase()"
-              [showToggleAll]="true"
-              class="w-full"
-              appendTo="body"
-              data-testid="meeting-committee-multi-select-wide"></lfx-multi-select>
-          </div>
-        } @else {
-          <lfx-multi-select
-            [form]="committeeForm"
-            control="committees"
-            [options]="committeeOptions()"
-            optionLabel="name"
-            optionValue="uid"
-            [placeholder]="
-              composerLayout() ? 'Select ' + committeeLabel.singular.toLowerCase() + '(s)' : 'Select one or more ' + committeeLabel.plural.toLowerCase()
-            "
-            [filter]="true"
-            [filterPlaceHolder]="'Search ' + committeeLabel.plural.toLowerCase()"
-            [showToggleAll]="true"
-            class="w-full"
-            appendTo="body"
-            data-testid="meeting-committee-multi-select"></lfx-multi-select>
-        }
-        <!-- Composer, `lg` up only: the picked groups as removable chips under the field -->
-        @if (composerLayout() && groupChips() && selectedCommitteeChips().length > 0) {
+        <!-- One picker, whatever the width. In the composer guests step at `lg` and up (groups in the side rail)
+             it stays a search-and-pick box and the picks sit below it as removable chips; elsewhere it lists the
+             picks in the field itself. Switching by a viewport signal rather than CSS keeps a single value
+             accessor on the control, so the two views can never disagree. -->
+        <lfx-multi-select
+          [form]="committeeForm"
+          control="committees"
+          [options]="committeeOptions()"
+          optionLabel="name"
+          optionValue="uid"
+          [placeholder]="
+            composerLayout() ? 'Select ' + committeeLabel.singular.toLowerCase() + '(s)' : 'Select one or more ' + committeeLabel.plural.toLowerCase()
+          "
+          [filter]="true"
+          [filterPlaceHolder]="'Search ' + committeeLabel.plural.toLowerCase()"
+          [showToggleAll]="true"
+          class="w-full"
+          appendTo="body"
+          [placeholderOnly]="showGroupChips()"
+          data-testid="meeting-committee-multi-select"></lfx-multi-select>
+        <!-- Composer guests step, `lg` up only: the picked groups as removable chips under the field -->
+        @if (showGroupChips() && selectedCommitteeChips().length > 0) {
           <ul
-            class="hidden flex-wrap gap-2 pb-3 pt-1 lg:flex"
+            class="flex flex-wrap gap-2 pb-3 pt-1"
             [attr.aria-label]="'Selected ' + committeeLabel.plural.toLowerCase()"
             data-testid="meeting-committee-chips">
             @for (chip of selectedCommitteeChips(); track chip.uid) {
               <li
                 class="inline-flex max-w-full items-center gap-1.5 rounded-full border border-blue-200 bg-blue-100 py-1 pl-3 pr-1.5 text-sm font-medium text-blue-800"
                 [attr.data-testid]="'meeting-committee-chip-' + chip.uid">
-                <span class="truncate">{{ chip.name }}</span>
+                <!-- Full name as a tooltip only when the chip actually cuts it off (measured on hover/focus) -->
+                <span
+                  class="truncate"
+                  [pTooltip]="truncatedChips().has(chip.uid) ? chip.name : ''"
+                  tooltipPosition="top"
+                  [showDelay]="150"
+                  tooltipStyleClass="!max-w-none [&_.p-tooltip-text]:whitespace-nowrap"
+                  (mouseenter)="onChipLabelEnter(chip.uid, $event)"
+                  >{{ chip.name }}</span
+                >
                 <button
                   type="button"
                   class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-blue-800 hover:bg-blue-200"
@@ -208,8 +181,8 @@
     }
 
     @if (selectedCommitteeIds().length > 0) {
-      <!-- The composer lists every invitee itself, so it drops this count -->
-      @if (!composerLayout()) {
+      <!-- The composer guests step lists every invitee itself, so it drops this count; quick create keeps it -->
+      @if (!groupChips()) {
         <p class="text-xs text-gray-500">
           <strong>{{ selectedCommitteeIds().length }}</strong> {{ committeeLabel.plural.toLowerCase() }} selected.
           @if (filteredCommitteeMembers().length > 0) {
@@ -222,8 +195,8 @@
         @if (composerLayout()) {
           <!-- Composer: same label treatment as Groups / Voting Status, description between label and options.
                From `lg` up (groups in the side rail) the three choices are radios, all visible at once; below
-               `lg`, where the step stacks, a dropdown keeps the stacked form short. Both are bound to the same
-               control, and the hidden one is `display: none`, so only one is ever focusable or announced. -->
+               `lg`, where the step stacks, a dropdown keeps the stacked form short. Only one is ever rendered,
+               switched by a viewport signal, so the control has a single value accessor. -->
           <div class="flex flex-col gap-1.5">
             <label id="cancel-on-committee-removal-label" for="cancel-on-committee-removal" class="text-sm font-medium text-gray-900">
               Registration on {{ committeeLabelSingularLower }} removal
@@ -231,7 +204,7 @@
             <p class="text-xs text-gray-500">
               Whether removing someone from a linked {{ committeeLabelSingularLower }} also cancels their registration on this meeting
             </p>
-            <div class="lg:hidden">
+            @if (!showRemovalRadios()) {
               <lfx-select
                 [form]="form()"
                 control="cancel_on_committee_removal"
@@ -239,25 +212,26 @@
                 styleClass="w-full"
                 inputId="cancel-on-committee-removal"
                 data-testid="cancel-on-committee-removal-select"></lfx-select>
-            </div>
-            <div
-              class="mt-1 hidden flex-col gap-2 lg:flex"
-              role="radiogroup"
-              aria-labelledby="cancel-on-committee-removal-label"
-              data-testid="cancel-on-committee-removal-radios">
-              @for (option of cancelOnCommitteeRemovalOptions; track option.value) {
-                <label [for]="'cancel-on-committee-removal-' + option.value" class="flex cursor-pointer items-center gap-2 text-sm text-gray-900">
-                  <lfx-radio-button
-                    [form]="form()"
-                    control="cancel_on_committee_removal"
-                    name="cancel-on-committee-removal"
-                    [value]="option.value"
-                    [inputId]="'cancel-on-committee-removal-' + option.value"
-                    [attr.data-testid]="'cancel-on-committee-removal-' + option.value" />
-                  <span>{{ option.label }}</span>
-                </label>
-              }
-            </div>
+            } @else {
+              <div
+                class="mt-1 flex flex-col gap-2"
+                role="radiogroup"
+                aria-labelledby="cancel-on-committee-removal-label"
+                data-testid="cancel-on-committee-removal-radios">
+                @for (option of cancelOnCommitteeRemovalOptions; track option.value) {
+                  <label [for]="'cancel-on-committee-removal-' + option.value" class="flex cursor-pointer items-center gap-2 text-sm text-gray-900">
+                    <lfx-radio-button
+                      [form]="form()"
+                      control="cancel_on_committee_removal"
+                      name="cancel-on-committee-removal"
+                      [value]="option.value"
+                      [inputId]="'cancel-on-committee-removal-' + option.value"
+                      [attr.data-testid]="'cancel-on-committee-removal-' + option.value" />
+                    <span>{{ option.label }}</span>
+                  </label>
+                }
+              </div>
+            }
           </div>
         } @else {
           <div class="flex flex-col gap-1">

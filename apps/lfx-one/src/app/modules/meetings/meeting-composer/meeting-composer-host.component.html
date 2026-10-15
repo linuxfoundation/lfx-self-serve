@@ -221,7 +221,7 @@
             }
             @case ('guests') {
               <!-- Grows to fill the column so the invited card can take the remaining height -->
-              <lfx-composer-guests class="flex min-h-0 flex-1 flex-col" [form]="formService.form()" />
+              <lfx-composer-guests class="flex flex-1 flex-col" [form]="formService.form()" />
             }
             @case ('agenda-resources') {
               <lfx-composer-agenda-resources [form]="formService.form()" [showResources]="!isOccurrenceEdit()" />
