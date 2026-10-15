@@ -141,6 +141,9 @@ describe('MeetingEditAgendaDialogComponent', () => {
 
     expect(escape.defaultPrevented).toBe(true);
     expect(config.closable).toBe(false);
+    // Nothing typed now could be saved: the field is read-only until the save settles.
+    fixture.detectChanges();
+    expect(input().readOnly).toBe(true);
 
     read.next(fresh());
     read.complete();
