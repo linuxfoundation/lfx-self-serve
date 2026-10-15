@@ -493,8 +493,8 @@ export class CampaignService {
    * nobody could confirm, and a defaulted response here would erase exactly that difference.
    */
   public updateCampaignBudget(params: CampaignBudgetUpdateParams): Observable<CampaignBudgetUpdateResult> {
-    const { projectSlug, briefId, campaignId, budget, budgetType, etag } = params;
-    const body: CampaignBudgetUpdateRequest = { briefId, etag, budget, budgetType };
+    const { projectSlug, briefId, campaignId, budget, budgetType, etag, platform } = params;
+    const body: CampaignBudgetUpdateRequest = platform ? { briefId, etag, budget, budgetType, platform } : { briefId, etag, budget, budgetType };
     return this.http.patch<CampaignBudgetUpdateResult>(`/api/campaigns/${encodeURIComponent(campaignId)}/budget`, body, {
       params: new HttpParams().set('project', projectSlug),
     });

@@ -134,4 +134,53 @@ describe('CampaignBudgetFormComponent', () => {
 
     expect(cancelled).toHaveBeenCalledTimes(1);
   });
+
+  // X (#3299): campaign-service writes X budgets as a daily amount only and refuses `lifetime` with 409.
+  describe('daily-only platform', () => {
+    beforeEach(() => {
+      fixture.componentRef.setInput('dailyOnly', true);
+    });
+
+    it('offers Daily alone, pre-selected, with no Lifetime choice', () => {
+      fixture.detectChanges();
+
+      expect(el().querySelector('#campaign-budget-type-c-1-daily')).not.toBeNull();
+      expect(el().querySelector('#campaign-budget-type-c-1-lifetime')).toBeNull();
+      expect(q('optimization-campaign-budget-type-lifetime-c-1')).toBeNull();
+      expect(fixture.componentInstance.form.controls.budgetType.value).toBe('daily');
+      expect(q('optimization-campaign-budget-type-hint-c-1')!.textContent).toContain('daily amount only');
+    });
+
+    it('pre-selects Daily even when the parent names lifetime', () => {
+      fixture.componentRef.setInput('knownBudgetType', 'lifetime');
+      fixture.detectChanges();
+
+      expect(fixture.componentInstance.form.controls.budgetType.value).toBe('daily');
+    });
+
+    it('emits a daily change without the operator choosing a pacing', () => {
+      fixture.detectChanges();
+      typeAmount('40');
+      submit();
+
+      expect(submitted).toHaveBeenCalledWith({ budget: 40, budgetType: 'daily' });
+    });
+
+    it('never emits a lifetime change, even if the control is forced to one', () => {
+      fixture.detectChanges();
+      typeAmount('40');
+      fixture.componentInstance.form.controls.budgetType.setValue('lifetime');
+      submit();
+
+      expect(submitted).not.toHaveBeenCalled();
+    });
+
+    it('keeps the generic pacing hint off a platform that takes either pacing', () => {
+      fixture.componentRef.setInput('dailyOnly', false);
+      fixture.detectChanges();
+
+      expect(el().querySelector('#campaign-budget-type-c-1-lifetime')).not.toBeNull();
+      expect(q('optimization-campaign-budget-type-hint-c-1')!.textContent).toContain('Must match the pacing');
+    });
+  });
 });

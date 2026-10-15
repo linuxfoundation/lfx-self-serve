@@ -9,7 +9,7 @@ import {
   CAMPAIGN_SETTINGS_VERDICT_LABELS,
   CAMPAIGN_SETTINGS_VERDICT_SEVERITIES,
 } from '../constants/campaign-optimize.constants';
-import type { CampaignServiceCampaignRef } from '../interfaces/campaign.interface';
+import type { CampaignBudgetPacingRead, CampaignServiceCampaignRef } from '../interfaces/campaign.interface';
 import type {
   CampaignRefVerdict,
   CampaignServiceSettingsField,
@@ -183,4 +183,18 @@ function hasValue(value: unknown): value is string {
 
 function isSettingsField(value: unknown): value is CampaignServiceSettingsField {
   return !!value && typeof value === 'object' && typeof (value as { field?: unknown }).field === 'string';
+}
+
+/**
+ * The budget pacing a campaign's live settings readback reports for it: the UPSTREAM side of its
+ * `budget_type` field, `daily` or `lifetime`, or `unknown` when the platform reported neither.
+ *
+ * Only the upstream value counts — the recorded side is what dispatch asked for, and an adopted
+ * campaign records none. On X the readback reports a pacing only under campaign budget optimization
+ * (a daily amount is `daily`, a total-only cap `lifetime`); anything else is absent and so `unknown`.
+ */
+export function campaignBudgetPacingFromSettings(readback: CampaignServiceSettingsReadback | null | undefined): Exclude<CampaignBudgetPacingRead, 'pending'> {
+  const fields = Array.isArray(readback?.fields) ? readback.fields : [];
+  const upstream = fields.find((field) => field?.field === 'budget_type')?.upstream;
+  return upstream === 'daily' || upstream === 'lifetime' ? upstream : 'unknown';
 }

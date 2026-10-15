@@ -10,10 +10,13 @@ import {
   CAMPAIGN_BID_CONFLICT_MESSAGE,
   CAMPAIGN_BID_OUTCOME_UNCONFIRMED,
   CAMPAIGN_BID_UNAVAILABLE_PLATFORM_REASON,
+  CAMPAIGN_BUDGET_BLOCKED_PACING_CHECK_REASON,
   CAMPAIGN_BUDGET_CONFLICT_MESSAGE,
   CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED,
   CAMPAIGN_BUDGET_UNAVAILABLE_PLATFORM_REASON,
   CAMPAIGN_BUDGET_UNAVAILABLE_UNPROVISIONED_REASON,
+  CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE,
+  CAMPAIGN_BUDGET_X_LIFETIME_REASON,
   CAMPAIGN_FINDING_ALREADY_PAUSED_REASON,
   CAMPAIGN_TOGGLE_FAILURE_MESSAGES,
   CAMPAIGN_TOGGLE_UNCONFIRMED_MESSAGES,
@@ -38,6 +41,7 @@ import {
   CampaignRow,
   CampaignServiceMetaAdSet,
   CampaignServiceMetaAdSets,
+  CampaignServiceSettingsReadback,
   CampaignStatusUpdateResult,
 } from '@lfx-one/shared/interfaces';
 import { CampaignKeywordTargetingService } from '@services/campaign-keyword-targeting.service';
@@ -2455,7 +2459,19 @@ describe('OptimizationTabComponent — budget change (#3299)', () => {
   let fixture: ComponentFixture<OptimizationTabComponent>;
   let updateCampaignBudget: ReturnType<typeof vi.fn>;
   let updateCampaignStatus: ReturnType<typeof vi.fn>;
+  let getCampaignSettings: ReturnType<typeof vi.fn>;
   let messageAdd: ReturnType<typeof vi.fn>;
+
+  /** A live settings readback whose upstream `budget_type` is `pacing` (absent when undefined). */
+  const settingsWith = (pacing?: string): CampaignServiceSettingsReadback => ({
+    campaign_id: 'c-1',
+    platform_campaign_id: '1234567890',
+    platform: 'twitter-ads',
+    read_at: '2026-10-15T10:00:00Z',
+    fields: [{ field: 'budget_type', ...(pacing === undefined ? {} : { upstream: pacing }), comparison: 'unknown' }],
+    diverged_count: 0,
+    unknown_count: 1,
+  });
 
   const doc = (over: Partial<CampaignIndexDoc> = {}): CampaignIndexDoc => ({
     id: 'c-1',
@@ -2482,6 +2498,7 @@ describe('OptimizationTabComponent — budget change (#3299)', () => {
 
   beforeEach(async () => {
     updateCampaignBudget = vi.fn().mockReturnValue(of(budgetResult()));
+    getCampaignSettings = vi.fn().mockReturnValue(of(settingsWith('daily')));
     updateCampaignStatus = vi
       .fn()
       .mockReturnValue(of({ platform: 'google-ads', campaignId: 'c-1', newStatus: 'PAUSED', success: true, serviceStatus: 'paused', etag: '"5"' }));
@@ -2497,6 +2514,7 @@ describe('OptimizationTabComponent — budget change (#3299)', () => {
           useValue: {
             updateCampaignBudget,
             updateCampaignStatus,
+            getCampaignSettings,
             getMonitorData: vi.fn().mockReturnValue(of(null)),
             getKeywords: vi.fn().mockReturnValue(of({ keywords: [] })),
             getMicrosoftKeywords: vi.fn().mockReturnValue(of(null)),
@@ -2558,7 +2576,7 @@ describe('OptimizationTabComponent — budget change (#3299)', () => {
     submit(id);
   }
 
-  it.each(['google-ads', 'linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads'])('offers the budget editor for %s', (platform) => {
+  it.each(['google-ads', 'linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads', 'twitter-ads'])('offers the budget editor for %s', (platform) => {
     render([doc({ platform })]);
 
     const button = q('optimization-campaign-budget-edit-c-1') as HTMLButtonElement;
@@ -2576,7 +2594,7 @@ describe('OptimizationTabComponent — budget change (#3299)', () => {
   });
 
   it('withholds the editor, with its reason, for a platform without budget-write support', () => {
-    render([doc({ platform: 'twitter-ads' })]);
+    render([doc({ platform: 'hubspot' })]);
 
     const button = q('optimization-campaign-budget-edit-c-1') as HTMLButtonElement;
     expect(button.disabled).toBe(true);
@@ -2654,6 +2672,106 @@ describe('OptimizationTabComponent — budget change (#3299)', () => {
       budget: 1234.567,
       budgetType: 'lifetime',
       etag: '"9"',
+      platform: 'google-ads',
+    });
+  });
+
+  // Only a daily-only platform needs its pacing read; every other one takes either pacing.
+  it('does not read live settings for a platform that takes either pacing', () => {
+    render([doc()]);
+    openEditor();
+
+    expect(getCampaignSettings).not.toHaveBeenCalled();
+    expect(budgetForm().dailyOnly()).toBe(false);
+  });
+
+  /**
+   * X (#3299): campaign-service writes X budgets as a daily amount only and refuses `lifetime` with
+   * 409, so the editor offers Daily alone and a lifetime-budgeted campaign is told so up front.
+   */
+  describe('X (daily only)', () => {
+    const xDoc = (over: Partial<CampaignIndexDoc> = {}): CampaignIndexDoc => doc({ platform: 'twitter-ads', ...over });
+
+    it('reads the live pacing when the editor opens and offers Daily alone, pre-selected', () => {
+      render([xDoc()]);
+      openEditor();
+
+      expect(getCampaignSettings).toHaveBeenCalledWith('tlf', 'b-1', 'c-1');
+      expect(budgetForm().dailyOnly()).toBe(true);
+      expect(budgetForm().form.controls.budgetType.value).toBe('daily');
+      expect(fixture.nativeElement.querySelector('#campaign-budget-type-c-1-lifetime')).toBeNull();
+    });
+
+    it('sends a daily change with the X platform hint', () => {
+      render([xDoc()]);
+      openEditor();
+      typeAmount('40');
+      submit();
+
+      expect(updateCampaignBudget).toHaveBeenCalledWith(expect.objectContaining({ budget: 40, budgetType: 'daily', platform: 'twitter-ads' }));
+    });
+
+    it('cannot submit while the pacing read is out', () => {
+      getCampaignSettings.mockReturnValue(NEVER);
+      render([xDoc()]);
+      openEditor();
+      typeAmount('40');
+      submit();
+
+      expect(updateCampaignBudget).not.toHaveBeenCalled();
+      expect(q('optimization-campaign-budget-blocked-c-1')!.textContent).toContain(CAMPAIGN_BUDGET_BLOCKED_PACING_CHECK_REASON);
+    });
+
+    it('withholds the lever, with its reason, for a lifetime-budgeted campaign rather than letting a 409 happen', () => {
+      getCampaignSettings.mockReturnValue(of(settingsWith('lifetime')));
+      render([xDoc()]);
+      openEditor();
+      typeAmount('40');
+      submit();
+
+      expect(updateCampaignBudget).not.toHaveBeenCalled();
+      expect(q('optimization-campaign-budget-blocked-c-1')!.textContent).toContain(CAMPAIGN_BUDGET_X_LIFETIME_REASON);
+      expect(q('optimization-campaign-budget-unavailable-c-1')!.textContent).toContain(CAMPAIGN_BUDGET_X_LIFETIME_REASON);
+
+      // Still closable from its disclosure, then disabled with the reason described.
+      const button = q('optimization-campaign-budget-edit-c-1') as HTMLButtonElement;
+      expect(button.disabled).toBe(false);
+      button.click();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('#campaign-budget-panel-c-1')).toBeNull();
+      expect(button.disabled).toBe(true);
+      expect(button.getAttribute('aria-describedby')).toBe('campaign-budget-unavailable-c-1');
+
+      // Known for the session: not read again.
+      expect(getCampaignSettings).toHaveBeenCalledTimes(1);
+    });
+
+    // A failed read or an unreported pacing does not block: upstream stays the authority.
+    it.each([
+      ['a failed read', () => throwError(() => new HttpErrorResponse({ status: 503, statusText: 'x' }))],
+      ['an unreported pacing', () => of(settingsWith())],
+    ])('lets a daily change through after %s, and reads again on the next opening', (_label, answer) => {
+      getCampaignSettings.mockImplementation(answer);
+      render([xDoc()]);
+      openEditor();
+      typeAmount('40');
+      submit();
+
+      expect(updateCampaignBudget).toHaveBeenCalledWith(expect.objectContaining({ budgetType: 'daily', platform: 'twitter-ads' }));
+      openEditor();
+      expect(getCampaignSettings).toHaveBeenCalledTimes(2);
+    });
+
+    it("shows the BFF's X explanation of a 409 in full", () => {
+      updateCampaignBudget.mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 409, statusText: 'x', error: { error: CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE, code: 'CONFLICT' } }))
+      );
+      render([xDoc()]);
+      openEditor();
+      typeAmount('40');
+      submit();
+
+      expect(q('optimization-campaign-budget-error-c-1')!.textContent!.trim()).toBe(CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE);
     });
   });
 
@@ -3063,15 +3181,8 @@ describe('OptimizationTabComponent — monitor findings and their levers', () =>
     expect(q('optimization-finding-no-lever-c-1-paused_should_run')).not.toBeNull();
   });
 
-  // X has no budget write; offering the editor would invite a change upstream refuses.
-  it('offers no budget lever on an X campaign', async () => {
-    await render([doc({ platform: 'twitter-ads' })], [item({ platform: 'twitter-ads' })]);
-
-    expect(lever('c-1-underspending')).toBeNull();
-    expect(q('optimization-finding-no-lever-c-1-underspending')).not.toBeNull();
-  });
-
-  it.each(['linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads'])('offers the budget lever on %s', async (platform) => {
+  // X budgets are writable (daily only) since #3299, so its findings get the lever too.
+  it.each(['linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads', 'twitter-ads'])('offers the budget lever on %s', async (platform) => {
     await render([doc({ platform })], [item({ platform })]);
 
     expect(lever('c-1-underspending')).not.toBeNull();

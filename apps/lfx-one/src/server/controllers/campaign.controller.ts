@@ -54,11 +54,13 @@ import {
   ACCOUNT_MONITOR_DEFAULT_DAYS,
   ACCOUNT_MONITOR_MAX_DAYS,
   ACCOUNT_MONITOR_MIN_DAYS,
+  CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE,
   CAMPAIGN_DELIVERY_TYPES,
   CAMPAIGN_EMAIL_STAGES,
   CAMPAIGN_ETAG_HEADER_PATTERN,
   CAMPAIGN_METRICS_WINDOWS,
   CAMPAIGN_PLATFORMS,
+  CAMPAIGN_SERVICE_BUDGET_UNWRITABLE_MESSAGE_PREFIX,
   DEFAULT_CAMPAIGN_BID_TYPE,
   GOOGLE_ADS_AGE_RANGES,
   GOOGLE_ADS_AGE_RANGE_MAP,
@@ -3093,6 +3095,18 @@ export class CampaignController {
       return;
     }
 
+    // The platform is a wording hint only (see `CampaignBudgetUpdateRequest.platform`), never sent
+    // upstream. Optional, but a present value must be a known platform rather than silently ignored.
+    if (body.platform !== undefined && !CAMPAIGN_PLATFORMS.some((p) => p.id === body.platform)) {
+      next(
+        ServiceValidationError.forField('platform', `platform must be one of: ${CAMPAIGN_PLATFORMS.map((p) => p.id).join(', ')}`, {
+          operation: 'campaign_budget_update',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
     // Refused rather than defaulted, for the same reasons as the status toggle: a guessed brief
     // addresses a route that 404s, and a missing If-Match is a 428 upstream.
     const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
@@ -3165,7 +3179,7 @@ export class CampaignController {
       logger.success(req, 'campaign_budget_update', startTime, { campaignId, budgetType, platform: result.platform });
       res.json(result);
     } catch (error) {
-      next(error);
+      next(body.platform === 'twitter-ads' ? this.explainTwitterBudgetConflict(error) : error);
     }
   }
 
@@ -3702,6 +3716,34 @@ export class CampaignController {
    * than cast. campaign-service's own vocabulary is that list; a value outside it (a contract change
    * upstream, a malformed row) is logged and reported as `null`, never passed off as a known one.
    */
+  /**
+   * Rewords campaign-service's platform-neutral "budget could not be addressed" 409 for an X
+   * campaign. Its sentence tells the operator to change the pacing in the ad platform, which is not
+   * the remedy on X: LFX One writes only the daily budget of a campaign-budget-optimized X campaign
+   * with no total cap, and anything else has to be changed in X Ads Manager. The status, code and
+   * upstream body are kept, and the upstream text stays on `message` for the log; only what the
+   * client reads changes. Any other error — another 409 (provenance, account mismatch), a 412, an
+   * unconfirmed 503 — is returned untouched.
+   */
+  private explainTwitterBudgetConflict(error: unknown): unknown {
+    if (!(error instanceof MicroserviceError) || error.transportFailure || error.statusCode !== 409) {
+      return error;
+    }
+    const upstreamMessage = typeof error.errorBody?.['message'] === 'string' ? (error.errorBody['message'] as string) : error.message;
+    if (!upstreamMessage.trim().toLowerCase().startsWith(CAMPAIGN_SERVICE_BUDGET_UNWRITABLE_MESSAGE_PREFIX)) {
+      return error;
+    }
+    return new MicroserviceError(error.message, error.statusCode, error.code, {
+      operation: error.operation,
+      service: error.service,
+      path: error.path,
+      errorBody: error.errorBody,
+      originalMessage: error.originalMessage,
+      originalError: error,
+      clientMessage: CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE,
+    });
+  }
+
   private knownCampaignPlatform(req: Request, operation: string, platform: unknown): CampaignPlatform | null {
     const known = CAMPAIGN_PLATFORMS.find((p) => p.id === platform);
     if (known) {

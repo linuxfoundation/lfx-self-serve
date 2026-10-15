@@ -6,6 +6,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE,
   GOOGLE_ADS_LANGUAGE_MAP,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   MAX_BULK_KEYWORD_ACTIONS,
@@ -5383,6 +5384,65 @@ describe('CampaignController.updateCampaignBudget', () => {
     expect(res.json).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledWith(upstream);
     expect(logger.success).not.toHaveBeenCalled();
+  });
+
+  // X (#3299): campaign-service writes X budgets as a daily amount, so the BFF forwards an X
+  // change like any other — there is no platform allowlist here — and never sends the hint upstream.
+  it('forwards an X daily budget change and reports the X row', async () => {
+    updateCampaignBudget.mockResolvedValue({ id: UUID, platform: 'twitter-ads', status: 'active', version: 2, etag: '"2"' });
+
+    await controller.updateCampaignBudget(budgetReq(UUID, { ...validBody, platform: 'twitter-ads' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(updateCampaignBudget).toHaveBeenCalledWith(expect.anything(), {
+      projectSlug: 'tlf',
+      briefId: 'b-1',
+      campaignId: UUID,
+      budget: 150.25,
+      budgetType: 'daily',
+      etag: '"1"',
+    });
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ platform: 'twitter-ads', budgetType: 'daily', etag: '"2"' }));
+  });
+
+  it('refuses a platform hint outside CampaignPlatform before calling upstream', async () => {
+    await controller.updateCampaignBudget(budgetReq(UUID, { ...validBody, platform: 'twitter' }), res, next);
+
+    expect(updateCampaignBudget).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+  });
+
+  const unwritable =
+    "this campaign's budget could not be changed as requested — the ad platform did not report the budget it is attached to, or that budget is paced differently from the requested budget_type; this endpoint changes an amount, never a pacing model, so change the pacing in the ad platform first";
+
+  // The platform-neutral 409 tells the operator to change the pacing, which is not X's remedy.
+  it('explains an X 409 for an unwritable budget in X terms, keeping the status and the upstream text for the log', async () => {
+    const upstream = new MicroserviceError(unwritable, 409, 'CONFLICT', { errorBody: { code: '409', message: unwritable } });
+    updateCampaignBudget.mockRejectedValue(upstream);
+
+    await controller.updateCampaignBudget(budgetReq(UUID, { ...validBody, platform: 'twitter-ads' }), res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    const forwarded = (next as ReturnType<typeof vi.fn>).mock.calls[0][0] as MicroserviceError;
+    expect(forwarded).toBeInstanceOf(MicroserviceError);
+    expect(forwarded.statusCode).toBe(409);
+    expect(forwarded.code).toBe('CONFLICT');
+    expect(forwarded.message).toBe(unwritable);
+    expect(forwarded.toResponse()['error']).toBe(CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE);
+  });
+
+  it.each([
+    ['another X 409', 'twitter-ads', 409, 'the campaign was created under a different ad account'],
+    ['the same 409 on another platform', 'reddit-ads', 409, unwritable],
+    ['the same 409 with no platform hint', undefined, 409, unwritable],
+    ['an X 412', 'twitter-ads', 412, 'ETag mismatch'],
+  ])('passes %s through unchanged', async (_label, platform, status, message) => {
+    const upstream = new MicroserviceError(message, status, 'UPSTREAM', { errorBody: { code: String(status), message } });
+    updateCampaignBudget.mockRejectedValue(upstream);
+
+    await controller.updateCampaignBudget(budgetReq(UUID, { ...validBody, platform }), res, next);
+
+    expect(next).toHaveBeenCalledWith(upstream);
   });
 });
 
