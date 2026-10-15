@@ -479,7 +479,10 @@
 
     <!-- Outside the preview block, so nothing that drops the preview can hide a create's outcome. -->
     @if (unconfirmedName(); as name) {
-      <div class="flex flex-col gap-1 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-800" role="alert" data-testid="audience-custom-builder-unconfirmed">
+      <div
+        class="flex flex-col gap-1 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-800"
+        role="alert"
+        data-testid="audience-custom-builder-unconfirmed">
         <span class="font-semibold">HubSpot did not confirm the list was created.</span>
         <span>Search HubSpot for "{{ name }}" before trying again. It may already exist, and a retry could create a second one.</span>
       </div>

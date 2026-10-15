@@ -798,7 +798,11 @@ describe('custom audiences', () => {
     const propertyFilters = AUDIENCE_CUSTOM_OPERATORS.map((o) => ({ property: 'jobtitle', operator: o.value, values: [] }));
 
     for (const scope of AUDIENCE_SPEAKER_SCOPES) {
-      await controller.previewCustom(buildReq({ criteria: { ...criteria, propertyFilters, speakers: { scope: scope.key, eventNames: [] } } }), buildRes(), next);
+      await controller.previewCustom(
+        buildReq({ criteria: { ...criteria, propertyFilters, speakers: { scope: scope.key, eventNames: [] } } }),
+        buildRes(),
+        next
+      );
     }
 
     expect(proxyMethods.previewCustom).toHaveBeenCalledTimes(AUDIENCE_SPEAKER_SCOPES.length);
@@ -828,9 +832,21 @@ describe('custom audiences', () => {
     ['too many cities', { criteria: { ...criteria, cities: Array.from({ length: 26 }, (_u, i) => `c${i}`) } }, 'cities'],
     ['a non-string name', { criteria, name: 5 }, 'name'],
     ['an over-long name', { criteria, name: 'n'.repeat(251) }, 'name'],
-    ['more than 10 filters', { criteria: { ...criteria, propertyFilters: Array.from({ length: 11 }, () => ({ property: 'jobtitle', operator: 'is_known', values: [] })) } }, 'propertyFilters'],
-    ['more than 25 filter values', { criteria: { ...criteria, propertyFilters: [{ property: 'jobtitle', operator: 'is_any_of', values: Array.from({ length: 26 }, (_u, i) => `v${i}`) }] } }, 'propertyFilters'],
-    ['more than 10 page URLs (upstream caps them at 10)', { criteria: { ...criteria, pageViewUrls: Array.from({ length: 11 }, (_u, i) => `https://e.org/p${i}`) } }, 'pageViewUrls'],
+    [
+      'more than 10 filters',
+      { criteria: { ...criteria, propertyFilters: Array.from({ length: 11 }, () => ({ property: 'jobtitle', operator: 'is_known', values: [] })) } },
+      'propertyFilters',
+    ],
+    [
+      'more than 25 filter values',
+      { criteria: { ...criteria, propertyFilters: [{ property: 'jobtitle', operator: 'is_any_of', values: Array.from({ length: 26 }, (_u, i) => `v${i}`) }] } },
+      'propertyFilters',
+    ],
+    [
+      'more than 10 page URLs (upstream caps them at 10)',
+      { criteria: { ...criteria, pageViewUrls: Array.from({ length: 11 }, (_u, i) => `https://e.org/p${i}`) } },
+      'pageViewUrls',
+    ],
     ['an over-long label (refused, never silently cut)', { criteria: { ...criteria, label: 'l'.repeat(201) } }, 'label'],
     ['an over-long gate list id', { criteria: { ...criteria, gateListId: '1'.repeat(65) } }, 'gateListId'],
     ['an over-long speakers list id', { criteria: { ...criteria, speakers: { scope: 'current', eventNames: [], listId: '1'.repeat(65) } } }, 'speakers'],
