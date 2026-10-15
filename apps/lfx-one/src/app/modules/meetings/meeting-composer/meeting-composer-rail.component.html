@@ -48,6 +48,9 @@
            Sections past the frontier are inert, matching the footer's ordering. -->
       @let locked = !row.active && !row.reachable;
       @let attention = row.needsAttention && !row.active;
+      <!-- The states are exclusive: a section that is done but sits past a required one that was emptied
+           again is not reachable, and reads as locked rather than done (attention beats both). -->
+      @let done = row.complete && !attention && !locked;
       <!-- Geometry is in exact px because the 14px root shrinks Tailwind's rem scale: 8px vertical row
            padding around a 24px marker, with the label centred on it. The side padding is `px-3.5` on purpose,
            not px: it matches the preview card's `p-3.5` below, so the rail and the card share one inset. -->
@@ -70,20 +73,20 @@
           @if (!row.isLast) {
             <span
               class="pointer-events-none absolute bottom-[-14px] left-1/2 top-[28px] w-[2px] -translate-x-1/2 rounded-full transition-colors duration-150"
-              [ngClass]="row.complete ? 'bg-blue-600' : 'bg-gray-200'"
+              [ngClass]="done ? 'bg-blue-600' : 'bg-gray-200'"
               aria-hidden="true"></span>
           }
           <span
             class="relative z-10 flex h-[24px] w-[24px] items-center justify-center rounded-full border-[1.5px] text-[11px] transition-colors duration-150"
             [ngClass]="{
               'border-blue-600 bg-white text-blue-600 shadow-[0_0_0_4px] shadow-blue-100': row.active,
-              'border-blue-600 bg-blue-600 text-white': row.complete && !attention,
+              'border-blue-600 bg-blue-600 text-white': done,
               'border-red-300 bg-red-50 text-red-500': attention,
               'border-gray-300 bg-white text-gray-500 group-hover:border-gray-400 group-hover:text-gray-700':
-                !row.active && !row.complete && !attention && row.reachable,
+                !row.active && !done && !attention && row.reachable,
               'border-dashed border-gray-200 bg-gray-50 text-gray-300': locked && !attention,
             }">
-            @if (row.complete && !attention) {
+            @if (done) {
               <i class="fa-solid fa-check text-[10px]" aria-hidden="true"></i>
             } @else {
               <i [ngClass]="row.section.icon" aria-hidden="true"></i>
@@ -102,8 +105,8 @@
             class="truncate text-[13px] leading-[20px]"
             [ngClass]="{
               'font-semibold text-blue-700': row.active,
-              'font-medium text-gray-900': !row.active && row.complete,
-              'font-medium text-gray-700 group-hover:text-gray-900': !row.active && !row.complete && row.reachable,
+              'font-medium text-gray-900': done,
+              'font-medium text-gray-700 group-hover:text-gray-900': !row.active && !done && row.reachable,
               'font-medium text-gray-400': locked,
             }">
             {{ row.section.label }}

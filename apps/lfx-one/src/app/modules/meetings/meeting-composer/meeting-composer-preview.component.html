@@ -5,7 +5,8 @@
   <span class="text-[9px] font-semibold uppercase tracking-wider text-gray-400">Preview</span>
 
   <!-- Stretched so the date tile always spans the full height of the title + when lines beside it;
-       the day number fills whatever the month band leaves. -->
+       the day number fills whatever the month band leaves. Tile sizes are exact px from the design
+       (36px wide, 9px month on a 14px band, 15px day): the 14px root shrinks the rem scale. -->
   <div class="flex items-stretch gap-2.5">
     <div class="flex w-[36px] shrink-0 flex-col overflow-hidden rounded-md border border-gray-200 text-center">
       <span class="bg-blue-600 text-[9px] font-bold uppercase leading-[14px] text-white" aria-hidden="true">{{ dateChip().month }}</span>

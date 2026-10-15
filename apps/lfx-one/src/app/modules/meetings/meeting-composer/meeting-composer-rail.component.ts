@@ -48,8 +48,6 @@ export class MeetingComposerRailComponent {
   protected readonly rows: Signal<MeetingComposerRailRow[]> = this.initRows();
   // Both layouts can be in the DOM at once, so their test ids have to differ.
   protected readonly testIdPrefix: Signal<string> = computed(() => (this.compact() ? 'meeting-composer-rail-compact' : 'meeting-composer-rail'));
-  // Edit mode has no ordering and no Next/Back, so announcing a step would describe a wizard that
-  // isn't there — matching what the desktop edit rows already do.
   /**
    * Layout of the rail itself.
    * @description The create-mode stepper bleeds past its column by the rows' own side padding (`px-3.5`, the
@@ -63,6 +61,8 @@ export class MeetingComposerRailComponent {
 
     return this.isEditMode() ? 'flex flex-col gap-[2px]' : '-mx-3.5 flex flex-col gap-[2px]';
   });
+  // Edit mode has no ordering and no Next/Back, so announcing a step would describe a wizard that
+  // isn't there — matching what the desktop edit rows already do.
   protected readonly activeChipAriaCurrent: Signal<'step' | 'true'> = computed(() => (this.isEditMode() ? 'true' : 'step'));
 
   public constructor() {
