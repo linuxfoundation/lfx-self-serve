@@ -15,7 +15,14 @@ import { TextareaComponent } from '@components/textarea/textarea.component';
 import { TimePickerComponent } from '@components/time-picker/time-picker.component';
 import { UserSearchComponent } from '@components/user-search/user-search.component';
 import { GenerateAgendaRequest, MeetingTemplate } from '@lfx-one/shared/interfaces';
-import { MEETING_DURATION_OPTIONS, RECURRING_MEETING_FEATURE, TIMEZONES, YOUTUBE_MAX_MEETING_TITLE_LENGTH } from '@lfx-one/shared/constants';
+import {
+  MEETING_AGENDA_MAX_LENGTH,
+  MEETING_AGENDA_WARNING_LENGTH,
+  MEETING_DURATION_OPTIONS,
+  RECURRING_MEETING_FEATURE,
+  TIMEZONES,
+  YOUTUBE_MAX_MEETING_TITLE_LENGTH,
+} from '@lfx-one/shared/constants';
 import { MeetingUserInfo, UserSearchResult } from '@lfx-one/shared/interfaces';
 import { composeFullName, formatUserLabel, getTimezoneUtcOffsetString, getWeekOfMonth } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
@@ -54,6 +61,9 @@ export class MeetingDetailsComponent implements OnInit {
 
   // Form group input from parent
   public readonly form = input.required<FormGroup>();
+  /** The shared agenda limit and the counter's amber threshold (#3612). */
+  protected readonly agendaMaxLength = MEETING_AGENDA_MAX_LENGTH;
+  protected readonly agendaWarningLength = MEETING_AGENDA_WARNING_LENGTH;
   // The owner baseline hydrated from the loaded meeting (edit mode only) — drives the revert
   // target for the organizer picker's clear affordance and the "Saved organizer" row.
   public readonly savedOwner = input<MeetingUserInfo | null>(null);

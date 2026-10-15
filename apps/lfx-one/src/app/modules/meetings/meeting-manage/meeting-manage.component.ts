@@ -19,6 +19,7 @@ import {
   MAX_EARLY_JOIN_TIME,
   MAX_EMAIL_REMINDER_HOURS,
   MAX_EMAIL_REMINDER_TIME,
+  MEETING_AGENDA_MAX_LENGTH,
   MEETING_STEP_TITLES,
   MIN_EARLY_JOIN_TIME,
   MIN_EMAIL_REMINDER_HOURS,
@@ -1268,7 +1269,7 @@ export class MeetingManageComponent {
 
         // Step 2: Meeting Details
         title: new FormControl('', [Validators.required]),
-        description: new FormControl('', [Validators.maxLength(2000)]),
+        description: new FormControl('', [Validators.maxLength(MEETING_AGENDA_MAX_LENGTH)]),
         aiPrompt: new FormControl(''),
         startDate: new FormControl(defaultDateTime.date, [Validators.required]),
         startTime: new FormControl(defaultDateTime.time, [Validators.required]),

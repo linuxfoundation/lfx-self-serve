@@ -138,22 +138,23 @@
           placeholder="Enter meeting agenda and key discussion points"
           styleClass="w-full min-h-48"
           [rows]="8"
-          [maxlength]="2000"
+          [maxlength]="agendaMaxLength"
           data-testid="meeting-details-agenda-textarea"></lfx-textarea>
         <div class="flex items-center justify-between mt-2">
           <p class="text-sm text-gray-600">A clear agenda helps guests prepare and keeps discussions focused</p>
           <p
             class="text-xs"
             [ngClass]="{
-              'text-gray-500': (form().get('description')?.value?.length || 0) < 1800,
-              'text-amber-600': (form().get('description')?.value?.length || 0) >= 1800 && (form().get('description')?.value?.length || 0) < 2000,
-              'text-red-600': (form().get('description')?.value?.length || 0) >= 2000,
+              'text-gray-500': (form().get('description')?.value?.length || 0) < agendaWarningLength,
+              'text-amber-600':
+                (form().get('description')?.value?.length || 0) >= agendaWarningLength && (form().get('description')?.value?.length || 0) < agendaMaxLength,
+              'text-red-600': (form().get('description')?.value?.length || 0) >= agendaMaxLength,
             }">
-            {{ form().get('description')?.value?.length || 0 }}/2000
+            {{ form().get('description')?.value?.length || 0 }}/{{ agendaMaxLength }}
           </p>
         </div>
         @if (form().get('description')?.errors?.['maxlength'] && form().get('description')?.touched) {
-          <p class="mt-1 text-sm text-red-600">Meeting agenda cannot exceed 2000 characters</p>
+          <p class="mt-1 text-sm text-red-600">Meeting agenda cannot exceed {{ agendaMaxLength }} characters</p>
         }
       </div>
     </div>
