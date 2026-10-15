@@ -1561,6 +1561,15 @@ describe('buildOccurrenceStripItems (E6-03)', () => {
     expect(item).toEqual(expect.objectContaining({ startMs: at(16), startTime: new Date(scheduled).toISOString(), duration: 30, endKnown: true }));
   });
 
+  it('knows no end for an ended live occurrence until its past record supplies one', () => {
+    const items = buildOccurrenceStripItems([], { past: [], future: [occurrence(16), occurrence(30)] }, 60, now);
+
+    expect(items.map((item) => [item.isPast, item.endKnown])).toEqual([
+      [true, false],
+      [false, true],
+    ]);
+  });
+
   it('flags a past record whose id is listed as cancelled', () => {
     const items = buildOccurrenceStripItems(
       [],

@@ -831,13 +831,16 @@ export function buildOccurrenceStripItems(
     const startMs = new Date(occurrence.start_time).getTime();
     // A zero (or missing) duration inherits the series', as the occurrence picker reads it.
     const duration = occurrence.duration || fallbackDuration;
+    const isPast = isOccurrencePast(occurrence.start_time, duration, now);
     return {
       startMs,
       startTime: occurrence.start_time,
       duration,
-      endKnown: (occurrence.duration ?? 0) > 0,
+      // An upcoming occurrence's own duration is its scheduled end. Once it has ended, a past row shows
+      // an end only from its record's scheduled end (#3587), set when that record is merged in.
+      endKnown: (occurrence.duration ?? 0) > 0 && !isPast,
       occurrenceId: occurrence.occurrence_id,
-      isPast: isOccurrencePast(occurrence.start_time, duration, now),
+      isPast,
       cancelled: occurrence.status === 'cancel' || cancelledIds.has(occurrence.occurrence_id),
     };
   };
