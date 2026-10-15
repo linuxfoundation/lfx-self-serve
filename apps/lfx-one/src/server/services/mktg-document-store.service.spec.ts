@@ -192,7 +192,12 @@ describe('MktgDocumentStoreService', () => {
       const receipt = await service.persistGeneration(req, SPEC, envelope('# Brand Kit\n'), PROJECT, 'session-1');
 
       expect(receipt).toBeNull();
-      expect(loggerMocks.warning).toHaveBeenCalledWith(req, 'mktg_document_store_record', expect.stringContaining('Revision write failed'), expect.any(Object));
+      expect(loggerMocks.warning).toHaveBeenCalledWith(
+        req,
+        'mktg_document_store_record',
+        expect.stringContaining('Revision write failed'),
+        expect.objectContaining({ err: expect.any(Error) })
+      );
 
       store.failPutsMatching = null;
       await expect(service.persistGeneration(req, SPEC, envelope('# Brand Kit\n'), PROJECT, 'session-1')).resolves.not.toBeNull();

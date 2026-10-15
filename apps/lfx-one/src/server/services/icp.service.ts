@@ -10,6 +10,7 @@ import { Request } from 'express';
 import { GithubReadmeService } from './github-readme.service';
 import { GuildService } from './guild.service';
 import { logger } from './logger.service';
+import { MktgDocumentStoreService } from './mktg-document-store.service';
 import { ObjectStoreService } from './object-store.service';
 import { ProjectService } from './project.service';
 
@@ -50,6 +51,8 @@ export class IcpService {
   private readonly githubReadmeService = new GithubReadmeService();
   private readonly objectStore = new ObjectStoreService();
   private readonly projectService = new ProjectService();
+  /** Records every persisted ICP document as a revision of the project's ICP document (the Documents area). */
+  private readonly documentStore = new MktgDocumentStoreService();
 
   /**
    * Whether the typed form payload is sent as the Guild session's structured
@@ -136,7 +139,9 @@ export class IcpService {
       document_chars: envelope.document_markdown.length,
     });
 
-    const persistence = await this.persistEnvelope(req, envelope, projectUid);
+    const persisted = await this.persistEnvelope(req, envelope, projectUid);
+    // A failed revision write drops the receipt like a failed artifact write, so the next poll retries both.
+    const persistence = persisted ? await this.documentStore.recordPersisted(req, 'icp', persisted, envelope, sessionId) : null;
 
     return {
       status: 'ready',

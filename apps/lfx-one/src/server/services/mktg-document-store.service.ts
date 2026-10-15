@@ -132,7 +132,7 @@ export class MktgDocumentStoreService {
       logger.warning(req, 'mktg_document_store_record', 'Revision write failed — returning the document without a receipt; retried on next poll', {
         agent: type.agentKey,
         project: receipt.project,
-        error: error instanceof Error ? error.message : String(error),
+        err: error,
       });
       return null;
     }
@@ -370,7 +370,7 @@ export class MktgDocumentStoreService {
       logger.warning(req, 'mktg_document_store_read_latest', 'Revision read failed — falling back to the pre-revision document', {
         agent: type.agentKey,
         project,
-        error: error instanceof Error ? error.message : String(error),
+        err: error,
       });
     }
 
