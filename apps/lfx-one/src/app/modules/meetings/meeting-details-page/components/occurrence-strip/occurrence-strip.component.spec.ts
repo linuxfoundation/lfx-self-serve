@@ -194,6 +194,14 @@ describe('MeetingOccurrenceStripComponent', () => {
     expect(navigatedTo()).toBe(at(-1));
   });
 
+  it('never shows a cancelled occurrence as selected, even when the page is that occurrence', async () => {
+    await render(page({ cancelled_occurrences: [String(at(-1) / 1000)] }), { selected: at(-1), pastPage: true });
+
+    expect(chip(-1)?.getAttribute('data-cancelled')).toBe('true');
+    expect(chip(-1)?.getAttribute('data-selected')).toBe('false');
+    expect(chip(-1)?.getAttribute('aria-current')).toBeNull();
+  });
+
   it('hides itself when the endpoint refuses the series, or fails', async () => {
     await render(new HttpErrorResponse({ status: 403 }));
     expect(query('[data-testid="occurrence-strip-section"]')).toBeNull();

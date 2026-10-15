@@ -102,7 +102,8 @@ export class MeetingOccurrenceStripComponent {
   protected readonly reservesSpace = computed(() => !!this.state.meeting()?.recurrence);
   protected readonly timeline: Signal<MeetingOccurrenceStripTimeline | null> = this.initTimeline();
   protected readonly items = computed(() => this.timeline()?.items ?? []);
-  protected readonly selected = computed(() => this.items().find((item) => item.startMs === this.state.selectedOccurrenceStartMs()) ?? null);
+  /** The page's occurrence among the chips; never a cancelled one, which stays visible but is never selected. */
+  protected readonly selected = computed(() => this.items().find((item) => !item.cancelled && item.startMs === this.state.selectedOccurrenceStartMs()) ?? null);
   /** The first occurrence that has not ended and is not cancelled: the prototype's next-up dot. */
   protected readonly nextUp = computed(() => this.items().find((item) => !item.isPast && !item.cancelled) ?? null);
   protected readonly showJumpToNext = computed(() => !!this.nextUp() && this.nextUp()?.startMs !== this.selected()?.startMs);
