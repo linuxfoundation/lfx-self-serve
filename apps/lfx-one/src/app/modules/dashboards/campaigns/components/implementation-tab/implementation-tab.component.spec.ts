@@ -6947,6 +6947,104 @@ describe('ImplementationTabComponent bidding control', () => {
     });
   });
 
+  /**
+   * A Manual choice retained across a tab round-trip while the capability is not an explicit yes
+   * (#3299). The control is hidden then and `bidding` is not sent, which campaign-service reads as
+   * automatic — so the create must be BLOCKED, never sent without the choice.
+   */
+  describe('a retained Manual choice while the capability is unknown or off', () => {
+    async function manualDraft(): Promise<CampaignImplementationDraft> {
+      let draft: CampaignImplementationDraft | null = null;
+      const first = await mount(true);
+      first.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (draft = d));
+      await pickStrategy('meta-ads', 'manual', first);
+      await typeBid('meta-ads', '1', first);
+      first.destroy();
+      expect(draft).not.toBeNull();
+      return draft as unknown as CampaignImplementationDraft;
+    }
+
+    async function remount(bidding: boolean | null, read: 'pending' | 'ready' | 'failed'): Promise<ComponentFixture<ImplementationTabComponent>> {
+      const draft = await manualDraft();
+      const f = TestBed.createComponent(ImplementationTabComponent);
+      f.componentRef.setInput('draft', draft);
+      f.componentRef.setInput('biddingEnabled', bidding);
+      f.componentRef.setInput('biddingCapabilityRead', read);
+      f.componentRef.setInput('briefData', brief());
+      f.detectChanges();
+      await f.whenStable();
+      const c = component(f);
+      c['selectedPlatforms'].set(['linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads']);
+      c['campaignForm'].controls['eventName'].setValue('KubeCon EU 2026');
+      c['campaignForm'].controls['registrationUrl'].setValue('https://example.com/kubecon');
+      c['campaignForm'].controls['startDate'].setValue('2026-09-01');
+      c['campaignForm'].controls['endDate'].setValue('2026-09-30');
+      c['addMicrosoftKeyword']('service mesh');
+      f.detectChanges();
+      await f.whenStable();
+      return f;
+    }
+
+    it('blocks Create and says it is checking while the capability read is pending', async () => {
+      fixture = await remount(null, 'pending');
+
+      expect(component()['canSubmit']()).toBe(false);
+      expect(query('implementation-bidding-capability-pending')?.textContent).toContain('Checking bidding support…');
+      expect(query('implementation-bidding-capability-live')?.textContent?.trim()).toBe('Checking bidding support…');
+      component()['submit']();
+      expect(createCampaign).not.toHaveBeenCalled();
+
+      // The answer arrives: the control returns with the retained choice, and it is sent.
+      fixture.componentRef.setInput('biddingEnabled', true);
+      fixture.componentRef.setInput('biddingCapabilityRead', 'ready');
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(query('implementation-bidding-capability-live')?.textContent?.trim()).toBe('');
+      const request = await submitted();
+      expect(request['metaConfig']['bidding']).toEqual({ strategy: 'manual', bidAmount: 1 });
+    });
+
+    it('blocks Create with a Retry that asks the parent to re-read when the read failed', async () => {
+      fixture = await remount(null, 'failed');
+      const retried = vi.fn();
+      fixture.componentRef.instance.retryBiddingCapability.subscribe(retried);
+
+      expect(component()['canSubmit']()).toBe(false);
+      expect(query('implementation-bidding-capability-failed')?.textContent).toContain('Could not check whether manual bidding is supported');
+      (query('implementation-bidding-capability-retry')?.querySelector('button') as HTMLButtonElement).click();
+
+      expect(retried).toHaveBeenCalledTimes(1);
+      expect(createCampaign).not.toHaveBeenCalled();
+    });
+
+    it('blocks Create when the capability is off, until the operator switches to Automatic', async () => {
+      fixture = await remount(false, 'ready');
+
+      expect(component()['canSubmit']()).toBe(false);
+      expect(query('implementation-bidding-capability-unsupported')?.textContent).toContain('Meta');
+
+      (query('implementation-bidding-capability-automatic')?.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(query('implementation-bidding-capability-unsupported')).toBeNull();
+      expect(component()['biddingDrafts']()['meta-ads']).toEqual({ strategy: 'automatic', bidAmount: 1 });
+      const request = await submitted();
+      // Off: no bidding key at all — the operator chose automatic, which is what that means.
+      expect(Object.keys(request['metaConfig'])).not.toContain('bidding');
+    });
+
+    it('does not block a retained Manual choice on a platform that is not selected', async () => {
+      fixture = await remount(null, 'pending');
+      component()['selectedPlatforms'].set(['linkedin-ads']);
+      fixture.detectChanges();
+
+      expect(query('implementation-bidding-capability-pending')).toBeNull();
+      expect(component()['canSubmit']()).toBe(true);
+    });
+  });
+
   describe('with the flag on', () => {
     beforeEach(async () => {
       fixture = await mount(true);

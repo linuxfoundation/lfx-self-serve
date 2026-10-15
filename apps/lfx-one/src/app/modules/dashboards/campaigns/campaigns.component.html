@@ -1452,6 +1452,8 @@
               [googleCreativeEnabled]="briefCampaignsGoogleCreativeEnabled()"
               [redditCreativeEnabled]="briefCampaignsRedditCreativeEnabled()"
               [biddingEnabled]="briefCampaignsBiddingEnabled()"
+              [biddingCapabilityRead]="briefCampaignsBiddingRead()"
+              (retryBiddingCapability)="retryBiddingCapability()"
               (draftChange)="implementationDraft.set($event)"
               data-testid="campaigns-implementation-tab" />
           </div>

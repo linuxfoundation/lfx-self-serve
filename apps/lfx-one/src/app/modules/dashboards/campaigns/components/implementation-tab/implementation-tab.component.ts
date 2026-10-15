@@ -20,6 +20,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import {
   CAMPAIGN_BIDDING_CREATE_PLATFORMS,
   CAMPAIGN_BIDDING_PLATFORMS,
+  CAMPAIGN_BIDDING_RULES,
   CAMPAIGN_BUDGET_DEFAULTS,
   CAMPAIGN_CHAR_LIMITS,
   CAMPAIGN_JOB_POLL_INTERVAL_MS,
@@ -97,6 +98,7 @@ import { filter, map, merge, scan, skip, startWith, Subscription, take } from 'r
 
 import type { Signal } from '@angular/core';
 import type {
+  CampaignBiddingCapabilityBlock,
   CampaignBiddingConfig,
   CampaignBiddingContext,
   CampaignBiddingControlView,
@@ -105,6 +107,7 @@ import type {
   CampaignBiddingPlatform,
   CampaignBriefOutput,
   CampaignBriefPersistenceState,
+  CampaignCapabilityReadState,
   CampaignCreateRequest,
   CampaignCreateResult,
   CampaignImplementationDraft,
@@ -313,6 +316,16 @@ export class ImplementationTabComponent implements OnInit {
 
   /** @see biddingEnabled — an explicit yes, never a `null`. */
   protected readonly biddingAvailable = computed<boolean>(() => this.biddingEnabled() === true);
+
+  /**
+   * Where the read behind `biddingEnabled` stands — what tells "still checking" from "the check
+   * failed" while `biddingEnabled` is `null`. Read only when a retained Manual choice needs the
+   * answer; see `biddingCapabilityBlock`.
+   */
+  public readonly biddingCapabilityRead = input<CampaignCapabilityReadState>('pending');
+
+  /** Asks the parent to re-read the create capabilities after a failed read. */
+  public readonly retryBiddingCapability = output<void>();
 
   /**
    * Emitted whenever a user-editable field changes, so the parent's copy is current at the moment
@@ -1395,6 +1408,18 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly biddingPayloads: Signal<Record<CampaignBiddingPlatform, CampaignBiddingConfig | null>> = this.initBiddingPayloads();
 
+  /**
+   * Why Create is blocked for a Manual bidding choice this tab still holds but cannot send (#3299),
+   * or `null`. While the capability is not an explicit yes the control is hidden and `bidding` is
+   * not sent — and campaign-service reads an absent `bidding` as AUTOMATIC. So a Manual choice
+   * retained in the draft (made earlier, before a tab round-trip left the capability unanswered or
+   * false) must block the create rather than be dropped: pending says it is checking, failed offers
+   * a Retry, and an explicit no asks the operator to switch to Automatic themselves.
+   */
+  protected readonly biddingCapabilityBlock: Signal<CampaignBiddingCapabilityBlock | null> = this.initBiddingCapabilityBlock();
+  /** The always-mounted live region's text for `biddingCapabilityBlock`; `''` when nothing blocks. */
+  protected readonly biddingCapabilityMessage = computed(() => this.biddingCapabilityBlock()?.message ?? '');
+
   protected readonly canSubmit = computed(() => {
     // Read FIRST and for its side effect only — see `campaignFormRevision`. Every direct form read
     // below is non-reactive, so without this dependency the memo never re-runs on a form edit.
@@ -1529,6 +1554,8 @@ export class ImplementationTabComponent implements OnInit {
     // A selected platform whose Bidding choice cannot be sent (#3299): its message is on screen,
     // under that platform's control.
     if (this.biddingAvailable() && CAMPAIGN_BIDDING_CREATE_PLATFORMS.some((p) => platforms.includes(p) && this.biddingPayloads()[p] === null)) return false;
+    // A retained Manual choice the deployment has not (yet) confirmed it can send: never dropped.
+    if (this.biddingCapabilityBlock() !== null) return false;
     // Backstop for a state the add handlers cannot produce but a RESTORED DRAFT can: a draft
     // written before these caps existed carries whatever list it had, and `applyDraft` replays it
     // verbatim by design (an emptied list must stay emptied). Without this the form would look
@@ -2050,6 +2077,24 @@ export class ImplementationTabComponent implements OnInit {
 
   protected onMicrosoftCpcBidInput(event: Event): void {
     this.microsoftCpcBid.set((event.target as HTMLInputElement).value);
+    this.emitDraft();
+  }
+
+  /**
+   * The explicit way out of an `unsupported` or `failed` block: the operator moves the retained
+   * Manual choices of the selected platforms to Automatic. The typed amounts are kept, so turning
+   * Manual back on later does not lose them.
+   */
+  protected switchRetainedBiddingToAutomatic(): void {
+    const platforms = this.retainedManualBiddingPlatforms();
+    this.biddingDrafts.update((drafts) => {
+      const next = { ...drafts };
+      for (const platform of platforms) {
+        const draft = next[platform];
+        if (draft) next[platform] = { ...draft, strategy: 'automatic' };
+      }
+      return next;
+    });
     this.emitDraft();
   }
 
@@ -3584,6 +3629,35 @@ export class ImplementationTabComponent implements OnInit {
       const strategy = this.googleBiddingStrategy();
       return strategy !== null && (GOOGLE_BIDDING_ROAS_STRATEGIES as readonly string[]).includes(strategy);
     });
+  }
+
+  private initBiddingCapabilityBlock(): Signal<CampaignBiddingCapabilityBlock | null> {
+    return computed(() => {
+      if (this.biddingAvailable()) return null;
+      const platforms = this.retainedManualBiddingPlatforms();
+      if (platforms.length === 0) return null;
+      const names = platforms.map((p) => CAMPAIGN_BIDDING_RULES[p].label).join(', ');
+      if (this.biddingEnabled() === false) {
+        return {
+          kind: 'unsupported',
+          message: `Manual bidding is not available on this deployment, so the manual max CPC bid chosen for ${names} cannot be sent. Switch to Automatic to create the campaign.`,
+        };
+      }
+      if (this.biddingCapabilityRead() === 'failed') {
+        return {
+          kind: 'failed',
+          message: `Could not check whether manual bidding is supported, so the manual max CPC bid chosen for ${names} cannot be sent yet. Retry the check, or switch to Automatic.`,
+        };
+      }
+      return { kind: 'pending', message: 'Checking bidding support…' };
+    });
+  }
+
+  /** The selected bidding platforms whose retained choice is Manual. */
+  private retainedManualBiddingPlatforms(): CampaignBiddingPlatform[] {
+    const drafts = this.biddingDrafts();
+    const selected = this.selectedPlatforms();
+    return CAMPAIGN_BIDDING_CREATE_PLATFORMS.filter((p) => selected.includes(p) && drafts[p]?.strategy === 'manual');
   }
 
   private initBiddingViews(): Signal<Record<CampaignBiddingPlatform, CampaignBiddingControlView>> {

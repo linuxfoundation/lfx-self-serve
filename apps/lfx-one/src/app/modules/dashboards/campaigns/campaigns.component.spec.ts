@@ -1413,8 +1413,9 @@ describe('CampaignsComponent brief persistence', () => {
         await withSavedBrief();
         await fixture.whenStable();
 
-        const c = fixture.componentInstance as unknown as { briefCampaignsBiddingEnabled(): boolean | null };
+        const c = fixture.componentInstance as unknown as { briefCampaignsBiddingEnabled(): boolean | null; briefCampaignsBiddingRead(): string };
         expect(c.briefCampaignsBiddingEnabled()).toBe(true);
+        expect(c.briefCampaignsBiddingRead()).toBe('ready');
       });
 
       it('leaves the bidding capability unknown when the capability read fails', async () => {
@@ -1423,7 +1424,11 @@ describe('CampaignsComponent brief persistence', () => {
         await withSavedBrief();
         await fixture.whenStable();
 
-        expect((fixture.componentInstance as unknown as { briefCampaignsBiddingEnabled(): boolean | null }).briefCampaignsBiddingEnabled()).toBeNull();
+        const c = fixture.componentInstance as unknown as { briefCampaignsBiddingEnabled(): boolean | null; briefCampaignsBiddingRead(): string };
+        expect(c.briefCampaignsBiddingEnabled()).toBeNull();
+        // `failed`, not `pending`: the tab offers a Retry for a retained Manual choice rather than
+        // saying it is still checking.
+        expect(c.briefCampaignsBiddingRead()).toBe('failed');
       });
 
       /**

@@ -8,6 +8,7 @@ import type {
   BriefMetrics,
   CampaignBidChange,
   CampaignBidOutcome,
+  CampaignConfirmedBid,
   CampaignBudgetChange,
   CampaignBudgetOutcome,
   CampaignIndexDoc,
@@ -258,7 +259,7 @@ export class OptimizationTabComponent implements OnInit {
   /** The last non-success bid outcome per row; cleared when a new change is dispatched. */
   protected readonly bidOutcome = signal<Partial<Record<string, CampaignBidOutcome>>>({});
   /** The bid this session CONFIRMED per row. The index carries no bid, so this is the only one the row can show. */
-  protected readonly confirmedBid = signal<Partial<Record<string, CampaignBidChange>>>({});
+  protected readonly confirmedBid = signal<Partial<Record<string, CampaignConfirmedBid>>>({});
 
   /** Which Microsoft Advertising, Reddit and X rows have their negative-keyword editor open. */
   protected readonly negativesEditorOpen = signal<Record<string, boolean>>({});
@@ -666,11 +667,13 @@ export class OptimizationTabComponent implements OnInit {
       const adSetBusy = adSetPending[campaign.id] !== undefined;
       const keywordTargetingOffered = typeof campaign.platform === 'string' && KEYWORD_TARGETING_CAMPAIGN_PLATFORMS.has(campaign.platform);
       const keywordTargetingUnavailableReason = keywordTargetingOffered ? this.keywordTargetingUnavailableReasonFor(campaign, status) : '';
+      const confirmedBidAmount = this.currentConfirmedBid(campaign, confirmedBids[campaign.id]);
       return {
         campaign,
         // The bidding campaign-service RECORDED (#3299) — what the create asked for and the last bid
         // it set, not a live read of the platform. Empty when the index records neither.
-        biddingSummary: this.biddingSummaryFor(campaign, confirmedBids[campaign.id]),
+        biddingSummary: this.biddingSummaryFor(campaign, confirmedBidAmount),
+        confirmedBidAmount,
         status,
         action,
         conflicted,
@@ -1466,7 +1469,7 @@ export class OptimizationTabComponent implements OnInit {
             return;
           }
           this.bidPending.update((p) => this.omitKeys(p, [id]));
-          this.confirmedBid.update((c) => ({ ...c, [id]: { bid: result.bid } }));
+          this.confirmedBid.update((c) => ({ ...c, [id]: { bid: result.bid, version: campaignEtagVersion(result.etag) } }));
           this.returnFocusToDisclosure(`campaign-bid-edit-${id}`, `campaign-bid-panel-${id}`);
           this.bidEditorOpen.update((open) => this.omitKeys(open, [id]));
           // The change bumped the row's version upstream; the next write on the row needs this one.
@@ -2614,16 +2617,32 @@ export class OptimizationTabComponent implements OnInit {
   }
 
   /**
-   * The row's recorded-bidding line. A bid this session CONFIRMED wins over the indexed
-   * `max_cpc_bid`: the index is asynchronous, so right after a bid change it still holds the old
-   * bid. A confirmed bid means manual — the bid lever succeeds only on a manual per-click strategy.
-   * `confirmedBid` lives exactly as long as the bid lever's own state: it survives list refreshes
-   * (so an index that has caught up shows the same value, and a lagging one cannot flip it back)
-   * and is cleared only when the project or brief changes.
+   * The bid this session confirmed for the row, while it is still the newest thing known about the
+   * row's bid. The index is asynchronous, so right after a change it still holds the old bid — the
+   * confirmed one wins while the indexed version is at or below the version the write returned.
+   * Once the index carries a NEWER version, someone may have changed the bid since, and the indexed
+   * value wins. Either version unparseable: the confirmed bid stands, as it did before versions
+   * were compared. `confirmedBid` itself is cleared only when the project or brief changes.
    */
-  private biddingSummaryFor(campaign: CampaignIndexDoc, confirmed: CampaignBidChange | undefined): string {
-    if (confirmed !== undefined) {
-      return campaignBiddingSummary(campaign.platform, 'manual', confirmed.bid);
+  private currentConfirmedBid(campaign: CampaignIndexDoc, confirmed: CampaignConfirmedBid | undefined): number | null {
+    if (confirmed === undefined) {
+      return null;
+    }
+    const indexed = campaignEtagVersion(campaign.etag);
+    if (confirmed.version !== null && indexed !== null && indexed > confirmed.version) {
+      return null;
+    }
+    return confirmed.bid;
+  }
+
+  /**
+   * The row's recorded-bidding line. A current confirmed bid (see `currentConfirmedBid`) wins and
+   * reads as manual — the bid lever succeeds only on a manual per-click strategy. Otherwise the
+   * indexed `bidding_strategy` / `max_cpc_bid`.
+   */
+  private biddingSummaryFor(campaign: CampaignIndexDoc, confirmedBidAmount: number | null): string {
+    if (confirmedBidAmount !== null) {
+      return campaignBiddingSummary(campaign.platform, 'manual', confirmedBidAmount);
     }
     return campaignBiddingSummary(campaign.platform, campaign.bidding_strategy, campaign.max_cpc_bid);
   }

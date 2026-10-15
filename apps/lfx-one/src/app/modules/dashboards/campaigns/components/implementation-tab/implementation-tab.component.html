@@ -1751,6 +1751,51 @@
         </div>
       }
 
+      <!--
+        A retained Manual bidding choice the deployment has not confirmed it can send (#3299). The
+        live region is always mounted and only its text changes, like the brief-status region at
+        the top of this template; the visible block below carries the actions.
+      -->
+      <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-bidding-capability-live">
+        {{ biddingCapabilityMessage() }}
+      </div>
+      @if (biddingCapabilityBlock(); as block) {
+        <div
+          class="flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
+          [class.bg-gray-50]="block.kind === 'pending'"
+          [class.text-gray-700]="block.kind === 'pending'"
+          [class.bg-amber-50]="block.kind !== 'pending'"
+          [class.text-amber-800]="block.kind !== 'pending'"
+          [attr.data-testid]="'implementation-bidding-capability-' + block.kind">
+          <p class="flex items-center gap-2">
+            @if (block.kind === 'pending') {
+              <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+            }
+            {{ block.message }}
+          </p>
+          @if (block.kind !== 'pending') {
+            <div class="flex items-center gap-2">
+              @if (block.kind === 'failed') {
+                <lfx-button
+                  label="Retry"
+                  size="small"
+                  severity="secondary"
+                  [outlined]="true"
+                  (onClick)="retryBiddingCapability.emit()"
+                  data-testid="implementation-bidding-capability-retry" />
+              }
+              <lfx-button
+                label="Switch to Automatic"
+                size="small"
+                severity="secondary"
+                [text]="true"
+                (onClick)="switchRetainedBiddingToAutomatic()"
+                data-testid="implementation-bidding-capability-automatic" />
+            </div>
+          }
+        </div>
+      }
+
       <!-- Submit -->
       <div class="flex items-center gap-3">
         <lfx-button

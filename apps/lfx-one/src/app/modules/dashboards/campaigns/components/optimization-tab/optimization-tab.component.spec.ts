@@ -3286,6 +3286,37 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
       expect(bidding()).toBe('Bidding: manual · max CPC bid 1.25 in the ad account currency');
     });
 
+    it('keeps the confirmed bid against a lagging index, same version or older', () => {
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 0.5 })]);
+      changeBid(1.25); // the write answered version 4 ("4")
+
+      for (const etag of ['"3"', '"4"']) {
+        render([doc({ bidding_strategy: 'manual', max_cpc_bid: 0.5, etag })]);
+        expect(bidding()).toBe('Bidding: manual · max CPC bid 1.25 in the ad account currency');
+        expect(q('optimization-campaign-bid-current-c-1')?.textContent).toContain('1.25');
+      }
+    });
+
+    it('gives way to a NEWER indexed bid someone else set, in the row line and the "set here" note alike', () => {
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 0.5 })]);
+      changeBid(1.25);
+
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 2, etag: '"5"', version: 5 })]);
+
+      expect(bidding()).toBe('Bidding: manual · max CPC bid 2 in the ad account currency');
+      expect(q('optimization-campaign-bid-current-c-1')).toBeNull();
+    });
+
+    it('keeps the confirmed bid when the write returned no parseable version', () => {
+      updateCampaignBid.mockReturnValue(of(bidResult({ etag: undefined })));
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 0.5 })]);
+      changeBid(1.25);
+
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 2, etag: '"9"', version: 9 })]);
+
+      expect(bidding()).toBe('Bidding: manual · max CPC bid 1.25 in the ad account currency');
+    });
+
     it('reads a confirmed bid as manual, even on a row the index recorded as automatic or not at all', () => {
       render([doc({ bidding_strategy: 'automatic' })]);
 

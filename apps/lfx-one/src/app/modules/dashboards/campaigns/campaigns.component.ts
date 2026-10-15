@@ -38,6 +38,7 @@ import type {
   BriefMetricsRow,
   CampaignAudience,
   CampaignBriefOutput,
+  CampaignCapabilityReadState,
   CampaignBriefPersistResult,
   CampaignBriefPersistenceState,
   CampaignCreateRequest,
@@ -768,6 +769,12 @@ export class CampaignsComponent {
   protected readonly briefCampaignsRedditCreativeEnabled = signal<boolean | null>(null);
   /** Whether the create flow offers the Bidding control (#3299) — `CampaignListResult.biddingEnabled`, read and cleared like the capabilities above. */
   protected readonly briefCampaignsBiddingEnabled = signal<boolean | null>(null);
+  /**
+   * Where the read behind `briefCampaignsBiddingEnabled` stands, so the Implementation tab can tell
+   * "still checking" from "the check failed" when it holds a Manual choice it cannot send without
+   * the answer (#3299). `pending` also covers "no read dispatched yet".
+   */
+  protected readonly briefCampaignsBiddingRead = signal<CampaignCapabilityReadState>('pending');
 
   /**
    * Generation counter for the campaign-list read — the same mechanism as `emailSearchGeneration`,
@@ -2312,6 +2319,7 @@ export class CampaignsComponent {
         this.briefCampaignsGoogleCreativeEnabled.set(null);
         this.briefCampaignsRedditCreativeEnabled.set(null);
         this.briefCampaignsBiddingEnabled.set(null);
+        this.briefCampaignsBiddingRead.set('pending');
         // Cleared with the list. A failure banner belongs to the read that produced it; leaving it
         // set would report the previous foundation's outage against a foundation never queried.
         this.briefCampaignsUnavailable.set(false);
@@ -3853,6 +3861,12 @@ export class CampaignsComponent {
         },
       });
   }
+
+  /** The Implementation tab's Retry for a failed bidding-capability read (#3299). */
+  protected retryBiddingCapability(): void {
+    this.loadCreateCapabilities();
+  }
+
   /**
    * The staged draft's link, only when it points at HubSpot's app (`HUBSPOT_APP_HOST_PATTERN`);
    * '' otherwise. The value comes from campaign-service and is not checked on the way through the
@@ -4165,6 +4179,8 @@ export class CampaignsComponent {
     // foundation inapplicable rather than merely old.
     const dispatchedAt = this.capabilityGeneration;
     const mayWrite = (): boolean => dispatchedAt === this.capabilityGeneration && projectSlug === this.activeFoundationSlug();
+    // Back to `pending` while this read is out, so a Retry after a failure shows "checking" again.
+    if (this.briefCampaignsBiddingEnabled() === null) this.briefCampaignsBiddingRead.set('pending');
     this.campaignService
       .listBriefCampaigns(projectSlug, briefId)
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
@@ -4180,6 +4196,7 @@ export class CampaignsComponent {
           this.briefCampaignsGoogleCreativeEnabled.set(result.googleCreativeEnabled);
           this.briefCampaignsRedditCreativeEnabled.set(result.redditCreativeEnabled);
           this.briefCampaignsBiddingEnabled.set(result.biddingEnabled);
+          this.briefCampaignsBiddingRead.set('ready');
         },
         // Cleared to `null`, not left alone and not set `false`. `false` would clear a restored
         // draft's selection on evidence a failed read does not have; leaving the previous value
@@ -4194,6 +4211,7 @@ export class CampaignsComponent {
           this.briefCampaignsGoogleCreativeEnabled.set(null);
           this.briefCampaignsRedditCreativeEnabled.set(null);
           this.briefCampaignsBiddingEnabled.set(null);
+          this.briefCampaignsBiddingRead.set('failed');
         },
       });
   }
@@ -4254,6 +4272,7 @@ export class CampaignsComponent {
     this.briefCampaignsGoogleCreativeEnabled.set(null);
     this.briefCampaignsRedditCreativeEnabled.set(null);
     this.briefCampaignsBiddingEnabled.set(null);
+    this.briefCampaignsBiddingRead.set('pending');
 
     if (projectSlug === '' || briefId === null || briefId === '') {
       // No brief id means nothing was persisted this session and no restore supplied one, so
@@ -4282,6 +4301,7 @@ export class CampaignsComponent {
             this.briefCampaignsGoogleCreativeEnabled.set(result.googleCreativeEnabled);
             this.briefCampaignsRedditCreativeEnabled.set(result.redditCreativeEnabled);
             this.briefCampaignsBiddingEnabled.set(result.biddingEnabled);
+            this.briefCampaignsBiddingRead.set('ready');
           }
         },
         error: () => {
@@ -4302,6 +4322,7 @@ export class CampaignsComponent {
             this.briefCampaignsGoogleCreativeEnabled.set(null);
             this.briefCampaignsRedditCreativeEnabled.set(null);
             this.briefCampaignsBiddingEnabled.set(null);
+            this.briefCampaignsBiddingRead.set('failed');
           }
         },
       });

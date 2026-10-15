@@ -3046,6 +3046,12 @@ export interface CampaignRow {
    * the index records neither. Carried on the row so the template only reads it.
    */
   biddingSummary: string;
+  /**
+   * The bid this session confirmed for the row, or `null`. `null` too once the index carries a
+   * NEWER version than the write that confirmed it, so the "set here" note and the recorded-bidding
+   * line both give way to the indexed value together.
+   */
+  confirmedBidAmount: number | null;
   /** What the row displays: this session's confirmed status, else the indexed one. */
   status: string;
   /**
@@ -3154,6 +3160,16 @@ export interface CampaignRow {
 export interface CampaignBidChange {
   /** Manual max cost-per-click, in the AD ACCOUNT's own currency, exactly as entered. Never converted or rounded. */
   bid: number;
+}
+
+/**
+ * A bid change this session CONFIRMED, with the campaign version the successful write returned
+ * (from its ETag). The confirmed bid stands only while the index has not moved past that version:
+ * a newer indexed version may carry a bid someone else set since. `null` when the ETag could not
+ * be parsed, in which case the confirmed bid stands as before.
+ */
+export interface CampaignConfirmedBid extends CampaignBidChange {
+  version: number | null;
 }
 
 /**
@@ -3623,6 +3639,19 @@ export interface CampaignBiddingDraft {
 
 /** The Bidding control's state per platform, as the implementation draft carries it. */
 export type CampaignBiddingDrafts = Partial<Record<CampaignBiddingPlatform, CampaignBiddingDraft>>;
+
+/**
+ * Where the create-capability read stands, for a choice the form cannot send without its answer:
+ * `pending` before it answers (or while none could be dispatched yet), `failed` after an error,
+ * `ready` once it answered. The answer itself travels separately (`biddingEnabled`).
+ */
+export type CampaignCapabilityReadState = 'pending' | 'ready' | 'failed';
+
+/** Why Create is blocked for a retained Manual bidding choice the deployment cannot confirm (#3299). */
+export interface CampaignBiddingCapabilityBlock {
+  kind: 'pending' | 'failed' | 'unsupported';
+  message: string;
+}
 
 /** The rest of a platform's config that its bidding rules read. */
 export interface CampaignBiddingContext {

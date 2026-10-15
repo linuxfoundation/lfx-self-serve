@@ -83,6 +83,35 @@ describe('CampaignBiddingControlComponent', () => {
     expect(label.textContent).toContain('ad account currency');
   });
 
+  /**
+   * The live region must exist BEFORE the error does and only change its text: a region inserted
+   * with its text already present is not reliably announced. Same element across all three renders.
+   */
+  it('keeps one persistent live region and updates its text as the error appears and clears', async () => {
+    await render({ platform: 'meta-ads', value: { strategy: 'automatic', bidAmount: null }, error: null });
+    const region = query('implementation-bidding-meta-ads-live');
+    expect(region).not.toBeNull();
+    expect(region?.getAttribute('aria-live')).toBe('polite');
+    expect(region?.textContent?.trim()).toBe('');
+    expect(query('implementation-bidding-meta-ads-error')).toBeNull();
+
+    await render({
+      platform: 'meta-ads',
+      value: { strategy: 'manual', bidAmount: null },
+      error: 'Enter a max CPC bid for manual bidding, or choose Automatic.',
+    });
+
+    expect(query('implementation-bidding-meta-ads-live')).toBe(region);
+    expect(region?.textContent?.trim()).toBe('Enter a max CPC bid for manual bidding, or choose Automatic.');
+    // The visible error is not itself a live region; it stays the input's description.
+    expect(query('implementation-bidding-meta-ads-error')?.hasAttribute('aria-live')).toBe(false);
+
+    await render({ platform: 'meta-ads', value: { strategy: 'manual', bidAmount: 1 }, error: null });
+
+    expect(query('implementation-bidding-meta-ads-live')).toBe(region);
+    expect(region?.textContent?.trim()).toBe('');
+  });
+
   it('labels a LinkedIn bid as USD and leaves the input valid without an error', async () => {
     await render({ platform: 'linkedin-ads', value: { strategy: 'manual', bidAmount: 2.5 }, error: null });
 

@@ -48,6 +48,8 @@ export class CampaignBiddingControlComponent implements OnInit {
       error: `${prefix}-error`,
     };
   });
+  /** What the always-mounted live region says: the bid error while Manual has one, otherwise nothing. */
+  protected readonly liveMessage: Signal<string> = computed(() => (this.isManual() ? (this.view().error ?? '') : ''));
   /** `aria-describedby` for the bid: the currency hint and the limits, plus the error when there is one. */
   protected readonly amountDescribedBy: Signal<string> = this.initAmountDescribedBy();
 
