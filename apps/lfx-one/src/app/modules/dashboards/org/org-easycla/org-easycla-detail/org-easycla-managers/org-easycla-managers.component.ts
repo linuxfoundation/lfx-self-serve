@@ -66,13 +66,18 @@ export class OrgEasyclaManagersComponent implements OnInit {
   /**
    * ACS grants for the two manager writes (#1984). Separate strings: Add is the same
    * `signature_approval_list:update` Corporate Console uses for that button; Remove is
-   * `cla_manager_delete:remove`. Null while the hop has not arrived — hide, do not guess.
+   * `cla_manager_delete:remove`.
    */
   private readonly addGrant = signal<boolean | null>(null);
   private readonly removeGrant = signal<boolean | null>(null);
 
-  protected readonly canAdd = computed(() => this.addGrant() === true && !this.loadFailed());
-  protected readonly canRemove = computed(() => this.removeGrant() === true);
+  private readonly onRoster = computed(() => this.claGroup().viewerIsClaManager === true);
+
+  protected readonly canAdd = computed(() => this.onRoster() && this.addGrant() === true && !this.loadFailed());
+  protected readonly canRemove = computed(() => this.onRoster() && this.removeGrant() === true);
+
+  protected readonly addBlockedReason = computed(() => (this.onRoster() ? undefined : this.copy.offRosterReason));
+  protected readonly addAriaLabel = computed(() => this.initAddAriaLabel());
 
   public constructor() {
     this.contextChanged$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.onContextChanged());
@@ -178,6 +183,11 @@ export class OrgEasyclaManagersComponent implements OnInit {
     const projectSfid = orgClaPairProjectSfid(group);
     const foundationSfid = orgClaPairFoundationSfid(group) ?? '';
     return orgUid && projectSfid ? `${orgUid}::${projectSfid}::${foundationSfid}` : '';
+  }
+
+  private initAddAriaLabel(): string {
+    const reason = this.addBlockedReason();
+    return reason ? `${this.copy.addAction}. ${reason}` : this.copy.addAction;
   }
 
   private initRows(): OrgClaManagerRow[] | null {
