@@ -29,14 +29,16 @@ import { UserService } from './user.service';
 /**
  * Form-first agent runs for the Marketing OS marketplace. A first run submits
  * the batch intake answers to the agent's validated generate endpoint (the BFF
- * renders the batch message server-side); every follow-up — edit-inputs
- * resubmit or feedback regeneration — resubmits the full form plus the stored
- * run's prior version (and feedback, when given) down one of two paths, per
- * the intake's `regenerateViaGenerate` flag: default intakes post on the
- * run's EXISTING Guild session via the chat/session BFF, while
- * `regenerateViaGenerate` intakes (e.g. the Message Foundation) go back
- * through the validated generate endpoint on a FRESH session, replacing the
- * stored run's session while keeping its version history. Either way the
+ * renders the batch message server-side); a follow-up — edit-inputs
+ * resubmit or feedback regeneration — takes one of three paths, per the
+ * intake's flags: default intakes post the full form plus the stored run's
+ * prior version (and feedback, when given) on the run's EXISTING Guild
+ * session via the chat/session BFF; `regenerateViaGenerate` intakes (e.g. the
+ * ICP) send the same through the validated generate endpoint on a FRESH
+ * session, replacing the stored run's session while keeping its version
+ * history; and `freshRunPerSubmission` intakes (the Messaging Document) send
+ * every submission as a fresh first-run generate with no prior version and no
+ * feedback, the run shell numbering the versions. Either way the
  * document comes exclusively
  * from the agent's result endpoint, which returns only schema-validated,
  * sha256-verified envelopes — raw chat text is never treated as the document.

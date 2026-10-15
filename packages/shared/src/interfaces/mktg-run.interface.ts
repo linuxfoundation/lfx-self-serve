@@ -71,8 +71,8 @@ export type MktgReadmeSkipReason = 'not-a-repo-url' | 'no-readme' | 'not-public'
 
 /**
  * Outcome of the server-side README fetch for one generation (agents with no
- * web access — the Message Foundation's `readme_markdown` input). Reported on
- * the generate response and stored with the version it produced, because the
+ * web access — the ICP's `readme_markdown` and the Messaging Document's
+ * `readme_text` inputs). Reported on the generate response and stored with the version it produced, because the
  * fetch happens per submission: a regeneration with a corrected URL must not
  * inherit the previous attempt's verdict.
  */

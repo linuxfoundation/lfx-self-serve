@@ -233,8 +233,7 @@ export const ICP_INTAKE: MktgAgentIntake = {
       kind: 'text',
       prefill: 'repository-url',
       hint: 'The README is fetched automatically from this repo and passed to the agent.',
-      // Blocking, for the same reason as the Message Foundation's Q1b: Paul's
-      // contract keeps the answer free text for the AGENT, but a URL that
+      // Blocking: Paul's contract keeps the answer free text for the AGENT, but a URL that
       // provably cannot yield a README is refused by the LFX collection UI
       // rather than accepted and discovered minutes later as a thin document.
       format: 'github-repo-url',
