@@ -553,6 +553,7 @@
                   <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">CTR</th>
                   <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Conv.</th>
                   <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Creatives</th>
+                  <th class="px-4 py-3 text-xs font-medium text-gray-500"><span class="sr-only">Actions</span></th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-gray-100">
@@ -625,6 +626,9 @@
                     } @else {
                       <td class="px-4 py-3 text-right text-xs text-gray-700" data-testid="linkedin-campaign-creatives">{{ camp.creatives.length }}</td>
                     }
+                    <td class="px-4 py-3">
+                      <ng-container *ngTemplateOutlet="actCell; context: { platform: 'linkedin-ads', id: camp.campaignId, name: camp.campaignName }" />
+                    </td>
                   </tr>
                 }
               </tbody>
@@ -739,6 +743,7 @@
                   <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Clicks</th>
                   <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">CTR</th>
                   <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Conv.</th>
+                  <th class="px-4 py-3 text-xs font-medium text-gray-500"><span class="sr-only">Actions</span></th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-gray-100">
@@ -805,6 +810,9 @@
                         <td class="px-4 py-3 text-right text-xs text-gray-700" data-testid="reddit-campaign-conversions">{{ camp.conversions }}</td>
                       }
                     }
+                    <td class="px-4 py-3">
+                      <ng-container *ngTemplateOutlet="actCell; context: { platform: 'reddit-ads', id: camp.campaignId, name: camp.campaignName }" />
+                    </td>
                   </tr>
                 }
               </tbody>
@@ -921,6 +929,7 @@
                   <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Clicks</th>
                   <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">CTR</th>
                   <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Conv.</th>
+                  <th class="px-4 py-3 text-xs font-medium text-gray-500"><span class="sr-only">Actions</span></th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-gray-100">
@@ -987,6 +996,9 @@
                         <td class="px-4 py-3 text-right text-xs text-gray-700" data-testid="meta-campaign-conversions">{{ camp.conversions }}</td>
                       }
                     }
+                    <td class="px-4 py-3">
+                      <ng-container *ngTemplateOutlet="actCell; context: { platform: 'meta-ads', id: camp.campaignId, name: camp.campaignName }" />
+                    </td>
                   </tr>
                 }
               </tbody>
@@ -996,4 +1008,47 @@
       }
     </div>
   }
+
+  <!--
+    campaign-service's per-platform audience reads (Meta, LinkedIn, Microsoft Advertising, Reddit, X).
+    Outside the platform switch above on purpose, like the Microsoft keyword table on the Optimize
+    tab: each read has its own source, window and failure states, and it is project-scoped, so it
+    does not follow the monitor's selected ad account. Google's audience stays in its own panel above.
+  -->
+  @if (activeFoundationSlug()) {
+    <lfx-paid-audience-insights [projectSlug]="activeFoundationSlug()" data-testid="monitoring-paid-audience" />
+  }
 </div>
+
+<!--
+  A Monitor row's actions. Each first resolves the row's PLATFORM campaign id to the campaign LFX One
+  manages (campaign-ref) inside the act dialog, so nothing is changed from here directly.
+-->
+<ng-template #actCell let-platform="platform" let-id="id" let-name="name">
+  <div class="flex items-center justify-end gap-1" [attr.data-testid]="'monitor-act-' + platform + '-' + id">
+    <lfx-button
+      label="Pause / resume"
+      size="small"
+      [text]="true"
+      ariaHaspopup="dialog"
+      [ariaLabel]="'Pause or resume ' + name"
+      (onClick)="openAct(platform, id, name, 'pause_resume')"
+      [attr.data-testid]="'monitor-act-toggle-' + id" />
+    <lfx-button
+      label="Budget"
+      size="small"
+      [text]="true"
+      ariaHaspopup="dialog"
+      [ariaLabel]="'Change budget of ' + name"
+      (onClick)="openAct(platform, id, name, 'budget')"
+      [attr.data-testid]="'monitor-act-budget-' + id" />
+    <lfx-button
+      label="Bid"
+      size="small"
+      [text]="true"
+      ariaHaspopup="dialog"
+      [ariaLabel]="'Change bid of ' + name"
+      (onClick)="openAct(platform, id, name, 'bid')"
+      [attr.data-testid]="'monitor-act-bid-' + id" />
+  </div>
+</ng-template>

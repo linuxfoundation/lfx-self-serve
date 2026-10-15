@@ -13,6 +13,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import type {
   BulkKeywordActionRequest,
+  CampaignAdSchedule,
   CampaignBidType,
   CampaignBidUpdateRequest,
   CampaignBidUpdateResult,
@@ -30,12 +31,15 @@ import type {
   CampaignNegativeKeywordMatchType,
   CampaignNegativeKeywordsRequest,
   CampaignPlatform,
+  CampaignProximityTarget,
+  CampaignSitelink,
   CampaignSSEEventType,
   CampaignServiceAccountMonitor,
   CampaignStatusUpdateRequest,
   CampaignStatusUpdateResult,
   CampaignToggleStatus,
   FlushableResponse,
+  GoogleAdsRadiusUnit,
   GoogleCampaignChannel,
   MicrosoftCampaignCreateRequest,
   MicrosoftKeyword,
@@ -51,20 +55,37 @@ import {
   CAMPAIGN_METRICS_WINDOWS,
   CAMPAIGN_PLATFORMS,
   DEFAULT_CAMPAIGN_BID_TYPE,
+  GOOGLE_ADS_GEO_TARGET_ID_PATTERN,
   GOOGLE_ADS_GEO_TARGET_MAP,
   GOOGLE_ADS_LANGUAGE_ID_PATTERN,
   GOOGLE_ADS_LANGUAGE_MAP,
+  GOOGLE_ADS_MAX_AD_SCHEDULES,
+  GOOGLE_ADS_MAX_AD_SCHEDULES_PER_DAY,
+  GOOGLE_ADS_MAX_BID_MODIFIER,
   GOOGLE_ADS_MAX_CALLOUTS,
   GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
+  GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS,
+  GOOGLE_ADS_MAX_FINAL_URL_BYTES,
   GOOGLE_ADS_MAX_GEO_TARGETS,
   GOOGLE_ADS_MAX_LANGUAGES,
+  GOOGLE_ADS_MAX_PROXIMITY_TARGETS,
+  GOOGLE_ADS_MAX_RADIUS,
+  GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES,
+  GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES,
+  GOOGLE_ADS_MAX_SITELINKS,
   GOOGLE_ADS_MICROS_PER_UNIT,
+  GOOGLE_ADS_MIN_BID_MODIFIER,
+  GOOGLE_ADS_RADIUS_UNITS,
+  GOOGLE_ADS_SCHEDULE_DAYS,
+  GOOGLE_ADS_SCHEDULE_MINUTES,
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
   GOOGLE_CAMPAIGN_CHANNEL_LABELS,
   GOOGLE_CHANNELS_WITH_AD_EXTENSIONS,
+  GOOGLE_CHANNELS_WITH_AD_SCHEDULES,
   GOOGLE_CHANNELS_WITH_CREATIVE,
   GOOGLE_CHANNELS_WITH_LANGUAGES,
+  GOOGLE_CHANNELS_WITH_PROXIMITY,
   GOOGLE_CREATIVE_FIELD_SPECS,
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
@@ -77,6 +98,7 @@ import {
   MAX_GOOGLE_CREATIVE_FIELD_LENGTH,
   MAX_GOOGLE_CREATIVE_LIST_ENTRIES,
   MAX_HUBSPOT_BODY_HTML_LENGTH,
+  MAX_KEYWORD_TARGETING_REVISION_LENGTH,
   MAX_NEGATIVE_KEYWORD_TEXT_LENGTH,
   MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
   META_GEO_CODE_PATTERN,
@@ -98,7 +120,9 @@ import {
   googleAdsEchoed,
   googleAdsToLower,
   googleAdsTrimSpace,
+  googleAdsUrlGoParseFlaw,
   isCanonicalGoogleAdsResourceId,
+  isGoSpaceCode,
   isMicrosoftMatchType,
 } from '@lfx-one/shared/constants';
 
@@ -145,6 +169,56 @@ const CAMPAIGN_SERVICE_STATUS_PLATFORMS: ReadonlySet<CampaignPlatform> = new Set
 const SUPPORTED_DELIVERY_TYPES: ReadonlySet<string> = new Set(CAMPAIGN_DELIVERY_TYPES.map((d) => d.id));
 
 const NUMERIC_ID_RE = /^\d+$/;
+
+/**
+ * One radius target as normalized for judgement and dispatch.
+ *
+ * Identical to {@link CampaignProximityTarget} except that `radiusUnit` is the caller's own string
+ * rather than one of the two Google accepts — the body is unvalidated at that point, and narrowing
+ * the type before the value has been judged would mean casting a lie. `createCampaign` refuses an
+ * unknown unit by name, so what the builder dispatches always carries one of the two.
+ */
+type NormalizedProximityTarget = Omit<CampaignProximityTarget, 'radiusUnit'> & { radiusUnit: string };
+
+/**
+ * One ad schedule as normalized for judgement and dispatch.
+ *
+ * Widened from {@link CampaignAdSchedule} on the same reasoning as {@link NormalizedProximityTarget}
+ * and in three places: `dayOfWeek` is the caller's own string rather than one of the seven Google
+ * accepts, and the two minute fields are plain numbers rather than the four-value enum, because the
+ * body is unvalidated at this point and narrowing a type before the value has been judged would
+ * mean casting a lie. `createCampaign` refuses each by name, so what the builder dispatches always
+ * carries a real day and real quarter-hours.
+ *
+ * `bidModifier` stays OPTIONAL rather than being zero-filled like every other field: upstream reads
+ * an absent modifier as "listed but unadjusted" and `0` as the -100% opt-out, so the two must stay
+ * distinguishable all the way to the wire.
+ */
+type NormalizedAdSchedule = Omit<CampaignAdSchedule, 'dayOfWeek' | 'startMinute' | 'endMinute'> & {
+  dayOfWeek: string;
+  startMinute: number;
+  endMinute: number;
+};
+
+/**
+ * One hour-and-minute pair as `HH:MM`, for naming a window in a refusal.
+ *
+ * Hour 24 is printed as written rather than wrapped to `00`: it is the half-open window's
+ * end-of-day, and wrapping it would misdescribe the two refusals that actually render it — the
+ * overrun would read "ends at 00:15, past the end of the day", and an overlap would name the
+ * window "MONDAY 09:00-00:00". Both would describe a different schedule than the caller wrote.
+ * The empty-window refusal never renders hour 24: an end hour of 24 puts the end at 1440 or more
+ * while a start hour of at most 23 puts the start at 1425 or less, so that branch cannot fire.
+ *
+ * Deliberately module-local, unlike the `googleAds*` helpers in `@lfx-one/shared/constants`. Those
+ * exist because they reproduce a Go SEMANTIC the form and this guard must agree on — `TrimSpace`'s
+ * NEL handling, Go's lowercasing, `url.Parse`'s flaw — so they are shared and separately specced.
+ * This one reproduces nothing upstream does; it formats a server-side refusal string, and nothing
+ * outside this file has a reason to render an ad schedule window.
+ */
+function googleAdsClockTime(hour: number, minute: number): string {
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
 
 /**
  * Which `googleAdsConfig` creative key each Google channel uses, and which of its fields are lists
@@ -634,8 +708,16 @@ export class CampaignController {
       // Google Ads resolves every country code against a CURATED map before its first mutate and
       // hard-errors on a miss — `validateGeoTargets` (`internal/platform/googleads/geo.go`):
       // "geo target %q is not a supported country code". The map holds 30 entries, and
-      // `GOOGLE_ADS_GEO_TARGET_MAP` is the same 30 (verified code-for-code), which is why gating on
-      // it cannot over-refuse: a code this guard rejects is one the dispatcher would reject too.
+      // `GOOGLE_ADS_GEO_TARGET_MAP` is the same 30 (verified code-for-code), so no COUNTRY CODE this
+      // guard rejects is one the dispatcher would accept.
+      //
+      // Upstream's `resolveGeoEntry` has since also accepted a raw NUMERIC geo target constant id in
+      // this list — how a caller addresses a city, region, metro or postal code — which this guard
+      // and `buildGoogleAdsConfig`'s `META_GEO_CODE_PATTERN` shape test both still refuse. That is a
+      // real residual over-refusal, and it is unreachable today: the Implementation tab's country
+      // picker is the only producer of this list and emits alpha-2 codes only. Lifting it means
+      // widening the builder's shape test and the picker together, so it is tracked separately
+      // rather than half-done here. The EXCLUSION list below, which is new, takes both spellings.
       //
       // The shape test in `buildGoogleAdsConfig` is not enough on its own. It admits any two-letter
       // code, so `PT` or `ZA` — well-formed, assigned, and offered nowhere in this map — passes the
@@ -673,6 +755,118 @@ export class CampaignController {
           }
         }
 
+        // `validateGeoPlan`'s remaining steps, in ITS order: the EXCLUSION list resolves after the
+        // targeted one, then the both-lists clash, then the Demand Gen proximity fence, then the
+        // radius targets themselves. Every one of these would otherwise reach the operator as the
+        // orchestrator's opaque "platform campaign creation failed", with the real reason only in
+        // the pod log.
+        const rawExcludedGeoTargets = body?.excludedGeoTargets;
+        if (rawExcludedGeoTargets !== undefined && rawExcludedGeoTargets !== null) {
+          const refuseExcluded = (message: string): void =>
+            next(ServiceValidationError.forField('excludedGeoTargets', message, { operation: 'campaign_create', service: 'campaign_controller' }));
+          // Go decodes `excludedGeoTargets` into a `[]string`, so a non-list or a non-string entry
+          // is refused before `resolveGeoList` runs. Reading either as absent would create a
+          // campaign that serves in a market the operator explicitly asked it to stay out of.
+          if (!Array.isArray(rawExcludedGeoTargets) || rawExcludedGeoTargets.some((g) => typeof g !== 'string')) {
+            refuseExcluded('Google Ads excluded locations must be a list of country codes or numeric geo target constant ids.');
+            return;
+          }
+
+          const excluded = this.googleUpperCodeList(rawExcludedGeoTargets);
+          // NO CHANNEL FENCE, and the omission is deliberate: `validateGeoPlan` applies none to the
+          // exclusion list, so exclusions reach every channel including Demand Gen. Gating them the
+          // way languages and proximity are gated would refuse creates upstream accepts.
+          //
+          // Upstream's cap, checked BEFORE the per-entry tests and before de-duplication, exactly
+          // where `resolveGeoList` checks its own. It is PER LIST, not per campaign: upstream calls
+          // `resolveGeoList` once for the targeted list and once for this one, each with its own
+          // counter, so a full exclusion list alongside a full targeted list is accepted and must
+          // not be refused here.
+          if (excluded.length > GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS) {
+            refuseExcluded(
+              `Google Ads accepts at most ${GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS} excluded locations on one campaign, and this one has ${excluded.length}. Remove some and create again.`
+            );
+            return;
+          }
+
+          // Entry by entry, refusing on the FIRST bad one, as `resolveGeoList` does.
+          for (const entry of excluded) {
+            const refusal = this.googleExcludedGeoRefusal(entry);
+            if (refusal) {
+              refuseExcluded(refusal);
+              return;
+            }
+          }
+
+          // A location that is both targeted and excluded is REFUSED rather than resolved: Google
+          // lets the exclusion win, so the campaign would silently not serve where the operator
+          // plainly asked it to. Compared by RESOLVED id, as upstream compares it, so `US` and
+          // `2840` clash however each half is spelled. Judged on the DISPATCHED targeted list —
+          // the same value the guard above judged and the builder sends.
+          const excludedIds = new Set(excluded.map((entry) => this.googleResolvedGeoId(entry)).filter((id): id is string => id !== null));
+          const dispatchedGeoTargets = Array.isArray(googleGeoTargets) ? this.googleUpperCodeList(googleGeoTargets) : [];
+          const clash = dispatchedGeoTargets.find((entry) => {
+            const id = this.googleResolvedGeoId(entry);
+            return id !== null && excludedIds.has(id);
+          });
+          if (clash !== undefined) {
+            refuseExcluded(
+              `Google Ads cannot both target and exclude ${googleAdsEchoed(clash)} — the exclusion would win and the campaign would not serve there at all. Remove it from one of the two lists and create again.`
+            );
+            return;
+          }
+        }
+
+        // Radius targets, after the two id lists, as `validateGeoPlan` orders them.
+        const rawProximityTargets = body?.proximityTargets;
+        if (rawProximityTargets !== undefined && rawProximityTargets !== null) {
+          const refuseProximity = (message: string): void =>
+            next(ServiceValidationError.forField('proximityTargets', message, { operation: 'campaign_create', service: 'campaign_controller' }));
+          // The Go decode into `[]googleAdsProximityConfig` refuses a non-list, a non-object entry,
+          // a non-numeric coordinate or radius, or a non-string unit. A null entry or field decodes
+          // to a zero, which the entry checks below refuse by name.
+          if (!Array.isArray(rawProximityTargets) || !rawProximityTargets.every((entry) => this.isProximityShape(entry))) {
+            refuseProximity('Google Ads radius targets must be a list of objects with a numeric latitude, longitude and radius and a radius unit.');
+            return;
+          }
+
+          const googleProximityChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
+          if (rawProximityTargets.length > 0 && typeof googleProximityChannel === 'string') {
+            // REFUSED by name, not withheld, and checked BEFORE the cap because `validateGeoPlan`
+            // checks it before it calls `validateProximityTargets`. Demand Gen attaches location
+            // criteria at the ad group level, where upstream has not verified that a proximity
+            // criterion is accepted, so it refuses rather than creating a paid campaign to find out.
+            if (!(GOOGLE_CHANNELS_WITH_PROXIMITY as readonly string[]).includes(googleProximityChannel)) {
+              refuseProximity(
+                `Google Ads does not accept radius targets on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleProximityChannel as GoogleCampaignChannel] ?? googleProximityChannel} campaigns, which target locations at the ad group level. Remove the radius targets or pick a different channel, then create again.`
+              );
+              return;
+            }
+
+            // Upstream's cap, checked against the SUBMITTED count before any exact repeat is
+            // collapsed — "a caller handing over a list longer than this has lost track of what it
+            // is asking for, and silently shrinking it into the cap would hide that".
+            if (rawProximityTargets.length > GOOGLE_ADS_MAX_PROXIMITY_TARGETS) {
+              refuseProximity(
+                `Google Ads accepts at most ${GOOGLE_ADS_MAX_PROXIMITY_TARGETS} radius targets on one campaign, and this one has ${rawProximityTargets.length}. Remove some and create again.`
+              );
+              return;
+            }
+
+            // Entry by entry, refusing on the FIRST bad one, in `validateProximityTargets`' order.
+            // A REPEAT is not among the refusals: upstream collapses an exact repeat rather than
+            // refusing it, so refusing one here would be an over-refusal of a create that works.
+            const targets = this.googleProximityList(rawProximityTargets);
+            for (const [index, target] of targets.entries()) {
+              const refusal = this.googleProximityRefusal(target, index);
+              if (refusal) {
+                refuseProximity(refusal);
+                return;
+              }
+            }
+          }
+        }
+
         // The language twin of the two guards above: a list that fails in Go comes back as the
         // orchestrator's opaque "platform campaign creation failed". So every upstream refusal is
         // made here first, by name, in UPSTREAM'S OWN ORDER — JSON decode, `validateCriteriaPlan`'s
@@ -693,7 +887,7 @@ export class CampaignController {
             return;
           }
 
-          const languages = this.googleLanguageList(rawLanguages);
+          const languages = this.googleUpperCodeList(rawLanguages);
           const googleChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
           if (languages.length > 0 && typeof googleChannel === 'string') {
             // REFUSED by name, not dropped: upstream's contract for the field is "refused, never
@@ -730,6 +924,96 @@ export class CampaignController {
                 next(ServiceValidationError.forField('languages', refusal, { operation: 'campaign_create', service: 'campaign_controller' }));
                 return;
               }
+            }
+          }
+        }
+
+        // Ad schedules last of the criteria, as `validateCriteriaPlan` runs `validateAdSchedules`
+        // after it has resolved the language list. Same reason as the three guards above: an entry
+        // Go refuses comes back as the orchestrator's opaque "platform campaign creation failed",
+        // so every refusal is made here first, by name, in upstream's own order.
+        const rawAdSchedules = body?.adSchedules;
+        if (rawAdSchedules !== undefined && rawAdSchedules !== null) {
+          const refuseAdSchedules = (message: string): void =>
+            next(ServiceValidationError.forField('adSchedules', message, { operation: 'campaign_create', service: 'campaign_controller' }));
+          // The Go decode into `[]googleAdsAdScheduleConfig` refuses a non-list, a non-object entry,
+          // a non-string day or a non-numeric hour, minute or bid modifier. A null FIELD decodes to
+          // a zero, which the entry checks below refuse by name. A null ENTRY is refused here
+          // instead, unlike a null radius target — see {@link isAdScheduleShape} for why.
+          if (!Array.isArray(rawAdSchedules) || !rawAdSchedules.every((entry) => this.isAdScheduleShape(entry))) {
+            refuseAdSchedules('Google Ads ad schedules must be a list of objects with a day of week and numeric start and end hours and minutes.');
+            return;
+          }
+
+          const googleScheduleChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
+          if (rawAdSchedules.length > 0 && typeof googleScheduleChannel === 'string') {
+            // REFUSED by name, not withheld: `validateCriteriaPlan` fails the whole Demand Gen
+            // create on any non-location criterion, ad schedules included. Performance Max is NOT
+            // fenced out — Google documents ad schedules as a Performance Max campaign criterion,
+            // and upstream keeps them there alongside languages.
+            if (!(GOOGLE_CHANNELS_WITH_AD_SCHEDULES as readonly string[]).includes(googleScheduleChannel)) {
+              refuseAdSchedules(
+                `Google Ads does not accept ad schedules on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleScheduleChannel as GoogleCampaignChannel] ?? googleScheduleChannel} campaigns. Remove the ad schedules or pick a different channel, then create again.`
+              );
+              return;
+            }
+
+            // Upstream's cap, checked against the SUBMITTED count before any exact repeat is
+            // collapsed, exactly where `validateAdSchedules` checks its own.
+            if (rawAdSchedules.length > GOOGLE_ADS_MAX_AD_SCHEDULES) {
+              refuseAdSchedules(
+                `Google Ads accepts at most ${GOOGLE_ADS_MAX_AD_SCHEDULES} ad schedules on one campaign, and this one has ${rawAdSchedules.length}. Remove some and create again.`
+              );
+              return;
+            }
+
+            // One call, not a per-entry loop: three of upstream's refusals — an exact repeat with a
+            // different bid modifier, an overlap, and the per-day limit — are about an entry's
+            // relationship to the entries before it and cannot be decided from the entry alone.
+            const scheduleRefusal = this.googleAdScheduleRefusal(this.googleAdScheduleList(rawAdSchedules));
+            if (scheduleRefusal) {
+              refuseAdSchedules(scheduleRefusal);
+              return;
+            }
+          }
+        }
+      }
+
+      // Sitelinks next, BEFORE callouts, as `validateAssetPlan` runs `validateSitelinks` first: JSON
+      // decode, the Search-only fence, the cap, then each entry in `validateSitelinks`' order, first
+      // bad one wins. Each would otherwise fail in Go as the opaque "platform campaign creation failed".
+      const rawSitelinks = body?.sitelinks;
+      if (cutoverOn && platforms.includes('google-ads') && rawSitelinks !== undefined && rawSitelinks !== null) {
+        const refuse = (message: string): void =>
+          next(ServiceValidationError.forField('sitelinks', message, { operation: 'campaign_create', service: 'campaign_controller' }));
+        // The Go decode into `[]googleAdsSitelinkConfig` refuses a non-list, a non-object entry or a
+        // non-string field. A null entry or field decodes to blanks, which the entry checks refuse.
+        if (!Array.isArray(rawSitelinks) || !rawSitelinks.every((entry) => this.isSitelinkShape(entry))) {
+          refuse('Google Ads sitelinks must be a list of objects with text fields.');
+          return;
+        }
+        const googleChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
+        if (rawSitelinks.length > 0 && typeof googleChannel === 'string') {
+          // REFUSED by name, not withheld: `validateAssetPlan` fails the whole create on any channel
+          // but Search, counting every entry. The UI never sends this.
+          if (!(GOOGLE_CHANNELS_WITH_AD_EXTENSIONS as readonly string[]).includes(googleChannel)) {
+            refuse(
+              `Google Ads only accepts sitelinks on Search campaigns, not on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove the sitelinks or pick Search, then create again.`
+            );
+            return;
+          }
+          if (rawSitelinks.length > GOOGLE_ADS_MAX_SITELINKS) {
+            refuse(
+              `Google Ads accepts at most ${GOOGLE_ADS_MAX_SITELINKS} sitelinks on one campaign, and this one has ${rawSitelinks.length}. Remove some and create again.`
+            );
+            return;
+          }
+          const seen = new Set<string>();
+          for (const [index, sitelink] of this.googleSitelinkList(rawSitelinks).entries()) {
+            const refusal = this.googleSitelinkRefusal(sitelink, index, seen);
+            if (refusal) {
+              refuse(refusal);
+              return;
             }
           }
         }
@@ -2749,8 +3033,14 @@ export class CampaignController {
    * Add campaign-level negative keywords through campaign-service's `add-negative-keywords`.
    *
    * The checks below mirror the upstream payload's own rules (1-60 entries, text 1-100 characters
-   * in the allowed set, Exact or Phrase), so a malformed batch is refused before a round trip.
-   * Upstream re-validates and adds what a pattern states badly (adjacent punctuation, duplicates).
+   * in the allowed set, Exact, Phrase or Broad), so a malformed batch is refused before a round trip.
+   * Upstream re-validates and adds what a pattern states badly (adjacent punctuation, duplicates),
+   * and what depends on the campaign's platform, which only it knows: the match types that platform
+   * takes, X's cap of 20, and whether `revision` belongs (required on Reddit, refused elsewhere).
+   *
+   * `revision` is forwarded only when the body carries one, and a present one must be a non-blank
+   * string within upstream's length: an empty or blank revision is upstream's 400 on every platform,
+   * so it is refused here rather than sent.
    *
    * The response is POSITIONAL: `results[i]` answers `negativeKeywords[i]`, and is passed on
    * index for index. Nothing here filters, sorts or de-duplicates it.
@@ -2842,10 +3132,37 @@ export class CampaignController {
       negativeKeywords.push({ text, matchType: matchType as CampaignNegativeKeywordMatchType });
     }
 
-    const startTime = logger.startOperation(req, 'campaign_negative_keywords_add', { campaignId, briefId, count: negativeKeywords.length });
+    const rawRevision: unknown = body.revision;
+    if (
+      rawRevision !== undefined &&
+      (typeof rawRevision !== 'string' || rawRevision.trim() === '' || rawRevision.length > MAX_KEYWORD_TARGETING_REVISION_LENGTH)
+    ) {
+      next(
+        ServiceValidationError.forField('revision', `revision must be a non-blank string of at most ${MAX_KEYWORD_TARGETING_REVISION_LENGTH} characters`, {
+          operation: 'campaign_negative_keywords_add',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+    // Exactly as read: it is a fingerprint, compared byte for byte upstream.
+    const revision = rawRevision as string | undefined;
+
+    const startTime = logger.startOperation(req, 'campaign_negative_keywords_add', {
+      campaignId,
+      briefId,
+      count: negativeKeywords.length,
+      hasRevision: revision !== undefined,
+    });
 
     try {
-      const result = await this.campaignServiceClient.addNegativeKeywords(req, { projectSlug, briefId, campaignId, negativeKeywords });
+      const result = await this.campaignServiceClient.addNegativeKeywords(req, {
+        projectSlug,
+        briefId,
+        campaignId,
+        negativeKeywords,
+        ...(revision !== undefined && { revision }),
+      });
       logger.success(req, 'campaign_negative_keywords_add', startTime, {
         campaignId,
         requested: negativeKeywords.length,
@@ -3272,6 +3589,84 @@ export class CampaignController {
   }
 
   /**
+   * Why upstream would refuse one entry of a trimmed sitelink list, or `null` when it would not.
+   *
+   * `validateSitelinks`' per-entry branches in order: link text blank, over 25 runes, then a repeat
+   * keyed on Go's `strings.ToLower`; the description lines both-or-neither, then each over 35 runes;
+   * then the destination, judged by {@link googleSitelinkUrlRefusal}. The echo is cut short.
+   */
+  private googleSitelinkRefusal(sitelink: CampaignSitelink, index: number, seen: Set<string>): string | null {
+    const { text, description1 = '', description2 = '', finalUrl } = sitelink;
+    if (text === '') return `Google Ads sitelink ${index + 1} has no link text. Fill it in or remove the sitelink, then create again.`;
+    const shown = googleAdsEchoed(text);
+    const runes = [...text].length;
+    if (runes > GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES) {
+      return `Google Ads accepts sitelink link text of at most ${GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES} characters, and ${shown} has ${runes}. Shorten it and create again.`;
+    }
+    const key = googleAdsToLower(text);
+    if (seen.has(key)) return `Google Ads refuses a campaign that lists the sitelink ${shown} more than once. Remove the repeat and create again.`;
+    seen.add(key);
+
+    if ((description1 === '') !== (description2 === '')) {
+      return `Google Ads needs both description lines on the sitelink ${shown} or neither, and this one has just one. Fill in the other or clear both, then create again.`;
+    }
+    if ([description1, description2].some((line) => [...line].length > GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES)) {
+      return `Google Ads accepts sitelink description lines of at most ${GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES} characters, and one on ${shown} is longer. Shorten it and create again.`;
+    }
+    return this.googleSitelinkUrlRefusal(finalUrl, shown);
+  }
+
+  /**
+   * Why upstream would refuse a sitelink destination, or `null` when it would not.
+   *
+   * `validateServableURL`, then the byte bound: {@link describeDestinationUrl} plus the Go parser
+   * rules `new URL()` does not share ({@link googleAdsUrlGoParseFlaw}).
+   *
+   * The byte bound is measured on the URL as sent. Upstream measures it after `buildTaggedFinalURL`
+   * adds the utm parameters, which this does not rebuild, so a URL just under the bound can still be
+   * refused upstream: a known under-refusal, documented on {@link GOOGLE_ADS_MAX_FINAL_URL_BYTES}.
+   */
+  private googleSitelinkUrlRefusal(finalUrl: string, shown: string): string | null {
+    if (finalUrl === '') return `The Google Ads sitelink ${shown} has no destination URL. Fill it in or remove the sitelink, then create again.`;
+    const shape = this.describeDestinationUrl(finalUrl);
+    if ((shape !== 'ok' && shape !== 'ok-http') || googleAdsUrlGoParseFlaw(finalUrl)) {
+      return `The destination URL on the Google Ads sitelink ${shown} is not a web address Google accepts. Use a full https:// address with no embedded credentials, no semicolons in the query and no stray % signs, then create again.`;
+    }
+    const bytes = new TextEncoder().encode(finalUrl).length;
+    if (bytes > GOOGLE_ADS_MAX_FINAL_URL_BYTES) {
+      return `The destination URL on the Google Ads sitelink ${shown} is ${bytes} bytes, over Google's ${GOOGLE_ADS_MAX_FINAL_URL_BYTES}-byte limit. Shorten it and create again.`;
+    }
+    return null;
+  }
+
+  /**
+   * Whether one raw sitelink entry survives the Go decode into `googleAdsSitelinkConfig`: an object
+   * (or null, which decodes to a blank sitelink) whose four fields are absent, null or text.
+   */
+  private isSitelinkShape(entry: unknown): boolean {
+    if (entry === null) return true;
+    if (typeof entry !== 'object' || Array.isArray(entry)) return false;
+    const fields = entry as Record<string, unknown>;
+    return (['text', 'description1', 'description2', 'finalUrl'] as const).every(
+      (f) => fields[f] === undefined || fields[f] === null || typeof fields[f] === 'string'
+    );
+  }
+
+  /**
+   * The sitelink list as judged and dispatched: each field trimmed with Go's rules as
+   * `validateSitelinks` trims it, an absent or null field read as blank. Nothing is dropped, so a
+   * blank entry is refused by name. Callers have checked the shape with {@link isSitelinkShape}.
+   */
+  private googleSitelinkList(raw: unknown): CampaignSitelink[] {
+    if (!Array.isArray(raw)) return [];
+    return raw.map((entry) => {
+      const fields = (entry ?? {}) as Record<string, unknown>;
+      const field = (name: string): string => (typeof fields[name] === 'string' ? googleAdsTrimSpace(fields[name] as string) : '');
+      return { text: field('text'), description1: field('description1'), description2: field('description2'), finalUrl: field('finalUrl') };
+    });
+  }
+
+  /**
    * Google's config, translated from the flat legacy request.
    *
    * Google is the one platform whose inputs live on the request root rather than in a
@@ -3419,6 +3814,12 @@ export class CampaignController {
         ...this.googleFlightWindow(body),
         ...this.googleBidding(body),
         ...(cleanGeoTargets.length > 0 ? { geoTargets: cleanGeoTargets } : {}),
+        // Exclusions reach EVERY channel, radius targets every channel but Demand Gen — the two
+        // halves of the same location plan are gated differently because `validateGeoPlan` gates
+        // them differently. Both normalized only; `createCampaign` names every refusal first.
+        ...this.googleExcludedGeoTargets(body),
+        ...this.googleProximityTargets(body, selectedChannels[0]),
+        ...this.googleAdSchedules(body, selectedChannels[0]),
         ...languages,
         ...creative,
       };
@@ -3452,6 +3853,8 @@ export class CampaignController {
 
     // Normalized only — `createCampaign` names every callout refusal before this is dispatched.
     const callouts = this.googleCallouts(body);
+    // Normalized only, as the callouts are — `createCampaign` names every sitelink refusal first.
+    const sitelinks = this.googleSitelinks(body);
 
     return {
       budget,
@@ -3471,8 +3874,15 @@ export class CampaignController {
       // route pre-LFXV2-3283 callers take. `geoTargets: []` and no key at all mean the same thing
       // to the dispatcher today; only one of them stays true if that default is ever tightened.
       ...(cleanGeoTargets.length > 0 ? { geoTargets: cleanGeoTargets } : {}),
+      // Both location lists reach Search: it is the channel upstream's campaign-level geo criteria
+      // were written for, so the proximity gate inside the helper can only pass here. The call is
+      // still made through the same helper so the two branches cannot normalize differently.
+      ...this.googleExcludedGeoTargets(body),
+      ...this.googleProximityTargets(body, 'search'),
+      ...this.googleAdSchedules(body, 'search'),
       ...searchLanguages,
       ...callouts,
+      ...sitelinks,
     };
   }
 
@@ -3520,12 +3930,30 @@ export class CampaignController {
   }
 
   /**
+   * The Search campaign's sitelink extensions, spread-ready, or `{}` when the request names none.
+   *
+   * Search only, as {@link googleCallouts}: `createCampaign` refuses sitelinks on any other channel
+   * by name, and every per-entry refusal, before this is dispatched. An empty description pair is
+   * omitted rather than sent as two empty strings; both absent is one of upstream's two legal states.
+   */
+  private googleSitelinks(body: CampaignCreateRequest): { sitelinks?: CampaignSitelink[] } {
+    const clean = this.googleSitelinkList(body?.sitelinks).map(({ text, description1 = '', description2 = '', finalUrl }) => ({
+      text,
+      ...(description1 !== '' ? { description1, description2 } : {}),
+      finalUrl,
+    }));
+    return clean.length > 0 ? { sitelinks: clean } : {};
+  }
+
+  /**
    * The first Google creative or bidding field that breaks a resource bound, or null when none does.
    *
    * Walks the raw body rather than the normalised output, because the allocation this bounds happens
    * DURING normalisation — a check on the result would run after the work it is meant to prevent.
-   * Shape-only, like everything else on this road: a non-string entry is left for the normalisers to
-   * drop and is not counted against the length bound.
+   * Each string is measured by {@link boundedLength}, after trimming: every field here is trimmed
+   * before it is sent, and upstream trims again, so measuring the raw length would refuse a short
+   * value padded with whitespace that upstream accepts. Shape-only, like everything else on this
+   * road: a non-string entry is left for the normalisers to drop and is not counted.
    *
    * Names the offending field in the refusal so an operator who somehow reaches it is told which one,
    * matching the HubSpot sibling rather than failing the create anonymously.
@@ -3535,6 +3963,15 @@ export class CampaignController {
     const candidates: [string, unknown][] = Object.values(GOOGLE_CREATIVE_REQUEST_KEYS).map((key) => [key, raw[key]]);
     candidates.push(['conversionActions', raw['conversionActions']]);
     candidates.push(['callouts', raw['callouts']]);
+    // The two geo lists and the ad schedules are bounded here and not only by their own caps
+    // further down, because `createConfigEnvelope` runs BEFORE those caps and normalizes whatever
+    // it is handed — `googleProximityList` and `googleAdScheduleList` each allocating a fresh
+    // object per entry as they go. The named caps (60 exclusions, 20 radius targets, 42 schedules)
+    // still make the refusal an operator can act on; this one only stops a 15mb body from being
+    // walked before they are reached.
+    candidates.push(['excludedGeoTargets', raw['excludedGeoTargets']]);
+    candidates.push(['proximityTargets', raw['proximityTargets']]);
+    candidates.push(['adSchedules', raw['adSchedules']]);
 
     for (const [key, source] of candidates) {
       // A creative key holds an object of fields; `conversionActions` and `callouts` are bare lists.
@@ -3545,19 +3982,55 @@ export class CampaignController {
           if (value.length > MAX_GOOGLE_CREATIVE_LIST_ENTRIES) {
             return { field, message: `the list exceeds the maximum of ${MAX_GOOGLE_CREATIVE_LIST_ENTRIES} entries` };
           }
-          const long = value.find((entry) => typeof entry === 'string' && entry.length > MAX_GOOGLE_CREATIVE_FIELD_LENGTH);
+          const long = value.find((entry) => typeof entry === 'string' && this.boundedLength(entry) > MAX_GOOGLE_CREATIVE_FIELD_LENGTH);
           if (long !== undefined) {
             return { field, message: `an entry exceeds the maximum length of ${MAX_GOOGLE_CREATIVE_FIELD_LENGTH}` };
           }
           continue;
         }
-        if (typeof value === 'string' && value.length > MAX_GOOGLE_CREATIVE_FIELD_LENGTH) {
+        if (typeof value === 'string' && this.boundedLength(value) > MAX_GOOGLE_CREATIVE_FIELD_LENGTH) {
           return { field, message: `the value exceeds the maximum length of ${MAX_GOOGLE_CREATIVE_FIELD_LENGTH}` };
         }
       }
     }
 
+    // Sitelinks are a list of objects, so `boundableEntries` cannot reach their fields. Each trimmed
+    // field is bounded where upstream already refuses it: link text and description lines far above
+    // their rune limits, and the URL at its byte limit, which no longer trimmed string can be under.
+    const sitelinks = raw['sitelinks'];
+    if (Array.isArray(sitelinks)) {
+      if (sitelinks.length > MAX_GOOGLE_CREATIVE_LIST_ENTRIES) {
+        return { field: 'sitelinks', message: `the list exceeds the maximum of ${MAX_GOOGLE_CREATIVE_LIST_ENTRIES} entries` };
+      }
+      for (const entry of sitelinks) {
+        if (!entry || typeof entry !== 'object') continue;
+        for (const name of ['text', 'description1', 'description2', 'finalUrl'] as const) {
+          const value = (entry as Record<string, unknown>)[name];
+          const max = name === 'finalUrl' ? GOOGLE_ADS_MAX_FINAL_URL_BYTES : MAX_GOOGLE_CREATIVE_FIELD_LENGTH;
+          if (typeof value === 'string' && this.boundedLength(value) > max) {
+            return { field: `sitelinks.${name}`, message: `a value exceeds the maximum length of ${max}` };
+          }
+        }
+      }
+    }
     return null;
+  }
+
+  /**
+   * A string's length once every character JS's `trim` OR Go's `strings.TrimSpace` would strip is
+   * gone from both ends — the shortest any trim on the way to upstream can make it. The creative
+   * and conversion normalisers use JS `trim` (which strips U+FEFF), the sitelink and callout ones
+   * Go's (which strips U+0085), and upstream trims with Go's again; measuring the union means the
+   * bound never refuses what any of them would shorten below it. A numeric index walk, so linear,
+   * with no copy of the string.
+   */
+  private boundedLength(value: string): number {
+    let start = 0;
+    let end = value.length;
+    // JS's `trim` set is Go's minus U+0085 plus U+FEFF, so the union is Go's plus U+FEFF.
+    while (start < end && (isGoSpaceCode(value.charCodeAt(start)) || value.charCodeAt(start) === 0xfeff)) start++;
+    while (end > start && (isGoSpaceCode(value.charCodeAt(end - 1)) || value.charCodeAt(end - 1) === 0xfeff)) end--;
+    return end - start;
   }
 
   /**
@@ -3683,19 +4156,26 @@ export class CampaignController {
    */
   private googleLanguages(body: CampaignCreateRequest, channel: GoogleCampaignChannel): Record<string, unknown> {
     if (!(GOOGLE_CHANNELS_WITH_LANGUAGES as readonly string[]).includes(channel)) return {};
-    const clean = this.googleLanguageList(body?.languages);
+    const clean = this.googleUpperCodeList(body?.languages);
     return clean.length > 0 ? { languages: clean } : {};
   }
 
   /**
-   * The language list as dispatched: strings only (`createCampaign` refuses anything else first),
-   * trimmed and upper-cased as `resolveLanguageList` does. Blanks are KEPT: upstream counts them
-   * toward the Demand Gen fence and the cap and then refuses them, so dropping one here would turn
-   * `['']` into an every-language campaign. `createCampaign` refuses them by name first.
+   * One list of upper-cased codes as judged and dispatched — languages, and both halves of the geo
+   * plan. `resolveLanguageList` and `resolveGeoList` normalize identically, so this is one helper
+   * rather than a copy per field; the per-field reasons live on the callers.
+   *
+   * Strings only — `createCampaign` refuses anything else first. Blanks are KEPT: upstream counts a
+   * blank toward the cap and then refuses it by name, so dropping one here would turn `['']` into
+   * an every-language campaign, or into a campaign with no exclusion at all.
+   *
+   * Trimmed with {@link googleAdsTrimSpace}, NOT `String.prototype.trim`. Go's `strings.TrimSpace`
+   * strips U+0085 and JS does not, so a code padded with one would be refused here as an unknown
+   * country or language while upstream accepts it — the over-refusal these mirrors exist to avoid.
    */
-  private googleLanguageList(raw: unknown): string[] {
+  private googleUpperCodeList(raw: unknown): string[] {
     if (!Array.isArray(raw)) return [];
-    return raw.filter((l): l is string => typeof l === 'string').map((l) => l.trim().toUpperCase());
+    return raw.filter((c): c is string => typeof c === 'string').map((c) => googleAdsTrimSpace(c).toUpperCase());
   }
 
   /**
@@ -3718,6 +4198,383 @@ export class CampaignController {
     return Object.hasOwn(GOOGLE_ADS_LANGUAGE_MAP, language)
       ? null
       : `Google Ads cannot target ${shown} on this path. Pick a different language and create again.`;
+  }
+
+  /**
+   * The campaign's excluded locations, normalized and spread-ready, or `{}` when the request names
+   * none.
+   *
+   * NOT channel-gated, unlike {@link googleLanguages} and {@link googleProximityTargets}:
+   * `validateGeoPlan` applies no channel fence to the exclusion list, so it is forwarded on every
+   * channel including Demand Gen. Gating it with its two neighbours would withhold a list upstream
+   * accepts and leave the campaign serving in a market the operator excluded.
+   *
+   * Empty omits the key rather than sending `[]`, as `geoTargets` does — the two mean the same
+   * thing to the dispatcher today, and only the absent key stays true if that ever tightens.
+   *
+   * NORMALIZES ONLY. Every refusal is made by name in `createCampaign`, in upstream's order, before
+   * this config is dispatched.
+   */
+  private googleExcludedGeoTargets(body: CampaignCreateRequest): Record<string, unknown> {
+    const clean = this.googleUpperCodeList(body?.excludedGeoTargets);
+    return clean.length > 0 ? { excludedGeoTargets: clean } : {};
+  }
+
+  /**
+   * The campaign's radius targets, normalized and spread-ready, or `{}` when the request names none
+   * or the channel cannot take them.
+   *
+   * CHANNEL-GATED on {@link GOOGLE_CHANNELS_WITH_PROXIMITY}, which is every channel but Demand Gen.
+   * The `{}` returned there is never dispatched either: `createCampaign` reads the request's own
+   * list and refuses such a create by name first, on upstream's "refused, never silently dropped"
+   * rule — a campaign that serves nationwide when the operator asked for a 25-mile radius is the
+   * same wrong-market defect the country guard exists to prevent.
+   *
+   * NORMALIZES ONLY, and does not collapse an exact repeat: upstream collapses repeats itself, and
+   * doing it here as well would make the dispatched list disagree with the one judged.
+   */
+  private googleProximityTargets(body: CampaignCreateRequest, channel: GoogleCampaignChannel): Record<string, unknown> {
+    if (!(GOOGLE_CHANNELS_WITH_PROXIMITY as readonly string[]).includes(channel)) return {};
+    const clean = this.googleProximityList(body?.proximityTargets);
+    return clean.length > 0 ? { proximityTargets: clean } : {};
+  }
+
+  /**
+   * Why upstream would refuse one entry of a normalized EXCLUDED geo list, or `null` when it would
+   * not.
+   *
+   * Mirrors `resolveGeoEntry`'s branches in order. A blank entry is refused. A NUMERIC entry is a
+   * raw geo target constant id — how a caller addresses a city, region, metro or postal code — so
+   * it must be canonical (`canonicalCampaignID` upstream, {@link isCanonicalGoogleAdsResourceId}
+   * here) but is deliberately NOT tested against {@link GOOGLE_ADS_GEO_TARGET_MAP}, which holds
+   * countries only; testing it there would refuse every city upstream accepts. Anything else must
+   * be a country code present in that map.
+   *
+   * Classified by {@link GOOGLE_ADS_GEO_TARGET_ID_PATTERN} (digits only, matching Go's `numericID`)
+   * rather than by a bounded resource-id pattern, so a 21-digit run is refused as a non-canonical
+   * id — upstream's own answer — instead of being misreported as an unsupported country code.
+   */
+  private googleExcludedGeoRefusal(entry: string): string | null {
+    if (entry === '') return 'Google Ads excluded locations cannot include a blank entry. Remove it and create again.';
+    const shown = googleAdsEchoed(entry);
+    if (GOOGLE_ADS_GEO_TARGET_ID_PATTERN.test(entry)) {
+      return isCanonicalGoogleAdsResourceId(entry)
+        ? null
+        : `Google Ads excluded location ${shown} is not the canonical spelling of a positive geo target constant id. Use the id with no leading zeros, or pick a country from the list, and create again.`;
+    }
+    return Object.hasOwn(GOOGLE_ADS_GEO_TARGET_MAP, entry)
+      ? null
+      : `Google Ads cannot exclude ${shown} on this path. Use a supported country code or a numeric geo target constant id from Google's geo-targets table, then create again.`;
+  }
+
+  /**
+   * The geo target constant id one normalized entry resolves to, or `null` when it resolves to
+   * nothing (a blank, a bad code, a non-canonical id) and the callers above have already refused it.
+   *
+   * The resolved id is what the targeted-and-excluded clash compares, for the reason upstream
+   * compares it: `US` and `2840` are one criterion, so a pair spelled two different ways still
+   * clashes.
+   */
+  private googleResolvedGeoId(entry: string): string | null {
+    if (GOOGLE_ADS_GEO_TARGET_ID_PATTERN.test(entry)) return isCanonicalGoogleAdsResourceId(entry) ? entry : null;
+    return GOOGLE_ADS_GEO_TARGET_MAP[entry] ?? null;
+  }
+
+  /**
+   * Whether one raw proximity entry survives the Go decode into `googleAdsProximityConfig`: an
+   * object (or null, which decodes to an all-zero target) carrying a numeric `latitude` and
+   * `longitude`, and a `radius` and `radiusUnit` that are absent, null or of the right type.
+   *
+   * The two halves are judged differently on purpose, and the difference is what an absent field
+   * COSTS. An absent `radius` or `radiusUnit` decodes to a zero or an empty string that
+   * {@link googleProximityRefusal} refuses by name a moment later, in upstream's own words — so
+   * tolerating them here loses nothing and keeps the better message.
+   *
+   * An absent or null LATITUDE or LONGITUDE decodes to `0`, which is a real point in the Gulf of
+   * Guinea and is refused by nothing: upstream would create a paid campaign targeting a radius
+   * around it. On a PARTIALLY filled entry that is refused here — the one place this guard is
+   * deliberately STRICTER than the Go decoder, on the same reasoning that makes `radiusUnit`
+   * required upstream: a coordinate it has to invent is a coordinate the caller never chose, and
+   * silently buying the wrong hemisphere is worse than naming the malformed entry.
+   * {@link CampaignProximityTarget} declares both fields required, so no caller honouring the
+   * contract can reach this.
+   *
+   * A WHOLLY null entry is the exception and returns `true`, because it needs no extra strictness:
+   * it decodes to an all-zero target whose zero RADIUS {@link googleProximityRefusal} refuses by
+   * name, in upstream's own words, before the invented coordinate can reach a mutate.
+   */
+  private isProximityShape(entry: unknown): boolean {
+    if (entry === null) return true;
+    if (typeof entry !== 'object' || Array.isArray(entry)) return false;
+    const fields = entry as Record<string, unknown>;
+    const coordinates = (['latitude', 'longitude'] as const).every((f) => typeof fields[f] === 'number');
+    const radius = fields['radius'] === undefined || fields['radius'] === null || typeof fields['radius'] === 'number';
+    const unit = fields['radiusUnit'] === undefined || fields['radiusUnit'] === null || typeof fields['radiusUnit'] === 'string';
+    return coordinates && radius && unit;
+  }
+
+  /**
+   * The radius targets as judged and dispatched: each absent or null field read as the zero Go
+   * decodes it to, so a target missing its radius is refused by name rather than silently dropped.
+   * Callers have checked the shape with {@link isProximityShape}.
+   *
+   * The unit is left exactly as the caller wrote it; {@link googleProximityRefusal} trims and
+   * upper-cases it the way `validateProximityTargets` does before comparing.
+   */
+  private googleProximityList(raw: unknown): NormalizedProximityTarget[] {
+    if (!Array.isArray(raw)) return [];
+    return raw.map((entry) => {
+      const fields = (entry ?? {}) as Record<string, unknown>;
+      const coordinate = (name: string): number => (typeof fields[name] === 'number' ? (fields[name] as number) : 0);
+      return {
+        latitude: coordinate('latitude'),
+        longitude: coordinate('longitude'),
+        radius: coordinate('radius'),
+        radiusUnit: typeof fields['radiusUnit'] === 'string' ? fields['radiusUnit'] : '',
+      };
+    });
+  }
+
+  /**
+   * Why upstream would refuse one normalized radius target, or `null` when it would not.
+   *
+   * Mirrors `validateProximityTargets`' branches in order: non-finite coordinates, latitude range,
+   * longitude range, radius finite and above zero, then the unit, then the radius against THAT
+   * unit's own ceiling. The two ceilings are not a converted pair — 800 km is about 497 miles — so
+   * each unit is judged against its own, and a radius exactly equal to one is ACCEPTED, since
+   * upstream refuses only `radius > max`.
+   *
+   * `index` is the caller's position in the list, reported from 1 so it matches what an operator
+   * counts; upstream's own message numbers from 0. The coordinates are echoed alongside it so the
+   * entry is identifiable either way.
+   */
+  private googleProximityRefusal(target: NormalizedProximityTarget, index: number): string | null {
+    const shown = `radius target ${index + 1} (${target.latitude}, ${target.longitude})`;
+    if (!Number.isFinite(target.latitude) || !Number.isFinite(target.longitude)) {
+      return `The Google Ads ${shown} needs a finite latitude and longitude. Fix the coordinates and create again.`;
+    }
+    if (target.latitude < -90 || target.latitude > 90) {
+      return `The Google Ads ${shown} has a latitude outside -90 to 90. Fix it and create again.`;
+    }
+    if (target.longitude < -180 || target.longitude > 180) {
+      return `The Google Ads ${shown} has a longitude outside -180 to 180. Fix it and create again.`;
+    }
+    if (!Number.isFinite(target.radius) || target.radius <= 0) {
+      return `The Google Ads ${shown} needs a radius greater than 0. Set one and create again.`;
+    }
+    const unit = googleAdsTrimSpace(target.radiusUnit).toUpperCase();
+    if (!(GOOGLE_ADS_RADIUS_UNITS as readonly string[]).includes(unit)) {
+      // No default is invented, upstream's rule: "a radius of 50 means two very different campaigns
+      // depending on the unit, and guessing one would silently buy ~2.5x the intended area".
+      return `The Google Ads ${shown} needs a radius unit of ${GOOGLE_ADS_RADIUS_UNITS.join(' or ')}. Pick one and create again.`;
+    }
+    const maxRadius = GOOGLE_ADS_MAX_RADIUS[unit as GoogleAdsRadiusUnit];
+    if (target.radius > maxRadius) {
+      return `The Google Ads ${shown} has a radius of ${target.radius} ${unit}, over Google's maximum of ${maxRadius}. Reduce it and create again.`;
+    }
+    return null;
+  }
+
+  /**
+   * The campaign's ad schedules, normalized and spread-ready, or `{}` when the request names none or
+   * the channel cannot take them.
+   *
+   * CHANNEL-GATED on {@link GOOGLE_CHANNELS_WITH_AD_SCHEDULES}, which is every channel but Demand
+   * Gen. The `{}` returned there is never dispatched either: `createCampaign` reads the request's
+   * own list and refuses such a create by name first, on upstream's "refused, never silently
+   * dropped" rule — a campaign that serves around the clock when the operator asked for weekday
+   * evenings spends the whole budget in the hours they excluded.
+   *
+   * NORMALIZES ONLY, and does not collapse an exact repeat: upstream collapses repeats itself, and
+   * doing it here as well would make the dispatched list disagree with the one judged.
+   */
+  private googleAdSchedules(body: CampaignCreateRequest, channel: GoogleCampaignChannel): Record<string, unknown> {
+    if (!(GOOGLE_CHANNELS_WITH_AD_SCHEDULES as readonly string[]).includes(channel)) return {};
+    const clean = this.googleAdScheduleList(body?.adSchedules);
+    return clean.length > 0 ? { adSchedules: clean } : {};
+  }
+
+  /**
+   * Whether one raw ad-schedule entry survives the Go decode into `googleAdsAdScheduleConfig`: an
+   * object carrying a string `dayOfWeek`, four INTEGER hour and minute fields, and a `bidModifier`
+   * that is absent, null or a number.
+   *
+   * The four time fields are decoded into Go `int`s, so `9.5` is a decode error upstream rather than
+   * a near miss — refusing it here reports the same thing in the caller's own words. An absent one
+   * decodes to `0`, which is a real hour and a real minute, so it is tolerated here and judged by
+   * {@link googleAdScheduleRefusal} alongside the fields the caller did write — and either answer
+   * is upstream's. A lone `endHour` leaves an ordinary window starting at 00:00, which that guard
+   * accepts exactly as upstream does; a MISSING `endHour` decodes to the 0 that the same guard
+   * refuses by name as an end hour outside 1 to 24.
+   *
+   * `bidModifier` is the one field whose ABSENCE must survive normalization rather than being read
+   * as a zero — see {@link NormalizedAdSchedule}. `null` is accepted here because Go decodes it to
+   * the same nil pointer an omitted key gives.
+   *
+   * A null ENTRY is refused, unlike a null proximity target. Not because upstream would accept it:
+   * `DayOfWeek` is a Go STRING, so a null entry decodes to an empty day and `validateAdSchedules`
+   * refuses it on its very first branch. Both ends refuse it either way, and only the wording
+   * differs — so this says the entry is malformed rather than blaming a day of week the caller
+   * never wrote. The proximity sibling tolerates its null entry because there the derived refusal
+   * is the better one: a zero RADIUS is upstream's own wording for the same defect.
+   */
+  private isAdScheduleShape(entry: unknown): boolean {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) return false;
+    const fields = entry as Record<string, unknown>;
+    if (typeof fields['dayOfWeek'] !== 'string') return false;
+    const times = (['startHour', 'startMinute', 'endHour', 'endMinute'] as const).every(
+      (f) => fields[f] === undefined || fields[f] === null || Number.isInteger(fields[f])
+    );
+    const modifier = fields['bidModifier'] === undefined || fields['bidModifier'] === null || typeof fields['bidModifier'] === 'number';
+    return times && modifier;
+  }
+
+  /**
+   * The ad schedules as judged and dispatched: each absent or null time field read as the zero Go
+   * decodes it to, and `bidModifier` carried through as `undefined` when the caller omitted it.
+   * Callers have checked the shape with {@link isAdScheduleShape}.
+   *
+   * The day is left exactly as the caller wrote it; {@link googleAdScheduleRefusal} trims and
+   * upper-cases it the way `validateAdSchedules` does before comparing.
+   *
+   * `bidModifier` is the only field that is not zero-filled, and the asymmetry is the whole point:
+   * upstream carries it as a `*float64` so that an omitted modifier stays distinguishable from `0`,
+   * which is the -100% opt-out. Filling it with a zero here would switch the campaign off for every
+   * window a caller listed without adjusting — a successful create that serves nowhere.
+   */
+  private googleAdScheduleList(raw: unknown): NormalizedAdSchedule[] {
+    if (!Array.isArray(raw)) return [];
+    return raw.map((entry) => {
+      const fields = (entry ?? {}) as Record<string, unknown>;
+      const time = (name: string): number => (typeof fields[name] === 'number' ? (fields[name] as number) : 0);
+      const modifier = fields['bidModifier'];
+      return {
+        dayOfWeek: typeof fields['dayOfWeek'] === 'string' ? fields['dayOfWeek'] : '',
+        startHour: time('startHour'),
+        startMinute: time('startMinute'),
+        endHour: time('endHour'),
+        endMinute: time('endMinute'),
+        ...(typeof modifier === 'number' ? { bidModifier: modifier } : {}),
+      };
+    });
+  }
+
+  /**
+   * Why upstream would refuse a normalized ad-schedule LIST, or `null` when it would not.
+   *
+   * A list-level guard rather than a per-entry one like {@link googleProximityRefusal}, because
+   * three of `validateAdSchedules`' branches are about an entry's relationship to the ones before
+   * it — an exact repeat, an overlap, and the per-day count — and none of them is decidable from a
+   * single entry. The cap is checked by the caller against the SUBMITTED length, as upstream does,
+   * before any repeat is collapsed.
+   *
+   * Mirrors `validateAdSchedules`' branch order exactly, and the order is load-bearing: day, start
+   * hour, end hour, start minute, end minute, the empty-or-inverted window, the 24:15 overrun, the
+   * bid modifier, THEN the repeat, THEN the overlap, THEN the per-day count. A repeat is tested
+   * before the overlap because an exact duplicate is one criterion written twice rather than two
+   * criteria that clash, and reporting it as an overlap would name the wrong defect.
+   *
+   * Overlap uses the half-open comparison upstream uses — `startA < endB && startB < endA` — so
+   * 09:00-12:00 and 12:00-17:00 do NOT overlap: 12:00 is not before 12:00. A naive "do they touch"
+   * test would refuse the ordinary split-day schedule, which is the over-refusal these mirrors exist
+   * to avoid.
+   *
+   * `index` is reported from 1 so it matches what an operator counts; upstream's own message numbers
+   * from 0.
+   */
+  private googleAdScheduleRefusal(schedules: NormalizedAdSchedule[]): string | null {
+    // Accepted intervals per normalized day, as minutes of the day — the form both the overlap test
+    // and the empty-window check compare in, so 24:00 is 1440 and sorts after every real end.
+    const perDay = new Map<string, { start: number; end: number }[]>();
+    // Accepted intervals by wire key, carrying the modifier a repeat must agree with.
+    const seen = new Map<string, number | undefined>();
+
+    for (const [index, schedule] of schedules.entries()) {
+      const shown = `ad schedule ${index + 1}`;
+      const day = googleAdsTrimSpace(schedule.dayOfWeek).toUpperCase();
+      if (!(GOOGLE_ADS_SCHEDULE_DAYS as readonly string[]).includes(day)) {
+        return `The Google Ads ${shown} needs a day of week of ${GOOGLE_ADS_SCHEDULE_DAYS.join(', ')}. Fix it and create again.`;
+      }
+      if (schedule.startHour < 0 || schedule.startHour > 23) {
+        return `The Google Ads ${shown} has a start hour of ${schedule.startHour}, outside 0 to 23. Fix it and create again.`;
+      }
+      // 24 is midnight at the END of the day and is valid only as an end, which is what makes the
+      // window half-open: a schedule running to midnight ends at hour 24.
+      if (schedule.endHour < 1 || schedule.endHour > 24) {
+        return `The Google Ads ${shown} has an end hour of ${schedule.endHour}, outside 1 to 24. Fix it and create again.`;
+      }
+      const minutes = GOOGLE_ADS_SCHEDULE_MINUTES as readonly number[];
+      if (!minutes.includes(schedule.startMinute)) {
+        return `The Google Ads ${shown} has a start minute of ${schedule.startMinute}. Google accepts only ${GOOGLE_ADS_SCHEDULE_MINUTES.join(', ')}, so pick one and create again.`;
+      }
+      if (!minutes.includes(schedule.endMinute)) {
+        return `The Google Ads ${shown} has an end minute of ${schedule.endMinute}. Google accepts only ${GOOGLE_ADS_SCHEDULE_MINUTES.join(', ')}, so pick one and create again.`;
+      }
+      const start = schedule.startHour * 60 + schedule.startMinute;
+      const end = schedule.endHour * 60 + schedule.endMinute;
+      const window = `${googleAdsClockTime(schedule.startHour, schedule.startMinute)}-${googleAdsClockTime(schedule.endHour, schedule.endMinute)}`;
+      // An end at or before the start is an empty or inverted window: the campaign would serve for
+      // no time at all that day, which is never what a caller who wrote a schedule meant.
+      if (end <= start) {
+        return `The Google Ads ${shown} ends at ${googleAdsClockTime(schedule.endHour, schedule.endMinute)}, which is not after its start of ${googleAdsClockTime(schedule.startHour, schedule.startMinute)}. Fix it and create again.`;
+      }
+      // 24:00 is the only representation of end-of-day; 24:15 is past it.
+      if (schedule.endHour === 24 && schedule.endMinute !== 0) {
+        return `The Google Ads ${shown} ends at ${googleAdsClockTime(24, schedule.endMinute)}, past the end of the day. End hour 24 takes only minute 0, so fix it and create again.`;
+      }
+      if (schedule.bidModifier !== undefined) {
+        const refusal = this.googleBidModifierRefusal(shown, schedule.bidModifier);
+        if (refusal) return refusal;
+      }
+
+      const key = `${day}|${start}|${end}`;
+      if (seen.has(key)) {
+        // Collapsed when the two say the same thing, refused when they disagree about the bid —
+        // Google accepts one criterion per interval, so the second value would be the one silently
+        // dropped. A collapsed repeat does not reach the per-day count below, exactly as upstream.
+        if (seen.get(key) !== schedule.bidModifier) {
+          return `The Google Ads ${shown} repeats ${day} ${window} with a different bid modifier. Google accepts one entry per interval, so remove one and create again.`;
+        }
+        continue;
+      }
+
+      const accepted = perDay.get(day) ?? [];
+      for (const other of accepted) {
+        if (start < other.end && other.start < end) {
+          const clash = `${googleAdsClockTime(Math.floor(other.start / 60), other.start % 60)}-${googleAdsClockTime(Math.floor(other.end / 60), other.end % 60)}`;
+          return `The Google Ads ${shown} (${day} ${window}) overlaps ${day} ${clash}. Google rejects overlapping ad schedules on the same day, so merge them and create again.`;
+        }
+      }
+      if (accepted.length >= GOOGLE_ADS_MAX_AD_SCHEDULES_PER_DAY) {
+        return `The Google Ads ${shown} is interval ${accepted.length + 1} on ${day}, and Google accepts at most ${GOOGLE_ADS_MAX_AD_SCHEDULES_PER_DAY} per day. Remove some and create again.`;
+      }
+      accepted.push({ start, end });
+      perDay.set(day, accepted);
+      seen.set(key, schedule.bidModifier);
+    }
+    return null;
+  }
+
+  /**
+   * Why upstream would refuse one bid modifier, or `null` when it would not. Mirrors
+   * `validateBidModifier`'s branches in order: finite, then the 0 opt-out, then the range.
+   *
+   * 0 RETURNS EARLY and is accepted. It is not a value below the minimum but the -100% opt-out —
+   * "do not serve here at all" — which is how a day-parted campaign switches off the hours it does
+   * not want. A guard that tested the range first would refuse the one modifier such a campaign is
+   * certain to carry.
+   *
+   * `noun` names the entry the caller wrote, so the message points at it rather than at the number.
+   */
+  private googleBidModifierRefusal(noun: string, modifier: number): string | null {
+    if (!Number.isFinite(modifier)) {
+      return `The Google Ads ${noun} needs a finite bid modifier. Fix it and create again.`;
+    }
+    if (modifier === 0) return null;
+    if (modifier < GOOGLE_ADS_MIN_BID_MODIFIER || modifier > GOOGLE_ADS_MAX_BID_MODIFIER) {
+      return `The Google Ads ${noun} has a bid modifier of ${modifier}. Google accepts 0 (do not serve) or ${GOOGLE_ADS_MIN_BID_MODIFIER} to ${GOOGLE_ADS_MAX_BID_MODIFIER}, so fix it and create again.`;
+    }
+    return null;
   }
 
   /**

@@ -7,6 +7,9 @@ import type {
   CAMPAIGN_EMAIL_STAGES,
   CAMPAIGN_EMAIL_VARIANTS,
   CAMPAIGN_METRICS_WINDOWS,
+  GOOGLE_ADS_RADIUS_UNITS,
+  GOOGLE_ADS_SCHEDULE_DAYS,
+  GOOGLE_ADS_SCHEDULE_MINUTES,
   GOOGLE_BIDDING_STRATEGIES,
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
@@ -15,6 +18,7 @@ import type {
   REDDIT_SELECTABLE_OBJECTIVES,
   REDDIT_VIDEO_GOALS,
 } from '../constants/campaign.constants';
+import type { KeywordTargetingPlatform, MetaAdSetCampaignEligibility } from './campaign-optimize.interface';
 
 // ---------------------------------------------------------------------------
 // Platform & Phase
@@ -770,6 +774,13 @@ export interface CampaignImplementationDraft {
    * is held rather than sent, and is still there if the operator switches back to Search.
    */
   googleCallouts?: string[];
+  /**
+   * Google's sitelink extensions, as the operator typed them.
+   *
+   * Held and restored on exactly the same rule as {@link googleCallouts}: absent and empty agree,
+   * and a list saved under a non-Search channel is kept rather than discarded.
+   */
+  googleSitelinks?: CampaignSitelink[];
   /**
    * The Google bidding section, as RAW form text — the same choice `googleCreatives` and
    * {@link microsoftCpcBid} make, and for the same reason: a draft hands the operator back the
@@ -1744,6 +1755,92 @@ export interface GoogleDisplayCreative {
   callToActionText?: string;
 }
 
+/**
+ * One Google sitelink extension: a label, its destination, and an optional two-line description.
+ *
+ * `finalUrl` is REQUIRED. Upstream (`assets.go`'s `validateSitelinks`) treats a sitelink with no
+ * destination as unservable rather than as a lesser sitelink, and refuses the whole create.
+ *
+ * The two description lines are ALL-OR-NOTHING: Google renders them together and rejects an asset
+ * carrying only one, so upstream refuses a sitelink that has exactly one of them. They are
+ * optional together, which is why both are optional here rather than required.
+ */
+export interface CampaignSitelink {
+  text: string;
+  description1?: string;
+  description2?: string;
+  finalUrl: string;
+}
+
+/**
+ * The radius unit a {@link CampaignProximityTarget} is measured in.
+ *
+ * Derived from {@link GOOGLE_ADS_RADIUS_UNITS} rather than written out again, so a unit added to
+ * the constant cannot leave this type behind.
+ */
+export type GoogleAdsRadiusUnit = (typeof GOOGLE_ADS_RADIUS_UNITS)[number];
+
+/**
+ * One Google proximity target: a point in decimal degrees and a radius around it.
+ *
+ * Every field is REQUIRED, `radiusUnit` emphatically so — upstream (`geo.go`'s
+ * `validateProximityTargets`) supplies no default because "a radius of 50 means two very different
+ * campaigns depending on the unit, and guessing one would silently buy ~2.5x the intended area (or
+ * 0.4x)". Refusing costs the caller one explicit word, before anything paid exists.
+ *
+ * Latitude and longitude are DECIMAL DEGREES (37.7749, -122.4194), the form every mapping tool
+ * emits; upstream converts them to the microdegrees Google's `GeoPoint` actually carries. `radius`
+ * must be greater than zero and within {@link GOOGLE_ADS_MAX_RADIUS} for its own unit — the two
+ * ceilings are not a converted pair.
+ */
+export interface CampaignProximityTarget {
+  latitude: number;
+  longitude: number;
+  radius: number;
+  radiusUnit: GoogleAdsRadiusUnit;
+}
+
+/**
+ * The day a {@link CampaignAdSchedule} runs on.
+ *
+ * Derived from {@link GOOGLE_ADS_SCHEDULE_DAYS} rather than written out again, so a day spelled
+ * differently in the constant cannot leave this type behind.
+ */
+export type GoogleAdsScheduleDay = (typeof GOOGLE_ADS_SCHEDULE_DAYS)[number];
+
+/**
+ * The minute a {@link CampaignAdSchedule} window starts or ends on.
+ *
+ * A UNION of the four values rather than `number`, because Google models minutes as an enum: `:10`
+ * is unrepresentable rather than merely unusual, and a caller honouring this type cannot write one.
+ */
+export type GoogleAdsScheduleMinute = (typeof GOOGLE_ADS_SCHEDULE_MINUTES)[number];
+
+/**
+ * One "serve during this window on this day" interval.
+ *
+ * The window is HALF-OPEN — [start, end) — which is why `endHour` admits 24 and `startHour` does
+ * not: a window running to midnight ends at hour 24, and one starting at midnight starts at hour 0.
+ * It is also what makes 09:00-12:00 and 12:00-17:00 two non-overlapping windows rather than a
+ * clash, so the ordinary split-day schedule is accepted.
+ *
+ * `bidModifier` is OPTIONAL and its absence is meaningful: an interval with no modifier restricts
+ * WHEN the campaign serves without changing what it bids, which is the ordinary case. It cannot
+ * default to 0, because 0 is the -100% opt-out — an entry written as "listed but unadjusted" would
+ * instead switch the campaign off for that window while reporting a successful create. Upstream
+ * carries the field as a pointer for exactly this reason, so an absent modifier must be OMITTED on
+ * the wire rather than sent as a zero. Any other value must be between
+ * {@link GOOGLE_ADS_MIN_BID_MODIFIER} and {@link GOOGLE_ADS_MAX_BID_MODIFIER}.
+ */
+export interface CampaignAdSchedule {
+  dayOfWeek: GoogleAdsScheduleDay;
+  startHour: number;
+  startMinute: GoogleAdsScheduleMinute;
+  endHour: number;
+  endMinute: GoogleAdsScheduleMinute;
+  bidModifier?: number;
+}
+
 export interface CampaignCreateRequest {
   eventName: string;
   eventSlug: string;
@@ -1777,6 +1874,38 @@ export interface CampaignCreateRequest {
   displayCreative?: GoogleDisplayCreative;
   geoTargets: string[];
   /**
+   * The places the Google campaign must NOT serve in, as ISO 3166-1 alpha-2 country codes or raw
+   * numeric Google geo target constant ids (which is how a CITY, region, metro or postal code is
+   * addressed — the curated country map cannot express those).
+   *
+   * Optional and OMITTED when empty, on the same rule as {@link geoTargets}: an absent list and an
+   * empty one both mean "exclude nowhere".
+   *
+   * Accepted on EVERY Google channel, Demand Gen included — `validateGeoPlan` puts no channel fence
+   * on exclusions, unlike {@link proximityTargets}. Bounded by
+   * {@link GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS}, which is counted separately from the targeted
+   * list's own bound.
+   *
+   * A place named in BOTH lists is refused rather than resolved: the exclusion would win and the
+   * campaign would not serve there at all, so a caller who wrote both did not get what either list
+   * says. The two are compared by RESOLVED id, so `US` in one list and `2840` in the other clash.
+   */
+  excludedGeoTargets?: string[];
+  /**
+   * Radius targeting around points — "everyone within N miles of the venue" — which is the one
+   * location shape that is not a place in Google's geo table.
+   *
+   * Optional and OMITTED when empty. Refused by upstream on Demand Gen (see
+   * {@link GOOGLE_CHANNELS_WITH_PROXIMITY}), so the BFF refuses a Demand Gen create carrying one by
+   * name rather than letting it fail after the fact, and the builder withholds the list on any
+   * channel that cannot take it. Bounded by {@link GOOGLE_ADS_MAX_PROXIMITY_TARGETS}.
+   *
+   * Two entries that render to the same criterion are COLLAPSED, not refused — unlike a repeated ad
+   * schedule, a proximity target carries no bid modifier, so two spellings of one target cannot
+   * disagree about anything.
+   */
+  proximityTargets?: CampaignProximityTarget[];
+  /**
    * The languages the Google campaign serves in, as ISO 639-1 codes (`EN`, `DE`, `JA`) or raw
    * numeric Google language constant ids.
    *
@@ -1792,6 +1921,24 @@ export interface CampaignCreateRequest {
    */
   languages?: string[];
   /**
+   * When the Google campaign serves, as one or more intervals per day of the week. Left unset it
+   * runs around the clock, which is Google's own default — so this list is a narrowing and an
+   * absent key means the same as an empty one, exactly as {@link languages} does.
+   *
+   * Accepted on every Google channel except Demand Gen — see
+   * {@link GOOGLE_CHANNELS_WITH_AD_SCHEDULES}. Bounded by {@link GOOGLE_ADS_MAX_AD_SCHEDULES}
+   * overall and {@link GOOGLE_ADS_MAX_AD_SCHEDULES_PER_DAY} on any one day; both are Google's own
+   * limits rather than local opinions.
+   *
+   * Two intervals that OVERLAP on the same day are refused, because Google rejects them — but
+   * touching intervals do not overlap, so a day split at noon is two ordinary entries. An exact
+   * repeat carrying the SAME bid modifier is collapsed; a repeat carrying a DIFFERENT one is
+   * refused, because Google accepts one criterion per interval and the second value would be the
+   * one silently dropped. That is the difference from {@link proximityTargets}, which has no field
+   * two spellings could disagree about.
+   */
+  adSchedules?: CampaignAdSchedule[];
+  /**
    * The Google campaign's callout extensions — short claims appended to the text ad, carrying no
    * link of their own.
    *
@@ -1804,6 +1951,12 @@ export interface CampaignCreateRequest {
    * it by name.
    */
   callouts?: string[];
+  /**
+   * The Google campaign's sitelink extensions — extra links rendered under the text ad.
+   *
+   * Omitted when empty and SEARCH ONLY, on the same rule as {@link callouts}.
+   */
+  sitelinks?: CampaignSitelink[];
   /**
    * How the Google campaign bids, and the numbers that go with the strategy it names.
    *
@@ -3051,12 +3204,32 @@ export interface CampaignRow {
   bidUnavailableReason: string;
   /** Why an available bid editor cannot submit RIGHT NOW (stale validator, another write in flight), or `''`. */
   bidBlockedReason: string;
-  /** Whether the row shows the negative-keyword control at all: Microsoft Advertising campaigns only. */
+  /** Whether the row shows the negative-keyword control at all: Microsoft Advertising, Reddit and X campaigns (`NEGATIVE_KEYWORD_CAMPAIGN_PLATFORMS`). */
   negativeKeywordsOffered: boolean;
   /** Whether that control can be used (the campaign exists on the platform and is not deleted). */
   negativeKeywordsAvailable: boolean;
   /** Why the negative-keyword control is disabled — set when offered but not available, empty otherwise. */
   negativeKeywordsUnavailableReason: string;
+  /** Whether the row shows the ad-set control at all: Meta campaigns only. */
+  adSetsOffered: boolean;
+  /** Whether that control can be opened (the campaign exists on Meta and is not deleted). */
+  adSetsAvailable: boolean;
+  /** Why the ad-set control is disabled — set when offered but not available, empty otherwise. */
+  adSetsUnavailableReason: string;
+  /** Why an open ad-set panel cannot change an ad set RIGHT NOW (stale validator, another write in flight), or `''`. */
+  adSetsBlockedReason: string;
+  /** Which ad-set directions the campaign's own state allows (`metaAdSetCampaignEligibility`); the read panel stays available either way. */
+  adSetEligibility: MetaAdSetCampaignEligibility;
+  /** The row's platform when it is offered negative keywords, which decides what the editor offers and sends; `null` otherwise. */
+  negativeKeywordsPlatform: NegativeKeywordCampaignPlatform | null;
+  /** Whether the row shows the keyword-targeting control at all: Reddit and X campaigns (`KEYWORD_TARGETING_CAMPAIGN_PLATFORMS`). */
+  keywordTargetingOffered: boolean;
+  /** Whether that control can be used (the campaign exists on the platform and is not deleted). */
+  keywordTargetingAvailable: boolean;
+  /** Why the keyword-targeting control is disabled — set when offered but not available, empty otherwise. */
+  keywordTargetingUnavailableReason: string;
+  /** The row's platform when it is offered keyword targeting; `null` otherwise. */
+  keywordTargetingPlatform: KeywordTargetingPlatform | null;
 }
 
 /** The bid the Optimize tab's bid editor submits, or that a change confirmed. */
@@ -3137,6 +3310,10 @@ export interface CampaignNegativeKeywordsRequestState {
   sent: string[];
   /** The match type the request was sent with, restored with them. */
   matchType: CampaignNegativeKeywordMatchType;
+  /** The campaign's ad platform, which words its outcomes ("Reddit refused it"). */
+  platform: NegativeKeywordCampaignPlatform;
+  /** How many requests of this campaign have settled: a change means Reddit's revision must be read again. */
+  settleCount: number;
 }
 
 /** One negative-keyword request, as the editor hands it to `CampaignNegativeKeywordsService`. */
@@ -3145,9 +3322,37 @@ export interface CampaignNegativeKeywordsSubmission {
   briefId: string;
   campaignId: string;
   campaignName: string;
+  /** The campaign's ad platform. Decides whether `revision` is sent: Reddit only. */
+  platform: NegativeKeywordCampaignPlatform;
   /** Parsed once by the editor and sent as-is: the outcomes are zipped onto this exact list. */
   keywords: string[];
   matchType: CampaignNegativeKeywordMatchType;
+  /**
+   * Reddit's compare-and-set token, from the campaign's keyword-targeting read. Sent ONLY for a
+   * Reddit campaign: Microsoft Advertising and X refuse the field whenever it is present, even empty.
+   */
+  revision?: string;
+}
+
+/** A platform whose campaigns take negative keywords through `add-negative-keywords`. */
+export type NegativeKeywordCampaignPlatform = 'microsoft-ads' | 'reddit-ads' | 'twitter-ads';
+
+/** What the negative-keyword editor offers and sends for one platform (`CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES`). */
+export interface CampaignNegativeKeywordPlatformRules {
+  /** The platform's name in outcome text ("Reddit refused it"). */
+  label: string;
+  /** The match types the platform takes for a negative, in display order. */
+  matchTypes: readonly CampaignNegativeKeywordMatchTypeOption[];
+  /** The match type the editor opens on. */
+  defaultMatchType: CampaignNegativeKeywordMatchType;
+  /** Most keywords one request may carry on this platform. */
+  maxKeywords: number;
+  /** Whether a request must carry the keyword-targeting read's `revision` (Reddit). */
+  requiresRevision: boolean;
+  /** Where the negatives land, for the field hint. */
+  destination: string;
+  /** The match-type hint under the choice. */
+  matchTypeHint: string;
 }
 
 /** One reporting-window choice of the Microsoft keyword table. */
@@ -3602,10 +3807,11 @@ export interface CampaignBidUpdateResult {
 
 /**
  * The match types a negative keyword may carry. Mirrors `negativeKeywordMatchTypeEnum` in
- * campaign-service's `design/brief.go`. Microsoft Advertising supports only these two for a
- * negative keyword, so `Broad` is not offered.
+ * campaign-service's `design/brief.go`. Each platform takes a subset and upstream refuses the rest
+ * with 400: Microsoft Advertising Exact or Phrase, X Broad, Phrase or Exact, Reddit Broad only
+ * (Reddit's excluded keywords carry no match type).
  */
-export type CampaignNegativeKeywordMatchType = 'Exact' | 'Phrase';
+export type CampaignNegativeKeywordMatchType = 'Exact' | 'Phrase' | 'Broad';
 
 /**
  * One negative keyword's outcome. Mirrors `negativeKeywordOutcomeEnum`.
@@ -3631,8 +3837,14 @@ export interface CampaignNegativeKeywordInput {
  */
 export interface CampaignNegativeKeywordsRequest {
   briefId: string;
-  /** 1 to 60 entries. `results[i]` in the response answers `negativeKeywords[i]`. */
+  /** 1 to 60 entries (1 to 20 on X). `results[i]` in the response answers `negativeKeywords[i]`. */
   negativeKeywords: CampaignNegativeKeywordInput[];
+  /**
+   * Reddit only, and required there: the `revision` the keyword-targeting read returned. Microsoft
+   * Advertising and X refuse the field (400) whenever it is present, even empty, so it is omitted
+   * rather than sent blank.
+   */
+  revision?: string;
 }
 
 /** Everything the server client needs to add negative keywords to one campaign. */
@@ -3641,6 +3853,8 @@ export interface CampaignNegativeKeywordsParams {
   briefId: string;
   campaignId: string;
   negativeKeywords: CampaignNegativeKeywordInput[];
+  /** Sent upstream only when defined (Reddit). */
+  revision?: string;
 }
 
 export interface CampaignNegativeKeywordResult {
@@ -3650,15 +3864,15 @@ export interface CampaignNegativeKeywordResult {
   outcome: CampaignNegativeKeywordOutcome;
   /** The platform's id for a negative keyword this request added. Absent for every other outcome. */
   negativeKeywordId?: string;
-  /** The platform's machine-readable error code for a FAILED keyword, when it named one. */
+  /** Why a keyword is FAILED: Microsoft's machine-readable code when it named one; NOT_SENT or REJECTED on Reddit and X. */
   errorCode?: string;
 }
 
 /**
  * The outcome of one negative-keywords request.
  *
- * NOT ATOMIC and POSITIONAL: Microsoft adds each negative independently, and `results[i]` answers
- * `negativeKeywords[i]` of the request. The BFF never filters or reorders `results`, so a caller
+ * NOT ATOMIC and POSITIONAL: Microsoft and X add each negative independently (Reddit's new ones share
+ * one write's outcome), and `results[i]` answers `negativeKeywords[i]` of the request. The BFF never filters or reorders `results`, so a caller
  * may zip them onto the list it sent.
  */
 export interface CampaignNegativeKeywordsResult {

@@ -1,0 +1,198 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<section class="flex flex-col gap-3" [attr.aria-label]="label() + ' audience'" [attr.data-testid]="'platform-audience-' + platform()">
+  <div class="flex flex-wrap items-center justify-between gap-2">
+    <div
+      class="flex flex-wrap items-center gap-2"
+      role="group"
+      [attr.aria-label]="label() + ' audience reporting window'"
+      data-testid="platform-audience-windows">
+      @for (option of windowOptions(); track option.value) {
+        <button
+          type="button"
+          (click)="selectWindow(option.value)"
+          [attr.aria-pressed]="selectedWindow() === option.value"
+          [class]="
+            selectedWindow() === option.value
+              ? 'rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white'
+              : 'rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-200'
+          "
+          [attr.data-testid]="'platform-audience-window-' + option.value">
+          {{ option.label }}
+        </button>
+      }
+    </div>
+    <button
+      type="button"
+      (click)="reload()"
+      [disabled]="state() === 'loading'"
+      class="flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+      [attr.aria-label]="'Refresh ' + label() + ' audience'"
+      data-testid="platform-audience-refresh">
+      <i class="fa-light fa-arrows-rotate" [class.fa-spin]="state() === 'loading'" aria-hidden="true"></i>
+      Refresh
+    </button>
+  </div>
+
+  @switch (state()) {
+    @case ('loading') {
+      <div class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-500" data-testid="platform-audience-loading">
+        <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+        Loading {{ label() }} audience...
+      </div>
+    }
+    @case ('error') {
+      <div
+        class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3"
+        role="alert"
+        [attr.data-testid]="'platform-audience-error-' + errorKind()">
+        <p class="text-sm text-gray-600">{{ errorMessage() }}</p>
+        @if (canRetry()) {
+          <lfx-button
+            label="Retry"
+            icon="fa-light fa-rotate-right"
+            size="small"
+            severity="secondary"
+            [text]="true"
+            (onClick)="reload()"
+            data-testid="platform-audience-retry" />
+        }
+      </div>
+    }
+    @case ('loaded') {
+      @if (view(); as audience) {
+        @if (audience.reportBuilding) {
+          <!-- No finished report covers the project yet: empty breakdowns mean "building", never "no audience". -->
+          <div class="flex items-center gap-2 rounded-lg border border-dashed border-blue-200 bg-blue-50 px-4 py-3" data-testid="platform-audience-building">
+            <i class="fa-light fa-hourglass-half text-blue-500" aria-hidden="true"></i>
+            <p class="text-sm text-blue-800">The {{ label() }} audience report is building, so nothing is measured yet. Check back in a few minutes.</p>
+          </div>
+        } @else {
+          <div class="flex flex-col gap-1 text-xs text-gray-500">
+            @if (audience.metricsAsOf) {
+              <p data-testid="platform-audience-as-of">Audience as of {{ audience.metricsAsOf | date: 'medium' }}</p>
+            }
+            @if (audience.metricsPending) {
+              <p class="text-blue-700" data-testid="platform-audience-pending">Building a newer report. These figures will update once it finishes.</p>
+            }
+            @if (audience.dataIncomplete) {
+              <p class="text-amber-700" data-testid="platform-audience-data-incomplete">
+                Partial data: {{ label() }} flagged the report's last day as still aggregating, so these figures may still rise.
+              </p>
+            }
+            @if (audience.approximate) {
+              <p class="text-amber-700" data-testid="platform-audience-approximate">
+                Estimates: {{ label() }} approximates these figures for privacy, drops small values and delays them 12-24 hours, so each breakdown totals less
+                than the campaigns.
+              </p>
+            }
+            @if (audience.someNotMeasured) {
+              <p class="text-amber-700" data-testid="platform-audience-not-measured-note">
+                {{ label() }} returned a breakdown with no measurements at all. Its figures are shown as not measured rather than as zero.
+              </p>
+            }
+          </div>
+
+          @if (audience.empty) {
+            <p class="rounded-lg border border-dashed border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-500" data-testid="platform-audience-empty">
+              No {{ label() }} audience activity in this window. Campaigns created here appear once they deliver.
+            </p>
+          } @else {
+            @for (section of audience.sections; track section.key) {
+              <div class="overflow-hidden rounded-lg border border-gray-200 bg-white" [attr.data-testid]="'platform-audience-section-' + section.key">
+                <div class="flex items-center justify-between gap-2 border-b border-gray-100 px-4 py-2">
+                  <h5 class="text-xs font-semibold text-gray-700">{{ section.title }}</h5>
+                  @if (section.notMeasured) {
+                    <span class="text-xs text-gray-500" [attr.data-testid]="'platform-audience-section-not-measured-' + section.key">{{
+                      notMeasuredLabel
+                    }}</span>
+                  }
+                </div>
+                <div class="overflow-x-auto">
+                  <table class="w-full text-left text-sm">
+                    <caption class="sr-only">
+                      {{
+                        label()
+                      }}
+                      audience by
+                      {{
+                        section.title
+                      }}. Spend is in
+                      {{
+                        spendUnit()
+                      }}.
+                    </caption>
+                    <thead>
+                      <tr class="border-b border-gray-200 bg-gray-50">
+                        <th scope="col" class="px-4 py-2 text-xs font-medium text-gray-500">{{ section.title }}</th>
+                        <th scope="col" class="px-4 py-2 text-right text-xs font-medium text-gray-500">Impr.</th>
+                        <th scope="col" class="px-4 py-2 text-right text-xs font-medium text-gray-500">Clicks</th>
+                        <th scope="col" class="px-4 py-2 text-right text-xs font-medium text-gray-500">CTR</th>
+                        <th scope="col" class="px-4 py-2 text-right text-xs font-medium text-gray-500">Spend ({{ spendUnit() }})</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @for (row of section.rows; track row.key) {
+                        <tr class="border-b border-gray-100 last:border-0" [attr.data-testid]="'platform-audience-row-' + row.key">
+                          <td class="px-4 py-2">
+                            <div class="flex flex-col gap-1">
+                              <span class="break-all text-gray-900">{{ row.label }}</span>
+                              <div class="h-1.5 w-full overflow-hidden rounded-full bg-gray-100" aria-hidden="true">
+                                <div class="h-full rounded-full bg-blue-500" [style.width.%]="row.barPct"></div>
+                              </div>
+                            </div>
+                          </td>
+                          <td class="px-4 py-2 text-right text-gray-700">
+                            @if (row.impressions !== null) {
+                              @if (audience.approximate) {
+                                ≈
+                              }
+                              {{ row.impressions | number }}
+                            } @else {
+                              <span class="text-xs text-gray-500">{{ notMeasuredLabel }}</span>
+                            }
+                          </td>
+                          <td class="px-4 py-2 text-right text-gray-700">
+                            @if (row.clicks !== null) {
+                              @if (audience.approximate) {
+                                ≈
+                              }
+                              {{ row.clicks | number }}
+                            } @else {
+                              <span class="text-xs text-gray-500">{{ notMeasuredLabel }}</span>
+                            }
+                          </td>
+                          <td class="px-4 py-2 text-right text-gray-700">
+                            @if (row.ctr !== null) {
+                              @if (audience.approximate) {
+                                ≈
+                              }
+                              {{ row.ctr | percent: '1.2-2' }}
+                            } @else {
+                              <span class="text-xs text-gray-500">{{ notMeasuredLabel }}</span>
+                            }
+                          </td>
+                          <td class="px-4 py-2 text-right text-gray-700">
+                            @if (row.spend !== null) {
+                              @if (audience.approximate) {
+                                ≈
+                              }
+                              {{ row.spend | number: '1.2-2' }}
+                            } @else {
+                              <span class="text-xs text-gray-500">{{ notMeasuredLabel }}</span>
+                            }
+                          </td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            }
+          }
+        }
+      }
+    }
+  }
+</section>

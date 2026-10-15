@@ -10,6 +10,10 @@ import {
   CDP_TO_AUTH0_PROVIDER_MAP,
   EMAIL_ALREADY_LINKED_MESSAGE,
   EMAIL_REGEX,
+  EMAIL_VERIFICATION_FAILED_ERROR,
+  EMAIL_VERIFICATION_FAILED_MESSAGE,
+  EMAIL_VERIFICATION_MIN_RESPONSE_MS,
+  EMAIL_VERIFICATION_SENT_MESSAGE,
   ERROR_CODES,
   PROFILE_EMAIL_PATH,
   PROFILE_EMAILS_PATH,
@@ -2143,11 +2147,13 @@ export class ProfileController {
         return next(validationError);
       }
 
+      const upstreamStartedAt = Date.now();
       const response = await this.emailVerificationService.sendVerificationCode(req, email);
+      await this.holdUntilFloor(upstreamStartedAt);
 
       if (response.success) {
-        logger.success(req, 'send_email_verification', startTime, { email });
-        res.json({ success: true, message: response.message || 'Verification code sent' });
+        logger.success(req, 'send_email_verification', startTime);
+        res.json({ success: true, message: EMAIL_VERIFICATION_SENT_MESSAGE });
       } else {
         logger.debug(req, 'send_email_verification', 'Verification response on failure', {
           response_keys: Object.keys(response),
@@ -2156,19 +2162,9 @@ export class ProfileController {
         });
 
         if (isIdentityAlreadyLinkedError(response.error, response.message)) {
-          // Upstream auth-service emits the "already linked" error without identifying the
-          // owning account, so resolve it here via EMAIL_TO_USERNAME → EMAIL_TO_SUB lookups.
-          // The resolved account is logged for support/debugging only — never returned to the
-          // client, so we don't expose another user's LFID.
-          const linkedTo =
-            (await this.emailVerificationService.resolveEmailToUsername(req, email)) || (await this.emailVerificationService.resolveEmailToSub(req, email));
-
-          logger.warning(req, 'send_email_verification', 'Email already linked to another account', {
-            email,
-            linked_to: linkedTo,
-          });
-
-          res.status(409).json({ success: false, error: response.error, message: EMAIL_ALREADY_LINKED_MESSAGE });
+          this.logLinkedEmailConflict(req, 'send_email_verification');
+          logger.success(req, 'send_email_verification', startTime);
+          res.json({ success: true, message: EMAIL_VERIFICATION_SENT_MESSAGE });
         } else if (response.error === 'Service temporarily unavailable') {
           res.status(503).json({ success: false, error: response.error, message: response.message });
         } else {
@@ -2251,15 +2247,32 @@ export class ProfileController {
       }
 
       // Step 2: Verify OTP via NATS
+      const otpStartedAt = Date.now();
       const otpResponse = await this.emailVerificationService.verifyOtp(req, email, otp);
 
-      if (!otpResponse.success || !otpResponse.data?.id_token) {
-        const error = otpResponse.error || (otpResponse.success ? 'token_missing' : 'verification_failed');
-        const message =
-          otpResponse.message ||
-          (otpResponse.success
-            ? 'Verification succeeded but identity token was not returned. Please try again.'
-            : 'Verification failed. Please try again or request a new code.');
+      if (!otpResponse.success) {
+        logger.debug(req, 'verify_and_link_email', 'OTP verification failed', { error: otpResponse.error, message: otpResponse.message });
+
+        if (otpResponse.error === 'Service temporarily unavailable') {
+          res.status(503).json({
+            success: false,
+            error: otpResponse.error,
+            message: otpResponse.message || EMAIL_VERIFICATION_FAILED_MESSAGE,
+          });
+          return;
+        }
+
+        if (isIdentityAlreadyLinkedError(otpResponse.error, otpResponse.message)) {
+          this.logLinkedEmailConflict(req, 'verify_and_link_email');
+        }
+        await this.holdUntilFloor(otpStartedAt);
+        res.status(400).json({ success: false, error: EMAIL_VERIFICATION_FAILED_ERROR, message: EMAIL_VERIFICATION_FAILED_MESSAGE });
+        return;
+      }
+
+      if (!otpResponse.data?.id_token) {
+        const error = otpResponse.error || 'token_missing';
+        const message = otpResponse.message || 'Verification succeeded but identity token was not returned. Please try again.';
 
         if (error.includes('invalid') || error.includes('otp')) {
           res.status(400).json({ success: false, error, message });
@@ -2428,6 +2441,19 @@ export class ProfileController {
       path,
       errorBody: { error: response.error, message: response.message },
     });
+  }
+
+  /** Hold indistinguishable responses until the shared upstream-to-response floor. */
+  private async holdUntilFloor(startedAt: number): Promise<void> {
+    const remainingMs = EMAIL_VERIFICATION_MIN_RESPONSE_MS - (Date.now() - startedAt);
+    if (remainingMs > 0) {
+      await new Promise<void>((resolve) => setTimeout(resolve, remainingMs));
+    }
+  }
+
+  /** Keep pre-proof conflict details request-correlated without logging another account's identity. */
+  private logLinkedEmailConflict(req: Request, operation: string): void {
+    logger.warning(req, operation, 'Email already linked to another account');
   }
 
   /**

@@ -254,8 +254,11 @@ export const MENTORSHIP_REGISTER_ERROR_CONFLICT = 'Your profile is in conflict w
 export const MENTORSHIP_REGISTER_ERROR_READ_ONLY = 'You are viewing as another user, so registration is read-only.';
 export const MENTORSHIP_REGISTER_ERROR_FALLBACK = 'We could not save your registration. Please try again in a moment.';
 
-/** Field error both register forms show when a picked skill is not in `MENTORSHIP_SKILL_OPTIONS`. */
-export const MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL = 'Choose skills from the suggested list.';
+/** Ceilings every mentor and mentee skill list is held to, in the browser and the BFF. */
+export const MENTORSHIP_SKILLS_MAX_ITEMS = 100;
+export const MENTORSHIP_SKILL_MAX_LENGTH = 300;
+export const MENTORSHIP_SKILLS_LIMIT_MESSAGE = `You can add up to ${MENTORSHIP_SKILLS_MAX_ITEMS} skills of up to ${MENTORSHIP_SKILL_MAX_LENGTH} characters each.`;
+export const MENTORSHIP_TECHNOLOGIES_LIMIT_MESSAGE = `You can add up to ${MENTORSHIP_SKILLS_MAX_ITEMS} technologies of up to ${MENTORSHIP_SKILL_MAX_LENGTH} characters each.`;
 
 /**
  * Most rows one `GET .../mentors` or `GET .../terms` page may return. The BFF rejects a larger `limit` and caps

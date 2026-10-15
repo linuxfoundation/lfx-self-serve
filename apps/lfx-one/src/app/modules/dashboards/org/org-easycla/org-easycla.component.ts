@@ -2,12 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { afterNextRender, ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Injector, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import {
   CCLA_SIGN_COPY,
+  ORG_CLA_EASYCLA_ROLE_MISSING_COPY,
+  ORG_CLA_EASYCLA_ROLE_MISSING_ERROR_CODE,
   ORG_CLA_SIGN_SELECTION_STATE,
   ORG_EASYCLA_RETURN_ORG_PARAM,
   ORG_EASYCLA_RETURN_PARAMS_RESET,
@@ -29,6 +32,7 @@ import { OrgLensNavigationService } from '@services/org-lens-navigation.service'
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
+import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { OrgClaReturnService } from '@shared/services/org-cla-return.service';
 
 import { OrgEasyclaCardComponent } from './org-easycla-card/org-easycla-card.component';
@@ -37,7 +41,16 @@ import { OrgEasyclaGroupSelectComponent } from './org-easycla-sign/org-easycla-g
 
 @Component({
   selector: 'lfx-org-easycla',
-  imports: [ButtonComponent, EmptyStateComponent, InputTextComponent, OrgLensEmptyStateComponent, OrgEasyclaCardComponent, RouterLink, SkeletonModule],
+  imports: [
+    ButtonComponent,
+    EmptyStateComponent,
+    InputTextComponent,
+    OpenIntercomDirective,
+    OrgLensEmptyStateComponent,
+    OrgEasyclaCardComponent,
+    RouterLink,
+    SkeletonModule,
+  ],
   providers: [DialogService],
   templateUrl: './org-easycla.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -84,6 +97,8 @@ export class OrgEasyclaComponent {
   });
 
   protected readonly fetchError = signal(false);
+  protected readonly easyclaRoleMissing = signal(false);
+  protected readonly easyclaRoleMissingCopy = ORG_CLA_EASYCLA_ROLE_MISSING_COPY;
 
   private readonly claLoadingState = signal(false);
   private readonly page = signal(0);
@@ -109,6 +124,7 @@ export class OrgEasyclaComponent {
     if (!this.orgContextLoaded()) return 'Sign a corporate CLA — checking your organization access';
     if (!this.hasCompany()) return 'Sign a corporate CLA — select an organization first';
     if (this.signingOpen()) return 'Sign a corporate CLA — a signing request is already open';
+    if (this.easyclaRoleMissing()) return ORG_CLA_EASYCLA_ROLE_MISSING_COPY.signClaAriaLabel;
     if (this.fetchError()) return 'Sign a corporate CLA — this organization’s agreements could not be loaded';
     if (!this.claListReady()) return 'Sign a corporate CLA — loading the agreements this organization already holds';
     return 'Sign a corporate CLA';
@@ -488,6 +504,7 @@ export class OrgEasyclaComponent {
         tap(() => {
           this.claLoadingState.set(true);
           this.fetchError.set(false);
+          this.easyclaRoleMissing.set(false);
         }),
         switchMap((uid) =>
           this.claService.getClaGroups(uid).pipe(
@@ -499,6 +516,9 @@ export class OrgEasyclaComponent {
               // one of those is a claim about the company's legal position.
               console.error('Failed to load organization CLA groups:', error);
               this.fetchError.set(true);
+              this.easyclaRoleMissing.set(
+                error instanceof HttpErrorResponse && error.status === 403 && error.error?.code === ORG_CLA_EASYCLA_ROLE_MISSING_ERROR_CODE
+              );
               this.claLoadingState.set(false);
               return of(null);
             })

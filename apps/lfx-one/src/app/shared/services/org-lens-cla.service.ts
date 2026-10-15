@@ -84,10 +84,11 @@ export class OrgLensClaService {
    * Fail closed: a missing body, a non-boolean, or an HTTP error is `false`, so a timeout cannot
    * continue Sign. The server interpolates the ACS string; this posts only the typed action.
    */
-  public checkPermission(orgUid: string, action: OrgClaPermissionAction, projectSfid: string): Observable<boolean> {
+  public checkPermission(orgUid: string, action: OrgClaPermissionAction, projectSfid: string, foundationSfid?: string): Observable<boolean> {
     const body: OrgClaPermissionCheckRequest = {
       action,
       ...(projectSfid ? { projectSfid } : {}),
+      ...(foundationSfid ? { foundationSfid } : {}),
     };
     return this.http.post<OrgClaPermissionCheckResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/cla-groups/permissions/checks`, body).pipe(
       map((response) => response?.allowed === true),

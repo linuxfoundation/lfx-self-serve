@@ -7,16 +7,19 @@ import { MAX_NEGATIVE_KEYWORDS_PER_REQUEST } from '../constants/campaign.constan
 import { parseNegativeKeywordInput } from '../utils/campaign.utils';
 
 /**
- * The negative-keyword editor's text: 1 to `MAX_NEGATIVE_KEYWORDS_PER_REQUEST` keywords, one per
- * line, each one campaign-service would accept (see `parseNegativeKeywordInput`).
+ * The negative-keyword editor's text: 1 to `maxKeywords` keywords (default
+ * `MAX_NEGATIVE_KEYWORDS_PER_REQUEST`), one per line, each one campaign-service would accept (see
+ * `parseNegativeKeywordInput`). `maxKeywords` may be a getter, read on every validation, because the
+ * cap depends on the campaign's platform (X takes 20), which an editor learns after building its form.
  *
  * Returns `{ negativeKeywordsRequired }` when no line holds a keyword,
  * `{ negativeKeywordsInvalid: { problems } }` when any line cannot be sent (the whole batch is held
  * back, so nothing is sent with a line silently dropped), and
  * `{ negativeKeywordsTooMany: { max, count } }` when there are too many.
  */
-export function campaignNegativeKeywordsValidator(): ValidatorFn {
+export function campaignNegativeKeywordsValidator(maxKeywords: number | (() => number) = MAX_NEGATIVE_KEYWORDS_PER_REQUEST): ValidatorFn {
   return (control: AbstractControl): ValidationErrors | null => {
+    const max = typeof maxKeywords === 'function' ? maxKeywords() : maxKeywords;
     const { keywords, problems } = parseNegativeKeywordInput(control.value);
     if (problems.length > 0) {
       return { negativeKeywordsInvalid: { problems } };
@@ -24,8 +27,8 @@ export function campaignNegativeKeywordsValidator(): ValidatorFn {
     if (keywords.length === 0) {
       return { negativeKeywordsRequired: true };
     }
-    if (keywords.length > MAX_NEGATIVE_KEYWORDS_PER_REQUEST) {
-      return { negativeKeywordsTooMany: { max: MAX_NEGATIVE_KEYWORDS_PER_REQUEST, count: keywords.length } };
+    if (keywords.length > max) {
+      return { negativeKeywordsTooMany: { max, count: keywords.length } };
     }
     return null;
   };

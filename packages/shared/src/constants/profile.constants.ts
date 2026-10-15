@@ -194,6 +194,27 @@ export const LFX_ONE_WORK_EXPERIENCE_SOURCE = 'lfxOne';
  */
 export const EMAIL_ALREADY_LINKED_MESSAGE = 'This email is already linked to another account';
 
+/** Enumeration-safe response shared by accepted and already-linked send-code requests. */
+export const EMAIL_VERIFICATION_SENT_MESSAGE = 'If this address can be added to your account, a verification code has been sent.';
+
+/** Generic error code for every non-service-unavailable OTP verification failure. */
+export const EMAIL_VERIFICATION_FAILED_ERROR = 'verification_failed';
+
+/** Non-identifying guidance for wrong, expired or already-linked OTP verification failures. */
+export const EMAIL_VERIFICATION_FAILED_MESSAGE = 'Verification failed. Please try again or request a new code.';
+
+/** Minimum upstream-to-response duration for send-code and unsuccessful OTP verification. */
+export const EMAIL_VERIFICATION_MIN_RESPONSE_MS = 1500;
+
+/** Send-code rate-limit window shared by the per-user and per-target limiters. */
+export const EMAIL_SEND_CODE_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
+
+/** Requests one user may make per window, per pod. */
+export const EMAIL_SEND_CODE_USER_RATE_LIMIT_MAX = 120;
+
+/** Requests one normalized email address may receive per window, per pod. */
+export const EMAIL_SEND_CODE_TARGET_RATE_LIMIT_MAX = 20;
+
 /**
  * Path/fragment vocabulary for the Flow C `returnTo` contract and the Settings page's TOC
  * deep-link sections. Shared across the BFF allowlist (profile.controller.ts), the legacy-page
