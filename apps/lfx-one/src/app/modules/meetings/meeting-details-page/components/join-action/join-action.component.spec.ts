@@ -3,8 +3,8 @@
 
 import { PLATFORM_ID, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ActivatedRoute, convertToParamMap } from '@angular/router';
-import { Meeting, User } from '@lfx-one/shared/interfaces';
+import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
+import { Meeting, MeetingOccurrence, User } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
@@ -25,21 +25,26 @@ describe('MeetingJoinActionComponent', () => {
   let autoJoined: Set<string>;
   let open: MockInstance<typeof window.open>;
 
-  function create(options: { platform?: 'browser' | 'server'; response?: unknown; zoomRedirect?: string } = {}): void {
+  function create(options: { platform?: 'browser' | 'server'; response?: unknown; zoomRedirect?: string; meeting?: Partial<Meeting> } = {}): void {
     getPublicMeetingJoinUrl = vi.fn().mockReturnValue(options.response ?? of({ link: ZOOM_LINK }));
     add = vi.fn();
     user = signal<User | null>({ name: 'Ada Example', email: 'ada@acme-motors.example' } as User);
-    meeting = signal({ id: '99152950841', password: 'secret' } as Meeting);
+    meeting = signal({ id: '99152950841', password: 'secret', title: 'Weekly Sync', ...options.meeting } as Meeting);
     autoJoined = new Set<string>();
     open = vi.spyOn(window, 'open').mockReturnValue(null);
 
     TestBed.configureTestingModule({
       imports: [MeetingJoinActionComponent],
       providers: [
+        provideRouter([]),
         { provide: PLATFORM_ID, useValue: options.platform ?? 'browser' },
         {
           provide: MeetingDetailsStateService,
-          useValue: { meeting, claimAutoJoin: (id: string) => !autoJoined.has(id) && !!autoJoined.add(id) },
+          useValue: {
+            meeting,
+            selectedOccurrence: signal<MeetingOccurrence | null>(null),
+            claimAutoJoin: (id: string) => !autoJoined.has(id) && !!autoJoined.add(id),
+          },
         },
         { provide: MeetingService, useValue: { getPublicMeetingJoinUrl } },
         { provide: UserService, useValue: { user, authenticated: signal(true) } },
@@ -143,10 +148,42 @@ describe('MeetingJoinActionComponent', () => {
       expect(button()?.getAttribute('data-state')).toBe('ready');
     });
 
-    it("explains a NOT_REGISTERED_FOR_MEETING error as the viewer's email missing from the invite list", () => {
-      create({ response: throwError(() => ({ error: { error: 'Not registered', code: 'NOT_REGISTERED_FOR_MEETING' } })) });
+    const notRegistered = { error: { error: 'Not registered', code: 'NOT_REGISTERED_FOR_MEETING' } };
 
-      expect(query('meeting-action-join-error')?.textContent).toContain("Your account's email is not on this meeting's invite list.");
+    it('explains a NOT_REGISTERED_FOR_MEETING error in one sentence, keyed on the code, not the message', () => {
+      create({ response: throwError(() => ({ error: { ...notRegistered.error, error: 'Any wording at all' } })) });
+
+      expect(query('meeting-action-not-registered-reason')?.textContent?.trim()).toBe(
+        "This meeting's invitation went to an email address that isn't on the account you're signed in with."
+      );
+      expect(query('meeting-action-join-error')?.textContent).not.toContain('Any wording at all');
+    });
+
+    it('links to the identities page to add and verify the invited email', () => {
+      create({ response: throwError(() => notRegistered) });
+
+      expect(query('meeting-action-add-email')?.getAttribute('href')).toBe('/profile/identities');
+    });
+
+    it('offers an email to the organizer when the page knows their address', () => {
+      create({
+        response: throwError(() => notRegistered),
+        meeting: {
+          start_time: '2026-07-23T16:00:00Z',
+          timezone: 'UTC',
+          created_by: { name: 'Ada Organizer', username: 'ada', email: 'ada.organizer@acme-motors.example' },
+        } as Partial<Meeting>,
+      });
+
+      expect(query('meeting-action-contact-organizer')?.getAttribute('href')).toMatch(/^mailto:ada\.organizer@acme-motors\.example/);
+      expect(query('meeting-action-contact-support')).toBeNull();
+    });
+
+    it('falls back to the support chat with no organizer address', () => {
+      create({ response: throwError(() => notRegistered) });
+
+      expect(query('meeting-action-contact-organizer')).toBeNull();
+      expect(query('meeting-action-contact-support')).not.toBeNull();
     });
 
     // V1's escape hatch (E2-06): join with another email through the guest form.
@@ -187,10 +224,13 @@ describe('MeetingJoinActionComponent', () => {
       expect(open).not.toHaveBeenCalled();
     });
 
-    it('does not offer a different email for other errors', () => {
+    it('offers none of the not-registered remedies for other errors, and shows their message', () => {
       create({ response: throwError(() => ({ error: { error: 'Meeting not joinable yet' } })) });
 
       expect(query('meeting-action-join-different-email')).toBeNull();
+      expect(query('meeting-action-add-email')).toBeNull();
+      expect(query('meeting-action-not-registered-reason')).toBeNull();
+      expect(query('meeting-action-join-error')?.textContent).toContain('Meeting not joinable yet');
     });
 
     it('treats a response without a link as an error, not a button that never loads', () => {
