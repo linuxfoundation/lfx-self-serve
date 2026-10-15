@@ -7,11 +7,15 @@ import { TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
-import { MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
+import { BRAND_KIT_INTAKE, MKTG_DOCUMENT_TYPES, MKTG_README_SKIP_NOTES } from '@lfx-one/shared/constants';
+import { MktgAgentRunService } from '@services/mktg-agent-run.service';
+import { MktgDependencyService } from '@services/mktg-dependency.service';
+import { UserService } from '@services/user.service';
+import { MktgGenerateProgress } from '@lfx-one/shared/interfaces';
 import { MktgDocumentDetailResponse, MktgDocumentType, MktgRevisionResponse, MktgRevisionSummary, ProjectContext } from '@lfx-one/shared/interfaces';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgDocumentViewComponent } from './mktg-document-view.component';
@@ -46,6 +50,14 @@ describe('MktgDocumentViewComponent', () => {
   }
 
   let harness: RouterTestingHarness;
+  let generation: Subject<MktgGenerateProgress>;
+  let runService: {
+    takePreparedGeneration: ReturnType<typeof vi.fn>;
+    generate: ReturnType<typeof vi.fn>;
+    resumeGeneration: ReturnType<typeof vi.fn>;
+    loadRun: ReturnType<typeof vi.fn>;
+  };
+  let activeContext = signal<ProjectContext | null>(PROJECT);
   let store: {
     getDocument: ReturnType<typeof vi.fn>;
     getRevision: ReturnType<typeof vi.fn>;
@@ -76,7 +88,14 @@ describe('MktgDocumentViewComponent', () => {
       ),
       restoreRevision: vi.fn(() => of({ ...detail, revision: RESTORED })),
     };
-    const activeContext = signal<ProjectContext | null>(PROJECT);
+    activeContext = signal<ProjectContext | null>(PROJECT);
+    generation = new Subject<MktgGenerateProgress>();
+    runService = {
+      takePreparedGeneration: vi.fn(() => null),
+      generate: vi.fn(() => generation),
+      resumeGeneration: vi.fn(() => null),
+      loadRun: vi.fn(() => null),
+    };
 
     await TestBed.configureTestingModule({
       providers: [
@@ -84,8 +103,85 @@ describe('MktgDocumentViewComponent', () => {
         provideNoopAnimations(),
         { provide: ProjectContextService, useValue: { activeContext, activeContextUid: computed(() => activeContext()?.uid ?? '') } },
         { provide: MktgDocumentStoreService, useValue: store },
+        { provide: MktgAgentRunService, useValue: runService },
+        { provide: MktgDependencyService, useValue: { notifyDocumentsChanged: vi.fn() } },
+        { provide: UserService, useValue: { user: signal({ sub: 'synthetic-user' }) } },
       ],
     }).compileComponents();
+  });
+
+  it('shows only progress on a first run and opens the exact receipt revision when it lands', async () => {
+    const request = { projectUid: PROJECT.uid, agentId: 'brand-kit', intake: BRAND_KIT_INTAKE, answers: {} };
+    runService.takePreparedGeneration.mockReturnValueOnce(request);
+    store.getDocument.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 404 })));
+    await render('/documents/brand-kit/living?generation=1');
+    expect(query('mktg-document-view-generating')).not.toBeNull();
+    expect(query('mktg-document-view-document')).toBeNull();
+    expect(query('mktg-document-view-about')).toBeNull();
+    expect(query('mktg-document-view-error')).toBeNull();
+    generation.next({ type: 'persisted', location: { agentKey: 'brand-kit', documentId: 'living', revisionId: LATEST.id } });
+    generation.complete();
+    await settle();
+    expect(store.getRevision).toHaveBeenLastCalledWith(PROJECT.uid, 'brand-kit', 'living', LATEST.id);
+    expect(query('mktg-document-view-generating')).toBeNull();
+    expect(query('mktg-document-view-document')?.textContent).toContain('Revision 2');
+    expect(TestBed.inject(Router).url).not.toContain('generation=');
+  });
+
+  it('keeps the previous revision visible, but cannot restore while generating', async () => {
+    runService.resumeGeneration.mockReturnValue(generation);
+    await render('/documents/brand-kit/living');
+    expect(query('mktg-document-view-generating')).not.toBeNull();
+    expect(query('mktg-document-view-document')?.textContent).toContain('Revision 2');
+    expect((query('mktg-document-view-restore-1') as HTMLButtonElement).disabled).toBe(true);
+    expect(runService.generate).not.toHaveBeenCalled();
+  });
+
+  it('reports a failed run and cancels its polling on a project change', async () => {
+    runService.resumeGeneration.mockReturnValueOnce(generation);
+    await render('/documents/brand-kit/living');
+    activeContext.set({ uid: 'proj-2', slug: 'orbit-two', name: 'Orbit Two' });
+    await settle();
+    expect(generation.observed).toBe(false);
+    expect(query('mktg-document-view-error')).toBeNull();
+  });
+
+  it('keeps a failed pending run honest and retries polling rather than generating again', async () => {
+    runService.resumeGeneration.mockReturnValueOnce(generation);
+    runService.loadRun.mockReturnValue({ pendingAttempt: {} });
+    await render('/documents/brand-kit/living');
+    generation.error(new Error('Synthetic result failure'));
+    await settle();
+    expect(query('mktg-document-view-generating')).toBeNull();
+    expect(query('mktg-document-view-error')?.textContent).toContain('could not finish');
+    expect(query('mktg-document-view-document')?.textContent).toContain('Revision 2');
+    runService.resumeGeneration.mockReturnValueOnce(
+      of({ type: 'persisted', location: { agentKey: 'brand-kit', documentId: 'living', revisionId: LATEST.id } })
+    );
+    query('mktg-document-view-retry')?.click();
+    await settle();
+    expect(runService.generate).not.toHaveBeenCalled();
+    expect(TestBed.inject(Router).url).toContain(`revision=${LATEST.id}`);
+  });
+
+  it('never subscribes to generation when document access is denied', async () => {
+    runService.resumeGeneration.mockReturnValue(generation);
+    store.getDocument.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 403 })));
+    await render('/documents/brand-kit/living');
+    expect(generation.observed).toBe(false);
+    expect(query('mktg-document-view-generating')).toBeNull();
+    expect(query('mktg-document-view-error')?.textContent).toContain('write access');
+  });
+
+  it('shows the saved README-less note only in About this document', async () => {
+    store.getRevision.mockReturnValueOnce(
+      of({
+        ...revisionResponse(LATEST),
+        source: { sessionId: 'session-1', draftVersion: 1, intakeMode: 'form', readme: { fetched: false, skipReason: 'no-readme' } },
+      })
+    );
+    await render('/documents/brand-kit/living');
+    expect(query('mktg-document-view-about')?.textContent).toContain(MKTG_README_SKIP_NOTES['no-readme']);
   });
 
   it('opens the latest revision when no revision is asked for', async () => {

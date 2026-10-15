@@ -8,11 +8,15 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { MessageComponent } from '@components/message/message.component';
+import { MKTG_AGENT_INTAKES, MKTG_README_SKIP_NOTES } from '@lfx-one/shared/constants';
 import { MktgRevisionResponse, MktgRevisionRow, MktgRevisionSummary } from '@lfx-one/shared/interfaces';
-import { describeMktgRevision } from '@lfx-one/shared/utils';
+import { describeMktgRevision, findMktgDocumentType } from '@lfx-one/shared/utils';
+import { MktgAgentRunService } from '@services/mktg-agent-run.service';
+import { MktgDependencyService } from '@services/mktg-dependency.service';
+import { UserService } from '@services/user.service';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { catchError, distinctUntilChanged, filter, map, of, switchMap, tap } from 'rxjs';
+import { catchError, concat, distinctUntilChanged, EMPTY, finalize, map, Observable, of, switchMap } from 'rxjs';
 
 // One revision of a Marketing OS document (design of record: "Document
 // store", DocumentView board): the header says which revision of how many,
@@ -32,6 +36,9 @@ export class MktgDocumentViewComponent {
   private readonly projectContext = inject(ProjectContextService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly runService = inject(MktgAgentRunService);
+  private readonly dependencies = inject(MktgDependencyService);
+  private readonly userService = inject(UserService);
 
   // === Signals ===
   protected readonly loading = signal(true);
@@ -39,12 +46,17 @@ export class MktgDocumentViewComponent {
   protected readonly notice = signal('');
   protected readonly view = signal<MktgRevisionResponse | null>(null);
   protected readonly restoringId = signal<string | null>(null);
+  protected readonly generating = signal(false);
+  protected readonly generationStage = signal('Submitting your intake…');
+  protected readonly retry = signal(0);
+  protected readonly canResume = signal(false);
 
   private readonly params = toSignal(
     this.route.paramMap.pipe(map((params) => ({ agentKey: params.get('agentKey') ?? '', documentId: params.get('documentId') ?? '' }))),
     { initialValue: { agentKey: '', documentId: '' } }
   );
   private readonly revisionParam = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('revision') ?? '')), { initialValue: '' });
+  private readonly generationParam = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('generation') ?? '')), { initialValue: '' });
 
   // === Computed ===
   protected readonly title: Signal<string> = this.initTitle();
@@ -57,33 +69,45 @@ export class MktgDocumentViewComponent {
     return sha ? `${sha.slice(0, 4)}…${sha.slice(-4)}` : '';
   });
 
+  protected readonly readmeNote = computed(() => {
+    const outcome = this.view()?.source?.readme;
+    return outcome && !outcome.fetched && outcome.skipReason ? MKTG_README_SKIP_NOTES[outcome.skipReason] : '';
+  });
+
+  protected readonly derivativeChips = computed(() => {
+    const current = this.view();
+    const intake = MKTG_AGENT_INTAKES[current?.type.catalogAgentId ?? ''];
+    return (intake?.derivativeChips ?? []).flatMap((chip) => {
+      const value = current?.derivatives?.[chip.key];
+      return value?.trim() ? [{ ...chip, value }] : [];
+    });
+  });
+
   private readonly request$ = toObservable(
-    computed(() => ({ project: this.projectContext.activeContextUid(), ...this.params(), revisionId: this.revisionParam() }))
+    computed(() => ({
+      project: this.projectContext.activeContextUid(),
+      ...this.params(),
+      revisionId: this.revisionParam(),
+      generationId: this.generationParam(),
+      userSub: this.userService.user()?.sub,
+      retry: this.retry(),
+    }))
   );
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
       this.request$
         .pipe(
-          filter((request) => !!request.project && !!request.agentKey && !!request.documentId),
           distinctUntilChanged((previous, current) => JSON.stringify(previous) === JSON.stringify(current)),
-          tap(() => {
+          switchMap((request) => {
             this.loading.set(true);
             this.errorText.set('');
-          }),
-          switchMap((request) => {
-            // Without `?revision=`, open the latest: the document's newest revision.
-            const revision$ = request.revisionId
-              ? this.documentStore.getRevision(request.project, request.agentKey, request.documentId, request.revisionId)
-              : this.documentStore
-                  .getDocument(request.project, request.agentKey, request.documentId)
-                  .pipe(switchMap((detail) => this.documentStore.getRevision(request.project, request.agentKey, request.documentId, detail.revisions[0].id)));
-            return revision$.pipe(
-              catchError((error: HttpErrorResponse) => {
-                this.errorText.set(this.loadErrorText(error.status));
-                return of(null);
-              })
-            );
+            this.view.set(null);
+            this.canResume.set(false);
+            if (!request.project || !request.agentKey || !request.documentId || !request.userSub) {
+              return EMPTY;
+            }
+            return this.loadDocument(request.project, request.agentKey, request.documentId, request.revisionId, request.generationId);
           }),
           takeUntilDestroyed()
         )
@@ -98,7 +122,7 @@ export class MktgDocumentViewComponent {
   protected onRestore(revision: MktgRevisionSummary): void {
     const view = this.view();
     const project = this.projectContext.activeContextUid();
-    if (!view || !project || this.restoringId()) {
+    if (!view || !project || this.restoringId() || this.generating()) {
       return;
     }
 
@@ -121,12 +145,41 @@ export class MktgDocumentViewComponent {
       });
   }
 
+  protected async onCopy(value: string): Promise<void> {
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(value);
+      this.notice.set('Copied to the clipboard.');
+    } catch {
+      this.errorText.set('Unable to copy to the clipboard. Try again or download the document.');
+    }
+  }
+
+  protected onDownload(): void {
+    const current = this.view();
+    if (!current || !isPlatformBrowser(this.platformId)) {
+      return;
+    }
+    const url = URL.createObjectURL(new Blob([current.markdown], { type: 'text/markdown' }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${this.title()} v${current.revision.number}.md`;
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
+  protected onRetry(): void {
+    this.retry.update((value) => value + 1);
+  }
+
   // === Private initializers ===
   private initTitle(): Signal<string> {
     return computed(() => {
       const view = this.view();
       if (!view) {
-        return '';
+        return findMktgDocumentType(this.params().agentKey)?.itemLabel ?? '';
       }
       if (view.type.kind === 'living') {
         return `${this.projectContext.activeContext()?.name ?? ''} ${view.type.label}`.trim();
@@ -136,12 +189,97 @@ export class MktgDocumentViewComponent {
   }
 
   // === Private helpers ===
+  private loadDocument(
+    project: string,
+    agentKey: string,
+    documentId: string,
+    revisionId: string,
+    generationId: string
+  ): Observable<MktgRevisionResponse | null> {
+    const type = findMktgDocumentType(agentKey);
+    const agentId = type?.catalogAgentId ?? '';
+    const intake = MKTG_AGENT_INTAKES[agentId];
+    const prepared = generationId ? this.runService.takePreparedGeneration(generationId, project, agentId) : null;
+    let generation$ = intake && !revisionId ? this.runService.resumeGeneration(project, agentId, intake) : null;
+    if (prepared) {
+      generation$ = this.runService.generate(prepared);
+    }
+    this.errorText.set('');
+    this.canResume.set(false);
+    this.generating.set(!!generation$);
+    this.generationStage.set('Submitting your intake…');
+
+    const revision$ = revisionId
+      ? this.documentStore.getRevision(project, agentKey, documentId, revisionId)
+      : this.documentStore
+          .getDocument(project, agentKey, documentId)
+          .pipe(
+            switchMap((detail) => (detail.revisions[0] ? this.documentStore.getRevision(project, agentKey, documentId, detail.revisions[0].id) : of(null)))
+          );
+    let authorized = true;
+    const initial$ = revision$.pipe(
+      catchError((error: HttpErrorResponse) => {
+        authorized = error.status !== 401 && error.status !== 403;
+        this.canResume.set(authorized && error.status !== 404);
+        if (error.status !== 404 || !generation$) {
+          this.errorText.set(this.loadErrorText(error.status));
+        }
+        return of(null);
+      })
+    );
+    if (!generation$) {
+      return initial$;
+    }
+    let landed = false;
+    // Defer the write until the existing-document read has checked access.
+    const generation = generation$;
+    const progress$ = of(null).pipe(switchMap(() => (authorized ? generation : EMPTY)));
+    return concat(
+      initial$,
+      progress$.pipe(
+        switchMap((progress) => {
+          this.loading.set(false);
+          this.generationStage.set(progress.type === 'submitted' ? 'Agent drafting the document…' : 'Saving the document…');
+          if (progress.type === 'submitted') {
+            return EMPTY;
+          }
+          this.dependencies.notifyDocumentsChanged(project);
+          const location = progress.location;
+          if (!location) {
+            return EMPTY;
+          }
+          landed = true;
+          // Canonicalize the URL before reading, so even a failed read retries
+          // this run's exact revision rather than another writer's latest.
+          this.router.navigate([], {
+            relativeTo: this.route,
+            queryParams: { generation: null, revision: location.revisionId },
+            queryParamsHandling: 'merge',
+            replaceUrl: true,
+          });
+          return EMPTY;
+        }),
+        catchError(() => {
+          this.errorText.set('This run could not finish. Your answers are kept. Return to the intake or retry a pending run.');
+          return EMPTY;
+        }),
+        finalize(() => {
+          this.generating.set(false);
+          this.canResume.set(!landed && authorized && !!this.runService.loadRun(project, agentId)?.pendingAttempt);
+          if (!landed && authorized && !this.errorText()) {
+            this.errorText.set('The document has not been saved yet. Retry to resume saving; no new generation is started.');
+          }
+        })
+      )
+    );
+  }
+
   private loadErrorText(status: number): string {
     if (status === 403) {
       return 'You need write access to this project to see its Marketing OS documents.';
     }
     if (status === 404) {
-      return 'This document has no such revision.';
+      return this.revisionParam() ? 'This document has no such revision.' : 'This document has not been generated yet.';
     }
     return 'This revision could not be loaded. Try again in a moment.';
   }

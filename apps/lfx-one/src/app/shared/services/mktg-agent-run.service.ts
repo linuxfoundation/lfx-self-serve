@@ -14,6 +14,8 @@ import {
   MktgRunAnswer,
   MktgRunAnswersBody,
   MktgRunAnswersResponse,
+  MktgPreparedGeneration,
+  MktgReadmeOutcome,
   MktgRunAttempt,
   MktgRunGenerateBody,
   MktgRunQuestionsPending,
@@ -92,6 +94,39 @@ export class MktgAgentRunService {
    * loss only ever costs cross-visit restore, never in-session correctness.
    */
   private readonly memoryRuns = new Map<string, MktgStoredAgentRun>();
+  private prepared: MktgPreparedGeneration | null = null;
+  private preparedId = 0;
+
+  /** A single-use, subject-bound handoff. The document view, not the intake, owns the polling subscription. */
+  public prepareGeneration(request: MktgGenerateRequest): string {
+    this.prepared = { userSub: this.userService.user()?.sub ?? '', request };
+    return String(++this.preparedId);
+  }
+
+  public takePreparedGeneration(id: string, projectUid: string, agentId: string): MktgGenerateRequest | null {
+    const prepared = this.prepared;
+    if (
+      !prepared ||
+      id !== String(this.preparedId) ||
+      !prepared.userSub ||
+      prepared.userSub !== this.userService.user()?.sub ||
+      prepared.request.projectUid !== projectUid ||
+      prepared.request.agentId !== agentId
+    ) {
+      return null;
+    }
+    this.prepared = null;
+    return prepared.request;
+  }
+
+  /** Resume a pending result poll after reloading or returning to its document. */
+  public resumeGeneration(projectUid: string, agentId: string, intake: MktgAgentIntake): Observable<MktgGenerateProgress> | null {
+    const stored = this.loadRun(projectUid, agentId);
+    if (!stored?.pendingAttempt) {
+      return null;
+    }
+    return this.finishAttempt({ projectUid, agentId, intake, answers: stored.answers }, stored.pendingAttempt);
+  }
 
   /**
    * Generates (or regenerates) an agent document. Emits, in order:
@@ -129,7 +164,21 @@ export class MktgAgentRunService {
       attempt$ = this.followUp(request, stored);
     }
 
-    return attempt$.pipe(switchMap((attempt) => concat(of<MktgGenerateProgress>({ type: 'submitted' }), this.awaitOutcome(request, attempt))));
+    return attempt$.pipe(
+      switchMap((attempt) => {
+        this.saveRun({
+          agentId: request.agentId,
+          projectUid: request.projectUid,
+          answers: request.answers,
+          sessionId: attempt.session.sessionId,
+          ownerToken: attempt.session.ownerToken,
+          versions: this.loadRun(request.projectUid, request.agentId)?.versions ?? [],
+          pendingAttempt: attempt,
+          savedAt: new Date().toISOString(),
+        });
+        return this.finishAttempt(request, attempt);
+      })
+    );
   }
 
   /**
@@ -199,6 +248,10 @@ export class MktgAgentRunService {
     } catch {
       return null;
     }
+  }
+
+  private finishAttempt(request: MktgGenerateRequest, attempt: MktgRunAttempt): Observable<MktgGenerateProgress> {
+    return concat(of<MktgGenerateProgress>({ type: 'submitted' }), this.awaitOutcome(request, attempt));
   }
 
   /**
@@ -329,8 +382,8 @@ export class MktgAgentRunService {
         }
         return concat(
           activity$,
-          of<MktgGenerateProgress>({ type: 'document', run: this.appendVersion(request, attempt, result, answered) }),
-          this.retryPersistence(request, attempt.session, result)
+          of<MktgGenerateProgress>({ type: 'document', run: this.appendVersion(request, attempt, result, answered), ...(result.persistence?.document && { location: result.persistence.document }) }),
+          this.retryPersistence(request, attempt.session, result, attempt.readme)
         );
       })
     );
@@ -447,11 +500,16 @@ export class MktgAgentRunService {
    * v1 with nothing to tell them it had been superseded. No project scope
    * means the BFF never persists at all, so there is nothing to retry.
    */
-  private retryPersistence(request: MktgGenerateRequest, session: MktgSessionInfo, result: MktgRunResultResponse): Observable<MktgGenerateProgress> {
+  private retryPersistence(
+    request: MktgGenerateRequest,
+    session: MktgSessionInfo,
+    result: MktgRunResultResponse,
+    readme?: MktgReadmeOutcome
+  ): Observable<MktgGenerateProgress> {
     if (!request.intake.persistsDocument || result.persistence || !request.projectUid) {
       return EMPTY;
     }
-    const body = this.resultBody(session, request.projectUid);
+    const body = this.resultBody(session, request.projectUid, readme);
     return timer(MKTG_RUN_POLL.intervalMs, MKTG_RUN_POLL.intervalMs).pipe(
       exhaustMap(() =>
         this.http
@@ -470,13 +528,19 @@ export class MktgAgentRunService {
       // one that emits, and the stream completes right after it.
       takeWhile((response) => !response.persistence, true),
       filter((response) => !!response.persistence),
-      map((): MktgGenerateProgress => ({ type: 'persisted' }))
+      map((response): MktgGenerateProgress => {
+        const stored = this.loadRun(request.projectUid, request.agentId);
+        if (stored) {
+          this.saveRun({ ...stored, pendingAttempt: undefined });
+        }
+        return { type: 'persisted', ...(response.persistence?.document && { location: response.persistence.document }) };
+      })
     );
   }
 
   /** Result-endpoint body: the owner token travels in the body (never the query string), with the run's project scope when there is one. */
-  private resultBody(session: MktgSessionInfo, projectUid: string): MktgRunResultBody {
-    return { sessionId: session.sessionId, ownerToken: session.ownerToken, ...(projectUid && { project: projectUid }) };
+  private resultBody(session: MktgSessionInfo, projectUid: string, readme?: MktgReadmeOutcome): MktgRunResultBody {
+    return { sessionId: session.sessionId, ownerToken: session.ownerToken, ...(projectUid && { project: projectUid }), ...(readme && { readme }) };
   }
 
   /** Appends the validated document as the next version — with the questions and answers that produced it, when any — and persists the run. */
@@ -511,7 +575,11 @@ export class MktgAgentRunService {
       sessionId: attempt.session.sessionId,
       ownerToken: attempt.session.ownerToken,
       answers: { ...request.answers },
-      versions: [...(stored?.versions ?? []), version],
+      versions:
+        stored?.sessionId === attempt.session.sessionId && stored.versions.at(-1)?.version === version.version
+          ? stored.versions
+          : [...(stored?.versions ?? []), version],
+      ...(!result.persistence && request.intake.persistsDocument && { pendingAttempt: attempt }),
       savedAt: new Date().toISOString(),
     };
     this.saveRun(run);

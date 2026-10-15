@@ -370,3 +370,11 @@ export class EventBusService {
 6. **Error handling**: Always handle loading and error states
 7. **Type safety**: Use proper TypeScript interfaces for all state
 8. **Performance**: Use computed signals to avoid unnecessary recalculations
+
+## Marketing OS run → document handoff
+
+The agent run page collects intake answers and resolves its catalog-defined attachments. It hands the request to `MktgAgentRunService` in memory and navigates to the document view; only a single-use request id enters the URL, never answers or session capabilities. The handoff is bound to the effective subject, project and agent.
+
+The document view owns the result-poll subscription. It shows progress alone for a first run, or progress above the previous stored revision for a later run. A persistence receipt identifies the exact produced document revision, so another writer's latest revision cannot be mistaken for this run's output. Missing receipts stay in the saving state through the bounded persistence retry; exhaustion is a visible failure, not a successful Documents promise.
+
+Pending attempts are saved with the existing user/project-scoped, TTL-bounded browser run record. A reload resumes result polling without creating another Guild session. Leaving the view or switching project/subject cancels polling. README-less outcomes relayed from the submission are stored as whitelisted descriptive provenance, not authorization evidence, and rendered in About this document. The validated envelope and its integrity checks remain the sole source of document content.

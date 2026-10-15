@@ -112,6 +112,41 @@ describe('MktgAgentRunService', () => {
     vi.useRealTimers();
   });
 
+  it('hands off intake answers once, only to the same subject, project and agent', () => {
+    const id = service.prepareGeneration(generateRequest());
+    expect(service.takePreparedGeneration(id, 'other-project', 'brand-kit')).toBeNull();
+    userSignal.set({ sub: 'other-user' } as User);
+    expect(service.takePreparedGeneration(id, 'proj-1', 'brand-kit')).toBeNull();
+    userSignal.set({ sub: USER_SUB } as User);
+    expect(service.takePreparedGeneration(id, 'proj-1', 'icp')).toBeNull();
+    expect(service.takePreparedGeneration(id, 'proj-1', 'brand-kit')).toEqual(generateRequest());
+    expect(service.takePreparedGeneration(id, 'proj-1', 'brand-kit')).toBeNull();
+    expect(httpPost).not.toHaveBeenCalled();
+  });
+
+  it('saves a pending attempt and resumes only result polling, without another generation or duplicate version', async () => {
+    const first = service.generate(generateRequest()).subscribe();
+    const stored = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? 'null') as MktgStoredAgentRun;
+    expect(stored.pendingAttempt?.session.sessionId).toBe('sess-1');
+    first.unsubscribe();
+    const location = { agentKey: 'brand-kit' as const, documentId: 'living', revisionId: `000001-${'a'.repeat(64)}` };
+    resultResponses = [
+      {
+        status: 'ready',
+        documentMarkdown: '# Ready',
+        version: 1,
+        persistence: { document: location, s3_key: 'safe-key', content_sha256: 'a'.repeat(64), project: 'proj-1', version: 1 },
+      },
+    ];
+    const events: MktgGenerateProgress[] = [];
+    service.resumeGeneration('proj-1', 'brand-kit', BRAND_KIT_INTAKE)?.subscribe((event) => events.push(event));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+    expect(events.at(-1)).toMatchObject({ type: 'document', location });
+    expect(httpPost.mock.calls.filter(([url]) => url === BRAND_KIT_INTAKE.endpoints.generate)).toHaveLength(1);
+    expect(service.loadRun('proj-1', 'brand-kit')?.pendingAttempt).toBeUndefined();
+    expect(service.resumeGeneration('proj-1', 'brand-kit', BRAND_KIT_INTAKE)).toBeNull();
+  });
+
   it('starts a first run via POST to the validated generate endpoint with the full answers', async () => {
     resultResponses = [{ status: 'ready', documentMarkdown: '# Brand Kit', version: 1 }];
     const events: MktgGenerateProgress[] = [];
