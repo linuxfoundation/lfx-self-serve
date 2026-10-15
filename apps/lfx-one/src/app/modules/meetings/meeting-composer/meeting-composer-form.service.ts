@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { computed, DestroyRef, inject, Injectable, linkedSignal, signal, type Signal } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { computed, DestroyRef, inject, Injectable, linkedSignal, PLATFORM_ID, signal, type Signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormArray, FormControl, FormGroup, ValidationErrors, ValidatorFn, Validators } from '@angular/forms';
 import {
@@ -56,6 +57,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   combineDateTime,
+  detectBrowserTimezoneOption,
   formatTo12HourInTimezone,
   generateRecurrenceObject,
   generateTempId,
@@ -115,6 +117,7 @@ export class MeetingComposerFormService {
   private readonly committeeService = inject(CommitteeService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly composer = inject(MeetingComposerService);
+  private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
   private readonly youtubeMaxLengthValidator = Validators.maxLength(YOUTUBE_MAX_MEETING_TITLE_LENGTH);
 
@@ -435,6 +438,17 @@ export class MeetingComposerFormService {
       this.loadMeeting(context.meetingUid);
       // Loaded for an occurrence edit too: it lists who attends that occurrence, and invites to it alone.
       this.loadGuests(context.meetingUid);
+    }
+
+    // Create only: preselect the organizer's own timezone, read from the browser (the OS setting). Left
+    // empty when nothing usable is detected, or during SSR, where `Intl` would report the server's zone.
+    // `setValue` doesn't mark the control dirty, so the composer still reads as untouched.
+    if (context.mode === 'create' && isPlatformBrowser(this.platformId)) {
+      const detectedTimezone = detectBrowserTimezoneOption();
+
+      if (detectedTimezone) {
+        this.form().get('timezone')?.setValue(detectedTimezone);
+      }
     }
 
     // Set after the subscriptions are wired so the type's visibility/restriction defaults still apply.
@@ -1162,9 +1176,11 @@ export class MeetingComposerFormService {
         // (see `TextareaComponent.maxlength`, bound as `[attr.maxlength]` precisely so it does not
         // become a validator), and a server-side truncation in `MeetingController.readPromptField`.
         aiPrompt: new FormControl(''),
-        // When the meeting happens is the organizer's call, never ours: a seeded date, time or timezone
-        // reads as an answer already given, and the one that gets shipped by accident is the one nobody
-        // looked at. They stay empty on a new meeting and required, so the composer asks for them.
+        // When the meeting happens is the organizer's call, never ours: a seeded date or time reads as an
+        // answer already given, and the one that gets shipped by accident is the one nobody looked at. They
+        // stay empty on a new meeting and required, so the composer asks for them. Timezone is the
+        // exception: `initialize()` preselects the browser's own zone on create, since that is a fact
+        // about the organizer rather than a guess about the meeting.
         startDate: new FormControl<Date | null>(null, [Validators.required]),
         // `timeFormatValidator` is what stops a free-typed time from saving blank. The picker's
         // blur handler returns unconvertible input unchanged (`TimePicker.convertTimeFormat`), so a
