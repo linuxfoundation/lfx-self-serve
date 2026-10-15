@@ -5583,7 +5583,7 @@ describe('ImplementationTabComponent dispatch failure reasons', () => {
     expect(el.querySelector('[data-testid="implementation-platform-result-next-step"]')?.textContent?.trim()).toBe(step);
     expect(el.textContent).not.toContain('(reason:');
     expect(el.textContent).toContain('cannot be used as configured; nothing was sent');
-    expect(el.textContent).toContain('not created — nothing was sent, safe to fix and retry');
+    expect(el.textContent).toContain('not created — nothing was created on the platform, safe to retry once the cause is fixed');
     expect(el.textContent).not.toContain('could not be confirmed');
   });
 
@@ -5602,6 +5602,14 @@ describe('ImplementationTabComponent dispatch failure reasons', () => {
     expect(heading(el)).toBe('Campaign Status Unconfirmed');
   });
 
+  it('labels the service-defect sentence as nothing created, with no next step', () => {
+    const error = 'meta-ads campaign creation was stopped before anything was sent by a defect in this service; the connection is not at fault';
+    const el = row(atResults([{ platform: 'meta-ads', ok: false, error }]), 'meta-ads');
+    expect(el.querySelector('[data-testid="implementation-platform-result-nothing-created"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="implementation-platform-result-next-step"]')).toBeNull();
+    expect(el.textContent).not.toContain('could not be confirmed');
+  });
+
   it('keeps "could not be confirmed" for an unclassified failure and a skip', () => {
     const el = atResults([
       { platform: 'meta-ads', ok: false, error: 'platform campaign creation failed' },
@@ -5611,11 +5619,11 @@ describe('ImplementationTabComponent dispatch failure reasons', () => {
     expect(row(el, 'reddit-ads').textContent).toContain('could not be confirmed');
   });
 
-  it('keeps an id-bearing row orphaned whatever its message says', () => {
-    const el = atResults([
-      { platform: 'meta-ads', ok: false, campaignId: '123', error: 'no meta-ads connection is configured for this project; nothing was sent' },
-    ]);
+  it('keeps an id-bearing row orphaned, with no "create again" step, whatever its message says', () => {
+    const el = atResults([{ platform: 'meta-ads', ok: false, campaignId: '123', error: notUsable('meta-ads', 'account_not_selected') }]);
     expect(row(el, 'meta-ads').textContent).toContain('created upstream but not recorded');
+    expect(row(el, 'meta-ads').querySelector('[data-testid="implementation-platform-result-next-step"]')).toBeNull();
+    expect(row(el, 'meta-ads').querySelector('[data-testid="implementation-platform-result-nothing-created"]')).toBeNull();
     expect(heading(el)).toBe('Campaigns Created');
   });
 

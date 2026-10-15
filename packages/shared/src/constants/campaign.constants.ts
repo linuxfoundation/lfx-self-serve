@@ -3668,25 +3668,31 @@ export const CAMPAIGN_DISPATCH_CONNECTION_REASON_NEXT_STEPS: Readonly<Record<str
  * nothing was created on the platform and released the claim (`preCreate` in
  * `DispatchFailureMessage`, `internal/service/dispatch_failure.go` in lfx-v2-campaign-service).
  * Each is the fixed tail of a `fmt.Sprintf` format whose only variables are the provider name, a
- * reason token and an HTTP status number — never upstream text — so a match cannot be forged by
- * a platform's error body:
+ * reason token and an HTTP status number — never upstream text:
  *
  * - `; nothing was sent` — no project connection, undecryptable credentials, an unusable project
  *   or LF system connection, a missing LF system connection;
  * - `so nothing was sent; the connection may need re-authorizing` — a token refresh failure;
- * - `; nothing was created` — the platform answered a non-2xx before anything was created.
+ * - `; nothing was created` — the platform answered a non-2xx before anything was created;
+ * - `; the connection is not at fault` — a defect in campaign-service stopped the create before
+ *   anything was sent.
  *
- * Every sentence for the opposite case (`preCreate` false) reads "could not be confirmed …
- * something may have been created" and ends otherwise. The service-defect sentence is NOT
- * listed even though it is pre-create too: it ends "the connection is not at fault", and
- * "fix and retry" is advice the operator cannot act on.
+ * The one verbatim text that arm can return, a service-authored pre-flight refusal, is likewise
+ * returned only on the `preCreate` path, so even a refusal that happened to end in one of these
+ * still describes a create that never happened. Every sentence for the opposite case (`preCreate`
+ * false) reads "could not be confirmed … verify on the platform before retrying" and matches none
+ * of them, and none of the orchestrator's other fixed `res.Error` strings does either.
+ *
+ * A match is a FACT (nothing was created), not advice: whether the operator can fix the cause is
+ * what `CAMPAIGN_DISPATCH_CONNECTION_REASON_NEXT_STEPS` answers, row by row.
  *
  * Text, not a field: the wire carries no machine-readable pre-create flag yet. A reworded
  * backend sentence stops matching and the row falls back to "could not be confirmed" — the
- * over-warning direction — so drift can never upgrade an unconfirmed row to "nothing was sent".
+ * over-warning direction — so drift can never upgrade an unconfirmed row to "nothing created".
  */
 export const CAMPAIGN_DISPATCH_NOTHING_CREATED_SUFFIXES: readonly string[] = [
   '; nothing was sent',
   'so nothing was sent; the connection may need re-authorizing',
   '; nothing was created',
+  '; the connection is not at fault',
 ];

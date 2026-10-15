@@ -169,7 +169,9 @@ type PlatformResultRow = CampaignPlatformResult & {
 function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow {
   const failure = result.error ? describeCampaignDispatchFailure(result.error) : null;
   const displayError = failure?.message ?? result.error ?? null;
-  const nextStep = result.ok ? null : (failure?.nextStep ?? null);
+  // Pre-create rows only: an id-bearing row has a campaign upstream, and "create again" there is
+  // the duplicate-spend move this panel exists to prevent.
+  const nextStep = !result.ok && !result.campaignId ? (failure?.nextStep ?? null) : null;
   if (result.ok) {
     return { ...result, outcome: 'created', displayError, nextStep };
   }
@@ -596,7 +598,7 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly platformResults = signal<CampaignPlatformResult[]>([]);
 
   /**
-   * `platformResults` with each row's outcome resolved to three states rather than the boolean
+   * `platformResults` with each row's outcome resolved to four states rather than the boolean
    * the wire carries. Derived here rather than in the template because only signal reads,
    * computed values and pipes may appear there (`docs/reviews/frontend-checklist.md` §4).
    *
@@ -609,7 +611,7 @@ export class ImplementationTabComponent implements OnInit {
    * being spent, so calling it a plain failure is wrong in the expensive direction: the reader's
    * next move is to create it again.
    *
-   * The third state is `unconfirmed`, NOT "not created", and the absence of a `campaign_id` is
+   * The fallback state for an id-less failure is `unconfirmed`, NOT "not created", and the absence of a `campaign_id` is
    * not evidence that nothing was created. `orchestrator.go` emits `ok: false` with no id for at
    * least four distinct situations: a genuine upstream rejection (:869), a concurrent dispatch
    * that skipped this platform (:780 — which campaign-service explicitly calls a skip, not a
@@ -646,16 +648,16 @@ export class ImplementationTabComponent implements OnInit {
    * is how an orphaned `campaignId` reaches the page at all — so an all-failed result would
    * otherwise be announced as a success in green.
    *
-   * The negative case is headed "Campaign Status Unconfirmed" rather than "No Campaigns Created"
-   * for the same reason the row state is named `unconfirmed`: a heading is the one line a reader
-   * acts on without reading further, and this one must not assert an absence nobody verified.
+   * Drives the panel's colour and icon; the heading text is `platformResultsHeading`.
    */
   protected readonly anyPlatformCreated = computed(() => this.platformOutcomes().some((r) => r.outcome === 'created' || r.outcome === 'orphaned'));
 
   /**
-   * The results panel heading. "No Campaigns Created" only when EVERY row is a proven pre-create
-   * failure; one unconfirmed row keeps "Campaign Status Unconfirmed" — see `platformOutcomes` for
-   * what `nothing-created` is and is not.
+   * The results panel heading. The negative case is "Campaign Status Unconfirmed" rather than "No
+   * Campaigns Created" for the same reason the row state is named `unconfirmed`: a heading is the
+   * one line a reader acts on without reading further, and it must not assert an absence nobody
+   * verified. The exception is when EVERY row is a proven pre-create failure — see
+   * `platformOutcomes` for what `nothing-created` is and is not.
    */
   protected readonly platformResultsHeading = computed(() => {
     if (this.anyPlatformCreated()) {

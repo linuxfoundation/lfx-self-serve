@@ -2027,7 +2027,7 @@
                         created upstream but not recorded — needs reconciliation
                       }
                       @case ('nothing-created') {
-                        not created — nothing was sent, safe to fix and retry
+                        not created — nothing was created on the platform, safe to retry once the cause is fixed
                       }
                       @default {
                         could not be confirmed — check the ad account before creating it again
@@ -2041,7 +2041,7 @@
               </div>
               @if (outcome === 'nothing-created') {
                 <p class="mt-1 text-xs font-medium text-gray-700" data-testid="implementation-platform-result-nothing-created">
-                  Nothing was sent — safe to fix and retry.
+                  Nothing was created on the platform — safe to retry once the cause is fixed.
                 </p>
               }
               @if (pr.displayError) {

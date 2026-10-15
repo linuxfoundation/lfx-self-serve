@@ -319,6 +319,7 @@ describe('describeCampaignDispatchFailure', () => {
     'linkedin-ads token refresh failed, so nothing was sent; the connection may need re-authorizing',
     'meta-ads answered HTTP 503 before anything was created (a retry may succeed); nothing was created',
     'reddit-ads refused the request (HTTP 400) before anything was created; nothing was created',
+    'meta-ads campaign creation was stopped before anything was sent by a defect in this service; the connection is not at fault',
   ])('flags the pre-create sentence %j as nothing created', (error) => {
     expect(describeCampaignDispatchFailure(error)).toEqual({ message: error, nextStep: null, nothingCreated: true });
   });
@@ -326,7 +327,6 @@ describe('describeCampaignDispatchFailure', () => {
   it.each([
     'meta-ads campaign creation could not be confirmed; something may have been created — verify on the platform before retrying',
     'meta-ads campaign creation could not be confirmed (the platform answered HTTP 502); something may have been created — verify on the platform before retrying',
-    'meta-ads campaign creation was stopped before anything was sent by a defect in this service; the connection is not at fault',
     'platform campaign creation failed',
     'skipped: another concurrent dispatch owns this platform',
     'dispatcher returned no campaign',
