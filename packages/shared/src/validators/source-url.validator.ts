@@ -6,25 +6,33 @@ import { AbstractControl, ValidationErrors, ValidatorFn } from '@angular/forms';
 import { FOUNDATION_MESSAGE_NONE_ANSWER } from '../constants/foundation-message.constants';
 
 /**
- * A source LFX One fetches to text for an agent: blank, Paul's "none", or one
- * `https://` link. Raises `{ sourceUrl: { reason: 'unrecognized' } }` for
- * anything else — including a plain `http://` link, because the BFF fetches
- * over HTTPS only and would otherwise leave the source silently unread.
+ * A source link an agent fetches itself: blank, Paul's "none", or one
+ * `https://` link — with `list`, one such link per line, blank lines ignored.
+ * Raises `{ sourceUrl: { reason: 'unrecognized' } }` for anything else,
+ * including a plain `http://` link: a source is a public page, and a
+ * mistyped scheme is the mistake worth catching while the user is looking.
  */
-export function sourceUrlValidator(): ValidatorFn {
+export function sourceUrlValidator(options: { list?: boolean } = {}): ValidatorFn {
   return (control: AbstractControl): ValidationErrors | null => {
     const value = typeof control.value === 'string' ? control.value.trim() : '';
-    if (!value || value.toLowerCase() === FOUNDATION_MESSAGE_NONE_ANSWER) {
+    if (!value || (!options.list && value.toLowerCase() === FOUNDATION_MESSAGE_NONE_ANSWER)) {
       return null;
     }
-    try {
-      const parsed = new URL(value);
-      if (parsed.protocol === 'https:' && !/\s/.test(value)) {
-        return null;
-      }
-    } catch {
-      // Not a URL at all — reported below.
-    }
-    return { sourceUrl: { reason: 'unrecognized' } };
+    const entries = options.list
+      ? value
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter((line) => line !== '')
+      : [value];
+    return entries.every(isHttpsLink) ? null : { sourceUrl: { reason: 'unrecognized' } };
   };
+}
+
+/** One `https://` link with no whitespace inside it. */
+function isHttpsLink(value: string): boolean {
+  try {
+    return new URL(value).protocol === 'https:' && !/\s/.test(value);
+  } catch {
+    return false;
+  }
 }

@@ -45,7 +45,7 @@
       <!-- Body -->
       <div class="flex flex-col bg-gradient-to-b from-white to-gray-50">
         @if (errorText()) {
-          <div class="max-w-2xl mx-auto w-full px-8 pt-6">
+          <div class="w-full px-6 lg:px-10 pt-6">
             <lfx-message severity="error" [text]="errorText()" data-testid="mktg-agent-run-error" />
           </div>
         }
@@ -54,7 +54,7 @@
           <!-- FORM phase -->
           @case ('form') {
             <form
-              class="max-w-2xl mx-auto w-full px-8 pt-7 pb-10 flex flex-col gap-5"
+              class="w-full px-6 lg:px-10 pt-7 pb-10 flex flex-col gap-5"
               [formGroup]="intakeForm"
               (ngSubmit)="onSubmit()"
               data-testid="mktg-agent-run-form">
@@ -68,7 +68,7 @@
                 <div class="flex flex-col gap-1.5">
                   <div class="flex items-center gap-2 flex-wrap">
                     <label class="text-sm font-medium text-gray-700" [for]="'mktg-intake-' + field.key">
-                      {{ fieldLabels()[field.key] }}
+                      {{ fieldLabels[field.key] }}
                       @if (!field.optional) {
                         <span class="text-red-600">*</span>
                       }
@@ -133,7 +133,7 @@
               </ng-template>
 
               @if (fieldGroups.length > 0) {
-                <!-- Titled groups (e.g. the Messaging Document's Sources and Paul's ten questions), one card each. -->
+                <!-- Titled groups (e.g. the Messaging Document's Sources), one card each. -->
                 @for (group of fieldGroups; track group.id) {
                   <section
                     class="bg-white border border-gray-200 rounded-xl p-5 flex flex-col gap-4"
@@ -159,7 +159,7 @@
                 }
               }
 
-              <!-- Optional existing documents, last: each read to text by the BFF as it is added. -->
+              <!-- Optional existing documents, last: a file is read to text by the BFF as it is added; a link goes to the agent as is. -->
               @if (intake.documents) {
                 <lfx-mktg-intake-documents [config]="intake.documents" [(documents)]="documents" [(busy)]="documentsBusy" />
               }
@@ -226,9 +226,101 @@
             </div>
           }
 
+          <!-- QUESTIONS phase: the agent read the sources and asks only the gaps, each with a suggested answer to accept or edit. -->
+          @case ('questions') {
+            <form
+              class="w-full px-6 lg:px-10 pt-7 pb-10 flex flex-col gap-5"
+              [formGroup]="questionsForm"
+              (ngSubmit)="onAnswerQuestions()"
+              data-testid="mktg-agent-run-questions">
+              <div>
+                <h1 class="font-display font-light text-xl text-gray-900" data-testid="mktg-agent-run-questions-title">A few questions before the draft</h1>
+                <p class="mt-1 text-sm leading-relaxed text-gray-500">
+                  The agent read your sources and researched the rest. These are the points it could not settle on its own — each comes with its best guess.
+                  Accept or edit every one; it writes the {{ intake.documentName }} from your answers.
+                </p>
+              </div>
+
+              @for (row of questionRows(); track row.key) {
+                <section
+                  class="bg-white border border-gray-200 rounded-xl p-5 flex flex-col gap-2.5"
+                  [attr.aria-labelledby]="row.controlId + '-label'"
+                  [attr.data-testid]="'mktg-agent-run-question-' + row.key">
+                  <div class="flex flex-col gap-1">
+                    <label class="text-sm font-semibold text-gray-900" [id]="row.controlId + '-label'" [for]="row.controlId">
+                      {{ row.label }}
+                      <span class="text-red-600">*</span>
+                    </label>
+                    <p class="text-sm leading-relaxed text-gray-700">{{ row.question }}</p>
+                    @if (row.why) {
+                      <p class="text-xs text-gray-500" [attr.data-testid]="'mktg-agent-run-question-why-' + row.key">{{ row.why }}</p>
+                    }
+                  </div>
+                  <lfx-textarea
+                    [id]="row.controlId"
+                    [form]="questionsForm"
+                    [control]="row.key"
+                    [rows]="3"
+                    placeholder="Your answer"
+                    styleClass="w-full min-h-20 resize-y"
+                    [describedBy]="answerErrors()[row.key] ? row.controlId + '-error' : ''"
+                    [invalid]="!!answerErrors()[row.key]"
+                    [dataTest]="row.controlId" />
+                  <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
+                    @if (row.suggested) {
+                      <span class="inline-flex items-center gap-1" [attr.data-testid]="'mktg-agent-run-question-suggested-' + row.key">
+                        <i class="fa-light fa-wand-magic-sparkles" aria-hidden="true"></i>
+                        Suggested by the agent — edit it if it is wrong
+                      </span>
+                    } @else {
+                      <span [attr.data-testid]="'mktg-agent-run-question-unsuggested-' + row.key"
+                        >The agent found nothing to suggest — your answer is needed.</span
+                      >
+                    }
+                    @if (row.basis.length > 0) {
+                      <span class="flex flex-wrap items-center gap-x-2" [attr.data-testid]="'mktg-agent-run-question-basis-' + row.key">
+                        <span>Based on:</span>
+                        @for (basis of row.basis; track basis.text) {
+                          @if (basis.href) {
+                            <a class="text-blue-600 hover:underline break-all" [href]="basis.href" target="_blank" rel="noopener noreferrer">{{
+                              basis.text
+                            }}</a>
+                          } @else {
+                            <span>{{ basis.text }}</span>
+                          }
+                        }
+                      </span>
+                    }
+                  </div>
+                  <!-- Blocking: no skip and no TBD — the agent already suggested what it could, so what is left needs a real answer. -->
+                  @if (answerErrors()[row.key]) {
+                    <span
+                      class="flex items-start gap-1.5 text-xs text-red-600"
+                      [id]="row.controlId + '-error'"
+                      [attr.data-testid]="'mktg-agent-run-answer-error-' + row.key"
+                      role="alert">
+                      <i class="fa-light fa-circle-exclamation mt-0.5 shrink-0" aria-hidden="true"></i>
+                      <span>{{ answerNotSubstantiveError }}</span>
+                    </span>
+                  }
+                </section>
+              }
+
+              <div class="flex items-center gap-3 mt-2">
+                <lfx-button
+                  type="submit"
+                  label="Send answers and write the draft"
+                  icon="fa-light fa-paper-plane"
+                  [disabled]="answersDisabled()"
+                  data-testid="mktg-agent-run-answers-submit-button" />
+                <span class="text-xs text-gray-400">* every question needs an answer — accept the suggestion or write your own</span>
+              </div>
+            </form>
+          }
+
           <!-- RESULT phase -->
           @case ('result') {
-            <div class="max-w-2xl mx-auto w-full px-8 pt-7 pb-10 flex flex-col gap-4" data-testid="mktg-agent-run-result">
+            <div class="w-full px-6 lg:px-10 pt-7 pb-10 flex flex-col gap-4" data-testid="mktg-agent-run-result">
               <!-- Document card -->
               <div class="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
                 <div class="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-gray-100">
@@ -315,6 +407,35 @@
                 @if (docExpanded()) {
                   <div class="px-4 py-4 border-b border-gray-100 max-h-96 overflow-y-auto" data-testid="mktg-agent-run-doc-preview">
                     <lfx-markdown-renderer [content]="currentVersion()?.document ?? ''" />
+                  </div>
+                }
+
+                <!-- What the agent asked before writing this version, and what went back — stored with the version. -->
+                @if (askedRows().length > 0) {
+                  <div class="flex flex-col gap-2 px-4 py-2.5 border-b border-gray-100" data-testid="mktg-agent-run-asked">
+                    <button
+                      type="button"
+                      class="flex items-center gap-2 text-left text-xs font-medium text-gray-600 hover:text-gray-900"
+                      [attr.aria-expanded]="askedExpanded()"
+                      data-testid="mktg-agent-run-asked-toggle"
+                      (click)="onToggleAsked()">
+                      <i class="fa-light" [ngClass]="askedExpanded() ? 'fa-chevron-down' : 'fa-chevron-right'" aria-hidden="true"></i>
+                      The agent asked {{ askedRows().length }} question(s) before writing this draft
+                    </button>
+                    @if (askedExpanded()) {
+                      <dl class="flex flex-col gap-3" data-testid="mktg-agent-run-asked-list">
+                        @for (row of askedRows(); track row.key) {
+                          <div class="flex flex-col gap-0.5" [attr.data-testid]="'mktg-agent-run-asked-' + row.key">
+                            <dt class="text-xs font-semibold text-gray-700">{{ row.label }}</dt>
+                            <dd class="text-xs text-gray-500">{{ row.question }}</dd>
+                            <dd class="text-xs text-gray-800 whitespace-pre-wrap">{{ row.answer }}</dd>
+                            @if (row.originLabel) {
+                              <dd class="text-2xs text-gray-400">{{ row.originLabel }}</dd>
+                            }
+                          </div>
+                        }
+                      </dl>
+                    }
                   </div>
                 }
 

@@ -7,11 +7,14 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
+import { FOUNDATION_MESSAGE_READ_REASONS, MKTG_AGENT_INTAKES, MKTG_AGENTS, MKTG_INTAKE_FORMAT_ERRORS, MKTG_README_SKIP_NOTES } from '@lfx-one/shared/constants';
 import {
   MktgAnswerMemory,
   MktgDependencyDocument,
   MktgGenerateProgress,
   MktgGenerateRequest,
+  MktgRunAnswer,
+  MktgRunQuestionsPending,
   MktgRunVersion,
   MktgStoredAgentRun,
   Project,
@@ -26,7 +29,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
-import { from, of } from 'rxjs';
+import { from, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgAgentRunComponent } from './mktg-agent-run.component';
@@ -58,6 +61,7 @@ describe('MktgAgentRunComponent', () => {
   let loadRun: ReturnType<typeof vi.fn>;
   let getProject: ReturnType<typeof vi.fn>;
   let generate: ReturnType<typeof vi.fn>;
+  let answerQuestions: ReturnType<typeof vi.fn>;
   let resolveDependencies: ReturnType<typeof vi.fn>;
   let rememberAnswers: ReturnType<typeof vi.fn>;
   let notifyDocumentsChanged: ReturnType<typeof vi.fn>;
@@ -102,6 +106,7 @@ describe('MktgAgentRunComponent', () => {
     loadRun = vi.fn((projectUid: string, runAgentId: string) => storedRuns[`${projectUid}:${runAgentId}`] ?? storedRuns[projectUid] ?? null);
     getProject = vi.fn((slug: string) => of(projects[slug] ?? null));
     generate = vi.fn(() => of<MktgGenerateProgress>({ type: 'submitted' }));
+    answerQuestions = vi.fn(() => of<MktgGenerateProgress>({ type: 'submitted' }));
     resolveDependencies = vi.fn((projectUid: string, agentIds: string[]) =>
       of(Object.fromEntries(agentIds.map((agentId) => [agentId, dependencyDocs[`${projectUid}:${agentId}`] ?? null])))
     );
@@ -119,9 +124,9 @@ describe('MktgAgentRunComponent', () => {
         { provide: ProjectContextService, useValue: { activeContext, activeContextUid: () => activeContext()?.uid ?? '' } },
         { provide: ProjectService, useValue: { getProject } },
         { provide: UserService, useValue: { user: userSignal } },
-        { provide: MktgAgentRunService, useValue: { loadRun, generate } },
+        { provide: MktgAgentRunService, useValue: { loadRun, generate, answerQuestions } },
         { provide: MktgDependencyService, useValue: { resolveDependencies, notifyDocumentsChanged } },
-        { provide: MktgIntakeDocumentsService, useValue: { readFile: vi.fn(), readLink: vi.fn() } },
+        { provide: MktgIntakeDocumentsService, useValue: { readFile: vi.fn() } },
         {
           provide: MktgAnswerMemoryService,
           useValue: { load: (projectUid: string): MktgAnswerMemory => rememberedAnswers[projectUid] ?? {}, remember: rememberAnswers },
@@ -392,6 +397,30 @@ describe('MktgAgentRunComponent', () => {
     });
   });
 
+  describe('full width with a side margin — no inner max-width cap on the form or the result', () => {
+    beforeEach(async () => configure());
+
+    it('lets the form span the page container with a healthy margin', async () => {
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      const form = query('mktg-agent-run-form');
+      expect(form?.className).toContain('w-full');
+      expect(form?.className).toContain('px-6');
+      expect(form?.className).not.toMatch(/max-w-/);
+    });
+
+    it('lets the result span the page container too', async () => {
+      storedRuns = { 'proj-1': storedRun('proj-1', '# Doc', { project_name: 'P1' }) };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      const result = query('mktg-agent-run-result');
+      expect(result?.className).toContain('w-full');
+      expect(result?.className).not.toMatch(/max-w-/);
+    });
+  });
+
   describe('textarea field styling — full-width, never collapsed', () => {
     beforeEach(async () => configure());
 
@@ -574,71 +603,68 @@ describe('MktgAgentRunComponent', () => {
   });
 
   describe('Messaging Document — the form from the design canvas', () => {
-    /** Paul's ten answers, all given. */
-    const tenAnswers = (): Record<string, string> => ({
-      vision_mission: 'TBD',
-      category: 'Release tooling.',
-      audiences: 'Platform teams.',
-      alternatives: 'Pipelines.',
-      differentiation: 'Neutral governance.',
-      use_cases: 'Ship.',
-      proof_points: 'TBD',
-      pillars: 'Three.',
-      objections: 'None.',
-      tagline_ctas_constraints: 'skip',
-    });
     const fillRequired = (): void => {
       component['intakeForm'].controls['project_name'].setValue('TestOrbit');
-      for (const [key, value] of Object.entries(tenAnswers())) {
-        component['intakeForm'].controls[key].setValue(value);
-      }
     };
     const submitted = (): MktgGenerateRequest => generate.mock.calls[0][0] as MktgGenerateRequest;
+    const QUESTIONS = [
+      {
+        key: 'audiences',
+        label: 'Audiences',
+        question: 'Who are the primary audiences?',
+        why: 'The site names platform teams only.',
+        suggestedAnswer: 'Platform teams; SREs.',
+        basis: ['https://testorbit.example.org', 'the README'],
+      },
+      { key: 'tagline_ctas_constraints', label: 'Tagline, CTAs and constraints', question: 'Is a tagline locked?', why: '', suggestedAnswer: '', basis: [] },
+    ];
+    const pendingQuestions = (): MktgRunQuestionsPending => ({
+      attempt: { session: { agentId: 'foundation-setup', sessionId: 'sess-md', ownerToken: 'token-md' }, priorVersion: 0 },
+      questionsId: 'abc12345',
+      questions: QUESTIONS,
+    });
 
     beforeEach(async () => configure('browser', 'foundation-setup'));
 
-    it('renders the sources, Paul’s ten questions and the existing documents, and attaches no other document', async () => {
+    it('renders the sources as links — the four, a GitHub repo or organization page, the other links — and the existing documents; no questions on the first form', async () => {
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
 
       const sources = query('mktg-agent-run-group-sources');
-      const questions = query('mktg-agent-run-group-questions');
-      for (const key of ['project_name', 'website_url', 'github_url', 'press_release_url', 'brand_page_url']) {
+      for (const key of ['project_name', 'website_url', 'github_url', 'press_release_url', 'brand_page_url', 'other_links']) {
         expect(sources?.querySelector(`[data-test="mktg-intake-${key}"]`)).not.toBeNull();
       }
-      expect(questions?.querySelectorAll('textarea').length).toBe(10);
+      expect(query('mktg-agent-run-group-questions')).toBeNull();
+      expect(host().querySelectorAll('textarea').length).toBe(1);
       expect(query('mktg-intake-documents')).not.toBeNull();
       // Runs first: no Brand Kit chip and no missing-dependency gate.
       expect(query('mktg-agent-run-attachments')).toBeNull();
       expect(query('mktg-agent-run-missing-dependency')).toBeNull();
     });
 
-    it('shows Paul’s wording with his [Project] placeholder read as the project name on the form', async () => {
+    it('names no one anywhere the user sees — this is a product, not a proof of concept', async () => {
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
-      component['intakeForm'].controls['project_name'].setValue('TestOrbit');
-      await fixture.whenStable();
 
-      const labels = component['fieldLabels']();
-      expect(labels['differentiation']).toBe('5. Differentiation. What is the one thing that is true of TestOrbit and not of those alternatives?');
-      expect(labels['proof_points']).toBe(
-        '7. Proof points to confirm: adopters, figures, milestones that may be cited by name, each with source and date. Naming a real organization is a factual and legal claim: confirm, never assume.'
-      );
-      expect(host().textContent).not.toContain('[Project]');
+      expect(host().textContent).not.toContain('Paul');
+      for (const copy of [MKTG_AGENT_INTAKES, MKTG_AGENTS, MKTG_INTAKE_FORMAT_ERRORS, MKTG_README_SKIP_NOTES, FOUNDATION_MESSAGE_READ_REASONS]) {
+        expect(JSON.stringify(copy)).not.toContain('Paul');
+      }
     });
 
-    it('requires the project name and all ten answers, and leaves the sources optional', async () => {
+    it('requires only the project name — every source is optional', async () => {
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
-      component['intakeForm'].controls['project_name'].setValue('TestOrbit');
+      // Prefilled from the active project, so the form starts valid; clearing the one required field is what invalidates it.
+      expect(component['intakeForm'].valid).toBe(true);
+      component['intakeForm'].controls['project_name'].setValue('');
       expect(component['intakeForm'].valid).toBe(false);
 
       fillRequired();
-      component['intakeForm'].controls['github_url'].setValue('');
       expect(component['intakeForm'].valid).toBe(true);
     });
 
-    it('takes "none" or an https:// link for a source and blocks anything else, saying why', async () => {
+    it('takes "none" or an https:// link for a source, a repository or an organization page for GitHub, one link per line for the rest, and blocks anything else, saying why', async () => {
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
       fillRequired();
@@ -651,20 +677,38 @@ describe('MktgAgentRunComponent', () => {
       await fixture.whenStable();
       expect(fieldError('website_url')?.textContent).toContain('https://');
       expect(component['submitDisabled']()).toBe(true);
-
       component['intakeForm'].controls['website_url'].setValue('https://testorbit.example.org');
       await fixture.whenStable();
       expect(fieldError('website_url')).toBeNull();
+
+      // An organization page (https://github.com/aaif) is a usable GitHub source now that the agent reads it.
+      component['intakeForm'].controls['github_url'].setValue('https://github.com/aaif');
+      await fixture.whenStable();
+      expect(fieldError('github_url')).toBeNull();
+      component['intakeForm'].controls['github_url'].setValue('https://gitlab.example.org/aaif');
+      await fixture.whenStable();
+      expect(fieldError('github_url')?.textContent).toContain('GitHub');
+      component['intakeForm'].controls['github_url'].setValue('https://github.com/aaif/spec');
+      await fixture.whenStable();
+      expect(fieldError('github_url')).toBeNull();
+
+      component['intakeForm'].controls['other_links'].setValue('https://blog.example.org/a\nnot a link');
+      await fixture.whenStable();
+      expect(fieldError('other_links')?.textContent).toContain('Every line');
+      component['intakeForm'].controls['other_links'].setValue('https://blog.example.org/a\n\nhttps://blog.example.org/b');
+      await fixture.whenStable();
+      expect(fieldError('other_links')).toBeNull();
       expect(component['submitDisabled']()).toBe(false);
     });
 
-    it('submits the answers and the documents — a link by its URL, a file by its text — and waits while one is being read', async () => {
+    it('submits the links and the documents — a link by its URL, a file by its text — and waits while a file is being read', async () => {
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
       fillRequired();
       component['intakeForm'].controls['website_url'].setValue('https://testorbit.example.org');
+      component['intakeForm'].controls['other_links'].setValue('https://blog.example.org/launch');
       component['documents'].set([
-        { id: 'link-1', kind: 'link', title: 'Positioning note', url: 'https://wiki.example.org/note', read: true, words: 120, truncated: false },
+        { id: 'link-1', kind: 'link', title: 'https://wiki.example.org/note', url: 'https://wiki.example.org/note', read: false, words: 0, truncated: false },
         { id: 'file-1', kind: 'file', title: 'brand.md', text: 'Brand guide.', read: true, words: 2, truncated: false },
       ]);
 
@@ -675,11 +719,129 @@ describe('MktgAgentRunComponent', () => {
       component['onSubmit']();
       await fixture.whenStable();
 
-      expect(submitted().answers).toEqual({ project_name: 'TestOrbit', website_url: 'https://testorbit.example.org', ...tenAnswers() });
+      expect(submitted().answers).toEqual({
+        project_name: 'TestOrbit',
+        website_url: 'https://testorbit.example.org',
+        other_links: 'https://blog.example.org/launch',
+      });
       expect(submitted().documents).toEqual([
-        { kind: 'link', title: 'Positioning note', url: 'https://wiki.example.org/note' },
+        { kind: 'link', title: 'https://wiki.example.org/note', url: 'https://wiki.example.org/note' },
         { kind: 'file', title: 'brand.md', text: 'Brand guide.' },
       ]);
+    });
+
+    describe('the questions step — after research, only the gaps, each with a suggested answer', () => {
+      const answerBox = (key: string): HTMLElement | null => host().querySelector<HTMLElement>(`[data-test="mktg-question-${key}"]`);
+
+      beforeEach(async () => {
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+        fillRequired();
+        generate.mockReturnValue(from<MktgGenerateProgress[]>([{ type: 'submitted' }, { type: 'questions', pending: pendingQuestions() }]));
+        component['onSubmit']();
+        await fixture.whenStable();
+      });
+
+      it('shows each question with its label, the why, the basis links, and the suggested answer pre-filled', () => {
+        expect(component['phase']()).toBe('questions');
+        expect(query('mktg-agent-run-questions')).not.toBeNull();
+        expect(query('mktg-agent-run-question-audiences')?.textContent).toContain('Audiences');
+        expect(query('mktg-agent-run-question-audiences')?.textContent).toContain('Who are the primary audiences?');
+        expect(query('mktg-agent-run-question-why-audiences')?.textContent).toContain('platform teams only');
+        const basis = query('mktg-agent-run-question-basis-audiences');
+        expect(basis?.querySelector('a')?.getAttribute('href')).toBe('https://testorbit.example.org');
+        expect(basis?.textContent).toContain('the README');
+        expect(component['questionsForm'].controls['audiences'].value).toBe('Platform teams; SREs.');
+        expect(query('mktg-agent-run-question-suggested-audiences')).not.toBeNull();
+        // No suggestion: an empty box the requester has to fill, said plainly.
+        expect(component['questionsForm'].controls['tagline_ctas_constraints'].value).toBe('');
+        expect(query('mktg-agent-run-question-unsuggested-tagline_ctas_constraints')).not.toBeNull();
+        expect(query('mktg-agent-run-question-why-tagline_ctas_constraints')).toBeNull();
+        expect(answerBox('audiences')).not.toBeNull();
+        // No "Request changes" box and no first form on this step.
+        expect(query('mktg-agent-run-regenerate-button')).toBeNull();
+        expect(query('mktg-agent-run-form')).toBeNull();
+      });
+
+      it('requires every answer — no skip, no TBD, no empty — and says so on the field', async () => {
+        expect(component['answersDisabled']()).toBe(true);
+
+        component['questionsForm'].controls['tagline_ctas_constraints'].setValue('TBD');
+        await fixture.whenStable();
+        expect(query('mktg-agent-run-answer-error-tagline_ctas_constraints')?.textContent).toContain('TBD');
+        expect(component['answersDisabled']()).toBe(true);
+
+        component['questionsForm'].controls['tagline_ctas_constraints'].setValue('No tagline is locked; name the Silver tier.');
+        await fixture.whenStable();
+        expect(query('mktg-agent-run-answer-error-tagline_ctas_constraints')).toBeNull();
+        expect(component['answersDisabled']()).toBe(false);
+      });
+
+      it('sends the answers with their origins on the same run and shows the document with what was asked', async () => {
+        component['questionsForm'].controls['audiences'].setValue('Platform teams; SREs.');
+        component['questionsForm'].controls['tagline_ctas_constraints'].setValue('No tagline is locked.');
+        const answers: MktgRunAnswer[] = [
+          { key: 'audiences', text: 'Platform teams; SREs.', origin: 'accepted' },
+          { key: 'tagline_ctas_constraints', text: 'No tagline is locked.', origin: 'requester' },
+        ];
+        const run: MktgStoredAgentRun = {
+          agentId: 'foundation-setup',
+          projectUid: 'proj-1',
+          sessionId: 'sess-md',
+          ownerToken: 'token-md',
+          answers: { project_name: 'TestOrbit' },
+          versions: [{ version: 1, document: '# TestOrbit Messaging Document', questions: QUESTIONS, answers, createdAt: '2026-10-15T00:00:00.000Z' }],
+          savedAt: new Date().toISOString(),
+        };
+        answerQuestions.mockReturnValue(from<MktgGenerateProgress[]>([{ type: 'submitted' }, { type: 'document', run }]));
+        vi.useFakeTimers();
+        try {
+          component['onAnswerQuestions']();
+          await vi.advanceTimersByTimeAsync(700);
+        } finally {
+          vi.useRealTimers();
+        }
+        await fixture.whenStable();
+
+        const [request, pending, sent] = answerQuestions.mock.calls[0] as [MktgGenerateRequest, MktgRunQuestionsPending, MktgRunAnswer[]];
+        expect(request).toMatchObject({ agentId: 'foundation-setup', projectUid: 'proj-1', answers: { project_name: 'TestOrbit' } });
+        expect(pending.questionsId).toBe('abc12345');
+        expect(sent).toEqual(answers);
+        expect(generate).toHaveBeenCalledTimes(1);
+
+        expect(component['phase']()).toBe('result');
+        expect(query('mktg-agent-run-asked-toggle')?.textContent).toContain('asked 2 question(s)');
+        query('mktg-agent-run-asked-toggle')?.click();
+        await fixture.whenStable();
+        expect(query('mktg-agent-run-asked-audiences')?.textContent).toContain('Platform teams; SREs.');
+        expect(query('mktg-agent-run-asked-audiences')?.textContent).toContain('Suggested by the agent, accepted');
+        expect(query('mktg-agent-run-asked-tagline_ctas_constraints')?.textContent).toContain('Your answer');
+      });
+
+      it('marks an edited suggestion as edited', async () => {
+        component['questionsForm'].controls['audiences'].setValue('Platform teams only.');
+        component['questionsForm'].controls['tagline_ctas_constraints'].setValue('No tagline is locked.');
+        answerQuestions.mockReturnValue(of<MktgGenerateProgress>({ type: 'submitted' }));
+
+        component['onAnswerQuestions']();
+        await fixture.whenStable();
+
+        const sent = answerQuestions.mock.calls[0][2] as MktgRunAnswer[];
+        expect(sent[0]).toEqual({ key: 'audiences', text: 'Platform teams only.', origin: 'edited' });
+        expect(component['phase']()).toBe('running');
+      });
+
+      it('keeps the answers and returns to the questions step when the answers could not be sent', async () => {
+        component['questionsForm'].controls['tagline_ctas_constraints'].setValue('No tagline is locked.');
+        answerQuestions.mockReturnValue(throwError(() => new Error('network')));
+
+        component['onAnswerQuestions']();
+        await fixture.whenStable();
+
+        expect(component['phase']()).toBe('questions');
+        expect(component['errorText']()).toContain('kept');
+        expect(component['questionsForm'].controls['tagline_ctas_constraints'].value).toBe('No tagline is locked.');
+      });
     });
 
     it('offers no "Request changes" box on the result — edit the inputs and generate a new revision instead', async () => {
@@ -689,7 +851,7 @@ describe('MktgAgentRunComponent', () => {
           projectUid: 'proj-1',
           sessionId: 'sess-md',
           ownerToken: 'token-md',
-          answers: { project_name: 'TestOrbit', ...tenAnswers() },
+          answers: { project_name: 'TestOrbit' },
           versions: [{ version: 1, document: '# TestOrbit Messaging Document', createdAt: '2026-10-15T00:00:00.000Z' }],
           savedAt: new Date().toISOString(),
         },
@@ -700,6 +862,8 @@ describe('MktgAgentRunComponent', () => {
       expect(query('mktg-agent-run-result')).not.toBeNull();
       expect(query('mktg-agent-run-regenerate-button')).toBeNull();
       expect(query('mktg-agent-run-new-run')).not.toBeNull();
+      // A version written without a questions round shows nothing about questions.
+      expect(query('mktg-agent-run-asked')).toBeNull();
 
       query('mktg-agent-run-edit-inputs-button')?.querySelector('button')?.click();
       await fixture.whenStable();
@@ -714,7 +878,7 @@ describe('MktgAgentRunComponent', () => {
           projectUid: 'proj-1',
           sessionId: 'sess-mf',
           ownerToken: 'token-mf',
-          answers: { project_name: 'TestOrbit', ...tenAnswers() },
+          answers: { project_name: 'TestOrbit' },
           versions: [
             {
               version: 1,
@@ -755,7 +919,7 @@ describe('MktgAgentRunComponent', () => {
           projectUid: 'proj-1',
           sessionId: 'sess-mf',
           ownerToken: 'token-mf',
-          answers: { project_name: 'TestOrbit', ...tenAnswers() },
+          answers: { project_name: 'TestOrbit' },
           versions: [{ version: 1, document: '# Doc', derivatives: { summary_25: 'Twenty-five words.' }, createdAt: '2026-08-19T00:00:00.000Z' }],
           savedAt: new Date().toISOString(),
         },

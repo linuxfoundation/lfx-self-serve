@@ -60,8 +60,8 @@ router.post(
   (req: Request, res: Response, next: NextFunction) => mktgAgentsController.readFoundationMessageFile(req, res, next)
 );
 
-// POST /api/mktg-agents/foundation-message/documents/link - read one existing-document link to text (reports what was read, never the text)
-router.post('/foundation-message/documents/link', (req, res, next) => mktgAgentsController.readFoundationMessageLink(req, res, next));
+// POST /api/mktg-agents/foundation-message/answers - answer the session's questions turn (owner-token in body), on the same session
+router.post('/foundation-message/answers', (req, res, next) => mktgAgentsController.foundationMessageAnswers(req, res, next));
 
 // POST /api/mktg-agents/icp/generate - start a one-shot form-mode ICP & Target Markets generation
 router.post('/icp/generate', (req, res, next) => mktgAgentsController.generateIcp(req, res, next));

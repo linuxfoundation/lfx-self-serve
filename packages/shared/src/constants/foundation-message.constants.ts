@@ -1,13 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Messaging Document contract constants (messaging-document-output/v1) —
+// Messaging Document contract constants (messaging-document-output/v1, the
+// messaging-document-questions/v1 and messaging-document-answers/v1 turns) —
 // shared between the BFF's form renderer and envelope gates, the intake form
 // UI, and tests. The agent keeps its Guild name (foundation-message), its
 // store prefix and its catalog id (foundation-setup); only its document is
 // now Paul's Messaging Document. Mirrors marketing-os-agents
-// agents/foundation-message (src/envelope.ts, src/form.ts, src/questions.ts)
-// and docs/contracts/messaging-document-output.md.
+// agents/foundation-message (src/envelope.ts, src/form.ts, src/questions.ts,
+// src/questions-turn.ts) and docs/contracts/messaging-document-*.md.
 
 /** Contract discriminator the BFF accepts; unknown majors are rejected. */
 export const FOUNDATION_MESSAGE_CONTRACT_ID = 'messaging-document-output/v1';
@@ -25,8 +26,9 @@ export const FOUNDATION_MESSAGE_FORM_TYPE = 'messaging_document_intake_form';
 export const FOUNDATION_MESSAGE_GENERATE_HEADER = 'BATCH INTAKE SUBMISSION (Messaging Document — GENERATE)';
 
 // ---------------------------------------------------------------------------
-// Paul's fixed intake wording — QUOTED VERBATIM from the agent's
-// src/questions.ts (dec-paul-prompt-fidelity). Never paraphrased.
+// The sources — Paul's four Step 0b source labels, QUOTED VERBATIM from the
+// agent's src/questions.ts (dec-paul-prompt-fidelity). The agent fetches every
+// link itself (web fetch, Exa search): LFX One sends URLs only.
 // ---------------------------------------------------------------------------
 
 /** Step 0b — the four sources, in Paul's order ("none" is a valid answer). */
@@ -40,81 +42,64 @@ export const FOUNDATION_MESSAGE_SOURCE_LABELS = {
   brand_page: 'an existing brand page or guidelines, if any',
 } as const;
 
-/** The form keys each source travels under: its URL (the requester's answer) and the text LFX One fetched from it. */
-export const FOUNDATION_MESSAGE_SOURCE_FIELDS = {
-  website: { urlKey: 'website_url', textKey: 'website_text' },
-  readme: { urlKey: 'github_url', textKey: 'readme_text' },
-  press_release: { urlKey: 'press_release_url', textKey: 'press_release_text' },
-  brand_page: { urlKey: 'brand_page_url', textKey: 'brand_page_text' },
+/** The form key each source's URL travels under. */
+export const FOUNDATION_MESSAGE_SOURCE_URL_KEYS = {
+  website: 'website_url',
+  readme: 'github_url',
+  press_release: 'press_release_url',
+  brand_page: 'brand_page_url',
 } as const;
 
-/**
- * Paul's ten Step 1 questions, in his priority order. Eight carry a quoted
- * question; two (7 and 10) are written as a description, quoted here as the
- * question text. `[Project]` is Paul's placeholder and stays as written in
- * what the agent receives.
- */
-export const FOUNDATION_MESSAGE_QUESTIONS = [
-  {
-    key: 'vision_mission',
-    label: 'Vision and mission',
-    question:
-      'Does the project have a written vision (long-term reason for being) and mission (purpose and scope)? Point me to them, give me your one-liners, or say TBD.',
-  },
-  {
-    key: 'category',
-    label: 'Category',
-    question:
-      'What category does [Project] compete in, in the words a buyer or adopter would use, and what is it *not* (the adjacent thing people confuse it with)?',
-  },
-  {
-    key: 'audiences',
-    label: 'Audiences',
-    question: 'Who are the three to five primary audiences this messaging must speak to, and what does each one care about most?',
-  },
-  {
-    key: 'alternatives',
-    label: 'Alternatives',
-    question:
-      'What does an adopter use instead today — the status quo, a proprietary product, another open source project — and are any alternatives built by member organizations?',
-  },
-  {
-    key: 'differentiation',
-    label: 'Differentiation',
-    question: 'What is the one thing that is true of [Project] and not of those alternatives?',
-  },
-  {
-    key: 'use_cases',
-    label: 'Use cases',
-    question: 'What are the top three jobs organizations adopt [Project] to do?',
-  },
-  {
-    key: 'proof_points',
-    label: 'Proof points to confirm',
-    question:
-      'adopters, figures, milestones that may be cited by name, each with source and date. Naming a real organization is a factual and legal claim: confirm, never assume.',
-  },
-  {
-    key: 'pillars',
-    label: 'Pillars',
-    question: 'Which three to five pillars should the message house be built on?',
-  },
-  {
-    key: 'objections',
-    label: 'Objections',
-    question:
-      'What are the two or three hardest questions skeptics, press, prospects or regulators ask, and what is the honest answer, including anything you would concede?',
-  },
-  {
-    key: 'tagline_ctas_constraints',
-    label: 'Tagline, CTAs and constraints',
-    question:
-      'whether a tagline is locked (site hero, press release) or should be recommended; the membership tier, working group or event the four CTA anchors should name; any Legal-approved phrase that must be used and any phrase that must not.',
-  },
-] as const;
+/** The form key of the optional list of further links (one per line on the form; an array in the payload). */
+export const FOUNDATION_MESSAGE_OTHER_LINKS_KEY = 'other_links';
 
-/** Paul's placeholder for the project inside his question wording. */
-export const FOUNDATION_MESSAGE_PROJECT_PLACEHOLDER = '[Project]';
+/** Most other links one run takes. */
+export const FOUNDATION_MESSAGE_MAX_OTHER_LINKS = 10;
+
+// ---------------------------------------------------------------------------
+// The questions turn (messaging-document-questions/v1) and the answers turn
+// (messaging-document-answers/v1): after reading the sources and researching,
+// the agent asks ONLY the gaps, each with a suggested answer; the requester
+// accepts or edits every one and the answers go back to the same session.
+// ---------------------------------------------------------------------------
+
+/** Contract discriminator of the agent's questions block. */
+export const FOUNDATION_MESSAGE_QUESTIONS_CONTRACT_ID = 'messaging-document-questions/v1';
+
+/** First line of the agent's questions turn; a fenced ```json block with the questions follows. */
+export const FOUNDATION_MESSAGE_QUESTIONS_HEADER = 'MESSAGING DOCUMENT — QUESTIONS (messaging-document-questions/v1)';
+
+/** Contract discriminator of the answers turn LFX One renders. */
+export const FOUNDATION_MESSAGE_ANSWERS_CONTRACT_ID = 'messaging-document-answers/v1';
+
+/** First line of the rendered answers turn — the marker the agent parses back. */
+export const FOUNDATION_MESSAGE_ANSWERS_HEADER = 'MESSAGING DOCUMENT — ANSWERS (messaging-document-answers/v1)';
+
+/**
+ * Where an answer came from: `accepted` — the suggested answer, unchanged;
+ * `edited` — the requester changed the suggestion; `requester` — there was
+ * no suggestion and the requester wrote the answer.
+ */
+export const FOUNDATION_MESSAGE_ANSWER_ORIGINS = ['accepted', 'edited', 'requester'] as const;
+
+/** Most questions one questions turn may carry (Paul's ten, with room for a split one). */
+export const FOUNDATION_MESSAGE_MAX_QUESTIONS = 20;
+
+/** Shape of a question key: the agent's snake_case field keys. */
+export const FOUNDATION_MESSAGE_QUESTION_KEY_REGEX = /^[a-z0-9][a-z0-9_]{0,63}$/;
+
+/** Longest answer text accepted on the answers turn. */
+export const FOUNDATION_MESSAGE_ANSWER_MAX_CHARS = 4000;
+
+/**
+ * An answer that is not one: there is no skip and no TBD on the questions
+ * step — the agent already suggested what it could, so what is left needs a
+ * real answer from the requester.
+ */
+export const FOUNDATION_MESSAGE_NON_ANSWER_REGEX = /^(?:tbd|skip|skipped|n\/?a|none|-+|\?+)\.?$/i;
+
+/** BFF endpoint the answers turn is posted to. */
+export const FOUNDATION_MESSAGE_ANSWERS_ENDPOINT = '/api/mktg-agents/foundation-message/answers';
 
 // ---------------------------------------------------------------------------
 // Form shapes and draft statuses (src/form.ts)
@@ -129,12 +114,8 @@ export const FOUNDATION_MESSAGE_STATUS_FROM_DOCUMENTS = 'Draft — from your doc
 /** Paul's draft labels; an envelope's `status` must start with one of them. */
 export const FOUNDATION_MESSAGE_DRAFT_STATUSES = [FOUNDATION_MESSAGE_STATUS_PREFILLED, FOUNDATION_MESSAGE_STATUS_FROM_DOCUMENTS] as const;
 
-/** The FORM SHAPE line's label per shape, as the agent's renderer writes it. */
-export const FOUNDATION_MESSAGE_SHAPE_LABELS = {
-  answers: 'ANSWERS',
-  'documents-with-answers': 'DOCUMENTS WITH ANSWERS',
-  prefill: 'PRE-FILL',
-} as const;
+/** The generate shapes the envelope's `intake.shape` records (the agent's GenerateShape). */
+export const FOUNDATION_MESSAGE_GENERATE_SHAPES = ['answers', 'documents-with-answers', 'prefill'] as const;
 
 // ---------------------------------------------------------------------------
 // Output contract gates (messaging-document-output/v1, contract §1a)
@@ -245,47 +226,47 @@ export const FOUNDATION_MESSAGE_SHA256_REGEX = /^[0-9a-f]{64}$/;
 /** ISO-8601 timestamp shape gate: date + time part required; offset/Z optional. */
 export const FOUNDATION_MESSAGE_ISO_TIMESTAMP_REGEX = /^\d{4}-\d{2}-\d{2}[Tt ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:[Zz]|[+-]\d{2}:?\d{2})?$/;
 
-/** A source URL the agent's form accepts (`HTTP_URL` in src/form.ts). */
+/** A URL the agent's form accepts (`HTTP_URL` in src/form.ts). */
 export const FOUNDATION_MESSAGE_HTTP_URL_REGEX = /^https?:\/\/\S+$/;
 
 /** The answer a requester gives for a source they do not have (Paul: "none" is a valid answer). */
 export const FOUNDATION_MESSAGE_NONE_ANSWER = 'none';
 
 // ---------------------------------------------------------------------------
-// BFF-side plumbing: what LFX One reads to text before the agent runs
+// BFF-side plumbing: the uploaded files LFX One reads to text before the run
+// (the agent fetches every link itself)
 // ---------------------------------------------------------------------------
 
 /**
- * Size cap (chars) for the server-fetched README passed as `readme_text`.
- * READMEs are prompt input, not storage — anything past this is truncated
- * with an explicit marker so the agent never sees a silently clipped document.
+ * Size cap (chars) for a server-fetched README. The Messaging Document agent
+ * fetches its own sources now; this serves the ICP's `readme_markdown` fetch
+ * (`GithubReadmeService`). READMEs are prompt input, not storage — anything
+ * past this is truncated with an explicit marker so the agent never sees a
+ * silently clipped document.
  */
 export const FOUNDATION_MESSAGE_README_MAX_CHARS = 65536;
 
 /** Marker appended when the fetched README exceeds the size cap. */
 export const FOUNDATION_MESSAGE_README_TRUNCATION_MARKER = '\n\n…(README truncated by LFX before submission)';
 
-/** Size cap (chars) for the text of a fetched web source (website, press release, brand page). */
-export const FOUNDATION_MESSAGE_SOURCE_MAX_CHARS = 40000;
-
 /** Size cap (chars) for the text of one existing document. */
 export const FOUNDATION_MESSAGE_DOCUMENT_MAX_CHARS = 60000;
 
-/** Marker appended when a source or document text exceeds its cap. */
+/** Marker appended when a document text exceeds its cap. */
 export const FOUNDATION_MESSAGE_TEXT_TRUNCATION_MARKER = '\n\n…(truncated by LFX before submission)';
 
 /** Most existing documents one run takes. */
 export const FOUNDATION_MESSAGE_MAX_DOCUMENTS = 6;
 
-/** Largest uploaded file or linked document LFX One reads (bytes). */
+/** Largest uploaded file LFX One reads (bytes). */
 export const FOUNDATION_MESSAGE_MAX_FILE_BYTES = 20 * 1024 * 1024;
 
 /** File types the existing-documents upload accepts: PDF, Word, Markdown and plain text. */
 export const FOUNDATION_MESSAGE_FILE_EXTENSIONS = ['.pdf', '.docx', '.md', '.txt'] as const;
 
 /**
- * Response content types (the media type, parameters ignored) a linked source
- * or document is read from, besides any `text/*`. Hosts often serve PDFs as
+ * Response content types (the media type, parameters ignored) a link is read
+ * from by the shared reader, besides any `text/*`. Hosts often serve PDFs as
  * `application/octet-stream`, so it is read too; the bytes then decide the
  * format. Anything else — an image, a video, JSON — is refused unread.
  */
@@ -305,7 +286,7 @@ export const FOUNDATION_MESSAGE_FILE_NAME_HEADER = 'X-File-Name';
 /** Longest document title kept (one line). */
 export const FOUNDATION_MESSAGE_DOCUMENT_TITLE_MAX_CHARS = 200;
 
-/** What the form says when an existing document or a source could not be read, per reason. */
+/** What the form says when an uploaded document could not be read, per reason (the link reasons remain for the shared reader). */
 export const FOUNDATION_MESSAGE_READ_REASONS = {
   unsupported: 'Not a PDF, Word (.docx), Markdown or text file.',
   encrypted: 'The PDF is password-protected or encrypted. Export it without a password and upload it again.',
@@ -317,8 +298,7 @@ export const FOUNDATION_MESSAGE_READ_REASONS = {
   busy: 'LFX One is still reading your other documents. Try this one again in a moment.',
 } as const;
 
-/** BFF endpoints that turn an existing document into text before the run. */
+/** BFF endpoint that turns an uploaded existing document into text before the run (a link goes to the agent as is). */
 export const FOUNDATION_MESSAGE_DOCUMENT_ENDPOINTS = {
   file: '/api/mktg-agents/foundation-message/documents/file',
-  link: '/api/mktg-agents/foundation-message/documents/link',
 } as const;

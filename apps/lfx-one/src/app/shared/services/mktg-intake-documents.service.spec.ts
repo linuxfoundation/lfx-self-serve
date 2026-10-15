@@ -13,8 +13,9 @@ import { MktgIntakeDocumentsService } from './mktg-intake-documents.service';
 /**
  * The browser never parses a document: a file goes to the BFF as its raw
  * bytes, with its name URI-encoded in a header (never the URL, which the
- * request logger writes), and a link goes as `{ url }`. These pin that wire
- * contract against the endpoints the intake config names.
+ * request logger writes). A link is never read here — the agent fetches it —
+ * so the service has no link call. These pin that wire contract against the
+ * endpoint the intake config names.
  */
 describe('MktgIntakeDocumentsService', () => {
   const config = FOUNDATION_MESSAGE_INTAKE.documents as MktgIntakeDocumentsConfig;
@@ -62,16 +63,8 @@ describe('MktgIntakeDocumentsService', () => {
     expect(failure?.status).toBe(413);
   });
 
-  it('posts a link as { url } to the link endpoint', () => {
-    let response: MktgDocumentExtractResponse | undefined;
-    service.readLink(config, 'https://wiki.example.org/note').subscribe((value) => (response = value));
-
-    const request = http.expectOne(config.endpoints.link);
-    expect(request.request.method).toBe('POST');
-    expect(request.request.body).toEqual({ url: 'https://wiki.example.org/note' });
-
-    const linkRead: MktgDocumentExtractResponse = { title: 'Positioning note', read: true, words: 6100, truncated: false };
-    request.flush(linkRead);
-    expect(response).toEqual(linkRead);
+  it('reads no links — the intake names a file endpoint only, and the agent fetches links itself', () => {
+    expect(Object.keys(config.endpoints)).toEqual(['file']);
+    expect((service as unknown as Record<string, unknown>)['readLink']).toBeUndefined();
   });
 });

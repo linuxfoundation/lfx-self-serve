@@ -1,29 +1,35 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Messaging Document output envelope (messaging-document-output/v1) and
-// generate form contract, shared between the Express BFF and the Angular
-// run page. Transcribed from marketing-os-agents agents/foundation-message
-// (src/envelope.ts, src/form.ts); the agent's JSON Schema is normative and
-// this must stay in sync (reviewed at PR).
+// Messaging Document output envelope (messaging-document-output/v1), the
+// generate form contract and the questions/answers turns
+// (messaging-document-questions/v1, messaging-document-answers/v1), shared
+// between the Express BFF and the Angular run page. Transcribed from
+// marketing-os-agents agents/foundation-message (src/envelope.ts, src/form.ts,
+// src/questions-turn.ts); the agent's JSON Schema is normative and this must
+// stay in sync (reviewed at PR).
 
 import {
   FOUNDATION_MESSAGE_FIELD_STATUSES,
-  FOUNDATION_MESSAGE_QUESTIONS,
-  FOUNDATION_MESSAGE_SHAPE_LABELS,
+  FOUNDATION_MESSAGE_GENERATE_SHAPES,
   FOUNDATION_MESSAGE_SOURCE_KINDS,
 } from '../constants/foundation-message.constants';
 import type { MktgArtifactPersistReceipt, MktgArtifactStoredResponse } from './mktg-artifact.interface';
-import type { MktgReadmeOutcome, MktgRunGenerateBody, MktgRunResultBody, MktgRunResultResponse, MktgRunSessionResponse } from './mktg-run.interface';
+import type {
+  MktgRunAnswer,
+  MktgRunAnswersBody,
+  MktgRunAnswersResponse,
+  MktgRunGenerateBody,
+  MktgRunResultBody,
+  MktgRunResultResponse,
+  MktgRunSessionResponse,
+} from './mktg-run.interface';
 
 /** One of Paul's four Step 0b sources. */
 export type FoundationMessageSourceKind = (typeof FOUNDATION_MESSAGE_SOURCE_KINDS)[number];
 
-/** The form key of one of Paul's ten Step 1 answers. */
-export type FoundationMessageAnswerKey = (typeof FOUNDATION_MESSAGE_QUESTIONS)[number]['key'];
-
 /** The generate form's shape, which follows from the answers and documents present. */
-export type FoundationMessageGenerateShape = keyof typeof FOUNDATION_MESSAGE_SHAPE_LABELS;
+export type FoundationMessageGenerateShape = (typeof FOUNDATION_MESSAGE_GENERATE_SHAPES)[number];
 
 /** A sidecar field's review status. */
 export type FoundationMessageFieldStatus = (typeof FOUNDATION_MESSAGE_FIELD_STATUSES)[number];
@@ -110,69 +116,91 @@ export interface FoundationMessageEnvelope {
   agent: FoundationMessageAgentProvenance;
 }
 
-/** One existing document as the agent's generate form takes it: a link, its text, or both. */
+/** One existing document as the agent's generate form takes it: an uploaded file's text, or a link the agent reads itself. */
 export interface FoundationMessageExistingDocument {
   /** Human label (one line). */
   title?: string;
-  /** Link to the document. */
+  /** Link to the document; the agent fetches it. */
   url?: string;
-  /** The document's text as LFX One read it; absent when a link could not be read. */
+  /** The document's text as LFX One read it from the uploaded file. */
   text?: string;
 }
 
 /**
  * The agent's `messaging_document_intake_form` — what the BFF renders into
- * the one text message it sends (src/form.ts). A source text travels only
- * with its URL; every answer and text passes through verbatim.
+ * the one text message it sends (src/form.ts). Sources travel as URLs only:
+ * the agent fetches and researches them itself. Every text passes through
+ * verbatim.
  */
 export interface FoundationMessageFormPayload {
   type: 'messaging_document_intake_form';
   project_name: string;
+  /** The LFX project uid, for the agent's LFX lookups. */
+  project_uid?: string;
   run_date?: string;
   website_url?: string;
-  website_text?: string;
   github_url?: string;
-  readme_text?: string;
   press_release_url?: string;
-  press_release_text?: string;
   brand_page_url?: string;
-  brand_page_text?: string;
-  vision_mission?: string;
-  category?: string;
-  audiences?: string;
-  alternatives?: string;
-  differentiation?: string;
-  use_cases?: string;
-  proof_points?: string;
-  pillars?: string;
-  objections?: string;
-  tagline_ctas_constraints?: string;
+  /** Further links the requester gave, in order. */
+  other_links?: string[];
   existing_documents?: FoundationMessageExistingDocument[];
 }
 
-/** What the BFF read to text for the form, layered onto the validated answers. */
+/** What the BFF layers onto the validated answers to build the form. */
 export interface FoundationMessageFormInputs {
-  /** The text read from each source's URL; a source with no text was not read. */
-  sourceTexts?: Partial<Record<FoundationMessageSourceKind, string>>;
   /** The existing documents, as the agent takes them. */
   documents?: FoundationMessageExistingDocument[];
+  /** The LFX project uid the run belongs to. */
+  projectUid?: string;
   /** The run date, YYYY-MM-DD; the renderer defaults it to today (UTC). */
   runDate?: string;
 }
 
-/** Request body for `POST /api/mktg-agents/foundation-message/generate` — the answers plus the existing documents. */
+/**
+ * One question of the agent's questions turn (messaging-document-questions/v1)
+ * — a gap the sources and research left open, with the agent's best guess.
+ * Field names mirror the agent's JSON block verbatim.
+ */
+export interface FoundationMessageQuestion {
+  /** The field the answer fills (snake_case, e.g. `audiences`). */
+  key: string;
+  /** Short label. */
+  label: string;
+  /** The question itself. */
+  question: string;
+  /** Why the agent could not settle it from the sources. */
+  why: string;
+  /** The agent's suggested answer; empty when it has none. */
+  suggested_answer: string;
+  /** Links (or source names) the suggestion rests on. */
+  basis: string[];
+}
+
+/** The agent's questions block: the fenced JSON of the questions turn. */
+export interface FoundationMessageQuestionsBlock {
+  /** Always `messaging-document-questions/v1`. */
+  contract: string;
+  /** The project name as the agent calls it. */
+  project: string;
+  /** The gap questions, in the agent's order. */
+  questions: FoundationMessageQuestion[];
+}
+
+/** One answer of the answers turn (messaging-document-answers/v1): the run shell's answer shape, rendered per key with its origin. */
+export type FoundationMessageAnswer = MktgRunAnswer;
+
+/** Request body for `POST /api/mktg-agents/foundation-message/generate` — the sources plus the existing documents. */
 export type FoundationMessageGenerateRequest = MktgRunGenerateBody;
 
-/** Response of `POST /api/mktg-agents/foundation-message/generate` — the session to poll, with the README outcome. */
+/** Response of `POST /api/mktg-agents/foundation-message/generate` — the session to poll. */
 export type FoundationMessageGenerateResponse = MktgRunSessionResponse;
 
-/** What starting a generation produced inside the BFF: the Guild session plus the README fetch outcome. */
-export interface FoundationMessageGenerationStart {
-  /** Guild session id running the one-shot generation. */
-  sessionId: string;
-  /** Outcome of the server-side README fetch that fed this submission; absent when no GitHub URL was given. */
-  readme?: MktgReadmeOutcome;
-}
+/** Request body for `POST /api/mktg-agents/foundation-message/answers` — the answers to the session's questions turn. */
+export type FoundationMessageAnswersRequest = MktgRunAnswersBody;
+
+/** Response of `POST /api/mktg-agents/foundation-message/answers`. */
+export type FoundationMessageAnswersResponse = MktgRunAnswersResponse;
 
 /** Request body for `POST /api/mktg-agents/foundation-message/result`. */
 export type FoundationMessageResultRequest = MktgRunResultBody;
@@ -185,9 +213,11 @@ export type FoundationMessageStoredResponse = MktgArtifactStoredResponse;
 
 /**
  * Response of `POST /api/mktg-agents/foundation-message/result`: `pending`
- * until the session emits a schema-valid, sha256-verified envelope, then
- * `ready` with the document, its copy primitives (surfaced as copyable chips)
- * and, when the write succeeded, the persistence receipt of the stored revision.
+ * until the session's latest agent turn is either the questions block —
+ * then `questions`, with the gaps to answer — or a schema-valid,
+ * sha256-verified envelope, then `ready` with the document, its copy
+ * primitives (surfaced as copyable chips) and, when the write succeeded, the
+ * persistence receipt of the stored revision.
  */
 export interface FoundationMessageResultResponse extends MktgRunResultResponse {
   /** Project display name from the envelope. Present when ready. */

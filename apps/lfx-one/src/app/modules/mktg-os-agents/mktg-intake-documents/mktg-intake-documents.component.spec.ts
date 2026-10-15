@@ -18,24 +18,17 @@ describe('MktgIntakeDocumentsComponent', () => {
   const config = FOUNDATION_MESSAGE_INTAKE.documents as MktgIntakeDocumentsConfig;
   let fixture: ComponentFixture<MktgIntakeDocumentsComponent>;
   let component: MktgIntakeDocumentsComponent;
-  let readLink: ReturnType<typeof vi.fn>;
   let readFile: ReturnType<typeof vi.fn>;
 
   const host = (): HTMLElement => fixture.nativeElement as HTMLElement;
   const fileEvent = (...files: File[]): FileSelectEvent => ({ originalEvent: new Event('change'), files, currentFiles: files });
 
   beforeEach(async () => {
-    readLink = vi.fn();
     readFile = vi.fn();
     await TestBed.configureTestingModule({
       imports: [MktgIntakeDocumentsComponent],
       // The LFX file-upload wrapper's PrimeNG uploader injects HttpClient; the testing backend keeps every request local.
-      providers: [
-        provideNoopAnimations(),
-        provideHttpClient(),
-        provideHttpClientTesting(),
-        { provide: MktgIntakeDocumentsService, useValue: { readLink, readFile } },
-      ],
+      providers: [provideNoopAnimations(), provideHttpClient(), provideHttpClientTesting(), { provide: MktgIntakeDocumentsService, useValue: { readFile } }],
     }).compileComponents();
     fixture = TestBed.createComponent(MktgIntakeDocumentsComponent);
     fixture.componentRef.setInput('config', config);
@@ -43,32 +36,24 @@ describe('MktgIntakeDocumentsComponent', () => {
     await fixture.whenStable();
   });
 
-  it('reads an added link and lists what it held, as the agent will get it', async () => {
-    readLink.mockReturnValue(of<MktgDocumentExtractResponse>({ title: 'Positioning note', read: true, words: 6100, truncated: false }));
-    component['linkForm'].controls.url.setValue('https://wiki.example.org/note');
-
-    component['onAddLink']();
-    await fixture.whenStable();
-
-    expect(readLink).toHaveBeenCalledWith(config, 'https://wiki.example.org/note');
-    expect(component.documents()).toEqual([
-      expect.objectContaining({ kind: 'link', title: 'Positioning note', url: 'https://wiki.example.org/note', read: true }),
-    ]);
-    expect(host().textContent).toContain('fetched · 6,100 words');
-    expect(component['linkForm'].controls.url.value).toBe('');
-  });
-
-  it('keeps a link that could not be read, saying why — it still goes to the agent, as not read', async () => {
-    readLink.mockReturnValue(
-      of<MktgDocumentExtractResponse>({ title: 'Doc', read: false, words: 0, truncated: false, reason: 'The document isn’t shared publicly.' })
-    );
+  it('lists an added link as given, never reading it — the agent fetches it', async () => {
     component['linkForm'].controls.url.setValue('https://docs.google.com/document/d/x/edit');
 
     component['onAddLink']();
     await fixture.whenStable();
 
-    expect(component.documents()[0]).toMatchObject({ read: false, reason: 'The document isn’t shared publicly.' });
-    expect(host().textContent).toContain('isn’t shared publicly');
+    expect(component.documents()).toEqual([
+      expect.objectContaining({
+        kind: 'link',
+        title: 'https://docs.google.com/document/d/x/edit',
+        url: 'https://docs.google.com/document/d/x/edit',
+        read: false,
+        words: 0,
+      }),
+    ]);
+    expect(host().textContent).toContain('the agent reads it');
+    expect(component.busy()).toBe(false);
+    expect(component['linkForm'].controls.url.value).toBe('');
   });
 
   it('refuses a link that is not https://', () => {
@@ -76,7 +61,7 @@ describe('MktgIntakeDocumentsComponent', () => {
 
     component['onAddLink']();
 
-    expect(readLink).not.toHaveBeenCalled();
+    expect(component.documents()).toEqual([]);
     expect(component['errorText']()).toContain('https://');
   });
 

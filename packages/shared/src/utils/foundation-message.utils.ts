@@ -1,15 +1,20 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Pure Messaging Document helpers (messaging-document-output/v1): request
-// validation, the generate form payload and its rendering into the one text
-// message the agent receives, and envelope validation. The SHA-256 recompute
-// is deliberately NOT here — hashing is environment-specific (node:crypto on
-// the server) and the shared package stays platform-neutral; callers
-// recompute the hash and compare against `envelope.content_sha256`.
+// Pure Messaging Document helpers (messaging-document-output/v1 and the
+// questions/answers turns): request validation, the generate form payload and
+// its rendering into the one text message the agent receives, the questions
+// block the agent sends back, the answers turn LFX One renders, and envelope
+// validation. The SHA-256 recompute is deliberately NOT here — hashing is
+// environment-specific (node:crypto on the server) and the shared package
+// stays platform-neutral; callers recompute the hash and compare against
+// `envelope.content_sha256`.
 
 import {
   FOUNDATION_MESSAGE_AGENT_IDENTIFIER,
+  FOUNDATION_MESSAGE_ANSWER_MAX_CHARS,
+  FOUNDATION_MESSAGE_ANSWER_ORIGINS,
+  FOUNDATION_MESSAGE_ANSWERS_HEADER,
   FOUNDATION_MESSAGE_BOILERPLATE_WORD_BAND,
   FOUNDATION_MESSAGE_CONTRACT_ID,
   FOUNDATION_MESSAGE_COPY_PRIMITIVE_WORD_CAPS,
@@ -26,38 +31,38 @@ import {
   FOUNDATION_MESSAGE_KIND,
   FOUNDATION_MESSAGE_LIST_FIELD_IDS,
   FOUNDATION_MESSAGE_MAX_DOCUMENTS,
+  FOUNDATION_MESSAGE_MAX_OTHER_LINKS,
   FOUNDATION_MESSAGE_MAX_PILLARS,
+  FOUNDATION_MESSAGE_MAX_QUESTIONS,
   FOUNDATION_MESSAGE_MIN_DOCUMENT_LENGTH,
+  FOUNDATION_MESSAGE_NON_ANSWER_REGEX,
   FOUNDATION_MESSAGE_NONE_ANSWER,
+  FOUNDATION_MESSAGE_OTHER_LINKS_KEY,
   FOUNDATION_MESSAGE_PROJECT_SLUG_REGEX,
-  FOUNDATION_MESSAGE_QUESTIONS,
+  FOUNDATION_MESSAGE_QUESTION_KEY_REGEX,
+  FOUNDATION_MESSAGE_QUESTIONS_CONTRACT_ID,
   FOUNDATION_MESSAGE_REQUIRED_HEADINGS,
   FOUNDATION_MESSAGE_SHA256_REGEX,
-  FOUNDATION_MESSAGE_SHAPE_LABELS,
-  FOUNDATION_MESSAGE_SOURCE_FIELDS,
   FOUNDATION_MESSAGE_SOURCE_KINDS,
   FOUNDATION_MESSAGE_SOURCE_LABELS,
-  FOUNDATION_MESSAGE_STATUS_FROM_DOCUMENTS,
-  FOUNDATION_MESSAGE_STATUS_PREFILLED,
+  FOUNDATION_MESSAGE_SOURCE_URL_KEYS,
   FOUNDATION_MESSAGE_TEXT_TRUNCATION_MARKER,
   FOUNDATION_MESSAGE_VERBATIM_FIELD_IDS,
 } from '../constants/foundation-message.constants';
 import {
   FoundationMessageEnvelope,
-  FoundationMessageExistingDocument,
-  FoundationMessageAnswerKey,
   FoundationMessageField,
   FoundationMessageFormInputs,
   FoundationMessageFormPayload,
-  FoundationMessageGenerateShape,
-  FoundationMessageSourceKind,
+  FoundationMessageQuestion,
   FoundationMessageValidationResult,
 } from '../interfaces/foundation-message.interface';
+import { MktgRunAnswer, MktgRunAnswerOrigin, MktgRunQuestion } from '../interfaces/mktg-run.interface';
+import { extractMktgEnvelopeCandidates } from './mktg-envelope.utils';
 
 const ONE_LINE = /^[^\r\n]+$/;
-const SOURCE_URL_KEYS: string[] = FOUNDATION_MESSAGE_SOURCE_KINDS.map((kind) => FOUNDATION_MESSAGE_SOURCE_FIELDS[kind].urlKey);
-const ANSWER_KEYS: FoundationMessageAnswerKey[] = FOUNDATION_MESSAGE_QUESTIONS.map((question) => question.key);
-const FORM_ANSWER_KEYS = new Set<string>(['project_name', ...SOURCE_URL_KEYS, ...ANSWER_KEYS]);
+const SOURCE_URL_KEYS: string[] = FOUNDATION_MESSAGE_SOURCE_KINDS.map((kind) => FOUNDATION_MESSAGE_SOURCE_URL_KEYS[kind]);
+const FORM_ANSWER_KEYS = new Set<string>(['project_name', ...SOURCE_URL_KEYS, FOUNDATION_MESSAGE_OTHER_LINKS_KEY]);
 
 // ---------------------------------------------------------------------------
 // Request validation
@@ -76,11 +81,20 @@ export function foundationMessageSourceUrl(answer: string | undefined): string |
   return trimmed;
 }
 
+/** The other links an answer lists, one per line, blank lines dropped. */
+export function foundationMessageOtherLinks(answer: string | undefined): string[] {
+  return (answer ?? '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line !== '');
+}
+
 /**
  * Validate a generate-request answers record: `project_name` required and one
  * line; the four source URLs optional — blank, "none", or an http(s) URL (the
- * agent's own rule); Paul's ten answers required (the LFX page requires them,
- * so the PRE-FILL shape is never sent from it); no unknown keys.
+ * agent's own rule); the other links optional, one http(s) URL per line; no
+ * unknown keys. There are no questions on this form: the agent reads the
+ * sources, researches, and asks only the gaps afterwards.
  */
 export function validateFoundationMessageIntakeAnswers(answers: unknown): FoundationMessageValidationResult {
   if (typeof answers !== 'object' || answers === null || Array.isArray(answers)) {
@@ -109,10 +123,18 @@ export function validateFoundationMessageIntakeAnswers(answers: unknown): Founda
     }
   }
 
-  for (const key of ANSWER_KEYS) {
-    const value = record[key];
-    if (typeof value !== 'string' || !value.trim()) {
-      errors.push(`answers.${key} is required and must be a non-empty string`);
+  const otherLinks = record[FOUNDATION_MESSAGE_OTHER_LINKS_KEY];
+  if (otherLinks !== undefined) {
+    if (typeof otherLinks !== 'string') {
+      errors.push(`answers.${FOUNDATION_MESSAGE_OTHER_LINKS_KEY} must be a string when provided`);
+    } else {
+      const links = foundationMessageOtherLinks(otherLinks);
+      if (links.length > FOUNDATION_MESSAGE_MAX_OTHER_LINKS) {
+        errors.push(`answers.${FOUNDATION_MESSAGE_OTHER_LINKS_KEY} takes at most ${FOUNDATION_MESSAGE_MAX_OTHER_LINKS} links`);
+      }
+      if (links.some((link) => !FOUNDATION_MESSAGE_HTTP_URL_REGEX.test(link))) {
+        errors.push(`answers.${FOUNDATION_MESSAGE_OTHER_LINKS_KEY} must be http(s) URLs, one per line`);
+      }
     }
   }
 
@@ -128,8 +150,8 @@ export function validateFoundationMessageIntakeAnswers(answers: unknown): Founda
 /**
  * Validate a generate request's existing documents: at most
  * `FOUNDATION_MESSAGE_MAX_DOCUMENTS`; a link carries its URL and never text
- * (the BFF re-reads every link itself); a file carries its title and the text
- * the BFF extracted from it.
+ * (the agent fetches it); a file carries its title and the text the BFF
+ * extracted from it.
  */
 export function validateFoundationMessageDocuments(documents: unknown): FoundationMessageValidationResult {
   if (documents === undefined) {
@@ -165,7 +187,7 @@ export function validateFoundationMessageDocuments(documents: unknown): Foundati
         errors.push(`${at}.url must be an http(s) URL`);
       }
       if (doc['text'] !== undefined) {
-        errors.push(`${at}.text is not accepted for a link — LFX One reads the link itself`);
+        errors.push(`${at}.text is not accepted for a link — the agent reads the link itself`);
       }
     } else if (doc['kind'] === 'file') {
       const text = doc['text'];
@@ -188,32 +210,25 @@ export function validateFoundationMessageDocuments(documents: unknown): Foundati
 
 /**
  * Build the `messaging_document_intake_form` payload from a VALIDATED answers
- * record. Answers pass through trimmed but otherwise verbatim; a "none" or
- * blank source is omitted; a source's text travels only with its URL (the
- * agent refuses a text without one).
+ * record. The project name and links pass through trimmed but otherwise
+ * verbatim; a "none" or blank source is omitted.
  */
 export function buildFoundationMessageFormPayload(answers: Record<string, string>, inputs: FoundationMessageFormInputs = {}): FoundationMessageFormPayload {
   const payload: FoundationMessageFormPayload = { type: FOUNDATION_MESSAGE_FORM_TYPE, project_name: (answers['project_name'] ?? '').trim() };
+  if (inputs.projectUid) {
+    payload.project_uid = inputs.projectUid;
+  }
   for (const kind of FOUNDATION_MESSAGE_SOURCE_KINDS) {
-    const { urlKey, textKey } = FOUNDATION_MESSAGE_SOURCE_FIELDS[kind];
+    const urlKey = FOUNDATION_MESSAGE_SOURCE_URL_KEYS[kind];
     const url = foundationMessageSourceUrl(answers[urlKey]);
-    if (url === null) {
-      continue;
-    }
-    payload[urlKey] = url;
-    const text = inputs.sourceTexts?.[kind];
-    if (text) {
-      payload[textKey] = text;
+    if (url !== null) {
+      payload[urlKey] = url;
     }
   }
-
-  for (const key of ANSWER_KEYS) {
-    const value = (answers[key] ?? '').trim();
-    if (value) {
-      payload[key] = value;
-    }
+  const otherLinks = foundationMessageOtherLinks(answers[FOUNDATION_MESSAGE_OTHER_LINKS_KEY]);
+  if (otherLinks.length > 0) {
+    payload.other_links = otherLinks;
   }
-
   if (inputs.documents && inputs.documents.length > 0) {
     payload.existing_documents = inputs.documents;
   }
@@ -221,14 +236,6 @@ export function buildFoundationMessageFormPayload(answers: Record<string, string
     payload.run_date = inputs.runDate;
   }
   return payload;
-}
-
-/** The form's shape: no answers → PRE-FILL; answers and documents → DOCUMENTS WITH ANSWERS; answers only → ANSWERS. */
-export function foundationMessageShapeOf(payload: FoundationMessageFormPayload): FoundationMessageGenerateShape {
-  if (!ANSWER_KEYS.some((key) => payload[key] !== undefined)) {
-    return 'prefill';
-  }
-  return (payload.existing_documents?.length ?? 0) > 0 ? 'documents-with-answers' : 'answers';
 }
 
 /**
@@ -243,27 +250,16 @@ export function guardFoundationMessageText(text: string): string {
     .join('\n');
 }
 
-/** The GitHub organization avatar URL (Paul's last logo fallback), or null when the URL is not a GitHub one. */
-export function foundationMessageGithubAvatarUrl(githubUrl: string | undefined): string | null {
-  if (githubUrl === undefined) {
-    return null;
-  }
-  const match = /^https?:\/\/(?:www\.)?github\.com\/([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))(?:[/?#]|$)/.exec(githubUrl);
-  return match === null ? null : `https://github.com/${match[1]}.png`;
-}
-
-/** The question as stamped into the intake message: "<label> — <question>". */
-export function foundationMessageStampedQuestion(question: { label: string; question: string }): string {
-  return `${question.label} — ${question.question}`;
-}
-
 /**
  * Render the generate form into the one text message the agent receives — a
- * VERBATIM mirror of the agent's own `renderFormMessage` (marketing-os-agents
+ * mirror of the agent's own `renderFormMessage` (marketing-os-agents
  * `agents/foundation-message/src/form.ts`), byte-identical for the same
- * payload. The marker lines are load-bearing: the agent's finalize tool reads
- * the project name, shape, sources, documents and answers back from them, so
- * any drift makes every run fail.
+ * payload. The form is small on purpose: the project, its LFX uid, the run
+ * date, the sources as links (the agent fetches and researches them itself;
+ * nothing is read here), the other links, and the existing documents — an
+ * uploaded file as its text, a link as its URL. The marker lines are
+ * load-bearing: the agent's finalize tool reads the project name, sources
+ * and documents back from them, so any drift makes every run fail.
  *
  * Why the BFF renders instead of sending the typed payload as a structured
  * `agent_input`: Guild coerces a structured input to
@@ -272,49 +268,26 @@ export function foundationMessageStampedQuestion(question: { label: string; ques
  */
 export function renderFoundationMessageFormText(payload: FoundationMessageFormPayload, now: Date = new Date()): string {
   const runDate = payload.run_date ?? now.toISOString().slice(0, 10);
-  const shape = foundationMessageShapeOf(payload);
-  const answered = ANSWER_KEYS.filter((key) => payload[key] !== undefined);
   const docs = payload.existing_documents ?? [];
+  const otherLinks = payload.other_links ?? [];
 
-  const lines: string[] = [FOUNDATION_MESSAGE_GENERATE_HEADER, `FORM SHAPE: ${FOUNDATION_MESSAGE_SHAPE_LABELS[shape]}`];
-  if (shape === 'prefill') {
-    lines.push(
-      'mode: prefill — there is no interviewee on this call and no Step 1 answer was',
-      "given. Answer each Step 1 question yourself from the sources in Paul's order",
-      `(supplied documents first), ask NOTHING, and set the status to "${FOUNDATION_MESSAGE_STATUS_PREFILLED}".`
-    );
-  } else if (shape === 'documents-with-answers') {
-    lines.push(
-      'The requester attached existing documents AND answered on the form. Map the',
-      'documents first (Step 0a); an answer below OVERRIDES the mapped value for its',
-      `field. Ask NOTHING. Status "${FOUNDATION_MESSAGE_STATUS_FROM_DOCUMENTS}".`
-    );
-  } else {
-    lines.push(
-      "The requester answered Paul's Step 1 questions on the form (their own written",
-      'input; no documents attached). Do not re-ask them; ask NOTHING. A question the',
-      `form left unanswered is answered from the sources, else Needs input. Status "${FOUNDATION_MESSAGE_STATUS_FROM_DOCUMENTS}".`
-    );
-  }
-  lines.push('', `PROJECT NAME: ${payload.project_name}`, `RUN DATE: ${runDate}`, '');
+  const lines: string[] = [
+    FOUNDATION_MESSAGE_GENERATE_HEADER,
+    '',
+    `PROJECT NAME: ${payload.project_name}`,
+    `PROJECT UID: ${payload.project_uid ?? 'none'}`,
+    `RUN DATE: ${runDate}`,
+    '',
+  ];
 
-  lines.push('SOURCES (Step 0b) — fetched to text by LFX One; you cannot fetch. A source with no text was not read.');
+  lines.push('SOURCES (Step 0b) — links only; fetch and read every one yourself. A source given as "none" was not supplied.');
   for (const kind of FOUNDATION_MESSAGE_SOURCE_KINDS) {
-    const url = payload[FOUNDATION_MESSAGE_SOURCE_FIELDS[kind].urlKey];
-    const text = payload[FOUNDATION_MESSAGE_SOURCE_FIELDS[kind].textKey];
-    lines.push(`--- SOURCE ${kind}: ${FOUNDATION_MESSAGE_SOURCE_LABELS[kind]} ---`);
-    lines.push(`URL: ${url ?? 'none'}`);
-    if (url === undefined) {
-      lines.push('TEXT: none (the requester gave no URL)');
-    } else if (text === undefined) {
-      lines.push('TEXT: not read (LFX One could not fetch it — never guess what it says)');
-    } else {
-      lines.push('TEXT: read, follows', guardFoundationMessageText(text));
-    }
-    lines.push(`--- END SOURCE ${kind} ---`);
+    const url = payload[FOUNDATION_MESSAGE_SOURCE_URL_KEYS[kind]];
+    lines.push(`--- SOURCE ${kind}: ${FOUNDATION_MESSAGE_SOURCE_LABELS[kind]} ---`, `URL: ${url ?? 'none'}`, `--- END SOURCE ${kind} ---`);
   }
-  const avatar = foundationMessageGithubAvatarUrl(payload.github_url);
-  lines.push(`LOGO FALLBACK (GitHub organization avatar, last in Paul's logo order): ${avatar ?? 'none'}`, '');
+  lines.push(`OTHER LINKS: ${otherLinks.length === 0 ? 'none' : `${otherLinks.length} supplied — fetch and read every one`}`);
+  otherLinks.forEach((link, index) => lines.push(`--- LINK ${index + 1} ---`, link, `--- END LINK ${index + 1} ---`));
+  lines.push('');
 
   const docsLine = docs.length === 0 ? 'none supplied' : `${docs.length} supplied — read every one in full and map it first`;
   lines.push(`EXISTING DOCUMENTS (Step 0a): ${docsLine}`);
@@ -323,26 +296,185 @@ export function renderFoundationMessageFormText(payload: FoundationMessageFormPa
     lines.push(`--- DOCUMENT ${n}: ${doc.title ?? doc.url ?? `document ${n}`} ---`);
     lines.push(`URL: ${doc.url ?? 'none'}`);
     if (doc.text === undefined) {
-      lines.push('TEXT: not read (only a link was given and LFX One could not read it)');
+      lines.push('TEXT: not read (a link only — fetch it yourself)');
     } else {
       lines.push('TEXT: read, follows', guardFoundationMessageText(doc.text));
     }
     lines.push(`--- END DOCUMENT ${n} ---`);
   });
-  lines.push('');
+  return lines.join('\n');
+}
 
-  lines.push(`STEP 1 ANSWERS: ${answered.length} of 10 answered on the form`);
-  FOUNDATION_MESSAGE_QUESTIONS.forEach((question, index) => {
-    const n = index + 1;
-    const answer = payload[question.key];
-    lines.push(`--- Q${n} ${question.key} ---`, `QUESTION: ${foundationMessageStampedQuestion(question)}`);
-    if (answer === undefined) {
-      lines.push('ANSWER: (not answered on the form)');
-    } else {
-      lines.push('ANSWER: follows', guardFoundationMessageText(answer));
+// ---------------------------------------------------------------------------
+// The questions turn (messaging-document-questions/v1) and the answers turn
+// (messaging-document-answers/v1)
+// ---------------------------------------------------------------------------
+
+/** The links a question's `basis` names: a list, a single string, or nothing. */
+function basisLinks(value: unknown): string[] | null {
+  if (value === undefined || value === null) {
+    return [];
+  }
+  if (typeof value === 'string') {
+    return value.trim() ? [value.trim()] : [];
+  }
+  if (Array.isArray(value) && value.every((entry) => typeof entry === 'string')) {
+    return (value as string[]).map((entry) => entry.trim()).filter((entry) => entry !== '');
+  }
+  return null;
+}
+
+/**
+ * The agent's questions block as the run shell takes it, or null when the
+ * candidate is not one: the contract id, a `questions` list of one to
+ * `FOUNDATION_MESSAGE_MAX_QUESTIONS` entries with unique snake_case keys, a
+ * label and a question each. `why`, `suggested_answer` and `basis` are read
+ * leniently (absent is empty): a question without a suggestion is one the
+ * requester answers from scratch.
+ */
+export function readFoundationMessageQuestions(candidate: unknown): MktgRunQuestion[] | null {
+  if (typeof candidate !== 'object' || candidate === null || Array.isArray(candidate)) {
+    return null;
+  }
+  const block = candidate as Record<string, unknown>;
+  if (block['contract'] !== FOUNDATION_MESSAGE_QUESTIONS_CONTRACT_ID || !Array.isArray(block['questions'])) {
+    return null;
+  }
+  const entries = block['questions'] as unknown[];
+  if (entries.length === 0 || entries.length > FOUNDATION_MESSAGE_MAX_QUESTIONS) {
+    return null;
+  }
+  const questions: MktgRunQuestion[] = [];
+  const seen = new Set<string>();
+  for (const entry of entries) {
+    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
+      return null;
     }
-    lines.push(`--- END Q${n} ---`);
+    const question = entry as Partial<FoundationMessageQuestion>;
+    const key = typeof question.key === 'string' ? question.key.trim() : '';
+    const label = typeof question.label === 'string' ? question.label.trim() : '';
+    const text = typeof question.question === 'string' ? question.question.trim() : '';
+    const basis = basisLinks(question.basis);
+    if (!FOUNDATION_MESSAGE_QUESTION_KEY_REGEX.test(key) || seen.has(key) || !label || !text || basis === null) {
+      return null;
+    }
+    seen.add(key);
+    questions.push({
+      key,
+      label,
+      question: text,
+      why: typeof question.why === 'string' ? question.why.trim() : '',
+      suggestedAnswer: typeof question.suggested_answer === 'string' ? question.suggested_answer.trim() : '',
+      basis,
+    });
+  }
+  return questions;
+}
+
+/**
+ * The questions block in one raw session event payload, when the agent's
+ * text carries one: the latest valid block wins. Lenient about where it
+ * sits — any agent text with a JSON object whose contract is the questions
+ * contract, fenced or not — because the exact event type the agent's text
+ * turn rides is Guild's to choose.
+ */
+export function extractFoundationMessageQuestions(payload: string): MktgRunQuestion[] | null {
+  let found: MktgRunQuestion[] | null = null;
+  for (const candidate of extractMktgEnvelopeCandidates(payload, FOUNDATION_MESSAGE_QUESTIONS_CONTRACT_ID)) {
+    found = readFoundationMessageQuestions(candidate) ?? found;
+  }
+  return found;
+}
+
+/**
+ * A stable id for a questions block — FNV-1a over its JSON, as eight hex
+ * digits. Platform-neutral (no node:crypto): it tells one block from
+ * another so the run shell never re-asks a block it already answered, and
+ * needs nothing stronger than that.
+ */
+export function foundationMessageQuestionsId(questions: MktgRunQuestion[]): string {
+  const text = JSON.stringify(questions);
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, '0');
+}
+
+/** Where an answer came from: the suggestion unchanged, an edited one, or the requester's own where there was none. */
+export function foundationMessageAnswerOrigin(text: string, suggestedAnswer: string): MktgRunAnswerOrigin {
+  const suggestion = suggestedAnswer.trim();
+  if (!suggestion) {
+    return 'requester';
+  }
+  return text.trim() === suggestion ? 'accepted' : 'edited';
+}
+
+/** True when the text is a real answer — not blank, not a skip, not a TBD. */
+export function isFoundationMessageAnswerSubstantive(text: string): boolean {
+  const trimmed = text.trim();
+  return trimmed !== '' && !FOUNDATION_MESSAGE_NON_ANSWER_REGEX.test(trimmed);
+}
+
+/**
+ * Validate the answers of an answers request: one to
+ * `FOUNDATION_MESSAGE_MAX_QUESTIONS` entries, each a `{ key, text, origin }`
+ * with a unique snake_case key, a substantive text (no skip, no TBD, no
+ * empty) within the length cap, and a known origin; no unknown keys.
+ */
+export function validateFoundationMessageAnswers(answers: unknown): FoundationMessageValidationResult {
+  if (!Array.isArray(answers)) {
+    return { valid: false, errors: ['answers must be an array'] };
+  }
+  const errors: string[] = [];
+  if (answers.length === 0 || answers.length > FOUNDATION_MESSAGE_MAX_QUESTIONS) {
+    errors.push(`answers takes 1 to ${FOUNDATION_MESSAGE_MAX_QUESTIONS} entries`);
+  }
+  const seen = new Set<string>();
+  answers.forEach((entry: unknown, index) => {
+    const at = `answers[${index}]`;
+    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
+      errors.push(`${at} must be an object`);
+      return;
+    }
+    const answer = entry as Record<string, unknown>;
+    const unknownKeys = Object.keys(answer).filter((key) => !['key', 'text', 'origin'].includes(key));
+    if (unknownKeys.length > 0) {
+      errors.push(`${at} has unknown keys: ${unknownKeys.join(', ')}`);
+    }
+    const key = answer['key'];
+    if (typeof key !== 'string' || !FOUNDATION_MESSAGE_QUESTION_KEY_REGEX.test(key)) {
+      errors.push(`${at}.key must be a snake_case question key`);
+    } else if (seen.has(key)) {
+      errors.push(`${at}.key repeats ${key}`);
+    } else {
+      seen.add(key);
+    }
+    const text = answer['text'];
+    if (typeof text !== 'string' || !isFoundationMessageAnswerSubstantive(text)) {
+      errors.push(`${at}.text must be an answer — not empty, not a skip, not a TBD`);
+    } else if (text.length > FOUNDATION_MESSAGE_ANSWER_MAX_CHARS) {
+      errors.push(`${at}.text must be at most ${FOUNDATION_MESSAGE_ANSWER_MAX_CHARS} characters`);
+    }
+    if (!(FOUNDATION_MESSAGE_ANSWER_ORIGINS as readonly string[]).includes(answer['origin'] as string)) {
+      errors.push(`${at}.origin must be one of ${FOUNDATION_MESSAGE_ANSWER_ORIGINS.join(', ')}`);
+    }
   });
+  return { valid: errors.length === 0, errors };
+}
+
+/**
+ * Render the answers turn (messaging-document-answers/v1) the agent parses
+ * back: the header, then per answer `--- A <key> (<origin>) ---`,
+ * `ANSWER: follows`, the text, `--- END A <key> ---`. Sent as a follow-up on
+ * the session that asked the questions.
+ */
+export function renderFoundationMessageAnswersText(answers: MktgRunAnswer[]): string {
+  const lines: string[] = [FOUNDATION_MESSAGE_ANSWERS_HEADER];
+  for (const answer of answers) {
+    lines.push(`--- A ${answer.key} (${answer.origin}) ---`, 'ANSWER: follows', guardFoundationMessageText(answer.text.trim()), `--- END A ${answer.key} ---`);
+  }
   return lines.join('\n');
 }
 
@@ -593,7 +725,7 @@ export function validateFoundationMessageEnvelope(candidate: unknown): Foundatio
     errors.push('mode must be "generate" or "revise"');
   }
   if (typeof envelope.status !== 'string' || !FOUNDATION_MESSAGE_DRAFT_STATUSES.some((label) => (envelope.status as string).startsWith(label))) {
-    errors.push(`status must start with one of Paul's draft labels: ${FOUNDATION_MESSAGE_DRAFT_STATUSES.join(' | ')}`);
+    errors.push(`status must start with one of the draft labels: ${FOUNDATION_MESSAGE_DRAFT_STATUSES.join(' | ')}`);
   }
   if (typeof envelope.content_sha256 !== 'string' || !FOUNDATION_MESSAGE_SHA256_REGEX.test(envelope.content_sha256)) {
     errors.push('content_sha256 must be 64 lowercase hex characters');

@@ -13,7 +13,15 @@ import {
   MKTG_RUN_STORAGE_KEY_PREFIX,
   MKTG_RUN_STORAGE_TTL_MS,
 } from '@lfx-one/shared/constants';
-import { MktgGenerateProgress, MktgGenerateRequest, MktgRunResultResponse, MktgStoredAgentRun, User } from '@lfx-one/shared/interfaces';
+import {
+  MktgGenerateProgress,
+  MktgGenerateRequest,
+  MktgRunQuestion,
+  MktgRunQuestionsPending,
+  MktgRunResultResponse,
+  MktgStoredAgentRun,
+  User,
+} from '@lfx-one/shared/interfaces';
 import { renderMktgIntakeMessage } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { concatMap, of, throwError, timer } from 'rxjs';
@@ -179,6 +187,22 @@ describe('MktgAgentRunService', () => {
 
     const stored = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? 'null') as MktgStoredAgentRun;
     expect(stored.versions[0].readme).toBeUndefined();
+  });
+
+  it('treats a `questions` result as pending for an intake with no answers endpoint — only the document ends the poll', async () => {
+    resultResponses = [
+      { status: 'questions', questions: [{ key: 'q', label: 'Q', question: 'Q?', why: '', suggestedAnswer: '', basis: [] }], questionsId: 'abc' },
+      { status: 'ready', documentMarkdown: '# Brand Kit', version: 1 },
+    ];
+    const events: MktgGenerateProgress[] = [];
+    service.generate(generateRequest()).subscribe((event) => events.push(event));
+
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+    expect(events).toEqual([{ type: 'submitted' }]);
+
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    expect(events).toHaveLength(2);
+    expect(events[1].type).toBe('document');
   });
 
   it('prunes an expired stored run on load — the persisted ownerToken never outlives the storage TTL', () => {
@@ -551,13 +575,24 @@ describe('MktgAgentRunService', () => {
     });
   });
 
-  describe('fresh-run intakes (Messaging Document)', () => {
+  describe('fresh-run intakes that research first (Messaging Document)', () => {
     const MF_STORAGE_KEY = `${MKTG_RUN_STORAGE_KEY_PREFIX}:${USER_SUB}:proj-1:foundation-setup`;
     const MF_ANSWERS: Record<string, string> = {
       project_name: 'TestOrbit',
-      github_url: 'https://github.com/example-org/testorbit',
-      vision_mission: 'TBD',
+      github_url: 'https://github.com/aaif',
+      other_links: 'https://blog.example.org/launch',
     };
+    const QUESTIONS: MktgRunQuestion[] = [
+      { key: 'audiences', label: 'Audiences', question: 'Who?', why: 'Unclear.', suggestedAnswer: 'Platform teams.', basis: ['https://testorbit.example.org'] },
+      { key: 'pillars', label: 'Pillars', question: 'Which?', why: '', suggestedAnswer: '', basis: [] },
+    ];
+    const QUESTIONS_RESULT: MktgRunResultResponse = { status: 'questions', questions: QUESTIONS, questionsId: 'abc12345' };
+    const ANSWERS = [
+      { key: 'audiences', text: 'Platform teams.', origin: 'accepted' as const },
+      { key: 'pillars', text: 'Reliability; openness.', origin: 'requester' as const },
+    ];
+    /** Where answers POSTs went. */
+    let answersCalls: unknown[][];
 
     const mfRequest = (feedback?: string): MktgGenerateRequest => ({
       agentId: 'foundation-setup',
@@ -577,13 +612,21 @@ describe('MktgAgentRunService', () => {
       savedAt: new Date().toISOString(),
     });
 
+    const mfResultCalls = (): unknown[][] => httpPost.mock.calls.filter(([url]) => url === FOUNDATION_MESSAGE_INTAKE.endpoints.result);
+
     beforeEach(() => {
+      answersCalls = [];
       // Same contract-locked mock, retargeted at the Messaging Document
       // endpoints: every submission is a generate POST on a FRESH session;
-      // posting to the chat endpoint would be the regression.
-      httpPost.mockImplementation((url: string) => {
+      // posting to the chat endpoint would be the regression. Answers go to
+      // the answers endpoint, on the same session.
+      httpPost.mockImplementation((url: string, body: unknown) => {
         if (url === FOUNDATION_MESSAGE_INTAKE.endpoints.generate) {
           return of({ sessionId: 'sess-2', ownerToken: 'token-2' });
+        }
+        if (url === FOUNDATION_MESSAGE_INTAKE.endpoints.answers) {
+          answersCalls.push([url, body]);
+          return of({ success: true });
         }
         if (url === FOUNDATION_MESSAGE_INTAKE.endpoints.result) {
           const next = resultResponses.length > 1 ? resultResponses.shift() : resultResponses[0];
@@ -593,7 +636,7 @@ describe('MktgAgentRunService', () => {
       });
     });
 
-    it('resubmits as a FRESH run — no priorVersion, no feedback — and numbers the run’s own history', async () => {
+    it('resubmits as a FRESH run — no priorVersion, no feedback — with the project uid, and numbers the run’s own history', async () => {
       window.localStorage.setItem(MF_STORAGE_KEY, JSON.stringify(mfStoredV1Run()));
       // The generate envelope always says version 1; the poll's gate stays 0 so it is accepted.
       resultResponses = [{ status: 'ready', documentMarkdown: '# second run', version: 1 }];
@@ -602,7 +645,8 @@ describe('MktgAgentRunService', () => {
       const events: MktgGenerateProgress[] = [];
       service.generate({ ...mfRequest(), documents }).subscribe((event) => events.push(event));
 
-      expect(httpPost).toHaveBeenCalledWith(FOUNDATION_MESSAGE_INTAKE.endpoints.generate, { answers: MF_ANSWERS, documents });
+      // The agent's own LFX lookups need the project; it rides the generate body for this intake.
+      expect(httpPost).toHaveBeenCalledWith(FOUNDATION_MESSAGE_INTAKE.endpoints.generate, { answers: MF_ANSWERS, documents, project: 'proj-1' });
       await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
       expect(events).toHaveLength(2);
 
@@ -612,12 +656,107 @@ describe('MktgAgentRunService', () => {
       expect(stored.versions[1].document).toBe('# second run');
     });
 
-    it('treats a first run normally — no priorVersion, plain generate body', async () => {
+    it('treats a first run normally — no priorVersion, plain generate body plus the project', async () => {
       resultResponses = [{ status: 'ready', documentMarkdown: '# v1', version: 1 }];
 
       service.generate(mfRequest()).subscribe();
 
-      expect(httpPost).toHaveBeenCalledWith(FOUNDATION_MESSAGE_INTAKE.endpoints.generate, { answers: MF_ANSWERS });
+      expect(httpPost).toHaveBeenCalledWith(FOUNDATION_MESSAGE_INTAKE.endpoints.generate, { answers: MF_ANSWERS, project: 'proj-1' });
+    });
+
+    it('stops at the agent’s questions: emits them with the session to continue and completes, storing no version', async () => {
+      resultResponses = [{ status: 'pending' }, QUESTIONS_RESULT];
+      const events: MktgGenerateProgress[] = [];
+      let completed = false;
+      service.generate(mfRequest()).subscribe({ next: (event) => events.push(event), complete: () => (completed = true) });
+
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs + MKTG_RUN_POLL.intervalMs);
+
+      expect(events).toEqual([
+        { type: 'submitted' },
+        {
+          type: 'questions',
+          pending: {
+            attempt: { session: { agentId: 'foundation-setup', sessionId: 'sess-2', ownerToken: 'token-2' }, priorVersion: 0 },
+            questionsId: 'abc12345',
+            questions: QUESTIONS,
+          },
+        },
+      ]);
+      expect(completed).toBe(true);
+      expect(window.localStorage.getItem(MF_STORAGE_KEY)).toBeNull();
+      // Polling stopped with the questions: nothing more is asked of the result endpoint.
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 3);
+      expect(mfResultCalls()).toHaveLength(2);
+    });
+
+    it('answers on the SAME session, ignores the block it just answered, and stores the questions and answers with the version', async () => {
+      const pending: MktgRunQuestionsPending = {
+        attempt: { session: { agentId: 'foundation-setup', sessionId: 'sess-2', ownerToken: 'token-2' }, priorVersion: 0 },
+        questionsId: 'abc12345',
+        questions: QUESTIONS,
+      };
+      // The result endpoint keeps reporting the answered block until the agent writes something newer.
+      resultResponses = [QUESTIONS_RESULT, { status: 'ready', documentMarkdown: '# From answers', version: 1 }];
+      const events: MktgGenerateProgress[] = [];
+      service.answerQuestions(mfRequest(), pending, ANSWERS).subscribe((event) => events.push(event));
+
+      expect(answersCalls).toEqual([[FOUNDATION_MESSAGE_INTAKE.endpoints.answers, { sessionId: 'sess-2', ownerToken: 'token-2', answers: ANSWERS }]]);
+      expect(httpPost).not.toHaveBeenCalledWith(FOUNDATION_MESSAGE_INTAKE.endpoints.generate, expect.anything());
+      expect(events).toEqual([{ type: 'submitted' }]);
+
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+      // The answered block came back once more — still no document, no new questions.
+      expect(events).toEqual([{ type: 'submitted' }]);
+
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+      expect(events).toHaveLength(2);
+      expect(events[1].type).toBe('document');
+
+      const stored = JSON.parse(window.localStorage.getItem(MF_STORAGE_KEY) ?? 'null') as MktgStoredAgentRun;
+      expect(stored).toMatchObject({ sessionId: 'sess-2', ownerToken: 'token-2' });
+      expect(stored.versions).toHaveLength(1);
+      expect(stored.versions[0]).toMatchObject({ version: 1, document: '# From answers', questions: QUESTIONS, answers: ANSWERS });
+    });
+
+    it('surfaces a second, different questions block after the answers as a new round', async () => {
+      const pending: MktgRunQuestionsPending = {
+        attempt: { session: { agentId: 'foundation-setup', sessionId: 'sess-2', ownerToken: 'token-2' }, priorVersion: 0 },
+        questionsId: 'abc12345',
+        questions: QUESTIONS,
+      };
+      const second: MktgRunResultResponse = { status: 'questions', questions: [QUESTIONS[1]], questionsId: 'def67890' };
+      resultResponses = [second];
+      const events: MktgGenerateProgress[] = [];
+      service.answerQuestions(mfRequest(), pending, ANSWERS).subscribe((event) => events.push(event));
+
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+
+      expect(events).toHaveLength(2);
+      expect(events[1]).toMatchObject({ type: 'questions', pending: { questionsId: 'def67890', questions: [QUESTIONS[1]] } });
+    });
+
+    it('fails the answers round on a rejected POST without touching the stored run', () => {
+      const existing = mfStoredV1Run();
+      window.localStorage.setItem(MF_STORAGE_KEY, JSON.stringify(existing));
+      const rejection = new HttpErrorResponse({ status: 403, statusText: 'Forbidden' });
+      httpPost.mockImplementation((url: string) => {
+        if (url === FOUNDATION_MESSAGE_INTAKE.endpoints.answers) {
+          return throwError(() => rejection);
+        }
+        throw new Error(`Unexpected POST to ${url}`);
+      });
+      const pending: MktgRunQuestionsPending = {
+        attempt: { session: { agentId: 'foundation-setup', sessionId: 'sess-2', ownerToken: 'token-2' }, priorVersion: 0 },
+        questionsId: 'abc12345',
+        questions: QUESTIONS,
+      };
+
+      let error: unknown;
+      service.answerQuestions(mfRequest(), pending, ANSWERS).subscribe({ error: (err) => (error = err) });
+
+      expect(error).toBe(rejection);
+      expect(JSON.parse(window.localStorage.getItem(MF_STORAGE_KEY) ?? 'null')).toMatchObject(existing);
     });
 
     it('poll-retries a receipt-less ready result — this intake now persists, so a missing receipt is a failed write', async () => {
@@ -627,7 +766,6 @@ describe('MktgAgentRunService', () => {
       // server-side write — exactly the Brand Kit case, recovered by the same
       // bounded, idempotent retry. Without it the only copy of the document
       // would be this browser's TTL-bounded stored run.
-      const mfResultCalls = (): unknown[][] => httpPost.mock.calls.filter(([url]) => url === FOUNDATION_MESSAGE_INTAKE.endpoints.result);
       const readyNoReceipt: MktgRunResultResponse = { status: 'ready', documentMarkdown: '# v1', version: 1 };
       resultResponses = [
         readyNoReceipt,
@@ -665,7 +803,7 @@ describe('MktgAgentRunService', () => {
       await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
       await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 10);
 
-      expect(httpPost.mock.calls.filter(([url]) => url === FOUNDATION_MESSAGE_INTAKE.endpoints.result)).toHaveLength(1 + MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS);
+      expect(mfResultCalls()).toHaveLength(1 + MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS);
     });
   });
 

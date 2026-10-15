@@ -4,13 +4,14 @@
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { FOUNDATION_MESSAGE_FILE_NAME_HEADER, FOUNDATION_MESSAGE_FILE_UPLOAD_CONTENT_TYPE } from '@lfx-one/shared/constants';
-import { MktgDocumentExtractResponse, MktgDocumentLinkRequest, MktgIntakeDocumentsConfig } from '@lfx-one/shared/interfaces';
+import { MktgDocumentExtractResponse, MktgIntakeDocumentsConfig } from '@lfx-one/shared/interfaces';
 import { from, Observable, switchMap, take } from 'rxjs';
 
 /**
- * Turns an intake's existing documents into text through the BFF before the
- * agent runs (the agents cannot fetch or open files). The browser never
- * parses a file: it sends the raw bytes, and the server reads them.
+ * Turns an intake's uploaded documents into text through the BFF before the
+ * agent runs (the agents cannot open files). The browser never parses a
+ * file: it sends the raw bytes, and the server reads them. A document given
+ * as a link is never read here — the agent fetches it.
  */
 @Injectable({ providedIn: 'root' })
 export class MktgIntakeDocumentsService {
@@ -27,11 +28,5 @@ export class MktgIntakeDocumentsService {
       switchMap((bytes) => this.http.post<MktgDocumentExtractResponse>(config.endpoints.file, bytes, { headers })),
       take(1)
     );
-  }
-
-  /** Reads a link to text and reports what it held; the server reads it again when the run starts. */
-  public readLink(config: MktgIntakeDocumentsConfig, url: string): Observable<MktgDocumentExtractResponse> {
-    const body: MktgDocumentLinkRequest = { url };
-    return this.http.post<MktgDocumentExtractResponse>(config.endpoints.link, body).pipe(take(1));
   }
 }

@@ -4,21 +4,24 @@
 import type { GithubRepoUrlErrorReason, MktgAgentIntake, MktgIntakeField, MktgIntakeFieldFormat, MktgReadmeSkipReason } from '../interfaces';
 import { BRAND_KIT_FORM_PREAMBLE_LINES, BRAND_KIT_INTAKE_QUESTIONS } from './brand-kit.constants';
 import {
+  FOUNDATION_MESSAGE_ANSWERS_ENDPOINT,
   FOUNDATION_MESSAGE_DERIVATIVE_CHIPS,
   FOUNDATION_MESSAGE_DOCUMENT_ENDPOINTS,
   FOUNDATION_MESSAGE_FILE_EXTENSIONS,
   FOUNDATION_MESSAGE_MAX_DOCUMENTS,
   FOUNDATION_MESSAGE_MAX_FILE_BYTES,
-  FOUNDATION_MESSAGE_QUESTIONS,
+  FOUNDATION_MESSAGE_MAX_OTHER_LINKS,
+  FOUNDATION_MESSAGE_OTHER_LINKS_KEY,
   FOUNDATION_MESSAGE_REQUIRED_HEADINGS,
-  FOUNDATION_MESSAGE_SOURCE_FIELDS,
   FOUNDATION_MESSAGE_SOURCE_KINDS,
   FOUNDATION_MESSAGE_SOURCE_LABELS,
+  FOUNDATION_MESSAGE_SOURCE_URL_KEYS,
 } from './foundation-message.constants';
 import { ICP_FORM_PREAMBLE_LINES, ICP_GAP_FILL_QUESTIONS, ICP_Q_GITHUB_URL, ICP_Q_PROJECT_NAME, ICP_REQUIRED_HEADINGS } from './icp.constants';
 
-/** Paul's questions whose answers run longer (proof points, objections, tagline and constraints) get a taller box. */
-const FOUNDATION_MESSAGE_LONG_ANSWER_KEYS = new Set<string>(['proof_points', 'objections', 'tagline_ctas_constraints']);
+/** Paul's label for each source, sentence-cased for the form. */
+const sourceLabel = (kind: (typeof FOUNDATION_MESSAGE_SOURCE_KINDS)[number]): string =>
+  FOUNDATION_MESSAGE_SOURCE_LABELS[kind].charAt(0).toUpperCase() + FOUNDATION_MESSAGE_SOURCE_LABELS[kind].slice(1);
 
 // Form-first run-page configuration for the Marketing OS Agents marketplace
 // (LFXAI-95 workstream): per-agent batch intake registry, running-phase stage
@@ -99,19 +102,24 @@ export const BRAND_KIT_INTAKE: MktgAgentIntake = {
 };
 
 /**
- * Messaging Document intake (marketing-os-agents agents/foundation-message
- * 2.0.0, Paul's messaging-document 1.0.0; wi-message-foundation-existing-documents-form).
- * The form from the design canvas, in three groups:
+ * Messaging Document intake (marketing-os-agents agents/foundation-message,
+ * Paul's messaging-document 1.0.0; wi-message-foundation-existing-documents-form).
+ * The form from the design canvas, in two parts:
  *
- * - Sources: the project name and Paul's four Step 0b sources. LFX One
- *   fetches each page to text for the agent, which cannot fetch; "none" is a
- *   valid answer. The project name and the GitHub repo come from LFX.
- * - Paul's ten Step 1 questions, all required on this page, with his wording
- *   quoted VERBATIM from the agent's src/questions.ts (via
- *   FOUNDATION_MESSAGE_QUESTIONS); "skip" and "TBD" are answers.
- * - Existing documents, optional and last: links and PDF, Word, Markdown or
- *   text files, turned into text by the BFF. The agent maps them first and
- *   the answers override them.
+ * - Sources: the project name, Paul's four Step 0b sources and any other
+ *   links, as URLs only. The agent fetches every link itself and researches
+ *   the rest (web fetch, Exa search); "none" is a valid answer. The project
+ *   name and the GitHub page come from LFX; the GitHub field takes a
+ *   repository or an organization page.
+ * - Existing documents, optional and last: PDF, Word, Markdown or text files,
+ *   turned into text by the BFF, and links the agent reads itself. The agent
+ *   maps them first.
+ *
+ * There are no questions on this form. After reading and researching, the
+ * agent asks only the gaps it could not settle, each with a suggested answer
+ * (`endpoints.answers`): the run page shows them as a second step on the
+ * same run, every answer required, and the answers go back to the same
+ * session. The questions and answers are stored with the version.
  *
  * It runs first and needs no other document, so nothing is attached. Every
  * submission is a fresh generate (`freshRunPerSubmission`): the generate form
@@ -123,52 +131,75 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
   formTitleAction: 'Build',
   documentName: 'Messaging Document',
   intro:
-    'Runs first; it needs no other document. The sources the agent reads, then Paul’s ten questions in your own words. Existing messaging or positioning documents can be attached at the end; the agent reads them first and treats your answers as the final word. Every result is stored as a new revision of the document in Documents.',
+    'Runs first; it needs no other document. Give the agent your sources as links: it reads every one, researches the rest on its own, and comes back with questions only for what the sources leave open — each with a suggested answer for you to accept or edit. Existing messaging or positioning documents can be attached at the end; the agent reads them first. Every result is stored as a new revision of the document in Documents.',
   // Never sent: the generate endpoint renders the agent's own intake form
   // server-side, and with fresh runs there is no chat follow-up to prefix.
   batchPreamble: [],
   fields: [
     { key: 'project_name', question: 'Project name', kind: 'text', prefill: 'project-name' },
-    ...FOUNDATION_MESSAGE_SOURCE_KINDS.map((kind) => ({
-      key: FOUNDATION_MESSAGE_SOURCE_FIELDS[kind].urlKey,
-      // Paul's label, sentence-cased for the form.
-      question: FOUNDATION_MESSAGE_SOURCE_LABELS[kind].charAt(0).toUpperCase() + FOUNDATION_MESSAGE_SOURCE_LABELS[kind].slice(1),
-      kind: 'text' as const,
+    {
+      key: FOUNDATION_MESSAGE_SOURCE_URL_KEYS.website,
+      question: sourceLabel('website'),
+      kind: 'text',
       optional: true,
       placeholder: 'https://… or none',
-      format: 'source-url' as const,
-      ...(kind === 'readme' ? { prefill: 'repository-url' as const } : {}),
-    })),
-    ...FOUNDATION_MESSAGE_QUESTIONS.map((question, index) => ({
-      key: question.key,
-      // "N. Label. Question" — a colon instead of the full stop when Paul's
-      // wording is a description (questions 7 and 10 start lowercase).
-      question: `${index + 1}. ${question.label}${/^[a-z]/.test(question.question) ? ':' : '.'} ${question.question}`,
-      kind: 'textarea' as const,
-      rows: FOUNDATION_MESSAGE_LONG_ANSWER_KEYS.has(question.key) ? 3 : 2,
-      placeholder: 'Your answer',
-    })),
+      format: 'source-url',
+    },
+    {
+      // A repository or an organization page: the agent reads either (hand
+      // test, 2026-10-15 — https://github.com/aaif is an organization page).
+      key: FOUNDATION_MESSAGE_SOURCE_URL_KEYS.readme,
+      question: sourceLabel('readme'),
+      kind: 'text',
+      optional: true,
+      prefill: 'repository-url',
+      placeholder: 'https://github.com/org or https://github.com/org/repo',
+      format: 'github-url',
+    },
+    {
+      key: FOUNDATION_MESSAGE_SOURCE_URL_KEYS.press_release,
+      question: sourceLabel('press_release'),
+      kind: 'text',
+      optional: true,
+      placeholder: 'https://… or none',
+      format: 'source-url',
+    },
+    {
+      key: FOUNDATION_MESSAGE_SOURCE_URL_KEYS.brand_page,
+      question: sourceLabel('brand_page'),
+      kind: 'text',
+      optional: true,
+      placeholder: 'https://… or none',
+      format: 'source-url',
+    },
+    {
+      key: FOUNDATION_MESSAGE_OTHER_LINKS_KEY,
+      question: 'Other links',
+      kind: 'textarea',
+      rows: 3,
+      optional: true,
+      placeholder: 'One link per line — docs, blog posts, talks, anything the agent should read',
+      hint: `Up to ${FOUNDATION_MESSAGE_MAX_OTHER_LINKS} links.`,
+      format: 'source-url-list',
+    },
   ],
   fieldGroups: [
     {
       id: 'sources',
       title: 'Sources',
-      hint: '“none” is a valid answer',
-      footnote:
-        'LFX One fetches each page and passes the text to the agent, so the agent never asks you to restate what the sources say. Only https:// links can be fetched.',
-      fieldKeys: ['project_name', ...FOUNDATION_MESSAGE_SOURCE_KINDS.map((kind) => FOUNDATION_MESSAGE_SOURCE_FIELDS[kind].urlKey)],
-    },
-    {
-      id: 'questions',
-      title: 'Paul’s ten questions',
-      hint: '“skip” or “TBD” is recorded as such',
-      fieldKeys: FOUNDATION_MESSAGE_QUESTIONS.map((question) => question.key),
+      hint: 'links only — “none” is a valid answer',
+      footnote: 'The agent reads every link itself and researches the rest on its own, so it never asks you to restate what the sources say.',
+      fieldKeys: [
+        'project_name',
+        ...FOUNDATION_MESSAGE_SOURCE_KINDS.map((kind) => FOUNDATION_MESSAGE_SOURCE_URL_KEYS[kind]),
+        FOUNDATION_MESSAGE_OTHER_LINKS_KEY,
+      ],
     },
   ],
   documents: {
     title: 'Existing documents',
     hint: 'Messaging, positioning, brand, audience or competitive documents. Several allowed.',
-    footnote: `Accepted: PDF, Word (.docx), Markdown and plain text, up to ${FOUNDATION_MESSAGE_MAX_FILE_BYTES / (1024 * 1024)} MB each; a Google Doc goes in as a link. Files and links are turned into text before the agent runs.`,
+    footnote: `Accepted: PDF, Word (.docx), Markdown and plain text, up to ${FOUNDATION_MESSAGE_MAX_FILE_BYTES / (1024 * 1024)} MB each — read here and sent as text. A link (a Google Doc, a wiki page) is sent as is; the agent reads it.`,
     maxDocuments: FOUNDATION_MESSAGE_MAX_DOCUMENTS,
     maxFileBytes: FOUNDATION_MESSAGE_MAX_FILE_BYTES,
     fileExtensions: [...FOUNDATION_MESSAGE_FILE_EXTENSIONS],
@@ -176,10 +207,12 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
   },
   derivativeChips: FOUNDATION_MESSAGE_DERIVATIVE_CHIPS.map((chip) => ({ key: chip.key, label: chip.label })),
   freshRunPerSubmission: true,
+  submitsProject: true,
   sections: FOUNDATION_MESSAGE_REQUIRED_HEADINGS.map((heading) => heading.replace(/^## /, '')),
   endpoints: {
     generate: '/api/mktg-agents/foundation-message/generate',
     result: '/api/mktg-agents/foundation-message/result',
+    answers: FOUNDATION_MESSAGE_ANSWERS_ENDPOINT,
     stored: '/api/mktg-agents/foundation-message/stored',
   },
   // The result endpoint stores every validated bundle as a revision of the
@@ -306,7 +339,10 @@ export const MKTG_INTAKE_FORMAT_ERRORS: Record<MktgIntakeFieldFormat, Partial<Re
       'That doesn’t look like a GitHub URL. Enter the project’s repository or organization URL, e.g. https://github.com/org/repo or https://github.com/org.',
   },
   'source-url': {
-    unrecognized: 'Enter the full link, starting with https://, or “none”. LFX One can only fetch https:// pages.',
+    unrecognized: 'Enter the full link, starting with https://, or “none”.',
+  },
+  'source-url-list': {
+    unrecognized: 'Every line must be a full link, starting with https://.',
   },
 };
 
@@ -327,6 +363,14 @@ export const MKTG_README_SKIP_NOTES: Record<MktgReadmeSkipReason, string> = {
 
 /** Running-phase stage checklist labels, in order. */
 export const MKTG_RUN_STAGES = ['Submitting your intake', 'Agent drafting the document', 'Validating required sections'] as const;
+
+/**
+ * Validation of the questions step: an answer that is not one. There is no
+ * skip and no TBD there — the agent already suggested what it could settle,
+ * so what is left needs the requester's answer.
+ */
+export const MKTG_ANSWER_NOT_SUBSTANTIVE_ERROR =
+  'An answer is needed here — the agent could not settle this from the sources, and “TBD” or “skip” leaves the gap.';
 
 /**
  * The document review-status labels, as the re-pinned agents write them

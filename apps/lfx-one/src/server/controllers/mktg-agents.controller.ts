@@ -6,7 +6,6 @@ import {
   FOUNDATION_MESSAGE_DOCUMENT_TITLE_MAX_CHARS,
   FOUNDATION_MESSAGE_FILE_NAME_HEADER,
   FOUNDATION_MESSAGE_FILE_UPLOAD_CONTENT_TYPE,
-  FOUNDATION_MESSAGE_HTTP_URL_REGEX,
   FOUNDATION_MESSAGE_READ_REASONS,
   MKTG_AGENTS,
   MKTG_ARTIFACT_PARTITION_REGEX,
@@ -17,6 +16,8 @@ import {
   BrandKitResultRequest,
   BrandKitResultResponse,
   BrandKitStoredResponse,
+  FoundationMessageAnswersRequest,
+  FoundationMessageAnswersResponse,
   FoundationMessageGenerateRequest,
   FoundationMessageGenerateResponse,
   FoundationMessageResultRequest,
@@ -29,14 +30,15 @@ import {
   MktgChatRequest,
   MktgChatResponse,
   MktgDocumentExtractResponse,
-  MktgDocumentLinkRequest,
   MktgHistoryRequest,
   MktgHistoryResponse,
   MktgReadText,
+  MktgRunAnswer,
 } from '@lfx-one/shared/interfaces';
 import {
   countFoundationMessageWords,
   validateBrandKitIntakeAnswers,
+  validateFoundationMessageAnswers,
   validateFoundationMessageDocuments,
   validateFoundationMessageIntakeAnswers,
   validateIcpIntakeAnswers,
@@ -423,16 +425,17 @@ export class MktgAgentsController {
   /**
    * POST /api/mktg-agents/foundation-message/generate
    * Starts a one-shot Messaging Document generation from the intake form: the
-   * project name, Paul's four sources (URLs or "none"), his ten answers and
-   * the optional existing documents. The BFF reads every source and link to
-   * text before the agent runs. Every submission is a fresh generate — the
+   * project name, the four sources and any other links as URLs (the agent
+   * fetches and researches them itself), the LFX project uid, and the
+   * optional existing documents — an uploaded file as the text the BFF read
+   * from it, a link as its URL. Every submission is a fresh generate — the
    * agent's generate form carries no prior version or feedback, so a body
    * with either is refused rather than silently ignored. Returns the session
    * id + creator-binding owner token for polling the result.
    */
   public async generateFoundationMessage(req: Request, res: Response, next: NextFunction): Promise<void> {
     // Normalize a missing/null body so malformed requests get a 400, not a throw.
-    const { answers, documents, feedback, priorVersion } = (req.body ?? {}) as Partial<FoundationMessageGenerateRequest>;
+    const { answers, documents, feedback, priorVersion, project } = (req.body ?? {}) as Partial<FoundationMessageGenerateRequest>;
     const fail = (field: string, message: string): void =>
       next(ServiceValidationError.forField(field, message, { operation: 'foundation_message_generate', service: 'mktg_agents_controller', path: req.path }));
 
@@ -448,6 +451,15 @@ export class MktgAgentsController {
     }
     if (feedback !== undefined || priorVersion !== undefined) {
       fail('feedback', 'The Messaging Document is revised by commenting on it in Documents; a generate takes no feedback or prior version.');
+      return;
+    }
+    // The project uid goes to the agent as data (its LFX lookups), never as
+    // the storage partition — that is the result endpoint's, resolved
+    // server-side. Shape-gated all the same so a crafted value never rides
+    // the form.
+    const trimmedProject = typeof project === 'string' ? project.trim() : '';
+    if (project !== undefined && (typeof project !== 'string' || !trimmedProject || !MKTG_ARTIFACT_PARTITION_REGEX.test(trimmedProject))) {
+      fail('project', 'project must be a single-segment project uid when provided');
       return;
     }
 
@@ -480,11 +492,86 @@ export class MktgAgentsController {
           .map(([key, value]) => [key, value.trim()])
           .filter(([, value]) => value !== '')
       );
-      const { sessionId, readme } = await this.foundationMessageService.startGeneration(req, trimmedAnswers, submitted, agent.guildAgentHandle);
-      logger.success(req, 'foundation_message_generate', startTime, { session_created: true, readme_fetched: readme?.fetched, readme_source: readme?.source });
-      // The README outcome rides the response so the run page can label a
-      // document generated WITHOUT the README the user named.
-      const response: FoundationMessageGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId), ...(readme && { readme }) };
+      const sessionId = await this.foundationMessageService.startGeneration(
+        req,
+        trimmedAnswers,
+        submitted,
+        trimmedProject || undefined,
+        agent.guildAgentHandle
+      );
+      logger.success(req, 'foundation_message_generate', startTime, { session_created: true });
+      const response: FoundationMessageGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId) };
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/mktg-agents/foundation-message/answers
+   * Sends the requester's answers to the session's questions turn — one per
+   * question, each accepted, edited or written from scratch; no skip, no TBD,
+   * no empty — as the answers turn on the SAME session. Only the session's
+   * creator may answer (owner-token proof, like every session write). The
+   * run page polls the result again afterwards.
+   */
+  public async foundationMessageAnswers(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // Normalize a missing/null body so malformed requests get a 400, not a throw.
+    const { sessionId, ownerToken, answers } = (req.body ?? {}) as Partial<FoundationMessageAnswersRequest>;
+    const fail = (field: string, message: string): void =>
+      next(ServiceValidationError.forField(field, message, { operation: 'foundation_message_answers', service: 'mktg_agents_controller', path: req.path }));
+
+    const validSessionId = typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : undefined;
+    if (!validSessionId) {
+      fail('sessionId', 'sessionId is required and must be a non-empty string');
+      return;
+    }
+    const answersResult = validateFoundationMessageAnswers(answers);
+    if (!answersResult.valid) {
+      fail('answers', answersResult.errors.join('; '));
+      return;
+    }
+
+    const userId = getEffectiveSub(req);
+    if (!userId) {
+      next(
+        new AuthenticationError('Could not identify the requesting user.', {
+          operation: 'foundation_message_answers',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    // Type-gate body fields — never rely on downstream defensive coercion.
+    const validOwnerToken = typeof ownerToken === 'string' && ownerToken ? ownerToken : undefined;
+    if (!verifySessionOwnerToken(validOwnerToken, userId, validSessionId)) {
+      next(
+        new AuthorizationError('You do not have permission to post to this session.', {
+          operation: 'foundation_message_answers',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    // Routing handle comes from the shared catalog only — never the client.
+    const agent = MKTG_AGENTS.find((candidate) => candidate.id === 'foundation-setup');
+    if (!agent || agent.status !== 'active' || !agent.guildAgentHandle) {
+      fail('agentId', 'The Messaging Document agent is not available.');
+      return;
+    }
+
+    // Safe: validateFoundationMessageAnswers guaranteed the shape.
+    const validAnswers = (answers as MktgRunAnswer[]).map((answer) => ({ key: answer.key, text: answer.text.trim(), origin: answer.origin }));
+    const startTime = logger.startOperation(req, 'foundation_message_answers', { answers: validAnswers.length });
+
+    try {
+      await this.foundationMessageService.sendAnswers(req, validSessionId, validAnswers, agent.guildAgentHandle);
+      logger.success(req, 'foundation_message_answers', startTime, { answers: validAnswers.length });
+      const response: FoundationMessageAnswersResponse = { success: true };
       res.json(response);
     } catch (error) {
       next(error);
@@ -498,7 +585,8 @@ export class MktgAgentsController {
    * it, so the form can show what was read and submit the text with the run.
    * The file name travels URI-encoded in the `X-File-Name` header — never the
    * URL, which the request logger writes — and is logged by extension only.
-   * Nothing is stored.
+   * Nothing is stored. A document given as a link is never read here: it
+   * goes to the agent as its URL.
    */
   public async readFoundationMessageFile(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'foundation_message_read_file';
@@ -521,40 +609,8 @@ export class MktgAgentsController {
       }
 
       const read = await this.mktgSourceTextService.readFile(req, fileName, file, FOUNDATION_MESSAGE_DOCUMENT_MAX_CHARS);
-      const response = this.extractResponse(fileName, read, true);
+      const response = this.extractResponse(fileName, read);
       logger.success(req, operation, startTime, { extension: fileName.slice(fileName.lastIndexOf('.')), size_bytes: file.byteLength, read: response.read });
-      res.json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
-   * POST /api/mktg-agents/foundation-message/documents/link
-   * Reads one existing-document link to text through the SSRF-safe fetcher
-   * and reports what was read (title, word count) — never the text, which the
-   * generate request re-reads server-side so a browser can never supply what
-   * a link "said".
-   */
-  public async readFoundationMessageLink(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const operation = 'foundation_message_read_link';
-    const { url } = (req.body ?? {}) as Partial<MktgDocumentLinkRequest>;
-    if (typeof url !== 'string' || !FOUNDATION_MESSAGE_HTTP_URL_REGEX.test(url.trim())) {
-      next(
-        ServiceValidationError.forField('url', 'url is required and must be an http(s) URL', { operation, service: 'mktg_agents_controller', path: req.path })
-      );
-      return;
-    }
-    const startTime = logger.startOperation(req, operation);
-    try {
-      // The username, not the sub: the read gate keys its per-user slots on it, so the two checks agree.
-      if (!getEffectiveUsername(req)) {
-        throw new AuthenticationError('Could not identify the requesting user.', { operation, service: 'mktg_agents_controller', path: req.path });
-      }
-      const link = url.trim();
-      const read = await this.mktgSourceTextService.readLink(req, link, FOUNDATION_MESSAGE_DOCUMENT_MAX_CHARS);
-      const response = this.extractResponse(read.title ?? link, read, false);
-      logger.success(req, operation, startTime, { read: response.read, reason: read.reason });
       res.json(response);
     } catch (error) {
       next(error);
@@ -886,22 +942,16 @@ export class MktgAgentsController {
     }
   }
 
-  /** What reading a file or a link produced, as the form shows it; the text only for a file. */
-  private extractResponse(title: string, read: MktgReadText, includeText: boolean): MktgDocumentExtractResponse {
+  /** What reading an uploaded file produced, as the form shows it, with the text the run submits back. */
+  private extractResponse(title: string, read: MktgReadText): MktgDocumentExtractResponse {
     const oneLine = title
       .replace(/[\r\n]+/g, ' ')
       .trim()
       .slice(0, FOUNDATION_MESSAGE_DOCUMENT_TITLE_MAX_CHARS);
     if (read.text === null) {
-      return { title: oneLine, read: false, words: 0, truncated: false, reason: FOUNDATION_MESSAGE_READ_REASONS[read.reason ?? 'fetch-failed'] };
+      return { title: oneLine, read: false, words: 0, truncated: false, reason: FOUNDATION_MESSAGE_READ_REASONS[read.reason ?? 'no-text'] };
     }
-    return {
-      title: oneLine,
-      read: true,
-      words: countFoundationMessageWords(read.text),
-      truncated: read.truncated,
-      ...(includeText && { text: read.text }),
-    };
+    return { title: oneLine, read: true, words: countFoundationMessageWords(read.text), truncated: read.truncated, text: read.text };
   }
 
   /** The upload's file name from its URI-encoded header: one line, no control characters, or '' when missing or undecodable. */

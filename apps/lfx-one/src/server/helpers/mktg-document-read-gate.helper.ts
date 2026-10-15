@@ -3,8 +3,7 @@
 
 /**
  * The time one request may spend parsing documents on the event loop, shared
- * by every source and document it reads (a Messaging Document generate reads
- * up to ten). Each parse takes what it used; once nothing is left, the
+ * by every source and document it reads. Each parse takes what it used; once nothing is left, the
  * request's remaining documents are not parsed.
  */
 export class MktgReadBudget {

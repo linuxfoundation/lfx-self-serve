@@ -17,9 +17,10 @@ import { getEffectiveUsername } from '../utils/auth-helper';
 import { logger } from './logger.service';
 
 /**
- * Reads the pages and files a Marketing OS agent needs to text, because the
- * agents cannot fetch or open files themselves: the Messaging Document's four
- * sources and its existing documents.
+ * Reads the files a Marketing OS agent needs to text, because the agents
+ * cannot open files themselves: the Messaging Document's uploaded existing
+ * documents. The link reader stays for agents that cannot fetch; the
+ * Messaging Document agent fetches its own sources and document links now.
  *
  * Links go through the SSRF-safe fetcher (`fetchSafeUrlBytes`: HTTPS only,
  * public hosts only, every redirect re-validated, a size cap), and only a

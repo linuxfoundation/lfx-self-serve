@@ -12,13 +12,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // source modules so the spec exercises the real payload/validation logic.
 const guildMocks = vi.hoisted(() => ({
   createSession: vi.fn(),
+  sendFollowUp: vi.fn(),
   getRawEventPayloads: vi.fn(),
-}));
-const readmeMocks = vi.hoisted(() => ({
-  fetchReadme: vi.fn(),
-}));
-const sourceTextMocks = vi.hoisted(() => ({
-  readLink: vi.fn(),
 }));
 // Persistence runs through the SHARED agent-artifact layer, whose own
 // collaborators (object store, project entitlement lookup) are mocked here the
@@ -59,17 +54,8 @@ vi.mock('./project.service', () => ({
 vi.mock('./guild.service', () => ({
   GuildService: class {
     public createSession = guildMocks.createSession;
+    public sendFollowUp = guildMocks.sendFollowUp;
     public getRawEventPayloads = guildMocks.getRawEventPayloads;
-  },
-}));
-vi.mock('./github-readme.service', () => ({
-  GithubReadmeService: class {
-    public fetchReadme = readmeMocks.fetchReadme;
-  },
-}));
-vi.mock('./mktg-source-text.service', () => ({
-  MktgSourceTextService: class {
-    public readLink = sourceTextMocks.readLink;
   },
 }));
 // The document store records revisions on top of the agent's own write and
@@ -108,19 +94,10 @@ const req = { path: '/api/mktg-agents/foundation-message/generate' } as unknown 
 const answers = (): Record<string, string> => ({
   project_name: 'TestOrbit',
   website_url: 'https://testorbit.example.org',
-  github_url: 'https://github.com/example-org/testorbit',
+  github_url: 'https://github.com/example-org',
   press_release_url: 'https://press.example.org/testorbit',
   brand_page_url: 'none',
-  vision_mission: 'Vision: reliable releases for everyone.',
-  category: 'Release tooling.',
-  audiences: 'Platform teams.',
-  alternatives: 'Hand-built pipelines.',
-  differentiation: 'Neutral governance.',
-  use_cases: 'Build, test, roll out.',
-  proof_points: 'TBD',
-  pillars: 'Reliability; openness; speed.',
-  objections: 'Is it mature? Yes, since 2024.',
-  tagline_ctas_constraints: 'skip',
+  other_links: 'https://blog.example.org/launch\nhttps://www.youtube.com/watch?v=abc',
 });
 
 /** The copy primitives, contract-true: inside their caps, the boilerplate in its band, embedded verbatim in the document. */
@@ -184,7 +161,28 @@ function buildEnvelope(overrides: Record<string, unknown> = {}): Record<string, 
 const toolResultPayload = (envelope: Record<string, unknown>): string =>
   JSON.stringify({ type: 'llm_done', content: { envelope_json: JSON.stringify(envelope) } });
 
-const read = (text: string | null) => ({ text, title: null, truncated: false, ...(text === null && { reason: 'fetch-failed' }) });
+/** The agent's questions turn as a raw agent text event: the header line, then the fenced JSON block. */
+const questionsPayload = (questions: Record<string, unknown>[]): string =>
+  JSON.stringify({
+    type: 'agent_notification_message',
+    content: {
+      type: 'text',
+      data: `MESSAGING DOCUMENT — QUESTIONS (messaging-document-questions/v1)\n\`\`\`json\n${JSON.stringify({
+        contract: 'messaging-document-questions/v1',
+        project: 'TestOrbit',
+        questions,
+      })}\n\`\`\``,
+    },
+  });
+
+const AUDIENCES_QUESTION = {
+  key: 'audiences',
+  label: 'Audiences',
+  question: 'Who are the primary audiences?',
+  why: 'The site names platform teams only.',
+  suggested_answer: 'Platform teams; SREs.',
+  basis: ['https://testorbit.example.org'],
+};
 
 describe('FoundationMessageService.startGeneration', () => {
   let service: FoundationMessageService;
@@ -193,10 +191,6 @@ describe('FoundationMessageService.startGeneration', () => {
     vi.clearAllMocks();
     service = new FoundationMessageService();
     guildMocks.createSession.mockResolvedValue('session-1');
-    readmeMocks.fetchReadme.mockResolvedValue({ readme: '# TestOrbit readme', outcome: { fetched: true, source: 'repository' } });
-    sourceTextMocks.readLink.mockImplementation(async (_req: Request, url: string) =>
-      read(url === 'https://testorbit.example.org' ? '# TestOrbit\n\n![TestOrbit logo](https://testorbit.example.org/logo.svg)' : null)
-    );
   });
 
   afterEach(() => {
@@ -210,29 +204,24 @@ describe('FoundationMessageService.startGeneration', () => {
   }
   const sentParams = (call = 0): CreateSessionParams => guildMocks.createSession.mock.calls[call][1] as CreateSessionParams;
 
-  it('reads every source to text and sends the rendered intake form', async () => {
-    const start = await service.startGeneration(req, answers(), [], 'foundation-message');
+  it('sends the sources as links only, with the project uid — nothing is fetched here, the agent reads them', async () => {
+    const sessionId = await service.startGeneration(req, answers(), [], 'proj-uid-1', 'foundation-message');
 
-    expect(start).toEqual({ sessionId: 'session-1', readme: { fetched: true, source: 'repository' } });
-    expect(readmeMocks.fetchReadme).toHaveBeenCalledWith(req, 'https://github.com/example-org/testorbit');
-    // "none" is never fetched; every other source is.
-    expect(sourceTextMocks.readLink.mock.calls.map((call) => call[1])).toEqual(['https://testorbit.example.org', 'https://press.example.org/testorbit']);
+    expect(sessionId).toBe('session-1');
     const params = sentParams();
     expect(params.handle).toBe('foundation-message');
     expect(params.agentInput).toBeUndefined();
     const message = params.message ?? '';
-    expect(message.startsWith('BATCH INTAKE SUBMISSION (Messaging Document — GENERATE)\nFORM SHAPE: ANSWERS')).toBe(true);
-    expect(message).toContain(
-      'URL: https://testorbit.example.org\nTEXT: read, follows\n# TestOrbit\n\n![TestOrbit logo](https://testorbit.example.org/logo.svg)'
-    );
-    expect(message).toContain('TEXT: read, follows\n# TestOrbit readme\n--- END SOURCE readme ---');
-    // A source LFX One could not fetch is sent as not read — never guessed.
-    expect(message).toContain('URL: https://press.example.org/testorbit\nTEXT: not read (LFX One could not fetch it — never guess what it says)');
-    expect(message).toContain('--- SOURCE brand_page: an existing brand page or guidelines, if any ---\nURL: none\nTEXT: none (the requester gave no URL)');
-    expect(message).toContain('STEP 1 ANSWERS: 10 of 10 answered on the form');
+    expect(message.startsWith('BATCH INTAKE SUBMISSION (Messaging Document — GENERATE)\n\nPROJECT NAME: TestOrbit\nPROJECT UID: proj-uid-1\n')).toBe(true);
+    // An organization page is a usable GitHub source: it goes as given.
+    expect(message).toContain('--- SOURCE readme: the GitHub repo or README ---\nURL: https://github.com/example-org\n--- END SOURCE readme ---');
+    expect(message).toContain('--- SOURCE brand_page: an existing brand page or guidelines, if any ---\nURL: none\n--- END SOURCE brand_page ---');
+    expect(message).toContain('OTHER LINKS: 2 supplied — fetch and read every one\n--- LINK 1 ---\nhttps://blog.example.org/launch\n--- END LINK 1 ---');
+    expect(message).not.toContain('TEXT:');
+    expect(message).not.toContain('STEP 1 ANSWERS');
   });
 
-  it('re-reads document links itself and passes uploaded files through', async () => {
+  it('passes an uploaded file through as its text and a document link as its URL', async () => {
     await service.startGeneration(
       req,
       answers(),
@@ -240,45 +229,68 @@ describe('FoundationMessageService.startGeneration', () => {
         { kind: 'link', title: 'Positioning note', url: 'https://wiki.example.org/note' },
         { kind: 'file', title: 'brand.md', text: 'Brand guide text.' },
       ],
+      undefined,
       'foundation-message'
     );
 
-    expect(sourceTextMocks.readLink).toHaveBeenCalledWith(req, 'https://wiki.example.org/note', 60000, expect.any(Object));
-    // Every source and document of one generate draws on the same parse-time budget.
-    const budgets = new Set(sourceTextMocks.readLink.mock.calls.map((call) => call[3]));
-    expect(budgets.size).toBe(1);
     const message = sentParams().message ?? '';
-    expect(message).toContain('FORM SHAPE: DOCUMENTS WITH ANSWERS');
-    expect(message).toContain(
-      '--- DOCUMENT 1: Positioning note ---\nURL: https://wiki.example.org/note\nTEXT: not read (only a link was given and LFX One could not read it)'
-    );
+    expect(message).toContain('PROJECT UID: none');
+    expect(message).toContain('--- DOCUMENT 1: Positioning note ---\nURL: https://wiki.example.org/note\nTEXT: not read (a link only — fetch it yourself)');
     expect(message).toContain('--- DOCUMENT 2: brand.md ---\nURL: none\nTEXT: read, follows\nBrand guide text.\n--- END DOCUMENT 2 ---');
-  });
-
-  it('fetches no README and reports no README outcome when no GitHub URL was given', async () => {
-    const start = await service.startGeneration(req, { ...answers(), github_url: 'none' }, [], 'foundation-message');
-
-    expect(readmeMocks.fetchReadme).not.toHaveBeenCalled();
-    expect(start).toEqual({ sessionId: 'session-1' });
-    expect(sentParams().message).toContain("LOGO FALLBACK (GitHub organization avatar, last in Paul's logo order): none");
   });
 
   it('submits the typed form as the structured agent_input when GUILD_STRUCTURED_AGENT_INPUT=true', async () => {
     vi.stubEnv('GUILD_STRUCTURED_AGENT_INPUT', 'true');
 
-    await service.startGeneration(req, answers(), [], 'foundation-message');
+    await service.startGeneration(req, answers(), [], 'proj-uid-1', 'foundation-message');
 
     const params = sentParams();
     expect(params.message).toBeUndefined();
     expect(params.agentInput).toMatchObject({
       type: 'messaging_document_intake_form',
       project_name: 'TestOrbit',
-      github_url: 'https://github.com/example-org/testorbit',
-      readme_text: '# TestOrbit readme',
+      project_uid: 'proj-uid-1',
+      github_url: 'https://github.com/example-org',
       press_release_url: 'https://press.example.org/testorbit',
+      other_links: ['https://blog.example.org/launch', 'https://www.youtube.com/watch?v=abc'],
     });
-    expect(params.agentInput).not.toHaveProperty('press_release_text');
     expect(params.agentInput).not.toHaveProperty('brand_page_url');
+  });
+});
+
+describe('FoundationMessageService.sendAnswers', () => {
+  it('renders the answers turn and sends it as a follow-up on the SAME session, routed by the handle', async () => {
+    vi.clearAllMocks();
+    guildMocks.sendFollowUp.mockResolvedValue(undefined);
+    const service = new FoundationMessageService();
+
+    await service.sendAnswers(
+      req,
+      'session-1',
+      [
+        { key: 'audiences', text: 'Platform teams; SREs.', origin: 'accepted' },
+        { key: 'pillars', text: 'Reliability; openness; speed.', origin: 'requester' },
+      ],
+      'foundation-message'
+    );
+
+    expect(guildMocks.createSession).not.toHaveBeenCalled();
+    const [, sessionId, params] = guildMocks.sendFollowUp.mock.calls[0] as [Request, string, { message: string; handle?: string }];
+    expect(sessionId).toBe('session-1');
+    expect(params.handle).toBe('foundation-message');
+    expect(params.message).toBe(
+      [
+        'MESSAGING DOCUMENT — ANSWERS (messaging-document-answers/v1)',
+        '--- A audiences (accepted) ---',
+        'ANSWER: follows',
+        'Platform teams; SREs.',
+        '--- END A audiences ---',
+        '--- A pillars (requester) ---',
+        'ANSWER: follows',
+        'Reliability; openness; speed.',
+        '--- END A pillars ---',
+      ].join('\n')
+    );
   });
 });
 
@@ -294,6 +306,41 @@ describe('FoundationMessageService.getResult', () => {
     guildMocks.getRawEventPayloads.mockResolvedValue([JSON.stringify({ type: 'llm_start' }), 'agent chatter']);
 
     expect(await service.getResult(req, 'session-1')).toEqual({ status: 'pending' });
+  });
+
+  it('reports the agent’s questions, with a stable id, while its latest text turn is the questions block', async () => {
+    guildMocks.getRawEventPayloads.mockResolvedValue([JSON.stringify({ type: 'llm_start' }), questionsPayload([AUDIENCES_QUESTION])]);
+
+    const result = await service.getResult(req, 'session-1', 'proj-uid-1');
+
+    expect(result.status).toBe('questions');
+    expect(result.questions).toEqual([
+      {
+        key: 'audiences',
+        label: 'Audiences',
+        question: 'Who are the primary audiences?',
+        why: 'The site names platform teams only.',
+        suggestedAnswer: 'Platform teams; SREs.',
+        basis: ['https://testorbit.example.org'],
+      },
+    ]);
+    expect(result.questionsId).toMatch(/^[0-9a-f]{8}$/);
+    // No document, so nothing to persist — and no upstream lookup for it.
+    expect(projectMocks.getProjectById).not.toHaveBeenCalled();
+    expect(result.documentMarkdown).toBeUndefined();
+  });
+
+  it('takes the latest questions block when the agent asked twice, and the document once it exists', async () => {
+    const second = { ...AUDIENCES_QUESTION, key: 'pillars', label: 'Pillars', question: 'Which pillars?' };
+    guildMocks.getRawEventPayloads.mockResolvedValue([questionsPayload([AUDIENCES_QUESTION]), questionsPayload([second])]);
+    const asked = await service.getResult(req, 'session-1');
+    expect(asked.status).toBe('questions');
+    expect(asked.questions?.map((question) => question.key)).toEqual(['pillars']);
+
+    guildMocks.getRawEventPayloads.mockResolvedValue([questionsPayload([AUDIENCES_QUESTION]), toolResultPayload(buildEnvelope())]);
+    const ready = await service.getResult(req, 'session-1');
+    expect(ready.status).toBe('ready');
+    expect(ready.questions).toBeUndefined();
   });
 
   it('returns the validated document with its copy primitives when the envelope passes every gate', async () => {

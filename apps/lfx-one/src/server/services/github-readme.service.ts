@@ -35,7 +35,8 @@ const GITHUB_README_CACHE_MAX_ENTRIES = 100;
 
 /**
  * Best-effort server-side README fetch for agents with no web access (the
- * ICP's `readme_markdown` and the Messaging Document's `readme_text` inputs).
+ * ICP's `readme_markdown` input; the Messaging Document agent fetches its
+ * own sources now).
  * Strictly best-effort by contract: EVERY failure — unparsable URL, non-GitHub host, missing README,
  * rate limit, timeout — returns a null README so the generation proceeds and
  * the agent marks README-dependent gaps TBD per its grounding rule. Never

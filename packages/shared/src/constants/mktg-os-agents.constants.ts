@@ -45,7 +45,7 @@ export const MKTG_AGENTS: MktgAgent[] = [
     tags: ['Messaging', 'Positioning'],
     status: 'active',
     description:
-      'Vision, mission, positioning, pillars, message house, proof points, objections and copy primitives, from your sources and Paul’s ten questions. Needs no other document.',
+      'Vision, mission, positioning, pillars, message house, proof points, objections and copy primitives. Reads your sources and researches on its own, then asks only what they leave open. Needs no other document.',
     icon: 'fa-light fa-landmark',
     accent: 'blue',
     guildAgentHandle: 'foundation-message',

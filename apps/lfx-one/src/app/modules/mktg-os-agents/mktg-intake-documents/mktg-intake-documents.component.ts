@@ -17,9 +17,10 @@ import { finalize, Observable } from 'rxjs';
 import { MktgIntakeDocumentsService } from '@services/mktg-intake-documents.service';
 
 // The optional existing-documents section of an intake (the Messaging
-// Document's Step 0a): links and uploaded files, each read to text by the BFF
-// as soon as it is added, so the user sees what the agent will get — "fetched
-// · 6,100 words", or why it could not be read — before generating.
+// Document's Step 0a): uploaded files, each read to text by the BFF as soon
+// as it is added so the user sees what the agent will get — "read · 6,100
+// words", or why it could not be read — and links, which go to the agent as
+// they are: it fetches them itself.
 @Component({
   selector: 'lfx-mktg-intake-documents',
   imports: [NgClass, ReactiveFormsModule, ButtonComponent, FileUploadComponent, InputTextComponent],
@@ -54,12 +55,14 @@ export class MktgIntakeDocumentsComponent {
   protected readonly acceptAttribute = computed(() => this.config().fileExtensions.join(','));
 
   // Literal class names so Tailwind's content scan generates them.
-  private readonly statusClass: Record<'read' | 'unread', string> = {
+  private readonly statusClass: Record<'read' | 'unread' | 'link', string> = {
     read: 'text-emerald-700',
     unread: 'text-amber-700',
+    link: 'text-gray-500',
   };
 
   // === Protected methods ===
+  /** A link is listed as given and sent to the agent as its URL; nothing is read here. */
   protected onAddLink(): void {
     const control = this.linkForm.controls.url;
     const url = control.value.trim();
@@ -72,12 +75,7 @@ export class MktgIntakeDocumentsComponent {
       return;
     }
     this.errorText.set('');
-    this.track(this.documentsService.readLink(this.config(), url)).subscribe({
-      next: (response) => this.add({ kind: 'link', url, ...this.entryFields(response) }),
-      // A link that could not be checked still goes to the agent, as "not read".
-      error: () =>
-        this.add({ kind: 'link', url, title: url, read: false, words: 0, truncated: false, reason: FOUNDATION_MESSAGE_READ_REASONS['fetch-failed'] }),
-    });
+    this.add({ kind: 'link', url, title: url, read: false, words: 0, truncated: false });
     control.reset('');
   }
 
@@ -112,18 +110,15 @@ export class MktgIntakeDocumentsComponent {
   private initRows(): Signal<MktgIntakeDocumentRow[]> {
     return computed(() =>
       this.documents().map((document) => {
+        if (document.kind === 'link') {
+          return { id: document.id, badge: 'LINK', title: document.title, status: 'the agent reads it', statusClass: this.statusClass.link };
+        }
         const words = document.words.toLocaleString('en-US');
         let status = document.reason ?? 'not read';
         if (document.read) {
-          status = `${document.kind === 'link' ? 'fetched' : 'read'} · ${words} words${document.truncated ? ' (cut to fit)' : ''}`;
+          status = `read · ${words} words${document.truncated ? ' (cut to fit)' : ''}`;
         }
-        return {
-          id: document.id,
-          badge: document.kind === 'link' ? 'LINK' : 'FILE',
-          title: document.title,
-          status,
-          statusClass: this.statusClass[document.read ? 'read' : 'unread'],
-        };
+        return { id: document.id, badge: 'FILE', title: document.title, status, statusClass: this.statusClass[document.read ? 'read' : 'unread'] };
       })
     );
   }

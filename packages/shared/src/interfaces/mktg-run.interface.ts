@@ -5,10 +5,12 @@
 // (LFXAI-95 workstream). An agent run collects a batch intake form, submits it
 // through the agent's validated generate endpoint (regenerations go through
 // the existing chat/session BFF, `POST /api/mktg-agents/chat`), polls the
-// agent's result endpoint for the schema-validated document, and stores each
-// generated document as a browser-side version so the marketplace can badge
-// agents that already have output.
+// agent's result endpoint for the schema-validated document — or, for agents
+// that research first, for the questions it could not settle, answered on
+// the same session — and stores each generated document as a browser-side
+// version so the marketplace can badge agents that already have output.
 
+import { FOUNDATION_MESSAGE_ANSWER_ORIGINS } from '../constants/foundation-message.constants';
 import type { MktgSessionInfo } from './mktg-chat.interface';
 
 /** How a single intake field is rendered on the run page. */
@@ -34,12 +36,13 @@ export type MktgIntakePrefillSource = 'project-name' | 'repository-url' | 'proje
  *   a GitHub organization). For the Brand Kit, whose BFF sends the URL to
  *   the agent as text and fetches nothing, so an organization URL is a usable
  *   answer to "the project's GitHub repo or README" (hand test, 2026-10-12).
- * - `source-url`: a page LFX One fetches to text for the agent (the Messaging
- *   Document's four sources) — an `https://` link, or "none" (Paul: "none"
- *   is a valid answer). The BFF fetches over HTTPS only, so a plain `http://`
- *   link is refused here rather than silently not read.
+ * - `source-url`: a page the agent fetches itself (the Messaging Document's
+ *   website, press release and brand page) — an `https://` link, or "none"
+ *   (Paul: "none" is a valid answer).
+ * - `source-url-list`: several such links, one per line (the Messaging
+ *   Document's other links); blank lines are ignored.
  */
-export type MktgIntakeFieldFormat = 'github-repo-url' | 'github-url' | 'source-url';
+export type MktgIntakeFieldFormat = 'github-repo-url' | 'github-url' | 'source-url' | 'source-url-list';
 
 /**
  * Where a README the BFF fetched for an agent came from: the repository the
@@ -71,9 +74,9 @@ export type MktgReadmeSkipReason = 'not-a-repo-url' | 'no-readme' | 'not-public'
 
 /**
  * Outcome of the server-side README fetch for one generation (agents with no
- * web access — the ICP's `readme_markdown` and the Messaging Document's
- * `readme_text` inputs). Reported on the generate response and stored with the version it produced, because the
- * fetch happens per submission: a regeneration with a corrected URL must not
+ * web access — the ICP's `readme_markdown` input). Reported on the generate
+ * response and stored with the version it produced, because the fetch
+ * happens per submission: a regeneration with a corrected URL must not
  * inherit the previous attempt's verdict.
  */
 export interface MktgReadmeOutcome {
@@ -159,16 +162,16 @@ export interface MktgResolvedFieldGroup {
 }
 
 /**
- * One existing document submitted with a generate request: a link the BFF
- * reads to text itself, or an uploaded file the BFF already turned into text
- * (the agent cannot fetch, and the browser never parses a file).
+ * One existing document submitted with a generate request: a link the agent
+ * fetches itself, or an uploaded file the BFF already turned into text (the
+ * browser never parses a file).
  */
 export interface MktgIntakeDocument {
   /** Where the document came from. */
   kind: 'link' | 'file';
-  /** Human label (one line): the file name, or the page title the BFF found. */
+  /** Human label (one line): the file name, or the link itself. */
   title: string;
-  /** The link, for `kind: 'link'`. Its text is always re-read server-side, never taken from the browser. */
+  /** The link, for `kind: 'link'`. Sent to the agent as is; LFX One never reads it. */
   url?: string;
   /** The extracted text, for `kind: 'file'`. */
   text?: string;
@@ -178,9 +181,9 @@ export interface MktgIntakeDocument {
 export interface MktgIntakeDocumentEntry extends MktgIntakeDocument {
   /** Client-side id; the `@for` track key. */
   id: string;
-  /** Whether LFX One could read it to text. A link that could not be read is still submitted, as "not read". */
+  /** Whether LFX One read it to text (an uploaded file). A link is never read here: the agent fetches it. */
   read: boolean;
-  /** Word count of the text read; 0 when not read. */
+  /** Word count of the text read; 0 for a link. */
   words: number;
   /** True when the text was cut at the size cap. */
   truncated: boolean;
@@ -196,15 +199,15 @@ export interface MktgIntakeDocumentRow {
   badge: string;
   /** The document's title. */
   title: string;
-  /** What reading it produced: "fetched · 6,100 words", or why it was not read. */
+  /** What the agent gets: "read · 6,100 words" for a file, "the agent reads it" for a link. */
   status: string;
-  /** Tailwind colour class of the status (read vs not read). */
+  /** Tailwind colour class of the status. */
   statusClass: string;
 }
 
-/** Response of the existing-document endpoints: what LFX One read from a file or a link. */
+/** Response of the existing-document file endpoint: what LFX One read from an uploaded file. */
 export interface MktgDocumentExtractResponse {
-  /** Title to show: the file name, or the page title. */
+  /** Title to show: the file name. */
   title: string;
   /** Whether any text was read. */
   read: boolean;
@@ -212,7 +215,7 @@ export interface MktgDocumentExtractResponse {
   words: number;
   /** True when the text was cut at the size cap. */
   truncated: boolean;
-  /** The text, for an uploaded file (submitted back with the run). Never returned for a link. */
+  /** The text, submitted back with the run. */
   text?: string;
   /** Why nothing was read, in words the user can act on. */
   reason?: string;
@@ -247,16 +250,10 @@ export interface MktgPdfWorkerReply {
   reason?: MktgReadTextReason;
 }
 
-/** Request body of the existing-document link endpoint. */
-export interface MktgDocumentLinkRequest {
-  /** The link to read. */
-  url: string;
-}
-
 /**
  * The optional existing-documents section of an intake (the Messaging
- * Document's Step 0a): links and uploaded files, turned into text by the BFF
- * before the agent runs.
+ * Document's Step 0a): uploaded files, turned into text by the BFF before the
+ * agent runs, and links the agent reads itself.
  */
 export interface MktgIntakeDocumentsConfig {
   /** Section heading. */
@@ -271,8 +268,8 @@ export interface MktgIntakeDocumentsConfig {
   maxFileBytes: number;
   /** Accepted file extensions, lowercase with the dot. */
   fileExtensions: string[];
-  /** BFF endpoints that read an uploaded file (raw body) or a link (JSON) to text. */
-  endpoints: { file: string; link: string };
+  /** BFF endpoint that reads an uploaded file (raw body) to text. */
+  endpoints: { file: string };
 }
 
 /**
@@ -379,6 +376,12 @@ export interface MktgRunEndpoints {
   /** POST — body {@link MktgRunResultBody}; responds {@link MktgRunResultResponse}. */
   result: string;
   /**
+   * POST — body {@link MktgRunAnswersBody}; responds `{ success: true }`. For
+   * agents whose result can be `questions` (they research first and ask only
+   * the gaps): the answers go to the SAME session, and the run polls on.
+   */
+  answers?: string;
+  /**
    * GET `?project=<uid>` — the project's LATEST server-persisted document for
    * this agent; responds `MktgArtifactStoredResponse`, 404 when nothing is
    * stored, 403 for a caller without the project's writer grant. Only agents
@@ -412,6 +415,13 @@ export interface MktgRunGenerateBody {
   priorVersion?: number;
   /** Existing documents, for intakes with a documents section. */
   documents?: MktgIntakeDocument[];
+  /**
+   * LFX project uid the run belongs to, for intakes that declare
+   * {@link MktgAgentIntake.submitsProject}: the agent receives it with the
+   * form for its own LFX lookups. Never the storage partition — the result
+   * endpoint resolves that server-side from {@link MktgRunResultBody.project}.
+   */
+  project?: string;
 }
 
 /**
@@ -441,11 +451,103 @@ export interface MktgRunSessionResponse {
   ownerToken: string;
   /**
    * Outcome of the server-side README fetch, for agents whose BFF fetches one
-   * (the Message Foundation). Reported HERE rather than on the result because
-   * the fetch is part of composing the submission — by the time the document
-   * is polled it is long settled. Absent for agents that fetch no README.
+   * (the ICP). Reported HERE rather than on the result because the fetch is
+   * part of composing the submission — by the time the document is polled it
+   * is long settled. Absent for agents that fetch no README.
    */
   readme?: MktgReadmeOutcome;
+}
+
+/** Where an answer on a questions step came from (the agent's answer origins). */
+export type MktgRunAnswerOrigin = (typeof FOUNDATION_MESSAGE_ANSWER_ORIGINS)[number];
+
+/**
+ * One question an agent asks after researching the sources — a gap it could
+ * not settle, with its best guess. Returned on a `questions` result and shown
+ * as the run's second step; the requester accepts or edits every one.
+ */
+export interface MktgRunQuestion {
+  /** The field the answer fills; the answer travels back under it. */
+  key: string;
+  /** Short label. */
+  label: string;
+  /** The question itself. */
+  question: string;
+  /** Why the agent could not settle it from the sources. */
+  why: string;
+  /** The agent's suggested answer, pre-filled on the form; '' when it has none. */
+  suggestedAnswer: string;
+  /** Links (or source names) the suggestion rests on. */
+  basis: string[];
+}
+
+/** One answer to a {@link MktgRunQuestion}. */
+export interface MktgRunAnswer {
+  /** The question's key. */
+  key: string;
+  /** The answer as the requester left it (never empty, never a skip). */
+  text: string;
+  /** Unchanged suggestion, an edited one, or the requester's own where there was none. */
+  origin: MktgRunAnswerOrigin;
+}
+
+/**
+ * Body POSTed to an agent's `answers` endpoint. The owner token travels in
+ * the body like every session write: only the session's creator may answer.
+ */
+export interface MktgRunAnswersBody {
+  /** Guild session id the questions came from. */
+  sessionId: string;
+  /** Creator-binding owner token returned by the generate endpoint. */
+  ownerToken: string;
+  /** One answer per question asked, in the questions' order. */
+  answers: MktgRunAnswer[];
+}
+
+/** Response of an agent's `answers` endpoint. */
+export interface MktgRunAnswersResponse {
+  /** True once the answers turn reached the session. */
+  success: true;
+}
+
+/** One link (or source name) a suggested answer rests on, as the questions step renders it. */
+export interface MktgRunBasisLink {
+  /** What to show. */
+  text: string;
+  /** The link, or null when the basis is a source name rather than a URL. */
+  href: string | null;
+}
+
+/** One question as the questions step renders it, precomputed so the template binds properties only. */
+export interface MktgRunQuestionRow {
+  /** The question's key; the `@for` track key and the control name. */
+  key: string;
+  /** Short label. */
+  label: string;
+  /** The question itself. */
+  question: string;
+  /** Why the agent could not settle it ('' when it gave no reason). */
+  why: string;
+  /** True when a suggested answer pre-fills the box. */
+  suggested: boolean;
+  /** What the suggestion rests on. */
+  basis: MktgRunBasisLink[];
+  /** The textarea's element id. */
+  controlId: string;
+}
+
+/** One asked-and-answered pair as the result shows it. */
+export interface MktgRunAnsweredQuestionRow {
+  /** The question's key; the `@for` track key. */
+  key: string;
+  /** Short label. */
+  label: string;
+  /** The question itself. */
+  question: string;
+  /** The answer that went back. */
+  answer: string;
+  /** Where the answer came from, in words ("Suggested by the agent", "Edited", "Your answer"). */
+  originLabel: string;
 }
 
 /**
@@ -484,11 +586,20 @@ export interface MktgRunPersistReceipt {
 /**
  * Response of an agent's `result` endpoint: `pending` until the session emits
  * a schema-valid, integrity-checked envelope, then `ready` with the validated
- * document.
+ * document — or `questions` while the session's latest agent turn is a
+ * questions block the requester has to answer first.
  */
 export interface MktgRunResultResponse {
   /** Generation state. */
-  status: 'pending' | 'ready';
+  status: 'pending' | 'ready' | 'questions';
+  /** The agent's questions, present when `questions`. */
+  questions?: MktgRunQuestion[];
+  /**
+   * Stable id of the questions block (a content hash), present when
+   * `questions`. The run shell answers a block once: a later poll that
+   * reports the same id is the block it already answered, not a new one.
+   */
+  questionsId?: string;
   /** The validated document (Markdown). Present when ready. */
   documentMarkdown?: string;
   /** Draft version from the validated envelope. Present when ready. */
@@ -553,6 +664,11 @@ export interface MktgAgentIntake {
    */
   persistsDocument?: boolean;
   /**
+   * The generate body carries the run's LFX project uid
+   * ({@link MktgRunGenerateBody.project}) for the agent's own LFX lookups.
+   */
+  submitsProject?: boolean;
+  /**
    * Follow-ups (edit-inputs resubmit, feedback regeneration) go through the
    * agent's generate endpoint as a full resubmit (`feedback` + `priorVersion`
    * in the body, fresh Guild session) instead of a chat follow-up on the
@@ -592,6 +708,10 @@ export interface MktgRunVersion {
    * and a later version generated with one does not inherit the note.
    */
   readme?: MktgReadmeOutcome;
+  /** The questions the agent asked before writing this version, when it asked any. */
+  questions?: MktgRunQuestion[];
+  /** The answers that went back, one per question. */
+  answers?: MktgRunAnswer[];
   /** ISO-8601 creation timestamp. */
   createdAt: string;
 }
@@ -660,11 +780,30 @@ export interface MktgRunAttempt {
   readme?: MktgReadmeOutcome;
 }
 
-/** Run-page phase: intake form → staged running → document result. */
-export type MktgRunPhase = 'form' | 'running' | 'result';
+/** Run-page phase: intake form → staged running → (the agent's questions →) document result. */
+export type MktgRunPhase = 'form' | 'running' | 'questions' | 'result';
+
+/**
+ * A questions turn waiting for the requester's answers: the session it came
+ * from (with the poll gate the eventual document must beat), the block's id
+ * and the questions. The run shell holds it between the `questions` progress
+ * event and the answers submission.
+ */
+export interface MktgRunQuestionsPending {
+  /** The generate attempt whose session asked the questions. */
+  attempt: MktgRunAttempt;
+  /** The block's stable id; the next poll ignores a block with this id. */
+  questionsId: string;
+  /** The questions to answer. */
+  questions: MktgRunQuestion[];
+}
 
 /**
  * Progress events emitted while a generation request is in flight.
+ *
+ * `questions` ends the stream: the agent wants answers before it writes, and
+ * the run continues through the service's `answerQuestions` on the same
+ * session.
  *
  * `persisted` is emitted only by the bounded background persistence retry,
  * when a late server-side write finally lands. It matters because the SERVER
@@ -673,7 +812,11 @@ export type MktgRunPhase = 'form' | 'running' | 'result';
  * server version until a page reload, and this is the event that says the
  * shared copy has caught up.
  */
-export type MktgGenerateProgress = { type: 'submitted' } | { type: 'document'; run: MktgStoredAgentRun } | { type: 'persisted' };
+export type MktgGenerateProgress =
+  | { type: 'submitted' }
+  | { type: 'questions'; pending: MktgRunQuestionsPending }
+  | { type: 'document'; run: MktgStoredAgentRun }
+  | { type: 'persisted' };
 
 /** Request to generate (or regenerate) an agent document from intake answers. */
 export interface MktgGenerateRequest {
