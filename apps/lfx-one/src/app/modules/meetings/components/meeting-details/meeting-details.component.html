@@ -145,12 +145,11 @@
           <p
             class="text-xs"
             [ngClass]="{
-              'text-gray-500': (form().get('description')?.value?.length || 0) < agendaWarningLength,
-              'text-amber-600':
-                (form().get('description')?.value?.length || 0) >= agendaWarningLength && (form().get('description')?.value?.length || 0) < agendaMaxLength,
-              'text-red-600': (form().get('description')?.value?.length || 0) >= agendaMaxLength,
+              'text-gray-500': agendaLength() < agendaWarningLength,
+              'text-amber-600': agendaLength() >= agendaWarningLength && agendaLength() < agendaMaxLength,
+              'text-red-600': agendaLength() >= agendaMaxLength,
             }">
-            {{ form().get('description')?.value?.length || 0 }}/{{ agendaMaxLength }}
+            {{ agendaLength() }}/{{ agendaMaxLength }}
           </p>
         </div>
         @if (form().get('description')?.errors?.['maxlength'] && form().get('description')?.touched) {

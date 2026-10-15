@@ -61,9 +61,6 @@ export class MeetingDetailsComponent implements OnInit {
 
   // Form group input from parent
   public readonly form = input.required<FormGroup>();
-  /** The shared agenda limit and the counter's amber threshold (#3612). */
-  protected readonly agendaMaxLength = MEETING_AGENDA_MAX_LENGTH;
-  protected readonly agendaWarningLength = MEETING_AGENDA_WARNING_LENGTH;
   // The owner baseline hydrated from the loaded meeting (edit mode only) — drives the revert
   // target for the organizer picker's clear affordance and the "Saved organizer" row.
   public readonly savedOwner = input<MeetingUserInfo | null>(null);
@@ -88,6 +85,23 @@ export class MeetingDetailsComponent implements OnInit {
   // Owner (organizer) picker signals
   public readonly ownerManualEntry = signal<boolean>(false);
 
+  /** The shared agenda limit and the counter's amber threshold (#3612). */
+  public readonly agendaMaxLength = MEETING_AGENDA_MAX_LENGTH;
+  public readonly agendaWarningLength = MEETING_AGENDA_WARNING_LENGTH;
+  /** The agenda's length, read once for the counter, its colour and the limit message. */
+  public readonly agendaLength = toSignal(
+    toObservable(this.form).pipe(
+      switchMap((f) => {
+        const ctrl = f.get('description');
+        if (!ctrl) return of(0);
+        return ctrl.valueChanges.pipe(
+          startWith(ctrl.value as string | null),
+          map((v: string | null) => v?.length ?? 0)
+        );
+      })
+    ),
+    { initialValue: 0 }
+  );
   public readonly youtubeTitleLimit = YOUTUBE_MAX_MEETING_TITLE_LENGTH;
   public readonly youtubeAmberThreshold = Math.floor(YOUTUBE_MAX_MEETING_TITLE_LENGTH * 0.9);
   public readonly titleLength = toSignal(
@@ -336,7 +350,7 @@ export class MeetingDetailsComponent implements OnInit {
       title,
       projectName: currentProject.name,
       context,
-      maxCharacters: 2000,
+      maxCharacters: MEETING_AGENDA_MAX_LENGTH,
     };
 
     this.isGeneratingAgenda.set(true);
