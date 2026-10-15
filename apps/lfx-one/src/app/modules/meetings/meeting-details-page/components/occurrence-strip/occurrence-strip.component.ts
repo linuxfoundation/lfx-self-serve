@@ -81,8 +81,11 @@ export class MeetingOccurrenceStripComponent {
   private runId = 0;
   /** Bumped by each move: a move superseded by a later one, while its reads were in flight, is dropped. */
   private moveId = 0;
-  /** The start of the chip a move is opening, while it reads; a repeat click on it is ignored. */
-  private pendingMoveMs: number | null = null;
+  /**
+   * The chip a move is opening, while it reads, and the run it reads for: a repeat click on it is
+   * ignored. A marker from an earlier run never blocks a click, since that move drops itself as stale.
+   */
+  private pendingMove: { startMs: number; run: number } | null = null;
 
   // One formatter per field, in the viewer's zone; the strip only renders its chips on the browser.
   private readonly timezone = isPlatformBrowser(this.platformId) ? getUserTimezone() : 'UTC';
@@ -236,13 +239,13 @@ export class MeetingOccurrenceStripComponent {
   private async moveTo(item: MeetingOccurrenceStripItem): Promise<void> {
     // A repeat click on the chip already being opened changes nothing: it would only cut short the read
     // for its record.
-    if (this.pendingMoveMs === item.startMs) {
+    if (this.pendingMove?.startMs === item.startMs && this.pendingMove.run === this.runId) {
       return;
     }
     this.focusStartMs.set(null);
     const move = ++this.moveId;
-    this.pendingMoveMs = item.startMs;
     const run = this.runId;
+    this.pendingMove = { startMs: item.startMs, run };
     // The page's own occurrence, not the selected chip: a read can bring that chip in without the page
     // having moved at all.
     const from = this.state.selectedOccurrenceStartMs();
@@ -261,7 +264,7 @@ export class MeetingOccurrenceStripComponent {
       this.state.navigateToOccurrence(target);
     } finally {
       if (move === this.moveId) {
-        this.pendingMoveMs = null;
+        this.pendingMove = null;
       }
     }
   }

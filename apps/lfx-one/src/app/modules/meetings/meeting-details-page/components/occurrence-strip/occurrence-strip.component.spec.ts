@@ -464,6 +464,28 @@ describe('MeetingOccurrenceStripComponent', () => {
       expect(lastMove()).toEqual(expect.objectContaining({ startMs: at(-10), pastResourceId: `${SERIES}-${at(-10)}` }));
     });
 
+    it("opens a chip clicked again in a new run while the old run's read is still pending", async () => {
+      const older = new Subject<PublicMeetingOccurrencesResponse>();
+      await render(window, { selected: at(-1), pages: [older] });
+
+      chip(-10)?.click();
+      await settle();
+      // The password changes: a new run reads its window (no more past pages this time), and the same
+      // chip is clicked there before the old run's read settles.
+      getPage.mockReturnValueOnce(of(page({ past: [past(-11), past(-10), past(-2), past(-1)], future: [future(-10), future(1)], past_has_more: false })));
+      password.set('other');
+      fixture.detectChanges();
+      await settle();
+      chip(-10)?.click();
+      await settle();
+      older.next(page({ past: [past(-10)], future: [], past_has_more: false }));
+      older.complete();
+      await settle();
+
+      expect(navigateToOccurrence).toHaveBeenCalledTimes(1);
+      expect(lastMove()).toEqual(expect.objectContaining({ startMs: at(-10), pastResourceId: `${SERIES}-${at(-10)}` }));
+    });
+
     it("keeps the click when its read only brings the page's own occurrence into the strip", async () => {
       // The page shows week -12, outside the first window, and the chase toward it failed: no chip is
       // selected. The click's read then brings week -12 in, though the page itself has not moved.
