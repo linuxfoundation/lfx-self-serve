@@ -520,6 +520,10 @@
           <p class="text-sm text-gray-500">No active LinkedIn campaigns found for this account.</p>
         </div>
       } @else if (linkedInView(); as view) {
+        @if (linkedInCurrencyNote()) {
+          <!-- campaign-service reported a connection's LinkedIn amounts in the account's currency and did not say which. -->
+          <p class="text-xs text-gray-500" data-testid="linkedin-currency-note">Spend and budgets are in the ad account's own currency.</p>
+        }
         <ng-container
           [ngTemplateOutlet]="accountPanel"
           [ngTemplateOutletContext]="{ $implicit: view, panel: 'linkedin', actPlatform: 'linkedin-ads', note: linkedInTotalsNote() }" />

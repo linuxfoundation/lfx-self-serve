@@ -1486,7 +1486,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       expect(badge.className).not.toContain('bg-green-50');
     });
 
-    it("keeps LinkedIn's whole-dollar currency and the other panels' two decimals", async () => {
+    it("keeps LinkedIn's whole units and the other panels' two decimals", async () => {
       await setup(allConnected);
       const legacy = {
         accountLabel: 'LF',
@@ -1519,7 +1519,10 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       service['getRedditMonitorData'].mockReturnValue(of(legacy));
       select('linkedin');
 
-      expect(text('linkedin-kpi-spend')).toBe('$413');
+      // The connection's LinkedIn account names no currency here: whole units, no `$`, and the note.
+      expect(text('linkedin-kpi-spend')).toBe('413');
+      expect(text('linkedin-campaign-row-0')).not.toContain('$');
+      expect(text('linkedin-currency-note')).toBe("Spend and budgets are in the ad account's own currency.");
       const linkedInRow = text('linkedin-campaign-row-0');
       expect(linkedInRow).toContain('KubeCon NA 2026');
       expect(linkedInRow).toContain('NA | KubeCon NA 2026 | Awareness');
@@ -1572,10 +1575,50 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       expect(text('linkedin-kpi-spend')).toBe('€413');
       expect(text('linkedin-campaign-row-0')).toContain('€1,000');
       expect(text('linkedin-campaign-row-0')).not.toContain('$');
+      expect(el('linkedin-currency-note')).toBeNull();
 
       select('reddit');
       expect(text('reddit-kpi-spend')).toBe('€412.50');
       expect(text('reddit-campaign-row-0')).toContain('€1,000.00');
+    });
+
+    /** The legacy (flag-off) LinkedIn panel reads the allowlisted USD accounts: whole dollars, no note. */
+    it('keeps the legacy LinkedIn panel in whole dollars, with no currency note', async () => {
+      await setup({ viaCampaignService: false, platforms: {} });
+      service['getLinkedInMonitorData'].mockReturnValue(
+        of({
+          accountLabel: 'LF',
+          pulledAt: '2026-10-13T00:00:00.000Z',
+          dateRange: { mode: 'last_30_days' },
+          campaigns: [
+            {
+              campaignId: '1',
+              campaignName: 'NA | KubeCon NA 2026 | Awareness',
+              eventName: 'KubeCon NA 2026',
+              creatives: [{}],
+              status: 'ACTIVE',
+              totalBudget: 1000,
+              dailyBudget: 0,
+              spend: 412.5,
+              impressions: 52000,
+              clicks: 610,
+              ctr: 1.17,
+              conversions: 14,
+              pacingPct: 88,
+              pacingLabel: 'normal',
+              startDate: '2026-09-01',
+              endDate: '',
+            },
+          ],
+          accountTotals: { spend: 412.5, impressions: 52000, clicks: 610, conversions: 14, campaignCount: 1 },
+          actionItems: [],
+        })
+      );
+      select('linkedin');
+
+      expect(text('linkedin-kpi-spend')).toBe('$413');
+      expect(text('linkedin-campaign-row-0')).toContain('$1,000');
+      expect(el('linkedin-currency-note')).toBeNull();
     });
   });
 
