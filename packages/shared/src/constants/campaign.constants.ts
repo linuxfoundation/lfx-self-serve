@@ -1303,11 +1303,13 @@ export const GOOGLE_ADS_SCHEDULE_MINUTES = [0, 15, 30, 45] as const;
 
 /**
  * Google's documented bid-adjustment range for an ad schedule or device criterion
- * (`campaign_criteria.go`'s `minBidModifier` / `maxBidModifier`), which is -100%..+900%.
+ * (`campaign_criteria.go`'s `minBidModifier` / `maxBidModifier`): a multiplier of 0.1 through 10.0,
+ * which is -90%..+900%.
  *
- * 0 is NOT below the minimum — it is the "do not serve here at all" opt-out and is accepted on its
- * own. What upstream refuses is a value strictly between 0 and the minimum, so a guard that simply
- * tested `value < 0.1` would refuse the opt-out every day-parted campaign uses.
+ * 0 is NOT below the minimum — it is the -100% "do not serve here at all" opt-out, and it sits
+ * outside the range above rather than at its bottom end: upstream accepts it on its own, before the
+ * range is ever tested. What upstream refuses is a value strictly between 0 and the minimum, so a
+ * guard that simply tested `value < 0.1` would refuse the opt-out every day-parted campaign uses.
  */
 export const GOOGLE_ADS_MIN_BID_MODIFIER = 0.1;
 export const GOOGLE_ADS_MAX_BID_MODIFIER = 10.0;

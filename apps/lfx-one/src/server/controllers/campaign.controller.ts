@@ -204,8 +204,17 @@ type NormalizedAdSchedule = Omit<CampaignAdSchedule, 'dayOfWeek' | 'startMinute'
  * One hour-and-minute pair as `HH:MM`, for naming a window in a refusal.
  *
  * Hour 24 is printed as written rather than wrapped to `00`: it is the half-open window's
- * end-of-day, and a message reading "ends at 00:00, which is not after its start" would describe
- * the opposite of the schedule the caller wrote.
+ * end-of-day, and wrapping it would misdescribe the two refusals that actually render it — the
+ * overrun would read "ends at 00:15, past the end of the day", and an overlap would name the
+ * window "MONDAY 09:00-00:00". Both would describe a different schedule than the caller wrote.
+ * The empty-window refusal never renders hour 24: an end hour of 24 puts the end at 1440 or more
+ * while a start hour of at most 23 puts the start at 1425 or less, so that branch cannot fire.
+ *
+ * Deliberately module-local, unlike the `googleAds*` helpers in `@lfx-one/shared/constants`. Those
+ * exist because they reproduce a Go SEMANTIC the form and this guard must agree on — `TrimSpace`'s
+ * NEL handling, Go's lowercasing, `url.Parse`'s flaw — so they are shared and separately specced.
+ * This one reproduces nothing upstream does; it formats a server-side refusal string, and nothing
+ * outside this file has a reason to render an ad schedule window.
  */
 function googleAdsClockTime(hour: number, minute: number): string {
   return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
