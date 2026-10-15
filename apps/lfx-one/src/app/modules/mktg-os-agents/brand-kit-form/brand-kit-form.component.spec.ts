@@ -160,7 +160,7 @@ describe('BrandKitFormComponent — generation poll state machine', () => {
       expect(submitButton()?.disabled).toBe(false);
       submitButton()?.click();
       expect(generate).toHaveBeenCalledTimes(1);
-      expect(generate).toHaveBeenCalledWith(expect.objectContaining({ github_url: 'https://github.com/opensearch-project' }));
+      expect(generate).toHaveBeenCalledWith(expect.objectContaining({ github_url: 'https://github.com/opensearch-project' }), 'proj-uid-1');
     });
 
     it('disables submit for a URL that is not a GitHub URL at all, and offers both shapes', () => {

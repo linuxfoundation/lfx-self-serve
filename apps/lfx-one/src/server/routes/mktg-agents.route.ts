@@ -81,6 +81,9 @@ router.get('/documents/:agentKey/:documentId', (req, res, next) => mktgDocuments
 // GET /api/mktg-agents/documents/:agentKey/:documentId/revisions/:revisionId?project=<uid> - one revision with its Markdown
 router.get('/documents/:agentKey/:documentId/revisions/:revisionId', (req, res, next) => mktgDocumentsController.getRevision(req, res, next));
 
+// POST — retry checking an existing server-recorded session, never start a new one.
+router.post('/documents/:agentKey/:documentId/runs/:runId/retry', (req, res, next) => mktgDocumentsController.retryRun(req, res, next));
+
 // POST /api/mktg-agents/documents/:agentKey/:documentId/restore - make an older revision the latest, as a new revision
 router.post('/documents/:agentKey/:documentId/restore', (req, res, next) => mktgDocumentsController.restoreRevision(req, res, next));
 

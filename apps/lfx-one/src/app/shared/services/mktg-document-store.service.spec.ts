@@ -60,6 +60,14 @@ describe('MktgDocumentStoreService', () => {
     request.flush({});
   });
 
+  it('retries a server-recorded run with project scope and no browser session token', () => {
+    service.retryRun('proj-1', 'brand-kit', 'living', 'a'.repeat(64)).subscribe();
+    const request = http.expectOne(`/api/mktg-agents/documents/brand-kit/living/runs/${'a'.repeat(64)}/retry`);
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toEqual({ project: 'proj-1' });
+    request.flush({ project: 'proj-1', revisions: [], runs: [] });
+  });
+
   it('logs and rethrows a failed read, so it never reads as "no documents yet"', () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const next = vi.fn();

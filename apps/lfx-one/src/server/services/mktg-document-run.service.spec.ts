@@ -139,6 +139,18 @@ describe('MktgDocumentRunService', () => {
     expect((await service.reconcile(req, project))[0]).toMatchObject({ state: 'writing', startedAt: '2026-10-15T12:00:00.000Z' });
   });
 
+  it('marks the creator fast-path result complete even if a previous read marked the run failed', async () => {
+    await service.start(req, project, 'brand-kit', 'synthetic-session', 'opaque-subject');
+    vi.setSystemTime('2026-10-15T13:00:00.000Z');
+    await service.reconcile(req, project);
+    await service.recordResult(req, 'synthetic-session', {
+      status: 'ready',
+      version: 1,
+      persistence: { project, document: { ...location, agentKey: 'brand-kit' }, s3_key: 'synthetic-key', content_sha256: 'a'.repeat(64), version: 1 },
+    });
+    expect(await service.reconcile(req, project)).toEqual([]);
+  });
+
   it('advances a reused session only for a newer intake attempt, without replacing its body', async () => {
     await service.start(req, project, 'brand-kit', 'synthetic-session', 'opaque-subject');
     flows.getResult.mockResolvedValue(ready);

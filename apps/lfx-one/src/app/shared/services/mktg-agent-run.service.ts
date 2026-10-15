@@ -287,10 +287,8 @@ export class MktgAgentRunService {
   private startRun(request: MktgGenerateRequest): Observable<MktgRunAttempt> {
     const body: MktgRunGenerateBody = {
       answers: request.answers,
+      project: request.projectUid,
       ...(request.documents?.length && { documents: request.documents }),
-      // The agent's own LFX lookups need the project; the storage partition is
-      // the result poll's business, resolved server-side.
-      ...(request.intake.submitsProject && request.projectUid && { project: request.projectUid }),
     };
     return this.http.post<MktgRunSessionResponse>(request.intake.endpoints.generate, body).pipe(
       map((response) => ({
@@ -320,7 +318,7 @@ export class MktgAgentRunService {
       // A stored run without versions has nothing to revise — plain first run.
       return this.startRun(request);
     }
-    const body: MktgRunGenerateBody = { answers: request.answers, priorVersion };
+    const body: MktgRunGenerateBody = { answers: request.answers, priorVersion, project: request.projectUid };
     if (request.feedback?.trim()) {
       body.feedback = request.feedback.trim();
     }
@@ -359,6 +357,8 @@ export class MktgAgentRunService {
     const priorVersion = stored.versions.at(-1)?.version ?? 0;
     const body: MktgChatRequest = {
       agentId: request.agentId,
+      project: request.projectUid,
+      priorVersion,
       message: renderMktgIntakeMessage(request.intake, request.answers, request.feedback, priorVersion || undefined),
       sessionId: stored.sessionId,
       ownerToken: stored.ownerToken,

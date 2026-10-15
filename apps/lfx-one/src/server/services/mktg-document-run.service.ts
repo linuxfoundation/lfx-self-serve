@@ -113,6 +113,20 @@ export class MktgDocumentRunService {
     );
   }
 
+  /** The creator's normal result poll may finish a run before a Documents read does. */
+  public async recordResult(req: Request, sessionId: string, result: MktgRunResultResponse): Promise<void> {
+    const receipt = result.persistence;
+    if (!receipt?.document) {
+      return;
+    }
+    const key = `${this.prefix(receipt.project)}${this.hash(sessionId)}.json`;
+    const object = await this.store.getObject(req, 'marketing-os-artifacts', key);
+    const stored = object ? this.parse(key, object.body, object.metadata, receipt.project) : null;
+    if (stored && stored.record.state !== 'completed' && (result.version ?? 0) > stored.record.priorVersion) {
+      await this.mark(req, stored, 'completed', receipt.document);
+    }
+  }
+
   /** Caller has already resolved and writer-authorized project; sessions come only from stored records. */
   public async reconcile(req: Request, project: string, agentKey?: string, documentId?: string): Promise<MktgDocumentRunProgress[]> {
     const listed = await this.store.listObjects(req, 'marketing-os-artifacts', this.prefix(project));

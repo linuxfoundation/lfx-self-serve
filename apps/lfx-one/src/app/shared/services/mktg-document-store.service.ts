@@ -10,6 +10,7 @@ import {
   MktgRestoreRevisionRequest,
   MktgRestoreRevisionResponse,
   MktgRevisionResponse,
+  MktgRetryDocumentRunRequest,
 } from '@lfx-one/shared/interfaces';
 import { catchError, Observable, take, throwError } from 'rxjs';
 
@@ -54,6 +55,12 @@ export class MktgDocumentStoreService {
   public restoreRevision(projectUid: string, agentKey: string, documentId: string, revisionId: string): Observable<MktgRestoreRevisionResponse> {
     const body: MktgRestoreRevisionRequest = { project: projectUid, revisionId };
     return this.http.post<MktgRestoreRevisionResponse>(`${this.documentPath(agentKey, documentId)}/restore`, body).pipe(take(1));
+  }
+
+  /** Explicitly check an existing server run again; no new generation is submitted. */
+  public retryRun(projectUid: string, agentKey: string, documentId: string, runId: string): Observable<MktgDocumentDetailResponse> {
+    const body: MktgRetryDocumentRunRequest = { project: projectUid };
+    return this.http.post<MktgDocumentDetailResponse>(`${this.documentPath(agentKey, documentId)}/runs/${encodeURIComponent(runId)}/retry`, body).pipe(take(1));
   }
 
   private logAndRethrow(message: string, error: unknown): Observable<never> {

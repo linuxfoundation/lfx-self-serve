@@ -205,7 +205,7 @@ describe('MktgAgentRunService', () => {
     const events: MktgGenerateProgress[] = [];
     service.generate(generateRequest()).subscribe((event) => events.push(event));
 
-    expect(httpPost).toHaveBeenCalledWith(BRAND_KIT_INTAKE.endpoints.generate, { answers: ANSWERS });
+    expect(httpPost).toHaveBeenCalledWith(BRAND_KIT_INTAKE.endpoints.generate, { answers: ANSWERS, project: 'proj-1' });
     expect(events).toEqual([{ type: 'submitted' }]);
 
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
@@ -315,7 +315,7 @@ describe('MktgAgentRunService', () => {
 
     // No TTL clock means the token's age is unknowable — never ride that session.
     expect(httpPost).not.toHaveBeenCalledWith('/api/mktg-agents/chat', expect.anything());
-    expect(httpPost).toHaveBeenCalledWith(BRAND_KIT_INTAKE.endpoints.generate, { answers: ANSWERS });
+    expect(httpPost).toHaveBeenCalledWith(BRAND_KIT_INTAKE.endpoints.generate, { answers: ANSWERS, project: 'proj-1' });
 
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
     expect(events).toHaveLength(2);
@@ -335,6 +335,8 @@ describe('MktgAgentRunService', () => {
     // prior_version is derived from the STORED run, never passed by the caller.
     expect(httpPost).toHaveBeenCalledWith('/api/mktg-agents/chat', {
       agentId: 'brand-kit',
+      project: 'proj-1',
+      priorVersion: 1,
       message: renderMktgIntakeMessage(BRAND_KIT_INTAKE, ANSWERS, 'Tighten the taglines.', 1),
       sessionId: 'sess-1',
       ownerToken: 'token-1',
@@ -368,6 +370,8 @@ describe('MktgAgentRunService', () => {
     const chatCall = httpPost.mock.calls.find(([url]) => url === '/api/mktg-agents/chat');
     expect(chatCall?.[1]).toEqual({
       agentId: 'brand-kit',
+      project: 'proj-1',
+      priorVersion: 1,
       message: renderMktgIntakeMessage(BRAND_KIT_INTAKE, ANSWERS, undefined, 1),
       sessionId: 'sess-1',
       ownerToken: 'token-1',
@@ -401,7 +405,7 @@ describe('MktgAgentRunService', () => {
     // user-1's session must never be replayed as user-2: no chat follow-up,
     // a brand-new validated generate instead.
     expect(httpPost).not.toHaveBeenCalledWith('/api/mktg-agents/chat', expect.anything());
-    expect(httpPost).toHaveBeenCalledWith(BRAND_KIT_INTAKE.endpoints.generate, { answers: ANSWERS });
+    expect(httpPost).toHaveBeenCalledWith(BRAND_KIT_INTAKE.endpoints.generate, { answers: ANSWERS, project: 'proj-1' });
 
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
     expect(events).toHaveLength(2);
@@ -438,7 +442,7 @@ describe('MktgAgentRunService', () => {
     // generate — the user is never dead-ended on the unusable session.
     expect(error).toBeUndefined();
     expect(httpPost).toHaveBeenCalledWith('/api/mktg-agents/chat', expect.objectContaining({ sessionId: 'sess-1', ownerToken: 'token-1' }));
-    expect(httpPost).toHaveBeenCalledWith(BRAND_KIT_INTAKE.endpoints.generate, { answers: ANSWERS });
+    expect(httpPost).toHaveBeenCalledWith(BRAND_KIT_INTAKE.endpoints.generate, { answers: ANSWERS, project: 'proj-1' });
     expect(events).toEqual([{ type: 'submitted' }]);
 
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
@@ -527,6 +531,8 @@ describe('MktgAgentRunService', () => {
 
       expect(httpPost).toHaveBeenCalledWith('/api/mktg-agents/chat', {
         agentId: 'brand-kit',
+        project: 'proj-1',
+        priorVersion: 1,
         message: renderMktgIntakeMessage(BRAND_KIT_INTAKE, ANSWERS, 'Tighten the taglines.', 1),
         sessionId: 'sess-1',
         ownerToken: 'token-1',
