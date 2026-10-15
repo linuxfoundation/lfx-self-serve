@@ -311,7 +311,7 @@ describe('MktgDocumentViewComponent', () => {
     const label = query(`mktg-document-view-revision-label-${current.number}`);
     const provenance = query(`mktg-document-view-revision-how-${current.number}`);
     expect(label?.classList.contains('truncate')).toBe(false);
-    expect(label?.getAttribute('title')).toContain(how);
+    expect(label?.hasAttribute('title')).toBe(false);
     expect(label?.firstElementChild?.classList.contains('block')).toBe(true);
     expect(provenance?.textContent).toBe(how);
     expect(provenance?.classList.contains('block')).toBe(true);

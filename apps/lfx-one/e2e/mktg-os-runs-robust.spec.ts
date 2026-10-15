@@ -50,7 +50,6 @@ test.describe('Marketing OS run/document structure and access states', () => {
       const revisionLabel = page.getByTestId(/^mktg-document-view-revision-label-/).first();
       await expect(revisionLabel).toHaveCSS('text-align', 'left');
       await expect(revisionLabel).toHaveCSS('white-space', 'normal');
-      await expect(revisionLabel).toHaveAttribute('title', /Generated from the form/);
       const provenance = page.getByTestId(/^mktg-document-view-revision-how-/).first();
       await expect(provenance).toHaveText('Generated from the form');
       await expect(provenance).toHaveCSS('display', 'block');

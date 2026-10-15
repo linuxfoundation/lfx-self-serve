@@ -60,7 +60,7 @@ test.describe('Marketing OS runs land on documents', () => {
     await expect(page.getByTestId('mktg-document-view-generating')).not.toContainText('Building the slides');
     await expect(page.getByTestId('mktg-document-view-storing-step')).toContainText('● Storing revision 2');
     run.persist();
-    await testInfo.attach('storing-with-previous-revision', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
+    await testInfo.attach('after-persist-released', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
     await expect(page.getByTestId('mktg-document-view-document')).toContainText('Synthetic revision 2', { timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('mktg-document-view-generating')).toHaveCount(0);
     await testInfo.attach('stored-revision', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
