@@ -829,7 +829,8 @@ export function buildOccurrenceStripItems(
   };
   const fromOccurrence = (occurrence: MeetingOccurrence): MeetingOccurrenceStripItem => {
     const startMs = new Date(occurrence.start_time).getTime();
-    const duration = occurrence.duration ?? fallbackDuration;
+    // A zero (or missing) duration inherits the series', as the occurrence picker reads it.
+    const duration = occurrence.duration || fallbackDuration;
     return {
       startMs,
       startTime: occurrence.start_time,

@@ -1486,6 +1486,20 @@ describe('buildOccurrenceStripItems (E6-03)', () => {
     expect(inProgress?.pastResourceId).toBeUndefined();
   });
 
+  it("gives an occurrence with a zero duration the series' duration", () => {
+    // 50 minutes into a 60-minute meeting: still running, though a zero duration plus the 40-minute
+    // end buffer alone would call it ended.
+    const start = now.getTime() - 50 * 60_000;
+    const [item] = buildOccurrenceStripItems(
+      [],
+      { past: [], future: [{ occurrence_id: String(Math.floor(start / 1000)), start_time: new Date(start).toISOString(), duration: 0 }] },
+      60,
+      now
+    );
+
+    expect(item).toEqual(expect.objectContaining({ duration: 60, isPast: false }));
+  });
+
   it('flags a past record whose id is listed as cancelled', () => {
     const items = buildOccurrenceStripItems(
       [],
