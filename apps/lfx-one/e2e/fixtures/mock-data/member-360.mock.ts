@@ -151,7 +151,7 @@ export function member360Fixture(): Member360Envelope {
           days_to_renewal: 47,
           engagement_score: 38,
           engagement_tier: 'At Risk',
-          trend: '▼',
+          trend: null,
           committees_score: 40,
           events_score: 40,
           speaking_score: 40,
@@ -175,7 +175,7 @@ export function member360Fixture(): Member360Envelope {
           days_to_renewal: 312,
           engagement_score: 92,
           engagement_tier: 'Champion',
-          trend: '▲',
+          trend: null,
           committees_score: 40,
           events_score: 40,
           speaking_score: 40,
@@ -388,6 +388,6 @@ export function member360Fixture(): Member360Envelope {
     project_slug: 'sample-foundation',
   };
   // SHA-256 of JSON.stringify(envelope.tabs); pinned so browser unit tests need no node crypto.
-  envelope.content_sha256 = 'd1033dec9ff8500273efe84be05353a83f63b691b7826118bfa36a7e9dbfac57';
+  envelope.content_sha256 = '547deb4170de08dfa3a0f879ae80b35eb3b198f2beb38ace2d13cd7e5f5b3db5';
   return envelope;
 }

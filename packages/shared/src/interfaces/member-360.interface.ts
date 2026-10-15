@@ -68,6 +68,7 @@ export interface Member360RankingFilters {
   search: string;
 }
 export interface Member360DisplayRow {
+  key: number;
   trendText: string;
   trendClass: string;
   trendAriaLabel: string | null;

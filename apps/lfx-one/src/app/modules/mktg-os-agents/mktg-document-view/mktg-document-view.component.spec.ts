@@ -5,6 +5,8 @@ import { DATE_PIPE_DEFAULT_OPTIONS } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { computed, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { member360Fixture } from '../../../../../e2e/fixtures/mock-data/member-360.mock';
+import { Title } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
@@ -19,6 +21,7 @@ import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-
 import { brandKitTestRevision } from '@shared/testing/brand-kit-test-data';
 import { MessageService } from 'primeng/api';
 import { NEVER, of, Subject, throwError } from 'rxjs';
+import { Member360Service } from '@services/member-360.service';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgDocumentViewComponent } from './mktg-document-view.component';
@@ -62,7 +65,9 @@ describe('MktgDocumentViewComponent', () => {
   let resolveBrandKit: ReturnType<typeof vi.fn>;
   let activeContext: ReturnType<typeof signal<ProjectContext | null>>;
   let slidesExport: { last: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; poll: ReturnType<typeof vi.fn> };
+  const run = { isPending: vi.fn(() => false), waitForStored: vi.fn(() => of({ status: 'ready', stored: true })) };
   let store: {
+    listDocuments: ReturnType<typeof vi.fn>;
     getDocument: ReturnType<typeof vi.fn>;
     getRevision: ReturnType<typeof vi.fn>;
     getApprovedRevision: ReturnType<typeof vi.fn>;
@@ -199,7 +204,9 @@ describe('MktgDocumentViewComponent', () => {
   }
 
   beforeEach(async () => {
+    run.isPending.mockReturnValue(false);
     store = {
+      listDocuments: vi.fn(() => of({ groups: [] })),
       getDocument: vi.fn(() => of(detail)),
       getRevision: vi.fn((_project: string, _agentKey: string, _documentId: string, revisionId: string) =>
         of(revisionResponse([LATEST, OLDER, RESTORED].find((candidate) => candidate.id === revisionId) ?? LATEST))
@@ -243,6 +250,7 @@ describe('MktgDocumentViewComponent', () => {
         { provide: MktgDocumentStoreService, useValue: store },
         { provide: ProjectService, useValue: { getProject: projectLookup } },
         { provide: UserService, useValue: { impersonating, user: viewer } },
+        { provide: Member360Service, useValue: run },
       ],
     }).compileComponents();
   });
@@ -446,9 +454,45 @@ describe('MktgDocumentViewComponent', () => {
     expectNoKitAssetChrome();
   });
 
+  it('opens a stored Member 360 report without a subject, including after a user-context flicker', async () => {
+    run.waitForStored.mockClear();
+    store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), member360: member360Fixture() }));
+    viewer.set(undefined);
+    impersonating.set(true);
+    await render('/documents/member-360/run-0123456789abcdef01234567');
+    expect(query('member-360-result')).not.toBeNull();
+    viewer.set({ sub: 'synthetic-writer' });
+    await settle();
+    viewer.set(undefined);
+    await settle();
+    expect(query('member-360-result')).not.toBeNull();
+    expect(query('mktg-document-view-loading')).toBeNull();
+    expect(run.waitForStored).not.toHaveBeenCalled();
+  });
+
+  it('gates pending capabilities on the subject but leaves a failed stored read retryable', async () => {
+    run.isPending.mockClear();
+    run.waitForStored.mockClear();
+    viewer.set(undefined);
+    run.isPending.mockReturnValue(true);
+    run.waitForStored.mockReturnValue(NEVER);
+    store.getDocument.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+    await render('/documents/member-360/run-0123456789abcdef01234567');
+    expect(run.isPending).not.toHaveBeenCalled();
+    expect(run.waitForStored).not.toHaveBeenCalled();
+    expect(query('mktg-document-view-loading')).toBeNull();
+    expect(query('mktg-document-view-retry')).not.toBeNull();
+    viewer.set({ sub: 'synthetic-writer' });
+    await settle();
+    expect(run.isPending).toHaveBeenCalledWith(PROJECT.uid, 'run-0123456789abcdef01234567');
+    expect(run.waitForStored).toHaveBeenCalled();
+  });
+
   it('opens the latest revision when no revision is asked for', async () => {
+    TestBed.inject(Title).setTitle('Baseline document · LFX');
     await render('/documents/brand-kit/living');
 
+    expect(TestBed.inject(Title).getTitle()).toBe('Baseline document · LFX');
     expect(store.getDocument).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living');
     expect(store.getRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', LATEST.id);
     expect(query('mktg-document-view-title')?.textContent).toContain('TestOrbit Brand Kit');
