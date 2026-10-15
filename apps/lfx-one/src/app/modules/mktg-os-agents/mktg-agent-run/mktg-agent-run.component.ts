@@ -15,6 +15,7 @@ import {
   MKTG_AGENT_INTAKES,
   MKTG_AGENTS,
   MKTG_DOCUMENT_STATUS_REVIEWED_PREFIX,
+  MKTG_DOCUMENT_TYPES,
   MKTG_INTAKE_FORMAT_ERRORS,
   MKTG_README_SKIP_NOTES,
   MKTG_RUN_STAGES,
@@ -320,6 +321,8 @@ export class MktgAgentRunComponent {
   // methods (docs/reviews/frontend-checklist.md §4).
   protected readonly agentIconClass: string = this.accentIcon[this.agent?.accent ?? 'gray'];
   protected readonly agentTagline: string = this.agent?.tags.join(' · ') ?? '';
+  /** The Documents area type this agent's output is stored as, when it has one. */
+  protected readonly documentsAgentKey: string | null = MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === this.agent?.id)?.agentKey ?? null;
 
   public constructor() {
     // The deferred timers must not outlive the view (their callbacks only
@@ -388,6 +391,11 @@ export class MktgAgentRunComponent {
   // === Protected methods ===
   protected onBack(): void {
     this.router.navigate(['..'], { relativeTo: this.route, queryParamsHandling: 'preserve' });
+  }
+
+  /** Every revision of this agent's document is kept in the Documents area. */
+  protected onOpenDocuments(): void {
+    this.router.navigate(['..', 'documents'], { relativeTo: this.route, queryParams: { type: this.documentsAgentKey }, queryParamsHandling: 'merge' });
   }
 
   protected onSubmit(): void {
