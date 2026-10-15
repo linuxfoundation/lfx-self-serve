@@ -181,14 +181,7 @@ export class OrgEasyclaApprovalListComponent {
     this.openDialog({ mode: 'edit', entry, existing: this.entries() }, 'Edit approval list entry', 'edited', target);
   }
 
-  /**
-   * Confirms a delete before it is sent.
-   *
-   * The copy names the state the matching acknowledgments land in. A removal leaves them Not
-   * Authorized rather than Invalidated, and adding the entry back restores them without the
-   * contributor acknowledging again, whether or not Auto ECLA is on. A CLA manager is entitled to
-   * know that before the click, not from the receipt.
-   */
+  /** Confirms a delete before it is sent. */
   protected confirmDelete(entry: OrgClaApprovalEntry): void {
     const target = this.writeTarget();
     if (!target) return;

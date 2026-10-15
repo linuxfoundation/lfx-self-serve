@@ -501,8 +501,6 @@ describe('OrgEasyclaApprovalListComponent', () => {
   });
 
   describe('deleting an entry', () => {
-    // A removal leaves the matching acknowledgments Not Authorized, and adding the entry back
-    // restores them. A CLA manager is entitled to know that before the click, not from the receipt.
     it('names the Not Authorized outcome in the confirmation, before anything is sent', async () => {
       const fixture = await render();
 

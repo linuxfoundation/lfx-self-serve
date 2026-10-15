@@ -73,8 +73,6 @@ describe('OrgEasyclaInvalidateAcknowledgmentDialogComponent', () => {
   });
 
   it('says what invalidating does and does not stop', async () => {
-    // The default data has no individual matches, so the paragraph ends after the Auto ECLA
-    // sentence — "remove the matching entries below" only belongs where a removal control is shown.
     const fixture = await render();
     const body = byTestId(fixture, 'org-easycla-invalidate-dialog-body');
 
@@ -87,8 +85,6 @@ describe('OrgEasyclaInvalidateAcknowledgmentDialogComponent', () => {
     ]);
   });
 
-  // Auto ECLA skips an invalidated acknowledgment on an approval-list edit and when the switch is
-  // turned on, so the dialog must not offer it as a way back.
   it('never says Auto ECLA will re-add the contributor', async () => {
     for (const data of [dialogData(), dialogData(ENTRIES, true)]) {
       const fixture = await render(data);
@@ -103,12 +99,9 @@ describe('OrgEasyclaInvalidateAcknowledgmentDialogComponent', () => {
     const bodyText = (fixture: ComponentFixture<unknown>): string =>
       byTestId(fixture, 'org-easycla-invalidate-dialog-body')?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 
-    // Individual matches the reader may remove: the sentence points at the checkbox below.
     const withRemoval = await render(dialogData(ENTRIES, true));
     expect(bodyText(withRemoval)).toContain("Auto ECLA won't re-add them. Remove the matching entries below to prevent this.");
 
-    // No removal control renders in any of these states, so the sentence must be absent and the
-    // paragraph must simply end.
     const noControl: OrgClaInvalidateAcknowledgmentDialogData[] = [
       dialogData([], true), // no individual match
       dialogData(ENTRIES, false), // matches, but the reader cannot edit the list

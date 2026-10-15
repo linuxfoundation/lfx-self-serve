@@ -653,14 +653,7 @@ export const ORG_CLA_AUTHORITY_NAME_MIN_LENGTH = 2;
  */
 export const ORG_CLA_APPROVAL_HEADING = 'Approved List of Contributors from My Organization';
 
-/**
- * Toast copy for a completed approval-list write.
- *
- * A removal's detail names the state the covered acknowledgements land in, because that is the
- * consequence a CLA manager needs confirmed: the rule is gone *and* those acknowledgements now
- * read Not Authorized until the entry is added back. Upstream reports no count of the
- * acknowledgements a write affected, so none of this copy claims one.
- */
+/** Toast copy for a completed approval-list write. */
 export const ORG_CLA_APPROVAL_RECEIPT = {
   added: { summary: 'Approval list updated', detail: (count: number) => (count === 1 ? 'The entry was added.' : `${count} entries were added.`) },
   edited: { summary: 'Approval list updated', detail: () => 'The entry was updated. Acknowledgements matching the previous value were invalidated.' },
@@ -869,13 +862,7 @@ export const ORG_CLA_INVALIDATION_REASONS = ['signed-in-error', 'should-be-corpo
  */
 export const ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH = 2048;
 
-/**
- * Confirmation-dialog copy for a row invalidate, as the M3 prototype words it.
- *
- * It names the contributor and says what invalidating does not stop: a contributor who still
- * matches the approval list can acknowledge again themselves. Auto ECLA never re-adds an
- * invalidated acknowledgment, so the copy says so rather than offering it as a way back.
- */
+/** Confirmation-dialog copy for a row invalidate, as the M3 prototype words it. */
 export const ORG_CLA_INVALIDATE_DIALOG_COPY = {
   title: (contributor: string): string => `Invalidate acknowledgment for ${contributor}?`,
   marksPrefix: 'This marks',
