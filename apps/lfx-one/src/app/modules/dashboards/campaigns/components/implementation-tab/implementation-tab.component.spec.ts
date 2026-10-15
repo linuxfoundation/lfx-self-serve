@@ -6968,11 +6968,13 @@ describe('ImplementationTabComponent bidding control', () => {
       bidding: boolean | null,
       read: 'unknown' | 'pending' | 'ready' | 'failed',
       platform: 'meta-ads' | 'microsoft-ads' = 'meta-ads',
-      edit: (d: CampaignImplementationDraft) => CampaignImplementationDraft = (d) => d
+      edit: (d: CampaignImplementationDraft) => CampaignImplementationDraft = (d) => d,
+      briefId: string | null = 'brief-1'
     ): Promise<ComponentFixture<ImplementationTabComponent>> {
       const draft = edit(await manualDraft(platform));
       const f = TestBed.createComponent(ImplementationTabComponent);
       f.componentRef.setInput('draft', draft);
+      f.componentRef.setInput('briefPersistence', { status: briefId ? 'saved' : 'off', briefId, message: null, approved: !!briefId });
       f.componentRef.setInput('biddingEnabled', bidding);
       f.componentRef.setInput('biddingCapabilityRead', read);
       f.componentRef.setInput('briefData', brief());
@@ -7118,6 +7120,71 @@ describe('ImplementationTabComponent bidding control', () => {
       const request = await submitted();
 
       expect(request['microsoftConfig']['cpcBid']).toBe(3);
+    });
+
+    /**
+     * With no brief id there is nothing to read against: the parent's read returns at once, so a
+     * Retry would do nothing. Saving the brief starts the read, so the banner asks for that instead.
+     */
+    it.each(['unknown', 'failed'] as const)('asks to save the brief, and offers no Retry, when %s with no brief id', async (read) => {
+      fixture = await remount(null, read, 'meta-ads', (d) => d, null);
+
+      expect(component()['canSubmit']()).toBe(false);
+      expect(query('implementation-bidding-capability-unsaved')?.textContent).toContain(
+        "Bidding support can't be checked until this brief is saved. Save the brief, or switch to Automatic."
+      );
+      expect(query('implementation-bidding-capability-retry')).toBeNull();
+      expect(query('implementation-bidding-capability-automatic')).not.toBeNull();
+    });
+
+    /**
+     * The thread's sequence: the capability is unanswered, so the legacy Microsoft field shows and
+     * the operator types a bid into it; then the capability resolves to true and the legacy field
+     * hides. The bid must carry into the control as Manual — not vanish and be sent as Automatic.
+     */
+    it('carries a legacy Microsoft bid into the control as Manual when the capability turns true', async () => {
+      fixture = await mount(null);
+      const input = query('implementation-microsoft-cpc-bid') as HTMLInputElement;
+      input.value = '2.5';
+      input.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+
+      fixture.componentRef.setInput('biddingEnabled', true);
+      fixture.componentRef.setInput('biddingCapabilityRead', 'ready');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(query('implementation-microsoft-cpc-bid')).toBeNull();
+      expect(component()['biddingDrafts']()['microsoft-ads']).toEqual({ strategy: 'manual', bidAmount: 2.5 });
+      expect(component()['microsoftCpcBid']()).toBe('');
+      expect((query('implementation-bidding-microsoft-ads-amount')?.querySelector('input') as HTMLInputElement).value).toBe('2.5');
+      const request = await submitted();
+      expect(request['microsoftConfig']['bidding']).toEqual({ strategy: 'manual', bidAmount: 2.5 });
+      expect(Object.keys(request['microsoftConfig'])).not.toContain('cpcBid');
+    });
+
+    it('leaves an explicit Microsoft choice alone when the capability turns true', async () => {
+      fixture = await remount(null, 'unknown', 'microsoft-ads', (d) => ({
+        ...d,
+        microsoftCpcBid: '2.5',
+        bidding: { ...d.bidding, 'microsoft-ads': { strategy: 'automatic', bidAmount: null } },
+      }));
+
+      fixture.componentRef.setInput('biddingEnabled', true);
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(component()['biddingDrafts']()['microsoft-ads']).toEqual({ strategy: 'automatic', bidAmount: null });
+      const request = await submitted();
+      expect(request['microsoftConfig']['bidding']).toEqual({ strategy: 'automatic' });
+      expect(Object.keys(request['microsoftConfig'])).not.toContain('cpcBid');
+    });
+
+    it('never renders Retry while a read is in flight either', async () => {
+      fixture = await remount(null, 'pending');
+
+      expect(query('implementation-bidding-capability-retry')).toBeNull();
     });
 
     it('does not block a retained Manual choice on a platform that is not selected', async () => {

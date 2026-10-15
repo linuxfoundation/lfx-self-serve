@@ -1757,6 +1757,18 @@ export class ImplementationTabComponent implements OnInit {
       this.emitDraft();
     });
 
+    // When the Bidding control becomes available, a bid typed into the legacy Microsoft field while
+    // it was not (#3299) would otherwise vanish with that field and Automatic would be sent. It is
+    // carried into the control as the Manual choice it always meant upstream (a `cpcBid` without
+    // `bidding` is a manual bid). Subscribed after the draft-restore effect is created, so a
+    // restored legacy value is seen too.
+    toObservable(this.biddingEnabled)
+      .pipe(
+        filter((enabled) => enabled === true),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(() => this.adoptLegacyMicrosoftCpcBid());
+
     // Re-run the two ad-copy array validators when the answer `searchCopyRequired` reads moves.
     //
     // Angular revalidates a control when IT changes and propagates the result upward; it never
@@ -3662,6 +3674,13 @@ export class ImplementationTabComponent implements OnInit {
       if (this.biddingCapabilityRead() === 'pending') {
         return { kind: 'pending', message: 'Checking bidding support…' };
       }
+      // No read out and no brief id to read against (none saved yet, or a save in flight): a Retry
+      // would be a no-op, since the parent's read needs a brief id. Saving the brief starts the read
+      // itself — the parent's persist success arm calls `loadCreateCapabilitiesFor` with the new
+      // id — so that is what the message asks for, and Retry is offered only when it can read.
+      if (!this.briefPersistence().briefId) {
+        return { kind: 'unsaved', message: "Bidding support can't be checked until this brief is saved. Save the brief, or switch to Automatic." };
+      }
       return {
         kind: 'failed',
         message: `Could not confirm that manual bidding is supported, so the manual max CPC bid chosen for ${names} cannot be sent yet. Retry the check, or switch to Automatic.`,
@@ -3677,6 +3696,20 @@ export class ImplementationTabComponent implements OnInit {
    */
   private microsoftLegacyCpcBidApplies(): boolean {
     return !this.biddingAvailable() && this.biddingDrafts()['microsoft-ads']?.strategy !== 'automatic';
+  }
+
+  /**
+   * Moves a legacy Microsoft max CPC into the Bidding control as a Manual choice, then clears the
+   * legacy field so the bid cannot be sent twice. Only when there is a value and no explicit
+   * Microsoft choice yet — an explicit choice is newer than the legacy field and wins.
+   */
+  private adoptLegacyMicrosoftCpcBid(): void {
+    const raw = this.microsoftCpcBid().trim();
+    if (raw === '' || this.biddingDrafts()['microsoft-ads'] !== undefined) return;
+    const amount = Number(raw);
+    this.biddingDrafts.update((drafts) => ({ ...drafts, 'microsoft-ads': { strategy: 'manual', bidAmount: Number.isFinite(amount) ? amount : null } }));
+    this.clearLegacyMicrosoftCpcBid();
+    this.emitDraft();
   }
 
   /** Choosing Automatic for Microsoft retires the legacy max CPC value, so it cannot resurface as a manual bid. */

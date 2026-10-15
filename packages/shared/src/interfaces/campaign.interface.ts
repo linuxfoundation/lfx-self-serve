@@ -3651,7 +3651,12 @@ export type CampaignCapabilityReadState = 'unknown' | 'pending' | 'ready' | 'fai
 
 /** Why Create is blocked for a retained Manual bidding choice the deployment cannot confirm (#3299). */
 export interface CampaignBiddingCapabilityBlock {
-  kind: 'pending' | 'failed' | 'unsupported';
+  /**
+   * `pending`: a read is in flight. `failed`: a read failed, or none is out but there is a brief to
+   * read against — Retry starts one. `unsaved`: none is out and there is no brief id yet, so a Retry
+   * could not read anything; saving the brief starts the read. `unsupported`: the answer is no.
+   */
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported';
   message: string;
 }
 
