@@ -305,6 +305,48 @@ describe('VotesTableComponent — row More menu', () => {
     expect(detail).toBe('Vote link copied to clipboard.');
   });
 
+  it('exposes menu semantics and expands only the row whose menu is open', async () => {
+    await settle();
+    expect(moreButton('active')!.getAttribute('aria-haspopup')).toBe('menu');
+    expect(moreButton('ended')!.getAttribute('aria-haspopup')).toBe('menu');
+    expect(moreButton('active')!.getAttribute('aria-expanded')).toBe('false');
+    expect(moreButton('ended')!.getAttribute('aria-expanded')).toBe('false');
+
+    moreButton('ended')!.click();
+    await settle();
+
+    expect(moreButton('ended')!.getAttribute('aria-expanded')).toBe('true');
+    expect(moreButton('active')!.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it.each(['escape', 'outside click', 'trigger toggle', 'selection'])('clears expanded state after %s dismissal', async (dismissal) => {
+    await settle();
+    moreButton('active')!.click();
+    await settle();
+    expect(moreButton('active')!.getAttribute('aria-expanded')).toBe('true');
+
+    const menu = document.body.querySelector('[role="menu"]') as HTMLElement;
+    switch (dismissal) {
+      case 'escape':
+        menu.dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape', key: 'Escape', bubbles: true }));
+        break;
+      case 'outside click':
+        document.body.click();
+        break;
+      case 'trigger toggle':
+        moreButton('active')!.click();
+        break;
+      case 'selection':
+        (menu.querySelector('[role="menuitem"] a') as HTMLElement).click();
+        break;
+    }
+    await settle();
+
+    expect(moreButton('active')!.getAttribute('aria-expanded')).toBe('false');
+    expect(moreButton('ended')!.getAttribute('aria-expanded')).toBe('false');
+    expect(document.body.querySelector('[role="menu"]')).toBeNull();
+  });
+
   it('rebuilds the menu for the clicked row', async () => {
     await settle();
 

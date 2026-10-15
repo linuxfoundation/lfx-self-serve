@@ -126,6 +126,8 @@ export class VotesTableComponent {
   protected readonly isDeleting = signal(false);
   /** Items for the shared row "More" (⋮) menu, rebuilt for the clicked row before it opens. */
   protected readonly rowActionMenuItems = signal<MenuItem[]>([]);
+  protected readonly rowActionMenuVoteUid = signal<string | null>(null);
+  protected readonly rowActionMenuOpen = signal(false);
   private readonly filterState = signal<VoteFilterState>({ search: '', status: null, group: null });
 
   // === Computed Signals ===
@@ -203,6 +205,7 @@ export class VotesTableComponent {
   /** Opens the row "More" menu without selecting the row, which would open a drawer. */
   protected toggleRowActionMenu(event: Event, vote: VoteTableRow, menu: MenuComponent): void {
     event.stopPropagation();
+    this.rowActionMenuVoteUid.set(vote.uid);
     this.rowActionMenuItems.set([{ label: 'Copy link', icon: 'fa-light fa-link', command: () => this.copyVoteLink(vote.uid) }]);
     menu.toggle(event);
   }
