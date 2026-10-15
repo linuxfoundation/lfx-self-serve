@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   daysUntilInTimezone,
+  detectBrowserTimezoneOption,
   formatIsoDateLabel,
   formatIsoDateShortLabel,
   formatMemberSince,
@@ -467,5 +468,59 @@ describe('wallTimeExistsInTimezone', () => {
         process.env.TZ = previousTz;
       }
     }
+  });
+});
+
+describe('detectBrowserTimezoneOption', () => {
+  const RealDateTimeFormat = Intl.DateTimeFormat;
+
+  // Stubs only the zone the browser reports; formatters built for an explicit zone stay real, which is
+  // what the alias comparison relies on.
+  const stubBrowserZone = (zone: string | undefined): void => {
+    // A `function`, not an arrow, so it can still be called with `new`.
+    vi.spyOn(Intl, 'DateTimeFormat').mockImplementation(function (locales?: string | string[], options?: Intl.DateTimeFormatOptions) {
+      const real = new RealDateTimeFormat(locales, options);
+
+      if (options?.timeZone) {
+        return real;
+      }
+
+      const resolved = real.resolvedOptions();
+
+      return Object.assign(Object.create(real), { resolvedOptions: () => ({ ...resolved, timeZone: zone }) }) as Intl.DateTimeFormat;
+    } as unknown as typeof Intl.DateTimeFormat);
+  };
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it('returns the browser zone when it is one of the picker options', () => {
+    stubBrowserZone('Europe/Berlin');
+    expect(detectBrowserTimezoneOption()).toBe('Europe/Berlin');
+  });
+
+  it('maps a legacy alias onto the picker option for the same zone', () => {
+    stubBrowserZone('Asia/Calcutta');
+    expect(detectBrowserTimezoneOption()).toBe('Asia/Kolkata');
+  });
+
+  it('falls back to a listed zone that keeps the same wall-clock time all year', () => {
+    stubBrowserZone('Europe/Lisbon');
+    expect(detectBrowserTimezoneOption(new Date('2026-06-01T00:00:00Z'))).toBe('Europe/London');
+  });
+
+  it('does not pair zones that share an offset only part of the year', () => {
+    // Same offset as Europe/London in winter, but no DST: no listed zone matches it all year except UTC.
+    stubBrowserZone('Africa/Abidjan');
+    expect(detectBrowserTimezoneOption(new Date('2026-06-01T00:00:00Z'))).toBe('UTC');
+  });
+
+  it('returns null when the browser reports no zone', () => {
+    stubBrowserZone(undefined);
+    expect(detectBrowserTimezoneOption()).toBeNull();
+  });
+
+  it('returns null when no picker option matches the browser zone', () => {
+    stubBrowserZone('Antarctica/Troll');
+    expect(detectBrowserTimezoneOption()).toBeNull();
   });
 });

@@ -497,6 +497,58 @@ export function getTimezoneByValue(value: string): TimezoneOption | undefined {
 }
 
 /**
+ * The browser's own timezone, as one of the {@link TIMEZONES} picker options.
+ * @description Read from `Intl`, which reports the operating system's zone setting. Matched in three
+ * passes, most exact first:
+ * 1. the zone itself;
+ * 2. the same zone under another name — engines may report a legacy alias (`Asia/Calcutta` for
+ *    `Asia/Kolkata`), so both sides are compared in the engine's canonical form;
+ * 3. a listed zone that keeps the same wall-clock time all year (Lisbon → London). Offsets are compared
+ *    twice a month across the current year, so a zone with different DST dates or rules never matches —
+ *    a single "current offset" check would pair zones that drift apart for part of the year.
+ * Returns `null` when no zone is reported or nothing matches, so a caller can leave the field empty
+ * rather than guess.
+ */
+export function detectBrowserTimezoneOption(now: Date = new Date()): string | null {
+  try {
+    const detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+    if (!detected) {
+      return null;
+    }
+
+    const canonical = (zone: string): string | null => {
+      try {
+        return new Intl.DateTimeFormat('en-US', { timeZone: zone }).resolvedOptions().timeZone;
+      } catch {
+        return null;
+      }
+    };
+    const detectedCanonical = canonical(detected);
+
+    const sameZone =
+      TIMEZONES.find((tz) => tz.value === detected) ?? TIMEZONES.find((tz) => detectedCanonical !== null && canonical(tz.value) === detectedCanonical);
+
+    if (sameZone) {
+      return sameZone.value;
+    }
+
+    const year = now.getUTCFullYear();
+    const samples = Array.from({ length: 24 }, (_, index) => new Date(Date.UTC(year, Math.floor(index / 2), index % 2 === 0 ? 1 : 15)));
+    const offsetsOf = (zone: string): number[] => samples.map((sample) => getTimezoneOffset(zone, sample));
+    const detectedOffsets = offsetsOf(detected);
+
+    if (detectedOffsets.some((offset) => Number.isNaN(offset))) {
+      return null;
+    }
+
+    return TIMEZONES.find((tz) => offsetsOf(tz.value).every((offset, index) => offset === detectedOffsets[index]))?.value ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Helper function to get user's current timezone
  */
 export function getUserTimezone(): string {
