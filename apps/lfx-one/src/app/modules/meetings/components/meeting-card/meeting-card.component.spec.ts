@@ -647,7 +647,7 @@ describe('MeetingCardComponent — remove myself', () => {
   });
 
   it.each([
-    ['an organizer', { ...INVITEE, organizer: true } as Meeting, {}],
+    ['an organizer with no registration of their own', { ...INVITEE, organizer: true, my_registrant_ids: [] } as Meeting, {}],
     ['someone who is not invited', { ...INVITEE, invited: false } as Meeting, {}],
     ['a past meeting', INVITEE, { past: true }],
     ['an anonymous viewer', INVITEE, { authenticated: false }],
@@ -655,6 +655,19 @@ describe('MeetingCardComponent — remove myself', () => {
     const component = await mount(meeting, options);
 
     expect(component.canLeaveMeeting()).toBe(false);
+  });
+
+  it.each([
+    ['their registrant IDs are listed', { my_registrant_ids: ['reg-1'] }],
+    ['the feed lists no IDs but the registrant lookup marked them invited', {}],
+  ])('offers the action to an organizer who is also registered when %s', async (_label, extra) => {
+    const component = await mount({ ...INVITEE, organizer: true, ...extra } as Meeting);
+
+    expect(component.canLeaveMeeting()).toBe(true);
+
+    component.confirmLeaveMeeting();
+
+    expect(confirm.mock.calls[0][0].message).toContain('You will still be an organizer of this meeting.');
   });
 
   it('offers the action to someone invited through a committee and says the committee will not invite them again', async () => {

@@ -1146,8 +1146,20 @@ describe('MeetingJoinComponent', () => {
       expect(confirm.mock.calls[0][0].message).toContain("it won't invite you to this meeting again");
     });
 
-    it('does not offer it to an organizer', async () => {
+    it('offers it to an organizer who is also registered, and says they stay an organizer', async () => {
       const fixture = await createFixture(buildMeeting({ organizer: true, invited: true }));
+      const confirmation = fixture.debugElement.injector.get(ConfirmationService);
+      const confirm = vi.spyOn(confirmation, 'confirm').mockReturnValue(confirmation);
+
+      expect(fixture.nativeElement.querySelector(REMOVE_BUTTON)).not.toBeNull();
+
+      fixture.componentInstance.confirmLeaveMeeting();
+
+      expect(confirm.mock.calls[0][0].message).toContain('You will still be an organizer of this meeting.');
+    });
+
+    it('does not offer it to an organizer who is not registered', async () => {
+      const fixture = await createFixture(buildMeeting({ organizer: true, invited: false }));
 
       expect(fixture.nativeElement.querySelector(REMOVE_BUTTON)).toBeNull();
     });

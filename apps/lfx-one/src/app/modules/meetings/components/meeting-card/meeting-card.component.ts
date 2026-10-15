@@ -248,7 +248,18 @@ export class MeetingCardComponent implements OnInit {
     const meeting = this.meetingInput();
     return this.pastMeeting() && 'user_attended' in meeting && meeting.user_attended === true;
   });
-  public readonly canLeaveMeeting: Signal<boolean> = computed(() => this.isRegisteredAttendee());
+  // An organizer's invitation is a registrant row like anyone else's, but organizer access does not depend on it, so
+  // an organizer may have none. `my_registrant_ids` is the authoritative list where the feed provides it; otherwise
+  // `invited` comes from the registrant lookup.
+  private readonly hasOwnRegistration: Signal<boolean> = computed(() => {
+    const registrantIds = this.meeting().my_registrant_ids;
+    return registrantIds ? registrantIds.length > 0 : this.effectivelyInvited();
+  });
+  public readonly canLeaveMeeting: Signal<boolean> = computed(() => {
+    const meeting = this.meeting();
+    if (!this.authenticated() || !this.effectivelyInvited() || this.pastMeeting()) return false;
+    return !meeting.organizer || this.hasOwnRegistration();
+  });
   public readonly canRegisterForMeeting: Signal<boolean> = computed(
     () => this.authenticated() && !this.effectivelyInvited() && !this.meeting().restricted && this.meeting().visibility === 'public'
   );
@@ -526,7 +537,7 @@ export class MeetingCardComponent implements OnInit {
   public confirmLeaveMeeting(): void {
     this.confirmationService.confirm({
       header: 'Remove Yourself',
-      message: getMeetingSelfRemovalMessage(this.meetingTitle(), this.meeting().invited_via_committee),
+      message: getMeetingSelfRemovalMessage(this.meetingTitle(), { viaCommittee: this.meeting().invited_via_committee, organizer: this.meeting().organizer }),
       acceptLabel: 'Remove Me',
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-danger p-button-sm',

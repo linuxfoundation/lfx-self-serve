@@ -762,7 +762,7 @@ export class MeetingJoinComponent implements OnInit {
   public confirmLeaveMeeting(): void {
     this.confirmationService.confirm({
       header: 'Remove Yourself',
-      message: getMeetingSelfRemovalMessage(this.meetingTitle(), this.meeting()?.invited_via_committee),
+      message: getMeetingSelfRemovalMessage(this.meetingTitle(), { viaCommittee: this.meeting()?.invited_via_committee, organizer: this.meeting()?.organizer }),
       acceptLabel: 'Remove Me',
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-danger p-button-sm',
