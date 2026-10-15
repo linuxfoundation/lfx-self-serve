@@ -89,7 +89,10 @@ export class VotesDashboardComponent {
   public showProjectFilter: Signal<boolean> = computed(() => this.isMeLens() && this.personaService.hasProjectRole() && this.projectOptions().length > 1);
 
   // === Filter State ===
-  protected readonly filters = signal<VoteFilterState>({ search: '', status: null, group: null });
+  protected readonly filters = signal<VoteFilterState>(
+    { search: '', status: null, group: null },
+    { equal: (a, b) => a.search === b.search && a.status === b.status && a.group === b.group }
+  );
 
   // === Page Tokens ===
   // Sequential token array: index 0 = token for page 2, index 1 = token for page 3, etc.
@@ -103,6 +106,7 @@ export class VotesDashboardComponent {
   protected readonly managementSummaryScope = this.initManagementSummaryScope();
   protected readonly managementSummary = this.initManagementSummary();
   protected readonly managementVoteStatCards = this.initManagementVoteStatCards();
+  private readonly voteRequestScope = this.initVoteRequestScope();
   protected readonly votes: Signal<Vote[]> = this.initVotes();
   protected readonly selectedListVote: Signal<Vote | null> = this.initSelectedListVote();
   protected readonly myVotes: Signal<Vote[]> = this.initMyVotes();
@@ -134,12 +138,13 @@ export class VotesDashboardComponent {
   protected onManagementVoteStatClick(action: string): void {
     if (!this.isManagementVotesLens() || this.managementSummaryLoading() || this.managementSummaryError()) return;
     if (action !== 'closing-soon' && action !== 'active') return;
+    const scopeChanged = action === 'closing-soon' || this.managementClosingOnly() || this.filters().status !== PollStatus.ACTIVE;
     this.managementClosingOnly.set(action === 'closing-soon' && !this.managementClosingOnly());
     this.myVotesStatusTab.set(PollStatus.ACTIVE);
     this.filters.update((state) => ({ ...state, status: PollStatus.ACTIVE }));
     this.pageTokens = [];
     this.currentFirst.set(0);
-    this.fetch$.next();
+    if (!scopeChanged) this.fetch$.next();
     if (action === 'closing-soon') this.retryManagementSummary();
   }
 
@@ -162,7 +167,6 @@ export class VotesDashboardComponent {
       this.managementClosingOnly.set(false);
       this.pageTokens = [];
       this.currentFirst.set(0);
-      this.fetch$.next();
     }
     if (this.isMeLens()) {
       this.currentFirst.set(0);
@@ -365,15 +369,23 @@ export class VotesDashboardComponent {
     });
   }
 
+  private initVoteRequestScope() {
+    // One signal snapshot coalesces status and closing-only updates from the same action.
+    return computed(() => ({
+      project: this.project(),
+      filters: this.filters(),
+      lens: this.lensService.activeLens(),
+      closingOnly: this.managementClosingOnly(),
+    }));
+  }
+
   private initTotalCount(): Signal<number> {
-    const project$ = toObservable(this.project);
-    const filters$ = toObservable(this.filters);
-    const lens$ = toObservable(this.lensService.activeLens);
+    const scope$ = toObservable(this.voteRequestScope);
 
     return toSignal(
-      combineLatest([project$, filters$, this.refresh$, lens$, toObservable(this.managementClosingOnly)]).pipe(
-        switchMap(([project, , , lens]) => {
-          if (lens === 'me' || this.managementClosingOnly()) {
+      combineLatest([scope$, this.refresh$]).pipe(
+        switchMap(([{ project, lens, closingOnly }]) => {
+          if (lens === 'me' || closingOnly) {
             return of(0);
           }
           if (!project?.uid) {
@@ -394,9 +406,7 @@ export class VotesDashboardComponent {
   }
 
   private initVotes(): Signal<Vote[]> {
-    const project$ = toObservable(this.project);
-    const filters$ = toObservable(this.filters);
-    const lens$ = toObservable(this.lensService.activeLens);
+    const scope$ = toObservable(this.voteRequestScope);
 
     // Lens-change pagination reset lives inside the pipeline, before the switchMap reads
     // currentFirst/pageTokens (previously a constructor subscription — but a toObservable's
@@ -406,9 +416,9 @@ export class VotesDashboardComponent {
     let previousScope: string | undefined;
 
     return toSignal(
-      combineLatest([project$, filters$, this.fetch$, lens$, toObservable(this.managementClosingOnly)]).pipe(
+      combineLatest([scope$, this.fetch$]).pipe(
         tap(() => this.loading.set(true)),
-        tap(([project, , , lens]) => {
+        tap(([{ project, lens }]) => {
           const scope = `${lens}:${project?.uid ?? ''}`;
           if (scope !== previousScope) {
             previousScope = scope;
@@ -417,7 +427,7 @@ export class VotesDashboardComponent {
             this.currentFirst.set(0);
           }
         }),
-        switchMap(([project, filterState, , lens]) => {
+        switchMap(([{ project, filters: filterState, lens }]) => {
           if (lens === 'me' || !project?.uid) {
             this.loading.set(false);
             return of([]);

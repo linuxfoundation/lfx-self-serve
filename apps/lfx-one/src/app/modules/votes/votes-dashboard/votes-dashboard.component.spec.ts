@@ -147,6 +147,43 @@ describe('VotesDashboardComponent personal summary', () => {
     expect(dashboard['managementVoteStatCards']().map((card) => card.value)).toEqual([3, 20]);
   });
 
+  it.each<Lens>(['project', 'foundation'])('sends one list request per %s summary action and status-tab exit', async (lens) => {
+    await management(lens);
+    const service = TestBed.inject(VoteService);
+    const list = vi.mocked(service.getVotesByProjectPaginated);
+    const count = vi.mocked(service.getVotesCountByProject);
+
+    for (const transition of [
+      { action: 'closing-soon', count: 0 },
+      { action: 'closing-soon', count: 1 },
+      { action: 'active', count: 0 },
+      { action: 'closing-soon', count: 0 },
+    ]) {
+      list.mockClear();
+      count.mockClear();
+      await selectSummary(transition.action);
+      expect(list, transition.action).toHaveBeenCalledTimes(1);
+      expect(count, transition.action).toHaveBeenCalledTimes(transition.count);
+    }
+
+    list.mockClear();
+    count.mockClear();
+    table['onStatusTabChange'](PollStatus.ACTIVE);
+    await settle();
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(count).toHaveBeenCalledTimes(1);
+
+    dashboard['onPageChange']({ first: 10, rows: 10 });
+    await settle();
+    list.mockClear();
+    count.mockClear();
+    await selectSummary('active');
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(count).not.toHaveBeenCalled();
+    expect(table.first()).toBe(0);
+    expect(rows()).toEqual(['first-page']);
+  });
+
   it('uses closing server rows/totals without count requests, retains pending controls and clears on explicit Active', async () => {
     await management();
     const service = TestBed.inject(VoteService);
