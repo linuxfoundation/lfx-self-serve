@@ -128,6 +128,19 @@ export class MktgAgentRunService {
     return this.finishAttempt({ projectUid, agentId, intake, answers: stored.answers }, stored.pendingAttempt);
   }
 
+  /** Explicit user retry, including a terminally failed attempt that normal document opens must not resume. */
+  public retryGeneration(projectUid: string, agentId: string, intake: MktgAgentIntake): Observable<MktgGenerateProgress> | null {
+    const stored = this.loadRun(projectUid, agentId);
+    const attempt = stored?.failedAttempt ?? stored?.pendingAttempt;
+    if (!stored || !attempt) {
+      return null;
+    }
+    return defer(() => {
+      this.saveRun({ ...stored, pendingAttempt: attempt, failedAttempt: undefined });
+      return this.finishAttempt({ projectUid, agentId, intake, answers: stored.answers }, attempt);
+    });
+  }
+
   /**
    * Generates (or regenerates) an agent document. Emits, in order:
    *
@@ -146,9 +159,10 @@ export class MktgAgentRunService {
    * The stream therefore stays open a little longer than the document for
    * those agents: `retryPersistence` spends a small bounded budget of extra
    * polls so a transient storage failure still ends with the server copy
-   * written. It never delays what the user sees; cancelling the subscription
-   * (project switch, a new submission, leaving the page) cancels the retry
-   * with it.
+   * written. The document view keeps its generating/saving state until the
+   * receipt identifies the stored revision; on a later run the previous
+   * revision remains visible meanwhile. Cancelling the subscription (project
+   * switch, a new submission, leaving the page) cancels the retry with it.
    */
   public generate(request: MktgGenerateRequest): Observable<MktgGenerateProgress> {
     const stored = this.loadRun(request.projectUid, request.agentId);
@@ -251,7 +265,15 @@ export class MktgAgentRunService {
   }
 
   private finishAttempt(request: MktgGenerateRequest, attempt: MktgRunAttempt): Observable<MktgGenerateProgress> {
-    return concat(of<MktgGenerateProgress>({ type: 'submitted' }), this.awaitOutcome(request, attempt));
+    return concat(of<MktgGenerateProgress>({ type: 'submitted' }), this.awaitOutcome(request, attempt)).pipe(
+      catchError((error: unknown) => {
+        const stored = this.loadRun(request.projectUid, request.agentId);
+        if (stored?.pendingAttempt?.session.sessionId === attempt.session.sessionId) {
+          this.saveRun({ ...stored, pendingAttempt: undefined, failedAttempt: attempt });
+        }
+        return throwError(() => error);
+      })
+    );
   }
 
   /**
@@ -489,12 +511,12 @@ export class MktgAgentRunService {
    * reads for every other browser and user (a dependent agent stays locked
    * until it exists) — would be lost to a blip no one ever sees.
    *
-   * The document is already emitted and rendered by the time this runs, so the
-   * stream never errors a run that already succeeded: a failed retry poll is
-   * just a spent attempt, exactly as on the standalone Brand Kit form, and the
-   * budget is shared with it (`MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS`). Its ONE
-   * emission is `{ type: 'persisted' }` when a receipt finally arrives, after
-   * which polling stops. That event exists because dependency resolution
+   * The validated document is already emitted into the browser run record,
+   * but the document view still shows saving until a receipt arrives. Failed
+   * retry polls spend the shared `MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS` budget
+   * without discarding that local draft; exhaustion lets the view show a save
+   * failure. The one `persisted` event carries the receipt's document location
+   * when available, then polling stops. That event exists because dependency resolution
    * prefers the SERVER copy over any browser-stored run: a v2 announced while
    * the write was still failing would leave consumers attached to the server's
    * v1 with nothing to tell them it had been superseded. No project scope

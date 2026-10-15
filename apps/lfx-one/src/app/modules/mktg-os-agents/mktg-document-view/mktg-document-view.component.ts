@@ -9,14 +9,14 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { MessageComponent } from '@components/message/message.component';
 import { MKTG_AGENT_INTAKES, MKTG_README_SKIP_NOTES } from '@lfx-one/shared/constants';
-import { MktgRevisionResponse, MktgRevisionRow, MktgRevisionSummary } from '@lfx-one/shared/interfaces';
+import { MktgGenerateProgress, MktgRevisionResponse, MktgRevisionRow, MktgRevisionSummary } from '@lfx-one/shared/interfaces';
 import { describeMktgRevision, findMktgDocumentType } from '@lfx-one/shared/utils';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { UserService } from '@services/user.service';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { catchError, concat, distinctUntilChanged, EMPTY, finalize, map, Observable, of, switchMap } from 'rxjs';
+import { catchError, concat, distinctUntilChanged, EMPTY, finalize, map, Observable, of, switchMap, timer } from 'rxjs';
 
 // One revision of a Marketing OS document (design of record: "Document
 // store", DocumentView board): the header says which revision of how many,
@@ -39,6 +39,7 @@ export class MktgDocumentViewComponent {
   private readonly runService = inject(MktgAgentRunService);
   private readonly dependencies = inject(MktgDependencyService);
   private readonly userService = inject(UserService);
+  private retryTarget = '';
 
   // === Signals ===
   protected readonly loading = signal(true);
@@ -50,6 +51,7 @@ export class MktgDocumentViewComponent {
   protected readonly generationStage = signal('Submitting your intake…');
   protected readonly retry = signal(0);
   protected readonly canResume = signal(false);
+  protected readonly retryRun = signal(false);
 
   private readonly params = toSignal(
     this.route.paramMap.pipe(map((params) => ({ agentKey: params.get('agentKey') ?? '', documentId: params.get('documentId') ?? '' }))),
@@ -59,6 +61,7 @@ export class MktgDocumentViewComponent {
   private readonly generationParam = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('generation') ?? '')), { initialValue: '' });
 
   // === Computed ===
+  protected readonly intakeAgentId = computed(() => findMktgDocumentType(this.params().agentKey)?.catalogAgentId ?? null);
   protected readonly title: Signal<string> = this.initTitle();
   protected readonly revisionRows: Signal<MktgRevisionRow[]> = computed(() => {
     const view = this.view();
@@ -100,6 +103,9 @@ export class MktgDocumentViewComponent {
         .pipe(
           distinctUntilChanged((previous, current) => JSON.stringify(previous) === JSON.stringify(current)),
           switchMap((request) => {
+            const explicitRetry =
+              this.retryTarget === JSON.stringify([request.project, request.agentKey, request.documentId, request.revisionId, request.userSub]);
+            this.retryTarget = '';
             this.loading.set(true);
             this.errorText.set('');
             this.view.set(null);
@@ -107,7 +113,7 @@ export class MktgDocumentViewComponent {
             if (!request.project || !request.agentKey || !request.documentId || !request.userSub) {
               return EMPTY;
             }
-            return this.loadDocument(request.project, request.agentKey, request.documentId, request.revisionId, request.generationId);
+            return this.loadDocument(request.project, request.agentKey, request.documentId, request.revisionId, request.generationId, explicitRetry);
           }),
           takeUntilDestroyed()
         )
@@ -167,10 +173,22 @@ export class MktgDocumentViewComponent {
     anchor.href = url;
     anchor.download = `${this.title()} v${current.revision.number}.md`;
     anchor.click();
-    setTimeout(() => URL.revokeObjectURL(url), 0);
+    timer(0)
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => URL.revokeObjectURL(url))
+      )
+      .subscribe();
   }
 
   protected onRetry(): void {
+    this.retryTarget = JSON.stringify([
+      this.projectContext.activeContextUid(),
+      this.params().agentKey,
+      this.params().documentId,
+      this.revisionParam(),
+      this.userService.user()?.sub,
+    ]);
     this.retry.update((value) => value + 1);
   }
 
@@ -194,18 +212,24 @@ export class MktgDocumentViewComponent {
     agentKey: string,
     documentId: string,
     revisionId: string,
-    generationId: string
+    generationId: string,
+    explicitRetry: boolean
   ): Observable<MktgRevisionResponse | null> {
     const type = findMktgDocumentType(agentKey);
     const agentId = type?.catalogAgentId ?? '';
     const intake = MKTG_AGENT_INTAKES[agentId];
     const prepared = generationId ? this.runService.takePreparedGeneration(generationId, project, agentId) : null;
-    let generation$ = intake && !revisionId ? this.runService.resumeGeneration(project, agentId, intake) : null;
+    let generation$: Observable<MktgGenerateProgress> | null = null;
+    if (intake && !revisionId) {
+      generation$ = explicitRetry ? this.runService.retryGeneration(project, agentId, intake) : this.runService.resumeGeneration(project, agentId, intake);
+    }
     if (prepared) {
       generation$ = this.runService.generate(prepared);
     }
     this.errorText.set('');
-    this.canResume.set(false);
+    const stored = this.runService.loadRun(project, agentId);
+    this.retryRun.set(!revisionId && !!(stored?.pendingAttempt || stored?.failedAttempt));
+    this.canResume.set(!revisionId && !!stored?.failedAttempt);
     this.generating.set(!!generation$);
     this.generationStage.set('Submitting your intake…');
 
@@ -259,13 +283,17 @@ export class MktgDocumentViewComponent {
           });
           return EMPTY;
         }),
-        catchError(() => {
-          this.errorText.set('This run could not finish. Your answers are kept. Return to the intake or retry a pending run.');
+        catchError((error: unknown) => {
+          console.error('Marketing OS run failed', error);
+          this.errorText.set('This run could not finish. Your answers are kept. Return to the intake or retry the run.');
           return EMPTY;
         }),
         finalize(() => {
           this.generating.set(false);
-          this.canResume.set(!landed && authorized && !!this.runService.loadRun(project, agentId)?.pendingAttempt);
+          const run = this.runService.loadRun(project, agentId);
+          const retryable = !!(run?.pendingAttempt || run?.failedAttempt);
+          this.retryRun.set(retryable);
+          this.canResume.set(!landed && authorized && retryable);
           if (!landed && authorized && !this.errorText()) {
             this.errorText.set('The document has not been saved yet. Retry to resume saving; no new generation is started.');
           }

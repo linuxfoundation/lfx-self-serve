@@ -55,6 +55,7 @@ describe('MktgDocumentViewComponent', () => {
     takePreparedGeneration: ReturnType<typeof vi.fn>;
     generate: ReturnType<typeof vi.fn>;
     resumeGeneration: ReturnType<typeof vi.fn>;
+    retryGeneration: ReturnType<typeof vi.fn>;
     loadRun: ReturnType<typeof vi.fn>;
   };
   let activeContext = signal<ProjectContext | null>(PROJECT);
@@ -94,6 +95,7 @@ describe('MktgDocumentViewComponent', () => {
       takePreparedGeneration: vi.fn(() => null),
       generate: vi.fn(() => generation),
       resumeGeneration: vi.fn(() => null),
+      retryGeneration: vi.fn(() => null),
       loadRun: vi.fn(() => null),
     };
 
@@ -150,18 +152,60 @@ describe('MktgDocumentViewComponent', () => {
     runService.resumeGeneration.mockReturnValueOnce(generation);
     runService.loadRun.mockReturnValue({ pendingAttempt: {} });
     await render('/documents/brand-kit/living');
-    generation.error(new Error('Synthetic result failure'));
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const failure = new Error('Synthetic result failure');
+    generation.error(failure);
     await settle();
+    expect(errorLog).toHaveBeenCalledWith('Marketing OS run failed', failure);
+    errorLog.mockRestore();
+    expect(query('mktg-document-view-intake-link')?.getAttribute('href')).toBe('/brand-kit');
     expect(query('mktg-document-view-generating')).toBeNull();
     expect(query('mktg-document-view-error')?.textContent).toContain('could not finish');
     expect(query('mktg-document-view-document')?.textContent).toContain('Revision 2');
-    runService.resumeGeneration.mockReturnValueOnce(
-      of({ type: 'persisted', location: { agentKey: 'brand-kit', documentId: 'living', revisionId: LATEST.id } })
-    );
+    runService.retryGeneration.mockReturnValueOnce(of({ type: 'persisted', location: { agentKey: 'brand-kit', documentId: 'living', revisionId: LATEST.id } }));
     query('mktg-document-view-retry')?.click();
     await settle();
     expect(runService.generate).not.toHaveBeenCalled();
     expect(TestBed.inject(Router).url).toContain(`revision=${LATEST.id}`);
+  });
+
+  it('offers explicit retry for a failed run without automatically resuming it on document open', async () => {
+    runService.loadRun.mockReturnValue({ failedAttempt: {} });
+    await render('/documents/brand-kit/living');
+    expect(query('mktg-document-view-generating')).toBeNull();
+    expect(query('mktg-document-view-error')).toBeNull();
+    expect(query('mktg-document-view-retry')?.textContent).toContain('Retry run');
+    expect(runService.retryGeneration).not.toHaveBeenCalled();
+  });
+
+  it('labels a failed document read as Reload, not a pending run retry', async () => {
+    store.getDocument.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 500 })));
+    await render('/documents/brand-kit/living');
+    expect(query('mktg-document-view-retry')?.textContent).toContain('Reload document');
+    query('mktg-document-view-retry')?.click();
+    await settle();
+    expect(runService.generate).not.toHaveBeenCalled();
+    expect(query('mktg-document-view-document')).not.toBeNull();
+  });
+
+  it('revokes download URLs when the view is destroyed before the deferred cleanup fires', async () => {
+    await render('/documents/brand-kit/living');
+    vi.useFakeTimers();
+    const revoke = vi.fn();
+    vi.stubGlobal('URL', Object.assign(class extends URL {}, { createObjectURL: vi.fn(() => 'blob:synthetic-download'), revokeObjectURL: revoke }));
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    try {
+      query('mktg-document-view-download')?.click();
+      expect(revoke).not.toHaveBeenCalled();
+      harness.fixture.destroy();
+      expect(revoke).toHaveBeenCalledExactlyOnceWith('blob:synthetic-download');
+      await vi.runAllTimersAsync();
+      expect(revoke).toHaveBeenCalledTimes(1);
+    } finally {
+      click.mockRestore();
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
+    }
   });
 
   it('never subscribes to generation when document access is denied', async () => {

@@ -106,7 +106,7 @@ export class MktgAgentRunComponent {
   // only) in the constructor.
   private readonly activeContext$ = toObservable(this.projectContext.activeContext);
   private readonly effectiveUser$ = toObservable(this.userService.user);
-  /** In-flight generation — cancelled when the active project changes so a run can never land on another project. */
+  /** Intake dependency resolution and navigation handoff, cancelled when the active context changes. */
   private generationSub: Subscription | null = null;
   /** The existing-documents section, when the intake has one and the form is on screen: its file reads are cancelled with the generation. */
   private readonly documentsSection = viewChild(MktgIntakeDocumentsComponent);
@@ -993,7 +993,6 @@ export class MktgAgentRunComponent {
       this.errorText.set('No active project — select a project before running this agent.');
       return;
     }
-
     const answers = this.buildAnswers();
     // Remember what the user typed, keyed by intake field key, so the NEXT
     // agent's form on this project can offer it back instead of asking again.

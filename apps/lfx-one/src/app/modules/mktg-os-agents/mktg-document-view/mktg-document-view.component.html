@@ -31,6 +31,16 @@
 
     @if (errorText()) {
       <lfx-message severity="error" [text]="errorText()" data-testid="mktg-document-view-error" />
+      @if (intakeAgentId(); as agentId) {
+        <a
+          [routerLink]="['../../..', agentId]"
+          [queryParams]="{ generation: null, revision: null, type: null }"
+          queryParamsHandling="merge"
+          class="self-start text-sm font-semibold text-blue-600"
+          data-testid="mktg-document-view-intake-link"
+          >Return to intake</a
+        >
+      }
     }
     @if (notice()) {
       <lfx-message severity="success" [text]="notice()" data-testid="mktg-document-view-notice" />
@@ -42,7 +52,7 @@
         class="self-start rounded-lg border border-blue-200 px-4 py-2 text-sm text-blue-700"
         data-testid="mktg-document-view-retry"
         (click)="onRetry()">
-        Retry pending run
+        {{ retryRun() ? 'Retry run' : 'Reload document' }}
       </button>
     }
     @if (generating()) {

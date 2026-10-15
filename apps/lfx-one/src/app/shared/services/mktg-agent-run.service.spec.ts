@@ -147,6 +147,48 @@ describe('MktgAgentRunService', () => {
     expect(service.resumeGeneration('proj-1', 'brand-kit', BRAND_KIT_INTAKE)).toBeNull();
   });
 
+  it.each([403, 422])('does not automatically resume a terminal HTTP %s failure, but allows an explicit retry', async (status) => {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(storedV1Run()));
+    resultResponses = [new HttpErrorResponse({ status })];
+    const failed = vi.fn();
+    service.generate(generateRequest()).subscribe({ error: failed });
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+    expect(failed).toHaveBeenCalledOnce();
+    expect(service.loadRun('proj-1', 'brand-kit')?.pendingAttempt).toBeUndefined();
+    expect(service.loadRun('proj-1', 'brand-kit')?.failedAttempt?.session.sessionId).toBe('sess-1');
+    expect(service.loadRun('proj-1', 'brand-kit')?.versions[0].document).toBe('# v1');
+    expect(service.resumeGeneration('proj-1', 'brand-kit', BRAND_KIT_INTAKE)).toBeNull();
+    const reloaded = TestBed.runInInjectionContext(() => new MktgAgentRunService());
+    expect(reloaded.resumeGeneration('proj-1', 'brand-kit', BRAND_KIT_INTAKE)).toBeNull();
+    resultResponses = [
+      {
+        status: 'ready',
+        documentMarkdown: '# v2',
+        version: 2,
+        persistence: { s3_key: 'safe-key', content_sha256: 'a'.repeat(64), project: 'proj-1', version: 2 },
+      },
+    ];
+    reloaded.retryGeneration('proj-1', 'brand-kit', BRAND_KIT_INTAKE)?.subscribe();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+    expect(reloaded.loadRun('proj-1', 'brand-kit')?.failedAttempt).toBeUndefined();
+    expect(reloaded.loadRun('proj-1', 'brand-kit')?.versions).toHaveLength(2);
+    expect(httpPost.mock.calls.filter(([url]) => url === '/api/mktg-agents/chat')).toHaveLength(1);
+    expect(httpPost.mock.calls.filter(([url]) => url === BRAND_KIT_INTAKE.endpoints.generate)).toHaveLength(0);
+  });
+
+  it('removes a timed-out attempt from automatic resume while retaining an explicit retry', async () => {
+    const failed = vi.fn();
+    service.generate(generateRequest()).subscribe({ error: failed });
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.timeoutMs);
+    expect(failed).toHaveBeenCalledOnce();
+    expect(service.loadRun('proj-1', 'brand-kit')?.pendingAttempt).toBeUndefined();
+    expect(service.loadRun('proj-1', 'brand-kit')?.failedAttempt).toBeDefined();
+    expect(service.resumeGeneration('proj-1', 'brand-kit', BRAND_KIT_INTAKE)).toBeNull();
+    expect(service.retryGeneration('proj-1', 'brand-kit', BRAND_KIT_INTAKE)).not.toBeNull();
+    // Constructing a retry must not mark it active before access is checked and the view subscribes.
+    expect(service.resumeGeneration('proj-1', 'brand-kit', BRAND_KIT_INTAKE)).toBeNull();
+  });
+
   it('starts a first run via POST to the validated generate endpoint with the full answers', async () => {
     resultResponses = [{ status: 'ready', documentMarkdown: '# Brand Kit', version: 1 }];
     const events: MktgGenerateProgress[] = [];
