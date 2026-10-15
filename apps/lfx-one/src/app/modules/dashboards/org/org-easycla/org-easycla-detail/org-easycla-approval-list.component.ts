@@ -184,10 +184,10 @@ export class OrgEasyclaApprovalListComponent {
   /**
    * Confirms a delete before it is sent.
    *
-   * The copy names invalidation rather than the softer "will no longer be recognized" the design
-   * uses, because invalidation is what the producer does: it flips the matching acknowledgements
-   * to unapproved and emails the contributors. A CLA manager is entitled to know that before the
-   * click, not from the receipt.
+   * The copy names the state the matching acknowledgments land in. A removal leaves them Not
+   * Authorized rather than Invalidated, and adding the entry back restores them without the
+   * contributor acknowledging again, whether or not Auto ECLA is on. A CLA manager is entitled to
+   * know that before the click, not from the receipt.
    */
   protected confirmDelete(entry: OrgClaApprovalEntry): void {
     const target = this.writeTarget();
@@ -196,8 +196,8 @@ export class OrgEasyclaApprovalListComponent {
     this.confirmationService.confirm({
       header: 'Remove this approval list entry?',
       message:
-        `Contributors covered by ${orgClaApprovalCriteriaLabel(entry.kind).toLowerCase()} "${entry.value}" will no longer be covered by this CLA, ` +
-        `and any acknowledgements they hold for it will be invalidated. They will need to acknowledge it again if you add the entry back.`,
+        `Contributors covered by ${orgClaApprovalCriteriaLabel(entry.kind).toLowerCase()} "${entry.value}" will no longer be covered by this CLA. ` +
+        `Their acknowledgments will show as Not Authorized until you add the entry back.`,
       acceptLabel: 'Remove entry',
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-danger p-button-sm',

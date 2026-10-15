@@ -656,15 +656,15 @@ export const ORG_CLA_APPROVAL_HEADING = 'Approved List of Contributors from My O
 /**
  * Toast copy for a completed approval-list write.
  *
- * A removal's summary names invalidation rather than removal, because that is the consequence a
- * CLA manager needs confirmed: the rule is gone *and* the acknowledgements it covered are no
- * longer valid. Upstream reports no count of the acknowledgements it invalidated, so none of
- * this copy claims one.
+ * A removal's detail names the state the covered acknowledgements land in, because that is the
+ * consequence a CLA manager needs confirmed: the rule is gone *and* those acknowledgements now
+ * read Not Authorized until the entry is added back. Upstream reports no count of the
+ * acknowledgements a write affected, so none of this copy claims one.
  */
 export const ORG_CLA_APPROVAL_RECEIPT = {
   added: { summary: 'Approval list updated', detail: (count: number) => (count === 1 ? 'The entry was added.' : `${count} entries were added.`) },
   edited: { summary: 'Approval list updated', detail: () => 'The entry was updated. Acknowledgements matching the previous value were invalidated.' },
-  removed: { summary: 'Entry removed', detail: () => 'The entry was removed. Acknowledgements it covered were invalidated.' },
+  removed: { summary: 'Entry removed', detail: () => 'The entry was removed. Acknowledgements it covered now show as Not Authorized.' },
 } as const;
 
 export const ORG_CLA_MANAGER_REFUSALS = ['no-lf-login', 'lf-username-required', 'not-authorized', 'last-manager', 'already-manager', 'unknown'] as const;

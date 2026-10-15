@@ -101,7 +101,7 @@ test.describe('Org Lens EasyCLA approval — content', () => {
     await expect(page.getByTestId('org-easycla-approval-value')).toHaveText(NEXT_DOMAIN);
   });
 
-  test('names the invalidation in the confirmation, before anything is sent', async ({ page }) => {
+  test('names the Not Authorized outcome in the confirmation, before anything is sent', async ({ page }) => {
     await gotoApproval(page, { get: EXISTING, put: approvalList() });
 
     await expect(page.getByTestId('org-easycla-approval-value')).toHaveText(DOMAIN, { timeout: PAGE_LOAD_TIMEOUT });
@@ -115,7 +115,8 @@ test.describe('Org Lens EasyCLA approval — content', () => {
     await expect(confirm).toContainText('Remove this approval list entry?');
     await expect(confirm).toContainText('email domain');
     await expect(confirm).toContainText(`"${DOMAIN}"`);
-    await expect(confirm).toContainText('invalidated');
+    await expect(confirm).toContainText('Their acknowledgments will show as Not Authorized until you add the entry back.');
+    await expect(confirm).not.toContainText('invalidated');
     expect(puts.count).toBe(0);
 
     const pending = putRequest(page);
@@ -124,7 +125,7 @@ test.describe('Org Lens EasyCLA approval — content', () => {
     const body = (await (await pending).postDataJSON()) as { add: unknown; remove: unknown };
     expect(body).toEqual({ add: [], remove: [{ kind: 'domain', value: DOMAIN }] });
 
-    await expect(page.locator('.p-toast')).toContainText('invalidated');
+    await expect(page.locator('.p-toast')).toContainText('Acknowledgements it covered now show as Not Authorized.');
     await expect(page.getByTestId('org-easycla-approval-empty')).toBeVisible();
   });
 

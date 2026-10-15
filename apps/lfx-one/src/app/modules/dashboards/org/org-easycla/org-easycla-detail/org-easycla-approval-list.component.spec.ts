@@ -501,15 +501,17 @@ describe('OrgEasyclaApprovalListComponent', () => {
   });
 
   describe('deleting an entry', () => {
-    // The producer flips the matching acknowledgements to unapproved and emails the contributors.
-    // A CLA manager is entitled to know that before the click, not from the receipt.
-    it('names the invalidation in the confirmation, before anything is sent', async () => {
+    // A removal leaves the matching acknowledgments Not Authorized, and adding the entry back
+    // restores them. A CLA manager is entitled to know that before the click, not from the receipt.
+    it('names the Not Authorized outcome in the confirmation, before anything is sent', async () => {
       const fixture = await render();
 
       click(fixture, 'org-easycla-approval-delete');
 
       expect(confirmations).toHaveLength(1);
-      expect(confirmations[0].message).toContain('invalidated');
+      expect(confirmations[0].message).toContain('Their acknowledgments will show as Not Authorized until you add the entry back.');
+      expect(confirmations[0].message).not.toContain('invalidated');
+      expect(confirmations[0].message).not.toContain('acknowledge it again');
       expect(confirmations[0].message).toContain('example.com');
       expect(updateApprovalList).not.toHaveBeenCalled();
     });
@@ -540,7 +542,9 @@ describe('OrgEasyclaApprovalListComponent', () => {
 
       confirmations[0].accept?.();
 
-      expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', detail: expect.stringContaining('invalidated') }));
+      expect(addMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ severity: 'success', detail: 'The entry was removed. Acknowledgements it covered now show as Not Authorized.' })
+      );
     });
   });
 
