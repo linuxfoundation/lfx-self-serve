@@ -26,22 +26,27 @@ const SUB = 'auth0|user-1';
 const LOGIN_EMAIL = 'jane.doe@login-example.example';
 const ALIAS_EMAIL = 'Jane.Doe+Meetings@Acme-Motors.example';
 const JOIN_URL = 'https://zoom.example.com/j/123';
+const GATEWAY_URL = 'https://gw.example/';
+const CONTACT_ID = '0032M00003abcdeQAA';
 
 interface Row {
   meeting_id: string;
   email?: string;
   case_insensitive_email?: string;
   username?: string;
+  user_id?: string;
 }
 
 interface Scenario {
   rows: Row[];
   preference: 'none' | 'timeout' | string;
   authEmails: { primary_email: string; alternate_emails: { email: string; verified: boolean }[] } | 'fail';
+  contactId: string | 'fail';
 }
 
 let scenario: Scenario;
 let natsCalls: { subject: string; payload: any }[];
+let contactIdCalls: number;
 let joinCalls: { path: string; query: any }[];
 let queryCalls: { filters: string[]; filters_or?: string[] }[];
 
@@ -134,7 +139,20 @@ describe('POST /public/api/meetings/:id/join-url (restricted meeting, real servi
     natsCalls = [];
     joinCalls = [];
     queryCalls = [];
-    scenario = { rows: [], preference: 'none', authEmails: { primary_email: LOGIN_EMAIL, alternate_emails: [] } };
+    contactIdCalls = 0;
+    scenario = { rows: [], preference: 'none', authEmails: { primary_email: LOGIN_EMAIL, alternate_emails: [] }, contactId: CONTACT_ID };
+    vi.stubEnv('API_GW_AUDIENCE', GATEWAY_URL);
+
+    // /me is the only outbound fetch faked; the test's own calls to the local server pass through.
+    const realFetch = globalThis.fetch;
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      if (String(input).startsWith(`${GATEWAY_URL}user-service/v1/me`)) {
+        contactIdCalls += 1;
+        if (scenario.contactId === 'fail') return { ok: false, status: 502 } as globalThis.Response;
+        return { ok: true, status: 200, json: async () => ({ ID: scenario.contactId }) } as globalThis.Response;
+      }
+      return realFetch(input, init);
+    });
     sessionOptions = { email: LOGIN_EMAIL, apiGatewayToken: 'v1-gateway-token' };
 
     vi.spyOn(NatsService.prototype, 'request').mockImplementation(async function (this: NatsService, subject: string, data: Uint8Array) {
@@ -185,6 +203,7 @@ describe('POST /public/api/meetings/:id/join-url (restricted meeting, real servi
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
   });
 
   it('1. joins with the meeting-invite preference alias when the login email and username do not match', async () => {
@@ -217,6 +236,34 @@ describe('POST /public/api/meetings/:id/join-url (restricted meeting, real servi
 
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('NOT_REGISTERED_FOR_MEETING');
+    expect(joinCalls).toHaveLength(0);
+  });
+
+  it('3b. joins when the alias is unverified but the row carries the user contact id', async () => {
+    scenario.rows = [{ ...aliasRow(), user_id: CONTACT_ID }];
+
+    const res = await postJoin();
+
+    expect(res.status).toBe(200);
+    expect(joinCalls[0].query.email).toBe(ALIAS_EMAIL);
+  });
+
+  it('3c. rejects a row that carries a different contact id', async () => {
+    scenario.rows = [{ ...aliasRow(), user_id: '0032M00003otherQAA' }];
+
+    const res = await postJoin();
+
+    expect(res.status).toBe(403);
+    expect(joinCalls).toHaveLength(0);
+  });
+
+  it('3d. answers 503 rather than 403 when the contact-id lookup fails and nothing else matched', async () => {
+    scenario.rows = [{ ...aliasRow(), user_id: CONTACT_ID }];
+    scenario.contactId = 'fail';
+
+    const res = await postJoin();
+
+    expect(res.status).toBe(503);
     expect(joinCalls).toHaveLength(0);
   });
 
@@ -336,5 +383,6 @@ describe('POST /public/api/meetings/:id/join-url (restricted meeting, real servi
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('NOT_REGISTERED_FOR_MEETING');
     expect(subjectCalls(NatsSubjects.MEETING_PREFERRED_EMAIL_GET)).toHaveLength(0);
+    expect(contactIdCalls).toBe(0);
   });
 });

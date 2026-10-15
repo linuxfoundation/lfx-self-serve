@@ -632,7 +632,7 @@ describe('MeetingService verified-email registrant lookup (PCC-1570)', () => {
   beforeEach(() => {
     proxyRequest.mockReset();
     getUserVerifiedEmails.mockReset();
-    getUserVerifiedEmails.mockResolvedValue({ emails: ['user+meetings@example.com'], preferenceEmail: null, incomplete: false });
+    getUserVerifiedEmails.mockResolvedValue({ emails: ['user+meetings@example.com'], preferenceEmail: null, contactId: null, incomplete: false });
     service = new MeetingService();
   });
 
@@ -651,6 +651,7 @@ describe('MeetingService verified-email registrant lookup (PCC-1570)', () => {
     getUserVerifiedEmails.mockResolvedValue({
       emails: ['user@example.com', 'user+meetings@example.com', 'alt@example.org'],
       preferenceEmail: null,
+      contactId: null,
       incomplete: false,
     });
     proxyRequest.mockResolvedValueOnce(registrantPage([{ uid: 'reg-2', email: 'user+meetings@example.com' }]));
@@ -671,8 +672,24 @@ describe('MeetingService verified-email registrant lookup (PCC-1570)', () => {
     });
   });
 
+  it('matches a row by contact id when its email is not one the user verified', async () => {
+    getUserVerifiedEmails.mockResolvedValue({ emails: ['user@example.com'], preferenceEmail: null, contactId: '0032M00003abcdeQAA', incomplete: false });
+    proxyRequest.mockResolvedValueOnce(registrantPage([{ uid: 'reg-3', email: 'user+calendar@gmail.example' }]));
+
+    const result = await service.getMeetingRegistrantsByVerifiedEmails(req, 'm-1', 'user@example.com');
+
+    expect(result.registrants.map((row) => row.uid)).toEqual(['reg-3']);
+    expect(proxyRequest.mock.calls[0][4].filters_or).toEqual(['user_id:0032M00003abcdeQAA']);
+    expect(logger.info).toHaveBeenCalledWith(
+      req,
+      'get_meeting_registrants_by_verified_emails',
+      expect.any(String),
+      expect.objectContaining({ matched_source: 'user_id' })
+    );
+  });
+
   it('skips the query when there are no other verified emails', async () => {
-    getUserVerifiedEmails.mockResolvedValue({ emails: ['user@example.com'], preferenceEmail: null, incomplete: false });
+    getUserVerifiedEmails.mockResolvedValue({ emails: ['user@example.com'], preferenceEmail: null, contactId: null, incomplete: false });
 
     const result = await service.getMeetingRegistrantsByVerifiedEmails(req, 'm-1', 'user@example.com');
 
@@ -681,7 +698,12 @@ describe('MeetingService verified-email registrant lookup (PCC-1570)', () => {
   });
 
   it('orders matches by email priority', async () => {
-    getUserVerifiedEmails.mockResolvedValue({ emails: ['pref@example.com', 'alt@example.org'], preferenceEmail: 'pref@example.com', incomplete: false });
+    getUserVerifiedEmails.mockResolvedValue({
+      emails: ['pref@example.com', 'alt@example.org'],
+      preferenceEmail: 'pref@example.com',
+      contactId: null,
+      incomplete: false,
+    });
     proxyRequest.mockResolvedValueOnce(
       registrantPage([
         { uid: 'reg-alt', email: 'alt@example.org' },
@@ -702,7 +724,7 @@ describe('MeetingService verified-email registrant lookup (PCC-1570)', () => {
   });
 
   it('reports a failed lookup only when nothing matched', async () => {
-    getUserVerifiedEmails.mockResolvedValue({ emails: [], preferenceEmail: null, incomplete: true });
+    getUserVerifiedEmails.mockResolvedValue({ emails: [], preferenceEmail: null, contactId: null, incomplete: true });
 
     const result = await service.getMeetingRegistrantsByVerifiedEmails(req, 'm-1', 'user@example.com');
 
@@ -711,7 +733,7 @@ describe('MeetingService verified-email registrant lookup (PCC-1570)', () => {
   });
 
   it('does not report a failed lookup when a partial lookup still matched', async () => {
-    getUserVerifiedEmails.mockResolvedValue({ emails: ['user+meetings@example.com'], preferenceEmail: null, incomplete: true });
+    getUserVerifiedEmails.mockResolvedValue({ emails: ['user+meetings@example.com'], preferenceEmail: null, contactId: null, incomplete: true });
     proxyRequest.mockResolvedValueOnce(registrantPage([{ uid: 'reg-2', email: 'user+meetings@example.com' }]));
 
     const result = await service.getMeetingRegistrantsByVerifiedEmails(req, 'm-1', 'user@example.com');

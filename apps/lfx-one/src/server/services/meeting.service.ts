@@ -1080,18 +1080,13 @@ export class MeetingService {
     meetingUid: string,
     triedEmail: string | undefined
   ): Promise<MeetingRegistrantsByVerifiedEmails> {
-    const { emails, preferenceEmail, incomplete } = await this.userVerifiedEmailsService.getUserVerifiedEmails(req);
+    const { emails, preferenceEmail, contactId, incomplete } = await this.userVerifiedEmailsService.getUserVerifiedEmails(req);
     const tried = triedEmail?.trim().toLowerCase();
     const candidates = emails.filter((candidate) => candidate !== tried);
 
-    const registrants =
-      candidates.length > 0
-        ? await this.queryMeetingRegistrants(
-            req,
-            meetingUid,
-            candidates.flatMap((candidate) => this.emailClauses(candidate))
-          )
-        : [];
+    // `user_id` catches rows whose email was rewritten to an address the user never verified.
+    const orClauses = [...candidates.flatMap((candidate) => this.emailClauses(candidate)), ...(contactId ? [`user_id:${contactId}`] : [])];
+    const registrants = orClauses.length > 0 ? await this.queryMeetingRegistrants(req, meetingUid, orClauses) : [];
     const rank = (registrant: MeetingRegistrant): number => {
       const index = candidates.indexOf((registrant.email || '').trim().toLowerCase());
       return index === -1 ? candidates.length : index;
@@ -1099,19 +1094,24 @@ export class MeetingService {
     registrants.sort((a, b) => rank(a) - rank(b));
 
     const matchedEmail = registrants.length > 0 ? (registrants[0].email || '').trim().toLowerCase() : null;
-    let matchedSource: 'meeting_invite_preference' | 'auth_service' | null = null;
-    if (matchedEmail) {
-      matchedSource = matchedEmail === preferenceEmail ? 'meeting_invite_preference' : 'auth_service';
+    let matchedSource: 'meeting_invite_preference' | 'auth_service' | 'user_id' | null = null;
+    if (registrants.length > 0) {
+      if (!candidates.includes(matchedEmail || '')) {
+        matchedSource = 'user_id';
+      } else {
+        matchedSource = matchedEmail === preferenceEmail ? 'meeting_invite_preference' : 'auth_service';
+      }
     }
     const logMeta = {
       meeting_id: meetingUid,
       candidate_count: candidates.length,
+      has_contact_id: !!contactId,
       has_preference: !!preferenceEmail,
       matched_source: matchedSource,
       incomplete,
     };
     if (matchedSource) {
-      logger.info(req, 'get_meeting_registrants_by_verified_emails', "Matched a registrant by the user's other verified emails", logMeta);
+      logger.info(req, 'get_meeting_registrants_by_verified_emails', "Matched a registrant by the user's other verified emails or contact id", logMeta);
     } else {
       logger.debug(req, 'get_meeting_registrants_by_verified_emails', "No registrant under the user's other verified emails", logMeta);
     }
