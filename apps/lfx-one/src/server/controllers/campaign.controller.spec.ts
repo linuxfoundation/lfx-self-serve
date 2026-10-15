@@ -2726,8 +2726,9 @@ describe('CampaignController.createCampaign cutover', () => {
   it.each([
     ['excludedGeoTargets', Array.from({ length: 101 }, () => 'US')],
     ['proximityTargets', Array.from({ length: 101 }, () => ({ latitude: -33.8688, longitude: 151.2093, radius: 25, radiusUnit: 'KILOMETERS' }))],
+    ['adSchedules', Array.from({ length: 101 }, () => ({ dayOfWeek: 'MONDAY', startHour: 9, startMinute: 0, endHour: 17, endMinute: 0 }))],
   ])('bounds a %s list before the envelope normalizes it, since that runs ahead of the named cap', async (field, list) => {
-    // The named caps (60 and 20) are the operator-facing refusal and still fire first for any
+    // The named caps (60, 20 and 42) are the operator-facing refusal and still fire first for any
     // plausible list. This ceiling only stops `createConfigEnvelope` — which runs BEFORE them and
     // allocates per entry — from walking a 15mb body.
     await controller.createCampaign(buildReq(googleBody({ [field]: list } as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
@@ -2992,6 +2993,325 @@ describe('CampaignController.createCampaign cutover', () => {
     const error = refusalFrom();
     expect(error.message).toContain('radius target 2');
     expect(error.message).toContain('151.2093');
+  });
+
+  const WEEKDAY = { dayOfWeek: 'MONDAY', startHour: 9, startMinute: 0, endHour: 17, endMinute: 0 };
+
+  it('dispatches the ad schedules the operator picked, so a day-parted campaign serves only those hours', async () => {
+    // The contrast for every ad-schedule refusal below: without it they would all pass on a
+    // controller that refused or dropped every schedule. `bidModifier` is a pointer upstream —
+    // absent means "listed but unadjusted" — so the key must be OMITTED rather than zero-filled,
+    // since 0 is the -100% "do not serve" opt-out and would mean the opposite.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000010', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ adSchedules: [WEEKDAY, { ...WEEKDAY, dayOfWeek: 'TUESDAY', bidModifier: 1.5 }] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    const sent = (envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['adSchedules'] as Record<string, unknown>[];
+    expect(sent).toHaveLength(2);
+    expect(sent[0]).not.toHaveProperty('bidModifier');
+    expect(sent[1]['bidModifier']).toBe(1.5);
+  });
+
+  it('dispatches ad schedules on Performance Max, which Google documents as a campaign criterion there', async () => {
+    // The fence that makes this PR complete Performance Max. `validateCriteriaPlan` SPLITS the
+    // non-location criteria for PMax: it keeps languages and ad schedules and refuses only the
+    // device and demographic ones. Fencing PMax out here would refuse a create Google takes.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000011', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: ['performance-max'], adSchedules: [WEEKDAY] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['adSchedules']).toHaveLength(1);
+  });
+
+  it('refuses ad schedules on Demand Gen by name, the one channel upstream fences them off', async () => {
+    // Named, not silently withheld: an operator who day-parted a campaign and got one serving
+    // around the clock would have no way to know the schedule was dropped.
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: ['demand-gen'], adSchedules: [WEEKDAY] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.field).toBe('adSchedules');
+    expect(error.message).toContain('Demand Gen');
+  });
+
+  it('refuses a 43rd ad schedule, matching the cap upstream checks against the submitted count', async () => {
+    // Against the SUBMITTED count, before any exact repeat is collapsed — so a list that is only
+    // over the cap because it repeats is still refused, exactly as upstream refuses it. Repeats
+    // keep this fixture under the per-day limit, which the cap must still beat.
+    await controller.createCampaign(
+      buildReq(googleBody({ adSchedules: Array.from({ length: 43 }, () => ({ ...WEEKDAY })) }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.field).toBe('adSchedules');
+    expect(error.message).toContain('43');
+  });
+
+  it.each([
+    ['a non-array schedule list', { adSchedules: {} }],
+    ['a non-object schedule entry', { adSchedules: ['monday'] }],
+    // The divergence from the radius list, pinned: a null ENTRY is refused as a shape here, where
+    // a null radius target is tolerated and left to the entry checks. Not an over-refusal — a null
+    // entry decodes to an empty `DayOfWeek` that upstream refuses on its first branch — only a
+    // refusal that names the malformed entry instead of a day of week the caller never wrote.
+    ['a null schedule entry', { adSchedules: [null] }],
+    ['a non-string day of week', { adSchedules: [{ ...WEEKDAY, dayOfWeek: 1 }] }],
+    ['a non-integer hour', { adSchedules: [{ ...WEEKDAY, startHour: 9.5 }] }],
+    ['a non-numeric bid modifier', { adSchedules: [{ ...WEEKDAY, bidModifier: '1.5' }] }],
+  ])('refuses %s before it reaches the dispatcher, which decodes the field as typed structs', async (_label, overrides) => {
+    await controller.createCampaign(buildReq(googleBody(overrides as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('adSchedules');
+  });
+
+  it.each([
+    ['an unknown day of week', { ...WEEKDAY, dayOfWeek: 'FUNDAY' }, 'MONDAY'],
+    ['a start hour outside the day', { ...WEEKDAY, startHour: 24 }, '0 to 23'],
+    ['an end hour of 0', { ...WEEKDAY, endHour: 0 }, '1 to 24'],
+    ['a start minute off the quarter hour', { ...WEEKDAY, startMinute: 10 }, '0, 15, 30, 45'],
+    ['an end minute off the quarter hour', { ...WEEKDAY, endMinute: 59 }, '0, 15, 30, 45'],
+    ['an end at the start', { ...WEEKDAY, endHour: 9 }, 'not after its start'],
+    ['an end before the start', { ...WEEKDAY, startHour: 17, endHour: 9 }, 'not after its start'],
+    ['an end past midnight', { ...WEEKDAY, endHour: 24, endMinute: 15 }, 'past the end of the day'],
+    ['a bid modifier below the floor', { ...WEEKDAY, bidModifier: 0.05 }, '0.1 to 10'],
+    ['a bid modifier above the ceiling', { ...WEEKDAY, bidModifier: 10.5 }, '0.1 to 10'],
+    ['a non-finite bid modifier', { ...WEEKDAY, bidModifier: Number.POSITIVE_INFINITY }, 'finite'],
+  ])('refuses %s, which upstream refuses before the first mutate', async (_label, schedule, expected) => {
+    await controller.createCampaign(buildReq(googleBody({ adSchedules: [schedule] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('adSchedules');
+    expect(error.message).toContain(expected);
+  });
+
+  it('dispatches a schedule that writes only an end hour, since the absent start is a real 00:00', async () => {
+    // The over-refusal this guard has to stay clear of. An absent hour decodes to `0` upstream,
+    // which is a real hour, so `MONDAY` with a lone `endHour` is the ordinary 00:00-17:00 window
+    // and not a malformed entry. A missing END hour is the opposite case and is refused by name
+    // as an end hour outside 1 to 24, because 0 is not a real END.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000018', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ adSchedules: [{ dayOfWeek: 'MONDAY', endHour: 17 }] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['adSchedules']).toEqual([
+      { dayOfWeek: 'MONDAY', startHour: 0, startMinute: 0, endHour: 17, endMinute: 0 },
+    ]);
+  });
+
+  it('dispatches a schedule running to midnight, the one place hour 24 is a valid end', async () => {
+    // The boundary the two refusals above sit either side of: the window is half-open, so a
+    // schedule that runs to the end of the day ends at 24:00. Refusing hour 24 outright would
+    // refuse every round-the-clock day part.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000012', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ adSchedules: [{ ...WEEKDAY, startHour: 0, endHour: 24, endMinute: 0 }] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['adSchedules']).toHaveLength(1);
+  });
+
+  it('dispatches two adjacent windows on the same day, because touching is not overlapping', async () => {
+    // The over-refusal guard for the overlap test. Upstream compares `startA < endB && startB <
+    // endA`, so 09:00-12:00 and 12:00-17:00 do not overlap — 12:00 is not before 12:00. A naive
+    // "do they touch" test would refuse the ordinary split-day schedule.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000013', error: null });
+
+    await controller.createCampaign(
+      buildReq(
+        googleBody({
+          adSchedules: [
+            { ...WEEKDAY, startHour: 9, endHour: 12 },
+            { ...WEEKDAY, startHour: 12, endHour: 17 },
+          ],
+        }),
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['adSchedules']).toHaveLength(2);
+  });
+
+  it('dispatches a schedule whose bid modifier is 0, the opt-out rather than a value below the floor', async () => {
+    // `validateBidModifier` returns EARLY on 0: it is the -100% "do not serve here" modifier, which
+    // is how a day-parted campaign switches off the hours it does not want. A guard that tested the
+    // range first would refuse the one modifier such a campaign is certain to carry.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000014', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ adSchedules: [{ ...WEEKDAY, bidModifier: 0 }] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const sent = (envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['adSchedules'] as Record<string, unknown>[];
+    expect(sent[0]['bidModifier']).toBe(0);
+  });
+
+  it('dispatches an exact repeat rather than refusing it, because upstream collapses one', async () => {
+    // Two entries that say exactly the same thing are one criterion written twice, and upstream
+    // drops the second instead of failing the create. Refusing here would be an over-refusal of a
+    // create that works. The repeat also does not count toward the per-day limit.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000015', error: null });
+
+    await controller.createCampaign(
+      buildReq(
+        googleBody({
+          adSchedules: [
+            { ...WEEKDAY, bidModifier: 1.5 },
+            { ...WEEKDAY, bidModifier: 1.5 },
+          ],
+        }),
+        {
+          project: 'tlf',
+          brief_id: 'b-1',
+        }
+      ),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['adSchedules']).toHaveLength(2);
+  });
+
+  it('refuses a repeated interval that disagrees about the bid modifier, as a repeat and not as an overlap', async () => {
+    // The contrast for the test above, and the reason the repeat is tested BEFORE the overlap: the
+    // two entries name one interval, so one of the two bids would be silently dropped. Reporting it
+    // as an overlap would name the wrong defect.
+    await controller.createCampaign(
+      buildReq(
+        googleBody({
+          adSchedules: [
+            { ...WEEKDAY, bidModifier: 1.5 },
+            { ...WEEKDAY, bidModifier: 2 },
+          ],
+        }),
+        {
+          project: 'tlf',
+          brief_id: 'b-1',
+        }
+      ),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.field).toBe('adSchedules');
+    expect(error.message).toContain('repeats MONDAY 09:00-17:00');
+  });
+
+  it('refuses two windows that overlap on the same day, naming both intervals', async () => {
+    await controller.createCampaign(
+      buildReq(
+        googleBody({
+          adSchedules: [
+            { ...WEEKDAY, startHour: 9, endHour: 17 },
+            { ...WEEKDAY, startHour: 16, endHour: 18 },
+          ],
+        }),
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.message).toContain('ad schedule 2');
+    expect(error.message).toContain('overlaps MONDAY 09:00-17:00');
+  });
+
+  it('accepts the same window on two different days, since the overlap test is per day', async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000016', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ adSchedules: [WEEKDAY, { ...WEEKDAY, dayOfWeek: 'TUESDAY' }] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['adSchedules']).toHaveLength(2);
+  });
+
+  it('refuses a seventh interval on one day, the per-day limit Google enforces', async () => {
+    // Six non-overlapping hours on Monday are fine; the seventh is not. Counted per day, after
+    // repeats are collapsed, exactly as upstream counts it.
+    await controller.createCampaign(
+      buildReq(
+        googleBody({
+          adSchedules: Array.from({ length: 7 }, (_, i) => ({ ...WEEKDAY, startHour: i, endHour: i + 1 })),
+        }),
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.field).toBe('adSchedules');
+    expect(error.message).toContain('at most 6 per day');
+  });
+
+  it("trims a day of week with Go's whitespace set, so a day upstream accepts is not refused here", async () => {
+    // `strings.TrimSpace` strips U+0085 (NEL) and `String.prototype.trim` does not. Trimming with
+    // JS's set would refuse this entry as an unknown day while upstream accepts it — the
+    // over-refusal these Go mirrors exist to prevent.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000017', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ adSchedules: [{ ...WEEKDAY, dayOfWeek: '\u0085monday\u0085' }] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['adSchedules']).toHaveLength(1);
+  });
+
+  it('numbers the refused ad schedule from 1, so the operator can find the row', async () => {
+    // Upstream numbers from 0 in its own log line; an operator counting rows in the form counts
+    // from 1.
+    await controller.createCampaign(
+      buildReq(googleBody({ adSchedules: [WEEKDAY, { ...WEEKDAY, dayOfWeek: 'FUNDAY' }] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(refusalFrom().message).toContain('ad schedule 2');
   });
 
   it('dispatches the languages the operator picked, trimmed and upper-cased', async () => {

@@ -13,6 +13,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import type {
   BulkKeywordActionRequest,
+  CampaignAdSchedule,
   CampaignBidType,
   CampaignBidUpdateRequest,
   CampaignBidUpdateResult,
@@ -58,6 +59,9 @@ import {
   GOOGLE_ADS_GEO_TARGET_MAP,
   GOOGLE_ADS_LANGUAGE_ID_PATTERN,
   GOOGLE_ADS_LANGUAGE_MAP,
+  GOOGLE_ADS_MAX_AD_SCHEDULES,
+  GOOGLE_ADS_MAX_AD_SCHEDULES_PER_DAY,
+  GOOGLE_ADS_MAX_BID_MODIFIER,
   GOOGLE_ADS_MAX_CALLOUTS,
   GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
   GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS,
@@ -70,11 +74,15 @@ import {
   GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES,
   GOOGLE_ADS_MAX_SITELINKS,
   GOOGLE_ADS_MICROS_PER_UNIT,
+  GOOGLE_ADS_MIN_BID_MODIFIER,
   GOOGLE_ADS_RADIUS_UNITS,
+  GOOGLE_ADS_SCHEDULE_DAYS,
+  GOOGLE_ADS_SCHEDULE_MINUTES,
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
   GOOGLE_CAMPAIGN_CHANNEL_LABELS,
   GOOGLE_CHANNELS_WITH_AD_EXTENSIONS,
+  GOOGLE_CHANNELS_WITH_AD_SCHEDULES,
   GOOGLE_CHANNELS_WITH_CREATIVE,
   GOOGLE_CHANNELS_WITH_LANGUAGES,
   GOOGLE_CHANNELS_WITH_PROXIMITY,
@@ -171,6 +179,46 @@ const NUMERIC_ID_RE = /^\d+$/;
  * unknown unit by name, so what the builder dispatches always carries one of the two.
  */
 type NormalizedProximityTarget = Omit<CampaignProximityTarget, 'radiusUnit'> & { radiusUnit: string };
+
+/**
+ * One ad schedule as normalized for judgement and dispatch.
+ *
+ * Widened from {@link CampaignAdSchedule} on the same reasoning as {@link NormalizedProximityTarget}
+ * and in three places: `dayOfWeek` is the caller's own string rather than one of the seven Google
+ * accepts, and the two minute fields are plain numbers rather than the four-value enum, because the
+ * body is unvalidated at this point and narrowing a type before the value has been judged would
+ * mean casting a lie. `createCampaign` refuses each by name, so what the builder dispatches always
+ * carries a real day and real quarter-hours.
+ *
+ * `bidModifier` stays OPTIONAL rather than being zero-filled like every other field: upstream reads
+ * an absent modifier as "listed but unadjusted" and `0` as the -100% opt-out, so the two must stay
+ * distinguishable all the way to the wire.
+ */
+type NormalizedAdSchedule = Omit<CampaignAdSchedule, 'dayOfWeek' | 'startMinute' | 'endMinute'> & {
+  dayOfWeek: string;
+  startMinute: number;
+  endMinute: number;
+};
+
+/**
+ * One hour-and-minute pair as `HH:MM`, for naming a window in a refusal.
+ *
+ * Hour 24 is printed as written rather than wrapped to `00`: it is the half-open window's
+ * end-of-day, and wrapping it would misdescribe the two refusals that actually render it — the
+ * overrun would read "ends at 00:15, past the end of the day", and an overlap would name the
+ * window "MONDAY 09:00-00:00". Both would describe a different schedule than the caller wrote.
+ * The empty-window refusal never renders hour 24: an end hour of 24 puts the end at 1440 or more
+ * while a start hour of at most 23 puts the start at 1425 or less, so that branch cannot fire.
+ *
+ * Deliberately module-local, unlike the `googleAds*` helpers in `@lfx-one/shared/constants`. Those
+ * exist because they reproduce a Go SEMANTIC the form and this guard must agree on — `TrimSpace`'s
+ * NEL handling, Go's lowercasing, `url.Parse`'s flaw — so they are shared and separately specced.
+ * This one reproduces nothing upstream does; it formats a server-side refusal string, and nothing
+ * outside this file has a reason to render an ad schedule window.
+ */
+function googleAdsClockTime(hour: number, minute: number): string {
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
 
 /**
  * Which `googleAdsConfig` creative key each Google channel uses, and which of its fields are lists
@@ -876,6 +924,56 @@ export class CampaignController {
                 next(ServiceValidationError.forField('languages', refusal, { operation: 'campaign_create', service: 'campaign_controller' }));
                 return;
               }
+            }
+          }
+        }
+
+        // Ad schedules last of the criteria, as `validateCriteriaPlan` runs `validateAdSchedules`
+        // after it has resolved the language list. Same reason as the three guards above: an entry
+        // Go refuses comes back as the orchestrator's opaque "platform campaign creation failed",
+        // so every refusal is made here first, by name, in upstream's own order.
+        const rawAdSchedules = body?.adSchedules;
+        if (rawAdSchedules !== undefined && rawAdSchedules !== null) {
+          const refuseAdSchedules = (message: string): void =>
+            next(ServiceValidationError.forField('adSchedules', message, { operation: 'campaign_create', service: 'campaign_controller' }));
+          // The Go decode into `[]googleAdsAdScheduleConfig` refuses a non-list, a non-object entry,
+          // a non-string day or a non-numeric hour, minute or bid modifier. A null FIELD decodes to
+          // a zero, which the entry checks below refuse by name. A null ENTRY is refused here
+          // instead, unlike a null radius target — see {@link isAdScheduleShape} for why.
+          if (!Array.isArray(rawAdSchedules) || !rawAdSchedules.every((entry) => this.isAdScheduleShape(entry))) {
+            refuseAdSchedules('Google Ads ad schedules must be a list of objects with a day of week and numeric start and end hours and minutes.');
+            return;
+          }
+
+          const googleScheduleChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
+          if (rawAdSchedules.length > 0 && typeof googleScheduleChannel === 'string') {
+            // REFUSED by name, not withheld: `validateCriteriaPlan` fails the whole Demand Gen
+            // create on any non-location criterion, ad schedules included. Performance Max is NOT
+            // fenced out — Google documents ad schedules as a Performance Max campaign criterion,
+            // and upstream keeps them there alongside languages.
+            if (!(GOOGLE_CHANNELS_WITH_AD_SCHEDULES as readonly string[]).includes(googleScheduleChannel)) {
+              refuseAdSchedules(
+                `Google Ads does not accept ad schedules on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleScheduleChannel as GoogleCampaignChannel] ?? googleScheduleChannel} campaigns. Remove the ad schedules or pick a different channel, then create again.`
+              );
+              return;
+            }
+
+            // Upstream's cap, checked against the SUBMITTED count before any exact repeat is
+            // collapsed, exactly where `validateAdSchedules` checks its own.
+            if (rawAdSchedules.length > GOOGLE_ADS_MAX_AD_SCHEDULES) {
+              refuseAdSchedules(
+                `Google Ads accepts at most ${GOOGLE_ADS_MAX_AD_SCHEDULES} ad schedules on one campaign, and this one has ${rawAdSchedules.length}. Remove some and create again.`
+              );
+              return;
+            }
+
+            // One call, not a per-entry loop: three of upstream's refusals — an exact repeat with a
+            // different bid modifier, an overlap, and the per-day limit — are about an entry's
+            // relationship to the entries before it and cannot be decided from the entry alone.
+            const scheduleRefusal = this.googleAdScheduleRefusal(this.googleAdScheduleList(rawAdSchedules));
+            if (scheduleRefusal) {
+              refuseAdSchedules(scheduleRefusal);
+              return;
             }
           }
         }
@@ -3721,6 +3819,7 @@ export class CampaignController {
         // them differently. Both normalized only; `createCampaign` names every refusal first.
         ...this.googleExcludedGeoTargets(body),
         ...this.googleProximityTargets(body, selectedChannels[0]),
+        ...this.googleAdSchedules(body, selectedChannels[0]),
         ...languages,
         ...creative,
       };
@@ -3780,6 +3879,7 @@ export class CampaignController {
       // still made through the same helper so the two branches cannot normalize differently.
       ...this.googleExcludedGeoTargets(body),
       ...this.googleProximityTargets(body, 'search'),
+      ...this.googleAdSchedules(body, 'search'),
       ...searchLanguages,
       ...callouts,
       ...sitelinks,
@@ -3863,13 +3963,15 @@ export class CampaignController {
     const candidates: [string, unknown][] = Object.values(GOOGLE_CREATIVE_REQUEST_KEYS).map((key) => [key, raw[key]]);
     candidates.push(['conversionActions', raw['conversionActions']]);
     candidates.push(['callouts', raw['callouts']]);
-    // Both geo lists are bounded here and not only by their own caps further down, because
-    // `createConfigEnvelope` runs BEFORE those caps and normalizes whatever it is handed —
-    // `googleProximityList` allocating a fresh object per entry as it goes. The named caps (60
-    // exclusions, 20 radius targets) still make the refusal an operator can act on; this one only
-    // stops a 15mb body from being walked before they are reached.
+    // The two geo lists and the ad schedules are bounded here and not only by their own caps
+    // further down, because `createConfigEnvelope` runs BEFORE those caps and normalizes whatever
+    // it is handed — `googleProximityList` and `googleAdScheduleList` each allocating a fresh
+    // object per entry as they go. The named caps (60 exclusions, 20 radius targets, 42 schedules)
+    // still make the refusal an operator can act on; this one only stops a 15mb body from being
+    // walked before they are reached.
     candidates.push(['excludedGeoTargets', raw['excludedGeoTargets']]);
     candidates.push(['proximityTargets', raw['proximityTargets']]);
+    candidates.push(['adSchedules', raw['adSchedules']]);
 
     for (const [key, source] of candidates) {
       // A creative key holds an object of fields; `conversionActions` and `callouts` are bare lists.
@@ -4269,6 +4371,208 @@ export class CampaignController {
     const maxRadius = GOOGLE_ADS_MAX_RADIUS[unit as GoogleAdsRadiusUnit];
     if (target.radius > maxRadius) {
       return `The Google Ads ${shown} has a radius of ${target.radius} ${unit}, over Google's maximum of ${maxRadius}. Reduce it and create again.`;
+    }
+    return null;
+  }
+
+  /**
+   * The campaign's ad schedules, normalized and spread-ready, or `{}` when the request names none or
+   * the channel cannot take them.
+   *
+   * CHANNEL-GATED on {@link GOOGLE_CHANNELS_WITH_AD_SCHEDULES}, which is every channel but Demand
+   * Gen. The `{}` returned there is never dispatched either: `createCampaign` reads the request's
+   * own list and refuses such a create by name first, on upstream's "refused, never silently
+   * dropped" rule — a campaign that serves around the clock when the operator asked for weekday
+   * evenings spends the whole budget in the hours they excluded.
+   *
+   * NORMALIZES ONLY, and does not collapse an exact repeat: upstream collapses repeats itself, and
+   * doing it here as well would make the dispatched list disagree with the one judged.
+   */
+  private googleAdSchedules(body: CampaignCreateRequest, channel: GoogleCampaignChannel): Record<string, unknown> {
+    if (!(GOOGLE_CHANNELS_WITH_AD_SCHEDULES as readonly string[]).includes(channel)) return {};
+    const clean = this.googleAdScheduleList(body?.adSchedules);
+    return clean.length > 0 ? { adSchedules: clean } : {};
+  }
+
+  /**
+   * Whether one raw ad-schedule entry survives the Go decode into `googleAdsAdScheduleConfig`: an
+   * object carrying a string `dayOfWeek`, four INTEGER hour and minute fields, and a `bidModifier`
+   * that is absent, null or a number.
+   *
+   * The four time fields are decoded into Go `int`s, so `9.5` is a decode error upstream rather than
+   * a near miss — refusing it here reports the same thing in the caller's own words. An absent one
+   * decodes to `0`, which is a real hour and a real minute, so it is tolerated here and judged by
+   * {@link googleAdScheduleRefusal} alongside the fields the caller did write — and either answer
+   * is upstream's. A lone `endHour` leaves an ordinary window starting at 00:00, which that guard
+   * accepts exactly as upstream does; a MISSING `endHour` decodes to the 0 that the same guard
+   * refuses by name as an end hour outside 1 to 24.
+   *
+   * `bidModifier` is the one field whose ABSENCE must survive normalization rather than being read
+   * as a zero — see {@link NormalizedAdSchedule}. `null` is accepted here because Go decodes it to
+   * the same nil pointer an omitted key gives.
+   *
+   * A null ENTRY is refused, unlike a null proximity target. Not because upstream would accept it:
+   * `DayOfWeek` is a Go STRING, so a null entry decodes to an empty day and `validateAdSchedules`
+   * refuses it on its very first branch. Both ends refuse it either way, and only the wording
+   * differs — so this says the entry is malformed rather than blaming a day of week the caller
+   * never wrote. The proximity sibling tolerates its null entry because there the derived refusal
+   * is the better one: a zero RADIUS is upstream's own wording for the same defect.
+   */
+  private isAdScheduleShape(entry: unknown): boolean {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) return false;
+    const fields = entry as Record<string, unknown>;
+    if (typeof fields['dayOfWeek'] !== 'string') return false;
+    const times = (['startHour', 'startMinute', 'endHour', 'endMinute'] as const).every(
+      (f) => fields[f] === undefined || fields[f] === null || Number.isInteger(fields[f])
+    );
+    const modifier = fields['bidModifier'] === undefined || fields['bidModifier'] === null || typeof fields['bidModifier'] === 'number';
+    return times && modifier;
+  }
+
+  /**
+   * The ad schedules as judged and dispatched: each absent or null time field read as the zero Go
+   * decodes it to, and `bidModifier` carried through as `undefined` when the caller omitted it.
+   * Callers have checked the shape with {@link isAdScheduleShape}.
+   *
+   * The day is left exactly as the caller wrote it; {@link googleAdScheduleRefusal} trims and
+   * upper-cases it the way `validateAdSchedules` does before comparing.
+   *
+   * `bidModifier` is the only field that is not zero-filled, and the asymmetry is the whole point:
+   * upstream carries it as a `*float64` so that an omitted modifier stays distinguishable from `0`,
+   * which is the -100% opt-out. Filling it with a zero here would switch the campaign off for every
+   * window a caller listed without adjusting — a successful create that serves nowhere.
+   */
+  private googleAdScheduleList(raw: unknown): NormalizedAdSchedule[] {
+    if (!Array.isArray(raw)) return [];
+    return raw.map((entry) => {
+      const fields = (entry ?? {}) as Record<string, unknown>;
+      const time = (name: string): number => (typeof fields[name] === 'number' ? (fields[name] as number) : 0);
+      const modifier = fields['bidModifier'];
+      return {
+        dayOfWeek: typeof fields['dayOfWeek'] === 'string' ? fields['dayOfWeek'] : '',
+        startHour: time('startHour'),
+        startMinute: time('startMinute'),
+        endHour: time('endHour'),
+        endMinute: time('endMinute'),
+        ...(typeof modifier === 'number' ? { bidModifier: modifier } : {}),
+      };
+    });
+  }
+
+  /**
+   * Why upstream would refuse a normalized ad-schedule LIST, or `null` when it would not.
+   *
+   * A list-level guard rather than a per-entry one like {@link googleProximityRefusal}, because
+   * three of `validateAdSchedules`' branches are about an entry's relationship to the ones before
+   * it — an exact repeat, an overlap, and the per-day count — and none of them is decidable from a
+   * single entry. The cap is checked by the caller against the SUBMITTED length, as upstream does,
+   * before any repeat is collapsed.
+   *
+   * Mirrors `validateAdSchedules`' branch order exactly, and the order is load-bearing: day, start
+   * hour, end hour, start minute, end minute, the empty-or-inverted window, the 24:15 overrun, the
+   * bid modifier, THEN the repeat, THEN the overlap, THEN the per-day count. A repeat is tested
+   * before the overlap because an exact duplicate is one criterion written twice rather than two
+   * criteria that clash, and reporting it as an overlap would name the wrong defect.
+   *
+   * Overlap uses the half-open comparison upstream uses — `startA < endB && startB < endA` — so
+   * 09:00-12:00 and 12:00-17:00 do NOT overlap: 12:00 is not before 12:00. A naive "do they touch"
+   * test would refuse the ordinary split-day schedule, which is the over-refusal these mirrors exist
+   * to avoid.
+   *
+   * `index` is reported from 1 so it matches what an operator counts; upstream's own message numbers
+   * from 0.
+   */
+  private googleAdScheduleRefusal(schedules: NormalizedAdSchedule[]): string | null {
+    // Accepted intervals per normalized day, as minutes of the day — the form both the overlap test
+    // and the empty-window check compare in, so 24:00 is 1440 and sorts after every real end.
+    const perDay = new Map<string, { start: number; end: number }[]>();
+    // Accepted intervals by wire key, carrying the modifier a repeat must agree with.
+    const seen = new Map<string, number | undefined>();
+
+    for (const [index, schedule] of schedules.entries()) {
+      const shown = `ad schedule ${index + 1}`;
+      const day = googleAdsTrimSpace(schedule.dayOfWeek).toUpperCase();
+      if (!(GOOGLE_ADS_SCHEDULE_DAYS as readonly string[]).includes(day)) {
+        return `The Google Ads ${shown} needs a day of week of ${GOOGLE_ADS_SCHEDULE_DAYS.join(', ')}. Fix it and create again.`;
+      }
+      if (schedule.startHour < 0 || schedule.startHour > 23) {
+        return `The Google Ads ${shown} has a start hour of ${schedule.startHour}, outside 0 to 23. Fix it and create again.`;
+      }
+      // 24 is midnight at the END of the day and is valid only as an end, which is what makes the
+      // window half-open: a schedule running to midnight ends at hour 24.
+      if (schedule.endHour < 1 || schedule.endHour > 24) {
+        return `The Google Ads ${shown} has an end hour of ${schedule.endHour}, outside 1 to 24. Fix it and create again.`;
+      }
+      const minutes = GOOGLE_ADS_SCHEDULE_MINUTES as readonly number[];
+      if (!minutes.includes(schedule.startMinute)) {
+        return `The Google Ads ${shown} has a start minute of ${schedule.startMinute}. Google accepts only ${GOOGLE_ADS_SCHEDULE_MINUTES.join(', ')}, so pick one and create again.`;
+      }
+      if (!minutes.includes(schedule.endMinute)) {
+        return `The Google Ads ${shown} has an end minute of ${schedule.endMinute}. Google accepts only ${GOOGLE_ADS_SCHEDULE_MINUTES.join(', ')}, so pick one and create again.`;
+      }
+      const start = schedule.startHour * 60 + schedule.startMinute;
+      const end = schedule.endHour * 60 + schedule.endMinute;
+      const window = `${googleAdsClockTime(schedule.startHour, schedule.startMinute)}-${googleAdsClockTime(schedule.endHour, schedule.endMinute)}`;
+      // An end at or before the start is an empty or inverted window: the campaign would serve for
+      // no time at all that day, which is never what a caller who wrote a schedule meant.
+      if (end <= start) {
+        return `The Google Ads ${shown} ends at ${googleAdsClockTime(schedule.endHour, schedule.endMinute)}, which is not after its start of ${googleAdsClockTime(schedule.startHour, schedule.startMinute)}. Fix it and create again.`;
+      }
+      // 24:00 is the only representation of end-of-day; 24:15 is past it.
+      if (schedule.endHour === 24 && schedule.endMinute !== 0) {
+        return `The Google Ads ${shown} ends at ${googleAdsClockTime(24, schedule.endMinute)}, past the end of the day. End hour 24 takes only minute 0, so fix it and create again.`;
+      }
+      if (schedule.bidModifier !== undefined) {
+        const refusal = this.googleBidModifierRefusal(shown, schedule.bidModifier);
+        if (refusal) return refusal;
+      }
+
+      const key = `${day}|${start}|${end}`;
+      if (seen.has(key)) {
+        // Collapsed when the two say the same thing, refused when they disagree about the bid —
+        // Google accepts one criterion per interval, so the second value would be the one silently
+        // dropped. A collapsed repeat does not reach the per-day count below, exactly as upstream.
+        if (seen.get(key) !== schedule.bidModifier) {
+          return `The Google Ads ${shown} repeats ${day} ${window} with a different bid modifier. Google accepts one entry per interval, so remove one and create again.`;
+        }
+        continue;
+      }
+
+      const accepted = perDay.get(day) ?? [];
+      for (const other of accepted) {
+        if (start < other.end && other.start < end) {
+          const clash = `${googleAdsClockTime(Math.floor(other.start / 60), other.start % 60)}-${googleAdsClockTime(Math.floor(other.end / 60), other.end % 60)}`;
+          return `The Google Ads ${shown} (${day} ${window}) overlaps ${day} ${clash}. Google rejects overlapping ad schedules on the same day, so merge them and create again.`;
+        }
+      }
+      if (accepted.length >= GOOGLE_ADS_MAX_AD_SCHEDULES_PER_DAY) {
+        return `The Google Ads ${shown} is interval ${accepted.length + 1} on ${day}, and Google accepts at most ${GOOGLE_ADS_MAX_AD_SCHEDULES_PER_DAY} per day. Remove some and create again.`;
+      }
+      accepted.push({ start, end });
+      perDay.set(day, accepted);
+      seen.set(key, schedule.bidModifier);
+    }
+    return null;
+  }
+
+  /**
+   * Why upstream would refuse one bid modifier, or `null` when it would not. Mirrors
+   * `validateBidModifier`'s branches in order: finite, then the 0 opt-out, then the range.
+   *
+   * 0 RETURNS EARLY and is accepted. It is not a value below the minimum but the -100% opt-out —
+   * "do not serve here at all" — which is how a day-parted campaign switches off the hours it does
+   * not want. A guard that tested the range first would refuse the one modifier such a campaign is
+   * certain to carry.
+   *
+   * `noun` names the entry the caller wrote, so the message points at it rather than at the number.
+   */
+  private googleBidModifierRefusal(noun: string, modifier: number): string | null {
+    if (!Number.isFinite(modifier)) {
+      return `The Google Ads ${noun} needs a finite bid modifier. Fix it and create again.`;
+    }
+    if (modifier === 0) return null;
+    if (modifier < GOOGLE_ADS_MIN_BID_MODIFIER || modifier > GOOGLE_ADS_MAX_BID_MODIFIER) {
+      return `The Google Ads ${noun} has a bid modifier of ${modifier}. Google accepts 0 (do not serve) or ${GOOGLE_ADS_MIN_BID_MODIFIER} to ${GOOGLE_ADS_MAX_BID_MODIFIER}, so fix it and create again.`;
     }
     return null;
   }
