@@ -986,6 +986,15 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       expect(text('meta-campaign-row-0')).toContain('$250.00');
       expect(el('meta-currency-note')).toBeNull();
     });
+
+    it('keeps the legacy Meta panel in dollars even if its data names a currency', async () => {
+      await setup({ viaCampaignService: false, platforms: {} });
+      service['getMetaMonitorData'].mockReturnValue(of({ ...euroAccount, currency: 'EUR' }));
+      select('meta');
+
+      expect(text('meta-kpi-spend')).toBe('$100.00');
+      expect(el('meta-currency-note')).toBeNull();
+    });
   });
 
   describe('Microsoft Ads (report-backed)', () => {

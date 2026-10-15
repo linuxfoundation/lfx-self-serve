@@ -148,15 +148,18 @@ export class MonitoringTabComponent implements OnInit {
   /**
    * Whether the Meta figures on screen came from campaign-service (the connection's account). Its
    * Meta monitor reports spend and budgets unconverted in the account's own currency, and the
-   * connection's account need not be a USD one, so those figures carry no `$` — see `initMetaView`.
-   * Recorded with the data it describes, not read from the live source flag.
+   * connection's account need not be a USD one, so those figures never carry the legacy `$`: they
+   * are printed in the currency campaign-service names, or with no symbol when it names none — see
+   * `initMetaView`. Recorded with the data it describes, not read from the live source flag.
    */
   protected readonly metaAmountsInAccountCurrency = signal(false);
   /**
    * Whether the Meta panel states the unit once in a note: only for a connection's figures whose
    * currency campaign-service did not name. A named currency is printed on every amount instead.
    */
-  protected readonly metaCurrencyNote = computed(() => this.metaAmountsInAccountCurrency() && this.namedCurrencyFormat(this.metaData()?.currency) === null);
+  protected readonly metaCurrencyNote = computed(() => this.metaAmountsInAccountCurrency() && this.metaNamedCurrencyFormat() === null);
+  /** The connection's named-currency format; never applied to legacy figures, which keep their `$`. */
+  private readonly metaNamedCurrencyFormat = computed(() => (this.metaAmountsInAccountCurrency() ? this.namedCurrencyFormat(this.metaData()?.currency) : null));
   protected readonly metaPulledAt = computed(() => {
     const pulledAt = this.metaData()?.pulledAt;
     return pulledAt ? new Date(pulledAt).toLocaleString('en-US') : null;
@@ -746,13 +749,9 @@ export class MonitoringTabComponent implements OnInit {
       // before. A connection's account can be in any currency and campaign-service passes its amounts
       // unconverted: printed in that currency when campaign-service names it, and otherwise
       // currency-neutral, as Microsoft/X are, with the panel stating the unit once.
-      const named = this.namedCurrencyFormat(data.currency);
-      const formats = named
-        ? { currency: named, pct: (n: number): string => this.formatPct(n) }
-        : this.metaAmountsInAccountCurrency()
-          ? { currency: (n: number): string => this.formatAccountAmount(n), pct: (n: number): string => this.formatPct(n) }
-          : this.standardFormats;
-      return this.buildAccountPanelView(data.campaigns, data.accountTotals, { ...formats, statusBadges: true });
+      const unnamed = this.metaAmountsInAccountCurrency() ? (n: number): string => this.formatAccountAmount(n) : this.standardFormats.currency;
+      const currency = this.metaNamedCurrencyFormat() ?? unnamed;
+      return this.buildAccountPanelView(data.campaigns, data.accountTotals, { ...this.standardFormats, currency, statusBadges: true });
     });
   }
 
@@ -852,8 +851,9 @@ export class MonitoringTabComponent implements OnInit {
    * One ad-platform panel, formatted: the KPI tiles and a row per campaign with every cell's text
    * and class. Shared by LinkedIn, Reddit, Meta and the report-backed Microsoft/X panel, which
    * render the same conventions — "Couldn't read" rows dashed, "Unknown" pacing, "Not measured"
-   * conversions. `formats` carries the one per-platform difference: LinkedIn's whole-dollar
-   * currency and its own percentage formatter.
+   * conversions. `formats` carries what differs per panel: the currency formatter (the account's
+   * named currency when campaign-service names one, else the panel's unnamed format — LinkedIn's
+   * in whole units) and LinkedIn's own percentage formatter.
    */
   private buildAccountPanelView<T extends RedditCampaignMetrics | LinkedInCampaignMetrics | MetaCampaignMetrics>(
     campaigns: readonly T[] | null | undefined,
