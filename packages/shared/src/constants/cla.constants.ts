@@ -873,16 +873,17 @@ export const ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH = 2048;
  * Confirmation-dialog copy for a row invalidate, as the M3 prototype words it.
  *
  * It names the contributor and says what invalidating does not stop: a contributor who still
- * matches the approval list can acknowledge again, or be re-added by Auto ECLA.
+ * matches the approval list can acknowledge again themselves. Auto ECLA never re-adds an
+ * invalidated acknowledgment, so the copy says so rather than offering it as a way back.
  */
 export const ORG_CLA_INVALIDATE_DIALOG_COPY = {
   title: (contributor: string): string => `Invalidate acknowledgment for ${contributor}?`,
   marksPrefix: 'This marks',
   marksSuffix:
     " as no longer covered by this CCLA. It's assumed they've already lost access to any email domain, GitHub org, or GitLab group this CCLA's approval list checks against.",
-  reacknowledge: (contributor: string): string =>
-    `If ${contributor} still matches this CLA's approval list criteria, they can acknowledge (or be re-added automatically via Auto ECLA) again`,
-  removeCriteria: " — remove the matching criteria below if that shouldn't be possible.",
+  reacknowledge: (contributor: string): string => `If ${contributor} still matches the approval list, they can acknowledge again themselves`,
+  noAutoReadd: ". Auto ECLA won't re-add them.",
+  removeCriteria: ' Remove the matching entries below to prevent this.',
   matchedBy: (count: number): string => ` was approved by ${count > 1 ? 'entries' : 'an entry'} added specifically for them.`,
   alsoRemove: (contributor: string, count: number): string =>
     `Also remove ${count > 1 ? 'these entries' : 'this entry'} from the Approval List so ${contributor} can't acknowledge this CCLA again later.`,
