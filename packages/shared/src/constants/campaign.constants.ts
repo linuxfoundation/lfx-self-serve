@@ -369,8 +369,10 @@ export const CAMPAIGN_UNAVAILABLE_DEFAULT_REASON = 'This campaign is not in a st
  * request the server accepts cannot drift apart.
  *
  * Note an adopted row can be PAUSED but not resumed through LFX One: campaign-service refuses
- * `ACTIVE` on every adopted row with 409 (it never recorded the child ids its cascade flips), and
- * that refusal reaches the operator like any other toggle 409.
+ * `ACTIVE` on every adopted row with 409 (it never recorded the child ids its cascade flips). Since
+ * X create is disabled, that is every X row today. Resume is still offered, and the 409 surfaces
+ * as the generic per-direction toggle failure, not upstream's reason; showing that reason (or
+ * withholding Resume on adopted rows) is a follow-up across every adoptable platform.
  */
 export const TOGGLEABLE_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<string>([
   'google-ads',

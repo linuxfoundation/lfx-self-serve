@@ -1304,10 +1304,11 @@ function getExtractionPrompt(programType?: CampaignProgramType): string {
  * brief-derived input it consumes is the KEYWORD list, which is generated for every paid brief
  * regardless of platform. So it is a legitimate member of this set that adds nothing to the prompt.
  *
- * Kept as a hand-written list rather than derived from `CAMPAIGN_PLATFORMS`, unlike the two
- * `!p.disabled` sets: this one answers "can the brief generator serve it", which is a property of
- * THIS service, not of whether the channel is offered. `twitter-ads` is absent for that reason and
- * would stay absent even if it were enabled.
+ * Kept as a hand-written list rather than derived from `CAMPAIGN_PLATFORMS`' create flag or from
+ * the pause/resume set (`TOGGLEABLE_CAMPAIGN_PLATFORMS`, which admits adopted X campaigns): this
+ * one answers "can the brief generator serve it", which is a property of THIS service, not of
+ * whether the channel is offered or its campaigns can be paused. `twitter-ads` is absent for that
+ * reason and would stay absent even if its create were enabled.
  */
 const SUPPORTED_PLATFORMS: ReadonlySet<string> = new Set(['google-ads', 'microsoft-ads', 'linkedin-ads', 'reddit-ads', 'meta-ads']);
 const SUPPORTED_PROGRAM_TYPES: ReadonlySet<CampaignProgramType> = new Set<CampaignProgramType>(['events', 'education']);

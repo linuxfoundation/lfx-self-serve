@@ -1566,7 +1566,8 @@ export class CampaignServiceClient {
    * while six dispatchers implement the toggle UPSTREAM (Google Ads, LinkedIn, Meta, Reddit,
    * Microsoft, X). That six is campaign-service's capability, NOT this app's reach: the caller
    * is gated on `CAMPAIGN_SERVICE_STATUS_PLATFORMS`, which admits only the platforms whose
-   * campaigns this app creates or adopts. HubSpot is absent from both and always will be: an email send has no run state.
+   * campaigns this app creates or adopts. HubSpot is absent from both and always will be: an
+   * email send has no run state.
    *
    * `If-Match` is REQUIRED, not optional — `toggle-campaign-status` answers a missing header with
    * 428, so an omitted etag is a guaranteed failure rather than a lenient write. Passing the
