@@ -40,7 +40,7 @@ import { DrawerModule } from 'primeng/drawer';
 import { PaginatorModule, PaginatorState } from 'primeng/paginator';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, combineLatest, distinctUntilChanged, EMPTY, finalize, map, of, shareReplay, startWith, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, EMPTY, finalize, of, shareReplay, startWith, switchMap, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-vote-results-drawer',
@@ -107,9 +107,9 @@ export class VoteResultsDrawerComponent {
 
   // === Derived Signals (from API) ===
   protected readonly vote: Signal<Vote | null> = this.initVote();
-  protected readonly voteResults: Signal<VoteResultsResponse | null> = this.initVoteResults();
   /** Voter-scope vote_response row; null+loaded means non-participant (not_participant), null+loading means request in flight. */
   protected readonly myResponse: Signal<MyVoteResponse | null> = this.initMyResponse();
+  protected readonly voteResults: Signal<VoteResultsResponse | null> = this.initVoteResults();
 
   // === Computed Signals ===
   protected readonly isGenericPoll: Signal<boolean> = this.initIsGenericPoll();
@@ -182,14 +182,27 @@ export class VoteResultsDrawerComponent {
     );
   }
 
-  /** Voter scope skips the results call until vote.status === ENDED so aggregate tallies never land in the browser before close — blind-results policy at the data layer, not just the template. distinctUntilChanged on the fetch key suppresses the duplicate trigger caused by initVote's startWith(listVote) → live emit. */
+  /** Voter scope fetches results only after close and a successful, matching, non-removed participation check. Creator scope is unchanged. The computed key reads all signals together so stale vote/response emissions cannot authorize the next vote's request. */
   private initVoteResults(): Signal<VoteResultsResponse | null> {
+    const resultsVoteId = computed(() => {
+      const id = this.voteId();
+      if (!id) return null;
+      if (this.audience() === 'creator') return id;
+
+      const vote = this.vote();
+      const response = this.myResponse();
+      const canFetch =
+        vote?.uid === id &&
+        vote.status === PollStatus.ENDED &&
+        response?.vote_uid === id &&
+        !response.voter_removed &&
+        !this.myResponseLoading() &&
+        !this.myResponseError();
+      return canFetch ? id : null;
+    });
+
     return toSignal(
-      combineLatest([this.voteId$, toObservable(this.audience), toObservable(this.vote)]).pipe(
-        map(([id, audience, vote]) => {
-          const canFetch = !!id && (audience === 'creator' || vote?.status === PollStatus.ENDED);
-          return canFetch ? (id as string) : null;
-        }),
+      toObservable(resultsVoteId).pipe(
         distinctUntilChanged(),
         switchMap((id) => {
           if (!id) {

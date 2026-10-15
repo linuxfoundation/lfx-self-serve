@@ -98,13 +98,13 @@ describe('VotePermalinkComponent', () => {
       expect(stateOf().error).toBe(true);
     });
 
-    it('sets reqContext.notFound during SSR for a missing vote', async () => {
-      voteService.fetchVote.mockReturnValue(httpError(404));
+    it.each([403, 404])('sets the SSR not-found flag without a drawer target for status %i', async (status) => {
+      voteService.fetchVote.mockReturnValue(httpError(status));
       await setup('server');
 
-      stateOf();
-
+      expect(stateOf()).toEqual({ loading: false, notFound: true, error: false, target: null });
       expect(reqContext.notFound).toBe(true);
+      expect(voteService.getMyVoteResponse).not.toHaveBeenCalled();
     });
 
     it('does not set reqContext.notFound in the browser', async () => {

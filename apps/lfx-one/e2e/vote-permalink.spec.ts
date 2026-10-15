@@ -90,8 +90,15 @@ async function gotoMyVotes(page: Page): Promise<void> {
     return fulfillJson(route, [buildMyVoteRow()]);
   });
 
-  await page.goto('/votes', { waitUntil: 'domcontentloaded' });
+  // A hard navigation to /votes would seed the client with real SSR transfer-cache data,
+  // bypassing these browser-only stubs. Enter the stubbed dashboard through the SPA router.
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page).not.toHaveURL(/auth0\.com/);
+  await expect(page.getByTestId('sidebar')).toBeVisible({ timeout: RENDER_TIMEOUT });
+  await page.evaluate(() => {
+    window.history.pushState({}, '', '/votes');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  });
 }
 
 test.describe('Vote permalink (#3659)', () => {
@@ -131,7 +138,11 @@ test.describe('Vote permalink (#3659)', () => {
       const linkedVote = { ...buildMyVoteRow(), status, response_status: undefined, description: '<p>Review the proposed charter.</p>' };
       await page.route(`**/api/votes/${VOTE_UID}`, (route) => fulfillJson(route, linkedVote));
       await page.route(`**/api/votes/${VOTE_UID}/my-response`, (route) => route.fulfill({ status: 404, body: '{}' }));
-      await page.route(`**/api/votes/${VOTE_UID}/results`, (route) => fulfillJson(route, null));
+      const resultsRequests: string[] = [];
+      await page.route(`**/api/votes/${VOTE_UID}/results`, (route) => {
+        resultsRequests.push(route.request().url());
+        return fulfillJson(route, null);
+      });
       await page.route(`**/api/projects/${PROJECT_SLUG}`, (route) =>
         fulfillJson(route, { uid: PROJECT_UID, slug: PROJECT_SLUG, name: PROJECT_NAME, writer: false })
       );
@@ -151,6 +162,7 @@ test.describe('Vote permalink (#3659)', () => {
       await expect(page.getByTestId('vote-results-voter-access-denied')).toHaveCount(0);
       await expect(page.getByTestId('vote-results-drawer-cast-button')).toHaveCount(0);
       await expect(page.getByTestId('vote-results-voter-final')).toHaveCount(0);
+      expect(resultsRequests).toEqual([]);
     });
   }
 });

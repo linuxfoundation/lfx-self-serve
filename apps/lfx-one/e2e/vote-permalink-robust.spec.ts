@@ -53,8 +53,14 @@ async function bootMyVotes(page: Page): Promise<void> {
   await page.route(`**/api/projects/${PROJECT_SLUG}`, (route) =>
     fulfillJson(route, { uid: PROJECT_UID, slug: PROJECT_SLUG, name: VOTE.project_name, writer: false })
   );
-  await page.goto('/votes', { waitUntil: 'domcontentloaded' });
+  // Do not SSR /votes: its real transfer-cache response would bypass page.route fixtures.
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page).not.toHaveURL(/auth0\.com/);
+  await expect(page.getByTestId('sidebar')).toBeVisible({ timeout: RENDER_TIMEOUT });
+  await page.evaluate(() => {
+    window.history.pushState({}, '', '/votes');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  });
   await expect(page.getByTestId(`votes-more-${VOTE_UID}`)).toBeVisible({ timeout: RENDER_TIMEOUT });
 }
 
