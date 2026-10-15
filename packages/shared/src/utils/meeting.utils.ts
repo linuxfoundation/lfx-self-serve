@@ -22,6 +22,7 @@ import {
 import { lfxColors } from '../constants/colors.constants';
 import { CommitteeMemberVotingStatus, MeetingType, RecurrenceType } from '../enums';
 import { PollStatus } from '../enums/poll.enum';
+import { getEntityCommands } from './entity-route.utils';
 import { isSameOccurrenceId, selectApplicableRsvp } from './rsvp-calculator.util';
 import type {
   BatchRegistrantOperationResponse,
@@ -36,6 +37,7 @@ import type {
   MeetingOccurrence,
   MeetingOccurrenceOption,
   MeetingOccurrenceRoute,
+  MeetingOccurrenceStripItem,
   MeetingOrganizerChipModel,
   MeetingOrganizerLink,
   MeetingRecurrence,
@@ -57,11 +59,23 @@ import type {
   V1PastMeetingSummary,
   V1SummaryDetail,
   Vote,
+  UpdateMeetingRequest,
 } from '../interfaces';
 import { normalizePollStatus } from './poll.utils';
 
 const RECURRENCE_NEVER_ENDS_YEARS_OFFSET = 100;
 const FIFTY_YEARS_MS = 50 * 365.25 * 24 * 60 * 60 * 1000;
+
+/**
+ * Post-meeting grace period. A meeting stays joinable, and is not yet "ended", until this long
+ * after its scheduled end.
+ *
+ * Declared above every consumer because {@link getCurrentOrNextOccurrence}, {@link canJoinMeeting},
+ * {@link hasMeetingEnded} and {@link isOccurrencePast} must agree on it: the first three each
+ * inlined the same forty-minute literal, so changing the grace period took four independent edits
+ * and missing any one of them would silently split the join window from the "has ended" boundary.
+ */
+export const MEETING_END_BUFFER_MS = 40 * 60_000;
 
 /**
  * Produces an ISO string ~100 years from `now`, used as the "never ends"
@@ -361,6 +375,32 @@ export function isMeetingOccurrenceCancelled(occurrence: MeetingOccurrence, canc
   return cancelledIds.length > 0 && cancelledIds.includes(occurrence.occurrence_id);
 }
 
+/**
+ * The occurrence a `?occurrence=` link (a Unix-*millisecond* start) addresses when it was cancelled
+ * (E6-05, #3588, FR-044), else `null`. Honours both cancellation signals: an occurrence entry with
+ * `status: 'cancel'` (the single-meeting payload), and an id in `cancelled_occurrences` (Unix *seconds*,
+ * 10 digits, the list payload), whether or not the payload still lists the occurrence. An id the
+ * payload no longer lists is rebuilt from the start, with the series' duration. A start that is not a
+ * whole second has no occurrence id, so it never matches one by flooring.
+ */
+export function findCancelledOccurrence(
+  meeting: Pick<Meeting, 'occurrences' | 'cancelled_occurrences' | 'duration'>,
+  requestedMs: number
+): MeetingOccurrence | null {
+  if (!Number.isSafeInteger(requestedMs) || requestedMs <= 0) {
+    return null;
+  }
+  const entry = (meeting.occurrences ?? []).find((occurrence) => new Date(occurrence.start_time).getTime() === requestedMs);
+  if (entry) {
+    return isMeetingOccurrenceCancelled(entry, meeting.cancelled_occurrences) ? entry : null;
+  }
+  const occurrenceId = startMsToOccurrenceId(requestedMs);
+  if (requestedMs % 1000 !== 0 || !(meeting.cancelled_occurrences ?? []).includes(occurrenceId)) {
+    return null;
+  }
+  return { occurrence_id: occurrenceId, start_time: new Date(requestedMs).toISOString(), duration: meeting.duration ?? 0, status: 'cancel' };
+}
+
 export function getActiveOccurrences(occurrences: MeetingOccurrence[], cancelledOccurrences?: string[] | null): MeetingOccurrence[] {
   return occurrences.filter((occurrence) => !isMeetingOccurrenceCancelled(occurrence, cancelledOccurrences));
 }
@@ -390,7 +430,7 @@ export function getCurrentOrNextOccurrence(meeting: Meeting): MeetingOccurrence 
   const joinableOccurrence = activeOccurrences.find((occurrence) => {
     const startTime = new Date(occurrence.start_time);
     const earliestJoinTime = new Date(startTime.getTime() - earlyJoinMinutes * 60000);
-    const latestJoinTime = new Date(startTime.getTime() + occurrence.duration * 60000 + 40 * 60000); // 40 minutes after end
+    const latestJoinTime = new Date(startTime.getTime() + occurrence.duration * 60000 + MEETING_END_BUFFER_MS);
 
     return now >= earliestJoinTime && now <= latestJoinTime;
   });
@@ -614,21 +654,22 @@ export function resolveUpcomingMeetingDurationMinutes(meeting: Meeting, occurren
  * Check if a meeting can be joined based on current time
  * @param meeting The meeting object
  * @param occurrence Optional specific occurrence (for recurring meetings)
+ * @param now Clock override — defaults to the real current time; pass an explicit `Date` from
+ *   callers that must be deterministic (the meeting-details view model, tests)
  * @returns True if the meeting can be joined, false otherwise
  * @description
  * A meeting can be joined when:
  * - Current time is after (start time - early join time)
- * - Current time is before (start time + duration + 40 minute buffer)
+ * - Current time is before (start time + duration + {@link MEETING_END_BUFFER_MS})
  */
-export function canJoinMeeting(meeting: Meeting, occurrence?: MeetingOccurrence | null): boolean {
+export function canJoinMeeting(meeting: Meeting, occurrence?: MeetingOccurrence | null, now = new Date()): boolean {
   const earlyJoinMinutes = meeting?.early_join_time_minutes ?? 10;
 
   // If we have an occurrence, use its timing
   if (occurrence) {
-    const now = new Date();
     const startTime = new Date(occurrence.start_time);
     const earliestJoinTime = new Date(startTime.getTime() - earlyJoinMinutes * 60000);
-    const latestJoinTime = new Date(startTime.getTime() + occurrence.duration * 60000 + 40 * 60000); // 40 minutes after end
+    const latestJoinTime = new Date(startTime.getTime() + occurrence.duration * 60000 + MEETING_END_BUFFER_MS);
 
     return now >= earliestJoinTime && now <= latestJoinTime;
   }
@@ -638,10 +679,9 @@ export function canJoinMeeting(meeting: Meeting, occurrence?: MeetingOccurrence 
     return false;
   }
 
-  const now = new Date();
   const startTime = new Date(meeting.start_time);
   const earliestJoinTime = new Date(startTime.getTime() - earlyJoinMinutes * 60000);
-  const latestJoinTime = new Date(startTime.getTime() + meeting.duration * 60000 + 40 * 60000); // 40 minutes after end
+  const latestJoinTime = new Date(startTime.getTime() + meeting.duration * 60000 + MEETING_END_BUFFER_MS);
 
   return now >= earliestJoinTime && now <= latestJoinTime;
 }
@@ -650,20 +690,19 @@ export function canJoinMeeting(meeting: Meeting, occurrence?: MeetingOccurrence 
  * Check if a meeting has ended (including 40-minute buffer)
  * @param meeting The meeting object
  * @param occurrence Optional occurrence for recurring meetings
- * @returns True if meeting has ended (current time > start time + duration + 40 minutes)
+ * @param now Clock override — defaults to the real current time; pass an explicit `Date` from
+ *   callers that must be deterministic (the meeting-details view model, tests)
+ * @returns True if meeting has ended (current time > start time + duration + {@link MEETING_END_BUFFER_MS})
  * @description
  * Determines if a meeting should be filtered from upcoming meetings list.
  * For recurring meetings, checks the specific occurrence.
  * For one-time meetings, checks the meeting start time.
  */
-export function hasMeetingEnded(meeting: Meeting, occurrence?: MeetingOccurrence): boolean {
-  const now = new Date();
-  const buffer = 40 * 60000; // 40 minutes in milliseconds
-
+export function hasMeetingEnded(meeting: Meeting, occurrence?: MeetingOccurrence, now = new Date()): boolean {
   // For recurring meetings with occurrence
   if (occurrence) {
     const startTime = new Date(occurrence.start_time);
-    const endTime = new Date(startTime.getTime() + occurrence.duration * 60000 + buffer);
+    const endTime = new Date(startTime.getTime() + occurrence.duration * 60000 + MEETING_END_BUFFER_MS);
     return now > endTime;
   }
 
@@ -673,12 +712,9 @@ export function hasMeetingEnded(meeting: Meeting, occurrence?: MeetingOccurrence
   }
 
   const startTime = new Date(meeting.start_time);
-  const endTime = new Date(startTime.getTime() + meeting.duration * 60000 + buffer);
+  const endTime = new Date(startTime.getTime() + meeting.duration * 60000 + MEETING_END_BUFFER_MS);
   return now > endTime;
 }
-
-/** Post-meeting buffer before an occurrence is treated as past (matches {@link hasMeetingEnded}). */
-export const MEETING_END_BUFFER_MS = 40 * 60_000;
 
 /**
  * Picks the meeting a "Next Meeting" card should show: the one whose upcoming start is soonest.
@@ -774,6 +810,129 @@ export function isVoteCalendarEventPast(vote: Pick<Vote, 'end_time' | 'status' |
     return true;
   }
   return isCalendarDeadlinePast(vote.early_end_time ?? vote.end_time, now);
+}
+
+/**
+ * An occurrence id (Unix seconds, 10 digits, as `occurrence_id` and `cancelled_occurrences` carry it)
+ * as the Unix-millisecond start the URL and the composite id use; `null` when it is not one.
+ */
+export function occurrenceIdToStartMs(occurrenceId: string): number | null {
+  return /^\d{10}$/.test(occurrenceId) ? Number(occurrenceId) * 1000 : null;
+}
+
+/** A Unix-millisecond start as its occurrence id (Unix seconds, 10 digits). */
+export function startMsToOccurrenceId(startMs: number): string {
+  return String(Math.floor(startMs / 1000));
+}
+
+/**
+ * The 13-digit millisecond start a past-meeting composite id (`{meetingId}-{13-digit ms}`) ends with;
+ * `null` for any other id.
+ */
+export function compositeIdToStartMs(compositeId: string): number | null {
+  return isPastMeetingCompositeId(compositeId) ? Number(compositeId.split('-').pop()) : null;
+}
+
+/**
+ * The V2 occurrence strip's chips (E6-03, #3586): the live occurrences and the endpoint's pages merged
+ * into one ascending list, one chip per start instant (live > endpoint future > past record, as
+ * {@link buildOccurrenceNavTimeline}), except that an ended live entry takes its past record's composite
+ * id, so it opens as the past meeting. Unlike that list it keeps cancelled occurrences, flagged, so
+ * the strip shows them rather than dropping them (FR-044), including a cancelled id with no
+ * occurrence left in either list, placed at its own start.
+ */
+export function buildOccurrenceStripItems(
+  liveOccurrences: MeetingOccurrence[],
+  series: Pick<PublicMeetingOccurrencesResponse, 'past' | 'future' | 'cancelled_occurrences'>,
+  fallbackDuration = 0,
+  now = new Date()
+): MeetingOccurrenceStripItem[] {
+  const cancelledIds = new Set(series.cancelled_occurrences ?? []);
+  const byInstant = new Map<number, MeetingOccurrenceStripItem>();
+  const add = (item: MeetingOccurrenceStripItem): void => {
+    if (Number.isFinite(item.startMs) && !byInstant.has(item.startMs)) {
+      byInstant.set(item.startMs, item);
+    }
+  };
+  const fromOccurrence = (occurrence: MeetingOccurrence): MeetingOccurrenceStripItem => {
+    const startMs = new Date(occurrence.start_time).getTime();
+    // A zero (or missing) duration inherits the series', as the occurrence picker reads it.
+    const duration = occurrence.duration || fallbackDuration;
+    const isPast = isOccurrencePast(occurrence.start_time, duration, now);
+    return {
+      startMs,
+      startTime: occurrence.start_time,
+      duration,
+      // An upcoming occurrence's own duration is its scheduled end. Once it has ended, a past row shows
+      // an end only from its record's scheduled end (#3587), set when that record is merged in.
+      endKnown: (occurrence.duration ?? 0) > 0 && !isPast,
+      occurrenceId: occurrence.occurrence_id,
+      isPast,
+      cancelled: occurrence.status === 'cancel' || cancelledIds.has(occurrence.occurrence_id),
+    };
+  };
+
+  liveOccurrences.forEach((occurrence) => add(fromOccurrence(occurrence)));
+  series.future.forEach((occurrence) => add(fromOccurrence(occurrence)));
+
+  for (const past of series.past) {
+    const startMs = compositeIdToStartMs(past.meeting_and_occurrence_id);
+    if (startMs === null) {
+      continue;
+    }
+    // Minutes, unrounded: start plus duration must give back the scheduled end exactly (09:00:45–09:30
+    // is 29.25 minutes, not 29).
+    const scheduled =
+      past.scheduled_end_time && past.scheduled_start_time
+        ? (new Date(past.scheduled_end_time).getTime() - new Date(past.scheduled_start_time).getTime()) / 60000
+        : 0;
+    // An ended occurrence the live list still carries takes the record's composite id, its canonical URL,
+    // and the record's end: shown only when the record has a scheduled end (the live duration may be the
+    // series' standing in). One still in progress keeps its live entry alone, as the page joins it there.
+    const existing = byInstant.get(startMs);
+    if (existing) {
+      if (existing.isPast) {
+        byInstant.set(startMs, {
+          ...existing,
+          startTime: past.scheduled_start_time || existing.startTime,
+          pastResourceId: past.meeting_and_occurrence_id,
+          duration: scheduled > 0 ? scheduled : existing.duration,
+          endKnown: scheduled > 0,
+        });
+      }
+      continue;
+    }
+    add({
+      startMs,
+      // The composite id's start is the record's identity and URL; its scheduled start, when present, is
+      // what was on the calendar, and what a row shows (the two can differ).
+      startTime: past.scheduled_start_time || new Date(startMs).toISOString(),
+      duration: scheduled > 0 ? scheduled : fallbackDuration,
+      endKnown: scheduled > 0,
+      occurrenceId: startMsToOccurrenceId(startMs),
+      pastResourceId: past.meeting_and_occurrence_id,
+      isPast: true,
+      cancelled: cancelledIds.has(startMsToOccurrenceId(startMs)),
+    });
+  }
+
+  for (const id of cancelledIds) {
+    const startMs = occurrenceIdToStartMs(id);
+    if (startMs !== null) {
+      const startTime = new Date(startMs).toISOString();
+      add({
+        startMs,
+        startTime,
+        duration: fallbackDuration,
+        endKnown: false,
+        occurrenceId: id,
+        isPast: isOccurrencePast(startTime, fallbackDuration, now),
+        cancelled: true,
+      });
+    }
+  }
+
+  return [...byInstant.values()].sort((a, b) => a.startMs - b.startMs);
 }
 
 /** Composite past-meeting route id: `{meetingId}-{13-digit-ms}`. */
@@ -1398,6 +1557,57 @@ export function collectMeetingOrganizers(
 }
 
 /**
+ * The meeting date for an organizer `mailto:` subject (`buildMeetingOrganizerMailto`'s
+ * `meetingDate`): a medium `en-US` date, e.g. `Oct 9, 2026`, in an explicit timezone, so a server
+ * render and the browser always produce the same subject. Callers pass the meeting's own timezone,
+ * the day the organizer scheduled; an absent or invalid zone falls back to UTC. Returns an empty
+ * string for a missing or unparseable timestamp and for Go's zero date (`0001-01-01…`), which past
+ * records can carry, so the subject never reads "Jan 1, 1".
+ */
+export function formatMeetingMailtoDate(iso: string | null | undefined, timeZone?: string | null): string {
+  if (!iso || iso.startsWith('0001-01-01')) {
+    return '';
+  }
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+  try {
+    return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeZone: timeZone || 'UTC' }).format(date);
+  } catch {
+    return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeZone: 'UTC' }).format(date);
+  }
+}
+
+/**
+ * The route to a meeting's edit page: under its project's tier (`/foundation` or `/project`, from the
+ * meeting's `is_foundation`, not the viewer's lens), else the flat `/meetings/:id/edit` that
+ * `lensRedirectGuard` resolves when the tier is not enriched. Shared by the meeting cards and the V2
+ * page's Edit agenda, so the two always open the same editor.
+ */
+export function buildMeetingEditCommands(meeting: Pick<Meeting, 'id' | 'is_foundation'>): string[] {
+  return getEntityCommands('meetings', meeting.id, meeting.is_foundation, 'edit') ?? ['/meetings', meeting.id, 'edit'];
+}
+
+/**
+ * The query params a meeting's edit page needs: `?project=` (which `writerGuard` resolves write
+ * access from) and, for a committee meeting, `?committee_uid=` (which the editor reads for the
+ * committee scope). `fallbackProjectSlug` is for a payload that carries its project elsewhere, as the
+ * public detail payload's `project.slug` does.
+ */
+export function buildMeetingEditQueryParams(
+  meeting: Pick<Meeting, 'project_slug' | 'committees'>,
+  fallbackProjectSlug?: string | null
+): Record<string, string> {
+  const params: Record<string, string> = {};
+  const projectSlug = meeting.project_slug || fallbackProjectSlug;
+  if (projectSlug) params['project'] = projectSlug;
+  const committeeUid = meeting.committees?.[0]?.uid;
+  if (committeeUid) params['committee_uid'] = committeeUid;
+  return params;
+}
+
+/**
  * Builds a `mailto:` URL that pre-fills an email to a meeting organizer. Returns `null` when the
  * organizer has no email (caller renders the name as plain text). Subject and body are
  * percent-encoded; the address is left as a bare addr-spec.
@@ -1748,4 +1958,46 @@ export function isBatchRegistrantOperationResponse<T>(value: unknown): value is 
 
   const { total, successful, failed } = summary as Partial<Record<keyof BatchRegistrantOperationResponse<T>['summary'], unknown>>;
   return typeof total === 'number' && typeof successful === 'number' && typeof failed === 'number';
+}
+
+/**
+ * The update body for a one-field edit of a stored meeting (O-01's agenda): `UpdateMeetingRequest`'s
+ * own keys, taken from the full authenticated record, with the field changed. Built rather than spread,
+ * so none of the record's read-only or sensitive fields (host key, passcode, occurrences, the viewer's
+ * flags) travel back, and normalized at the save boundary as the composer does: committees sanitized
+ * with legacy voting statuses mapped to the API's (GH-1796), no `owner` (omitting it keeps the stored
+ * one), and no reminder time when the reminder is off (upstream's minimum would reject the stored value).
+ */
+export function buildMeetingUpdateRequest(meeting: Meeting, changes: Partial<UpdateMeetingRequest> = {}): UpdateMeetingRequest {
+  const committees = sanitizeMeetingCommittees(meeting.committees).map((committee) => ({
+    uid: committee.uid,
+    allowed_voting_statuses: normalizeMeetingApiVotingStatuses(committee.allowed_voting_statuses),
+  }));
+  const request: UpdateMeetingRequest = {
+    project_uid: meeting.project_uid,
+    start_time: meeting.start_time,
+    duration: meeting.duration,
+    timezone: meeting.timezone,
+    title: meeting.title,
+    description: meeting.description,
+    platform: meeting.platform,
+    recurrence: meeting.recurrence,
+    committees,
+    meeting_type: meeting.meeting_type,
+    visibility: meeting.visibility,
+    restricted: meeting.restricted,
+    recording_enabled: meeting.recording_enabled,
+    transcript_enabled: meeting.transcript_enabled,
+    youtube_upload_enabled: meeting.youtube_upload_enabled,
+    show_meeting_attendees: meeting.show_meeting_attendees,
+    artifact_visibility: meeting.artifact_visibility,
+    cancel_on_committee_removal: meeting.cancel_on_committee_removal,
+    early_join_time_minutes: meeting.early_join_time_minutes,
+    organizers: meeting.organizers,
+    ai_summary_enabled: meeting.ai_summary_enabled,
+    require_ai_summary_approval: meeting.require_ai_summary_approval,
+    auto_email_reminder_enabled: meeting.auto_email_reminder_enabled,
+    ...(meeting.auto_email_reminder_enabled && { auto_email_reminder_time: meeting.auto_email_reminder_time }),
+  };
+  return { ...request, ...changes };
 }

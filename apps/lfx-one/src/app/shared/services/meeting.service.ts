@@ -44,10 +44,13 @@ import {
   PastMeetingSummary,
   PresignAttachmentRequest,
   PresignAttachmentResponse,
+  PublicMeetingAttachment,
+  MeetingOccurrenceDirection,
   PublicMeetingOccurrencesResponse,
   PublicMeetingProject,
   PublicMeetingRegistrationResponse,
   PublicPastMeetingResponse,
+  PublicPastMeetingRoster,
   PublicProjectMeetingsResponse,
   QueryServiceCountResponse,
   ReconcilePastMeetingParticipantsResponse,
@@ -288,6 +291,56 @@ export class MeetingService {
     return this.http
       .get<PublicMeetingOccurrencesResponse>(`/public/api/meetings/${id}/occurrences`, { headers })
       .pipe(catchError(() => of({ past: [], future: [] } as PublicMeetingOccurrencesResponse)));
+  }
+
+  /**
+   * One page of the series timeline for the V2 occurrence strip (E6-02 paging, E6-03). Unlike
+   * {@link getPublicMeetingOccurrences}, which V1 reads whole and which degrades to empty, errors
+   * propagate, so the strip can tell a refusal (400 / 403: hidden silently) from an empty timeline.
+   * Any other failure is logged here and rethrown. The password travels in its header.
+   */
+  public getPublicMeetingOccurrencesPage(
+    id: string,
+    password: string | null,
+    page: { pageSize: number; direction?: MeetingOccurrenceDirection; cursor?: string }
+  ): Observable<PublicMeetingOccurrencesResponse> {
+    const headers = password ? new HttpHeaders({ [MEETING_PASSWORD_HEADER]: password }) : undefined;
+    let params = new HttpParams().set('page_size', String(page.pageSize));
+    if (page.direction) {
+      params = params.set('direction', page.direction);
+    }
+    if (page.cursor) {
+      params = params.set('cursor', page.cursor);
+    }
+    return this.http.get<PublicMeetingOccurrencesResponse>(`/public/api/meetings/${encodeURIComponent(id)}/occurrences`, { headers, params }).pipe(
+      catchError((error: unknown) => {
+        // A refusal is the endpoint gating the series, not a failure.
+        if (!(error instanceof HttpErrorResponse && (error.status === 400 || error.status === 403))) {
+          console.error('Failed to load the meeting occurrences', id, error);
+        }
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /**
+   * A meeting's materials from the public route (E3-03), which gates them as the meeting is gated, so
+   * an anonymous visitor to a public meeting gets them too. The password travels in its header.
+   * Errors propagate: a refusal (400 / 403) means "sign in", any other failure is an error.
+   */
+  public getPublicMeetingAttachments(id: string, password: string | null): Observable<PublicMeetingAttachment[]> {
+    const headers = password ? new HttpHeaders({ [MEETING_PASSWORD_HEADER]: password }) : undefined;
+    return this.http.get<PublicMeetingAttachment[]>(`/public/api/meetings/${encodeURIComponent(id)}/attachments`, { headers }).pipe(take(1));
+  }
+
+  /** A presigned download URL for one of a meeting's files, from the public route (E3-03), gated as the list is. */
+  public getPublicMeetingAttachmentDownloadUrl(id: string, attachmentId: string, password: string | null): Observable<AttachmentDownloadUrlResponse> {
+    const headers = password ? new HttpHeaders({ [MEETING_PASSWORD_HEADER]: password }) : undefined;
+    return this.http
+      .get<AttachmentDownloadUrlResponse>(`/public/api/meetings/${encodeURIComponent(id)}/attachments/${encodeURIComponent(attachmentId)}/download`, {
+        headers,
+      })
+      .pipe(take(1));
   }
 
   /** Public project calendar page — meetings for a project (by UID or slug), optionally scoped to a single committee. */
@@ -607,6 +660,35 @@ export class MeetingService {
     return this.http.get<PastMeetingSummary>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}/summary`);
   }
 
+  /**
+   * The past meeting's artifacts on the public routes (E4-04, #3528), by the id `getPublicPastMeeting`
+   * loaded it with (the BFF resolves it, composite id included). For a viewer with no session: the BFF gives only an artifact whose own level is `public`,
+   * else a 401. Not cached, unlike the signed-in recording read, since the answer depends on the session.
+   */
+  public getPublicPastMeetingRecording(pastMeetingId: string): Observable<PastMeetingRecording> {
+    return this.http.get<PastMeetingRecording>(`/public/api/meetings/past/${encodeURIComponent(pastMeetingId)}/recording`);
+  }
+
+  public getPublicPastMeetingTranscript(pastMeetingId: string): Observable<PastMeetingTranscript> {
+    return this.http.get<PastMeetingTranscript>(`/public/api/meetings/past/${encodeURIComponent(pastMeetingId)}/transcript`);
+  }
+
+  public getPublicPastMeetingTranscriptContent(pastMeetingId: string): Observable<PastMeetingTranscriptContent> {
+    return this.http.get<PastMeetingTranscriptContent>(`/public/api/meetings/past/${encodeURIComponent(pastMeetingId)}/transcript/content`);
+  }
+
+  /**
+   * The past meeting's public roster (E4-04, E4-05): identified participants with § Public roster
+   * fields, the unidentified-attendee count and the meeting's attendance counts. Needs a session.
+   */
+  public getPublicPastMeetingRoster(pastMeetingId: string): Observable<PublicPastMeetingRoster> {
+    return this.http.get<PublicPastMeetingRoster>(`/public/api/meetings/past/${encodeURIComponent(pastMeetingId)}/participants`);
+  }
+
+  public getPublicPastMeetingSummary(pastMeetingId: string): Observable<PastMeetingSummary> {
+    return this.http.get<PastMeetingSummary>(`/public/api/meetings/past/${encodeURIComponent(pastMeetingId)}/summary`);
+  }
+
   public getPastMeetingAttachments(pastMeetingUid: string): Observable<PastMeetingAttachment[]> {
     return this.http.get<PastMeetingAttachment[]>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}/attachments`);
   }
@@ -808,6 +890,16 @@ export class MeetingService {
   }
 
   public getMeetingRsvpForCurrentUser(meetingUid: string, occurrenceId?: string, allDatesOnly = false): Observable<MeetingRsvp | null> {
+    return this.getMeetingRsvpForCurrentUserOrFail(meetingUid, occurrenceId, allDatesOnly).pipe(catchError(() => of(null)));
+  }
+
+  /**
+   * The caller's own RSVP, or `null` when they have not answered — like
+   * {@link getMeetingRsvpForCurrentUser}, but a failure is logged and rethrown rather than read as
+   * `null`, for a caller that must not mistake "could not load" for "has not answered" (the V2
+   * status pill, E2-04). `allDatesOnly`, without an occurrence, asks for series-wide answers only.
+   */
+  public getMeetingRsvpForCurrentUserOrFail(meetingUid: string, occurrenceId?: string, allDatesOnly = false): Observable<MeetingRsvp | null> {
     const options: { params?: Record<string, string> } = {};
     if (occurrenceId) {
       options.params = { occurrenceId };
@@ -817,7 +909,7 @@ export class MeetingService {
     return this.http.get<MeetingRsvp | null>(`/api/meetings/${meetingUid}/rsvp/me`, options).pipe(
       catchError((error) => {
         console.error(`Failed to get RSVP for meeting ${meetingUid}:`, error);
-        return of(null);
+        return throwError(() => error);
       })
     );
   }

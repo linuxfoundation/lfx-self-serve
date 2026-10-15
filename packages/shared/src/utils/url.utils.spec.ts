@@ -4,6 +4,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  getUrlHostname,
+  toSafeExternalHref,
   canonicalHttpUrl,
   extractUrls,
   isHttpsUrl,
@@ -765,5 +767,56 @@ describe('canonicalHttpUrl — port policy, shared with the fetch path', () => {
     // the connection. A `buttonUrl` or body anchor is clicked by a RECIPIENT; refusing `http://`
     // would drop a legitimate sponsor or documentation link.
     expect(canonicalHttpUrl('http://events.linuxfoundation.org/x')).toBe('http://events.linuxfoundation.org/x');
+  });
+});
+
+describe('getUrlHostname', () => {
+  it("gives an http(s) URL's host without www", () => {
+    expect(getUrlHostname('https://www.github.example/org/repo')).toBe('github.example');
+    expect(getUrlHostname('http://docs.vendor-corp.example/page?x=1')).toBe('docs.vendor-corp.example');
+  });
+
+  it('gives null for anything else', () => {
+    expect(getUrlHostname('javascript:alert(1)')).toBeNull();
+    expect(getUrlHostname('not a url')).toBeNull();
+    expect(getUrlHostname(undefined)).toBeNull();
+  });
+});
+
+describe('toSafeExternalHref', () => {
+  it('keeps an absolute http(s) URL', () => {
+    expect(toSafeExternalHref(' https://github.example/org/repo ')).toBe('https://github.example/org/repo');
+    expect(toSafeExternalHref('http://docs.vendor-corp.example')).toBe('http://docs.vendor-corp.example/');
+  });
+
+  it('gives a bare host/path https://', () => {
+    expect(toSafeExternalHref('docs.vendor-corp.example/document/d/abc')).toBe('https://docs.vendor-corp.example/document/d/abc');
+    expect(toSafeExternalHref('staging.vendor-corp.example:8080/docs')).toBe('https://staging.vendor-corp.example:8080/docs');
+  });
+
+  it('refuses other schemes and anything without a host', () => {
+    expect(toSafeExternalHref('javascript:alert(1)')).toBeNull();
+    expect(toSafeExternalHref('data:text/html,hi')).toBeNull();
+    expect(toSafeExternalHref('mailto:someone@vendor-corp.example')).toBeNull();
+    expect(toSafeExternalHref('not a link')).toBeNull();
+    expect(toSafeExternalHref('')).toBeNull();
+  });
+
+  it('refuses links to private, loopback and local hosts', () => {
+    expect(toSafeExternalHref('http://192.168.1.1/admin')).toBeNull();
+    expect(toSafeExternalHref('10.0.0.5/dashboard')).toBeNull();
+    expect(toSafeExternalHref('http://127.0.0.1:8080')).toBeNull();
+    expect(toSafeExternalHref('https://intranet.localhost/x')).toBeNull();
+    expect(toSafeExternalHref('http://[::1]/x')).toBeNull();
+  });
+
+  it('refuses an email address and any link with userinfo', () => {
+    expect(toSafeExternalHref('someone@vendor-corp.example')).toBeNull();
+    expect(toSafeExternalHref('https://trusted.example@evil.example/login')).toBeNull();
+    expect(toSafeExternalHref('https://user:pass@docs.vendor-corp.example')).toBeNull();
+  });
+
+  it('keeps a public IPv6 link', () => {
+    expect(toSafeExternalHref('https://[2606:4700:4700::1111]/docs')).toBe('https://[2606:4700:4700::1111]/docs');
   });
 });

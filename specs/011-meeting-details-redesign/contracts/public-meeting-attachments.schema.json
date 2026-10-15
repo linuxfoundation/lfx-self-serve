@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lfx.dev/schemas/public-meeting-attachments.schema.json",
+  "title": "PublicMeetingAttachments",
+  "description": "E3-03 (#3252) responses of the public meeting materials routes, gated as GET /public/api/meetings/:id is. GET /public/api/meetings/:id/attachments returns PublicMeetingAttachmentList; GET /public/api/meetings/:id/attachments/:attachmentId/download returns AttachmentDownloadUrl (404 when the attachment is not one of that meeting's). Mirrors PublicMeetingAttachment (packages/shared/src/interfaces/meeting-attachment.interface.ts), an explicit allowlist built by MeetingService.getPublicMeetingAttachments: no creator or updater identity and no raw storage URL (file_url), so additionalProperties is false.",
+  "oneOf": [{ "$ref": "#/$defs/PublicMeetingAttachmentList" }, { "$ref": "#/$defs/AttachmentDownloadUrl" }],
+  "$defs": {
+    "PublicMeetingAttachmentList": {
+      "type": "array",
+      "description": "Every attachment of the meeting, all query-service pages read.",
+      "items": { "$ref": "#/$defs/PublicMeetingAttachment" }
+    },
+    "PublicMeetingAttachment": {
+      "type": "object",
+      "required": ["uid", "meeting_id", "type", "name", "created_at"],
+      "additionalProperties": false,
+      "properties": {
+        "uid": { "type": "string", "description": "Attachment identifier." },
+        "meeting_id": { "type": "string", "description": "The meeting it belongs to." },
+        "type": { "type": "string", "enum": ["file", "link"] },
+        "category": { "type": "string", "enum": ["Meeting Minutes", "Notes", "Presentation", "Other"] },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "link": {
+          "type": "string",
+          "description": "The external URL, for type link. Organizer-entered: clients must check its scheme before using it as an href."
+        },
+        "file_uploaded": { "type": "boolean" },
+        "file_name": { "type": "string" },
+        "file_size": { "type": "integer", "minimum": 0, "description": "Bytes." },
+        "file_upload_status": { "type": "string", "description": "ongoing | completed | failed, as upstream reports it." },
+        "file_content_type": { "type": "string", "description": "MIME type." },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "AttachmentDownloadUrl": {
+      "type": "object",
+      "required": ["download_url"],
+      "additionalProperties": false,
+      "properties": {
+        "download_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "A short-lived presigned URL for the file. Sent with Cache-Control: private, no-store."
+        }
+      }
+    }
+  }
+}

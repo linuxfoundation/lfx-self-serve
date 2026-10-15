@@ -11,15 +11,31 @@ import {
 } from '@lfx-one/shared/constants';
 import { MeetingVisibility, QueryServiceMeetingType } from '@lfx-one/shared/enums';
 import {
+  ApiRequestOptions,
   CreateMeetingRegistrantRequest,
-  MeetingOccurrenceSummary,
+  MeetingContentAccess,
+  MeetingTimelineOccurrence,
   MeetingRegistrant,
+  PastMeeting,
+  PastMeetingArtifactKind,
+  PastOccurrenceSummary,
   Project,
   PublicMeetingOccurrencesResponse,
   PublicMeetingProject,
   PublicMeetingRegistrationResponse,
 } from '@lfx-one/shared/interfaces';
-import { getPastMeetingResourceId, joinAsSentenceList, truncateToUtf16Units } from '@lfx-one/shared/utils';
+import {
+  countPastMeetingAttendance,
+  getPastMeetingResourceId,
+  isPastMeetingArtifactPublic,
+  isPastMeetingSummaryAwaitingApproval,
+  joinAsSentenceList,
+  toPublicPastMeetingRecording,
+  toPublicPastMeetingRoster,
+  toPublicPastMeetingSummary,
+  toPublicPastMeetingTranscript,
+  truncateToUtf16Units,
+} from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -29,9 +45,11 @@ import {
   applyOrganizerAndHostKeyResult,
   checkPastMeetingAccess,
   enrichMeetingsWithCreatedBy,
+  isUserInvitedToMeeting,
   resolveOrganizerAndHostKey,
   stripHostKey,
 } from '../helpers/meeting.helper';
+import { pageOccurrenceTimeline, parseOccurrencesPageRequest } from '../helpers/meeting-occurrences.helper';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { AccessCheckService } from '../services/access-check.service';
 import { logger } from '../services/logger.service';
@@ -132,6 +150,17 @@ export class PublicMeetingController {
       const parent = await this.resolveParentProject(req, project);
 
       await this.addInviteeRegistrantCount(req, meeting, id, m2mToken);
+
+      // The ITX payload also carries a registrant count per occurrence. It follows the meeting
+      // count's rule, registrants and organizers only (spec 011 § Counts). An invite proved late by
+      // the email fallback below keeps the meeting count but not these, which nothing renders.
+      if (!meeting.invited && !meeting.organizer && meeting.occurrences) {
+        meeting.occurrences = meeting.occurrences.map((occurrence) => {
+          const withoutCount = { ...occurrence };
+          delete withoutCount.registrant_count;
+          return withoutCount;
+        });
+      }
 
       // Organizer identity is authenticated-visible info (LFXV2-2802). For authenticated callers,
       // enrich created_by/owner from the live v1_meeting index (the ITX detail payload omits created_by);
@@ -297,9 +326,8 @@ export class PublicMeetingController {
       if (fullAccess && !isOrganizer && isAuthenticated && originalToken !== undefined) {
         try {
           const participants = await this.meetingService.getPastMeetingParticipants(req, getPastMeetingResourceId(meeting), true);
-          meeting.participant_count = participants.length;
-          meeting.attended_count = participants.filter((p) => p.is_attended).length;
-          meeting.individual_registrants_count = participants.filter((p) => p.is_invited).length;
+          // The same counts the admin page reads (E4-05).
+          Object.assign(meeting, countPastMeetingAttendance(participants));
         } catch (error) {
           logger.warning(req, 'get_public_past_meeting_by_id', 'Participant counts unavailable', { past_meeting_id: id, err: error });
         }
@@ -359,11 +387,198 @@ export class PublicMeetingController {
   }
 
   /**
+   * GET /public/api/meetings/past/:id/recording — the past meeting's recording for the public page
+   * (E4-04, FR-028). See {@link resolvePublicPastArtifact} for who may read it. A caller with no
+   * session gets an allowlist (`toPublicPastMeetingRecording`), never upstream's host or audit identities.
+   */
+  public async getPublicPastMeetingRecording(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await this.sendPublicPastArtifact(req, res, next, 'recording', 'get_public_past_meeting_recording', async (resourceId, options) => {
+      const recording = await this.meetingService.getPastMeetingRecording(req, resourceId, options);
+      // Signed in (no options): what upstream returned for the caller's own token; anonymous: an allowlist.
+      return options && recording ? toPublicPastMeetingRecording(recording) : recording;
+    });
+  }
+
+  /**
+   * GET /public/api/meetings/past/:id/transcript — the past meeting's transcript record, behind the
+   * same gate and with the same allowlist for a caller with no session as {@link getPublicPastMeetingRecording}.
+   */
+  public async getPublicPastMeetingTranscript(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await this.sendPublicPastArtifact(req, res, next, 'transcript', 'get_public_past_meeting_transcript', async (resourceId, options) => {
+      const transcript = await this.meetingService.getPastMeetingTranscript(req, resourceId, options);
+      return options && transcript ? toPublicPastMeetingTranscript(transcript) : transcript;
+    });
+  }
+
+  /**
+   * GET /public/api/meetings/past/:id/transcript/content — the transcript text, behind the transcript's
+   * gate. The upstream file read keeps `getPastMeetingTranscriptContent`'s 5 MB / 15 s bound.
+   */
+  public async getPublicPastMeetingTranscriptContent(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await this.sendPublicPastArtifact(req, res, next, 'transcript', 'get_public_past_meeting_transcript_content', (resourceId, options) =>
+      this.meetingService.getPastMeetingTranscriptContent(req, resourceId, options)
+    );
+  }
+
+  /**
+   * GET /public/api/meetings/past/:id/summary — the AI summary. A summary awaiting approval is the
+   * organizer's alone upstream, so a caller with no session never gets one (404, as for no summary),
+   * and gets a public one as an allowlist without the Zoom document link, its password or config
+   * (`toPublicPastMeetingSummary`).
+   */
+  public async getPublicPastMeetingSummary(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await this.sendPublicPastArtifact(req, res, next, 'summary', 'get_public_past_meeting_summary', async (resourceId, options) => {
+      const summary = await this.meetingService.getPastMeetingSummary(req, resourceId, options);
+      // Signed in (no options): exactly what upstream returned for the caller's own token.
+      if (!options || !summary) {
+        return summary;
+      }
+      return isPastMeetingSummaryAwaitingApproval(summary) ? null : toPublicPastMeetingSummary(summary);
+    });
+  }
+
+  /**
+   * GET /public/api/meetings/past/:id/participants — the public roster (E4-04).
+   * @description Never anonymous: a session is required even where artifact access would admit an
+   * anonymous caller (`meeting-surface-boundary.md`). A signed-in caller needs artifact access
+   * (`checkPastMeetingAccess`: public and unrestricted, organizer, registrant, participant or committee
+   * member); the rows are then read with the M2M token and cut down to § Public roster fields in
+   * the response (`toPublicPastMeetingRoster`): no email, job title or committee standing.
+   */
+  public async getPublicPastMeetingParticipants(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id } = req.params;
+    const operation = 'get_public_past_meeting_participants';
+    const startTime = logger.startOperation(req, operation, { past_meeting_id: id });
+
+    // Depends on the caller's session, so never cached.
+    res.setHeader('Cache-Control', 'private, no-store');
+
+    try {
+      if (!this.validateMeetingId(id, operation, req, next)) {
+        return;
+      }
+      if (!req.oidc?.isAuthenticated() || !req.bearerToken) {
+        throw new AuthenticationError('Sign in to see who attended this meeting', { operation, service: 'public_meeting_controller' });
+      }
+
+      const m2mToken = await generateM2MToken(req);
+      const meeting = await this.meetingService.getPastMeetingById(req, id, { bearerToken: m2mToken });
+      const isOrganizer = await this.isPastMeetingOrganizer(req, meeting);
+      if (!(await checkPastMeetingAccess(req, meeting, m2mToken, isOrganizer))) {
+        throw new AuthorizationError("You don't have access to this meeting's participants", { operation, service: 'public_meeting_controller' });
+      }
+
+      // Fails on a partial page walk, so a short read never understates the roster or its count.
+      const participants = await this.meetingService.getPastMeetingParticipants(req, getPastMeetingResourceId(meeting), true, { bearerToken: m2mToken });
+      const roster = toPublicPastMeetingRoster(participants);
+
+      logger.success(req, operation, startTime, {
+        past_meeting_id: id,
+        participant_count: roster.participants.length,
+        unidentified_attendees: roster.unidentified_attendees,
+      });
+      res.json(roster);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /public/api/meetings/:id/attachments — the meeting's materials for the public meeting page
+   * (E3-03, #3252), so an anonymous visitor to a public meeting sees them too.
+   * @description Behind the same gates as {@link getMeetingById}, and failing the same way: a public,
+   * unrestricted meeting is open; otherwise a registrant or organizer, or the meeting password
+   * (a missing or wrong one is the same 400). The list is read with the M2M token and returned as
+   * `PublicMeetingAttachment` (`MeetingService.getPublicMeetingAttachments`), without who made each one or the raw storage URL.
+   */
+  public async getMeetingAttachments(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id } = req.params;
+    const startTime = logger.startOperation(req, 'get_public_meeting_attachments', { meeting_id: id });
+
+    // Gated by the passcode header and the session, not the URL — see getMeetingById.
+    res.setHeader('Cache-Control', 'private, no-store');
+
+    try {
+      if (!this.validateMeetingId(id, 'get_public_meeting_attachments', req, next)) {
+        return;
+      }
+
+      // The M2M token goes to each upstream call explicitly and never onto req.bearerToken, which
+      // keeps the caller's own token for the organizer check.
+      const originalToken = req.bearerToken;
+      const m2mToken = await generateM2MToken(req);
+      const meeting = await this.meetingService.getMeetingById(req, id, 'v1_meeting', { access: false, bearerToken: m2mToken });
+      if (!(await this.authorizeMeetingContent(req, next, meeting, m2mToken, originalToken, 'get_public_meeting_attachments'))) {
+        return;
+      }
+
+      const response = await this.meetingService.getPublicMeetingAttachments(req, id, { bearerToken: m2mToken });
+
+      logger.success(req, 'get_public_meeting_attachments', startTime, { meeting_id: id, attachment_count: response.length });
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /public/api/meetings/:id/attachments/:attachmentId/download — a presigned URL for one of the
+   * meeting's files, behind the same gates as {@link getMeetingAttachments}. The attachment must be
+   * one of this meeting's: the gate only vouches for this meeting, and the presign runs with the M2M
+   * token, so a file of another meeting is a 404 here rather than trusting upstream to refuse it.
+   */
+  public async getMeetingAttachmentDownloadUrl(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id, attachmentId } = req.params;
+    const startTime = logger.startOperation(req, 'get_public_meeting_attachment_download_url', { meeting_id: id, attachment_uid: attachmentId });
+
+    // A presigned URL is a bearer credential for the file: never cached.
+    res.setHeader('Cache-Control', 'private, no-store');
+
+    try {
+      if (!this.validateMeetingId(id, 'get_public_meeting_attachment_download_url', req, next)) {
+        return;
+      }
+      if (
+        !validateUidParameter(attachmentId, req, next, {
+          operation: 'get_public_meeting_attachment_download_url',
+          service: 'public_meeting_controller',
+        })
+      ) {
+        return;
+      }
+
+      const originalToken = req.bearerToken;
+      const m2mToken = await generateM2MToken(req);
+      const meeting = await this.meetingService.getMeetingById(req, id, 'v1_meeting', { access: false, bearerToken: m2mToken });
+      if (!(await this.authorizeMeetingContent(req, next, meeting, m2mToken, originalToken, 'get_public_meeting_attachment_download_url'))) {
+        return;
+      }
+
+      const attachments = await this.meetingService.getMeetingAttachments(req, id, { bearerToken: m2mToken });
+      if (!attachments.some((attachment) => attachment.uid === attachmentId)) {
+        throw new ResourceNotFoundError('Attachment', attachmentId, {
+          operation: 'get_public_meeting_attachment_download_url',
+          service: 'public_meeting_controller',
+          path: req.path,
+        });
+      }
+
+      const download = await this.meetingService.getMeetingAttachmentDownloadUrl(req, id, attachmentId, { bearerToken: m2mToken });
+
+      logger.success(req, 'get_public_meeting_attachment_download_url', startTime, { meeting_id: id, attachment_uid: attachmentId });
+      res.json(download);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /public/api/meetings/:id/occurrences
    * Returns the series timeline for a meeting: past occurrences (from v1_past_meeting
-   * records) plus a minimal projection of the live series' current/future occurrences.
-   * Timestamps only — no titles, passwords, or join info. Private/restricted series are
-   * gated by the same access chain as getMeetingById (password, registrant, organizer).
+   * records) plus a projection of the live series' current/future occurrences: timestamps,
+   * status and title, and the registrant count for a registrant or organizer only — no
+   * descriptions, passwords, or join info. Private/restricted series are gated by the same
+   * access chain as getMeetingById (password, registrant, organizer).
    */
   public async getMeetingOccurrences(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { id } = req.params;
@@ -388,8 +603,8 @@ export class PublicMeetingController {
 
       // Fail closed: when the live series can't be loaded, its visibility can't be
       // verified, so the timeline is not exposed.
-      const allowed = liveMeeting ? await this.canViewSeriesTimeline(req, liveMeeting, m2mToken, originalToken) : false;
-      if (!allowed) {
+      const access = liveMeeting ? await this.canViewSeriesTimeline(req, liveMeeting, m2mToken, originalToken) : null;
+      if (!access) {
         next(
           new AuthorizationError('Not authorized to view this meeting series', {
             operation: 'get_public_meeting_occurrences',
@@ -400,26 +615,55 @@ export class PublicMeetingController {
         return;
       }
 
-      const past = await this.meetingService.getPastOccurrencesForMeeting(req, id);
+      // Read before any upstream call past the gate, so a malformed parameter is a 400, not wasted work.
+      const page = parseOccurrencesPageRequest(req);
 
-      // Minimal projection only — the full ITX payload carries sensitive fields (e.g. password)
-      const future: MeetingOccurrenceSummary[] = (liveMeeting?.occurrences ?? []).map((o) => ({
+      // A paged request (V2) gets a failed later page reported as past_incomplete with an empty past,
+      // not a silent prefix of the history (#3585). An unpaged one (V1) keeps the old degradation: the
+      // pages read so far, or none.
+      let pastIncomplete = false;
+      const past = await this.meetingService.getPastOccurrencesForMeeting(req, id, { throwOnFailure: !!page }).catch((error: unknown) => {
+        // Unpaged, the service already swallows a fetch failure; anything else still goes to the error handler.
+        if (!page) {
+          throw error;
+        }
+        logger.warning(req, 'get_public_meeting_occurrences', 'Past occurrences unavailable, returning none and flagging it', {
+          meeting_id: id,
+          err: error,
+        });
+        pastIncomplete = true;
+        return [] as PastOccurrenceSummary[];
+      });
+
+      // A projection, never the ITX payload, which carries sensitive fields (e.g. password). The
+      // registrant count goes only to a caller the gate let in as a registrant or organizer (spec 011
+      // § Counts). A caller let in because the meeting is public, or by its passcode, has not shown they
+      // are registered: both gates end the chain before the registrant and organizer lookups, so a
+      // signed-in registrant of a public meeting, or one whose client sends the passcode, gets no count.
+      // Proving it would add upstream calls, which #3584 rules out.
+      const showsRegistrantCount = access === 'registrant' || access === 'organizer';
+      const future: MeetingTimelineOccurrence[] = (liveMeeting?.occurrences ?? []).map((o) => ({
         occurrence_id: o.occurrence_id,
         start_time: o.start_time,
         duration: o.duration,
         status: o.status,
+        title: o.title,
+        ...(showsRegistrantCount && { registrant_count: o.registrant_count }),
       }));
 
+      // No paging parameter: the whole timeline, as V1 reads it. V2 always sends one (#3585).
       const response: PublicMeetingOccurrencesResponse = {
-        past,
-        future,
+        ...(page ? pageOccurrenceTimeline(past, future, page) : { past, future }),
         cancelled_occurrences: liveMeeting?.cancelled_occurrences ?? undefined,
+        ...(pastIncomplete ? { past_incomplete: true } : {}),
       };
 
       logger.success(req, 'get_public_meeting_occurrences', startTime, {
         meeting_id: id,
-        past_count: past.length,
-        future_count: future.length,
+        paged: !!page,
+        past_count: response.past.length,
+        future_count: response.future.length,
+        past_incomplete: pastIncomplete,
       });
 
       res.json(response);
@@ -815,6 +1059,92 @@ export class PublicMeetingController {
   }
 
   /**
+   * Sends one past-meeting artifact for the public page (E4-04). Failures go to the error handler: 404
+   * when there is none, 401 when the caller must sign in, upstream errors as raised.
+   */
+  private async sendPublicPastArtifact<T>(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+    kind: PastMeetingArtifactKind,
+    operation: string,
+    read: (resourceId: string, options: ApiRequestOptions | undefined) => Promise<T | null>
+  ): Promise<void> {
+    const { id } = req.params;
+    const startTime = logger.startOperation(req, operation, { past_meeting_id: id });
+
+    // Depends on the caller's session, so never cached.
+    res.setHeader('Cache-Control', 'private, no-store');
+
+    try {
+      if (!this.validateMeetingId(id, operation, req, next)) {
+        return;
+      }
+
+      const { resourceId, options } = await this.resolvePublicPastArtifact(req, id, kind, operation);
+      const artifact = await read(resourceId, options);
+      if (!artifact) {
+        throw new ResourceNotFoundError(`Past meeting ${kind}`, id, { operation, service: 'public_meeting_controller' });
+      }
+
+      logger.success(req, operation, startTime, { past_meeting_id: id, anonymous: !!options });
+      res.json(artifact);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Who reads a past-meeting artifact on a public route, and with which token (E4-04).
+   * @description A signed-in caller reads with their own token, so upstream FGA decides exactly as on
+   * `/api/past-meetings` (the `recording_viewer` / `transcript_viewer` / `ai_summary_viewer` relations,
+   * which the meeting service derives from each artifact's own access level). A caller with no session
+   * has no token for upstream to judge, so the BFF decides: only an artifact whose own level is `public`
+   * on a public, unrestricted meeting (`isPastMeetingArtifactPublic`), read with the M2M token. The
+   * levels come from the past meeting's query-service document, since the ITX read does not carry
+   * them; no document, or an unset level, is not public. Anything else is a 401, so the page can offer
+   * sign-in. The past meeting is read with the M2M token only to resolve the gate and the artifacts'
+   * composite id; none of it is returned.
+   */
+  private async resolvePublicPastArtifact(
+    req: Request,
+    id: string,
+    kind: PastMeetingArtifactKind,
+    operation: string
+  ): Promise<{ resourceId: string; options: ApiRequestOptions | undefined }> {
+    const m2mToken = await generateM2MToken(req);
+    const meeting = await this.meetingService.getPastMeetingById(req, id, { bearerToken: m2mToken });
+    const resourceId = getPastMeetingResourceId(meeting);
+
+    if (req.oidc?.isAuthenticated() && req.bearerToken) {
+      return { resourceId, options: undefined };
+    }
+    const levels = await this.meetingService.getPastMeetingArtifactAccessLevels(req, resourceId, { bearerToken: m2mToken });
+    if (!levels || !isPastMeetingArtifactPublic({ visibility: meeting.visibility, restricted: meeting.restricted, ...levels }, kind)) {
+      throw new AuthenticationError(`Sign in to view this meeting's ${kind}`, { operation, service: 'public_meeting_controller' });
+    }
+    return { resourceId, options: { bearerToken: m2mToken } };
+  }
+
+  /**
+   * Whether the signed-in caller organizes this past meeting, checked with their own token (never the
+   * M2M identity). An access-check failure counts as no (fail closed).
+   */
+  private async isPastMeetingOrganizer(req: Request, meeting: PastMeeting): Promise<boolean> {
+    try {
+      const meetingWithAccess = await this.accessCheckService.addAccessToResource(
+        req,
+        { ...meeting, id: getPastMeetingResourceId(meeting) },
+        'v1_past_meeting',
+        'organizer'
+      );
+      return meetingWithAccess.organizer ?? false;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Sets up M2M token for API calls
    */
   private async setupM2MToken(req: Request): Promise<string> {
@@ -862,63 +1192,129 @@ export class PublicMeetingController {
   }
 
   /**
-   * Access gate for the public series-timeline endpoint, mirroring getMeetingById's chain:
-   * public non-restricted series are open; private/restricted series require a valid
-   * password, a registrant record (checked via M2M, matching the invited fallback), or an
-   * organizer relation (checked with the user's own token — never the M2M identity).
-   * Restores the M2M token on req before returning.
+   * Access gate for the public series-timeline endpoint: {@link resolveMeetingContentAccess}, returning
+   * the gate the caller passed, which decides whether the response carries registrant counts.
    */
-  private async canViewSeriesTimeline(req: Request, meeting: Meeting, m2mToken: string, originalToken: string | undefined): Promise<boolean> {
+  private async canViewSeriesTimeline(
+    req: Request,
+    meeting: Meeting,
+    m2mToken: string,
+    originalToken: string | undefined
+  ): Promise<MeetingContentAccess | null> {
+    return this.resolveMeetingContentAccess(req, meeting, m2mToken, originalToken, 'get_public_meeting_occurrences');
+  }
+
+  /**
+   * The public meeting gates as a yes/no: {@link resolveMeetingContentAccess}.
+   */
+  private async canViewMeetingContent(
+    req: Request,
+    meeting: Meeting,
+    m2mToken: string,
+    originalToken: string | undefined,
+    operation: string
+  ): Promise<boolean> {
+    return (await this.resolveMeetingContentAccess(req, meeting, m2mToken, originalToken, operation)) !== null;
+  }
+
+  /**
+   * The public meeting gates, mirroring getMeetingById's chain, returning the gate the caller passed
+   * (null when none): public non-restricted meetings are open; private/restricted ones need a valid
+   * password (header only), a registrant record (by email or username, then by email directly, via
+   * M2M, as getMeetingById checks), or an organizer relation (checked with the user's own token,
+   * passed per call, never the M2M identity). An open meeting is not checked further, so `public`
+   * says nothing about whether the caller is registered. Likewise a valid passcode ends the chain as
+   * `password` without the registrant or organizer lookups, so it says nothing about who the caller is.
+   */
+  private async resolveMeetingContentAccess(
+    req: Request,
+    meeting: Meeting,
+    m2mToken: string,
+    originalToken: string | undefined,
+    operation: string
+  ): Promise<MeetingContentAccess | null> {
     if (meeting.visibility === MeetingVisibility.PUBLIC && !meeting.restricted) {
-      return true;
+      return 'public';
     }
 
     // The passcode arrives in a request header (never the GET query string, which lands
     // in access logs and caches — CodeQL js/sensitive-get-query).
     const password = req.headers[MEETING_PASSWORD_HEADER];
     if (typeof password === 'string' && password && validatePassword(password, meeting.password as string)) {
-      return true;
+      return 'password';
     }
 
     if (!req.oidc?.isAuthenticated()) {
-      return false;
+      return null;
     }
 
+    // The registrant gate as getMeetingById runs it: by email or username first (a registrant's meeting
+    // email can differ from their sign-in email), then a direct email lookup, which catches a false
+    // negative from the OR lookup.
     const email = getEffectiveEmail(req);
+    try {
+      if (await isUserInvitedToMeeting(req, meeting.id, email || '', m2mToken)) {
+        return 'registrant';
+      }
+    } catch (error) {
+      logger.warning(req, operation, 'Registrant check failed, trying the direct email lookup', {
+        meeting_id: meeting.id,
+        err: error,
+      });
+    }
     if (email) {
       try {
         const registrants = await this.meetingService.getMeetingRegistrantsByEmail(req, meeting.id, email, m2mToken);
         if (registrants.length > 0) {
-          return true;
+          return 'registrant';
         }
       } catch (error) {
-        logger.warning(req, 'get_public_meeting_occurrences', 'Registrant check failed, continuing to organizer check', {
+        logger.warning(req, operation, 'Direct email registrant check failed, continuing to organizer check', {
           meeting_id: meeting.id,
           err: error,
         });
       }
     }
 
-    // Guard on originalToken, not just isAuthenticated: running the access check while the
-    // M2M token is active would evaluate the application identity and could leak access.
+    // Guard on originalToken, not just isAuthenticated: running the access check with the M2M
+    // identity would evaluate the application, not the user, and could leak access.
     if (originalToken !== undefined) {
-      req.bearerToken = originalToken;
       try {
-        const meetingWithAccess = await this.accessCheckService.addAccessToResource(req, { ...meeting }, 'v1_meeting', 'organizer');
+        const meetingWithAccess = await this.accessCheckService.addAccessToResource(req, { ...meeting }, 'v1_meeting', 'organizer', {
+          bearerToken: originalToken,
+        });
         if (meetingWithAccess.organizer) {
-          return true;
+          return 'organizer';
         }
       } catch (error) {
-        logger.warning(req, 'get_public_meeting_occurrences', 'Organizer check failed, denying series timeline access', {
+        logger.warning(req, operation, 'Organizer check failed, denying access', {
           meeting_id: meeting.id,
           err: error,
         });
-      } finally {
-        req.bearerToken = m2mToken;
       }
     }
 
-    return false;
+    return null;
+  }
+
+  /**
+   * Gates a public meeting's content (materials, downloads) the way {@link getMeetingById} gates the
+   * meeting: past every other gate, the password check, whose 400 a caller gets for a missing or
+   * wrong password (the legacy `?password=` included). True when the caller may proceed; otherwise
+   * the error has already gone to `next`.
+   */
+  private async authorizeMeetingContent(
+    req: Request,
+    next: NextFunction,
+    meeting: Meeting,
+    m2mToken: string,
+    originalToken: string | undefined,
+    operation: string
+  ): Promise<boolean> {
+    if (await this.canViewMeetingContent(req, meeting, m2mToken, originalToken, operation)) {
+      return true;
+    }
+    return this.validateMeetingPassword(this.getRequestMeetingPassword(req), meeting.password as string, operation, req, next);
   }
 
   /**

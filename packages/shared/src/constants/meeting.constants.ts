@@ -5,8 +5,16 @@ import { ArtifactVisibility, MeetingType, MeetingVisibility, CancelOnCommitteeRe
 import type {
   AttachmentCategory,
   CardSelectorOption,
-  MeetingTypeConfig,
+  FilterOption,
   MeetingComposerPreviewFeature,
+  MeetingStatusKind,
+  MeetingTypeConfig,
+  PastMeetingArtifactKind,
+  PastMeetingIdentityTier,
+  PastMeetingSummaryApprovalState,
+  PastRosterAttendanceFilter,
+  PastRosterFilterOption,
+  PastRosterInvitationFilter,
   RsvpResponse,
   ShowMeetingAttendeesLockOptions,
 } from '../interfaces';
@@ -69,6 +77,21 @@ export const HOST_KEY_EARLY_MINUTES = 70;
  * Mirrors PCC's showHostKey() logic.
  */
 export const HOST_KEY_LATE_MINUTES = 40;
+
+/**
+ * How long after the host-key window opens the V2 join details section reads the meeting a second time
+ * (E7-02), should the first read, timed by the browser's clock, come back without the key (a clock
+ * ahead of the server's, or a failed read). After that the section stops waiting.
+ */
+export const MEETING_HOST_KEY_RETRY_MS = 90_000;
+
+/**
+ * How far ahead of the host-key window's opening, by the browser's clock, the V2 join details section
+ * still shows a key the server returned (E7-02): the server authorized it by its own clock, which a
+ * browser running slow would otherwise contradict. Wide enough for clock skew, far narrower than the
+ * days between a series' occurrences, so today's key never shows on a later occurrence's page.
+ */
+export const MEETING_HOST_KEY_CLOCK_SKEW_MS = 10 * 60_000;
 
 /**
  * Available meeting platforms and their configurations
@@ -578,6 +601,58 @@ export const DEFAULT_MEETING_TOOL = 'Zoom';
 export const DEFAULT_ARTIFACT_VISIBILITY = 'meeting_participants';
 
 /**
+ * Where a past meeting's attendance rate changes band (E4-05), in percent: below `medium` is `low`,
+ * below `high` is `medium`, the rest `high`. One set for the public and the admin page.
+ */
+export const PAST_MEETING_ATTENDANCE_RATE_THRESHOLDS = { medium: 25, high: 70 } as const;
+
+/** Each identity tier's label on the admin participant list (N-02). An `unverified` row left unknown reads "Unknown". */
+export const PAST_MEETING_IDENTITY_TIER_LABELS: Record<PastMeetingIdentityTier, string> = {
+  verified: 'Verified',
+  'auto-matched': 'Auto-matched',
+  'ai-reconciled': 'AI-matched',
+  unverified: 'Needs review',
+};
+
+/** The label of an `unverified` attendee that reconciliation left unknown (N-02). */
+export const PAST_MEETING_IDENTITY_UNKNOWN_LABEL = 'Unknown';
+
+/** The label of an attendee that is a notetaker or recording bot (#2253), in place of a tier (N-02). */
+export const PAST_MEETING_NOTETAKER_BOT_LABEL = 'Notetaker bot';
+
+/**
+ * How strongly each identity tier identifies an attendee (N-02), so the BFF keeps the best-identified
+ * record when it merges one person's duplicate attendee records, whatever order they arrive in.
+ */
+export const PAST_MEETING_IDENTITY_TIER_RANK: Record<PastMeetingIdentityTier, number> = {
+  unverified: 0,
+  'auto-matched': 1,
+  'ai-reconciled': 2,
+  verified: 3,
+};
+
+/** The V2 past roster's invitation filter (E4-05), worded as the admin page's cells ("Not invited"). */
+export const PAST_ROSTER_INVITATION_FILTER_OPTIONS: PastRosterFilterOption<PastRosterInvitationFilter>[] = [
+  { value: 'all', label: 'All' },
+  { value: 'invited', label: 'Invited' },
+  { value: 'not-invited', label: 'Not invited' },
+];
+
+/** The V2 past roster's attendance filter (E4-05). */
+export const PAST_ROSTER_ATTENDANCE_FILTER_OPTIONS: PastRosterFilterOption<PastRosterAttendanceFilter>[] = [
+  { value: 'all', label: 'All' },
+  { value: 'attended', label: 'Attended' },
+  { value: 'absent', label: 'Absent' },
+];
+
+/** The past-meeting field holding each artifact's own access level (E4-04). */
+export const PAST_MEETING_ARTIFACT_ACCESS_FIELDS: Record<PastMeetingArtifactKind, 'recording_access' | 'transcript_access' | 'ai_summary_access'> = {
+  recording: 'recording_access',
+  transcript: 'transcript_access',
+  summary: 'ai_summary_access',
+};
+
+/**
  * Default repeat interval for recurring meetings
  * @description How often recurring meetings repeat (1 = every occurrence)
  */
@@ -1043,6 +1118,54 @@ export const RECONCILIATION_BOT_NAME_PATTERN =
  */
 export const NOTES_ATTACHMENT_CATEGORY: AttachmentCategory = 'Notes';
 
+/**
+ * Every `AttachmentCategory`, as the materials drawer offers them (E3-05, #3254). Before this the
+ * drawer hard-coded `Other` for links and sent nothing for files, so the other three were
+ * unreachable from the meetings UI.
+ */
+export const MEETING_ATTACHMENT_CATEGORIES: readonly AttachmentCategory[] = Object.keys({
+  // Keyed by the union, so a category added to `AttachmentCategory` fails to compile here until listed.
+  'Meeting Minutes': true,
+  Notes: true,
+  Presentation: true,
+  Other: true,
+} satisfies Record<AttachmentCategory, true>) as AttachmentCategory[];
+
+/** The category a new attachment starts with in the materials drawer: what links always had. */
+export const DEFAULT_MEETING_ATTACHMENT_CATEGORY: AttachmentCategory = 'Other';
+
+/** `MEETING_ATTACHMENT_CATEGORIES` as select options (label and value are the same string). */
+export const MEETING_ATTACHMENT_CATEGORY_OPTIONS: FilterOption<AttachmentCategory>[] = MEETING_ATTACHMENT_CATEGORIES.map((category) => ({
+  label: category,
+  value: category,
+}));
+
+/**
+ * Display label for each meeting status on the meeting details V2 page
+ * @description Shared by the status pill (E1-05) and the sticky identity bar's subtitle (E1-02), so
+ * the two never disagree about what a meeting is called. Resolve the status with
+ * `resolveMeetingStatus`. The join window (`canJoinMeeting`) opens a few minutes before the scheduled
+ * start: that part reads "Starting soon", and from the start through the end buffer "In progress".
+ */
+export const MEETING_STATUS_LABELS = {
+  upcoming: 'Upcoming',
+  'starting-soon': 'Starting soon',
+  live: 'In progress',
+  ended: 'Ended',
+  'awaiting-rsvp': 'Awaiting your RSVP',
+  going: "You're going",
+  maybe: 'Maybe',
+  'cant-attend': "Can't attend",
+} as const satisfies Record<MeetingStatusKind, string>;
+
+/**
+ * TransferState key for the public meeting page's SSR-resolved `MeetingJoinPageState`
+ * @description V1 (`meeting-join-v1/meeting-join.component.ts`) declares the same literal inline
+ * and stays byte-identical, so it does not import this; the meeting details gate and V2 do. The
+ * two must stay equal, or V2 silently loses its seed.
+ */
+export const MEETING_JOIN_STATE_KEY = 'meetingJoinState';
+
 // ============================================================================
 // Pre-v2 Meeting Wizard Constants
 // ============================================================================
@@ -1136,3 +1259,84 @@ export const MEETING_DURATION_OPTIONS = [
   { label: '120 minutes', value: 120 },
   { label: 'Custom...', value: 'custom' },
 ];
+
+/**
+ * Collapsed height, in px, of a meeting's description before "See more" (V2 agenda, E3-01): the
+ * public join page's 200, so the V2 page reads the same as the page it replaces (the past-meeting
+ * details page uses 300, and is not part of this redesign).
+ */
+export const MEETING_AGENDA_COLLAPSED_HEIGHT_PX = 200;
+
+/**
+ * The people section's RSVP labels (E3-04), for each row's chip and the tallies above the rows.
+ * Same words as the V1 guest drawer's filter.
+ */
+export const MEETING_PEOPLE_ATTENDANCE_LABELS: Record<RsvpResponse | 'pending', string> = {
+  accepted: 'Accepted',
+  maybe: 'Maybe',
+  declined: 'Declined',
+  pending: 'Pending',
+};
+
+/** The people section's row order after the organizers (E3-04): coming, undecided, no reply, declined. */
+export const MEETING_PEOPLE_ATTENDANCE_ORDER: Record<RsvpResponse | 'pending', number> = { accepted: 0, maybe: 1, pending: 2, declined: 3 };
+
+/** Items each materials group shows before "Show N more" (E3-02), as V1's materials card caps its files. */
+export const MEETING_MATERIALS_PREVIEW_LIMIT = 5;
+
+/** How recent an attachment change earns the materials section its "Updated" pill (E3-02), as on V1. */
+export const MEETING_MATERIALS_UPDATED_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * When the V2 materials section refetches after the drawer changes the list (E3-02): at once, then
+ * after each of these delays, since the query service indexes a change some time after the write.
+ */
+export const MEETING_MATERIALS_REFETCH_DELAYS_MS: readonly number[] = [1000, 5000, 15000];
+
+/**
+ * How long a just-added file's row waits (Processing, no download) for the list to return it. Past
+ * this the row is released, so a failed refetch cannot leave it stuck; a download then still works
+ * once the index has it, and otherwise shows the usual failure toast.
+ */
+export const MEETING_MATERIALS_PENDING_MAX_MS = 30_000;
+
+/** Recording file types that carry a meeting's media, as opposed to chat, captions or transcripts (E4-02). */
+export const MEETING_RECORDING_MEDIA_FILE_TYPES: readonly string[] = ['MP4', 'M4A'];
+
+/**
+ * How far before a recording session's stored start one of its files may begin and still belong to it
+ * (E4-02): the session start (the Zoom instance) and the file's own start come from different sources,
+ * at second precision, so a file can open a moment earlier.
+ */
+export const MEETING_RECORDING_SESSION_TOLERANCE_MS = 60_000;
+
+/** What each summary approval state reads as (E4-03); `not-required` shows no status. */
+export const PAST_MEETING_SUMMARY_APPROVAL_LABELS: Record<PastMeetingSummaryApprovalState, string | null> = {
+  approved: 'Approved',
+  pending: 'Pending review',
+  'not-required': null,
+};
+
+/**
+ * The V2 details page's scroll padding under its sticky identity bar (#3260, WCAG 2.4.11), in px: the
+ * 83px bar plus a margin, and the same with the 42px impersonation banner above it. Keep in step with
+ * the bar's and the banner's heights.
+ */
+export const MEETING_DETAILS_SCROLL_PADDING_PX = { default: 100, impersonating: 142 } as const;
+
+/**
+ * Paged requests to `GET /public/api/meetings/:id/occurrences` (E6-02, #3585): the default page size,
+ * which is the occurrence strip's window on each side of today, and the most one page may hold. A
+ * request with no paging parameter still gets the whole timeline, which V1 reads.
+ */
+export const MEETING_OCCURRENCES_PAGE_DEFAULT_LIMIT = 12;
+export const MEETING_OCCURRENCES_PAGE_MAX_LIMIT = 50;
+
+/**
+ * The V2 occurrence strip (E6-03, #3586): occurrences per side in each page it reads; how many pages
+ * of the largest size it reads toward a selected occurrence outside the first window before giving up
+ * on showing it selected (the endpoint pages a past side only backwards, so it walks rather than
+ * jumps).
+ */
+export const MEETING_OCCURRENCE_STRIP_PAGE_SIZE = 12;
+export const MEETING_OCCURRENCE_STRIP_MAX_CHASE_PAGES = 5;

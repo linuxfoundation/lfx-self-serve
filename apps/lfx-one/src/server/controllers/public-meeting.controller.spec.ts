@@ -6,7 +6,7 @@
 import '@angular/compiler';
 
 import { PUBLIC_REGISTRATION_FIELD_MAX_LENGTH } from '@lfx-one/shared/constants';
-import { MeetingVisibility } from '@lfx-one/shared/enums';
+import { ArtifactVisibility, MeetingVisibility } from '@lfx-one/shared/enums';
 import type { Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -24,6 +24,7 @@ const {
   generateM2MTokenMock,
   getEffectiveEmailMock,
   getEffectiveUsernameMock,
+  getUsernameFromAuthMock,
   validatePasswordMock,
   validateUidParameterMock,
   meetingSvc,
@@ -36,6 +37,7 @@ const {
   generateM2MTokenMock: vi.fn(),
   getEffectiveEmailMock: vi.fn(),
   getEffectiveUsernameMock: vi.fn(),
+  getUsernameFromAuthMock: vi.fn(),
   validatePasswordMock: vi.fn(),
   validateUidParameterMock: vi.fn<(uid: unknown, req: unknown, next: (err: unknown) => void) => boolean>(() => true),
   meetingSvc: {
@@ -48,18 +50,28 @@ const {
     getMeetingHostKey: vi.fn(),
     getPastMeetingById: vi.fn(),
     getPastMeetingParticipants: vi.fn(),
+    getPastMeetingRecording: vi.fn(),
+    getPastMeetingTranscript: vi.fn(),
+    getPastMeetingTranscriptContent: vi.fn(),
+    getPastMeetingSummary: vi.fn(),
+    getPastMeetingArtifactAccessLevels: vi.fn(),
     getPastOccurrencesForMeeting: vi.fn(),
     addMeetingRegistrantSelf: vi.fn(),
+    getMeetingAttachments: vi.fn(),
+    getPublicMeetingAttachments: vi.fn(),
+    getMeetingAttachmentDownloadUrl: vi.fn(),
+    getMeetingRegistrantsForUser: vi.fn(),
   },
   projectSvc: { getProjectById: vi.fn() },
   addInvitedStatusToMeetingMock: vi.fn(),
   checkPastMeetingAccessMock: vi.fn(),
 }));
 
-// The `@lfx-one/shared/*` path alias isn't wired into vitest; stub the one runtime shared import
-// the controller/gate use. validation.helper is mocked wholesale (see below) so its heavy
-// shared/constants + shared/utils module graph never loads.
-vi.mock('@lfx-one/shared/enums', () => ({ MeetingVisibility: { PUBLIC: 'public', PRIVATE: 'private' } }));
+// The enums are plain values with no heavy imports, so the real module is used: the E4-04 gate
+// reads ArtifactVisibility, and the deep-imported past-meeting utils load the constants that read
+// MeetingType. validation.helper is mocked wholesale (see below) so its heavy shared/constants +
+// shared/utils module graph never loads.
+vi.mock('@lfx-one/shared/enums', async (importOriginal) => importOriginal());
 // meeting.helper (kept real via importOriginal) imports resolveMeetingOrganizer and
 // resolveMeetingOwner from shared/utils; stub them so the real barrel (and its MeetingType enum
 // dependency) isn't pulled into the mock graph. Both null => the enrichment gate always opens,
@@ -79,6 +91,14 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   // the barrel needs the Angular JIT compiler (loaded at the top of this spec) in plain Node.
   isWithinHostKeyWindow: (await import('@lfx-one/shared/utils/meeting-privacy.utils')).isWithinHostKeyWindow,
   getPastMeetingResourceId: (await import('@lfx-one/shared/utils/past-meeting.utils')).getPastMeetingResourceId,
+  countPastMeetingAttendance: (await import('@lfx-one/shared/utils/past-meeting.utils')).countPastMeetingAttendance,
+  // Real, so the E4-04 gate assertions run the actual access rules and roster projection.
+  isPastMeetingArtifactPublic: (await import('@lfx-one/shared/utils/past-meeting.utils')).isPastMeetingArtifactPublic,
+  toPublicPastMeetingRoster: (await import('@lfx-one/shared/utils/past-meeting.utils')).toPublicPastMeetingRoster,
+  isPastMeetingSummaryAwaitingApproval: (await import('@lfx-one/shared/utils/past-meeting-summary.utils')).isPastMeetingSummaryAwaitingApproval,
+  toPublicPastMeetingSummary: (await import('@lfx-one/shared/utils/past-meeting-summary.utils')).toPublicPastMeetingSummary,
+  toPublicPastMeetingRecording: (await import('@lfx-one/shared/utils/past-meeting.utils')).toPublicPastMeetingRecording,
+  toPublicPastMeetingTranscript: (await import('@lfx-one/shared/utils/past-meeting.utils')).toPublicPastMeetingTranscript,
 }));
 // The deep-imported shared meeting-privacy module reads HOST_KEY_* from this barrel; stub it so
 // the full constants module graph (which re-imports shared/enums for ArtifactVisibility etc.) doesn't load.
@@ -93,6 +113,8 @@ vi.mock('@lfx-one/shared/constants', async () => ({
   HOST_KEY_EARLY_MINUTES: 70,
   HOST_KEY_LATE_MINUTES: 40,
   MEETING_PASSWORD_HEADER: 'x-meeting-password',
+  MEETING_OCCURRENCES_PAGE_DEFAULT_LIMIT: 12,
+  MEETING_OCCURRENCES_PAGE_MAX_LIMIT: 50,
   PUBLIC_REGISTRATION_FIELD_MAX_LENGTH: 255,
   PUBLIC_REGISTRATION_FIELD_LABELS: {
     meeting_id: 'Meeting ID',
@@ -144,7 +166,7 @@ vi.mock('../utils/auth-helper', async () => {
   return {
     getEffectiveEmail: getEffectiveEmailMock,
     getEffectiveUsername: getEffectiveUsernameMock,
-    getUsernameFromAuth: vi.fn(),
+    getUsernameFromAuth: getUsernameFromAuthMock,
     stripAuthPrefix: actual.stripAuthPrefix,
   };
 });
@@ -517,6 +539,21 @@ describe('PublicMeetingController.getMeetingById registrant count', () => {
     expect(meeting.registrant_count).toBe(12);
   });
 
+  it("strips each occurrence's registrant count unless the viewer is invited or an organizer", async () => {
+    const occurrences = [{ occurrence_id: '1784323800', start_time: '2026-07-16T09:30:00Z', duration: 30, registrant_count: 7 }];
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ occurrences } as Partial<Meeting>));
+    addInvitedStatusToMeetingMock.mockImplementation(async (_req: any, meeting: Meeting) => ({ ...meeting, invited: false }));
+    const visitor = buildReqRes(false);
+    await controller.getMeetingById(visitor.req, visitor.res, visitor.next);
+    expect(visitor.res.json.mock.calls[0][0].meeting.occurrences).toEqual([{ occurrence_id: '1784323800', start_time: '2026-07-16T09:30:00Z', duration: 30 }]);
+
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ occurrences } as Partial<Meeting>));
+    addInvitedStatusToMeetingMock.mockImplementation(async (_req: any, meeting: Meeting) => ({ ...meeting, invited: true }));
+    const invitee = buildReqRes(true);
+    await controller.getMeetingById(invitee.req, invitee.res, invitee.next);
+    expect(invitee.res.json.mock.calls[0][0].meeting.occurrences[0].registrant_count).toBe(7);
+  });
+
   it('still serves the meeting when the count is unavailable', async () => {
     meetingSvc.getMeetingRegistrantCount.mockRejectedValue(new Error('query service down'));
     const { req, res, next } = buildReqRes(true);
@@ -871,23 +908,23 @@ describe('PublicMeetingController.getMeetingOccurrences', () => {
     generateM2MTokenMock.mockResolvedValue('m2m-token');
   });
 
-  it('returns past summaries plus a minimal projection of live occurrences without leaking sensitive fields', async () => {
+  const liveOccurrence = {
+    occurrence_id: String(Math.floor(T2 / 1000)),
+    start_time: new Date(T2).toISOString(),
+    duration: 30,
+    status: 'available',
+    title: 'Weekly sync',
+    description: 'should not leak',
+    registrant_count: 12,
+  };
+
+  it('returns past summaries plus a projection of live occurrences without leaking sensitive fields', async () => {
     meetingSvc.getPastOccurrencesForMeeting.mockResolvedValue(pastSummaries);
     meetingSvc.getMeetingById.mockResolvedValue(
       buildMeeting({
         password: 'secret',
         cancelled_occurrences: ['1784323800'],
-        occurrences: [
-          {
-            occurrence_id: String(Math.floor(T2 / 1000)),
-            start_time: new Date(T2).toISOString(),
-            duration: 30,
-            status: 'available',
-            title: 'should not leak',
-            description: 'should not leak',
-            registrant_count: 12,
-          },
-        ],
+        occurrences: [liveOccurrence],
       } as Partial<Meeting>)
     );
     const { req, res, next } = buildReqRes(false);
@@ -898,11 +935,185 @@ describe('PublicMeetingController.getMeetingOccurrences', () => {
     const payload = res.json.mock.calls[0][0];
     expect(payload.past).toEqual(pastSummaries);
     expect(payload.cancelled_occurrences).toEqual(['1784323800']);
-    expect(payload.future).toHaveLength(1);
-    // Minimal projection only — timestamps and status, no titles/descriptions/counts
-    expect(Object.keys(payload.future[0]).sort()).toEqual(['duration', 'occurrence_id', 'start_time', 'status']);
+    // An anonymous caller on a public meeting: timestamps, status and title; no description, and no
+    // registrant count, since nothing shows this caller is registered.
+    expect(payload.future).toEqual([
+      { occurrence_id: liveOccurrence.occurrence_id, start_time: liveOccurrence.start_time, duration: 30, status: 'available', title: 'Weekly sync' },
+    ]);
     expect(JSON.stringify(payload)).not.toContain('secret');
     expect(JSON.stringify(payload)).not.toContain('should not leak');
+  });
+
+  describe('registrant count on future occurrences', () => {
+    beforeEach(() => {
+      meetingSvc.getPastOccurrencesForMeeting.mockResolvedValue([]);
+      validatePasswordMock.mockReturnValue(false);
+      getEffectiveEmailMock.mockReturnValue('user@example.com');
+      getUsernameFromAuthMock.mockResolvedValue('user');
+    });
+
+    it('gives it to a registrant of a restricted meeting', async () => {
+      meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ restricted: true, occurrences: [liveOccurrence] } as Partial<Meeting>));
+      meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([{ email: 'user@example.com' }]);
+      const { req, res, next } = buildReqRes(true);
+
+      await controller.getMeetingOccurrences(req, res, next);
+
+      expect(res.json.mock.calls[0][0].future[0]).toEqual(expect.objectContaining({ title: 'Weekly sync', registrant_count: 12 }));
+    });
+
+    it('gives it to an organizer of a private meeting who is not a registrant', async () => {
+      meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE, occurrences: [liveOccurrence] } as Partial<Meeting>));
+      meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([]);
+      meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
+      addAccessToResourceMock.mockImplementation(async (_req: any, resource: any) => ({ ...resource, organizer: true }));
+      const { req, res, next } = buildReqRes(true);
+
+      await controller.getMeetingOccurrences(req, res, next);
+
+      expect(res.json.mock.calls[0][0].future[0].registrant_count).toBe(12);
+    });
+
+    it('withholds it from a visitor let in by the passcode alone', async () => {
+      meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE, occurrences: [liveOccurrence] } as Partial<Meeting>));
+      validatePasswordMock.mockReturnValue(true);
+      const { req, res, next } = buildReqRes(false);
+      req.headers['x-meeting-password'] = 'pw';
+
+      await controller.getMeetingOccurrences(req, res, next);
+
+      const occurrence = res.json.mock.calls[0][0].future[0];
+      expect(occurrence.title).toBe('Weekly sync');
+      expect(occurrence).not.toHaveProperty('registrant_count');
+    });
+
+    it('gives it to a registrant found only by the direct email lookup', async () => {
+      meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE, occurrences: [liveOccurrence] } as Partial<Meeting>));
+      meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([]);
+      meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([{ email: 'user@example.com' }]);
+      const { req, res, next } = buildReqRes(true);
+
+      await controller.getMeetingOccurrences(req, res, next);
+
+      expect(meetingSvc.getMeetingRegistrantsByEmail).toHaveBeenCalled();
+      expect(res.json.mock.calls[0][0].future[0].registrant_count).toBe(12);
+    });
+
+    // The passcode ends the chain before the registrant and organizer lookups (#3584: no new
+    // upstream call), so even an organizer whose client sends it is counted as a passcode holder.
+    it('withholds it from a signed-in organizer whose client also sends the passcode, without the lookups', async () => {
+      meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE, occurrences: [liveOccurrence] } as Partial<Meeting>));
+      validatePasswordMock.mockReturnValue(true);
+      addAccessToResourceMock.mockImplementation(async (_req: any, resource: any) => ({ ...resource, organizer: true }));
+      const { req, res, next } = buildReqRes(true);
+      req.headers['x-meeting-password'] = 'pw';
+
+      await controller.getMeetingOccurrences(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.json.mock.calls[0][0].future[0]).not.toHaveProperty('registrant_count');
+      expect(meetingSvc.getMeetingRegistrantsForUser).not.toHaveBeenCalled();
+      expect(addAccessToResourceMock).not.toHaveBeenCalled();
+    });
+
+    // The open gate checks nothing further, so a registrant of a public meeting is not told apart
+    // from any visitor here; proving it would add an upstream call (#3584).
+    it('withholds it from a signed-in registrant of a public meeting', async () => {
+      meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ occurrences: [liveOccurrence] } as Partial<Meeting>));
+      meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([{ email: 'user@example.com' }]);
+      const { req, res, next } = buildReqRes(true);
+
+      await controller.getMeetingOccurrences(req, res, next);
+
+      expect(res.json.mock.calls[0][0].future[0]).not.toHaveProperty('registrant_count');
+      expect(meetingSvc.getMeetingRegistrantsForUser).not.toHaveBeenCalled();
+    });
+  });
+
+  // E6-02 (#3585): paging is opt-in. With no parameter V1 keeps the whole timeline.
+  describe('paging', () => {
+    const weekly = (weeks: number[]) =>
+      weeks.map((week) => ({
+        occurrence_id: String(Math.floor((T2 + week * 7 * 86400000) / 1000)),
+        start_time: new Date(T2 + week * 7 * 86400000).toISOString(),
+        duration: 30,
+        title: 'Weekly sync',
+      }));
+
+    beforeEach(() => {
+      meetingSvc.getPastOccurrencesForMeeting.mockResolvedValue(pastSummaries);
+      meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ occurrences: weekly([0, 1, 2]) } as Partial<Meeting>));
+    });
+
+    it('returns the whole timeline with no paging fields when no parameter is sent', async () => {
+      const { req, res, next } = buildReqRes(false);
+
+      await controller.getMeetingOccurrences(req, res, next);
+
+      const payload = res.json.mock.calls[0][0];
+      expect(payload.future).toHaveLength(3);
+      expect(payload.past).toEqual(pastSummaries);
+      expect(Object.keys(payload).sort()).toEqual(['cancelled_occurrences', 'future', 'past']);
+      expect(meetingSvc.getPastOccurrencesForMeeting).toHaveBeenCalledWith(req, MEETING_ID, { throwOnFailure: false });
+    });
+
+    it('returns one bounded page with a cursor when a page size is sent', async () => {
+      const { req, res, next } = buildReqRes(false);
+      req.query = { page_size: '2' };
+
+      await controller.getMeetingOccurrences(req, res, next);
+
+      const payload = res.json.mock.calls[0][0];
+      expect(payload.future.map((o: { occurrence_id: string }) => o.occurrence_id)).toEqual(weekly([0, 1]).map((o) => o.occurrence_id));
+      expect(payload).toEqual(
+        expect.objectContaining({ future_has_more: true, future_cursor: String(T2 + 7 * 86400000), past_has_more: false, past: pastSummaries })
+      );
+    });
+
+    it('refuses a malformed parameter with a 400 before reading the history', async () => {
+      const { req, res, next } = buildReqRes(false);
+      req.query = { page_size: '500' };
+
+      await controller.getMeetingOccurrences(req, res, next);
+
+      expect(res.json).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
+      expect(meetingSvc.getPastOccurrencesForMeeting).not.toHaveBeenCalled();
+    });
+
+    it('flags an unreadable history on a paged request instead of returning a silent prefix', async () => {
+      meetingSvc.getPastOccurrencesForMeeting.mockRejectedValue(new Error('page 2 failed'));
+      const { req, res, next } = buildReqRes(false);
+      req.query = { page_size: '12' };
+
+      await controller.getMeetingOccurrences(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      const payload = res.json.mock.calls[0][0];
+      expect(payload.past).toEqual([]);
+      expect(payload.past_incomplete).toBe(true);
+      expect(payload.future).toHaveLength(3);
+      expect(meetingSvc.getPastOccurrencesForMeeting).toHaveBeenCalledWith(req, MEETING_ID, { throwOnFailure: true });
+    });
+
+    it('still sends an unexpected history error to the error handler on an unpaged (V1) request', async () => {
+      meetingSvc.getPastOccurrencesForMeeting.mockRejectedValue(new Error('mapping failed'));
+      const { req, res, next } = buildReqRes(false);
+
+      await controller.getMeetingOccurrences(req, res, next);
+
+      expect(res.json).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ message: 'mapping failed' }));
+    });
+
+    it('keeps the old degradation for an unpaged (V1) request: no throw, no flag', async () => {
+      const { req, res, next } = buildReqRes(false);
+
+      await controller.getMeetingOccurrences(req, res, next);
+
+      expect(meetingSvc.getPastOccurrencesForMeeting).toHaveBeenCalledWith(req, MEETING_ID, { throwOnFailure: false });
+      expect(res.json.mock.calls[0][0]).not.toHaveProperty('past_incomplete');
+    });
   });
 
   it('fails closed when the live series fetch fails (visibility cannot be verified)', async () => {
@@ -944,26 +1155,28 @@ describe('PublicMeetingController.getMeetingOccurrences', () => {
     expect(res.json.mock.calls[0][0].past).toEqual(pastSummaries);
   });
 
-  it('allows an authenticated registrant on a restricted meeting via the M2M email check', async () => {
+  it('allows an authenticated registrant on a restricted meeting via the M2M email-or-username check', async () => {
     meetingSvc.getPastOccurrencesForMeeting.mockResolvedValue(pastSummaries);
     meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ restricted: true } as Partial<Meeting>));
     validatePasswordMock.mockReturnValue(false);
     getEffectiveEmailMock.mockReturnValue('user@example.com');
-    meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([{ email: 'user@example.com' }]);
+    getUsernameFromAuthMock.mockResolvedValue('user');
+    meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([{ email: 'user@example.com' }]);
     const { req, res, next } = buildReqRes(true);
 
     await controller.getMeetingOccurrences(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
-    expect(meetingSvc.getMeetingRegistrantsByEmail).toHaveBeenCalledWith(req, MEETING_ID, 'user@example.com', 'm2m-token');
+    expect(meetingSvc.getMeetingRegistrantsForUser).toHaveBeenCalledWith(req, MEETING_ID, 'user@example.com', 'user', 'm2m-token');
     expect(res.json.mock.calls[0][0].past).toEqual(pastSummaries);
   });
 
-  it('allows an authenticated organizer on a private meeting and restores the M2M token', async () => {
+  it("allows an authenticated organizer on a private meeting, checked with the user's own token", async () => {
     meetingSvc.getPastOccurrencesForMeeting.mockResolvedValue(pastSummaries);
     meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE } as Partial<Meeting>));
     validatePasswordMock.mockReturnValue(false);
     getEffectiveEmailMock.mockReturnValue('user@example.com');
+    meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([]);
     meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
     addAccessToResourceMock.mockImplementation(async (_req: any, resource: any) => ({ ...resource, organizer: true }));
     const { req, res, next } = buildReqRes(true);
@@ -972,6 +1185,8 @@ describe('PublicMeetingController.getMeetingOccurrences', () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(res.json.mock.calls[0][0].past).toEqual(pastSummaries);
+    // The organizer check gets the user's token per call; req.bearerToken is never swapped.
+    expect(addAccessToResourceMock).toHaveBeenCalledWith(req, expect.anything(), 'v1_meeting', 'organizer', { bearerToken: 'user-token' });
     expect(req.bearerToken).toBe('m2m-token');
   });
 
@@ -985,6 +1200,227 @@ describe('PublicMeetingController.getMeetingOccurrences', () => {
 
     expect(generateM2MTokenMock).toHaveBeenCalledTimes(1);
     expect(req.bearerToken).toBe('m2m-token');
+  });
+});
+
+/**
+ * E3-03 (#3252): the public meeting page's materials, behind getMeetingById's gates and failing as
+ * it does (a 400 on a missing or wrong password), read with the M2M token.
+ */
+describe('PublicMeetingController attachments', () => {
+  let controller: PublicMeetingController;
+
+  const listed = [{ uid: 'att-1', meeting_id: MEETING_ID, type: 'file', name: 'Slides', file_name: 'slides.pdf', created_at: '2026-01-01T00:00:00Z' }];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new PublicMeetingController();
+    generateM2MTokenMock.mockResolvedValue('m2m-token');
+    validatePasswordMock.mockReturnValue(false);
+    getEffectiveEmailMock.mockReturnValue('user@example.com');
+    getUsernameFromAuthMock.mockResolvedValue('user');
+    meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([]);
+    meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
+    addAccessToResourceMock.mockImplementation(async (_req: any, resource: any) => ({ ...resource, organizer: false }));
+    meetingSvc.getPublicMeetingAttachments.mockResolvedValue(listed);
+    meetingSvc.getMeetingAttachments.mockResolvedValue([{ ...listed[0], file_url: 'https://storage.example/raw/slides.pdf' }]);
+    meetingSvc.getMeetingAttachmentDownloadUrl.mockResolvedValue({ download_url: 'https://storage.example/presigned' });
+  });
+
+  it("lists a public meeting's materials to an anonymous visitor, every upstream call carrying the M2M token", async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting());
+    const { req, res, next } = buildReqRes(false, false);
+
+    await controller.getMeetingAttachments(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(meetingSvc.getMeetingById).toHaveBeenCalledWith(req, MEETING_ID, 'v1_meeting', { access: false, bearerToken: 'm2m-token' });
+    expect(meetingSvc.getPublicMeetingAttachments).toHaveBeenCalledWith(req, MEETING_ID, { bearerToken: 'm2m-token' });
+    expect(res.json).toHaveBeenCalledWith(listed);
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'private, no-store');
+    // The M2M identity is passed per call, never put on the shared request.
+    expect(req.bearerToken).toBeUndefined();
+  });
+
+  it.each([
+    ['private', { visibility: 'private' }],
+    ['restricted', { restricted: true }],
+  ])("refuses a %s meeting to an anonymous visitor without a password, with the meeting endpoint's 400", async (_kind, overrides) => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting(overrides as Partial<Meeting>));
+    const { req, res, next } = buildReqRes(false);
+
+    await controller.getMeetingAttachments(req, res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next.mock.calls[0][0].statusCode).toBe(400);
+    expect(meetingSvc.getPublicMeetingAttachments).not.toHaveBeenCalled();
+  });
+
+  it("lists a private meeting's materials with its password in the header", async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE, password: 'pw' } as Partial<Meeting>));
+    validatePasswordMock.mockImplementation((provided: string, expected: string) => provided === expected);
+    const { req, res, next } = buildReqRes(false);
+    req.headers['x-meeting-password'] = 'pw';
+
+    await controller.getMeetingAttachments(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledTimes(1);
+  });
+
+  it('still accepts the legacy ?password= query, as the meeting endpoint does', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE, password: 'pw' } as Partial<Meeting>));
+    validatePasswordMock.mockImplementation((provided: string, expected: string) => provided === expected);
+    const { req, res, next } = buildReqRes(false);
+    req.query['password'] = 'pw';
+
+    await controller.getMeetingAttachments(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a wrong password with the 400', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE, password: 'pw' } as Partial<Meeting>));
+    validatePasswordMock.mockImplementation((provided: string, expected: string) => provided === expected);
+    const { req, res, next } = buildReqRes(false);
+    req.headers['x-meeting-password'] = 'wrong';
+
+    await controller.getMeetingAttachments(req, res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next.mock.calls[0][0].statusCode).toBe(400);
+  });
+
+  it("lists a restricted meeting's materials to a signed-in registrant (M2M email-or-username check)", async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ restricted: true } as Partial<Meeting>));
+    meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([{ email: 'user@example.com' }]);
+    const { req, res, next } = buildReqRes(true);
+
+    await controller.getMeetingAttachments(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(meetingSvc.getMeetingRegistrantsForUser).toHaveBeenCalledWith(req, MEETING_ID, 'user@example.com', 'user', 'm2m-token');
+    expect(res.json).toHaveBeenCalledTimes(1);
+  });
+
+  // A registrant's meeting email can differ from their sign-in email; getMeetingById finds them by
+  // username then, and so must this route.
+  it('finds a registrant by username when their meeting email differs', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ restricted: true } as Partial<Meeting>));
+    getEffectiveEmailMock.mockReturnValue(undefined);
+    meetingSvc.getMeetingRegistrantsForUser.mockImplementation(async (_req: unknown, _id: string, email?: string, username?: string) =>
+      !email && username === 'user' ? [{ username: 'user' }] : []
+    );
+    const { req, res, next } = buildReqRes(true);
+
+    await controller.getMeetingAttachments(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledTimes(1);
+  });
+
+  // getMeetingById retries a direct email lookup when the email-or-username lookup misses; so must this.
+  it('falls back to the direct email lookup when the email-or-username lookup misses', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ restricted: true } as Partial<Meeting>));
+    meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([]);
+    meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([{ email: 'user@example.com' }]);
+    const { req, res, next } = buildReqRes(true);
+
+    await controller.getMeetingAttachments(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(meetingSvc.getMeetingRegistrantsByEmail).toHaveBeenCalledWith(req, MEETING_ID, 'user@example.com', 'm2m-token');
+    expect(res.json).toHaveBeenCalledTimes(1);
+  });
+
+  it("lists a private meeting's materials to its organizer, checked with the user's own token", async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE } as Partial<Meeting>));
+    addAccessToResourceMock.mockImplementation(async (_req: any, resource: any) => ({ ...resource, organizer: true }));
+    const { req, res, next } = buildReqRes(true);
+
+    await controller.getMeetingAttachments(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(addAccessToResourceMock).toHaveBeenCalledWith(req, expect.anything(), 'v1_meeting', 'organizer', { bearerToken: 'user-token' });
+    expect(res.json).toHaveBeenCalledTimes(1);
+    expect(req.bearerToken).toBe('user-token');
+  });
+
+  // Optional auth: a session whose token refresh failed carries no user token, and the M2M identity
+  // must never stand in for the user in the organizer check.
+  it("never runs the organizer check without the user's own token", async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE } as Partial<Meeting>));
+    addAccessToResourceMock.mockImplementation(async (_req: any, resource: any) => ({ ...resource, organizer: true }));
+    const { req, res, next } = buildReqRes(true, false);
+
+    await controller.getMeetingAttachments(req, res, next);
+
+    expect(addAccessToResourceMock).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next.mock.calls[0][0].statusCode).toBe(400);
+  });
+
+  it('passes a failed meeting lookup on, listing nothing', async () => {
+    const lookupError = new Error('itx 404');
+    meetingSvc.getMeetingById.mockRejectedValue(lookupError);
+    const { req, res, next } = buildReqRes(false);
+
+    await controller.getMeetingAttachments(req, res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(lookupError);
+    expect(meetingSvc.getPublicMeetingAttachments).not.toHaveBeenCalled();
+  });
+
+  it("presigns a download of a public meeting's file for an anonymous visitor, with the M2M token", async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting());
+    const { req, res, next } = buildReqRes(false);
+    req.params.attachmentId = 'att-1';
+
+    await controller.getMeetingAttachmentDownloadUrl(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(meetingSvc.getMeetingAttachmentDownloadUrl).toHaveBeenCalledWith(req, MEETING_ID, 'att-1', { bearerToken: 'm2m-token' });
+    expect(res.json).toHaveBeenCalledWith({ download_url: 'https://storage.example/presigned' });
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'private, no-store');
+  });
+
+  // The gate vouches for this meeting only: a file of another meeting is not presigned through it.
+  it("refuses to presign a file that is not one of this meeting's, with a 404", async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting());
+    const { req, res, next } = buildReqRes(false);
+    req.params.attachmentId = 'att-of-another-meeting';
+
+    await controller.getMeetingAttachmentDownloadUrl(req, res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next.mock.calls[0][0].statusCode).toBe(404);
+    expect(meetingSvc.getMeetingAttachmentDownloadUrl).not.toHaveBeenCalled();
+  });
+
+  it('refuses a download from a private meeting without a password, with the 400', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE } as Partial<Meeting>));
+    const { req, res, next } = buildReqRes(false);
+    req.params.attachmentId = 'att-1';
+
+    await controller.getMeetingAttachmentDownloadUrl(req, res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next.mock.calls[0][0].statusCode).toBe(400);
+    expect(meetingSvc.getMeetingAttachmentDownloadUrl).not.toHaveBeenCalled();
+  });
+
+  it('validates the attachment id before anything else', async () => {
+    validateUidParameterMock.mockImplementation((uid: unknown) => uid === MEETING_ID);
+    const { req, res, next } = buildReqRes(false);
+    req.params.attachmentId = '';
+
+    await controller.getMeetingAttachmentDownloadUrl(req, res, next);
+
+    expect(meetingSvc.getMeetingById).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+    validateUidParameterMock.mockImplementation(() => true);
   });
 });
 
@@ -1388,5 +1824,294 @@ describe('PublicMeetingController.registerForPublicMeeting', () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(meetingSvc.addMeetingRegistrantSelf.mock.calls[0][2]).not.toHaveProperty('username');
+  });
+});
+
+describe('PublicMeetingController public past-meeting artifacts (E4-04)', () => {
+  const RESOURCE_ID = 'meeting-orig-1111-1700000000000';
+  let controller: PublicMeetingController;
+
+  // The ITX read carries visibility / restricted; the per-artifact levels come from the query-service document.
+  const pastMeeting = (overrides: Partial<PastMeeting> = {}): PastMeeting => buildPastMeeting({ meeting_and_occurrence_id: RESOURCE_ID, ...overrides });
+  const levels = (fields: Partial<Pick<PastMeeting, 'recording_access' | 'transcript_access' | 'ai_summary_access'>>) =>
+    meetingSvc.getPastMeetingArtifactAccessLevels.mockResolvedValue(fields);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    validateUidParameterMock.mockReturnValue(true);
+    controller = new PublicMeetingController();
+    generateM2MTokenMock.mockResolvedValue('m2m-token');
+  });
+
+  it('gives a caller with no session a public artifact of a public, unrestricted meeting, read with the M2M token', async () => {
+    meetingSvc.getPastMeetingById.mockResolvedValue(pastMeeting());
+    levels({ recording_access: ArtifactVisibility.PUBLIC });
+    // Upstream's document carries host and audit identities; the anonymous response must not.
+    meetingSvc.getPastMeetingRecording.mockResolvedValue({
+      uid: 'rec-1',
+      recording_files: [],
+      sessions: [],
+      host_email: 'host@example.com',
+      created_by: { email: 'creator@example.com' },
+    });
+    const { req, res, next } = buildReqRes(false, false);
+
+    await controller.getPublicPastMeetingRecording(req, res, next);
+
+    expect(meetingSvc.getPastMeetingById).toHaveBeenCalledWith(req, MEETING_ID, { bearerToken: 'm2m-token' });
+    // By the composite id, whichever id the route was called with (the V2 page uses the composite one).
+    expect(meetingSvc.getPastMeetingArtifactAccessLevels).toHaveBeenCalledWith(req, RESOURCE_ID, { bearerToken: 'm2m-token' });
+    expect(meetingSvc.getPastMeetingRecording).toHaveBeenCalledWith(req, RESOURCE_ID, { bearerToken: 'm2m-token' });
+    expect(res.json.mock.calls[0][0]).toMatchObject({ uid: 'rec-1', recording_files: [], sessions: [] });
+    expect(JSON.stringify(res.json.mock.calls[0][0])).not.toMatch(/host@example.com|creator@example.com/);
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'private, no-store');
+    expect(req.bearerToken).toBeUndefined();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['the artifact is for participants', {}, { recording_access: ArtifactVisibility.MEETING_PARTICIPANTS }],
+    ['the artifact is for hosts', {}, { recording_access: ArtifactVisibility.MEETING_HOSTS }],
+    ['no access level is set', {}, {}],
+    ['the meeting is restricted', { restricted: true }, { recording_access: ArtifactVisibility.PUBLIC }],
+    ['the meeting is private', { visibility: MeetingVisibility.PRIVATE }, { recording_access: ArtifactVisibility.PUBLIC }],
+  ])('answers 401 to a caller with no session when %s', async (_label, meetingFields, levelFields) => {
+    meetingSvc.getPastMeetingById.mockResolvedValue(pastMeeting(meetingFields as Partial<PastMeeting>));
+    levels(levelFields);
+    const { req, res, next } = buildReqRes(false, false);
+
+    await controller.getPublicPastMeetingRecording(req, res, next);
+
+    expect(meetingSvc.getPastMeetingRecording).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  // The ITX read's artifact_visibility is the recording's level; it never stands in for the others.
+  it.each(['transcript', 'summary'] as const)("answers 401 for the %s when only the ITX record's artifact_visibility is public", async (kind) => {
+    meetingSvc.getPastMeetingById.mockResolvedValue(pastMeeting({ artifact_visibility: ArtifactVisibility.PUBLIC }));
+    levels({ recording_access: ArtifactVisibility.PUBLIC });
+    const { req, res, next } = buildReqRes(false, false);
+
+    await (kind === 'summary' ? controller.getPublicPastMeetingSummary(req, res, next) : controller.getPublicPastMeetingTranscript(req, res, next));
+
+    expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));
+    expect(meetingSvc.getPastMeetingSummary).not.toHaveBeenCalled();
+    expect(meetingSvc.getPastMeetingTranscript).not.toHaveBeenCalled();
+  });
+
+  it('answers 401 to a caller with no session when the past meeting has no query-service document', async () => {
+    meetingSvc.getPastMeetingById.mockResolvedValue(pastMeeting());
+    meetingSvc.getPastMeetingArtifactAccessLevels.mockResolvedValue(null);
+    const { req, res, next } = buildReqRes(false, false);
+
+    await controller.getPublicPastMeetingRecording(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));
+  });
+
+  it("reads with a signed-in caller's own token, so upstream decides, whatever the access level", async () => {
+    meetingSvc.getPastMeetingById.mockResolvedValue(pastMeeting());
+    levels({ transcript_access: ArtifactVisibility.MEETING_HOSTS });
+    meetingSvc.getPastMeetingTranscript.mockResolvedValue({ uid: 'tr-1', host_email: 'host@example.com' });
+    const { req, res, next } = buildReqRes(true);
+
+    await controller.getPublicPastMeetingTranscript(req, res, next);
+
+    expect(meetingSvc.getPastMeetingTranscript).toHaveBeenCalledWith(req, RESOURCE_ID, undefined);
+    expect(meetingSvc.getPastMeetingArtifactAccessLevels).not.toHaveBeenCalled();
+    expect(req.bearerToken).toBe('user-token');
+    // Signed in: exactly what upstream returned for the caller's own token.
+    expect(res.json).toHaveBeenCalledWith({ uid: 'tr-1', host_email: 'host@example.com' });
+  });
+
+  it('treats a session whose user token could not be refreshed as no session', async () => {
+    meetingSvc.getPastMeetingById.mockResolvedValue(pastMeeting());
+    levels({ transcript_access: ArtifactVisibility.MEETING_PARTICIPANTS });
+    const { req, res, next } = buildReqRes(true, false);
+
+    await controller.getPublicPastMeetingTranscript(req, res, next);
+
+    expect(meetingSvc.getPastMeetingTranscript).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));
+  });
+
+  it("gates the transcript text on the transcript's access level", async () => {
+    meetingSvc.getPastMeetingById.mockResolvedValue(pastMeeting());
+    levels({ transcript_access: ArtifactVisibility.PUBLIC, recording_access: ArtifactVisibility.MEETING_HOSTS });
+    meetingSvc.getPastMeetingTranscriptContent.mockResolvedValue({ content: 'WEBVTT' });
+    const { req, res, next } = buildReqRes(false, false);
+
+    await controller.getPublicPastMeetingTranscriptContent(req, res, next);
+
+    expect(meetingSvc.getPastMeetingTranscriptContent).toHaveBeenCalledWith(req, RESOURCE_ID, { bearerToken: 'm2m-token' });
+    expect(res.json).toHaveBeenCalledWith({ content: 'WEBVTT' });
+  });
+
+  it('answers 404 when there is no such artifact', async () => {
+    meetingSvc.getPastMeetingById.mockResolvedValue(pastMeeting());
+    levels({ recording_access: ArtifactVisibility.PUBLIC });
+    meetingSvc.getPastMeetingRecording.mockResolvedValue(null);
+    const { req, res, next } = buildReqRes(false, false);
+
+    await controller.getPublicPastMeetingRecording(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 404 }));
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('hands an upstream failure to the error handler', async () => {
+    const failure = new Error('upstream down');
+    meetingSvc.getPastMeetingById.mockResolvedValue(pastMeeting());
+    levels({ recording_access: ArtifactVisibility.PUBLIC });
+    meetingSvc.getPastMeetingRecording.mockRejectedValue(failure);
+    const { req, res, next } = buildReqRes(false, false);
+
+    await controller.getPublicPastMeetingRecording(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(failure);
+  });
+
+  describe('summary', () => {
+    const summary = (approved: boolean, requiresApproval: boolean) => ({
+      uid: 'sum-1',
+      approved,
+      requires_approval: requiresApproval,
+      email_sent: true,
+      password: 'zoom-secret',
+      zoom_config: { meeting_id: 'z-1', meeting_uuid: 'u-1' },
+      summary_data: { title: 'Summary', content: 'Text', edited_content: '', doc_url: 'https://docs.zoom.example/s/1', start_time: '', end_time: '' },
+    });
+
+    it('never gives a caller with no session a summary awaiting approval', async () => {
+      meetingSvc.getPastMeetingById.mockResolvedValue(pastMeeting());
+      levels({ ai_summary_access: ArtifactVisibility.PUBLIC });
+      meetingSvc.getPastMeetingSummary.mockResolvedValue(summary(false, true));
+      const { req, res, next } = buildReqRes(false, false);
+
+      await controller.getPublicPastMeetingSummary(req, res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 404 }));
+      expect(res.json).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [true, true],
+      [false, false],
+    ])(
+      'gives a caller with no session a public summary without the Zoom document credentials (approved=%s, requires_approval=%s)',
+      async (approved, requiresApproval) => {
+        meetingSvc.getPastMeetingById.mockResolvedValue(pastMeeting());
+        levels({ ai_summary_access: ArtifactVisibility.PUBLIC });
+        meetingSvc.getPastMeetingSummary.mockResolvedValue(summary(approved, requiresApproval));
+        const { req, res, next } = buildReqRes(false, false);
+
+        await controller.getPublicPastMeetingSummary(req, res, next);
+
+        const body = res.json.mock.calls[0][0];
+        expect(body).toMatchObject({ uid: 'sum-1', approved, requires_approval: requiresApproval, summary_data: { content: 'Text', doc_url: '' } });
+        expect(JSON.stringify(body)).not.toContain('zoom-secret');
+        expect(body.zoom_config).toBeUndefined();
+      }
+    );
+
+    it("passes a signed-in caller's summary through as upstream returned it", async () => {
+      meetingSvc.getPastMeetingById.mockResolvedValue(pastMeeting());
+      meetingSvc.getPastMeetingSummary.mockResolvedValue(summary(false, true));
+      const { req, res, next } = buildReqRes(true);
+
+      await controller.getPublicPastMeetingSummary(req, res, next);
+
+      expect(meetingSvc.getPastMeetingSummary).toHaveBeenCalledWith(req, RESOURCE_ID, undefined);
+      expect(res.json).toHaveBeenCalledWith(summary(false, true));
+    });
+  });
+
+  describe('participants', () => {
+    const rows = [
+      {
+        uid: 'p1',
+        first_name: 'Ada',
+        last_name: 'Lovelace',
+        email: 'ada@example.com',
+        job_title: 'Engineer',
+        org_name: 'Example Org',
+        avatar_url: 'https://avatars.example.com/ada.png',
+        committee_voting_status: 'Voting Rep',
+        is_attended: true,
+        is_invited: true,
+        is_verified: true,
+      },
+      { uid: 'p2', first_name: 'Zoom', last_name: 'Caller', email: '', is_unknown: true, is_attended: true, is_invited: false },
+    ];
+
+    it('requires a session, even on a public, unrestricted meeting', async () => {
+      const { req, res, next } = buildReqRes(false, false);
+
+      await controller.getPublicPastMeetingParticipants(req, res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));
+      expect(meetingSvc.getPastMeetingById).not.toHaveBeenCalled();
+      expect(meetingSvc.getPastMeetingParticipants).not.toHaveBeenCalled();
+    });
+
+    it('answers 403 to a signed-in caller without artifact access', async () => {
+      meetingSvc.getPastMeetingById.mockResolvedValue(pastMeeting({ visibility: MeetingVisibility.PRIVATE }));
+      addAccessToResourceMock.mockResolvedValue({ organizer: false });
+      checkPastMeetingAccessMock.mockResolvedValue(false);
+      const { req, res, next } = buildReqRes(true);
+
+      await controller.getPublicPastMeetingParticipants(req, res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403 }));
+      expect(meetingSvc.getPastMeetingParticipants).not.toHaveBeenCalled();
+    });
+
+    it('returns only the public roster fields, with unidentified attendees counted, to a caller with access', async () => {
+      meetingSvc.getPastMeetingById.mockResolvedValue(pastMeeting());
+      addAccessToResourceMock.mockResolvedValue({ organizer: false });
+      checkPastMeetingAccessMock.mockResolvedValue(true);
+      meetingSvc.getPastMeetingParticipants.mockResolvedValue(rows);
+      const { req, res, next } = buildReqRes(true);
+
+      await controller.getPublicPastMeetingParticipants(req, res, next);
+
+      expect(addAccessToResourceMock).toHaveBeenCalledWith(req, expect.objectContaining({ id: RESOURCE_ID }), 'v1_past_meeting', 'organizer');
+      expect(checkPastMeetingAccessMock).toHaveBeenCalledWith(req, expect.objectContaining({ id: MEETING_ID }), 'm2m-token', false);
+      expect(meetingSvc.getPastMeetingParticipants).toHaveBeenCalledWith(req, RESOURCE_ID, true, { bearerToken: 'm2m-token' });
+      expect(res.json).toHaveBeenCalledWith({
+        participants: [
+          {
+            uid: 'p1',
+            first_name: 'Ada',
+            last_name: 'Lovelace',
+            avatar_url: 'https://avatars.example.com/ada.png',
+            org_name: 'Example Org',
+            is_attended: true,
+            is_invited: true,
+          },
+        ],
+        unidentified_attendees: 1,
+        // E4-05: counted over every participant, listed or not.
+        attendance: { participant_count: 2, attended_count: 2, individual_registrants_count: 1, unverified_attended_count: 1 },
+      });
+      const body = JSON.stringify(res.json.mock.calls[0][0]);
+      expect(body).not.toContain('ada@example.com');
+      expect(body).not.toContain('Engineer');
+      expect(body).not.toContain('Voting Rep');
+      expect(req.bearerToken).toBe('user-token');
+    });
+
+    it('counts a failed organizer check as not the organizer (fail closed)', async () => {
+      meetingSvc.getPastMeetingById.mockResolvedValue(pastMeeting());
+      addAccessToResourceMock.mockRejectedValue(new Error('fga down'));
+      checkPastMeetingAccessMock.mockResolvedValue(false);
+      const { req, res, next } = buildReqRes(true);
+
+      await controller.getPublicPastMeetingParticipants(req, res, next);
+
+      expect(checkPastMeetingAccessMock).toHaveBeenCalledWith(req, expect.anything(), 'm2m-token', false);
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403 }));
+    });
   });
 });

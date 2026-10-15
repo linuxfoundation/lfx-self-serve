@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient, HttpErrorResponse, HttpHeaders } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpHeaders, HttpParams } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import type {
   BatchRegistrantOperationResponse,
@@ -196,6 +196,84 @@ describe('MeetingService public meeting passcode transport', () => {
     service.getPublicMeeting(MEETING_UID, null).subscribe();
 
     expect(get.mock.calls[0][1].headers).toBeUndefined();
+  });
+
+  // E6-03: the occurrence strip's paged read.
+  it('reads an occurrences page with the passcode in the header and the paging in the params', () => {
+    service.getPublicMeetingOccurrencesPage(MEETING_UID, 'SUPER_SECRET', { pageSize: 12, direction: 'past', cursor: '1784323800000' }).subscribe();
+
+    const [url, options] = get.mock.calls[0];
+    expect(url).toBe(`/public/api/meetings/${MEETING_UID}/occurrences`);
+    expect((options.headers as HttpHeaders).get('x-meeting-password')).toBe('SUPER_SECRET');
+    expect((options.params as HttpParams).toString()).toBe('page_size=12&direction=past&cursor=1784323800000');
+  });
+
+  it('sends only the page size for the window, and no header without a passcode', () => {
+    service.getPublicMeetingOccurrencesPage(MEETING_UID, null, { pageSize: 12 }).subscribe();
+
+    const [, options] = get.mock.calls[0];
+    expect(options.headers).toBeUndefined();
+    expect((options.params as HttpParams).toString()).toBe('page_size=12');
+  });
+
+  it('passes a refusal on to the caller without logging it, and logs any other failure', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const errors: unknown[] = [];
+
+    get.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 403 })));
+    service.getPublicMeetingOccurrencesPage(MEETING_UID, null, { pageSize: 12 }).subscribe({ error: (error) => errors.push(error) });
+    expect(consoleError).not.toHaveBeenCalled();
+
+    get.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 500 })));
+    service.getPublicMeetingOccurrencesPage(MEETING_UID, null, { pageSize: 12 }).subscribe({ error: (error) => errors.push(error) });
+    expect(consoleError).toHaveBeenCalledTimes(1);
+
+    expect(errors.map((error) => (error as HttpErrorResponse).status)).toEqual([403, 500]);
+  });
+});
+
+// "Could not load" and "has not answered" are different answers for the V2 status pill (E2-04).
+describe('MeetingService own RSVP', () => {
+  let service: MeetingService;
+  let get: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    get = vi.fn();
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: { get } }] });
+    service = TestBed.inject(MeetingService);
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  });
+
+  it('scopes the request to an occurrence when one is given', async () => {
+    get.mockReturnValue(of(null));
+
+    await firstValueFrom(service.getMeetingRsvpForCurrentUserOrFail(MEETING_UID, '1760000000'));
+
+    expect(get).toHaveBeenCalledWith(`/api/meetings/${MEETING_UID}/rsvp/me`, { params: { occurrenceId: '1760000000' } });
+  });
+
+  it('asks for series-wide answers only with allDatesOnly and no occurrence, the occurrence winning otherwise', async () => {
+    get.mockReturnValue(of(null));
+
+    await firstValueFrom(service.getMeetingRsvpForCurrentUserOrFail(MEETING_UID, undefined, true));
+    expect(get).toHaveBeenLastCalledWith(`/api/meetings/${MEETING_UID}/rsvp/me`, { params: { rsvp_scope: 'all' } });
+
+    await firstValueFrom(service.getMeetingRsvpForCurrentUserOrFail(MEETING_UID, '1760000000', true));
+    expect(get).toHaveBeenLastCalledWith(`/api/meetings/${MEETING_UID}/rsvp/me`, { params: { occurrenceId: '1760000000' } });
+  });
+
+  it('rethrows a failure from the strict variant', async () => {
+    get.mockReturnValue(throwError(() => ({ status: 500 })));
+
+    await expect(firstValueFrom(service.getMeetingRsvpForCurrentUserOrFail(MEETING_UID))).rejects.toEqual({ status: 500 });
+    expect(console.error).toHaveBeenCalled();
+  });
+
+  it('keeps reading a failure as null in the original method', async () => {
+    get.mockReturnValue(throwError(() => ({ status: 500 })));
+
+    await expect(firstValueFrom(service.getMeetingRsvpForCurrentUser(MEETING_UID))).resolves.toBeNull();
   });
 });
 

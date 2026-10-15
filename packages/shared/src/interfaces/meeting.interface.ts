@@ -382,6 +382,8 @@ export interface Meeting {
   participant_count?: number;
   /** Attended count for past meetings (response only) */
   attended_count?: number;
+  /** Attendees nobody has identified yet (`PastMeetingAttendanceCounts.unverified_attended_count`, N-02). */
+  unverified_attended_count?: number;
   /** Meeting occurrences */
   occurrences: MeetingOccurrence[];
   /** RFC3339 start time of the next upcoming occurrence (server-computed by the meeting service).
@@ -1007,6 +1009,14 @@ export interface PastMeeting extends Meeting {
   occurrence_id: string;
   /** Composite meeting and occurrence ID (e.g., "99152950841-1630560600000"); used as the canonical id downstream */
   meeting_and_occurrence_id?: string;
+  /**
+   * Who may read each artifact, as upstream FGA enforces it for a caller's own token. Carried by the
+   * past meeting's query-service document, not by the ITX read (whose `artifact_visibility` is the
+   * recording's level). The BFF reads them only to decide what an anonymous caller may read (E4-04).
+   */
+  recording_access?: ArtifactVisibility | null;
+  transcript_access?: ArtifactVisibility | null;
+  ai_summary_access?: ArtifactVisibility | null;
   /** Platform-specific meeting ID (e.g., Zoom meeting ID) */
   platform_meeting_id: string;
   /** Array of session objects with start/end times */
@@ -1042,24 +1052,64 @@ export interface PastOccurrenceSummary {
 }
 
 /**
- * Minimal projection of a live occurrence for the public occurrences endpoint
+ * Minimal projection of a live occurrence, as the public project calendar feed publishes it
  * @description Timestamps and status only — titles, descriptions, and counts are
- * deliberately excluded from the public payload
+ * deliberately excluded from that public payload
  */
 export type MeetingOccurrenceSummary = Pick<MeetingOccurrence, 'occurrence_id' | 'start_time' | 'duration' | 'status'>;
 
 /**
+ * A live occurrence on the public occurrences endpoint, for the occurrence strip and the
+ * browse-all dialog (E6-01, #3584)
+ * @description Adds the occurrence `title` (any caller who passes the meeting gate sees the series
+ * itself) and `registrant_count`, set only for a caller the gate let in as a registrant or
+ * organizer; a signed-in registrant of a public meeting, let in by the open gate, gets none.
+ * `description` stays excluded: unused, and the largest field.
+ */
+export type MeetingTimelineOccurrence = Pick<MeetingOccurrence, 'occurrence_id' | 'start_time' | 'duration' | 'status' | 'title' | 'registrant_count'>;
+
+/** Why the public meeting gate let a caller see a meeting's content: the gate it passed. */
+export type MeetingContentAccess = 'public' | 'password' | 'registrant' | 'organizer';
+
+/**
  * Series timeline for the public meeting occurrences endpoint
- * @description Past occurrences from v1_past_meeting records plus a minimal
- * projection of the live series' current/future occurrences
+ * @description Past occurrences from v1_past_meeting records (timestamps only) plus a projection
+ * of the live series' current/future occurrences: timestamps, status and title, and the registrant
+ * count for a registrant or organizer only
  */
 export interface PublicMeetingOccurrencesResponse {
   /** Past occurrences, ascending by scheduled start time */
   past: PastOccurrenceSummary[];
-  /** Current/future occurrences (minimal projection); empty when the series no longer exists */
-  future: MeetingOccurrenceSummary[];
+  /** Current/future occurrences, ascending on a paged request (unpaged, in ITX's order); empty when the series no longer exists */
+  future: MeetingTimelineOccurrence[];
   /** Cancelled occurrence IDs from the live series (10-digit Unix-second keys) */
   cancelled_occurrences?: string[];
+  /** Paged requests only: older past occurrences exist than `past[0]` */
+  past_has_more?: boolean;
+  /** Paged requests only: later occurrences exist than the last of `future` */
+  future_has_more?: boolean;
+  /** Paged requests only, when `past_has_more`: send as `cursor` with `direction=past` for the next older page */
+  past_cursor?: string;
+  /** Paged requests only, when `future_has_more`: send as `cursor` with `direction=future` for the next later page */
+  future_cursor?: string;
+  /** Paged requests only: true when the past history could not be read in full; `past` is then empty rather than a silent prefix */
+  past_incomplete?: boolean;
+}
+
+/** Which side of the timeline a paged occurrences request reads (E6-02, #3585). */
+export type MeetingOccurrenceDirection = 'past' | 'future';
+
+/**
+ * The paging parameters of `GET /public/api/meetings/:id/occurrences` (E6-02, #3585), parsed. Absent
+ * (null) when the request names none, which keeps the whole-timeline response V1 reads.
+ */
+export interface MeetingOccurrencesPageRequest {
+  /** Occurrences per side (the `page_size` parameter), at most `MEETING_OCCURRENCES_PAGE_MAX_LIMIT` */
+  limit: number;
+  /** Read one side only; both sides around now when absent */
+  direction?: MeetingOccurrenceDirection;
+  /** A 13-digit Unix-millisecond start: older than it with `past`, later than it with `future` */
+  cursor?: number;
 }
 
 /**
@@ -1127,6 +1177,91 @@ export interface PastMeetingParticipant {
   updated_at: string;
 }
 
+/** A past-meeting artifact that has its own access level (E4-04). */
+export type PastMeetingArtifactKind = 'recording' | 'transcript' | 'summary';
+
+/**
+ * One row of the public past-meeting roster (`GET /public/api/meetings/past/:id/participants`): only
+ * the fields `meeting-surface-boundary.md` § Public roster fields allows. No email, job title or
+ * committee voting status.
+ */
+export interface PublicPastMeetingParticipant {
+  uid: string;
+  first_name: string;
+  last_name: string;
+  avatar_url?: string;
+  org_name?: string;
+  is_attended: boolean;
+  is_invited: boolean;
+}
+
+/** How well a past meeting was attended, by its rate (E4-05): the band its rate bar is coloured by. */
+export type PastMeetingAttendanceTone = 'low' | 'medium' | 'high';
+
+/**
+ * How an attendee's identity was established (N-02, FR-033), from the reconciliation flags
+ * (`getPastMeetingIdentityTier`): `verified` (matched to a known person), `auto-matched` (matched
+ * automatically on an exact email or username), `ai-reconciled` (an AI suggestion an organizer
+ * confirmed), or `unverified` (left unknown, or still needing review). Only attendees have one.
+ */
+export type PastMeetingIdentityTier = 'verified' | 'auto-matched' | 'ai-reconciled' | 'unverified';
+
+/**
+ * The names behind an attendee's row besides the one it shows (N-02, `getPastMeetingIdentityNames`),
+ * each null unless it differs from that name: what they joined Zoom as, and the invitee
+ * reconciliation matched them to.
+ */
+export interface PastMeetingIdentityNames {
+  joinedAs: string | null;
+  matchedTo: string | null;
+}
+
+/** The participant counts a past meeting carries, as the BFF counts them (`countPastMeetingAttendance`). */
+export interface PastMeetingAttendanceCounts {
+  /** Every participant record: each was invited, attended, or both. */
+  participant_count: number;
+  attended_count: number;
+  /** Participants who were invited. */
+  individual_registrants_count: number;
+  /**
+   * Attendees in the `unverified` identity tier (N-02): counted in `attended_count`, but nobody has
+   * established who they are. Notetaker bots are left out, as reconciliation leaves them out.
+   */
+  unverified_attended_count?: number;
+}
+
+/**
+ * A past meeting's attendance as both the public page and the admin page show it (E4-05): one source
+ * of truth, `getPastMeetingAttendanceFigures` over the BFF's counts. `rate` and `tone` are null when
+ * there is nobody to count (no participants), so a page shows the row without inventing a percentage.
+ */
+export interface PastMeetingAttendanceFigures {
+  total: number;
+  attended: number;
+  /** Participants who did not attend (`total - attended`). */
+  absent: number;
+  /** Attended as a whole percentage of `total`. */
+  rate: number | null;
+  tone: PastMeetingAttendanceTone | null;
+  /** How many of `attended` are unverified (N-02), so a page can say so; null when not counted. */
+  unverified: number | null;
+}
+
+/**
+ * The public past-meeting roster: the identified people (invitees, and attendees in any identity tier
+ * but `unverified`), without their tier, plus how many attendees are `unverified` (the identity-tier
+ * aggregate, N-02), who are counted but never listed.
+ */
+export interface PublicPastMeetingRoster {
+  participants: PublicPastMeetingParticipant[];
+  unidentified_attendees: number;
+  /**
+   * The meeting's attendance counts over every participant, listed or not (`countPastMeetingAttendance`,
+   * E4-05): the figures the V2 page shows, from the same helper as the admin page.
+   */
+  attendance: PastMeetingAttendanceCounts;
+}
+
 /**
  * Past meeting participant enriched with committee membership data from meeting registrants
  */
@@ -1145,6 +1280,20 @@ export interface EnrichedPastMeetingParticipant extends PastMeetingParticipant {
   committee_voting_status?: string | null;
   /** Committee category (from committee member data) */
   committee_category?: string | null;
+}
+
+/**
+ * A row of the admin participant list (N-02): the enriched participant plus its identity tier, the
+ * tier's label (null for someone who did not attend), and the names behind the row
+ * (`toPastMeetingParticipantRow`).
+ */
+export interface PastMeetingParticipantRow extends EnrichedPastMeetingParticipant {
+  /** Null for someone who did not attend, and for every attending notetaker bot, matched or not. */
+  identity_tier: PastMeetingIdentityTier | null;
+  identity_label: string | null;
+  identity_names: PastMeetingIdentityNames;
+  /** A notetaker or recording bot (#2253): never queued for review, so never shown as needing one. */
+  is_notetaker_bot: boolean;
 }
 
 /**
@@ -1557,6 +1706,11 @@ export interface PastMeetingRecording {
   sessions: RecordingSession[];
   /** Total size of all recordings in bytes */
   total_size: number;
+  /**
+   * Length in seconds of the linked (largest) session, derived by the BFF from its media files
+   * (`getRecordingDurationSeconds`, E4-02); `null` when it cannot be measured.
+   */
+  duration_seconds?: number | null;
   /** Creation timestamp */
   created_at: string;
   /** Last update timestamp */
@@ -1892,6 +2046,21 @@ export interface MeetingJoinPageState {
 }
 
 /**
+ * The public meeting page's `MeetingJoinPageState`, captured by the meeting details gate for V2
+ * @description V1 removes the `meetingJoinState` TransferState key in its constructor, and the
+ * browser always mounts V1 before the gate can swap to V2, so V2 cannot read the key itself. The
+ * gate snapshots it first and hands it over once. `routeId` is the `/meetings/:id` param the
+ * snapshot was taken under, so V2 only seeds from it for that same meeting.
+ */
+export interface MeetingDetailsSeed {
+  routeId: string | null;
+  state: MeetingJoinPageState;
+}
+
+/** Which of the three top-level branches the meeting details V2 page renders. */
+export type MeetingDetailsLoadStatus = 'loading' | 'ready' | 'error';
+
+/**
  * Parsed section from an AI-generated meeting summary
  * @description Represents a structured section extracted from markdown `##` headings
  * in meeting summaries, with visual styling metadata for display
@@ -1998,7 +2167,8 @@ export interface MeetingAttendeePreviewPerson {
  * builds this shape field-by-field rather than deleting known-sensitive keys off a full `Meeting`, so
  * credentials (`password`, `passcode`, `host_key`, `zoom_config`) and organizer PII (`created_by`,
  * `owner`, `organizers`) stay out of the anonymous payload even as new `Meeting` fields land upstream
- * (LFXV2-2802). Mirrors the minimal-projection contract of `PublicMeetingOccurrencesResponse`.
+ * (LFXV2-2802). Its occurrences use the timestamps-only `MeetingOccurrenceSummary`, stricter than the
+ * occurrences endpoint's `MeetingTimelineOccurrence`.
  */
 export interface PublicCalendarMeeting {
   /** Meeting UID of the live series, or of the originating series for a past-meeting row */
@@ -2263,6 +2433,18 @@ export interface MeetingCreateMenuRow {
  * column, where hanging the whole panel off to one side reads as belonging to something else.
  */
 export type MeetingCreateMenuAlign = 'right' | 'center';
+
+/** The past roster's invitation filter on the V2 page (E4-05). */
+export type PastRosterInvitationFilter = 'all' | 'invited' | 'not-invited';
+
+/** The past roster's attendance filter on the V2 page (E4-05). */
+export type PastRosterAttendanceFilter = 'all' | 'attended' | 'absent';
+
+/** One choice of a past-roster filter on the V2 page (E4-05): its value and its label. */
+export interface PastRosterFilterOption<T extends string> {
+  value: T;
+  label: string;
+}
 
 /** Common fields needed to build a calendar deep link for "Add to calendar" (GH-3505). */
 export interface CalendarLinkEvent {

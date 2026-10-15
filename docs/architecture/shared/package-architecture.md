@@ -43,6 +43,12 @@ Both forms resolve via the `apps/lfx-one/tsconfig.json` `paths` mapping above, n
 
 **Rule: code that runs outside Angular's own runtime (Playwright specs/helpers under `apps/lfx-one/e2e/`, standalone Node scripts, etc.) must deep-import the specific `.utils.ts` file it needs, not `@lfx-one/shared/utils`,** even when the barrel already re-exports the symbol — this is a second sanctioned case for deep imports, alongside "the barrel doesn't re-export it."
 
+### Shared specs that reach Angular declarations need the compiler first
+
+Deep-importing is not always enough. `utils/meeting.utils.ts` imports `HttpParams` from `@angular/common/http`, and those declarations hit the same JIT-compile path — so a Vitest spec under `packages/shared/src/` that pulls it in, directly or transitively, throws at import time even though it never touches a form.
+
+**Rule: a `packages/shared` spec whose import graph reaches an Angular declaration must open with `import '@angular/compiler';` before its other imports,** with a comment saying which import pulls the compiler in. `meeting.utils.spec.ts`, `meeting-privacy.utils.spec.ts`, `meeting-calendar.utils.spec.ts`, `vote.utils.spec.ts` and `meeting-view-model.utils.spec.ts` all carry this prelude. The app's own specs (`apps/lfx-one/src/**`) do not need it — they run under the Angular unit-test builder, which loads the compiler itself.
+
 ## What Goes Where
 
 ### Interfaces (`interfaces/`)

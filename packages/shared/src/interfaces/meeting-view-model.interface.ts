@@ -1,0 +1,534 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import type { MeetingVisibility } from '../enums';
+import type {
+  MeetingRegistrant,
+  MeetingTimelineOccurrence,
+  PastMeetingSummary,
+  PastOccurrenceSummary,
+  PublicPastMeetingRoster,
+  RsvpResponse,
+} from './meeting.interface';
+
+/**
+ * Where the viewer sits relative to the meeting's schedule.
+ *
+ * `live` is the join window, which opens `early_join_time_minutes` before the start and closes
+ * `MEETING_END_BUFFER_MS` after the scheduled end — the same window `canJoinMeeting` answers, so
+ * "the join button is showing" and "the time state is live" can never disagree.
+ */
+export type MeetingTimeState = 'before' | 'live' | 'ended';
+
+/** A committee chip in the V2 header: its name, and its group page path with the uid encoded. */
+export interface MeetingCommitteeLink {
+  uid: string;
+  name: string;
+  href: string;
+}
+
+/**
+ * The meeting status the V2 page shows in its pill and identity bar (E1-05).
+ * @description The time state, except that before the meeting a viewer on the invite list with RSVP
+ * tracking on sees their own answer: `awaiting-rsvp`, `going`, `maybe` or `cant-attend`.
+ */
+export type MeetingStatusKind = 'upcoming' | 'starting-soon' | 'live' | 'ended' | 'awaiting-rsvp' | 'going' | 'maybe' | 'cant-attend';
+
+/** Start and end of the occurrence a V2 section is about, end derived from its duration. */
+export interface MeetingTimeWindow {
+  start: Date;
+  end: Date;
+}
+
+/** Inputs to `resolveMeetingStatus`. */
+export interface MeetingStatusInput {
+  timeState: MeetingTimeState;
+  /**
+   * Whether the scheduled start has passed. The join window opens before it, so a `live` time state
+   * before the start reads as `starting-soon`.
+   */
+  hasStarted: boolean;
+  /** `Meeting.invited`: the viewer is on the invite list (a registrant, or an invited organizer). */
+  invited: boolean;
+  /** `Meeting.is_invite_responses_enabled`; pre-2024 meetings never collected RSVPs. */
+  inviteResponsesEnabled: boolean;
+  /**
+   * The viewer's own answer for the selected occurrence: `null` when they have not answered,
+   * `undefined` while it is not loaded. Unknown never reads as "Awaiting your RSVP".
+   */
+  myRsvp: RsvpResponse | null | undefined;
+}
+
+/**
+ * Who the viewer is, as far as this meeting is concerned.
+ *
+ * - `visitor` — not signed in. No roster, no registration, no RSVP.
+ * - `outsider` — signed in but not on the meeting. May be able to self-register, or may not.
+ * - `registrant` — on the meeting's registrant list (`Meeting.invited`).
+ * - `organizer` — has write access to the meeting (`Meeting.organizer`).
+ *
+ * The epic's viewer axis also names a `host` tier. It is deliberately absent because host-key
+ * entitlement is orthogonal to this role, not a rung on it: the payload already carries it as
+ * `Meeting.can_view_host_key` / `Meeting.host_key`, which the BFF sets for whoever holds the FGA
+ * `host` relation, including co-hosts who are not organizers. Read those two fields directly;
+ * never treat `organizer` as the host-key gate.
+ */
+export type MeetingViewerRole = 'visitor' | 'outsider' | 'registrant' | 'organizer';
+
+/**
+ * The single control the action rail renders. Exactly one kind is in effect at a time, and every
+ * combination of inputs maps to a named kind — `none` is a decision ("nothing to offer this
+ * viewer"), not a fall-through.
+ *
+ * - `join` — the join window is open and the viewer is on the meeting, or is a signed-in viewer on
+ *   an unrestricted meeting (reaching the page already required the link).
+ * - `rsvp` — pre-meeting RSVP controls (only ever returned when RSVP tracking is on).
+ * - `register` — self-registration, available on public unrestricted meetings.
+ * - `invitation-required` — signed-in outsider on a restricted meeting. V1 renders an empty rail
+ *   before the window and a join error inside it; saying so is much of the point of this redesign.
+ * - `guest-join` — anonymous visitor inside the join window, whatever the privacy. On a restricted
+ *   meeting the server matches the submitted email against the registrants; this is how an invitee
+ *   without an LFX session joins from their invite link.
+ * - `tools` — post-meeting artifacts (recording, transcript, summary).
+ * - `no-access` — the meeting has ended and the viewer cannot see its artifacts.
+ * - `rsvp-unavailable` — registrant on a pre-2024 meeting, where `is_invite_responses_enabled` is
+ *   not true and no RSVP exists to show or collect. The other V1 silent-empty state.
+ * - `none` — nothing actionable, and nothing worth explaining.
+ */
+export type ActionSlotKind = 'join' | 'rsvp' | 'register' | 'invitation-required' | 'guest-join' | 'tools' | 'no-access' | 'rsvp-unavailable' | 'none';
+
+/**
+ * The state of a V2 join link (E2-01 FR-027, E2-06 FR-025): the signed-in Join control's, fetched
+ * with the account's email, and the guest form's, fetched with the email typed in. `loading` is
+ * also what the server renders, since the fetch is browser-only; `idle` is the guest form's state
+ * until its fields are valid, when there is nothing to fetch yet.
+ */
+export interface MeetingJoinUrlState {
+  status: 'idle' | 'loading' | 'ready' | 'error';
+  /**
+   * The join link, once `ready`: bare from `MeetingJoinUrlService`, with the Zoom display-name params
+   * once a component adds them (`buildJoinUrlWithParams`).
+   */
+  url?: string;
+  /** The BFF's message, or a generic one, once `error`. */
+  error?: string;
+  /** The BFF's error code, e.g. `NOT_REGISTERED_FOR_MEETING`. */
+  code?: string | null;
+}
+
+/**
+ * The meeting's privacy, resolved once into the label and icon the header renders plus the raw
+ * fields any further branching needs. `openToPublic` — public *and* unrestricted — gates
+ * self-registration only. Joining keys on `restricted` alone, because reaching a non-open page
+ * already required the meeting password.
+ */
+export interface MeetingPrivacyState {
+  /** `fa-light` class from `getMeetingPrivacyIcon`. */
+  icon: string;
+  /** Human label from `getMeetingPrivacyLabel`, e.g. `Private (Restricted)`. */
+  label: string;
+  /** True only when the meeting is public AND unrestricted. */
+  openToPublic: boolean;
+  restricted: boolean;
+  /** Never null: `resolvePrivacy` reads an absent visibility as private, so the state fails closed. */
+  visibility: MeetingVisibility;
+}
+
+/** Inputs to `resolveViewerRole` — the viewer-context fields the detail payload carries. */
+export interface MeetingViewerContext {
+  /** Whether a user session exists at all. */
+  authenticated: boolean;
+  /**
+   * `Meeting.invited` — the viewer is on the registrant list. Populated only by the upcoming detail
+   * endpoint: the past endpoint folds registrant status into `full_access` and never sets
+   * `invited`, so on a past meeting a registrant resolves as `outsider`. Past-meeting sections key
+   * on `fullAccess`, not on the role, for that reason.
+   */
+  invited: boolean;
+  /** `Meeting.organizer` — the viewer has write access. */
+  organizer: boolean;
+}
+
+/**
+ * Inputs to `resolveActionSlot`.
+ *
+ * The viewer's own RSVP answer is deliberately not here: it changes what the RSVP card *shows*,
+ * never which kind the rail renders. It belongs to the RSVP card's own input (E2-04 / E2-05), not
+ * to this decision or to section visibility.
+ */
+export interface ActionSlotInput {
+  /**
+   * Whether the viewer may see a past meeting's artifacts — `full_access` on
+   * {@link PublicPastMeetingResponse}, held client-side as `pastMeetingFullAccess`. Only
+   * consulted when `timeState` is `ended`.
+   */
+  fullAccess: boolean;
+  /**
+   * Normalized `Meeting.is_invite_responses_enabled`, read through
+   * `isMeetingInviteResponsesEnabled` — never the raw indexed alias. When false, this resolver can
+   * never return `rsvp`.
+   */
+  inviteResponsesEnabled: boolean;
+  privacy: MeetingPrivacyState;
+  timeState: MeetingTimeState;
+  viewerRole: MeetingViewerRole;
+}
+
+/** Inputs to `resolveVisibleSections`. */
+export interface MeetingSectionVisibilityInput {
+  fullAccess: boolean;
+  inviteResponsesEnabled: boolean;
+  /** Whether the meeting recurs, i.e. whether there is an occurrence strip to render. */
+  recurring: boolean;
+  timeState: MeetingTimeState;
+  viewerRole: MeetingViewerRole;
+}
+
+/**
+ * Which regions of the details page render. Every field is a decision, so a section that is
+ * missing from the page can always be traced to one boolean rather than to an `@if` buried in a
+ * template.
+ *
+ * `rsvpSummary`, `rsvpRosterFilter` and `rsvpAvatarBadges` are all separately false whenever RSVP
+ * tracking is off, because the hard gate is "no RSVP UI anywhere", not "no RSVP card".
+ */
+export interface MeetingSectionVisibility {
+  agenda: boolean;
+  /**
+   * The join region — visible until the meeting ends, the live window included, and only for
+   * people on the meeting. Covers the join link only. The host key is **not** gated by this flag:
+   * a co-host who is not an organizer can hold it while resolving as `outsider`, so render it from
+   * `Meeting.can_view_host_key` / `Meeting.host_key` directly. Passcodes and dial-in numbers wait for
+   * upstream U-04 / U-05 and are not implied here.
+   */
+  joinDetails: boolean;
+  materials: boolean;
+  /** The occurrence strip for a recurring meeting. */
+  occurrences: boolean;
+  /**
+   * The participant roster.
+   *
+   * - **Upcoming or live:** registrants and organizers only. The registrant list comes back empty for
+   *   anyone else, and the detail payloads no longer populate `individual_registrants_count` or
+   *   `committee_members_count`, so an outsider or visitor has no count source: false for them
+   *   rather than an empty list or an invented number.
+   * - **Ended:** any signed-in viewer with artifact access, whatever the role, because the past
+   *   payload never sets `invited` and a past registrant arrives as `outsider`. The roster is then
+   *   the `PastMeetingParticipant` list. Never for an anonymous viewer.
+   */
+  people: boolean;
+  /** Per-avatar RSVP badges on the roster. Upcoming or live only: past rows carry no RSVP. */
+  rsvpAvatarBadges: boolean;
+  /** The "responded / attending" filter on the roster. Upcoming or live only. */
+  rsvpRosterFilter: boolean;
+  /**
+   * The aggregate RSVP strip, from meeting-level counts. Upcoming or live: registrants and organizers.
+   * Ended: the same audience as `people` — any signed-in viewer with artifact access.
+   */
+  rsvpSummary: boolean;
+  /** Recording, transcript and AI summary — post-meeting, gated on artifact access. */
+  tools: boolean;
+}
+
+/** What the people section's roster is fetched for (E3-04): the meeting and the RSVP occurrence. */
+export interface MeetingRosterRequest {
+  meetingId: string;
+  /** `undefined` for a one-off meeting, whose registrants and RSVPs are not per occurrence. */
+  occurrenceId: string | undefined;
+}
+
+/** One upcoming roster row of the people section (E3-04), display-ready. */
+export interface MeetingPeopleRow {
+  uid: string;
+  name: string;
+  /** "job title · organization", whichever of the two exist; `null` when neither does. */
+  role: string | null;
+  avatarUrl: string | null;
+  /** The registrant's `host` flag: shown as "Organizer" ahead of any RSVP. */
+  organizer: boolean;
+  /**
+   * The RSVP the row shows, as `data-attendance` reads it; `null` when RSVP tracking is off for the
+   * meeting, so no RSVP UI renders at all.
+   */
+  attendance: RsvpResponse | 'pending' | null;
+  /** How they came to be invited: directly, or with a committee (`data-invitation`). */
+  invitation: 'direct' | 'committee';
+}
+
+/** The people section's RSVP tallies; `pending` is everyone on the roster who has not answered. */
+export interface MeetingPeopleTallies {
+  accepted: number;
+  maybe: number;
+  declined: number;
+  pending: number;
+}
+
+/** Options for `buildMeetingPeopleRows` (E3-04). */
+export interface MeetingPeopleRowOptions {
+  /** `Meeting.is_invite_responses_enabled`: when false, no row carries an RSVP. */
+  inviteResponsesEnabled: boolean;
+  /** The signed-in viewer, to find their own row. */
+  viewer?: { username?: string | null; email?: string | null } | null;
+  /**
+   * The viewer's own answer as the page knows it (`MeetingDetailsStateService.myRsvp`). An answer the
+   * viewer just saved reaches the page before the query service indexes it, so it wins over the
+   * roster's copy on the viewer's row; `null` or `undefined` leave the roster's copy alone.
+   */
+  viewerRsvp?: RsvpResponse | null;
+}
+
+/**
+ * The people section's roster load (E3-04). `registrants` is what the section shows: the last roster
+ * fetched for the same meeting and occurrence while a refresh is in flight or after it fails.
+ */
+export interface MeetingRosterState {
+  status: 'loading' | 'ready' | 'error';
+  registrants: MeetingRegistrant[];
+}
+
+/**
+ * One past-meeting artifact as the V2 Recording & Transcript section knows it (E4-01): `available`
+ * with somewhere to open it, `none` when the meeting has no such artifact, `no-access` when the
+ * viewer may not open it, `error` when it could not be read, or `session-expired` when the read
+ * answered 401 (the section then asks the viewer to sign in). `sign-in`: an anonymous viewer whose
+ * public route refused this one artifact (#3528), which signing in may open.
+ */
+export interface MeetingArtifactState {
+  status: 'available' | 'none' | 'no-access' | 'error' | 'session-expired' | 'sign-in';
+  /** The recording's share URL (`getLargestSessionShareUrl`); unset for the transcript, which opens in a modal. */
+  url?: string;
+  /** The recording's length as shown (`formatRecordingDuration`, E4-02); unset when it could not be measured. */
+  duration?: string;
+  /** The same length for a screen reader (`formatRecordingDurationSpoken`), e.g. "58 minutes 24 seconds". */
+  durationLabel?: string;
+}
+
+/**
+ * The V2 Recording & Transcript section's load (E4-01). `sign-in`: an anonymous viewer the public
+ * artifact routes (E4-04) give nothing to (no artifact access, or no artifact of this meeting is
+ * public). `pending`: an ended meeting opened by its series id, which has no occurrence record to
+ * read artifacts from yet.
+ */
+export interface MeetingRecordingSectionState {
+  status: 'loading' | 'ready' | 'sign-in' | 'pending';
+  recording: MeetingArtifactState;
+  transcript: MeetingArtifactState;
+  /** The AI summary (E4-03): `available` only with content this viewer may read. */
+  summary: MeetingSummaryArtifactState;
+}
+
+/**
+ * The one approval state of a past-meeting AI summary, shared by the page, the summary modal and the
+ * card (E4-03): `approved`, `pending` (requires approval and is not approved yet), or `not-required`
+ * (the meeting never required approval). It is also the `data-approval` attribute (testid contract).
+ */
+export type PastMeetingSummaryApprovalState = 'approved' | 'pending' | 'not-required';
+
+/**
+ * The AI summary as the V2 Recording & Transcript section knows it (E4-03). `awaiting-review` is an
+ * unapproved summary held back from a viewer who is not an organizer: they learn it exists, not what
+ * it says. `available` carries the markdown and its approval state.
+ */
+export interface MeetingSummaryArtifactState {
+  status: MeetingArtifactState['status'] | 'awaiting-review';
+  /** The summary's markdown (edited content first), when `available`. */
+  content?: string;
+  approval?: PastMeetingSummaryApprovalState;
+  /** The record behind `available`, for the full-summary modal. */
+  record?: PastMeetingSummary;
+}
+
+/**
+ * The V2 past roster's load (E4-05). `ready` carries the public roster. `no-access`: the BFF refused it
+ * (403). `session-expired`: the session lapsed (401), so the section asks the viewer to sign in again.
+ */
+export interface MeetingPastRosterState {
+  status: 'loading' | 'ready' | 'error' | 'no-access' | 'session-expired';
+  roster?: PublicPastMeetingRoster;
+}
+
+/** The organizer's link from the V2 page to the admin page (E4-05): router commands and query params. */
+export interface MeetingAdminLink {
+  commands: string[];
+  queryParams: Record<string, string>;
+}
+
+/**
+ * One chip of the V2 occurrence strip (E6-03, #3586): an occurrence of the series, past or upcoming,
+ * cancelled ones included (FR-044).
+ */
+export interface MeetingOccurrenceStripItem {
+  /** The start as a Unix-millisecond instant: the strip's key, and the URL's `?occurrence=` value */
+  startMs: number;
+  /**
+   * ISO start time as scheduled, what a row displays: a past record's `scheduled_start_time` when it has
+   * one, which can differ from the composite id's start (`startMs`, the identity)
+   */
+  startTime: string;
+  /** Minutes */
+  duration: number;
+  /**
+   * Whether `duration` is the occurrence's own (a live occurrence's, or a past record's scheduled end)
+   * rather than the series' duration standing in: only then may an end time be shown as fact
+   */
+  endKnown: boolean;
+  /** The canonical occurrence id (Unix seconds, 10 digits), what RSVP and occurrence APIs take */
+  occurrenceId: string;
+  /** A past record's composite id (`{meetingId}-{13-digit ms}`), its canonical URL; absent for an upcoming one */
+  pastResourceId?: string;
+  /** Ended on the clock (end plus the end buffer), or a past record */
+  isPast: boolean;
+  /** Cancelled, by `status === 'cancel'` or a listed `cancelled_occurrences` id */
+  cancelled: boolean;
+}
+
+/** The strip's timeline as loaded so far, with whether either end has more to page in. */
+export interface MeetingOccurrenceStripTimeline {
+  items: MeetingOccurrenceStripItem[];
+  pastHasMore: boolean;
+  futureHasMore: boolean;
+  /** Send as `cursor` with `direction=past` for the next older page */
+  pastCursor?: string;
+  /** Send as `cursor` with `direction=future` for the next later page */
+  futureCursor?: string;
+}
+
+/** What the strip has read of the series so far: the occurrences endpoint's pages, merged. */
+export interface MeetingOccurrenceStripPages {
+  /** `{seriesUid}:{password}`: a page read for another key is dropped */
+  key: string;
+  past: PastOccurrenceSummary[];
+  future: MeetingTimelineOccurrence[];
+  cancelled: string[];
+  pastHasMore: boolean;
+  futureHasMore: boolean;
+  pastCursor?: string;
+  futureCursor?: string;
+  /** The endpoint could not read the past history: the past side is unknown, not empty */
+  pastIncomplete: boolean;
+}
+
+/** One chip as the strip renders it: an item with everything its template shows, computed once. */
+export interface MeetingOccurrenceStripChip {
+  item: MeetingOccurrenceStripItem;
+  /** Upper-case short weekday ("THU") in the viewer's timezone */
+  weekday: string;
+  /** Two-digit day ("09") */
+  day: string;
+  /** Short month ("Jul") */
+  month: string;
+  /** The full date and its notes, for a screen reader ("Thursday, July 16, 2026, next meeting") */
+  label: string;
+  cssClass: string;
+  selected: boolean;
+  nextUp: boolean;
+  /** 0 for the strip's one tab stop, -1 for every other chip */
+  tabIndex: number;
+}
+
+/** A tab of the browse-all-occurrences dialog (E6-04). */
+export type MeetingOccurrenceBrowseTab = 'upcoming' | 'past';
+
+/** A tab of the browse dialog with its label. */
+export interface MeetingOccurrenceBrowseTabOption {
+  id: MeetingOccurrenceBrowseTab;
+  label: string;
+}
+
+/**
+ * What the occurrence strip hands its browse-all dialog (E6-04, #3587). The dialog reads the strip's
+ * loaded series through these getters and asks the strip to read further or open an occurrence, so
+ * one loader serves both, with its run guards.
+ */
+export interface MeetingOccurrenceBrowseDialogData {
+  /** The meeting's title, the dialog's heading */
+  title: string;
+  /** The project's logo, beside the heading, when it has one */
+  logoUrl: string | null;
+  /** The cadence ("Weekly on Thursday"), when the meeting's recurrence gives one */
+  cadence: string | null;
+  /** The viewer's timezone, for dates and times */
+  timezone: string;
+  /** Every occurrence loaded so far, ascending */
+  items: () => MeetingOccurrenceStripItem[];
+  /** The page's occurrence (Unix ms), the row marked "Viewing" */
+  selectedStartMs: () => number | null;
+  /** Whether the page shows an occurrence that has ended: the tab to open when its row is not loaded */
+  selectedHasEnded: () => boolean;
+  /** Whether a side has more to read */
+  hasMore: (tab: MeetingOccurrenceBrowseTab) => boolean;
+  /** The past history could not be read: the Past tab is unknown, not empty */
+  pastIncomplete: () => boolean;
+  /** Reads the next page on a side; false when there is none or it failed */
+  loadMore: (tab: MeetingOccurrenceBrowseTab) => Promise<boolean>;
+  /** Opens an occurrence as a chip would */
+  open: (item: MeetingOccurrenceStripItem) => void;
+}
+
+/** A row of the browse-all-occurrences dialog as it renders, computed once per change (E6-04). */
+export interface MeetingOccurrenceBrowseRow {
+  item: MeetingOccurrenceStripItem;
+  /** Upper-case short month ("JUL"), the date tile's band */
+  month: string;
+  /** Day of the month, the date tile's figure */
+  day: string;
+  /** Full date ("Thursday, July 23, 2026") */
+  date: string;
+  /** "9:00 AM – 10:00 AM", or the start alone when the end is not known */
+  time: string;
+  /** The page's occurrence: marked "Viewing" */
+  selected: boolean;
+  /** The row's own colours (selected, hovered, or inert when cancelled) */
+  rowClass: string;
+  /** The date tile's month band colours */
+  bandClass: string;
+}
+
+/** Where the strip's request goes: the series, and the password the page holds for it. */
+export interface MeetingOccurrenceStripRequest {
+  seriesUid: string;
+  password: string | null;
+}
+
+/**
+ * Where an organizer's page without a host key stands against the host-key window (E7-02): `closed`
+ * before it; once it opens on a page that saw it closed, `opening` until the first read is 90s old,
+ * `retry` until the second is, then `settled` (or `null` when the page is not waiting for a key).
+ */
+export type MeetingHostKeyWait = 'closed' | 'opening' | 'retry' | 'settled';
+
+/** What the edit-agenda dialog edits (O-01): the series' agenda, or the selected occurrence's own. */
+export type MeetingAgendaEditScope = 'series' | 'occurrence';
+
+/** The occurrence an occurrence-scoped agenda edit saves to: the occurrence API needs its time. */
+export interface MeetingAgendaEditOccurrence {
+  occurrenceId: string;
+  startTime: string;
+  /** Minutes */
+  duration: number;
+}
+
+/** What the agenda section hands the edit-agenda dialog (O-01, #3604). */
+export interface MeetingEditAgendaDialogData {
+  meetingId: string;
+  scope: MeetingAgendaEditScope;
+  /** Set for an occurrence-scoped edit */
+  occurrence: MeetingAgendaEditOccurrence | null;
+  /** A series with more than one occurrence: a series edit says it applies to all of them */
+  recurring: boolean;
+  /** The agenda as the page showed it when the dialog opened, trimmed: the conflict check's baseline */
+  original: string;
+  /**
+   * Called with the agenda the page should now show: the one saved, or a newer one the organizer chose
+   * to keep. Called even if the dialog was dismissed while the save was in flight.
+   */
+  onApplied: (description: string) => void;
+}
+
+/** An agenda the page shows ahead of its next read, after an edit (O-01): keyed to what it edited. */
+export interface MeetingAgendaOverride {
+  meetingId: string;
+  /** `null` for the series' agenda */
+  occurrenceId: string | null;
+  description: string;
+}

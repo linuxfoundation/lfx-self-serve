@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { IMPORT_REGISTRANTS_MAX, QUERY_SERVICE_MAX_PAGE_SIZE, RSVP_RESPONSES } from '@lfx-one/shared/constants';
+import { IMPORT_REGISTRANTS_MAX, PAST_MEETING_IDENTITY_TIER_RANK, QUERY_SERVICE_MAX_PAGE_SIZE, RSVP_RESPONSES } from '@lfx-one/shared/constants';
 import { QueryServiceMeetingType } from '@lfx-one/shared/enums';
 import {
   ApiRequestOptions,
@@ -30,6 +30,7 @@ import {
   PastMeetingParticipant,
   PastMeetingRecording,
   PastMeetingSummary,
+  PublicMeetingAttachment,
   PastMeetingTranscript,
   PastMeetingTranscriptContent,
   PastOccurrenceSummary,
@@ -45,11 +46,15 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   buildRecurrenceNeverEndDate,
+  getPastMeetingIdentityTier,
   getPastMeetingTranscriptUrl,
+  getRecordingDurationSeconds,
+  isPastMeetingNotetakerBot,
   isMeetingAttendeeListShared,
   isShowMeetingAttendeesLocked,
   isUnresolvableParticipantName,
   mapITXResponseToMeetingRsvp,
+  maskEmailForLogs,
   normalizeIndexedMeetingAiSummary,
   normalizeIndexedMeetingInviteResponses,
   selectApplicableRsvp,
@@ -208,9 +213,12 @@ export class MeetingService {
     req: Request,
     meetingUid: string,
     meetingType: QueryServiceMeetingType = 'v1_meeting',
-    options: { access?: boolean; includeProject?: boolean } = {}
+    options: { access?: boolean; includeProject?: boolean; bearerToken?: string } = {}
   ): Promise<Meeting> {
-    const { access = true, includeProject = false } = options;
+    const { access = true, includeProject = false, bearerToken } = options;
+    // An explicit identity for every upstream call below (e.g. a public route's M2M token), so the
+    // caller never has to put it on the shared `req.bearerToken`; absent, they use the request's own.
+    const apiOptions: ApiRequestOptions | undefined = bearerToken ? { bearerToken } : undefined;
     logger.debug(req, 'get_meeting_by_id', 'Fetching meeting by ID', {
       meeting_id: meetingUid,
       type: meetingType,
@@ -218,7 +226,16 @@ export class MeetingService {
 
     // All meetings are now ITX-managed, use the ITX endpoint
     const meeting = normalizeIndexedMeetingInviteResponses(
-      await this.microserviceProxy.proxyRequest<Meeting>(req, 'LFX_V2_SERVICE', `/itx/meetings/${encodePathSegment(meetingUid)}`, 'GET')
+      await this.microserviceProxy.proxyRequest<Meeting>(
+        req,
+        'LFX_V2_SERVICE',
+        `/itx/meetings/${encodePathSegment(meetingUid)}`,
+        'GET',
+        undefined,
+        undefined,
+        undefined,
+        apiOptions
+      )
     );
 
     // Set the meeting ID from the URL param
@@ -247,7 +264,7 @@ export class MeetingService {
       includeProject
         ? fetchEntityProject(req, this.projectService, meeting.project_uid, { operation: 'get_meeting_by_id', meeting_id: meeting.id })
         : Promise.resolve(null),
-      committees ? this.getCommitteeNameMap(req, [meeting]) : Promise.resolve(null),
+      committees ? this.getCommitteeNameMap(req, [meeting], apiOptions) : Promise.resolve(null),
     ]);
     if (project) {
       Object.assign(meeting, toEntityProjectFields(project));
@@ -266,7 +283,7 @@ export class MeetingService {
         meeting_id: meetingUid,
       });
       // Add writer access field to the meeting
-      return await this.accessCheckService.addAccessToResource(req, meeting, meetingType, 'organizer');
+      return await this.accessCheckService.addAccessToResource(req, meeting, meetingType, 'organizer', apiOptions);
     }
 
     logger.debug(req, 'get_meeting_by_id', 'Completed meeting fetch', {
@@ -315,9 +332,16 @@ export class MeetingService {
    * fields (`project_slug`, `project_name`, `is_foundation`) so clients can reconcile project
    * context from the past meeting itself — mirrors `getMeetingById`'s `includeProject` option.
    * Opt-in because most callers (e.g. the past-meetings list) only need the raw ITX payload.
+   * @param options.bearerToken - Reads with this token instead of `req.bearerToken` (e.g. the M2M
+   * token on a public route), for the past meeting and its committee names alike.
    */
-  public async getPastMeetingById(req: Request, pastMeetingUid: string, options: { includeProject?: boolean } = {}): Promise<PastMeeting> {
-    const { includeProject = false } = options;
+  public async getPastMeetingById(
+    req: Request,
+    pastMeetingUid: string,
+    options: { includeProject?: boolean; bearerToken?: string } = {}
+  ): Promise<PastMeeting> {
+    const { includeProject = false, bearerToken } = options;
+    const apiOptions: ApiRequestOptions | undefined = bearerToken ? { bearerToken } : undefined;
     logger.debug(req, 'get_past_meeting_by_id', 'Fetching past meeting by ID', {
       past_meeting_id: pastMeetingUid,
     });
@@ -326,7 +350,11 @@ export class MeetingService {
       req,
       'LFX_V2_SERVICE',
       `/itx/past_meetings/${encodePathSegment(pastMeetingUid)}`,
-      'GET'
+      'GET',
+      undefined,
+      undefined,
+      undefined,
+      apiOptions
     );
 
     if (!meeting) {
@@ -344,7 +372,7 @@ export class MeetingService {
         past_meeting_id: pastMeetingUid,
         committee_count: meeting.committees.length,
       });
-      const committeeNameMap = await this.getCommitteeNameMap(req, [meeting]);
+      const committeeNameMap = await this.getCommitteeNameMap(req, [meeting], apiOptions);
       meeting.committees = meeting.committees.map((c) => ({
         uid: c.uid,
         name: committeeNameMap.get(c.uid) || c.name,
@@ -1014,10 +1042,10 @@ export class MeetingService {
       page_size: QUERY_SERVICE_MAX_PAGE_SIZE,
     };
 
-    logger.debug(req, 'get_meeting_registrants_by_email', 'Fetching meeting registrants by email params', {
+    // The email is masked and the filters left out: the address is verified PII, and debug logs keep it.
+    logger.debug(req, 'get_meeting_registrants_by_email', 'Fetching meeting registrants by email', {
       meeting_id: meetingUid,
-      email: normalizedEmail,
-      params,
+      email: maskEmailForLogs(normalizedEmail),
     });
 
     const headers = m2mToken ? { Authorization: `Bearer ${m2mToken}` } : undefined;
@@ -1344,7 +1372,12 @@ export class MeetingService {
    * through a "bridge" record B (e.g. A and B share an email, B and C share a username), and a
    * one-pass merge would miss that A and C belong to the same person depending on encounter order.
    */
-  public async getPastMeetingParticipants(req: Request, pastMeetingUid: string, failOnPartial: boolean = false): Promise<PastMeetingParticipant[]> {
+  public async getPastMeetingParticipants(
+    req: Request,
+    pastMeetingUid: string,
+    failOnPartial: boolean = false,
+    options?: ApiRequestOptions
+  ): Promise<PastMeetingParticipant[]> {
     logger.debug(req, 'get_past_meeting_participants', 'Fetching past meeting participants', {
       past_meeting_id: pastMeetingUid,
     });
@@ -1357,10 +1390,19 @@ export class MeetingService {
     const raw = await fetchAllQueryResources<PastMeetingParticipant>(
       req,
       (pageToken) =>
-        this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingParticipant>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          ...params,
-          ...(pageToken && { page_token: pageToken }),
-        }),
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingParticipant>>(
+          req,
+          'LFX_V2_SERVICE',
+          '/query/resources',
+          'GET',
+          {
+            ...params,
+            ...(pageToken && { page_token: pageToken }),
+          },
+          undefined,
+          undefined,
+          options
+        ),
       { failOnPartial }
     );
 
@@ -1440,7 +1482,13 @@ export class MeetingService {
    * match in a single query. `tags_all` can't be used here because `username` is not synthesized
    * into the participant record's indexed tags — username-only matches silently failed before.
    */
-  public async isUserPastMeetingParticipant(req: Request, pastMeetingUid: string, email: string, username?: string): Promise<boolean> {
+  public async isUserPastMeetingParticipant(
+    req: Request,
+    pastMeetingUid: string,
+    email: string,
+    username?: string,
+    options?: ApiRequestOptions
+  ): Promise<boolean> {
     logger.debug(req, 'is_user_past_meeting_participant', 'Checking if user was a past meeting participant', {
       past_meeting_id: pastMeetingUid,
       email,
@@ -1464,7 +1512,10 @@ export class MeetingService {
         type: 'v1_past_meeting_participant',
         filters: [`meeting_and_occurrence_id:${pastMeetingUid}`],
         filters_or: filtersOr,
-      }
+      },
+      undefined,
+      undefined,
+      options
     );
 
     const matched = resources.length > 0;
@@ -1478,43 +1529,76 @@ export class MeetingService {
   }
 
   /**
+   * A past meeting's per-artifact access levels (E4-04), from its `v1_past_meeting` query-service
+   * document. The ITX past-meeting read does not carry them (only `artifact_visibility`, which is the
+   * recording's level), while the index document holds all three, each as upstream FGA enforces it.
+   * Looked up by the composite `meeting_and_occurrence_id` (`getPastMeetingResourceId`), which every
+   * past-meeting record carries whichever id the page was opened by (the V2 page opens a past meeting
+   * by its composite id, not its uuid). Null when no document matches, which the caller must treat as
+   * not public.
+   */
+  public async getPastMeetingArtifactAccessLevels(
+    req: Request,
+    resourceId: string,
+    options?: ApiRequestOptions
+  ): Promise<Pick<PastMeeting, 'recording_access' | 'transcript_access' | 'ai_summary_access'> | null> {
+    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeeting>>(
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      { type: 'v1_past_meeting', filters: [`meeting_and_occurrence_id:${resourceId}`] },
+      undefined,
+      undefined,
+      options
+    );
+
+    // Only the document of this occurrence: its levels decide what an anonymous caller may read, so a
+    // match that returned any other document fails closed rather than lending its levels.
+    const record = resources?.find((resource) => resource.data?.meeting_and_occurrence_id === resourceId)?.data;
+    if (!record) {
+      logger.debug(req, 'get_past_meeting_artifact_access_levels', 'No past meeting document found', { past_meeting_id: resourceId });
+      return null;
+    }
+    return { recording_access: record.recording_access, transcript_access: record.transcript_access, ai_summary_access: record.ai_summary_access };
+  }
+
+  /**
    * Fetches past meeting recording by past meeting UID
    */
-  public async getPastMeetingRecording(req: Request, pastMeetingUid: string): Promise<PastMeetingRecording | null> {
+  public async getPastMeetingRecording(req: Request, pastMeetingUid: string, options?: ApiRequestOptions): Promise<PastMeetingRecording | null> {
     logger.debug(req, 'get_past_meeting_recording', 'Fetching past meeting recording', {
       past_meeting_id: pastMeetingUid,
     });
 
-    try {
-      const params = {
-        type: 'v1_past_meeting_recording',
-        tags: `meeting_and_occurrence_id:${pastMeetingUid}`,
-      };
+    // Failures propagate (the controller hands them to the error handler, so a viewer sees an error
+    // rather than "no recording"); only an empty result means there is no recording.
+    const params = {
+      type: 'v1_past_meeting_recording',
+      tags: `meeting_and_occurrence_id:${pastMeetingUid}`,
+    };
 
-      const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingRecording>>(
-        req,
-        'LFX_V2_SERVICE',
-        '/query/resources',
-        'GET',
-        params
-      );
+    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingRecording>>(
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      params,
+      undefined,
+      undefined,
+      options
+    );
 
-      if (!resources || resources.length === 0) {
-        logger.warning(req, 'get_past_meeting_recording', 'No recording found for past meeting', {
-          past_meeting_id: pastMeetingUid,
-          type: params.type,
-        });
-        return null;
-      }
-
-      return resources[0].data;
-    } catch (error) {
-      logger.warning(req, 'get_past_meeting_recording', 'Failed to fetch past meeting recording, returning null', {
+    if (!resources || resources.length === 0) {
+      logger.warning(req, 'get_past_meeting_recording', 'No recording found for past meeting', {
         past_meeting_id: pastMeetingUid,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        type: params.type,
       });
       return null;
     }
+
+    // Measured here so every client reads one duration (E4-02); null when it cannot be measured.
+    return { ...resources[0].data, duration_seconds: getRecordingDurationSeconds(resources[0].data) };
   }
 
   /**
@@ -1524,41 +1608,38 @@ export class MeetingService {
    * from recordings — they are NOT included in the recording's recording_files,
    * so they must be fetched independently.
    */
-  public async getPastMeetingTranscript(req: Request, pastMeetingUid: string): Promise<PastMeetingTranscript | null> {
+  public async getPastMeetingTranscript(req: Request, pastMeetingUid: string, options?: ApiRequestOptions): Promise<PastMeetingTranscript | null> {
     logger.debug(req, 'get_past_meeting_transcript', 'Fetching past meeting transcript', {
       past_meeting_id: pastMeetingUid,
     });
 
-    try {
-      const params = {
-        type: 'v1_past_meeting_transcript',
-        tags: `meeting_and_occurrence_id:${pastMeetingUid}`,
-      };
+    // Failures propagate (the controller hands them to the error handler, so a viewer sees an error
+    // rather than "no transcript"); only an empty result means there is no transcript.
+    const params = {
+      type: 'v1_past_meeting_transcript',
+      tags: `meeting_and_occurrence_id:${pastMeetingUid}`,
+    };
 
-      const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingTranscript>>(
-        req,
-        'LFX_V2_SERVICE',
-        '/query/resources',
-        'GET',
-        params
-      );
+    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingTranscript>>(
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      params,
+      undefined,
+      undefined,
+      options
+    );
 
-      if (!resources || resources.length === 0) {
-        logger.warning(req, 'get_past_meeting_transcript', 'No transcript found for past meeting', {
-          past_meeting_id: pastMeetingUid,
-          type: params.type,
-        });
-        return null;
-      }
-
-      return resources[0].data;
-    } catch (error) {
-      logger.warning(req, 'get_past_meeting_transcript', 'Failed to fetch past meeting transcript, returning null', {
+    if (!resources || resources.length === 0) {
+      logger.warning(req, 'get_past_meeting_transcript', 'No transcript found for past meeting', {
         past_meeting_id: pastMeetingUid,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        type: params.type,
       });
       return null;
     }
+
+    return resources[0].data;
   }
 
   /**
@@ -1569,8 +1650,12 @@ export class MeetingService {
    * as an attachment, so the browser cannot render it directly — the BFF fetches
    * the bytes and returns the text.
    */
-  public async getPastMeetingTranscriptContent(req: Request, pastMeetingUid: string): Promise<PastMeetingTranscriptContent | null> {
-    const transcript = await this.getPastMeetingTranscript(req, pastMeetingUid);
+  public async getPastMeetingTranscriptContent(
+    req: Request,
+    pastMeetingUid: string,
+    options?: ApiRequestOptions
+  ): Promise<PastMeetingTranscriptContent | null> {
+    const transcript = await this.getPastMeetingTranscript(req, pastMeetingUid, options);
     const url = getPastMeetingTranscriptUrl(transcript);
 
     if (!url) {
@@ -1648,51 +1733,48 @@ export class MeetingService {
   /**
    * Fetches past meeting summary by past meeting UID
    */
-  public async getPastMeetingSummary(req: Request, pastMeetingUid: string): Promise<PastMeetingSummary | null> {
+  public async getPastMeetingSummary(req: Request, pastMeetingUid: string, options?: ApiRequestOptions): Promise<PastMeetingSummary | null> {
     logger.debug(req, 'get_past_meeting_summary', 'Fetching past meeting summary', {
       past_meeting_id: pastMeetingUid,
     });
 
-    try {
-      const params = {
-        type: 'v1_past_meeting_summary',
-        tags: `meeting_and_occurrence_id:${pastMeetingUid}`,
-      };
+    // Failures propagate (the controller hands them to the error handler, so a viewer sees an error
+    // rather than "no summary"); only an empty result means there is no summary.
+    const params = {
+      type: 'v1_past_meeting_summary',
+      tags: `meeting_and_occurrence_id:${pastMeetingUid}`,
+    };
 
-      const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingSummary>>(
-        req,
-        'LFX_V2_SERVICE',
-        '/query/resources',
-        'GET',
-        params
-      );
+    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingSummary>>(
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      params,
+      undefined,
+      undefined,
+      options
+    );
 
-      if (!resources || resources.length === 0) {
-        logger.warning(req, 'get_past_meeting_summary', 'No summary found for past meeting', {
-          past_meeting_id: pastMeetingUid,
-          type: params.type,
-        });
-        return null;
-      }
-
-      const summary = selectPrimaryPastMeetingSummary(resources);
-
-      if (summary && resources.length > 1) {
-        logger.info(req, 'get_past_meeting_summary', 'Selected summary among multiple', {
-          past_meeting_id: pastMeetingUid,
-          total: resources.length,
-          selected_uid: summary.uid,
-        });
-      }
-
-      return summary;
-    } catch (error) {
-      logger.warning(req, 'get_past_meeting_summary', 'Failed to fetch past meeting summary, returning null', {
+    if (!resources || resources.length === 0) {
+      logger.warning(req, 'get_past_meeting_summary', 'No summary found for past meeting', {
         past_meeting_id: pastMeetingUid,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        type: params.type,
       });
       return null;
     }
+
+    const summary = selectPrimaryPastMeetingSummary(resources);
+
+    if (summary && resources.length > 1) {
+      logger.info(req, 'get_past_meeting_summary', 'Selected summary among multiple', {
+        past_meeting_id: pastMeetingUid,
+        total: resources.length,
+        selected_uid: summary.uid,
+      });
+    }
+
+    return summary;
   }
 
   /**
@@ -1803,51 +1885,47 @@ export class MeetingService {
       occurrence_id: occurrenceId,
     });
 
-    try {
-      // Resolve the user's registrant(s) first — handles accounts with multiple emails where the
-      // RSVP record's email differs from the auth email. RSVPs reliably carry registrant_id,
-      // unlike username which is often null on RSVP records.
-      // registrant.username stores the plain LFID, which getEffectiveUsername resolves (the LF
-      // username claim, or the impersonation target's username).
-      const email = getEffectiveEmail(req) ?? undefined;
-      const username = getEffectiveUsername(req) ?? undefined;
+    // A failed lookup propagates (the controller passes it to `apiErrorHandler`), so a caller can tell
+    // "could not load" from "has not answered" (`null`): the V2 status pill must not read a failure as
+    // "Awaiting your RSVP" (E2-04). V1's client still reads any failure as `null`.
+    // Resolve the user's registrant(s) first — handles accounts with multiple emails where the
+    // RSVP record's email differs from the auth email. RSVPs reliably carry registrant_id,
+    // unlike username which is often null on RSVP records.
+    // registrant.username stores the plain LFID, which getEffectiveUsername resolves (the LF
+    // username claim, or the impersonation target's username).
+    const email = getEffectiveEmail(req) ?? undefined;
+    const username = getEffectiveUsername(req) ?? undefined;
 
-      if (!email && !username) {
-        logger.warning(req, 'get_meeting_rsvp_for_current_user', 'No email or username in auth context, returning null', {
-          meeting_id: meetingUid,
-        });
-        return null;
-      }
-
-      const registrants = await this.getMeetingRegistrantsForUser(req, meetingUid, email, username);
-      if (registrants.length === 0) {
-        return null;
-      }
-      // A user can have multiple registrant rows for the same meeting (occurrence-specific
-      // invites or re-registrations). Match RSVPs against any of them so all the user's
-      // responses are visible.
-      const registrantIds = new Set(registrants.map((r) => r.uid));
-
-      const allRsvps = await this.getMeetingRsvps(req, meetingUid);
-      const requireAllDates = allDatesOnly && !occurrenceId;
-      const userRsvps = allRsvps.filter((rsvp) => registrantIds.has(rsvp.registrant_id) && (!requireAllDates || rsvp.scope === 'all'));
-
-      // Delegate to the shared scope resolver so this endpoint and
-      // `calculateRsvpCounts` stay in lockstep. It normalises seconds ↔ ms on
-      // occurrence_id (LFXV2-2864) and walks the user's RSVPs newest-first,
-      // returning the first one applicable to the target occurrence (see
-      // resolver docs) — replacing the previous strict-equality match which
-      // never fired for occurrence-scoped rows and the arbitrary
-      // `userRsvps[0]` fallback which surfaced order-dependent wrong answers.
-      return selectApplicableRsvp(occurrenceId, userRsvps);
-    } catch (error) {
-      logger.warning(req, 'get_meeting_rsvp_for_current_user', 'Failed to fetch user RSVP, returning null', {
+    if (!email && !username) {
+      logger.warning(req, 'get_meeting_rsvp_for_current_user', 'No email or username in auth context, returning null', {
         meeting_id: meetingUid,
-        occurrence_id: occurrenceId,
-        error: error instanceof Error ? error.message : 'Unknown error',
       });
       return null;
     }
+
+    const registrants = await this.getMeetingRegistrantsForUser(req, meetingUid, email, username);
+    if (registrants.length === 0) {
+      return null;
+    }
+    // A user can have multiple registrant rows for the same meeting (occurrence-specific
+    // invites or re-registrations). Match RSVPs against any of them so all the user's
+    // responses are visible.
+    const registrantIds = new Set(registrants.map((r) => r.uid));
+
+    // The raw page walk, strict: `getMeetingRsvps` reads a failure as no RSVPs. Its filtering to
+    // active registrants is already done here by matching the user's own (active) registrant ids.
+    const allRsvps = await this.getRawMeetingRsvps(req, meetingUid, undefined, true);
+    const requireAllDates = allDatesOnly && !occurrenceId;
+    const userRsvps = allRsvps.filter((rsvp) => registrantIds.has(rsvp.registrant_id) && (!requireAllDates || rsvp.scope === 'all'));
+
+    // Delegate to the shared scope resolver so this endpoint and
+    // `calculateRsvpCounts` stay in lockstep. It normalises seconds ↔ ms on
+    // occurrence_id (LFXV2-2864) and walks the user's RSVPs newest-first,
+    // returning the first one applicable to the target occurrence (see
+    // resolver docs) — replacing the previous strict-equality match which
+    // never fired for occurrence-scoped rows and the arbitrary
+    // `userRsvps[0]` fallback which surfaced order-dependent wrong answers.
+    return selectApplicableRsvp(occurrenceId, userRsvps);
   }
 
   /**
@@ -1949,9 +2027,11 @@ export class MeetingService {
   }
 
   /**
-   * Gets all meeting attachments via Query Service
+   * Gets all meeting attachments via Query Service, every page of them. The public download route
+   * uses this list as the meeting's ownership set, so a partial result fails rather than leaving a
+   * real attachment out (and its download refused).
    */
-  public async getMeetingAttachments(req: Request, meetingUid: string): Promise<MeetingAttachment[]> {
+  public async getMeetingAttachments(req: Request, meetingUid: string, options?: ApiRequestOptions): Promise<MeetingAttachment[]> {
     const params = {
       type: 'v1_meeting_attachment',
       parent: `meeting:${meetingUid}`,
@@ -1959,15 +2039,21 @@ export class MeetingService {
 
     logger.debug(req, 'get_meeting_attachments', 'Fetching meeting attachments', { meeting_id: meetingUid, query_params: params });
 
-    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingAttachment>>(
+    return fetchAllQueryResources<MeetingAttachment>(
       req,
-      'LFX_V2_SERVICE',
-      '/query/resources',
-      'GET',
-      params
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingAttachment>>(
+          req,
+          'LFX_V2_SERVICE',
+          '/query/resources',
+          'GET',
+          { ...params, ...(pageToken && { page_token: pageToken }) },
+          undefined,
+          undefined,
+          options
+        ),
+      { failOnPartial: true }
     );
-
-    return resources.map((resource) => resource.data);
   }
 
   /**
@@ -2093,16 +2179,52 @@ export class MeetingService {
   }
 
   /**
+   * A meeting's attachments as the public meeting page may see them (E3-03): {@link getMeetingAttachments}
+   * projected onto {@link PublicMeetingAttachment}, an explicit allowlist, so the creator/updater
+   * identities, the raw storage URL and any field added upstream later stay out of the response.
+   */
+  public async getPublicMeetingAttachments(req: Request, meetingUid: string, options?: ApiRequestOptions): Promise<PublicMeetingAttachment[]> {
+    const attachments = await this.getMeetingAttachments(req, meetingUid, options);
+    return attachments.map(
+      (attachment): PublicMeetingAttachment => ({
+        uid: attachment.uid,
+        meeting_id: attachment.meeting_id,
+        type: attachment.type,
+        category: attachment.category,
+        name: attachment.name,
+        description: attachment.description,
+        link: attachment.link,
+        file_uploaded: attachment.file_uploaded,
+        file_name: attachment.file_name,
+        file_size: attachment.file_size,
+        file_upload_status: attachment.file_upload_status,
+        file_content_type: attachment.file_content_type,
+        created_at: attachment.created_at,
+        updated_at: attachment.updated_at,
+      })
+    );
+  }
+
+  /**
    * Gets a presigned download URL for a meeting attachment
    */
-  public async getMeetingAttachmentDownloadUrl(req: Request, meetingUid: string, attachmentUid: string): Promise<AttachmentDownloadUrlResponse> {
+  public async getMeetingAttachmentDownloadUrl(
+    req: Request,
+    meetingUid: string,
+    attachmentUid: string,
+    options?: ApiRequestOptions
+  ): Promise<AttachmentDownloadUrlResponse> {
     logger.debug(req, 'get_meeting_attachment_download_url', 'Getting download URL', { meeting_id: meetingUid, attachment_uid: attachmentUid });
 
     return this.microserviceProxy.proxyRequest<AttachmentDownloadUrlResponse>(
       req,
       'LFX_V2_SERVICE',
       `/itx/meetings/${encodePathSegment(meetingUid)}/attachments/${encodePathSegment(attachmentUid)}/download`,
-      'GET'
+      'GET',
+      undefined,
+      undefined,
+      undefined,
+      options
     );
   }
 
@@ -2373,7 +2495,7 @@ export class MeetingService {
    * Fetches committee names for all unique committees referenced in meetings.
    * Returns a Map of committee UID -> committee name for merging into meeting data.
    */
-  private async getCommitteeNameMap(req: Request, meetings: Meeting[]): Promise<Map<string, string>> {
+  private async getCommitteeNameMap(req: Request, meetings: Meeting[], options?: ApiRequestOptions): Promise<Map<string, string>> {
     const uniqueCommitteeUids = [
       ...new Set(
         meetings
@@ -2406,11 +2528,20 @@ export class MeetingService {
         fetchAllQueryResources<Committee>(
           req,
           (pageToken) =>
-            this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-              type: 'committee',
-              filters_or: batch.map((uid) => `uid:${uid}`),
-              ...(pageToken && { page_token: pageToken }),
-            }),
+            this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(
+              req,
+              'LFX_V2_SERVICE',
+              '/query/resources',
+              'GET',
+              {
+                type: 'committee',
+                filters_or: batch.map((uid) => `uid:${uid}`),
+                ...(pageToken && { page_token: pageToken }),
+              },
+              undefined,
+              undefined,
+              options
+            ),
           { failOnPartial: true }
         )
       )
@@ -2517,6 +2648,11 @@ export class MeetingService {
   }
 
   private isSamePerson(a: PastMeetingParticipant, b: PastMeetingParticipant): boolean {
+    // A notetaker bot is never the same person as a human, even on a shared email (N-02, #2253):
+    // merged, its Zoom name would make the person read as a bot, depending on query order.
+    if (isPastMeetingNotetakerBot(a) !== isPastMeetingNotetakerBot(b)) {
+      return false;
+    }
     if (a.username && b.username) {
       return a.username === b.username;
     }
@@ -2560,9 +2696,32 @@ export class MeetingService {
   }
 
   /** Folds a connected group of identity-matched participant records into one merged record. */
+  /**
+   * Whether `candidate` should supply a merged participant's record over `current`: an attended
+   * record over one that did not attend, and between two attended records the better-identified
+   * one (`PAST_MEETING_IDENTITY_TIER_RANK`, N-02), so the identity flags and names the merge keeps
+   * do not depend on the order the query returns the duplicates in. Between equals, a record an
+   * organizer left unknown wins; any other tie keeps `current`.
+   */
+  private isPreferredPastMeetingRecord(candidate: PastMeetingParticipant, current: PastMeetingParticipant): boolean {
+    if (candidate.is_attended !== current.is_attended) {
+      return candidate.is_attended;
+    }
+    if (!candidate.is_attended) {
+      return false;
+    }
+    const rank = (participant: PastMeetingParticipant): number => PAST_MEETING_IDENTITY_TIER_RANK[getPastMeetingIdentityTier(participant) ?? 'unverified'];
+    if (rank(candidate) !== rank(current)) {
+      return rank(candidate) > rank(current);
+    }
+    // Between two unverified records, an organizer's explicit "Leave unknown" wins: reconciliation
+    // skips is_unknown, so keeping the other record would queue an attendee already reviewed.
+    return !!candidate.is_unknown && !current.is_unknown;
+  }
+
   private mergePastMeetingParticipantGroup(group: PastMeetingParticipant[]): PastMeetingParticipant {
     const merged = group.reduce((merged, participant) => {
-      const preferred = participant.is_attended && !merged.is_attended ? participant : merged;
+      const preferred = this.isPreferredPastMeetingRecord(participant, merged) ? participant : merged;
       const other = preferred === participant ? merged : participant;
       return {
         ...preferred,
@@ -2576,6 +2735,10 @@ export class MeetingService {
         org_name: this.pickNonBlank(preferred.org_name, other.org_name),
         username: this.pickNonBlank(preferred.username, other.username),
         email: this.pickNonBlank(preferred.email, other.email),
+        // N-02: the names behind an attendee row survive the merge, whichever record supplied them.
+        // A bot is never grouped with a person (`isSamePerson`), so this never borrows a bot's name.
+        zoom_user_name: this.pickNonBlank(preferred.zoom_user_name, other.zoom_user_name),
+        mapped_invitee_name: this.pickNonBlank(preferred.mapped_invitee_name, other.mapped_invitee_name),
       };
     });
 

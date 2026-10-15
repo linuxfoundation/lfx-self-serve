@@ -8,13 +8,20 @@
   }
 
   <!-- Status -->
-  <div class="flex items-center gap-2" data-testid="summary-status">
-    @if (approved) {
-      <span class="text-xs font-medium text-emerald-600 bg-emerald-100 px-2 py-1 rounded-full"> <i class="fa-light fa-circle-check mr-1"></i>Approved </span>
-    } @else {
-      <span class="text-xs font-medium text-amber-600 bg-amber-100 px-2 py-1 rounded-full"> <i class="fa-light fa-clock mr-1"></i>Pending Review </span>
-    }
-  </div>
+  <!-- The shared approval state (E4-03): no status for a summary that never required approval. -->
+  @if (approval !== 'not-required') {
+    <div class="flex items-center gap-2" data-testid="summary-status" [attr.data-approval]="approval">
+      @if (approval === 'approved') {
+        <span class="text-xs font-medium text-emerald-600 bg-emerald-100 px-2 py-1 rounded-full">
+          <i class="fa-light fa-circle-check mr-1"></i>{{ approvalLabels.approved }}
+        </span>
+      } @else {
+        <span class="text-xs font-medium text-amber-600 bg-amber-100 px-2 py-1 rounded-full">
+          <i class="fa-light fa-clock mr-1"></i>{{ approvalLabels.pending }}
+        </span>
+      }
+    </div>
+  }
 
   <!-- Content -->
   @if (isStructured) {

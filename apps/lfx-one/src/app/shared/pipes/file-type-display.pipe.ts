@@ -8,7 +8,7 @@ import { FileTypeDisplay, MeetingAttachment, PastMeetingAttachment } from '@lfx-
   name: 'fileTypeDisplay',
 })
 export class FileTypeDisplayPipe implements PipeTransform {
-  public transform(attachment: MeetingAttachment | PastMeetingAttachment): FileTypeDisplay {
+  public transform(attachment: Pick<MeetingAttachment | PastMeetingAttachment, 'file_name' | 'name'>): FileTypeDisplay {
     const ext = (attachment.file_name || attachment.name || '').split('.').pop()?.toLowerCase();
     switch (ext) {
       case 'pdf':

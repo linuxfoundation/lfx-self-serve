@@ -4,7 +4,9 @@
 import { NgClass } from '@angular/common';
 import { Component, inject } from '@angular/core';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
-import { PastMeetingSummary, SummarySection } from '@lfx-one/shared';
+import { PastMeetingSummary, PastMeetingSummaryApprovalState, SummarySection } from '@lfx-one/shared/interfaces';
+import { getPastMeetingSummaryApprovalState, getPastMeetingSummaryContent } from '@lfx-one/shared/utils';
+import { PAST_MEETING_SUMMARY_APPROVAL_LABELS } from '@lfx-one/shared/constants';
 import { DynamicDialogConfig } from 'primeng/dynamicdialog';
 
 @Component({
@@ -17,10 +19,13 @@ export class MeetingSummaryModalComponent {
 
   public readonly summary: PastMeetingSummary = this.dialogConfig.data.summary;
   public readonly hasTitle: boolean = !!this.summary.summary_data?.title;
-  // Use || (not ??) so an empty edited_content ('' — never edited) falls back to the
-  // original content. With ??, an approved-but-unedited summary rendered blank.
-  public readonly content: string = this.summary.summary_data?.edited_content || this.summary.summary_data?.content || '';
-  public readonly approved: boolean = this.summary.approved || false;
+  // Edited content first, else the original (getPastMeetingSummaryContent: an unedited summary's
+  // edited_content is '', so it falls back rather than rendering blank).
+  public readonly content: string = getPastMeetingSummaryContent(this.summary);
+  /** The shared approval state (E4-03): a summary that never required approval shows no status. */
+  public readonly approval: PastMeetingSummaryApprovalState = getPastMeetingSummaryApprovalState(this.summary);
+  /** The shared wording for each state, so the modal and the page read alike. */
+  protected readonly approvalLabels = PAST_MEETING_SUMMARY_APPROVAL_LABELS;
   public readonly sections: SummarySection[] = this.parseSections(this.content);
   public readonly isStructured: boolean = this.sections.length > 0;
 

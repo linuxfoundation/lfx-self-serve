@@ -60,6 +60,14 @@ export interface MeetingAttachment {
 }
 
 /**
+ * A meeting attachment as the public meeting page receives it (E3-03, #3252).
+ * @description `MeetingAttachment` without who created or last updated it (names, emails and
+ * usernames) and without `file_url`, the raw storage location: a file is downloaded through the
+ * gated presign route, never from a URL in this list.
+ */
+export type PublicMeetingAttachment = Omit<MeetingAttachment, 'file_url' | 'created_by' | 'updated_by'>;
+
+/**
  * Past meeting attachment entity aligned with ITX proxy API response
  * @description Represents a file or link attached to a past meeting occurrence
  */
@@ -235,6 +243,11 @@ export interface MaterialsChangedEvent {
   deletedUids: string[];
   /** Newly created past-meeting attachments, ready for optimistic display */
   addedAttachments: PastMeetingAttachment[];
+  /**
+   * Newly created attachments of an upcoming meeting (the drawer in meeting mode), for the same
+   * optimistic display; absent or empty in past mode. V1's join page refetches instead and ignores it.
+   */
+  addedMeetingAttachments?: MeetingAttachment[];
 }
 
 /**
@@ -258,4 +271,33 @@ export interface PendingAttachment {
   uploaded?: boolean;
   /** Error message if upload failed */
   uploadError?: string;
+}
+
+/**
+ * The V2 materials section's load (E3-02). `sign-in` is a viewer who must sign in to see this
+ * meeting's materials (anonymous, and refused by the public route or on a past meeting), told apart
+ * from `ready` with none attached.
+ */
+export interface MeetingMaterialsState {
+  status: 'loading' | 'ready' | 'sign-in' | 'error';
+  attachments: PublicMeetingAttachment[];
+}
+
+/** What the V2 materials section fetches (E3-02): a past occurrence's own list, or the meeting's public one. */
+export interface MeetingMaterialsRequest {
+  /** `past` for a page loaded by a past occurrence's id; `upcoming` reads the public route. */
+  mode: 'upcoming' | 'past';
+  /** The meeting id, or for `past` the occurrence's resource id (`getPastMeetingResourceId`). */
+  id: string;
+  /** The meeting password the page holds, sent in its header to the public route. */
+  password: string | null;
+}
+
+/** One supporting-materials row of the V2 materials section (E3-02), display-ready. */
+export interface MeetingMaterialLink {
+  attachment: PublicMeetingAttachment;
+  /** The link made safe for an `href` (`toSafeExternalHref`); `null` renders the row as text. */
+  href: string | null;
+  /** "Link · host", or "Link" without a recognisable host. */
+  caption: string;
 }

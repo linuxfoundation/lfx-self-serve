@@ -3,13 +3,30 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { EnrichedPastMeetingParticipant, PastMeetingRecording, RecordingSession } from '../interfaces';
+import { ArtifactVisibility, MeetingVisibility } from '../enums';
+import { EnrichedPastMeetingParticipant, PastMeeting, PastMeetingRecording, PastMeetingTranscript, RecordingFile, RecordingSession } from '../interfaces';
 import {
   filterPastMeetingParticipants,
+  formatRecordingDuration,
+  formatRecordingDurationSpoken,
   getLargestSessionShareUrl,
   getPastMeetingResourceId,
   getPastMeetingStartTimeMs,
+  getRecordingDurationSeconds,
+  isPastMeetingArtifactPublic,
   isPastMeetingCalendarRow,
+  countPastMeetingAttendance,
+  filterPublicPastMeetingRoster,
+  getPastMeetingAttendanceFigures,
+  getPastMeetingAttendanceTone,
+  getPastMeetingIdentityNames,
+  getPastMeetingIdentityTier,
+  isPastMeetingNotetakerBot,
+  isPastMeetingUnverifiedAttendee,
+  toPastMeetingParticipantRow,
+  toPublicPastMeetingRecording,
+  toPublicPastMeetingRoster,
+  toPublicPastMeetingTranscript,
 } from './past-meeting.utils';
 
 /** Builds an EnrichedPastMeetingParticipant fixture, defaulting every field so tests set only what they assert on. */
@@ -27,6 +44,12 @@ function participant(partial: Partial<EnrichedPastMeetingParticipant>): Enriched
     org_name: partial.org_name,
     is_attended: partial.is_attended ?? false,
     is_invited: partial.is_invited ?? false,
+    is_unknown: partial.is_unknown,
+    is_verified: partial.is_verified,
+    is_auto_matched: partial.is_auto_matched,
+    is_ai_reconciled: partial.is_ai_reconciled,
+    zoom_user_name: partial.zoom_user_name,
+    mapped_invitee_name: partial.mapped_invitee_name,
     org_is_member: partial.org_is_member ?? false,
     org_is_project_member: partial.org_is_project_member ?? false,
     avatar_url: partial.avatar_url,
@@ -185,15 +208,15 @@ function session(partial: Partial<RecordingSession>): RecordingSession {
   };
 }
 
-/** Builds a PastMeetingRecording fixture around a given set of sessions. */
-function recording(sessions: RecordingSession[]): PastMeetingRecording {
+/** Builds a PastMeetingRecording fixture around a given set of sessions (and, optionally, files). */
+function recording(sessions: RecordingSession[], files: RecordingFile[] = []): PastMeetingRecording {
   return {
     uid: 'rec-1',
     past_meeting_id: 'past-1',
     platform: 'Zoom',
     platform_meeting_id: '123',
     recording_count: sessions.length,
-    recording_files: [],
+    recording_files: files,
     sessions,
     total_size: sessions.reduce((sum, s) => sum + s.total_size, 0),
     created_at: '2024-01-01T00:00:00Z',
@@ -260,5 +283,375 @@ describe('getLargestSessionShareUrl', () => {
   it('returns null when the largest session has an empty share URL, even if a smaller one has one', () => {
     const rec = recording([session({ total_size: 100, share_url: 'https://small.example' }), session({ total_size: 500, share_url: '' })]);
     expect(getLargestSessionShareUrl(rec)).toBeNull();
+  });
+});
+
+describe('getRecordingDurationSeconds', () => {
+  const mediaFile = (type: string, start: string, end: string): RecordingFile => ({
+    id: `${type}-${start}`,
+    download_url: '',
+    play_url: '',
+    file_size: 1,
+    file_type: type,
+    recording_type: 'shared_screen_with_speaker_view',
+    recording_start: start,
+    recording_end: end,
+    status: 'completed',
+    platform_meeting_id: '1',
+  });
+  const twoSessions = (largestFirst: boolean): RecordingSession[] => [
+    session({ start_time: '2026-07-16T09:00:00Z', total_size: largestFirst ? 900 : 100, uuid: 's1' }),
+    session({ start_time: '2026-07-16T10:00:00Z', total_size: largestFirst ? 100 : 900, uuid: 's2' }),
+  ];
+  const files = [
+    mediaFile('MP4', '2026-07-16T09:00:05Z', '2026-07-16T09:20:05Z'),
+    mediaFile('MP4', '2026-07-16T10:00:10Z', '2026-07-16T10:58:34Z'),
+    mediaFile('M4A', '2026-07-16T10:00:00Z', '2026-07-16T10:58:24Z'),
+    mediaFile('CHAT', '2026-07-16T10:00:00Z', '2026-07-16T12:00:00Z'),
+    mediaFile('CC', '2026-07-16T10:00:00Z', '2026-07-16T12:00:00Z'),
+  ];
+
+  it("measures only the largest session's media files, overlapping views counted once", () => {
+    // 10:00:00 (M4A) to 10:58:34 (MP4): chat, captions and the first session's file are left out.
+    expect(getRecordingDurationSeconds(recording(twoSessions(false), files))).toBe(58 * 60 + 34);
+  });
+
+  it('measures the first session when it is the largest, ignoring the later one', () => {
+    expect(getRecordingDurationSeconds(recording(twoSessions(true), files))).toBe(20 * 60);
+  });
+
+  // The host stopped and restarted recording: the gap is not part of what plays.
+  it('does not count the gap between stopped and restarted recording', () => {
+    const restarted = [mediaFile('MP4', '2026-07-16T10:00:00Z', '2026-07-16T10:20:00Z'), mediaFile('MP4', '2026-07-16T10:40:00Z', '2026-07-16T11:00:00Z')];
+    expect(getRecordingDurationSeconds(recording([session({ start_time: '2026-07-16T10:00:00Z', total_size: 1 })], restarted))).toBe(40 * 60);
+  });
+
+  it("keeps a file that opens a moment before its session's stored start", () => {
+    const early = [mediaFile('MP4', '2026-07-16T09:59:59Z', '2026-07-16T10:30:00Z')];
+    expect(getRecordingDurationSeconds(recording([session({ start_time: '2026-07-16T10:00:00Z', total_size: 1 })], early))).toBe(30 * 60 + 1);
+  });
+
+  // Two sessions starting less than the tolerance apart: each keeps its own files.
+  it('keeps close-together sessions apart', () => {
+    const close = [
+      session({ start_time: '2026-07-16T10:00:00Z', total_size: 100, uuid: 'a' }),
+      session({ start_time: '2026-07-16T10:00:30Z', total_size: 900, uuid: 'b' }),
+    ];
+    const closeFiles = [mediaFile('MP4', '2026-07-16T10:00:00Z', '2026-07-16T10:00:20Z'), mediaFile('MP4', '2026-07-16T10:00:30Z', '2026-07-16T10:30:30Z')];
+    expect(getRecordingDurationSeconds(recording(close, closeFiles))).toBe(30 * 60);
+  });
+
+  // A later session's file that opens a moment before that session's stored start is still its own.
+  it("credits a later session's early-opening file to that session, not the earlier one", () => {
+    const sessions = [
+      session({ start_time: '2026-07-16T09:00:00Z', total_size: 100, uuid: 'a' }),
+      session({ start_time: '2026-07-16T10:00:00Z', total_size: 900, uuid: 'b' }),
+    ];
+    const early = [mediaFile('MP4', '2026-07-16T09:00:00Z', '2026-07-16T09:20:00Z'), mediaFile('MP4', '2026-07-16T09:59:58Z', '2026-07-16T10:30:00Z')];
+    expect(getRecordingDurationSeconds(recording(sessions, early))).toBe(30 * 60 + 2);
+  });
+
+  it('returns null rather than guessing', () => {
+    const one = [session({ start_time: '2026-07-16T10:00:00Z', total_size: 1 })];
+    // No media file, only chat.
+    expect(getRecordingDurationSeconds(recording(one, [mediaFile('CHAT', '2026-07-16T10:00:00Z', '2026-07-16T11:00:00Z')]))).toBeNull();
+    // A media file without a readable start.
+    expect(getRecordingDurationSeconds(recording(one, [mediaFile('MP4', 'not a time', '2026-07-16T11:00:00Z')]))).toBeNull();
+    // A zero-length file.
+    expect(getRecordingDurationSeconds(recording(one, [mediaFile('MP4', '2026-07-16T10:00:00Z', '2026-07-16T10:00:00Z')]))).toBeNull();
+    // Another session's start is unreadable, so which files are the largest session's is unknown.
+    const unreadable = [session({ start_time: '2026-07-16T10:00:00Z', total_size: 9 }), session({ start_time: 'garbage', total_size: 1, uuid: 'x' })];
+    expect(getRecordingDurationSeconds(recording(unreadable, [mediaFile('MP4', '2026-07-16T10:00:00Z', '2026-07-16T11:00:00Z')]))).toBeNull();
+    // Go's zero time, which the upstream converter emits for a time it could not read.
+    const zero = [session({ start_time: '0001-01-01T00:00:00Z', total_size: 9 })];
+    expect(getRecordingDurationSeconds(recording(zero, [mediaFile('MP4', '2026-07-16T10:00:00Z', '2026-07-16T11:00:00Z')]))).toBeNull();
+    expect(getRecordingDurationSeconds(recording(one, [mediaFile('MP4', '0001-01-01T00:00:00Z', '2026-07-16T11:00:00Z')]))).toBeNull();
+    expect(getRecordingDurationSeconds(recording([], []))).toBeNull();
+    expect(getRecordingDurationSeconds(null)).toBeNull();
+  });
+});
+
+describe('formatRecordingDurationSpoken', () => {
+  it('spells the length out for a screen reader', () => {
+    expect(formatRecordingDurationSpoken(58 * 60 + 24)).toBe('58 minutes 24 seconds');
+    expect(formatRecordingDurationSpoken(3600 + 60 + 1)).toBe('1 hour 1 minute 1 second');
+    expect(formatRecordingDurationSpoken(7200)).toBe('2 hours');
+    expect(formatRecordingDurationSpoken(0)).toBe('0 seconds');
+    expect(formatRecordingDurationSpoken(null)).toBeNull();
+  });
+});
+
+describe('formatRecordingDuration', () => {
+  it('reads m:ss under an hour and h:mm:ss from an hour', () => {
+    expect(formatRecordingDuration(58 * 60 + 24)).toBe('58:24');
+    expect(formatRecordingDuration(65)).toBe('1:05');
+    expect(formatRecordingDuration(3600 + 2 * 60 + 3)).toBe('1:02:03');
+    expect(formatRecordingDuration(0)).toBe('0:00');
+  });
+
+  it('returns null for a missing or invalid length', () => {
+    expect(formatRecordingDuration(null)).toBeNull();
+    expect(formatRecordingDuration(undefined)).toBeNull();
+    expect(formatRecordingDuration(-1)).toBeNull();
+  });
+});
+
+describe('isPastMeetingArtifactPublic (E4-04)', () => {
+  type AccessFields = Pick<PastMeeting, 'visibility' | 'restricted' | 'recording_access' | 'transcript_access' | 'ai_summary_access'>;
+  const meeting = (fields: Partial<AccessFields>): AccessFields => ({ visibility: MeetingVisibility.PUBLIC, restricted: false, ...fields });
+
+  it("reads each artifact's own access level", () => {
+    const record = meeting({ recording_access: ArtifactVisibility.PUBLIC, ai_summary_access: ArtifactVisibility.MEETING_HOSTS });
+    expect(isPastMeetingArtifactPublic(record, 'recording')).toBe(true);
+    expect(isPastMeetingArtifactPublic(record, 'summary')).toBe(false);
+  });
+
+  it('is never public when the level is unset, whatever the meeting-wide artifact_visibility says', () => {
+    const record = { ...meeting({}), artifact_visibility: ArtifactVisibility.PUBLIC };
+    expect(isPastMeetingArtifactPublic(record, 'transcript')).toBe(false);
+    expect(isPastMeetingArtifactPublic(record, 'summary')).toBe(false);
+  });
+
+  it('is public only for a public, unrestricted meeting', () => {
+    expect(isPastMeetingArtifactPublic(meeting({ ai_summary_access: ArtifactVisibility.PUBLIC, restricted: true }), 'summary')).toBe(false);
+    expect(isPastMeetingArtifactPublic(meeting({ ai_summary_access: ArtifactVisibility.PUBLIC, visibility: MeetingVisibility.PRIVATE }), 'summary')).toBe(
+      false
+    );
+    expect(isPastMeetingArtifactPublic(meeting({ ai_summary_access: ArtifactVisibility.MEETING_PARTICIPANTS }), 'summary')).toBe(false);
+  });
+});
+
+describe('toPublicPastMeetingRoster', () => {
+  it('keeps only the public roster fields', () => {
+    const roster = toPublicPastMeetingRoster([
+      participant({
+        uid: 'p1',
+        first_name: 'Ada',
+        last_name: 'Lovelace',
+        email: 'ada@example.com',
+        job_title: 'Engineer',
+        org_name: 'Acme',
+        is_attended: true,
+        is_verified: true,
+      }),
+    ]);
+
+    expect(roster.participants).toEqual([
+      { uid: 'p1', first_name: 'Ada', last_name: 'Lovelace', avatar_url: undefined, org_name: 'Acme', is_attended: true, is_invited: false },
+    ]);
+    expect(JSON.stringify(roster)).not.toContain('ada@example.com');
+    expect(JSON.stringify(roster)).not.toContain('Engineer');
+  });
+
+  // N-02: the public roster names every identified attendee, without the tier, and counts the unverified.
+  it('names invitees and identified attendees, and only counts the unverified ones', () => {
+    const roster = toPublicPastMeetingRoster([
+      participant({ uid: 'verified', is_attended: true, is_verified: true }),
+      participant({ uid: 'invitee', is_invited: true }),
+      participant({ uid: 'unknown', is_attended: true, is_unknown: true }),
+      participant({ uid: 'needs-review', is_attended: true }),
+      // Reconciliation sets is_verified on every match it makes (N-02), automatic or AI.
+      participant({ uid: 'auto-matched', is_attended: true, is_invited: true, is_verified: true, is_auto_matched: true }),
+      participant({ uid: 'ai-reconciled', is_attended: true, is_verified: true, is_ai_reconciled: true }),
+    ]);
+
+    expect(roster.participants.map((row) => row.uid)).toEqual(['verified', 'invitee', 'auto-matched', 'ai-reconciled']);
+    expect(roster.unidentified_attendees).toBe(2);
+    expect(JSON.stringify(roster.participants)).not.toMatch(/is_auto_matched|is_ai_reconciled|is_verified/);
+    // E4-05: the counts cover every participant, listed or not, so the figures match the admin page's.
+    expect(roster.attendance).toEqual({ participant_count: 6, attended_count: 5, individual_registrants_count: 2, unverified_attended_count: 2 });
+  });
+});
+
+describe('public recording and transcript allowlists (E4-04)', () => {
+  const file = {
+    id: 'f1',
+    download_url: 'https://zoom.example/dl',
+    play_url: 'https://zoom.example/play',
+    file_size: 10,
+    file_type: 'MP4',
+    recording_type: 'shared_screen',
+    recording_start: '',
+    recording_end: '',
+    status: 'completed',
+    platform_meeting_id: 'z-1',
+  };
+  const session = { start_time: '', share_url: 'https://zoom.example/share', total_size: 10, uuid: 'u-1' };
+  // Upstream documents carry host and audit identities the typed interface does not list.
+  const leaky = { host_email: 'host@example.com', host_id: 'h-1', created_by: { email: 'creator@example.com' } };
+
+  it('keeps what the page plays and measures, and nothing upstream adds', () => {
+    const recording = {
+      uid: 'rec-1',
+      past_meeting_id: 'pm-1',
+      platform: 'Zoom',
+      platform_meeting_id: 'z-1',
+      recording_count: 1,
+      recording_files: [{ ...file, ...leaky }],
+      sessions: [{ ...session, ...leaky }],
+      total_size: 10,
+      duration_seconds: 60,
+      created_at: '',
+      updated_at: '',
+      ...leaky,
+    } as PastMeetingRecording;
+
+    const result = toPublicPastMeetingRecording(recording);
+
+    expect(result.recording_files).toEqual([file]);
+    expect(result.sessions).toEqual([session]);
+    expect(result.duration_seconds).toBe(60);
+    expect(JSON.stringify(result)).not.toMatch(/host@example.com|creator@example.com|h-1/);
+  });
+
+  it('allowlists the transcript record the same way', () => {
+    const result = toPublicPastMeetingTranscript({ id: 't-1', title: 'TSC', recording_files: [{ ...file, ...leaky }], ...leaky } as PastMeetingTranscript);
+
+    expect(result.recording_files).toEqual([file]);
+    expect(JSON.stringify(result)).not.toMatch(/host@example.com|creator@example.com|h-1/);
+  });
+});
+
+describe('past-meeting attendance figures (E4-05)', () => {
+  it('counts every record, the attended and the invited', () => {
+    expect(
+      countPastMeetingAttendance([
+        { is_attended: true, is_invited: true },
+        { is_attended: true, is_invited: false },
+        { is_attended: false, is_invited: true },
+      ])
+    ).toEqual({ participant_count: 3, attended_count: 2, individual_registrants_count: 2, unverified_attended_count: 2 });
+  });
+
+  it('counts unverified attendees, leaving out notetaker bots (N-02)', () => {
+    const counts = countPastMeetingAttendance([
+      participant({ is_attended: true, is_verified: true }),
+      participant({ is_attended: true, is_unknown: true }),
+      participant({ is_attended: true }),
+      participant({ is_attended: true, zoom_user_name: "Libby's Notetaker (Otter.ai)" }),
+      participant({ is_invited: true }),
+    ]);
+
+    expect(counts.attended_count).toBe(4);
+    expect(counts.unverified_attended_count).toBe(2);
+  });
+
+  it.each([
+    [0, 'low'],
+    [24, 'low'],
+    [25, 'medium'],
+    [69, 'medium'],
+    [70, 'high'],
+    [100, 'high'],
+  ] as const)('puts a %i%% rate in the %s band', (rate, tone) => {
+    expect(getPastMeetingAttendanceTone(rate)).toBe(tone);
+  });
+
+  it('derives total, attended, absent, rate and tone from the counts', () => {
+    expect(getPastMeetingAttendanceFigures({ participant_count: 8, attended_count: 6, unverified_attended_count: 2 })).toEqual({
+      total: 8,
+      attended: 6,
+      absent: 2,
+      rate: 75,
+      tone: 'high',
+      unverified: 2,
+    });
+  });
+
+  it('leaves unverified null when the counts predate it, and never above attended', () => {
+    expect(getPastMeetingAttendanceFigures({ participant_count: 8, attended_count: 6 })?.unverified).toBeNull();
+    expect(getPastMeetingAttendanceFigures({ participant_count: 8, attended_count: 3, unverified_attended_count: 5 })?.unverified).toBe(3);
+  });
+
+  // The admin page used to hide its whole stats row here.
+  it('gives zero figures with no rate for a meeting with no participants', () => {
+    expect(getPastMeetingAttendanceFigures({ participant_count: 0, attended_count: 0 })).toEqual({
+      total: 0,
+      attended: 0,
+      absent: 0,
+      rate: null,
+      tone: null,
+      unverified: null,
+    });
+  });
+
+  it('is null when the counts are unknown, so unknown never reads as zero', () => {
+    expect(getPastMeetingAttendanceFigures(undefined)).toBeNull();
+    expect(getPastMeetingAttendanceFigures({ participant_count: 5 })).toBeNull();
+  });
+});
+
+describe('participant identity tiers (N-02)', () => {
+  it.each([
+    ['nobody who did not attend', { is_invited: true, is_verified: true }, null],
+    ['an attendee left unknown', { is_attended: true, is_unknown: true, is_verified: true }, 'unverified'],
+    ['an attendee nobody has verified', { is_attended: true }, 'unverified'],
+    ['an AI match, though verified', { is_attended: true, is_verified: true, is_ai_reconciled: true, is_auto_matched: true }, 'ai-reconciled'],
+    ['an automatic name match, though verified', { is_attended: true, is_verified: true, is_auto_matched: true }, 'auto-matched'],
+    ['a verified match with neither flag', { is_attended: true, is_verified: true }, 'verified'],
+  ] as const)('gives %s its tier', (_, flags, tier) => {
+    expect(getPastMeetingIdentityTier(participant(flags))).toBe(tier);
+  });
+
+  it('names what they joined Zoom as and who they were matched to, only where it differs from the row', () => {
+    expect(
+      getPastMeetingIdentityNames(participant({ first_name: 'Ada', last_name: 'Lovelace', zoom_user_name: 'ada-mbp', mapped_invitee_name: 'Ada King' }))
+    ).toEqual({ joinedAs: 'ada-mbp', matchedTo: 'Ada King' });
+    expect(
+      getPastMeetingIdentityNames(
+        participant({ first_name: 'Ada', last_name: 'Lovelace', zoom_user_name: ' ada  LOVELACE ', mapped_invitee_name: 'Ada Lovelace' })
+      )
+    ).toEqual({ joinedAs: null, matchedTo: null });
+    expect(getPastMeetingIdentityNames(participant({ first_name: 'Ada', last_name: 'Lovelace' }))).toEqual({ joinedAs: null, matchedTo: null });
+  });
+
+  it('labels a row by its tier, and an unverified attendee left unknown as Unknown', () => {
+    expect(toPastMeetingParticipantRow(participant({ is_attended: true, is_verified: true, is_auto_matched: true })).identity_label).toBe('Auto-matched');
+    expect(toPastMeetingParticipantRow(participant({ is_attended: true })).identity_label).toBe('Needs review');
+    expect(toPastMeetingParticipantRow(participant({ is_attended: true, is_unknown: true })).identity_label).toBe('Unknown');
+    expect(toPastMeetingParticipantRow(participant({ is_invited: true }))).toMatchObject({ identity_tier: null, identity_label: null });
+  });
+
+  // #2253: reconciliation never queues a bot, so no surface treats one as awaiting review.
+  it('treats an unmatched notetaker bot as a bot everywhere: no tier, not unverified, not listed', () => {
+    const bot = participant({ uid: 'bot', is_attended: true, zoom_user_name: "Libby's Notetaker (Otter.ai)" });
+
+    expect(toPastMeetingParticipantRow(bot)).toMatchObject({ identity_tier: null, identity_label: 'Notetaker bot', is_notetaker_bot: true });
+    expect(toPastMeetingParticipantRow(participant({ is_attended: true }))).toMatchObject({ identity_tier: 'unverified', is_notetaker_bot: false });
+    // A record reconciled before the bot exclusion can carry a match; it is still a bot.
+    const matchedBot = participant({ is_attended: true, is_verified: true, is_ai_reconciled: true, zoom_user_name: 'Fathom Notetaker' });
+    expect(toPastMeetingParticipantRow(matchedBot)).toMatchObject({ identity_tier: null, identity_label: 'Notetaker bot', is_notetaker_bot: true });
+    expect(isPastMeetingUnverifiedAttendee(bot)).toBe(false);
+
+    const invitedBot = participant({ uid: 'invited-bot', is_invited: true, first_name: 'Fireflies.ai', last_name: 'Notetaker' });
+    const roster = toPublicPastMeetingRoster([bot, invitedBot, participant({ uid: 'unknown', is_attended: true, is_unknown: true })]);
+    expect(roster.participants).toEqual([]);
+    expect(roster.unidentified_attendees).toBe(1);
+    expect(roster.attendance.unverified_attended_count).toBe(1);
+  });
+
+  it('tells a notetaker bot by its Zoom name, else its first and last name', () => {
+    expect(isPastMeetingNotetakerBot({ zoom_user_name: 'Fireflies.ai Notetaker' })).toBe(true);
+    expect(isPastMeetingNotetakerBot({ first_name: 'Read', last_name: 'AI Notetaker' })).toBe(true);
+    expect(isPastMeetingNotetakerBot({ first_name: 'Grain', last_name: 'Adeyemi' })).toBe(false);
+  });
+});
+
+describe('filterPublicPastMeetingRoster (E4-05)', () => {
+  const row = (uid: string, is_invited: boolean, is_attended: boolean) => ({ uid, first_name: uid, last_name: '', is_invited, is_attended });
+  const rows = [row('invited-attended', true, true), row('invited-absent', true, false), row('walk-in', false, true)];
+  const uids = (invitation: 'all' | 'invited' | 'not-invited', attendance: 'all' | 'attended' | 'absent') =>
+    filterPublicPastMeetingRoster(rows, invitation, attendance).map((r) => r.uid);
+
+  it('keeps every row with both filters on all', () => {
+    expect(uids('all', 'all')).toEqual(['invited-attended', 'invited-absent', 'walk-in']);
+  });
+
+  it('applies each filter on its own axis', () => {
+    expect(uids('invited', 'all')).toEqual(['invited-attended', 'invited-absent']);
+    expect(uids('not-invited', 'all')).toEqual(['walk-in']);
+    expect(uids('all', 'absent')).toEqual(['invited-absent']);
+    expect(uids('invited', 'attended')).toEqual(['invited-attended']);
+    expect(uids('not-invited', 'absent')).toEqual([]);
   });
 });
