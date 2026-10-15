@@ -4477,8 +4477,11 @@ export interface AudienceQaChecks {
   signalMapping: AudienceQaCheck;
   /** Are the GDPR / global-opt-out suppressions actually applied as exclusions? */
   suppression: AudienceQaCheck & { applied: { gdpr: boolean; optOut: boolean } };
-  /** Does the list exclude anything at all? */
-  /** `exclusionCount` includes send-time suppressions; `sendTimeCount` is their share, when any were counted. */
+  /**
+   * Does the list exclude anything at all?
+   *
+   * `exclusionCount` includes send-time suppressions; `sendTimeCount` is their share, when any were counted.
+   */
   exclusionCompleteness: AudienceQaCheck & { exclusionCount: number; sendTimeCount?: number };
   /**
    * Is this edition's own registration list suppressed rather than included? Absent when the

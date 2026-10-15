@@ -150,13 +150,13 @@ export class AudienceCustomBuilderComponent {
   protected readonly speakersOn = computed(() => this.formValue().speakersOn === true);
   protected readonly busy = computed(() => this.interpreting() || this.previewing() || this.creating());
   protected readonly locked = computed(() => this.disabled() || this.busy());
-  /** Create stays disabled until a preview of the CURRENT criteria exists. */
   /** The unclaimed outcome of this project's last create, held by the service. */
   private readonly strandedOutcome = computed(() => this.customService.createOutcome(this.projectSlug()));
   /** A create for this project still in flight from a builder that has since gone (navigation). */
   protected readonly createInFlightElsewhere = computed(() => (this.creating() ? null : this.customService.inFlightCreate(this.projectSlug())));
   /** The model's questions are blocking: a draft with any unanswered is provisional, and only preview may use it. */
   protected readonly questionsOpen = computed(() => this.questions().length > 0);
+  /** Create stays disabled until a preview of the CURRENT criteria exists. */
   protected readonly canCreate = computed(
     () => !!this.preview() && !this.locked() && !this.unconfirmedName() && this.createInFlightElsewhere() === null && !this.questionsOpen()
   );
