@@ -120,16 +120,17 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly linkedInTotalsNote = computed(() => this.totalsCoverageNote(this.linkedInCampaigns()));
   /**
    * Whether the LinkedIn figures on screen came from campaign-service (the connection's account).
-   * Its LinkedIn monitor reports spend in the account's own currency (`costInLocalCurrency`), so
-   * those figures never carry the legacy `$`: they are printed in the currency campaign-service
-   * names, or with no symbol and a note when it names none. Recorded with the data it describes.
+   * Those figures never carry the legacy `$`: they are printed in the currency campaign-service
+   * names, or with no symbol and a note when it names none. An unnamed currency is NOT known to be
+   * the account's own: a campaign-service that predates its `costInLocalCurrency` read sends USD
+   * (`costInUsd`) with no `currency` either, so that note claims no currency. Recorded with the data.
    */
   protected readonly linkedInAmountsInAccountCurrency = signal(false);
   /** The connection's named-currency format, in whole units; never applied to legacy figures. */
   private readonly linkedInNamedCurrencyFormat = computed(() =>
     this.linkedInAmountsInAccountCurrency() ? this.namedCurrencyFormat(this.linkedInData()?.currency, true) : null
   );
-  /** The "account's own currency" note: a connection's figures whose currency campaign-service did not name. */
+  /** The "did not report its currency" note: a connection's figures whose currency campaign-service did not name. */
   protected readonly linkedInCurrencyNote = computed(() => this.linkedInAmountsInAccountCurrency() && this.linkedInNamedCurrencyFormat() === null);
   protected readonly linkedInPulledAt = computed(() => {
     const pulledAt = this.linkedInData()?.pulledAt;
@@ -723,9 +724,9 @@ export class MonitoringTabComponent implements OnInit {
       // LinkedIn heads each row with the event name over the full campaign name, and adds the
       // creative count — "Not read" when campaign-service did not read creatives. Built from the
       // row's OWN campaign inside the builder, so no index join can pair a row with another's data.
-      // The legacy path keeps its whole-dollar `$` exactly as before. A connection's figures are in
-      // the account's own currency: printed in whole units of it when campaign-service names it, and
-      // otherwise currency-neutral, as Meta's and Microsoft's are, with the panel stating the unit once.
+      // The legacy path keeps its whole-dollar `$` exactly as before. A connection's figures are
+      // printed in whole units of the currency campaign-service names, and otherwise currency-neutral,
+      // with a note that the currency was not reported (it may be USD from an older campaign-service).
       const unnamed = this.linkedInAmountsInAccountCurrency()
         ? (n: number): string => this.formatAccountAmount(n, 0)
         : (n: number): string => this.formatLinkedInCurrency(n);

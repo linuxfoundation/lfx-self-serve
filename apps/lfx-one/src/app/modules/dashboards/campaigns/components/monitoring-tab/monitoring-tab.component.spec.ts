@@ -1520,9 +1520,12 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       select('linkedin');
 
       // The connection's LinkedIn account names no currency here: whole units, no `$`, and the note.
+      // The note claims no currency: a campaign-service predating its local-currency read sends
+      // USD (`costInUsd`) with no `currency` too, so "the account's own currency" could be false.
       expect(text('linkedin-kpi-spend')).toBe('413');
       expect(text('linkedin-campaign-row-0')).not.toContain('$');
-      expect(text('linkedin-currency-note')).toBe("Spend and budgets are in the ad account's own currency.");
+      expect(text('linkedin-currency-note')).toBe('The ad account did not report its currency, so amounts are shown without a currency symbol.');
+      expect(text('linkedin-currency-note')).not.toContain('own currency');
       const linkedInRow = text('linkedin-campaign-row-0');
       expect(linkedInRow).toContain('KubeCon NA 2026');
       expect(linkedInRow).toContain('NA | KubeCon NA 2026 | Awareness');

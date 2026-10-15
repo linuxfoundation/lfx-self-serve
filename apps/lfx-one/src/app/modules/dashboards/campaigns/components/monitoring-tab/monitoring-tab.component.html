@@ -521,8 +521,13 @@
         </div>
       } @else if (linkedInView(); as view) {
         @if (linkedInCurrencyNote()) {
-          <!-- campaign-service reported a connection's LinkedIn amounts in the account's currency and did not say which. -->
-          <p class="text-xs text-gray-500" data-testid="linkedin-currency-note">Spend and budgets are in the ad account's own currency.</p>
+          <!--
+            campaign-service named no currency for a connection's LinkedIn amounts. A pod predating its local-currency
+            read sends costInUsd with no currency either, so the note must not claim the account's own currency.
+          -->
+          <p class="text-xs text-gray-500" data-testid="linkedin-currency-note">
+            The ad account did not report its currency, so amounts are shown without a currency symbol.
+          </p>
         }
         <ng-container
           [ngTemplateOutlet]="accountPanel"
