@@ -97,7 +97,7 @@ test.describe('Org Lens EasyCLA approval — content', () => {
       remove: [{ kind: 'domain', value: DOMAIN }],
     });
 
-    await expect(page.locator('.p-toast')).toContainText('invalidated');
+    await expect(page.locator('.p-toast')).toContainText('now show as Not Authorized');
     await expect(page.getByTestId('org-easycla-approval-value')).toHaveText(NEXT_DOMAIN);
   });
 

@@ -490,13 +490,14 @@ describe('OrgEasyclaApprovalListComponent', () => {
       });
     });
 
-    it("says the previous value's acknowledgements were invalidated", async () => {
+    it("says the previous value's acknowledgements show as Not Authorized", async () => {
       const fixture = await render();
       click(fixture, 'org-easycla-approval-edit');
 
       closeDialogWith({ add: [{ kind: 'domain', value: 'new.example.com' }], remove: [{ kind: 'domain', value: 'example.com' }] });
 
-      expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({ detail: expect.stringContaining('invalidated') }));
+      expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({ detail: expect.stringContaining('now show as Not Authorized') }));
+      expect(addMessage).not.toHaveBeenCalledWith(expect.objectContaining({ detail: expect.stringContaining('invalidated') }));
     });
   });
 

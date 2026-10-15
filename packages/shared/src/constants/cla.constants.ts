@@ -656,7 +656,7 @@ export const ORG_CLA_APPROVAL_HEADING = 'Approved List of Contributors from My O
 /** Toast copy for a completed approval-list write. */
 export const ORG_CLA_APPROVAL_RECEIPT = {
   added: { summary: 'Approval list updated', detail: (count: number) => (count === 1 ? 'The entry was added.' : `${count} entries were added.`) },
-  edited: { summary: 'Approval list updated', detail: () => 'The entry was updated. Acknowledgements matching the previous value were invalidated.' },
+  edited: { summary: 'Approval list updated', detail: () => 'The entry was updated. Acknowledgements matching the previous value now show as Not Authorized.' },
   removed: { summary: 'Entry removed', detail: () => 'The entry was removed. Acknowledgements it covered now show as Not Authorized.' },
 } as const;
 
