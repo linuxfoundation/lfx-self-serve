@@ -122,11 +122,11 @@ export class IcpService {
    * envelope exists, so a `pending` poll costs no upstream lookups. Without
    * it the document is still returned; it is simply not persisted.
    */
-  public async getResult(req: Request, sessionId: string, projectUid?: string, readme?: MktgReadmeOutcome): Promise<IcpResultResponse> {
+  public async getResult(req: Request, sessionId: string, projectUid?: string, readme?: MktgReadmeOutcome, minimumVersion = 0): Promise<IcpResultResponse> {
     const payloads = await this.guildService.getRawEventPayloads(req, sessionId);
     const envelope = this.findAuthoritativeEnvelope(req, payloads);
 
-    if (!envelope) {
+    if (!envelope || envelope.version <= minimumVersion) {
       return { status: 'pending' };
     }
 

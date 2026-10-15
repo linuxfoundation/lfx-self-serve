@@ -16,6 +16,7 @@
 
 import type { MktgArtifactIntakeMode, MktgArtifactKey } from './mktg-artifact.interface';
 import type { MktgReadmeOutcome } from './mktg-run.interface';
+import type { MktgDocumentRunProgress } from './mktg-document-run.interface';
 
 /**
  * Agent key of a document type — the artifact namespace for the agents that
@@ -166,6 +167,8 @@ export interface MktgDocumentGroup {
 export interface MktgDocumentsResponse {
   project: string;
   groups: MktgDocumentGroup[];
+  /** Server-visible unfinished runs, including documents with no revision yet; newest first. */
+  runs?: MktgDocumentRunProgress[];
 }
 
 /** Response of `GET /api/mktg-agents/documents/:agentKey/:documentId?project=<uid>`: the document and its revisions, newest first. */
@@ -174,6 +177,8 @@ export interface MktgDocumentDetailResponse {
   type: MktgDocumentType;
   documentId: string;
   revisions: MktgRevisionSummary[];
+  /** Server-visible unfinished runs for this document; revisions may be empty on a first run. */
+  runs?: MktgDocumentRunProgress[];
 }
 
 /** The exact stored revision produced by a result poll, never a lookup of whichever revision is latest. */

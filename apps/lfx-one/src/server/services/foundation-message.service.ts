@@ -140,13 +140,19 @@ export class FoundationMessageService {
    * before anything is written; without it the document is still returned,
    * just not stored.
    */
-  public async getResult(req: Request, sessionId: string, projectUid?: string, readme?: MktgReadmeOutcome): Promise<FoundationMessageResultResponse> {
+  public async getResult(
+    req: Request,
+    sessionId: string,
+    projectUid?: string,
+    readme?: MktgReadmeOutcome,
+    minimumVersion = 0
+  ): Promise<FoundationMessageResultResponse> {
     const payloads = await this.guildService.getRawEventPayloads(req, sessionId);
     const envelope = this.findAuthoritativeEnvelope(req, payloads);
     // What the agent has done so far, in plain sentences, for the run page's live feed — on every status.
     const activity = buildMktgRunActivity(payloads);
 
-    if (!envelope) {
+    if (!envelope || envelope.version <= minimumVersion) {
       const questions = this.findLatestQuestions(req, payloads);
       if (questions) {
         return { status: 'questions', questions, questionsId: foundationMessageQuestionsId(questions), activity };

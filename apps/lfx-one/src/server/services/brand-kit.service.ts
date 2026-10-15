@@ -67,11 +67,17 @@ export class BrandKitService {
    * envelope exists, so a `pending` poll costs no upstream lookups. Without
    * it the document is still returned; it is simply not persisted.
    */
-  public async getResult(req: Request, sessionId: string, projectUid?: string, readme?: MktgReadmeOutcome): Promise<BrandKitResultResponse> {
+  public async getResult(
+    req: Request,
+    sessionId: string,
+    projectUid?: string,
+    readme?: MktgReadmeOutcome,
+    minimumVersion = 0
+  ): Promise<BrandKitResultResponse> {
     const payloads = await this.guildService.getRawEventPayloads(req, sessionId);
     const envelope = this.findAuthoritativeEnvelope(req, payloads);
 
-    if (!envelope) {
+    if (!envelope || envelope.version <= minimumVersion) {
       return { status: 'pending' };
     }
 
