@@ -809,7 +809,8 @@ export function compositeIdToStartMs(compositeId: string): number | null {
 /**
  * The V2 occurrence strip's chips (E6-03, #3586): the live occurrences and the endpoint's pages merged
  * into one ascending list, one chip per start instant (live > endpoint future > past record, as
- * {@link buildOccurrenceNavTimeline}). Unlike that list it keeps cancelled occurrences, flagged, so
+ * {@link buildOccurrenceNavTimeline}), except that an ended live entry takes its past record's composite
+ * id, so it opens as the past meeting. Unlike that list it keeps cancelled occurrences, flagged, so
  * the strip shows them rather than dropping them (FR-044), including a cancelled id with no
  * occurrence left in either list, placed at its own start.
  */
@@ -845,6 +846,15 @@ export function buildOccurrenceStripItems(
   for (const past of series.past) {
     const startMs = compositeIdToStartMs(past.meeting_and_occurrence_id);
     if (startMs === null) {
+      continue;
+    }
+    // An ended occurrence the live list still carries gets the record's composite id, its canonical URL;
+    // one still in progress keeps its live entry alone, as the page joins it from there.
+    const existing = byInstant.get(startMs);
+    if (existing) {
+      if (existing.isPast) {
+        byInstant.set(startMs, { ...existing, pastResourceId: past.meeting_and_occurrence_id });
+      }
       continue;
     }
     const scheduled =

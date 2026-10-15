@@ -1470,6 +1470,22 @@ describe('buildOccurrenceStripItems (E6-03)', () => {
     expect(items[1]).toEqual(expect.objectContaining({ isPast: false, cancelled: false }));
   });
 
+  it('gives an ended occurrence the live list still carries its past record id, but not one still in progress', () => {
+    const ended = Date.UTC(2026, 6, 16, 9, 0);
+    const running = Date.UTC(2026, 6, 20, 11, 45);
+    const live = (ms: number): MeetingOccurrence => ({ occurrence_id: String(ms / 1000), start_time: new Date(ms).toISOString(), duration: 30 });
+    const record = (ms: number) => ({ meeting_and_occurrence_id: `99152950841-${ms}`, scheduled_start_time: new Date(ms).toISOString() });
+    // `now` is 2026-07-20 12:00 UTC: the 16th has ended; the 20th at 11:45 is still in progress, and its
+    // record is already forming.
+    const items = buildOccurrenceStripItems([], { past: [record(ended), record(running)], future: [live(ended), live(running)] }, 30, now);
+
+    expect(items).toHaveLength(2);
+    expect(items[0]).toEqual(expect.objectContaining({ isPast: true, pastResourceId: `99152950841-${ended}` }));
+    const inProgress = items.find((item) => item.startMs === running);
+    expect(inProgress).toEqual(expect.objectContaining({ isPast: false }));
+    expect(inProgress?.pastResourceId).toBeUndefined();
+  });
+
   it('flags a past record whose id is listed as cancelled', () => {
     const items = buildOccurrenceStripItems(
       [],
