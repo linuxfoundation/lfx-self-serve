@@ -351,6 +351,33 @@ describe('MeetingOccurrenceStripComponent', () => {
     expect(navigatedTo()).toBe(at(-3));
   });
 
+  it('reads the unread past weeks before stepping forward from an older ended live entry', async () => {
+    await render(page({ past: [past(-3), past(-2)], future: [future(-10), future(1)], past_has_more: true, past_cursor: String(at(-3)) }), {
+      selected: at(-10),
+      pages: [page({ past: [past(-12), past(-11), past(-9), past(-8)], future: [], past_has_more: true, past_cursor: String(at(-12)) })],
+    });
+    // The selection is among the loaded chips: no chase on load.
+    expect(getPage).toHaveBeenCalledTimes(1);
+
+    button('occurrence-strip-next')?.click();
+    await settle();
+
+    expect(getPage).toHaveBeenLastCalledWith(SERIES, 'pw', { pageSize: 12, direction: 'past', cursor: String(at(-3)) });
+    expect(navigatedTo()).toBe(at(-9));
+  });
+
+  it('keeps reading forward until an occurrence still to come is loaded', async () => {
+    await render(page({ past: [past(-2), past(-1)], future: [future(-1, { status: 'cancel' })], future_has_more: true, future_cursor: String(at(-1)) }), {
+      selected: at(-1),
+      pastPage: true,
+      pages: [page({ past: [], future: [future(2)], future_has_more: false })],
+    });
+
+    expect(getPage).toHaveBeenLastCalledWith(SERIES, 'pw', { pageSize: 12, direction: 'future', cursor: String(at(-1)) });
+    expect(chip(2)?.getAttribute('data-nextup')).toBe('true');
+    expect(query('[data-testid="occurrence-strip-jump-next"]')).not.toBeNull();
+  });
+
   it("applies a later page's cancellations to chips already shown", async () => {
     await render(page({ past: [past(-1)], past_has_more: true, past_cursor: String(at(-1)), cancelled_occurrences: [] }), {
       selected: at(-1),

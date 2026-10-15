@@ -115,10 +115,8 @@ export class MeetingOccurrenceStripComponent {
   });
   /** "Occurrence N of M", only when the whole series is known. */
   protected readonly position: Signal<{ index: number; total: number } | null> = this.initPosition();
-  protected readonly previous = computed(() => this.neighbour(-1));
-  protected readonly next = computed(() => this.neighbour(1));
-  protected readonly canGoPrevious = computed(() => !!this.previous() || (!!this.selected() && !!this.timeline()?.pastHasMore));
-  protected readonly canGoNext = computed(() => !!this.next() || (!!this.selected() && !!this.timeline()?.futureHasMore));
+  protected readonly canGoPrevious = computed(() => this.canStep(this.adjacent(-1)));
+  protected readonly canGoNext = computed(() => this.canStep(this.adjacent(1)));
   protected readonly chips: Signal<MeetingOccurrenceStripChip[]> = this.initChips();
 
   private readonly tabStopMs: Signal<number | null> = this.initTabStopMs();
@@ -186,24 +184,22 @@ export class MeetingOccurrenceStripComponent {
   }
 
   protected async step(direction: -1 | 1): Promise<void> {
-    const immediate = direction < 0 ? this.previous() : this.next();
-    if (immediate) {
-      this.moveTo(immediate);
-      return;
-    }
-    // At a read end: read further pages until the neighbour is known (a bounded number). The step is
-    // dropped if a read fails, or if meanwhile the run moved on (a new series or password, or the strip
-    // went away) or the page moved elsewhere.
+    // Read whatever side is unread between the selection and its neighbour first (a bounded number of
+    // pages). The step is dropped if a read fails, or if meanwhile the run moved on (a new series or
+    // password, or the strip went away) or the page moved elsewhere.
     const run = this.runId;
     const from = this.selected()?.startMs;
-    for (let read = 0; read < MEETING_OCCURRENCE_STRIP_MAX_CHASE_PAGES; read++) {
-      const paged = await this.loadMore(run, direction < 0 ? 'past' : 'future', MEETING_OCCURRENCE_STRIP_PAGE_SIZE);
-      if (!paged || run !== this.runId || from === undefined || this.selected()?.startMs !== from) {
+    for (let read = 0; read <= MEETING_OCCURRENCE_STRIP_MAX_CHASE_PAGES; read++) {
+      const { item, readFirst } = this.adjacent(direction);
+      if (item) {
+        this.moveTo(item);
         return;
       }
-      const target = this.neighbour(direction);
-      if (target) {
-        this.moveTo(target);
+      if (!readFirst || read === MEETING_OCCURRENCE_STRIP_MAX_CHASE_PAGES) {
+        return;
+      }
+      const paged = await this.loadMore(run, readFirst, MEETING_OCCURRENCE_STRIP_PAGE_SIZE);
+      if (!paged || run !== this.runId || from === undefined || this.selected()?.startMs !== from) {
         return;
       }
     }
@@ -231,29 +227,46 @@ export class MeetingOccurrenceStripComponent {
   }
 
   /**
-   * The adjacent selectable occurrence among those loaded, skipping cancelled ones; null at a loaded end.
-   * Also null when the nearest one lies beyond its side's read pages while that side has more: the live
-   * list can still carry an ended occurrence weeks older than the past page, and the unread weeks
-   * between come first.
+   * The next selectable occurrence in a direction, or which side must be read before it is known. The
+   * two sides page independently (the past backwards, the live list forwards, and the live list can
+   * still carry ended occurrences), so chips adjacent among those loaded need not be adjacent in the
+   * series: when the stretch between the selection and the nearest candidate reaches into a side's
+   * unread range (older than its oldest past record, or later than its latest upcoming one, while it has
+   * more), that side is read first. Cancelled occurrences are skipped.
    */
-  private neighbour(direction: -1 | 1): MeetingOccurrenceStripItem | null {
+  private adjacent(direction: -1 | 1): { item: MeetingOccurrenceStripItem | null; readFirst: MeetingOccurrenceDirection | null } {
     const items = this.items();
     const selected = this.selected();
     const loaded = this.loaded();
     if (!selected || !loaded) {
-      return null;
+      return { item: null, readFirst: null };
     }
-    const { oldestPast, latestFuture } = this.readEdges(loaded);
     for (let index = items.indexOf(selected) + direction; index >= 0 && index < items.length; index += direction) {
       const candidate = items[index];
-      const beyondPast = direction < 0 && loaded.pastHasMore && (oldestPast === undefined || candidate.startMs < oldestPast);
-      const beyondFuture = direction > 0 && loaded.futureHasMore && (latestFuture === undefined || candidate.startMs > latestFuture);
-      if (beyondPast || beyondFuture) {
-        return null;
+      if (candidate.cancelled) {
+        continue;
       }
-      if (!candidate.cancelled) {
-        return candidate;
-      }
+      const unread = this.unreadSide(loaded, selected.startMs, candidate.startMs);
+      return unread ? { item: null, readFirst: unread } : { item: candidate, readFirst: null };
+    }
+    // Past the loaded end in this direction: that side's further pages.
+    const beyond: MeetingOccurrenceDirection = direction < 0 ? 'past' : 'future';
+    const hasMore = direction < 0 ? loaded.pastHasMore : loaded.futureHasMore;
+    return { item: null, readFirst: hasMore ? beyond : null };
+  }
+
+  private canStep({ item, readFirst }: { item: MeetingOccurrenceStripItem | null; readFirst: MeetingOccurrenceDirection | null }): boolean {
+    return !!item || !!readFirst;
+  }
+
+  /** Which side, if any, has unread occurrences between two starts. */
+  private unreadSide(loaded: MeetingOccurrenceStripPages, a: number, b: number): MeetingOccurrenceDirection | null {
+    const { oldestPast, latestFuture } = this.readEdges(loaded);
+    if (loaded.pastHasMore && (oldestPast === undefined || Math.min(a, b) < oldestPast)) {
+      return 'past';
+    }
+    if (loaded.futureHasMore && (latestFuture === undefined || Math.max(a, b) > latestFuture)) {
+      return 'future';
     }
     return null;
   }
@@ -339,6 +352,14 @@ export class MeetingOccurrenceStripComponent {
       }
       const direction = this.chaseDirection(target, loaded);
       if (!direction || !(await this.loadMore(run, direction, MEETING_OCCURRENCES_PAGE_MAX_LIMIT))) {
+        break;
+      }
+    }
+
+    // The live list pages without leaving out ended or cancelled entries: keep reading forward (a bounded
+    // number) while none still to come is loaded, so the next-up dot and Jump to next can appear.
+    for (let read = 0; read < MEETING_OCCURRENCE_STRIP_MAX_CHASE_PAGES && run === this.runId && !this.nextUp(); read++) {
+      if (!this.loaded()?.futureHasMore || !(await this.loadMore(run, 'future', MEETING_OCCURRENCE_STRIP_PAGE_SIZE))) {
         break;
       }
     }
