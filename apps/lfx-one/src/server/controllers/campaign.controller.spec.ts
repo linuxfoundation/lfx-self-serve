@@ -2669,6 +2669,331 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(error.message).toContain('31');
   });
 
+  /**
+   * The EXCLUDED location list, one test per branch of upstream's `resolveGeoList` as
+   * `validateGeoPlan` calls it for the exclusion half (`internal/platform/googleads/geo.go`), plus
+   * the both-lists clash it checks straight after, plus the accept-cases that keep the guard from
+   * over-refusing. All of it runs inside `preflightCampaignKind`, before the first mutate.
+   */
+
+  /** Sixty canonical city/region constant ids — the exclusion cap exactly, and none of them a country. */
+  const SIXTY_GEO_IDS = Array.from({ length: 60 }, (_, i) => String(1000000 + i));
+
+  it('dispatches 60 exclusions alongside a full targeted list, because upstream caps each list separately', async () => {
+    // The contrast for every exclusion refusal below, and the one that pins the cap as PER LIST:
+    // `validateGeoPlan` calls `resolveGeoList` once per list, each with its own counter, so 30
+    // targeted countries and 60 exclusions is a create Google takes. Summing the two here would
+    // refuse it.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000c', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ geoTargets: ALL_MAPPED_GEOS, excludedGeoTargets: SIXTY_GEO_IDS }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    const sent = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    expect(sent['geoTargets']).toHaveLength(30);
+    expect(sent['excludedGeoTargets']).toHaveLength(60);
+  });
+
+  it("trims an excluded code with Go's whitespace set, not JS's, so a code upstream accepts is not refused here", async () => {
+    // `strings.TrimSpace` strips U+0085 (NEL) and `String.prototype.trim` does not. Trimming with
+    // JS's set would refuse this entry as an unknown country code while `resolveGeoList` resolves
+    // it to 2840 — the over-refusal these Go mirrors exist to prevent.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000e', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ excludedGeoTargets: ['\u0085US\u0085'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['excludedGeoTargets']).toEqual(['US']);
+  });
+
+  it("trims a radius unit with Go's whitespace set, so a unit upstream accepts is not refused here", async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000f', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ proximityTargets: [{ ...SYDNEY, radiusUnit: '\u0085kilometers' }] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['proximityTargets']).toHaveLength(1);
+  });
+
+  it.each([
+    ['excludedGeoTargets', Array.from({ length: 101 }, () => 'US')],
+    ['proximityTargets', Array.from({ length: 101 }, () => ({ latitude: -33.8688, longitude: 151.2093, radius: 25, radiusUnit: 'KILOMETERS' }))],
+  ])('bounds a %s list before the envelope normalizes it, since that runs ahead of the named cap', async (field, list) => {
+    // The named caps (60 and 20) are the operator-facing refusal and still fire first for any
+    // plausible list. This ceiling only stops `createConfigEnvelope` — which runs BEFORE them and
+    // allocates per entry — from walking a 15mb body.
+    await controller.createCampaign(buildReq(googleBody({ [field]: list } as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe(field);
+    expect(error.message).toContain('100');
+  });
+
+  it('excludes a numeric city id without testing it against the curated country table, because upstream accepts ids outside it', async () => {
+    // The over-refusal guard for the guard itself. `resolveGeoEntry` tells a code from an id by
+    // SHAPE and returns a canonical id as-is rather than resolving it against the country map, so
+    // `1023191` (New York) is an exclusion Google takes. Testing it against
+    // `GOOGLE_ADS_GEO_TARGET_MAP` would refuse it here. A country code still resolves to its id,
+    // and both spellings reach the wire as the operator wrote them, upper-cased.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000c', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ geoTargets: ['US'], excludedGeoTargets: ['1023191', ' ca '] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['excludedGeoTargets']).toEqual(['1023191', 'CA']);
+  });
+
+  it('excludes locations on Demand Gen, which upstream fences for radius targets but not for exclusions', async () => {
+    // `validateGeoPlan` applies its Demand Gen fence to the PROXIMITY list only — the exclusion
+    // list has no channel gate at all. Gating this one the way languages and radius targets are
+    // gated would refuse a create Google takes, on the channel this work exists to complete.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000c', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: ['demand-gen'], excludedGeoTargets: ['CN'] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['excludedGeoTargets']).toEqual(['CN']);
+  });
+
+  it.each([
+    ['a non-array excluded list', { excludedGeoTargets: {} }],
+    ['non-string excluded entries', { excludedGeoTargets: [2840] }],
+  ])('refuses %s before it reaches the dispatcher, which decodes the field as a list of strings', async (_label, overrides) => {
+    await controller.createCampaign(buildReq(googleBody(overrides as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('excludedGeoTargets');
+  });
+
+  it('refuses a 61st exclusion, matching the cap `resolveGeoList` checks before it reads a single entry', async () => {
+    await controller.createCampaign(buildReq(googleBody({ excludedGeoTargets: [...SIXTY_GEO_IDS, 'US'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.field).toBe('excludedGeoTargets');
+    expect(error.message).toContain('61');
+  });
+
+  it('refuses a blank exclusion, which upstream refuses after trimming rather than skipping', async () => {
+    // Dropping it would create a campaign that serves everywhere the operator left unexcluded
+    // PLUS the market they meant to type into that slot.
+    await controller.createCampaign(buildReq(googleBody({ excludedGeoTargets: ['US', '  '] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('excludedGeoTargets');
+  });
+
+  it('refuses a non-canonical numeric exclusion id, because upstream requires the id with no leading zeros', async () => {
+    await controller.createCampaign(buildReq(googleBody({ excludedGeoTargets: ['02840'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.field).toBe('excludedGeoTargets');
+    expect(error.message).toContain('canonical spelling');
+  });
+
+  it('names an unsupported-but-well-formed exclusion code instead of letting Google refuse it opaquely', async () => {
+    // `PT` is the same code the targeted guard names above: two letters, assigned, and absent from
+    // `geo.go`'s map, so `resolveGeoEntry` hard-errors on it before the first mutate.
+    await controller.createCampaign(buildReq(googleBody({ excludedGeoTargets: ['US', 'PT'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.field).toBe('excludedGeoTargets');
+    expect(error.message).toContain('PT');
+  });
+
+  it('refuses a location that is both targeted and excluded even when the two halves are spelled differently', async () => {
+    // The clash is compared by RESOLVED id, as upstream compares it, so `US` targeted and `2840`
+    // excluded is the same location twice. Comparing the raw strings would let it through, and
+    // Google would let the exclusion win — a campaign that silently never serves in its own
+    // target market.
+    await controller.createCampaign(
+      buildReq(googleBody({ geoTargets: ['US', 'CA'], excludedGeoTargets: ['2840'] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.field).toBe('excludedGeoTargets');
+    expect(error.message).toContain('US');
+    // Only the clashing half is named — `CA` is targeted and not excluded, and naming it would
+    // send the operator looking at the wrong chip.
+    expect(error.message).not.toContain('CA');
+  });
+
+  /**
+   * The RADIUS targets, one test per branch of upstream's `validateProximityTargets`
+   * (`internal/platform/googleads/geo.go`) in its own order, plus the Demand Gen fence
+   * `validateGeoPlan` applies before it, plus the accept-cases that keep the guard from
+   * over-refusing.
+   */
+  const SYDNEY = { latitude: -33.8688, longitude: 151.2093, radius: 25, radiusUnit: 'KILOMETERS' };
+
+  it('dispatches radius targets at both unit ceilings, which is exactly what upstream accepts', async () => {
+    // The contrast for every radius refusal below, and the boundary itself: `validateProximityTargets`
+    // compares `radius > maxRadius` STRICTLY, so exactly 500 miles and exactly 800 kilometres are
+    // creates Google takes. A `>=` here would refuse both. The lower-cased unit is deliberate —
+    // upstream trims and upper-cases before it compares, so refusing `miles` would be an
+    // over-refusal.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000d', error: null });
+
+    await controller.createCampaign(
+      buildReq(
+        googleBody({
+          proximityTargets: [
+            { latitude: 37.7749, longitude: -122.4194, radius: 500, radiusUnit: ' miles ' },
+            { ...SYDNEY, radius: 800 },
+          ],
+        }),
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['proximityTargets']).toHaveLength(2);
+  });
+
+  it('dispatches two radius targets that differ below microdegree precision rather than refusing the repeat', async () => {
+    // Upstream COLLAPSES an exact repeat instead of refusing it — a proximity target carries no
+    // bid modifier, so two entries rendering to the same wire tuple say the same thing. These two
+    // round to the SAME microdegrees (-33868800), so upstream collapses them to one target —
+    // refusing either here would be an over-refusal of a create that works.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000d', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ proximityTargets: [SYDNEY, { ...SYDNEY, latitude: -33.86880001 }] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['proximityTargets']).toHaveLength(2);
+  });
+
+  it.each([
+    ['a non-array radius list', { proximityTargets: {} }],
+    ['a non-object radius entry', { proximityTargets: ['sydney'] }],
+    ['a non-numeric coordinate', { proximityTargets: [{ ...SYDNEY, latitude: '-33.8688' }] }],
+    ['a non-string radius unit', { proximityTargets: [{ ...SYDNEY, radiusUnit: 1 }] }],
+    // The two that matter most, and the one place this guard is stricter than the Go decoder. A
+    // null or absent coordinate decodes to `0` — a real point off West Africa that nothing
+    // downstream refuses — so tolerating it would dispatch a paid radius campaign around a
+    // coordinate the operator never chose. An absent RADIUS is deliberately not here: it decodes
+    // to a zero the entry checks refuse by name, in upstream's own words.
+    ['a null coordinate', { proximityTargets: [{ ...SYDNEY, longitude: null }] }],
+    ['a missing coordinate', { proximityTargets: [{ longitude: 151.2093, radius: 25, radiusUnit: 'KILOMETERS' }] }],
+  ])('refuses %s before it reaches the dispatcher, which decodes the field as typed structs', async (_label, overrides) => {
+    await controller.createCampaign(buildReq(googleBody(overrides as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('proximityTargets');
+  });
+
+  it('refuses a radius target with no radius by name rather than as a malformed shape', async () => {
+    // The contrast for the two coordinate cases above, and the reason the shape test tolerates an
+    // absent radius: it decodes to `0`, which `validateProximityTargets` refuses in its own words.
+    // Hardening the shape test around it would replace a message that says what is wrong with one
+    // that says the object was the wrong shape.
+    await controller.createCampaign(
+      buildReq(googleBody({ proximityTargets: [{ latitude: -33.8688, longitude: 151.2093, radiusUnit: 'KILOMETERS' }] }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().message).toContain('greater than 0');
+  });
+
+  it('refuses radius targets on Demand Gen by name, which upstream fences before it validates a single one', async () => {
+    // Named, not silently withheld: an operator who drew a radius and got a campaign serving the
+    // whole country would have no way to know the radius was dropped.
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: ['demand-gen'], proximityTargets: [SYDNEY] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.field).toBe('proximityTargets');
+    expect(error.message).toContain('Demand Gen');
+  });
+
+  it('refuses a 21st radius target, matching the cap upstream checks against the submitted count', async () => {
+    // Against the SUBMITTED count, before any exact repeat is collapsed — so a list that is only
+    // over the cap because it repeats is still refused, exactly as upstream refuses it.
+    await controller.createCampaign(
+      buildReq(googleBody({ proximityTargets: Array.from({ length: 21 }, () => ({ ...SYDNEY })) }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.field).toBe('proximityTargets');
+    expect(error.message).toContain('21');
+  });
+
+  it.each([
+    ['a non-finite coordinate', { ...SYDNEY, longitude: Number.POSITIVE_INFINITY }, 'finite'],
+    ['a latitude outside the globe', { ...SYDNEY, latitude: -90.1 }, '-90'],
+    ['a longitude outside the globe', { ...SYDNEY, longitude: 180.5 }, '-180'],
+    ['a zero radius', { ...SYDNEY, radius: 0 }, 'greater than 0'],
+    ['an unknown radius unit', { ...SYDNEY, radiusUnit: 'FURLONGS' }, 'MILES or KILOMETERS'],
+    ['a radius over the unit ceiling', { ...SYDNEY, radius: 800.5 }, '800'],
+  ])('refuses %s, which upstream refuses before the first mutate', async (_label, target, expected) => {
+    await controller.createCampaign(buildReq(googleBody({ proximityTargets: [target] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('proximityTargets');
+    expect(error.message).toContain(expected);
+  });
+
+  it('numbers the refused radius target from 1 and echoes its coordinates, so the operator can find it', async () => {
+    // Upstream numbers from 0 in its own log line; an operator counting rows in the form counts
+    // from 1, and the coordinates identify the entry whichever way it is counted.
+    await controller.createCampaign(
+      buildReq(googleBody({ proximityTargets: [SYDNEY, { ...SYDNEY, radius: -5 }] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    const error = refusalFrom();
+    expect(error.message).toContain('radius target 2');
+    expect(error.message).toContain('151.2093');
+  });
+
   it('dispatches the languages the operator picked, trimmed and upper-cased', async () => {
     // The contrast for every language refusal below: without it they would all pass on a
     // controller that refused or dropped every language list. `resolveLanguageList` resolves an

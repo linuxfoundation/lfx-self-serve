@@ -7,6 +7,7 @@ import type {
   CAMPAIGN_EMAIL_STAGES,
   CAMPAIGN_EMAIL_VARIANTS,
   CAMPAIGN_METRICS_WINDOWS,
+  GOOGLE_ADS_RADIUS_UNITS,
   GOOGLE_BIDDING_STRATEGIES,
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
@@ -1769,6 +1770,34 @@ export interface CampaignSitelink {
   finalUrl: string;
 }
 
+/**
+ * The radius unit a {@link CampaignProximityTarget} is measured in.
+ *
+ * Derived from {@link GOOGLE_ADS_RADIUS_UNITS} rather than written out again, so a unit added to
+ * the constant cannot leave this type behind.
+ */
+export type GoogleAdsRadiusUnit = (typeof GOOGLE_ADS_RADIUS_UNITS)[number];
+
+/**
+ * One Google proximity target: a point in decimal degrees and a radius around it.
+ *
+ * Every field is REQUIRED, `radiusUnit` emphatically so — upstream (`geo.go`'s
+ * `validateProximityTargets`) supplies no default because "a radius of 50 means two very different
+ * campaigns depending on the unit, and guessing one would silently buy ~2.5x the intended area (or
+ * 0.4x)". Refusing costs the caller one explicit word, before anything paid exists.
+ *
+ * Latitude and longitude are DECIMAL DEGREES (37.7749, -122.4194), the form every mapping tool
+ * emits; upstream converts them to the microdegrees Google's `GeoPoint` actually carries. `radius`
+ * must be greater than zero and within {@link GOOGLE_ADS_MAX_RADIUS} for its own unit — the two
+ * ceilings are not a converted pair.
+ */
+export interface CampaignProximityTarget {
+  latitude: number;
+  longitude: number;
+  radius: number;
+  radiusUnit: GoogleAdsRadiusUnit;
+}
+
 export interface CampaignCreateRequest {
   eventName: string;
   eventSlug: string;
@@ -1801,6 +1830,38 @@ export interface CampaignCreateRequest {
   performanceMaxCreative?: GooglePerformanceMaxCreative;
   displayCreative?: GoogleDisplayCreative;
   geoTargets: string[];
+  /**
+   * The places the Google campaign must NOT serve in, as ISO 3166-1 alpha-2 country codes or raw
+   * numeric Google geo target constant ids (which is how a CITY, region, metro or postal code is
+   * addressed — the curated country map cannot express those).
+   *
+   * Optional and OMITTED when empty, on the same rule as {@link geoTargets}: an absent list and an
+   * empty one both mean "exclude nowhere".
+   *
+   * Accepted on EVERY Google channel, Demand Gen included — `validateGeoPlan` puts no channel fence
+   * on exclusions, unlike {@link proximityTargets}. Bounded by
+   * {@link GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS}, which is counted separately from the targeted
+   * list's own bound.
+   *
+   * A place named in BOTH lists is refused rather than resolved: the exclusion would win and the
+   * campaign would not serve there at all, so a caller who wrote both did not get what either list
+   * says. The two are compared by RESOLVED id, so `US` in one list and `2840` in the other clash.
+   */
+  excludedGeoTargets?: string[];
+  /**
+   * Radius targeting around points — "everyone within N miles of the venue" — which is the one
+   * location shape that is not a place in Google's geo table.
+   *
+   * Optional and OMITTED when empty. Refused by upstream on Demand Gen (see
+   * {@link GOOGLE_CHANNELS_WITH_PROXIMITY}), so the BFF refuses a Demand Gen create carrying one by
+   * name rather than letting it fail after the fact, and the builder withholds the list on any
+   * channel that cannot take it. Bounded by {@link GOOGLE_ADS_MAX_PROXIMITY_TARGETS}.
+   *
+   * Two entries that render to the same criterion are COLLAPSED, not refused — unlike a repeated ad
+   * schedule, a proximity target carries no bid modifier, so two spellings of one target cannot
+   * disagree about anything.
+   */
+  proximityTargets?: CampaignProximityTarget[];
   /**
    * The languages the Google campaign serves in, as ISO 639-1 codes (`EN`, `DE`, `JA`) or raw
    * numeric Google language constant ids.
