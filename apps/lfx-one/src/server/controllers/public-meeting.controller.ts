@@ -13,7 +13,8 @@ import { MeetingVisibility, QueryServiceMeetingType } from '@lfx-one/shared/enum
 import {
   ApiRequestOptions,
   CreateMeetingRegistrantRequest,
-  MeetingOccurrenceSummary,
+  MeetingContentAccess,
+  MeetingTimelineOccurrence,
   MeetingRegistrant,
   PastMeeting,
   PastMeetingArtifactKind,
@@ -147,6 +148,17 @@ export class PublicMeetingController {
       const parent = await this.resolveParentProject(req, project);
 
       await this.addInviteeRegistrantCount(req, meeting, id, m2mToken);
+
+      // The ITX payload also carries a registrant count per occurrence. It follows the meeting
+      // count's rule, registrants and organizers only (spec 011 § Counts). An invite proved late by
+      // the email fallback below keeps the meeting count but not these, which nothing renders.
+      if (!meeting.invited && !meeting.organizer && meeting.occurrences) {
+        meeting.occurrences = meeting.occurrences.map((occurrence) => {
+          const withoutCount = { ...occurrence };
+          delete withoutCount.registrant_count;
+          return withoutCount;
+        });
+      }
 
       // Organizer identity is authenticated-visible info (LFXV2-2802). For authenticated callers,
       // enrich created_by/owner from the live v1_meeting index (the ITX detail payload omits created_by);
@@ -561,9 +573,10 @@ export class PublicMeetingController {
   /**
    * GET /public/api/meetings/:id/occurrences
    * Returns the series timeline for a meeting: past occurrences (from v1_past_meeting
-   * records) plus a minimal projection of the live series' current/future occurrences.
-   * Timestamps only — no titles, passwords, or join info. Private/restricted series are
-   * gated by the same access chain as getMeetingById (password, registrant, organizer).
+   * records) plus a projection of the live series' current/future occurrences: timestamps,
+   * status and title, and the registrant count for a registrant or organizer only — no
+   * descriptions, passwords, or join info. Private/restricted series are gated by the same
+   * access chain as getMeetingById (password, registrant, organizer).
    */
   public async getMeetingOccurrences(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { id } = req.params;
@@ -588,8 +601,8 @@ export class PublicMeetingController {
 
       // Fail closed: when the live series can't be loaded, its visibility can't be
       // verified, so the timeline is not exposed.
-      const allowed = liveMeeting ? await this.canViewSeriesTimeline(req, liveMeeting, m2mToken, originalToken) : false;
-      if (!allowed) {
+      const access = liveMeeting ? await this.canViewSeriesTimeline(req, liveMeeting, m2mToken, originalToken) : null;
+      if (!access) {
         next(
           new AuthorizationError('Not authorized to view this meeting series', {
             operation: 'get_public_meeting_occurrences',
@@ -602,12 +615,20 @@ export class PublicMeetingController {
 
       const past = await this.meetingService.getPastOccurrencesForMeeting(req, id);
 
-      // Minimal projection only — the full ITX payload carries sensitive fields (e.g. password)
-      const future: MeetingOccurrenceSummary[] = (liveMeeting?.occurrences ?? []).map((o) => ({
+      // A projection, never the ITX payload, which carries sensitive fields (e.g. password). The
+      // registrant count goes only to a caller the gate let in as a registrant or organizer (spec 011
+      // § Counts). A caller let in because the meeting is public, or by its passcode, has not shown they
+      // are registered: both gates end the chain before the registrant and organizer lookups, so a
+      // signed-in registrant of a public meeting, or one whose client sends the passcode, gets no count.
+      // Proving it would add upstream calls, which #3584 rules out.
+      const showsRegistrantCount = access === 'registrant' || access === 'organizer';
+      const future: MeetingTimelineOccurrence[] = (liveMeeting?.occurrences ?? []).map((o) => ({
         occurrence_id: o.occurrence_id,
         start_time: o.start_time,
         duration: o.duration,
         status: o.status,
+        title: o.title,
+        ...(showsRegistrantCount && { registrant_count: o.registrant_count }),
       }));
 
       const response: PublicMeetingOccurrencesResponse = {
@@ -1148,17 +1169,20 @@ export class PublicMeetingController {
   }
 
   /**
-   * Access gate for the public series-timeline endpoint: {@link canViewMeetingContent}.
+   * Access gate for the public series-timeline endpoint: {@link resolveMeetingContentAccess}, returning
+   * the gate the caller passed, which decides whether the response carries registrant counts.
    */
-  private async canViewSeriesTimeline(req: Request, meeting: Meeting, m2mToken: string, originalToken: string | undefined): Promise<boolean> {
-    return this.canViewMeetingContent(req, meeting, m2mToken, originalToken, 'get_public_meeting_occurrences');
+  private async canViewSeriesTimeline(
+    req: Request,
+    meeting: Meeting,
+    m2mToken: string,
+    originalToken: string | undefined
+  ): Promise<MeetingContentAccess | null> {
+    return this.resolveMeetingContentAccess(req, meeting, m2mToken, originalToken, 'get_public_meeting_occurrences');
   }
 
   /**
-   * The public meeting gates as a yes/no, mirroring getMeetingById's chain: public non-restricted
-   * meetings are open; private/restricted ones need a valid password (header only), a registrant
-   * record (by email or username, then by email directly, via M2M, as getMeetingById checks), or an organizer relation (checked with
-   * the user's own token, passed per call, never the M2M identity).
+   * The public meeting gates as a yes/no: {@link resolveMeetingContentAccess}.
    */
   private async canViewMeetingContent(
     req: Request,
@@ -1167,19 +1191,38 @@ export class PublicMeetingController {
     originalToken: string | undefined,
     operation: string
   ): Promise<boolean> {
+    return (await this.resolveMeetingContentAccess(req, meeting, m2mToken, originalToken, operation)) !== null;
+  }
+
+  /**
+   * The public meeting gates, mirroring getMeetingById's chain, returning the gate the caller passed
+   * (null when none): public non-restricted meetings are open; private/restricted ones need a valid
+   * password (header only), a registrant record (by email or username, then by email directly, via
+   * M2M, as getMeetingById checks), or an organizer relation (checked with the user's own token,
+   * passed per call, never the M2M identity). An open meeting is not checked further, so `public`
+   * says nothing about whether the caller is registered. Likewise a valid passcode ends the chain as
+   * `password` without the registrant or organizer lookups, so it says nothing about who the caller is.
+   */
+  private async resolveMeetingContentAccess(
+    req: Request,
+    meeting: Meeting,
+    m2mToken: string,
+    originalToken: string | undefined,
+    operation: string
+  ): Promise<MeetingContentAccess | null> {
     if (meeting.visibility === MeetingVisibility.PUBLIC && !meeting.restricted) {
-      return true;
+      return 'public';
     }
 
     // The passcode arrives in a request header (never the GET query string, which lands
     // in access logs and caches — CodeQL js/sensitive-get-query).
     const password = req.headers[MEETING_PASSWORD_HEADER];
     if (typeof password === 'string' && password && validatePassword(password, meeting.password as string)) {
-      return true;
+      return 'password';
     }
 
     if (!req.oidc?.isAuthenticated()) {
-      return false;
+      return null;
     }
 
     // The registrant gate as getMeetingById runs it: by email or username first (a registrant's meeting
@@ -1188,7 +1231,7 @@ export class PublicMeetingController {
     const email = getEffectiveEmail(req);
     try {
       if (await isUserInvitedToMeeting(req, meeting.id, email || '', m2mToken)) {
-        return true;
+        return 'registrant';
       }
     } catch (error) {
       logger.warning(req, operation, 'Registrant check failed, trying the direct email lookup', {
@@ -1200,7 +1243,7 @@ export class PublicMeetingController {
       try {
         const registrants = await this.meetingService.getMeetingRegistrantsByEmail(req, meeting.id, email, m2mToken);
         if (registrants.length > 0) {
-          return true;
+          return 'registrant';
         }
       } catch (error) {
         logger.warning(req, operation, 'Direct email registrant check failed, continuing to organizer check', {
@@ -1218,7 +1261,7 @@ export class PublicMeetingController {
           bearerToken: originalToken,
         });
         if (meetingWithAccess.organizer) {
-          return true;
+          return 'organizer';
         }
       } catch (error) {
         logger.warning(req, operation, 'Organizer check failed, denying access', {
@@ -1228,7 +1271,7 @@ export class PublicMeetingController {
       }
     }
 
-    return false;
+    return null;
   }
 
   /**
