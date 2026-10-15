@@ -11,6 +11,16 @@
 export const TRANSIENT_RETRY_DELAY_MS = 1000;
 
 /**
+ * Backoff schedule (ms) for `retryPropagationLag` in
+ * `apps/lfx-one/src/app/shared/utils/http-error.utils.ts` — retries a 403/404 that may be the
+ * ITX index / FGA tuple for an entity this user just created still catching up with the write,
+ * rather than a genuine permission/not-found response (#501). Each entry is the delay before that
+ * attempt; the array length is the retry count, so trimming/extending the schedule changes both
+ * at once.
+ */
+export const PROPAGATION_LAG_RETRY_DELAYS_MS = [1000, 2000];
+
+/**
  * Minimum remaining wall-clock budget (ms) for issuing another upstream request inside a
  * budget-bounded retry/poll loop (GH-1637). Below this floor the request cannot complete a
  * round trip before the deadline, so it would abort as a 408 — masking the error the loop

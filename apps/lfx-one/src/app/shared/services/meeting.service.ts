@@ -60,7 +60,7 @@ import {
 import { isBatchRegistrantOperationResponse, mergeBatchRegistrantResponses } from '@lfx-one/shared/utils';
 import { catchError, concatMap, from, map, Observable, of, shareReplay, take, tap, throwError, toArray } from 'rxjs';
 
-import { extractErrorMessage } from '@shared/utils/http-error.utils';
+import { extractErrorMessage, retryPropagationLag } from '@shared/utils/http-error.utils';
 
 @Injectable({
   providedIn: 'root',
@@ -240,6 +240,11 @@ export class MeetingService {
    * the new `request$` rather than invalidating — callers already subscribed to the prior
    * `shareReplay(1)` observable continue to completion with the old payload, so racing
    * `skipCache` callers can still observe a stale result.
+   *
+   * `retryPropagationLag` sits closest to the source, ahead of the cache-eviction `tap` and the
+   * logging `catchError`, so a transient 403/404 right after a create (#501) is retried silently
+   * and only a terminal failure reaches those. Both the writerGuard's `meetings` probe and this
+   * page's edit-mode load go through this one method, so retrying here fixes the race for both.
    */
   public getMeetingDetail(id: string, options?: { skipCache?: boolean }): Observable<Meeting> {
     const cached = this.meetingDetailCache.get(id);
@@ -250,6 +255,7 @@ export class MeetingService {
       this.meetingDetailCache.delete(id);
     }
     const request$ = this.http.get<Meeting>(`/api/meetings/${id}`).pipe(
+      retryPropagationLag(),
       tap({ error: () => this.meetingDetailCache.delete(id) }),
       catchError((error) => {
         console.error(`Failed to load meeting ${id}:`, error);
