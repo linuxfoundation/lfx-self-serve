@@ -2902,8 +2902,8 @@ export interface MonitorCellView {
   className: string;
 }
 
-/** The report-backed panel's KPI tiles. */
-export interface ReportBackedKpisView {
+/** An ad-platform panel's KPI tiles (LinkedIn, Reddit, Meta, Microsoft Ads, X). */
+export interface AccountMonitorKpisView {
   impressions: string;
   clicks: string;
   ctr: string;
@@ -2911,11 +2911,16 @@ export interface ReportBackedKpisView {
   conversions: MonitorCellView;
 }
 
-/** One campaign row of the report-backed panel. Every metric cell is a dash when `fetchFailed`. */
-export interface ReportBackedCampaignRowView {
+/** One campaign row of an ad-platform panel. Every metric cell is a dash when `fetchFailed`. */
+export interface AccountMonitorCampaignRowView {
   campaignId: string;
+  /** The row's heading: the event name on LinkedIn, the campaign name elsewhere. */
+  title: string;
+  /** The full campaign name under the heading (LinkedIn only); null elsewhere. */
+  subtitle: string | null;
   campaignName: string;
   status: string;
+  statusClass: string;
   fetchFailed: boolean;
   flight: string;
   budget: string;
@@ -2925,11 +2930,89 @@ export interface ReportBackedCampaignRowView {
   clicks: MonitorCellView;
   ctr: MonitorCellView;
   conversions: MonitorCellView;
+  /** LinkedIn only: the creative count, or "Not read". Null on every other platform. */
+  creatives: MonitorCellView | null;
 }
 
-export interface ReportBackedMonitorView {
-  kpis: ReportBackedKpisView | null;
-  rows: ReportBackedCampaignRowView[];
+/** An ad-platform panel, rendered. `kpis` is null when no totals arrived. */
+export interface AccountMonitorPanelView {
+  kpis: AccountMonitorKpisView | null;
+  rows: AccountMonitorCampaignRowView[];
+}
+
+/** The Google Ads panel's KPI tiles. */
+export interface GoogleMonitorKpisView {
+  impressions: string;
+  clicks: string;
+  /** An em dash, never 0.0%, when CTR is not computable. */
+  ctr: string;
+  spend: string;
+  conversions: string;
+}
+
+/** One row of the Google Ads campaign table. */
+export interface GoogleMonitorCampaignRowView {
+  campaignId: string;
+  title: string;
+  /** The full campaign name, copied by the row's copy button. */
+  name: string;
+  shortName: string;
+  startDate: string;
+  endDate: string;
+  totalBudget: string;
+  spend: string;
+  impressions: string;
+  clicks: string;
+  ctr: string;
+  avgCpc: string;
+  conversions: string;
+  pacingBarClass: string;
+  /** Bar width in percent, capped at 100. */
+  pacingBarWidth: number;
+  pacingText: string;
+}
+
+/** The Google Ads keyword totals strip. */
+export interface KeywordTotalsView {
+  impressions: string;
+  clicks: string;
+  avgCtr: string;
+  spend: string;
+  conversions: string;
+}
+
+/** One row of the visible keyword page. */
+export interface KeywordRowView {
+  trackKey: string;
+  keyword: string;
+  /** The full campaign name, copied by the row's copy button. */
+  campaign: string;
+  campaignLabel: string;
+  matchType: string;
+  matchTypeClass: string;
+  qualityScore: string;
+  qualityScoreClass: string;
+  impressions: string;
+  clicks: string;
+  ctr: string;
+  avgCpc: string;
+  spend: string;
+  conversions: string;
+}
+
+/** One platform button on the Monitor tab, styled for its selected state. */
+export interface MonitorPlatformButtonView {
+  className: string;
+  /** The brand background when selected, null otherwise. */
+  background: string | null;
+}
+
+/** A platform's selected-button colours: its brand background and a foreground that clears WCAG AA (4.5:1) on it. */
+export interface MonitorPlatformButtonColors {
+  background: string;
+  foreground: string;
+  /** The Tailwind text class that renders `foreground`. */
+  textClass: 'text-white' | 'text-gray-950';
 }
 
 /** The HubSpot section's KPI tiles; rates are `MonitorCellView`s so an unknown one renders grey. */

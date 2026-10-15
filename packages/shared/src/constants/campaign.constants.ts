@@ -41,12 +41,15 @@ import type {
   MicrosoftKeywordsWindow,
   MicrosoftKeywordsWindowOption,
   MonitorConnectionPlatform,
+  MonitorPlatformButtonColors,
+  MonitorTabPlatform,
   NegativeKeywordCampaignPlatform,
   ParsedCampaignName,
   RedditObjective,
   RedditObjectiveParams,
   SelectableMetaObjective,
 } from '../interfaces/campaign.interface';
+import { lfxColors } from './colors.constants';
 import { COUNTRIES } from './countries.constants';
 
 /** Tab definitions for the Campaigns page tab navigation. */
@@ -1146,6 +1149,23 @@ export const MONITOR_CUTOVER_MISMATCH_MESSAGE = 'The monitor is switching data s
 
 /** HubSpot's brand orange, for the Monitor tab's email button (HubSpot is not a `CampaignPlatform`). */
 export const HUBSPOT_BRAND_COLOR = '#FF7A59';
+
+/**
+ * Each Monitor tab platform button's SELECTED colours. The background is the brand colour; the
+ * foreground is whichever of white and gray-950 clears WCAG AA (4.5:1) for 12px text on it. White
+ * fails on Google (3.6:1), Reddit (3.4:1), Meta (4.2:1), Microsoft (2.8:1) and HubSpot (2.6:1), so
+ * those take gray-950 (5.7, 5.9, 4.8, 7.3, 7.8:1); LinkedIn (4.9:1) and X (21:1) keep white. The
+ * spec recomputes every ratio, so a brand-colour change that breaks AA fails there.
+ */
+export const MONITOR_PLATFORM_BUTTON_COLORS: Readonly<Record<MonitorTabPlatform, MonitorPlatformButtonColors>> = {
+  google: { background: PLATFORM_BRAND_COLORS['google-ads'], foreground: lfxColors.gray[950], textClass: 'text-gray-950' },
+  linkedin: { background: PLATFORM_BRAND_COLORS['linkedin-ads'], foreground: lfxColors.white, textClass: 'text-white' },
+  reddit: { background: PLATFORM_BRAND_COLORS['reddit-ads'], foreground: lfxColors.gray[950], textClass: 'text-gray-950' },
+  meta: { background: PLATFORM_BRAND_COLORS['meta-ads'], foreground: lfxColors.gray[950], textClass: 'text-gray-950' },
+  microsoft: { background: PLATFORM_BRAND_COLORS['microsoft-ads'], foreground: lfxColors.gray[950], textClass: 'text-gray-950' },
+  twitter: { background: PLATFORM_BRAND_COLORS['twitter-ads'], foreground: lfxColors.white, textClass: 'text-white' },
+  hubspot: { background: HUBSPOT_BRAND_COLOR, foreground: lfxColors.gray[950], textClass: 'text-gray-950' },
+};
 
 /**
  * Zero-padded `YYYY-MM-DD` shape for a campaign flight date.

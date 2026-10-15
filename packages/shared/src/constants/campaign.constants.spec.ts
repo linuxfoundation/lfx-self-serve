@@ -4,9 +4,11 @@
 import { describe, expect, it } from 'vitest';
 
 import { GoogleCreativeEitherOrRule, GoogleCreativeFieldSpec, RedditObjective } from '../interfaces/campaign.interface';
+import { lfxColors } from './colors.constants';
 import {
   isCanonicalGoogleAdsResourceId,
   CAMPAIGN_ALERT_THRESHOLDS,
+  MONITOR_PLATFORM_BUTTON_COLORS,
   CAMPAIGN_EMAIL_TYPES,
   DEFAULT_CAMPAIGN_EMAIL_TYPE_ID,
   DEFAULT_REDDIT_CALL_TO_ACTION,
@@ -1030,6 +1032,33 @@ describe('Google Ads string rules', () => {
     ['an empty authority', 'https:///register', true],
   ])("flags %s as Go's parser would", (_label, url, expected) => {
     expect(googleAdsUrlGoParseFlaw(url)).toBe(expected);
+  });
+});
+
+/**
+ * Every Monitor tab platform button's SELECTED colours must clear WCAG AA (4.5:1) for its 12px
+ * label. Recomputed from the hex values, so a brand-colour change that breaks AA fails here.
+ */
+describe('MONITOR_PLATFORM_BUTTON_COLORS', () => {
+  function luminance(hex: string): number {
+    const channels = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+    const [r, g, b] = channels.map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  }
+
+  function contrast(a: string, b: string): number {
+    const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+    return (hi + 0.05) / (lo + 0.05);
+  }
+
+  it.each(Object.entries(MONITOR_PLATFORM_BUTTON_COLORS))('%s clears 4.5:1, with a text class that renders its foreground', (_platform, colors) => {
+    expect(contrast(colors.background, colors.foreground)).toBeGreaterThanOrEqual(4.5);
+    expect(colors.textClass).toBe(colors.foreground === lfxColors.white ? 'text-white' : 'text-gray-950');
+    expect(colors.foreground === lfxColors.white || colors.foreground === lfxColors.gray[950]).toBe(true);
+  });
+
+  it('covers every platform the Monitor tab offers', () => {
+    expect(Object.keys(MONITOR_PLATFORM_BUTTON_COLORS).sort()).toEqual(['google', 'hubspot', 'linkedin', 'meta', 'microsoft', 'reddit', 'twitter']);
   });
 });
 
