@@ -1128,11 +1128,22 @@ describe('MeetingJoinComponent', () => {
       expect(fixture.nativeElement.querySelector(REMOVE_BUTTON)).not.toBeNull();
     });
 
-    it('does not offer it to someone invited through a committee, and does not offer registering either', async () => {
+    it('offers it to someone invited through a committee, and does not offer registering', async () => {
       const fixture = await createFixture(buildMeeting({ organizer: false, invited: true, invited_via_committee: true }));
 
-      expect(fixture.nativeElement.querySelector(REMOVE_BUTTON)).toBeNull();
+      expect(fixture.nativeElement.querySelector(REMOVE_BUTTON)).not.toBeNull();
       expect(fixture.nativeElement.querySelector(REGISTER_BUTTON)).toBeNull();
+    });
+
+    it('tells a committee invitee the committee will not invite them again', async () => {
+      const fixture = await createFixture(buildMeeting({ organizer: false, invited: true, invited_via_committee: true }));
+
+      const confirmation = fixture.debugElement.injector.get(ConfirmationService);
+      const confirm = vi.spyOn(confirmation, 'confirm').mockReturnValue(confirmation);
+
+      fixture.componentInstance.confirmLeaveMeeting();
+
+      expect(confirm.mock.calls[0][0].message).toContain("it won't invite you to this meeting again");
     });
 
     it('does not offer it to an organizer', async () => {
@@ -1198,13 +1209,15 @@ describe('MeetingJoinComponent', () => {
 
     it('keeps the action and shows the BFF message when it rejected the request itself', async () => {
       removeMyMeetingRegistration.mockReturnValue(
-        throwError(() => new HttpErrorResponse({ status: 400, error: { code: 'VALIDATION_ERROR', error: 'Leave the committee instead.' } }))
+        throwError(() => new HttpErrorResponse({ status: 400, error: { code: 'VALIDATION_ERROR', error: 'The registration could not be removed.' } }))
       );
       const fixture = await createFixture(buildMeeting({ organizer: false, invited: true }));
 
       await confirmAndAccept(fixture);
 
-      expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: expect.stringContaining('Leave the committee instead.') }));
+      expect(toastAdd).toHaveBeenCalledWith(
+        expect.objectContaining({ severity: 'error', detail: expect.stringContaining('The registration could not be removed.') })
+      );
       expect(fixture.nativeElement.querySelector(REMOVE_BUTTON)).not.toBeNull();
     });
 

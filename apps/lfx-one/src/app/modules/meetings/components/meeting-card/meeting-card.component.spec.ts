@@ -657,11 +657,15 @@ describe('MeetingCardComponent — remove myself', () => {
     expect(component.canLeaveMeeting()).toBe(false);
   });
 
-  it('does not offer the action to someone invited through a committee, but still shows they are registered', async () => {
+  it('offers the action to someone invited through a committee and says the committee will not invite them again', async () => {
     const component = await mount({ ...INVITEE, invited_via_committee: true } as Meeting);
 
     expect(component.isRegisteredAttendee()).toBe(true);
-    expect(component.canLeaveMeeting()).toBe(false);
+    expect(component.canLeaveMeeting()).toBe(true);
+
+    component.confirmLeaveMeeting();
+
+    expect(confirm.mock.calls[0][0].message).toContain("it won't invite you to this meeting again");
   });
 
   it.each([
@@ -724,9 +728,9 @@ describe('MeetingCardComponent — remove myself', () => {
     expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
   });
 
-  it('shows the BFF message when it rejected the request itself, such as a committee-added registrant', async () => {
+  it('shows the BFF message when it rejected the request itself, such as a validation failure', async () => {
     removeMyMeetingRegistration.mockReturnValue(
-      throwError(() => new HttpErrorResponse({ status: 400, error: { code: 'VALIDATION_ERROR', error: 'Leave the committee instead.' } }))
+      throwError(() => new HttpErrorResponse({ status: 400, error: { code: 'VALIDATION_ERROR', error: 'The registration could not be removed.' } }))
     );
     const component = await mount();
 
@@ -734,7 +738,9 @@ describe('MeetingCardComponent — remove myself', () => {
     confirm.mock.calls[0][0].accept();
 
     expect(component.canLeaveMeeting()).toBe(true);
-    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: expect.stringContaining('Leave the committee instead.') }));
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'error', detail: expect.stringContaining('The registration could not be removed.') })
+    );
   });
 
   it('shows generic copy for any other failure and keeps the action available', async () => {

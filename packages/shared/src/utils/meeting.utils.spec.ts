@@ -38,6 +38,7 @@ import {
   buildCommitteeCadenceSummary,
   buildMeetingOccurrenceOptions,
   buildMeetingOccurrenceRoute,
+  getMeetingSelfRemovalMessage,
   buildOccurrenceNavTimeline,
   formatMeetingOccurrenceLabel,
   getMeetingSeriesUid,
@@ -1954,5 +1955,21 @@ describe('isBatchRegistrantOperationResponse', () => {
     ['a body with a non-numeric count', { successes: [], failures: [], summary: { total: '1', successful: 0, failed: 1 } }],
   ])('rejects %s', (_label, value) => {
     expect(isBatchRegistrantOperationResponse(value)).toBe(false);
+  });
+});
+
+describe('getMeetingSelfRemovalMessage', () => {
+  it('names the meeting and warns about losing the RSVP', () => {
+    expect(getMeetingSelfRemovalMessage('Weekly sync', false)).toBe(
+      'Remove yourself from "Weekly sync"? You will no longer be invited to any occurrence and will lose your RSVP.'
+    );
+  });
+
+  it.each([[undefined], [false]])('does not mention a committee when invited_via_committee is %s', (viaCommittee) => {
+    expect(getMeetingSelfRemovalMessage('Weekly sync', viaCommittee)).not.toContain('committee');
+  });
+
+  it('tells a committee invitee the committee will not invite them again', () => {
+    expect(getMeetingSelfRemovalMessage('Weekly sync', true)).toContain("You stay in the committee, but it won't invite you to this meeting again.");
   });
 });

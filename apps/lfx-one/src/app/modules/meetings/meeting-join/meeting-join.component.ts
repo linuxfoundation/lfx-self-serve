@@ -72,6 +72,7 @@ import {
   User,
 } from '@lfx-one/shared';
 import {
+  getMeetingSelfRemovalMessage,
   getUserTimezone,
   isHostKeyVisible,
   isMeetingAttendeeListShared,
@@ -509,8 +510,7 @@ export class MeetingJoinComponent implements OnInit {
     // Initialize invited/registration signals
     this.isInvited = this.initializeIsInvited();
     this.effectivelyInvited = computed(() => (this.isInvited() && !this.optimisticLeft()) || this.optimisticInvited());
-    // A committee-sourced registration follows committee membership, so it cannot be removed from here.
-    this.canLeaveMeeting = computed(() => this.effectivelyInvited() && !this.meeting()?.invited_via_committee);
+    this.canLeaveMeeting = computed(() => this.effectivelyInvited());
     this.canRegisterForMeeting = this.initializeCanRegisterForMeeting();
     this.canRespondAsOrganizer = this.initializeCanRespondAsOrganizer();
     this.currentUserRsvp = this.initializeCurrentUserRsvp();
@@ -762,7 +762,7 @@ export class MeetingJoinComponent implements OnInit {
   public confirmLeaveMeeting(): void {
     this.confirmationService.confirm({
       header: 'Remove Yourself',
-      message: `Remove yourself from "${this.meetingTitle()}"? You will no longer be invited to any occurrence and will lose your RSVP.`,
+      message: getMeetingSelfRemovalMessage(this.meetingTitle(), this.meeting()?.invited_via_committee),
       acceptLabel: 'Remove Me',
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-danger p-button-sm',

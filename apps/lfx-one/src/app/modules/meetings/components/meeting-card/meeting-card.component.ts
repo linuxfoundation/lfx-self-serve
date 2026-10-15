@@ -73,7 +73,13 @@ import {
   resolveOccurrenceRecurrence,
   TagSeverity,
 } from '@lfx-one/shared';
-import { isMeetingAttendeeListShared, isMeetingInviteResponsesEnabled, isSameOccurrenceId, retainConfirmedRsvp } from '@lfx-one/shared/utils';
+import {
+  getMeetingSelfRemovalMessage,
+  isMeetingAttendeeListShared,
+  isMeetingInviteResponsesEnabled,
+  isSameOccurrenceId,
+  retainConfirmedRsvp,
+} from '@lfx-one/shared/utils';
 import { RecordingModalComponent } from '@components/recording-modal/recording-modal.component';
 import { SummaryModalComponent } from '@components/summary-modal/summary-modal.component';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
@@ -242,8 +248,7 @@ export class MeetingCardComponent implements OnInit {
     const meeting = this.meetingInput();
     return this.pastMeeting() && 'user_attended' in meeting && meeting.user_attended === true;
   });
-  // A committee-sourced registration follows committee membership, so it cannot be removed from here.
-  public readonly canLeaveMeeting: Signal<boolean> = computed(() => this.isRegisteredAttendee() && !this.meeting().invited_via_committee);
+  public readonly canLeaveMeeting: Signal<boolean> = computed(() => this.isRegisteredAttendee());
   public readonly canRegisterForMeeting: Signal<boolean> = computed(
     () => this.authenticated() && !this.effectivelyInvited() && !this.meeting().restricted && this.meeting().visibility === 'public'
   );
@@ -521,7 +526,7 @@ export class MeetingCardComponent implements OnInit {
   public confirmLeaveMeeting(): void {
     this.confirmationService.confirm({
       header: 'Remove Yourself',
-      message: `Remove yourself from "${this.meetingTitle()}"? You will no longer be invited to any occurrence and will lose your RSVP.`,
+      message: getMeetingSelfRemovalMessage(this.meetingTitle(), this.meeting().invited_via_committee),
       acceptLabel: 'Remove Me',
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-danger p-button-sm',
