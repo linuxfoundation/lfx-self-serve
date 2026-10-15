@@ -3743,11 +3743,17 @@ describe('CampaignController.createCampaign cutover', () => {
   it.each([
     ['an unknown age range', { excludedAgeRanges: ['18-25'] }, 'excludedAgeRanges', '18-25'],
     ['a blank age range', { excludedAgeRanges: ['  '] }, 'excludedAgeRanges', '18-24'],
+    ['a prototype key as an age range', { excludedAgeRanges: ['constructor'] }, 'excludedAgeRanges', '18-24'],
     ['an unknown gender', { excludedGenders: ['NONBINARY'] }, 'excludedGenders', 'NONBINARY'],
     ['a blank gender', { excludedGenders: ['  '] }, 'excludedGenders', 'MALE, FEMALE, UNDETERMINED'],
   ])('refuses %s, which upstream refuses on the vocabulary', async (_label, overrides, field, expected) => {
     // A blank entry has no branch of its own upstream — it is simply absent from the map — so it
     // gets the vocabulary message rather than a blank-specific one, unlike a blank language.
+    //
+    // `constructor` is the same case as any other unknown spelling, and is here to pin that: the
+    // age-range vocabulary is a MAP, and `in` would have said yes to every inherited `Object.prototype`
+    // key and let `CONSTRUCTOR` through to Google. `Object.hasOwn` is what keeps it a refusal, and
+    // this row fails if anyone swaps it back.
     await controller.createCampaign(buildReq(googleBody(overrides as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
 
     expect(createCampaigns).not.toHaveBeenCalled();

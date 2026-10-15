@@ -1539,6 +1539,14 @@ export const GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS = 20;
  *
  * `UNDETERMINED` is the bucket Google puts users it could not classify into. Excluding it is a real
  * choice a campaign makes, so it is a member rather than a non-value.
+ *
+ * READ FOR MEMBERSHIP, NOT FOR RESOLUTION: the BFF tests a key with `Object.hasOwn` and then
+ * dispatches the caller's OWN spelling, upper-cased — `18-24` goes on the wire as `18-24`, not as
+ * `AGE_RANGE_18_24`. The values are here so the enum each friendly spelling denotes is written down
+ * beside it; nothing reads them, and {@link GOOGLE_ADS_AGE_RANGES} derives from the KEYS alone.
+ * Resolving through them instead would be a behaviour change, not a tidy-up:
+ * upstream accepts both spellings, so the wire is correct either way, and the spec pins the
+ * pass-through.
  */
 export const GOOGLE_ADS_AGE_RANGE_MAP = {
   '18-24': 'AGE_RANGE_18_24',

@@ -14,7 +14,6 @@ import { NextFunction, Request, Response } from 'express';
 import type {
   BulkKeywordActionRequest,
   CampaignAdSchedule,
-  CampaignDeviceBidModifier,
   CampaignBidType,
   CampaignBidUpdateRequest,
   CampaignBidUpdateResult,
@@ -27,6 +26,7 @@ import type {
   CampaignBudgetUpdateResult,
   CampaignCreateRequest,
   CampaignDeliveryType,
+  CampaignDeviceBidModifier,
   CampaignMetricsWindow,
   CampaignNegativeKeywordInput,
   CampaignNegativeKeywordMatchType,
@@ -1101,87 +1101,34 @@ export class CampaignController {
         // asymmetry is upstream's and it is about what a repeat costs: a repeated device carries a
         // second bid modifier, one of which Google would silently drop, while a repeated exclusion
         // asks twice for the one thing it already said.
-        const rawExcludedAgeRanges = body?.excludedAgeRanges;
-        if (rawExcludedAgeRanges !== undefined && rawExcludedAgeRanges !== null) {
-          const refuseAgeRanges = (message: string): void =>
-            next(ServiceValidationError.forField('excludedAgeRanges', message, { operation: 'campaign_create', service: 'campaign_controller' }));
-          // Upstream decodes the field into a Go `[]string`, so a non-array or a non-string entry is
-          // refused before any validator runs.
-          if (!Array.isArray(rawExcludedAgeRanges) || rawExcludedAgeRanges.some((a) => typeof a !== 'string')) {
-            refuseAgeRanges('Google Ads excluded age ranges must be a list of age range names.');
-            return;
-          }
+        const demographicChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
 
-          const ageRanges = this.googleUpperCodeList(rawExcludedAgeRanges);
-          const googleAgeRangeChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
-          if (ageRanges.length > 0 && typeof googleAgeRangeChannel === 'string') {
-            // The second half of Performance Max's split: it takes demographics as asset-group
-            // signals, which this client does not create, so a campaign-level exclusion there is
-            // refused rather than created somewhere the operator cannot see it.
-            if (!(GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS as readonly string[]).includes(googleAgeRangeChannel)) {
-              refuseAgeRanges(
-                `Google Ads does not accept campaign-level demographic exclusions on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleAgeRangeChannel as GoogleCampaignChannel] ?? googleAgeRangeChannel} campaigns. Remove the excluded age ranges or pick a different channel, then create again.`
-              );
-              return;
-            }
-
-            // Upstream's cap, checked against the SUBMITTED count before any repeat is collapsed,
-            // exactly where `validateExcludedAgeRanges` checks its own.
-            if (ageRanges.length > GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS) {
-              refuseAgeRanges(
-                `Google Ads accepts at most ${GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS} excluded age ranges on one campaign, and this one has ${ageRanges.length}. Remove some and create again.`
-              );
-              return;
-            }
-
-            // Entry by entry, refusing on the FIRST bad one, as `validateExcludedAgeRanges` does.
-            for (const ageRange of ageRanges) {
-              const refusal = this.googleExcludedAgeRangeRefusal(ageRange);
-              if (refusal) {
-                refuseAgeRanges(refusal);
-                return;
-              }
-            }
-          }
+        // Age ranges first. The channel fence here is the second half of Performance Max's split: it
+        // takes demographics as asset-group signals, which this client does not create, so a
+        // campaign-level exclusion there is refused rather than created somewhere the operator
+        // cannot see it.
+        const ageRangeRefusal = this.googleDemographicExclusionRefusal(
+          body?.excludedAgeRanges,
+          'excluded age ranges',
+          'age range names',
+          demographicChannel,
+          (entry) => this.googleExcludedAgeRangeRefusal(entry)
+        );
+        if (ageRangeRefusal) {
+          next(ServiceValidationError.forField('excludedAgeRanges', ageRangeRefusal, { operation: 'campaign_create', service: 'campaign_controller' }));
+          return;
         }
 
-        const rawExcludedGenders = body?.excludedGenders;
-        if (rawExcludedGenders !== undefined && rawExcludedGenders !== null) {
-          const refuseGenders = (message: string): void =>
-            next(ServiceValidationError.forField('excludedGenders', message, { operation: 'campaign_create', service: 'campaign_controller' }));
-          if (!Array.isArray(rawExcludedGenders) || rawExcludedGenders.some((g) => typeof g !== 'string')) {
-            refuseGenders('Google Ads excluded genders must be a list of gender names.');
-            return;
-          }
-
-          const genders = this.googleUpperCodeList(rawExcludedGenders);
-          const googleGenderChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
-          if (genders.length > 0 && typeof googleGenderChannel === 'string') {
-            if (!(GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS as readonly string[]).includes(googleGenderChannel)) {
-              refuseGenders(
-                `Google Ads does not accept campaign-level demographic exclusions on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleGenderChannel as GoogleCampaignChannel] ?? googleGenderChannel} campaigns. Remove the excluded genders or pick a different channel, then create again.`
-              );
-              return;
-            }
-
-            // The cap is PER LIST upstream, not shared with the age ranges: `validateExcludedGenders`
-            // checks `maxDemographicExclusions` against its own length. A request at the cap on both
-            // lists is accepted.
-            if (genders.length > GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS) {
-              refuseGenders(
-                `Google Ads accepts at most ${GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS} excluded genders on one campaign, and this one has ${genders.length}. Remove some and create again.`
-              );
-              return;
-            }
-
-            for (const gender of genders) {
-              const refusal = this.googleExcludedGenderRefusal(gender);
-              if (refusal) {
-                refuseGenders(refusal);
-                return;
-              }
-            }
-          }
+        // Then genders, through the same helper. The cap is PER LIST upstream, not shared with the
+        // age ranges: `validateExcludedGenders` checks `maxDemographicExclusions` against its own
+        // length, so a request at the cap on BOTH lists is accepted — which is why this is a second
+        // call and not a second field folded into the first.
+        const genderRefusal = this.googleDemographicExclusionRefusal(body?.excludedGenders, 'excluded genders', 'gender names', demographicChannel, (entry) =>
+          this.googleExcludedGenderRefusal(entry)
+        );
+        if (genderRefusal) {
+          next(ServiceValidationError.forField('excludedGenders', genderRefusal, { operation: 'campaign_create', service: 'campaign_controller' }));
+          return;
         }
       }
 
@@ -4182,7 +4129,9 @@ export class CampaignController {
    * Each string is measured by {@link boundedLength}, after trimming: every field here is trimmed
    * before it is sent, and upstream trims again, so measuring the raw length would refuse a short
    * value padded with whitespace that upstream accepts. Shape-only, like everything else on this
-   * road: a non-string entry is left for the normalisers to drop and is not counted.
+   * road: a non-string entry is left for the normalisers to drop and is not counted — except for the
+   * three lists of objects handled by `nestedStringFields` at the end, whose entries are legitimately
+   * objects, so the strings inside them are measured rather than skipped.
    *
    * Names the offending field in the refusal so an operator who somehow reaches it is told which one,
    * matching the HubSpot sibling rather than failing the create anonymously.
@@ -4227,21 +4176,35 @@ export class CampaignController {
       }
     }
 
-    // Sitelinks are a list of objects, so `boundableEntries` cannot reach their fields. Each trimmed
-    // field is bounded where upstream already refuses it: link text and description lines far above
-    // their rune limits, and the URL at its byte limit, which no longer trimmed string can be under.
-    const sitelinks = raw['sitelinks'];
-    if (Array.isArray(sitelinks)) {
-      if (sitelinks.length > MAX_GOOGLE_CREATIVE_LIST_ENTRIES) {
-        return { field: 'sitelinks', message: `the list exceeds the maximum of ${MAX_GOOGLE_CREATIVE_LIST_ENTRIES} entries` };
+    // Three request fields are lists of OBJECTS, and the loop above measures only the string ENTRIES
+    // of a list — an object entry is left for the normalisers, so the strings nested inside it are
+    // never reached by `boundableEntries`. They are bounded here instead, each at the limit upstream
+    // already refuses it past: the sitelink URL at its byte limit, which no longer trimmed string can
+    // be under, and every other field at the shared length. One table rather than a block each,
+    // because `deviceBidModifiers` is the second list-of-objects to need this and a third bespoke
+    // copy is how the two drift apart.
+    //
+    // `sitelinks` is the only one of the three that is not already a `candidates` key, so its list
+    // length is checked here. For the other two the check above has already refused an over-long
+    // list with the same field and message, which is why this one re-states rather than contradicts.
+    const nestedStringFields: readonly (readonly [string, readonly string[]])[] = [
+      ['sitelinks', ['text', 'description1', 'description2', 'finalUrl']],
+      ['adSchedules', ['dayOfWeek']],
+      ['deviceBidModifiers', ['device']],
+    ];
+    for (const [key, names] of nestedStringFields) {
+      const list = raw[key];
+      if (!Array.isArray(list)) continue;
+      if (list.length > MAX_GOOGLE_CREATIVE_LIST_ENTRIES) {
+        return { field: key, message: `the list exceeds the maximum of ${MAX_GOOGLE_CREATIVE_LIST_ENTRIES} entries` };
       }
-      for (const entry of sitelinks) {
+      for (const entry of list) {
         if (!entry || typeof entry !== 'object') continue;
-        for (const name of ['text', 'description1', 'description2', 'finalUrl'] as const) {
+        for (const name of names) {
           const value = (entry as Record<string, unknown>)[name];
           const max = name === 'finalUrl' ? GOOGLE_ADS_MAX_FINAL_URL_BYTES : MAX_GOOGLE_CREATIVE_FIELD_LENGTH;
           if (typeof value === 'string' && this.boundedLength(value) > max) {
-            return { field: `sitelinks.${name}`, message: `a value exceeds the maximum length of ${max}` };
+            return { field: `${key}.${name}`, message: `a value exceeds the maximum length of ${max}` };
           }
         }
       }
@@ -4916,6 +4879,54 @@ export class CampaignController {
         const refusal = this.googleBidModifierRefusal(shown, entry.bidModifier);
         if (refusal) return refusal;
       }
+    }
+    return null;
+  }
+
+  /**
+   * Why upstream would refuse one campaign-level demographic exclusion list, or `null` when it
+   * would not. `null` is also the answer for a field that was never sent, and for a create carrying
+   * no Google channel — nothing is refused for a campaign that was never going to send the field.
+   *
+   * ONE helper for `validateExcludedAgeRanges` and `validateExcludedGenders`, because the two are
+   * the same upstream branch written twice: both decode a Go `[]string`, both fence the same
+   * channels, both check `maxDemographicExclusions` against the SUBMITTED count before any repeat
+   * is collapsed, and both refuse on the FIRST bad entry. Only the vocabulary differs, and that is
+   * what `entryRefusal` carries. The two call sites stay separate so that if one of the upstream
+   * validators moves, only its own call has to move with it.
+   *
+   * `listNoun` and `itemNoun` are the only text that differs between the two messages, so a new
+   * demographic list upstream adds a call, not a third copy of these four strings.
+   */
+  private googleDemographicExclusionRefusal(
+    raw: unknown,
+    listNoun: string,
+    itemNoun: string,
+    channel: unknown,
+    entryRefusal: (entry: string) => string | null
+  ): string | null {
+    if (raw === undefined || raw === null) return null;
+
+    // Upstream decodes the field into a Go `[]string`, so a non-array or a non-string entry is
+    // refused before any validator runs.
+    if (!Array.isArray(raw) || raw.some((entry) => typeof entry !== 'string')) {
+      return `Google Ads ${listNoun} must be a list of ${itemNoun}.`;
+    }
+
+    const entries = this.googleUpperCodeList(raw as string[]);
+    if (entries.length === 0 || typeof channel !== 'string') return null;
+
+    if (!(GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS as readonly string[]).includes(channel)) {
+      return `Google Ads does not accept campaign-level demographic exclusions on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel as GoogleCampaignChannel] ?? channel} campaigns. Remove the ${listNoun} or pick a different channel, then create again.`;
+    }
+
+    if (entries.length > GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS) {
+      return `Google Ads accepts at most ${GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS} ${listNoun} on one campaign, and this one has ${entries.length}. Remove some and create again.`;
+    }
+
+    for (const entry of entries) {
+      const refusal = entryRefusal(entry);
+      if (refusal) return refusal;
     }
     return null;
   }
