@@ -12,11 +12,8 @@ import { MeetingComposerService } from './meeting-composer.service';
  * list so the composer sits over a real page. Composer state lives in a root service, so it
  * survives this component being destroyed by the redirect.
  *
- * **Currently unreferenced, on purpose — this is the flag-flip target.** While
- * `MEETING_V2_ENABLED_FLAG` gates v2, `meetings.routes.ts` points both URLs at the pre-v2 wizard
- * instead (see the comment there for why a lazy route cannot read the flag without a guard). Kept
- * rather than deleted because pointing those two `loadComponent` lines back here is exactly what
- * retiring the flag means; deleting it would make that a rewrite instead of a two-line change.
+ * Reached only while `MEETING_V2_ENABLED_FLAG` is on: `meetings.routes.ts` pairs each URL with the
+ * pre-v2 wizard and `meetingsV2Guard` picks between them.
  */
 @Component({
   selector: 'lfx-meeting-composer-route',

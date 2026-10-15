@@ -206,15 +206,21 @@ export const FORMATION_ENABLED_FLAG = 'formation-enabled';
  *
  * Default false so an unevaluated flag renders the pre-v2 wizard. This is the deliberate exception
  * to "default to current behavior": the DEFAULT here *is* current behavior, because v2 is the new
- * surface and false is what keeps it dark. LaunchDarkly targeting (a named tester list, dev and
- * prod configured identically) is the rollout switch, never the code default — flipping this
- * constant would ship v2 to everyone.
+ * surface and false is what keeps it dark. LaunchDarkly targeting is the rollout switch, never the
+ * code default; the fallback lives in {@link MEETING_V2_ENABLED_DEFAULT}. The deep links
+ * (`/meetings/create`, `/meetings/:id/edit`) follow the flag too, through `meetingsV2Guard`.
  *
  * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`. Does not gate the BFF or any
  * endpoint: both paths write the same already-authorized `/api/meetings` surface behind the same
  * `writerGuard`, so this flag only controls which UI renders, never what a user may do.
  */
 export const MEETING_V2_ENABLED_FLAG = 'meeting-v2-enabled';
+/**
+ * What {@link MEETING_V2_ENABLED_FLAG} reads as when LaunchDarkly has not answered (unready, unreachable,
+ * or during SSR). Every read of the flag — components and `meetingsV2Guard` — uses this one value, so
+ * moving the fallback from the pre-v2 wizard to v2 is a single-line change here.
+ */
+export const MEETING_V2_ENABLED_DEFAULT = false;
 /**
  * Dark-launch gate for the LFX Insights API Tokens group in Developer Settings (IN-1233). Default
  * false: the group stays hidden until LaunchDarkly targeting turns it on.
