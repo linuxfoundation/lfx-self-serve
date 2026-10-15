@@ -825,13 +825,11 @@ function formatSignedUsd(value: number | null, tone: HealthMetricsMembersBridgeT
 }
 
 function summarizeYear(rows: HealthMetricsMembersTierYear[]): HealthMetricsMembersTiersYearSummary {
-  const isPartial = rows.some((row) => row.isPartialYear);
   return {
     measured: rows.length > 0,
-    isPartial,
+    isPartial: rows.some((row) => row.isPartialYear),
     members: sumMeasured(rows.map((row) => row.memberCount)),
-    // A partial year counts joiners still active today, matching PCC. A completed year keeps the bridge joiners.
-    newMembers: sumMeasured(rows.map((row) => (isPartial ? row.activeNewMemberCount : row.newMemberCount))),
+    newMembers: sumMeasured(rows.map((row) => row.newMemberCount)),
     revenue: sumMeasured(rows.map((row) => row.revenueUsd)),
   };
 }

@@ -33,7 +33,6 @@ import {
 
 import { toIsoDate } from '../helpers/date-format.helper';
 import { healthMetricsL2PeriodEndPredicate, healthMetricsL2PeriodPredicate, isHealthMetricsL2Range } from '../helpers/health-metrics-l2.helper';
-import { isInvalidIdentifierError } from '../helpers/snowflake-error.helper';
 import { executeSnowflakeViewRead } from '../helpers/snowflake-view-read.helper';
 import { clampInteger, escapeSqlLikePattern } from '../helpers/validation.helper';
 import { logger } from './logger.service';
@@ -108,7 +107,6 @@ interface TierYearRow {
   TIER_SORT_RANK: number | null;
   MEMBER_COUNT: number | null;
   NEW_MEMBER_COUNT: number | null;
-  ACTIVE_NEW_MEMBER_COUNT: number | null;
   TIER_REVENUE_USD: number | null;
   IS_PARTIAL_YEAR: boolean | null;
 }
@@ -805,27 +803,30 @@ export class HealthMetricsMembersService {
   }
 
   private async getTierYears(req: Request, query: HealthMetricsMembersTiersQuery): Promise<HealthMetricsMembersTierYear[]> {
-    const readContext = {
+    const sql = `
+      SELECT
+        year,
+        membership_tier,
+        tier_sort_rank,
+        member_count,
+        new_member_count,
+        tier_revenue_usd,
+        is_partial_year
+      FROM ${MEMBERSHIP_TIER_YEAR_VIEW}
+      WHERE foundation_slug = ?
+        AND year IS NOT NULL
+        AND membership_tier IS NOT NULL
+      ORDER BY year DESC, tier_sort_rank ASC NULLS LAST, membership_tier ASC
+      LIMIT ${HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP + 1}
+    `;
+
+    const result = await executeSnowflakeViewRead<TierYearRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
       view: MEMBERSHIP_TIER_YEAR_VIEW,
       operation: 'get_members_tiers',
       clientMessage: 'Membership by tier is unavailable right now.',
-    };
-    let rows: TierYearRow[];
-    try {
-      const result = await executeSnowflakeViewRead<TierYearRow>(this.snowflakeService, req, tierYearSql(true), [query.foundationSlug], {
-        ...readContext,
-        // Absent until the tier-year model is deployed. Must not open the shared Snowflake breaker.
-        expectInvalidIdentifier: 'ACTIVE_NEW_MEMBER_COUNT',
-      });
-      rows = result.rows;
-    } catch (error) {
-      if (!isInvalidIdentifierError(error, 'ACTIVE_NEW_MEMBER_COUNT')) throw error;
-      logger.warning(req, 'get_members_tiers', 'Membership tier year has no active_new_member_count yet; using new_member_count', {
-        foundation_slug: query.foundationSlug,
-      });
-      const legacy = await executeSnowflakeViewRead<TierYearRow>(this.snowflakeService, req, tierYearSql(false), [query.foundationSlug], readContext);
-      rows = legacy.rows.map((row) => ({ ...row, ACTIVE_NEW_MEMBER_COUNT: row.NEW_MEMBER_COUNT }));
-    }
+    });
+
+    let rows = result.rows;
     if (rows.length > HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP) {
       logger.warning(req, 'get_members_tiers', 'Membership tier rows hit the read cap', {
         foundation_slug: query.foundationSlug,
@@ -1066,26 +1067,6 @@ function boardMeetingsSql(range: HealthMetricsL2Range): string {
   `;
 }
 
-function tierYearSql(includeActiveNewMemberCount: boolean): string {
-  const activeNewMemberCount = includeActiveNewMemberCount ? '\n        active_new_member_count,' : '';
-  return `
-      SELECT
-        year,
-        membership_tier,
-        tier_sort_rank,
-        member_count,
-        new_member_count,${activeNewMemberCount}
-        tier_revenue_usd,
-        is_partial_year
-      FROM ${MEMBERSHIP_TIER_YEAR_VIEW}
-      WHERE foundation_slug = ?
-        AND year IS NOT NULL
-        AND membership_tier IS NOT NULL
-      ORDER BY year DESC, tier_sort_rank ASC NULLS LAST, membership_tier ASC
-      LIMIT ${HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP + 1}
-    `;
-}
-
 function mapTierYear(row: TierYearRow): HealthMetricsMembersTierYear | null {
   const year = toNullableNumber(row.YEAR);
   if (year === null || !row.MEMBERSHIP_TIER) return null;
@@ -1097,7 +1078,6 @@ function mapTierYear(row: TierYearRow): HealthMetricsMembersTierYear | null {
     sortRank: toNullableNumber(row.TIER_SORT_RANK) ?? Number.MAX_SAFE_INTEGER,
     memberCount: toNullableNumber(row.MEMBER_COUNT),
     newMemberCount: toNullableNumber(row.NEW_MEMBER_COUNT),
-    activeNewMemberCount: toNullableNumber(row.ACTIVE_NEW_MEMBER_COUNT),
     revenueUsd: toNullableNumber(row.TIER_REVENUE_USD),
     isPartialYear: row.IS_PARTIAL_YEAR === true,
   };
