@@ -3642,10 +3642,12 @@ export type CampaignBiddingDrafts = Partial<Record<CampaignBiddingPlatform, Camp
 
 /**
  * Where the create-capability read stands, for a choice the form cannot send without its answer:
- * `pending` before it answers (or while none could be dispatched yet), `failed` after an error,
- * `ready` once it answered. The answer itself travels separately (`biddingEnabled`).
+ * `pending` only while a read is IN FLIGHT, `failed` after an error, `ready` once it answered, and
+ * `unknown` when no read is out and none has answered — initially, after a foundation switch, or
+ * when there was no brief to read against. `unknown` must offer a way to start a read; nothing
+ * else will. The answer itself travels separately (`biddingEnabled`).
  */
-export type CampaignCapabilityReadState = 'pending' | 'ready' | 'failed';
+export type CampaignCapabilityReadState = 'unknown' | 'pending' | 'ready' | 'failed';
 
 /** Why Create is blocked for a retained Manual bidding choice the deployment cannot confirm (#3299). */
 export interface CampaignBiddingCapabilityBlock {

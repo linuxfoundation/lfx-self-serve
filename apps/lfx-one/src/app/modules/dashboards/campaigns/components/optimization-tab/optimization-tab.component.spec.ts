@@ -3281,20 +3281,39 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
       render([doc({ bidding_strategy: 'manual', max_cpc_bid: 0.5 }), doc({ id: 'c-2', bidding_strategy: 'manual', max_cpc_bid: 0.75, etag: '"7"' })]);
       expect(bidding()).toBe('Bidding: manual · max CPC bid 1.25 in the ad account currency');
 
-      // Nor does one that has.
+      // One that has caught up (the write's own version) shows its own value — the same bid.
       render([doc({ bidding_strategy: 'manual', max_cpc_bid: 1.25, etag: '"4"', version: 4 })]);
       expect(bidding()).toBe('Bidding: manual · max CPC bid 1.25 in the ad account currency');
     });
 
-    it('keeps the confirmed bid against a lagging index, same version or older', () => {
+    it('keeps the confirmed bid against a lagging index (a strictly older version)', () => {
       render([doc({ bidding_strategy: 'manual', max_cpc_bid: 0.5 })]);
       changeBid(1.25); // the write answered version 4 ("4")
 
-      for (const etag of ['"3"', '"4"']) {
-        render([doc({ bidding_strategy: 'manual', max_cpc_bid: 0.5, etag })]);
-        expect(bidding()).toBe('Bidding: manual · max CPC bid 1.25 in the ad account currency');
-        expect(q('optimization-campaign-bid-current-c-1')?.textContent).toContain('1.25');
-      }
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 0.5, etag: '"3"' })]);
+
+      expect(bidding()).toBe('Bidding: manual · max CPC bid 1.25 in the ad account currency');
+      expect(q('optimization-campaign-bid-current-c-1')?.textContent).toContain('1.25');
+    });
+
+    it('lets an index that has caught up (the SAME version) win', () => {
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 0.5 })]);
+      changeBid(1.25); // version 4
+
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 1.3, etag: '"4"', version: 4 })]);
+
+      expect(bidding()).toBe('Bidding: manual · max CPC bid 1.3 in the ad account currency');
+      expect(q('optimization-campaign-bid-current-c-1')).toBeNull();
+    });
+
+    it('shows a v5 refresh at 2.50 over a bid confirmed at v4', () => {
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 0.5 })]);
+      changeBid(1.25); // version 4
+
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 2.5, etag: '"5"', version: 5 })]);
+
+      expect(bidding()).toBe('Bidding: manual · max CPC bid 2.5 in the ad account currency');
+      expect(q('optimization-campaign-bid-current-c-1')).toBeNull();
     });
 
     it('gives way to a NEWER indexed bid someone else set, in the row line and the "set here" note alike', () => {

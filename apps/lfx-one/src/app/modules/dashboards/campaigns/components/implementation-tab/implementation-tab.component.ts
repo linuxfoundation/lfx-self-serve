@@ -322,7 +322,7 @@ export class ImplementationTabComponent implements OnInit {
    * failed" while `biddingEnabled` is `null`. Read only when a retained Manual choice needs the
    * answer; see `biddingCapabilityBlock`.
    */
-  public readonly biddingCapabilityRead = input<CampaignCapabilityReadState>('pending');
+  public readonly biddingCapabilityRead = input<CampaignCapabilityReadState>('unknown');
 
   /** Asks the parent to re-read the create capabilities after a failed read. */
   public readonly retryBiddingCapability = output<void>();
@@ -1550,7 +1550,7 @@ export class ImplementationTabComponent implements OnInit {
     if (microsoftSelected && this.microsoftEffectiveGeoTargets().length === 0) return false;
     // The legacy max CPC field is hidden — and not sent — while the Bidding control is offered, so
     // a stale value in it must not block a create the operator cannot see the reason for.
-    if (microsoftSelected && !this.biddingAvailable() && !this.microsoftCpcBidValid()) return false;
+    if (microsoftSelected && this.microsoftLegacyCpcBidApplies() && !this.microsoftCpcBidValid()) return false;
     // A selected platform whose Bidding choice cannot be sent (#3299): its message is on screen,
     // under that platform's control.
     if (this.biddingAvailable() && CAMPAIGN_BIDDING_CREATE_PLATFORMS.some((p) => platforms.includes(p) && this.biddingPayloads()[p] === null)) return false;
@@ -2076,7 +2076,18 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   protected onMicrosoftCpcBidInput(event: Event): void {
-    this.microsoftCpcBid.set((event.target as HTMLInputElement).value);
+    const value = (event.target as HTMLInputElement).value;
+    this.microsoftCpcBid.set(value);
+    // Typing a bid into the legacy field is the operator's newest choice, so it supersedes an
+    // earlier explicit Automatic — otherwise the typed bid would be silently not sent
+    // (`microsoftLegacyCpcBidApplies`).
+    if (value.trim() !== '' && this.biddingDrafts()['microsoft-ads']?.strategy === 'automatic') {
+      this.biddingDrafts.update((drafts) => {
+        const next = { ...drafts };
+        delete next['microsoft-ads'];
+        return next;
+      });
+    }
     this.emitDraft();
   }
 
@@ -2095,11 +2106,13 @@ export class ImplementationTabComponent implements OnInit {
       }
       return next;
     });
+    if (platforms.includes('microsoft-ads')) this.clearLegacyMicrosoftCpcBid();
     this.emitDraft();
   }
 
   protected onBiddingChange(platform: CampaignBiddingPlatform, draft: CampaignBiddingDraft): void {
     this.biddingDrafts.update((drafts) => ({ ...drafts, [platform]: { ...draft } }));
+    if (platform === 'microsoft-ads' && draft.strategy === 'automatic') this.clearLegacyMicrosoftCpcBid();
     this.emitDraft();
   }
 
@@ -2546,7 +2559,7 @@ export class ImplementationTabComponent implements OnInit {
               //
               // Never beside `bidding` (#3299): the Bidding control replaces this field, and
               // campaign-service refuses an automatic `bidding` with any `cpcBid`.
-              ...(!this.biddingAvailable() && this.microsoftEffectiveCpcBid() !== null ? { cpcBid: this.microsoftEffectiveCpcBid() as number } : {}),
+              ...(this.microsoftLegacyCpcBidApplies() && this.microsoftEffectiveCpcBid() !== null ? { cpcBid: this.microsoftEffectiveCpcBid() as number } : {}),
               project: this.briefData()?.eventDetails?.themes?.[0] || undefined,
               ...this.biddingField('microsoft-ads'),
             },
@@ -3643,14 +3656,32 @@ export class ImplementationTabComponent implements OnInit {
           message: `Manual bidding is not available on this deployment, so the manual max CPC bid chosen for ${names} cannot be sent. Switch to Automatic to create the campaign.`,
         };
       }
-      if (this.biddingCapabilityRead() === 'failed') {
-        return {
-          kind: 'failed',
-          message: `Could not check whether manual bidding is supported, so the manual max CPC bid chosen for ${names} cannot be sent yet. Retry the check, or switch to Automatic.`,
-        };
+      // Only an IN-FLIGHT read is "checking". `unknown` — no read out and none answered, as after a
+      // foundation switch — is treated like a failure: it gets a Retry, because nothing else will
+      // start the read the block is waiting for.
+      if (this.biddingCapabilityRead() === 'pending') {
+        return { kind: 'pending', message: 'Checking bidding support…' };
       }
-      return { kind: 'pending', message: 'Checking bidding support…' };
+      return {
+        kind: 'failed',
+        message: `Could not confirm that manual bidding is supported, so the manual max CPC bid chosen for ${names} cannot be sent yet. Retry the check, or switch to Automatic.`,
+      };
     });
+  }
+
+  /**
+   * Whether the legacy Microsoft max CPC field still speaks for the operator. Not while the Bidding
+   * control is offered (it replaces the field), and not once the operator has explicitly chosen
+   * Automatic for Microsoft: campaign-service reads a `cpcBid` without `bidding` as a MANUAL bid, so
+   * sending it then would create the campaign manual against the choice on screen.
+   */
+  private microsoftLegacyCpcBidApplies(): boolean {
+    return !this.biddingAvailable() && this.biddingDrafts()['microsoft-ads']?.strategy !== 'automatic';
+  }
+
+  /** Choosing Automatic for Microsoft retires the legacy max CPC value, so it cannot resurface as a manual bid. */
+  private clearLegacyMicrosoftCpcBid(): void {
+    this.microsoftCpcBid.set('');
   }
 
   /** The selected bidding platforms whose retained choice is Manual. */

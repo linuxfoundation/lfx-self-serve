@@ -772,9 +772,10 @@ export class CampaignsComponent {
   /**
    * Where the read behind `briefCampaignsBiddingEnabled` stands, so the Implementation tab can tell
    * "still checking" from "the check failed" when it holds a Manual choice it cannot send without
-   * the answer (#3299). `pending` also covers "no read dispatched yet".
+   * the answer (#3299). `pending` ONLY while a read is in flight: every path that clears the
+   * capability without starting a read leaves `unknown`, which the tab answers with a Retry.
    */
-  protected readonly briefCampaignsBiddingRead = signal<CampaignCapabilityReadState>('pending');
+  protected readonly briefCampaignsBiddingRead = signal<CampaignCapabilityReadState>('unknown');
 
   /**
    * Generation counter for the campaign-list read — the same mechanism as `emailSearchGeneration`,
@@ -2319,7 +2320,7 @@ export class CampaignsComponent {
         this.briefCampaignsGoogleCreativeEnabled.set(null);
         this.briefCampaignsRedditCreativeEnabled.set(null);
         this.briefCampaignsBiddingEnabled.set(null);
-        this.briefCampaignsBiddingRead.set('pending');
+        this.briefCampaignsBiddingRead.set('unknown');
         // Cleared with the list. A failure banner belongs to the read that produced it; leaving it
         // set would report the previous foundation's outage against a foundation never queried.
         this.briefCampaignsUnavailable.set(false);
@@ -4272,7 +4273,8 @@ export class CampaignsComponent {
     this.briefCampaignsGoogleCreativeEnabled.set(null);
     this.briefCampaignsRedditCreativeEnabled.set(null);
     this.briefCampaignsBiddingEnabled.set(null);
-    this.briefCampaignsBiddingRead.set('pending');
+    // `unknown` until a read is actually dispatched below — the early return starts none.
+    this.briefCampaignsBiddingRead.set('unknown');
 
     if (projectSlug === '' || briefId === null || briefId === '') {
       // No brief id means nothing was persisted this session and no restore supplied one, so
@@ -4281,6 +4283,7 @@ export class CampaignsComponent {
       // way; this arm only stops here.
       return;
     }
+    this.briefCampaignsBiddingRead.set('pending');
 
     this.campaignService
       .listBriefCampaigns(projectSlug, briefId)

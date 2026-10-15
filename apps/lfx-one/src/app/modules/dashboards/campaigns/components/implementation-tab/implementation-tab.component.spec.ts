@@ -6953,19 +6953,24 @@ describe('ImplementationTabComponent bidding control', () => {
    * automatic — so the create must be BLOCKED, never sent without the choice.
    */
   describe('a retained Manual choice while the capability is unknown or off', () => {
-    async function manualDraft(): Promise<CampaignImplementationDraft> {
+    async function manualDraft(platform: 'meta-ads' | 'microsoft-ads' = 'meta-ads'): Promise<CampaignImplementationDraft> {
       let draft: CampaignImplementationDraft | null = null;
       const first = await mount(true);
       first.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (draft = d));
-      await pickStrategy('meta-ads', 'manual', first);
-      await typeBid('meta-ads', '1', first);
+      await pickStrategy(platform, 'manual', first);
+      await typeBid(platform, '1', first);
       first.destroy();
       expect(draft).not.toBeNull();
       return draft as unknown as CampaignImplementationDraft;
     }
 
-    async function remount(bidding: boolean | null, read: 'pending' | 'ready' | 'failed'): Promise<ComponentFixture<ImplementationTabComponent>> {
-      const draft = await manualDraft();
+    async function remount(
+      bidding: boolean | null,
+      read: 'unknown' | 'pending' | 'ready' | 'failed',
+      platform: 'meta-ads' | 'microsoft-ads' = 'meta-ads',
+      edit: (d: CampaignImplementationDraft) => CampaignImplementationDraft = (d) => d
+    ): Promise<ComponentFixture<ImplementationTabComponent>> {
+      const draft = edit(await manualDraft(platform));
       const f = TestBed.createComponent(ImplementationTabComponent);
       f.componentRef.setInput('draft', draft);
       f.componentRef.setInput('biddingEnabled', bidding);
@@ -7011,7 +7016,7 @@ describe('ImplementationTabComponent bidding control', () => {
       fixture.componentRef.instance.retryBiddingCapability.subscribe(retried);
 
       expect(component()['canSubmit']()).toBe(false);
-      expect(query('implementation-bidding-capability-failed')?.textContent).toContain('Could not check whether manual bidding is supported');
+      expect(query('implementation-bidding-capability-failed')?.textContent).toContain('Could not confirm that manual bidding is supported');
       (query('implementation-bidding-capability-retry')?.querySelector('button') as HTMLButtonElement).click();
 
       expect(retried).toHaveBeenCalledTimes(1);
@@ -7033,6 +7038,86 @@ describe('ImplementationTabComponent bidding control', () => {
       const request = await submitted();
       // Off: no bidding key at all — the operator chose automatic, which is what that means.
       expect(Object.keys(request['metaConfig'])).not.toContain('bidding');
+    });
+
+    it('lets the operator switch to Automatic while the read is still pending', async () => {
+      fixture = await remount(null, 'pending');
+
+      (query('implementation-bidding-capability-automatic')?.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(query('implementation-bidding-capability-pending')).toBeNull();
+      expect(component()['canSubmit']()).toBe(true);
+    });
+
+    /**
+     * A foundation switch (or a list load with no brief id) clears the capability WITHOUT starting a
+     * read, leaving `unknown`. "Checking…" would wait forever there, so it is treated like a failed
+     * read: Retry starts one, and Switch to Automatic is offered too.
+     */
+    it('offers Retry and Switch to Automatic when no read is in flight (after a foundation switch)', async () => {
+      fixture = await remount(null, 'unknown');
+      const retried = vi.fn();
+      fixture.componentRef.instance.retryBiddingCapability.subscribe(retried);
+
+      expect(component()['canSubmit']()).toBe(false);
+      expect(query('implementation-bidding-capability-pending')).toBeNull();
+      expect(query('implementation-bidding-capability-failed')).not.toBeNull();
+      (query('implementation-bidding-capability-retry')?.querySelector('button') as HTMLButtonElement).click();
+      expect(retried).toHaveBeenCalledTimes(1);
+
+      (query('implementation-bidding-capability-automatic')?.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(component()['canSubmit']()).toBe(true);
+    });
+
+    /**
+     * The thread's sequence: a legacy Microsoft max CPC is in the draft beside a retained Manual
+     * choice; the capability comes back off; the operator switches to Automatic. Without `bidding`,
+     * campaign-service reads a `cpcBid` as MANUAL — so it must not be sent.
+     */
+    it('sends no Microsoft cpcBid after Switch to Automatic, even with a legacy value in the draft', async () => {
+      fixture = await remount(false, 'ready', 'microsoft-ads', (d) => ({ ...d, microsoftCpcBid: '2.5' }));
+      expect(query('implementation-bidding-capability-unsupported')).not.toBeNull();
+
+      (query('implementation-bidding-capability-automatic')?.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(component()['microsoftCpcBid']()).toBe('');
+      const request = await submitted();
+      expect(Object.keys(request['microsoftConfig'])).not.toContain('cpcBid');
+      expect(Object.keys(request['microsoftConfig'])).not.toContain('bidding');
+    });
+
+    it('never sends a legacy cpcBid beside an explicit Automatic choice, however it got there', async () => {
+      // A restored draft that already says Automatic for Microsoft, carrying a stale legacy value.
+      fixture = await remount(false, 'ready', 'microsoft-ads', (d) => ({
+        ...d,
+        microsoftCpcBid: '2.5',
+        bidding: { ...d.bidding, 'microsoft-ads': { strategy: 'automatic', bidAmount: 1 } },
+      }));
+
+      const request = await submitted();
+
+      expect(Object.keys(request['microsoftConfig'])).not.toContain('cpcBid');
+    });
+
+    it('lets a bid typed into the legacy field win over an earlier Automatic', async () => {
+      fixture = await remount(false, 'ready', 'microsoft-ads', (d) => ({
+        ...d,
+        bidding: { ...d.bidding, 'microsoft-ads': { strategy: 'automatic', bidAmount: 1 } },
+      }));
+      const input = query('implementation-microsoft-cpc-bid') as HTMLInputElement;
+      input.value = '3';
+      input.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+
+      const request = await submitted();
+
+      expect(request['microsoftConfig']['cpcBid']).toBe(3);
     });
 
     it('does not block a retained Manual choice on a platform that is not selected', async () => {

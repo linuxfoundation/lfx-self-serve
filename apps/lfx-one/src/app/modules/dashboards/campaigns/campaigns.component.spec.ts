@@ -1418,6 +1418,18 @@ describe('CampaignsComponent brief persistence', () => {
         expect(c.briefCampaignsBiddingRead()).toBe('ready');
       });
 
+      it('marks the bidding read pending only while a read is out, and unknown when none is', async () => {
+        const c = fixture.componentInstance as unknown as { briefCampaignsBiddingRead(): string };
+        // Nothing has been asked yet: unknown, not "checking".
+        expect(c.briefCampaignsBiddingRead()).toBe('unknown');
+
+        const inFlight = new Subject<CampaignListResult>();
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(inFlight);
+        await withSavedBrief();
+
+        expect(c.briefCampaignsBiddingRead()).toBe('pending');
+      });
+
       it('leaves the bidding capability unknown when the capability read fails', async () => {
         vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(throwError(() => new Error('query service down')));
 
@@ -1824,6 +1836,37 @@ describe('CampaignsComponent brief persistence', () => {
         // Not TLF's campaigns under CNCF: the rows would render against a projectSlug that is
         // now 'cncf' and a briefId that is now '', which is the address a pause is sent to.
         expect(campaigns()).not.toEqual([indexed()]);
+      });
+
+      /**
+       * A foundation switch clears the bidding capability WITHOUT starting a read (#3299). It must
+       * read `unknown`, not `pending`: the tab answers `unknown` with a Retry and Switch to Automatic,
+       * while `pending` would say "Checking…" for a read that never comes.
+       */
+      it('leaves the bidding read unknown, not pending, after a foundation switch', async () => {
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
+          of({
+            campaigns: [indexed()],
+            possiblyStale: false,
+            statusToggleEnabled: true,
+            demandGenEnabled: false,
+            googleChannelsEnabled: false,
+            googleCreativeEnabled: true,
+            redditCreativeEnabled: true,
+            biddingEnabled: true,
+          })
+        );
+        await withSavedBrief();
+        load();
+        await fixture.whenStable();
+        const c = fixture.componentInstance as unknown as { briefCampaignsBiddingEnabled(): boolean | null; briefCampaignsBiddingRead(): string };
+        expect(c.briefCampaignsBiddingRead()).toBe('ready');
+
+        selectFoundation('cncf');
+        await fixture.whenStable();
+
+        expect(c.briefCampaignsBiddingEnabled()).toBeNull();
+        expect(c.briefCampaignsBiddingRead()).toBe('unknown');
       });
 
       it('drops a campaign list that resolves after the foundation changed', async () => {

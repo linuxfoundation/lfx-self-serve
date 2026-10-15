@@ -2619,9 +2619,9 @@ export class OptimizationTabComponent implements OnInit {
   /**
    * The bid this session confirmed for the row, while it is still the newest thing known about the
    * row's bid. The index is asynchronous, so right after a change it still holds the old bid — the
-   * confirmed one wins while the indexed version is at or below the version the write returned.
-   * Once the index carries a NEWER version, someone may have changed the bid since, and the indexed
-   * value wins. Either version unparseable: the confirmed bid stands, as it did before versions
+   * confirmed one wins only while the indexed version is STRICTLY OLDER than the version the write
+   * returned. At that version the index has caught up with this write; past it, someone may have
+   * changed the bid since. Either way the indexed value wins. Either version unparseable: the confirmed bid stands, as it did before versions
    * were compared. `confirmedBid` itself is cleared only when the project or brief changes.
    */
   private currentConfirmedBid(campaign: CampaignIndexDoc, confirmed: CampaignConfirmedBid | undefined): number | null {
@@ -2629,7 +2629,7 @@ export class OptimizationTabComponent implements OnInit {
       return null;
     }
     const indexed = campaignEtagVersion(campaign.etag);
-    if (confirmed.version !== null && indexed !== null && indexed > confirmed.version) {
+    if (confirmed.version !== null && indexed !== null && indexed >= confirmed.version) {
       return null;
     }
     return confirmed.bid;
