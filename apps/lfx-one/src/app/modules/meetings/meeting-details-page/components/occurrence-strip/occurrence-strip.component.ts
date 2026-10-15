@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { isPlatformBrowser } from '@angular/common';
 import { afterRenderEffect, Component, computed, DestroyRef, ElementRef, inject, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
@@ -31,7 +32,8 @@ import { MeetingDetailsStateService } from '../../meeting-details-state.service'
  * hydration agree. The placeholder holds the strip's height only for a meeting known to recur
  * (`recurrence` set); a past occurrence's page, whose payload can omit it, shows nothing until a series
  * loads, so a one-off past meeting never collapses a reserved space. A refusal (the endpoint's 400 /
- * 403) or any failure hides the strip, as V1's does; so does a series with a single occurrence. It
+ * 403) of any page, or any failure of the first, hides the strip, as V1's does; so does a series with a
+ * single occurrence. A later page that fails otherwise leaves the chips already shown. It
  * starts from the window around now and pages further, toward the page's occurrence when that lies
  * outside it (up to `MEETING_OCCURRENCE_STRIP_MAX_CHASE_PAGES` of the largest size), and when Previous /
  * Next reach a loaded end. Each read belongs to one run: a newer series or password supersedes it, and
@@ -321,17 +323,16 @@ export class MeetingOccurrenceStripComponent {
   }
 
   /**
-   * Which side to read toward the target, judged by the pages' own ends: the oldest past record read
-   * and the latest upcoming occurrence read. Not the chips' ends, which include cancelled ids from the
-   * whole, unpaged `cancelled_occurrences` list and could sit beyond what has been read.
+   * Which side to read toward the target, each side judged by its own pages' end: the oldest past record
+   * read for going back, the latest upcoming occurrence read for going forward. Not the chips' ends,
+   * which include cancelled ids from the whole, unpaged `cancelled_occurrences` list, and not one range
+   * across both sides, since the live list can still carry ended occurrences older than the past page.
    */
   private chaseDirection(target: number, loaded: MeetingOccurrenceStripPages): MeetingOccurrenceDirection | null {
     const pastStarts = loaded.past.map((record) => compositeIdToStartMs(record.meeting_and_occurrence_id)).filter((ms): ms is number => ms !== null);
     const futureStarts = loaded.future.map((occurrence) => new Date(occurrence.start_time).getTime()).filter((ms) => Number.isFinite(ms));
-    // The oldest start read is the past side's when it has any; the latest is the future side's.
-    const read = [...pastStarts, ...futureStarts];
-    const oldest = read.length > 0 ? Math.min(...read) : undefined;
-    const latest = read.length > 0 ? Math.max(...read) : undefined;
+    const oldest = pastStarts.length > 0 ? Math.min(...pastStarts) : undefined;
+    const latest = futureStarts.length > 0 ? Math.max(...futureStarts) : undefined;
     if (loaded.pastHasMore && (oldest === undefined || target < oldest)) {
       return 'past';
     }
@@ -371,12 +372,27 @@ export class MeetingOccurrenceStripComponent {
               pastHasMore: !!page.past_has_more,
               pastCursor: page.past_cursor,
               pastIncomplete: current.pastIncomplete || !!page.past_incomplete,
+              // Every page carries the series' current cancellations: a later one is the newer list.
+              cancelled: page.cancelled_occurrences ?? current.cancelled,
             }
-          : { ...current, future: [...current.future, ...(page.future ?? [])], futureHasMore: !!page.future_has_more, futureCursor: page.future_cursor }
+          : {
+              ...current,
+              future: [...current.future, ...(page.future ?? [])],
+              futureHasMore: !!page.future_has_more,
+              futureCursor: page.future_cursor,
+              cancelled: page.cancelled_occurrences ?? current.cancelled,
+            }
       );
       return true;
-    } catch {
-      // Logged by the service; the strip keeps what it has.
+    } catch (error) {
+      // A refusal now means the series is no longer this viewer's to see: hidden, and its pages dropped,
+      // as a refused first page. Any other failure (logged by the service) keeps the chips it has: a
+      // working strip is not thrown away because one further page did not arrive.
+      if (run === this.runId && error instanceof HttpErrorResponse && (error.status === 400 || error.status === 403)) {
+        this.runId++;
+        this.loaded.set(null);
+        this.status.set('hidden');
+      }
       return false;
     } finally {
       if (this.pagingRun() === run) {

@@ -326,6 +326,60 @@ describe('MeetingOccurrenceStripComponent', () => {
     expect(getPage).not.toHaveBeenCalled();
   });
 
+  it('chases a past date by the past page alone, even when the live list still carries an older ended one', async () => {
+    await render(page({ past: [past(-3), past(-2)], future: [future(-10), future(1)], past_has_more: true, past_cursor: String(at(-3)) }), {
+      selected: at(-5),
+      pastPage: true,
+      pages: [page({ past: [past(-6), past(-5), past(-4)], future: [], past_has_more: false })],
+    });
+
+    expect(getPage).toHaveBeenCalledTimes(2);
+    expect(chip(-5)?.getAttribute('data-selected')).toBe('true');
+  });
+
+  it("applies a later page's cancellations to chips already shown", async () => {
+    await render(page({ past: [past(-1)], past_has_more: true, past_cursor: String(at(-1)), cancelled_occurrences: [] }), {
+      selected: at(-1),
+      pages: [page({ past: [past(-2)], future: [], past_has_more: false, cancelled_occurrences: [String(at(2) / 1000)] })],
+    });
+    expect(chip(2)?.getAttribute('data-cancelled')).toBe('false');
+
+    button('occurrence-strip-prev')?.click();
+    await settle();
+
+    expect(chip(2)?.getAttribute('data-cancelled')).toBe('true');
+  });
+
+  it('hides itself when a later page is refused, but keeps its chips when one merely fails', async () => {
+    await render(page({ past: [past(-1)], past_has_more: true, past_cursor: String(at(-1)) }), {
+      selected: at(-1),
+      pages: [new HttpErrorResponse({ status: 500 })],
+    });
+    button('occurrence-strip-prev')?.click();
+    await settle();
+    expect(chip(1)).not.toBeNull();
+    expect(navigateToOccurrence).not.toHaveBeenCalled();
+
+    TestBed.resetTestingModule();
+    await render(page({ past: [past(-1)], past_has_more: true, past_cursor: String(at(-1)) }), {
+      selected: at(-1),
+      pages: [new HttpErrorResponse({ status: 403 })],
+    });
+    button('occurrence-strip-prev')?.click();
+    await settle();
+    expect(query('[data-testid="occurrence-strip-section"]')).toBeNull();
+  });
+
+  it('hides itself when a page read while chasing is refused', async () => {
+    await render(page({ past: [past(-2), past(-1)], past_has_more: true, past_cursor: String(at(-2)) }), {
+      selected: at(-8),
+      pastPage: true,
+      pages: [new HttpErrorResponse({ status: 403 })],
+    });
+
+    expect(query('[data-testid="occurrence-strip-section"]')).toBeNull();
+  });
+
   it('drops a Previous step whose page arrives after the page moved elsewhere', async () => {
     const older = new Subject<PublicMeetingOccurrencesResponse>();
     await render(page({ past: [past(-1)], past_has_more: true, past_cursor: String(at(-1)) }), { selected: at(-1), pages: [older] });
