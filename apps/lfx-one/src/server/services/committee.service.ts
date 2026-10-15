@@ -54,7 +54,7 @@ import { fetchAllQueryResources, FetchAllQueryResourcesOptions } from '../helper
 import { settleInBatches } from '../helpers/settle-in-batches.helper';
 import { logger } from '../services/logger.service';
 import { generateM2MToken } from '../utils/m2m-token.util';
-import { resolveAuditUserDisplayName, getUsernameFromAuth, isImpersonating, getEffectiveEmail } from '../utils/auth-helper';
+import { resolveAuditUserDisplayName, getUsernameFromAuth, isImpersonating, getEffectiveEmail, getEffectiveUsername } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
 import { ETagService } from './etag.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -1699,7 +1699,10 @@ export class CommitteeService {
         if (access.get(`${id}#writer`) === true) managedCommitteeUids.add(id);
       }
     }
-    const authorized = candidates.filter((application) => managedCommitteeUids.has(application.committee_uid));
+    // Effective writer access also covers project/foundation admins who inherit it. Reviewing a join request is the
+    // group managers' job, so only callers on the group's own writer roster get it in their pending actions.
+    const directWriterCommitteeUids = await this.getDirectWriterCommitteeUids(req, [...managedCommitteeUids], deadlineAt, requestOptions);
+    const authorized = candidates.filter((application) => directWriterCommitteeUids.has(application.committee_uid));
     if (authorized.length === 0) return [];
 
     const liveResults = await settleInBatches(
@@ -2459,6 +2462,40 @@ export class CommitteeService {
       // Tie-breaker: prefer lexicographically smallest uid for stable ordering across requests.
       return (current.uid ?? '') < (best.uid ?? '') ? current : best;
     });
+  }
+
+  /**
+   * Narrows effective-writer committees to those whose own `settings.writers` roster lists the caller. The roster holds
+   * only direct grants, so a writer who inherits access from a project or foundation is excluded. Matching mirrors the
+   * roster and inherited lists: LF username first, then email, case-insensitive. A 403/404 settings read means the caller
+   * is not on the roster; any other failure propagates so a group is never shown on a guess.
+   */
+  private async getDirectWriterCommitteeUids(
+    req: Request,
+    committeeUids: string[],
+    deadlineAt: number,
+    requestOptions: ApiRequestOptions
+  ): Promise<Set<string>> {
+    const username = getEffectiveUsername(req)?.toLowerCase();
+    const email = getEffectiveEmail(req)?.toLowerCase();
+    const direct = new Set<string>();
+    if ((!username && !email) || committeeUids.length === 0) return direct;
+
+    const results = await settleInBatches(committeeUids, 10, (uid) => this.getCommitteeSettings(req, uid, { throwOnError: true, requestOptions }), {
+      deadlineAt,
+    });
+    for (const [index, result] of results.entries()) {
+      if (result.status === 'rejected') {
+        const error = result.reason;
+        if (error?.statusCode === 403 || error?.status === 403 || error?.statusCode === 404 || error?.status === 404) continue;
+        throw error;
+      }
+      const onRoster = (result.value.writers ?? []).some(
+        (writer) => (!!username && writer.username?.toLowerCase() === username) || (!!email && writer.email?.toLowerCase() === email)
+      );
+      if (onRoster) direct.add(committeeUids[index]);
+    }
+    return direct;
   }
 
   /**
