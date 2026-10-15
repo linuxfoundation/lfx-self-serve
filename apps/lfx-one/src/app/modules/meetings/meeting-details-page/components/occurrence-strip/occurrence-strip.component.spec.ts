@@ -316,10 +316,14 @@ describe('MeetingOccurrenceStripComponent', () => {
     fixture.detectChanges();
     await settle();
     expect(query('[data-testid="occurrence-strip-section"]')).toBeNull();
+    expect(getPage).not.toHaveBeenCalled();
 
     onRoute.set(true);
     fixture.detectChanges();
+    await settle();
     expect(chip(1)).not.toBeNull();
+    // Resumed from the held pages, not read again.
+    expect(getPage).not.toHaveBeenCalled();
   });
 
   it('drops a Previous step whose page arrives after the page moved elsewhere', async () => {

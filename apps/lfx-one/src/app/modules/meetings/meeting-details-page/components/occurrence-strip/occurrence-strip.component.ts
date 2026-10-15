@@ -457,15 +457,18 @@ export class MeetingOccurrenceStripComponent {
   }
 
   /**
-   * The series and password the strip reads, browser only. Keyed on the series, not the route: moving
-   * between occurrences (route id included) keeps the loaded pages, the scroll and the focused chip.
-   * The password is the page's (the series endpoint takes it from the header on any page).
+   * The series and password the strip reads, browser only, once the page shows its route. Keyed on the
+   * series and password: a move within the route keeps the strip as it is, and one that rebuilds it
+   * resumes from the held pages. The password is the page's (the series endpoint takes it from the
+   * header on any page).
    */
   private initRequest(): Signal<MeetingOccurrenceStripRequest | null> {
     return computed(
       () => {
         const seriesUid = this.state.seriesUid();
-        if (!isPlatformBrowser(this.platformId) || !seriesUid) {
+        // Nothing while the page loads another route: `seriesUid` still names the previous meeting's
+        // series then, and the page's stale-content guard covers the strip too.
+        if (!isPlatformBrowser(this.platformId) || !seriesUid || !this.state.matchesRoute()) {
           return null;
         }
         return { seriesUid, password: this.state.password() };
