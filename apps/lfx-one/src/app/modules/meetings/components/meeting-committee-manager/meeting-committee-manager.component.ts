@@ -1,11 +1,27 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, input, InputSignal, output, OutputEmitterRef, signal, Signal, WritableSignal } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import {
+  afterNextRender,
+  Component,
+  computed,
+  DestroyRef,
+  inject,
+  input,
+  InputSignal,
+  output,
+  OutputEmitterRef,
+  PLATFORM_ID,
+  signal,
+  Signal,
+  WritableSignal,
+} from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
+import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { SelectComponent } from '@components/select/select.component';
 import { Committee, CommitteeMember, MeetingCommittee } from '@lfx-one/shared';
 import { CommitteeMemberVotingStatus, MeetingVisibility } from '@lfx-one/shared/enums';
@@ -20,6 +36,7 @@ import {
 } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { updateTruncatedKeys } from '@shared/utils/truncation.util';
 import { TooltipModule } from 'primeng/tooltip';
 import { catchError, combineLatest, EMPTY, filter, forkJoin, ignoreElements, map, merge, Observable, of, startWith, switchMap, tap } from 'rxjs';
 
@@ -30,7 +47,7 @@ interface CommitteeMemberDisplay extends CommitteeMember {
 
 @Component({
   selector: 'lfx-meeting-committee-manager',
-  imports: [ButtonComponent, ReactiveFormsModule, MultiSelectComponent, SelectComponent, TooltipModule],
+  imports: [ButtonComponent, ReactiveFormsModule, MultiSelectComponent, RadioButtonComponent, SelectComponent, TooltipModule],
   templateUrl: './meeting-committee-manager.component.html',
 })
 export class MeetingCommitteeManagerComponent {
@@ -67,6 +84,17 @@ export class MeetingCommitteeManagerComponent {
    * always had (board or restricted).
    */
   public readonly allowRestrictedAttendees = input<boolean>(false);
+  /**
+   * Meeting v2 composer only: the picker's description sits between its label and the dropdown, always
+   * shown, and the placeholder is the shorter "Select group(s)".
+   * @description Off by default, so the pre-v2 wizard keeps its hint-below layout.
+   */
+  public readonly composerLayout = input<boolean>(false);
+  /**
+   * Composer guests step only: from `lg` up, list the picked groups as removable chips under a field that keeps
+   * its placeholder. Off everywhere else (quick create included), where the picks are listed in the field.
+   */
+  public readonly groupChips = input<boolean>(false);
 
   // Outputs
   public readonly committeesChange: OutputEmitterRef<MeetingCommittee[]> = output<MeetingCommittee[]>();
@@ -91,6 +119,8 @@ export class MeetingCommitteeManagerComponent {
   // State management
   public selectedCommitteeIds: WritableSignal<string[]> = signal([]);
   public selectedVotingStatuses: WritableSignal<string[]> = signal([]);
+  /** Group chips whose label is currently cut off, by uid; only those get a tooltip. */
+  protected readonly truncatedChips: WritableSignal<ReadonlySet<string>> = signal(new Set());
   public committeeForm: FormGroup;
   public readonly committeesLoading = signal<boolean>(true);
 
@@ -192,6 +222,17 @@ export class MeetingCommitteeManagerComponent {
 
   // Committee options loaded from API
   public readonly committeeOptions: Signal<Committee[]> = this.initCommitteeOptions();
+  /** The picked groups as chips (composer guests step), in selection order. */
+  public readonly selectedCommitteeChips: Signal<MeetingCommittee[]> = this.initSelectedCommitteeChips();
+  /**
+   * Whether the viewport is at Tailwind's `lg` (1024px) or wider — the width at which the composer guests step
+   * puts groups in its side rail. `false` during SSR, so the server renders the stacked layout.
+   */
+  protected readonly isWideViewport: Signal<boolean> = this.initWideViewport();
+  /** Composer guests step at `lg`+: picks render as chips under a field that keeps its placeholder. */
+  protected readonly showGroupChips: Signal<boolean> = computed(() => this.composerLayout() && this.groupChips() && this.isWideViewport());
+  /** Composer guests step at `lg`+: registration-on-removal as radios; a dropdown otherwise (quick create included). */
+  protected readonly showRemovalRadios: Signal<boolean> = computed(() => this.composerLayout() && this.groupChips() && this.isWideViewport());
 
   // Reactive committee members loading
   public committeeMembers: Signal<CommitteeMemberDisplay[]> = this.initCommitteeMembers();
@@ -323,6 +364,12 @@ export class MeetingCommitteeManagerComponent {
       });
   }
 
+  /** Drops one group from the selection — the chip's dismiss button. Goes through the control so every listener runs. */
+  public removeCommittee(uid: string): void {
+    const control = this.committeeForm.get('committees');
+    control?.setValue(this.selectedCommitteeIds().filter((id) => id !== uid));
+  }
+
   /**
    * Re-runs the member fetch for the current selection, behind the error banner's Try again.
    * @description Deliberately not a re-selection: the locked group of a scoped create is exactly the
@@ -339,6 +386,11 @@ export class MeetingCommitteeManagerComponent {
    */
   public retryCommitteeOptions(): void {
     this.optionsRetryToken.update((token) => token + 1);
+  }
+
+  /** Records whether a chip's label is cut off, so its tooltip only shows when it adds something. */
+  protected onChipLabelEnter(uid: string, event: Event): void {
+    this.truncatedChips.set(updateTruncatedKeys(this.truncatedChips(), uid, event.currentTarget as HTMLElement));
   }
 
   /**
@@ -370,6 +422,45 @@ export class MeetingCommitteeManagerComponent {
       },
       { emitEvent: false }
     );
+  }
+
+  /**
+   * Names come from the loaded options, falling back to the meeting's own saved committees and finally the uid,
+   * so a chip still renders while the option list is loading or failed.
+   */
+  private initSelectedCommitteeChips(): Signal<MeetingCommittee[]> {
+    return computed(() => {
+      const options = this.committeeOptions();
+      const saved = this.selectedCommittees();
+
+      return this.selectedCommitteeIds().map((uid) => ({
+        uid,
+        name: options.find((option) => option.uid === uid)?.name ?? saved.find((committee) => committee.uid === uid)?.name ?? uid,
+      }));
+    });
+  }
+
+  private initWideViewport(): Signal<boolean> {
+    const wide = signal(false);
+
+    if (isPlatformBrowser(inject(PLATFORM_ID))) {
+      const destroyRef = inject(DestroyRef);
+      // Read after the first browser render, not in the constructor, so the client's first pass matches the
+      // server's stacked markup and hydration doesn't see a different tree.
+      afterNextRender(() => {
+        if (typeof window.matchMedia !== 'function') {
+          return;
+        }
+        const query = window.matchMedia('(min-width: 1024px)');
+        const onChange = (event: MediaQueryListEvent): void => wide.set(event.matches);
+
+        wide.set(query.matches);
+        query.addEventListener('change', onChange);
+        destroyRef.onDestroy(() => query.removeEventListener('change', onChange));
+      });
+    }
+
+    return wide.asReadonly();
   }
 
   /**

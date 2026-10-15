@@ -7,9 +7,10 @@ import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { MyVotesQuickFilter, PollStatus, Vote, VoteResponseStatus } from '@lfx-one/shared';
+import { ClipboardShareService } from '@services/clipboard-share.service';
 import { VoteService } from '@services/vote.service';
 import { MessageService } from 'primeng/api';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { VotesTableComponent } from './votes-table.component';
 
@@ -180,6 +181,42 @@ describe('VotesTableComponent — personal summary filters', () => {
     expect(rows()).toEqual(VOTES.map((v) => v.uid));
   });
 
+  it('opts into recoverable empty lazy results without changing default consumers', async () => {
+    await render();
+    fixture.componentRef.setInput('lazy', true);
+    fixture.componentRef.setInput('votes', []);
+    await settle(true);
+    expect(table['isFiltered']()).toBe(false);
+    expect(fixture.nativeElement.querySelector('[data-testid="votes-search-input"]')).toBeNull();
+    fixture.componentRef.setInput('serverFiltersActive', true);
+    await settle();
+    expect(fixture.nativeElement.textContent).toContain('No results found');
+    expect(fixture.nativeElement.querySelector('[data-testid="votes-search-input"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('[data-testid="votes-group-filter"]')).toBeTruthy();
+    expect(fixture.nativeElement.textContent).toContain('Reset filters');
+    table['resetFilters']();
+    fixture.componentRef.setInput('serverFiltersActive', false);
+    fixture.componentRef.setInput('votes', VOTES);
+    await settle(true);
+    expect(rows()).toEqual(VOTES.map((v) => v.uid));
+  });
+
+  it('hides pending pagination without hiding filters or loaded rows', async () => {
+    await render();
+    fixture.componentRef.setInput('lazy', true);
+    fixture.componentRef.setInput('totalRecords', 20);
+    await settle();
+    expect(fixture.nativeElement.querySelector('.p-paginator')).toBeTruthy();
+    fixture.componentRef.setInput('paginationLoading', true);
+    await settle();
+    expect(fixture.nativeElement.querySelector('.p-paginator')).toBeNull();
+    expect(rows()).toEqual(VOTES.map((v) => v.uid));
+    expect(fixture.nativeElement.querySelector('[data-testid="votes-search-input"]')).toBeTruthy();
+    fixture.componentRef.setInput('paginationLoading', false);
+    await settle();
+    expect(fixture.nativeElement.querySelector('.p-paginator')).toBeTruthy();
+  });
+
   it('clears an unavailable group only after loading, preserving search and summary', async () => {
     await render();
     fixture.componentRef.setInput('quickFilter', 'needs-vote');
@@ -204,5 +241,120 @@ describe('VotesTableComponent — personal summary filters', () => {
     expect(table.searchForm.controls.search.value).toBe('Board');
     await settle(true);
     expect(rows()).toEqual(['other']);
+  });
+});
+
+describe('VotesTableComponent — row More menu', () => {
+  let fixture: ComponentFixture<VotesTableComponent>;
+  let table: VotesTableComponent;
+  let copyLink: ReturnType<typeof vi.fn>;
+  const ROWS = [vote('active'), vote('ended', { status: PollStatus.ENDED }), vote('draft', { status: PollStatus.DISABLED })];
+  const moreButton = (uid: string): HTMLButtonElement | null => fixture.nativeElement.querySelector(`[data-testid="votes-more-${uid}"] button`);
+
+  beforeEach(async () => {
+    copyLink = vi.fn();
+    await TestBed.configureTestingModule({
+      imports: [VotesTableComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: VoteService, useValue: {} },
+        { provide: MessageService, useValue: {} },
+        { provide: ClipboardShareService, useValue: { copyLink } },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(VotesTableComponent);
+    table = fixture.componentInstance;
+    fixture.componentRef.setInput('votes', ROWS);
+  });
+  afterEach(() => fixture?.destroy());
+
+  async function settle(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+
+  it.each([false, true])('shows ⋮ on active and ended rows but not drafts (manager view: %s)', async (hasPMOAccess) => {
+    fixture.componentRef.setInput('hasPMOAccess', hasPMOAccess);
+    await settle();
+
+    expect(moreButton('active')).not.toBeNull();
+    expect(moreButton('ended')).not.toBeNull();
+    expect(moreButton('draft')).toBeNull();
+  });
+
+  it('opens the menu without selecting the row, and Copy link copies the absolute permalink', async () => {
+    await settle();
+    const viewed = vi.fn();
+    table.viewVote.subscribe(viewed);
+    table.viewResults.subscribe(viewed);
+
+    moreButton('active')!.click();
+    await settle();
+
+    expect(viewed).not.toHaveBeenCalled();
+    const items = table['rowActionMenuItems']();
+    expect(items.map((item) => item.label)).toEqual(['Copy link']);
+
+    items[0].command!({});
+
+    expect(copyLink).toHaveBeenCalledTimes(1);
+    const [url, detail] = copyLink.mock.calls[0];
+    expect(url).toBe(`${window.location.origin}/votes/active`);
+    expect(detail).toBe('Vote link copied to clipboard.');
+  });
+
+  it('exposes menu semantics and expands only the row whose menu is open', async () => {
+    await settle();
+    expect(moreButton('active')!.getAttribute('aria-haspopup')).toBe('menu');
+    expect(moreButton('ended')!.getAttribute('aria-haspopup')).toBe('menu');
+    expect(moreButton('active')!.getAttribute('aria-expanded')).toBe('false');
+    expect(moreButton('ended')!.getAttribute('aria-expanded')).toBe('false');
+
+    moreButton('ended')!.click();
+    await settle();
+
+    expect(moreButton('ended')!.getAttribute('aria-expanded')).toBe('true');
+    expect(moreButton('active')!.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it.each(['escape', 'outside click', 'trigger toggle', 'selection'])('clears expanded state after %s dismissal', async (dismissal) => {
+    await settle();
+    moreButton('active')!.click();
+    await settle();
+    expect(moreButton('active')!.getAttribute('aria-expanded')).toBe('true');
+
+    const menu = document.body.querySelector('[role="menu"]') as HTMLElement;
+    switch (dismissal) {
+      case 'escape':
+        menu.dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape', key: 'Escape', bubbles: true }));
+        break;
+      case 'outside click':
+        document.body.click();
+        break;
+      case 'trigger toggle':
+        moreButton('active')!.click();
+        break;
+      case 'selection':
+        (menu.querySelector('[role="menuitem"] a') as HTMLElement).click();
+        break;
+    }
+    await settle();
+
+    expect(moreButton('active')!.getAttribute('aria-expanded')).toBe('false');
+    expect(moreButton('ended')!.getAttribute('aria-expanded')).toBe('false');
+    expect(document.body.querySelector('[role="menu"]')).toBeNull();
+  });
+
+  it('rebuilds the menu for the clicked row', async () => {
+    await settle();
+
+    moreButton('active')!.click();
+    moreButton('ended')!.click();
+    await settle();
+    table['rowActionMenuItems']()[0].command!({});
+
+    expect(copyLink.mock.calls[0][0]).toMatch(/\/votes\/ended$/);
   });
 });

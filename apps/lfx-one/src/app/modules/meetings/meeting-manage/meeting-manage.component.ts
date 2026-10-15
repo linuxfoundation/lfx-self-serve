@@ -99,7 +99,7 @@ import { MeetingResourcesSummaryComponent } from '../components/meeting-resource
 import { MeetingTypeSelectionComponent } from '../components/meeting-type-selection/meeting-type-selection.component';
 import { evictOnWriteAccessLoss } from '@shared/utils/evict-on-write-access-loss.util';
 import { syncEntityProjectContext, syncEntityProjectContextFallback } from '@shared/utils/entity-project-context.util';
-import { hasMeetingWriteAccess, resolveEntityWriteSlug } from '@shared/utils/write-access.util';
+import { meetingWriteAccessState, resolveEntityWriteSlug } from '@shared/utils/write-access.util';
 
 @Component({
   selector: 'lfx-meeting-manage',
@@ -938,8 +938,13 @@ export class MeetingManageComponent {
             return of(false);
           }
           return this.projectService.getProject(key, false, { meetingCoordinator: true }).pipe(
-            map((project) => hasMeetingWriteAccess(project)),
-            catchError(() => of(false))
+            // tri-state: true/false are a confirmed grant/deny, undefined is "couldn't confirm"
+            // (lookup failed, or the BFF's own meetingCoordinator FGA check failed — see
+            // meetingWriteAccessState's doc). The computed() below treats undefined as
+            // provisional, never as a denial, so a transient blip can't evict a legitimate
+            // meeting coordinator mid-form (linuxfoundation/lfx-self-serve-ops#500).
+            map((project) => meetingWriteAccessState(project)),
+            catchError(() => of(undefined))
           );
         })
       )

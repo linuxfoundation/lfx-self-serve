@@ -4,17 +4,27 @@
 import { describe, expect, it } from 'vitest';
 
 import { GoogleCreativeEitherOrRule, GoogleCreativeFieldSpec, RedditObjective } from '../interfaces/campaign.interface';
+import { lfxColors } from './colors.constants';
 import {
   isCanonicalGoogleAdsResourceId,
   CAMPAIGN_ALERT_THRESHOLDS,
+  MONITOR_PLATFORM_BUTTON_COLORS,
   CAMPAIGN_EMAIL_TYPES,
   DEFAULT_CAMPAIGN_EMAIL_TYPE_ID,
   DEFAULT_REDDIT_CALL_TO_ACTION,
   DEFAULT_REDDIT_OBJECTIVE,
+  GOOGLE_ADS_AGE_RANGE_MAP,
+  GOOGLE_ADS_AGE_RANGES,
   GOOGLE_ADS_BIDDING_BOUNDS,
   GOOGLE_ADS_CHANNEL_TYPE_ENUMS,
   GOOGLE_ADS_CONVERSION_ACTION_PATTERN,
+  GOOGLE_ADS_DEVICES,
+  GOOGLE_ADS_GENDERS,
+  GOOGLE_ADS_LANGUAGE_LABELS,
+  GOOGLE_ADS_LANGUAGE_MAP,
   GOOGLE_ADS_MAX_CONVERSION_ACTIONS,
+  GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS,
+  GOOGLE_ADS_MAX_DEVICE_BID_MODIFIERS,
   GOOGLE_BIDDING_CPA_STRATEGIES,
   GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
   GOOGLE_BIDDING_ROAS_STRATEGIES,
@@ -23,6 +33,8 @@ import {
   GOOGLE_BIDDING_TARGET_REQUIRED_STRATEGIES,
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
+  GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS,
+  GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS,
   GOOGLE_CONVERSION_ACTION_CHANNELS,
   GOOGLE_CREATIVE_EITHER_OR_RULES,
   GOOGLE_CREATIVE_FIELD_SPECS,
@@ -43,6 +55,11 @@ import {
   normalizeGeoTargets,
   normalizeMicrosoftGeoTargets,
   resolveRedditOptimizationGoal,
+  googleAdsEchoed,
+  googleAdsToLower,
+  googleAdsTrimSpace,
+  googleAdsUrlGoParseFlaw,
+  isGoSpaceCode,
 } from './campaign.constants';
 
 describe('campaignToggleAction', () => {
@@ -882,6 +899,19 @@ describe('resolveRedditOptimizationGoal', () => {
     expect(REDDIT_OBJECTIVE_PARAMS.video_views.optimizationGoal).toBeUndefined();
   });
 
+  /**
+   * The tripwire for the resolver's `as string` cast. The value pins above cover only the three
+   * objectives named today; this walks the table itself, so a new objective added without a goal
+   * fails here instead of silently resolving to `undefined` through the cast (#3504).
+   */
+  it('carries a static goal on every objective except video_views', () => {
+    const goalless = Object.entries(REDDIT_OBJECTIVE_PARAMS)
+      .filter(([objective, params]) => objective !== 'video_views' && !params.optimizationGoal)
+      .map(([objective]) => objective);
+
+    expect(goalless).toEqual([]);
+  });
+
   /** Upstream trims and upper-cases before testing membership, so a lowercase goal is accepted. */
   it.each(['VIDEO_VIEW_6S', 'video_view_15s', '  VIDEO_VIEW_6S  '])('resolves video_views from the request goal %s', (videoGoal) => {
     expect(resolveRedditOptimizationGoal('video_views', videoGoal)).toBe(videoGoal.trim().toUpperCase());
@@ -903,5 +933,177 @@ describe('resolveRedditOptimizationGoal', () => {
    */
   it('refuses an objective outside the table', () => {
     expect(() => resolveRedditOptimizationGoal('reach' as RedditObjective)).toThrow(/Unsupported Reddit objective: reach/);
+  });
+
+  /**
+   * The table is a plain object literal, so these five resolve to inherited `Object.prototype`
+   * members — every one truthy, which is exactly what the previous `!objParams` test asked for.
+   * Each then carried no `optimizationGoal`, so the resolver returned `undefined` through its cast
+   * and the caller sent a campaign POST missing `objective`, `bid_type` and `optimization_goal`
+   * rather than refusing before the call. Pinned by name because the guard that fixes it,
+   * `Object.hasOwn`, is easy to "simplify" back into a truthiness test (#3504).
+   */
+  it.each(['constructor', 'toString', 'valueOf', 'hasOwnProperty', '__proto__'])('refuses the inherited prototype key %s', (objective) => {
+    expect(() => resolveRedditOptimizationGoal(objective as RedditObjective)).toThrow(`Unsupported Reddit objective: ${objective}`);
+  });
+});
+
+describe('Google Ads language tables', () => {
+  /**
+   * The two maps share no type-level key constraint — `GOOGLE_ADS_LANGUAGE_MAP` is a plain
+   * `Record<string, string>` so it stays a line-for-line mirror of upstream's `languageConstants` —
+   * so this is what ties them. A code in the map and not the labels would be a language upstream
+   * accepts that the picker never offers; the reverse would offer one with no constant id behind it.
+   */
+  it('labels exactly the codes the language map carries', () => {
+    expect(Object.keys(GOOGLE_ADS_LANGUAGE_LABELS).sort()).toEqual(Object.keys(GOOGLE_ADS_LANGUAGE_MAP).sort());
+  });
+});
+
+/** Go's `strings.TrimSpace` and `strings.ToLower`, the two rules upstream's callout checks use. */
+describe('Google Ads string rules', () => {
+  it.each([
+    ['ASCII space and tabs', ' \tFree\n', 'Free'],
+    ['U+0085, which Go trims and JS `trim` keeps', '\u0085Free\u0085', 'Free'],
+    ['no-break and line separators', '\u00a0Free\u2028', 'Free'],
+    ['U+FEFF, which JS `trim` strips and Go keeps', '\ufeffFree', '\ufeffFree'],
+  ])('trims %s as Go does', (_label, input, expected) => {
+    expect(googleAdsTrimSpace(input)).toBe(expected);
+  });
+
+  it("matches Go's `unicode.IsSpace` on every UTF-16 code unit", () => {
+    // `\t`–`\r`, U+0085 and category Z: Go's set, written as a regex only here, as the reference.
+    const goSpace = /^[\t\n\v\f\r\u0085\p{Z}]$/u;
+    const mismatches: number[] = [];
+    for (let code = 0; code <= 0xffff; code++) {
+      if (isGoSpaceCode(code) !== goSpace.test(String.fromCharCode(code))) mismatches.push(code);
+    }
+
+    expect(mismatches).toEqual([]);
+  });
+
+  it('trims a long interior whitespace run in linear time', () => {
+    // A `[ws]+$` regex backtracks quadratically here: 40,000 spaces took about 2.5 s.
+    const text = `x${' '.repeat(1_000_000)}x`;
+    const started = Date.now();
+
+    expect(googleAdsTrimSpace(` ${text} `)).toBe(text);
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  it.each([
+    ['short text, unchanged', 'Free shipping', 'Free shipping'],
+    ['long text, cut at 32 code points', 'A'.repeat(40), `${'A'.repeat(32)}…`],
+    ['an emoji at the cut, kept whole', `${'A'.repeat(31)}🎉🎉`, `${'A'.repeat(31)}🎉…`],
+  ])('echoes %s', (_label, input, expected) => {
+    expect(googleAdsEchoed(input)).toBe(expected);
+  });
+
+  it.each([
+    ['a final sigma, with no word-end rule', 'ΟΔΟΣ', 'οδοσ'],
+    ['a dotted capital I, to a plain i', 'İnfo', 'info'],
+    ['ASCII', 'Free Shipping', 'free shipping'],
+  ])('lower-cases %s as Go does', (_label, input, expected) => {
+    expect(googleAdsToLower(input)).toBe(expected);
+  });
+
+  it.each([
+    ['a plain https URL', 'https://events.example.org/register?utm=a&b=c#top', false],
+    ['an uppercase scheme', 'HTTPS://events.example.org/', false],
+    ['a valid percent escape', 'https://events.example.org/a%20b', false],
+    ['a semicolon in the fragment, which is not the query', 'https://events.example.org/#a;b', false],
+    ['a semicolon in the query', 'https://events.example.org/?a=1;b=2', true],
+    ['a stray percent sign', 'https://events.example.org/50%off', true],
+    ['a percent sign with one hex digit', 'https://events.example.org/?q=%2', true],
+    ['no `//` after the scheme', 'https:events.example.org', true],
+    ['backslashes for slashes', 'https:\\\\events.example.org', true],
+    // Found by running Go's `url.Parse` and this helper over the same generated corpus.
+    ['a newline inside the host, which `new URL()` deletes', 'https://exa\nmple.org/path', true],
+    ['a tab inside the path', 'https://events.example.org/pa\tth', true],
+    ['a C0 control in the query', 'https://events.example.org/?a=\u0001', true],
+    ['DEL in the path', 'https://events.example.org/a\u007fb', true],
+    ['a control character in the fragment, which Go cuts off before checking', 'https://events.example.org/#a\u0001b', false],
+    ['a backslash inside the authority', 'https://events.example.org\\path', true],
+    ['a backslash in the path, which both parsers accept', 'https://events.example.org/a\\b', false],
+    ['a brace in the host', 'https://{events.example.org/', true],
+    ['a backtick in the host', 'https://ev`ents.example.org/', true],
+    ['a percent escape in the host', 'https://ev%41nts.example.org/', true],
+    ['an empty userinfo, which Go still refuses', 'https://@events.example.org/', true],
+    ['an empty authority', 'https:///register', true],
+  ])("flags %s as Go's parser would", (_label, url, expected) => {
+    expect(googleAdsUrlGoParseFlaw(url)).toBe(expected);
+  });
+});
+
+/**
+ * Every Monitor tab platform button's SELECTED colours must clear WCAG AA (4.5:1) for its 12px
+ * label. Recomputed from the hex values, so a brand-colour change that breaks AA fails here.
+ */
+describe('MONITOR_PLATFORM_BUTTON_COLORS', () => {
+  function luminance(hex: string): number {
+    const channels = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+    const [r, g, b] = channels.map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  }
+
+  function contrast(a: string, b: string): number {
+    const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+    return (hi + 0.05) / (lo + 0.05);
+  }
+
+  it.each(Object.entries(MONITOR_PLATFORM_BUTTON_COLORS))('%s clears 4.5:1, with a text class that renders its foreground', (_platform, colors) => {
+    expect(contrast(colors.background, colors.foreground)).toBeGreaterThanOrEqual(4.5);
+    expect(colors.textClass).toBe(colors.foreground === lfxColors.white ? 'text-white' : 'text-gray-950');
+    expect(colors.foreground === lfxColors.white || colors.foreground === lfxColors.gray[950]).toBe(true);
+  });
+
+  it('covers every platform the Monitor tab offers', () => {
+    expect(Object.keys(MONITOR_PLATFORM_BUTTON_COLORS).sort()).toEqual(['google', 'hubspot', 'linkedin', 'meta', 'microsoft', 'reddit', 'twitter']);
+  });
+});
+
+describe('Google Ads campaign criteria vocabularies', () => {
+  it('caps the device bid modifier list at the number of devices it accepts, as upstream does', () => {
+    // The cap's whole claim is "a longer list must repeat a device", and `maxDeviceBidModifiers`
+    // upstream tracks `len(deviceTypes)` with a test of its own saying so. A device added to the
+    // vocabulary without raising the cap would refuse a list that repeats nothing.
+    expect(GOOGLE_ADS_MAX_DEVICE_BID_MODIFIERS).toBe(GOOGLE_ADS_DEVICES.length);
+  });
+
+  it('accepts both spellings of every age range, since upstream resolves them to the same enum', () => {
+    // `ageRangeTypes` carries the friendly spelling and Google's own `AGE_RANGE_*` name for each
+    // range deliberately. A friendly spelling without its enum twin — or an enum name that resolved
+    // somewhere else — would refuse here what upstream accepts.
+    for (const range of GOOGLE_ADS_AGE_RANGES) {
+      const enumName = GOOGLE_ADS_AGE_RANGE_MAP[range as keyof typeof GOOGLE_ADS_AGE_RANGE_MAP];
+
+      expect(enumName).toMatch(/^AGE_RANGE_/);
+      expect(GOOGLE_ADS_AGE_RANGE_MAP[enumName]).toBe(enumName);
+    }
+  });
+
+  it('offers only the friendly spellings in a refusal, so a message is not both halves of the map', () => {
+    expect(GOOGLE_ADS_AGE_RANGES).toEqual(['18-24', '25-34', '35-44', '45-54', '55-64', '65+', 'UNDETERMINED']);
+  });
+
+  it('keeps UNDETERMINED in both vocabularies, since it is an ordinary member of each', () => {
+    // Not a placeholder for "unset": excluding it is how a campaign skips the users Google could
+    // not classify, which is a real targeting choice and one Google accepts on both criteria.
+    expect(GOOGLE_ADS_AGE_RANGES).toContain('UNDETERMINED');
+    expect(GOOGLE_ADS_GENDERS).toContain('UNDETERMINED');
+  });
+
+  it('fences both criteria off the same two channels today, from two separate lists', () => {
+    // Separate constants because `validateCriteriaPlan` fences them in separate branches for
+    // separate reasons — a bid Performance Max does not set, against demographics it takes as
+    // asset-group signals — so either could move without the other.
+    expect(GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS).not.toContain('demand-gen');
+    expect(GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS).not.toContain('performance-max');
+    expect(GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS).not.toContain('demand-gen');
+    expect(GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS).not.toContain('performance-max');
+  });
+
+  it('caps each demographic exclusion list at 20, the per-list bound upstream checks twice', () => {
+    expect(GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS).toBe(20);
   });
 });

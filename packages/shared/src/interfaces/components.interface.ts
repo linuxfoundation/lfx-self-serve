@@ -578,6 +578,18 @@ export interface PendingActionItem {
   applicationApplicantEmail?: string;
   /** Optional applicant display name; the email remains visible when present. */
   applicationApplicantName?: string;
+  /** Owning project/foundation name for a join application, so the reviewer knows which project the group belongs to. */
+  applicationProjectName?: string;
+  /** Group category for a join application (e.g. "Technical Steering Committee"). */
+  applicationGroupCategory?: string;
+  /** Owning project slug for a join application — drives `?project=` on the group link. */
+  applicationProjectSlug?: string;
+  /** Whether the owning project is a foundation (join application) — picks `/foundation` vs `/project` for the group link; absent keeps the flat `/groups/:uid` fallback. */
+  applicationIsFoundation?: boolean;
+  /** Free-text message the applicant wrote. Untrusted — render as text only. */
+  applicationMessage?: string;
+  /** ISO timestamp the application was submitted. */
+  applicationSubmittedAt?: string;
   /** Committee/group display name (set on Invitation action types). Used for the "You've joined {Group}" toast and the accept/decline `aria-label`, so the copy doesn't have to be parsed back out of `text`. */
   inviteGroupName?: string;
   /** Owning project slug for the invited group (set on Invitation action types) — drives the `?project=` query param on the view link (GH-1566). */
@@ -660,6 +672,8 @@ export interface DecoratedPendingAction extends PendingActionItem, FormationPend
   voteUsesDrawer: boolean;
   /** True when the action is an Invitation (committee invite) that renders Accept/Decline controls inline. */
   isInvitation: boolean;
+  /** True for a join request that can be approved, rejected or dismissed (full address + applicant email); precomputed so templates read a flag, not a function. */
+  isReviewableApplication: boolean;
   /** Precomputed `aria-label` for the Accept control ("Accept invite to {inviteGroupName}") — built in TS so the template never calls a method. */
   acceptAriaLabel: string;
   /** Precomputed `aria-label` for the Decline control ("Decline invite to {inviteGroupName}") — built in TS so the template never calls a method. */
@@ -686,6 +700,8 @@ export interface DrawerActionRow extends PendingActionItem, FormationPendingActi
   meetingLoadFailed: boolean;
   /** True when the action is an Invitation (committee invite) that renders Accept/Decline controls inline. */
   isInvitation: boolean;
+  /** True for a join request that can be approved, rejected or dismissed (full address + applicant email); precomputed so templates read a flag, not a function. */
+  isReviewableApplication: boolean;
   /** Precomputed `aria-label` for the Accept control ("Accept invite to {inviteGroupName}") — built in TS so the template never calls a method. */
   acceptAriaLabel: string;
   /** Precomputed `aria-label` for the Decline control ("Decline invite to {inviteGroupName}") — built in TS so the template never calls a method. */

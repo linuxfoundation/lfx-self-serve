@@ -10,11 +10,12 @@ import { OrgSlugResolverService } from './org-slug-resolver.service';
 // The resolver is access-sensitive (spec 050, DR-002/DR-003/DR-007): these specs pin the outcome
 // decisions — which rows count, when a slug is a tie, what the cache may store — against a stubbed
 // query-service. `valkey.service` is mocked whole: it reaches the Angular-tainted shared utils barrel.
-const { proxyRequest, getEffectiveUsername, withCache, buildPerUserOrgKey } = vi.hoisted(() => ({
+const { proxyRequest, getEffectiveUsername, withCache, buildPerUserOrgKey, resolveClaOnlyOrg } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   getEffectiveUsername: vi.fn(),
   withCache: vi.fn(),
   buildPerUserOrgKey: vi.fn(),
+  resolveClaOnlyOrg: vi.fn(),
 }));
 
 vi.mock('./logger.service', () => ({ logger: { debug: vi.fn(), warning: vi.fn(), error: vi.fn(), startOperation: vi.fn(), success: vi.fn() } }));
@@ -25,6 +26,11 @@ vi.mock('./microservice-proxy.service', () => ({
 }));
 vi.mock('./valkey.service', () => ({ buildPerUserOrgKey, valkeyService: { withCache } }));
 vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername }));
+vi.mock('./org-cla-only-orgs.service', () => ({
+  OrgClaOnlyOrgsService: class {
+    public resolveOrg = resolveClaOnlyOrg;
+  },
+}));
 
 const req = { path: '/api/orgs/resolve/x' } as Request;
 const UID_A = '0014100000MgaAAAAA';
@@ -126,6 +132,48 @@ describe('OrgSlugResolverService — SFID segment', () => {
       org: { uid: UID_A, slug: null, name: `Org ${UID_A}` },
       cache: 'bypass',
     });
+  });
+});
+
+describe('OrgSlugResolverService — CLA-only organization', () => {
+  it('falls back to the caller’s CLA-manager scope when query-service hides the organization', async () => {
+    proxyRequest.mockResolvedValueOnce(page([]));
+    resolveClaOnlyOrg.mockResolvedValueOnce({ uid: UID_A, slug: null, name: 'Acme Corp', claOnly: true });
+
+    const result = await new OrgSlugResolverService().resolveSegment(req, UID_A);
+
+    expect(result).toEqual({ outcome: 'hit', org: { uid: UID_A, slug: null, name: 'Acme Corp', claOnly: true }, cache: 'bypass' });
+    expect(resolveClaOnlyOrg).toHaveBeenCalledWith(req, UID_A);
+    expect(withCache).not.toHaveBeenCalled();
+  });
+
+  it('never asks for the scope when the caller can read the organization', async () => {
+    proxyRequest.mockResolvedValueOnce(page([{ uid: UID_A }]));
+
+    await new OrgSlugResolverService().resolveSegment(req, UID_A);
+
+    expect(resolveClaOnlyOrg).not.toHaveBeenCalled();
+  });
+
+  it('is a miss when the scope does not confirm the organization either', async () => {
+    proxyRequest.mockResolvedValueOnce(page([]));
+    resolveClaOnlyOrg.mockResolvedValueOnce(null);
+
+    expect(await new OrgSlugResolverService().resolveSegment(req, UID_A)).toEqual({ outcome: 'miss', cache: 'bypass' });
+  });
+
+  it('has no slug fallback: a CLA-only organization is addressed by its SFID', async () => {
+    proxyRequest.mockResolvedValueOnce(page([]));
+
+    expect(await new OrgSlugResolverService().resolveSegment(req, 'acme-inc')).toEqual({ outcome: 'miss', cache: 'miss' });
+    expect(resolveClaOnlyOrg).not.toHaveBeenCalled();
+  });
+
+  it('leaves a query-service failure to surface as before, without asking the scope', async () => {
+    proxyRequest.mockRejectedValueOnce(new Error('query-service down'));
+
+    await expect(new OrgSlugResolverService().resolveSegment(req, UID_A)).rejects.toThrow('query-service down');
+    expect(resolveClaOnlyOrg).not.toHaveBeenCalled();
   });
 });
 

@@ -384,6 +384,18 @@ describe('OrgEasyclaApprovalListComponent', () => {
       expect(byTestId(fixture, 'org-easycla-approval-edit')).not.toBeNull();
       expect(byTestId(fixture, 'org-easycla-approval-delete')).not.toBeNull();
     });
+
+    // The approval-list permission check has to carry the distinct foundation id alongside the
+    // covered-project id so an EasyCLA grant on the foundation pair wins the OR for Add/Edit/
+    // Remove. Without this assertion, dropping the fourth argument at `component.ts`'s
+    // `checkPermission(...)` call would leave the suite green and hide those controls from a
+    // foundation-only manager. The managers and contributor-acknowledgments specs assert the same
+    // shape; this one is the regression pin for the approval list.
+    it('sends both the project pair and the foundation pair to checkPermission', async () => {
+      await render(claGroup({ pairProjectSfid: 'a09410000182dD3AAI', foundationSfid: 'a09410000182dFOUND' }));
+
+      expect(checkPermission).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'approval-list-update', 'a09410000182dD3AAI', 'a09410000182dFOUND');
+    });
   });
 
   describe('adding entries', () => {
@@ -478,26 +490,27 @@ describe('OrgEasyclaApprovalListComponent', () => {
       });
     });
 
-    it("says the previous value's acknowledgements were invalidated", async () => {
+    it("says the previous value's acknowledgments show as Not Authorized", async () => {
       const fixture = await render();
       click(fixture, 'org-easycla-approval-edit');
 
       closeDialogWith({ add: [{ kind: 'domain', value: 'new.example.com' }], remove: [{ kind: 'domain', value: 'example.com' }] });
 
-      expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({ detail: expect.stringContaining('invalidated') }));
+      expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({ detail: expect.stringContaining('now show as Not Authorized') }));
+      expect(addMessage).not.toHaveBeenCalledWith(expect.objectContaining({ detail: expect.stringContaining('invalidated') }));
     });
   });
 
   describe('deleting an entry', () => {
-    // The producer flips the matching acknowledgements to unapproved and emails the contributors.
-    // A CLA manager is entitled to know that before the click, not from the receipt.
-    it('names the invalidation in the confirmation, before anything is sent', async () => {
+    it('names the Not Authorized outcome in the confirmation, before anything is sent', async () => {
       const fixture = await render();
 
       click(fixture, 'org-easycla-approval-delete');
 
       expect(confirmations).toHaveLength(1);
-      expect(confirmations[0].message).toContain('invalidated');
+      expect(confirmations[0].message).toContain('Their acknowledgments will show as Not Authorized until you add the entry back.');
+      expect(confirmations[0].message).not.toContain('invalidated');
+      expect(confirmations[0].message).not.toContain('acknowledge it again');
       expect(confirmations[0].message).toContain('example.com');
       expect(updateApprovalList).not.toHaveBeenCalled();
     });
@@ -528,7 +541,9 @@ describe('OrgEasyclaApprovalListComponent', () => {
 
       confirmations[0].accept?.();
 
-      expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', detail: expect.stringContaining('invalidated') }));
+      expect(addMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ severity: 'success', detail: 'The entry was removed. Acknowledgments it covered now show as Not Authorized.' })
+      );
     });
   });
 

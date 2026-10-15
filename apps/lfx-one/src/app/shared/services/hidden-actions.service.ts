@@ -3,9 +3,11 @@
 
 import { inject, Injectable } from '@angular/core';
 import { PendingActionItem } from '@lfx-one/shared';
+import { hasJoinApplicationAddress } from '@lfx-one/shared/utils';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 
 import { CookieRegistryService } from './cookie-registry.service';
+import { UserService } from './user.service';
 
 /**
  * Service for managing hidden pending actions using browser cookies.
@@ -18,6 +20,7 @@ import { CookieRegistryService } from './cookie-registry.service';
 export class HiddenActionsService {
   private readonly cookieService = inject(SsrCookieService);
   private readonly cookieRegistry = inject(CookieRegistryService);
+  private readonly userService = inject(UserService);
   private readonly cookiePrefix = 'lfx_hidden_';
   private readonly dismissCookiePrefix = 'lfx_dismissed_';
   private readonly maxAgeDays = 1; // 24 hours
@@ -48,8 +51,8 @@ export class HiddenActionsService {
    * @param item The pending action item to dismiss
    */
   public dismissAction(item: PendingActionItem): void {
-    const identifier = this.getActionIdentifier(item);
-    const cookieName = `${this.dismissCookiePrefix}${this.hashString(identifier)}`;
+    const cookieName = this.getDismissCookieName(item);
+    if (!cookieName) return;
     this.cookieService.set(cookieName, '1', {
       expires: this.permanentExpireDays,
       path: '/',
@@ -68,17 +71,41 @@ export class HiddenActionsService {
    * item its assignee still owns, forever. Keyed on `type` rather than the decorated view's
    * `isFormationItem`: this runs on the wire row before decoration, and that flag also encodes
    * linkability (slug + key present), which is the wrong criterion for a cookie exemption.
-   * Join applications likewise remain visible until an authoritative review succeeds, including
-   * incomplete wire rows; stale cookies must never suppress a request awaiting a decision.
+   * Join applications stay visible until an authoritative review succeeds or the reviewer explicitly dismisses
+   * the request (a delegating admin may not want it in their own list; it stays pending for other reviewers and
+   * on the group's applications tab). Only a dismiss cookie counts, and incomplete wire rows are never hidden.
    *
    * @param item The pending action item to check
    * @returns true if the action is hidden, false otherwise
    */
   public isActionHidden(item: PendingActionItem): boolean {
-    if (item.type === 'FormationItem' || item.type === 'JoinApplication') return false;
+    if (item.type === 'FormationItem') return false;
+    if (item.type === 'JoinApplication') {
+      // Only an explicit Dismiss hides a request (never the 24h completion cookie). No cookie name means the row has no full
+      // address or there is no effective user to scope the dismissal to — in both cases the request stays visible.
+      const dismissName = this.getDismissCookieName(item);
+      return dismissName ? this.cookieService.check(dismissName) : false;
+    }
     const identifier = this.getActionIdentifier(item);
     const hash = this.hashString(identifier);
     return this.cookieService.check(`${this.cookiePrefix}${hash}`) || this.cookieService.check(`${this.dismissCookiePrefix}${hash}`);
+  }
+
+  /**
+   * Name of the permanent dismiss cookie for an item, or null when it must not be dismissible.
+   *
+   * Join requests are scoped to the effective user (the impersonated user while impersonating): the cookie lives in the
+   * browser, not the account, so an unscoped name would hide a request from anyone who later uses it — another login on a
+   * shared browser, or an admin impersonating a writer — who never dismissed it and may owe it a decision. They also need
+   * the full committee + application address; an incomplete row would hash to one shared identifier and bury every other one.
+   */
+  private getDismissCookieName(item: PendingActionItem): string | null {
+    if (item.type !== 'JoinApplication') {
+      return `${this.dismissCookiePrefix}${this.hashString(this.getActionIdentifier(item))}`;
+    }
+    const subject = this.userService.user()?.sub;
+    if (!subject || !hasJoinApplicationAddress(item)) return null;
+    return `${this.dismissCookiePrefix}${this.hashString(`${this.getActionIdentifier(item)}|${subject}`)}`;
   }
 
   // Prefer intrinsic IDs (meetingUid, voteUid, briefActionUid, formationItemUid) so same-text siblings never collide; fall back to type+badge+text+buttonLink for legacy action shapes without one.

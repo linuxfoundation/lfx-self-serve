@@ -1021,7 +1021,7 @@ export interface PastMeeting extends Meeting {
   platform_meeting_id: string;
   /** Array of session objects with start/end times */
   sessions: MeetingSession[];
-  /** Whether the requesting user attended this meeting — populated by /api/user/past-meetings only */
+  /** Whether the requesting user attended this meeting — populated by /api/user/past-meetings and /api/past-meetings when a signed-in user is present */
   user_attended?: boolean;
 }
 
@@ -2273,3 +2273,24 @@ export interface MeetingCreateMenuRow {
  * column, where hanging the whole panel off to one side reads as belonging to something else.
  */
 export type MeetingCreateMenuAlign = 'right' | 'center';
+
+/** Common fields needed to build a calendar deep link for "Add to calendar" (GH-3505). */
+export interface CalendarLinkEvent {
+  title: string;
+  /** ISO start time. */
+  startIso: string;
+  durationMinutes: number;
+  description?: string;
+  joinUrl?: string;
+}
+
+/** Which occurrence(s) an "Add to calendar" download/deep-link covers (GH-3505). */
+export type MeetingCalendarScope = 'occurrence' | 'series';
+
+/** Optional per-event extras for the server's ICS `buildVEvent` beyond the title/time fields every caller has. */
+export interface VEventExtras {
+  /** Agenda/body text. Falls back to the title when omitted, matching prior behavior. */
+  description?: string;
+  /** Join link, appended to DESCRIPTION and set as the ICS URL property (GH-3505). */
+  joinUrl?: string;
+}

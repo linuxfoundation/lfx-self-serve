@@ -37,6 +37,16 @@
             data-testid="registered-badge"></lfx-tag>
         }
 
+        <!-- Attended Badge (past meetings the viewer attended) -->
+        @if (userAttended()) {
+          <lfx-tag
+            value="Attended"
+            severity="success"
+            icon="fa-light fa-circle-check"
+            tooltip="You attended this meeting."
+            data-testid="attended-badge"></lfx-tag>
+        }
+
         <!-- Meeting Type Badge -->
         @if (meetingTypeBadge(); as badge) {
           @if (badge.text !== 'None') {

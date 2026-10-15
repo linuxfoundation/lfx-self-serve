@@ -145,6 +145,24 @@ describe('AudienceQaPanelComponent', () => {
     expect(host().textContent, "portal A's verdict was rendered under portal B").not.toContain('PASS');
   });
 
+  // The event and send-time suppressions are part of what is audited: a verdict for other inputs is stale.
+  it.each([
+    ['the send-time suppressions', () => fixture.componentRef.setInput('sendSuppressionIds', [])],
+    ['the event', () => fixture.componentRef.setInput('eventName', 'Another Event')],
+  ])('drops a verdict when %s change', (_label, change) => {
+    fixture.componentRef.setInput('eventName', 'Synthetic Summit');
+    fixture.componentRef.setInput('sendSuppressionIds', ['201']);
+    fixture.detectChanges();
+    runAudienceQa.mockReturnValue(of(report()));
+    enterRefAndRun();
+    expect(host().textContent, 'precondition: a verdict is shown').toContain('PASS');
+
+    change();
+    fixture.detectChanges();
+
+    expect(host().textContent).not.toContain('PASS');
+  });
+
   it("shows the fallback copy rather than Angular's transport string", () => {
     // extractErrorMessage ends in `error.message || fallback` and HttpErrorResponse.message is
     // never empty, so on a body-less failure the fallback was unreachable and the operator got
@@ -213,6 +231,20 @@ describe('AudienceQaPanelComponent', () => {
     for (const key of ['signalMapping', 'suppression', 'exclusionCompleteness']) {
       expect(host().querySelector(`[data-testid="audience-qa-panel-check-${key}"]`), `${key} was not rendered`).not.toBeNull();
     }
+  });
+
+  it('links the audited list to HubSpot only when the report carries a URL', () => {
+    // A blank URL renders href="", which opens this app instead of the list.
+    runAudienceQa.mockReturnValue(of(report()));
+    enterRefAndRun();
+    expect(host().querySelector('[data-testid="audience-qa-panel-report-link"]')?.getAttribute('href')).toBe(
+      'https://app.hubspot.com/contacts/1/objectLists/601'
+    );
+
+    runAudienceQa.mockReturnValue(of(report({ hubspotUrl: '' })));
+    enterRefAndRun();
+    expect(host().querySelector('[data-testid="audience-qa-panel-overall"]'), 'fixture precondition: the report must render').not.toBeNull();
+    expect(host().querySelector('[data-testid="audience-qa-panel-report-link"]'), 'a blank URL rendered a link back to this app').toBeNull();
   });
 
   it('shows candidates and no verdict when the name matched several lists', () => {
@@ -288,5 +320,57 @@ describe('AudienceQaPanelComponent', () => {
     fixture.detectChanges();
 
     expect(runAudienceQa).not.toHaveBeenCalled();
+  });
+
+  describe('current registrants', () => {
+    it('sends the event name so upstream can check this edition is suppressed', () => {
+      runAudienceQa.mockReturnValue(of(report()));
+      fixture.componentRef.setInput('eventName', '  Synthetic Summit 2026 ');
+      fixture.detectChanges();
+
+      enterRefAndRun();
+
+      expect(runAudienceQa).toHaveBeenCalledWith('tlf', { listRef: '601', targetsEu: false, targetsCa: false, eventName: 'Synthetic Summit 2026' });
+    });
+
+    it('sends no event name when there is none, and shows no fourth row', () => {
+      runAudienceQa.mockReturnValue(of(report()));
+
+      enterRefAndRun();
+
+      expect(runAudienceQa).toHaveBeenCalledWith('tlf', { listRef: '601', targetsEu: false, targetsCa: false });
+      expect(host().textContent).not.toContain('Current registrants');
+    });
+
+    it('shows the check when upstream ran it', () => {
+      runAudienceQa.mockReturnValue(of(report({ checks: checks({ currentRegistrants: { verdict: 'FAIL', findings: [] } }), overall: 'FAIL' })));
+
+      enterRefAndRun();
+
+      expect(host().textContent).toContain('Current registrants');
+    });
+  });
+
+  describe('send-time suppression', () => {
+    it('sends the suppression lists the send applies, and says which exclusions are send-time', () => {
+      runAudienceQa.mockReturnValue(
+        of(report({ checks: checks({ exclusionCompleteness: { verdict: 'PASS', findings: [], exclusionCount: 3, sendTimeCount: 3 } }) }))
+      );
+      fixture.componentRef.setInput('sendSuppressionIds', ['201', '202', '203']);
+      fixture.detectChanges();
+
+      enterRefAndRun();
+
+      expect(runAudienceQa.mock.calls.at(-1)?.[1]).toMatchObject({ sendSuppressionListIds: ['201', '202', '203'] });
+      expect(host().textContent).toContain('0 on the list, 3 applied at send time');
+    });
+
+    it('sends none when the send applies none', () => {
+      runAudienceQa.mockReturnValue(of(report()));
+
+      enterRefAndRun();
+
+      expect(runAudienceQa.mock.calls.at(-1)?.[1]).not.toHaveProperty('sendSuppressionListIds');
+    });
   });
 });

@@ -40,11 +40,14 @@ import { EVENT_TERM_GENERIC, HUBSPOT_TEMPLATE_RENDER_LIMIT, MAX_SPONSOR_NAME_LEN
 import type { HubSpotMarketingEmail } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
+import { DialogService } from 'primeng/dynamicdialog';
 import { NEVER, Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { MockInstance } from 'vitest';
 
 import { CampaignsComponent } from './campaigns.component';
 import { AudienceBuilderTabComponent } from './components/audience-builder-tab/audience-builder-tab.component';
+import { ImplementationTabComponent } from './components/implementation-tab/implementation-tab.component';
 
 /**
  * The controller spec covers what the server does with a brief. What is only observable here is
@@ -128,6 +131,7 @@ describe('CampaignsComponent brief persistence', () => {
         provideHttpClientTesting(),
         provideRouter([]),
         { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
         // `providerReady: signal(true)` so `hasCampaignAccess` evaluates the real persona/flag
         // check instead of deferring (its SSR/pre-hydration fast path, see campaigns.component.ts)
         // — every test here runs in the browser and expects an immediate verdict. `getBooleanFlag`
@@ -1295,6 +1299,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
+            biddingEnabled: false,
           })
         );
 
@@ -1328,6 +1333,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
+            biddingEnabled: false,
           })
         );
 
@@ -1372,6 +1378,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: true,
             googleCreativeEnabled: true,
             redditCreativeEnabled: true,
+            biddingEnabled: false,
           })
         );
 
@@ -1384,6 +1391,58 @@ describe('CampaignsComponent brief persistence', () => {
         };
         expect(c.briefCampaignsGoogleChannelsEnabled()).toBe(true);
         expect(c.briefCampaignsDemandGenEnabled()).toBe(false);
+      });
+
+      /**
+       * The Bidding capability (#3299) rides on the same read, and is asserted with every OTHER
+       * capability set the opposite way, so a component that read the wrong key would fail here.
+       * A failed read leaves it `null`, which the tab treats as off.
+       */
+      it('loads the bidding capability from its own key', async () => {
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
+          of({
+            campaigns: [],
+            possiblyStale: false,
+            statusToggleEnabled: false,
+            demandGenEnabled: false,
+            googleChannelsEnabled: false,
+            googleCreativeEnabled: false,
+            redditCreativeEnabled: false,
+            biddingEnabled: true,
+          })
+        );
+
+        await withSavedBrief();
+        await fixture.whenStable();
+
+        const c = fixture.componentInstance as unknown as { briefCampaignsBiddingEnabled(): boolean | null; briefCampaignsBiddingRead(): string };
+        expect(c.briefCampaignsBiddingEnabled()).toBe(true);
+        expect(c.briefCampaignsBiddingRead()).toBe('ready');
+      });
+
+      it('marks the bidding read pending only while a read is out, and unknown when none is', async () => {
+        const c = fixture.componentInstance as unknown as { briefCampaignsBiddingRead(): string };
+        // Nothing has been asked yet: unknown, not "checking".
+        expect(c.briefCampaignsBiddingRead()).toBe('unknown');
+
+        const inFlight = new Subject<CampaignListResult>();
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(inFlight);
+        await withSavedBrief();
+
+        expect(c.briefCampaignsBiddingRead()).toBe('pending');
+      });
+
+      it('leaves the bidding capability unknown when the capability read fails', async () => {
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(throwError(() => new Error('query service down')));
+
+        await withSavedBrief();
+        await fixture.whenStable();
+
+        const c = fixture.componentInstance as unknown as { briefCampaignsBiddingEnabled(): boolean | null; briefCampaignsBiddingRead(): string };
+        expect(c.briefCampaignsBiddingEnabled()).toBeNull();
+        // `failed`, not `pending`: the tab offers a Retry for a retained Manual choice rather than
+        // saying it is still checking.
+        expect(c.briefCampaignsBiddingRead()).toBe('failed');
       });
 
       /**
@@ -1430,6 +1489,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
+            biddingEnabled: false,
           })
         );
         (fixture.componentInstance as unknown as { selectTab(t: CampaignTab, owner: CampaignDeliveryType): void }).selectTab('planning', 'paid-marketing');
@@ -1473,6 +1533,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
+            biddingEnabled: false,
           })
         );
         load();
@@ -1487,6 +1548,7 @@ describe('CampaignsComponent brief persistence', () => {
           googleChannelsEnabled: false,
           googleCreativeEnabled: false,
           redditCreativeEnabled: false,
+          biddingEnabled: false,
         });
         capability.complete();
         await fixture.whenStable();
@@ -1517,6 +1579,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
+            biddingEnabled: false,
           })
         );
         (fixture.componentInstance as unknown as { loadCreateCapabilities(): void }).loadCreateCapabilities();
@@ -1548,6 +1611,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
+            biddingEnabled: false,
           })
         );
 
@@ -1574,6 +1638,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
+            biddingEnabled: false,
           })
         );
 
@@ -1613,6 +1678,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
+            biddingEnabled: false,
           })
         );
         (fixture.componentInstance as unknown as { loadCreateCapabilities(): void }).loadCreateCapabilities();
@@ -1653,6 +1719,7 @@ describe('CampaignsComponent brief persistence', () => {
           googleChannelsEnabled: false,
           googleCreativeEnabled: false,
           redditCreativeEnabled: false,
+          biddingEnabled: false,
         });
         pending.complete();
         await fixture.whenStable();
@@ -1693,6 +1760,7 @@ describe('CampaignsComponent brief persistence', () => {
           googleChannelsEnabled: false,
           googleCreativeEnabled: false,
           redditCreativeEnabled: false,
+          biddingEnabled: false,
         });
         second.complete();
         await fixture.whenStable();
@@ -1717,6 +1785,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
+            biddingEnabled: false,
           })
         );
 
@@ -1743,6 +1812,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: true,
             redditCreativeEnabled: true,
+            biddingEnabled: false,
           })
         );
         await withSavedBrief();
@@ -1759,6 +1829,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: true,
             redditCreativeEnabled: true,
+            biddingEnabled: false,
           })
         );
         selectFoundation('cncf');
@@ -1767,6 +1838,37 @@ describe('CampaignsComponent brief persistence', () => {
         // Not TLF's campaigns under CNCF: the rows would render against a projectSlug that is
         // now 'cncf' and a briefId that is now '', which is the address a pause is sent to.
         expect(campaigns()).not.toEqual([indexed()]);
+      });
+
+      /**
+       * A foundation switch clears the bidding capability WITHOUT starting a read (#3299). It must
+       * read `unknown`, not `pending`: the tab answers `unknown` with a Retry and Switch to Automatic,
+       * while `pending` would say "Checking…" for a read that never comes.
+       */
+      it('leaves the bidding read unknown, not pending, after a foundation switch', async () => {
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
+          of({
+            campaigns: [indexed()],
+            possiblyStale: false,
+            statusToggleEnabled: true,
+            demandGenEnabled: false,
+            googleChannelsEnabled: false,
+            googleCreativeEnabled: true,
+            redditCreativeEnabled: true,
+            biddingEnabled: true,
+          })
+        );
+        await withSavedBrief();
+        load();
+        await fixture.whenStable();
+        const c = fixture.componentInstance as unknown as { briefCampaignsBiddingEnabled(): boolean | null; briefCampaignsBiddingRead(): string };
+        expect(c.briefCampaignsBiddingRead()).toBe('ready');
+
+        selectFoundation('cncf');
+        await fixture.whenStable();
+
+        expect(c.briefCampaignsBiddingEnabled()).toBeNull();
+        expect(c.briefCampaignsBiddingRead()).toBe('unknown');
       });
 
       it('drops a campaign list that resolves after the foundation changed', async () => {
@@ -1788,6 +1890,7 @@ describe('CampaignsComponent brief persistence', () => {
           googleChannelsEnabled: false,
           googleCreativeEnabled: true,
           redditCreativeEnabled: true,
+          biddingEnabled: false,
         });
         await fixture.whenStable();
 
@@ -1819,6 +1922,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: true,
             redditCreativeEnabled: true,
+            biddingEnabled: false,
           })
         );
         await withSavedBrief();
@@ -1850,6 +1954,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: true,
             redditCreativeEnabled: true,
+            biddingEnabled: false,
           })
         );
         await withSavedBrief();
@@ -1884,6 +1989,7 @@ describe('CampaignsComponent brief persistence', () => {
           googleChannelsEnabled: false,
           googleCreativeEnabled: true,
           redditCreativeEnabled: true,
+          biddingEnabled: false,
         });
         await fixture.whenStable();
         expect(optimizeText()).toContain('Brief B campaign');
@@ -1949,6 +2055,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: true,
             redditCreativeEnabled: true,
+            biddingEnabled: false,
           })
         );
         load();
@@ -2171,6 +2278,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     emailStaging: WritableSignal<'idle' | 'staging' | 'done' | 'error'>;
     emailStagingMessage: WritableSignal<string>;
     emailStagingDraftUrl: Signal<string>;
+    emailStagingWarnings: Signal<readonly string[]>;
     canStageEmail: Signal<boolean>;
     onStageEmailSend(): Promise<void>;
     // Read-only now: the form is the source of truth and these derive from it, so a test
@@ -2232,7 +2340,13 @@ describe('CampaignsComponent — email delivery channel', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [CampaignsComponent],
-      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([]), { provide: MessageService, useValue: { add: vi.fn() } }],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+      ],
     }).compileComponents();
     fixture = TestBed.createComponent(CampaignsComponent);
     TestBed.inject(PersonaService).currentPersona.set('executive-director');
@@ -3632,6 +3746,66 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(anchor?.getAttribute('href') ?? '').toBe(expected);
     });
 
+    it('shows a warning when the draft was created without its hero image, and keeps the staging a success', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTab.set('implementation');
+      internals().selectedEmailTemplateId.set('hs-1');
+      fixture.detectChanges();
+
+      internals().emailBriefId.set(audience.briefId);
+      internals().onAudienceComposed(audience);
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+      vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(
+        of({
+          campaigns: [],
+          errors: [],
+          platformResults: [
+            {
+              platform: 'hubspot',
+              ok: true,
+              campaignId: 'c1',
+              hubspotUrl: 'https://app.hubspot.com/email/123/edit/c1/settings',
+              warnings: ['The hero image could not be added to the email: the image could not be downloaded from the event page.'],
+            },
+          ],
+        } as unknown as CampaignJobOutcome)
+      );
+
+      await internals().onStageEmailSend();
+      fixture.detectChanges();
+
+      expect(internals().emailStaging()).toBe('done');
+      expect(internals().emailStagingWarnings()).toHaveLength(1);
+      const shown = fixture.nativeElement.querySelector('[data-testid="campaigns-email-stage-warning"]') as HTMLElement | null;
+      expect(shown?.textContent).toContain('hero image could not be added');
+    });
+
+    it('shows no warning block when the draft was created in full', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTab.set('implementation');
+      internals().selectedEmailTemplateId.set('hs-1');
+      fixture.detectChanges();
+
+      internals().emailBriefId.set(audience.briefId);
+      internals().onAudienceComposed(audience);
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+      vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(
+        of({
+          campaigns: [],
+          errors: [],
+          platformResults: [{ platform: 'hubspot', ok: true, campaignId: 'c1' }],
+        } as unknown as CampaignJobOutcome)
+      );
+
+      await internals().onStageEmailSend();
+      fixture.detectChanges();
+
+      expect(internals().emailStagingWarnings()).toEqual([]);
+      expect(fixture.nativeElement.querySelector('[data-testid="campaigns-email-stage-warnings"]')).toBeNull();
+    });
+
     /** An ABSENT platformResults must still succeed — it is optional on the contract. */
     it('still reports success when the service omits platformResults', async () => {
       selectEmail();
@@ -4300,6 +4474,17 @@ describe('CampaignsComponent — email delivery channel', () => {
       );
       // Staging stays blocked: nothing was attached, so a send here would have no recipients.
       expect(internals().canStageEmail()).toBe(false);
+    });
+
+    it('still names a loose master list with no HubSpot URL, but offers no link to it', () => {
+      // A blank URL renders href="", which opens this app instead of the list.
+      onImplementTab();
+      internals().onAudienceComposeUnattached({ ...looseHere(), master: { ...looseMaster, hubspotUrl: '' } });
+      fixture.detectChanges();
+
+      const host: HTMLElement = fixture.nativeElement;
+      expect(host.querySelector('[data-testid="campaigns-email-audience-unattached"]')?.textContent).toContain('27Q2 - KubeCon EU 2026 - Master');
+      expect(host.querySelector('[data-testid="campaigns-email-audience-unattached-link"]'), 'a blank URL rendered a link back to this app').toBeNull();
     });
 
     /**
@@ -7047,7 +7232,13 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [CampaignsComponent],
-      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([]), { provide: MessageService, useValue: { add: vi.fn() } }],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+      ],
     }).compileComponents();
     fixture = TestBed.createComponent(CampaignsComponent);
     TestBed.inject(PersonaService).currentPersona.set('executive-director');
@@ -7355,6 +7546,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       providers: [
         // The page scopes the root negative-keyword service, which injects the app-root MessageService.
         { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
         provideHttpClient(),
         provideHttpClientTesting(),
         provideRouter([]),
@@ -8944,6 +9136,7 @@ describe('CampaignsComponent — HubSpot template picker correctness', () => {
       providers: [
         // The page scopes the root negative-keyword service, which injects the app-root MessageService.
         { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
         provideHttpClient(),
         provideHttpClientTesting(),
         provideRouter([]),
@@ -9175,6 +9368,7 @@ describe('CampaignsComponent when the client flag is on and the user holds a cam
         provideHttpClientTesting(),
         provideRouter([]),
         { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(true), providerReady: signal(true) } },
       ],
     }).compileComponents();
@@ -9272,7 +9466,13 @@ describe('CampaignsComponent email monitor', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [CampaignsComponent],
-      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([]), { provide: MessageService, useValue: { add: vi.fn() } }],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+      ],
     }).compileComponents();
     fixture = TestBed.createComponent(CampaignsComponent);
     TestBed.inject(PersonaService).currentPersona.set('executive-director');
@@ -9816,5 +10016,174 @@ describe('CampaignsComponent email monitor', () => {
     fixture.detectChanges();
 
     expect(internals().canRefreshEmailMetrics()).toBe(false);
+  });
+});
+
+/**
+ * Recovering a retained Manual bidding choice the deployment cannot confirm yet (#3299), proven at
+ * the PAGE level: the real Implementation tab under the real page, with only the service's
+ * `persistBrief` and `listBriefCampaigns` replaced. Asserting that the tab EMITTED a retry is not
+ * enough — the page must actually read the capability and the tab must then let Create through
+ * with the Manual bid intact.
+ */
+describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
+  let fixture: ComponentFixture<CampaignsComponent>;
+  let listBriefCampaigns: MockInstance<CampaignService['listBriefCampaigns']>;
+
+  const brief = {
+    eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'US', registrationUrl: 'https://example.com/kubecon' },
+    totalBudget: 500,
+    selectedPlatforms: ['meta-ads'],
+    structuredCopy: { google_search: { headlines: ['Attend KubeCon'], descriptions: ['Join us in September'] } },
+    metaCopy: {
+      variants: [{ primaryText: 'Brief primary', headline: 'Brief meta headline', description: 'Brief description' }],
+      recommendedGeos: ['US'],
+    },
+    keywords: [],
+    hsUtm: null,
+    driveFolderUrl: '',
+  } as unknown as CampaignBriefOutput;
+
+  const capability = (biddingEnabled: boolean): Observable<CampaignListResult> =>
+    of({
+      campaigns: [],
+      possiblyStale: false,
+      statusToggleEnabled: false,
+      demandGenEnabled: false,
+      googleChannelsEnabled: false,
+      googleCreativeEnabled: false,
+      redditCreativeEnabled: false,
+      biddingEnabled,
+    });
+
+  const saved = () => of({ enabled: true, briefId: 'brief-1', etag: '"1"', created: true, approved: true });
+
+  interface PageInternals {
+    onProceedToImplementation(b: CampaignBriefOutput): void;
+    briefPersistence(): CampaignBriefPersistenceState;
+    briefCampaignsBiddingEnabled(): boolean | null;
+    briefCampaignsBiddingRead(): string;
+  }
+  const page = (): PageInternals => fixture.componentInstance as unknown as PageInternals;
+  const tab = (): Record<string, any> => fixture.debugElement.query(By.directive(ImplementationTabComponent)).componentInstance as Record<string, any>;
+  const q = (testId: string): HTMLElement | null => (fixture.nativeElement as HTMLElement).querySelector(`[data-testid="${testId}"]`);
+
+  function selectFoundation(slug: string): void {
+    const ctx = TestBed.inject(ProjectContextService);
+    ctx.setRouteLensKind('foundation');
+    ctx.setFoundation({ uid: `uid-${slug}`, slug, name: slug } as ProjectContext, false);
+  }
+
+  /**
+   * Two rounds, each draining a macrotask too. The brief save runs on a promise chain the page does
+   * not hand to Angular (`persistChain`), so its outcome — the saved id, the capability read it
+   * starts, and the in-flight flag it clears last — can land after one round's change detection;
+   * the second round carries it into the tab's inputs.
+   */
+  async function settle(): Promise<void> {
+    for (let round = 0; round < 2; round++) {
+      fixture.detectChanges();
+      await fixture.whenStable();
+      await new Promise((resolve) => setTimeout(resolve));
+    }
+    fixture.detectChanges();
+  }
+
+  /** Proceed (which saves the brief), fill the form, and choose Manual for Meta at 1.00. */
+  async function proceedWithManualMeta(): Promise<void> {
+    page().onProceedToImplementation(brief);
+    await settle();
+    const t = tab();
+    t['campaignForm'].controls['startDate'].setValue('2026-09-01');
+    t['campaignForm'].controls['endDate'].setValue('2026-09-30');
+    await settle();
+    const control = fixture.debugElement.query(By.css('lfx-campaign-bidding-control')).componentInstance;
+    control.form.controls.strategy.setValue('manual');
+    await settle();
+    const input = q('implementation-bidding-meta-ads-amount')?.querySelector('input') as HTMLInputElement;
+    input.value = '1';
+    input.dispatchEvent(new Event('input'));
+    await settle();
+  }
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [CampaignsComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+      ],
+    }).compileComponents();
+    const service = TestBed.inject(CampaignService);
+    vi.spyOn(service, 'persistBrief').mockReturnValue(saved() as never);
+    listBriefCampaigns = vi.spyOn(service, 'listBriefCampaigns').mockReturnValue(capability(true));
+    fixture = TestBed.createComponent(CampaignsComponent);
+    TestBed.inject(PersonaService).currentPersona.set('executive-director');
+    selectFoundation('tlf');
+    await settle();
+  });
+
+  it('after a foundation switch offers no Retry, only "save the brief", and saving recovers the Manual bid', async () => {
+    await proceedWithManualMeta();
+    expect(tab()['canSubmit']()).toBe(true);
+
+    selectFoundation('cncf');
+    await settle();
+
+    expect(page().briefPersistence().briefId).toBeNull();
+    expect(page().briefCampaignsBiddingRead()).toBe('unknown');
+    expect(tab()['canSubmit']()).toBe(false);
+    expect(q('implementation-bidding-capability-unsaved')?.textContent).toContain("Bidding support can't be checked until this brief is saved.");
+    expect(q('implementation-bidding-capability-retry')).toBeNull();
+
+    // Save the brief (Proceed is the save). Its success arm is what reads the capability.
+    listBriefCampaigns.mockClear();
+    page().onProceedToImplementation(brief);
+    await settle();
+
+    expect(listBriefCampaigns).toHaveBeenCalledTimes(1);
+    expect(page().briefCampaignsBiddingEnabled()).toBe(true);
+    expect(q('implementation-bidding-capability-unsaved')).toBeNull();
+    expect(tab()['biddingDrafts']()['meta-ads']).toEqual({ strategy: 'manual', bidAmount: 1 });
+    expect(tab()['canSubmit']()).toBe(true);
+  });
+
+  it('after a failed read with a brief id, Retry reads the capability again and Create unblocks', async () => {
+    await proceedWithManualMeta();
+    expect(page().briefCampaignsBiddingEnabled()).toBe(true);
+
+    // The next read fails: leave and re-enter the tab so it runs.
+    listBriefCampaigns.mockReturnValue(throwError(() => new Error('query service down')));
+    (fixture.componentInstance as unknown as { loadCreateCapabilities(): void }).loadCreateCapabilities();
+    await settle();
+
+    expect(page().briefPersistence().briefId).toBe('brief-1');
+    expect(page().briefCampaignsBiddingRead()).toBe('failed');
+    expect(tab()['canSubmit']()).toBe(false);
+    const retry = q('implementation-bidding-capability-retry')?.querySelector('button') as HTMLButtonElement | null;
+    expect(retry).not.toBeNull();
+
+    listBriefCampaigns.mockClear();
+    listBriefCampaigns.mockReturnValue(capability(true));
+    retry!.click();
+    await settle();
+
+    expect(listBriefCampaigns).toHaveBeenCalledTimes(1);
+    expect(page().briefCampaignsBiddingRead()).toBe('ready');
+    expect(tab()['biddingDrafts']()['meta-ads']).toEqual({ strategy: 'manual', bidAmount: 1 });
+    expect(tab()['canSubmit']()).toBe(true);
+  });
+
+  it('a retry reached without a brief id reads nothing and leaves the state unknown', async () => {
+    (fixture.componentInstance as unknown as { briefCampaignsBiddingRead: { set(v: string): void } }).briefCampaignsBiddingRead.set('failed');
+    listBriefCampaigns.mockClear();
+
+    (fixture.componentInstance as unknown as { retryBiddingCapability(): void }).retryBiddingCapability();
+
+    expect(listBriefCampaigns).not.toHaveBeenCalled();
+    expect(page().briefCampaignsBiddingRead()).toBe('unknown');
   });
 });

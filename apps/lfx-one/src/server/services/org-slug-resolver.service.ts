@@ -20,6 +20,7 @@ import { ServiceValidationError } from '../errors/service-validation.error';
 import { getEffectiveUsername } from '../utils/auth-helper';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
+import { OrgClaOnlyOrgsService } from './org-cla-only-orgs.service';
 import { buildPerUserOrgKey, valkeyService } from './valkey.service';
 
 /** Cached shape: only unambiguous hits are stored, so a later call with a different `prefer` can never be answered from another call's tie-break. */
@@ -57,9 +58,11 @@ const OPERATION = 'resolve_org_segment';
  */
 export class OrgSlugResolverService {
   private readonly microserviceProxy: MicroserviceProxyService;
+  private readonly claOnlyOrgs: OrgClaOnlyOrgsService;
 
-  public constructor(microserviceProxy?: MicroserviceProxyService) {
+  public constructor(microserviceProxy?: MicroserviceProxyService, claOnlyOrgs?: OrgClaOnlyOrgsService) {
     this.microserviceProxy = microserviceProxy ?? new MicroserviceProxyService();
+    this.claOnlyOrgs = claOnlyOrgs ?? new OrgClaOnlyOrgsService();
   }
 
   public async resolveSegment(req: Request, rawSegment: string, prefer?: string): Promise<OrgSegmentResolution> {
@@ -74,7 +77,9 @@ export class OrgSlugResolverService {
     }
 
     if (segmentKind === 'sfid') {
-      const org = await this.lookupByUid(req, segment);
+      // A CLA Manager holds no Org Lens read, so query-service hides the org from them; their own
+      // `cla-manager` scope is the second chance. SFID only — a CLA-only org is addressed by SFID.
+      const org = (await this.lookupByUid(req, segment)) ?? (await this.claOnlyOrgs.resolveOrg(req, segment));
       return org ? { outcome: 'hit', org, cache: 'bypass' } : { outcome: 'miss', cache: 'bypass' };
     }
 

@@ -1,0 +1,119 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { provideRouter } from '@angular/router';
+import { PollStatus } from '@lfx-one/shared/enums';
+import { MyVoteResponse, Vote } from '@lfx-one/shared/interfaces';
+import { VoteService } from '@services/vote.service';
+import { Observable, of, Subject } from 'rxjs';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import { VoteResultsDrawerComponent } from './vote-results-drawer.component';
+
+let fixture: ComponentFixture<VoteResultsDrawerComponent>;
+
+afterEach(() => {
+  fixture?.destroy();
+  document.body.innerHTML = '';
+});
+
+function makeVote(status: PollStatus, uid = 'vote-1'): Vote {
+  return { uid, name: 'Charter ratification', description: '<p>Approve the revised charter.</p>', project_uid: 'project-1', status } as Vote;
+}
+
+async function setupDrawer(vote: Vote, myResponse: Observable<MyVoteResponse | null> = of(null), audience: 'voter' | 'creator' = 'voter') {
+  const service = {
+    getVote: vi.fn(() => of(vote)),
+    getMyVoteResponse: vi.fn(() => myResponse),
+    getVoteResults: vi.fn(() => of(null)),
+  };
+  await TestBed.configureTestingModule({
+    imports: [VoteResultsDrawerComponent],
+    providers: [provideNoopAnimations(), provideRouter([]), { provide: VoteService, useValue: service }],
+  }).compileComponents();
+  fixture = TestBed.createComponent(VoteResultsDrawerComponent);
+  fixture.componentRef.setInput('voteId', vote.uid);
+  fixture.componentRef.setInput('audience', audience);
+  fixture.componentRef.setInput('visible', true);
+  await fixture.whenStable();
+  fixture.detectChanges();
+  return service;
+}
+
+describe('VoteResultsDrawerComponent — view-only permalink', () => {
+  it.each([PollStatus.ACTIVE, PollStatus.ENDED])('shows vote details without casting or results for a non-voter (%s)', async (status) => {
+    const service = await setupDrawer(makeVote(status));
+
+    expect(document.querySelector('[data-testid="vote-results-voter-not-participant"]')).toBeTruthy();
+    expect(document.querySelector('[data-testid="vote-results-voter-description"]')?.textContent).toContain('Approve the revised charter.');
+    expect(document.querySelector('[data-testid="vote-results-drawer-cast-button"]')).toBeNull();
+    expect(document.querySelector('[data-testid="vote-results-voter-final"]')).toBeNull();
+    expect(service.getVoteResults).not.toHaveBeenCalled();
+  });
+
+  it.each([PollStatus.ACTIVE, PollStatus.ENDED])('never fetches results for a removed voter (%s)', async (status) => {
+    const service = await setupDrawer(makeVote(status), of({ uid: 'response-1', vote_uid: 'vote-1', voter_removed: true }));
+
+    expect(document.querySelector('[data-testid="vote-results-voter-access-denied"]')).toBeTruthy();
+    expect(service.getVoteResults).not.toHaveBeenCalled();
+  });
+
+  it.each([PollStatus.ACTIVE, PollStatus.ENDED])('fetches confirmed voter results only after close (%s)', async (status) => {
+    const service = await setupDrawer(makeVote(status), of({ uid: 'response-1', vote_uid: 'vote-1' }));
+
+    expect(service.getVoteResults).toHaveBeenCalledTimes(status === PollStatus.ENDED ? 1 : 0);
+    if (status === PollStatus.ENDED) expect(service.getVoteResults).toHaveBeenCalledWith('vote-1');
+  });
+
+  it.each([PollStatus.ACTIVE, PollStatus.ENDED])('preserves creator results regardless of participation (%s)', async (status) => {
+    const service = await setupDrawer(makeVote(status), of(null), 'creator');
+
+    expect(service.getVoteResults).toHaveBeenCalledWith('vote-1');
+    expect(service.getMyVoteResponse).not.toHaveBeenCalled();
+  });
+
+  it('waits for a pending participation check before requesting closed-vote results', async () => {
+    const pending = new Subject<MyVoteResponse | null>();
+    const service = await setupDrawer(makeVote(PollStatus.ENDED), pending);
+    expect(service.getVoteResults).not.toHaveBeenCalled();
+
+    pending.next({ uid: 'response-1', vote_uid: 'vote-1' });
+    pending.complete();
+    await fixture.whenStable();
+
+    expect(service.getVoteResults).toHaveBeenCalledTimes(1);
+    expect(service.getVoteResults).toHaveBeenCalledWith('vote-1');
+  });
+
+  it('does not request results when the participation check fails', async () => {
+    const pending = new Subject<MyVoteResponse | null>();
+    const service = await setupDrawer(makeVote(PollStatus.ENDED), pending);
+    pending.error(new Error('Synthetic participation lookup failure'));
+    await fixture.whenStable();
+
+    expect(service.getVoteResults).not.toHaveBeenCalled();
+    expect(fixture.componentInstance['myResponseError']()).toBe(true);
+  });
+
+  it('does not reuse the previous vote participation row while changing votes', async () => {
+    const service = await setupDrawer(makeVote(PollStatus.ENDED), of({ uid: 'response-1', vote_uid: 'vote-1' }));
+    expect(service.getVoteResults).toHaveBeenCalledTimes(1);
+
+    const nextResponse = new Subject<MyVoteResponse | null>();
+    service.getVote.mockReturnValue(of(makeVote(PollStatus.ENDED, 'vote-2')));
+    service.getMyVoteResponse.mockReturnValue(nextResponse);
+    fixture.componentRef.setInput('voteId', 'vote-2');
+    await fixture.whenStable();
+    expect(service.getVoteResults).toHaveBeenCalledTimes(1);
+
+    nextResponse.next(null);
+    nextResponse.complete();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(service.getVoteResults).toHaveBeenCalledTimes(1);
+    expect(document.querySelector('[data-testid="vote-results-voter-not-participant"]')).toBeTruthy();
+  });
+});

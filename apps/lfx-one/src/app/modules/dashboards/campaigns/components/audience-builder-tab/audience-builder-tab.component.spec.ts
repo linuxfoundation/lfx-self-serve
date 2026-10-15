@@ -3,6 +3,7 @@
 
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { AudienceCustomService } from '@services/audience-custom.service';
 import { CampaignService } from '@services/campaign.service';
 import { NEVER, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -24,10 +25,14 @@ import type {
   AudienceDiscoveryResult,
   AudienceDiscoverySSEEventType,
   AudienceLastSentEmail,
+  AudienceSignal,
   AudienceSuppressionList,
   SSEEvent,
 } from '@lfx-one/shared/interfaces';
 
+import { By } from '@angular/platform-browser';
+
+import { AudienceCustomBuilderComponent } from '../audience-custom-builder/audience-custom-builder.component';
 import { AudienceBuilderTabComponent } from './audience-builder-tab.component';
 
 const EVENT: AudienceDiscoveredEvent = { eventName: 'Synthetic Summit 2026', brandShort: 'SYN', eventDates: ['2026-03-02', '2026-03-04'] };
@@ -101,6 +106,18 @@ describe('AudienceBuilderTabComponent', () => {
     await TestBed.configureTestingModule({
       imports: [AudienceBuilderTabComponent],
       providers: [
+        // The custom builder child owns its own requests; none of these specs drive it.
+        {
+          provide: AudienceCustomService,
+          useValue: {
+            interpret: vi.fn(() => NEVER),
+            preview: vi.fn(() => NEVER),
+            create: vi.fn(() => NEVER),
+            inFlightCreate: vi.fn(() => null),
+            createOutcome: vi.fn(() => null),
+            takeCreateOutcome: vi.fn(() => null),
+          },
+        },
         {
           provide: CampaignService,
           useValue: {
@@ -1701,6 +1718,38 @@ describe('AudienceBuilderTabComponent', () => {
       expect(host().querySelector('[data-testid="campaigns-audience-compose-result"]')).not.toBeNull();
     });
 
+    it('links the created lists to HubSpot only when they carry a URL, and names them either way', async () => {
+      // A blank URL renders href="", which opens this app instead of the list.
+      const masterUrl = 'https://app.hubspot.com/contacts/1/objectLists/901';
+      const resultBlock = (): HTMLElement | null => host().querySelector<HTMLElement>('[data-testid="campaigns-audience-compose-result"]');
+      const compose = async (url: string): Promise<void> => {
+        await renderWithDiscovery();
+        click('audience-card-grid-toggle-101');
+        composeAudienceMaster.mockReturnValue(
+          of({
+            master: { listId: '901', name: '26Q1 - SYN - Synthetic Summit 2026 - Master', hubspotUrl: url },
+            suppression: { listId: '902', name: 'Combined Suppression', hubspotUrl: url && 'https://app.hubspot.com/contacts/1/objectLists/902' },
+            sourceListIds: ['101'],
+          })
+        );
+        click('campaigns-audience-compose');
+      };
+
+      await compose(masterUrl);
+      const masterLink = resultBlock()?.querySelector<HTMLAnchorElement>('[data-testid="campaigns-audience-compose-result-master-link"]');
+      expect(masterLink?.getAttribute('href')).toBe(masterUrl);
+      expect(masterLink?.textContent?.trim()).toBe('26Q1 - SYN - Synthetic Summit 2026 - Master');
+      expect(resultBlock()?.querySelector('[data-testid="campaigns-audience-compose-result-master-name"]')).toBeNull();
+
+      await compose('');
+      const block = resultBlock();
+      expect(block?.querySelectorAll('a').length, 'a blank URL rendered a link back to this app').toBe(0);
+      expect(block?.querySelector('[data-testid="campaigns-audience-compose-result-master-name"]')?.textContent?.trim()).toBe(
+        '26Q1 - SYN - Synthetic Summit 2026 - Master'
+      );
+      expect(block?.textContent).toContain('Combined Suppression (combined suppression)');
+    });
+
     it('will not compose with nothing selected', async () => {
       await renderWithDiscovery();
 
@@ -2760,6 +2809,389 @@ describe('AudienceBuilderTabComponent', () => {
       search('speakers');
 
       expect(host().querySelectorAll('[role="alert"]').length).toBe(0);
+    });
+  });
+
+  describe('custom audiences', () => {
+    async function renderWithDiscovery(missing: AudienceSignal[] = []): Promise<void> {
+      await render();
+      typeEventUrl('https://events.example.org/synthetic-summit');
+      click('campaigns-audience-discover');
+      completeDiscovery({ ...discovered(), missingSignals: missing });
+    }
+
+    function builder(): AudienceCustomBuilderComponent {
+      return fixture.debugElement.query(By.directive(AudienceCustomBuilderComponent)).componentInstance as AudienceCustomBuilderComponent;
+    }
+
+    it('adds a list the custom builder created to the inclusion set', async () => {
+      await renderWithDiscovery();
+
+      builder().created.emit({ listId: '7777', name: '26Q1 - Seoul - Mailable Contacts', hubspotUrl: 'https://app.hubspot.com/x/7777' });
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-7777"]'), 'a created list must join Include like a hand-added one').not.toBeNull();
+    });
+
+    it('opens the builder with a reviewable speakers preset for a missing speakers signal', async () => {
+      await renderWithDiscovery(['event_speakers']);
+
+      click('audience-missing-signals-create-event_speakers');
+
+      expect(builder().preset()).toMatchObject({
+        criteria: { label: 'Synthetic Summit 2026', speakers: { scope: 'current', eventNames: ['Synthetic Summit 2026'] } },
+      });
+    });
+
+    it('holds compose while a custom create is still landing', async () => {
+      await renderWithDiscovery();
+      click('audience-card-grid-toggle-101');
+      const compose = (): HTMLButtonElement | null => host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose"]');
+      expect(compose()?.disabled, 'precondition: compose is offered').toBe(false);
+
+      builder().creatingChange.emit(true);
+      fixture.detectChanges();
+
+      expect(compose()?.disabled, 'compose would snapshot the selection before the created list joins it').toBe(true);
+    });
+
+    it('starts the custom builder over with the run, and forgets the planned event', async () => {
+      await renderWithDiscovery();
+      const before = builder().resetKey();
+
+      fixture.componentRef.setInput('projectSlug', 'another-foundation');
+      fixture.detectChanges();
+
+      expect(builder().resetKey()).toBeGreaterThan(before);
+    });
+
+    it('drops a suppression count when the project changes', async () => {
+      await renderWithDiscovery();
+      previewAudienceCount.mockReturnValue(of({ exact: true, estimate: 900, count: 900, reason: '' }));
+      click('campaigns-audience-suppression-count-run');
+      expect(host().querySelector('[data-testid="campaigns-audience-suppression-count-value"]')).not.toBeNull();
+
+      fixture.componentRef.setInput('projectSlug', 'another-foundation');
+      fixture.detectChanges();
+      // Portal B resolves a suppression list with the SAME numeric id, so the count's display key
+      // matches again: only the reset keeps A's count from reading as B's.
+      stream = new Subject<SSEEvent<AudienceDiscoverySSEEventType>>();
+      discoverAudience.mockReturnValue(stream.asObservable());
+      typeEventUrl('https://events.example.org/synthetic-summit');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-suppression-count-value"]'), "project A's count must not read as B's").toBeNull();
+    });
+
+    it('shows a zero estimate as unavailable, never as a measured zero', async () => {
+      await renderWithDiscovery();
+      previewAudienceCount.mockReturnValue(of({ exact: false, estimate: 0, count: 0, reason: 'a list did not report a size' }));
+      click('campaigns-audience-suppression-count-run');
+
+      const value = host().querySelector('[data-testid="campaigns-audience-suppression-count-value"]')?.textContent ?? '';
+      expect(value).toContain('unavailable');
+      expect(value).not.toContain('0 contacts');
+    });
+
+    it('keeps the existing-list search results to its own box', async () => {
+      await render();
+      searchAudienceLists.mockReturnValue(of([{ listId: '777', name: 'Prospects', size: 10, hubspotUrl: 'https://app.hubspot.com/x/777' }]));
+      const input = host().querySelector<HTMLInputElement>('[data-testid="campaigns-audience-use-existing-search"]');
+      if (input === null) throw new Error('the existing-list search is not rendered');
+      vi.useFakeTimers();
+      try {
+        input.value = 'prospects';
+        input.dispatchEvent(new Event('input'));
+        vi.advanceTimersByTime(AUDIENCE_LIST_TYPEAHEAD_DEBOUNCE_MS);
+      } finally {
+        vi.useRealTimers();
+      }
+      fixture.detectChanges();
+
+      // The Fill gaps search answers with a different list; the existing-list box must keep its own.
+      searchAudienceLists.mockReturnValue(of([{ listId: '888', name: 'Speakers', size: 5, hubspotUrl: 'https://app.hubspot.com/x/888' }]));
+      (fixture.componentInstance as unknown as { onSearch(q: string): void }).onSearch('speakers');
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-use-existing-777"]')).not.toBeNull();
+      expect(host().querySelector('[data-testid="campaigns-audience-use-existing-888"]')).toBeNull();
+    });
+
+    it('shows the URL typed in Event mode when switching to Reuse', async () => {
+      await render();
+      click('campaigns-audience-mode-event');
+      const planUrl = host().querySelector<HTMLInputElement>('[data-testid="campaigns-audience-event-plan-url"]');
+      if (planUrl === null) throw new Error('the event plan URL is not rendered');
+      planUrl.value = 'https://events.example.org/typed-in-event-mode';
+      planUrl.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+
+      click('campaigns-audience-mode-reuse');
+
+      expect(host().querySelector<HTMLInputElement>('[data-testid="campaigns-audience-event-url"]')?.value).toBe(
+        'https://events.example.org/typed-in-event-mode'
+      );
+    });
+
+    it('loads suppressions scoped to a planned event for a list used without discovery', async () => {
+      await render();
+      builder().eventPlanned.emit({ eventName: 'Synthetic Summit 2026', brandShort: 'SYN', eventDates: [] });
+      builder().created.emit({ listId: '7777', name: 'Seoul', hubspotUrl: 'https://app.hubspot.com/x/7777' });
+      fixture.detectChanges();
+
+      expect(getAudienceSuppressionLists).toHaveBeenLastCalledWith('tlf', 'SYN', 'Synthetic Summit 2026');
+    });
+
+    it('loads the planned scope once a portfolio-wide load already on the wire settles', async () => {
+      await render();
+      const generic = new Subject<AudienceSuppressionList[]>();
+      getAudienceSuppressionLists.mockReturnValueOnce(generic);
+      builder().created.emit({ listId: '7777', name: 'Seoul', hubspotUrl: 'https://app.hubspot.com/x/7777' });
+      fixture.detectChanges();
+      expect(getAudienceSuppressionLists).toHaveBeenLastCalledWith('tlf', '', '');
+
+      builder().eventPlanned.emit({ eventName: 'Synthetic Summit 2026', brandShort: 'SYN', eventDates: [] });
+      generic.next([
+        {
+          key: 'lf_events_gdpr',
+          label: 'LF Events GDPR',
+          listId: '201',
+          name: 'LF Events - GDPR Suppression',
+          size: 5000,
+          category: 'standard',
+          hubspotUrl: '',
+        },
+      ]);
+      generic.complete();
+      fixture.detectChanges();
+
+      expect(getAudienceSuppressionLists).toHaveBeenLastCalledWith('tlf', 'SYN', 'Synthetic Summit 2026');
+    });
+
+    it('holds Discover while a custom create is still landing', async () => {
+      await render();
+      typeEventUrl('https://events.example.org/synthetic-summit');
+      builder().creatingChange.emit(true);
+      fixture.detectChanges();
+
+      click('campaigns-audience-discover');
+      // The handler holds too, not only the button.
+      (fixture.componentInstance as unknown as { onDiscover(): void }).onDiscover();
+
+      expect(host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-discover"]')?.disabled).toBe(true);
+      expect(discoverAudience, "discovery's reset would discard the create's reply").not.toHaveBeenCalled();
+    });
+
+    it('rescopes after a portfolio-wide load that found no rows', async () => {
+      await render();
+      const generic = new Subject<AudienceSuppressionList[]>();
+      getAudienceSuppressionLists.mockReturnValueOnce(generic);
+      builder().created.emit({ listId: '7777', name: 'Seoul', hubspotUrl: 'https://app.hubspot.com/x/7777' });
+      fixture.detectChanges();
+      builder().eventPlanned.emit({ eventName: 'Synthetic Summit 2026', brandShort: 'SYN', eventDates: [] });
+      generic.next([]);
+      generic.complete();
+      fixture.detectChanges();
+
+      expect(getAudienceSuppressionLists).toHaveBeenLastCalledWith('tlf', 'SYN', 'Synthetic Summit 2026');
+    });
+
+    it('retries a failed planned rescope on the next trigger', async () => {
+      await render();
+      builder().created.emit({ listId: '7777', name: 'Seoul', hubspotUrl: 'https://app.hubspot.com/x/7777' });
+      fixture.detectChanges();
+      getAudienceSuppressionLists.mockReturnValueOnce(throwError(() => new Error('down')));
+      builder().eventPlanned.emit({ eventName: 'Synthetic Summit 2026', brandShort: 'SYN', eventDates: [] });
+      fixture.detectChanges();
+      const callsAfterFailure = getAudienceSuppressionLists.mock.calls.length;
+
+      builder().created.emit({ listId: '8888', name: 'Busan', hubspotUrl: 'https://app.hubspot.com/x/8888' });
+      fixture.detectChanges();
+
+      expect(getAudienceSuppressionLists.mock.calls.length, 'the failed scope is loaded again').toBe(callsAfterFailure + 1);
+      expect(getAudienceSuppressionLists).toHaveBeenLastCalledWith('tlf', 'SYN', 'Synthetic Summit 2026');
+    });
+
+    it('keeps a row the operator unticked unticked when a failed rescope is retried', async () => {
+      await render();
+      builder().created.emit({ listId: '7777', name: 'Seoul', hubspotUrl: 'https://app.hubspot.com/x/7777' });
+      fixture.detectChanges();
+      const tab = fixture.componentInstance as unknown as { suppression(): ReadonlyMap<string, string>; onToggleSuppression(key: string): void };
+      expect(tab.suppression().has('lf_events_gdpr'), 'precondition: the generic row is pre-ticked').toBe(true);
+      tab.onToggleSuppression('lf_events_gdpr');
+      fixture.detectChanges();
+      getAudienceSuppressionLists.mockReturnValueOnce(throwError(() => new Error('down')));
+      builder().eventPlanned.emit({ eventName: 'Synthetic Summit 2026', brandShort: 'SYN', eventDates: [] });
+      fixture.detectChanges();
+
+      builder().created.emit({ listId: '8888', name: 'Busan', hubspotUrl: 'https://app.hubspot.com/x/8888' });
+      fixture.detectChanges();
+
+      expect(getAudienceSuppressionLists).toHaveBeenLastCalledWith('tlf', 'SYN', 'Synthetic Summit 2026');
+      expect(tab.suppression().has('lf_events_gdpr'), 'the operator unticked it; a retry must not re-tick it').toBe(false);
+    });
+
+    it('sends a typed master name with the compose', async () => {
+      await renderWithDiscovery();
+      composeAudienceMaster.mockReturnValue(NEVER);
+      click('audience-card-grid-toggle-101');
+      const name = host().querySelector<HTMLInputElement>('[data-testid="campaigns-audience-compose-name"]');
+      if (name === null) {
+        throw new Error('the master name field is not rendered');
+      }
+      name.value = '  My Master  ';
+      name.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+
+      click('campaigns-audience-compose');
+
+      expect(composeAudienceMaster.mock.calls.at(-1)?.[1]?.name).toBe('My Master');
+    });
+  });
+
+  describe('legacy parity additions', () => {
+    async function discover(missing: AudienceSignal[] = []): Promise<void> {
+      await render();
+      typeEventUrl('https://events.example.org/synthetic-summit/');
+      click('campaigns-audience-discover');
+      completeDiscovery({ ...discovered(), missingSignals: missing });
+    }
+
+    function builderPreset(): unknown {
+      return (fixture.debugElement.query(By.directive(AudienceCustomBuilderComponent)).componentInstance as AudienceCustomBuilderComponent).preset();
+    }
+
+    it('pre-fills a page-view list from the event URL, without the scheme', async () => {
+      await discover(['page_view']);
+
+      click('audience-missing-signals-create-page_view');
+
+      expect(builderPreset()).toMatchObject({ criteria: { pageViewUrls: ['events.example.org/synthetic-summit'] } });
+    });
+
+    it('asks the model for an education list scoped to the brand', async () => {
+      await discover(['education_enrollment']);
+
+      click('audience-missing-signals-create-education_enrollment');
+
+      expect((builderPreset() as { request: string }).request).toContain("SYN's education courses");
+    });
+
+    it('plans an event audience from the event page through the model, without discovery', async () => {
+      await render();
+      typeEventUrl('https://events.example.org/synthetic-summit/');
+
+      click('campaigns-audience-event-generate');
+
+      expect(discoverAudience, 'an event audience needs no discovery').not.toHaveBeenCalled();
+      expect(builderPreset()).toMatchObject({ eventUrl: 'https://events.example.org/synthetic-summit/' });
+      expect((builderPreset() as { request: string }).request).toContain('Regional expansion audience');
+    });
+
+    it('opens on Event Audience, like the legacy builder, and switches modes', async () => {
+      await render();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-mode-event"]')?.getAttribute('aria-selected')).toBe('true');
+      expect(host().querySelector('[data-testid="campaigns-audience-event-panel"]')).not.toBeNull();
+      expect(host().querySelector('[data-testid="campaigns-audience-reuse-view"]')?.classList.contains('hidden')).toBe(true);
+
+      click('campaigns-audience-mode-reuse');
+
+      expect(host().querySelector('[data-testid="campaigns-audience-reuse-view"]')?.classList.contains('hidden')).toBe(false);
+      expect(host().querySelector('[data-testid="campaigns-audience-custom"]')?.classList.contains('hidden')).toBe(true);
+    });
+
+    it('uses an existing list without discovery, and loads the suppressions it needs', async () => {
+      await render();
+      searchAudienceLists.mockReturnValue(of([{ listId: '777', name: 'Synthetic Summit - Prospects', size: 10, hubspotUrl: 'https://app.hubspot.com/x/777' }]));
+      const input = host().querySelector<HTMLInputElement>('[data-testid="campaigns-audience-use-existing-search"]');
+      if (input === null) throw new Error('the existing-list search is not rendered');
+      vi.useFakeTimers();
+      try {
+        input.value = 'prospects';
+        input.dispatchEvent(new Event('input'));
+        vi.advanceTimersByTime(AUDIENCE_LIST_TYPEAHEAD_DEBOUNCE_MS);
+      } finally {
+        vi.useRealTimers();
+      }
+      fixture.detectChanges();
+
+      click('campaigns-audience-use-existing-777');
+
+      expect(
+        host().querySelector('[data-testid="campaigns-audience-remove-777"]'),
+        'the Review step appears for a list chosen without discovery'
+      ).not.toBeNull();
+      expect(getAudienceSuppressionLists).toHaveBeenCalledWith('tlf', '', '');
+    });
+
+    it('adds a reused existing list to Include', async () => {
+      await discover();
+
+      (fixture.debugElement.query(By.directive(AudienceCustomBuilderComponent)).componentInstance as AudienceCustomBuilderComponent).reuse.emit({
+        listId: '411',
+        name: '25Q3 - Seoul - Mailable Contacts',
+        hubspotUrl: 'https://app.hubspot.com/x/411',
+      });
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-411"]')).not.toBeNull();
+    });
+
+    it('counts the ticked suppressions exactly, and hides the count once they change', async () => {
+      await discover();
+      previewAudienceCount.mockReturnValue(of({ exact: true, count: 1234, estimate: 1300 }));
+
+      click('campaigns-audience-suppression-count-run');
+
+      expect(previewAudienceCount).toHaveBeenLastCalledWith('tlf', { listIds: expect.arrayContaining(['201']) });
+      expect(host().querySelector('[data-testid="campaigns-audience-suppression-count-value"]')?.textContent).toContain('1,234');
+    });
+  });
+
+  describe('end-to-end test fixes', () => {
+    async function discover(result: Partial<AudienceDiscoveryResult> = {}): Promise<void> {
+      await render();
+      typeEventUrl('https://events.example.org/synthetic-summit/');
+      click('campaigns-audience-discover');
+      completeDiscovery({ ...discovered(), ...result });
+    }
+
+    it('says how many lists discovery kept out of Include', async () => {
+      await discover({ hidden: 4 });
+
+      expect(host().querySelector('[data-testid="campaigns-audience-hidden-count"]')?.textContent).toContain('4 more list(s)');
+    });
+
+    it('gives QA the edition name, year included, so the current-registrants check runs', async () => {
+      await discover();
+
+      const qa = fixture.debugElement.query(By.css('lfx-audience-qa-panel')).componentInstance as { eventName: () => string };
+      expect(qa.eventName()).toBe('Synthetic Summit 2026');
+    });
+
+    it('gives QA the planned event when no discovery ran', async () => {
+      await render();
+      (fixture.debugElement.query(By.directive(AudienceCustomBuilderComponent)).componentInstance as AudienceCustomBuilderComponent).eventPlanned.emit({
+        eventName: 'AGNTCon + MCPCon Japan',
+        brandShort: 'AAIF',
+        eventDates: ['2026-09-10'],
+      });
+      fixture.detectChanges();
+
+      const qa = fixture.debugElement.query(By.css('lfx-audience-qa-panel')).componentInstance as { eventName: () => string };
+      expect(qa.eventName()).toBe('AGNTCon + MCPCon Japan 2026');
+    });
+
+    it('pre-fills speakers with the edition name, year included', async () => {
+      await discover({ missingSignals: ['event_speakers'] });
+
+      click('audience-missing-signals-create-event_speakers');
+
+      expect(
+        (fixture.debugElement.query(By.directive(AudienceCustomBuilderComponent)).componentInstance as AudienceCustomBuilderComponent).preset()
+      ).toMatchObject({ criteria: { speakers: { eventNames: ['Synthetic Summit 2026'] } } });
     });
   });
 });

@@ -60,7 +60,7 @@ export class OrgEasyclaApprovalEntriesDialogComponent {
 
   protected readonly hint = computed(() =>
     this.isEdit
-      ? 'Update this entry. Contributors matching the previous value lose coverage under this CLA, and any acknowledgements they hold for it are invalidated.'
+      ? 'Update this entry. Contributors matching the previous value lose coverage under this CLA, and their acknowledgments will show as Not Authorized until you add that value back.'
       : 'Add one or more entries. A contributor matching any entry can be covered by this CLA.'
   );
 

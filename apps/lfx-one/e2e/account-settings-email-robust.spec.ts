@@ -85,9 +85,10 @@ test.describe('Account Settings — Email Management — Robust Tests', () => {
   });
 
   test.describe('Meeting-invite badge contract', () => {
-    test('attaches no invite badge while the primary address is in effect', async ({ page }) => {
+    test('attaches the invite badge to the primary row while no override is set', async ({ page }) => {
       await openEmailSettings(page);
-      await expect(page.getByTestId('meeting-invites-badge')).toHaveCount(0);
+      await expect(page.getByTestId('meeting-invites-badge')).toHaveCount(1);
+      await expect(emailRow(page, PRIMARY_EMAIL).getByTestId('meeting-invites-badge')).toBeAttached();
     });
 
     test('attaches exactly one invite badge, inside the overriding row', async ({ page }) => {
@@ -140,6 +141,22 @@ test.describe('Account Settings — Email Management — Robust Tests', () => {
 
       await expect(emailRow(page, ALTERNATE_EMAIL).getByTestId('meeting-invites-badge')).toBeAttached({ timeout: ELEMENT_TIMEOUT });
       await expect(page.getByTestId('meeting-invite-error-banner')).toHaveCount(0);
+      await expect(page.getByTestId('meeting-invite-load-failed-banner')).toHaveCount(0);
+      await expect(page.getByTestId('meeting-invite-orphaned-banner')).toHaveCount(0);
+    });
+
+    test('attaches the load-failed banner and no invite badge when the lookup fails', async ({ page }) => {
+      await openEmailSettings(page, { inviteGetFails: true });
+
+      await expect(page.getByTestId('section-email-settings').getByTestId('meeting-invite-load-failed-banner')).toBeAttached();
+      await expect(page.getByTestId('meeting-invites-badge')).toHaveCount(0);
+    });
+
+    test('attaches the orphaned banner when the override matches no listed address', async ({ page }) => {
+      await openEmailSettings(page, { initialInvite: { email_id: 'email-id-unlisted', email: 'unlisted.user@example.com' } });
+
+      await expect(page.getByTestId('section-email-settings').getByTestId('meeting-invite-orphaned-banner')).toBeAttached();
+      await expect(page.getByTestId('meeting-invites-badge')).toHaveCount(0);
     });
   });
 });

@@ -5,7 +5,7 @@ import { Component, computed, inject, signal, Signal, WritableSignal } from '@an
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CreateTargetPickerComponent } from '@components/create-target-picker/create-target-picker.component';
-import { COMMITTEE_WRITE_ARTIFACT_TYPES, CREATABLE_ARTIFACTS, MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import { COMMITTEE_WRITE_ARTIFACT_TYPES, CREATABLE_ARTIFACTS, MEETING_V2_ENABLED_DEFAULT, MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { CreatableArtifactConfig, CreatableArtifactType, CreatePickerNode, ProjectContext } from '@lfx-one/shared/interfaces';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -61,7 +61,7 @@ export class CreateArtifactDialogComponent {
    * defaulted to `false` so a slow or unreachable provider sends a meeting pick to the pre-v2
    * create route rather than a composer this user isn't targeted for. See `MEETING_V2_ENABLED_FLAG`.
    */
-  protected readonly meetingsV2Enabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MEETING_V2_ENABLED_FLAG, false);
+  protected readonly meetingsV2Enabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MEETING_V2_ENABLED_FLAG, MEETING_V2_ENABLED_DEFAULT);
 
   public onTargetSelected(node: CreatePickerNode): void {
     this.selectedTarget.set(node);

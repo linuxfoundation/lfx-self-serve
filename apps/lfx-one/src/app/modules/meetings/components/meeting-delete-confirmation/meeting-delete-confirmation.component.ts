@@ -5,7 +5,7 @@ import { Component, inject, signal, type Signal, WritableSignal } from '@angular
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
-import { MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import { MEETING_V2_ENABLED_DEFAULT, MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { Meeting } from '@lfx-one/shared/interfaces';
 import { resolveMeetingBaseCount } from '@lfx-one/shared/utils';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
@@ -39,7 +39,7 @@ export class MeetingDeleteConfirmationComponent {
   public readonly deleteForm: FormGroup = this.initializeDeleteForm();
   public isDeleting: WritableSignal<boolean> = signal(false);
   /** Meeting v2 styling (compact details card, icon-only warning, taller reason field). Flag off keeps the pre-v2 look. */
-  protected readonly meetingsV2Enabled: Signal<boolean> = inject(FeatureFlagService).getBooleanFlag(MEETING_V2_ENABLED_FLAG, false);
+  protected readonly meetingsV2Enabled: Signal<boolean> = inject(FeatureFlagService).getBooleanFlag(MEETING_V2_ENABLED_FLAG, MEETING_V2_ENABLED_DEFAULT);
 
   public onConfirm(): void {
     this.isDeleting.set(true);

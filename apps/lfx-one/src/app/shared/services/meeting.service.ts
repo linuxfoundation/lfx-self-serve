@@ -27,6 +27,7 @@ import {
   ITXUpdatePastMeetingParticipantRequest,
   Meeting,
   MeetingAttachment,
+  MeetingCalendarScope,
   MeetingJoinURL,
   MeetingRegistrant,
   MeetingRegistrationRemovalResult,
@@ -202,9 +203,14 @@ export class MeetingService {
     uid: string,
     pageToken?: string,
     searchName?: string,
-    filters?: string[]
+    filters?: string[],
+    includeViewerAttendance = false
   ): Observable<PaginatedResponse<PastMeeting>> {
     let params = new HttpParams().set('tags', `project_uid:${uid}`).set('sort', PAST_MEETING_SORT.NAME_DESC);
+    // Opt-in: the server scans the viewer's attendance history per request, so only the visible list asks for it.
+    if (includeViewerAttendance) {
+      params = params.set('include_viewer_attendance', 'true');
+    }
     if (pageToken) {
       params = params.set('page_token', pageToken);
     }
@@ -313,6 +319,20 @@ export class MeetingService {
         return throwError(() => error);
       })
     );
+  }
+
+  /**
+   * Builds the "Download .ics" URL for a meeting (GH-3505). Returns a plain URL (no HTTP call
+   * here) — the browser downloads the file natively via an anchor/`window.open` target, and the
+   * server resolves authorization and the join link itself.
+   */
+  public getMeetingCalendarIcsUrl(meetingId: string, options: { scope: MeetingCalendarScope; occurrenceId?: string }): string {
+    let params = new HttpParams().set('scope', options.scope);
+    if (options.occurrenceId) {
+      params = params.set('occurrenceId', options.occurrenceId);
+    }
+
+    return `/api/meetings/${encodeURIComponent(meetingId)}/calendar.ics?${params.toString()}`;
   }
 
   public createMeeting(meeting: CreateMeetingRequest): Observable<Meeting> {

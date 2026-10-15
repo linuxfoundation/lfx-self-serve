@@ -15,7 +15,7 @@ describe('shouldRecordReplay', () => {
     expect(shouldRecordReplay(`${ORIGIN}/meetings/m-1?password=${SECRET}`, ORIGIN)).toBe(false);
     expect(shouldRecordReplay(`/meetings/m-1?passcode=${SECRET}`, ORIGIN)).toBe(false);
     expect(shouldRecordReplay(`${ORIGIN}/invite?token=${SECRET}`, ORIGIN)).toBe(false);
-    expect(shouldRecordReplay(`${ORIGIN}/gw/newsletters#access_token=${SECRET}`, ORIGIN)).toBe(false);
+    expect(shouldRecordReplay(`${ORIGIN}/api/gatewaze/supabase/storage/v1/object/sign/a?token=${SECRET}`, ORIGIN)).toBe(false);
     expect(shouldRecordReplay(`${ORIGIN}/meetings/m-1?tab=a`, ORIGIN)).toBe(true);
     expect(shouldRecordReplay('/meetings/m-1', ORIGIN)).toBe(true);
   });
@@ -26,7 +26,7 @@ describe('shouldRecordReplay', () => {
     expect(shouldRecordReplay(`${ORIGIN}/invite?token=redacted`, ORIGIN)).toBe(false);
     expect(shouldRecordReplay(`${ORIGIN}/login?returnTo=${encodeURIComponent('/meetings/m-1?password=redacted')}`, ORIGIN)).toBe(false);
     expect(shouldRecordReplay(`${ORIGIN}/meetings/m-1?password=%72edacted`, ORIGIN)).toBe(false);
-    expect(shouldRecordReplay(`${ORIGIN}/gw/newsletters#access_token=redacted`, ORIGIN)).toBe(false);
+    expect(shouldRecordReplay(`${ORIGIN}/api/gatewaze/supabase/storage/v1/object/sign/a?token=redacted`, ORIGIN)).toBe(false);
   });
 
   it('records a clean URL that merely mentions the redaction marker outside a credential', () => {
@@ -129,14 +129,14 @@ describe('gateReplayRecording', () => {
 /**
  * Drives representative RUM events through the redaction the `beforeSend` hook applies, so a field
  * dropped from the hook, or sent through the wrong redactor, fails here rather than reaching
- * telemetry. The redactors themselves are covered in `auth-fragment.utils.spec.ts`.
+ * telemetry. The redactors themselves are covered in `credential-redaction.utils.spec.ts`.
  */
 describe('redactRumEvent', () => {
   it('redacts every credential from the URL fields of a view event', () => {
     const event = {
       type: 'view',
       view: {
-        url: `${ORIGIN}/meetings/m-1?password=${SECRET}#access_token=${SECRET}`,
+        url: `${ORIGIN}/meetings/m-1?password=${SECRET}`,
         referrer: `${ORIGIN}/invite?token=${SECRET}`,
         performance: { lcp: { resource_url: `${ORIGIN}/meetings/m-1?passcode=${SECRET}` } },
       },
@@ -145,7 +145,7 @@ describe('redactRumEvent', () => {
     redactRumEvent(event, ORIGIN);
 
     expect(JSON.stringify(event)).not.toContain(SECRET);
-    expect(event.view.url).toBe(`${ORIGIN}/meetings/m-1?password=redacted#redacted`);
+    expect(event.view.url).toBe(`${ORIGIN}/meetings/m-1?password=redacted`);
     expect(event.view.referrer).toBe(`${ORIGIN}/invite?token=redacted`);
     expect(event.view.performance.lcp.resource_url).toBe(`${ORIGIN}/meetings/m-1?passcode=redacted`);
   });

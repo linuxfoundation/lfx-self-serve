@@ -30,6 +30,7 @@ import {
 } from 'rxjs';
 
 import { AccountContextService } from './account-context.service';
+import { OrgClaOnlyAccessService } from './org-cla-only-access.service';
 import { OrgLensNavigationService } from './org-lens-navigation.service';
 import { LensService } from './lens.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
@@ -47,6 +48,7 @@ export class OrgNavigationService {
   private readonly orgLensNavigation = inject(OrgLensNavigationService);
   private readonly injector = inject(Injector);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
+  private readonly orgClaOnlyAccess = inject(OrgClaOnlyAccessService);
   private readonly destroyRef = inject(DestroyRef);
 
   /** Written by the first-page tap inside `createOrgListState`, so it is declared before `state`. */
@@ -75,6 +77,19 @@ export class OrgNavigationService {
    * still in flight" from "the viewer is scrolling"; this can.
    */
   public readonly firstPageLandedGeneration: Signal<number> = this.firstPageLandedGenerationInternal.asReadonly();
+
+  public constructor() {
+    // M3: CLA-only rows are filtered by the flag as each page lands (`toOrgListPage`). A list fetched
+    // before LaunchDarkly was ready was filtered against the flag's default, and a caller whose
+    // selector was already enabled gets no re-bootstrap — so refetch it once the flag settles.
+    toObservable(this.orgClaOnlyAccess.enabled, { injector: this.injector })
+      .pipe(distinctUntilChanged(), skip(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        if (this.state.loaded() || this.state.loading()) {
+          this.refreshList(this.accountContextService.selectedAccount().uid || this.accountContextService.getStoredUid());
+        }
+      });
+  }
 
   public searchTerm(): WritableSignal<string> {
     return this.state.searchTerm;
@@ -293,8 +308,10 @@ export class OrgNavigationService {
   }
 
   private toOrgListPage(response: OrgItemsResponse, reset: boolean): OrgListPage {
+    // M3: the server lists CLA-only rows whatever the flag says; dropped here at ingest, so the default selection never picks one either.
+    const claOnlyListed = this.orgClaOnlyAccess.enabled();
     return {
-      items: response.items,
+      items: claOnlyListed ? response.items : response.items.filter((item) => item.claOnly !== true),
       nextPageToken: response.next_page_token,
       upstreamFailed: response.upstream_failed,
       reset,

@@ -1,11 +1,21 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AUDIENCE_ATTACH_MAX_LIST_IDS, AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH } from '@lfx-one/shared/constants';
+import {
+  AUDIENCE_ATTACH_MAX_LIST_IDS,
+  AUDIENCE_CUSTOM_OPERATORS,
+  AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH,
+  AUDIENCE_SPEAKER_SCOPES,
+} from '@lfx-one/shared/constants';
 import { NextFunction, Request, Response } from 'express';
 
 import type {
   AudienceAttachExistingRequest,
+  AudienceCustomAnswer,
+  AudienceCustomCriteria,
+  AudienceCustomOperator,
+  AudienceCustomPropertyFilter,
+  AudienceSpeakerScope,
   AudienceComposeMasterPartial,
   AudienceComposeMasterRequest,
   AudienceDiscoverRequest,
@@ -47,6 +57,120 @@ const MISSING_SUPPRESSION_MESSAGE = 'at least one suppression list is required: 
 
 /** Default number of past sends returned when the caller does not ask for a specific count. */
 const LAST_SENT_DEFAULT_LIMIT = 3;
+
+/** Bounds on the custom-audience payload, mirroring the upstream design's limits. */
+const CUSTOM_REQUEST_MAX_LENGTH = 2000;
+const CUSTOM_ANSWER_MAX_LENGTH = 500;
+const CUSTOM_QUESTION_ID_MAX_LENGTH = 64;
+const CUSTOM_MAX_ANSWERS = 12;
+const CUSTOM_MAX_VALUES = 25;
+const CUSTOM_MAX_PAGE_VIEW_URLS = 10;
+const CUSTOM_VALUE_MAX_LENGTH = 200;
+const CUSTOM_MAX_FILTERS = 10;
+const CUSTOM_NAME_MAX_LENGTH = 250;
+// Derived from the shared constants the UI offers, so an operator or scope added there is never
+// refused here.
+const CUSTOM_OPERATORS: readonly AudienceCustomOperator[] = AUDIENCE_CUSTOM_OPERATORS.map((o) => o.value);
+const SPEAKER_SCOPES: readonly AudienceSpeakerScope[] = AUDIENCE_SPEAKER_SCOPES.map((s) => s.key);
+const PROPERTY_NAME = /^[A-Za-z0-9_]{1,100}$/;
+
+/** A bounded array of trimmed, non-blank strings, or null when the value is not one. */
+function valueArray(value: unknown, max = CUSTOM_MAX_VALUES): string[] | null {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > max) return null;
+  if (value.some((entry) => typeof entry !== 'string' || entry.length > CUSTOM_VALUE_MAX_LENGTH)) return null;
+  return value.map((entry) => (entry as string).trim()).filter(Boolean);
+}
+
+/**
+ * Validates a custom-audience criteria object, returning it rebuilt from checked fields or the
+ * name of the first invalid field. Rebuilt rather than passed through for the reason compose
+ * reconstructs its payload: a mistyped field must not reach a non-idempotent create.
+ *
+ * Only SHAPE is checked here. Whether the criteria make sense (a gate for location branches, a
+ * property the portal defines) is upstream's to decide, because only it can read the portal.
+ */
+function parseCustomCriteria(raw: unknown): { criteria: AudienceCustomCriteria } | { field: string; message: string } {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { field: 'criteria', message: 'criteria must be an object' };
+  const c = raw as Record<string, unknown>;
+
+  const arrays: Record<'cities' | 'countries' | 'registeredFor' | 'educationTopics' | 'pageViewUrls', string[]> = {
+    cities: [],
+    countries: [],
+    registeredFor: [],
+    educationTopics: [],
+    pageViewUrls: [],
+  };
+  for (const field of ['cities', 'countries', 'registeredFor', 'educationTopics', 'pageViewUrls'] as const) {
+    // Upstream caps page_view_urls at 10, every other list at 25.
+    const max = field === 'pageViewUrls' ? CUSTOM_MAX_PAGE_VIEW_URLS : CUSTOM_MAX_VALUES;
+    const parsed = valueArray(c[field], max);
+    if (!parsed) return { field, message: `${field} must be an array of at most ${max} strings` };
+    arrays[field] = parsed;
+  }
+  const flags = ['contactLocation', 'eventRegistered', 'educationEnrolled', 'gateEventHistory', 'ambassadors'] as const;
+  const badFlag = flags.find((field) => c[field] !== undefined && typeof c[field] !== 'boolean');
+  if (badFlag) return { field: badFlag, message: `${badFlag} must be a boolean` };
+  const badString = (['gateListId', 'label', 'educationTopicProperty'] as const).find((field) => c[field] !== undefined && typeof c[field] !== 'string');
+  if (badString) return { field: badString, message: `${badString} must be a string` };
+  if (typeof c['gateListId'] === 'string' && c['gateListId'].trim().length > MAX_LIST_ID_LENGTH) {
+    return { field: 'gateListId', message: `gateListId must be at most ${MAX_LIST_ID_LENGTH} characters` };
+  }
+  if (typeof c['label'] === 'string' && c['label'].trim().length > CUSTOM_VALUE_MAX_LENGTH) {
+    // Refused rather than cut: the label names the list, so a silent cut renames it.
+    return { field: 'label', message: `label must be at most ${CUSTOM_VALUE_MAX_LENGTH} characters` };
+  }
+
+  const filters: AudienceCustomPropertyFilter[] = [];
+  if (c['propertyFilters'] !== undefined) {
+    if (!Array.isArray(c['propertyFilters']) || c['propertyFilters'].length > CUSTOM_MAX_FILTERS) {
+      return { field: 'propertyFilters', message: `propertyFilters must be an array of at most ${CUSTOM_MAX_FILTERS} filters` };
+    }
+    for (const entry of c['propertyFilters'] as unknown[]) {
+      const f = (entry ?? {}) as Record<string, unknown>;
+      const values = valueArray(f['values']);
+      if (typeof f['property'] !== 'string' || !PROPERTY_NAME.test(f['property'])) {
+        return { field: 'propertyFilters', message: 'each filter needs a HubSpot internal property name (letters, digits, underscores)' };
+      }
+      if (!CUSTOM_OPERATORS.includes(f['operator'] as AudienceCustomOperator)) {
+        return { field: 'propertyFilters', message: `operator must be one of ${CUSTOM_OPERATORS.join(', ')}` };
+      }
+      if (!values) return { field: 'propertyFilters', message: `filter values must be an array of at most ${CUSTOM_MAX_VALUES} strings` };
+      filters.push({ property: f['property'], operator: f['operator'] as AudienceCustomOperator, values });
+    }
+  }
+
+  let speakers: AudienceCustomCriteria['speakers'];
+  if (c['speakers'] !== undefined && c['speakers'] !== null) {
+    const sp = c['speakers'] as Record<string, unknown>;
+    const eventNames = valueArray(sp['eventNames']);
+    if (!SPEAKER_SCOPES.includes(sp['scope'] as AudienceSpeakerScope))
+      return { field: 'speakers', message: `speakers.scope must be one of ${SPEAKER_SCOPES.join(', ')}` };
+    if (sp['listId'] !== undefined && (typeof sp['listId'] !== 'string' || sp['listId'].trim().length > MAX_LIST_ID_LENGTH)) {
+      return { field: 'speakers', message: `speakers.listId must be a string of at most ${MAX_LIST_ID_LENGTH} characters` };
+    }
+    if (!eventNames) return { field: 'speakers', message: 'speakers.eventNames must be an array of strings' };
+    speakers = { scope: sp['scope'] as AudienceSpeakerScope, eventNames, ...(sp['listId'] ? { listId: (sp['listId'] as string).trim() } : {}) };
+  }
+
+  return {
+    criteria: {
+      ...arrays,
+      contactLocation: c['contactLocation'] === true,
+      eventRegistered: c['eventRegistered'] === true,
+      educationEnrolled: c['educationEnrolled'] === true,
+      gateEventHistory: c['gateEventHistory'] === true,
+      ambassadors: c['ambassadors'] === true,
+      propertyFilters: filters,
+      ...(typeof c['gateListId'] === 'string' && c['gateListId'].trim() ? { gateListId: c['gateListId'].trim() } : {}),
+      ...(typeof c['label'] === 'string' && c['label'].trim() ? { label: c['label'].trim() } : {}),
+      ...(typeof c['educationTopicProperty'] === 'string' && PROPERTY_NAME.test(c['educationTopicProperty'].trim())
+        ? { educationTopicProperty: c['educationTopicProperty'].trim() }
+        : {}),
+      ...(speakers ? { speakers } : {}),
+    },
+  };
+}
 
 /** A `ServiceValidationError` carrying this controller's context. */
 function invalid(req: Request, operation: string, field: string, message: string): ServiceValidationError {
@@ -619,13 +743,147 @@ export class AudienceBuilderController {
     const startTime = logger.startOperation(req, 'audience_qa_run', {});
 
     try {
-      const result = await this.audienceBuilder.runQa(req, projectSlug, { listRef, targetsEu: body.targetsEu === true, targetsCa: body.targetsCa === true });
+      const eventName = typeof body.eventName === 'string' ? body.eventName.trim() : '';
+      const sendSuppression = body.sendSuppressionListIds === undefined ? [] : stringArray(body.sendSuppressionListIds);
+      if (!sendSuppression) {
+        next(invalid(req, 'audience_qa_run', 'sendSuppressionListIds', `sendSuppressionListIds must be an array of at most ${MAX_LIST_IDS} list ids`));
+        return;
+      }
+      const result = await this.audienceBuilder.runQa(req, projectSlug, {
+        listRef,
+        targetsEu: body.targetsEu === true,
+        targetsCa: body.targetsCa === true,
+        ...(eventName ? { eventName } : {}),
+        ...(sendSuppression.length ? { sendSuppressionListIds: sendSuppression } : {}),
+      });
 
       logger.success(req, 'audience_qa_run', startTime, { needsDisambiguation: result.needsDisambiguation });
       res.json(result);
     } catch (error) {
       next(error);
     }
+  }
+
+  /** Free text → draft criteria. Uses a model upstream; creates nothing. */
+  public async interpretCustom(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectSlug = this.projectSlug(req);
+    if (!projectSlug) {
+      next(invalid(req, 'audience_custom_interpret', 'project', 'project is required'));
+      return;
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const request = typeof body['request'] === 'string' ? body['request'].trim() : '';
+    if (!request || request.length > CUSTOM_REQUEST_MAX_LENGTH) {
+      next(invalid(req, 'audience_custom_interpret', 'request', `request is required and at most ${CUSTOM_REQUEST_MAX_LENGTH} characters`));
+      return;
+    }
+    const rawAnswers = body['answers'] === undefined ? [] : body['answers'];
+    if (!Array.isArray(rawAnswers) || rawAnswers.length > CUSTOM_MAX_ANSWERS) {
+      next(invalid(req, 'audience_custom_interpret', 'answers', `answers must be an array of at most ${CUSTOM_MAX_ANSWERS}`));
+      return;
+    }
+    const answers: AudienceCustomAnswer[] = [];
+    for (const entry of rawAnswers as unknown[]) {
+      const a = (entry ?? {}) as Record<string, unknown>;
+      const answer = typeof a['answer'] === 'string' ? a['answer'].trim() : '';
+      if (!answer || answer.length > CUSTOM_ANSWER_MAX_LENGTH) {
+        next(invalid(req, 'audience_custom_interpret', 'answers', `each answer must be a non-blank string of at most ${CUSTOM_ANSWER_MAX_LENGTH} characters`));
+        return;
+      }
+      // Refused, not cut: a cut question id no longer matches the question upstream asked.
+      if (a['questionId'] !== undefined && (typeof a['questionId'] !== 'string' || a['questionId'].length > CUSTOM_QUESTION_ID_MAX_LENGTH)) {
+        next(invalid(req, 'audience_custom_interpret', 'answers', `each questionId must be a string of at most ${CUSTOM_QUESTION_ID_MAX_LENGTH} characters`));
+        return;
+      }
+      if (a['question'] !== undefined && (typeof a['question'] !== 'string' || a['question'].length > CUSTOM_ANSWER_MAX_LENGTH)) {
+        next(invalid(req, 'audience_custom_interpret', 'answers', `each question must be a string of at most ${CUSTOM_ANSWER_MAX_LENGTH} characters`));
+        return;
+      }
+      answers.push({
+        answer,
+        ...(typeof a['questionId'] === 'string' ? { questionId: a['questionId'] } : {}),
+        ...(typeof a['question'] === 'string' ? { question: a['question'] } : {}),
+      });
+    }
+
+    // Same SSRF pre-check discover applies: upstream fetches this page server-side.
+    const eventUrl = typeof body['eventUrl'] === 'string' ? body['eventUrl'].trim() : '';
+    if (eventUrl) {
+      try {
+        await validateScrapeUrl(eventUrl);
+      } catch (error) {
+        next(invalid(req, 'audience_custom_interpret', 'eventUrl', error instanceof Error ? error.message : 'Invalid URL'));
+        return;
+      }
+    }
+
+    const startTime = logger.startOperation(req, 'audience_custom_interpret', { answers: answers.length, event: eventUrl !== '' });
+    try {
+      const result = await this.audienceBuilder.interpretCustom(req, projectSlug, { request, answers, ...(eventUrl ? { eventUrl } : {}) });
+      logger.success(req, 'audience_custom_interpret', startTime, { questions: result.questions.length, gateFound: !!result.gate });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** Validates criteria against the portal and returns what create would build. Creates nothing. */
+  public async previewCustom(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const parsed = this.customRequest(req, 'audience_custom_preview', next);
+    if (!parsed) return;
+    const startTime = logger.startOperation(req, 'audience_custom_preview', {});
+    try {
+      const result = await this.audienceBuilder.previewCustom(req, parsed.projectSlug, parsed.request);
+      logger.success(req, 'audience_custom_preview', startTime, { branches: result.branchCount });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** Creates ONE custom list in HubSpot. Not idempotent; an unconfirmed create is a 502 partial. */
+  public async createCustom(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const parsed = this.customRequest(req, 'audience_custom_create', next);
+    if (!parsed) return;
+    const startTime = logger.startOperation(req, 'audience_custom_create', {});
+    try {
+      const result = await this.audienceBuilder.createCustom(req, parsed.projectSlug, parsed.request);
+      logger.success(req, 'audience_custom_create', startTime, { listId: result.listId });
+      res.status(201).json(result);
+    } catch (error) {
+      if (error instanceof AudienceComposePartialError) {
+        logger.error(req, 'audience_custom_create', startTime, error, { masterName: error.masterName });
+        const partial: AudienceComposeMasterPartial = { masterName: error.masterName, error: error.message };
+        res.status(502).json(partial);
+        return;
+      }
+      next(error);
+    }
+  }
+
+  /** The shared preview/create payload check; calls `next` and returns null when invalid. */
+  private customRequest(
+    req: Request,
+    operation: string,
+    next: NextFunction
+  ): { projectSlug: string; request: { criteria: AudienceCustomCriteria; name?: string } } | null {
+    const projectSlug = this.projectSlug(req);
+    if (!projectSlug) {
+      next(invalid(req, operation, 'project', 'project is required'));
+      return null;
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (body['name'] !== undefined && (typeof body['name'] !== 'string' || body['name'].length > CUSTOM_NAME_MAX_LENGTH)) {
+      next(invalid(req, operation, 'name', `name must be a string of at most ${CUSTOM_NAME_MAX_LENGTH} characters`));
+      return null;
+    }
+    const parsed = parseCustomCriteria(body['criteria']);
+    if ('field' in parsed) {
+      next(invalid(req, operation, parsed.field, parsed.message));
+      return null;
+    }
+    const name = typeof body['name'] === 'string' ? body['name'].trim() : '';
+    return { projectSlug, request: { criteria: parsed.criteria, ...(name ? { name } : {}) } };
   }
 
   /** The project slug every route is scoped to, trimmed; `''` when absent or repeated. */

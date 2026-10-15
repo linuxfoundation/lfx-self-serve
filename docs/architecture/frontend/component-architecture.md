@@ -57,7 +57,7 @@ apps/lfx-one/src/app/modules/
 
 > **Note**: Routes are FLAT under `MainLayoutComponent` — there is no `/project/:slug` nesting.
 >
-> **Meetings create/edit**: `meetings/` carries two implementations side by side. `meeting-manage/` is the pre-v2 full-page wizard and the current shipping default — `/meetings/create` and `/meetings/:id/edit` load it unconditionally. `meeting-composer/` is the v2 drawer, raised in place of the wizard from the meetings dashboard, the group meetings tab, meeting cards, the dashboard quicklinks and the create-artifact dialog only when the `meeting-v2-enabled` LaunchDarkly flag (`MEETING_V2_ENABLED_FLAG`, default `false`) is on for that user. The wizard stays in place until v2 is validated and the flag is retired.
+> **Meetings create/edit**: `meetings/` carries two implementations side by side. `meeting-manage/` is the pre-v2 full-page wizard; `meeting-composer/` is the v2 drawer. The `meeting-v2-enabled` LaunchDarkly flag (`MEETING_V2_ENABLED_FLAG`) decides which one a user gets at every entry point: the meetings dashboard, the group meetings tab, meeting cards, the dashboard quicklinks, the create-artifact dialog, and the `/meetings/create` and `/meetings/:id/edit` deep links. Each deep link is a pair of routes on the same path — a composer entry (`MeetingComposerRouteComponent`) behind the `meetingsV2Guard` CanMatch, then the wizard — so turning the flag off sends the same URL back to the wizard with no deploy. With no answer from LaunchDarkly the browser uses `MEETING_V2_ENABLED_DEFAULT` (`false`). Retiring the wizard means dropping each pair's wizard entry, the guard and the flag.
 
 ### Key Principles
 
@@ -475,6 +475,7 @@ AppComponent
         ├── /groups              → CommitteeDashboardComponent (lazy loaded)
         ├── /mailing-lists       → MailingListDashboardComponent (lazy loaded)
         ├── /votes               → VotesDashboardComponent (lazy loaded)
+        ├── /votes/:id           → VotePermalinkComponent (shareable permalink, Me lens, in-place 404)
         ├── /surveys             → SurveysDashboardComponent (lazy loaded)
         ├── /settings            → redirects by lens (settingsLensRedirectGuard): Me → /profile/settings; foundation/project → lens-prefixed settings; other lenses (e.g. org) fall through to SettingsDashboardComponent
         └── /profile             → ProfileLayoutComponent (lazy loaded; tabs incl. settings → AccountSettingsComponent, transactions)

@@ -1,0 +1,130 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="mktg-document-view-page">
+  <div class="flex flex-col gap-5 mt-3">
+    <!-- Top bar: back to Documents, the document, and which revision this is -->
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-gray-200 bg-white px-4 py-3">
+      <a
+        routerLink="../.."
+        [queryParams]="{ type: view()?.type?.agentKey ?? null, revision: null }"
+        queryParamsHandling="merge"
+        class="font-semibold text-blue-600 hover:text-blue-800"
+        data-testid="mktg-document-view-back-link"
+        >← Documents</a
+      >
+      <span class="text-gray-400" aria-hidden="true">/</span>
+      <h1 class="text-base font-semibold text-gray-900" data-testid="mktg-document-view-title">{{ title() }}</h1>
+      <div class="grow"></div>
+      @if (view(); as current) {
+        <span class="rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-600" data-testid="mktg-document-view-revision-chip">
+          Revision {{ current.revision.number }} of {{ current.revisions.length }}
+          @if (current.revision.latest) {
+            · latest
+          }
+          @if (current.revision.status) {
+            · {{ current.revision.status }}
+          }
+        </span>
+      }
+    </div>
+
+    @if (errorText()) {
+      <lfx-message severity="error" [text]="errorText()" data-testid="mktg-document-view-error" />
+    }
+    @if (notice()) {
+      <lfx-message severity="success" [text]="notice()" data-testid="mktg-document-view-notice" />
+    }
+
+    @if (loading()) {
+      <div class="rounded-xl border border-gray-200 bg-white px-6 py-10 text-sm text-gray-500" role="status">Loading the document…</div>
+    } @else if (view(); as current) {
+      <div class="flex flex-wrap items-start gap-6">
+        <!-- The revision's document, as the agent wrote it -->
+        <!-- basis-[640px]: the design of record's document column width (arbitrary value, see styling.md). -->
+        <main class="min-w-0 grow shrink basis-[640px]">
+          <article class="rounded-xl border border-gray-200 bg-white px-8 py-7" data-testid="mktg-document-view-document">
+            <lfx-markdown-renderer [content]="current.markdown" />
+          </article>
+        </main>
+
+        <aside class="flex flex-col gap-4 grow-0 shrink basis-80 min-w-72">
+          <!-- Revisions: open or restore any other revision -->
+          <div class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white px-4 py-4" data-testid="mktg-document-view-revisions">
+            <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-500">Revisions</h2>
+            <ol class="flex flex-col gap-2">
+              @for (row of revisionRows(); track row.revision.id) {
+                <li
+                  class="flex items-start justify-between gap-2 rounded-lg border px-2.5 py-2 text-sm"
+                  [ngClass]="row.revision.id === current.revision.id ? 'border-blue-600 bg-blue-100' : 'border-gray-200'"
+                  [attr.data-testid]="'mktg-document-view-revision-' + row.revision.number">
+                  <span class="min-w-0 flex-1">
+                    <span class="font-mono">v{{ row.revision.number }}</span> · {{ row.revision.createdAt | date: 'd MMM' }}
+                    @if (row.revision.latest) {
+                      · latest
+                    }
+                    · <span class="font-normal text-gray-500">{{ row.how }}</span>
+                  </span>
+                  @if (row.revision.id === current.revision.id) {
+                    <span class="shrink-0 text-gray-500">here</span>
+                  } @else {
+                    <span class="flex shrink-0 items-center gap-3 font-normal">
+                      <a
+                        [routerLink]="[]"
+                        [queryParams]="{ revision: row.revision.id }"
+                        queryParamsHandling="merge"
+                        class="text-blue-600 hover:text-blue-800"
+                        [attr.aria-label]="'Open revision ' + row.revision.number"
+                        [attr.data-testid]="'mktg-document-view-open-' + row.revision.number"
+                        >Open</a
+                      >
+                      @if (!row.revision.latest) {
+                        <button
+                          type="button"
+                          class="text-blue-600 underline hover:text-blue-800 disabled:cursor-not-allowed disabled:text-gray-400"
+                          [disabled]="restoringId() !== null"
+                          [attr.aria-label]="'Restore revision ' + row.revision.number"
+                          [attr.data-testid]="'mktg-document-view-restore-' + row.revision.number"
+                          (click)="onRestore(row.revision)">
+                          {{ restoringId() === row.revision.id ? 'Restoring…' : 'Restore' }}
+                        </button>
+                      }
+                    </span>
+                  }
+                </li>
+              }
+            </ol>
+            @if (!current.revision.latest) {
+              <button
+                type="button"
+                class="mt-1 min-h-10 rounded-lg bg-blue-600 px-3.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+                [disabled]="restoringId() !== null"
+                data-testid="mktg-document-view-restore-current"
+                (click)="onRestore(current.revision)">
+                {{ restoringId() === current.revision.id ? 'Restoring…' : 'Restore revision ' + current.revision.number }}
+              </button>
+            }
+            <p class="text-xs text-gray-500">Restoring makes the chosen revision the latest, as a new revision. Nothing is deleted.</p>
+          </div>
+
+          <!-- About this document -->
+          <div class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white px-4 py-4" data-testid="mktg-document-view-about">
+            <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-500">About this document</h2>
+            <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
+              <dt class="text-gray-500">Agent</dt>
+              <dd>{{ current.type.agentName }}</dd>
+              <dt class="text-gray-500">Stored</dt>
+              <dd>{{ current.revision.createdAt | date: 'd MMM y, HH:mm' }}</dd>
+              <dt class="text-gray-500">Content hash</dt>
+              <dd class="font-mono" data-testid="mktg-document-view-hash">
+                <!-- The full hash is for screen readers; a title tooltip would be unreachable by keyboard on a <dd>. -->
+                <span aria-hidden="true">{{ shortHash() }}</span>
+                <span class="sr-only">{{ current.revision.contentSha256 }}</span>
+              </dd>
+            </dl>
+          </div>
+        </aside>
+      </div>
+    }
+  </div>
+</div>

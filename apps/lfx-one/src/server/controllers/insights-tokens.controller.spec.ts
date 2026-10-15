@@ -77,12 +77,12 @@ describe('InsightsTokensController', () => {
   });
 
   it('returns eligibility', async () => {
-    getEligibility.mockResolvedValueOnce({ canCreate: true, orgs: [{ uid: 'org-1', name: 'Acme Corporation' }], checkFailed: false });
+    getEligibility.mockResolvedValueOnce({ canCreate: true, checkFailed: false });
     const res = mockRes();
 
     await controller.getEligibility(mockReq(), res, next);
 
-    expect(res.json).toHaveBeenCalledWith({ canCreate: true, orgs: [{ uid: 'org-1', name: 'Acme Corporation' }], checkFailed: false });
+    expect(res.json).toHaveBeenCalledWith({ canCreate: true, checkFailed: false });
   });
 
   describe('createToken', () => {

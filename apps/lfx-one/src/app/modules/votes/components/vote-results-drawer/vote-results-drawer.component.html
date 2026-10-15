@@ -218,7 +218,8 @@
       @if (audience() === 'voter') {
         <!-- VOTER PANEL (LFXV2-1917) — blind results until close, no creator note, no stats card.
              State A (not_voted) is a defensive fallback: the dashboard normally routes ACTIVE+AWAITING
-             voters to lfx-vote-cast-drawer instead. State D guards deep-links to non-participant votes. -->
+             voters to lfx-vote-cast-drawer instead. State D covers removed voters; never-invited
+             viewers use the neutral not_participant panel. -->
         @if (isLoading()) {
           <div class="flex flex-col gap-4" data-testid="vote-results-drawer-voter-loading">
             <p-skeleton width="60%" height="20px"></p-skeleton>
@@ -237,7 +238,7 @@
             <p class="text-sm text-slate-600 max-w-sm">Something went wrong while checking your access to this vote. Try reopening this vote.</p>
           </div>
         } @else if (voterState() === 'access_denied') {
-          <!-- State D — empty-state card. Triggered when myResponse is null OR voter_removed=true. -->
+          <!-- State D — empty-state card. Triggered when voter_removed=true. -->
           <div
             class="flex flex-col items-center justify-center py-12 px-6 text-center border border-slate-200 rounded-lg"
             data-testid="vote-results-voter-access-denied">
@@ -246,6 +247,23 @@
             </div>
             <h2 class="text-base font-semibold text-slate-900 mb-2">You don't have access to this vote</h2>
             <p class="text-sm text-slate-600 max-w-sm">You're not listed as a participant, or you've been removed from this vote.</p>
+          </div>
+        } @else if (voterState() === 'not_participant') {
+          <!-- Neutral state for a viewer who was never invited (myResponse loaded as null) — e.g. opened from a vote permalink. -->
+          @if (voteData.description) {
+            <div class="flex flex-col gap-2 pb-4 border-b border-slate-200" data-testid="vote-results-voter-description">
+              <h2 class="text-base font-semibold text-slate-900">Vote Details</h2>
+              <div class="vote-description text-sm text-slate-700 leading-relaxed" [innerHTML]="voteData.description"></div>
+            </div>
+          }
+          <div
+            class="flex flex-col items-center justify-center py-12 px-6 text-center border border-slate-200 rounded-lg"
+            data-testid="vote-results-voter-not-participant">
+            <div class="w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center mb-4">
+              <i class="fa-light fa-eye text-2xl text-slate-500" aria-hidden="true"></i>
+            </div>
+            <h2 class="text-base font-semibold text-slate-900 mb-2">You're not a voter on this vote</h2>
+            <p class="text-sm text-slate-600 max-w-sm">Only invited voters can cast a ballot. Results are shared with voters after the vote closes.</p>
           </div>
         } @else if (voterState() === 'submitted') {
           <!-- State B — confirmation block. NO live tallies, NO edit/resubmit controls. -->

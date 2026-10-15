@@ -1,12 +1,29 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex flex-col gap-4" data-testid="composer-guests">
+<!-- One grid, so the parts can reorder by breakpoint. From `lg` up: search, the invited card and the attendees
+     switch stack in the main column while the groups rail spans all three rows on the right. Below `lg`
+     everything stacks in DOM order — search, groups, the list, then the switch — so group settings sit next to
+     the search they feed rather than at the end of the form. Editing one occurrence has no group settings or
+     switch, so it is the search and the list alone. -->
+<div [class]="layoutClass()" data-testid="composer-guests">
   <!-- Search and add — editing one occurrence, it invites to that occurrence alone. -->
-  <div class="flex flex-col gap-1.5">
-    <label for="composer-guest-search" class="text-sm font-medium text-gray-900">
-      {{ isOccurrenceEdit() ? 'Add guests to this occurrence' : 'Search and add guests' }}
-    </label>
+  <div class="flex min-w-0 flex-col gap-1.5 lg:col-start-1 lg:row-start-1">
+    <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+      <label for="composer-guest-search" class="text-sm font-medium text-gray-900">
+        {{ isOccurrenceEdit() ? 'Add guests to this occurrence' : 'Search and add guests' }}
+      </label>
+      <p class="text-sm text-gray-600">
+        Not finding a certain guest?
+        <button
+          type="button"
+          class="ml-1 font-medium text-blue-600 hover:text-blue-700 hover:underline"
+          (click)="onOpenManualDialog()"
+          data-testid="composer-guest-manual-link">
+          Add manually
+        </button>
+      </p>
+    </div>
     <lfx-user-search
       [form]="quickAddForm"
       inputId="composer-guest-search"
@@ -21,18 +38,12 @@
       inputStyleClass="w-full text-sm"
       panelStyleClass="w-full"
       dataTestId="composer-guest-search"
+      manualEntryPlacement="empty"
+      manualEntryLabel="Add guest manually"
+      [showAddHint]="true"
+      [waitForSearchableQuery]="true"
       (onUserSelect)="onUserSelected()"
       (onManualEntry)="onOpenManualDialog()" />
-    <p class="text-sm text-gray-500">
-      Not finding a certain guest?
-      <button
-        type="button"
-        class="font-medium text-blue-700 underline hover:text-blue-800"
-        (click)="onOpenManualDialog()"
-        data-testid="composer-guest-manual-link">
-        Add manually
-      </button>
-    </p>
 
     <!-- Persistent live region: must exist before content appears so screen readers announce the insertion. -->
     <div aria-live="polite">
@@ -62,152 +73,212 @@
     </div>
   </div>
 
-  <!-- Groups and the guest-list visibility toggle are series settings: hidden when editing one occurrence. -->
+  <!-- Groups: the right rail from `lg` up; below it, right after the search, in a light grey panel that sets
+       the group settings apart from the guest fields around them (series settings, so absent when
+       editing one occurrence) -->
   @if (!isOccurrenceEdit()) {
-    <!-- Groups -->
-    <lfx-meeting-committee-manager
-      [selectedCommittees]="selectedCommittees()"
-      [allowRestrictedAttendees]="true"
-      [form]="form()"
-      [savedAttendeeVisibility]="savedAttendeeVisibility()"
-      [committeeContext]="formService.committeeContext()"
-      [contextLoading]="formService.committeeContextLoading()"
-      [contextFailed]="formService.committeeContextFailed()"
-      (committeeMembersChange)="onCommitteeMembersChange($event)"
-      (committeeMembersResolvedChange)="formService.setResolvedCommitteeUids($event)"
-      (retryContext)="formService.retryLoadCommitteeContext()" />
-
-    <lfx-feature-toggle [feature]="showMeetingAttendeesFeature" [form]="form()" [toggleNote]="showAttendeesToggleNote()" />
+    <div
+      class="flex min-w-0 flex-col gap-4 rounded-xl bg-gray-50 p-4 lg:col-start-2 lg:row-span-3 lg:row-start-1 lg:rounded-none lg:border-l lg:border-gray-200 lg:bg-transparent lg:py-0 lg:pl-6 lg:pr-0"
+      role="group"
+      aria-label="Groups">
+      <lfx-meeting-committee-manager
+        [selectedCommittees]="selectedCommittees()"
+        [allowRestrictedAttendees]="true"
+        [composerLayout]="true"
+        [groupChips]="true"
+        [form]="form()"
+        [savedAttendeeVisibility]="savedAttendeeVisibility()"
+        [committeeContext]="formService.committeeContext()"
+        [contextLoading]="formService.committeeContextLoading()"
+        [contextFailed]="formService.committeeContextFailed()"
+        (committeeMembersChange)="onCommitteeMembersChange($event)"
+        (committeeMembersResolvedChange)="formService.setResolvedCommitteeUids($event)"
+        (retryContext)="formService.retryLoadCommitteeContext()" />
+    </div>
   }
 
-  <!-- Invited list -->
-  @if (formService.guestsLoading()) {
-    <p class="text-sm text-gray-500" data-testid="composer-guests-loading">Loading guests…</p>
-  } @else {
-    @if (formService.guestsLoadFailed()) {
-      <!-- The meeting itself loaded, so the composer-level error state never renders and its retry is
-           unreachable from here. Without this button the failure is terminal for the open: a group
-           picked while the list is missing stays buffered, which blocks Save with no way forward. -->
-      <div class="flex flex-col gap-2 rounded-lg border border-red-200 bg-red-50 p-3" data-testid="composer-guests-load-error">
-        <div class="flex items-start gap-2">
-          <i class="fa-light fa-triangle-exclamation mt-0.5 text-red-500" aria-hidden="true"></i>
-          <div class="flex flex-col gap-1">
-            <p class="text-sm text-red-700">We couldn't load the guests already invited to this meeting.</p>
-            @if (formService.hasUnreconciledGroupSelection()) {
-              <p class="text-sm text-red-700" data-testid="composer-guests-group-blocked">
-                A group is waiting on that list, so saving now would attach the group without inviting its members. Try again before saving.
-              </p>
-            } @else {
-              <p class="text-sm text-red-700">Anyone you add here will still be invited on save.</p>
-            }
-          </div>
-        </div>
-        <div class="flex">
-          <lfx-button
-            label="Try again"
-            severity="secondary"
-            [outlined]="true"
-            size="small"
-            data-testid="composer-guests-load-retry"
-            (onClick)="formService.retryLoadGuests()" />
-        </div>
-      </div>
-    }
-
-    @if (guestCount() === 0) {
-      <div class="flex flex-col items-center gap-2 rounded-lg border border-dashed border-gray-300 p-8 text-center" data-testid="composer-guests-empty">
-        <i class="fa-light fa-users text-2xl text-gray-400" aria-hidden="true"></i>
-        <p class="text-sm font-semibold text-gray-900">No guests yet</p>
-        <p class="text-sm text-gray-500">
-          {{ isOccurrenceEdit() ? 'Search for people to invite to this occurrence only.' : 'Search for people or add a group to invite everyone at once.' }}
-        </p>
-      </div>
-    } @else {
-      <div class="flex flex-col gap-1.5">
-        <div class="flex flex-wrap items-baseline justify-between gap-2">
-          <span class="text-sm font-medium text-gray-900">Invited · {{ guestCount() }}</span>
+  <!-- Invited list: one card holding the count, a filter over the list, and the list itself. Its grid row takes all
+       the height the step has left (never less than 320px), so the attendees switch below always sits at the
+       bottom; a long list scrolls inside the card body rather than pushing the switch down. -->
+  <section class="flex min-h-0 min-w-0 flex-col rounded-xl border border-gray-200 lg:col-start-1 lg:row-start-2" aria-labelledby="composer-guests-heading">
+    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
+      <div class="flex min-w-0 flex-col">
+        <h3 id="composer-guests-heading" class="text-sm font-semibold text-gray-900" data-testid="composer-guests-count">Invited ({{ guestCount() }})</h3>
+        @if (showAcceptanceSummary()) {
           <span class="text-xs text-gray-500" data-testid="composer-guests-stats">
-            @if (groupGuestCount() > 0) {
-              <span>{{ groupGuestCount() }} from groups</span>
-            }
-            @if (groupGuestCount() > 0 && directGuestCount() > 0) {
-              <span> · </span>
-            }
-            @if (directGuestCount() > 0) {
-              <span>{{ directGuestCount() }} direct guest{{ directGuestCount() === 1 ? '' : 's' }}</span>
-            }
-            @if (showAcceptanceSummary()) {
-              @if (groupGuestCount() > 0 || directGuestCount() > 0) {
-                <span> · </span>
-              }
-              <!-- role="note": aria-label is prohibited on the generic role a bare span maps to, so
-                   without a role the label below is discarded rather than announced. -->
-              <span
-                class="cursor-help"
-                role="note"
-                tabindex="0"
-                [attr.aria-label]="acceptanceLabel()"
-                [pTooltip]="acceptanceBreakdown()"
-                tooltipEvent="both"
-                tooltipPosition="top"
-                tooltipStyleClass="text-xs max-w-xs"
-                data-testid="composer-guests-acceptance">
-                {{ acceptanceSummary() }}
-              </span>
-            }
+            <!-- role="note": aria-label is prohibited on the generic role a bare span maps to, so
+                 without a role the label below is discarded rather than announced. -->
+            <span
+              class="cursor-help"
+              role="note"
+              tabindex="0"
+              [attr.aria-label]="acceptanceLabel()"
+              [pTooltip]="acceptanceBreakdown()"
+              tooltipEvent="both"
+              tooltipPosition="top"
+              tooltipStyleClass="text-xs max-w-xs"
+              data-testid="composer-guests-acceptance">
+              {{ acceptanceSummary() }}
+            </span>
           </span>
-        </div>
-
-        <ul class="flex max-h-96 flex-col gap-2 overflow-y-auto rounded-lg border border-gray-200 p-3" data-testid="composer-guests-list">
-          @for (row of guestRows(); track row.trackId) {
-            <li class="flex items-center gap-3 rounded-md border border-gray-200 p-3">
-              <span class="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-600" aria-hidden="true">
-                {{ row.initials }}
-              </span>
-              <div class="flex min-w-0 flex-1 flex-col">
-                <div class="flex items-center gap-2">
-                  <span class="min-w-0 truncate text-sm font-medium text-gray-900">{{ row.displayName }}</span>
-                  @if (row.guest.host) {
-                    <span class="flex-none rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">Host</span>
-                  }
-                </div>
-                <span class="truncate text-xs text-gray-500">{{ row.secondaryLine }}</span>
-              </div>
-              @if (row.guest.committee_name) {
-                <span
-                  class="max-w-[8rem] shrink truncate rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600"
-                  [pTooltip]="row.guest.committee_name"
-                  tooltipEvent="both"
-                  tabindex="0">
-                  via {{ row.guest.committee_name }}
-                </span>
-              }
-              @if (row.scopeLabel) {
-                <span
-                  class="flex-none rounded-full px-2 py-0.5 text-xs"
-                  [class]="row.removable ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-600'"
-                  [attr.data-testid]="'composer-guest-scope-' + row.trackId">
-                  {{ row.scopeLabel }}
-                </span>
-              }
-              @if (row.removable) {
-                <button
-                  type="button"
-                  class="flex-none rounded-md p-2 text-gray-400 hover:bg-gray-50 hover:text-red-600"
-                  [attr.aria-label]="row.removeLabel"
-                  (click)="onRequestRemoveGuest(row.guest, row.displayName)"
-                  [attr.data-testid]="'composer-guest-remove-' + row.trackId">
-                  <i class="fa-light fa-xmark" aria-hidden="true"></i>
-                </button>
-              } @else {
-                <!-- Keeps the column aligned with removable rows; upstream can't drop a series-wide guest from one occurrence. -->
-                <span class="w-8 flex-none" aria-hidden="true"></span>
-              }
-            </li>
-          }
-        </ul>
+        }
       </div>
-    }
+      @if (guestCount() > 0) {
+        <div class="w-full sm:w-56">
+          <label for="composer-guests-filter" class="sr-only">Filter invited people</label>
+          <lfx-input-text
+            [form]="guestFilterForm"
+            control="query"
+            inputId="composer-guests-filter"
+            type="search"
+            size="small"
+            icon="fa-light fa-magnifying-glass"
+            placeholder="Search people..."
+            styleClass="w-full"
+            dataTest="composer-guests-filter" />
+        </div>
+      }
+    </div>
+
+    <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-2">
+      @if (formService.guestsLoading()) {
+        <p class="text-sm text-gray-500" data-testid="composer-guests-loading">Loading guests…</p>
+      } @else {
+        @if (formService.guestsLoadFailed()) {
+          <!-- The meeting itself loaded, so the composer-level error state never renders and its retry is
+             unreachable from here. Without this button the failure is terminal for the open: a group
+             picked while the list is missing stays buffered, which blocks Save with no way forward. -->
+          <div class="flex flex-col gap-2 rounded-lg border border-red-200 bg-red-50 p-3" data-testid="composer-guests-load-error">
+            <div class="flex items-start gap-2">
+              <i class="fa-light fa-triangle-exclamation mt-0.5 text-red-500" aria-hidden="true"></i>
+              <div class="flex flex-col gap-1">
+                <p class="text-sm text-red-700">We couldn't load the guests already invited to this meeting.</p>
+                @if (formService.hasUnreconciledGroupSelection()) {
+                  <p class="text-sm text-red-700" data-testid="composer-guests-group-blocked">
+                    A group is waiting on that list, so saving now would attach the group without inviting its members. Try again before saving.
+                  </p>
+                } @else {
+                  <p class="text-sm text-red-700">Anyone you add here will still be invited on save.</p>
+                }
+              </div>
+            </div>
+            <div class="flex">
+              <lfx-button
+                label="Try again"
+                severity="secondary"
+                [outlined]="true"
+                size="small"
+                data-testid="composer-guests-load-retry"
+                (onClick)="formService.retryLoadGuests()" />
+            </div>
+          </div>
+        }
+
+        @if (guestCount() === 0) {
+          <div class="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center" data-testid="composer-guests-empty">
+            <i class="fa-light fa-users text-2xl text-gray-400" aria-hidden="true"></i>
+            <p class="text-sm font-semibold text-gray-900">No guests yet</p>
+            <p class="text-sm text-gray-500">
+              {{ isOccurrenceEdit() ? 'Search for people to invite to this occurrence only.' : 'Search for people or add a group to invite everyone at once.' }}
+            </p>
+          </div>
+        } @else if (filteredGuestRows().length === 0) {
+          <p class="py-6 text-center text-sm text-gray-500" data-testid="composer-guests-filter-empty">No invited people match “{{ guestFilter() }}”.</p>
+        } @else {
+          <!-- A plain list: rows split by hairlines rather than drawn as separate cards -->
+          <ul class="flex flex-col divide-y divide-gray-200" data-testid="composer-guests-list">
+            @for (row of filteredGuestRows(); track row.trackId) {
+              <li class="flex items-center gap-3 py-3">
+                <span
+                  class="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-600"
+                  aria-hidden="true">
+                  {{ row.initials }}
+                </span>
+                <div class="flex min-w-0 flex-1 flex-col">
+                  <div class="flex items-center gap-2">
+                    <span class="min-w-0 truncate text-sm font-medium text-gray-900">{{ row.displayName }}</span>
+                    @if (row.guest.host) {
+                      <span class="flex-none rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">Host</span>
+                    }
+                  </div>
+                  <span class="truncate text-xs text-gray-500">{{ row.secondaryLine }}</span>
+                </div>
+                @if (row.guest.committee_name) {
+                  <!-- Capped at 260px (exact px: the 14px root shrinks the rem scale; ~40 characters) or 40% of the row,
+                       whichever is smaller, so a long group name never crowds out the guest's name and email. The
+                       tooltip only shows when the name is actually cut off (measured on hover/focus). -->
+                  <span
+                    class="max-w-[min(260px,40%)] shrink truncate rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600"
+                    [pTooltip]="truncatedGroupChips().has(row.trackId) ? row.guest.committee_name : ''"
+                    tooltipEvent="both"
+                    tooltipPosition="top"
+                    [showDelay]="150"
+                    tooltipStyleClass="!max-w-none [&_.p-tooltip-text]:whitespace-nowrap"
+                    (mouseenter)="onGroupChipEnter(row.trackId, $event)"
+                    (focus)="onGroupChipEnter(row.trackId, $event)"
+                    role="note"
+                    [attr.aria-label]="'via ' + row.guest.committee_name"
+                    tabindex="0">
+                    via {{ row.guest.committee_name }}
+                  </span>
+                }
+                @if (row.scopeLabel) {
+                  <span
+                    class="flex-none rounded-full px-2 py-0.5 text-xs"
+                    [class]="row.removable ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-600'"
+                    [attr.data-testid]="'composer-guest-scope-' + row.trackId">
+                    {{ row.scopeLabel }}
+                  </span>
+                }
+                @if (row.removable) {
+                  <button
+                    type="button"
+                    class="flex-none rounded-md p-2 text-gray-400 hover:bg-gray-50 hover:text-red-600"
+                    [attr.aria-label]="row.removeLabel"
+                    (click)="onRequestRemoveGuest(row.guest, row.displayName)"
+                    [attr.data-testid]="'composer-guest-remove-' + row.trackId">
+                    <i class="fa-light fa-xmark" aria-hidden="true"></i>
+                  </button>
+                } @else {
+                  <!-- Keeps the column aligned with removable rows; upstream can't drop a series-wide guest from one occurrence. -->
+                  <span class="w-8 flex-none" aria-hidden="true"></span>
+                }
+              </li>
+            }
+          </ul>
+        }
+      }
+    </div>
+  </section>
+
+  <!-- Guest-list visibility: a series setting, hidden when editing one occurrence. A compact switch row
+       rather than a feature card, so it reads as an option of the list above it. When the meeting type locks
+       it (board), a tag after the title says why the switch can't be turned on. -->
+  @if (!isOccurrenceEdit()) {
+    <!-- Exact px for the switch's 2px nudge and the 10px lock glyph (the 14px root shrinks the rem scale) -->
+    <div class="flex items-start gap-3 lg:col-start-1 lg:row-start-3" [attr.data-testid]="'feature-' + showMeetingAttendeesFeature.key">
+      <lfx-toggle
+        class="mt-[2px] shrink-0"
+        [form]="form()"
+        [control]="showMeetingAttendeesFeature.key"
+        [id]="showMeetingAttendeesFeature.key"
+        [ariaLabel]="showAttendeesAriaLabel()"
+        [attr.data-testid]="'toggle-' + showMeetingAttendeesFeature.key" />
+      <label [for]="showMeetingAttendeesFeature.key" class="flex min-w-0 flex-col gap-0.5">
+        <span class="flex flex-wrap items-center gap-2">
+          <span class="text-sm font-semibold text-gray-900">{{ showMeetingAttendeesFeature.title }}</span>
+          @if (showAttendeesToggleNote(); as note) {
+            <span
+              class="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600"
+              [attr.data-testid]="'feature-note-' + showMeetingAttendeesFeature.key">
+              <i class="fa-light fa-lock text-[10px]" aria-hidden="true"></i>
+              {{ note }}
+            </span>
+          }
+        </span>
+        <span class="text-xs text-gray-500">{{ showMeetingAttendeesFeature.description }}</span>
+      </label>
+    </div>
   }
 </div>
 

@@ -62,6 +62,7 @@ import {
   MeetingRescheduleOccurrenceResult,
   RecurringMeetingEditScopeResult,
   MEETING_TYPE_CONFIGS,
+  MEETING_V2_ENABLED_DEFAULT,
   MEETING_V2_ENABLED_FLAG,
   MeetingHostCandidate,
   PastMeeting,
@@ -235,6 +236,12 @@ export class MeetingCardComponent implements OnInit {
   public readonly isRegisteredAttendee: Signal<boolean> = computed(
     () => this.authenticated() && this.effectivelyInvited() && !this.meeting().organizer && !this.pastMeeting()
   );
+  public readonly userAttended: Signal<boolean> = computed(() => {
+    // Read the input, not the local `meeting` signal: that one is only seeded while it has no id, so a
+    // refreshed input for the same card would leave this stale. `user_attended` has no optimistic updates.
+    const meeting = this.meetingInput();
+    return this.pastMeeting() && 'user_attended' in meeting && meeting.user_attended === true;
+  });
   // A committee-sourced registration follows committee membership, so it cannot be removed from here.
   public readonly canLeaveMeeting: Signal<boolean> = computed(() => this.isRegisteredAttendee() && !this.meeting().invited_via_committee);
   public readonly canRegisterForMeeting: Signal<boolean> = computed(
@@ -267,7 +274,7 @@ export class MeetingCardComponent implements OnInit {
    * full-page editor rather than a composer this user isn't targeted for. See
    * `MEETING_V2_ENABLED_FLAG`.
    */
-  protected readonly meetingsV2Enabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MEETING_V2_ENABLED_FLAG, false);
+  protected readonly meetingsV2Enabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MEETING_V2_ENABLED_FLAG, MEETING_V2_ENABLED_DEFAULT);
 
   // The two signals below are the flag-off edit target. They carry the same URL and query params
   // the edit button held before v2; the difference is that `onEditMeeting()` now navigates with

@@ -72,7 +72,7 @@ test.describe('Org Lens EasyCLA approval — content', () => {
     await expect(page.getByTestId('org-easycla-approval-value')).toHaveText(NEXT_DOMAIN);
   });
 
-  test('warns that the previous value must be acknowledged again, then invalidates it', async ({ page }) => {
+  test('warns that the previous value will show as Not Authorized, then removes it', async ({ page }) => {
     const afterEdit = approvalList({ entries: [{ kind: 'domain', value: NEXT_DOMAIN }] });
 
     await gotoApproval(page, { get: EXISTING, put: afterEdit });
@@ -82,7 +82,7 @@ test.describe('Org Lens EasyCLA approval — content', () => {
     await page.getByTestId('org-easycla-approval-edit').locator('button').click();
     await expect(page.getByTestId('org-easycla-approval-dialog-edit-warning')).toBeVisible();
     await expect(page.getByTestId('org-easycla-approval-dialog-edit-warning')).toContainText(
-      'Contributors covered only by the previous value will need to acknowledge this CLA again.'
+      'Contributors covered only by the previous value will show as Not Authorized until you add it back.'
     );
     await expect(page.getByTestId('org-easycla-approval-dialog-edit-warning')).not.toContainText('invalidated');
 
@@ -97,11 +97,11 @@ test.describe('Org Lens EasyCLA approval — content', () => {
       remove: [{ kind: 'domain', value: DOMAIN }],
     });
 
-    await expect(page.locator('.p-toast')).toContainText('invalidated');
+    await expect(page.locator('.p-toast')).toContainText('now show as Not Authorized');
     await expect(page.getByTestId('org-easycla-approval-value')).toHaveText(NEXT_DOMAIN);
   });
 
-  test('names the invalidation in the confirmation, before anything is sent', async ({ page }) => {
+  test('names the Not Authorized outcome in the confirmation, before anything is sent', async ({ page }) => {
     await gotoApproval(page, { get: EXISTING, put: approvalList() });
 
     await expect(page.getByTestId('org-easycla-approval-value')).toHaveText(DOMAIN, { timeout: PAGE_LOAD_TIMEOUT });
@@ -115,7 +115,8 @@ test.describe('Org Lens EasyCLA approval — content', () => {
     await expect(confirm).toContainText('Remove this approval list entry?');
     await expect(confirm).toContainText('email domain');
     await expect(confirm).toContainText(`"${DOMAIN}"`);
-    await expect(confirm).toContainText('invalidated');
+    await expect(confirm).toContainText('Their acknowledgments will show as Not Authorized until you add the entry back.');
+    await expect(confirm).not.toContainText('invalidated');
     expect(puts.count).toBe(0);
 
     const pending = putRequest(page);
@@ -124,7 +125,7 @@ test.describe('Org Lens EasyCLA approval — content', () => {
     const body = (await (await pending).postDataJSON()) as { add: unknown; remove: unknown };
     expect(body).toEqual({ add: [], remove: [{ kind: 'domain', value: DOMAIN }] });
 
-    await expect(page.locator('.p-toast')).toContainText('invalidated');
+    await expect(page.locator('.p-toast')).toContainText('Acknowledgments it covered now show as Not Authorized.');
     await expect(page.getByTestId('org-easycla-approval-empty')).toBeVisible();
   });
 

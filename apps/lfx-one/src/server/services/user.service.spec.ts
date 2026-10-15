@@ -11,6 +11,7 @@ import {
   Meeting,
   MeetingRegistrant,
   MeetingRsvp,
+  PastMeeting,
   ProfileVisibilitySections,
   ProfileVisibilityUpdateRequest,
   QueryServiceResponse,
@@ -1342,7 +1343,11 @@ describe('UserService.getPendingActions managed applications (GH-3131)', () => {
     applicant_name: index === 0 ? 'Applicant' : undefined,
     status: 'pending',
     created_at: tomorrow,
-    message: 'private message',
+    message: 'I maintain the upstream driver and want to help review patches.',
+    project_name: 'Project Alpha',
+    committee_category: 'Technical Steering Committee',
+    project_slug: 'project-alpha',
+    is_foundation: false,
     reviewer_notes: 'private notes',
     reason: 'private reason',
   }));
@@ -1404,16 +1409,24 @@ describe('UserService.getPendingActions managed applications (GH-3131)', () => {
     service = new UserService();
   });
 
-  it('includes every review address without an email and exposes no private application payload or navigation CTA', async () => {
+  it('includes every review address without an email, exposes the reviewer context but not reviewer-only notes, and has no navigation CTA', async () => {
     getEffectiveEmail.mockReturnValue(null);
     const actions = (await service.getPendingActions(req, undefined, null, undefined)).filter((action) => action.type === 'JoinApplication');
     expect(actions.map((action) => [action.committeeUid, action.applicationUid])).toEqual(applications.map((row) => [row.committee_uid, row.uid]));
     expect(actions[0]).toMatchObject({ applicationApplicantEmail: 'applicant@example.com', applicationApplicantName: 'Applicant', badge: 'Group 0' });
+    expect(actions[0]).toMatchObject({
+      applicationProjectName: 'Project Alpha',
+      applicationGroupCategory: 'Technical Steering Committee',
+      applicationProjectSlug: 'project-alpha',
+      applicationIsFoundation: false,
+      applicationMessage: 'I maintain the upstream driver and want to help review patches.',
+      applicationSubmittedAt: tomorrow,
+    });
     expect(actions[1].text).toContain('applicant@example.com');
     for (const action of actions) {
       expect(action.buttonText).toBe('');
       expect(Object.keys(action)).toEqual(expect.arrayContaining(['committeeUid', 'applicationUid', 'applicationApplicantEmail']));
-      for (const field of ['message', 'reviewer_notes', 'reason', 'buttonLink']) expect(action).not.toHaveProperty(field);
+      for (const field of ['message', 'reviewer_notes', 'reason', 'applicationReviewerNotes', 'buttonLink']) expect(action).not.toHaveProperty(field);
     }
   });
 
@@ -1495,6 +1508,74 @@ describe('UserService.getUserMeetingRegistrations', () => {
     getUsernameFromAuth.mockResolvedValue(null);
 
     expect((await service.getUserMeetingRegistrations(req, undefined)).size).toBe(0);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe('UserService.enrichPastMeetingsWithUserAttendance', () => {
+  const req = {} as unknown as Request;
+  let service: UserService;
+
+  const participantPage = (rows: { meeting_and_occurrence_id: string; is_attended: boolean }[]) => ({
+    resources: rows.map((data, i) => ({ id: String(i), type: 'v1_past_meeting_participant', data })),
+  });
+  const buildMeeting = (id: string): PastMeeting => ({ id, meeting_and_occurrence_id: id }) as PastMeeting;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    getUsernameFromAuth.mockReset().mockResolvedValue(null);
+    service = new UserService();
+  });
+
+  it('marks meetings the user attended and the rest as not attended', async () => {
+    proxyRequest.mockResolvedValueOnce(
+      participantPage([
+        { meeting_and_occurrence_id: 'm1-o1', is_attended: true },
+        { meeting_and_occurrence_id: 'm2-o1', is_attended: false },
+      ])
+    );
+    const meetings = [buildMeeting('m1-o1'), buildMeeting('m2-o1'), buildMeeting('m3-o1')];
+
+    await service.enrichPastMeetingsWithUserAttendance(req, 'User@Example.com', meetings);
+
+    expect(meetings.map((m) => m.user_attended)).toEqual([true, false, false]);
+  });
+
+  it('treats an occurrence as attended when any participant record says so', async () => {
+    proxyRequest.mockResolvedValueOnce(
+      participantPage([
+        { meeting_and_occurrence_id: 'm1-o1', is_attended: false },
+        { meeting_and_occurrence_id: 'm1-o1', is_attended: true },
+      ])
+    );
+    const meetings = [buildMeeting('m1-o1')];
+
+    await service.enrichPastMeetingsWithUserAttendance(req, 'user@example.com', meetings);
+
+    expect(meetings[0].user_attended).toBe(true);
+  });
+
+  it('leaves user_attended undefined when the participant scan fails', async () => {
+    proxyRequest.mockRejectedValueOnce(new Error('upstream down'));
+    const meetings = [buildMeeting('m1-o1')];
+
+    await service.enrichPastMeetingsWithUserAttendance(req, 'user@example.com', meetings);
+
+    expect(meetings[0].user_attended).toBeUndefined();
+  });
+
+  it('leaves user_attended undefined and skips the scan when there is no identity', async () => {
+    const meetings = [buildMeeting('m1-o1')];
+
+    await service.enrichPastMeetingsWithUserAttendance(req, '', meetings);
+
+    expect(proxyRequest).not.toHaveBeenCalled();
+    expect(meetings[0].user_attended).toBeUndefined();
+  });
+
+  it('skips the scan for an empty meeting list', async () => {
+    await service.enrichPastMeetingsWithUserAttendance(req, 'user@example.com', []);
+
     expect(proxyRequest).not.toHaveBeenCalled();
   });
 });

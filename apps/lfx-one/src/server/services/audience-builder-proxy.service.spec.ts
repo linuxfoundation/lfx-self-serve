@@ -31,6 +31,7 @@ import { MicroserviceError } from '../errors/microservice.error';
 import { AUDIENCE_BUILDER_REQUEST_TIMEOUT_MS } from '@lfx-one/shared/constants';
 
 import { AudienceBuilderProxyService, AudienceComposePartialError } from './audience-builder-proxy.service';
+import { logger } from './logger.service';
 
 const req = {} as unknown as Request;
 
@@ -99,32 +100,74 @@ describe('AudienceBuilderProxyService wire mapping', () => {
     await expect(service.getSuppressionLists(req, 'tlf', 'LF', 'Synthetic Summit')).rejects.toThrow(/lists/);
   });
 
-  it('fails a compose whose response is missing the master it claims to have created', async () => {
-    // A non-idempotent create reported as success over unusable data: `{ master: {} }` rendered
-    // "Master list created" with no list id the operator could act on.
+  // A 2xx compose means the master EXISTS, so an unusable reply is a do-not-retry partial, never a
+  // plain error: the client lets an operator retry a plain error, and a retry composes a second
+  // master list (the orphaned duplicates of the blank-portal-id incident).
+  it('turns a compose reply missing its master into a partial, never a retryable error', async () => {
+    // `{ master: {} }` rendered "Master list created" with no list id the operator could act on.
     proxyRequest.mockResolvedValue({ master: {}, source_list_ids: [] });
 
-    await expect(service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [] })).rejects.toThrow(/master/);
+    const error = await service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [], name: 'Requested' }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(AudienceComposePartialError);
+    expect((error as AudienceComposePartialError).masterName, 'the requested name is the one to search by').toBe('Requested');
+    expect((error as AudienceComposePartialError).master).toBeUndefined();
   });
 
-  it('fails a compose whose master id is blank, not just missing', async () => {
+  it('turns a compose whose master id is blank into a partial carrying the name to search by', async () => {
     // A blank string passes every null check and then reaches "Master list created" as a list
     // with nothing to open or search — the same unusable create, through a narrower door.
     proxyRequest.mockResolvedValue({ master: { list_id: '  ', name: 'M', hubspot_url: 'https://app.hubspot.com/l/1' }, source_list_ids: [] });
 
-    await expect(service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [] })).rejects.toThrow(/blank/);
+    const error = await service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [] }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(AudienceComposePartialError);
+    expect((error as AudienceComposePartialError).masterName).toBe('M');
+    expect((error as AudienceComposePartialError).master, 'an unconfirmed master is never passed as a list').toBeUndefined();
   });
 
-  it('fails a compose whose SUPPRESSION list is blank, not just the master', async () => {
+  it('turns a compose whose SUPPRESSION name is blank into a partial that keeps the master and orphans nothing', async () => {
     // The suppression object was passed through unchecked beside a validated master, so a
-    // create with a blank suppression name still rendered as confirmed and actionable.
+    // create with a blank suppression name still rendered as confirmed and actionable. On a 2xx
+    // the suppression is the master's own exclusion list: it must never reach the ORPHAN banner,
+    // which tells the operator to delete it.
     proxyRequest.mockResolvedValue({
       master: { list_id: '900', name: 'Master', hubspot_url: 'https://app.hubspot.com/l/1' },
       suppression: { list_id: '901', name: '', hubspot_url: 'https://app.hubspot.com/l/1' },
       source_list_ids: [],
     });
 
-    await expect(service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [] })).rejects.toThrow(/suppression\.name/);
+    const error = await service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [] }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(AudienceComposePartialError);
+    const partial = error as AudienceComposePartialError;
+    expect(partial.master?.listId).toBe('900');
+    expect(partial.masterName, 'never beside a confirmed master').toBeUndefined();
+    expect(partial.suppression, "the master's suppression is not an orphan").toBeUndefined();
+    expect(partial.suppressionName).toBeUndefined();
+  });
+
+  it('never passes a confirmed master without a name', async () => {
+    proxyRequest.mockResolvedValue({ master: { list_id: '900', name: ' ', hubspot_url: '' }, source_list_ids: null });
+
+    const named = await service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [], name: 'Requested' }).catch((e: unknown) => e);
+    expect((named as AudienceComposePartialError).master?.name, 'the requested name').toBe('Requested');
+
+    const unnamed = await service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [] }).catch((e: unknown) => e);
+    expect((unnamed as AudienceComposePartialError).master?.name, 'the id when nothing else names it').toBe('list 900');
+  });
+
+  it('logs which field made a compose reply unusable', async () => {
+    proxyRequest.mockResolvedValue({ master: { list_id: '900', name: 'Master', hubspot_url: '' } });
+
+    await service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [] }).catch(() => undefined);
+
+    expect(logger.warning).toHaveBeenCalledWith(
+      req,
+      'audience_compose_master',
+      expect.any(String),
+      expect.objectContaining({ reason: expect.stringContaining('source_list_ids'), master_list_id: '900' })
+    );
   });
 
   it('does NOT apply that strictness to the partial path', async () => {
@@ -195,7 +238,13 @@ describe('AudienceBuilderProxyService wire mapping', () => {
       audience: {},
     });
 
-    await expect(service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [], briefId: 'brief-1' })).rejects.toThrow(/audience/);
+    // The master exists, so this is a do-not-retry partial, never a retryable error. Upstream
+    // reported the attach, so no list is passed: the client must not call it "unattached".
+    const error = await service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [], briefId: 'brief-1' }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AudienceComposePartialError);
+    expect((error as AudienceComposePartialError).master).toBeUndefined();
+    expect((error as AudienceComposePartialError).masterName).toBeUndefined();
+    expect((error as AudienceComposePartialError).message).toContain('Refresh the campaign');
   });
 
   it('coerces an unrecognised recorded status to failed rather than trusting it', async () => {
@@ -299,10 +348,18 @@ describe('AudienceBuilderProxyService wire mapping', () => {
     expect(email.includedLists[0]?.hubspotUrl, 'a data: url survived the mapper').toBeUndefined();
   });
 
-  it('fails a created list whose hubspot_url is not http(s), the same as a blank one', async () => {
-    proxyRequest.mockResolvedValue({ master: { list_id: '900', name: 'Master', hubspot_url: 'javascript:void(0)' }, source_list_ids: [] });
+  // The link is not an identifying field: the list is found by its id and name. Upstream returns a
+  // blank hubspot_url when the portal id is unknown, and failing on it reported a created master
+  // as an error and invited the retry that orphaned a duplicate.
+  it.each([
+    ['blank', ''],
+    ['non-http', 'javascript:void(0)'],
+  ])('reports a created master with a %s link as created, without the link', async (_label, url) => {
+    proxyRequest.mockResolvedValue({ master: { list_id: '900', name: 'Master', hubspot_url: url }, source_list_ids: [] });
 
-    await expect(service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [] })).rejects.toThrow('master.hubspot_url');
+    const result = await service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [] });
+
+    expect(result.master).toEqual({ listId: '900', name: 'Master', hubspotUrl: '', size: undefined });
   });
 
   it('posts an attach with the wire field names and maps the recorded audience', async () => {
@@ -358,5 +415,224 @@ describe('AudienceBuilderProxyService wire mapping', () => {
     const [sent] = await service.getLastSent(req, 'tlf', 'Synthetic Summit', 'LF', 5);
 
     expect(sent?.includedLists[0]?.hubspotUrl).toContain('/objectLists/1/');
+  });
+});
+
+describe('AudienceBuilderProxyService custom audiences', () => {
+  let service: AudienceBuilderProxyService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new AudienceBuilderProxyService();
+  });
+
+  const criteria = {
+    cities: ['Seoul'],
+    countries: [],
+    contactLocation: true,
+    eventRegistered: false,
+    educationEnrolled: false,
+    registeredFor: [],
+    gateEventHistory: false,
+    gateListId: '26716',
+    propertyFilters: [{ property: 'industry', operator: 'is_any_of' as const, values: ['X'] }],
+    speakers: { scope: 'current' as const, eventNames: ['OSS Korea 2026'] },
+    ambassadors: false,
+    educationTopics: ['Kubernetes'],
+    pageViewUrls: [],
+  };
+
+  it('sends snake_case criteria and omits blank optional ids', async () => {
+    proxyRequest.mockResolvedValue({ name: 'n', criteria: {}, branch_count: 3, warnings: [] });
+
+    await service.previewCustom(req, 'tlf', { criteria });
+
+    const [, , path, method, , body] = proxyRequest.mock.calls[0];
+    expect(path).toBe('/projects/tlf/audience-builder/custom/preview');
+    expect(method).toBe('POST');
+    expect(body.custom.criteria).toMatchObject({
+      contact_location: true,
+      gate_list_id: '26716',
+      property_filters: [{ property: 'industry', operator: 'is_any_of', values: ['X'] }],
+    });
+    expect(body.custom.criteria.speakers).toEqual({ scope: 'current', event_names: ['OSS Korea 2026'] });
+    expect(body.custom).not.toHaveProperty('name');
+    expect(body.custom.criteria.education_topics).toEqual(['Kubernetes']);
+    expect(body.custom.criteria, 'no topic property is sent unless the operator picked one').not.toHaveProperty('education_topic_property');
+  });
+
+  it('maps similar lists, dropping one with no id and an unknown recommendation', async () => {
+    proxyRequest.mockResolvedValue({
+      criteria: {},
+      questions: [],
+      notes: [],
+      similar: [
+        {
+          list: { list_id: '411', name: '25Q3 - Seoul - Mailable Contacts', hubspot_url: 'https://app.hubspot.com/x/411' },
+          recommendation: 'update',
+          reason: 'older',
+        },
+        { list: { list_id: '', name: 'blank' }, recommendation: 'reuse' },
+        { list: { list_id: '412', name: 'Seoul Meetup', hubspot_url: 'https://app.hubspot.com/x/412' }, recommendation: 'maybe' },
+      ],
+    });
+
+    const out = await service.interpretCustom(req, 'tlf', { request: 'Seoul' });
+
+    expect(out.similar.map((s) => s.list.listId)).toEqual(['411', '412']);
+    expect(out.similar[0].recommendation).toBe('update');
+    expect(out.similar[1].recommendation).toBeUndefined();
+  });
+
+  it('maps an interpretation, defaulting every array', async () => {
+    proxyRequest.mockResolvedValue({
+      criteria: { cities: ['Seoul'], contact_location: true, gate_list_id: '26716' },
+      brand_short: 'LF',
+      gate: { list_id: '26716', name: 'LF Master-list', hubspot_url: 'javascript:alert(1)' },
+      questions: [{ id: 'mailability', question: 'Gate?', options: ['a', 'b'] }],
+      notes: [],
+    });
+
+    const out = await service.interpretCustom(req, 'tlf', { request: 'Seoul', answers: [{ answer: 'a' }] });
+
+    expect(proxyRequest.mock.calls[0][5]).toEqual({ request: 'Seoul', answers: [{ answer: 'a' }] });
+    expect(out.criteria.countries).toEqual([]);
+    expect(out.criteria.propertyFilters).toEqual([]);
+    expect(out.criteria.eventRegistered).toBe(false);
+    expect(out.gate?.hubspotUrl, 'a non-http link is dropped').toBe('');
+    expect(out.questions[0].why).toBeUndefined();
+  });
+
+  // Upstream answered 2xx, so the list exists: an unusable reply is a do-not-retry partial, never a
+  // plain error the client would let the operator retry into a second list.
+  it.each([['no id', { list_id: '', name: 'Seoul', hubspot_url: 'https://app.hubspot.com/x' }]])(
+    'turns a created list with %s into a partial carrying its name',
+    async (_label, wire) => {
+      proxyRequest.mockResolvedValue(wire);
+
+      const error = await service.createCustom(req, 'tlf', { criteria }).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(AudienceComposePartialError);
+      expect((error as AudienceComposePartialError).masterName).toBe('Seoul');
+    }
+  );
+
+  it('reports a created custom list with a non-http link as created, without the link', async () => {
+    proxyRequest.mockResolvedValue({ list_id: '7', name: 'Seoul', hubspot_url: 'javascript:alert(1)' });
+
+    const list = await service.createCustom(req, 'tlf', { criteria });
+
+    expect(list).toEqual({ listId: '7', name: 'Seoul', hubspotUrl: '', size: undefined });
+  });
+
+  it('names a malformed create by the requested name when the reply carries none', async () => {
+    proxyRequest.mockResolvedValue(null);
+
+    const error = await service.createCustom(req, 'tlf', { criteria, name: 'My list' }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(AudienceComposePartialError);
+    expect((error as AudienceComposePartialError).masterName).toBe('My list');
+  });
+
+  // A dropped filter or scope would widen the audience the operator then creates, so an unknown
+  // criteria enum fails the reply instead.
+  it.each([
+    ['operator', { property_filters: [{ property: 'jobtitle', operator: 'is_like', values: ['x'] }] }, /property_filters.operator/],
+    ['speaker scope', { speakers: { scope: 'future', event_names: [] } }, /speakers.scope/],
+  ])('refuses an unknown upstream %s rather than dropping it', async (_label, criteria, field) => {
+    proxyRequest.mockResolvedValue({ criteria, questions: [], notes: [] });
+
+    await expect(service.interpretCustom(req, 'tlf', { request: 'x' })).rejects.toThrow(field);
+  });
+
+  it('drops a planned event with no name and malformed questions', async () => {
+    proxyRequest.mockResolvedValue({
+      criteria: {},
+      questions: [{ id: 'ok', question: 'Gate?', options: ['a', 2] }, { question: 'no id' }, { id: 'bad', question: 'x', options: 'nope' }, null],
+      notes: [],
+      event: { brand_short: 'X', event_dates: 'not-an-array' },
+    });
+
+    const out = await service.interpretCustom(req, 'tlf', { request: 'x' });
+
+    expect(out.event, 'the tab reads the event name; one without it is no event').toBeUndefined();
+    expect(out.questions).toEqual([{ id: 'ok', question: 'Gate?', why: undefined, options: ['a'] }]);
+  });
+
+  it('turns an unconfirmed create into a partial carrying the name', async () => {
+    proxyRequest.mockRejectedValue(
+      new MicroserviceError('boom', 500, 'UPSTREAM', { errorBody: { code: '500', message: 'unconfirmed', master_name: 'Seoul test' } })
+    );
+
+    const error = await service.createCustom(req, 'tlf', { criteria }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(AudienceComposePartialError);
+    expect((error as AudienceComposePartialError).masterName).toBe('Seoul test');
+  });
+
+  it('forwards the event name to QA and keeps the current-registrants check when it ran', async () => {
+    const check = { verdict: 'PASS', findings: [] };
+    proxyRequest.mockResolvedValue({
+      needs_disambiguation: false,
+      list_id: '1',
+      name: 'm',
+      checks: {
+        signal_mapping: check,
+        suppression: { ...check, applied_gdpr: true, applied_opt_out: true },
+        exclusion_completeness: { ...check, exclusion_count: 1 },
+        current_registrants: { verdict: 'FAIL', findings: [] },
+      },
+      overall: 'FAIL',
+    });
+
+    const out = await service.runQa(req, 'tlf', { listRef: '1', eventName: 'KubeCon Japan 2026' });
+
+    expect(proxyRequest.mock.calls[0][5]).toMatchObject({ event_name: 'KubeCon Japan 2026' });
+    expect(out.needsDisambiguation === false && out.checks.currentRegistrants?.verdict).toBe('FAIL');
+  });
+});
+
+describe('AudienceBuilderProxyService end-to-end test fields', () => {
+  let service: AudienceBuilderProxyService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new AudienceBuilderProxyService();
+  });
+
+  it("maps the hidden count, and each prior send's subject and match reason", async () => {
+    proxyRequest.mockResolvedValueOnce({ event: { event_name: 'E' }, lists: [], missing_signals: [], hidden: 5 });
+    const discovered = await service.discover(req, 'tlf', 'https://events.example.org/e');
+    expect(discovered.result.hidden).toBe(5);
+
+    proxyRequest.mockResolvedValueOnce({
+      emails: [
+        {
+          email_id: '1',
+          email_name: 'N',
+          hubspot_url: 'https://app.hubspot.com/x',
+          included_lists: [],
+          suppression_lists: [],
+          subject: 'S',
+          match_reason: 'brand_only',
+        },
+      ],
+    });
+    const sent = await service.getLastSent(req, 'tlf', 'E', '', 3);
+    expect(sent[0]).toMatchObject({ subject: 'S', matchReason: 'brand_only' });
+  });
+
+  it('maps the event an event audience was planned from', async () => {
+    proxyRequest.mockResolvedValue({
+      criteria: {},
+      questions: [],
+      notes: [],
+      similar: [],
+      event: { event_name: 'E', brand_short: 'AAIF', event_dates: ['2026-09-10'] },
+    });
+
+    const out = await service.interpretCustom(req, 'tlf', { request: 'x', eventUrl: 'https://events.example.org/e' });
+
+    expect(out.event).toEqual({ eventName: 'E', brandShort: 'AAIF', eventDates: ['2026-09-10'] });
   });
 });

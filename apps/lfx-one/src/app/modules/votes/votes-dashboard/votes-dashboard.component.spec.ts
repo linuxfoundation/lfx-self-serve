@@ -7,7 +7,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import { PollStatus, VoteResponseStatus } from '@lfx-one/shared';
-import { Lens, ProjectContext, Vote } from '@lfx-one/shared/interfaces';
+import { Lens, ProjectContext, Vote, VoteListResponse, VotePermalinkTarget, VoteSummary } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
@@ -85,11 +85,15 @@ describe('VotesDashboardComponent personal summary', () => {
             getMyVotes,
             mergeRecentlyOpenedVotes: (votes: Vote[]) => votes,
             getVotesCountByProject: vi.fn(() => of(20)),
-            getVotesByProjectPaginated: vi.fn((_uid: string, _rows: number, pageToken?: string, _search?: string, filters?: string[]) => {
-              const pageUid = pageToken ? 'second-page' : 'first-page';
-              const uid = filters?.includes(`status:${PollStatus.ENDED}`) ? 'ended-first-page' : pageUid;
-              return of({ data: [vote(uid, 1)], page_token: pageToken ? undefined : 'page-two' });
-            }),
+            getVotesSummaryByProject: vi.fn(() => of({ active_votes: 20, closing_soon: 3, as_of: new Date(NOW).toISOString() })),
+            getVotesByProjectPaginated: vi.fn(
+              (_uid: string, _rows: number, pageToken?: string, _search?: string, filters?: string[], closingOnly?: boolean) => {
+                const pageUid = pageToken ? 'second-page' : 'first-page';
+                const uid = filters?.includes(`status:${PollStatus.ENDED}`) ? 'ended-first-page' : pageUid;
+                if (closingOnly) return of({ data: [vote('closing', 1)], total_records: 1, page_token: undefined });
+                return of({ data: [vote(uid, 1)], page_token: pageToken ? undefined : 'page-two' });
+              }
+            ),
           },
         },
         { provide: CommitteeService, useValue: { getCommitteesByProject: vi.fn(() => of([])) } },
@@ -113,6 +117,269 @@ describe('VotesDashboardComponent personal summary', () => {
   afterEach(() => {
     fixture?.destroy();
     vi.useRealTimers();
+  });
+
+  async function management(lens: Lens = 'project'): Promise<void> {
+    activeContext.set({ uid: 'project-a', name: 'Synthetic Project', slug: 'synthetic-project' });
+    activeLens.set(lens);
+    await settle();
+    table = fixture.debugElement.query(By.directive(VotesTableComponent)).componentInstance;
+  }
+
+  it.each<Lens>(['project', 'foundation'])('shows %s totals for the entire Group scope, independent of search/status/page', async (lens) => {
+    const service = TestBed.inject(VoteService);
+    await management(lens);
+    expect(element('votes-management-stats')).not.toBeNull();
+    expect(element('votes-me-stats')).toBeNull();
+    expect(dashboard['managementVoteStatCards']().map((card) => card.value)).toEqual([3, 20]);
+    const summary = vi.mocked(service.getVotesSummaryByProject);
+    summary.mockClear();
+    table.searchForm.controls.search.setValue('Ballot');
+    table['onStatusTabChange'](PollStatus.ENDED);
+    await settle();
+    dashboard['onPageChange']({ first: 10, rows: 10 });
+    await settle();
+    expect(summary).not.toHaveBeenCalled();
+    table.searchForm.controls.group.setValue('Synthetic Board');
+    await settle();
+    expect(summary).toHaveBeenCalledExactlyOnceWith('project-a', 'Synthetic Board');
+    expect(table.first()).toBe(0);
+    expect(dashboard['managementVoteStatCards']().map((card) => card.value)).toEqual([3, 20]);
+  });
+
+  it.each<Lens>(['project', 'foundation'])('sends one list request per %s summary action and status-tab exit', async (lens) => {
+    await management(lens);
+    const service = TestBed.inject(VoteService);
+    const list = vi.mocked(service.getVotesByProjectPaginated);
+    const count = vi.mocked(service.getVotesCountByProject);
+
+    for (const transition of [
+      { action: 'closing-soon', count: 0 },
+      { action: 'closing-soon', count: 1 },
+      { action: 'active', count: 0 },
+      { action: 'closing-soon', count: 0 },
+    ]) {
+      list.mockClear();
+      count.mockClear();
+      await selectSummary(transition.action);
+      expect(list, transition.action).toHaveBeenCalledTimes(1);
+      expect(count, transition.action).toHaveBeenCalledTimes(transition.count);
+    }
+
+    list.mockClear();
+    count.mockClear();
+    table['onStatusTabChange'](PollStatus.ACTIVE);
+    await settle();
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(count).toHaveBeenCalledTimes(1);
+
+    dashboard['onPageChange']({ first: 10, rows: 10 });
+    await settle();
+    list.mockClear();
+    count.mockClear();
+    await selectSummary('active');
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(count).not.toHaveBeenCalled();
+    expect(table.first()).toBe(0);
+    expect(rows()).toEqual(['first-page']);
+  });
+
+  it.each<Lens>(['project', 'foundation'])('only requests the selected status when leaving %s Closing Soon', async (lens) => {
+    await management(lens);
+    const service = TestBed.inject(VoteService);
+    const list = vi.mocked(service.getVotesByProjectPaginated);
+    const count = vi.mocked(service.getVotesCountByProject);
+    for (const status of [PollStatus.ENDED, PollStatus.DISABLED, 'all']) {
+      await selectSummary('closing-soon');
+      list.mockClear();
+      count.mockClear();
+      table['onStatusTabChange'](status);
+      await settle();
+      const filters = status === 'all' ? undefined : [`status:${status}`];
+      expect(list, status).toHaveBeenCalledExactlyOnceWith('project-a', 10, undefined, undefined, filters, undefined);
+      expect(count, status).toHaveBeenCalledExactlyOnceWith('project-a', undefined, filters);
+      expect(dashboard['managementClosingOnly']()).toBe(false);
+      expect(table.first()).toBe(0);
+    }
+  });
+
+  it.each<Lens>(['project', 'foundation'])('keeps the %s table mounted when leaving an empty Closing Soon list for All', async (lens) => {
+    await management(lens);
+    const service = TestBed.inject(VoteService);
+    const list = vi.mocked(service.getVotesByProjectPaginated);
+    const count = vi.mocked(service.getVotesCountByProject);
+    list.mockReturnValueOnce(of({ data: [], total_records: 0 }));
+    await selectSummary('closing-soon');
+    expect(rows()).toEqual([]);
+    const originalTable = table;
+    const destroyed = vi.fn();
+    table['destroyRef'].onDestroy(destroyed);
+    const pending = new Subject<VoteListResponse>();
+    list.mockReturnValueOnce(pending);
+    list.mockClear();
+    count.mockClear();
+    element('filter-pill-all')!.click();
+    fixture.detectChanges();
+    expect(element('votes-empty-state-card')).toBeNull();
+    expect(destroyed).not.toHaveBeenCalled();
+    await settle();
+    expect(fixture.debugElement.query(By.directive(VotesTableComponent)).componentInstance).toBe(originalTable);
+    expect(destroyed).not.toHaveBeenCalled();
+    expect(element('votes-empty-state-card')).toBeNull();
+    expect(list).toHaveBeenCalledExactlyOnceWith('project-a', 10, undefined, undefined, undefined, undefined);
+    expect(count).toHaveBeenCalledExactlyOnceWith('project-a', undefined, undefined);
+    pending.next({ data: [vote('restored', 1)] });
+    pending.complete();
+    await settle();
+    expect(rows()).toEqual(['restored']);
+    expect(destroyed).not.toHaveBeenCalled();
+  });
+
+  it.each<Lens>(['project', 'foundation'])('hides the %s paginator until the closing list supplies its total', async (lens) => {
+    await management(lens);
+    const pending = new Subject<VoteListResponse>();
+    vi.mocked(TestBed.inject(VoteService).getVotesByProjectPaginated).mockReturnValueOnce(pending);
+    expect(fixture.nativeElement.querySelector('.p-paginator')).not.toBeNull();
+    await selectSummary('closing-soon');
+    expect(fixture.nativeElement.querySelector('.p-paginator')).toBeNull();
+    expect(element('votes-search-input')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="votes-row-first-page"]')).toBeNull();
+    pending.next({ data: [vote('closing', 1)], total_records: 1 });
+    pending.complete();
+    await settle();
+    expect(table.totalRecords()).toBe(1);
+    expect(fixture.nativeElement.querySelector('.p-paginator')).not.toBeNull();
+  });
+
+  for (const lens of ['project', 'foundation'] as const) {
+    it.each(['list', 'count'] as const)(`waits for both %s-first responses before restoring the ${lens} Active paginator`, async (first) => {
+      await management(lens);
+      await selectSummary('closing-soon');
+      const service = TestBed.inject(VoteService);
+      const list = new Subject<VoteListResponse>();
+      const count = new Subject<number>();
+      vi.mocked(service.getVotesByProjectPaginated).mockReturnValueOnce(list);
+      vi.mocked(service.getVotesCountByProject).mockReturnValueOnce(count);
+      table['onStatusTabChange'](PollStatus.ACTIVE);
+      await settle();
+      expect(fixture.nativeElement.querySelector('.p-paginator')).toBeNull();
+      const finishList = () => {
+        list.next({ data: [vote('active', 1)] });
+        list.complete();
+      };
+      const finishCount = () => {
+        count.next(20);
+        count.complete();
+      };
+      if (first === 'list') finishList();
+      else finishCount();
+      await settle();
+      expect(fixture.nativeElement.querySelector('.p-paginator')).toBeNull();
+      if (first === 'list') finishCount();
+      else finishList();
+      await settle();
+      expect(table.totalRecords()).toBe(20);
+      expect(fixture.nativeElement.querySelector('.p-paginator')).not.toBeNull();
+    });
+  }
+
+  it('uses closing server rows/totals without count requests, retains pending controls and clears on explicit Active', async () => {
+    await management();
+    const service = TestBed.inject(VoteService);
+    const count = vi.mocked(service.getVotesCountByProject);
+    const list = vi.mocked(service.getVotesByProjectPaginated);
+    table.searchForm.patchValue({ group: 'Synthetic Board', search: 'Ballot' });
+    await selectSummary('closing-soon');
+    expect(dashboard['managementClosingOnly']()).toBe(true);
+    expect(table.statusTab()).toBe(PollStatus.ACTIVE);
+    expect(table.first()).toBe(0);
+    expect(table.totalRecords()).toBe(1);
+    expect(rows()).toEqual(['closing']);
+    expect(list).toHaveBeenLastCalledWith('project-a', 10, undefined, 'Ballot', ['status:active', 'committee_name:Synthetic Board'], true);
+    expect(table.searchForm.controls.search.value).toBe('Ballot');
+    count.mockClear();
+    dashboard['refreshVotes']();
+    await settle();
+    expect(count).not.toHaveBeenCalled();
+    table['onStatusTabChange'](PollStatus.ACTIVE);
+    await settle();
+    expect(dashboard['managementClosingOnly']()).toBe(false);
+    expect(table.first()).toBe(0);
+    expect(rows()).toEqual(['first-page']);
+    dashboard['onPageChange']({ first: 10, rows: 10 });
+    await settle();
+    await selectSummary('active');
+    expect(table.first()).toBe(0);
+    expect(rows()).toEqual(['first-page']);
+    await selectSummary('closing-soon');
+    await selectSummary('closing-soon');
+    expect(dashboard['managementClosingOnly']()).toBe(false);
+    expect(table.statusTab()).toBe(PollStatus.ACTIVE);
+    await selectSummary('closing-soon');
+    table['resetFilters']();
+    await settle();
+    expect(dashboard['managementClosingOnly']()).toBe(false);
+    expect(table.statusTab()).toBe('all');
+  });
+
+  it('keeps zero closing results recoverable through Reset without hiding controls', async () => {
+    await management();
+    vi.mocked(TestBed.inject(VoteService).getVotesByProjectPaginated).mockReturnValue(of({ data: [], total_records: 0 }));
+    await selectSummary('closing-soon');
+    expect(table.totalRecords()).toBe(0);
+    expect(element('votes-search-input')).not.toBeNull();
+    expect(element('votes-group-filter')).not.toBeNull();
+    expect(element('votes-empty-state-card')).toBeNull();
+    expect(fixture.nativeElement.textContent).toContain('No results found');
+    expect(fixture.nativeElement.textContent).toContain('Reset filters');
+  });
+
+  it('isolates summary loading/failure/retry from the available list and publishes confirmed zero', async () => {
+    const service = TestBed.inject(VoteService);
+    const pending = new Subject<VoteSummary>();
+    vi.mocked(service.getVotesSummaryByProject).mockReturnValueOnce(pending);
+    await management();
+    const button = element('stat-card-active') as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.textContent).toContain('—');
+    expect(rows()).toEqual(['first-page']);
+    pending.error(new Error('Summary failed'));
+    await settle();
+    expect(element('votes-management-summary-error')?.getAttribute('role')).toBe('alert');
+    expect(dashboard['managementVoteStatCards']().map((card) => card.value)).toEqual(['—', '—']);
+    expect(rows()).toEqual(['first-page']);
+    vi.mocked(service.getVotesByProjectPaginated).mockClear();
+    vi.mocked(service.getVotesCountByProject).mockClear();
+    vi.mocked(service.getVotesSummaryByProject).mockReturnValueOnce(of({ active_votes: 0, closing_soon: 0, as_of: new Date(NOW).toISOString() }));
+    element('votes-management-summary-retry')!.querySelector('button')!.click();
+    await settle();
+    expect(dashboard['managementVoteStatCards']().map((card) => card.value)).toEqual([0, 0]);
+    expect(element('votes-management-summary-error')).toBeNull();
+    expect(button.disabled).toBe(false);
+    expect(service.getVotesByProjectPaginated).not.toHaveBeenCalled();
+    expect(service.getVotesCountByProject).not.toHaveBeenCalled();
+  });
+
+  it('cancels obsolete summaries and resets closing mode/cursors on same-lens context changes', async () => {
+    const service = TestBed.inject(VoteService);
+    const old = new Subject<VoteSummary>();
+    vi.mocked(service.getVotesSummaryByProject).mockReturnValueOnce(old);
+    await management();
+    activeContext.set({ uid: 'project-b', name: 'Synthetic B', slug: 'synthetic-b' });
+    await settle();
+    expect(old.observers).toHaveLength(0);
+    old.next({ active_votes: 99, closing_soon: 99, as_of: new Date(NOW).toISOString() });
+    expect(dashboard['managementSummary']()?.active_votes).toBe(20);
+    await selectSummary('closing-soon');
+    dashboard['onPageChange']({ first: 10, rows: 10 });
+    activeContext.set({ uid: 'project-c', name: 'Synthetic C', slug: 'synthetic-c' });
+    await settle();
+    expect(dashboard['managementClosingOnly']()).toBe(false);
+    expect(table.first()).toBe(0);
+    expect(service.getVotesByProjectPaginated).toHaveBeenLastCalledWith('project-c', 10, undefined, undefined, ['status:active'], undefined);
+    activeLens.set('org');
+    await settle();
+    expect(element('votes-management-stats')).toBeNull();
   });
 
   it('returns to the complete personal list after leaving Me with a summary selected', async () => {
@@ -248,5 +515,100 @@ describe('VotesDashboardComponent personal summary', () => {
     expect(rows()).toEqual(empty ? [] : ['responded', 'soon', 'later', 'ended']);
     expect(table.searchForm.controls.group.value).toBe(empty ? null : 'Audi Group');
     if (empty) expect(fixture.nativeElement.textContent).toContain('No results found');
+  });
+
+  describe('permalink target', () => {
+    const openTarget = async (target: VotePermalinkTarget | null) => {
+      fixture.componentRef.setInput('permalinkTarget', target);
+      await settle();
+    };
+    const drawers = () => ({ cast: dashboard['castDrawerVisible'](), results: dashboard['resultsDrawerVisible']() });
+
+    it('opens the cast drawer for a cast target', async () => {
+      await openTarget({ uid: 'soon', drawer: 'cast', audience: 'voter' });
+
+      expect(dashboard['selectedVoteId']()).toBe('soon');
+      expect(drawers()).toEqual({ cast: true, results: false });
+    });
+
+    it('opens an initial target without reporting a close before the first render', () => {
+      const initialFixture = TestBed.createComponent(VotesDashboardComponent);
+      const closed = vi.fn();
+      initialFixture.componentInstance.permalinkClosed.subscribe(closed);
+      initialFixture.componentRef.setInput('permalinkTarget', { uid: 'soon', drawer: 'cast', audience: 'voter' });
+      try {
+        initialFixture.detectChanges();
+        TestBed.tick();
+
+        expect(initialFixture.componentInstance['castDrawerVisible']()).toBe(true);
+        expect(initialFixture.componentInstance['resultsDrawerVisible']()).toBe(false);
+        expect(closed).not.toHaveBeenCalled();
+      } finally {
+        initialFixture.destroy();
+      }
+    });
+
+    it('tears down permalink visibility subscriptions when the dashboard is destroyed', async () => {
+      const closed = vi.fn();
+      dashboard.permalinkClosed.subscribe(closed);
+      await openTarget({ uid: 'soon', drawer: 'cast', audience: 'voter' });
+
+      fixture.destroy();
+      dashboard['castDrawerVisible'].set(false);
+      TestBed.tick();
+
+      expect(closed).not.toHaveBeenCalled();
+    });
+
+    it('opens the results drawer as creator for a results/creator target, in the Me lens', async () => {
+      await openTarget({ uid: 'not-in-feed', drawer: 'results', audience: 'creator' });
+
+      expect(drawers()).toEqual({ cast: false, results: true });
+      expect(dashboard['resultsAudience']()).toBe('creator');
+
+      // Another vote opened from the list falls back to the lens audience.
+      dashboard['onViewResults']('later');
+      expect(dashboard['resultsAudience']()).toBe('voter');
+    });
+
+    it('emits permalinkClosed once when the drawer closes, not when switching results → cast', async () => {
+      const closed = vi.fn();
+      dashboard.permalinkClosed.subscribe(closed);
+      await openTarget({ uid: 'soon', drawer: 'results', audience: 'voter' });
+
+      dashboard['onCastFromResults']('soon');
+      await settle();
+      expect(closed).not.toHaveBeenCalled();
+      expect(drawers()).toEqual({ cast: true, results: false });
+
+      dashboard['castDrawerVisible'].set(false);
+      await settle();
+      expect(closed).toHaveBeenCalledTimes(1);
+
+      // Re-emitting the same target never reopens the drawer, and later closes don't re-emit.
+      await openTarget({ uid: 'soon', drawer: 'results', audience: 'voter' });
+      expect(drawers()).toEqual({ cast: false, results: false });
+      dashboard['onViewResults']('later');
+      dashboard['resultsDrawerVisible'].set(false);
+      await settle();
+      expect(closed).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves the routed dashboard unchanged without a target', async () => {
+      const closed = vi.fn();
+      dashboard.permalinkClosed.subscribe(closed);
+      await openTarget(null);
+
+      expect(drawers()).toEqual({ cast: false, results: false });
+      expect(dashboard['resultsAudience']()).toBe('voter');
+      dashboard['onViewResults']('later');
+      dashboard['resultsDrawerVisible'].set(false);
+      await settle();
+      expect(closed).not.toHaveBeenCalled();
+
+      activeLens.set('project');
+      await settle();
+      expect(dashboard['resultsAudience']()).toBe('creator');
+    });
   });
 });
