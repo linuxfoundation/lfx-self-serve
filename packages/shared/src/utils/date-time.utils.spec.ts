@@ -493,10 +493,11 @@ describe('detectBrowserTimezoneOption', () => {
   });
 
   it('does not pair zones whose clocks change on a different day or hour', () => {
-    // Each agrees with Europe/Athens on most days but changes its clocks at a different moment.
+    // Each agrees with Europe/Athens on most days but changes its clocks at a different moment, under
+    // long-stable rules (Beirut: midnight local; Chisinau: 02:00 local; Athens: 01:00 UTC). Zones whose DST
+    // dates are set year by year (e.g. Asia/Gaza) are left out: their result depends on the runtime's tzdata.
     expect(detectBrowserTimezoneOption(june2026, 'Asia/Beirut')).not.toBe('Europe/Athens');
     expect(detectBrowserTimezoneOption(june2026, 'Europe/Chisinau')).not.toBe('Europe/Athens');
-    expect(detectBrowserTimezoneOption(june2026, 'Asia/Gaza')).not.toBe('Europe/Athens');
   });
 
   it('returns null when no zone is reported', () => {
