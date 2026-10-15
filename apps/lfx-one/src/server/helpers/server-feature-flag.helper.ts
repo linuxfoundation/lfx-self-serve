@@ -343,7 +343,7 @@ export enum ServerFeatureFlag {
    *
    * Not a cutover flag: there is no legacy arm. It gates ONLY this route. The other
    * campaign-service-only Optimize routes (Meta/X/Microsoft/LinkedIn/Reddit audience,
-   * Meta/Reddit/X campaign-ref, the Reddit keyword read, campaign settings, Meta ad sets, keyword
+   * Meta/Reddit/X/Microsoft campaign-ref, the Reddit keyword read, campaign settings, Meta ad sets, keyword
    * targeting, adopt) are ungated, following the precedent of the Microsoft keyword read and the
    * budget/bid levers: their upstream endpoints exist, and campaign-service answers 400 itself where
    * a platform's metrics are switched off.

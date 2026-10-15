@@ -741,7 +741,12 @@
         } @else {
           <ng-container
             [ngTemplateOutlet]="accountPanel"
-            [ngTemplateOutletContext]="{ $implicit: view, panel: reportBackedPanel(), note: reportBackedTotalsNote() }" />
+            [ngTemplateOutletContext]="{
+              $implicit: view,
+              panel: reportBackedPanel(),
+              actPlatform: reportBackedActPlatform(),
+              note: reportBackedTotalsNote(),
+            }" />
         }
       }
     </div>
@@ -922,8 +927,8 @@
 
   <!-- An ad platform's KPI strip and campaign table (LinkedIn, Reddit, Meta, Microsoft Ads, X), from its
        precomputed AccountMonitorPanelView: "Couldn't read" rows are dashed, "Unknown" pacing and "Not
-       measured" conversions are grey. LinkedIn adds its creatives column; LinkedIn, Reddit and Meta
-       (`actPlatform`) add the row actions. -->
+       measured" conversions are grey. LinkedIn adds its creatives column; LinkedIn, Reddit, Meta and
+       Microsoft Ads (`actPlatform`) add the row actions, X does not. -->
   <ng-template #accountPanel let-view let-panel="panel" let-note="note" let-actPlatform="actPlatform">
     @if (view.kpis; as kpis) {
       <!-- KPI Strip -->

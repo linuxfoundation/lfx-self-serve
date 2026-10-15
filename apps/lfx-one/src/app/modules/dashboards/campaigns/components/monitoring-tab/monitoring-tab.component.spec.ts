@@ -1066,6 +1066,37 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       expect(text('microsoft-connection-notice-title')).toBe('No Microsoft Ads connection for this project');
       expect(service['getMicrosoftMonitorData']).not.toHaveBeenCalled();
     });
+
+    it.each([
+      ['monitor-act-toggle-1', 'pause_resume', 'Pause or resume: KubeCon NA 2026 - Search'],
+      ['monitor-act-budget-1', 'budget', 'Budget: KubeCon NA 2026 - Search'],
+      ['monitor-act-bid-1', 'bid', 'Bid: KubeCon NA 2026 - Search'],
+    ])("offers %s on a Microsoft row, opening the act dialog with Microsoft's campaign id", async (testId, lever, header) => {
+      await setup(allConnected);
+      select('microsoft');
+
+      expect(el('monitor-act-microsoft-ads-1')).not.toBeNull();
+      (fixture.nativeElement.querySelector(`[data-testid="${testId}"] button`) as HTMLButtonElement).click();
+
+      expect(TestBed.inject(DialogService).open).toHaveBeenCalledWith(
+        CampaignActDialogComponent,
+        expect.objectContaining({
+          header,
+          data: { projectSlug: 'cncf', platform: 'microsoft-ads', platformCampaignId: '1', campaignName: 'KubeCon NA 2026 - Search', lever },
+        })
+      );
+    });
+
+    it('offers no actions on an X row, which shares the report-backed panel', async () => {
+      await setup(allConnected);
+      // X's button is hidden while the app disables the platform, so the panel is selected directly.
+      (fixture.componentInstance as unknown as { setPlatform(p: string): void }).setPlatform('twitter');
+      fixture.detectChanges();
+
+      expect(service['getTwitterMonitorData']).toHaveBeenCalled();
+      expect(el('twitter-campaign-row-0')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid^="monitor-act-"]')).toBeNull();
+    });
   });
 
   /**

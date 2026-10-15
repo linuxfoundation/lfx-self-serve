@@ -109,20 +109,25 @@ export const CAMPAIGN_AUDIENCE_FAILED_MESSAGE = 'The audience read failed. Try a
  * campaign-service's `localCampaignRefMethod` calls (`design/connection.go`). The id is a query
  * parameter upstream, so this refuses early what upstream would refuse with a 400.
  *
- * Google Ads and Microsoft Advertising are absent: their resolves are internal to the keyword
- * actions and have no BFF route. LinkedIn's is the decoder Pattern of `resolve-linkedin-ads-campaign`
- * (a positive int64 with no leading zero; upstream also refuses one past int64 with 400).
+ * Google Ads is absent: its resolve is internal to the keyword actions and has no BFF route.
+ * LinkedIn's is the decoder Pattern of `resolve-linkedin-ads-campaign` and Microsoft's that of
+ * `resolve-microsoft-ads-campaign` (each a positive int64 with no leading zero; upstream also refuses
+ * one past int64 with 400).
  */
 export const CAMPAIGN_REF_ID_PATTERNS: Readonly<Record<CampaignRefPlatform, RegExp>> = {
   'meta-ads': /^[1-9][0-9]{0,31}$/,
   'reddit-ads': /^[A-Za-z0-9_]{1,64}$/,
   'twitter-ads': /^[A-Za-z0-9]{1,64}$/,
   'linkedin-ads': /^[1-9][0-9]{0,18}$/,
+  'microsoft-ads': /^[1-9][0-9]{0,18}$/,
 };
+
+/** The campaign-ref platforms whose ids are int64 upstream, so must also be within its range. */
+export const CAMPAIGN_REF_INT64_PLATFORMS: ReadonlySet<CampaignRefPlatform> = new Set<CampaignRefPlatform>(['linkedin-ads', 'microsoft-ads']);
 
 /**
  * Whether a platform campaign id passes the campaign-ref resolve's id rule. The pattern is the shape;
- * LinkedIn's ids must also be within int64 (upstream refuses one past 9223372036854775807 with 400),
+ * LinkedIn's and Microsoft's ids must also be within int64 (upstream refuses one past 9223372036854775807 with 400),
  * which a regex states badly, so that range is checked arithmetically.
  */
 export function isValidCampaignRefId(platform: CampaignRefPlatform, value: unknown): boolean {
@@ -132,7 +137,7 @@ export function isValidCampaignRefId(platform: CampaignRefPlatform, value: unkno
   if (!CAMPAIGN_REF_ID_PATTERNS[platform].test(value)) {
     return false;
   }
-  return platform === 'linkedin-ads' ? isCanonicalPositiveInt64(value) : true;
+  return CAMPAIGN_REF_INT64_PLATFORMS.has(platform) ? isCanonicalPositiveInt64(value) : true;
 }
 
 /**
@@ -357,11 +362,16 @@ export const CAMPAIGN_SETTINGS_READ_FALLBACK = 'The live settings could not be r
 // Act from Monitor
 // ---------------------------------------------------------------------------
 
-/** The Monitor tables whose rows offer actions: LinkedIn, Reddit and Meta (Google Ads is another owner's lane). */
+/**
+ * The Monitor tables whose rows offer actions: LinkedIn, Reddit, Meta and Microsoft Ads (Google Ads is
+ * another owner's lane). X shares Microsoft's report-backed panel but is not here: its toggle and
+ * budget levers are not offered yet.
+ */
 export const CAMPAIGN_MONITOR_ACT_PLATFORMS: ReadonlySet<CampaignMonitorActPlatform> = new Set<CampaignMonitorActPlatform>([
   'linkedin-ads',
   'reddit-ads',
   'meta-ads',
+  'microsoft-ads',
 ]);
 
 /** The act dialog's header per lever, and the Monitor row button's visible text. */

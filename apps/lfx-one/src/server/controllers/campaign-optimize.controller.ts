@@ -95,7 +95,7 @@ export class CampaignOptimizeController {
   }
 
   /**
-   * `GET /api/campaigns/{meta|reddit|twitter|linkedin}/campaign-ref?project=&platformCampaignId=`.
+   * `GET /api/campaigns/{meta|reddit|twitter|linkedin|microsoft}/campaign-ref?project=&platformCampaignId=`.
    * Answers campaign-service's resolution as is; an unowned id is a 200 with no matches.
    */
   public async resolvePlatformCampaign(req: Request, res: Response, next: NextFunction, platform: CampaignRefPlatform): Promise<void> {
