@@ -2189,6 +2189,19 @@ export interface CampaignPlatformResult {
 }
 
 /**
+ * What the UI makes of one failed platform's `error` (see `describeCampaignDispatchFailure`).
+ *
+ * `message` is the backend sentence to show, with the `(reason: <token>)` fragment removed when
+ * `nextStep` replaces it. `nothingCreated` is true only for the fixed pre-create sentence endings
+ * in `CAMPAIGN_DISPATCH_NOTHING_CREATED_SUFFIXES`.
+ */
+export interface CampaignDispatchFailureDescription {
+  message: string;
+  nextStep: string | null;
+  nothingCreated: boolean;
+}
+
+/**
  * What a finished creation job left behind, normalized across both sources.
  *
  * `campaigns` is populated by the vendor-direct path and `platformResults` by the

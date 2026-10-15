@@ -136,14 +136,21 @@ import type {
   RedditCallToAction,
   RedditObjective,
 } from '@lfx-one/shared/interfaces';
-import { campaignBiddingError, campaignBiddingPayload, codePointLength, defaultCampaignBiddingDraft } from '@lfx-one/shared/utils';
+import {
+  campaignBiddingError,
+  campaignBiddingPayload,
+  codePointLength,
+  defaultCampaignBiddingDraft,
+  describeCampaignDispatchFailure,
+} from '@lfx-one/shared/utils';
 
 import { CampaignBiddingControlComponent } from '../campaign-bidding-control/campaign-bidding-control.component';
 
 type ImplementationStep = 'form' | 'creating' | 'results';
 
 /**
- * One campaign-service platform result paired with the three-state outcome the row renders.
+ * One campaign-service platform result paired with the outcome the row renders, and the
+ * operator-facing reading of its `error` (`describeCampaignDispatchFailure`).
  *
  * A local intersection rather than a `@lfx-one/shared` interface: it is this component's view
  * model, derived from `CampaignPlatformResult` and consumed only by this template, so it is not
@@ -152,14 +159,26 @@ type ImplementationStep = 'form' | 'creating' | 'results';
  * `apps/lfx-one/`, while ESLint's `@typescript-eslint/consistent-type-definitions` rejects a
  * plain `type X = { … }` object literal.
  */
-type PlatformResultRow = CampaignPlatformResult & { outcome: 'created' | 'orphaned' | 'unconfirmed' };
+type PlatformResultRow = CampaignPlatformResult & {
+  outcome: 'created' | 'orphaned' | 'nothing-created' | 'unconfirmed';
+  displayError: string | null;
+  nextStep: string | null;
+};
 
 /** See `ImplementationTabComponent.platformOutcomes` for why `ok` alone is not the test. */
 function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow {
+  const failure = result.error ? describeCampaignDispatchFailure(result.error) : null;
+  const displayError = failure?.message ?? result.error ?? null;
+  // Pre-create rows only: an id-bearing row has a campaign upstream, and "create again" there is
+  // the duplicate-spend move this panel exists to prevent.
+  const nextStep = !result.ok && !result.campaignId ? (failure?.nextStep ?? null) : null;
   if (result.ok) {
-    return { ...result, outcome: 'created' };
+    return { ...result, outcome: 'created', displayError, nextStep };
   }
-  return { ...result, outcome: result.campaignId ? 'orphaned' : 'unconfirmed' };
+  if (result.campaignId) {
+    return { ...result, outcome: 'orphaned', displayError, nextStep };
+  }
+  return { ...result, outcome: failure?.nothingCreated ? 'nothing-created' : 'unconfirmed', displayError, nextStep };
 }
 
 @Component({
@@ -579,7 +598,7 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly platformResults = signal<CampaignPlatformResult[]>([]);
 
   /**
-   * `platformResults` with each row's outcome resolved to three states rather than the boolean
+   * `platformResults` with each row's outcome resolved to four states rather than the boolean
    * the wire carries. Derived here rather than in the template because only signal reads,
    * computed values and pipes may appear there (`docs/reviews/frontend-checklist.md` §4).
    *
@@ -592,14 +611,15 @@ export class ImplementationTabComponent implements OnInit {
    * being spent, so calling it a plain failure is wrong in the expensive direction: the reader's
    * next move is to create it again.
    *
-   * The third state is `unconfirmed`, NOT "not created", and the absence of a `campaign_id` is
-   * not evidence that nothing was created. `orchestrator.go` emits `ok: false` with no id for at
-   * least four distinct situations: a genuine upstream rejection (:869), a concurrent dispatch
-   * that skipped this platform (:780 — which campaign-service explicitly calls a skip, not a
-   * failure), and two responses in which an upstream campaign may well exist but its id did not
-   * survive — "dispatcher returned no campaign" (:879) and "dispatcher returned no upstream
-   * campaign id" (:887). Rendering all four as a definite "not created" tells an ED that no paid
-   * artifact exists, and their next move is to create a second one that really does spend money.
+   * The fallback state for an id-less failure is `unconfirmed`, NOT "not created", and the
+   * absence of a `campaign_id` is not evidence that nothing was created. `orchestrator.go` emits
+   * `ok: false` with no id for at least four distinct situations: a genuine upstream rejection
+   * (:869), a concurrent dispatch that skipped this platform (:780 — which campaign-service
+   * explicitly calls a skip, not a failure), and two responses in which an upstream campaign may
+   * well exist but its id did not survive — "dispatcher returned no campaign" (:879) and
+   * "dispatcher returned no upstream campaign id" (:887). Rendering all four as a definite "not
+   * created" tells an ED that no paid artifact exists, and their next move is to create a second
+   * one that really does spend money.
    *
    * So the row states what is known — this platform's campaign could not be confirmed — and
    * leaves the reader to check. That over-warns on the genuine-rejection and skip cases, which is
@@ -607,6 +627,17 @@ export class ImplementationTabComponent implements OnInit {
    * campaign costs budget. Note the skip is NOT detected by matching its human-readable sentence;
    * the wire has no dedicated `skipped` field yet (LFXV2-2665 tracks adding one) and a message
    * reworded upstream would silently flip the UI's verdict.
+   *
+   * The one exception is `nothing-created`, and it is matched on text deliberately. Since
+   * campaign-service #208 a failure the service PROVED happened before anything was created (the
+   * claim was released) carries a fixed sentence whose ending says so —
+   * `CAMPAIGN_DISPATCH_NOTHING_CREATED_SUFFIXES`, mirrored from `DispatchFailureMessage`. That
+   * differs from the skip in the one way the rule above cares about: the direction of drift. A
+   * reworded skip sentence would flip a row AWAY from the warning; a reworded pre-create sentence
+   * simply stops matching and the row falls back to `unconfirmed`, the over-warning direction. No
+   * sentence for the possibly-created case ends in those suffixes, and none of them is built from
+   * upstream text, so a match cannot downgrade a real campaign to "nothing was sent". An id-bearing
+   * row stays `orphaned` whatever its message says.
    */
   protected readonly platformOutcomes = computed<PlatformResultRow[]>(() => this.platformResults().map(toPlatformResultRow));
 
@@ -618,11 +649,24 @@ export class ImplementationTabComponent implements OnInit {
    * is how an orphaned `campaignId` reaches the page at all — so an all-failed result would
    * otherwise be announced as a success in green.
    *
-   * The negative case is headed "Campaign Status Unconfirmed" rather than "No Campaigns Created"
-   * for the same reason the row state is named `unconfirmed`: a heading is the one line a reader
-   * acts on without reading further, and this one must not assert an absence nobody verified.
+   * Drives the panel's colour and icon; the heading text is `platformResultsHeading`.
    */
-  protected readonly anyPlatformCreated = computed(() => this.platformOutcomes().some((r) => r.outcome !== 'unconfirmed'));
+  protected readonly anyPlatformCreated = computed(() => this.platformOutcomes().some((r) => r.outcome === 'created' || r.outcome === 'orphaned'));
+
+  /**
+   * The results panel heading. The negative case is "Campaign Status Unconfirmed" rather than "No
+   * Campaigns Created" for the same reason the row state is named `unconfirmed`: a heading is the
+   * one line a reader acts on without reading further, and it must not assert an absence nobody
+   * verified. The exception is when EVERY row is a proven pre-create failure — see
+   * `platformOutcomes` for what `nothing-created` is and is not.
+   */
+  protected readonly platformResultsHeading = computed(() => {
+    if (this.anyPlatformCreated()) {
+      return 'Campaigns Created';
+    }
+    const rows = this.platformOutcomes();
+    return rows.length > 0 && rows.every((r) => r.outcome === 'nothing-created') ? 'No Campaigns Created' : 'Campaign Status Unconfirmed';
+  });
 
   protected readonly errors = signal<string[]>([]);
   protected readonly briefKeywords = signal<CampaignKeyword[]>([]);
