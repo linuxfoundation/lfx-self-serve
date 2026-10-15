@@ -453,6 +453,8 @@ export interface MeetingOccurrenceBrowseDialogData {
   items: () => MeetingOccurrenceStripItem[];
   /** The page's occurrence (Unix ms), the row marked "Viewing" */
   selectedStartMs: () => number | null;
+  /** Whether the page shows an occurrence that has ended: the tab to open when its row is not loaded */
+  selectedHasEnded: () => boolean;
   /** Whether a side has more to read */
   hasMore: (tab: MeetingOccurrenceBrowseTab) => boolean;
   /** The past history could not be read: the Past tab is unknown, not empty */

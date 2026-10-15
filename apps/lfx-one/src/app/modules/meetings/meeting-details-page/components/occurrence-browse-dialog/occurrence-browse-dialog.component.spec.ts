@@ -34,7 +34,7 @@ describe('MeetingOccurrenceBrowseDialogComponent', () => {
   let open: ReturnType<typeof vi.fn>;
   let loadMore: ReturnType<typeof vi.fn>;
 
-  async function render(selected: number | null, cadence: string | null = 'Weekly on Thursday'): Promise<void> {
+  async function render(selected: number | null, cadence: string | null = 'Weekly on Thursday', selectedHasEnded = false): Promise<void> {
     close = vi.fn();
     open = vi.fn();
     loadMore = vi.fn().mockResolvedValue(true);
@@ -45,6 +45,7 @@ describe('MeetingOccurrenceBrowseDialogComponent', () => {
       timezone: 'UTC',
       items: () => items(),
       selectedStartMs: () => selected,
+      selectedHasEnded: () => selectedHasEnded,
       hasMore: (tab) => more[tab](),
       pastIncomplete: () => pastIncomplete(),
       loadMore,
@@ -81,6 +82,12 @@ describe('MeetingOccurrenceBrowseDialogComponent', () => {
     tab('upcoming')?.click();
     fixture.detectChanges();
     expect(rows().map((element) => Number(element.getAttribute('data-start-ms')))).toEqual([at(0), at(1)]);
+  });
+
+  it('opens on Past for an ended page occurrence whose row is not loaded', async () => {
+    await render(at(-40), 'Weekly on Thursday', true);
+
+    expect(tab('past')?.getAttribute('aria-selected')).toBe('true');
   });
 
   it("marks the page's occurrence as Viewing, with aria-current", async () => {

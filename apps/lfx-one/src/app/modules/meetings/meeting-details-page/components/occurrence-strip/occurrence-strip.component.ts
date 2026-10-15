@@ -246,6 +246,7 @@ export class MeetingOccurrenceStripComponent {
       timezone: this.timezone,
       items: () => this.items(),
       selectedStartMs: () => this.state.selectedOccurrenceStartMs(),
+      selectedHasEnded: () => this.state.timeState() === 'ended',
       hasMore: (tab) => this.browseReadSide(tab) !== null,
       pastIncomplete: () => !!this.loaded()?.pastIncomplete,
       loadMore: (tab) => {

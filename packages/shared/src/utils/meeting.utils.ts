@@ -853,9 +853,11 @@ export function buildOccurrenceStripItems(
     if (startMs === null) {
       continue;
     }
+    // Minutes, unrounded: start plus duration must give back the scheduled end exactly (09:00:45–09:30
+    // is 29.25 minutes, not 29).
     const scheduled =
       past.scheduled_end_time && past.scheduled_start_time
-        ? Math.round((new Date(past.scheduled_end_time).getTime() - new Date(past.scheduled_start_time).getTime()) / 60000)
+        ? (new Date(past.scheduled_end_time).getTime() - new Date(past.scheduled_start_time).getTime()) / 60000
         : 0;
     // An ended occurrence the live list still carries takes the record's composite id, its canonical URL,
     // and the record's end: shown only when the record has a scheduled end (the live duration may be the

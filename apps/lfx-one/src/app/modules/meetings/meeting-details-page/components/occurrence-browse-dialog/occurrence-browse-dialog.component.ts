@@ -154,10 +154,14 @@ export class MeetingOccurrenceBrowseDialogComponent {
     this.ref.close();
   }
 
-  /** The tab holding the page's occurrence; Upcoming when it is not among those loaded. */
+  /**
+   * The tab holding the page's occurrence. When its row is not loaded (an old one beyond the strip's
+   * reads), the page's own time state says which: Past for an occurrence that has ended.
+   */
   private initialTab(): MeetingOccurrenceBrowseTab {
     const selected = this.data.items().find((item) => item.startMs === this.data.selectedStartMs());
-    return selected?.isPast ? 'past' : 'upcoming';
+    const hasEnded = selected ? selected.isPast : this.data.selectedHasEnded();
+    return hasEnded ? 'past' : 'upcoming';
   }
 
   private initRows(): Signal<MeetingOccurrenceBrowseRow[]> {

@@ -1570,6 +1570,28 @@ describe('buildOccurrenceStripItems (E6-03)', () => {
     ]);
   });
 
+  it('keeps a scheduled length with seconds exact, so start plus duration is the scheduled end', () => {
+    const start = at(16) + 45_000;
+    const end = at(16) + 30 * 60_000;
+    const [item] = buildOccurrenceStripItems(
+      [],
+      {
+        past: [
+          {
+            meeting_and_occurrence_id: `99152950841-${at(16)}`,
+            scheduled_start_time: new Date(start).toISOString(),
+            scheduled_end_time: new Date(end).toISOString(),
+          },
+        ],
+        future: [],
+      },
+      60,
+      now
+    );
+
+    expect(Date.parse(item.startTime) + item.duration * 60_000).toBe(end);
+  });
+
   it('flags a past record whose id is listed as cancelled', () => {
     const items = buildOccurrenceStripItems(
       [],
