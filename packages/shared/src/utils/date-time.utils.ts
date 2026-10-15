@@ -498,20 +498,21 @@ export function getTimezoneByValue(value: string): TimezoneOption | undefined {
 
 /**
  * The browser's own timezone, as one of the {@link TIMEZONES} picker options.
- * @description Read from `Intl`, which reports the operating system's zone setting. Matched in three
- * passes, most exact first:
+ * @description Read from `Intl`, which reports the operating system's zone setting (pass `reportedZone` to
+ * supply it instead, e.g. in tests). Matched in three passes, most exact first:
  * 1. the zone itself;
  * 2. the same zone under another name — engines may report a legacy alias (`Asia/Calcutta` for
  *    `Asia/Kolkata`), so both sides are compared in the engine's canonical form;
  * 3. a listed zone that keeps the same wall-clock time all year (Lisbon → London). Offsets are compared
- *    twice a month across the current year, so a zone with different DST dates or rules never matches —
- *    a single "current offset" check would pair zones that drift apart for part of the year.
+ *    daily across the current year and on both sides of each of the reported zone's clock changes, located
+ *    to the minute, so a zone whose DST starts or ends on a different day or hour does not match — a
+ *    single "current offset" check would pair zones that drift apart for part of the year.
  * Returns `null` when no zone is reported or nothing matches, so a caller can leave the field empty
  * rather than guess.
  */
-export function detectBrowserTimezoneOption(now: Date = new Date()): string | null {
+export function detectBrowserTimezoneOption(now: Date = new Date(), reportedZone?: string): string | null {
   try {
-    const detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const detected = reportedZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
 
     if (!detected) {
       return null;
@@ -533,19 +534,55 @@ export function detectBrowserTimezoneOption(now: Date = new Date()): string | nu
       return sameZone.value;
     }
 
-    const year = now.getUTCFullYear();
-    const samples = Array.from({ length: 24 }, (_, index) => new Date(Date.UTC(year, Math.floor(index / 2), index % 2 === 0 ? 1 : 15)));
-    const offsetsOf = (zone: string): number[] => samples.map((sample) => getTimezoneOffset(zone, sample));
-    const detectedOffsets = offsetsOf(detected);
-
-    if (detectedOffsets.some((offset) => Number.isNaN(offset))) {
-      return null;
-    }
-
-    return TIMEZONES.find((tz) => offsetsOf(tz.value).every((offset, index) => offset === detectedOffsets[index]))?.value ?? null;
+    return findSameWallClockZone(detected, now.getUTCFullYear());
   } catch {
     return null;
   }
+}
+
+/**
+ * Pass 3 of {@link detectBrowserTimezoneOption}: the first listed zone whose UTC offset equals `zone`'s at
+ * every probe instant of `year` — noon UTC daily, plus one minute before and at each of `zone`'s clock
+ * changes. Candidates are checked lazily and drop out at their first mismatch, so the full set of probes
+ * only runs for zones that already agree on the first ones.
+ */
+function findSameWallClockZone(zone: string, year: number): string | null {
+  const minute = 60 * 1000;
+  const days = Array.from({ length: 366 }, (_, index) => Date.UTC(year, 0, 1 + index, 12)).filter((time) => new Date(time).getUTCFullYear() === year);
+  const offsetAt = (time: number): number => getTimezoneOffset(zone, new Date(time));
+  const probes: number[] = [];
+  let previousOffset = offsetAt(days[0]);
+
+  if (Number.isNaN(previousOffset)) {
+    return null;
+  }
+
+  probes.push(days[0]);
+  for (let index = 1; index < days.length; index++) {
+    const offset = offsetAt(days[index]);
+    probes.push(days[index]);
+
+    if (offset !== previousOffset) {
+      // Narrow the change down to the minute, then probe just before it and at it.
+      let low = days[index - 1];
+      let high = days[index];
+      while (high - low > minute) {
+        const middle = low + Math.floor((high - low) / 2 / minute) * minute;
+        if (offsetAt(middle) === previousOffset) {
+          low = middle;
+        } else {
+          high = middle;
+        }
+      }
+      probes.push(high - minute, high);
+    }
+
+    previousOffset = offset;
+  }
+
+  const expected = probes.map(offsetAt);
+
+  return TIMEZONES.find((tz) => probes.every((time, index) => getTimezoneOffset(tz.value, new Date(time)) === expected[index]))?.value ?? null;
 }
 
 /**

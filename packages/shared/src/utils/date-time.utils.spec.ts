@@ -472,55 +472,43 @@ describe('wallTimeExistsInTimezone', () => {
 });
 
 describe('detectBrowserTimezoneOption', () => {
-  const RealDateTimeFormat = Intl.DateTimeFormat;
+  // The reported zone is passed in, so no \`Intl\` stub is needed; \`now\` pins the sampled year.
+  const june2026 = new Date('2026-06-01T00:00:00Z');
 
-  // Stubs only the zone the browser reports; formatters built for an explicit zone stay real, which is
-  // what the alias comparison relies on.
-  const stubBrowserZone = (zone: string | undefined): void => {
-    // A `function`, not an arrow, so it can still be called with `new`.
-    vi.spyOn(Intl, 'DateTimeFormat').mockImplementation(function (locales?: string | string[], options?: Intl.DateTimeFormatOptions) {
-      const real = new RealDateTimeFormat(locales, options);
-
-      if (options?.timeZone) {
-        return real;
-      }
-
-      const resolved = real.resolvedOptions();
-
-      return Object.assign(Object.create(real), { resolvedOptions: () => ({ ...resolved, timeZone: zone }) }) as Intl.DateTimeFormat;
-    } as unknown as typeof Intl.DateTimeFormat);
-  };
-
-  afterEach(() => vi.restoreAllMocks());
-
-  it('returns the browser zone when it is one of the picker options', () => {
-    stubBrowserZone('Europe/Berlin');
-    expect(detectBrowserTimezoneOption()).toBe('Europe/Berlin');
+  it('returns the reported zone when it is one of the picker options', () => {
+    expect(detectBrowserTimezoneOption(june2026, 'Europe/Berlin')).toBe('Europe/Berlin');
   });
 
   it('maps a legacy alias onto the picker option for the same zone', () => {
-    stubBrowserZone('Asia/Calcutta');
-    expect(detectBrowserTimezoneOption()).toBe('Asia/Kolkata');
+    expect(detectBrowserTimezoneOption(june2026, 'Asia/Calcutta')).toBe('Asia/Kolkata');
   });
 
   it('falls back to a listed zone that keeps the same wall-clock time all year', () => {
-    stubBrowserZone('Europe/Lisbon');
-    expect(detectBrowserTimezoneOption(new Date('2026-06-01T00:00:00Z'))).toBe('Europe/London');
+    expect(detectBrowserTimezoneOption(june2026, 'Europe/Lisbon')).toBe('Europe/London');
   });
 
   it('does not pair zones that share an offset only part of the year', () => {
-    // Same offset as Europe/London in winter, but no DST: no listed zone matches it all year except UTC.
-    stubBrowserZone('Africa/Abidjan');
-    expect(detectBrowserTimezoneOption(new Date('2026-06-01T00:00:00Z'))).toBe('UTC');
+    // Same offset as Europe/London in winter, but no DST: only UTC matches it all year.
+    expect(detectBrowserTimezoneOption(june2026, 'Africa/Abidjan')).toBe('UTC');
   });
 
-  it('returns null when the browser reports no zone', () => {
-    stubBrowserZone(undefined);
-    expect(detectBrowserTimezoneOption()).toBeNull();
+  it('does not pair zones whose clocks change on a different day or hour', () => {
+    // Each agrees with Europe/Athens on most days but changes its clocks at a different moment.
+    expect(detectBrowserTimezoneOption(june2026, 'Asia/Beirut')).not.toBe('Europe/Athens');
+    expect(detectBrowserTimezoneOption(june2026, 'Europe/Chisinau')).not.toBe('Europe/Athens');
+    expect(detectBrowserTimezoneOption(june2026, 'Asia/Gaza')).not.toBe('Europe/Athens');
   });
 
-  it('returns null when no picker option matches the browser zone', () => {
-    stubBrowserZone('Antarctica/Troll');
-    expect(detectBrowserTimezoneOption()).toBeNull();
+  it('returns null when no zone is reported', () => {
+    expect(detectBrowserTimezoneOption(june2026, '')).toBeNull();
+  });
+
+  it('returns null when no picker option matches the reported zone', () => {
+    expect(detectBrowserTimezoneOption(june2026, 'Antarctica/Troll')).toBeNull();
+  });
+
+  it('reads the browser zone when none is passed', () => {
+    const reported = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    expect(detectBrowserTimezoneOption(june2026)).toBe(detectBrowserTimezoneOption(june2026, reported));
   });
 });
