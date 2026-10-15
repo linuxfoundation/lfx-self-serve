@@ -149,6 +149,45 @@ describe('MeetingEditAgendaDialogComponent', () => {
     expect(config.closable).toBe(true);
   });
 
+  it("sends the series' duration for an occurrence that inherits it", async () => {
+    await render(
+      { scope: 'occurrence', occurrence: OCCURRENCE },
+      fresh({ duration: 90, occurrences: [{ occurrence_id: OCCURRENCE.occurrenceId, start_time: OCCURRENCE.startTime, duration: 0, description: ORIGINAL }] })
+    );
+    type('Occurrence agenda');
+
+    saveButton().click();
+    await settle();
+
+    expect(updateOccurrence).toHaveBeenCalledWith('meeting-1', OCCURRENCE.occurrenceId, expect.objectContaining({ duration: 90 }));
+  });
+
+  it.each([
+    ['marked cancelled', { status: 'cancel' }, []],
+    ['listed in cancelled_occurrences', {}, [OCCURRENCE.occurrenceId]],
+  ])('treats an occurrence %s meanwhile as gone, and saves nothing to it', async (_case, extra, cancelled) => {
+    await render(
+      { scope: 'occurrence', occurrence: OCCURRENCE },
+      fresh({
+        occurrences: [{ occurrence_id: OCCURRENCE.occurrenceId, start_time: OCCURRENCE.startTime, duration: 45, description: ORIGINAL, ...extra }],
+        cancelled_occurrences: cancelled,
+      })
+    );
+    type('Occurrence agenda');
+
+    saveButton().click();
+    await settle();
+
+    expect(query('edit-agenda-moved')).not.toBeNull();
+    expect(updateOccurrence).not.toHaveBeenCalled();
+  });
+
+  it('carries the documented test id on the agenda input', async () => {
+    await render();
+
+    expect(query('edit-agenda-input')?.querySelector('textarea')).not.toBeNull();
+  });
+
   it('says an occurrence moved or cancelled meanwhile, and saves nothing to it', async () => {
     await render({ scope: 'occurrence', occurrence: OCCURRENCE }, fresh({ occurrences: [] }));
     type('Occurrence agenda');

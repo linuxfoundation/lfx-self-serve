@@ -8,7 +8,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { MEETING_AGENDA_MAX_LENGTH, MEETING_AGENDA_WARNING_LENGTH } from '@lfx-one/shared/constants';
 import { Meeting, MeetingEditAgendaDialogData, MeetingOccurrence } from '@lfx-one/shared/interfaces';
-import { buildMeetingUpdateRequest } from '@lfx-one/shared/utils';
+import { buildMeetingUpdateRequest, isMeetingOccurrenceCancelled } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { lockDynamicDialogWhile } from '@shared/utils/lock-dynamic-dialog.util';
 import { MessageService } from 'primeng/api';
@@ -109,7 +109,8 @@ export class MeetingEditAgendaDialogComponent {
         await firstValueFrom(
           this.meetingService.updateOccurrence(this.data.meetingId, occurrence.occurrence_id, {
             start_time: occurrence.start_time,
-            duration: occurrence.duration,
+            // A zero or missing duration inherits the series' (the API requires one), as the composer reads it.
+            duration: occurrence.duration || fresh.duration,
             description,
           })
         );
@@ -142,7 +143,8 @@ export class MeetingEditAgendaDialogComponent {
   /**
    * The occurrence this dialog edits, as the fresh record holds it; `null` for a series edit. Matched by
    * its start instant as well as its id: the page's payload and the authenticated read need not spell
-   * the id alike (seconds or milliseconds), but they agree on when it starts.
+   * the id alike (seconds or milliseconds), but they agree on when it starts. A cancelled one counts as
+   * missing.
    */
   private freshOccurrence(meeting: Meeting): MeetingOccurrence | null {
     const edited = this.data.scope === 'occurrence' ? this.data.occurrence : null;
@@ -150,9 +152,10 @@ export class MeetingEditAgendaDialogComponent {
       return null;
     }
     const startMs = Date.parse(edited.startTime);
-    return (
-      (meeting.occurrences ?? []).find((occurrence) => occurrence.occurrence_id === edited.occurrenceId || Date.parse(occurrence.start_time) === startMs) ??
-      null
+    const match = (meeting.occurrences ?? []).find(
+      (occurrence) => occurrence.occurrence_id === edited.occurrenceId || Date.parse(occurrence.start_time) === startMs
     );
+    // Cancelled meanwhile (either signal): as good as gone, nothing to save to.
+    return match && !isMeetingOccurrenceCancelled(match, meeting.cancelled_occurrences) ? match : null;
   }
 }
