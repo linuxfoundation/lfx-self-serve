@@ -261,6 +261,33 @@ describe('MeetingOccurrenceStripComponent', () => {
     expect(chip(-5)?.getAttribute('data-selected')).toBe('true');
   });
 
+  it('keeps chasing past an old cancellation that lies beyond the pages read', async () => {
+    await render(page({ past: [past(-2), past(-1)], past_has_more: true, past_cursor: String(at(-2)), cancelled_occurrences: [String(at(-10) / 1000)] }), {
+      selected: at(-5),
+      pastPage: true,
+      pages: [page({ past: [past(-6), past(-5), past(-4), past(-3)], future: [], past_has_more: false })],
+    });
+
+    expect(getPage).toHaveBeenCalledTimes(2);
+    expect(chip(-5)?.getAttribute('data-selected')).toBe('true');
+  });
+
+  it('drops a Previous step whose page arrives after the page moved elsewhere', async () => {
+    const older = new Subject<PublicMeetingOccurrencesResponse>();
+    await render(page({ past: [past(-1)], past_has_more: true, past_cursor: String(at(-1)) }), { selected: at(-1), pages: [older] });
+
+    button('occurrence-strip-prev')?.click();
+    await settle();
+    // The viewer picks another chip before the older page arrives.
+    selectedStartMs.set(at(2));
+    fixture.detectChanges();
+    older.next(page({ past: [past(-2)], future: [], past_has_more: false }));
+    older.complete();
+    await settle();
+
+    expect(navigateToOccurrence).not.toHaveBeenCalled();
+  });
+
   it('stops chasing after the page limit, still showing what it has', async () => {
     const more = (week: number) => page({ past: [past(week)], future: [], past_has_more: true, past_cursor: String(at(week)) });
     await render(page({ past: [past(-1)], past_has_more: true, past_cursor: String(at(-1)) }), {

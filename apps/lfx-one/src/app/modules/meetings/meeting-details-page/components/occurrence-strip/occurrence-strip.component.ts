@@ -10,11 +10,12 @@ import {
   MeetingOccurrenceDirection,
   MeetingOccurrenceStripChip,
   MeetingOccurrenceStripItem,
+  MeetingOccurrenceStripPages,
   MeetingOccurrenceStripRequest,
   MeetingOccurrenceStripTimeline,
   PublicMeetingOccurrencesResponse,
 } from '@lfx-one/shared/interfaces';
-import { buildOccurrenceStripItems, getUserTimezone } from '@lfx-one/shared/utils';
+import { buildOccurrenceStripItems, compositeIdToStartMs, getUserTimezone } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { SkeletonModule } from 'primeng/skeleton';
 import { firstValueFrom } from 'rxjs';
@@ -133,9 +134,14 @@ export class MeetingOccurrenceStripComponent {
       }
       const chip = scroller.querySelector<HTMLElement>(`[data-start-ms="${startMs}"]`);
       if (chip) {
-        scroller.scrollLeft = chip.offsetLeft - scroller.clientWidth / 2 + chip.clientWidth / 2;
+        // Measured against the scroller itself: `offsetLeft` would be relative to an ancestor outside it.
+        const offset = chip.getBoundingClientRect().left - scroller.getBoundingClientRect().left + scroller.scrollLeft;
+        scroller.scrollLeft = offset - scroller.clientWidth / 2 + chip.clientWidth / 2;
       }
     });
+
+    // A destroyed strip's reads are superseded like any other, so none of them acts after it.
+    this.destroyRef.onDestroy(() => this.runId++);
 
     // After the strip moved the page: a strip created again by that move takes focus back to the
     // chip, when the move left none (the old strip's control went with its view). A move that kept
@@ -171,11 +177,20 @@ export class MeetingOccurrenceStripComponent {
   }
 
   protected async step(direction: -1 | 1): Promise<void> {
-    let target = direction < 0 ? this.previous() : this.next();
-    if (!target) {
-      await this.loadMore(this.runId, direction < 0 ? 'past' : 'future', MEETING_OCCURRENCE_STRIP_PAGE_SIZE);
-      target = this.neighbour(direction);
+    const immediate = direction < 0 ? this.previous() : this.next();
+    if (immediate) {
+      this.moveTo(immediate);
+      return;
     }
+    // At a loaded end: read the next page first. The step is dropped if that fails, or if meanwhile the
+    // run moved on (a new series or password, or the strip went away) or the page moved elsewhere.
+    const run = this.runId;
+    const from = this.selected()?.startMs;
+    const paged = await this.loadMore(run, direction < 0 ? 'past' : 'future', MEETING_OCCURRENCE_STRIP_PAGE_SIZE);
+    if (!paged || run !== this.runId || from === undefined || this.selected()?.startMs !== from) {
+      return;
+    }
+    const target = this.neighbour(direction);
     if (target) {
       this.moveTo(target);
     }
@@ -282,10 +297,11 @@ export class MeetingOccurrenceStripComponent {
     for (let chased = 0; chased < MEETING_OCCURRENCE_STRIP_MAX_CHASE_PAGES; chased++) {
       const target = this.state.selectedOccurrenceStartMs();
       const timeline = this.timeline();
-      if (target === null || !timeline || timeline.items.some((item) => item.startMs === target)) {
+      const loaded = this.loaded();
+      if (target === null || !timeline || !loaded || timeline.items.some((item) => item.startMs === target)) {
         break;
       }
-      const direction = this.chaseDirection(target, timeline);
+      const direction = this.chaseDirection(target, loaded);
       if (!direction || !(await this.loadMore(run, direction, MEETING_OCCURRENCES_PAGE_MAX_LIMIT))) {
         break;
       }
@@ -297,13 +313,22 @@ export class MeetingOccurrenceStripComponent {
     }
   }
 
-  private chaseDirection(target: number, timeline: MeetingOccurrenceStripTimeline): MeetingOccurrenceDirection | null {
-    const first = timeline.items[0]?.startMs;
-    const last = timeline.items[timeline.items.length - 1]?.startMs;
-    if (timeline.pastHasMore && (first === undefined || target < first)) {
+  /**
+   * Which side to read toward the target, judged by the pages' own ends: the oldest past record read
+   * and the latest upcoming occurrence read. Not the chips' ends, which include cancelled ids from the
+   * whole, unpaged `cancelled_occurrences` list and could sit beyond what has been read.
+   */
+  private chaseDirection(target: number, loaded: MeetingOccurrenceStripPages): MeetingOccurrenceDirection | null {
+    const pastStarts = loaded.past.map((record) => compositeIdToStartMs(record.meeting_and_occurrence_id)).filter((ms): ms is number => ms !== null);
+    const futureStarts = loaded.future.map((occurrence) => new Date(occurrence.start_time).getTime()).filter((ms) => Number.isFinite(ms));
+    // The oldest start read is the past side's when it has any; the latest is the future side's.
+    const read = [...pastStarts, ...futureStarts];
+    const oldest = read.length > 0 ? Math.min(...read) : undefined;
+    const latest = read.length > 0 ? Math.max(...read) : undefined;
+    if (loaded.pastHasMore && (oldest === undefined || target < oldest)) {
       return 'past';
     }
-    if (timeline.futureHasMore && (last === undefined || target > last)) {
+    if (loaded.futureHasMore && (latest === undefined || target > latest)) {
       return 'future';
     }
     return null;
