@@ -426,6 +426,12 @@ export interface MeetingOccurrenceStripChip {
 /** A tab of the browse-all-occurrences dialog (E6-04). */
 export type MeetingOccurrenceBrowseTab = 'upcoming' | 'past';
 
+/** A tab of the browse dialog with its label. */
+export interface MeetingOccurrenceBrowseTabOption {
+  id: MeetingOccurrenceBrowseTab;
+  label: string;
+}
+
 /**
  * What the occurrence strip hands its browse-all dialog (E6-04, #3587). The dialog reads the strip's
  * loaded series through these getters and asks the strip to read further or open an occurrence, so

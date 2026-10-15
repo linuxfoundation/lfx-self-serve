@@ -132,6 +132,39 @@ describe('MeetingOccurrenceBrowseDialogComponent', () => {
     expect(query('[data-testid="occurrence-browse-load-more"]')).toBeNull();
   });
 
+  it('keeps focus in the dialog after Load more: on the first new row', async () => {
+    more.past.set(true);
+    await render(at(-1));
+    document.body.appendChild(fixture.nativeElement);
+    loadMore.mockImplementation(async () => {
+      items.update((current) => [item(-4), item(-3), ...current]);
+      more.past.set(false);
+      return true;
+    });
+
+    const loadButton = query('[data-testid="occurrence-browse-load-more"] button') as HTMLButtonElement;
+    loadButton.focus();
+    loadButton.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    // Past runs newest first, so the first row the page added is week -3, after -1 and -2.
+    expect(document.activeElement).toBe(row(-3));
+    fixture.nativeElement.remove();
+  });
+
+  it('makes an empty tab panel focusable, so its message is reached', async () => {
+    items.set([item(0)]);
+    await render(at(0));
+    expect(query('[role="tabpanel"]')?.getAttribute('tabindex')).toBeNull();
+
+    tab('past')?.click();
+    fixture.detectChanges();
+
+    expect(query('[role="tabpanel"]')?.getAttribute('tabindex')).toBe('0');
+  });
+
   it('says a tab is empty, and that the past is unknown when it could not be read', async () => {
     items.set([item(0)]);
     await render(at(0));

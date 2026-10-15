@@ -14,7 +14,8 @@
           class="block h-[34px] w-[34px] flex-none rounded-[var(--md-radius-md)] bg-[var(--md-surface-hover)] object-contain p-[4px]" />
       }
       <div class="flex min-w-0 flex-1 flex-col gap-[2px]">
-        <h2 id="occurrence-browse-title" class="m-0 truncate text-[15px] font-bold text-[var(--md-text-heading)]">{{ data.title }}</h2>
+        <!-- Wraps (up to two lines) rather than truncating: a meeting title can be any length. -->
+        <h2 [id]="headingId" class="m-0 line-clamp-2 text-[15px] font-bold text-[var(--md-text-heading)]">{{ data.title }}</h2>
         @if (subtitle()) {
           <p class="m-0 text-[12.5px] text-[var(--md-text-muted)]" data-testid="occurrence-browse-subtitle">{{ subtitle() }}</p>
         }
@@ -50,7 +51,8 @@
   <div
     id="occurrence-browse-panel"
     role="tabpanel"
-    class="flex min-h-0 flex-col overflow-y-auto px-[12px] pb-[12px] pt-[8px]"
+    class="flex min-h-0 flex-col overflow-y-auto px-[12px] pb-[12px] pt-[8px] focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
+    [attr.tabindex]="rows().length === 0 ? 0 : null"
     [attr.aria-labelledby]="'occurrence-browse-tab-' + tab()">
     @if (pastUnknown()) {
       <p class="m-0 px-[12px] py-[16px] text-[13.5px] text-[var(--md-text-muted)]" data-testid="occurrence-browse-unavailable">
@@ -102,7 +104,13 @@
         }
       </ul>
       @if (hasMore()) {
-        <lfx-button label="Load more" [loading]="loadingMore()" [styleClass]="loadMoreClass" (onClick)="loadMore()" data-testid="occurrence-browse-load-more" />
+        <!-- Not [loading]: that disables the button and drops its focus out of the dialog while it reads. -->
+        <lfx-button
+          [label]="loadingMore() ? 'Loading…' : 'Load more'"
+          [attr.aria-busy]="loadingMore()"
+          [styleClass]="loadMoreClass"
+          (onClick)="loadMore()"
+          data-testid="occurrence-browse-load-more" />
       }
     }
   </div>

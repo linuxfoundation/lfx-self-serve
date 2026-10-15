@@ -1,12 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, Signal, signal } from '@angular/core';
+import { afterNextRender, Component, computed, ElementRef, inject, Injector, Signal, signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import {
   MeetingOccurrenceBrowseDialogData,
   MeetingOccurrenceBrowseRow,
   MeetingOccurrenceBrowseTab,
+  MeetingOccurrenceBrowseTabOption,
   MeetingOccurrenceStripItem,
 } from '@lfx-one/shared/interfaces';
 import { formatDisplayTimeInTimezone } from '@lfx-one/shared/utils';
@@ -33,10 +34,16 @@ import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
   templateUrl: './occurrence-browse-dialog.component.html',
 })
 export class MeetingOccurrenceBrowseDialogComponent {
+  /** The heading's id: the caller names the dialog from it (`nameDynamicDialog`). */
+  public static readonly headingId = 'occurrence-browse-title';
+
   private readonly ref = inject(DynamicDialogRef);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
   protected readonly data: MeetingOccurrenceBrowseDialogData = inject(DynamicDialogConfig).data;
 
-  protected readonly tabs: { id: MeetingOccurrenceBrowseTab; label: string }[] = [
+  protected readonly headingId = MeetingOccurrenceBrowseDialogComponent.headingId;
+  protected readonly tabs: MeetingOccurrenceBrowseTabOption[] = [
     { id: 'upcoming', label: 'Upcoming' },
     { id: 'past', label: 'Past' },
   ];
@@ -91,15 +98,33 @@ export class MeetingOccurrenceBrowseDialogComponent {
     this.ref.close();
   }
 
+  /**
+   * Reads the next page on the open tab. The button stays enabled (`aria-busy` while reading), so focus
+   * stays on it; when the read adds rows, focus moves to the first new one, and if nothing more remains
+   * (the button goes) to the last row, so it never falls out of the dialog to the page behind.
+   */
   protected async loadMore(): Promise<void> {
     if (this.loadingMore()) {
       return;
     }
+    const before = this.rows().length;
     this.loadingMore.set(true);
     try {
       await this.data.loadMore(this.tab());
     } finally {
       this.loadingMore.set(false);
+    }
+    const rows = this.rows();
+    let target: MeetingOccurrenceBrowseRow | undefined;
+    if (rows.length > before) {
+      target = rows[before];
+    } else if (!this.hasMore()) {
+      target = rows[rows.length - 1];
+    }
+    if (target) {
+      afterNextRender(() => this.host.nativeElement.querySelector<HTMLElement>(`[data-start-ms="${target.item.startMs}"]`)?.focus(), {
+        injector: this.injector,
+      });
     }
   }
 
@@ -141,6 +166,15 @@ export class MeetingOccurrenceBrowseDialogComponent {
     });
   }
 
+  private initSubtitle(): Signal<string> {
+    return computed(() => {
+      const complete = !this.data.hasMore('past') && !this.data.hasMore('upcoming') && !this.data.pastIncomplete();
+      const count = this.data.items().length;
+      const parts = [complete ? `${count} ${count === 1 ? 'occurrence' : 'occurrences'}` : null, this.data.cadence].filter((part): part is string => !!part);
+      return parts.join(' · ');
+    });
+  }
+
   /** The prototype's row: the page's own on the accent tint, others hovered, a cancelled one inert. */
   private rowClass(item: MeetingOccurrenceStripItem, selected: boolean): string {
     if (selected) {
@@ -155,14 +189,5 @@ export class MeetingOccurrenceBrowseDialogComponent {
       return 'bg-[var(--md-accent)] text-[var(--md-surface-card)]';
     }
     return item.isPast ? 'bg-[var(--md-border)] text-[var(--md-text-body)]' : 'bg-[var(--md-accent-bg)] text-[var(--md-accent-ink)]';
-  }
-
-  private initSubtitle(): Signal<string> {
-    return computed(() => {
-      const complete = !this.data.hasMore('past') && !this.data.hasMore('upcoming') && !this.data.pastIncomplete();
-      const count = this.data.items().length;
-      const parts = [complete ? `${count} ${count === 1 ? 'occurrence' : 'occurrences'}` : null, this.data.cadence].filter((part): part is string => !!part);
-      return parts.join(' · ');
-    });
   }
 }

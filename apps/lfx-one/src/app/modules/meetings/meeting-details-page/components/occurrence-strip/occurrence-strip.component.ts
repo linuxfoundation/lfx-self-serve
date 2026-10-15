@@ -23,6 +23,7 @@ import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { firstValueFrom } from 'rxjs';
 
+import { nameDynamicDialog } from '@shared/utils/name-dynamic-dialog';
 import { restoreFocusOnDialogClose } from '@shared/utils/restore-dialog-focus.util';
 
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
@@ -238,12 +239,15 @@ export class MeetingOccurrenceStripComponent {
       closable: true,
       closeOnEscape: true,
       dismissableMask: true,
-      ariaLabelledBy: 'occurrence-browse-title',
       appendTo: this.host.nativeElement.closest('.meeting-details-v2') ?? 'body',
       styleClass:
         '!rounded-[var(--md-radius-dialog)] !border !border-[var(--md-border)] !bg-[var(--md-surface-card)] !shadow-[var(--md-shadow-dialog)] overflow-hidden',
       data,
     });
+    // PrimeNG 20.4 leaves a headless dialog's `ariaLabelledBy` config unbound: name it from its heading.
+    if (this.browseRef) {
+      nameDynamicDialog(this.dialogService, this.browseRef, MeetingOccurrenceBrowseDialogComponent.headingId);
+    }
     restoreFocusOnDialogClose(this.browseRef, trigger);
   }
 
