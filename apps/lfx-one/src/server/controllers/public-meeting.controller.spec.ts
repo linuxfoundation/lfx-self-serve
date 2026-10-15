@@ -891,23 +891,23 @@ describe('PublicMeetingController.getMeetingOccurrences', () => {
     generateM2MTokenMock.mockResolvedValue('m2m-token');
   });
 
-  it('returns past summaries plus a minimal projection of live occurrences without leaking sensitive fields', async () => {
+  const liveOccurrence = {
+    occurrence_id: String(Math.floor(T2 / 1000)),
+    start_time: new Date(T2).toISOString(),
+    duration: 30,
+    status: 'available',
+    title: 'Weekly sync',
+    description: 'should not leak',
+    registrant_count: 12,
+  };
+
+  it('returns past summaries plus a projection of live occurrences without leaking sensitive fields', async () => {
     meetingSvc.getPastOccurrencesForMeeting.mockResolvedValue(pastSummaries);
     meetingSvc.getMeetingById.mockResolvedValue(
       buildMeeting({
         password: 'secret',
         cancelled_occurrences: ['1784323800'],
-        occurrences: [
-          {
-            occurrence_id: String(Math.floor(T2 / 1000)),
-            start_time: new Date(T2).toISOString(),
-            duration: 30,
-            status: 'available',
-            title: 'should not leak',
-            description: 'should not leak',
-            registrant_count: 12,
-          },
-        ],
+        occurrences: [liveOccurrence],
       } as Partial<Meeting>)
     );
     const { req, res, next } = buildReqRes(false);
@@ -918,11 +918,45 @@ describe('PublicMeetingController.getMeetingOccurrences', () => {
     const payload = res.json.mock.calls[0][0];
     expect(payload.past).toEqual(pastSummaries);
     expect(payload.cancelled_occurrences).toEqual(['1784323800']);
-    expect(payload.future).toHaveLength(1);
-    // Minimal projection only — timestamps and status, no titles/descriptions/counts
-    expect(Object.keys(payload.future[0]).sort()).toEqual(['duration', 'occurrence_id', 'start_time', 'status']);
+    // An anonymous caller on a public meeting: timestamps, status and title; no description, and no
+    // registrant count, since nothing shows this caller is registered.
+    expect(payload.future).toEqual([
+      { occurrence_id: liveOccurrence.occurrence_id, start_time: liveOccurrence.start_time, duration: 30, status: 'available', title: 'Weekly sync' },
+    ]);
     expect(JSON.stringify(payload)).not.toContain('secret');
     expect(JSON.stringify(payload)).not.toContain('should not leak');
+  });
+
+  it('gives the registrant count to a registrant and an organizer, never to a passcode holder', async () => {
+    meetingSvc.getPastOccurrencesForMeeting.mockResolvedValue([]);
+    validatePasswordMock.mockReturnValue(false);
+    getEffectiveEmailMock.mockReturnValue('user@example.com');
+    getUsernameFromAuthMock.mockResolvedValue('user');
+
+    // A registrant of a restricted meeting.
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ restricted: true, occurrences: [liveOccurrence] } as Partial<Meeting>));
+    meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([{ email: 'user@example.com' }]);
+    const registrant = buildReqRes(true);
+    await controller.getMeetingOccurrences(registrant.req, registrant.res, registrant.next);
+    expect(registrant.res.json.mock.calls[0][0].future[0]).toEqual(expect.objectContaining({ title: 'Weekly sync', registrant_count: 12 }));
+
+    // An organizer of a private meeting who is not a registrant.
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE, occurrences: [liveOccurrence] } as Partial<Meeting>));
+    meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([]);
+    meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
+    addAccessToResourceMock.mockImplementation(async (_req: any, resource: any) => ({ ...resource, organizer: true }));
+    const organizer = buildReqRes(true);
+    await controller.getMeetingOccurrences(organizer.req, organizer.res, organizer.next);
+    expect(organizer.res.json.mock.calls[0][0].future[0].registrant_count).toBe(12);
+
+    // A visitor let in by the passcode alone.
+    validatePasswordMock.mockReturnValue(true);
+    const passcode = buildReqRes(false);
+    passcode.req.headers['x-meeting-password'] = 'pw';
+    await controller.getMeetingOccurrences(passcode.req, passcode.res, passcode.next);
+    const passcodeOccurrence = passcode.res.json.mock.calls[0][0].future[0];
+    expect(passcodeOccurrence.title).toBe('Weekly sync');
+    expect(passcodeOccurrence).not.toHaveProperty('registrant_count');
   });
 
   it('fails closed when the live series fetch fails (visibility cannot be verified)', async () => {

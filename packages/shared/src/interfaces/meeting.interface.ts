@@ -1052,11 +1052,24 @@ export interface PastOccurrenceSummary {
 }
 
 /**
- * Minimal projection of a live occurrence for the public occurrences endpoint
+ * Minimal projection of a live occurrence, as the public project calendar feed publishes it
  * @description Timestamps and status only — titles, descriptions, and counts are
- * deliberately excluded from the public payload
+ * deliberately excluded from that public payload
  */
 export type MeetingOccurrenceSummary = Pick<MeetingOccurrence, 'occurrence_id' | 'start_time' | 'duration' | 'status'>;
+
+/**
+ * A live occurrence on the public occurrences endpoint, for the occurrence strip and the
+ * browse-all dialog (E6-01, #3584)
+ * @description Adds the occurrence `title` (any caller who passes the meeting gate sees the series
+ * itself) and `registrant_count`, which is set only for a registrant or organizer, the viewers the
+ * details page already gives a registrant count. `description` stays excluded: unused, and the
+ * largest field.
+ */
+export type MeetingTimelineOccurrence = Pick<MeetingOccurrence, 'occurrence_id' | 'start_time' | 'duration' | 'status' | 'title' | 'registrant_count'>;
+
+/** Why the public meeting gate let a caller see a meeting's content: the gate it passed. */
+export type MeetingContentAccess = 'public' | 'password' | 'registrant' | 'organizer';
 
 /**
  * Series timeline for the public meeting occurrences endpoint
@@ -1066,8 +1079,8 @@ export type MeetingOccurrenceSummary = Pick<MeetingOccurrence, 'occurrence_id' |
 export interface PublicMeetingOccurrencesResponse {
   /** Past occurrences, ascending by scheduled start time */
   past: PastOccurrenceSummary[];
-  /** Current/future occurrences (minimal projection); empty when the series no longer exists */
-  future: MeetingOccurrenceSummary[];
+  /** Current/future occurrences; empty when the series no longer exists */
+  future: MeetingTimelineOccurrence[];
   /** Cancelled occurrence IDs from the live series (10-digit Unix-second keys) */
   cancelled_occurrences?: string[];
 }
