@@ -4476,6 +4476,17 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().canStageEmail()).toBe(false);
     });
 
+    it('still names a loose master list with no HubSpot URL, but offers no link to it', () => {
+      // A blank URL renders href="", which opens this app instead of the list.
+      onImplementTab();
+      internals().onAudienceComposeUnattached({ ...looseHere(), master: { ...looseMaster, hubspotUrl: '' } });
+      fixture.detectChanges();
+
+      const host: HTMLElement = fixture.nativeElement;
+      expect(host.querySelector('[data-testid="campaigns-email-audience-unattached"]')?.textContent).toContain('27Q2 - KubeCon EU 2026 - Master');
+      expect(host.querySelector('[data-testid="campaigns-email-audience-unattached-link"]'), 'a blank URL rendered a link back to this app').toBeNull();
+    });
+
     /**
      * The derived build that used to live in this block is gone, and must stay gone.
      *

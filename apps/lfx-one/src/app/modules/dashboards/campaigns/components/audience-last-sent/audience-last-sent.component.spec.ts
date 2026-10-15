@@ -196,6 +196,15 @@ describe('AudienceLastSentComponent', () => {
     expect(emitted.map((list) => list.listId)).toEqual(['401']);
   });
 
+  it('links a master list to HubSpot only when it has a URL', () => {
+    // A blank URL renders href="", which opens this app instead of the list.
+    render({ masterLists: [master(), master({ listId: '402', hubspotUrl: '' })] });
+
+    const link = host().querySelector<HTMLAnchorElement>('[data-testid="audience-last-sent-master-link-401"]');
+    expect(link?.getAttribute('href')).toBe('https://app.hubspot.com/contacts/1/objectLists/401');
+    expect(host().querySelector('[data-testid="audience-last-sent-master-link-402"]'), 'a blank URL rendered a link back to this app').toBeNull();
+  });
+
   it('renders "size unknown" rather than "0 contacts" when HubSpot reported no size', () => {
     render({ masterLists: [master({ size: undefined })] });
 
