@@ -33,18 +33,6 @@ export const MKTG_OS_AGENTS_ROUTE_SEGMENT = 'mktg-os-agents';
 // `agent_id` (the bare name is not a Guild identifier — it 404s).
 // `brand-kit` is live (Guild agent linux-foundation~brand-kit).
 export const MKTG_AGENTS: MktgAgent[] = [
-  {
-    id: 'brand-kit',
-    number: 1,
-    name: 'Brand Kit Agent',
-    tags: ['Brand', 'Identity'],
-    status: 'active',
-    description:
-      'Develops a full project brand kit — positioning, voice, visual identity brief, palette, typography, and taglines — from seven intake questions. Logos, colors, and fonts are generated output, not inputs.',
-    icon: 'fa-light fa-droplet',
-    accent: 'violet',
-    guildAgentHandle: 'brand-kit',
-  },
   // Live Guild agent (linux-foundation~foundation-message), the Messaging
   // Document Agent since its port to Paul's messaging-document 1.0.0; the
   // catalog id and Guild name are unchanged. It runs first and needs no other
@@ -52,7 +40,7 @@ export const MKTG_AGENTS: MktgAgent[] = [
   // `dependsOn` and its intake attaches nothing.
   {
     id: 'foundation-setup',
-    number: 2,
+    number: 1,
     name: 'Messaging Document Agent',
     tags: ['Messaging', 'Positioning'],
     status: 'active',
@@ -61,6 +49,18 @@ export const MKTG_AGENTS: MktgAgent[] = [
     icon: 'fa-light fa-landmark',
     accent: 'blue',
     guildAgentHandle: 'foundation-message',
+  },
+  {
+    id: 'brand-kit',
+    number: 2,
+    name: 'Brand Kit Agent',
+    tags: ['Brand', 'Identity'],
+    status: 'active',
+    description:
+      'Develops a full project brand kit — positioning, voice, visual identity brief, palette, typography, and taglines — from seven intake questions. Logos, colors, and fonts are generated output, not inputs.',
+    icon: 'fa-light fa-droplet',
+    accent: 'violet',
+    guildAgentHandle: 'brand-kit',
   },
   // Live Guild agent (linux-foundation~icp) with its batch intake form
   // registered in MKTG_AGENT_INTAKES (wi-icp-lfx-selfserve). It CONSUMES the
