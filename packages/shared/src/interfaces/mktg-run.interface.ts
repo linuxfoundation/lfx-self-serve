@@ -237,6 +237,16 @@ export interface MktgReadText {
   reason?: MktgReadTextReason;
 }
 
+/** A message from the BFF's PDF worker: ready for its PDF, then the PDF's text or why it has none. */
+export interface MktgPdfWorkerReply {
+  /** True once pdf.js has loaded and the worker waits for its PDF. */
+  ready?: boolean;
+  /** The PDF's text, page by page. */
+  text?: string;
+  /** Why there is no text. */
+  reason?: MktgReadTextReason;
+}
+
 /** Request body of the existing-document link endpoint. */
 export interface MktgDocumentLinkRequest {
   /** The link to read. */

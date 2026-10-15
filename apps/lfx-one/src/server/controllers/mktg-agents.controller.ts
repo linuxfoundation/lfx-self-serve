@@ -51,7 +51,7 @@ import { IcpService } from '../services/icp.service';
 import { logger } from '../services/logger.service';
 import { MktgSourceTextService } from '../services/mktg-source-text.service';
 import { ProjectService } from '../services/project.service';
-import { getEffectiveSub } from '../utils/auth-helper';
+import { getEffectiveSub, getEffectiveUsername } from '../utils/auth-helper';
 import { createSessionOwnerToken, verifySessionOwnerToken } from '../utils/mktg-session-token.util';
 
 export class MktgAgentsController {
@@ -504,7 +504,8 @@ export class MktgAgentsController {
     const operation = 'foundation_message_read_file';
     const startTime = logger.startOperation(req, operation);
     try {
-      if (!getEffectiveSub(req)) {
+      // The username, not the sub: the read gate keys its per-user slots on it, so the two checks agree.
+      if (!getEffectiveUsername(req)) {
         throw new AuthenticationError('Could not identify the requesting user.', { operation, service: 'mktg_agents_controller', path: req.path });
       }
       const fileName = this.readUploadFileName(req);
@@ -546,7 +547,8 @@ export class MktgAgentsController {
     }
     const startTime = logger.startOperation(req, operation);
     try {
-      if (!getEffectiveSub(req)) {
+      // The username, not the sub: the read gate keys its per-user slots on it, so the two checks agree.
+      if (!getEffectiveUsername(req)) {
         throw new AuthenticationError('Could not identify the requesting user.', { operation, service: 'mktg_agents_controller', path: req.path });
       }
       const link = url.trim();

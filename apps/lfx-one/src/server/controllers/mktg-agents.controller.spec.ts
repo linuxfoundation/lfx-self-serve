@@ -37,6 +37,7 @@ const tokenMocks = vi.hoisted(() => ({
 }));
 const authMocks = vi.hoisted(() => ({
   getEffectiveSub: vi.fn((): string | null => 'auth0|user-1'),
+  getEffectiveUsername: vi.fn((): string | null => 'user-1'),
 }));
 const loggerMocks = vi.hoisted(() => ({
   startOperation: vi.fn(() => 0),
@@ -510,6 +511,18 @@ describe('MktgAgentsController', () => {
       expect(unread.json.mock.calls[0][0]).toMatchObject({ read: false, words: 0, reason: expect.stringContaining('Anyone with the link') });
       expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
       expect(sourceTextMocks.readLink).toHaveBeenCalledTimes(2);
+    });
+
+    it('refuses a caller with no LFID username, the key the read gate holds slots on, even when a sub is present', async () => {
+      authMocks.getEffectiveUsername.mockReturnValueOnce(null).mockReturnValueOnce(null);
+      const linkReq = { path: '/api/mktg-agents/foundation-message/documents/link', body: { url: 'https://wiki.example.org/doc' } } as unknown as Request;
+
+      await controller.readFoundationMessageFile(fileReq({ 'x-file-name': 'a.txt' }, Buffer.from('x')), buildRes(), next);
+      await controller.readFoundationMessageLink(linkReq, buildRes(), next);
+
+      expect(next.mock.calls.map(([error]) => error instanceof AuthenticationError)).toEqual([true, true]);
+      expect(sourceTextMocks.readFile).not.toHaveBeenCalled();
+      expect(sourceTextMocks.readLink).not.toHaveBeenCalled();
     });
   });
 

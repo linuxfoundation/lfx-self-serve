@@ -3,6 +3,7 @@
 
 import JSZip from 'jszip';
 import { readFileSync } from 'node:fs';
+import { deflateSync } from 'node:zlib';
 import PDFDocument from 'pdfkit';
 import mammoth from 'mammoth';
 import { describe, expect, it, vi } from 'vitest';
@@ -28,6 +29,34 @@ async function pdfkitPdf(pages: string[], userPassword?: string): Promise<Buffer
   }
   doc.end();
   return done;
+}
+
+/** A one-page PDF whose single content stream inflates to `inflatedBytes` of `q Q` operators: a few dozen kilobytes on disk. */
+function heavyStreamPdf(inflatedBytes: number): Buffer {
+  const stream = deflateSync(Buffer.alloc(inflatedBytes, 'q Q\n'));
+  return Buffer.concat([
+    Buffer.from(
+      '%PDF-1.4\n1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n' +
+        '3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >> endobj\n' +
+        `4 0 obj << /Length ${stream.length} /Filter /FlateDecode >> stream\n`,
+      'latin1'
+    ),
+    stream,
+    Buffer.from('\nendstream endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n', 'latin1'),
+  ]);
+}
+
+/** The longest the event loop went without running a timer while `work` ran. */
+async function longestStall(work: () => Promise<unknown>): Promise<number> {
+  let last = performance.now();
+  let longest = 0;
+  const ticker = setInterval(() => {
+    longest = Math.max(longest, performance.now() - last);
+    last = performance.now();
+  }, 5);
+  await work();
+  clearInterval(ticker);
+  return Math.max(longest, performance.now() - last);
 }
 
 /** A zip of the given entries, deflated. */
@@ -92,6 +121,18 @@ describe('MktgDocumentText.read — PDF', () => {
     expect((await MktgDocumentText.read(slow, { fileName: 'slow.pdf' }, 1)).reason).toBe('too-complex');
     expect(performance.now() - start).toBeLessThan(1000);
   }, 20_000);
+
+  it('stops a small PDF with one huge compressed content stream at the deadline, the event loop running throughout', async () => {
+    const heavy = heavyStreamPdf(40 * 1024 * 1024);
+    let read: Awaited<ReturnType<typeof MktgDocumentText.read>> | undefined;
+
+    expect(heavy.length).toBeLessThan(200 * 1024);
+    const stall = await longestStall(async () => {
+      read = await MktgDocumentText.read(heavy, { fileName: 'heavy.pdf' });
+    });
+    expect(read?.reason).toBe('too-complex');
+    expect(stall).toBeLessThan(300);
+  }, 20_000);
 });
 
 describe('MktgDocumentText.read — Word, HTML and text', () => {
@@ -120,6 +161,20 @@ describe('MktgDocumentText.read — Word, HTML and text', () => {
     expect(parse).not.toHaveBeenCalled();
     parse.mockRestore();
   }, 20_000);
+
+  it('refuses a .docx listing more parts than any Word file has before JSZip reads it, within the deadline', async () => {
+    const load = vi.spyOn(JSZip, 'loadAsync');
+    const parse = vi.spyOn(mammoth, 'extractRawText');
+    const manyParts = await wordZip(3, Object.fromEntries(Array.from({ length: 1_500 }, (_, part) => [`word/empty${part}.xml`, ''])));
+
+    const start = performance.now();
+    expect((await MktgDocumentText.read(manyParts, { fileName: 'brief.docx' })).reason).toBe('too-complex');
+    expect(performance.now() - start).toBeLessThan(MktgDocumentText.maxDocxMillis);
+    expect(load).not.toHaveBeenCalled();
+    expect(parse).not.toHaveBeenCalled();
+    load.mockRestore();
+    parse.mockRestore();
+  });
 
   it('never inflates the parts it does not parse: a bomb among the images costs nothing, a main document hidden in one is not read', async () => {
     const imageBomb = await wordZip(3, { 'word/media/image1.png': Buffer.alloc(40 * 1024 * 1024) });
