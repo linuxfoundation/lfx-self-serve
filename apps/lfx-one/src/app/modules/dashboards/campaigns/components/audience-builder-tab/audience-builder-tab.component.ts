@@ -2040,7 +2040,9 @@ export class AudienceBuilderTabComponent {
     const brand = event?.brandShort ?? '';
     const name = event?.eventName ?? '';
     const scope = this.plannedSuppressionScope();
-    if (this.suppressionSeeded() && scope === this.suppressionScope) {
+    // Skipped only when the last load of this scope SUCCEEDED: a failed one must be retried by the
+    // next trigger, or compose and attach stay blocked after the endpoint recovers.
+    if (this.suppressionSeeded() && scope === this.suppressionScope && !this.suppressionFailed()) {
       return;
     }
     // Once a load has seeded (even an empty one), a rescope keeps the operator's ticks and

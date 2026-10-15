@@ -2965,6 +2965,22 @@ describe('AudienceBuilderTabComponent', () => {
       expect(getAudienceSuppressionLists).toHaveBeenLastCalledWith('tlf', 'SYN', 'Synthetic Summit 2026');
     });
 
+    it('retries a failed planned rescope on the next trigger', async () => {
+      await render();
+      builder().created.emit({ listId: '7777', name: 'Seoul', hubspotUrl: 'https://app.hubspot.com/x/7777' });
+      fixture.detectChanges();
+      getAudienceSuppressionLists.mockReturnValueOnce(throwError(() => new Error('down')));
+      builder().eventPlanned.emit({ eventName: 'Synthetic Summit 2026', brandShort: 'SYN', eventDates: [] });
+      fixture.detectChanges();
+      const callsAfterFailure = getAudienceSuppressionLists.mock.calls.length;
+
+      builder().created.emit({ listId: '8888', name: 'Busan', hubspotUrl: 'https://app.hubspot.com/x/8888' });
+      fixture.detectChanges();
+
+      expect(getAudienceSuppressionLists.mock.calls.length, 'the failed scope is loaded again').toBe(callsAfterFailure + 1);
+      expect(getAudienceSuppressionLists).toHaveBeenLastCalledWith('tlf', 'SYN', 'Synthetic Summit 2026');
+    });
+
     it('sends a typed master name with the compose', async () => {
       await renderWithDiscovery();
       composeAudienceMaster.mockReturnValue(NEVER);

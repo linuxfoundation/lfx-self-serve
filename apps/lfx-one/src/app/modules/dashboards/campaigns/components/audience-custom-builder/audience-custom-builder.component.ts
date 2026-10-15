@@ -430,9 +430,12 @@ export class AudienceCustomBuilderComponent {
   /** Picks up the outcome of a create whose builder was destroyed before it settled. */
   private claimStrandedOutcome(project: string): void {
     const outcome = this.customService.takeCreateOutcome(project);
+    // The two are exclusive: a confirmed create settles an "unconfirmed" a reset recorded for it.
     if (outcome?.kind === 'unconfirmed') {
+      this.strandedCreated.set(null);
       this.unconfirmedName.set(outcome.name);
     } else if (outcome?.kind === 'created') {
+      this.unconfirmedName.set(null);
       this.strandedCreated.set(outcome.list);
     }
   }

@@ -375,6 +375,23 @@ describe('AudienceCustomBuilderComponent', () => {
     expect(host().querySelector('[data-testid="audience-custom-builder-create"]'), 'no button may offer a second create').toBeNull();
   });
 
+  it('settles the reset-time warning when the stranded create is then confirmed', () => {
+    service.create.mockReturnValue(new Subject<AudienceComposedList>());
+    interpretSeoul();
+    click('audience-custom-builder-preview');
+    click('audience-custom-builder-create');
+    click('audience-custom-builder-confirm-create');
+    fixture.componentRef.setInput('resetKey', 1);
+    fixture.detectChanges();
+    expect(host().querySelector('[data-testid="audience-custom-builder-unconfirmed"]'), 'precondition').not.toBeNull();
+
+    outcome.set({ kind: 'created', list: created });
+    fixture.detectChanges();
+
+    expect(host().querySelector('[data-testid="audience-custom-builder-unconfirmed"]'), 'confirmed, so no longer unconfirmed').toBeNull();
+    expect(el('audience-custom-builder-stranded-created').textContent).toContain(created.name);
+  });
+
   it('applies a deterministic preset without calling the model', () => {
     fixture.componentRef.setInput('preset', { version: 1, criteria: { label: 'Synthetic Summit', registeredFor: ['Synthetic Summit 2026'] } });
     fixture.detectChanges();
