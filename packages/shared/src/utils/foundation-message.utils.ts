@@ -12,6 +12,7 @@
 
 import {
   FOUNDATION_MESSAGE_AGENT_IDENTIFIER,
+  FOUNDATION_MESSAGE_ANSWER_KEYS,
   FOUNDATION_MESSAGE_ANSWER_MAX_CHARS,
   FOUNDATION_MESSAGE_ANSWER_ORIGINS,
   FOUNDATION_MESSAGE_ANSWERS_HEADER,
@@ -251,15 +252,32 @@ export function guardFoundationMessageText(text: string): string {
 }
 
 /**
+ * The GitHub organization avatar of a GitHub URL (`https://github.com/<owner>.png`),
+ * the last fallback in the agent's logo order; null for any other URL. A
+ * mirror of the agent's `githubAvatarUrl`: the rendered intake carries it on
+ * its `LOGO FALLBACK` line.
+ */
+export function foundationMessageGithubAvatarUrl(githubUrl: string | undefined): string | null {
+  if (githubUrl === undefined) {
+    return null;
+  }
+  const match = /^https?:\/\/(?:www\.)?github\.com\/([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))(?:[/?#]|$)/.exec(githubUrl);
+  return match === null ? null : `https://github.com/${match[1]}.png`;
+}
+
+/**
  * Render the generate form into the one text message the agent receives — a
- * mirror of the agent's own `renderFormMessage` (marketing-os-agents
+ * mirror of the agent's own `renderGenerate` (marketing-os-agents
  * `agents/foundation-message/src/form.ts`), byte-identical for the same
- * payload. The form is small on purpose: the project, its LFX uid, the run
- * date, the sources as links (the agent fetches and researches them itself;
- * nothing is read here), the other links, and the existing documents — an
- * uploaded file as its text, a link as its URL. The marker lines are
- * load-bearing: the agent's finalize tool reads the project name, sources
- * and documents back from them, so any drift makes every run fail.
+ * payload; foundation-message.utils.spec.ts pins renderings produced by that
+ * renderer. The form is small on purpose: the project, the run date, its LFX
+ * uid, the sources as URLs (the agent fetches and researches them itself;
+ * nothing is read here) with the GitHub avatar as the logo fallback, the
+ * other links, the existing documents — an uploaded file as its text, a link
+ * as its URL — and the answers line, which declares all ten intake questions
+ * open because this form asks none. The marker lines are load-bearing: the
+ * agent's finalize tool parses the project name, uid, sources, documents and
+ * answers back from them (`parseGenerate`), so any drift makes every run fail.
  *
  * Why the BFF renders instead of sending the typed payload as a structured
  * `agent_input`: Guild coerces a structured input to
@@ -273,35 +291,38 @@ export function renderFoundationMessageFormText(payload: FoundationMessageFormPa
 
   const lines: string[] = [
     FOUNDATION_MESSAGE_GENERATE_HEADER,
-    '',
     `PROJECT NAME: ${payload.project_name}`,
-    `PROJECT UID: ${payload.project_uid ?? 'none'}`,
     `RUN DATE: ${runDate}`,
+    `LFX PROJECT UID: ${payload.project_uid ?? 'not supplied'}`,
     '',
+    'SOURCES (URLs only — read each one yourself with the fetch tool; none = the requester has none):',
   ];
-
-  lines.push('SOURCES (Step 0b) — links only; fetch and read every one yourself. A source given as "none" was not supplied.');
   for (const kind of FOUNDATION_MESSAGE_SOURCE_KINDS) {
     const url = payload[FOUNDATION_MESSAGE_SOURCE_URL_KEYS[kind]];
-    lines.push(`--- SOURCE ${kind}: ${FOUNDATION_MESSAGE_SOURCE_LABELS[kind]} ---`, `URL: ${url ?? 'none'}`, `--- END SOURCE ${kind} ---`);
+    lines.push(`SOURCE ${kind} (${FOUNDATION_MESSAGE_SOURCE_LABELS[kind]}): ${url ?? 'none'}`);
   }
-  lines.push(`OTHER LINKS: ${otherLinks.length === 0 ? 'none' : `${otherLinks.length} supplied — fetch and read every one`}`);
-  otherLinks.forEach((link, index) => lines.push(`--- LINK ${index + 1} ---`, link, `--- END LINK ${index + 1} ---`));
+  lines.push(`LOGO FALLBACK (GitHub organization avatar, last in the logo order): ${foundationMessageGithubAvatarUrl(payload.github_url) ?? 'none'}`);
+  lines.push(`OTHER LINKS: ${otherLinks.length === 0 ? 'none' : `${otherLinks.length} — read each one`}`);
+  otherLinks.forEach((link) => lines.push(`- ${link}`));
   lines.push('');
 
-  const docsLine = docs.length === 0 ? 'none supplied' : `${docs.length} supplied — read every one in full and map it first`;
-  lines.push(`EXISTING DOCUMENTS (Step 0a): ${docsLine}`);
+  lines.push(`EXISTING DOCUMENTS: ${docs.length === 0 ? 'none supplied' : `${docs.length} supplied — read every one in full and map it first`}`);
   docs.forEach((doc, index) => {
     const n = index + 1;
     lines.push(`--- DOCUMENT ${n}: ${doc.title ?? doc.url ?? `document ${n}`} ---`);
     lines.push(`URL: ${doc.url ?? 'none'}`);
     if (doc.text === undefined) {
-      lines.push('TEXT: not read (a link only — fetch it yourself)');
+      lines.push('TEXT: not supplied — read the URL yourself');
     } else {
-      lines.push('TEXT: read, follows', guardFoundationMessageText(doc.text));
+      lines.push('TEXT: read by LFX One, follows', guardFoundationMessageText(doc.text));
     }
     lines.push(`--- END DOCUMENT ${n} ---`);
   });
+  lines.push('');
+
+  // This form carries no answers, so every intake question is open: the agent
+  // answers what its research can and asks back the rest.
+  lines.push(`ANSWERS ON THE FORM: 0 of ${FOUNDATION_MESSAGE_ANSWER_KEYS.length} — open: ${FOUNDATION_MESSAGE_ANSWER_KEYS.join(', ')}`);
   return lines.join('\n');
 }
 
@@ -372,15 +393,18 @@ export function readFoundationMessageQuestions(candidate: unknown): MktgRunQuest
 }
 
 /**
- * The questions block in one raw session event payload, when the agent's
- * text carries one: the latest valid block wins. Lenient about where it
- * sits — any agent text with a JSON object whose contract is the questions
- * contract, fenced or not — because the exact event type the agent's text
- * turn rides is Guild's to choose.
+ * The questions block in one text the agent itself wrote (an agent text turn
+ * out of `extractMktgAgentTexts`), when it carries one: the latest valid
+ * block wins. Lenient about where in the text it sits — any JSON object
+ * whose contract is the questions contract, inside the fenced ```json block
+ * of the questions turn or not — because the exact event type the agent's
+ * text turn rides is Guild's to choose. Never hand it a whole event payload
+ * or a tool result: a page the agent fetched could carry a block too, and
+ * only the agent's own text counts.
  */
-export function extractFoundationMessageQuestions(payload: string): MktgRunQuestion[] | null {
+export function extractFoundationMessageQuestions(agentText: string): MktgRunQuestion[] | null {
   let found: MktgRunQuestion[] | null = null;
-  for (const candidate of extractMktgEnvelopeCandidates(payload, FOUNDATION_MESSAGE_QUESTIONS_CONTRACT_ID)) {
+  for (const candidate of extractMktgEnvelopeCandidates(agentText, FOUNDATION_MESSAGE_QUESTIONS_CONTRACT_ID)) {
     found = readFoundationMessageQuestions(candidate) ?? found;
   }
   return found;

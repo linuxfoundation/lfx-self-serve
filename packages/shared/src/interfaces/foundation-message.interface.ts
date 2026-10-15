@@ -212,12 +212,14 @@ export type FoundationMessagePersistReceipt = MktgArtifactPersistReceipt;
 export type FoundationMessageStoredResponse = MktgArtifactStoredResponse;
 
 /**
- * Response of `POST /api/mktg-agents/foundation-message/result`: `pending`
- * until the session's latest agent turn is either the questions block —
- * then `questions`, with the gaps to answer — or a schema-valid,
- * sha256-verified envelope, then `ready` with the document, its copy
- * primitives (surfaced as copyable chips) and, when the write succeeded, the
- * persistence receipt of the stored revision.
+ * Response of `POST /api/mktg-agents/foundation-message/result`: `ready`
+ * once the session holds a schema-valid, sha256-verified envelope, with the
+ * document, its copy primitives (surfaced as copyable chips) and, when the
+ * write succeeded, the persistence receipt of the stored revision;
+ * `questions` whenever the session holds a questions block the agent wrote
+ * and no valid envelope yet — the latest block, reported on every poll until
+ * a newer block or the envelope appears, so the run shell tells an
+ * already-answered block apart by its `questionsId`; `pending` otherwise.
  */
 export interface FoundationMessageResultResponse extends MktgRunResultResponse {
   /** Project display name from the envelope. Present when ready. */

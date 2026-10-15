@@ -222,11 +222,11 @@ export interface MktgDocumentExtractResponse {
 }
 
 /**
- * Why LFX One could not read a file or a link to text. Each has its own
- * remedy (upload instead of link, share the document, export without a
- * password), which is why they are told apart.
+ * Why LFX One could not read an uploaded file to text. Each has its own
+ * remedy (export without a password, upload a text version, a shorter one),
+ * which is why they are told apart.
  */
-export type MktgReadTextReason = 'unsupported' | 'encrypted' | 'no-text' | 'too-complex' | 'not-shared' | 'fetch-failed' | 'too-large' | 'busy';
+export type MktgReadTextReason = 'unsupported' | 'encrypted' | 'no-text' | 'too-complex' | 'too-large' | 'busy';
 
 /** What reading one file or page to text produced on the server. */
 export interface MktgReadText {
@@ -586,8 +586,10 @@ export interface MktgRunPersistReceipt {
 /**
  * Response of an agent's `result` endpoint: `pending` until the session emits
  * a schema-valid, integrity-checked envelope, then `ready` with the validated
- * document — or `questions` while the session's latest agent turn is a
- * questions block the requester has to answer first.
+ * document — or `questions` while the session holds a questions block the
+ * agent wrote and no envelope yet: the latest block, reported on every poll
+ * until a newer one or the envelope appears (`questionsId` tells an
+ * already-answered block from a new one).
  */
 export interface MktgRunResultResponse {
   /** Generation state. */

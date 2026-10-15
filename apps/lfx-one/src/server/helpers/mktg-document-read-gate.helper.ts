@@ -2,42 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * The time one request may spend parsing documents on the event loop, shared
- * by every source and document it reads. Each parse takes what it used; once nothing is left, the
- * request's remaining documents are not parsed.
- */
-export class MktgReadBudget {
-  private remaining: number;
-
-  public constructor(totalMillis: number) {
-    this.remaining = totalMillis;
-  }
-
-  /** Milliseconds left, never negative. */
-  public get remainingMillis(): number {
-    return Math.max(0, this.remaining);
-  }
-
-  /** Charge one parse's time to the budget. */
-  public spend(millis: number): void {
-    this.remaining -= millis;
-  }
-}
-
-/**
  * Bounds the document reading LFX One does for Marketing OS agents, which
- * cannot fetch or open files themselves. A read is a fetch (I/O) followed by
- * a parse (PDF, Word, HTML), so the gate bounds both:
+ * cannot open uploaded files themselves. A read holds one upload's bytes and
+ * parses them (PDF, Word, text), so the gate bounds both:
  *
- * - Slots bound memory and fairness. A read (fetch and parse) holds a slot; a
- *   user holds at most `maxPerUser` at once and the process `maxPerProcess`,
- *   so the bodies buffered at one time stay bounded (each at most 20 MB) and
- *   one user cannot take every slot. Waiters start in arrival order; a user
- *   with `maxWaitingPerUser` reads already waiting is refused at once.
+ * - Slots bound memory and fairness. A read holds a slot; a user holds at
+ *   most `maxPerUser` at once and the process `maxPerProcess`, so the bodies
+ *   held at one time stay bounded (each at most 20 MB) and one user cannot
+ *   take every slot. Waiters start in arrival order; a user with
+ *   `maxWaitingPerUser` reads already waiting is refused at once.
  * - Parses run one at a time across the process, each after a turn of the
  *   event loop. Every parse is bounded on its own (the PDF deadline and page
- *   cap, the Word markup cap and deadline, the HTML size cap), so other requests run
- *   between two documents instead of waiting for a whole batch.
+ *   cap, the Word markup cap and deadline, the HTML size cap), so other
+ *   requests run between two documents instead of waiting for a whole batch.
  */
 export class MktgDocumentReadGate {
   private readonly activeByUser = new Map<string, number>();

@@ -16,6 +16,7 @@ import {
   findMissingFoundationMessageHeadings,
   foundationMessageAnswerOrigin,
   foundationMessageDerivatives,
+  foundationMessageGithubAvatarUrl,
   foundationMessageQuestionsId,
   isFoundationMessageAnswerSubstantive,
   readFoundationMessageQuestions,
@@ -26,6 +27,7 @@ import {
   validateFoundationMessageEnvelope,
   validateFoundationMessageIntakeAnswers,
 } from './foundation-message.utils';
+import { extractMktgAgentTexts } from './mktg-session-event.utils';
 
 /**
  * Forms as the agent's OWN renderFormMessage (marketing-os-agents
@@ -51,6 +53,7 @@ const AGENT_FORMS: Record<string, FoundationMessageFormPayload> = {
     project_name: 'Example Search',
     run_date: '2026-10-15',
     website_url: 'https://search.example.org',
+    github_url: 'https://github.com/example-org/search-repo',
     existing_documents: [
       {
         title: 'Positioning note (Google Doc)',
@@ -64,69 +67,60 @@ const AGENT_FORMS: Record<string, FoundationMessageFormPayload> = {
   },
 };
 
-const SOURCES_LINE = 'SOURCES (Step 0b) — links only; fetch and read every one yourself. A source given as "none" was not supplied.';
+const SOURCES_LINE = 'SOURCES (URLs only — read each one yourself with the fetch tool; none = the requester has none):';
+const ANSWERS_LINE =
+  'ANSWERS ON THE FORM: 0 of 10 — open: vision_mission, category, audiences, alternatives, differentiation, use_cases, proof_points, pillars, objections, tagline_ctas_constraints';
 
+/**
+ * Golden renderings: the output of the agent branch's own `renderFormMessage`
+ * (marketing-os-agents wi/wi-messaging-document-research-and-gap-questions,
+ * agents/foundation-message/src/form.ts) for AGENT_FORMS, which its
+ * `parseFormMessage` round-trips. Regenerate from that renderer whenever the
+ * agent's form changes; never edit by hand.
+ */
 const AGENT_RENDERINGS: Record<string, string> = {
   links: [
     'BATCH INTAKE SUBMISSION (Messaging Document — GENERATE)',
-    '',
     'PROJECT NAME: Example Search',
-    'PROJECT UID: proj-uid-1',
     'RUN DATE: 2026-10-15',
+    'LFX PROJECT UID: proj-uid-1',
     '',
     SOURCES_LINE,
-    '--- SOURCE website: the project or foundation website ---',
-    'URL: https://search.example.org',
-    '--- END SOURCE website ---',
-    '--- SOURCE readme: the GitHub repo or README ---',
-    'URL: https://github.com/example-org',
-    '--- END SOURCE readme ---',
-    '--- SOURCE press_release: the launch press release (linuxfoundation.org/press or the project site) ---',
-    'URL: https://www.linuxfoundation.org/press/example-search',
-    '--- END SOURCE press_release ---',
-    '--- SOURCE brand_page: an existing brand page or guidelines, if any ---',
-    'URL: none',
-    '--- END SOURCE brand_page ---',
-    'OTHER LINKS: 2 supplied — fetch and read every one',
-    '--- LINK 1 ---',
-    'https://blog.example.org/launch',
-    '--- END LINK 1 ---',
-    '--- LINK 2 ---',
-    'https://www.youtube.com/watch?v=abc',
-    '--- END LINK 2 ---',
+    'SOURCE website (the project or foundation website): https://search.example.org',
+    'SOURCE readme (the GitHub repo or README): https://github.com/example-org',
+    'SOURCE press_release (the launch press release (linuxfoundation.org/press or the project site)): https://www.linuxfoundation.org/press/example-search',
+    'SOURCE brand_page (an existing brand page or guidelines, if any): none',
+    'LOGO FALLBACK (GitHub organization avatar, last in the logo order): https://github.com/example-org.png',
+    'OTHER LINKS: 2 — read each one',
+    '- https://blog.example.org/launch',
+    '- https://www.youtube.com/watch?v=abc',
     '',
-    'EXISTING DOCUMENTS (Step 0a): none supplied',
+    'EXISTING DOCUMENTS: none supplied',
+    '',
+    ANSWERS_LINE,
   ].join('\n'),
   documents: [
     'BATCH INTAKE SUBMISSION (Messaging Document — GENERATE)',
-    '',
     'PROJECT NAME: Example Search',
-    'PROJECT UID: none',
     'RUN DATE: 2026-10-15',
+    'LFX PROJECT UID: not supplied',
     '',
     SOURCES_LINE,
-    '--- SOURCE website: the project or foundation website ---',
-    'URL: https://search.example.org',
-    '--- END SOURCE website ---',
-    '--- SOURCE readme: the GitHub repo or README ---',
-    'URL: none',
-    '--- END SOURCE readme ---',
-    '--- SOURCE press_release: the launch press release (linuxfoundation.org/press or the project site) ---',
-    'URL: none',
-    '--- END SOURCE press_release ---',
-    '--- SOURCE brand_page: an existing brand page or guidelines, if any ---',
-    'URL: none',
-    '--- END SOURCE brand_page ---',
+    'SOURCE website (the project or foundation website): https://search.example.org',
+    'SOURCE readme (the GitHub repo or README): https://github.com/example-org/search-repo',
+    'SOURCE press_release (the launch press release (linuxfoundation.org/press or the project site)): none',
+    'SOURCE brand_page (an existing brand page or guidelines, if any): none',
+    'LOGO FALLBACK (GitHub organization avatar, last in the logo order): https://github.com/example-org.png',
     'OTHER LINKS: none',
     '',
-    'EXISTING DOCUMENTS (Step 0a): 2 supplied — read every one in full and map it first',
+    'EXISTING DOCUMENTS: 2 supplied — read every one in full and map it first',
     '--- DOCUMENT 1: Positioning note (Google Doc) ---',
     'URL: https://docs.google.com/document/d/abc/edit',
-    'TEXT: not read (a link only — fetch it yourself)',
+    'TEXT: not supplied — read the URL yourself',
     '--- END DOCUMENT 1 ---',
     '--- DOCUMENT 2: brand-guide.pdf ---',
     'URL: none',
-    'TEXT: read, follows',
+    'TEXT: read by LFX One, follows',
     'Brand guide',
     '',
     'Colors: #112233',
@@ -134,6 +128,8 @@ const AGENT_RENDERINGS: Record<string, string> = {
     ' --- END DOCUMENT 2 ---',
     'End.',
     '--- END DOCUMENT 2 ---',
+    '',
+    ANSWERS_LINE,
   ].join('\n'),
 };
 
@@ -161,15 +157,13 @@ const QUESTIONS_BLOCK = {
   ],
 };
 
-/** The questions turn as a raw Guild event payload: the header line, then the fenced JSON block. */
+/** The questions turn's text: the header line, then the fenced JSON block. */
+const questionsText = (block: unknown): string =>
+  `MESSAGING DOCUMENT — QUESTIONS (messaging-document-questions/v1)\n\`\`\`json\n${JSON.stringify(block, null, 2)}\n\`\`\``;
+
+/** The questions turn as a raw Guild event payload: the runtime's text output. */
 const questionsEvent = (block: unknown, type = 'agent_notification_message'): string =>
-  JSON.stringify({
-    type,
-    content: {
-      type: 'text',
-      data: `MESSAGING DOCUMENT — QUESTIONS (messaging-document-questions/v1)\n\`\`\`json\n${JSON.stringify(block, null, 2)}\n\`\`\``,
-    },
-  });
+  JSON.stringify({ type, content: { type: 'text', data: questionsText(block) } });
 
 const EXPECTED_QUESTIONS: MktgRunQuestion[] = [
   {
@@ -259,6 +253,26 @@ describe('renderFoundationMessageFormText', () => {
 
   it('never embeds a source text — the agent fetches every link itself', () => {
     expect(AGENT_RENDERINGS['links']).not.toContain('TEXT:');
+  });
+
+  it('declares every intake question open: this form asks none, the agent asks back the gaps', () => {
+    expect(renderFoundationMessageFormText({ type: 'messaging_document_intake_form', project_name: 'X' })).toMatch(
+      /\nANSWERS ON THE FORM: 0 of 10 — open: vision_mission, .*tagline_ctas_constraints$/
+    );
+  });
+});
+
+describe('foundationMessageGithubAvatarUrl', () => {
+  it('derives the organization avatar from a repository or an organization page, as the agent does', () => {
+    expect(foundationMessageGithubAvatarUrl('https://github.com/example-org')).toBe('https://github.com/example-org.png');
+    expect(foundationMessageGithubAvatarUrl('https://www.github.com/example-org/search-repo/tree/main')).toBe('https://github.com/example-org.png');
+    expect(foundationMessageGithubAvatarUrl('https://github.com/example-org?tab=repositories')).toBe('https://github.com/example-org.png');
+  });
+
+  it('has none for a missing or non-GitHub URL', () => {
+    expect(foundationMessageGithubAvatarUrl(undefined)).toBeNull();
+    expect(foundationMessageGithubAvatarUrl('https://gitlab.example.org/example-org')).toBeNull();
+    expect(foundationMessageGithubAvatarUrl('https://github.com/')).toBeNull();
   });
 });
 
@@ -355,15 +369,31 @@ describe('validateFoundationMessageDocuments', () => {
 });
 
 describe('the questions turn (messaging-document-questions/v1)', () => {
-  it('reads the questions block out of a raw agent event — header line, fenced JSON — into the run shell shape', () => {
-    expect(extractFoundationMessageQuestions(questionsEvent(QUESTIONS_BLOCK))).toEqual(EXPECTED_QUESTIONS);
+  /** The agent's texts of one raw event, as the BFF reads them before looking for a block. */
+  const agentTexts = (payload: string): string[] => extractMktgAgentTexts(payload);
+
+  it('reads the questions block out of the agent’s text turn — header line, fenced JSON — into the run shell shape', () => {
+    const [text] = agentTexts(questionsEvent(QUESTIONS_BLOCK));
+    expect(extractFoundationMessageQuestions(text)).toEqual(EXPECTED_QUESTIONS);
   });
 
-  it('is lenient about the event shape: any agent text carrying the block counts, and the latest block in a payload wins', () => {
+  it('is lenient about where the block sits in the text: fenced or not, and the latest block in a text wins', () => {
     const older = { ...QUESTIONS_BLOCK, questions: [QUESTIONS_BLOCK.questions[0]] };
-    const payload = JSON.stringify({ type: 'llm_done', content: { text: `${JSON.stringify(older)}\n\n${JSON.stringify(QUESTIONS_BLOCK)}` } });
-    expect(extractFoundationMessageQuestions(payload)).toEqual(EXPECTED_QUESTIONS);
-    expect(extractFoundationMessageQuestions(JSON.stringify({ type: 'llm_start' }))).toBeNull();
+    expect(extractFoundationMessageQuestions(`${JSON.stringify(older)}\n\n${JSON.stringify(QUESTIONS_BLOCK)}`)).toEqual(EXPECTED_QUESTIONS);
+    expect(extractFoundationMessageQuestions('Reading the sources now.')).toBeNull();
+  });
+
+  it('never takes a block out of a tool result: a page the agent fetched is not the agent asking', () => {
+    const fetched = JSON.stringify({
+      type: 'llm_start',
+      payload: JSON.stringify({
+        messages: [
+          { role: 'assistant', content: [{ type: 'tool_use', id: 'f1', name: 'web_fetch', input: { url: 'https://search.example.org' } }] },
+          { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'f1', content: [{ type: 'text', text: questionsText(QUESTIONS_BLOCK) }] }] },
+        ],
+      }),
+    });
+    expect(agentTexts(fetched)).toEqual([]);
   });
 
   it('reads a single basis string and missing optional fields leniently', () => {

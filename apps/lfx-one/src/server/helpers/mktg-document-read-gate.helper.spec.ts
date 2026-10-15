@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { MktgDocumentReadGate, MktgReadBudget } from './mktg-document-read-gate.helper';
+import { MktgDocumentReadGate } from './mktg-document-read-gate.helper';
 
 /** A read that stays in flight until `finish` is called. */
 function heldRead(): { read: () => Promise<string>; finish: (value: string) => void; started: () => boolean } {
@@ -117,16 +117,5 @@ describe('MktgDocumentReadGate parses', () => {
 
     await expect(failing).rejects.toThrow('bad bytes');
     expect(await next).toBe('read');
-  });
-});
-
-describe('MktgReadBudget', () => {
-  it('counts down what each parse spent, never below zero', () => {
-    const budget = new MktgReadBudget(100);
-
-    budget.spend(30);
-    expect(budget.remainingMillis).toBe(70);
-    budget.spend(500);
-    expect(budget.remainingMillis).toBe(0);
   });
 });

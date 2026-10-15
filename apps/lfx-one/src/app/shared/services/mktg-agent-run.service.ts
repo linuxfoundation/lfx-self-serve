@@ -435,10 +435,11 @@ export class MktgAgentRunService {
     const stored = this.loadRun(request.projectUid, request.agentId);
     const lastVersion = stored?.versions.length ? stored.versions[stored.versions.length - 1].version : 0;
     const version: MktgRunVersion = {
-      // The envelope's own version is authoritative; pollForDocument guaranteed
-      // it (and the document) is present, so the fallbacks are type-narrowing
-      // only. A fresh-run intake's envelope always says version 1, so the run
-      // numbers its own history instead.
+      // The envelope's own version is authoritative. awaitOutcome reaches this
+      // only for a result that is not `questions`, which pollForOutcome's
+      // isDocument gate let through with its document and version present, so
+      // the fallbacks only narrow the type. A fresh-run intake's envelope
+      // always says version 1, so the run numbers its own history instead.
       version: request.intake.freshRunPerSubmission ? lastVersion + 1 : (result.version ?? lastVersion + 1),
       document: result.documentMarkdown ?? '',
       feedback: request.feedback,

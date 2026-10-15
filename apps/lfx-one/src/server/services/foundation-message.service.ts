@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { FOUNDATION_MESSAGE_CONTRACT_ID, MKTG_ARTIFACT_SPECS } from '@lfx-one/shared/constants';
+import { FOUNDATION_MESSAGE_CONTRACT_ID, FOUNDATION_MESSAGE_FINALIZE_TOOL, MKTG_ARTIFACT_SPECS } from '@lfx-one/shared/constants';
 import {
   FoundationMessageEnvelope,
   FoundationMessageExistingDocument,
@@ -15,7 +15,9 @@ import {
 import {
   buildFoundationMessageFormPayload,
   extractFoundationMessageQuestions,
+  extractMktgAgentTexts,
   extractMktgEnvelopeCandidates,
+  extractMktgToolResults,
   foundationMessageDerivatives,
   foundationMessageQuestionsId,
   renderFoundationMessageAnswersText,
@@ -53,6 +55,13 @@ import { MktgDocumentStoreService } from './mktg-document-store.service';
  *    events. Every candidate is schema-validated and its document sha256
  *    recomputed before anything reaches the user, and the validated bundle is
  *    stored as a revision of the project's foundation-message document.
+ *
+ * Who wrote what matters here: the agent fetches the requester's links and
+ * searches the web, and every page it reads comes back as a tool result in
+ * the same event stream. A questions block is therefore taken only from the
+ * agent's own text turns and an envelope only from the finalize tool's
+ * results (`extractMktgAgentTexts`, `extractMktgToolResults`) — never from
+ * whatever string in a payload happens to carry a contract id.
  */
 export class FoundationMessageService {
   private readonly guildService = new GuildService();
@@ -120,10 +129,14 @@ export class FoundationMessageService {
    * Fetch the session's current result: `ready` once a valid envelope appears
    * in the event stream, with the validated document, its copy primitives and
    * (when the write succeeded) the persistence receipt of the stored revision;
-   * `questions` while the latest agent turn is a questions block instead;
-   * `pending` otherwise. `projectUid` decides the storage partition and is
-   * entitlement-checked before anything is written; without it the document
-   * is still returned, just not stored.
+   * `questions` whenever the session holds a questions block and no valid
+   * envelope yet — the LATEST block the agent wrote, reported on every poll
+   * until a newer block or the envelope appears, which is why it carries a
+   * `questionsId`: the run shell ignores the block it already answered by
+   * that id while the agent works on the answers; `pending` otherwise.
+   * `projectUid` decides the storage partition and is entitlement-checked
+   * before anything is written; without it the document is still returned,
+   * just not stored.
    */
   public async getResult(req: Request, sessionId: string, projectUid?: string): Promise<FoundationMessageResultResponse> {
     const payloads = await this.guildService.getRawEventPayloads(req, sessionId);
@@ -177,15 +190,20 @@ export class FoundationMessageService {
   }
 
   /**
-   * The questions block of the session's latest agent text turn, when there
-   * is one: the raw payloads are chronological, so the last block found is
-   * the latest. User events never reach this scan (`getRawEventPayloads`
-   * drops them), so an answer can never plant a questions block.
+   * The latest questions block the AGENT wrote in the session, when there is
+   * one: the raw payloads are chronological and so are the agent's texts
+   * within each, so the last block found is the latest, and it stays the
+   * answer until the agent writes a newer block (or the envelope ends the
+   * run). Only the agent's own text turns are read — never a tool result,
+   * where a fetched page or a search hit could plant a block, and never a
+   * user event, which `getRawEventPayloads` drops anyway.
    */
   private findLatestQuestions(req: Request, payloads: string[]): MktgRunQuestion[] | null {
     let latest: MktgRunQuestion[] | null = null;
     for (const payload of payloads) {
-      latest = extractFoundationMessageQuestions(payload) ?? latest;
+      for (const text of extractMktgAgentTexts(payload)) {
+        latest = extractFoundationMessageQuestions(text) ?? latest;
+      }
     }
     if (latest) {
       logger.debug(req, 'foundation_message_result', 'The agent is asking questions', { questions: latest.length });
@@ -209,39 +227,43 @@ export class FoundationMessageService {
   }
 
   /**
-   * Scan raw event payloads (chronologically ordered) for envelope candidates
-   * and return the authoritative one: the highest `version` among valid
-   * candidates, the latest occurrence winning ties. The sha256 integrity gate
-   * runs PER CANDIDATE, before version selection — a newer candidate that
-   * fails the recompute must not shadow an older valid one.
+   * The authoritative envelope of the session: the LATEST valid result of the
+   * agent's finalize tool (`finalize_messaging_document`), read only from
+   * that tool's result events — a page the agent fetched or a search hit is
+   * a tool result too, but of another tool, and nothing else in a payload is
+   * looked at. The raw payloads are chronological, so a later valid finalize
+   * (the agent fixed a gate failure and finalized again) supersedes an
+   * earlier one; the envelope's self-declared `version` plays no part in the
+   * choice. The sha256 integrity gate runs PER CANDIDATE — a later candidate
+   * that fails the recompute does not shadow an earlier valid one.
    */
   private findAuthoritativeEnvelope(req: Request, payloads: string[]): FoundationMessageEnvelope | null {
-    let best: FoundationMessageEnvelope | null = null;
+    let latest: FoundationMessageEnvelope | null = null;
     let candidateCount = 0;
     let invalidCount = 0;
 
     for (const payload of payloads) {
-      for (const candidate of extractMktgEnvelopeCandidates(payload, FOUNDATION_MESSAGE_CONTRACT_ID)) {
-        candidateCount++;
-        const result = validateFoundationMessageEnvelope(candidate);
-        if (!result.valid) {
-          invalidCount++;
-          logger.debug(req, 'foundation_message_result', 'Rejected envelope candidate', { errors: result.errors });
-          continue;
-        }
-        // Safe: validateFoundationMessageEnvelope passed every schema gate.
-        const envelope = candidate as FoundationMessageEnvelope;
-        const recomputedSha = createHash('sha256').update(Buffer.from(envelope.document_markdown, 'utf8')).digest('hex');
-        if (recomputedSha !== envelope.content_sha256) {
-          invalidCount++;
-          logger.warning(req, 'foundation_message_result', 'Envelope content_sha256 does not match the document bytes — discarding candidate', {
-            expected: envelope.content_sha256,
-            recomputed: recomputedSha,
-          });
-          continue;
-        }
-        if (!best || envelope.version >= best.version) {
-          best = envelope;
+      for (const resultText of extractMktgToolResults(payload, FOUNDATION_MESSAGE_FINALIZE_TOOL)) {
+        for (const candidate of extractMktgEnvelopeCandidates(resultText, FOUNDATION_MESSAGE_CONTRACT_ID)) {
+          candidateCount++;
+          const result = validateFoundationMessageEnvelope(candidate);
+          if (!result.valid) {
+            invalidCount++;
+            logger.debug(req, 'foundation_message_result', 'Rejected envelope candidate', { errors: result.errors });
+            continue;
+          }
+          // Safe: validateFoundationMessageEnvelope passed every schema gate.
+          const envelope = candidate as FoundationMessageEnvelope;
+          const recomputedSha = createHash('sha256').update(Buffer.from(envelope.document_markdown, 'utf8')).digest('hex');
+          if (recomputedSha !== envelope.content_sha256) {
+            invalidCount++;
+            logger.warning(req, 'foundation_message_result', 'Envelope content_sha256 does not match the document bytes — discarding candidate', {
+              expected: envelope.content_sha256,
+              recomputed: recomputedSha,
+            });
+            continue;
+          }
+          latest = envelope;
         }
       }
     }
@@ -250,9 +272,9 @@ export class FoundationMessageService {
       events: payloads.length,
       candidates: candidateCount,
       invalid: invalidCount,
-      found: !!best,
+      found: !!latest,
     });
 
-    return best;
+    return latest;
   }
 }

@@ -56,6 +56,28 @@ export const FOUNDATION_MESSAGE_OTHER_LINKS_KEY = 'other_links';
 /** Most other links one run takes. */
 export const FOUNDATION_MESSAGE_MAX_OTHER_LINKS = 10;
 
+/**
+ * The ten intake answer keys, in the agent's priority order (its
+ * `ANSWER_KEYS`, src/questions.ts). The form asks none of them: the rendered
+ * intake declares every one open (`ANSWERS ON THE FORM: 0 of 10 — open: …`),
+ * and the agent asks back only the gaps its research leaves.
+ */
+export const FOUNDATION_MESSAGE_ANSWER_KEYS = [
+  'vision_mission',
+  'category',
+  'audiences',
+  'alternatives',
+  'differentiation',
+  'use_cases',
+  'proof_points',
+  'pillars',
+  'objections',
+  'tagline_ctas_constraints',
+] as const;
+
+/** The agent's finalize tool: the only event source the BFF accepts an output envelope from (its tool RESULT). */
+export const FOUNDATION_MESSAGE_FINALIZE_TOOL = 'finalize_messaging_document';
+
 // ---------------------------------------------------------------------------
 // The questions turn (messaging-document-questions/v1) and the answers turn
 // (messaging-document-answers/v1): after reading the sources and researching,
@@ -264,19 +286,6 @@ export const FOUNDATION_MESSAGE_MAX_FILE_BYTES = 20 * 1024 * 1024;
 /** File types the existing-documents upload accepts: PDF, Word, Markdown and plain text. */
 export const FOUNDATION_MESSAGE_FILE_EXTENSIONS = ['.pdf', '.docx', '.md', '.txt'] as const;
 
-/**
- * Response content types (the media type, parameters ignored) a link is read
- * from by the shared reader, besides any `text/*`. Hosts often serve PDFs as
- * `application/octet-stream`, so it is read too; the bytes then decide the
- * format. Anything else — an image, a video, JSON — is refused unread.
- */
-export const FOUNDATION_MESSAGE_LINK_CONTENT_TYPES: readonly string[] = [
-  'application/pdf',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/xhtml+xml',
-  'application/octet-stream',
-];
-
 /** Content type of the raw upload body. */
 export const FOUNDATION_MESSAGE_FILE_UPLOAD_CONTENT_TYPE = 'application/octet-stream';
 
@@ -286,14 +295,12 @@ export const FOUNDATION_MESSAGE_FILE_NAME_HEADER = 'X-File-Name';
 /** Longest document title kept (one line). */
 export const FOUNDATION_MESSAGE_DOCUMENT_TITLE_MAX_CHARS = 200;
 
-/** What the form says when an uploaded document could not be read, per reason (the link reasons remain for the shared reader). */
+/** What the form says when an uploaded document could not be read, per reason. */
 export const FOUNDATION_MESSAGE_READ_REASONS = {
   unsupported: 'Not a PDF, Word (.docx), Markdown or text file.',
   encrypted: 'The PDF is password-protected or encrypted. Export it without a password and upload it again.',
   'no-text': 'No text found — a scanned PDF or an image cannot be read. Upload a text version.',
   'too-complex': 'This document is too long or too complex to read here. Upload a shorter version, or export it again as PDF or text.',
-  'not-shared': 'The document isn’t shared publicly. Share it as “Anyone with the link”, or upload it as a file.',
-  'fetch-failed': 'LFX One couldn’t fetch this link. It goes to the agent as “not read”; upload the file instead if you have it.',
   'too-large': 'The file is larger than 20 MB.',
   busy: 'LFX One is still reading your other documents. Try this one again in a moment.',
 } as const;
