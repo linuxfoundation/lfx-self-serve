@@ -22,6 +22,7 @@ import {
   MeetingStatusKind,
   MeetingTimeState,
   MeetingViewerRole,
+  PastMeeting,
   PublicMeetingProject,
   PublicPastMeetingResponse,
   RsvpResponse,
@@ -195,11 +196,23 @@ export class MeetingDetailsStateService {
   });
   /**
    * The start (Unix ms) of the occurrence the page shows, for the occurrence strip (E6-03): the selected
-   * occurrence's, or on a page opened by a past composite id, the start that id ends with.
+   * occurrence's, or on a past occurrence's page, its own start. That is the composite route id's when
+   * the page was opened by one; for one opened by its plain id (the upcoming lookup's 404 fallback), the
+   * record's composite id (full access), else its scheduled start, which the limited response keeps.
    */
   public readonly selectedOccurrenceStartMs: Signal<number | null> = computed(() => {
     if (this.loadedViaPastMeetingId()) {
-      return compositeIdToStartMs(this.routeId() ?? '');
+      const fromRoute = compositeIdToStartMs(this.routeId() ?? '');
+      if (fromRoute !== null) {
+        return fromRoute;
+      }
+      const record = this.meeting() as Partial<PastMeeting> | undefined;
+      const fromRecord = record?.meeting_and_occurrence_id ? compositeIdToStartMs(record.meeting_and_occurrence_id) : null;
+      if (fromRecord !== null) {
+        return fromRecord;
+      }
+      const scheduled = record?.scheduled_start_time ? Date.parse(record.scheduled_start_time) : NaN;
+      return Number.isFinite(scheduled) ? scheduled : null;
     }
     const occurrence = this.selectedOccurrence();
     return occurrence ? new Date(occurrence.start_time).getTime() : null;

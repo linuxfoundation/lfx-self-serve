@@ -388,6 +388,45 @@ describe('MeetingDetailsStateService', () => {
     });
   });
 
+  describe('a past occurrence opened by its plain id (E6-03)', () => {
+    const startMs = Date.UTC(2026, 6, 16, 9, 30);
+
+    beforeEach(() => {
+      paramMap$.next(convertToParamMap({ id: 'past-uuid' }));
+      getPublicMeeting.mockReturnValue(throwError(() => ({ status: 404 })));
+    });
+
+    it("selects the record's composite start with full access", async () => {
+      getPublicPastMeeting.mockReturnValue(
+        of({
+          meeting: { ...buildMeeting('past-uuid'), meeting_id: '99152950841', meeting_and_occurrence_id: `99152950841-${startMs}` },
+          project,
+          full_access: true,
+        })
+      );
+      const state = create();
+      await settle();
+
+      expect(state.loadedViaPastMeetingId()).toBe(true);
+      expect(state.selectedOccurrenceStartMs()).toBe(startMs);
+    });
+
+    it('selects the scheduled start from the limited response, which has no composite id', async () => {
+      getPublicPastMeeting.mockReturnValue(
+        of({
+          meeting: { ...buildMeeting('past-uuid'), meeting_id: '99152950841', scheduled_start_time: new Date(startMs).toISOString() },
+          project,
+          full_access: false,
+        })
+      );
+      const state = create();
+      await settle();
+
+      expect(state.selectedOccurrenceStartMs()).toBe(startMs);
+      expect(state.visibleSections()?.occurrences).toBe(true);
+    });
+  });
+
   describe('navigating to another meeting', () => {
     it('shows the skeleton, never the previous meeting, until the new one resolves', async () => {
       const state = create();
