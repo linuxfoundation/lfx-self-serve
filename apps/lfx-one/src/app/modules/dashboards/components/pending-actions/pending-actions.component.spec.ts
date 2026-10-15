@@ -10,6 +10,7 @@ import type { Meeting, PendingActionItem } from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
+import { LensService } from '@services/lens.service';
 import { UserService } from '@services/user.service';
 import { VoteService } from '@services/vote.service';
 import { HiddenActionsService } from '@shared/services/hidden-actions.service';
@@ -58,7 +59,18 @@ async function render(actions: PendingActionItem[], flagEnabled = true): Promise
       { provide: InvitationService, useValue: { resolvedInviteUids: signal(new Set<string>()) } },
       { provide: InvitationAcceptFlowService, useValue: {} },
       { provide: MeetingService, useValue: meetingClient },
-      { provide: UserService, useValue: { user: signal(null), authenticated: signal(false) } },
+      {
+        provide: UserService,
+        useValue: {
+          user: signal(null),
+          authenticated: signal(false),
+          viewerUsername: signal(null),
+          meetingRegistrationGeneration: vi.fn(() => 0),
+          recordConfirmedMeetingRsvp: vi.fn(),
+          isMeetingRsvpCurrent: vi.fn(() => true),
+        },
+      },
+      { provide: LensService, useValue: { activeLens: signal('me') } },
       { provide: VoteService, useValue: {} },
       { provide: CommitteeService, useValue: reviewClient },
       // The real service: the template's `p-toast` subscribes to its message/clear observables.

@@ -81,6 +81,16 @@
         <p-skeleton width="100%" height="6rem" />
         <p-skeleton width="100%" height="6rem" />
       </section>
+    } @else if (easyclaRoleMissing()) {
+      <lfx-empty-state data-testid="org-easycla-role-missing-state" icon="fa-light fa-lock" [title]="easyclaRoleMissingCopy.title">
+        <p class="text-sm text-gray-500" data-testid="org-easycla-role-missing-description">
+          {{ easyclaRoleMissingCopy.reason }} {{ easyclaRoleMissingCopy.supportLead }}
+          <button type="button" lfxOpenIntercom class="font-medium underline" data-testid="org-easycla-role-missing-contact-support">
+            {{ easyclaRoleMissingCopy.supportLabel }}
+          </button>
+          {{ easyclaRoleMissingCopy.supportTail }}
+        </p>
+      </lfx-empty-state>
     } @else if (fetchError()) {
       <!-- Never the "signed nothing" copy: a failed load and an empty list are different facts,
            and only one of them is a statement about the organization's legal position. -->
@@ -106,13 +116,10 @@
         @for (claGroup of pagedClaGroups(); track claGroup.id) {
           <!--
             Stretched link, matching the me-selector in sidebar.component.html: the anchor
-            overlays the card as a SIBLING rather than wrapping it. Wrapping nested the "Needs a
-            CLA Manager" tag — which carries a tooltip and so takes `tabindex="0"` — inside the
-            link, giving a second tab stop within the card and making a click on the tag
-            ambiguous with following the agreement.
+            overlays the card as a SIBLING rather than wrapping it.
 
             The card sits above the anchor but with pointer events off, so clicks fall through to
-            the link while the tag can re-enable them for its own tooltip.
+            the link.
           -->
           <div class="relative">
             <!--

@@ -8,15 +8,47 @@
       <p-skeleton width="min(28rem, 100%)" height="1rem" />
     </div>
   } @else {
+    <!-- Back to the foundation cards -->
+    <a routerLink="/newsletters/my" class="inline-flex items-center gap-1.5 mb-3 text-sm text-blue-500 hover:underline" data-testid="my-newsletters-back">
+      <i class="fa-light fa-arrow-left text-xs" aria-hidden="true"></i>My Newsletters
+    </a>
+
     <!-- Page Header -->
-    <div class="flex items-center justify-between mb-6">
-      <div>
-        <h1 class="font-display font-light text-2xl" data-testid="my-newsletters-title">My Newsletters</h1>
-        <p class="mt-1 text-sm text-gray-500" data-testid="my-newsletters-description">
-          Newsletters sent to groups you belong to across all foundations and projects.
-        </p>
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+      <div class="flex items-center gap-4 min-w-0">
+        @if (foundation(); as current) {
+          <lfx-avatar
+            class="shrink-0"
+            [image]="current.logo_url ?? ''"
+            [label]="foundationInitial()"
+            shape="square"
+            styleClass="w-14 h-14 rounded-xl border border-gray-200 bg-white text-xl text-gray-700 [&_img]:object-contain [&_img]:p-1.5" />
+        }
+        <div class="flex flex-col gap-1 min-w-0">
+          <h1 class="font-display font-light text-2xl break-words" data-testid="my-newsletters-title">{{ foundation()?.name ?? 'Newsletters' }}</h1>
+          <p class="text-sm text-gray-500 m-0" data-testid="my-newsletters-description">Newsletters you've received from this foundation.</p>
+        </div>
       </div>
+      @if (foundation()?.can_invite) {
+        <lfx-button
+          label="Invite a colleague"
+          icon="fa-light fa-user-plus"
+          severity="info"
+          size="small"
+          (onClick)="onInvite()"
+          data-testid="my-newsletters-invite" />
+      }
     </div>
+
+    @if (inviteCommitteeUid(); as committeeUid) {
+      <div class="mb-6">
+        <lfx-newsletter-invite-landing
+          [committeeUid]="committeeUid"
+          [foundationSlug]="foundationSlug()"
+          (joined)="onInviteJoined()"
+          (dismissed)="onInviteDismissed()" />
+      </div>
+    }
 
     @if (loading() && myNewsletters().length > 0) {
       <p class="mb-4 text-sm text-gray-500" role="status" data-testid="my-newsletters-refresh-status">Refreshing newsletters…</p>
@@ -41,7 +73,7 @@
       <lfx-empty-state
         icon="fa-light fa-paper-plane"
         title="No newsletters yet"
-        subtitle="Newsletters sent to your groups will appear here. Join a group to see its past newsletters."
+        subtitle="Issues you receive from this foundation will appear here."
         data-testid="my-newsletters-empty-state">
       </lfx-empty-state>
     } @else {
@@ -59,21 +91,6 @@
                 data-testid="my-newsletters-search-input"></lfx-input-text>
             </div>
 
-            @if (showFoundationFilter()) {
-              <div class="w-full sm:w-56">
-                <lfx-select
-                  [form]="searchForm"
-                  control="foundationFilter"
-                  size="small"
-                  [options]="foundationOptions()"
-                  [filter]="true"
-                  filterPlaceholder="Search foundations..."
-                  styleClass="w-full"
-                  (onChange)="onFoundationFilterChange($event.value)"
-                  data-testid="my-newsletters-foundation-filter">
-                </lfx-select>
-              </div>
-            }
             @if (showProjectFilter()) {
               <div class="w-full sm:w-56">
                 <lfx-select
@@ -116,9 +133,9 @@
               data-testid="my-newsletters-table">
               <ng-template #header>
                 <tr>
-                  <th class="w-[50%]">Title</th>
+                  <th class="w-[55%]">Title</th>
                   <th class="w-[20%]">Sent</th>
-                  <th class="w-[30%]">Project / Foundation</th>
+                  <th class="w-[25%]">Project</th>
                 </tr>
               </ng-template>
 

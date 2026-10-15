@@ -7,8 +7,14 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import {
   GOOGLE_ADS_BIDDING_BOUNDS,
+  GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
+  GOOGLE_ADS_MAX_CALLOUTS,
   GOOGLE_ADS_MAX_CONVERSION_ACTIONS,
   GOOGLE_ADS_MAX_GEO_TARGETS,
+  GOOGLE_ADS_MAX_LANGUAGES,
+  GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES,
+  GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES,
+  GOOGLE_ADS_MAX_SITELINKS,
   GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
   GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL,
   GOOGLE_BIDDING_STRATEGY_LABELS,
@@ -25,6 +31,7 @@ import type {
   CampaignBriefPersistenceState,
   CampaignCreateResult,
   CampaignImplementationDraft,
+  CampaignSitelink,
   GoogleCreativeChannel,
   GoogleCreativeFieldSpec,
 } from '@lfx-one/shared/interfaces';
@@ -2219,9 +2226,9 @@ describe('ImplementationTabComponent reddit objective', () => {
 
   /**
    * `video_views` cannot succeed on either arm today. Reddit has no bare `VIDEO_VIEWS`
-   * optimization goal: campaign-service requires a companion `videoGoal` and refuses the request
-   * without one, and the legacy creator does not refuse — it sends `optimizationGoal:
-   * 'VIDEO_VIEWS'`, which Reddit itself rejects. Offering it would guarantee a failed create.
+   * optimization goal, so both creators require a companion `videoGoal` and refuse the request
+   * without one — and no control in this tier can set one, so offering the objective would
+   * guarantee a refused create.
    */
   it('does not offer video_views', async () => {
     const f = await restoredWithObjective('conversions');
@@ -5641,6 +5648,810 @@ describe('ImplementationTabComponent google geo targets', () => {
     restoreGoogleDraft(fixture, c, {});
 
     expect(c['googleGeoTargets']()).toEqual([code]);
+  });
+});
+
+/**
+ * The Google language chips.
+ *
+ * The control is a `<select>` over the supported table's own keys, so the guards left are the ones
+ * a select cannot express — the cap, not adding a code twice — plus the CHANNEL gate, which the geo
+ * sibling has no equivalent of: upstream's `validateCriteriaPlan` refuses the whole non-location
+ * criteria set on Demand Gen, so the section and the payload both close there.
+ */
+describe('ImplementationTabComponent google languages', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it('adds a code once and refuses a duplicate or a blank', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const { code } = c['googleLanguageOptions'][0];
+
+    c['addGoogleLanguage'](code);
+    c['addGoogleLanguage'](code);
+    c['addGoogleLanguage']('');
+
+    expect(c['googleLanguages']()).toEqual([code]);
+  });
+
+  it('refuses an add at the cap', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    // The curated table holds 39 codes and the cap is 40, so the cap cannot be reached from the
+    // select alone — the list is seeded past it to exercise the guard the select cannot express.
+    c['googleLanguages'].set(Array.from({ length: GOOGLE_ADS_MAX_LANGUAGES }, (_, i) => `X${i}`));
+
+    c['addGoogleLanguage'](c['googleLanguageOptions'][0].code);
+
+    expect(c['googleLanguages']()).toHaveLength(GOOGLE_ADS_MAX_LANGUAGES);
+  });
+
+  it('removes a chip by index', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const [first, second] = c['googleLanguageOptions'];
+    c['addGoogleLanguage'](first.code);
+    c['addGoogleLanguage'](second.code);
+
+    c['removeGoogleLanguage'](0);
+
+    expect(c['googleLanguages']()).toEqual([second.code]);
+  });
+
+  /**
+   * Sorted by the English NAME, because that is what the options render, under a PINNED `en`
+   * collation — the endpoints are asserted by value so the order cannot quietly follow whichever
+   * locale runs the suite.
+   */
+  it('offers the languages in name order', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const labels = c['googleLanguageOptions'].map((o: { label: string }) => o.label);
+
+    expect(labels).toEqual([...labels].sort((a: string, b: string) => a.localeCompare(b, 'en')));
+    expect(labels[0]).toBe('Arabic');
+    expect(labels.at(-1)).toBe('Vietnamese');
+  });
+
+  /**
+   * Chips read as the name the select offered, not the code. A restored draft is the other source
+   * of a code, so an unknown one falls back to itself — including an inherited `Object.prototype`
+   * key, which a plain-object index would have resolved to a function (#3504).
+   */
+  it.each([
+    ['DE', 'German'],
+    ['ZZ', 'ZZ'],
+    ['constructor', 'constructor'],
+  ])('names the chip for %s as %s', (code, name) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['googleLanguages'].set([code]);
+    fixture.detectChanges();
+
+    expect(c['googleLanguageChips']()).toEqual([{ code, name }]);
+    const remove = fixture.nativeElement.querySelector(`[data-testid="implementation-google-language-remove-${code}"]`);
+    expect(remove?.getAttribute('aria-label')).toBe(`Remove ${name}`);
+  });
+
+  it.each([
+    ['search', { includeSearch: true }],
+    ['performance-max', { includePerformanceMax: true }],
+    ['display', { includeDisplay: true }],
+  ])('opens the section on %s, which upstream accepts campaign languages on', (channel, patch) => {
+    const c = seedChannel(fixture, patch);
+
+    expect(c['googleLanguagesChannel']()).toBe(channel);
+  });
+
+  /**
+   * Video is in `GOOGLE_CHANNELS_WITH_LANGUAGES` because `validateCriteriaPlan` accepts languages
+   * there, and is still unreachable from this screen: `GOOGLE_VIDEO_CREATE_SUPPORTED` is false, so
+   * `selectedGoogleChannels` drops it and there is no Video create for a language to ride on. The
+   * constant stays right about upstream; this asserts the narrower thing the UI can do.
+   */
+  it('closes the section on video, which has no create to attach a language to', () => {
+    const c = seedChannel(fixture, { includeVideo: true });
+
+    expect(c['googleLanguagesChannel']()).toBeNull();
+  });
+
+  /**
+   * The one closed channel, and the reason the gate exists at all. `validateCriteriaPlan` refuses
+   * languages, device bid modifiers, demographics and ad schedules together on Demand Gen, so a
+   * control offered here would be offering a refusal.
+   */
+  it('closes the section on demand-gen', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+
+    expect(c['googleLanguagesChannel']()).toBeNull();
+  });
+
+  it('withholds a list picked under one channel once the selection moves to demand-gen', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleLanguage'](c['googleLanguageOptions'][0].code);
+    expect(c['googleLanguagesPayload']()).toHaveProperty('languages');
+
+    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    fixture.detectChanges();
+
+    // HELD, not cleared: the chips survive so switching back restores the operator's choice, but
+    // the payload carries nothing a Demand Gen create would be refused for.
+    expect(c['googleLanguages']()).toHaveLength(1);
+    expect(c['googleLanguagesPayload']()).toEqual({});
+  });
+
+  /**
+   * Held is not silent. The section disappears on Demand Gen, so without this notice the operator
+   * would read nothing about the campaign now serving in every language; switching back clears it.
+   */
+  it('says the held list will not be sent on demand-gen, and clears the notice on a switch back', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleLanguage']('DE');
+    const notice = () => fixture.nativeElement.querySelector('[data-testid="implementation-google-languages-withheld"]');
+    fixture.detectChanges();
+    expect(notice()).toBeNull();
+
+    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    fixture.detectChanges();
+    expect(c['googleLanguagesWithheldOn']()).toBe('Demand Gen');
+    expect(notice()?.textContent).toContain('serve in every language');
+
+    c['campaignForm'].patchValue({ includeSearch: true, includeDemandGen: false });
+    fixture.detectChanges();
+    expect(notice()).toBeNull();
+    expect(c['googleLanguagesPayload']()).toEqual({ languages: ['DE'] });
+  });
+
+  it('shows no withheld notice on demand-gen when no language was picked', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+
+    expect(c['googleLanguagesWithheldOn']()).toBeNull();
+  });
+
+  /**
+   * An absent key, not `[]`. Upstream reads an absent language list as Google's own default of
+   * every language, so sending an empty array would be a narrowing nobody asked for.
+   */
+  it('sends nothing when no language was picked', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['googleLanguagesPayload']()).toEqual({});
+  });
+
+  /**
+   * The legacy road. The in-process creator reads nothing on `googleAdsConfig`, so a language picked
+   * there would be collected and dropped, and the campaign created serving in every language. A
+   * picked list is held, not sent, and the section is not rendered; `null` (not known yet) withholds
+   * the same way.
+   */
+  it.each([[null], [false]])('withholds the section and the payload while googleCreativeEnabled is %s', (capability) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleLanguage']('DE');
+    fixture.componentRef.setInput('googleCreativeEnabled', capability);
+    fixture.detectChanges();
+
+    expect(c['googleLanguagesChannel']()).toBeNull();
+    expect(c['googleLanguagesPayload']()).toEqual({});
+    expect(fixture.nativeElement.querySelector('[data-testid="implementation-google-languages-section"]')).toBeNull();
+    expect(c['googleLanguages']()).toEqual(['DE']);
+  });
+
+  it('renders the section once the capability is on', () => {
+    seedChannel(fixture, { includeSearch: true });
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="implementation-google-languages-section"]')).not.toBeNull();
+  });
+
+  it('round-trips the chips through a draft', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    let emitted: CampaignImplementationDraft | undefined;
+    fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
+    const { code } = c['googleLanguageOptions'][1];
+    c['addGoogleLanguage'](code);
+
+    expect(emitted?.googleLanguages).toEqual([code]);
+
+    c['googleLanguages'].set([]);
+    restoreGoogleDraft(fixture, c, { googleLanguages: [code] });
+
+    expect(c['googleLanguages']()).toEqual([code]);
+  });
+
+  /** The chips are COPIED out of the draft, so the parent's array cannot be mutated through them. */
+  it('does not share the restored array with the draft', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const saved = [c['googleLanguageOptions'][1].code];
+
+    restoreGoogleDraft(fixture, c, { googleLanguages: saved });
+    c['addGoogleLanguage'](c['googleLanguageOptions'][2].code);
+
+    expect(saved).toHaveLength(1);
+  });
+
+  /** A draft saved before this section shipped carries no key, and must not clear the chips. */
+  it('leaves the chips alone when the draft carries no language key', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const { code } = c['googleLanguageOptions'][1];
+    c['addGoogleLanguage'](code);
+
+    restoreGoogleDraft(fixture, c, {});
+
+    expect(c['googleLanguages']()).toEqual([code]);
+  });
+});
+
+/**
+ * The Google callout chips.
+ *
+ * Free text rather than a select, so every one of upstream's `validateCallouts` branches has to be
+ * mirrored on the add path — and each test below is one of those branches, plus the accept-cases
+ * that keep the guards from refusing what upstream takes.
+ */
+describe('ImplementationTabComponent google callouts', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it('trims an added callout and refuses a blank', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['addGoogleCallout']('  Free shipping  ')).toBe(true);
+    expect(c['addGoogleCallout']('   ')).toBe(false);
+
+    expect(c['googleCallouts']()).toEqual(['Free shipping']);
+  });
+
+  /**
+   * Case-folded, because upstream keys its duplicate check on `strings.ToLower(text)` and REFUSES
+   * the whole create rather than de-duplicating. Two chips differing only in case would be one
+   * callout upstream and a campaign that never gets created.
+   */
+  it('refuses a callout that repeats an existing one in a different case', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleCallout']('Free Shipping');
+
+    expect(c['addGoogleCallout']('free shipping')).toBe(false);
+    expect(c['googleCallouts']()).toEqual(['Free Shipping']);
+  });
+
+  it('refuses an add at the cap', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    for (let i = 0; i < GOOGLE_ADS_MAX_CALLOUTS; i++) c['addGoogleCallout'](`Callout ${i + 1}`);
+
+    expect(c['addGoogleCallout']('One more')).toBe(false);
+    expect(c['googleCallouts']()).toHaveLength(GOOGLE_ADS_MAX_CALLOUTS);
+  });
+
+  /**
+   * Runes, not UTF-16 units. `utf8.RuneCountInString` counts code points, so 25 astral-plane
+   * characters are a callout upstream accepts — counted with `.length` they would be 50 and this
+   * add would be refused for no reason, which is the over-refusal these mirrors exist to avoid.
+   */
+  it('accepts a 25-emoji callout and refuses a 26-character one', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['addGoogleCallout']('🎉'.repeat(GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES))).toBe(true);
+    expect(c['addGoogleCallout']('A'.repeat(GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES + 1))).toBe(false);
+
+    expect(c['googleCallouts']()).toEqual(['🎉'.repeat(GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES)]);
+  });
+
+  /** The live warnings describe what is IN THE BOX, which is why the draft text is a signal. */
+  it('warns on the in-progress text by rune count and by case-folded repeat', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleCallout']('Free Shipping');
+
+    c['googleCalloutDraft'].set('🎉'.repeat(GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES + 1));
+    expect(c['googleCalloutDraftLength']()).toBe(GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES + 1);
+    expect(c['googleCalloutDraftTooLong']()).toBe(true);
+
+    c['googleCalloutDraft'].set('  free shipping ');
+    expect(c['googleCalloutDraftTooLong']()).toBe(false);
+    expect(c['googleCalloutDraftDuplicate']()).toBe(true);
+  });
+
+  /**
+   * `aria-invalid` says the box is wrong; only `aria-describedby` says why, and it is the half that
+   * survives focus returning to the field later — `role="alert"` fires once, as the line appears.
+   * The id is asserted against the message element actually rendered, so a renamed id on either
+   * side breaks the test rather than silently pointing `aria-describedby` at nothing.
+   */
+  it('points the callout box at whichever message is rendered, and at nothing when clean', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleCallout']('Free Shipping');
+    const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+    expect(c['googleCalloutDraftErrorId']()).toBeNull();
+
+    c['googleCalloutDraft'].set('A'.repeat(GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES + 1));
+    fixture.detectChanges();
+    expect(find('implementation-google-callout-add')?.getAttribute('aria-describedby')).toBe(find('implementation-google-callout-too-long')?.id);
+
+    c['googleCalloutDraft'].set('free shipping');
+    fixture.detectChanges();
+    expect(find('implementation-google-callout-add')?.getAttribute('aria-describedby')).toBe(find('implementation-google-callout-duplicate')?.id);
+
+    c['googleCalloutDraft'].set('Fast delivery');
+    fixture.detectChanges();
+    expect(find('implementation-google-callout-add')?.getAttribute('aria-describedby')).toBeNull();
+  });
+
+  it('removes a chip by index', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleCallout']('First');
+    c['addGoogleCallout']('Second');
+
+    c['removeGoogleCallout'](0);
+
+    expect(c['googleCallouts']()).toEqual(['Second']);
+  });
+
+  /**
+   * SEARCH ONLY, and withheld rather than refused elsewhere: `validateAssetPlan` refuses the whole
+   * extension set on any other channel at preflight, before the budget mutate, so forwarding a
+   * list typed under Search and then abandoned would cost the operator the entire campaign.
+   */
+  it('offers callouts on Search and withholds them on a non-Search channel', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    expect(c['googleCalloutsAvailable']()).toBe(true);
+    c['addGoogleCallout']('Free shipping');
+    expect(c['googleCalloutsPayload']()).toEqual({ callouts: ['Free shipping'] });
+
+    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    fixture.detectChanges();
+
+    expect(c['googleCalloutsAvailable']()).toBe(false);
+    expect(c['googleCalloutsPayload']()).toEqual({});
+    // Held, not discarded — the chips are still there if Search is re-ticked.
+    expect(c['googleCallouts']()).toEqual(['Free shipping']);
+  });
+
+  /** Omitted rather than sent empty, so the upstream default is reached by the absent-key route. */
+  it('omits the callouts key when nothing was added', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['googleCalloutsPayload']()).toEqual({});
+  });
+
+  it('round-trips the chips through a draft', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    let emitted: CampaignImplementationDraft | undefined;
+    fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
+    c['addGoogleCallout']('Free shipping');
+
+    expect(emitted?.googleCallouts).toEqual(['Free shipping']);
+
+    c['googleCallouts'].set([]);
+    restoreGoogleDraft(fixture, c, { googleCallouts: ['Free shipping'] });
+
+    expect(c['googleCallouts']()).toEqual(['Free shipping']);
+  });
+
+  /** COPIED out of the draft, so the parent's array cannot be mutated through the chips. */
+  it('does not share the restored array with the draft', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const saved = ['Free shipping'];
+
+    restoreGoogleDraft(fixture, c, { googleCallouts: saved });
+    c['addGoogleCallout']('Next day delivery');
+
+    expect(saved).toHaveLength(1);
+  });
+
+  /**
+   * Go's string rules, not JS's: upstream trims with `strings.TrimSpace` (which strips U+0085 and
+   * keeps U+FEFF) and keys repeats on `strings.ToLower` (no final-sigma rule). A chip JS calls new
+   * but Go calls a repeat would cost the whole create.
+   */
+  it.each([
+    ['a trailing U+0085', 'Free shipping', 'free shipping\u0085'],
+    ['final sigma', 'ΟΔΟΣ', 'οδοσ'],
+  ])('refuses a repeat hidden by %s, on the add and in the live warning', (_label, first, repeat) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleCallout'](first);
+
+    c['googleCalloutDraft'].set(repeat);
+    expect(c['googleCalloutDraftDuplicate']()).toBe(true);
+    expect(c['addGoogleCallout'](repeat)).toBe(false);
+    expect(c['googleCallouts']()).toEqual([first]);
+  });
+
+  it('says out loud that callouts are withheld after a switch away from Search, in the notice and its live region', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+    // The region exists, empty, BEFORE there is anything to say: an aria-live element inserted
+    // with its text already present is not reliably announced.
+    expect(find('implementation-google-callouts-withheld-live')?.textContent?.trim()).toBe('');
+
+    c['addGoogleCallout']('Free shipping');
+    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    fixture.detectChanges();
+
+    const notice = find('implementation-google-callouts-withheld')?.textContent ?? '';
+    expect(notice).toContain('Demand Gen campaigns do not take callouts');
+    expect(notice).toContain('the 1 you added');
+    expect(find('implementation-google-callouts-withheld-live')?.textContent?.trim()).toBe(c['googleCalloutsWithheldWarning']());
+    // The visible copy carries no role, or the sentence would be announced twice.
+    expect(find('implementation-google-callouts-withheld')?.getAttribute('role')).toBeNull();
+  });
+
+  it('shows no withheld notice when no callouts were added', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+
+    expect(c['googleCalloutsWithheldWarning']()).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="implementation-google-callouts-withheld"]')).toBeNull();
+  });
+
+  /**
+   * Through `submit()`, not the payload helper: deleting the payload spread would leave every
+   * helper-level test above green while every callout an operator adds is dropped.
+   */
+  it.each([
+    ['Search', { includeSearch: true }, ['Free shipping']],
+    ['Demand Gen, after a switch from Search', { includeDemandGen: true }, undefined],
+  ])('sends the callouts on a submitted %s create only when the channel takes them', async (_label, channel, expected) => {
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleCallout']('Free shipping');
+    c['campaignForm'].patchValue({ includeSearch: false, ...channel });
+    fixture.detectChanges();
+    expect(c['canSubmit']()).toBe(true);
+
+    c['submit']();
+    await fixture.whenStable();
+
+    expect(createCampaign).toHaveBeenCalled();
+    expect((createCampaign.mock.calls[0][0] as unknown as Record<string, unknown>)['callouts']).toEqual(expected);
+  });
+
+  /** A draft saved before this section shipped carries no key, and must not clear the chips. */
+  it('leaves the chips alone when the draft carries no callouts key', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleCallout']('Free shipping');
+
+    restoreGoogleDraft(fixture, c, {});
+
+    expect(c['googleCallouts']()).toEqual(['Free shipping']);
+  });
+});
+
+/**
+ * The sitelink extensions.
+ *
+ * Every bound and refusal here mirrors `validateSitelinks`
+ * (`internal/platform/googleads/assets.go`), one test per branch. The guard runs inside
+ * `validateAssetPlan`, inside `preflightCampaignKind`, BEFORE the budget mutate — so each of these
+ * costs the whole campaign upstream rather than just the sitelink.
+ */
+describe('ImplementationTabComponent google sitelinks', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  const sitelink = (text: string, overrides: Partial<CampaignSitelink> = {}): CampaignSitelink => ({
+    text,
+    description1: '',
+    description2: '',
+    finalUrl: 'https://events.example.org/register',
+    ...overrides,
+  });
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  /**
+   * Every box in the sub-form is reachable by a screen reader on its own terms: the section's
+   * `<label for>` names only the link-text box, so the other three carry an `aria-label` — a
+   * placeholder is not an accessible name and vanishes as soon as the operator types. The ids are
+   * asserted against the message elements actually rendered, so a rename on either side fails the
+   * test rather than leaving `aria-describedby` pointing at nothing.
+   */
+  it('names every box and points each at whichever of its messages is rendered', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleSitelink'](sitelink('Register now'));
+    const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+    expect(find('implementation-google-sitelink-url')?.getAttribute('aria-label')).toBe('Sitelink destination URL');
+    expect(find('implementation-google-sitelink-description1')?.getAttribute('aria-label')).toBe('Sitelink description line 1');
+    expect(find('implementation-google-sitelink-description2')?.getAttribute('aria-label')).toBe('Sitelink description line 2');
+    expect(find('implementation-google-sitelink-text')?.getAttribute('aria-describedby')).toBeNull();
+
+    c['googleSitelinkDraft'].set(sitelink('A'.repeat(GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES + 1)));
+    fixture.detectChanges();
+    expect(find('implementation-google-sitelink-text')?.getAttribute('aria-describedby')).toBe(find('implementation-google-sitelink-too-long')?.id);
+
+    c['googleSitelinkDraft'].set(sitelink('register now'));
+    fixture.detectChanges();
+    expect(find('implementation-google-sitelink-text')?.getAttribute('aria-describedby')).toBe(find('implementation-google-sitelink-duplicate')?.id);
+
+    // Both description boxes point at the ONE line describing the pair — the rule they break is
+    // about the pair, so naming it on only the box last typed in would be the wrong half.
+    c['googleSitelinkDraft'].set(sitelink('Agenda', { description1: 'Talks and workshops' }));
+    fixture.detectChanges();
+    const halfDescribed = find('implementation-google-sitelink-half-described')?.id;
+    expect(find('implementation-google-sitelink-description1')?.getAttribute('aria-describedby')).toBe(halfDescribed);
+    expect(find('implementation-google-sitelink-description2')?.getAttribute('aria-describedby')).toBe(halfDescribed);
+
+    c['googleSitelinkDraft'].set(sitelink('Agenda', { finalUrl: 'events.example.org/agenda' }));
+    fixture.detectChanges();
+    expect(find('implementation-google-sitelink-url')?.getAttribute('aria-describedby')).toBe(find('implementation-google-sitelink-url-invalid')?.id);
+  });
+
+  it('trims an added sitelink and drops the two blank description lines', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['addGoogleSitelink'](sitelink('  Register now  ', { finalUrl: '  https://events.example.org/register  ' }))).toBe(true);
+
+    // Descriptions OMITTED, not sent as empty strings: absent on both lines is one of the two
+    // legal states upstream recognises, where one line present and one empty is not.
+    expect(c['googleSitelinks']()).toEqual([{ text: 'Register now', finalUrl: 'https://events.example.org/register' }]);
+  });
+
+  it.each([
+    ['no link text', sitelink('   ')],
+    ['no destination', sitelink('Register', { finalUrl: '  ' })],
+    ['a destination with no scheme', sitelink('Register', { finalUrl: 'events.example.org/register' })],
+    ['a destination carrying embedded credentials', sitelink('Register', { finalUrl: 'https://user:pw@events.example.org/register' })],
+  ])('refuses a sitelink with %s', (_label, entry) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['addGoogleSitelink'](entry)).toBe(false);
+    expect(c['googleSitelinks']()).toEqual([]);
+  });
+
+  it('refuses a sitelink that repeats an existing link text in a different case', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleSitelink'](sitelink('Register Now'));
+
+    expect(c['addGoogleSitelink'](sitelink('register now'))).toBe(false);
+    expect(c['googleSitelinks']()).toHaveLength(1);
+  });
+
+  it('refuses an add at the cap', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    for (let i = 0; i < GOOGLE_ADS_MAX_SITELINKS; i++) c['addGoogleSitelink'](sitelink(`Sitelink ${i + 1}`));
+
+    expect(c['addGoogleSitelink'](sitelink('One more'))).toBe(false);
+    expect(c['googleSitelinks']()).toHaveLength(GOOGLE_ADS_MAX_SITELINKS);
+  });
+
+  /**
+   * Runes, not UTF-16 units — the same hazard the callouts carry. 25 astral-plane characters are
+   * link text upstream accepts; counted with `.length` they would be 50 and refused for no reason.
+   */
+  it('accepts 25-emoji link text and refuses 26 characters', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['addGoogleSitelink'](sitelink('🎉'.repeat(GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES)))).toBe(true);
+    expect(c['addGoogleSitelink'](sitelink('A'.repeat(GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES + 1)))).toBe(false);
+
+    expect(c['googleSitelinks']()).toHaveLength(1);
+  });
+
+  /** Google renders the two lines together and rejects an asset carrying only one. */
+  it.each([
+    ['only the first line', { description1: 'Seats are limited' }],
+    ['only the second line', { description2: 'Seats are limited' }],
+  ])('refuses a sitelink described on %s', (_label, overrides) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['addGoogleSitelink'](sitelink('Register', overrides))).toBe(false);
+  });
+
+  /**
+   * The 35-rune bound is PER LINE, not on the two together: upstream measures each line with its
+   * own `utf8.RuneCountInString`. Summing them would refuse this 70-rune pair, which it accepts.
+   */
+  it('accepts both description lines at exactly 35 runes and refuses a 36th on either', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const line = 'A'.repeat(GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES);
+
+    expect(c['addGoogleSitelink'](sitelink('Register', { description1: line, description2: line }))).toBe(true);
+    expect(c['addGoogleSitelink'](sitelink('Tickets', { description1: line, description2: `${line}B` }))).toBe(false);
+  });
+
+  it('warns on the sub-form in progress and withholds the add button until both required fields are filled', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleSitelink'](sitelink('Register Now'));
+
+    // An empty sub-form is not yet a mistake — withheld, not warned about.
+    expect(c['googleSitelinkUrlInvalid']()).toBe(false);
+    expect(c['googleSitelinkAddDisabled']()).toBe(true);
+
+    c['googleSitelinkDraft'].set({ text: '  register now ', description1: 'One line only', description2: '', finalUrl: 'not a url' });
+
+    expect(c['googleSitelinkDuplicate']()).toBe(true);
+    expect(c['googleSitelinkDescriptionHalfFilled']()).toBe(true);
+    expect(c['googleSitelinkUrlInvalid']()).toBe(true);
+    expect(c['googleSitelinkAddDisabled']()).toBe(true);
+
+    c['googleSitelinkDraft'].set({
+      text: '🎉'.repeat(GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES + 1),
+      description1: '',
+      description2: '',
+      finalUrl: 'https://events.example.org/x',
+    });
+
+    expect(c['googleSitelinkTextLength']()).toBe(GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES + 1);
+    expect(c['googleSitelinkTextTooLong']()).toBe(true);
+  });
+
+  /** Cleared ONLY on success, so a refused entry stays editable beside the warning that named it. */
+  it('clears the sub-form on a successful add and leaves it standing on a refusal', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    c['googleSitelinkDraft'].set(sitelink('Register'));
+    c['onGoogleSitelinkAdd']();
+    expect(c['googleSitelinkDraft']()).toEqual({ text: '', description1: '', description2: '', finalUrl: '' });
+
+    c['googleSitelinkDraft'].set(sitelink('register'));
+    c['onGoogleSitelinkAdd']();
+    expect(c['googleSitelinkDraft']().text).toBe('register');
+  });
+
+  it('removes a sitelink by index', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleSitelink'](sitelink('First'));
+    c['addGoogleSitelink'](sitelink('Second'));
+
+    c['removeGoogleSitelink'](0);
+
+    expect(c['googleSitelinks']().map((s: CampaignSitelink) => s.text)).toEqual(['Second']);
+  });
+
+  /** Search only, and WITHHELD elsewhere rather than refused — exactly as the callouts are. */
+  it('offers sitelinks on Search and withholds them on a non-Search channel', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleSitelink'](sitelink('Register'));
+
+    expect(c['googleSitelinksPayload']()).toEqual({ sitelinks: [{ text: 'Register', finalUrl: 'https://events.example.org/register' }] });
+
+    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    fixture.detectChanges();
+
+    expect(c['googleSitelinksPayload']()).toEqual({});
+    // Held, not discarded — the list is still there if Search is re-ticked.
+    expect(c['googleSitelinks']()).toHaveLength(1);
+  });
+
+  /** Omitted rather than sent empty, so the upstream default is reached by the absent-key route. */
+  it('omits the sitelinks key when nothing was added', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['googleSitelinksPayload']()).toEqual({});
+  });
+
+  it('round-trips the sitelinks through a draft', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    let emitted: CampaignImplementationDraft | undefined;
+    fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
+    c['addGoogleSitelink'](sitelink('Register'));
+
+    expect(emitted?.googleSitelinks).toEqual([{ text: 'Register', finalUrl: 'https://events.example.org/register' }]);
+
+    c['googleSitelinks'].set([]);
+    restoreGoogleDraft(fixture, c, { googleSitelinks: [{ text: 'Register', finalUrl: 'https://events.example.org/register' }] });
+
+    expect(c['googleSitelinks']()).toHaveLength(1);
+  });
+
+  /**
+   * COPIED out of the draft ENTRY BY ENTRY, not just array-spread: a sitelink is an object, so a
+   * shallow spread would still hand the draft's own entries over and let an edit here reach back
+   * into the stored draft.
+   */
+  it('does not share the restored entries with the draft', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const saved = [sitelink('Register')];
+
+    restoreGoogleDraft(fixture, c, { googleSitelinks: saved });
+    c['googleSitelinks']()[0].text = 'Edited';
+
+    expect(saved[0].text).toBe('Register');
+  });
+
+  /** A draft saved before this section shipped carries no key, and must not clear the list. */
+  it.each([
+    ['a trailing U+0085', 'Register', 'register\u0085'],
+    ['final sigma', 'ΟΔΟΣ', 'οδοσ'],
+  ])('refuses a repeated link text hidden by %s, on the add and in the live warning', (_label, first, repeat) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleSitelink'](sitelink(first));
+
+    c['googleSitelinkDraft'].set(sitelink(repeat));
+    expect(c['googleSitelinkDuplicate']()).toBe(true);
+    expect(c['addGoogleSitelink'](sitelink(repeat))).toBe(false);
+    expect(c['googleSitelinks']()).toHaveLength(1);
+  });
+
+  it.each([
+    ['a semicolon in the query', 'https://events.example.org/register?a=1;b=2'],
+    ['a stray percent sign', 'https://events.example.org/50%off'],
+    ['no `//` after the scheme', 'https:events.example.org/register'],
+    ['a tab inside the path', 'https://events.example.org/reg\tister'],
+  ])("refuses a destination with %s, which Go's URL parser refuses and `new URL()` accepts", (_label, finalUrl) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    c['googleSitelinkDraft'].set(sitelink('Register', { finalUrl }));
+    expect(c['googleSitelinkUrlInvalid']()).toBe(true);
+    expect(c['addGoogleSitelink'](sitelink('Register', { finalUrl }))).toBe(false);
+  });
+
+  /** BYTES, as Go's `len()` counts them: 1,100 two-byte characters cross 2,084 at half the length. */
+  it('warns on and refuses a destination over the 2084-byte limit, pointing the box at the message', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const finalUrl = `https://events.example.org/${'é'.repeat(1100)}`;
+    const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+    c['googleSitelinkDraft'].set(sitelink('Register', { finalUrl }));
+    fixture.detectChanges();
+
+    expect(c['googleSitelinkUrlBytesOver']()).toBe(new TextEncoder().encode(finalUrl).length);
+    expect(c['googleSitelinkAddDisabled']()).toBe(true);
+    expect(find('implementation-google-sitelink-url')?.getAttribute('aria-describedby')).toBe(find('implementation-google-sitelink-url-too-long')?.id);
+    expect(c['addGoogleSitelink'](sitelink('Register', { finalUrl }))).toBe(false);
+  });
+
+  it('says out loud that sitelinks are withheld after a switch away from Search, in the notice and its live region', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+    // Mounted, empty, before there is anything to say.
+    expect(find('implementation-google-sitelinks-withheld-live')?.textContent?.trim()).toBe('');
+
+    c['addGoogleSitelink'](sitelink('Register'));
+    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    fixture.detectChanges();
+
+    const notice = find('implementation-google-sitelinks-withheld')?.textContent ?? '';
+    expect(notice).toContain('Demand Gen campaigns do not take sitelinks');
+    expect(notice).toContain('the 1 you added');
+    expect(find('implementation-google-sitelinks-withheld-live')?.textContent?.trim()).toBe(c['googleSitelinksWithheldWarning']());
+    expect(find('implementation-google-sitelinks-withheld')?.getAttribute('role')).toBeNull();
+  });
+
+  it('shows no sitelinks notice when none were added', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+
+    expect(c['googleSitelinksWithheldWarning']()).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="implementation-google-sitelinks-withheld"]')).toBeNull();
+  });
+
+  /** Through `submit()`, so deleting the payload spread fails here and not only in a helper test. */
+  it.each([
+    ['Search', { includeSearch: true }, [{ text: 'Register', finalUrl: 'https://events.example.org/register' }]],
+    ['Demand Gen, after a switch from Search', { includeDemandGen: true }, undefined],
+  ])('sends the sitelinks on a submitted %s create only when the channel takes them', async (_label, channel, expected) => {
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleSitelink'](sitelink('Register'));
+    c['campaignForm'].patchValue({ includeSearch: false, ...channel });
+    fixture.detectChanges();
+    expect(c['canSubmit']()).toBe(true);
+
+    c['submit']();
+    await fixture.whenStable();
+
+    expect(createCampaign).toHaveBeenCalled();
+    expect((createCampaign.mock.calls[0][0] as unknown as Record<string, unknown>)['sitelinks']).toEqual(expected);
+  });
+
+  it('leaves the list alone when the draft carries no sitelinks key', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleSitelink'](sitelink('Register'));
+
+    restoreGoogleDraft(fixture, c, {});
+
+    expect(c['googleSitelinks']()).toHaveLength(1);
   });
 });
 

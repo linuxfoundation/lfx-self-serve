@@ -1,33 +1,54 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser } from '@angular/common';
+import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import { Component, computed, DestroyRef, inject, OnInit, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { skip, type Subscription } from 'rxjs';
-import { CAMPAIGN_PACING_THRESHOLDS, parseCampaignName, PLATFORM_BRAND_COLORS } from '@lfx-one/shared/constants';
+import { skip, take, type Subscription } from 'rxjs';
+import { ButtonComponent } from '@components/button/button.component';
+import {
+  CAMPAIGN_ACT_FOUNDATION_CHANGED_MESSAGE,
+  CAMPAIGN_MONITOR_ACT_LEVER_LABELS,
+  CAMPAIGN_MONITOR_ACT_PLATFORMS,
+  CAMPAIGN_PACING_THRESHOLDS,
+  parseCampaignName,
+  PLATFORM_BRAND_COLORS,
+} from '@lfx-one/shared/constants';
 import { formatPercent } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 
 import type {
+  CampaignActDialogData,
+  CampaignActDialogResult,
+  CampaignAdoptDialogData,
   CampaignMetrics,
+  CampaignMonitorActLever,
+  CampaignMonitorActPlatform,
   CampaignMonitorResponse,
   KeywordMetrics,
   KeywordMetricsResponse,
   LinkedInAccount,
+  LinkedInCampaignMetrics,
   LinkedInMonitorResponse,
   LinkedInPacingLabel,
   MetaAccountOption,
+  MetaCampaignMetrics,
   MetaMonitorResponse,
   RedditAccountOption,
+  RedditCampaignMetrics,
   RedditMonitorResponse,
   RedditPacingLabel,
 } from '@lfx-one/shared/interfaces';
 
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { MetaPacingClassPipe } from '@pipes/campaign-optimization.pipe';
+import { MessageService } from 'primeng/api';
+import { DialogService } from 'primeng/dynamicdialog';
 import { AudienceDemographicsComponent } from '../audience-demographics/audience-demographics.component';
+import { CampaignActDialogComponent } from '../campaign-act-dialog/campaign-act-dialog.component';
+import { CampaignAdoptDialogComponent } from '../campaign-adopt-dialog/campaign-adopt-dialog.component';
+import { PaidAudienceInsightsComponent } from '../paid-audience-insights/paid-audience-insights.component';
 
 type DateRangeOption = 7 | 14 | 30;
 type PlatformType = 'google' | 'linkedin' | 'reddit' | 'meta';
@@ -36,7 +57,7 @@ const KEYWORD_PAGE_SIZE = 10;
 
 @Component({
   selector: 'lfx-monitoring-tab',
-  imports: [AudienceDemographicsComponent, MetaPacingClassPipe],
+  imports: [AudienceDemographicsComponent, ButtonComponent, MetaPacingClassPipe, NgTemplateOutlet, PaidAudienceInsightsComponent],
   templateUrl: './monitoring-tab.component.html',
   styleUrl: './monitoring-tab.component.scss',
 })
@@ -45,6 +66,8 @@ export class MonitoringTabComponent implements OnInit {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly dialogService = inject(DialogService);
+  private readonly messageService = inject(MessageService);
   private monitorSub: Subscription | null = null;
   private keywordsSub: Subscription | null = null;
   private linkedInSub: Subscription | null = null;
@@ -71,6 +94,7 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly linkedInError = signal<string | null>(null);
   protected readonly linkedInCampaigns = computed(() => this.linkedInData()?.campaigns ?? []);
   protected readonly linkedInTotals = computed(() => this.linkedInData()?.accountTotals ?? null);
+  protected readonly linkedInTotalsNote = computed(() => this.totalsCoverageNote(this.linkedInCampaigns()));
   protected readonly linkedInPulledAt = computed(() => {
     const pulledAt = this.linkedInData()?.pulledAt;
     return pulledAt ? new Date(pulledAt).toLocaleString() : null;
@@ -84,6 +108,7 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly redditError = signal<string | null>(null);
   protected readonly redditCampaigns = computed(() => this.redditData()?.campaigns ?? []);
   protected readonly redditTotals = computed(() => this.redditData()?.accountTotals ?? null);
+  protected readonly redditTotalsNote = computed(() => this.totalsCoverageNote(this.redditCampaigns()));
   protected readonly redditPulledAt = computed(() => {
     const pulledAt = this.redditData()?.pulledAt;
     return pulledAt ? new Date(pulledAt).toLocaleString() : null;
@@ -98,6 +123,7 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly metaError = signal<string | null>(null);
   protected readonly metaCampaigns = computed(() => this.metaData()?.campaigns ?? []);
   protected readonly metaTotals = computed(() => this.metaData()?.accountTotals ?? null);
+  protected readonly metaTotalsNote = computed(() => this.totalsCoverageNote(this.metaCampaigns()));
   protected readonly metaPulledAt = computed(() => {
     const pulledAt = this.metaData()?.pulledAt;
     return pulledAt ? new Date(pulledAt).toLocaleString() : null;
@@ -180,6 +206,21 @@ export class MonitoringTabComponent implements OnInit {
 
   public ngOnInit(): void {
     this.loadForActiveFoundation();
+  }
+
+  /**
+   * Act on a Monitor row's campaign: opens the act dialog, which resolves the row's PLATFORM campaign
+   * id to the campaign LFX One manages before showing any lever. When LFX One does not manage it, the
+   * dialog asks to adopt it; a confirmed adoption reopens the act dialog on the same lever.
+   */
+  protected openAct(platform: CampaignMonitorActPlatform, platformCampaignId: string, campaignName: string, lever: CampaignMonitorActLever): void {
+    // The project is captured HERE, once, and carried through the adopt step and back: a foundation
+    // switch while a dialog is open must not point the flow at another project.
+    const projectSlug = this.activeFoundationSlug();
+    if (!projectSlug || !CAMPAIGN_MONITOR_ACT_PLATFORMS.has(platform) || !platformCampaignId) {
+      return;
+    }
+    this.openActDialog({ projectSlug, platform, platformCampaignId, campaignName, lever });
   }
 
   protected setDateRange(days: DateRangeOption): void {
@@ -455,6 +496,30 @@ export class MonitoringTabComponent implements OnInit {
     return `${formatPercent(value)}%`;
   }
 
+  /**
+   * What the LinkedIn/Reddit/Meta totals strip leaves out, or null when it covers every campaign.
+   *
+   * Only the campaign-service monitor path sets `fetchFailed` / `conversionsMeasured`; on the
+   * legacy path both are undefined, so this returns null and the strip renders exactly as before.
+   * A row whose metrics could not be read contributes zeros to the totals, and a row whose
+   * conversions were not measured contributes a 0 to the conversions total, so the strip says so
+   * rather than presenting a partial sum as the account's.
+   */
+  private totalsCoverageNote(rows: readonly (LinkedInCampaignMetrics | RedditCampaignMetrics | MetaCampaignMetrics)[]): string | null {
+    const total = rows.length;
+    const read = rows.filter((r) => !r.fetchFailed);
+    const measured = read.filter((r) => r.conversionsMeasured !== false).length;
+    const parts: string[] = [];
+    if (read.length < total) {
+      parts.push(`Totals cover ${read.length} of ${total} campaigns`);
+    }
+    // All-unmeasured is already stated by the "Not measured" conversions tile; only a PARTIAL sum needs saying.
+    if (measured > 0 && measured < read.length) {
+      parts.push(`conversions cover ${measured} of ${total} campaigns`);
+    }
+    return parts.length > 0 ? `${parts.join('; ')}.` : null;
+  }
+
   private loadForActiveFoundation(): void {
     // Stale account selections belong to the previous foundation — drop them so the
     // "pick first account" logic below re-runs for the new foundation's accounts.
@@ -568,5 +633,63 @@ export class MonitoringTabComponent implements OnInit {
           this.metaError.set(extractErrorMessage(httpErr, 'Failed to load Meta accounts'));
         },
       });
+  }
+
+  private openActDialog(data: CampaignActDialogData): void {
+    this.dialogService
+      .open(CampaignActDialogComponent, {
+        header: `${CAMPAIGN_MONITOR_ACT_LEVER_LABELS[data.lever]}: ${data.campaignName}`,
+        width: '36rem',
+        // The dialog preset caps nothing, so a fixed width alone runs off a phone: capped to the viewport,
+        // as the org EasyCLA dialogs do.
+        style: { maxWidth: '90vw' },
+        modal: true,
+        closable: true,
+        dismissableMask: true,
+        data,
+      })
+      // Bound to this tab as well as to the one close: a dialog closed after the tab is gone opens nothing.
+      ?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe((result: CampaignActDialogResult | undefined) => {
+        if (result?.adopt && this.stillOnProject(data.projectSlug)) {
+          this.openAdopt(data);
+        }
+      });
+  }
+
+  private openAdopt(act: CampaignActDialogData): void {
+    const data: CampaignAdoptDialogData = {
+      projectSlug: act.projectSlug,
+      platform: act.platform,
+      platformCampaignId: act.platformCampaignId,
+      campaignName: act.campaignName,
+    };
+    this.dialogService
+      .open(CampaignAdoptDialogComponent, {
+        header: `Adopt campaign: ${act.campaignName}`,
+        width: '36rem',
+        // The dialog preset caps nothing, so a fixed width alone runs off a phone: capped to the viewport,
+        // as the org EasyCLA dialogs do.
+        style: { maxWidth: '90vw' },
+        modal: true,
+        closable: true,
+        data,
+      })
+      ?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe((adopted: boolean | undefined) => {
+        if (adopted === true && this.stillOnProject(act.projectSlug)) {
+          // Reopened against the CAPTURED project, never the live selection.
+          this.openActDialog(act);
+        }
+      });
+  }
+
+  /** Whether the foundation the flow started on is still selected; when not, says why nothing follows. */
+  private stillOnProject(projectSlug: string): boolean {
+    if (this.activeFoundationSlug() === projectSlug) {
+      return true;
+    }
+    this.messageService.add({ severity: 'info', summary: 'Foundation changed', detail: CAMPAIGN_ACT_FOUNDATION_CHANGED_MESSAGE, life: 8000 });
+    return false;
   }
 }

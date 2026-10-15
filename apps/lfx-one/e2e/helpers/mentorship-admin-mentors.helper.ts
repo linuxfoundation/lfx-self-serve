@@ -20,7 +20,7 @@ export const MENTOR_ACTION_MENTORS: MentorshipProgramMentor[] = [
   { name: 'Test Mentor Requested', status: 'requested' },
   { name: 'Test Mentor Pending', status: 'pending' },
   { name: 'Test Mentor Invited', status: 'invited' },
-  { name: 'Test Mentor Active', status: 'active' },
+  { name: 'Test Mentor Active', status: 'approved' },
   { name: 'Test Mentor Declined', status: 'declined' },
 ].map(({ name, status }, index) => ({
   id: adminMentorId(index + 1),
@@ -28,7 +28,7 @@ export const MENTOR_ACTION_MENTORS: MentorshipProgramMentor[] = [
   email: `test.mentor.${index + 1}@example.com`,
   status: status as MentorshipProgramMentor['status'],
   invitedOn: '2026-03-04',
-  profileCreated: status === 'active',
+  profileCreated: status === 'approved',
 }));
 
 export const MENTOR_REQUESTED_ID = MENTOR_ACTION_MENTORS[0].id;

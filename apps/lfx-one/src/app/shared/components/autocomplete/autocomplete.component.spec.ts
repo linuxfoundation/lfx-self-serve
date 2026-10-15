@@ -49,7 +49,7 @@ describe('AutocompleteComponent', () => {
 
   const queryAutoComplete = (): AutoComplete => fixture.debugElement.query(By.directive(AutoComplete)).componentInstance as AutoComplete;
 
-  // #384 (Issue 1): PrimeNG commits a keyboard selection (Enter/Tab) by indexing into the live
+  // PrimeNG commits a keyboard selection (Enter/Tab) by indexing into the live
   // `suggestions` array at `focusedOptionIndex`, not by the row the user actually arrow-keyed onto.
   // A row focused before a debounced search response replaces `suggestions` must lose that focus —
   // otherwise Enter can commit a different option than the one highlighted.
@@ -97,8 +97,8 @@ describe('AutocompleteComponent', () => {
     expect(form.get('org')?.value).toBe('Alliander');
   });
 
-  // copilot (PR #3462): a blanket -1 would undo PrimeNG's own autoOptionFocus behavior — when that
-  // input is on, a suggestions change should focus the first valid option, not clear focus.
+  // A blanket -1 would undo PrimeNG's own autoOptionFocus behavior (linuxfoundation/lfx-self-serve-ops#383) —
+  // when that input is on, a suggestions change should focus the first valid option, not clear focus.
   it('focuses the first valid option instead of -1 when autoOptionFocus is enabled', async () => {
     const form = new FormGroup({ org: new FormControl<string | null>(null) });
     TestBed.resetTestingModule();

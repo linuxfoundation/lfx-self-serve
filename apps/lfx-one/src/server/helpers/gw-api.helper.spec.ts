@@ -110,7 +110,7 @@ describe('getGwApiBaseUrl', () => {
 
 /**
  * The drain is what stops a rejected upload hanging until keep-alive. Every rejection path on
- * `/api/gw/*` decides before the body is read, and `apiErrorHandler` answers without touching the
+ * `/api/gatewaze` decides before the body is read, and `apiErrorHandler` answers without touching the
  * request stream — so without this the client cannot finish writing.
  *
  * Tested directly because it is awaited on four paths now, and both of the defects it has had
@@ -247,30 +247,32 @@ describe('isGwProxyPath', () => {
   // trimmed the mount prefix off `req.url`, so it was asking about `/newsletters/123` and gzipping
   // every proxied response. Inverting the segment-boundary check below failed nothing in the suite.
   it.each([
-    ['the bare mount', '/api/gw'],
-    ['a path under the mount', '/api/gw/newsletters/123'],
-    ['an upper-cased mount, which Express routes case-insensitively', '/API/GW/newsletters'],
-    ['a mixed-case mount', '/Api/Gw/media'],
+    ['the bare mount', '/api/gatewaze'],
+    ['a Supabase proxy path', '/api/gatewaze/supabase/storage/v1/object/media/a.png'],
+    ['an API proxy path, upper-cased, which Express routes case-insensitively', '/API/GATEWAZE/api/modules/x'],
+    ['a mixed-case mount', '/Api/Gatewaze/api/media'],
   ])('matches %s', (_label, path) => {
     expect(isGwProxyPath(path)).toBe(true);
   });
 
   it.each([
-    ['a sibling sharing the prefix', '/api/gwidgets'],
-    ['a sibling under that prefix', '/api/gwidgets/list'],
+    ['a sibling sharing the prefix', '/api/gatewazex'],
+    ['a sibling under that prefix', '/api/gatewazex/upload'],
     ['an unrelated api route', '/api/meetings'],
-    ['the mount without its leading segment', '/gw/newsletters'],
+    ['a shorter path under /api', '/api/gw/newsletters/123'],
+    ['the mount without its leading segment', '/gatewaze/api/x'],
     ['empty', ''],
   ])('does not match %s', (_label, path) => {
-    // `/api/gwidgets` is the one that matters: a bare `startsWith('/api/gw')` swallows it and
+    // `/api/gatewazex` is the one that matters: a bare `startsWith('/api/gatewaze')` swallows it and
     // silently strips its body parsing, which surfaces as an empty `req.body` rather than an error.
+    // `/api/gw` is not a proxy path, so it gets the body parsers like any other unknown path and answers 404.
     expect(isGwProxyPath(path)).toBe(false);
   });
 
   it('cannot match a path Express has already trimmed, which is why callers must pass an untrimmed one', () => {
-    // The shape of the compression bug, pinned. Inside `app.use('/api/gw', router)` the request
+    // The shape of the compression bug, pinned. Inside `app.use('/api/gatewaze', router)` the request
     // path is relative to the mount, so asking this function about it always answers false.
-    expect(isGwProxyPath('/newsletters/123')).toBe(false);
+    expect(isGwProxyPath('/api/modules/x')).toBe(false);
   });
 });
 
@@ -278,18 +280,18 @@ describe('gwMountPath', () => {
   const req = (originalUrl: string, path: string): Request => ({ originalUrl, path }) as Request;
 
   it('returns the untrimmed path for a request already inside the mount', () => {
-    // THE assertion that separates the fix from the bug. Inside `app.use('/api/gw', router)`
-    // Express trims the prefix, so `req.path` is `/newsletters/123` while `originalUrl` still
+    // THE assertion that separates the fix from the bug. Inside `app.use('/api/gatewaze', router)`
+    // Express trims the prefix, so `req.path` is `/api/modules/x` while `originalUrl` still
     // carries the mount. `compression`'s filter runs at that point and was asked about `req.path`,
     // so it answered false and gzipped every proxied response.
-    const value = gwMountPath(req('/api/gw/newsletters/123', '/newsletters/123'));
+    const value = gwMountPath(req('/api/gatewaze/api/modules/x', '/api/modules/x'));
 
-    expect(value).toBe('/api/gw/newsletters/123');
+    expect(value).toBe('/api/gatewaze/api/modules/x');
     expect(isGwProxyPath(value)).toBe(true);
   });
 
   it('strips the query string, which isGwProxyPath must not see', () => {
-    expect(gwMountPath(req('/api/gw/newsletters?project=agentic-ai-foundation', '/newsletters'))).toBe('/api/gw/newsletters');
+    expect(gwMountPath(req('/api/gatewaze/api/newsletters?project=agentic-ai-foundation', '/api/newsletters'))).toBe('/api/gatewaze/api/newsletters');
   });
 
   it('is unchanged for a top-level request, where req.path was already correct', () => {
@@ -300,6 +302,6 @@ describe('gwMountPath', () => {
   });
 
   it('keeps a sibling path out of the mount', () => {
-    expect(isGwProxyPath(gwMountPath(req('/api/gwidgets/list', '/api/gwidgets/list')))).toBe(false);
+    expect(isGwProxyPath(gwMountPath(req('/api/gatewazex/list', '/api/gatewazex/list')))).toBe(false);
   });
 });

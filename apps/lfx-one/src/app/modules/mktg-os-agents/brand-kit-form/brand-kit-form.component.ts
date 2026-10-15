@@ -96,8 +96,9 @@ export class BrandKitFormComponent implements OnDestroy {
     const messages: Record<string, string> = {};
     for (const field of BRAND_KIT_INTAKE.fields) {
       const error = this.intakeForm.controls[field.key]?.errors?.['githubRepoUrl'] as GithubRepoUrlError | undefined;
-      if (field.format && error) {
-        messages[field.key] = MKTG_INTAKE_FORMAT_ERRORS[field.format][error.reason];
+      const message = field.format && error ? MKTG_INTAKE_FORMAT_ERRORS[field.format][error.reason] : undefined;
+      if (message) {
+        messages[field.key] = message;
       }
     }
     return messages;
@@ -209,7 +210,15 @@ export class BrandKitFormComponent implements OnDestroy {
   /** The shared intake's format rule for a question, as validators (empty when it has none). */
   private formatValidators(key: string): ValidatorFn[] {
     const format = BRAND_KIT_INTAKE.fields.find((field) => field.key === key)?.format;
-    return format === 'github-repo-url' ? [githubRepoUrlValidator()] : [];
+    if (format === 'github-repo-url') {
+      return [githubRepoUrlValidator()];
+    }
+    if (format === 'github-url') {
+      // A GitHub organization URL is a usable Brand Kit answer; only a value
+      // that is not a GitHub URL at all is refused.
+      return [githubRepoUrlValidator({ acceptOwner: true })];
+    }
+    return [];
   }
 
   private pollResult(epoch: number, sessionId: string, ownerToken: string, attempt: number, consecutiveErrors: number, persistRetries: number): void {

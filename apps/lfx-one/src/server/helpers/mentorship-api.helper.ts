@@ -107,6 +107,20 @@ export async function listAllMentorshipPages<T>(
   query: Record<string, unknown> = {},
   pageSize: number = MENTORSHIP_LIST_PAGE_SIZE
 ): Promise<T[]> {
+  return (await readMentorshipPages<T>(proxy, req, path, query, pageSize)).items;
+}
+
+/**
+ * `listAllMentorshipPages`, also saying whether the read stopped at `MENTORSHIP_LIST_MAX_PAGES` with rows still to come,
+ * for a caller that must tell its user the list is incomplete.
+ */
+export async function readMentorshipPages<T>(
+  proxy: MicroserviceProxyService,
+  req: Request,
+  path: string,
+  query: Record<string, unknown> = {},
+  pageSize: number = MENTORSHIP_LIST_PAGE_SIZE
+): Promise<{ items: T[]; truncated: boolean }> {
   const items: T[] = [];
   for (let page = 0; page < MENTORSHIP_LIST_MAX_PAGES; page++) {
     const { data, meta } = await proxyMentorshipRequest<MentorshipUpstreamListResponse<T>>(proxy, req, path, 'GET', {
@@ -118,7 +132,7 @@ export async function listAllMentorshipPages<T>(
     items.push(...rows);
     const total = meta?.total;
     if (rows.length === 0 || typeof total !== 'number' || !Number.isFinite(total) || items.length >= total) {
-      return items;
+      return { items, truncated: false };
     }
   }
   logger.warning(req, 'mentorship_list_all_pages', 'Upstream list exceeded the page cap, returning the rows read so far', {
@@ -126,5 +140,5 @@ export async function listAllMentorshipPages<T>(
     max_pages: MENTORSHIP_LIST_MAX_PAGES,
     count: items.length,
   });
-  return items;
+  return { items, truncated: true };
 }

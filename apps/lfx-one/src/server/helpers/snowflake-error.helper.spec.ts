@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { isInvalidIdentifierError, isInvalidRowCountError, isMissingObjectError, isPoolQueueFullError } from './snowflake-error.helper';
+import { isInvalidIdentifierError, isInvalidRowCountError, isMissingObjectError, isPoolQueueFullError, isValueConversionError } from './snowflake-error.helper';
 
 describe('isMissingObjectError', () => {
   it('matches a realistically wrapped missing-table error', () => {
@@ -105,5 +105,41 @@ describe('isInvalidRowCountError', () => {
 
   it('does not match an unrelated SDK error code', () => {
     expect(isInvalidRowCountError(Object.assign(new Error('SQL compilation error'), { code: '002003' }))).toBe(false);
+  });
+});
+
+describe('isValueConversionError', () => {
+  it.each(['Date', 'Timestamp', 'Time', 'Numeric value', 'Boolean value'])('matches an unrecognized %s by message', (type) => {
+    expect(isValueConversionError(new Error(`Snowflake query execution failed: ${type} 'x' is not recognized`))).toBe(true);
+  });
+
+  it.each([100038, '100038', '0100038'])('matches the confirmed numeric-conversion code %j', (code) => {
+    expect(isValueConversionError(Object.assign(new Error('Conversion failed'), { code }))).toBe(true);
+  });
+
+  it('matches case-insensitive messages and string rejections', () => {
+    expect(isValueConversionError("TIMESTAMP 'x' IS NOT RECOGNIZED")).toBe(true);
+  });
+
+  it.each([
+    "Object 'ANALYTICS.PLATINUM_LFX_ONE.EXAMPLE' does not exist or not authorized.",
+    "SQL compilation error: invalid identifier 'MEMBER_EMAIL'",
+    "SQL compilation error: syntax error line 1 unexpected '-'.",
+    "Invalid row count '10000000000000000000000000' in result offset clause",
+    'max waitingClients count exceeded',
+    'Network error. Could not reach Snowflake.',
+    'Incorrect username or password.',
+    "Session parameter 'EXAMPLE' is not recognized",
+    "Numeric value '345.123' is out of range",
+  ])('does not exempt unrelated failures: %s', (message) => {
+    expect(isValueConversionError(new Error(message))).toBe(false);
+  });
+
+  it.each(['100040', '100035', '002003', '002011', null, undefined])('does not match an unconfirmed or unrelated code alone: %j', (code) => {
+    expect(isValueConversionError(Object.assign(new Error('Other failure'), { code }))).toBe(false);
+  });
+
+  it.each([null, undefined, { message: 'Other failure' }])('handles non-Error rejection values %j', (error) => {
+    expect(isValueConversionError(error)).toBe(false);
   });
 });

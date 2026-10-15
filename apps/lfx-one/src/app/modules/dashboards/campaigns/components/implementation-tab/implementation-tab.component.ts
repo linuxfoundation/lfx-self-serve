@@ -48,17 +48,28 @@ import {
   GOOGLE_ADS_BIDDING_BOUNDS,
   GOOGLE_ADS_CONVERSION_ACTION_PATTERN,
   GOOGLE_ADS_GEO_TARGET_MAP,
+  GOOGLE_ADS_LANGUAGE_LABELS,
+  GOOGLE_ADS_MAX_CALLOUTS,
+  GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
   GOOGLE_ADS_MAX_CONVERSION_ACTIONS,
   GOOGLE_ADS_MAX_GEO_TARGETS,
+  GOOGLE_ADS_MAX_LANGUAGES,
+  GOOGLE_ADS_MAX_SITELINKS,
+  GOOGLE_ADS_MAX_FINAL_URL_BYTES,
+  GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES,
+  GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES,
   GOOGLE_BIDDING_CPA_STRATEGIES,
   GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
   GOOGLE_BIDDING_ROAS_STRATEGIES,
   GOOGLE_BIDDING_TARGET_REQUIRED_STRATEGIES,
   GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL,
   GOOGLE_BIDDING_STRATEGY_LABELS,
+  GOOGLE_CAMPAIGN_CHANNEL_LABELS,
   GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
   GOOGLE_CAMPAIGN_NAME_TOKENS,
+  GOOGLE_CHANNELS_WITH_AD_EXTENSIONS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
+  GOOGLE_CHANNELS_WITH_LANGUAGES,
   GOOGLE_CONVERSION_ACTION_CHANNELS,
   GOOGLE_CREATIVE_EITHER_OR_RULES,
   GOOGLE_CREATIVE_FIELD_SPECS,
@@ -73,6 +84,9 @@ import {
   REDDIT_MAX_BUDGET_USD,
   REDDIT_OBJECTIVE_LABELS,
   REDDIT_SELECTABLE_OBJECTIVES,
+  googleAdsToLower,
+  googleAdsTrimSpace,
+  googleAdsUrlGoParseFlaw,
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -90,6 +104,7 @@ import type {
   CampaignKeyword,
   CampaignPlatform,
   CampaignPlatformResult,
+  CampaignSitelink,
   CampaignType,
   GoogleBiddingOption,
   GoogleBiddingStrategy,
@@ -255,10 +270,11 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * Render the cutover-only Google controls on an explicit yes. `null` (unknown) withholds them.
    *
-   * "Creative" names the capability after the first surface that needed it, but it gates BOTH
-   * cutover-only sections — the per-channel creative and the bidding plan. They share one answer
-   * because they share one cause: both ride on `googleAdsConfig`, and the legacy creator reads
-   * neither. A second flag would be a second way to say the same thing, and the two could drift.
+   * "Creative" names the capability after the first surface that needed it, but it gates EVERY
+   * cutover-only section — the per-channel creative, the bidding plan and the campaign languages.
+   * They share one answer because they share one cause: all three ride on `googleAdsConfig`, and
+   * the legacy creator reads none of them. A second flag would be a second way to say the same
+   * thing, and the two could drift.
    */
   protected readonly googleCreativeAvailable = computed<boolean>(() => this.googleCreativeEnabled() === true);
 
@@ -669,6 +685,82 @@ export class ImplementationTabComponent implements OnInit {
    * the control that cannot express it is the kinder one.
    */
   protected readonly googleGeoOptions = Object.keys(GOOGLE_ADS_GEO_TARGET_MAP).sort();
+  /**
+   * The languages the Google campaign serves in, as ISO 639-1 codes.
+   *
+   * Empty is a real and SAFE answer with no fallback behind it, which is the difference from
+   * {@link googleGeoTargets}: upstream reads an absent language list as Google's own default, which
+   * is to serve in every language. So this list only ever narrows, and leaving it alone leaves the
+   * campaign exactly as it is created today.
+   */
+  protected readonly googleLanguages = signal<string[]>([]);
+  protected readonly googleMaxLanguages = GOOGLE_ADS_MAX_LANGUAGES;
+  /**
+   * The languages Google Ads can target on this path, offered as a closed list.
+   *
+   * A select for the same reason the geo control is one: `resolveLanguageList`
+   * (`internal/platform/googleads/campaign_criteria.go`) resolves every ISO 639-1 code against a
+   * curated table and hard-errors on a miss, and {@link GOOGLE_ADS_LANGUAGE_MAP} is that same table.
+   *
+   * Sorted by the ENGLISH NAME rather than the code, unlike the geo select — the options render as
+   * names here, so sorting by code would put them on screen in no order the operator can see. The
+   * collation locale is pinned to `en`: left to the runtime default, the server render and the
+   * browser could order the options differently and fail hydration.
+   *
+   * The raw numeric constant ids upstream also accepts are deliberately NOT offered: they exist for
+   * languages outside the curated table, and the BFF guard accepts them without testing them
+   * against that table, so the narrower control costs nothing an operator can reach from this screen.
+   */
+  protected readonly googleLanguageOptions = Object.entries(GOOGLE_ADS_LANGUAGE_LABELS)
+    .map(([code, label]) => ({ code, label }))
+    .sort((a, b) => a.label.localeCompare(b.label, 'en'));
+  /**
+   * Code to English name, for the chips and their remove buttons, so a chip reads as the name the
+   * operator picked from the select and a screen reader announces "Remove German" rather than
+   * "Remove D E". A `Map` rather than the label object indexed directly: a restored draft is the
+   * other source of a code, and a plain-object index would resolve an inherited `Object.prototype`
+   * key (#3504). A code outside the table falls back to the code itself.
+   */
+  private readonly googleLanguageNames = new Map<string, string>(Object.entries(GOOGLE_ADS_LANGUAGE_LABELS));
+  /**
+   * The picked languages as chips — code and display name together — so the template binds data
+   * rather than calling a lookup on every change-detection pass.
+   */
+  protected readonly googleLanguageChips = computed(() => this.googleLanguages().map((code) => ({ code, name: this.googleLanguageNames.get(code) ?? code })));
+  /**
+   * Google's callout extensions — short claims appended to the Search ad, each carrying no link.
+   *
+   * Free text rather than a closed list, the opposite choice from {@link googleGeoOptions} and for
+   * the opposite reason: a callout is ad copy the operator writes, so there is nothing to enumerate.
+   * What upstream judges is its SHAPE — length, emptiness, repetition — and every one of those
+   * judgements is mirrored on the add path so a refusal arrives while the text is still in the box.
+   */
+  protected readonly googleCallouts = signal<string[]>([]);
+  protected readonly googleMaxCallouts = GOOGLE_ADS_MAX_CALLOUTS;
+  protected readonly googleMaxCalloutRunes = GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES;
+  /**
+   * The callout box's live text, kept so the over-length warning can describe what is in the box
+   * rather than what was last committed. Transient: it reaches the draft only when a callout is
+   * ADDED, exactly as {@link microsoftKeywordDraft} does.
+   */
+  protected readonly googleCalloutDraft = signal('');
+  /**
+   * Google's sitelink extensions — extra links rendered under the Search ad.
+   *
+   * Four fields rather than the callout's one, so the draft is an OBJECT and the add guard has more
+   * to say. An entry arrives through {@link addGoogleSitelink} or a restored draft; the BFF guard
+   * re-checks every entry against `validateSitelinks` before anything is sent.
+   */
+  protected readonly googleSitelinks = signal<CampaignSitelink[]>([]);
+  protected readonly googleMaxSitelinks = GOOGLE_ADS_MAX_SITELINKS;
+  protected readonly googleMaxFinalUrlBytes = GOOGLE_ADS_MAX_FINAL_URL_BYTES;
+  protected readonly googleMaxSitelinkRunes = GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES;
+  protected readonly googleMaxSitelinkDescriptionRunes = GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES;
+  /**
+   * The sitelink sub-form's live values, on the same rule as {@link googleCalloutDraft}: transient,
+   * reaching the saved draft only when a sitelink is added.
+   */
+  protected readonly googleSitelinkDraft = signal<CampaignSitelink>({ text: '', description1: '', description2: '', finalUrl: '' });
   protected readonly metaVariants = signal<MetaAdVariant[]>([]);
   protected readonly metaGeoTargets = signal<string[]>([]);
   protected readonly metaBudgetUsd = signal(500);
@@ -1004,6 +1096,149 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly microsoftKeywordDraftTooLong = computed(() => this.microsoftKeywordDraftLength() > MICROSOFT_MAX_KEYWORD_TEXT_LENGTH);
 
   /**
+   * Rune length of the in-progress callout — `[...s].length`, never `.length`, matching upstream's
+   * `utf8.RuneCountInString`, after Go's trim. See {@link GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES}.
+   */
+  protected readonly googleCalloutDraftLength = computed(() => [...googleAdsTrimSpace(this.googleCalloutDraft())].length);
+
+  protected readonly googleCalloutDraftTooLong = computed(() => this.googleCalloutDraftLength() > GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES);
+
+  /**
+   * Whether the text in the box repeats a callout already chipped, case-folded.
+   *
+   * Case-folded because upstream is: `validateCallouts` keys its duplicate check on
+   * `strings.ToLower(text)` and REFUSES the create rather than de-duplicating. Warning here turns
+   * that whole-create refusal into a sentence beside the box, before anything is dispatched. Keyed
+   * with Go's own trim and lower-casing, which JS's built-ins do not match.
+   */
+  protected readonly googleCalloutDraftDuplicate = computed(() => {
+    const key = googleAdsToLower(googleAdsTrimSpace(this.googleCalloutDraft()));
+    if (key === '') return false;
+    return this.googleCallouts().some((c) => googleAdsToLower(c) === key);
+  });
+
+  /**
+   * The id of the message line currently describing the callout box, or `null` when it is clean.
+   *
+   * `aria-invalid` alone only marks the field wrong; it never says why. The Meta pixel field above
+   * pairs it with `aria-describedby` so a screen reader reads the reason when focus lands on the
+   * input, which `role="alert"` cannot do — that fires once, as the line appears. Computed rather
+   * than a template ternary because the two messages are mutually exclusive and
+   * `.claude/rules/styling.md` forbids nesting ternaries in a binding.
+   */
+  protected readonly googleCalloutDraftErrorId = computed<string | null>(() => {
+    if (this.googleCalloutDraftTooLong()) return 'google-callout-too-long';
+    if (this.googleCalloutDraftDuplicate()) return 'google-callout-duplicate';
+    return null;
+  });
+
+  protected readonly googleCalloutsFull = computed(() => this.googleCallouts().length >= GOOGLE_ADS_MAX_CALLOUTS);
+
+  /** Rune length of the in-progress sitelink link text. Spread, not `.length` — as the callout. */
+  protected readonly googleSitelinkTextLength = computed(() => [...googleAdsTrimSpace(this.googleSitelinkDraft().text)].length);
+
+  protected readonly googleSitelinkTextTooLong = computed(() => this.googleSitelinkTextLength() > GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES);
+
+  /**
+   * Whether either description line is over its own bound.
+   *
+   * EACH line separately, not their total: upstream applies `maxSitelinkDescriptionRunes` to
+   * `desc1` and `desc2` in turn, so a pair of 30-rune lines is fine and one 36-rune line is not.
+   */
+  protected readonly googleSitelinkDescriptionTooLong = computed(() => {
+    const draft = this.googleSitelinkDraft();
+    return [draft.description1 ?? '', draft.description2 ?? ''].some((d) => [...googleAdsTrimSpace(d)].length > GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES);
+  });
+
+  /**
+   * Whether exactly one description line is filled in.
+   *
+   * Google renders the two lines together and rejects an asset carrying only one, so upstream
+   * refuses the whole create on this. Both filled or both empty are the two legal states.
+   */
+  protected readonly googleSitelinkDescriptionHalfFilled = computed(() => {
+    const draft = this.googleSitelinkDraft();
+    return (googleAdsTrimSpace(draft.description1 ?? '') === '') !== (googleAdsTrimSpace(draft.description2 ?? '') === '');
+  });
+
+  /** Case-folded with Go's rules, as the callout sibling is — upstream refuses, not de-duplicates. */
+  protected readonly googleSitelinkDuplicate = computed(() => {
+    const key = googleAdsToLower(googleAdsTrimSpace(this.googleSitelinkDraft().text));
+    if (key === '') return false;
+    return this.googleSitelinks().some((s) => googleAdsToLower(s.text) === key);
+  });
+
+  /**
+   * Whether the destination in the box is one the ad platforms will refuse.
+   *
+   * False while the box is EMPTY: an unfilled field is not yet a mistake, and the add button's own
+   * disabled state is what withholds the add until it is filled. This warns only about text that
+   * is present and unservable.
+   */
+  protected readonly googleSitelinkUrlInvalid = computed(() => {
+    const url = googleAdsTrimSpace(this.googleSitelinkDraft().finalUrl);
+    if (url === '') return false;
+    return !this.isServableDestination(url);
+  });
+
+  /** UTF-8 byte length of a servable destination over upstream's `maxFinalURLBytes`, else 0. */
+  protected readonly googleSitelinkUrlBytesOver = computed(() => {
+    const url = googleAdsTrimSpace(this.googleSitelinkDraft().finalUrl);
+    if (url === '' || this.googleSitelinkUrlInvalid()) return 0;
+    const bytes = new TextEncoder().encode(url).length;
+    return bytes > GOOGLE_ADS_MAX_FINAL_URL_BYTES ? bytes : 0;
+  });
+
+  /** The message line describing the destination box, or null when it is clean. */
+  protected readonly googleSitelinkUrlErrorId = computed<string | null>(() => {
+    if (this.googleSitelinkUrlInvalid()) return 'google-sitelink-url-invalid';
+    if (this.googleSitelinkUrlBytesOver() > 0) return 'google-sitelink-url-too-long';
+    return null;
+  });
+
+  /**
+   * Ids of the message lines currently describing the link-text box and the two description boxes,
+   * or `null` when each is clean. Same reason as {@link googleCalloutDraftErrorId}: `aria-invalid`
+   * marks the field wrong and `aria-describedby` is what says why once focus returns to it. One
+   * computed per group rather than a template ternary, because each group's messages are mutually
+   * exclusive and `.claude/rules/styling.md` forbids nesting ternaries in a binding.
+   */
+  protected readonly googleSitelinkTextErrorId = computed<string | null>(() => {
+    if (this.googleSitelinkTextTooLong()) return 'google-sitelink-too-long';
+    if (this.googleSitelinkDuplicate()) return 'google-sitelink-duplicate';
+    return null;
+  });
+
+  protected readonly googleSitelinkDescriptionErrorId = computed<string | null>(() => {
+    if (this.googleSitelinkDescriptionHalfFilled()) return 'google-sitelink-half-described';
+    if (this.googleSitelinkDescriptionTooLong()) return 'google-sitelink-description-too-long';
+    return null;
+  });
+
+  protected readonly googleSitelinksFull = computed(() => this.googleSitelinks().length >= GOOGLE_ADS_MAX_SITELINKS);
+
+  /**
+   * Whether the add button is withheld. A computed rather than an expression in the template, so
+   * the button's condition and `addGoogleSitelink`'s refusals stay one list in one place.
+   *
+   * The two required fields are withheld as "not filled in yet" rather than warned about, which is
+   * why the empty cases live here and not in {@link googleSitelinkUrlInvalid}.
+   */
+  protected readonly googleSitelinkAddDisabled = computed(() => {
+    const draft = this.googleSitelinkDraft();
+    if (googleAdsTrimSpace(draft.text) === '' || googleAdsTrimSpace(draft.finalUrl) === '') return true;
+    return (
+      this.googleSitelinksFull() ||
+      this.googleSitelinkTextTooLong() ||
+      this.googleSitelinkDuplicate() ||
+      this.googleSitelinkDescriptionHalfFilled() ||
+      this.googleSitelinkDescriptionTooLong() ||
+      this.googleSitelinkUrlInvalid() ||
+      this.googleSitelinkUrlBytesOver() > 0
+    );
+  });
+
+  /**
    * The effective geo list as a display string. A computed rather than `.join()` in the template:
    * `docs/reviews/frontend-checklist.md` permits signal reads, computeds and pipes in bindings but
    * not logic-bearing calls, which re-run on every change-detection pass.
@@ -1328,11 +1563,16 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly creativeFieldErrors: Signal<Record<string, string>> = this.initCreativeFieldErrors();
   protected readonly googleBiddingChannel: Signal<GoogleCampaignChannel | null> = this.initGoogleBiddingChannel();
+  protected readonly googleCalloutsAvailable: Signal<boolean> = this.initGoogleCalloutsAvailable();
+  protected readonly googleCalloutsWithheldWarning: Signal<string | null> = this.initGoogleCalloutsWithheldWarning();
+  protected readonly googleSitelinksWithheldWarning: Signal<string | null> = this.initGoogleSitelinksWithheldWarning();
   protected readonly googleBiddingOptions: Signal<GoogleBiddingOption[]> = this.initGoogleBiddingOptions();
   protected readonly googleBiddingStrategy: Signal<GoogleBiddingStrategy | null> = this.initGoogleBiddingStrategy();
   protected readonly googleBiddingDefaultLabel: Signal<string> = this.initGoogleBiddingDefaultLabel();
   protected readonly googleTakesTargetCpa: Signal<boolean> = this.initGoogleTakesTargetCpa();
   protected readonly googleTakesTargetRoas: Signal<boolean> = this.initGoogleTakesTargetRoas();
+  protected readonly googleLanguagesChannel: Signal<GoogleCampaignChannel | null> = this.initGoogleLanguagesChannel();
+  protected readonly googleLanguagesWithheldOn: Signal<string | null> = this.initGoogleLanguagesWithheldOn();
   protected readonly googleTakesCpcBid: Signal<boolean> = this.initGoogleTakesCpcBid();
   private readonly googleStrategyNeedsTarget: Signal<boolean> = this.initGoogleStrategyNeedsTarget();
   protected readonly googleTakesConversionActions: Signal<boolean> = this.initGoogleTakesConversionActions();
@@ -1821,6 +2061,142 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
+  /**
+   * Add one Google campaign language — the geo add's twin, on the same reasoning: the select's
+   * options are {@link GOOGLE_ADS_LANGUAGE_LABELS}' own keys, so the value is already canonical and
+   * the only guards left are the cap and not adding a code twice.
+   */
+  protected addGoogleLanguage(code: string): void {
+    if (code === '') return;
+    if (this.googleLanguages().length >= GOOGLE_ADS_MAX_LANGUAGES) return;
+    if (this.googleLanguages().includes(code)) return;
+    this.googleLanguages.update((codes) => [...codes, code]);
+    this.emitDraft();
+  }
+
+  protected onGoogleLanguageAdd(event: Event): void {
+    const select = event.target as HTMLSelectElement;
+    this.addGoogleLanguage(select.value);
+    // Back to the placeholder, exactly as the geo select does.
+    select.value = '';
+  }
+
+  protected removeGoogleLanguage(index: number): void {
+    this.googleLanguages.update((codes) => codes.filter((_, i) => i !== index));
+    this.emitDraft();
+  }
+
+  /**
+   * Add one callout, reporting whether it was actually added.
+   *
+   * Every refusal below is one branch of upstream's `validateCallouts`
+   * (`internal/platform/googleads/assets.go`), in upstream's own order, so a callout that becomes a
+   * chip is one the create will accept — and none of these can over-refuse, because each mirrors a
+   * rule that is already law at the other end:
+   *   - CAP: upstream compares the RAW list length first, before looking at any entry, so the cap
+   *     is the door here too.
+   *   - BLANK: never chipped. Upstream and the BFF both refuse an empty entry, so a blank chip
+   *     would cost the whole create.
+   *   - RUNES: `[...trimmed].length`, matching `utf8.RuneCountInString`. `.length` counts UTF-16
+   *     units and would refuse an emoji or astral-plane callout upstream accepts.
+   *   - DUPLICATE: case-folded, because upstream keys on `strings.ToLower` and REFUSES the create
+   *     ("callout %q is listed more than once") rather than de-duplicating.
+   *
+   * Trimmed and lower-cased with Go's rules ({@link googleAdsTrimSpace}, {@link googleAdsToLower}),
+   * because JS's `trim` and `toLowerCase` disagree with upstream's on a few characters.
+   *
+   * The BOOLEAN is what lets `onGoogleCalloutAdd` keep the operator's text on a refusal — the same
+   * contract and the same reason as {@link addMicrosoftKeyword}: clearing unconditionally would
+   * discard the very text the over-length warning is asking them to shorten.
+   */
+  protected addGoogleCallout(text: string): boolean {
+    if (this.googleCallouts().length >= GOOGLE_ADS_MAX_CALLOUTS) return false;
+    const trimmed = googleAdsTrimSpace(text);
+    if (!trimmed) return false;
+    if ([...trimmed].length > GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES) return false;
+    if (this.googleCallouts().some((c) => googleAdsToLower(c) === googleAdsToLower(trimmed))) return false;
+    this.googleCallouts.update((callouts) => [...callouts, trimmed]);
+    this.emitDraft();
+    return true;
+  }
+
+  protected onGoogleCalloutDraftInput(event: Event): void {
+    // Draft text only — no `emitDraft()`. Transient input, exactly as the Microsoft keyword box:
+    // it reaches the draft when the callout is ADDED.
+    this.googleCalloutDraft.set((event.target as HTMLInputElement).value);
+  }
+
+  protected onGoogleCalloutAdd(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    // Cleared ONLY on success, so a refused callout stays in the box with its warning beside it.
+    if (this.addGoogleCallout(input.value)) {
+      input.value = '';
+      this.googleCalloutDraft.set('');
+    }
+  }
+
+  protected removeGoogleCallout(index: number): void {
+    this.googleCallouts.update((callouts) => callouts.filter((_, i) => i !== index));
+    this.emitDraft();
+  }
+
+  /**
+   * Add one sitelink, reporting whether it was actually added.
+   *
+   * Boolean for the same reason {@link addGoogleCallout} is: a refusal must leave the sub-form
+   * filled so the operator can fix the field the warning names, not retype four of them.
+   *
+   * One refusal per branch of upstream's `validateSitelinks`, in its order — cap on the raw list,
+   * blank link text, the rune bound, the case-folded duplicate, the all-or-nothing description
+   * pair, each description line's own rune bound, then the destination and its byte bound. A
+   * sitelink that passes every one is one upstream accepts, short of the utm-tagging margin
+   * documented on {@link GOOGLE_ADS_MAX_FINAL_URL_BYTES}.
+   */
+  protected addGoogleSitelink(sitelink: CampaignSitelink): boolean {
+    const text = googleAdsTrimSpace(sitelink.text);
+    const description1 = googleAdsTrimSpace(sitelink.description1 ?? '');
+    const description2 = googleAdsTrimSpace(sitelink.description2 ?? '');
+    const finalUrl = googleAdsTrimSpace(sitelink.finalUrl);
+
+    if (this.googleSitelinks().length >= GOOGLE_ADS_MAX_SITELINKS) return false;
+    if (!text) return false;
+    if ([...text].length > GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES) return false;
+    if (this.googleSitelinks().some((s) => googleAdsToLower(s.text) === googleAdsToLower(text))) return false;
+    if ((description1 === '') !== (description2 === '')) return false;
+    if ([description1, description2].some((d) => [...d].length > GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES)) return false;
+    // Upstream treats a sitelink with no destination as UNSERVABLE, not as a lesser sitelink, and
+    // refuses the whole create — so an empty URL is a refusal here, not an omitted optional field.
+    if (!this.isServableDestination(finalUrl)) return false;
+    if (new TextEncoder().encode(finalUrl).length > GOOGLE_ADS_MAX_FINAL_URL_BYTES) return false;
+
+    this.googleSitelinks.update((sitelinks) => [
+      ...sitelinks,
+      // Descriptions omitted together when neither is filled, so the request carries absence rather
+      // than two empty strings — the shape the BFF helper and upstream both expect.
+      { text, ...(description1 !== '' || description2 !== '' ? { description1, description2 } : {}), finalUrl },
+    ]);
+    this.emitDraft();
+    return true;
+  }
+
+  protected onGoogleSitelinkDraftInput(field: keyof CampaignSitelink, event: Event): void {
+    // Draft only — no `emitDraft()`, matching the callout box. It reaches the draft on ADD.
+    const value = (event.target as HTMLInputElement).value;
+    this.googleSitelinkDraft.update((draft) => ({ ...draft, [field]: value }));
+  }
+
+  protected onGoogleSitelinkAdd(): void {
+    // Cleared ONLY on success, so a refused sitelink keeps all four fields and its warning.
+    if (this.addGoogleSitelink(this.googleSitelinkDraft())) {
+      this.googleSitelinkDraft.set({ text: '', description1: '', description2: '', finalUrl: '' });
+    }
+  }
+
+  protected removeGoogleSitelink(index: number): void {
+    this.googleSitelinks.update((sitelinks) => sitelinks.filter((_, i) => i !== index));
+    this.emitDraft();
+  }
+
   protected removeMicrosoftGeoTarget(index: number): void {
     this.microsoftGeoTargets.update((targets) => targets.filter((_, i) => i !== index));
     this.emitDraft();
@@ -1943,6 +2319,16 @@ export class ImplementationTabComponent implements OnInit {
       // The bidding plan, Google-gated for the same reason the creative is, and already narrowed
       // to the fields the effective strategy and channel actually take.
       ...(platforms.includes('google-ads') ? this.googleBiddingPayload() : {}),
+      // The language narrowing, Google-gated for the same reason, and already withheld unless the
+      // dispatched channel is one upstream accepts campaign languages on.
+      ...(platforms.includes('google-ads') ? this.googleLanguagesPayload() : {}),
+      // The callout extensions, Google-gated for the same reason the creative and the bidding plan
+      // are, and already narrowed by `googleCalloutsAvailable` to the one channel upstream accepts
+      // extensions on.
+      ...(platforms.includes('google-ads') ? this.googleCalloutsPayload() : {}),
+      // The sitelink extensions, on the same gate as the callouts — both are ad extensions, and
+      // upstream refuses the whole create when any extension list reaches a non-Search campaign.
+      ...(platforms.includes('google-ads') ? this.googleSitelinksPayload() : {}),
       driveFolderUrl: this.briefDriveFolderUrl() || undefined,
       platforms,
       ...(platforms.includes('linkedin-ads')
@@ -1990,9 +2376,9 @@ export class ImplementationTabComponent implements OnInit {
               // thing that makes the payload say what the screen shows.
               //
               // Sent even when `redditObjectiveIsUnavailable()`, and that is the deliberate half.
-              // The only withheld objective is `video_views`, which the campaign-service arm
-              // refuses outright unless a `videoGoal` accompanies it and nothing in this tier can
-              // set one. So such a create fails upstream rather than succeeding — where omitting
+              // The only withheld objective is `video_views`, which BOTH creators refuse outright
+              // unless a `videoGoal` accompanies it and nothing in this tier can set one. So such a
+              // create fails before anything is built rather than succeeding — where omitting
               // the field would fall back to `conversions` and quietly build a campaign the
               // operator never chose, against an objective the select is at that moment showing
               // them as "(no longer available)". A refusal they can see and act on beats a
@@ -2285,6 +2671,25 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.googleGeoTargets !== undefined) {
       this.googleGeoTargets.set([...draft.googleGeoTargets]);
     }
+    // Copied on the same rule, and restored whatever the channel selection is: the chips section
+    // and `googleLanguagesPayload` both gate on `googleLanguagesChannel`, so a list restored under
+    // a channel that takes no languages is held, not sent, and is still there if the operator
+    // switches back.
+    if (draft.googleLanguages !== undefined) {
+      this.googleLanguages.set([...draft.googleLanguages]);
+    }
+    // Copied on the same rule, and restored WHATEVER channel the draft was saved under: the section
+    // and the payload both gate on the dispatched channel, so a list restored under Performance Max
+    // is held rather than sent, and is still there if the operator switches back to Search.
+    if (draft.googleCallouts !== undefined) {
+      this.googleCallouts.set([...draft.googleCallouts]);
+    }
+    // Each entry copied as well as the array: a sitelink is an object, so a shallow array spread
+    // would still hand the draft's own entries to the signal, and a later edit here would reach
+    // back into the stored draft.
+    if (draft.googleSitelinks !== undefined) {
+      this.googleSitelinks.set(draft.googleSitelinks.map((s) => ({ ...s })));
+    }
     // The bidding controls, each on the same present-only rule. One `if` per field rather than a
     // single patch, because a draft saved before this section shipped carries some of these and
     // not others only as the section grows — and a blanket patch of `undefined` would clear a
@@ -2435,6 +2840,10 @@ export class ImplementationTabComponent implements OnInit {
       googleCreatives: this.googleCreativeSnapshot(),
       // Spread, not referenced, for the same reason the Meta and Microsoft geo lists below are.
       googleGeoTargets: [...this.googleGeoTargets()],
+      googleLanguages: [...this.googleLanguages()],
+      googleCallouts: [...this.googleCallouts()],
+      // Entries copied too, for the reason the restore above gives in the other direction.
+      googleSitelinks: this.googleSitelinks().map((s) => ({ ...s })),
       // The bidding plan as TYPED, not as resolved: the raw strategy the operator picked, not the
       // channel default standing in for it, and the raw text of each number. A draft gives back
       // the form that was left, and resolving here would make a reopened draft claim a choice
@@ -2946,6 +3355,105 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
+   * The channel the language control is rendered against, or null when it should not be rendered.
+   *
+   * Resolves the channel the SAME way `buildGoogleAdsConfig` does — Search when Search is among the
+   * selection, otherwise the first selected channel — so the control can never be offered against a
+   * channel other than the one the request will carry. That resolution, and the first two gates
+   * below, are `googleBiddingChannel`'s, read from it rather than repeated, so the two sections
+   * cannot drift apart on which channel they mean.
+   *
+   * Three gates, and each withholds the control for a different reason:
+   *
+   * 1. `showGoogleSection` — no Google platform, nothing to target.
+   * 2. `googleCreativeAvailable` — the LEGACY road, on the same rule as the bidding picker and for
+   *    the same reason. Languages ride on the `googleAdsConfig` envelope and the in-process creator
+   *    reads none of it, so a language picked there would be collected, dropped, and the campaign
+   *    created serving in every language while the operator believes they narrowed it.
+   * 3. {@link GOOGLE_CHANNELS_WITH_LANGUAGES} — Demand Gen. `validateCriteriaPlan` REFUSES the whole
+   *    non-location criteria set there rather than dropping it, so offering the control on that
+   *    channel would not produce a wider campaign, it would produce a failed create.
+   *
+   * Video is in that constant and still never reaches here: `GOOGLE_VIDEO_CREATE_SUPPORTED` is
+   * false, so `selectedGoogleChannels` drops it and there is no Video create for a language to ride
+   * on. The constant is right about upstream; this signal is narrower because the screen is.
+   *
+   * Nulling in one place is what keeps the collected value and the payload from disagreeing: the
+   * template opens on this signal and `googleLanguagesPayload` opens on it too.
+   */
+  private initGoogleLanguagesChannel(): Signal<GoogleCampaignChannel | null> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      if (!channel) return null;
+      return (GOOGLE_CHANNELS_WITH_LANGUAGES as readonly string[]).includes(channel) ? channel : null;
+    });
+  }
+
+  /**
+   * The label of the channel a picked language list is being WITHHELD on, or null when nothing is.
+   *
+   * Non-null only when the Google section is live on a dispatched channel (`googleBiddingChannel`)
+   * that takes no languages, and the operator has picked some — in practice languages chosen under
+   * Search and then left behind by a switch to Demand Gen. The list is held for a switch back, not
+   * sent, so the campaign serves in every language; the template says so rather than letting the
+   * section simply vanish. Off on the legacy road and with no Google channel, where
+   * `googleBiddingChannel` is null and nothing about languages is on screen to explain.
+   */
+  private initGoogleLanguagesWithheldOn(): Signal<string | null> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      if (!channel || this.googleLanguagesChannel() || this.googleLanguages().length === 0) return null;
+      return GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel];
+    });
+  }
+
+  /**
+   * The sentence saying callouts are held back, or null when none are. Set when the dispatched
+   * channel is known, takes no callouts, and the operator added some — in practice callouts typed
+   * under Search and left behind by a switch to another channel. Held is not silent: the section
+   * disappears with the switch, so without this the operator would not know the campaign is created
+   * without them. One string feeds both the visible notice and its live region.
+   */
+  private initGoogleCalloutsWithheldWarning(): Signal<string | null> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      const count = this.googleCallouts().length;
+      if (!channel || this.googleCalloutsAvailable() || count === 0) return null;
+      return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take callouts, so the ${count} you added will not be sent. Switch back to Search to keep them.`;
+    });
+  }
+  /** The sitelink twin of {@link initGoogleCalloutsWithheldWarning}, on the same Search gate. */
+  private initGoogleSitelinksWithheldWarning(): Signal<string | null> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      const count = this.googleSitelinks().length;
+      if (!channel || this.googleCalloutsAvailable() || count === 0) return null;
+      return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take sitelinks, so the ${count} you added will not be sent. Switch back to Search to keep them.`;
+    });
+  }
+
+  /**
+   * Whether the campaign this form will dispatch can carry ad extensions at all.
+   *
+   * Built on {@link googleBiddingChannel} rather than re-deriving the channel, because the question
+   * is about the channel the REQUEST will carry and that signal is already exactly that — the same
+   * `buildGoogleAdsConfig` mirror, including its Search-wins asymmetry and its null on the legacy
+   * road. Re-deriving it here would be a second copy of one upstream contract, free to drift.
+   *
+   * False is a withholding, not a refusal. Upstream's `validateAssetPlan` refuses the whole
+   * extension set on any channel but Search ("supported on Search campaigns only, not on %s") at
+   * preflight, BEFORE the budget mutate — so a callout sent on a Performance Max create yields no
+   * campaign at all. The section hides and the payload holds the list rather than forwarding it;
+   * the operator's typed callouts survive in the draft and come back if they re-tick Search.
+   */
+  private initGoogleCalloutsAvailable(): Signal<boolean> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      return channel !== null && (GOOGLE_CHANNELS_WITH_AD_EXTENSIONS as readonly string[]).includes(channel);
+    });
+  }
+
+  /**
    * The strategies the selected channel accepts, labelled for the picker.
    *
    * Straight from the shared catalogue, which reproduces campaign-service's five per-channel sets.
@@ -3315,6 +3823,79 @@ export class ImplementationTabComponent implements OnInit {
       if (actions.length > 0) payload.conversionActions = actions;
     }
     return payload;
+  }
+
+  /**
+   * The language narrowing as the request carries it, or `{}` when there is nothing to send.
+   *
+   * Gated by `googleLanguagesChannel`, the SAME computed the template's chips section opens on, so
+   * a list picked under one channel and then abandoned under another is withheld rather than
+   * forwarded into a refusal. An empty list is withheld too, by the absent-key route `geoTargets`
+   * and the flight window take: upstream reads an absent `languages` as Google's own default of
+   * every language, so sending `[]` would be a narrowing the operator never asked for.
+   */
+  private googleLanguagesPayload(): Partial<CampaignCreateRequest> {
+    if (!this.googleLanguagesChannel()) return {};
+    const languages = this.googleLanguages();
+    return languages.length > 0 ? { languages: [...languages] } : {};
+  }
+
+  /**
+   * The callout extensions as the request carries them, or `{}` when there is nothing to send.
+   *
+   * Gated by {@link googleCalloutsAvailable} — the same computed the section renders on — so what
+   * the operator can see is exactly what is sent. A list typed under Search and then abandoned by
+   * unticking it is WITHHELD, not forwarded: upstream's `validateAssetPlan` refuses the whole
+   * extension set on any other channel at preflight, before the budget mutate, so forwarding it
+   * would turn a servable create into no campaign at all.
+   *
+   * Omitted rather than sent empty when the list is empty, so the upstream default is reached by
+   * the absent-key route every caller predating this field takes — the same rule as `geoTargets`
+   * and the flight window.
+   */
+  private googleCalloutsPayload(): Partial<CampaignCreateRequest> {
+    if (!this.googleCalloutsAvailable()) return {};
+    const callouts = this.googleCallouts();
+    return callouts.length > 0 ? { callouts: [...callouts] } : {};
+  }
+
+  /**
+   * The sitelink extensions as the request carries them, or `{}` when there is nothing to send.
+   *
+   * Gate, withholding and omit-when-empty are {@link googleCalloutsPayload}'s exactly. The entries
+   * are COPIED rather than passed by reference, so a later chip edit cannot reach a request that
+   * has already been built.
+   */
+  private googleSitelinksPayload(): Partial<CampaignCreateRequest> {
+    if (!this.googleCalloutsAvailable()) return {};
+    const sitelinks = this.googleSitelinks();
+    return sitelinks.length > 0 ? { sitelinks: sitelinks.map((s) => ({ ...s })) } : {};
+  }
+
+  /**
+   * Whether a destination URL is one the ad platforms will serve.
+   *
+   * The same accept set as the BFF's sitelink guard and upstream's `validateServableURL`: absolute,
+   * http(s), with a hostname and no embedded credentials, and none of the Go parser flaws
+   * {@link googleAdsUrlGoParseFlaw} names. Three tiers hold this contract
+   * because none of them can call the others — so the rule for changing it is that all three move
+   * together, and this one must never be the strictest: a URL refused here never reaches the BFF
+   * guard that would have named the real reason.
+   */
+  private isServableDestination(raw: string): boolean {
+    const value = googleAdsTrimSpace(raw);
+    if (value === '' || googleAdsUrlGoParseFlaw(value)) return false;
+
+    let parsed: URL;
+    try {
+      parsed = new URL(value);
+    } catch {
+      return false;
+    }
+
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+    if (parsed.hostname === '') return false;
+    return parsed.username === '' && parsed.password === '';
   }
 
   /** One typed bidding number, or `undefined` when the field is blank or cannot be a number. */

@@ -36,4 +36,6 @@ export enum NatsSubjects {
   FORWARDS_CHECK_ALIAS = 'lfx.forwards-service.check_alias',
   FORWARDS_SET_TARGET = 'lfx.forwards-service.set_target',
   FORWARDS_GET_FORWARD = 'lfx.forwards-service.get_forward',
+  // Transactional email (lfx-v2-email-service) — pre-rendered HTML + text, one recipient per request
+  EMAIL_SERVICE_SEND = 'lfx.email-service.send_email',
 }

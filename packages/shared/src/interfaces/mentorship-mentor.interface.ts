@@ -160,9 +160,8 @@ export interface MentorshipUpstreamMentorProfileInput extends MentorshipUpstream
 
 /**
  * Statuses of an upstream `program_members` row, in the order the request lifecycle reaches them.
- * Upstream renamed `active` to `approved`; `active` stays until every environment has migrated.
  */
-export type MentorshipUpstreamProgramMemberStatus = 'invited' | 'requested' | 'pending' | 'approved' | 'active' | 'declined' | 'withdrawn';
+export type MentorshipUpstreamProgramMemberStatus = 'invited' | 'requested' | 'pending' | 'approved' | 'declined' | 'withdrawn';
 
 /**
  * One row of upstream `GET /mentorship/v1/me/program-memberships`: the caller's own membership of a

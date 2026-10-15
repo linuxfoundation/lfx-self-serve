@@ -133,7 +133,7 @@ export type MentorshipCiiLookupStatus = 'idle' | 'loading' | 'valid' | 'invalid'
 /** Mentor lifecycle on the Mentors tab. No `graduated` (mentors don't graduate). */
 export type MentorshipMentorStatus = (typeof MENTORSHIP_MENTOR_STATUSES)[number];
 
-/** Mentee lifecycle on the Current Mentees / Past Mentees tabs. Adds `graduated`. */
+/** Mentee lifecycle on the Current Mentees / Past Mentees tabs. An accepted mentee is `accepted` (a mentor is `approved`), and only mentees reach `graduated`. */
 export type MentorshipMenteeStatus = (typeof MENTORSHIP_MENTEE_STATUSES)[number];
 
 /** Shared row fields consumed by the admin program-detail people tables. */
@@ -453,7 +453,7 @@ export interface MentorshipRegisterFailureOptions<TFieldErrors extends object> {
 /**
  * One term in the create body. No `id` (upstream generates it) and dates are date-only `YYYY-MM-DD`, which upstream stores
  * at 00:00 UTC. Upstream needs `endDate` after `startDate`, and `applicationEndDate` strictly after `applicationStartDate`
- * (a same-day window is refused) and before `startDate`.
+ * (a same-day window is refused) and no later than the end of the `endDate` month; the window may run into the term.
  */
 export interface MentorshipEnrollCreateTerm {
   name: string;

@@ -5,7 +5,7 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, Router } from '@angular/router';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
-import type { Committee, Meeting } from '@lfx-one/shared/interfaces';
+import type { Committee, CommitteeMember, CommitteeTab, Meeting } from '@lfx-one/shared/interfaces';
 import { CommitteeJoinApplicationSessionService } from '@services/committee-join-application-session.service';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -21,24 +21,23 @@ import { UserService } from '@services/user.service';
 import { VoteService } from '@services/vote.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { EMPTY, of } from 'rxjs';
+import { BehaviorSubject, EMPTY, of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CommitteeViewComponent } from './committee-view.component';
 
 /**
- * Covers the wire between the meeting composer and this page's meeting list. The composer opens as
- * a drawer over the group page and closes back onto it instead of navigating, so a meeting created
- * or edited from the Meetings tab only reaches the list if `saveCount` refetches it.
- *
- * The component is instantiated directly rather than rendered: the assertions are all about the
- * constructor's stream wiring, and the template pulls in two dozen child components.
+ * Instantiates the page in an injection context to exercise its reactive tab selection and
+ * meeting-composer wiring without rendering the two dozen child components in its template.
  */
 describe('CommitteeViewComponent', () => {
   let composer: MeetingComposerService;
   let getMeetingsByCommittee: ReturnType<typeof vi.fn>;
   let getCommitteeMembers: ReturnType<typeof vi.fn>;
   let currentCommittee: Committee;
+  let getCommittee: ReturnType<typeof vi.fn>;
+  let routeParams: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
+  let queryParams: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
 
   const committee = { uid: 'committee-1', name: 'Technical Steering', my_role: 'member' } as unknown as Committee;
   const meeting = { uid: 'meeting-1', title: 'Weekly sync' } as unknown as Meeting;
@@ -52,6 +51,9 @@ describe('CommitteeViewComponent', () => {
     getMeetingsByCommittee = vi.fn(() => of([meeting]));
     getCommitteeMembers = vi.fn(() => of([]));
     currentCommittee = committee;
+    getCommittee = vi.fn(() => of(currentCommittee));
+    routeParams = new BehaviorSubject(convertToParamMap({ id: committee.uid }));
+    queryParams = new BehaviorSubject(convertToParamMap({}));
 
     TestBed.configureTestingModule({
       providers: [
@@ -59,8 +61,8 @@ describe('CommitteeViewComponent', () => {
         {
           provide: ActivatedRoute,
           useValue: {
-            paramMap: of(convertToParamMap({ id: 'committee-1' })),
-            queryParamMap: of(convertToParamMap({})),
+            paramMap: routeParams,
+            queryParamMap: queryParams,
           },
         },
         {
@@ -76,7 +78,7 @@ describe('CommitteeViewComponent', () => {
         {
           provide: CommitteeService,
           useValue: {
-            getCommittee: vi.fn(() => of(currentCommittee)),
+            getCommittee,
             fetchCommittee: vi.fn(() => of(currentCommittee)),
             getCommitteeMembers,
             getCommitteeInvites: vi.fn(() => of([])),
@@ -214,6 +216,206 @@ describe('CommitteeViewComponent', () => {
 
       expect(tabKeys(component)).toContain('members');
       expect(getCommitteeMembers).toHaveBeenCalledWith('committee-1');
+    });
+  });
+
+  describe('initial tab deep links', () => {
+    const member: CommitteeMember = {
+      uid: 'synthetic-member-1',
+      committee_uid: committee.uid,
+      committee_name: committee.name,
+      email: 'tab-tester@example.org',
+      first_name: 'Synthetic',
+      last_name: 'Tab Tester',
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    };
+
+    beforeEach(() => {
+      currentCommittee = { ...committee, member_visibility: 'basic_profile', enable_voting: true } as Committee;
+    });
+
+    it.each<CommitteeTab>(['members', 'votes', 'meetings', 'documents'])('selects %s with synchronous detail and roster', (tab) => {
+      queryParams.next(convertToParamMap({ tab }));
+      getCommitteeMembers.mockReturnValue(of([member]));
+
+      const component = createComponent();
+      flush();
+
+      expect(component.activeTab()).toBe(tab);
+      expect(component.members()).toEqual([member]);
+    });
+
+    it.each<CommitteeTab>(['members', 'votes'])('waits for delayed detail and roster before selecting %s', (tab) => {
+      const detail = new Subject<Committee>();
+      const roster = new Subject<CommitteeMember[]>();
+      getCommittee.mockReturnValue(detail);
+      getCommitteeMembers.mockReturnValue(roster);
+      queryParams.next(convertToParamMap({ tab }));
+
+      const component = createComponent();
+      flush();
+      expect(component.committee()).toBeNull();
+      expect(component.membersLoading()).toBe(false);
+      expect(component.activeTab()).toBe('overview');
+
+      detail.next(currentCommittee);
+      flush();
+      // A value alone is not a settled detail read: role loading clears on completion.
+      expect(component.myRoleLoading()).toBe(true);
+      expect(component.activeTab()).toBe('overview');
+
+      detail.complete();
+      flush();
+      expect(component.myRoleLoading()).toBe(false);
+      expect(component.membersLoading()).toBe(true);
+      expect(component.activeTab()).toBe('overview');
+
+      roster.next([member]);
+      flush();
+      expect(component.activeTab()).toBe('overview');
+      roster.complete();
+      flush();
+
+      expect(component.activeTab()).toBe(tab);
+      expect(component.members()).toEqual([member]);
+    });
+
+    it('selects an available Members tab after a failed roster read settles', () => {
+      const roster = new Subject<CommitteeMember[]>();
+      getCommitteeMembers.mockReturnValue(roster);
+      queryParams.next(convertToParamMap({ tab: 'members' }));
+
+      const component = createComponent();
+      flush();
+      expect(component.activeTab()).toBe('overview');
+
+      roster.error(new Error('Synthetic roster failure'));
+      flush();
+
+      expect(component.membersLoading()).toBe(false);
+      expect(component.members()).toEqual([]);
+      expect(component.activeTab()).toBe('members');
+    });
+
+    it.each([undefined, 'not-a-real-tab'])('defaults to Overview for tab=%s', (tab) => {
+      queryParams.next(convertToParamMap(tab ? { tab } : {}));
+
+      const component = createComponent();
+      flush();
+
+      expect(component.activeTab()).toBe('overview');
+    });
+
+    it.each<CommitteeTab>(['members', 'votes'])('consumes a settled but unavailable %s request without waiting for later access', (tab) => {
+      currentCommittee = { ...currentCommittee, member_visibility: 'hidden', enable_voting: false, writer: false, auditor: false } as Committee;
+      queryParams.next(convertToParamMap({ tab }));
+      const component = createComponent();
+      flush();
+
+      expect(component.visibleTabs().some((entry) => entry.key === tab)).toBe(false);
+      expect(component.activeTab()).toBe('overview');
+
+      currentCommittee = { ...currentCommittee, member_visibility: 'basic_profile', enable_voting: true } as Committee;
+      component.refreshCommittee();
+      flush();
+
+      expect(component.visibleTabs().some((entry) => entry.key === tab)).toBe(true);
+      expect(component.activeTab()).toBe('overview');
+    });
+
+    it('preserves a non-Overview manual choice through pending roster completion', () => {
+      const roster = new Subject<CommitteeMember[]>();
+      getCommitteeMembers.mockReturnValue(roster);
+      queryParams.next(convertToParamMap({ tab: 'members' }));
+      const component = createComponent();
+      flush();
+
+      component.activeTab.set('meetings');
+      flush();
+      roster.next([member]);
+      roster.complete();
+      flush();
+
+      expect(component.activeTab()).toBe('meetings');
+    });
+
+    it('preserves same-group manual selection on refresh and falls back when that tab becomes hidden', () => {
+      queryParams.next(convertToParamMap({ tab: 'members' }));
+      const component = createComponent();
+      flush();
+      expect(component.activeTab()).toBe('members');
+
+      component.activeTab.set('votes');
+      currentCommittee = { ...currentCommittee, name: 'Refreshed synthetic group' };
+      component.refreshCommittee();
+      flush();
+      expect(component.activeTab()).toBe('votes');
+
+      currentCommittee = { ...currentCommittee, enable_voting: false };
+      component.refreshCommittee();
+      flush();
+      expect(component.activeTab()).toBe('overview');
+    });
+
+    it('resets selection for another group and waits for its own visibility rather than the previous detail', () => {
+      queryParams.next(convertToParamMap({ tab: 'members' }));
+      const component = createComponent();
+      flush();
+      expect(component.activeTab()).toBe('members');
+
+      const nextDetail = new Subject<Committee>();
+      getCommittee.mockReturnValue(nextDetail);
+      routeParams.next(convertToParamMap({ id: 'committee-2' }));
+      queryParams.next(convertToParamMap({ tab: 'votes' }));
+      flush();
+      expect(component.committee()?.uid).toBe(committee.uid);
+      expect(component.activeTab()).toBe('overview');
+
+      nextDetail.next({ ...currentCommittee, uid: 'committee-2', enable_voting: false });
+      nextDetail.complete();
+      flush();
+      expect(component.activeTab()).toBe('overview');
+      expect(component.visibleTabs().some((entry) => entry.key === 'votes')).toBe(false);
+    });
+
+    it('cancels an old group pending selection when navigation reuses the component', () => {
+      const oldRoster = new Subject<CommitteeMember[]>();
+      getCommitteeMembers.mockReturnValueOnce(oldRoster).mockReturnValue(of([]));
+      queryParams.next(convertToParamMap({ tab: 'members' }));
+      const component = createComponent();
+      flush();
+      expect(component.activeTab()).toBe('overview');
+
+      const nextDetail = new Subject<Committee>();
+      getCommittee.mockReturnValue(nextDetail);
+      routeParams.next(convertToParamMap({ id: 'committee-2' }));
+      queryParams.next(convertToParamMap({ tab: 'votes' }));
+      flush();
+      oldRoster.next([member]);
+      oldRoster.complete();
+      flush();
+      expect(component.activeTab()).toBe('overview');
+
+      nextDetail.next({ ...currentCommittee, uid: 'committee-2' });
+      nextDetail.complete();
+      flush();
+      expect(component.activeTab()).toBe('votes');
+    });
+
+    it('matches a case-insensitive vanity slug to a loaded committee UID', () => {
+      const detail = new Subject<Committee>();
+      getCommittee.mockReturnValue(detail);
+      routeParams.next(convertToParamMap({ id: 'SYNTHETIC-STEERING' }));
+      queryParams.next(convertToParamMap({ tab: 'members' }));
+      const component = createComponent();
+      flush();
+
+      detail.next({ ...currentCommittee, sso_group_name: 'synthetic-steering' });
+      detail.complete();
+      flush();
+
+      expect(component.activeTab()).toBe('members');
     });
   });
 });

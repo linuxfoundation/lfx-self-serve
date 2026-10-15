@@ -41,7 +41,7 @@ describe('MentorsTabComponent', () => {
     id: 'mem_1',
     name: 'Ifeoma Adeyemi',
     email: 'ifeoma.adeyemi@example.com',
-    status: 'active',
+    status: 'approved',
     invitedOn: '2026-03-04',
     profileCreated: true,
     ...overrides,
@@ -115,7 +115,7 @@ describe('MentorsTabComponent', () => {
 
   it('shows each mentor with its status, invitation date and profile flag', () => {
     expect(rowText('mem_1')).toContain('Ifeoma Adeyemi');
-    expect(rowText('mem_1')).toContain(MENTORSHIP_ADMIN_MENTOR_STATUS_LABELS.active);
+    expect(rowText('mem_1')).toContain(MENTORSHIP_ADMIN_MENTOR_STATUS_LABELS.approved);
     expect(rowText('mem_1')).toContain('Yes');
     expect(rowText('mem_2')).toContain(MENTORSHIP_ADMIN_MENTOR_STATUS_LABELS.invited);
     expect(rowText('mem_2')).toContain('No');
@@ -365,7 +365,7 @@ describe('MentorsTabComponent', () => {
       ['requested', ['accept', 'decline']],
       ['pending', ['accept', 'decline']],
       ['invited', ['revoke']],
-      ['active', ['remove']],
+      ['approved', ['remove']],
       ['declined', []],
       ['withdrawn', []],
     ] as const)('offers a %s mentor %j', (status, keys) => {
@@ -379,17 +379,17 @@ describe('MentorsTabComponent', () => {
     it('does not write until the confirm is accepted', () => {
       const confirm = confirmSpy();
 
-      fixture.componentInstance['onMentorAction'](mentor(), actionFor('active', 'remove'));
+      fixture.componentInstance['onMentorAction'](mentor(), actionFor('approved', 'remove'));
 
       expect(confirm).toHaveBeenCalledTimes(1);
       expect(updateProgramMentor).not.toHaveBeenCalled();
     });
 
     it.each([
-      ['requested', 'accept', 'active'],
+      ['requested', 'accept', 'approved'],
       ['requested', 'decline', 'declined'],
       ['invited', 'revoke', 'declined'],
-      ['active', 'remove', 'withdrawn'],
+      ['approved', 'remove', 'withdrawn'],
     ] as const)('a confirmed %s mentor %s sends the status %s', (status, key, sent) => {
       confirmAction('mem_1', status, key);
 
@@ -402,7 +402,7 @@ describe('MentorsTabComponent', () => {
       fixture.componentRef.setInput('countsRefresh', refresh);
       const reads = getProgramMentors.mock.calls.length;
 
-      confirmAction('mem_1', 'active', 'remove');
+      confirmAction('mem_1', 'approved', 'remove');
       settle();
 
       expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'success', detail: 'Mentor removed.' });
@@ -417,7 +417,7 @@ describe('MentorsTabComponent', () => {
       fixture.componentRef.setInput('countsRefresh', refresh);
       const reads = getProgramMentors.mock.calls.length;
 
-      confirmAction('mem_1', 'active', 'remove');
+      confirmAction('mem_1', 'approved', 'remove');
       settle();
 
       const shown = toast.mock.calls[0][0] as ToastMessageOptions;
@@ -431,7 +431,7 @@ describe('MentorsTabComponent', () => {
       const toast = toasts();
       const reads = getProgramMentors.mock.calls.length;
 
-      confirmAction('mem_1', 'active', 'remove');
+      confirmAction('mem_1', 'approved', 'remove');
       settle();
 
       expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'error', detail: "The change couldn't be saved. Please try again." });
@@ -443,7 +443,7 @@ describe('MentorsTabComponent', () => {
       updateProgramMentor.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403, error: body })));
       const toast = toasts();
 
-      confirmAction('mem_1', 'active', 'remove');
+      confirmAction('mem_1', 'approved', 'remove');
 
       expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'error', detail: 'Read only while impersonating.' });
     });
@@ -453,7 +453,7 @@ describe('MentorsTabComponent', () => {
       updateProgramMentor.mockReturnValue(pending);
       const toast = toasts();
 
-      confirmAction('mem_1', 'active', 'remove');
+      confirmAction('mem_1', 'approved', 'remove');
       confirmAction('mem_2', 'invited', 'revoke');
 
       expect(updateProgramMentor).toHaveBeenCalledTimes(1);
@@ -466,7 +466,7 @@ describe('MentorsTabComponent', () => {
       const toast = toasts();
       const refresh = vi.fn();
       fixture.componentRef.setInput('countsRefresh', refresh);
-      confirmAction('mem_1', 'active', 'remove');
+      confirmAction('mem_1', 'approved', 'remove');
       const reads = getProgramMentors.mock.calls.length;
 
       fixture.destroy();

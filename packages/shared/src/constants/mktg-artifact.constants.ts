@@ -38,6 +38,13 @@ export const MKTG_ARTIFACT_KEY_SUFFIX = '.md';
 export const MKTG_ARTIFACT_CONTENT_TYPE = 'text/markdown; charset=utf-8';
 
 /**
+ * The intake-mode vocabulary stored as object metadata (`intake-mode`): the
+ * union of every Marketing OS envelope contract's `intake.mode` values. The
+ * read path maps an unknown or missing value to `form`.
+ */
+export const MKTG_ARTIFACT_INTAKE_MODES = ['form', 'conversational', 'prefill'] as const;
+
+/**
  * Draft version reported for an object whose metadata carries none —
  * everything persisted before metadata was written, and anything unparseable.
  * The DOCUMENTED default is 1, which is also the only safe value on the write

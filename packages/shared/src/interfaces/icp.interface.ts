@@ -7,6 +7,7 @@
 // (src/envelope.ts, src/form.ts) — the agent's zod schemas are normative;
 // this must stay in sync (reviewed at PR).
 
+import type { ICP_INTAKE_MODES } from '../constants/icp.constants';
 import type { MktgReadmeOutcome, MktgRunGenerateBody, MktgRunResultBody, MktgRunResultResponse, MktgRunSessionResponse } from './mktg-run.interface';
 
 /** One verbatim intake Q/A pair from the variable-length interview log. */
@@ -19,16 +20,23 @@ export interface IcpIntakeAnswer {
   answer: string;
 }
 
-/** How the intake answers were collected. */
-export type IcpIntakeMode = 'form' | 'conversational';
+/**
+ * How the intake answers were collected. `prefill` (0.4.0) is a batch run
+ * with documents and no interviewee — the agent derives every answer itself
+ * and labels the draft "Draft — pre-filled".
+ */
+export type IcpIntakeMode = (typeof ICP_INTAKE_MODES)[number];
 
-/** Machine-readable log of the interview (3–8 answers; variable-length). */
+/** Machine-readable log of the interview (0–8 answers; variable-length). */
 export interface IcpIntake {
   /** How the answers were collected. */
   mode: IcpIntakeMode;
   /** ISO-8601 timestamp when intake completed — UTC by producer contract, but the shape gate accepts any offset. */
   completed_at: string;
-  /** 3–8 entries, in the order asked. */
+  /**
+   * 0–8 entries, in the order asked. Empty only in a prefill run or when
+   * existing documents were provided (the agent's cross-field guard).
+   */
   answers: IcpIntakeAnswer[];
 }
 
@@ -36,7 +44,7 @@ export interface IcpIntake {
 export interface IcpDefinition {
   /** ICP label, appearing verbatim inside `document_markdown` (gate G3). */
   label: string;
-  /** 2–3 persona titles, each appearing verbatim inside `document_markdown`. */
+  /** Persona titles (at least one; 4–9 in total across all ICPs), each appearing verbatim inside `document_markdown`. */
   personas: string[];
 }
 
@@ -45,7 +53,7 @@ export type IcpDisqualifierState = 'confirmed' | 'inferred_draft';
 
 /**
  * The machine-readable spine of the document the contract's structure gates
- * (G1–G6) are checked against — 1–2 ICPs with 2–3 personas each, the 4–6
+ * (G1–G6) are checked against — 1–2 ICPs with 4–9 personas in total, the 4–6
  * fit/warmth attributes, and the disqualifier confidence.
  */
 export interface IcpStructure {
@@ -71,6 +79,14 @@ export interface IcpInputs {
   live_membership_data_provided: boolean;
   /** SHA-256 of the consumed live membership data, when it was provided. */
   live_membership_data_sha256?: string;
+  /**
+   * Whether the foundation's own existing documents (0.4.0 Step 0a) were
+   * supplied on the form. Provenance only — the per-field Source column lives
+   * in the document's Review Sheet.
+   */
+  existing_documents_provided: boolean;
+  /** How many existing documents were supplied, when any were. */
+  existing_documents_count?: number;
 }
 
 /** Producer provenance, filled deterministically by the agent wrapper. */

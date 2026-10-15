@@ -39,6 +39,7 @@ export * from './api.interface';
 
 // Campaign interfaces
 export * from './campaign.interface';
+export * from './campaign-optimize.interface';
 
 // Permissions interfaces
 export * from './permissions.interface';
@@ -391,6 +392,9 @@ export * from './social-listening.interface';
 
 // Gatewaze admin embed host-context contract (embedded React-in-Angular pilot)
 export * from './gw-embed.interface';
+
+// Gatewaze host-session mode: the server-held Gatewaze session (#2738)
+export * from './gw-host-session.interface';
 
 // Per-user preference store + BFF wire contracts (LFXV2-3002 Block 0)
 export * from './user-preference.interface';

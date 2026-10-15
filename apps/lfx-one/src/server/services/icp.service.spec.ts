@@ -70,13 +70,7 @@ vi.mock('./logger.service', () => ({
 
 import type { Request } from 'express';
 
-import {
-  ICP_DIMENSION_FIELDS,
-  ICP_PERSONA_FIELDS,
-  ICP_REQUIRED_HEADINGS,
-  ICP_REQUIRED_SUBHEADINGS,
-  ICP_REVISED_INTAKE_FEEDBACK,
-} from '@lfx-one/shared/constants';
+import { ICP_REQUIRED_HEADINGS, ICP_REQUIRED_SUBHEADINGS, ICP_REVISED_INTAKE_FEEDBACK } from '@lfx-one/shared/constants';
 
 import { IcpService } from './icp.service';
 
@@ -105,15 +99,11 @@ function buildDocument(): string {
   const filler = 'Synthetic fixture prose for the ICP structural gates. '.repeat(4);
   const lines: string[] = ['# TestOrbit ICP & Target Markets', ''];
   for (const heading of ICP_REQUIRED_HEADINGS) {
-    lines.push(heading, '');
-    if (heading === '## 1. Market Segment Overview') {
-      lines.push(...ICP_REQUIRED_SUBHEADINGS.flatMap((sub) => [sub, '', filler, '']));
-      continue;
-    }
-    lines.push(filler, '');
+    lines.push(heading, '', filler, '');
+    // The template's level-3 subsections sit under their numbered section (§1.x, §3.x).
+    const section = /^## (\d+)\./.exec(heading)?.[1];
+    lines.push(...ICP_REQUIRED_SUBHEADINGS.filter((sub) => section && sub.startsWith(`### ${section}.`)).flatMap((sub) => [sub, '', filler, '']));
   }
-  lines.push(...ICP_DIMENSION_FIELDS.map((field) => `- ${field}: covered`));
-  lines.push(...ICP_PERSONA_FIELDS.map((field) => `- ${field}: covered`));
   lines.push(...spine.icps.map((icp) => `- ${icp.label}`));
   lines.push(...spine.icps.flatMap((icp) => icp.personas.map((persona) => `- ${persona}`)));
   lines.push(...spine.fit_warmth_attributes.map((attribute) => `- ${attribute}`));
@@ -132,7 +122,7 @@ function buildEnvelope(overrides: Record<string, unknown> = {}): Record<string, 
     content_sha256: createHash('sha256').update(documentMarkdown, 'utf8').digest('hex'),
     business_outcome: 'Membership growth',
     structure: structure(),
-    inputs: { brand_kit_provided: false, message_foundation_provided: false, live_membership_data_provided: false },
+    inputs: { brand_kit_provided: false, message_foundation_provided: false, live_membership_data_provided: false, existing_documents_provided: false },
     intake: {
       mode: 'form',
       completed_at: '2026-09-10T00:00:00Z',

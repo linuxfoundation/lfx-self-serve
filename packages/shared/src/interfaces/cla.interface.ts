@@ -1338,9 +1338,15 @@ export type OrgClaPermissionAction = (typeof ORG_CLA_PERMISSION_ACTIONS)[number]
 export interface OrgClaPermissionCheckRequest {
   action: OrgClaPermissionAction;
   /**
-   * Project or foundation Salesforce id for the pair check. Required for both actions.
+   * Project or foundation Salesforce id for the pair check. Required for every action.
    */
   projectSfid?: string;
+  /**
+   * The CLA Group's foundation Salesforce id, when it differs from `projectSfid`. EasyCLA grants
+   * `cla-manager` on the foundation alone when the foundation is signed at foundation level, so
+   * every action except `sign` is also asked on this pair. Ignored for `sign`.
+   */
+  foundationSfid?: string;
 }
 
 export interface OrgClaPermissionCheckResponse {

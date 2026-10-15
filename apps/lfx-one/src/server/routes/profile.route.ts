@@ -8,6 +8,7 @@ import { InsightsTokensController } from '../controllers/insights-tokens.control
 import { ProfileController } from '../controllers/profile.controller';
 import { MicroserviceError } from '../errors/microservice.error';
 import { blockDuringImpersonation } from '../middleware/impersonation-readonly.middleware';
+import { emailSendCodeTargetRateLimiter, emailSendCodeUserRateLimiter } from '../middleware/rate-limit.middleware';
 
 const router = Router();
 
@@ -139,7 +140,9 @@ router.post('/reset-password', blockDuringImpersonation, (req, res, next) => pro
 router.post('/change-password', blockDuringImpersonation, (req, res, next) => profileController.changePassword(req, res, next));
 
 // POST /api/profile/identities/email/send-code - Send email verification code
-router.post('/identities/email/send-code', blockDuringImpersonation, (req, res, next) => profileController.sendEmailVerification(req, res, next));
+router.post('/identities/email/send-code', blockDuringImpersonation, emailSendCodeUserRateLimiter, emailSendCodeTargetRateLimiter, (req, res, next) =>
+  profileController.sendEmailVerification(req, res, next)
+);
 
 // POST /api/profile/identities/email/verify - Verify OTP and link email identity
 router.post('/identities/email/verify', blockDuringImpersonation, (req, res, next) => profileController.verifyAndLinkEmail(req, res, next));

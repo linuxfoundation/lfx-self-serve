@@ -104,6 +104,17 @@ describe('MeetingPreferenceService', () => {
       await expect(service.getMeetingInviteEmail(req, V1_TOKEN)).resolves.toBeNull();
     });
 
+    // A blank address matches no row, so it would silently drop the invite badge (#3559).
+    it.each([
+      ['a blank email', { email_id: 'email-1', email: '' }],
+      ['a whitespace-only email', { email_id: 'email-1', email: '  ' }],
+      ['a blank id', { email_id: '', email: ALTERNATE_EMAIL }],
+    ])('fails closed to null when the override carries %s', async (_label, body) => {
+      natsRequest.mockResolvedValue(reply(body));
+
+      await expect(service.getMeetingInviteEmail(req, V1_TOKEN)).resolves.toBeNull();
+    });
+
     // Valid JSON can still decode to null, a primitive, or `{ error: <non-string> }` — none of
     // those are a `{ error: string }` shape, so accessing `.error` or handing the value to the
     // string-only redactor must not throw past this method's fail-closed contract.
@@ -170,6 +181,17 @@ describe('MeetingPreferenceService', () => {
       });
       expect(natsRequest.mock.calls[0][0]).toBe(NatsSubjects.MEETING_PREFERRED_EMAIL_SET);
       expect(decodeRequestPayload()).toEqual({ token: V1_TOKEN, email: ALTERNATE_EMAIL });
+    });
+
+    // The blank-address guard is read-side only — a SET reply echoes a write upstream already
+    // committed, so a blank echo must not be reported as a failed write (#3559).
+    it('still confirms the write when the reply echoes a blank address', async () => {
+      natsRequest.mockResolvedValue(reply({ email_id: 'email-1', email: '' }));
+
+      await expect(service.setMeetingInviteEmail(req, V1_TOKEN, ALTERNATE_EMAIL)).resolves.toEqual({
+        success: true,
+        data: { email_id: 'email-1', email: '' },
+      });
     });
 
     it('forwards the reset sentinel verbatim so upstream clears the override', async () => {

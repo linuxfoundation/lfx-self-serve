@@ -97,7 +97,7 @@ const patchMentor = (): Promise<Response> =>
   fetch(`${baseUrl}/api/mentorship/admin/programs/${PROGRAM_ID}/mentors/${APPLICATION_ID}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status: 'active' }),
+    body: JSON.stringify({ status: 'approved' }),
   });
 
 const putNote = (): Promise<Response> =>

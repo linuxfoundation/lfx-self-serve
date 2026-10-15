@@ -50,6 +50,8 @@ import {
   CampaignNegativeKeywordsRequest,
   CampaignNegativeKeywordsResult,
   CampaignSSEEventType,
+  CampaignServiceAccountMonitor,
+  CampaignServiceHubSpotEmailMonitor,
   CampaignStatusToggleParams,
   CampaignStatusUpdateResult,
   GenerateEmailCopyResult,
@@ -67,6 +69,26 @@ import {
   RedditAccountOption,
   RedditMonitorResponse,
   SSEEvent,
+} from '@lfx-one/shared/interfaces';
+import type {
+  CampaignAdoptableBriefsResponse,
+  CampaignAdoptRequest,
+  CampaignAudiencePlatform,
+  CampaignRecordResult,
+  CampaignRefPlatform,
+  CampaignServiceCampaign,
+  CampaignServiceCampaignResolution,
+  CampaignServiceKeywordTargeting,
+  CampaignServiceKeywordTargetingRemovals,
+  CampaignServiceMetaAdSets,
+  CampaignServiceMetaAdSetStatusChange,
+  CampaignServicePlatformAudienceMap,
+  CampaignServiceSettingsReadback,
+  KeywordTargetingRemovalsRequest,
+  MetaAdSetStatusParams,
+  MetaAdSetStatusRequest,
+  RedditKeywordMetricsResponse,
+  RedditKeywordsWindow,
 } from '@lfx-one/shared/interfaces';
 import { retryTransientHttpError } from '@shared/utils/http-error.utils';
 import { catchError, exhaustMap, last, map, Observable, of, take, takeWhile, throwError, timer } from 'rxjs';
@@ -321,6 +343,27 @@ export class CampaignService {
     return this.http.get<MetaMonitorResponse>('/api/campaigns/meta/monitor', { params: { project: projectSlug, days, accountKey } });
   }
 
+  /**
+   * Microsoft Advertising account monitor, served by campaign-service in its own (snake_case) shape.
+   *
+   * 404 while the server's monitor cutover flag is off. Report-backed: `metrics_as_of`,
+   * `metrics_pending` and `metrics_window_*` say how fresh the figures are, and on the first read
+   * every campaign is `fetch_failed` while the report builds. No panel renders this yet.
+   */
+  public getMicrosoftMonitorData(projectSlug: string, accountId: string, days: number = 30): Observable<CampaignServiceAccountMonitor> {
+    return this.http.get<CampaignServiceAccountMonitor>('/api/campaigns/microsoft/monitor', { params: { project: projectSlug, days, accountKey: accountId } });
+  }
+
+  /** X (Twitter) Ads account monitor — the Microsoft one's sibling, plus a 409 for an account it cannot monitor. */
+  public getTwitterMonitorData(projectSlug: string, accountId: string, days: number = 30): Observable<CampaignServiceAccountMonitor> {
+    return this.http.get<CampaignServiceAccountMonitor>('/api/campaigns/twitter/monitor', { params: { project: projectSlug, days, accountKey: accountId } });
+  }
+
+  /** HubSpot email monitor: project-scoped, so no account. 404 while the server's monitor cutover flag is off. */
+  public getHubSpotMonitorData(projectSlug: string, days: number = 30): Observable<CampaignServiceHubSpotEmailMonitor> {
+    return this.http.get<CampaignServiceHubSpotEmailMonitor>('/api/campaigns/hubspot/monitor', { params: { project: projectSlug, days } });
+  }
+
   public getKeywords(projectSlug: string, days: number = 30): Observable<KeywordMetricsResponse> {
     return this.http.get<KeywordMetricsResponse>('/api/campaigns/keywords', { params: { project: projectSlug, days } });
   }
@@ -433,18 +476,21 @@ export class CampaignService {
   }
 
   /**
-   * Add campaign-level negative keywords to one campaign (Microsoft Advertising only).
+   * Add negative keywords to one Microsoft Advertising, Reddit or X campaign.
    *
    * NOT atomic and POSITIONAL: `results[i]` answers `negativeKeywords[i]`, each with its own outcome,
    * so the caller zips them onto the list it sent. No etag: nothing is persisted on the row.
+   * `revision` is Reddit's, from the keyword-targeting read; it is put in the body only when given,
+   * because Microsoft Advertising and X refuse the field whenever it is present.
    */
   public addNegativeKeywords(
     projectSlug: string,
     briefId: string,
     campaignId: string,
-    negativeKeywords: CampaignNegativeKeywordInput[]
+    negativeKeywords: CampaignNegativeKeywordInput[],
+    revision?: string
   ): Observable<CampaignNegativeKeywordsResult> {
-    const body: CampaignNegativeKeywordsRequest = { briefId, negativeKeywords };
+    const body: CampaignNegativeKeywordsRequest = { briefId, negativeKeywords, ...(revision !== undefined && { revision }) };
     return this.http.post<CampaignNegativeKeywordsResult>(`/api/campaigns/${encodeURIComponent(campaignId)}/negative-keywords`, body, {
       params: new HttpParams().set('project', projectSlug),
     });
@@ -635,6 +681,122 @@ export class CampaignService {
    */
   public runAudienceQa(projectSlug: string, request: AudienceQaRunRequest): Observable<AudienceQaResult> {
     return this.http.post<AudienceQaResult>('/api/campaigns/audience-builder/qa/run', request, { params: { project: projectSlug } });
+  }
+
+  // --- Optimize: campaign-service reads and levers ---------------------------
+  //
+  // Thin clients over `/api/campaigns/...` (see `campaign-optimize.controller.ts`). Errors
+  // propagate unhandled: a caller must tell a refusal from a stale etag (`PRECONDITION_FAILED`)
+  // and from an outcome nobody could confirm (`META_AD_SET_STATUS_UNCONFIRMED`,
+  // `KEYWORD_TARGETING_REMOVAL_UNCONFIRMED`), which a defaulted response would erase.
+
+  /**
+   * One platform's audience demographics for the project's own campaigns. A failure carries a fixed
+   * message and a `CAMPAIGN_AUDIENCE_*` code per cause; campaign-service's own text never arrives.
+   */
+  public getPlatformAudience<P extends CampaignAudiencePlatform>(
+    projectSlug: string,
+    platform: P,
+    window?: string
+  ): Observable<CampaignServicePlatformAudienceMap[P]> {
+    let params = new HttpParams().set('project', projectSlug);
+    if (window) {
+      params = params.set('window', window);
+    }
+    return this.http.get<CampaignServicePlatformAudienceMap[P]>(`/api/campaigns/${this.platformRouteSegment(platform)}/audience`, { params });
+  }
+
+  /**
+   * Resolve a platform campaign id to campaign-service's campaign and brief. More than one match is
+   * possible: the caller must refuse rather than choose.
+   */
+  public resolvePlatformCampaign(
+    projectSlug: string,
+    platform: CampaignRefPlatform,
+    platformCampaignId: string
+  ): Observable<CampaignServiceCampaignResolution> {
+    const params = new HttpParams().set('project', projectSlug).set('platformCampaignId', platformCampaignId);
+    return this.http.get<CampaignServiceCampaignResolution>(`/api/campaigns/${this.platformRouteSegment(platform)}/campaign-ref`, { params });
+  }
+
+  /** Reddit keyword performance (the Microsoft table's shape). Answers 404 until campaign-service serves it. */
+  public getRedditKeywords(projectSlug: string, window?: RedditKeywordsWindow): Observable<RedditKeywordMetricsResponse> {
+    let params = new HttpParams().set('project', projectSlug);
+    if (window) {
+      params = params.set('window', window);
+    }
+    return this.http.get<RedditKeywordMetricsResponse>('/api/campaigns/reddit/keywords', { params });
+  }
+
+  /** The campaign's live settings compared with what its row recorded. `unknown` is never a match. */
+  public getCampaignSettings(projectSlug: string, briefId: string, campaignId: string): Observable<CampaignServiceSettingsReadback> {
+    const params = new HttpParams().set('project', projectSlug).set('briefId', briefId);
+    return this.http.get<CampaignServiceSettingsReadback>(`/api/campaigns/${encodeURIComponent(campaignId)}/settings`, { params });
+  }
+
+  /** A Meta campaign's ad sets and their delivery over `window`. */
+  public listMetaAdSets(projectSlug: string, briefId: string, campaignId: string, window?: CampaignMetricsWindow): Observable<CampaignServiceMetaAdSets> {
+    let params = new HttpParams().set('project', projectSlug).set('briefId', briefId);
+    if (window) {
+      params = params.set('window', window);
+    }
+    return this.http.get<CampaignServiceMetaAdSets>(`/api/campaigns/${encodeURIComponent(campaignId)}/meta-ad-sets`, { params });
+  }
+
+  /**
+   * Pause or resume one Meta ad set. `etag` is the campaign ROW's and goes upstream as `If-Match`;
+   * the answer's etag is the row's version, which a pause or resume of the recorded ad set BUMPS,
+   * so the caller must adopt it for its next write. `ALREADY_IN_STATE` means nothing was sent.
+   */
+  public updateMetaAdSetStatus(params: MetaAdSetStatusParams): Observable<CampaignServiceMetaAdSetStatusChange> {
+    const { projectSlug, campaignId, adSetId, briefId, status, etag } = params;
+    const body: MetaAdSetStatusRequest = { briefId, status, etag };
+    return this.http.post<CampaignServiceMetaAdSetStatusChange>(
+      `/api/campaigns/${encodeURIComponent(campaignId)}/meta-ad-sets/${encodeURIComponent(adSetId)}/status`,
+      body,
+      { params: new HttpParams().set('project', projectSlug) }
+    );
+  }
+
+  /** Bind a campaign that already exists on its ad platform to a brief. Creates nothing upstream. */
+  public adoptCampaign(projectSlug: string, request: CampaignAdoptRequest): Observable<CampaignServiceCampaign> {
+    return this.http.post<CampaignServiceCampaign>('/api/campaigns/adopt', request, { params: new HttpParams().set('project', projectSlug) });
+  }
+
+  /** The approved paid-marketing briefs a campaign can be adopted into. Answers 404 while campaign-service briefs are off. */
+  public listAdoptableBriefs(projectSlug: string): Observable<CampaignAdoptableBriefsResponse> {
+    return this.http.get<CampaignAdoptableBriefsResponse>('/api/campaigns/briefs', { params: new HttpParams().set('project', projectSlug) });
+  }
+
+  /**
+   * One campaign row read from campaign-service (not the index), with its CURRENT etag for the next
+   * write's `If-Match`, and whether this deployment can pause or resume it.
+   */
+  public getCampaignRecord(projectSlug: string, briefId: string, campaignId: string): Observable<CampaignRecordResult> {
+    const params = new HttpParams().set('project', projectSlug).set('briefId', briefId);
+    return this.http.get<CampaignRecordResult>(`/api/campaigns/${encodeURIComponent(campaignId)}/record`, { params });
+  }
+
+  /** A Reddit or X campaign's keyword targeting. Reddit's `revision` must be sent back with a removal. */
+  public getKeywordTargeting(projectSlug: string, briefId: string, campaignId: string): Observable<CampaignServiceKeywordTargeting> {
+    const params = new HttpParams().set('project', projectSlug).set('briefId', briefId);
+    return this.http.get<CampaignServiceKeywordTargeting>(`/api/campaigns/${encodeURIComponent(campaignId)}/keyword-targeting`, { params });
+  }
+
+  /** Remove keywords from a Reddit or X campaign's targeting. POSITIONAL: `results[i]` answers `keywords[i]`. */
+  public removeKeywordTargeting(
+    projectSlug: string,
+    campaignId: string,
+    request: KeywordTargetingRemovalsRequest
+  ): Observable<CampaignServiceKeywordTargetingRemovals> {
+    return this.http.post<CampaignServiceKeywordTargetingRemovals>(`/api/campaigns/${encodeURIComponent(campaignId)}/keyword-targeting/removals`, request, {
+      params: new HttpParams().set('project', projectSlug),
+    });
+  }
+
+  /** The BFF's per-platform route segment for a campaign-service platform id (`meta-ads` -> `meta`). */
+  private platformRouteSegment(platform: CampaignAudiencePlatform | CampaignRefPlatform): string {
+    return platform.replace(/-ads$/, '');
   }
 
   /**

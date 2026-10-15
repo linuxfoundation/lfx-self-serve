@@ -32,7 +32,7 @@ import { requireGwEmbedAccess } from './require-gw-embed-access.middleware';
 
 const buildReq = (overrides: Partial<Request> = {}): Request =>
   ({
-    path: '/api/gw/newsletters',
+    path: '/api/gatewaze/api/newsletters',
     bearerToken: 'token-1',
     method: 'POST',
     readableEnded: false,
@@ -134,12 +134,13 @@ describe('requireGwEmbedAccess', () => {
   it.each([
     ['the flag is off', { flag: false, bearer: 'token-1' }],
     ['the caller has no bearer', { flag: true, bearer: undefined }],
-  ])('defers to the controller uniform 404 when %s, rather than disclosing the route with a 403', async (_label, { flag, bearer }) => {
+  ])('answers the uniform 404 when %s, rather than disclosing the route with a 403', async (_label, { flag, bearer }) => {
+    // It fails closed itself rather than trusting what is mounted after it to answer the 404.
     flagMocks.isServerFeatureEnabled.mockReturnValue(flag);
 
     await requireGwEmbedAccess(buildReq({ bearerToken: bearer } as Partial<Request>), res, next);
 
-    expect(next).toHaveBeenCalledWith();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 404, code: 'NOT_FOUND' }));
     // Must not run an authorization check it would have to answer with a disclosing status.
     expect(personaMocks.getPersonas).not.toHaveBeenCalled();
   });
@@ -208,7 +209,7 @@ describe('requireGwEmbedAccess', () => {
   });
 
   describe('writer-summary caching', () => {
-    // `/api/gw/*` is called many times per screen, and getWriterSummary fully paginates the
+    // `/api/gatewaze/*` is called many times per screen, and getWriterSummary fully paginates the
     // caller's direct grants and access-checks every one. Uncached, a plain writer paid that sweep
     // on every proxied request. Each case uses its own identity: the cache is module-scoped and
     // deliberately outlives a single test.
@@ -281,8 +282,8 @@ describe('requireGwEmbedAccess', () => {
 
   describe('impersonation', () => {
     // The route's two identities diverge while impersonating: authorization below resolves the
-    // impersonated TARGET from req.bearerToken, while the controller forwards the browser's own
-    // Gatewaze bearer, which belongs to the real user. A write would be audited as the wrong one.
+    // impersonated TARGET from req.bearerToken, while the Gatewaze session is minted from the LFX
+    // session's own sign-in, the real user. A write would be audited as the wrong one.
     beforeEach(() => authMocks.isImpersonating.mockReturnValue(true));
 
     it('refuses the proxy outright, before any authorization work', async () => {

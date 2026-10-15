@@ -136,6 +136,36 @@ export const MENTORSHIP_ADMIN_DECISION_DONE_MESSAGES = {
 export const MENTORSHIP_ADMIN_DECISION_FAILED_MESSAGE = "The change couldn't be saved. Please try again.";
 export const MENTORSHIP_ADMIN_DECISION_IN_FLIGHT_MESSAGE = 'Another change is still being saved. Try again in a moment.';
 
+/**
+ * Download by Status on Current and Past Mentees: one CSV of the tab's applications (open terms for Current, closed
+ * for Past), for one status or all. The header row, in column order; the BFF writes each row in the same order.
+ */
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_COLUMNS = ['Name', 'Email', 'Status', 'Term', 'Tasks Submitted', 'Applied On', 'Updated On'] as const;
+/** The menu entry that downloads every status. */
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_ALL_LABEL = 'All';
+/** File name stem per tab; the BFF adds the status (or `all`) and `.csv`. */
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_FILE_PREFIXES: Record<MentorshipAdminMenteeTab, string> = {
+  current: 'current-mentees',
+  past: 'past-mentees',
+};
+/** Saved under this name when the response names no file; the BFF always sends one. */
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_FALLBACK_NAME = 'mentees.csv';
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_EMPTY_SUMMARY = 'Nothing to download';
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_EMPTY_MESSAGES: Record<MentorshipAdminMenteeTab, string> = {
+  current: 'No current mentees have this status.',
+  past: 'No past mentees have this status.',
+};
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_ERROR_SUMMARY = "Couldn't download mentees";
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_ERROR_MESSAGE = 'The download failed. Please try again.';
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_FORBIDDEN_MESSAGE = "You don't have access to this program's mentees.";
+/** Set by the BFF, to the number of rows the file holds, when the export stopped at its page cap with more mentees left out. */
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_TRUNCATED_HEADER = 'X-Export-Truncated';
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_TRUNCATED_SUMMARY = 'Download incomplete';
+/** `{count}` is the number of rows the file holds. */
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_TRUNCATED_TEMPLATE =
+  'The file holds only the first {count} mentees: this program has more than one download can include.';
+export const MENTORSHIP_ADMIN_MENTEES_EXPORT_TOAST_LIFE = 5000;
+
 /** Copy of the reviewer-note save toasts on Current Mentees. */
 export const MENTORSHIP_ADMIN_NOTE_SAVE_SUCCESS_SUMMARY = 'Note saved';
 export const MENTORSHIP_ADMIN_NOTE_CLEAR_SUCCESS_SUMMARY = 'Note cleared';
@@ -224,8 +254,11 @@ export const MENTORSHIP_REGISTER_ERROR_CONFLICT = 'Your profile is in conflict w
 export const MENTORSHIP_REGISTER_ERROR_READ_ONLY = 'You are viewing as another user, so registration is read-only.';
 export const MENTORSHIP_REGISTER_ERROR_FALLBACK = 'We could not save your registration. Please try again in a moment.';
 
-/** Field error both register forms show when a picked skill is not in `MENTORSHIP_SKILL_OPTIONS`. */
-export const MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL = 'Choose skills from the suggested list.';
+/** Ceilings every mentor and mentee skill list is held to, in the browser and the BFF. */
+export const MENTORSHIP_SKILLS_MAX_ITEMS = 100;
+export const MENTORSHIP_SKILL_MAX_LENGTH = 300;
+export const MENTORSHIP_SKILLS_LIMIT_MESSAGE = `You can add up to ${MENTORSHIP_SKILLS_MAX_ITEMS} skills of up to ${MENTORSHIP_SKILL_MAX_LENGTH} characters each.`;
+export const MENTORSHIP_TECHNOLOGIES_LIMIT_MESSAGE = `You can add up to ${MENTORSHIP_SKILLS_MAX_ITEMS} technologies of up to ${MENTORSHIP_SKILL_MAX_LENGTH} characters each.`;
 
 /**
  * Most rows one `GET .../mentors` or `GET .../terms` page may return. The BFF rejects a larger `limit` and caps
@@ -280,11 +313,12 @@ export const MENTORSHIP_PROGRAM_DETAIL_TABS = [
  * `MentorshipMentorStatus` union; declaration order is the lifecycle order. The admin Mentors
  * tab reads the wider `MENTORSHIP_ADMIN_MENTOR_STATUSES` instead.
  */
-export const MENTORSHIP_MENTOR_STATUSES = ['pending', 'accepted', 'declined', 'withdrawn'] as const;
+export const MENTORSHIP_MENTOR_STATUSES = ['pending', 'approved', 'declined', 'withdrawn'] as const;
 
 /**
  * Mentee lifecycle statuses an application holds on the wire.
- * Superset of mentor statuses; mentees additionally reach `graduated`.
+ * Not a superset of mentor statuses: an accepted mentee is `accepted` where an accepted mentor is
+ * `approved`, and only mentees reach `graduated`.
  * Declaration order is the Past Mentees status filter's option order; Current Mentees
  * filters on `MENTORSHIP_APPLICANT_DISPLAY_STATUSES` instead.
  */
@@ -292,22 +326,22 @@ export const MENTORSHIP_MENTEE_STATUSES = ['pending', 'accepted', 'declined', 'w
 
 export const MENTORSHIP_MENTOR_STATUS_LABELS: Record<MentorshipMentorStatus, string> = {
   pending: 'Invited',
-  accepted: 'Accepted',
+  approved: 'Approved',
   declined: 'Declined',
   withdrawn: 'Withdrawn',
 };
 
 /**
  * Mentor lifecycle on the admin Mentors tab, which reads every `program_members` status upstream keeps
- * (`active` is the accepted mentor). Declaration order is the status filter's option order.
+ * (`approved` is the accepted mentor). Declaration order is the status filter's option order.
  */
-export const MENTORSHIP_ADMIN_MENTOR_STATUSES = ['requested', 'pending', 'invited', 'active', 'declined', 'withdrawn'] as const;
+export const MENTORSHIP_ADMIN_MENTOR_STATUSES = ['requested', 'pending', 'invited', 'approved', 'declined', 'withdrawn'] as const;
 
 export const MENTORSHIP_ADMIN_MENTOR_STATUS_LABELS: Record<MentorshipAdminMentorStatus, string> = {
   requested: 'Requested',
   pending: 'Pending',
   invited: 'Invited',
-  active: 'Accepted',
+  approved: 'Approved',
   declined: 'Declined',
   withdrawn: 'Withdrawn',
 };
@@ -316,13 +350,13 @@ export const MENTORSHIP_ADMIN_MENTOR_STATUS_BADGE_CLASSES: Record<MentorshipAdmi
   requested: 'bg-amber-100 text-amber-700',
   pending: 'bg-amber-100 text-amber-700',
   invited: 'bg-blue-100 text-blue-700',
-  active: 'bg-emerald-100 text-emerald-700',
+  approved: 'bg-emerald-100 text-emerald-700',
   declined: 'bg-red-100 text-red-600',
   withdrawn: 'bg-gray-100 text-gray-600',
 };
 
 /** Statuses an admin may set through `PATCH …/mentors/:memberId`. Upstream allows no move out of `declined` or `withdrawn`. */
-export const MENTORSHIP_ADMIN_MENTOR_UPDATE_STATUSES = ['active', 'declined', 'withdrawn'] as const;
+export const MENTORSHIP_ADMIN_MENTOR_UPDATE_STATUSES = ['approved', 'declined', 'withdrawn'] as const;
 
 /** Shortest trimmed search `POST .../mentor-candidates` accepts; upstream answers 400 below it. */
 export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MIN_SEARCH_LENGTH = 2;
@@ -371,31 +405,31 @@ export const MENTORSHIP_ADMIN_MENTOR_INVITE_LFID_MAX_LENGTH = 100;
 /** Shown when a mentor change hits a 409: the mentor's status moved on, so the list reloads. */
 export const MENTORSHIP_ADMIN_MENTOR_CHANGED_MESSAGE = 'This mentor changed. The list has been refreshed.';
 
-/** Mentors tab row actions by the mentor's status, in display order. Upstream's DELETE only withdraws an active mentor, so Remove covers it. */
+/** Mentors tab row actions by the mentor's status, in display order. Upstream's DELETE only withdraws an approved mentor, so Remove covers it. */
 export const MENTORSHIP_ADMIN_MENTOR_ACTIONS_BY_STATUS: Record<MentorshipAdminMentorStatus, readonly MentorshipAdminMentorAction[]> = {
   requested: [
-    { key: 'accept', label: 'Accept', status: 'active' },
+    { key: 'accept', label: 'Approve', status: 'approved' },
     { key: 'decline', label: 'Decline', status: 'declined' },
   ],
   pending: [
-    { key: 'accept', label: 'Accept', status: 'active' },
+    { key: 'accept', label: 'Approve', status: 'approved' },
     { key: 'decline', label: 'Decline', status: 'declined' },
   ],
   invited: [{ key: 'revoke', label: 'Revoke invite', status: 'declined' }],
-  active: [{ key: 'remove', label: 'Remove', status: 'withdrawn' }],
+  approved: [{ key: 'remove', label: 'Remove', status: 'withdrawn' }],
   declined: [],
   withdrawn: [],
 };
 
 export const MENTORSHIP_ADMIN_MENTOR_ACTION_CONFIRM_MESSAGES: Record<MentorshipAdminMentorAction['key'], string> = {
-  accept: 'Accept this mentor into the program?',
+  accept: 'Approve this mentor for the program?',
   decline: 'Decline this mentor for the program?',
   revoke: 'Revoke this invite? The mentor can no longer accept it.',
   remove: 'Remove this mentor from the program? They can request to join again later.',
 };
 
 export const MENTORSHIP_ADMIN_MENTOR_ACTION_SUCCESS_MESSAGES: Record<MentorshipAdminMentorAction['key'], string> = {
-  accept: 'Mentor accepted.',
+  accept: 'Mentor approved.',
   decline: 'Mentor declined.',
   revoke: 'Invite revoked.',
   remove: 'Mentor removed.',
@@ -419,7 +453,7 @@ export const MENTORSHIP_MENTEE_STATUS_LABELS: Record<MentorshipMenteeStatus, str
 
 export const MENTORSHIP_MENTOR_STATUS_BADGE_CLASSES: Record<MentorshipMentorStatus, string> = {
   pending: 'bg-amber-100 text-amber-700',
-  accepted: 'bg-emerald-100 text-emerald-700',
+  approved: 'bg-emerald-100 text-emerald-700',
   declined: 'bg-red-100 text-red-600',
   withdrawn: 'bg-gray-100 text-gray-600',
 };
@@ -506,6 +540,12 @@ export const MENTORSHIP_APPLICANT_STATUS_LABELS: Record<MentorshipApplicantDispl
 export const MENTORSHIP_ADMIN_MENTEE_STATUS_FILTERS: Record<MentorshipAdminMenteeTab, readonly MentorshipAdminMenteeStatusFilter[]> = {
   current: MENTORSHIP_APPLICANT_DISPLAY_STATUSES,
   past: MENTORSHIP_MENTEE_STATUSES,
+};
+
+/** The label of every admin mentee status filter, as its tab's badge reads it. */
+export const MENTORSHIP_ADMIN_MENTEE_STATUS_FILTER_LABELS: Record<MentorshipAdminMenteeStatusFilter, string> = {
+  ...MENTORSHIP_MENTEE_STATUS_LABELS,
+  ...MENTORSHIP_APPLICANT_STATUS_LABELS,
 };
 
 /** The shared statuses reuse the mentee classes so the two palettes can't drift apart. */

@@ -3793,6 +3793,61 @@ describe('CampaignServiceClient.addNegativeKeywords', () => {
     });
     // No headers argument at all: this lever persists nothing and takes no If-Match.
     expect(call).toHaveLength(6);
+    // Microsoft Advertising and X refuse a PRESENT revision, even an empty one.
+    expect(call[5]).not.toHaveProperty('revision');
+  });
+
+  it("sends Reddit's revision in the body, exactly as given, when the caller passes one", async () => {
+    const revision = 'sha256:5e1b7f0c2a9d4e3b8c6a1f0e9d8c7b6a';
+    const broad = [{ text: 'free download', matchType: 'Broad' as const }];
+    proxyRequest.mockResolvedValueOnce({
+      campaign_id: 'c-1',
+      results: [{ text: 'free download', match_type: 'Broad', outcome: 'APPLIED' }],
+      applied_count: 1,
+    });
+
+    await new CampaignServiceClient().addNegativeKeywords(req, { ...args, negativeKeywords: broad, revision });
+
+    expect(proxyRequest.mock.calls[0][5]).toEqual({ negative_keywords: [{ text: 'free download', match_type: 'Broad' }], revision });
+  });
+
+  // Reddit: the new keywords share one PATCH's outcome, and ALREADY_PRESENT ones keep theirs. A
+  // mixed batch is answered per item, so the ALREADY_PRESENT entries must survive the mapping.
+  it('keeps the ALREADY_PRESENT entries of a mixed Reddit batch at their own positions', async () => {
+    const reddit = [
+      { text: 'free', matchType: 'Broad' as const },
+      { text: 'torrent', matchType: 'Broad' as const },
+      { text: 'crack', matchType: 'Broad' as const },
+    ];
+    proxyRequest.mockResolvedValueOnce({
+      campaign_id: 'c-1',
+      results: [
+        { text: 'free', match_type: 'Broad', outcome: 'UNCONFIRMED' },
+        { text: 'torrent', match_type: 'Broad', outcome: 'ALREADY_PRESENT' },
+        { text: 'crack', match_type: 'Broad', outcome: 'UNCONFIRMED' },
+      ],
+      applied_count: 1,
+    });
+
+    const result = await new CampaignServiceClient().addNegativeKeywords(req, { ...args, negativeKeywords: reddit, revision: 'sha256:abc' });
+
+    expect(result.results.map((r) => r.outcome)).toEqual(['UNCONFIRMED', 'ALREADY_PRESENT', 'UNCONFIRMED']);
+    expect(result.appliedCount).toBe(1);
+  });
+
+  it.each([
+    ['NOT_SENT', 'NOT_SENT'],
+    ['REJECTED', 'REJECTED'],
+  ])('relays the %s error code of a FAILED X or Reddit keyword', async (_label, code) => {
+    proxyRequest.mockResolvedValueOnce({
+      campaign_id: 'c-1',
+      results: [{ text: 'free', match_type: 'Exact', outcome: 'FAILED', error_code: code }],
+      applied_count: 0,
+    });
+
+    const result = await new CampaignServiceClient().addNegativeKeywords(req, { ...args, negativeKeywords: [{ text: 'free', matchType: 'Exact' }] });
+
+    expect(result.results[0]).toEqual({ text: 'free', matchType: 'Exact', outcome: 'FAILED', errorCode: code });
   });
 
   /**
@@ -4802,5 +4857,91 @@ describe('fromBriefResponse — scraped hero and sponsors survive a reload', () 
     );
 
     expect(restored?.eventDetails?.sponsors).toEqual([]);
+  });
+});
+
+describe('CampaignServiceClient account monitors', () => {
+  const monitor = { account_id: 'x', days: 30, campaigns: [], action_items: [], totals: { spend: 0, impressions: 0, clicks: 0, campaign_count: 0 } };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it.each([
+    ['getLinkedInAdsAccountMonitor', 'linkedin-ads', '512345678'],
+    ['getMetaAdsAccountMonitor', 'meta-ads', 'act_100000000000001'],
+    ['getRedditAdsAccountMonitor', 'reddit-ads', 't2_abc123'],
+    ['getMicrosoftAdsAccountMonitor', 'microsoft-ads', '187654321'],
+    ['getTwitterAdsAccountMonitor', 'twitter-ads', '18ce54d4x5t'],
+  ] as const)('%s GETs connection-%s/account-monitor with account_id and days as QUERY parameters', async (method, provider, accountId) => {
+    proxyRequest.mockResolvedValueOnce(monitor);
+
+    const result = await new CampaignServiceClient()[method](req, 'cncf', accountId, 14);
+
+    expect(result).toBe(monitor);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', `/projects/cncf/connection-${provider}/account-monitor`, 'GET', {
+      account_id: accountId,
+      days: 14,
+    });
+    expect(proxyRequest.mock.calls[0]).toHaveLength(5);
+  });
+
+  it('encodes the project as a path segment', async () => {
+    proxyRequest.mockResolvedValueOnce(monitor);
+
+    await new CampaignServiceClient().getRedditAdsAccountMonitor(req, 'a b/c', 't2_abc123', 30);
+
+    expect(proxyRequest.mock.calls[0][2]).toBe('/projects/a%20b%2Fc/connection-reddit-ads/account-monitor');
+  });
+
+  it('encodes the project for the LinkedIn monitor and refuses an empty account', async () => {
+    proxyRequest.mockResolvedValueOnce(monitor);
+
+    await new CampaignServiceClient().getLinkedInAdsAccountMonitor(req, 'lf/ai', '512345678', 7);
+    const caught = await new CampaignServiceClient().getLinkedInAdsAccountMonitor(req, 'tlf', '', 7).catch((e: unknown) => e);
+
+    expect(proxyRequest.mock.calls[0][2]).toBe('/projects/lf%2Fai/connection-linkedin-ads/account-monitor');
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it('refuses a path-climbing project without calling the proxy', async () => {
+    await expect(new CampaignServiceClient().getMetaAdsAccountMonitor(req, '..', 'act_1', 30)).rejects.toBeInstanceOf(ServiceValidationError);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['', 't2_abc123', 'project'],
+    ['cncf', '', 'accountKey'],
+  ])('refuses project=%j account=%j without calling the proxy', async (project, accountId, field) => {
+    const caught = await new CampaignServiceClient().getRedditAdsAccountMonitor(req, project, accountId, 30).catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect((caught as ServiceValidationError).validationErrors[0].field).toBe(field);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('GETs the project-scoped HubSpot monitor with only days, and no account', async () => {
+    const hubspot = {
+      days: 7,
+      emails: [],
+      action_items: [],
+      totals: {},
+      emails_checked: 0,
+      emails_not_sent_in_window: 0,
+      emails_unattributable: 0,
+      emails_truncated: false,
+    };
+    proxyRequest.mockResolvedValueOnce(hubspot);
+
+    const result = await new CampaignServiceClient().getHubSpotAccountMonitor(req, 'a b', 7);
+
+    expect(result).toBe(hubspot);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/a%20b/connection-hubspot/account-monitor', 'GET', { days: 7 });
+  });
+
+  it('refuses an empty project for the HubSpot monitor without calling the proxy', async () => {
+    await expect(new CampaignServiceClient().getHubSpotAccountMonitor(req, '', 30)).rejects.toBeInstanceOf(ServiceValidationError);
+    expect(proxyRequest).not.toHaveBeenCalled();
   });
 });

@@ -71,6 +71,15 @@ export const IMPERSONATION_READ_ONLY_ERROR_CODE = 'IMPERSONATION_READ_ONLY';
 /** Linux Foundation (TLF) project slug whose corporate memberships make a company's employees eligible. */
 export const MEMBER_BENEFIT_FOUNDATION_SLUG = 'tlf';
 
+/** Display name of {@link MEMBER_BENEFIT_FOUNDATION_SLUG}, used when a newsletter falls back to TLF membership. */
+export const MEMBER_BENEFIT_FOUNDATION_NAME = 'The Linux Foundation';
+
+/** `project.funding_model` entry marking a project whose companies join as members (it has its own roster). */
+export const MEMBER_BENEFIT_MEMBERSHIP_FUNDING_MODEL = 'Membership';
+
+/** `project.legal_entity_type` of internal LF cost centres — never a membership roster of their own. */
+export const MEMBER_BENEFIT_INTERNAL_ALLOCATION_ENTITY_TYPE = 'Internal Allocation';
+
 /** `project_membership.status` values (compared case-insensitively) that count as an active membership. */
 export const MEMBER_BENEFIT_ACTIVE_MEMBERSHIP_STATUSES: ReadonlySet<string> = new Set(['active', 'purchased']);
 
@@ -95,3 +104,46 @@ export const MEMBER_BENEFIT_B2B_ORG_MAX_RESULTS = 200;
 
 /** Email shapes safe to interpolate into an `email:<value>` query-service filter. */
 export const MEMBER_BENEFIT_FILTER_SAFE_EMAIL = /^[^\s:,@]+@[a-z0-9.-]+$/;
+
+/** Invites one user may send per window (per pod — see `newsletterInviteRateLimiter`). */
+export const NEWSLETTER_INVITE_RATE_LIMIT_MAX = 20;
+
+/** Window of the newsletter invite rate limit. */
+export const NEWSLETTER_INVITE_RATE_LIMIT_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/** Query param on the My Newsletters foundation drill-down that carries an invite's newsletter group uid. */
+export const NEWSLETTER_INVITE_QUERY_PARAM = 'invite';
+
+/** 404 code of an invite whose group is not a Newsletter-category group (or no longer exists). */
+export const NEWSLETTER_INVITE_INVALID_ERROR_CODE = 'NEWSLETTER_INVITE_INVALID';
+
+/** 403 code of an invite refused because the sender may not invite to that foundation. */
+export const NEWSLETTER_INVITE_FORBIDDEN_ERROR_CODE = 'NEWSLETTER_INVITE_FORBIDDEN';
+
+/** 400 code of an invite to a personal mailbox domain. */
+export const NEWSLETTER_INVITE_PERSONAL_EMAIL_ERROR_CODE = 'NEWSLETTER_INVITE_PERSONAL_EMAIL';
+
+/** 400 code of an invite to a domain that is not a Linux Foundation member company. */
+export const NEWSLETTER_INVITE_NOT_MEMBER_ERROR_CODE = 'NEWSLETTER_INVITE_NOT_MEMBER_COMPANY';
+
+/** 403 code of a member-benefit join refused because the caller is not eligible. */
+export const NEWSLETTER_MEMBER_BENEFIT_NOT_ELIGIBLE_ERROR_CODE = 'NEWSLETTER_MEMBER_BENEFIT_NOT_ELIGIBLE';
+
+/** The same address is emailed an invite to the same newsletter group at most once per window (per pod). */
+export const NEWSLETTER_INVITE_RECIPIENT_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+
+/** Longest inviter display name put in an invite email; longer names are cut with an ellipsis. */
+export const NEWSLETTER_INVITE_INVITER_NAME_MAX_LENGTH = 64;
+
+/**
+ * Shape a newsletter invite recipient must have (after lowercasing): a plain dot-atom address, so the
+ * `to` sent to the email service and the `email:` roster filter can only name one ordinary mailbox.
+ */
+export const NEWSLETTER_INVITE_EMAIL_PATTERN = /^[a-z0-9._%+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+$/;
+
+/**
+ * `res.locals` key the invite controller sets when a failed invite must still spend the sender's
+ * rate-limit budget (anything past input-shape checks, e.g. a non-member domain) — so the member
+ * domain check cannot be probed for free.
+ */
+export const NEWSLETTER_INVITE_COUNTED_LOCALS_KEY = 'newsletterInviteCounted';

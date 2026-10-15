@@ -82,7 +82,6 @@ export interface OrgLensRoiProjectRow {
   /** Null — never zero — when the project has no investment to divide by. */
   roi: number | null;
   bcr: number | null;
-  breakevenMarkup: number | null;
   /** Sums to `totalExpenditure` by construction; never rescale client-side. */
   categories: OrgLensRoiCategoryRow[];
 }
@@ -250,11 +249,9 @@ export interface OrgLensRoiProjectTableRow {
   profit: number;
   roi: number | null;
   bcr: number | null;
-  breakevenMarkup: number | null;
   investmentLabel: string;
   returnLabel: string;
   profitLabel: string;
   roiLabel: string;
   bcrLabel: string;
-  breakevenMarkupLabel: string;
 }

@@ -39,7 +39,7 @@ describe('buildHealthMetricsTrainingSubNavItems', () => {
 
 const PERIOD: HealthMetricsTrainingEnrollmentPeriod = {
   totals: { enrollments: 3850, certifications: 620, revenueUsd: 100000 },
-  baseline: { enrollments: 3500, certifications: 620, revenueUsd: 125000 },
+  change: { enrollments: 0.1, certifications: 0.004, revenueUsd: -0.2 },
   byType: [
     { deliveryType: 'E-Learning', enrollments: 2900, revenueUsd: 0 },
     { deliveryType: 'Certification Exam', enrollments: 620, revenueUsd: 70000 },
@@ -90,7 +90,7 @@ describe('buildHealthMetricsTrainingEnrollmentView', () => {
     vi.useRealTimers();
   });
 
-  it('builds the KPI strip from the totals, each delta against the baseline', () => {
+  it("builds the KPI strip from the totals, each delta from the model's change", () => {
     const view = buildHealthMetricsTrainingEnrollmentView(ENROLLMENT, 'YTD', 'enrollments');
 
     expect(view.headline).toEqual({ key: 'enrollments', label: 'Enrollments', value: '3,850', delta: '+10%', deltaDirection: 'up' });
@@ -110,30 +110,29 @@ describe('buildHealthMetricsTrainingEnrollmentView', () => {
     expect(buildHealthMetricsTrainingEnrollmentView(enrollment, 'COMPLETED_YEAR', 'enrollments').headline.value).toBe('4,100');
   });
 
-  it('names the baseline for the running year and for a completed one', () => {
+  it('names the comparison when the period has one', () => {
     expect(buildHealthMetricsTrainingEnrollmentView(ENROLLMENT, 'YTD', 'enrollments').baselineLabel).toBe('all against the same point last year');
-    expect(buildHealthMetricsTrainingEnrollmentView(ENROLLMENT, 'COMPLETED_YEAR', 'enrollments').baselineLabel).toBe('all against 2024');
   });
 
-  it('shows not available for every delta when the period has no baseline', () => {
-    const view = buildHealthMetricsTrainingEnrollmentView(withPeriod({ baseline: null }), 'COMPLETED_YEAR_3', 'enrollments');
+  it('shows not available for every delta when the period has no comparison', () => {
+    const view = buildHealthMetricsTrainingEnrollmentView(withPeriod({ change: null }), 'COMPLETED_YEAR', 'enrollments');
 
-    expect(view.baselineLabel).toBe('no earlier year to compare against');
+    expect(view.baselineLabel).toBe('no year-over-year comparison for this period');
     expect([view.headline, ...view.side].every((stat) => stat.delta === 'not available' && stat.deltaDirection === 'neutral')).toBe(true);
   });
 
-  it('shows not available for a delta whose baseline is zero or NULL, and for a NULL figure', () => {
+  it('shows not available for a change the model leaves NULL, and a measured zero as 0%', () => {
     const view = buildHealthMetricsTrainingEnrollmentView(
       withPeriod({
         totals: { enrollments: 10, certifications: null, revenueUsd: 50 },
-        baseline: { enrollments: 0, certifications: 5, revenueUsd: null },
+        change: { enrollments: null, certifications: 0, revenueUsd: null },
       }),
       'YTD',
       'enrollments'
     );
 
     expect(view.headline.delta).toBe('not available');
-    expect(view.side[0]).toMatchObject({ value: 'not available', delta: 'not available' });
+    expect(view.side[0]).toMatchObject({ value: 'not available', delta: '0%', deltaDirection: 'neutral' });
     expect(view.side[1].delta).toBe('not available');
   });
 
@@ -197,16 +196,6 @@ describe('buildHealthMetricsTrainingEnrollmentView', () => {
       { deliveryType: 'MicroCourse', enrollments: 0, revenueUsd: 0 },
     ];
     expect(buildHealthMetricsTrainingEnrollmentView(withPeriod({ byType }), 'YTD', 'revenue').typeCountLabel).toBe('3 delivery types');
-  });
-
-  it('shows not available for a revenue delta whose baseline netted negative', () => {
-    const view = buildHealthMetricsTrainingEnrollmentView(
-      withPeriod({ baseline: { enrollments: 3500, certifications: 620, revenueUsd: -5000 } }),
-      'YTD',
-      'enrollments'
-    );
-
-    expect(view.side[1].delta).toBe('not available');
   });
 
   it('orders the trend by year and marks the running year partial', () => {

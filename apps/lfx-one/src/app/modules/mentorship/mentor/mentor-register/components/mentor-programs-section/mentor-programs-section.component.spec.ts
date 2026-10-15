@@ -38,7 +38,7 @@ describe('MentorProgramsSectionComponent', () => {
     id: 'req_1',
     programId: 'mp_kubernetes',
     programName: 'Kubernetes Contributors',
-    status: 'accepted',
+    status: 'approved',
   };
 
   let fixture: ComponentFixture<MentorProgramsSectionComponent>;
@@ -90,7 +90,7 @@ describe('MentorProgramsSectionComponent', () => {
     expect(optionIds()).toEqual(['mp_kubernetes', 'mp_gridflow']);
   });
 
-  it.each(['pending', 'accepted', 'declined'] as const)(
+  it.each(['pending', 'approved', 'declined'] as const)(
     'lists a program with a %s request disabled, with the status as its note, since upstream would refuse another',
     (status) => {
       fixture.componentRef.setInput('requests', [{ ...request, status }]);
@@ -362,7 +362,7 @@ describe('MentorProgramsSectionComponent', () => {
 
   it('renders one row per request, with its status badge', () => {
     expect(element().querySelector('[data-testid="mentorship-mentor-request-row-req_1"]')).not.toBeNull();
-    expect(element().querySelector('[data-testid="mentorship-mentor-request-status-req_1"]')?.textContent?.trim()).toBe('Accepted');
+    expect(element().querySelector('[data-testid="mentorship-mentor-request-status-req_1"]')?.textContent?.trim()).toBe('Approved');
   });
 
   it('calls an undecided request Pending, not Invited as the admin tab does', () => {
@@ -380,7 +380,7 @@ describe('MentorProgramsSectionComponent', () => {
     }
   });
 
-  it.each(['accepted', 'declined', 'withdrawn', 'graduated'] as const)(
+  it.each(['approved', 'declined', 'withdrawn', 'graduated'] as const)(
     'offers no Withdraw on a %s request, since only a pending one can be withdrawn',
     (status) => {
       fixture.componentRef.setInput('requests', [{ ...request, status }]);

@@ -27,6 +27,8 @@ import { AccessCheckService } from '../services/access-check.service';
 import { AttendanceReconciliationService } from '../services/attendance-reconciliation.service';
 import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
+import { UserService } from '../services/user.service';
+import { getEffectiveEmail } from '../utils/auth-helper';
 
 /**
  * Controller for handling past meeting HTTP requests
@@ -35,6 +37,7 @@ export class PastMeetingController {
   private meetingService: MeetingService = new MeetingService();
   private accessCheckService: AccessCheckService = new AccessCheckService();
   private attendanceReconciliationService: AttendanceReconciliationService = new AttendanceReconciliationService();
+  private userService: UserService = new UserService();
 
   /**
    * GET /past-meetings
@@ -43,6 +46,12 @@ export class PastMeetingController {
    * enrichment. Participant counts (`participant_count`, `attended_count`,
    * `individual_registrants_count`, `committee_members_count`) are lazy-loaded per card
    * on the client via `meeting-rsvp-details` when the card enters the viewport.
+   *
+   * When the caller opts in with `include_viewer_attendance=true` and has a signed-in identity (email
+   * or username), each row also gets the viewer's `user_attended` from a single scan of that user's
+   * participant records. It stays undefined for anonymous callers or when the scan fails, so the list
+   * still loads without the "Attended" label. The flag is opt-in because the scan is not scoped to the
+   * page, so callers that never show the label (e.g. stats paging) must not pay for it.
    */
   public async getPastMeetings(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_past_meetings', {
@@ -50,7 +59,10 @@ export class PastMeetingController {
     });
 
     try {
-      const { data: meetings, page_token } = (await this.meetingService.getMeetings(req, req.query as Record<string, any>, 'v1_past_meeting')) as {
+      // Controller-only flag: keep it out of the params forwarded to the query service.
+      const { include_viewer_attendance: includeViewerAttendance, ...upstreamQuery } = req.query as Record<string, any>;
+
+      const { data: meetings, page_token } = (await this.meetingService.getMeetings(req, upstreamQuery, 'v1_past_meeting')) as {
         data: PastMeeting[];
         page_token?: string;
       };
@@ -61,6 +73,13 @@ export class PastMeetingController {
 
       // Past meetings never surface the host key.
       enriched.forEach((meeting) => stripHostKey(meeting));
+
+      // Let the card show an "Attended" label for the viewer when the caller asked for it. The email can
+      // be null for username-only viewers, so pass '' and let the service skip only when both identities
+      // are missing.
+      if (includeViewerAttendance === 'true') {
+        await this.userService.enrichPastMeetingsWithUserAttendance(req, getEffectiveEmail(req) ?? '', enriched);
+      }
 
       logger.success(req, 'get_past_meetings', startTime, {
         meeting_count: enriched.length,
