@@ -19,6 +19,41 @@
       <lfx-message severity="success" [text]="notice()" data-testid="mktg-documents-notice" />
     }
 
+    @if (!loading() && !listFailed() && runs().length) {
+      <section class="flex flex-col gap-3 rounded-xl border border-blue-200 bg-white px-5 py-4" data-testid="mktg-documents-started-runs">
+        <h2 class="text-sm font-semibold text-gray-700">Started runs</h2>
+        @for (run of runs(); track run.runId) {
+          <div class="flex flex-wrap items-center justify-between gap-3 text-sm" [attr.data-testid]="'mktg-documents-started-run-' + run.runId">
+            <div class="flex flex-col gap-1">
+              <span>{{ projectName() }} {{ run.label }}</span>
+              <span class="text-gray-500">
+                @switch (run.state) {
+                  @case ('writing') {
+                    Writing the document
+                  }
+                  @case ('storing') {
+                    Storing the revision
+                  }
+                  @case ('failed') {
+                    A previous run did not finish
+                  }
+                }
+                · Started {{ run.startedAt | date: 'd MMM, HH:mm' }}
+              </span>
+            </div>
+            <a
+              [routerLink]="[run.agentKey, run.documentId]"
+              [queryParams]="{ revision: null, generation: null }"
+              queryParamsHandling="merge"
+              class="font-semibold text-blue-600"
+              [attr.data-testid]="'mktg-documents-open-started-' + run.runId"
+              >Open document</a
+            >
+          </div>
+        }
+      </section>
+    }
+
     <div class="flex flex-wrap gap-6 items-start">
       <!-- Navigation: living documents in run order, then the one-off runs -->
       <nav aria-label="Documents by agent" class="flex flex-col gap-1.5 grow-0 shrink basis-72 min-w-60" data-testid="mktg-documents-nav">
@@ -150,6 +185,11 @@
               </div>
             } @else if (living.document) {
               <div class="py-6 text-sm text-gray-500" role="status">{{ detailLoading() ? 'Loading revisions…' : 'The revisions could not be loaded.' }}</div>
+            } @else if (selectedRuns().length) {
+              <div class="flex flex-col gap-2 py-4" data-testid="mktg-documents-pending-document">
+                <h2 class="text-lg font-semibold text-gray-900">{{ projectName() }} {{ living.type.label }}</h2>
+                <p class="text-sm text-gray-500">The started run is listed above. Open its document to follow progress or retry it.</p>
+              </div>
             } @else {
               <div class="flex flex-col gap-2 py-4" data-testid="mktg-documents-empty-living">
                 <h2 class="text-lg font-semibold text-gray-900">No {{ living.type.label }} yet</h2>

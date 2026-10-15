@@ -237,6 +237,12 @@ describe('IcpService', () => {
       expect(objectStoreMocks.putContentAddressedObject).not.toHaveBeenCalled();
     });
 
+    it('does not persist the prior envelope for a server-tracked follow-up', async () => {
+      guildMocks.getRawEventPayloads.mockResolvedValue([toolResultPayload(buildEnvelope())]);
+      expect(await service.getResult(req, 'session-1', PROJECT_UID, undefined, 1)).toEqual({ status: 'pending' });
+      expect(objectStoreMocks.putContentAddressedObject).not.toHaveBeenCalled();
+    });
+
     it('returns the validated document and persists it under the ICP key prefix', async () => {
       const envelope = buildEnvelope();
       guildMocks.getRawEventPayloads.mockResolvedValue([toolResultPayload(envelope)]);

@@ -64,6 +64,7 @@ describe('MktgDocumentViewComponent', () => {
     getDocument: ReturnType<typeof vi.fn>;
     getRevision: ReturnType<typeof vi.fn>;
     restoreRevision: ReturnType<typeof vi.fn>;
+    retryRun: ReturnType<typeof vi.fn>;
   };
 
   function query(testId: string): HTMLElement | null {
@@ -89,6 +90,7 @@ describe('MktgDocumentViewComponent', () => {
         of(revisionResponse([LATEST, OLDER, RESTORED].find((candidate) => candidate.id === revisionId) ?? LATEST))
       ),
       restoreRevision: vi.fn(() => of({ ...detail, revision: RESTORED })),
+      retryRun: vi.fn(() => of({ ...detail, runs: [] })),
     };
     activeContext = signal<ProjectContext | null>(PROJECT);
     generation = new Subject<MktgGenerateProgress>();
@@ -128,6 +130,81 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-sidebar')?.classList.contains('sm:min-w-[260px]')).toBe(true);
     expect(query('mktg-document-view-sidebar')?.contains(query('mktg-document-view-revisions'))).toBe(true);
     expect(query('mktg-document-view-sidebar')?.contains(query('mktg-document-view-about'))).toBe(true);
+  });
+
+  it('shows server-visible first-run progress in a fresh browser without a local session capability', async () => {
+    const run = {
+      project: PROJECT.uid,
+      runId: 'a'.repeat(64),
+      agentKey: 'brand-kit',
+      documentId: 'living',
+      startedAt: '2026-10-15T12:00:00Z',
+      state: 'writing',
+    };
+    store.getDocument.mockReturnValueOnce(of({ ...detail, revisions: [], runs: [run] }));
+    await render('/documents/brand-kit/living');
+    expect(query('mktg-document-view-generating-title')?.textContent).toContain('Writing the TestOrbit Brand Kit');
+    expect(query('mktg-document-view-document')).toBeNull();
+    expect(query('mktg-document-view-generating-note')?.textContent).toContain('On a first run');
+    expect(runService.generate).not.toHaveBeenCalled();
+    expect(runService.retryGeneration).not.toHaveBeenCalled();
+    harness.fixture.destroy();
+  });
+
+  it('uses server state instead of subscribing to a stale local pending capability', async () => {
+    runService.loadRun.mockReturnValue({ pendingAttempt: {} });
+    runService.resumeGeneration.mockReturnValue(generation);
+    store.getDocument.mockReturnValue(of({ ...detail, runs: [] }));
+    await render('/documents/brand-kit/living');
+    expect(generation.observed).toBe(false);
+    expect(query('mktg-document-view-generating')).toBeNull();
+    expect(query('mktg-document-view-document')).not.toBeNull();
+  });
+
+  it('routes the first retry after a local fast-path failure to its recorded server run', async () => {
+    runService.takePreparedGeneration.mockReturnValueOnce({ projectUid: PROJECT.uid, agentId: 'brand-kit', intake: BRAND_KIT_INTAKE, answers: {} });
+    store.getDocument.mockReturnValue(of({ ...detail, runs: [] }));
+    await render('/documents/brand-kit/living?generation=1');
+    runService.loadRun.mockReturnValue({ failedAttempt: {} });
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    generation.error(new Error('Synthetic owner poll failure'));
+    await settle();
+    errorLog.mockRestore();
+    const staleLocalRetry = new Subject<MktgGenerateProgress>();
+    runService.retryGeneration.mockReturnValue(staleLocalRetry);
+    const run = {
+      project: PROJECT.uid,
+      runId: 'a'.repeat(64),
+      agentKey: 'brand-kit',
+      documentId: 'living',
+      startedAt: '2026-10-15T12:00:00Z',
+      state: 'failed',
+    };
+    store.getDocument.mockReturnValue(of({ ...detail, runs: [run] }));
+    query('mktg-document-view-retry')?.click();
+    await settle();
+    expect(store.retryRun).toHaveBeenCalledWith(PROJECT.uid, 'brand-kit', 'living', run.runId);
+    expect(staleLocalRetry.observed).toBe(false);
+    expect(runService.generate).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries a failed server run without using a browser owner token or starting generation', async () => {
+    const run = {
+      project: PROJECT.uid,
+      runId: 'a'.repeat(64),
+      agentKey: 'brand-kit',
+      documentId: 'living',
+      startedAt: '2026-10-15T12:00:00Z',
+      state: 'failed',
+    };
+    store.getDocument.mockReturnValueOnce(of({ ...detail, runs: [run] }));
+    await render('/documents/brand-kit/living');
+    expect(query('mktg-document-view-retry-note')?.textContent).toContain('no new generation is started');
+    query('mktg-document-view-retry')?.click();
+    await settle();
+    expect(store.retryRun).toHaveBeenCalledWith(PROJECT.uid, 'brand-kit', 'living', run.runId);
+    expect(runService.generate).not.toHaveBeenCalled();
+    expect(runService.retryGeneration).not.toHaveBeenCalled();
   });
 
   it('uses the design card text, stored local start time and only known writing/storing phases on resume', async () => {
@@ -235,6 +312,9 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-generating')).toBeNull();
     expect(query('mktg-document-view-error')).toBeNull();
     expect(query('mktg-document-view-retry')?.textContent).toContain('Retry run');
+    expect(query('mktg-document-view-retry-note')?.textContent?.trim()).toBe(
+      'A previous run did not finish. Retry polls it again; no new generation is started.'
+    );
     expect(runService.retryGeneration).not.toHaveBeenCalled();
   });
 
@@ -242,6 +322,7 @@ describe('MktgDocumentViewComponent', () => {
     store.getDocument.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 500 })));
     await render('/documents/brand-kit/living');
     expect(query('mktg-document-view-retry')?.textContent).toContain('Reload document');
+    expect(query('mktg-document-view-retry-note')).toBeNull();
     query('mktg-document-view-retry')?.click();
     await settle();
     expect(runService.generate).not.toHaveBeenCalled();

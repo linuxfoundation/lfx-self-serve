@@ -47,13 +47,20 @@
     }
 
     @if (canResume() && !generating()) {
-      <button
-        type="button"
-        class="self-start rounded-lg border border-blue-200 px-4 py-2 text-sm text-blue-700"
-        data-testid="mktg-document-view-retry"
-        (click)="onRetry()">
-        {{ retryRun() ? 'Retry run' : 'Reload document' }}
-      </button>
+      <div class="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          class="self-start rounded-lg border border-blue-200 px-4 py-2 text-sm text-blue-700"
+          data-testid="mktg-document-view-retry"
+          (click)="onRetry()">
+          {{ retryRun() ? 'Retry run' : 'Reload document' }}
+        </button>
+        @if (retryRun()) {
+          <p class="text-sm text-gray-500" data-testid="mktg-document-view-retry-note">
+            A previous run did not finish. Retry polls it again; no new generation is started.
+          </p>
+        }
+      </div>
     }
     @if (generating()) {
       <div

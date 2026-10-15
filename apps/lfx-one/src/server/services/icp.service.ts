@@ -121,6 +121,8 @@ export class IcpService {
    * (see {@link persistEnvelope}). It is resolved lazily, only once a ready
    * envelope exists, so a `pending` poll costs no upstream lookups. Without
    * it the document is still returned; it is simply not persisted.
+   * `minimumVersion` is a tracked attempt's prior draft: older envelopes stay
+   * pending without persisting a revision for the new run.
    */
   public async getResult(req: Request, sessionId: string, projectUid?: string, readme?: MktgReadmeOutcome, minimumVersion = 0): Promise<IcpResultResponse> {
     const payloads = await this.guildService.getRawEventPayloads(req, sessionId);

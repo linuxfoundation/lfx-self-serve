@@ -9,7 +9,7 @@ import {
   PERSONA_COOKIE_KEY,
   SELECTED_PROJECT_COOKIE_KEY,
 } from '@lfx-one/shared/constants';
-import type { MktgRevisionResponse, MktgRevisionSummary, PersistedPersonaState, Project } from '@lfx-one/shared/interfaces';
+import type { MktgDocumentRunProgress, MktgRevisionResponse, MktgRevisionSummary, PersistedPersonaState, Project } from '@lfx-one/shared/interfaces';
 import { expect, Page, Route } from '@playwright/test';
 
 import { mockProjects } from '../fixtures/mock-data/projects.mock';
@@ -63,7 +63,14 @@ async function json(route: Route, body: unknown, status = 200): Promise<void> {
 /** Synthetic project, flag and every Marketing OS request are stubbed; no live Guild session or write is possible. */
 export async function setupRunPage(
   page: Page,
-  options: { existing?: boolean; writer?: boolean; fail?: boolean; holdRead?: boolean; holdPersistence?: boolean } = {}
+  options: {
+    existing?: boolean;
+    writer?: boolean;
+    fail?: boolean;
+    holdRead?: boolean;
+    holdPersistence?: boolean;
+    serverState?: { started: boolean; generated: boolean; persisted: boolean; startedAt: string };
+  } = {}
 ) {
   const writer = options.writer ?? true;
   mockProjects[RUN_PROJECT.slug] = {
@@ -97,8 +104,19 @@ export async function setupRunPage(
       lens,
     });
   });
-  let generated = false;
-  let persisted = !options.holdPersistence;
+  const serverState = options.serverState ?? { started: false, generated: false, persisted: !options.holdPersistence, startedAt: new Date().toISOString() };
+  const progress = (): MktgDocumentRunProgress[] => {
+    if (!serverState.started || (serverState.generated && serverState.persisted)) {
+      return [];
+    }
+    let state: MktgDocumentRunProgress['state'] = 'writing';
+    if (options.fail) {
+      state = 'failed';
+    } else if (serverState.generated) {
+      state = 'storing';
+    }
+    return [{ project: RUN_PROJECT.uid, agentKey: 'brand-kit', documentId: 'living', runId: 'c'.repeat(64), startedAt: serverState.startedAt, state }];
+  };
   let submitted: Record<string, unknown> | null = null;
   let releaseRead: () => void = () => undefined;
   const readGate = new Promise<void>((resolve) => {
@@ -109,6 +127,10 @@ export async function setupRunPage(
     const path = url.pathname;
     if (path.endsWith('/generate')) {
       submitted = route.request().postDataJSON();
+      if (!serverState.started) {
+        serverState.startedAt = new Date().toISOString();
+      }
+      serverState.started = true;
       return json(route, { sessionId: 'synthetic-session', ownerToken: 'synthetic-owner-token' });
     }
     if (path.endsWith('/result')) {
@@ -116,7 +138,7 @@ export async function setupRunPage(
         return json(route, { message: 'Synthetic run failure' }, 422);
       }
       const response = runRevision('brand-kit', options.existing ? 2 : 1);
-      const persistence = persisted
+      const persistence = serverState.persisted
         ? {
             s3_key: 'synthetic-key',
             content_sha256: response.revision.contentSha256,
@@ -127,7 +149,7 @@ export async function setupRunPage(
         : undefined;
       return json(
         route,
-        generated
+        serverState.generated
           ? {
               status: 'ready',
               documentMarkdown: response.markdown,
@@ -137,6 +159,33 @@ export async function setupRunPage(
           : { status: 'pending' }
       );
     }
+    if (path === '/api/mktg-agents/documents') {
+      if (!writer) {
+        return json(route, { message: 'Write access required' }, 403);
+      }
+      const saved = !!options.existing || (serverState.generated && serverState.persisted);
+      const current = runRevision('brand-kit', serverState.generated && options.existing ? 2 : 1);
+      return json(route, {
+        project: RUN_PROJECT.uid,
+        runs: progress(),
+        groups: MKTG_DOCUMENT_TYPES.map((type) => ({
+          type,
+          documents:
+            saved && type.agentKey === 'brand-kit'
+              ? [
+                  {
+                    agentKey: type.agentKey,
+                    documentId: 'living',
+                    revisionCount: current.revision.number,
+                    latestRevisionId: current.revision.id,
+                    createdAt: serverState.startedAt,
+                    updatedAt: serverState.startedAt,
+                  },
+                ]
+              : [],
+        })),
+      });
+    }
     if (path.includes('/documents/')) {
       if (options.holdRead) {
         await readGate;
@@ -144,12 +193,16 @@ export async function setupRunPage(
       if (!writer) {
         return json(route, { message: 'Write access required' }, 403);
       }
-      if (!options.existing && !(generated && persisted)) {
-        return json(route, { message: 'Not generated yet' }, 404);
-      }
       const agentKey = path.split('/documents/')[1].split('/')[0];
-      const response = runRevision(agentKey, generated && persisted && options.existing ? 2 : 1);
-      return json(route, response);
+      const runs = progress().filter((run) => run.agentKey === agentKey);
+      const response = runRevision(agentKey, serverState.generated && serverState.persisted && options.existing ? 2 : 1);
+      if (!options.existing && !(serverState.generated && serverState.persisted)) {
+        if (!runs.length || path.includes('/revisions/')) {
+          return json(route, { message: 'Not generated yet' }, 404);
+        }
+        return json(route, { project: RUN_PROJECT.uid, type: response.type, documentId: 'living', revisions: [], runs });
+      }
+      return json(route, { ...response, runs });
     }
     // Neither live dependencies nor accidental unmocked Marketing OS routes may escape this helper.
     return json(route, { message: 'No synthetic stored document' }, 404);
@@ -158,11 +211,12 @@ export async function setupRunPage(
   await expect(page.getByTestId('sidebar')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   await page.context().addCookies(cookies);
   return {
+    serverState,
     finish: () => {
-      generated = true;
+      serverState.generated = true;
     },
     persist: () => {
-      persisted = true;
+      serverState.persisted = true;
     },
     releaseRead: () => releaseRead(),
     submitted: () => submitted,

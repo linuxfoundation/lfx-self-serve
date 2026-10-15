@@ -10,6 +10,7 @@ import { MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
 import { MktgDocumentDetailResponse, MktgDocumentsResponse, MktgDocumentType, MktgRevisionSummary, ProjectContext } from '@lfx-one/shared/interfaces';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { UserService } from '@services/user.service';
 import { NEVER, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -84,9 +85,26 @@ describe('MktgDocumentsComponent', () => {
         provideRouter([{ path: '**', children: [] }]),
         provideNoopAnimations(),
         { provide: ProjectContextService, useValue: { activeContext, activeContextUid: computed(() => activeContext()?.uid ?? '') } },
+        { provide: UserService, useValue: { user: signal({ sub: 'synthetic-viewer' }) } },
         { provide: MktgDocumentStoreService, useValue: store },
       ],
     }).compileComponents();
+  });
+
+  it('lists a server-recorded first run without presenting it as an absent or already-stored document', async () => {
+    const response = documentsResponse();
+    response.groups = response.groups.map((group) => ({ ...group, documents: [] }));
+    response.runs = [
+      { project: PROJECT.uid, runId: 'a'.repeat(64), agentKey: 'brand-kit', documentId: 'living', startedAt: '2026-10-15T12:00:00Z', state: 'writing' },
+    ];
+    store.listDocuments.mockReturnValueOnce(of(response));
+    await render();
+    expect(query('mktg-documents-started-runs')?.textContent).toContain('Writing the document');
+    expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('Writing');
+    expect(query('mktg-documents-empty-living')).toBeNull();
+    expect(query('mktg-documents-pending-document')).not.toBeNull();
+    expect(query('mktg-documents-open-started-' + 'a'.repeat(64))).not.toBeNull();
+    fixture.destroy();
   });
 
   it('lists the living documents in run order with their revision state, and the runs', async () => {

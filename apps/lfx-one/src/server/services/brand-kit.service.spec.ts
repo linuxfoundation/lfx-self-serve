@@ -206,6 +206,12 @@ describe('BrandKitService', () => {
       expect(result.intakeMode).toBe('form');
     });
 
+    it('does not materialize the prior envelope while a reused-session run waits for a newer draft', async () => {
+      guildMocks.getRawEventPayloads.mockResolvedValue([JSON.stringify({ type: 'llm_done', content: buildEnvelope() })]);
+      expect(await service.getResult(req, 's', PROJECT_UID, undefined, 1)).toEqual({ status: 'pending' });
+      expect(objectStoreMocks.putContentAddressedObject).not.toHaveBeenCalled();
+    });
+
     it('persists the ready document under the SERVER-resolved project partition and returns the receipt', async () => {
       const envelope = buildEnvelope();
       guildMocks.getRawEventPayloads.mockResolvedValue([JSON.stringify({ type: 'llm_done', content: { envelope_json: JSON.stringify(envelope) } })]);

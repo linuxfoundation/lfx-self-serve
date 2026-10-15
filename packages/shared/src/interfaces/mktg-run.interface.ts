@@ -386,7 +386,7 @@ export interface MktgRunEndpoints {
  */
 export interface MktgRunGenerateBody {
   /** Selected project uid, resolved and writer-authorized by the BFF before starting a durable run. */
-  project?: string;
+  project: string;
   /** Answers keyed by intake field key; conditional/optional keys may be absent per the agent's own contract. */
   answers: Record<string, string>;
   /**

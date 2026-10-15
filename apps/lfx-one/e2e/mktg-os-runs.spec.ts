@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { BRAND_KIT_INTAKE } from '@lfx-one/shared/constants';
+import { BRAND_KIT_INTAKE, FEATURE_FLAG_OVERRIDE_STORAGE_KEY, MKTG_OS_AGENTS_ENABLED_FLAG, MKTG_RUN_STORAGE_KEY_PREFIX } from '@lfx-one/shared/constants';
 import { expect, test } from '@playwright/test';
 
 import { DATA_LOAD_TIMEOUT, fillRunIntake, RUN_REVISION_ID, setupRunPage } from './helpers/mktg-os-runs.helper';
@@ -64,6 +64,57 @@ test.describe('Marketing OS runs land on documents', () => {
     await expect(page.getByTestId('mktg-document-view-document')).toContainText('Synthetic revision 2', { timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('mktg-document-view-generating')).toHaveCount(0);
     await testInfo.attach('stored-revision', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
+  });
+
+  test('a left run appears in Documents and lands from a fresh browser with no local run record', async ({ page, browser }, testInfo) => {
+    const origin = await setupRunPage(page);
+    await origin.open();
+    await expect(page.getByTestId('mktg-agent-run-form')).toBeVisible();
+    await fillRunIntake(page);
+    await page.getByTestId('mktg-agent-run-submit-button').click();
+    await expect(page.getByTestId('mktg-document-view-generating')).toBeVisible();
+    await origin.open('');
+    await expect(page.getByTestId('mktg-os-agents-page')).toBeVisible();
+
+    const freshContext = await browser.newContext({
+      baseURL: testInfo.project.use.baseURL,
+      storageState: testInfo.project.use.storageState,
+      viewport: { width: 1440, height: 900 },
+    });
+    try {
+      const freshPage = await freshContext.newPage();
+      await freshPage.addInitScript(
+        ([key, flag]) => {
+          localStorage.clear();
+          localStorage.setItem(key, JSON.stringify({ [flag]: true }));
+        },
+        [FEATURE_FLAG_OVERRIDE_STORAGE_KEY, MKTG_OS_AGENTS_ENABLED_FLAG]
+      );
+      const submissions: string[] = [];
+      freshPage.on('request', (request) => {
+        if (request.method() === 'POST' && /\/api\/mktg-agents\/(?:chat|[^/]+\/(?:generate|result))$/.test(new URL(request.url()).pathname)) {
+          submissions.push(request.url());
+        }
+      });
+      const visitor = await setupRunPage(freshPage, { serverState: origin.serverState });
+      await visitor.open('documents');
+      await expect(freshPage.getByTestId('mktg-documents-started-runs')).toContainText('Writing the document');
+      await expect(freshPage.getByTestId('mktg-documents-empty-living')).toHaveCount(0);
+      expect(await freshPage.evaluate((prefix) => Object.keys(localStorage).filter((key) => key.startsWith(prefix)), MKTG_RUN_STORAGE_KEY_PREFIX)).toEqual([]);
+      await testInfo.attach('fresh-browser-started-run-list', { body: await freshPage.screenshot({ fullPage: true }), contentType: 'image/png' });
+      await freshPage.getByTestId('mktg-documents-open-started-' + 'c'.repeat(64)).click();
+      await expect(freshPage.getByTestId('mktg-document-view-generating-title')).toHaveText('Writing the Synthetic Orbit Brand Kit');
+      await expect(freshPage.getByTestId('mktg-document-view-document')).toHaveCount(0);
+      await testInfo.attach('fresh-browser-generating', { body: await freshPage.screenshot({ fullPage: true }), contentType: 'image/png' });
+      origin.finish();
+      await expect(freshPage.getByTestId('mktg-document-view-document')).toContainText('Synthetic revision 1', { timeout: DATA_LOAD_TIMEOUT });
+      await expect(freshPage.getByTestId('mktg-document-view-generating')).toHaveCount(0);
+      expect(submissions).toEqual([]);
+      expect(await freshPage.evaluate((prefix) => Object.keys(localStorage).filter((key) => key.startsWith(prefix)), MKTG_RUN_STORAGE_KEY_PREFIX)).toEqual([]);
+      await testInfo.attach('fresh-browser-landed', { body: await freshPage.screenshot({ fullPage: true }), contentType: 'image/png' });
+    } finally {
+      await freshContext.close();
+    }
   });
 
   test('generation failure is visible without presenting the prior revision as a new result', async ({ page }, testInfo) => {

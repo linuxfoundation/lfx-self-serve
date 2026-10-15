@@ -463,6 +463,12 @@ describe('FoundationMessageService.getResult', () => {
     expect(result.version).toBe(1);
   });
 
+  it('does not persist the prior envelope for a server-tracked follow-up', async () => {
+    guildMocks.getRawEventPayloads.mockResolvedValue([toolResultPayload(buildEnvelope())]);
+    expect(await service.getResult(req, 'session-1', 'synthetic-project', undefined, 1)).toMatchObject({ status: 'pending' });
+    expect(objectStoreMocks.putContentAddressedObject).not.toHaveBeenCalled();
+  });
+
   it('returns the validated document with its copy primitives when the envelope passes every gate', async () => {
     guildMocks.getRawEventPayloads.mockResolvedValue([toolResultPayload(buildEnvelope())]);
 

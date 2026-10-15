@@ -8,15 +8,22 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { MessageComponent } from '@components/message/message.component';
-import { MKTG_AGENT_INTAKES, MKTG_README_SKIP_NOTES } from '@lfx-one/shared/constants';
-import { MktgGenerateProgress, MktgRevisionResponse, MktgRevisionRow, MktgRevisionSummary } from '@lfx-one/shared/interfaces';
+import { MKTG_AGENT_INTAKES, MKTG_README_SKIP_NOTES, MKTG_RUN_POLL } from '@lfx-one/shared/constants';
+import {
+  MktgDocumentDetailResponse,
+  MktgDocumentRunProgress,
+  MktgGenerateProgress,
+  MktgRevisionResponse,
+  MktgRevisionRow,
+  MktgRevisionSummary,
+} from '@lfx-one/shared/interfaces';
 import { describeMktgRevision, findMktgDocumentType } from '@lfx-one/shared/utils';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { UserService } from '@services/user.service';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { catchError, concat, distinctUntilChanged, EMPTY, finalize, map, Observable, of, switchMap, timer } from 'rxjs';
+import { catchError, concat, defer, distinctUntilChanged, EMPTY, expand, finalize, map, Observable, of, switchMap, timer } from 'rxjs';
 
 // One revision of a Marketing OS document (design of record: "Document
 // store", DocumentView board): the header says which revision of how many,
@@ -40,6 +47,7 @@ export class MktgDocumentViewComponent {
   private readonly dependencies = inject(MktgDependencyService);
   private readonly userService = inject(UserService);
   private retryTarget = '';
+  private retryServerRunId = '';
 
   // === Signals ===
   protected readonly loading = signal(true);
@@ -53,6 +61,7 @@ export class MktgDocumentViewComponent {
   protected readonly retry = signal(0);
   protected readonly canResume = signal(false);
   protected readonly retryRun = signal(false);
+  protected readonly serverRun = signal<MktgDocumentRunProgress | null>(null);
 
   private readonly params = toSignal(
     this.route.paramMap.pipe(map((params) => ({ agentKey: params.get('agentKey') ?? '', documentId: params.get('documentId') ?? '' }))),
@@ -108,7 +117,10 @@ export class MktgDocumentViewComponent {
           switchMap((request) => {
             const explicitRetry =
               this.retryTarget === JSON.stringify([request.project, request.agentKey, request.documentId, request.revisionId, request.userSub]);
+            const serverRetryId = explicitRetry ? this.retryServerRunId : '';
             this.retryTarget = '';
+            this.retryServerRunId = '';
+            this.serverRun.set(null);
             this.loading.set(true);
             this.errorText.set('');
             this.view.set(null);
@@ -116,7 +128,15 @@ export class MktgDocumentViewComponent {
             if (!request.project || !request.agentKey || !request.documentId || !request.userSub) {
               return EMPTY;
             }
-            return this.loadDocument(request.project, request.agentKey, request.documentId, request.revisionId, request.generationId, explicitRetry);
+            return this.loadDocument(
+              request.project,
+              request.agentKey,
+              request.documentId,
+              request.revisionId,
+              request.generationId,
+              explicitRetry,
+              serverRetryId
+            );
           }),
           takeUntilDestroyed()
         )
@@ -185,6 +205,7 @@ export class MktgDocumentViewComponent {
   }
 
   protected onRetry(): void {
+    this.retryServerRunId = this.serverRun()?.state === 'failed' ? (this.serverRun()?.runId ?? '') : '';
     this.retryTarget = JSON.stringify([
       this.projectContext.activeContextUid(),
       this.params().agentKey,
@@ -216,14 +237,15 @@ export class MktgDocumentViewComponent {
     documentId: string,
     revisionId: string,
     generationId: string,
-    explicitRetry: boolean
+    explicitRetry: boolean,
+    serverRetryId: string
   ): Observable<MktgRevisionResponse | null> {
     const type = findMktgDocumentType(agentKey);
     const agentId = type?.catalogAgentId ?? '';
     const intake = MKTG_AGENT_INTAKES[agentId];
     const prepared = generationId ? this.runService.takePreparedGeneration(generationId, project, agentId) : null;
     let generation$: Observable<MktgGenerateProgress> | null = null;
-    if (intake && !revisionId) {
+    if (intake && !revisionId && !serverRetryId) {
       generation$ = explicitRetry ? this.runService.retryGeneration(project, agentId, intake) : this.runService.resumeGeneration(project, agentId, intake);
     }
     if (prepared) {
@@ -237,14 +259,23 @@ export class MktgDocumentViewComponent {
     this.generationStartedAt.set(startedAt && !Number.isNaN(Date.parse(startedAt)) ? startedAt : new Date().toISOString());
     this.generating.set(!!generation$);
     this.generationProgress.set(null);
+    if (!generation$) {
+      return this.loadServerDocument(project, agentKey, documentId, revisionId, serverRetryId);
+    }
 
+    let serverVisible = false;
+    let observedRetryId = serverRetryId;
     const revision$ = revisionId
       ? this.documentStore.getRevision(project, agentKey, documentId, revisionId)
-      : this.documentStore
-          .getDocument(project, agentKey, documentId)
-          .pipe(
-            switchMap((detail) => (detail.revisions[0] ? this.documentStore.getRevision(project, agentKey, documentId, detail.revisions[0].id) : of(null)))
-          );
+      : this.documentStore.getDocument(project, agentKey, documentId).pipe(
+          switchMap((detail) => {
+            serverVisible = detail.runs !== undefined;
+            if (explicitRetry && !observedRetryId) {
+              observedRetryId = detail.runs?.find((run) => run.state === 'failed')?.runId ?? '';
+            }
+            return detail.revisions[0] ? this.documentStore.getRevision(project, agentKey, documentId, detail.revisions[0].id) : of(null);
+          })
+        );
     let authorized = true;
     const initial$ = revision$.pipe(
       catchError((error: HttpErrorResponse) => {
@@ -256,54 +287,112 @@ export class MktgDocumentViewComponent {
         return of(null);
       })
     );
-    if (!generation$) {
-      return initial$;
-    }
     let landed = false;
     // Defer the write until the existing-document read has checked access.
     const generation = generation$;
     const progress$ = of(null).pipe(switchMap(() => (authorized ? generation : EMPTY)));
+    const updates$ = progress$.pipe(
+      switchMap((progress) => {
+        this.loading.set(false);
+        this.generationProgress.set(progress.type);
+        if (progress.type === 'submitted') {
+          return EMPTY;
+        }
+        this.dependencies.notifyDocumentsChanged(project);
+        const location = progress.location;
+        if (!location) {
+          return EMPTY;
+        }
+        landed = true;
+        // Canonicalize the URL before reading, so even a failed read retries
+        // this run's exact revision rather than another writer's latest.
+        this.router.navigate([], {
+          relativeTo: this.route,
+          queryParams: { generation: null, revision: location.revisionId },
+          queryParamsHandling: 'merge',
+          replaceUrl: true,
+        });
+        return EMPTY;
+      }),
+      catchError((error: unknown) => {
+        console.error('Marketing OS run failed', error);
+        this.errorText.set('This run could not finish. Your answers are kept. Return to the intake or retry the run.');
+        return EMPTY;
+      }),
+      finalize(() => {
+        this.generating.set(false);
+        const run = this.runService.loadRun(project, agentId);
+        const retryable = !!(run?.pendingAttempt || run?.failedAttempt);
+        this.retryRun.set(retryable);
+        this.canResume.set(!landed && authorized && retryable);
+        if (!landed && authorized && !this.errorText()) {
+          this.errorText.set('The document has not been saved yet. Retry to resume saving; no new generation is started.');
+        }
+      })
+    );
+    // A recorded server run is authoritative over an old local capability.
     return concat(
       initial$,
-      progress$.pipe(
-        switchMap((progress) => {
-          this.loading.set(false);
-          this.generationProgress.set(progress.type);
-          if (progress.type === 'submitted') {
-            return EMPTY;
-          }
-          this.dependencies.notifyDocumentsChanged(project);
-          const location = progress.location;
-          if (!location) {
-            return EMPTY;
-          }
-          landed = true;
-          // Canonicalize the URL before reading, so even a failed read retries
-          // this run's exact revision rather than another writer's latest.
-          this.router.navigate([], {
-            relativeTo: this.route,
-            queryParams: { generation: null, revision: location.revisionId },
-            queryParamsHandling: 'merge',
-            replaceUrl: true,
-          });
-          return EMPTY;
-        }),
-        catchError((error: unknown) => {
-          console.error('Marketing OS run failed', error);
-          this.errorText.set('This run could not finish. Your answers are kept. Return to the intake or retry the run.');
-          return EMPTY;
-        }),
-        finalize(() => {
-          this.generating.set(false);
-          const run = this.runService.loadRun(project, agentId);
-          const retryable = !!(run?.pendingAttempt || run?.failedAttempt);
-          this.retryRun.set(retryable);
-          this.canResume.set(!landed && authorized && retryable);
-          if (!landed && authorized && !this.errorText()) {
-            this.errorText.set('The document has not been saved yet. Retry to resume saving; no new generation is started.');
-          }
-        })
-      )
+      defer(() => (serverVisible && !prepared ? this.loadServerDocument(project, agentKey, documentId, revisionId, observedRetryId) : updates$))
+    );
+  }
+
+  /** Server-visible progress works without a local session capability or localStorage record. */
+  private loadServerDocument(
+    project: string,
+    agentKey: string,
+    documentId: string,
+    revisionId: string,
+    retryId: string
+  ): Observable<MktgRevisionResponse | null> {
+    const revision = (detail: MktgDocumentDetailResponse) => {
+      const id = revisionId || detail.revisions[0]?.id;
+      if (!id) {
+        return of({ detail, view: null as MktgRevisionResponse | null });
+      }
+      return this.documentStore.getRevision(project, agentKey, documentId, id).pipe(
+        switchMap((view) =>
+          !revisionId && view.revisions[0]?.id && view.revisions[0].id !== view.revision.id
+            ? this.documentStore.getRevision(project, agentKey, documentId, view.revisions[0].id)
+            : of(view)
+        ),
+        map((view) => ({ detail: { ...detail, runs: view.runs ?? detail.runs }, view }))
+      );
+    };
+    const read = () =>
+      revisionId
+        ? this.documentStore.getRevision(project, agentKey, documentId, revisionId).pipe(map((view) => ({ detail: view as MktgDocumentDetailResponse, view })))
+        : this.documentStore.getDocument(project, agentKey, documentId).pipe(switchMap(revision));
+    const first$ = retryId ? this.documentStore.retryRun(project, agentKey, documentId, retryId).pipe(switchMap(revision)) : read();
+    return first$.pipe(
+      expand((state) => (state.detail.runs?.some((run) => run.state !== 'failed') ? timer(MKTG_RUN_POLL.intervalMs).pipe(switchMap(read)) : EMPTY)),
+      map(({ detail, view }) => {
+        const run = detail.runs?.find((entry) => entry.state !== 'failed') ?? detail.runs?.[0] ?? null;
+        this.serverRun.set(run);
+        this.generating.set(!!run && run.state !== 'failed');
+        if (run) {
+          this.generationStartedAt.set(run.startedAt);
+          this.generationProgress.set(run.state === 'storing' ? 'document' : 'submitted');
+          this.canResume.set(run.state === 'failed');
+          this.retryRun.set(run.state === 'failed');
+        } else {
+          const agentId = findMktgDocumentType(agentKey)?.catalogAgentId ?? '';
+          const legacyFailed = detail.runs === undefined && !revisionId && !!this.runService.loadRun(project, agentId)?.failedAttempt;
+          this.canResume.set(legacyFailed);
+          this.retryRun.set(legacyFailed);
+        }
+        return view;
+      }),
+      catchError((error: HttpErrorResponse) => {
+        console.error('Marketing OS document progress could not be loaded', error);
+        this.serverRun.set(null);
+        this.generating.set(false);
+        this.loading.set(false);
+        this.errorText.set(this.loadErrorText(error.status));
+        this.canResume.set(error.status !== 401 && error.status !== 403 && error.status !== 404);
+        this.retryRun.set(false);
+        return of(null);
+      })
     );
   }
 
