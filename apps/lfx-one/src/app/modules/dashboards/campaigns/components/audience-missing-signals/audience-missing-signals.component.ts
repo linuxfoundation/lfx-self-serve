@@ -6,17 +6,21 @@ import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { debounceTime, distinctUntilChanged, map } from 'rxjs';
 
-import { AUDIENCE_LIST_TYPEAHEAD_DEBOUNCE_MS, AUDIENCE_SIGNAL_INFO, AUDIENCE_SPEAKER_SCOPES } from '@lfx-one/shared/constants';
+import {
+  AUDIENCE_CUSTOM_CREATABLE_SIGNALS,
+  AUDIENCE_LIST_TYPEAHEAD_DEBOUNCE_MS,
+  AUDIENCE_SIGNAL_INFO,
+  AUDIENCE_SPEAKER_SCOPES,
+} from '@lfx-one/shared/constants';
 import type { AudienceListRef, AudienceListSearchResult, AudienceSignal } from '@lfx-one/shared/interfaces';
 
 /**
  * "Qualifying lists not found" — the signals discovery could not fill, and a manual escape hatch.
  *
- * Auto-creating a list for a missing signal is deliberately absent: correct filters need
- * portal-specific facts (the per-project subscription property, the `hosted_events` property, the
- * page-view filter shape) that are not knowable from here, and a guess would create a real,
- * wrongly-filtered contact list in the production portal. Search-and-add covers the same need
- * with the operator supplying the judgement.
+ * "Create list" never creates anything here: it opens the custom builder pre-filled, where the
+ * operator reviews the criteria, the service verifies every property against the portal, and a
+ * preview and an explicit confirmation come before any list exists. Every signal in
+ * AUDIENCE_CUSTOM_CREATABLE_SIGNALS offers it.
  */
 @Component({
   selector: 'lfx-audience-missing-signals',
@@ -36,6 +40,8 @@ export class AudienceMissingSignalsComponent {
   /** Lists marked as exclusions, so a search result's Exclude button reads as on. */
   public readonly excludedIds = input<ReadonlySet<string>>(new Set<string>());
   public readonly disabled = input(false);
+  /** Whether "Create list" is offered at all (the portal is usable). */
+  public readonly canCreate = input(false);
 
   // === Outputs ===
   /** A debounced, de-duplicated typeahead query. The container owns the request. */
@@ -43,6 +49,8 @@ export class AudienceMissingSignalsComponent {
   public readonly addList = output<AudienceListSearchResult>();
   /** Mark (or unmark) a search result as an exclusion: its contacts are kept off this send. */
   public readonly excludeList = output<AudienceListRef>();
+  /** Open the custom builder pre-filled for this signal. Creates nothing by itself. */
+  public readonly createList = output<AudienceSignal>();
 
   // === Forms ===
   protected readonly searchControl = new FormControl('', { nonNullable: true });
@@ -53,7 +61,12 @@ export class AudienceMissingSignalsComponent {
   // === Computed Signals ===
   /** Each missing signal with the same label and guidance the review grid uses for its buckets. */
   protected readonly missing = computed(() =>
-    this.missingSignals().map((signal) => ({ signal, label: AUDIENCE_SIGNAL_INFO[signal].label, description: AUDIENCE_SIGNAL_INFO[signal].description }))
+    this.missingSignals().map((signal) => ({
+      signal,
+      label: AUDIENCE_SIGNAL_INFO[signal].label,
+      description: AUDIENCE_SIGNAL_INFO[signal].description,
+      creatable: AUDIENCE_CUSTOM_CREATABLE_SIGNALS.includes(signal),
+    }))
   );
 
   /**
@@ -112,6 +125,12 @@ export class AudienceMissingSignalsComponent {
   protected onAdd(list: AudienceListSearchResult): void {
     if (!this.disabled()) {
       this.addList.emit(list);
+    }
+  }
+
+  protected onCreate(signal: AudienceSignal): void {
+    if (!this.disabled() && this.canCreate()) {
+      this.createList.emit(signal);
     }
   }
 

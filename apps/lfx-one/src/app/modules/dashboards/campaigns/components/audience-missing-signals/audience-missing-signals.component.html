@@ -21,6 +21,18 @@
               <span class="text-xs font-semibold text-gray-900">{{ item.label }}</span>
             </div>
             <p class="text-xs text-gray-600">{{ item.description }}</p>
+            @if (item.creatable && canCreate()) {
+              <div>
+                <button
+                  type="button"
+                  (click)="onCreate(item.signal)"
+                  [disabled]="disabled()"
+                  class="mt-1 rounded border border-amber-300 bg-white px-2 py-1 text-xs font-medium text-gray-800 hover:bg-amber-100 disabled:opacity-50"
+                  [attr.data-testid]="'audience-missing-signals-create-' + item.signal">
+                  Create list…
+                </button>
+              </div>
+            }
           </div>
         }
       </div>
