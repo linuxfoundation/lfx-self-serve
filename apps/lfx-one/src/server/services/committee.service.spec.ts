@@ -1593,9 +1593,13 @@ describe('CommitteeService.getManagedPendingApplications', () => {
   it.each(['approved', 'rejected'] as const)('omits indexed pending applications whose live status is %s', async (status) => {
     const app = application('manager');
     prime([app]);
-    proxyRequest.mockResolvedValueOnce(applicationPage([app])).mockResolvedValueOnce({ ...app, status });
+    proxyRequest
+      .mockResolvedValueOnce(applicationPage([app]))
+      .mockResolvedValueOnce(rosterFor('manager'))
+      .mockResolvedValueOnce({ ...app, status });
     expect(await service.getManagedPendingApplications(req)).toEqual([]);
-    expect(proxyRequest).toHaveBeenCalledTimes(2); // No metadata fetch for stale candidates.
+    expect(proxyRequest).toHaveBeenCalledTimes(3); // Discovery, roster and live read; no metadata fetch for stale candidates.
+    expect(proxyRequest.mock.calls.filter(isLiveRead)).toHaveLength(1);
   });
 
   it('allows a rejected application reinstated as pending under the same UID on the next feed', async () => {
@@ -1617,9 +1621,13 @@ describe('CommitteeService.getManagedPendingApplications', () => {
   it.each([{ uid: 'other-request' }, { committee_uid: 'other-group' }])('omits a live response with mismatched identity: %j', async (mismatch) => {
     const app = application('manager');
     prime([app]);
-    proxyRequest.mockResolvedValueOnce(applicationPage([app])).mockResolvedValueOnce({ ...app, ...mismatch });
+    proxyRequest
+      .mockResolvedValueOnce(applicationPage([app]))
+      .mockResolvedValueOnce(rosterFor('manager'))
+      .mockResolvedValueOnce({ ...app, ...mismatch });
     expect(await service.getManagedPendingApplications(req)).toEqual([]);
-    expect(proxyRequest).toHaveBeenCalledTimes(2);
+    expect(proxyRequest).toHaveBeenCalledTimes(3);
+    expect(proxyRequest.mock.calls.filter(isLiveRead)).toHaveLength(1);
   });
 
   it.each(['statusCode', 'status'])('omits live 403/404 using %s but retains healthy applications', async (statusField) => {
@@ -1711,9 +1719,13 @@ describe('CommitteeService.getManagedPendingApplications', () => {
     const app = application('manager');
     prime([app]);
     const error = Object.assign(new Error('live unavailable'), { [statusField]: 500 });
-    proxyRequest.mockResolvedValueOnce(applicationPage([app])).mockRejectedValueOnce(error);
+    proxyRequest
+      .mockResolvedValueOnce(applicationPage([app]))
+      .mockResolvedValueOnce(rosterFor('manager'))
+      .mockRejectedValueOnce(error);
     await expect(service.getManagedPendingApplications(req)).rejects.toBe(error);
-    expect(proxyRequest).toHaveBeenCalledTimes(2);
+    expect(proxyRequest).toHaveBeenCalledTimes(3);
+    expect(proxyRequest.mock.calls.filter(isLiveRead)).toHaveLength(1);
   });
 
   it('propagates permission failures before any live reads', async () => {
