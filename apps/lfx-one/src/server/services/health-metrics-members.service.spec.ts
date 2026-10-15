@@ -99,6 +99,9 @@ describe('HealthMetricsMembersService.getTiers', () => {
     expect(sql).toContain('ORDER BY year DESC, tier_sort_rank ASC NULLS LAST, membership_tier ASC');
     expect(sql).toContain(`LIMIT ${HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP + 1}`);
     expect(sql).not.toMatch(/WHERE[\s\S]*year\s*=/);
+    expect(execute.mock.calls.find(([statement]) => String(statement).includes('active_new_member_count'))?.[2]).toMatchObject({
+      expectInvalidIdentifier: 'ACTIVE_NEW_MEMBER_COUNT',
+    });
   });
 
   it('reads the foundation total off the Memberships revenue row for every period', async () => {
@@ -123,6 +126,24 @@ describe('HealthMetricsMembersService.getTiers', () => {
       { range: 'COMPLETED_YEAR', totalUsd: 3500000 },
       { range: 'YTD', totalUsd: 4000000 },
     ]);
+  });
+
+  it('keeps the tiers page on new_member_count when active_new_member_count is not deployed yet', async () => {
+    execute.mockImplementation(async (sql: string) => {
+      if (String(sql).includes('active_new_member_count')) {
+        throw new Error("SQL compilation error: invalid identifier 'ACTIVE_NEW_MEMBER_COUNT'");
+      }
+      return { rows: String(sql).includes('MEMBERSHIP_TIER_YEAR') ? [tierRow()] : [REVENUE_ROW] };
+    });
+
+    const response = await new HealthMetricsMembersService().getTiers(req, { foundationSlug: 'acme' });
+
+    expect(response.rows).toEqual([
+      { year: 2025, tier: 'Gold', sortRank: 2, memberCount: 12, newMemberCount: 3, activeNewMemberCount: 3, revenueUsd: 600000, isPartialYear: false },
+    ]);
+    const tierReads = execute.mock.calls.filter(([statement]) => String(statement).includes('MEMBERSHIP_TIER_YEAR'));
+    expect(tierReads).toHaveLength(2);
+    expect(String(tierReads[1][0])).not.toContain('active_new_member_count');
   });
 
   it('keeps null counts null, sorts an unranked tier last and drops a row without a tier', async () => {

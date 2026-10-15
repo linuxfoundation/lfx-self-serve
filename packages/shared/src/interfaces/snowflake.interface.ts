@@ -117,4 +117,10 @@ export interface SnowflakeViewReadContext {
   operation: string;
   /** Generic sentence that replaces the SDK's message, which names the view. */
   clientMessage: string;
+  /**
+   * Column that may be absent during a schema rollout. A matching invalid-identifier
+   * error is recorded as success against the shared circuit breaker, then rethrown
+   * so the caller can retry without the column.
+   */
+  expectInvalidIdentifier?: string;
 }

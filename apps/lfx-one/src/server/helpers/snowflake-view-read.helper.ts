@@ -31,7 +31,10 @@ export async function executeSnowflakeViewRead<T>(
 ): Promise<SnowflakeQueryResult<T>> {
   const startTime = Date.now();
   try {
-    return await snowflakeService.execute<T>(sql, binds, { expectMissingObject: true });
+    return await snowflakeService.execute<T>(sql, binds, {
+      expectMissingObject: true,
+      ...(context.expectInvalidIdentifier ? { expectInvalidIdentifier: context.expectInvalidIdentifier } : {}),
+    });
   } catch (error) {
     // The breaker treats this as expected and logs it at `warning`, but the same message covers a
     // revoked GRANT — an access-control event that has to be alertable on its own.
