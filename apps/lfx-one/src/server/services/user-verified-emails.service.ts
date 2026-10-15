@@ -47,7 +47,7 @@ export class UserVerifiedEmailsService {
     const [emailData, preference, contactId] = await Promise.all([
       this.emailVerificationService.getUserEmails(req, sub),
       v1Token ? this.meetingPreferenceService.getMeetingInviteEmail(req, v1Token) : Promise.resolve(undefined),
-      v1Token ? this.getContactId(req, v1Token) : Promise.resolve(null),
+      v1Token ? this.getContactId(req, v1Token) : Promise.resolve(undefined),
     ]);
 
     if (!emailData) {
@@ -62,12 +62,15 @@ export class UserVerifiedEmailsService {
       emails: dedupeEmails([preferenceEmail, ...authServiceEmails]),
       preferenceEmail,
       contactId: contactId || null,
-      incomplete: !emailData || (!!v1Token && !contactId),
+      // A missing gateway token or a failed /me is incomplete; a /me with no ID is a real "no contact".
+      incomplete: !emailData || (!isImpersonating(req) && contactId === undefined),
     };
   }
 
   // Registrant rows keep the user's contact id as `user_id` even when sync rewrites the email.
-  private async getContactId(req: Request, v1Token: string): Promise<string | null> {
+  // Undefined means the lookup failed; null means /me answered without an ID.
+  // Not UserService.getApiGatewayProfile: UserService imports MeetingService, so importing it here is circular.
+  private async getContactId(req: Request, v1Token: string): Promise<string | null | undefined> {
     try {
       const response = await fetch(`${getUserServiceBaseUrl('get_contact_id', 'user_verified_emails_service')}/me?basic=true`, {
         headers: { Authorization: `Bearer ${v1Token}` },
@@ -75,13 +78,13 @@ export class UserVerifiedEmailsService {
       });
       if (!response.ok) {
         logger.warning(req, 'get_contact_id', 'User-service /me returned a non-OK status', { status: response.status });
-        return null;
+        return undefined;
       }
       const profile = (await response.json()) as { ID?: string };
       return profile.ID || null;
     } catch (error) {
       logger.warning(req, 'get_contact_id', 'User-service /me lookup failed', { error: error instanceof Error ? error.message : 'Unknown error' });
-      return null;
+      return undefined;
     }
   }
 }

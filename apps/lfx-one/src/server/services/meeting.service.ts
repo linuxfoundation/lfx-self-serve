@@ -1072,7 +1072,7 @@ export class MeetingService {
 
   /**
    * Fetches the signed-in user's registrants for a meeting by their verified emails other than
-   * `triedEmail`, in one query. Rows are ordered by email priority (meeting-invite preference first).
+   * `triedEmail`, or by their v1 contact id, in one query. Rows are ordered by email priority (meeting-invite preference first).
    * `lookupFailed` is set when nothing matched and an email source was unavailable.
    */
   public async getMeetingRegistrantsByVerifiedEmails(

@@ -41,7 +41,7 @@ interface Scenario {
   rows: Row[];
   preference: 'none' | 'timeout' | string;
   authEmails: { primary_email: string; alternate_emails: { email: string; verified: boolean }[] } | 'fail';
-  contactId: string | 'fail';
+  contactId: string | 'fail' | 'none';
 }
 
 let scenario: Scenario;
@@ -149,7 +149,7 @@ describe('POST /public/api/meetings/:id/join-url (restricted meeting, real servi
       if (String(input).startsWith(`${GATEWAY_URL}user-service/v1/me`)) {
         contactIdCalls += 1;
         if (scenario.contactId === 'fail') return { ok: false, status: 502 } as globalThis.Response;
-        return { ok: true, status: 200, json: async () => ({ ID: scenario.contactId }) } as globalThis.Response;
+        return { ok: true, status: 200, json: async () => (scenario.contactId === 'none' ? {} : { ID: scenario.contactId }) } as globalThis.Response;
       }
       return realFetch(input, init);
     });
@@ -265,6 +265,26 @@ describe('POST /public/api/meetings/:id/join-url (restricted meeting, real servi
 
     expect(res.status).toBe(503);
     expect(joinCalls).toHaveLength(0);
+  });
+
+  it('3e. answers 503 when the gateway token is missing and nothing else matched', async () => {
+    scenario.rows = [{ ...aliasRow(), user_id: CONTACT_ID }];
+    sessionOptions = { email: LOGIN_EMAIL };
+
+    const res = await postJoin();
+
+    expect(res.status).toBe(503);
+    expect(contactIdCalls).toBe(0);
+  });
+
+  it('3f. answers 403 when the profile has no contact id and nothing else matched', async () => {
+    scenario.rows = [aliasRow()];
+    scenario.contactId = 'none';
+
+    const res = await postJoin();
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('NOT_REGISTERED_FOR_MEETING');
   });
 
   it('4. rejects an unregistered user when every email source is healthy', async () => {

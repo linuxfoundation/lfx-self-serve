@@ -121,12 +121,12 @@ describe('UserVerifiedEmailsService.getUserVerifiedEmails', () => {
     expect(getMeetingInviteEmail).not.toHaveBeenCalled();
   });
 
-  it('skips the preference without a gateway token', async () => {
+  it('skips the preference and flags the lookup incomplete without a gateway token', async () => {
     await expect(service.getUserVerifiedEmails(buildReq(false))).resolves.toEqual({
       emails: [PRIMARY, 'alt@example.org'],
       preferenceEmail: null,
       contactId: null,
-      incomplete: false,
+      incomplete: true,
     });
     expect(getMeetingInviteEmail).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
@@ -182,6 +182,12 @@ describe('UserVerifiedEmailsService.getUserVerifiedEmails', () => {
 
     await expect(service.getUserVerifiedEmails(buildReq())).resolves.toMatchObject({ contactId: null, incomplete: true });
     expect(loggerWarning).toHaveBeenCalledWith(expect.anything(), 'get_contact_id', expect.any(String), { status: 502 });
+  });
+
+  it('treats a profile with no ID as complete', async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({}) });
+
+    await expect(service.getUserVerifiedEmails(buildReq())).resolves.toMatchObject({ contactId: null, incomplete: false });
   });
 
   it('flags a thrown contact-id lookup as incomplete', async () => {
