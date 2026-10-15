@@ -1718,7 +1718,7 @@ export class UserService {
    *    ("Only invited users are allowed to RSVP"). Filtering here keeps the dashboard from
    *    surfacing rows the user can't action.
    *  - `committeeMeetingIds`: the subset of `meetingIds` where any of the user's registrations came from a
-   *    committee. Those follow committee membership, so the user cannot remove themselves from them.
+   *    committee. It only words the Remove confirmation, which tells the user the committee will not invite them again.
    *  - `uidsByMeeting`: the same registration UIDs grouped by meeting for personal-feed enrichment.
    */
   private async fetchUserActiveRegistrantIdentities(
