@@ -187,7 +187,7 @@ export interface MktgDocumentLocation {
 export interface MktgRevisionResponse extends MktgDocumentDetailResponse {
   revision: MktgRevisionSummary;
   markdown: string;
-  /** Run provenance, used to match browser-held run notes to this revision only. */
+  /** Stored run provenance, including the whitelisted README outcome shown in About this document. */
   source?: MktgRevisionSource;
   /** Copyable derivative text from the validated envelope. */
   derivatives?: Record<string, string>;

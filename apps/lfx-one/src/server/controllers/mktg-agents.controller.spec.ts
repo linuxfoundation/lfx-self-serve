@@ -160,6 +160,19 @@ describe('MktgAgentsController', () => {
     next = vi.fn() as NextFunction & ReturnType<typeof vi.fn>;
   });
 
+  it.each([
+    ['brandKitResult', brandKitMocks],
+    ['foundationMessageResult', foundationMessageMocks],
+    ['icpResult', icpMocks],
+  ] as const)('%s passes the explicit README outcome from the HTTP boundary', async (method, service) => {
+    service.getResult.mockResolvedValue({ status: 'pending' });
+    const readme = { fetched: false, skipReason: 'no-readme' };
+    const req = buildResultReq({ sessionId: 'sess-1', ownerToken: 'token-1', project: 'proj-uid-1', readme });
+    await controller[method](req, buildRes(), next);
+    expect(next).not.toHaveBeenCalled();
+    expect(service.getResult).toHaveBeenCalledWith(req, 'sess-1', 'proj-uid-1', readme);
+  });
+
   describe('storedBrandKit (GET /api/mktg-agents/brand-kit/stored)', () => {
     it('rejects a missing project query param with a validation error, resolving nothing', async () => {
       const res = buildRes();
@@ -265,7 +278,7 @@ describe('MktgAgentsController', () => {
       await controller.brandKitResult(req, res, next);
 
       expect(next).not.toHaveBeenCalled();
-      expect(brandKitMocks.getResult).toHaveBeenCalledWith(req, 'sess-1', 'proj-uid-1');
+      expect(brandKitMocks.getResult).toHaveBeenCalledWith(req, 'sess-1', 'proj-uid-1', undefined);
     });
 
     it('treats a non-string / blank project as no scope rather than coercing it into a partition', async () => {
@@ -274,7 +287,7 @@ describe('MktgAgentsController', () => {
 
       await controller.brandKitResult(req, buildRes(), next);
 
-      expect(brandKitMocks.getResult).toHaveBeenCalledWith(req, 'sess-1', undefined);
+      expect(brandKitMocks.getResult).toHaveBeenCalledWith(req, 'sess-1', undefined, undefined);
     });
 
     it('never reaches the service when the owner token does not verify', async () => {
@@ -394,7 +407,7 @@ describe('MktgAgentsController', () => {
       await controller.icpResult(req, buildRes(), next);
 
       expect(next).not.toHaveBeenCalled();
-      expect(icpMocks.getResult).toHaveBeenCalledWith(req, 'sess-1', 'proj-uid-1');
+      expect(icpMocks.getResult).toHaveBeenCalledWith(req, 'sess-1', 'proj-uid-1', undefined);
     });
 
     it('treats a non-string project as no scope rather than coercing it into a partition', async () => {
@@ -403,7 +416,7 @@ describe('MktgAgentsController', () => {
 
       await controller.icpResult(req, buildRes(), next);
 
-      expect(icpMocks.getResult).toHaveBeenCalledWith(req, 'sess-1', undefined);
+      expect(icpMocks.getResult).toHaveBeenCalledWith(req, 'sess-1', undefined, undefined);
     });
 
     it('never reaches the service when the owner token does not verify', async () => {
@@ -589,7 +602,7 @@ describe('MktgAgentsController', () => {
       await controller.foundationMessageResult(req, buildRes(), next);
 
       expect(next).not.toHaveBeenCalled();
-      expect(foundationMessageMocks.getResult).toHaveBeenCalledWith(req, 'sess-1', 'proj-uid-1');
+      expect(foundationMessageMocks.getResult).toHaveBeenCalledWith(req, 'sess-1', 'proj-uid-1', undefined);
     });
 
     it('treats a non-string / blank project as no scope rather than coercing it into a partition', async () => {
@@ -598,7 +611,7 @@ describe('MktgAgentsController', () => {
 
       await controller.foundationMessageResult(req, buildRes(), next);
 
-      expect(foundationMessageMocks.getResult).toHaveBeenCalledWith(req, 'sess-1', undefined);
+      expect(foundationMessageMocks.getResult).toHaveBeenCalledWith(req, 'sess-1', undefined, undefined);
     });
 
     // The three guards below are the write path's authn/authz boundary. They

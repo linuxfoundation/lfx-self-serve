@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ICP_CONTRACT_ID, ICP_MAX_DOCUMENT_BYTES, ICP_PROJECT_UID_REGEX } from '@lfx-one/shared/constants';
-import { IcpEnvelope, IcpGenerationStart, IcpResultResponse, MktgRunPersistReceipt } from '@lfx-one/shared/interfaces';
+import { IcpEnvelope, IcpGenerationStart, IcpResultResponse, MktgReadmeOutcome, MktgRunPersistReceipt } from '@lfx-one/shared/interfaces';
 import { buildIcpFormPayload, buildIcpObjectKey, extractIcpEnvelopeCandidates, renderIcpFormText, validateIcpEnvelope } from '@lfx-one/shared/utils';
 import { createHash } from 'node:crypto';
 import { Request } from 'express';
@@ -122,7 +122,7 @@ export class IcpService {
    * envelope exists, so a `pending` poll costs no upstream lookups. Without
    * it the document is still returned; it is simply not persisted.
    */
-  public async getResult(req: Request, sessionId: string, projectUid?: string): Promise<IcpResultResponse> {
+  public async getResult(req: Request, sessionId: string, projectUid?: string, readme?: MktgReadmeOutcome): Promise<IcpResultResponse> {
     const payloads = await this.guildService.getRawEventPayloads(req, sessionId);
     const envelope = this.findAuthoritativeEnvelope(req, payloads);
 
@@ -141,7 +141,7 @@ export class IcpService {
 
     const persisted = await this.persistEnvelope(req, envelope, projectUid);
     // A failed revision write drops the receipt like a failed artifact write, so the next poll retries both.
-    const persistence = persisted ? await this.documentStore.recordPersisted(req, 'icp', persisted, envelope, sessionId) : null;
+    const persistence = persisted ? await this.documentStore.recordPersisted(req, 'icp', persisted, envelope, sessionId, readme) : null;
 
     return {
       status: 'ready',

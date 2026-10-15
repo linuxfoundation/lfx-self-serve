@@ -340,21 +340,6 @@ export interface MktgAttachmentChip {
   iconClass: string;
 }
 
-/**
- * The document's review-status chip on the result card — the label as it
- * appears inside the document (`Draft — pre-filled`, `Draft — from your
- * documents`, `ED-reviewed — [name], [date]`, …), with the styling that
- * tells a reviewed document from a draft. Precomputed in the component
- * because the reviewed/draft decision drives the class, and the repo
- * prohibits the conditional a template-side derivation would need.
- */
-export interface MktgDocumentStatusChip {
-  /** The status label verbatim from the document. */
-  label: string;
-  /** Tailwind colour classes for the chip. */
-  chipClass: string;
-}
-
 /** One word-count-locked derivative surfaced as a copyable chip on the result. */
 export interface MktgIntakeDerivativeChip {
   /** Derivative key in the agent's envelope `derivatives` record. */
@@ -570,13 +555,11 @@ export interface MktgRunQuestionChip {
 /**
  * Receipt of an agent's server-side persistence write, returned on a `ready`
  * result by agents whose contract persists the validated document (the Brand
- * Kit's dec-brand-kit-storage-v2 write path today). The run shell reads only
- * its PRESENCE: a ready result WITHOUT a receipt means the object-store write
- * did not happen — transient by default, and because the keys are
- * content-addressed the next poll re-runs the same write idempotently.
- * Field names are snake_case (unlike the camelCase enclosing response) on
- * purpose: they mirror the downstream Artifact contract verbatim so minting
- * needs no normalization layer — do not camelCase them.
+ * Kit's dec-brand-kit-storage-v2 write path). A missing receipt keeps the
+ * document view saving through bounded retries. Its `document` location
+ * identifies the exact stored revision to open. Artifact fields retain their
+ * downstream snake_case names; the document location uses the Documents
+ * API's camelCase fields.
  */
 export interface MktgRunPersistReceipt {
   /** Document revision recorded by this result poll. Absent on older servers. */
@@ -837,6 +820,8 @@ export type MktgAnswerMemory = Record<string, MktgRememberedAnswer>;
 export interface MktgStoredAgentRun {
   /** Resumable result polling; no new Guild session is created on a document reload. */
   pendingAttempt?: MktgRunAttempt;
+  /** Terminally failed poll. Only an explicit retry may resume it, never a normal document open. */
+  failedAttempt?: MktgRunAttempt;
   /** Catalog agent id. */
   agentId: string;
   /** LFX project uid the run belongs to. */

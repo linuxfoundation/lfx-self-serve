@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { MKTG_ARTIFACT_SPECS } from '@lfx-one/shared/constants';
-import { BrandKitEnvelope, BrandKitPersistReceipt, BrandKitResultResponse, BrandKitStoredResponse } from '@lfx-one/shared/interfaces';
+import { BrandKitEnvelope, BrandKitPersistReceipt, BrandKitResultResponse, BrandKitStoredResponse, MktgReadmeOutcome } from '@lfx-one/shared/interfaces';
 import { extractBrandKitEnvelopeCandidates, renderBrandKitFormMessage, validateBrandKitEnvelope } from '@lfx-one/shared/utils';
 import { createHash } from 'node:crypto';
 import { Request } from 'express';
@@ -67,7 +67,7 @@ export class BrandKitService {
    * envelope exists, so a `pending` poll costs no upstream lookups. Without
    * it the document is still returned; it is simply not persisted.
    */
-  public async getResult(req: Request, sessionId: string, projectUid?: string): Promise<BrandKitResultResponse> {
+  public async getResult(req: Request, sessionId: string, projectUid?: string, readme?: MktgReadmeOutcome): Promise<BrandKitResultResponse> {
     const payloads = await this.guildService.getRawEventPayloads(req, sessionId);
     const envelope = this.findAuthoritativeEnvelope(req, payloads);
 
@@ -82,7 +82,7 @@ export class BrandKitService {
       document_chars: envelope.document_markdown.length,
     });
 
-    const persistence = await this.persistEnvelope(req, envelope, sessionId, projectUid);
+    const persistence = await this.persistEnvelope(req, envelope, sessionId, projectUid, readme);
 
     return {
       status: 'ready',
@@ -124,8 +124,14 @@ export class BrandKitService {
    * failure degrades to null at WARN — the document still reaches the user,
    * without a receipt, and the next poll retries the idempotent write.
    */
-  private async persistEnvelope(req: Request, envelope: BrandKitEnvelope, sessionId: string, projectUid?: string): Promise<BrandKitPersistReceipt | null> {
-    return this.documentStore.persistGeneration(req, this.artifactSpec, envelope, projectUid, sessionId);
+  private async persistEnvelope(
+    req: Request,
+    envelope: BrandKitEnvelope,
+    sessionId: string,
+    projectUid?: string,
+    readme?: MktgReadmeOutcome
+  ): Promise<BrandKitPersistReceipt | null> {
+    return this.documentStore.persistGeneration(req, this.artifactSpec, envelope, projectUid, sessionId, readme);
   }
 
   /**

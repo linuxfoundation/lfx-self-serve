@@ -101,10 +101,11 @@ export class MktgDocumentStoreService {
     spec: MktgArtifactSpec,
     envelope: MktgArtifactEnvelope,
     projectUid: string | undefined,
-    sessionId: string
+    sessionId: string,
+    readme?: MktgReadmeOutcome
   ): Promise<MktgArtifactPersistReceipt | null> {
     const receipt = await this.artifactService.persist(req, spec, envelope, projectUid);
-    return receipt ? this.recordPersisted(req, spec.agentKey, receipt, envelope, sessionId) : null;
+    return receipt ? this.recordPersisted(req, spec.agentKey, receipt, envelope, sessionId, readme) : null;
   }
 
   /**
@@ -121,7 +122,8 @@ export class MktgDocumentStoreService {
     agentKey: MktgDocumentAgentKey,
     receipt: T,
     envelope: MktgArtifactEnvelope,
-    sessionId: string
+    sessionId: string,
+    readme?: MktgReadmeOutcome
   ): Promise<T | null> {
     const type = findMktgDocumentType(agentKey);
     if (!type) {
@@ -129,7 +131,7 @@ export class MktgDocumentStoreService {
     }
 
     try {
-      const revision = await this.recordGeneration(req, type, receipt.project, envelope, sessionId);
+      const revision = await this.recordGeneration(req, type, receipt.project, envelope, sessionId, readme);
       return { ...receipt, document: { agentKey, documentId: revision.record.documentId, revisionId: revision.id } };
     } catch (error) {
       logger.warning(req, 'mktg_document_store_record', 'Revision write failed — returning the document without a receipt; retried on next poll', {
@@ -153,7 +155,8 @@ export class MktgDocumentStoreService {
     type: MktgDocumentType,
     project: string,
     envelope: MktgArtifactEnvelope,
-    sessionId: string
+    sessionId: string,
+    readme?: MktgReadmeOutcome
   ): Promise<MktgStoredRevision> {
     const documentId = type.kind === 'run' ? this.runDocumentId(sessionId) : MKTG_LIVING_DOCUMENT_ID;
     const revisions = await this.readRevisions(req, project, type, documentId);
@@ -188,7 +191,7 @@ export class MktgDocumentStoreService {
       createdAt: new Date().toISOString(),
       origin: 'generated',
       restoredFromId: null,
-      source: { sessionId, draftVersion: envelope.version, intakeMode: envelope.intake.mode, ...this.readmeSource(req) },
+      source: { sessionId, draftVersion: envelope.version, intakeMode: envelope.intake.mode, ...this.readmeSource(readme) },
       bundle: { markdown, contentSha256: envelope.content_sha256, sidecar, brandFile: null },
     });
 
@@ -634,8 +637,7 @@ export class MktgDocumentStoreService {
    * metadata only, never proof of access or agent output. Accept only a known
    * reason. Unknown or older clients supply no outcome rather than a guess.
    */
-  private readmeSource(req: Request): { readme?: MktgReadmeOutcome } {
-    const outcome = req.body?.readme;
+  private readmeSource(outcome: MktgReadmeOutcome | undefined): { readme?: MktgReadmeOutcome } {
     if (outcome?.fetched !== false || typeof outcome.skipReason !== 'string') {
       return {};
     }

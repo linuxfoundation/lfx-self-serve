@@ -295,7 +295,7 @@ export class MktgAgentsController {
    */
   public async brandKitResult(req: Request, res: Response, next: NextFunction): Promise<void> {
     // Normalize a missing/null body so malformed requests get a 400, not a throw.
-    const { sessionId, ownerToken, project } = (req.body ?? {}) as Partial<BrandKitResultRequest>;
+    const { sessionId, ownerToken, project, readme } = (req.body ?? {}) as Partial<BrandKitResultRequest>;
 
     const validSessionId = typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : undefined;
     if (!validSessionId) {
@@ -345,7 +345,7 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'brand_kit_result', {});
 
     try {
-      const result: BrandKitResultResponse = await this.brandKitService.getResult(req, validSessionId, validProjectUid);
+      const result: BrandKitResultResponse = await this.brandKitService.getResult(req, validSessionId, validProjectUid, readme);
       logger.success(req, 'brand_kit_result', startTime, { status: result.status });
       res.json(result);
     } catch (error) {
@@ -637,7 +637,7 @@ export class MktgAgentsController {
    */
   public async foundationMessageResult(req: Request, res: Response, next: NextFunction): Promise<void> {
     // Normalize a missing/null body so malformed requests get a 400, not a throw.
-    const { sessionId, ownerToken, project } = (req.body ?? {}) as Partial<FoundationMessageResultRequest>;
+    const { sessionId, ownerToken, project, readme } = (req.body ?? {}) as Partial<FoundationMessageResultRequest>;
 
     const validSessionId = typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : undefined;
     if (!validSessionId) {
@@ -687,7 +687,7 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'foundation_message_result', {});
 
     try {
-      const result: FoundationMessageResultResponse = await this.foundationMessageService.getResult(req, validSessionId, validProjectUid);
+      const result: FoundationMessageResultResponse = await this.foundationMessageService.getResult(req, validSessionId, validProjectUid, readme);
       logger.success(req, 'foundation_message_result', startTime, { status: result.status });
       res.json(result);
     } catch (error) {
@@ -820,7 +820,7 @@ export class MktgAgentsController {
    */
   public async icpResult(req: Request, res: Response, next: NextFunction): Promise<void> {
     // Normalize a missing/null body so malformed requests get a 400, not a throw.
-    const { sessionId, ownerToken, project } = (req.body ?? {}) as Partial<IcpResultRequest>;
+    const { sessionId, ownerToken, project, readme } = (req.body ?? {}) as Partial<IcpResultRequest>;
 
     const validSessionId = typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : undefined;
     if (!validSessionId) {
@@ -869,7 +869,7 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'icp_result', {});
 
     try {
-      const result: IcpResultResponse = await this.icpService.getResult(req, validSessionId, validProjectUid);
+      const result: IcpResultResponse = await this.icpService.getResult(req, validSessionId, validProjectUid, readme);
       logger.success(req, 'icp_result', startTime, { status: result.status });
       res.json(result);
     } catch (error) {

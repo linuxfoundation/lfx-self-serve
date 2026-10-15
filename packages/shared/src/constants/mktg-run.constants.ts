@@ -371,9 +371,6 @@ export const MKTG_README_SKIP_NOTES: Record<MktgReadmeSkipReason, string> = {
   'fetch-failed': 'Generated without a README — GitHub couldn’t be reached for that repository, so the agent had no README to work from.',
 };
 
-/** Running-phase stage checklist labels, in order. */
-export const MKTG_RUN_STAGES = ['Submitting your intake', 'Agent drafting the document', 'Validating required sections'] as const;
-
 /**
  * Validation of the questions step: an answer that is not one. There is no
  * skip and no TBD there — the agent already suggested what it could settle,
@@ -417,9 +414,6 @@ export const MKTG_DOCUMENT_STATUS_LABEL_REGEX = /((?:Draft(?: v\d+)?|ED-reviewed
  * mid-sentence or mentions the word "status" somewhere before it.
  */
 export const MKTG_DOCUMENT_STATUS_LEAD_REGEX = /^(?:[\s#>|*_-]*|[\s#>|*_-]*status[\s*_:|—–-]*)$/i;
-
-/** Prefix of the reviewed label — the one status that is no longer a draft. */
-export const MKTG_DOCUMENT_STATUS_REVIEWED_PREFIX = 'ED-reviewed';
 
 /** localStorage key prefix for stored runs; full key is `<prefix>:<projectUid>:<agentId>`. */
 export const MKTG_RUN_STORAGE_KEY_PREFIX = 'lfx-mktg-agent-run';

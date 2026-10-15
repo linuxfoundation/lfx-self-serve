@@ -75,7 +75,7 @@ vi.mock('./object-store.service', () => ({
 }));
 
 import { MKTG_ARTIFACT_SPECS, MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
-import type { MktgArtifactEnvelope, MktgDocumentType, MktgRevisionRecord } from '@lfx-one/shared/interfaces';
+import type { MktgArtifactEnvelope, MktgDocumentType, MktgReadmeSkipReason, MktgRevisionRecord } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
 import { MktgDocumentStoreService } from './mktg-document-store.service';
@@ -182,20 +182,23 @@ describe('MktgDocumentStoreService', () => {
     it('records only a known README-less reason, never arbitrary client text', async () => {
       const request = { ...req, body: { readme: { fetched: false, skipReason: 'no-readme', extra: 'not stored' } } } as Request;
       const generated = { ...envelope('# First\n'), inputs: { readme_provided: false } };
-      const receipt = await service.persistGeneration(request, SPEC, generated, PROJECT, 'session-1');
+      const receipt = await service.persistGeneration(request, SPEC, generated, PROJECT, 'session-1', { fetched: false, skipReason: 'no-readme' });
       const read = await service.getRevision(req, PROJECT, BRAND_KIT, 'living', receipt!.document!.revisionId);
       expect(read?.source?.readme).toEqual({ fetched: false, skipReason: 'no-readme' });
       const withReadme = { ...req, body: { readme: { fetched: true } } } as Request;
-      await service.persistGeneration(withReadme, SPEC, envelope('# Second\n'), PROJECT, 'session-2');
+      await service.persistGeneration(withReadme, SPEC, envelope('# Second\n'), PROJECT, 'session-2', { fetched: true });
       expect(storedRecord(revisionKeys()[1]).source.readme).toBeUndefined();
       await service.persistGeneration(
         { ...req, body: { readme: { fetched: false, skipReason: 'invented' } } } as Request,
         SPEC,
         { ...generated, document_markdown: '# Third\n', content_sha256: sha('# Third\n') },
         PROJECT,
-        'session-3'
+        'session-3',
+        { fetched: false, skipReason: 'invented' as MktgReadmeSkipReason }
       );
       expect(storedRecord(revisionKeys()[2]).source.readme).toBeUndefined();
+      await service.persistGeneration(request, SPEC, envelope('# No explicit outcome\n'), PROJECT, 'session-4');
+      expect(storedRecord(revisionKeys()[3]).source.readme).toBeUndefined();
     });
 
     it('records a generation once, however often the result is polled', async () => {

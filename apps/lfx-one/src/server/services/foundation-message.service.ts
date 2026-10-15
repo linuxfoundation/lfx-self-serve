@@ -11,6 +11,7 @@ import {
   MktgIntakeDocument,
   MktgRunAnswer,
   MktgRunQuestion,
+  MktgReadmeOutcome,
 } from '@lfx-one/shared/interfaces';
 import {
   buildFoundationMessageFormPayload,
@@ -139,7 +140,7 @@ export class FoundationMessageService {
    * before anything is written; without it the document is still returned,
    * just not stored.
    */
-  public async getResult(req: Request, sessionId: string, projectUid?: string): Promise<FoundationMessageResultResponse> {
+  public async getResult(req: Request, sessionId: string, projectUid?: string, readme?: MktgReadmeOutcome): Promise<FoundationMessageResultResponse> {
     const payloads = await this.guildService.getRawEventPayloads(req, sessionId);
     const envelope = this.findAuthoritativeEnvelope(req, payloads);
     // What the agent has done so far, in plain sentences, for the run page's live feed — on every status.
@@ -163,7 +164,7 @@ export class FoundationMessageService {
       document_chars: envelope.document_markdown.length,
     });
 
-    const persistence = await this.persistEnvelope(req, envelope, sessionId, projectUid);
+    const persistence = await this.persistEnvelope(req, envelope, sessionId, projectUid, readme);
 
     return {
       status: 'ready',
@@ -225,9 +226,10 @@ export class FoundationMessageService {
     req: Request,
     envelope: FoundationMessageEnvelope,
     sessionId: string,
-    projectUid?: string
+    projectUid?: string,
+    readme?: MktgReadmeOutcome
   ): Promise<FoundationMessagePersistReceipt | null> {
-    return this.documentStore.persistGeneration(req, this.artifactSpec, envelope, projectUid, sessionId);
+    return this.documentStore.persistGeneration(req, this.artifactSpec, envelope, projectUid, sessionId, readme);
   }
 
   /**
