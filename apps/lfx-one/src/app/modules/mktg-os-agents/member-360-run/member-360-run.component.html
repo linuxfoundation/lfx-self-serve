@@ -1,0 +1,156 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6 p-4 sm:p-8" data-testid="member-360-run-page">
+  <header class="flex flex-wrap items-center gap-4 border-b border-gray-200 bg-white p-4">
+    <a routerLink=".." queryParamsHandling="preserve" class="font-semibold text-blue-600" data-testid="member-360-back">← Marketing OS</a
+    ><span class="text-gray-400">/</span><b>Member 360</b> <span class="grow"></span
+    ><span class="text-sm text-gray-500" data-testid="member-360-last-run"
+      >{{ context.activeContext()?.name }}
+      @if (latest(); as last) {
+        · last run {{ latestPeriod() }}, {{ last.generated_at | date: 'd MMM' : 'UTC' }}
+      }
+    </span>
+  </header>
+  <!-- Exact 820px form width and 26px title from the approved board. -->
+  <main class="mx-auto flex w-full max-w-[820px] flex-col gap-5">
+    <h1 class="text-[26px] font-bold">Member 360</h1>
+    <p class="text-gray-700">{{ intro }}</p>
+    @if (!context.activeContextUid()) {
+      <p role="status">Select a project to run Member 360.</p>
+    } @else if (!context.activeProject()) {
+      <p role="status">Checking project access…</p>
+    } @else if (!context.canWrite()) {
+      <lfx-message severity="warn" text="You need write access to this project to run Member 360." data-testid="member-360-no-access" />
+    } @else {
+      <form [formGroup]="form" (ngSubmit)="run()" class="flex flex-col gap-5">
+        <section class="flex flex-col gap-5 rounded-xl border border-gray-200 bg-white p-6">
+          <div class="flex flex-col gap-1">
+            <b>Project</b>
+            <div class="flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3" data-testid="member-360-project">
+              <b>{{ context.activeContext()?.name }}</b
+              ><span class="text-sm text-gray-500">fixed to the project you are in; the agent refuses any other</span>
+            </div>
+          </div>
+          <!-- Stack through 1280px so the full default Window label fits at laptop width. -->
+          <div class="grid gap-4 min-[1281px]:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+            <div class="flex min-w-0 flex-col gap-1">
+              <label for="member-360-window-input" class="font-semibold">Window</label
+              ><lfx-select
+                [form]="form"
+                control="window"
+                [options]="windowOptions"
+                styleClass="w-full [&_.p-select-label]:whitespace-normal"
+                inputId="member-360-window-input"
+                ariaLabel="Window"
+                data-testid="member-360-window" />
+            </div>
+            <div class="flex min-w-0 flex-col gap-1">
+              <label for="member-360-compare-input" class="font-semibold">Compare with</label
+              ><lfx-select
+                [form]="form"
+                control="compare"
+                [options]="compareOptions()"
+                [loading]="historyLoading()"
+                styleClass="w-full"
+                inputId="member-360-compare-input"
+                ariaLabel="Compare with"
+                data-testid="member-360-compare" />
+            </div>
+          </div>
+          <div class="flex flex-col gap-2">
+            <p class="flex items-baseline gap-x-1">
+              <b>Trackers</b><span class="text-sm text-gray-500">optional · speaking, content, ambassadors, marketing activity</span>
+            </p>
+            @for (upload of trackers(); track upload.id) {
+              <div
+                class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-200 p-3"
+                data-testid="member-360-tracker"
+                [attr.data-upload-id]="upload.id">
+                <span class="break-all"
+                  ><span class="mr-2 rounded border border-gray-200 px-2 py-1 font-mono text-xs">{{ upload.format }}</span
+                  >{{ upload.tracker.filename }}
+                  <span class="text-sm text-emerald-700"
+                    >{{ upload.tracker.rows.length }} {{ upload.tracker.rows.length === 1 ? 'row' : 'rows' }} · {{ upload.summary }}</span
+                  ></span
+                >
+                <lfx-button
+                  label="Remove"
+                  [ariaLabel]="'Remove ' + upload.tracker.filename"
+                  [text]="true"
+                  [disabled]="uploading() || submitting()"
+                  (onClick)="remove(upload.id)"
+                  [attr.data-testid]="'member-360-remove-' + upload.id" />
+              </div>
+            }
+            <lfx-file-upload
+              mode="basic"
+              accept=".csv,.xlsx"
+              [multiple]="true"
+              [customUpload]="true"
+              [auto]="true"
+              [maxFileSize]="trackerMaxBytes"
+              [disabled]="uploading() || submitting()"
+              chooseLabel="Upload tracker"
+              chooseStyleClass="p-button-outlined p-button-secondary !border-dashed"
+              (onCustomUpload)="upload($event.files)"
+              dataTest="member-360-upload" />
+            @if (uploading()) {
+              <p role="status">Parsing tracker rows…</p>
+            }
+            <p class="text-sm text-gray-500">A tracker is parsed to rows and matched to member companies by name.</p>
+          </div>
+          <div class="flex flex-col gap-2">
+            <b>Sources this run will use</b>
+            <div class="grid gap-2 text-sm md:grid-cols-3">
+              <div class="rounded-lg bg-emerald-50 p-3 text-emerald-800">LFX: roster, memberships, key contacts, committees, meetings</div>
+              <div class="rounded-lg bg-emerald-50 p-3 text-emerald-800">Web research: speaking, content, ambassadors (capped)</div>
+              <div class="rounded-lg bg-emerald-50 p-3 text-emerald-800">
+                Your trackers: {{ trackers().length }} {{ trackers().length === 1 ? 'file' : 'files' }}
+              </div>
+            </div>
+            <p class="text-sm text-gray-500">
+              Coming soon: HubSpot, social listening and Google Drive. The Member 360 method reads them too; until they are connected the scores are reweighted
+              without them.
+            </p>
+          </div>
+        </section>
+        @if (error()) {
+          <lfx-message severity="error" [text]="error()" data-testid="member-360-error" />
+        }
+        @if (historyError()) {
+          <lfx-message severity="error" [text]="historyError()" data-testid="member-360-history-error" />
+          <lfx-button label="Retry history" [text]="true" (onClick)="retryHistory()" data-testid="member-360-retry-history" />
+        }
+        <div class="flex flex-wrap items-center gap-3">
+          <lfx-button
+            type="submit"
+            [label]="submitting() ? 'Starting run…' : 'Run Member 360'"
+            [loading]="submitting()"
+            [disabled]="submitting() || uploading() || historyLoading() || (form.controls.compare.value && !!historyError())"
+            data-testid="member-360-run" />
+          <span class="text-sm text-gray-500"
+            >About 5 to 10 minutes for 12 members. The result is stored as a new run with its workbook; nothing is overwritten.</span
+          >
+        </div>
+      </form>
+      <section class="flex flex-col gap-2" data-testid="member-360-run-history">
+        <h2 class="font-semibold">Run history</h2>
+        @if (historyLoading()) {
+          <p role="status">Loading run history…</p>
+        } @else if (!historyError() && !history().length) {
+          <p class="text-sm text-gray-500">No Member 360 runs yet.</p>
+        }
+        @for (run of history(); track run.documentId) {
+          <a
+            [routerLink]="['../documents/member-360', run.documentId]"
+            queryParamsHandling="preserve"
+            class="text-blue-600"
+            [attr.data-testid]="'member-360-run-history-' + run.documentId"
+            >{{ run.createdAt | date: 'd MMM y' }} · Open</a
+          >
+        }
+      </section>
+    }
+  </main>
+</div>
