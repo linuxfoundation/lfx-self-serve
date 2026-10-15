@@ -34,8 +34,12 @@ export type MktgIntakePrefillSource = 'project-name' | 'repository-url' | 'proje
  *   a GitHub organization). For the Brand Kit, whose BFF sends the URL to
  *   the agent as text and fetches nothing, so an organization URL is a usable
  *   answer to "the project's GitHub repo or README" (hand test, 2026-10-12).
+ * - `source-url`: a page LFX One fetches to text for the agent (the Messaging
+ *   Document's four sources) — an `https://` link, or "none" (Paul: "none"
+ *   is a valid answer). The BFF fetches over HTTPS only, so a plain `http://`
+ *   link is refused here rather than silently not read.
  */
-export type MktgIntakeFieldFormat = 'github-repo-url' | 'github-url';
+export type MktgIntakeFieldFormat = 'github-repo-url' | 'github-url' | 'source-url';
 
 /**
  * Where a README the BFF fetched for an agent came from: the repository the
@@ -120,6 +124,145 @@ export interface MktgIntakeField {
    * omitted from the submitted answers when the trimmed value is empty.
    */
   optional?: boolean;
+}
+
+/**
+ * A titled group of intake fields on the run page (e.g. the Messaging
+ * Document's "Sources" and "Paul's ten questions"). Intakes without groups
+ * render their fields as one flat list.
+ */
+export interface MktgIntakeFieldGroup {
+  /** Stable id; the `@for` track key and the test id suffix. */
+  id: string;
+  /** Section heading. */
+  title: string;
+  /** Short note beside the heading. */
+  hint?: string;
+  /** Helper paragraph under the group's fields. */
+  footnote?: string;
+  /** Keys of the intake fields in this group, in display order. */
+  fieldKeys: string[];
+}
+
+/** A field group with its fields resolved, as the run page renders it. */
+export interface MktgResolvedFieldGroup {
+  /** The group's id. */
+  id: string;
+  /** Section heading. */
+  title: string;
+  /** Short note beside the heading ('' when none). */
+  hint: string;
+  /** Helper paragraph under the fields ('' when none). */
+  footnote: string;
+  /** The group's fields, in display order. */
+  fields: MktgIntakeField[];
+}
+
+/**
+ * One existing document submitted with a generate request: a link the BFF
+ * reads to text itself, or an uploaded file the BFF already turned into text
+ * (the agent cannot fetch, and the browser never parses a file).
+ */
+export interface MktgIntakeDocument {
+  /** Where the document came from. */
+  kind: 'link' | 'file';
+  /** Human label (one line): the file name, or the page title the BFF found. */
+  title: string;
+  /** The link, for `kind: 'link'`. Its text is always re-read server-side, never taken from the browser. */
+  url?: string;
+  /** The extracted text, for `kind: 'file'`. */
+  text?: string;
+}
+
+/** An existing document on the form, with what reading it produced. */
+export interface MktgIntakeDocumentEntry extends MktgIntakeDocument {
+  /** Client-side id; the `@for` track key. */
+  id: string;
+  /** Whether LFX One could read it to text. A link that could not be read is still submitted, as "not read". */
+  read: boolean;
+  /** Word count of the text read; 0 when not read. */
+  words: number;
+  /** True when the text was cut at the size cap. */
+  truncated: boolean;
+  /** Why it was not read, in words the user can act on. */
+  reason?: string;
+}
+
+/** One existing document as the form lists it, precomputed so the template binds properties only. */
+export interface MktgIntakeDocumentRow {
+  /** The entry's id; the `@for` track key. */
+  id: string;
+  /** `LINK` or `FILE`. */
+  badge: string;
+  /** The document's title. */
+  title: string;
+  /** What reading it produced: "fetched · 6,100 words", or why it was not read. */
+  status: string;
+  /** Tailwind colour class of the status (read vs not read). */
+  statusClass: string;
+}
+
+/** Response of the existing-document endpoints: what LFX One read from a file or a link. */
+export interface MktgDocumentExtractResponse {
+  /** Title to show: the file name, or the page title. */
+  title: string;
+  /** Whether any text was read. */
+  read: boolean;
+  /** Word count of the text read. */
+  words: number;
+  /** True when the text was cut at the size cap. */
+  truncated: boolean;
+  /** The text, for an uploaded file (submitted back with the run). Never returned for a link. */
+  text?: string;
+  /** Why nothing was read, in words the user can act on. */
+  reason?: string;
+}
+
+/**
+ * Why LFX One could not read a file or a link to text. Each has its own
+ * remedy (upload instead of link, share the document, export without a
+ * password), which is why they are told apart.
+ */
+export type MktgReadTextReason = 'unsupported' | 'encrypted' | 'no-text' | 'not-shared' | 'fetch-failed' | 'too-large';
+
+/** What reading one file or page to text produced on the server. */
+export interface MktgReadText {
+  /** The text, or null when nothing could be read. */
+  text: string | null;
+  /** A title found in the content (an HTML `<title>`), or null. */
+  title: string | null;
+  /** True when the text was cut at its size cap. */
+  truncated: boolean;
+  /** Why nothing was read, when nothing was. */
+  reason?: MktgReadTextReason;
+}
+
+/** Request body of the existing-document link endpoint. */
+export interface MktgDocumentLinkRequest {
+  /** The link to read. */
+  url: string;
+}
+
+/**
+ * The optional existing-documents section of an intake (the Messaging
+ * Document's Step 0a): links and uploaded files, turned into text by the BFF
+ * before the agent runs.
+ */
+export interface MktgIntakeDocumentsConfig {
+  /** Section heading. */
+  title: string;
+  /** Short note beside the heading. */
+  hint: string;
+  /** Helper paragraph under the controls. */
+  footnote: string;
+  /** Most documents one run takes. */
+  maxDocuments: number;
+  /** Largest file accepted, in bytes. */
+  maxFileBytes: number;
+  /** Accepted file extensions, lowercase with the dot. */
+  fileExtensions: string[];
+  /** BFF endpoints that read an uploaded file (raw body) or a link (JSON) to text. */
+  endpoints: { file: string; link: string };
 }
 
 /**
@@ -257,6 +400,8 @@ export interface MktgRunGenerateBody {
    * only); the agent finalizes the new draft as `priorVersion + 1`.
    */
   priorVersion?: number;
+  /** Existing documents, for intakes with a documents section. */
+  documents?: MktgIntakeDocument[];
 }
 
 /**
@@ -406,6 +551,18 @@ export interface MktgAgentIntake {
    * a chat follow-up could carry neither.
    */
   regenerateViaGenerate?: boolean;
+  /**
+   * Every submission, the first and every edit-inputs resubmit, is a FRESH
+   * generate with no prior version and no feedback: the agent's generate form
+   * carries neither (the Messaging Document is revised by comment-and-revise
+   * in Documents instead). The run page offers no "Request changes" box, and
+   * the run shell numbers its own versions, since each envelope says version 1.
+   */
+  freshRunPerSubmission?: boolean;
+  /** Titled field groups, in display order; without them the fields render as one list. */
+  fieldGroups?: MktgIntakeFieldGroup[];
+  /** The optional existing-documents section, shown after the fields. */
+  documents?: MktgIntakeDocumentsConfig;
 }
 
 /** One generated document version for an agent run. */
@@ -518,6 +675,8 @@ export interface MktgGenerateRequest {
   intake: MktgAgentIntake;
   /** Full set of intake answers — regeneration resubmits the whole form. */
   answers: Record<string, string>;
+  /** Existing documents, for intakes with a documents section. */
+  documents?: MktgIntakeDocument[];
   /**
    * Feedback on the prior draft; present only for "Request changes"
    * regenerations. The prior draft's version is NOT part of the request — the

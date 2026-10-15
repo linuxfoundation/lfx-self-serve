@@ -1,17 +1,28 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { FOUNDATION_MESSAGE_CONTRACT_ID, MKTG_ARTIFACT_SPECS } from '@lfx-one/shared/constants';
+import {
+  FOUNDATION_MESSAGE_CONTRACT_ID,
+  FOUNDATION_MESSAGE_DOCUMENT_MAX_CHARS,
+  FOUNDATION_MESSAGE_SOURCE_FIELDS,
+  FOUNDATION_MESSAGE_SOURCE_MAX_CHARS,
+  MKTG_ARTIFACT_SPECS,
+} from '@lfx-one/shared/constants';
 import {
   FoundationMessageEnvelope,
+  FoundationMessageExistingDocument,
   FoundationMessageGenerationStart,
   FoundationMessagePersistReceipt,
   FoundationMessageResultResponse,
+  FoundationMessageSourceKind,
   FoundationMessageStoredResponse,
+  MktgIntakeDocument,
 } from '@lfx-one/shared/interfaces';
 import {
   buildFoundationMessageFormPayload,
   extractMktgEnvelopeCandidates,
+  foundationMessageDerivatives,
+  foundationMessageSourceUrl,
   renderFoundationMessageFormText,
   validateFoundationMessageEnvelope,
 } from '@lfx-one/shared/utils';
@@ -22,119 +33,104 @@ import { GithubReadmeService } from './github-readme.service';
 import { GuildService } from './guild.service';
 import { logger } from './logger.service';
 import { MktgDocumentStoreService } from './mktg-document-store.service';
+import { MktgSourceTextService } from './mktg-source-text.service';
 
 /**
- * Message Foundation generation flow (message-foundation-output/v1), the
- * brand-kit flow's sibling with two twists:
+ * Messaging Document generation flow (messaging-document-output/v1; Guild
+ * linux-foundation~foundation-message 2.0.0, Paul's messaging-document 1.0.0).
  *
- * 1. The batch submission is the agent's typed
- *    `message_foundation_intake_form` payload, transported by default as a
- *    BFF-rendered text message (`renderFoundationMessageFormText` — a
- *    verbatim mirror of the agent's own form renderer). Live-smoked
- *    2026-08-20: Guild coerces a structured `agent_input` to
- *    `{type:'text', text: JSON.stringify(payload)}` before the agent's zod
- *    preprocess runs, so sending the object raw feeds the model unrendered
- *    JSON; `GUILD_STRUCTURED_AGENT_INPUT=true` flips back to the structured
- *    transport without a redeploy once Guild passes objects through. The
- *    README is fetched server-side (the agent has no web access) and NEVER
- *    blocks the run: a failed fetch just omits `readme_markdown` and the
- *    agent marks gaps TBD.
- * 2. Regeneration is a full resubmit on a FRESH session: the payload carries
- *    `feedback` + `prior_version`, and the agent finalizes as
- *    `prior_version + 1` — which is exactly what the result poll's
- *    strictly-newer version gate accepts.
- *
- * The authoritative typed output is the `finalize_message_foundation` tool
- * RESULT riding raw system events (the brand-kit live-smoke A3 pattern).
- * Every candidate envelope is schema-validated and the document sha256 is
- * recomputed server-side before anything reaches the user.
+ * 1. The agent cannot fetch, so LFX One reads everything to text first, in
+ *    parallel: the GitHub README (through the GitHub API, as before), the
+ *    website, press release and brand page (through the SSRF-safe fetcher),
+ *    and every existing document given as a link. Uploaded files arrive
+ *    already read. Nothing read here can fail the run: a source that could
+ *    not be read goes to the agent as "not read", and the agent records it so.
+ * 2. The answers and texts become the agent's `messaging_document_intake_form`
+ *    and are sent as the one rendered text message the agent parses back
+ *    (`renderFoundationMessageFormText`, a verbatim mirror of its renderer;
+ *    dec-qa-form-path-only). `GUILD_STRUCTURED_AGENT_INPUT=true` still flips to
+ *    the structured transport for when Guild passes objects through.
+ * 3. The authoritative output is the finalize tool RESULT riding raw session
+ *    events. Every candidate is schema-validated and its document sha256
+ *    recomputed before anything reaches the user, and the validated bundle is
+ *    stored as a revision of the project's foundation-message document.
  */
 export class FoundationMessageService {
   private readonly guildService = new GuildService();
   private readonly githubReadmeService = new GithubReadmeService();
+  private readonly sourceTextService = new MktgSourceTextService();
 
   /**
-   * The Marketing OS document store over the SHARED agent-artifact
-   * persistence layer: every validated document is written exactly as before
-   * (entitlement boundary, key layout, size gate, metadata refresh rule,
-   * degrade-to-null) and then recorded as a revision of the project's
-   * Message Foundation document, whose latest revision is what the stored read serves.
+   * The Marketing OS document store over the SHARED agent-artifact persistence
+   * layer: every validated bundle is written through the artifact layer and
+   * recorded as a revision of the project's foundation-message document (its
+   * sidecar, brand seed and inputs record ride in the revision), whose latest
+   * revision is what the stored read serves.
    */
   private readonly documentStore = new MktgDocumentStoreService();
 
-  /** Message Foundation knobs for the shared persistence layer: key prefix, size cap, log namespace. */
+  /** The foundation-message knobs for the shared persistence layer: key prefix, size cap, log namespace. */
   private readonly artifactSpec = MKTG_ARTIFACT_SPECS['foundation-message'];
 
-  /**
-   * Whether the typed form payload is sent as the Guild session's structured
-   * `agent_input` instead of the default BFF-rendered text message. Default
-   * OFF: the live smoke (2026-08-20) showed Guild coercing structured inputs
-   * to `{type:'text', text:JSON.stringify(payload)}` before the agent's
-   * preprocess, bypassing its form renderer. Flip to `true` without a
-   * redeploy once Guild delivers structured inputs verbatim.
-   */
+  /** Structured `agent_input` transport, default OFF (Guild coerces objects to JSON text before the agent's preprocess). */
   private get structuredAgentInputEnabled(): boolean {
     return process.env['GUILD_STRUCTURED_AGENT_INPUT'] === 'true';
   }
 
   /**
-   * Start a one-shot form-mode generation session (fresh session for first
-   * runs AND regenerations). Returns the session id — which the caller binds
-   * to the requesting user via the owner token — together with the README
-   * fetch outcome.
-   *
-   * The outcome travels back with the session because the README fetch is
-   * part of composing THIS submission: by the time the document is polled it
-   * is long settled, and a run that generated without a README must be able
-   * to say so on the result rather than leave the user with an unexplained
-   * thin document.
+   * Start a one-shot generation on a fresh session. Returns the session id —
+   * which the caller binds to the requesting user via the owner token — and
+   * the README fetch outcome, so a document generated without the README the
+   * user named can say so.
    */
   public async startGeneration(
     req: Request,
     answers: Record<string, string>,
-    options: { feedback?: string; priorVersion?: number },
+    documents: MktgIntakeDocument[],
     guildAgentHandle: string
   ): Promise<FoundationMessageGenerationStart> {
-    // Best-effort README fetch — by contract it can never fail the run.
-    const readme = await this.githubReadmeService.fetchReadme(req, answers['github_url'] ?? '');
-    if (!readme.outcome.fetched) {
-      logger.warning(req, 'foundation_message_generate', 'Generating without a README — the agent will mark README-dependent gaps TBD', {
-        reason: readme.outcome.skipReason,
-      });
-    }
+    const url = (kind: FoundationMessageSourceKind): string | null => foundationMessageSourceUrl(answers[FOUNDATION_MESSAGE_SOURCE_FIELDS[kind].urlKey]);
+    const githubUrl = url('readme');
+    const page = async (kind: FoundationMessageSourceKind): Promise<string | undefined> => {
+      const link = url(kind);
+      return link === null ? undefined : ((await this.sourceTextService.readLink(req, link, FOUNDATION_MESSAGE_SOURCE_MAX_CHARS)).text ?? undefined);
+    };
+
+    // Everything is read in parallel: the generate POST waits for all of it.
+    const [readme, website, pressRelease, brandPage, existingDocuments] = await Promise.all([
+      githubUrl === null ? Promise.resolve(null) : this.githubReadmeService.fetchReadme(req, githubUrl),
+      page('website'),
+      page('press_release'),
+      page('brand_page'),
+      Promise.all(documents.map((document) => this.readDocument(req, document))),
+    ]);
 
     const payload = buildFoundationMessageFormPayload(answers, {
-      readmeMarkdown: readme.readme ?? undefined,
-      feedback: options.feedback,
-      priorVersion: options.priorVersion,
+      sourceTexts: { website, readme: readme?.readme ?? undefined, press_release: pressRelease, brand_page: brandPage },
+      documents: existingDocuments,
     });
 
-    // Structured transport (flag-gated): the typed payload travels as the
-    // Guild agent_input verbatim; the handle rides only as the explicit
-    // agent_id (no @mention can be prepended to a non-text input).
-    if (this.structuredAgentInputEnabled) {
-      const sessionId = await this.guildService.createSession(req, { agentInput: payload, handle: guildAgentHandle });
-      return { sessionId, readme: readme.outcome };
-    }
+    logger.info(req, 'foundation_message_generate', 'Composed the Messaging Document intake', {
+      sources_given: [githubUrl, url('website'), url('press_release'), url('brand_page')].filter((link) => link !== null).length,
+      sources_read: [readme?.readme, website, pressRelease, brandPage].filter((text) => !!text).length,
+      documents: existingDocuments.length,
+      documents_read: existingDocuments.filter((document) => document.text !== undefined).length,
+      readme_skip_reason: readme?.outcome.skipReason,
+    });
 
-    // Default: render the agent's own form-mode message text (verbatim
-    // mirror of its renderFormMessage) and ride the known-good text
-    // transport — @handle prepend AND explicit agent_id, belt and braces.
-    const sessionId = await this.guildService.createSession(req, { message: renderFoundationMessageFormText(payload), handle: guildAgentHandle });
-    return { sessionId, readme: readme.outcome };
+    const sessionId = this.structuredAgentInputEnabled
+      ? await this.guildService.createSession(req, { agentInput: payload, handle: guildAgentHandle })
+      : await this.guildService.createSession(req, { message: renderFoundationMessageFormText(payload), handle: guildAgentHandle });
+    return { sessionId, ...(readme && { readme: readme.outcome }) };
   }
 
   /**
    * Fetch the session's current result: `pending` until a valid envelope
-   * appears in the event stream, then `ready` with the validated document,
-   * its five word-count-locked derivatives and (when the object-store write
-   * succeeds) its persistence receipt.
-   *
-   * `projectUid` is the LFX project the run is scoped to — it decides the
-   * storage partition and is entitlement-checked before anything is written
-   * (see {@link persistEnvelope}). It is resolved lazily, only once a ready
-   * envelope exists, so a `pending` poll costs no upstream lookups. Without
-   * it the document is still returned; it is simply not persisted.
+   * appears in the event stream, then `ready` with the validated document, its
+   * copy primitives and (when the write succeeded) the persistence receipt of
+   * the stored revision. `projectUid` decides the storage partition and is
+   * entitlement-checked before anything is written; without it the document
+   * is still returned, just not stored.
    */
   public async getResult(req: Request, sessionId: string, projectUid?: string): Promise<FoundationMessageResultResponse> {
     const payloads = await this.guildService.getRawEventPayloads(req, sessionId);
@@ -144,11 +140,13 @@ export class FoundationMessageService {
       return { status: 'pending' };
     }
 
-    logger.info(req, 'foundation_message_result', 'Message Foundation document ready', {
+    logger.info(req, 'foundation_message_result', 'Messaging Document ready', {
       project: envelope.project,
       version: envelope.version,
-      intake_mode: envelope.intake.mode,
-      brand_kit_provided: envelope.inputs.brand_kit_provided,
+      mode: envelope.mode,
+      shape: envelope.intake.shape,
+      status: envelope.status,
+      agent_version: envelope.agent.agent_version,
       document_chars: envelope.document_markdown.length,
     });
 
@@ -158,45 +156,39 @@ export class FoundationMessageService {
       status: 'ready',
       documentMarkdown: envelope.document_markdown,
       version: envelope.version,
-      derivatives: { ...envelope.derivatives },
+      derivatives: foundationMessageDerivatives(envelope),
       projectName: envelope.project_name,
       project: envelope.project,
-      intakeMode: envelope.intake.mode,
+      documentStatus: envelope.status,
       ...(persistence && { persistence }),
     };
   }
 
   /**
-   * Fetch the project's LATEST Message Foundation document — the
-   * dec-agent-dependency-gating read path that lets a dependent agent (or any
-   * other browser, or any other entitled user) reach a Message Foundation it
-   * did not generate — through {@link MktgDocumentStoreService.readLatest}:
-   * the latest stored revision of the project's living Message Foundation
-   * document, ordered by revision sequence, so a restored revision is what
-   * dependent agents read after a Restore. Only when the document has no
-   * revisions yet, or the revision read fails, does it fall back to the
-   * pre-revision agent-artifact read (newest by store write time under
-   * `foundation-message/{project uid}/`), which degrades a storage failure to
-   * null at WARN.
+   * The project's LATEST stored document — its latest revision, restored ones
+   * included — which is what sibling agents (the ICP) attach. Falls back to the
+   * pre-revision read path when the document has no revisions yet.
    */
   public async getStoredFoundationMessage(req: Request, project: string): Promise<FoundationMessageStoredResponse | null> {
     return this.documentStore.readLatest(req, this.artifactSpec, project);
   }
 
+  /** One existing document as the agent takes it: a link is (re-)read here, a file's text is passed through. */
+  private async readDocument(req: Request, document: MktgIntakeDocument): Promise<FoundationMessageExistingDocument> {
+    const title = document.title.trim();
+    if (document.kind === 'file') {
+      return { title, text: document.text ?? '' };
+    }
+    const url = (document.url ?? '').trim();
+    const read = await this.sourceTextService.readLink(req, url, FOUNDATION_MESSAGE_DOCUMENT_MAX_CHARS);
+    return read.text === null ? { title, url } : { title, url, text: read.text };
+  }
+
   /**
-   * Persist the validated envelope's raw document bytes through the shared
-   * agent-artifact layer. The envelope is passed only after
-   * {@link findAuthoritativeEnvelope} has schema-validated it AND recomputed
-   * its `content_sha256` against the document bytes — the storage layer
-   * addresses objects by that sha and does not re-derive it.
-   *
-   * `projectUid` is the run's LFX project scope, untrusted: the shared layer
-   * resolves it server-side and requires the caller's writer grant before the
-   * document can enter that project's partition (the envelope's own `project`
-   * slug is derived from a free-text project name and is never trusted to
-   * address storage). Every refusal and every storage failure degrades to null
-   * at WARN — the document still reaches the user, without a receipt, and the
-   * next poll retries the idempotent write.
+   * Persist the validated bundle and record it as a new revision of the
+   * project's foundation-message document. Every refusal and storage failure
+   * degrades to null at WARN — the document still reaches the user, without a
+   * receipt, and the next poll retries the idempotent write.
    */
   private async persistEnvelope(
     req: Request,
@@ -208,12 +200,11 @@ export class FoundationMessageService {
   }
 
   /**
-   * Scan raw event payloads (chronologically ordered by the Guild service)
-   * for envelope candidates and return the authoritative one: the highest
-   * `version` among valid candidates, with the latest occurrence winning
-   * ties. The sha256 integrity gate runs PER CANDIDATE, before version
-   * selection — a newer candidate that fails the recompute must not shadow
-   * an older hash-valid envelope.
+   * Scan raw event payloads (chronologically ordered) for envelope candidates
+   * and return the authoritative one: the highest `version` among valid
+   * candidates, the latest occurrence winning ties. The sha256 integrity gate
+   * runs PER CANDIDATE, before version selection — a newer candidate that
+   * fails the recompute must not shadow an older valid one.
    */
   private findAuthoritativeEnvelope(req: Request, payloads: string[]): FoundationMessageEnvelope | null {
     let best: FoundationMessageEnvelope | null = null;
@@ -224,29 +215,24 @@ export class FoundationMessageService {
       for (const candidate of extractMktgEnvelopeCandidates(payload, FOUNDATION_MESSAGE_CONTRACT_ID)) {
         candidateCount++;
         const result = validateFoundationMessageEnvelope(candidate);
-        if (result.valid) {
-          // Safe: validateFoundationMessageEnvelope passed every schema gate.
-          const envelope = candidate as FoundationMessageEnvelope;
-
-          // Recompute the sha over the UTF-8 bytes and require equality —
-          // envelope integrity rests wholly on the BFF. A mismatch
-          // disqualifies THIS candidate only.
-          const recomputedSha = createHash('sha256').update(Buffer.from(envelope.document_markdown, 'utf8')).digest('hex');
-          if (recomputedSha !== envelope.content_sha256) {
-            invalidCount++;
-            logger.warning(req, 'foundation_message_result', 'Envelope content_sha256 does not match the document bytes — discarding candidate', {
-              expected: envelope.content_sha256,
-              recomputed: recomputedSha,
-            });
-            continue;
-          }
-
-          if (!best || envelope.version >= best.version) {
-            best = envelope;
-          }
-        } else {
+        if (!result.valid) {
           invalidCount++;
           logger.debug(req, 'foundation_message_result', 'Rejected envelope candidate', { errors: result.errors });
+          continue;
+        }
+        // Safe: validateFoundationMessageEnvelope passed every schema gate.
+        const envelope = candidate as FoundationMessageEnvelope;
+        const recomputedSha = createHash('sha256').update(Buffer.from(envelope.document_markdown, 'utf8')).digest('hex');
+        if (recomputedSha !== envelope.content_sha256) {
+          invalidCount++;
+          logger.warning(req, 'foundation_message_result', 'Envelope content_sha256 does not match the document bytes — discarding candidate', {
+            expected: envelope.content_sha256,
+            recomputed: recomputedSha,
+          });
+          continue;
+        }
+        if (!best || envelope.version >= best.version) {
+          best = envelope;
         }
       }
     }

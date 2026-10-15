@@ -17,6 +17,9 @@ const guildMocks = vi.hoisted(() => ({
 const readmeMocks = vi.hoisted(() => ({
   fetchReadme: vi.fn(),
 }));
+const sourceTextMocks = vi.hoisted(() => ({
+  readLink: vi.fn(),
+}));
 // Persistence runs through the SHARED agent-artifact layer, whose own
 // collaborators (object store, project entitlement lookup) are mocked here the
 // same way brand-kit.service.spec.ts mocks them.
@@ -64,6 +67,11 @@ vi.mock('./github-readme.service', () => ({
     public fetchReadme = readmeMocks.fetchReadme;
   },
 }));
+vi.mock('./mktg-source-text.service', () => ({
+  MktgSourceTextService: class {
+    public readLink = sourceTextMocks.readLink;
+  },
+}));
 // The document store records revisions on top of the agent's own write and
 // has its own spec (mktg-document-store.service.spec.ts). Here it passes
 // through, so this spec keeps asserting the agent's persistence, plus the
@@ -91,7 +99,7 @@ vi.mock('./logger.service', () => ({
 import type { MktgArtifactEnvelope, MktgArtifactSpec } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
-import { FOUNDATION_MESSAGE_REQUIRED_HEADINGS, FOUNDATION_MESSAGE_REVISED_INTAKE_FEEDBACK } from '@lfx-one/shared/constants';
+import { FOUNDATION_MESSAGE_FIELD_IDS, FOUNDATION_MESSAGE_LIST_FIELD_IDS, FOUNDATION_MESSAGE_REQUIRED_HEADINGS } from '@lfx-one/shared/constants';
 
 import { FoundationMessageService } from './foundation-message.service';
 
@@ -99,60 +107,75 @@ const req = { path: '/api/mktg-agents/foundation-message/generate' } as unknown 
 
 const answers = (): Record<string, string> => ({
   project_name: 'TestOrbit',
+  website_url: 'https://testorbit.example.org',
   github_url: 'https://github.com/example-org/testorbit',
-  brand_kit_markdown: '# TestOrbit Brand Kit\n\nVoice: clear.',
+  press_release_url: 'https://press.example.org/testorbit',
+  brand_page_url: 'none',
+  vision_mission: 'Vision: reliable releases for everyone.',
+  category: 'Release tooling.',
+  audiences: 'Platform teams.',
+  alternatives: 'Hand-built pipelines.',
+  differentiation: 'Neutral governance.',
+  use_cases: 'Build, test, roll out.',
+  proof_points: 'TBD',
+  pillars: 'Reliability; openness; speed.',
+  objections: 'Is it mature? Yes, since 2024.',
+  tagline_ctas_constraints: 'skip',
 });
 
-/**
- * Contract-true derivatives: inside the §1a word caps, boilerplate inside the
- * 50-250 band, `llms_txt` opening with an H1, and every value embedded
- * verbatim in the document below (gate G3) — the same envelope the agent's
- * finalize tool would emit.
- */
-const DERIVATIVES: Record<string, string> = {
-  summary_25: 'TestOrbit is an open source toolkit that helps platform teams ship reliable services faster.',
-  summary_50:
-    'TestOrbit is an open source toolkit that helps platform teams ship reliable services faster, with sensible defaults, transparent governance, and a contributor community that reviews every change in the open.',
-  boilerplate:
-    'TestOrbit is an open source toolkit for platform teams who need to ship reliable services without assembling their own release toolchain. It packages opinionated defaults for building, testing, and rolling out changes, and keeps every decision inspectable so teams can adapt it to their own environment. Governed in the open under the Linux Foundation, TestOrbit is maintained by contributors from a range of organisations who review each change in public. Adopters use it to shorten the path from a merged pull request to a production release while keeping the audit trail their compliance teams expect.',
-  llms_txt: '# TestOrbit\n\nTestOrbit is an open source toolkit for platform teams.',
-  elevator_pitch:
-    'TestOrbit gives platform teams one open source toolkit for building, testing and rolling out reliable services, governed in the open under the Linux Foundation.',
+/** The copy primitives, contract-true: inside their caps, the boilerplate in its band, embedded verbatim in the document. */
+const PRIMITIVES: Record<string, string> = {
+  'md.summary_25': 'TestOrbit is an open source toolkit that helps platform teams ship reliable services faster.',
+  'md.summary_50': 'TestOrbit is an open source toolkit that helps platform teams ship reliable services faster, governed in the open.',
+  'md.boilerplate': 'TestOrbit is an open source toolkit for platform teams. '.repeat(10).trim(),
+  'md.llms_txt': '# TestOrbit',
+  'md.elevator_pitch': 'TestOrbit gives platform teams one open source toolkit for reliable releases.',
+  'md.positioning': 'For platform teams, TestOrbit is the open release toolkit.',
 };
 
-function buildDocument(): string {
-  const filler = 'Synthetic fixture prose for the Message Foundation structural gate. '.repeat(3);
-  const sections = ['# TestOrbit Message Foundation', ''];
+function buildDocument(title = '# TestOrbit Messaging Document'): string {
+  const filler = 'Synthetic fixture prose for the Messaging Document structural gate. '.repeat(2);
+  const lines = [title, '', '| Status | Draft — from your documents |', ''];
   for (const heading of FOUNDATION_MESSAGE_REQUIRED_HEADINGS) {
-    sections.push(heading, '', filler, '');
-    if (heading.startsWith('## 3.')) {
-      // §3 Copy Primitives — the document is the single source for the derivatives (gate G3).
-      sections.push(...Object.values(DERIVATIVES), '');
-    }
+    lines.push(heading, '', filler, '');
   }
-  return sections.join('\n');
+  lines.push(...Object.values(PRIMITIVES), PRIMITIVES['md.positioning'], 'md.governance_sentence value', 'md.trademark_sentence value');
+  return lines.join('\n');
 }
 
 function buildEnvelope(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   const documentMarkdown = (overrides['document_markdown'] as string) ?? buildDocument();
+  const fields: Record<string, unknown> = {};
+  for (const id of FOUNDATION_MESSAGE_FIELD_IDS) {
+    fields[id] = { value: PRIMITIVES[id] ?? `${id} value`, source: 'Asked', status: 'draft' };
+  }
+  for (const id of FOUNDATION_MESSAGE_LIST_FIELD_IDS) {
+    fields[id] = { value: [], source: 'Needs input', status: 'tbd' };
+  }
   return {
-    contract: 'message-foundation-output/v1',
-    kind: 'message-foundation',
+    contract: 'messaging-document-output/v1',
+    kind: 'messaging-document',
     project: 'testorbit',
     project_name: 'TestOrbit',
     version: 1,
+    mode: 'generate',
+    status: 'Draft — from your documents',
     document_markdown: documentMarkdown,
     content_sha256: createHash('sha256').update(documentMarkdown, 'utf8').digest('hex'),
-    derivatives: { ...DERIVATIVES },
-    inputs: { brand_kit_provided: true },
-    intake: {
-      mode: 'form',
-      completed_at: '2026-08-20T00:00:00Z',
-      answers: [
-        { question_number: 1, question: 'Q1a?', answer: 'TestOrbit' },
-        { question_number: 2, question: 'Q1b?', answer: 'https://github.com/example-org/testorbit' },
-      ],
+    fields,
+    brand_seed: {
+      project_name: 'TestOrbit',
+      logo: { light: 'https://testorbit.example.org/logo.svg', dark: null },
+      palette: null,
+      fonts: null,
+      _source: { logo: 'site header', palette: 'none — LF default', fonts: 'none — LF default' },
     },
+    inputs_record: { documents: [], sources: [], lfx_records: [], answers: [] },
+    intake: { mode: 'form', shape: 'answers', completed_at: '2026-10-15T10:00:00Z' },
+    revision: null,
+    capabilities: { web_fetch: false, lfx_mcp: false },
+    generated_at: '2026-10-15T10:00:00Z',
+    agent: { identifier: 'linux-foundation~foundation-message', agent_version: '2.0.0', prompt_manifest_sha256: 'b'.repeat(64) },
     ...overrides,
   };
 }
@@ -160,6 +183,8 @@ function buildEnvelope(overrides: Record<string, unknown> = {}): Record<string, 
 /** Wraps an envelope the way the authoritative finalize tool result rides raw events. */
 const toolResultPayload = (envelope: Record<string, unknown>): string =>
   JSON.stringify({ type: 'llm_done', content: { envelope_json: JSON.stringify(envelope) } });
+
+const read = (text: string | null) => ({ text, title: null, truncated: false, ...(text === null && { reason: 'fetch-failed' }) });
 
 describe('FoundationMessageService.startGeneration', () => {
   let service: FoundationMessageService;
@@ -169,6 +194,9 @@ describe('FoundationMessageService.startGeneration', () => {
     service = new FoundationMessageService();
     guildMocks.createSession.mockResolvedValue('session-1');
     readmeMocks.fetchReadme.mockResolvedValue({ readme: '# TestOrbit readme', outcome: { fetched: true, source: 'repository' } });
+    sourceTextMocks.readLink.mockImplementation(async (_req: Request, url: string) =>
+      read(url === 'https://testorbit.example.org' ? '# TestOrbit\n\n![TestOrbit logo](https://testorbit.example.org/logo.svg)' : null)
+    );
   });
 
   afterEach(() => {
@@ -182,78 +210,72 @@ describe('FoundationMessageService.startGeneration', () => {
   }
   const sentParams = (call = 0): CreateSessionParams => guildMocks.createSession.mock.calls[call][1] as CreateSessionParams;
 
-  it('submits the rendered form-mode text by default (live-smoke verdict: Guild coerces structured inputs to raw JSON text)', async () => {
-    const start = await service.startGeneration(req, answers(), {}, 'foundation-message');
+  it('reads every source to text and sends the rendered intake form', async () => {
+    const start = await service.startGeneration(req, answers(), [], 'foundation-message');
 
-    expect(start.sessionId).toBe('session-1');
-    // The README outcome rides back with the session so the run can label a
-    // document generated without one.
-    expect(start.readme).toEqual({ fetched: true, source: 'repository' });
-    expect(guildMocks.createSession).toHaveBeenCalledTimes(1);
+    expect(start).toEqual({ sessionId: 'session-1', readme: { fetched: true, source: 'repository' } });
+    expect(readmeMocks.fetchReadme).toHaveBeenCalledWith(req, 'https://github.com/example-org/testorbit');
+    // "none" is never fetched; every other source is.
+    expect(sourceTextMocks.readLink.mock.calls.map((call) => call[1])).toEqual(['https://testorbit.example.org', 'https://press.example.org/testorbit']);
     const params = sentParams();
     expect(params.handle).toBe('foundation-message');
     expect(params.agentInput).toBeUndefined();
-    // The agent's MODE RULES preamble plus verbatim Q/A pairs and fenced documents.
-    expect(params.message).toContain('BATCH INTAKE SUBMISSION (form mode — see MODE RULES in your instructions).');
-    expect(params.message).toContain('A1a. TestOrbit');
-    expect(params.message).toContain('A1b. https://github.com/example-org/testorbit');
-    expect(params.message).toContain(`===== BEGIN BRAND KIT DOCUMENT =====\n${answers()['brand_kit_markdown']}\n===== END BRAND KIT DOCUMENT =====`);
-    expect(params.message).toContain('===== BEGIN GITHUB README =====\n# TestOrbit readme\n===== END GITHUB README =====');
+    const message = params.message ?? '';
+    expect(message.startsWith('BATCH INTAKE SUBMISSION (Messaging Document — GENERATE)\nFORM SHAPE: ANSWERS')).toBe(true);
+    expect(message).toContain(
+      'URL: https://testorbit.example.org\nTEXT: read, follows\n# TestOrbit\n\n![TestOrbit logo](https://testorbit.example.org/logo.svg)'
+    );
+    expect(message).toContain('TEXT: read, follows\n# TestOrbit readme\n--- END SOURCE readme ---');
+    // A source LFX One could not fetch is sent as not read — never guessed.
+    expect(message).toContain('URL: https://press.example.org/testorbit\nTEXT: not read (LFX One could not fetch it — never guess what it says)');
+    expect(message).toContain('--- SOURCE brand_page: an existing brand page or guidelines, if any ---\nURL: none\nTEXT: none (the requester gave no URL)');
+    expect(message).toContain('STEP 1 ANSWERS: 10 of 10 answered on the form');
   });
 
-  it('submits the typed form payload as the structured agent_input when GUILD_STRUCTURED_AGENT_INPUT=true', async () => {
+  it('re-reads document links itself and passes uploaded files through', async () => {
+    await service.startGeneration(
+      req,
+      answers(),
+      [
+        { kind: 'link', title: 'Positioning note', url: 'https://wiki.example.org/note' },
+        { kind: 'file', title: 'brand.md', text: 'Brand guide text.' },
+      ],
+      'foundation-message'
+    );
+
+    expect(sourceTextMocks.readLink).toHaveBeenCalledWith(req, 'https://wiki.example.org/note', 60000);
+    const message = sentParams().message ?? '';
+    expect(message).toContain('FORM SHAPE: DOCUMENTS WITH ANSWERS');
+    expect(message).toContain(
+      '--- DOCUMENT 1: Positioning note ---\nURL: https://wiki.example.org/note\nTEXT: not read (only a link was given and LFX One could not read it)'
+    );
+    expect(message).toContain('--- DOCUMENT 2: brand.md ---\nURL: none\nTEXT: read, follows\nBrand guide text.\n--- END DOCUMENT 2 ---');
+  });
+
+  it('fetches no README and reports no README outcome when no GitHub URL was given', async () => {
+    const start = await service.startGeneration(req, { ...answers(), github_url: 'none' }, [], 'foundation-message');
+
+    expect(readmeMocks.fetchReadme).not.toHaveBeenCalled();
+    expect(start).toEqual({ sessionId: 'session-1' });
+    expect(sentParams().message).toContain("LOGO FALLBACK (GitHub organization avatar, last in Paul's logo order): none");
+  });
+
+  it('submits the typed form as the structured agent_input when GUILD_STRUCTURED_AGENT_INPUT=true', async () => {
     vi.stubEnv('GUILD_STRUCTURED_AGENT_INPUT', 'true');
 
-    await service.startGeneration(req, answers(), {}, 'foundation-message');
+    await service.startGeneration(req, answers(), [], 'foundation-message');
 
     const params = sentParams();
-    expect(params.handle).toBe('foundation-message');
     expect(params.message).toBeUndefined();
     expect(params.agentInput).toMatchObject({
-      type: 'message_foundation_intake_form',
+      type: 'messaging_document_intake_form',
       project_name: 'TestOrbit',
       github_url: 'https://github.com/example-org/testorbit',
-      brand_kit_markdown: answers()['brand_kit_markdown'],
-      readme_markdown: '# TestOrbit readme',
+      readme_text: '# TestOrbit readme',
+      press_release_url: 'https://press.example.org/testorbit',
     });
-  });
-
-  it('NEVER blocks the run on a failed README fetch — the no-README grounding lines are rendered instead', async () => {
-    readmeMocks.fetchReadme.mockResolvedValue({ readme: null, outcome: { fetched: false, skipReason: 'not-a-repo-url' } });
-
-    const start = await service.startGeneration(req, answers(), {}, 'foundation-message');
-
-    const message = sentParams().message ?? '';
-    expect(message).toContain('No README content was provided.');
-    expect(message).not.toContain('===== BEGIN GITHUB README =====');
-    // Best-effort, but never silent: the run reports WHY it had no README.
-    expect(start.readme).toEqual({ fetched: false, skipReason: 'not-a-repo-url' });
-  });
-
-  it('logs a README-less generation at warning with its reason — a thin document must be explainable from the logs', async () => {
-    const { logger } = await import('./logger.service');
-    readmeMocks.fetchReadme.mockResolvedValue({ readme: null, outcome: { fetched: false, skipReason: 'no-readme' } });
-
-    await service.startGeneration(req, answers(), {}, 'foundation-message');
-
-    expect(logger.warning).toHaveBeenCalledWith(
-      req,
-      'foundation_message_generate',
-      expect.stringContaining('without a README'),
-      expect.objectContaining({ reason: 'no-readme' })
-    );
-  });
-
-  it('carries feedback + prior_version on a regeneration, and synthesizes the revision note without feedback', async () => {
-    await service.startGeneration(req, answers(), { feedback: 'Sharpen it', priorVersion: 2 }, 'foundation-message');
-    let message = sentParams().message ?? '';
-    expect(message).toContain('FEEDBACK on draft v2 — regenerate incorporating it and finalize as version 3:');
-    expect(message).toContain('Sharpen it');
-
-    await service.startGeneration(req, answers(), { priorVersion: 1 }, 'foundation-message');
-    message = sentParams(1).message ?? '';
-    expect(message).toContain('FEEDBACK on draft v1 — regenerate incorporating it and finalize as version 2:');
-    expect(message).toContain(FOUNDATION_MESSAGE_REVISED_INTAKE_FEEDBACK);
+    expect(params.agentInput).not.toHaveProperty('press_release_text');
+    expect(params.agentInput).not.toHaveProperty('brand_page_url');
   });
 });
 
@@ -271,7 +293,7 @@ describe('FoundationMessageService.getResult', () => {
     expect(await service.getResult(req, 'session-1')).toEqual({ status: 'pending' });
   });
 
-  it('returns the validated document with its derivatives when the envelope passes every gate', async () => {
+  it('returns the validated document with its copy primitives when the envelope passes every gate', async () => {
     guildMocks.getRawEventPayloads.mockResolvedValue([toolResultPayload(buildEnvelope())]);
 
     const result = await service.getResult(req, 'session-1');
@@ -279,27 +301,20 @@ describe('FoundationMessageService.getResult', () => {
     expect(result.status).toBe('ready');
     expect(result.version).toBe(1);
     expect(result.projectName).toBe('TestOrbit');
-    expect(result.intakeMode).toBe('form');
-    expect(result.derivatives).toMatchObject({ summary_25: DERIVATIVES['summary_25'], elevator_pitch: DERIVATIVES['elevator_pitch'] });
-    expect(result.documentMarkdown).toContain('## 5. Messaging Pillars');
+    expect(result.documentStatus).toBe('Draft — from your documents');
+    expect(result.derivatives).toMatchObject({ summary_25: PRIMITIVES['md.summary_25'], elevator_pitch: PRIMITIVES['md.elevator_pitch'] });
+    expect(result.documentMarkdown).toContain('## 7. Message house');
   });
 
-  it('suppresses an envelope whose derivatives break the §1a word-count locks (never surfaced as "word-count-locked")', async () => {
-    // 13 words × 8 = 104 words, well past the §3 elevator-pitch cap of 90.
-    const overLongPitch = 'This elevator pitch runs well past the contract hard cap of ninety words. '.repeat(8).trim();
-    const document = `${buildDocument()}\n${overLongPitch}\n`;
-    const forged = buildEnvelope({
-      document_markdown: document,
-      content_sha256: createHash('sha256').update(document, 'utf8').digest('hex'),
-      derivatives: { ...DERIVATIVES, elevator_pitch: overLongPitch },
-    });
-    guildMocks.getRawEventPayloads.mockResolvedValue([toolResultPayload(forged)]);
+  it('never surfaces an envelope on the previous Message Foundation contract', async () => {
+    guildMocks.getRawEventPayloads.mockResolvedValue([toolResultPayload(buildEnvelope({ contract: 'message-foundation-output/v1' }))]);
 
     expect(await service.getResult(req, 'session-1')).toEqual({ status: 'pending' });
   });
 
-  it('suppresses an envelope whose derivative is not verbatim in the hash-verified document (gate G3)', async () => {
-    const forged = buildEnvelope({ derivatives: { ...DERIVATIVES, summary_25: 'A summary that the document itself never contains.' } });
+  it('suppresses an envelope whose copy primitive is not verbatim in the hash-verified document (gate F3)', async () => {
+    const forged = buildEnvelope();
+    (forged['fields'] as Record<string, { value: string }>)['md.summary_25'].value = 'A summary the document never contains.';
     guildMocks.getRawEventPayloads.mockResolvedValue([toolResultPayload(forged)]);
 
     expect(await service.getResult(req, 'session-1')).toEqual({ status: 'pending' });
@@ -315,29 +330,12 @@ describe('FoundationMessageService.getResult', () => {
     expect(result.status).toBe('ready');
     expect(result.version).toBe(1);
   });
-
-  it('selects the highest version among valid candidates (regeneration supersedes the prior draft)', async () => {
-    const v1 = buildEnvelope();
-    const v2Document = buildDocument().replace('# TestOrbit Message Foundation', '# TestOrbit Message Foundation v2');
-    const v2 = buildEnvelope({
-      version: 2,
-      document_markdown: v2Document,
-      content_sha256: createHash('sha256').update(v2Document, 'utf8').digest('hex'),
-    });
-    guildMocks.getRawEventPayloads.mockResolvedValue([toolResultPayload(v2), toolResultPayload(v1)]);
-
-    const result = await service.getResult(req, 'session-1');
-
-    expect(result.version).toBe(2);
-    expect(result.documentMarkdown).toContain('Message Foundation v2');
-  });
 });
 
 /**
- * The gap this WorkItem closes: before it, a Message Foundation existed only
- * in the browser that generated it, so no dependent agent — and no other user
- * of the project — could reach one. These assert the SAME persistence contract
- * the Brand Kit has always had, because it is now literally the same code.
+ * Every validated bundle is stored through the SAME persistence contract the
+ * Brand Kit has, and recorded as a revision of the project's
+ * foundation-message document.
  */
 describe('FoundationMessageService persistence', () => {
   const PROJECT_UID = 'proj-uid-1';
@@ -375,7 +373,7 @@ describe('FoundationMessageService persistence', () => {
       version: 1,
       intake_mode: 'form',
     });
-    // Recorded as a revision of the project's Message Foundation, keyed by the run's session.
+    // Recorded as a revision of the project's foundation-message document, keyed by the run's session.
     expect(documentStoreMocks.recordedSessions).toEqual(['session-1']);
   });
 
