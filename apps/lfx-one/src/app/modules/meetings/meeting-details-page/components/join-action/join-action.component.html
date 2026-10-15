@@ -53,7 +53,10 @@
             <button type="button" [class]="linkClass" (click)="joinWithDifferentEmail()" data-testid="meeting-action-join-different-email">
               Join with a different email
             </button>
-            <a [routerLink]="identitiesPath" [class]="linkClass" data-testid="meeting-action-add-email">Add and verify the invited email on your account</a>
+            <!-- Not while impersonating: identity changes are blocked then, and the account is someone else's. -->
+            @if (!userService.impersonating()) {
+              <a [routerLink]="identitiesPath" [class]="linkClass" data-testid="meeting-action-add-email">Add and verify the invited email on your account</a>
+            }
             @if (organizerMailto(); as mailto) {
               <a [href]="mailto" [class]="linkClass" data-testid="meeting-action-contact-organizer">Contact the organizer</a>
             } @else {

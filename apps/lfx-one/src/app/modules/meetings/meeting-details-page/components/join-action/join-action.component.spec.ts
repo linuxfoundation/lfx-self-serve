@@ -25,7 +25,9 @@ describe('MeetingJoinActionComponent', () => {
   let autoJoined: Set<string>;
   let open: MockInstance<typeof window.open>;
 
-  function create(options: { platform?: 'browser' | 'server'; response?: unknown; zoomRedirect?: string; meeting?: Partial<Meeting> } = {}): void {
+  function create(
+    options: { platform?: 'browser' | 'server'; response?: unknown; zoomRedirect?: string; meeting?: Partial<Meeting>; impersonating?: boolean } = {}
+  ): void {
     getPublicMeetingJoinUrl = vi.fn().mockReturnValue(options.response ?? of({ link: ZOOM_LINK }));
     add = vi.fn();
     user = signal<User | null>({ name: 'Ada Example', email: 'ada@acme-motors.example' } as User);
@@ -47,7 +49,7 @@ describe('MeetingJoinActionComponent', () => {
           },
         },
         { provide: MeetingService, useValue: { getPublicMeetingJoinUrl } },
-        { provide: UserService, useValue: { user, authenticated: signal(true) } },
+        { provide: UserService, useValue: { user, authenticated: signal(true), impersonating: signal(options.impersonating ?? false) } },
         { provide: MessageService, useValue: { add } },
         {
           provide: ActivatedRoute,
@@ -190,6 +192,13 @@ describe('MeetingJoinActionComponent', () => {
       create({ response: throwError(() => notRegistered) });
 
       expect(query('meeting-action-add-email')?.getAttribute('href')).toBe('/profile/identities');
+    });
+
+    it('offers no identities link while impersonating, where identity changes are blocked', () => {
+      create({ response: throwError(() => notRegistered), impersonating: true });
+
+      expect(query('meeting-action-add-email')).toBeNull();
+      expect(query('meeting-action-join-different-email')).not.toBeNull();
     });
 
     it('offers an email to the organizer when the page knows their address', () => {

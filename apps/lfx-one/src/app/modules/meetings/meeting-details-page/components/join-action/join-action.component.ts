@@ -42,7 +42,7 @@ import { MeetingGuestJoinComponent } from '../guest-join/guest-join.component';
 export class MeetingJoinActionComponent {
   private readonly state = inject(MeetingDetailsStateService);
   private readonly joinUrlService = inject(MeetingJoinUrlService);
-  private readonly userService = inject(UserService);
+  protected readonly userService = inject(UserService);
   private readonly messageService = inject(MessageService);
   private readonly activatedRoute = inject(ActivatedRoute);
   private readonly platformId = inject(PLATFORM_ID);
