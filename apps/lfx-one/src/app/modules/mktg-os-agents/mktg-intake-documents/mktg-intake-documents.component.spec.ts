@@ -1,11 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { FOUNDATION_MESSAGE_INTAKE } from '@lfx-one/shared/constants';
 import { MktgDocumentExtractResponse, MktgIntakeDocumentsConfig } from '@lfx-one/shared/interfaces';
 import { MktgIntakeDocumentsService } from '@services/mktg-intake-documents.service';
+import type { FileSelectEvent } from 'primeng/fileupload';
 import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -19,14 +22,20 @@ describe('MktgIntakeDocumentsComponent', () => {
   let readFile: ReturnType<typeof vi.fn>;
 
   const host = (): HTMLElement => fixture.nativeElement as HTMLElement;
-  const fileEvent = (...files: File[]): Event => ({ target: { files, value: 'C:\\fakepath\\x' } }) as unknown as Event;
+  const fileEvent = (...files: File[]): FileSelectEvent => ({ originalEvent: new Event('change'), files, currentFiles: files });
 
   beforeEach(async () => {
     readLink = vi.fn();
     readFile = vi.fn();
     await TestBed.configureTestingModule({
       imports: [MktgIntakeDocumentsComponent],
-      providers: [provideNoopAnimations(), { provide: MktgIntakeDocumentsService, useValue: { readLink, readFile } }],
+      // The LFX file-upload wrapper's PrimeNG uploader injects HttpClient; the testing backend keeps every request local.
+      providers: [
+        provideNoopAnimations(),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: MktgIntakeDocumentsService, useValue: { readLink, readFile } },
+      ],
     }).compileComponents();
     fixture = TestBed.createComponent(MktgIntakeDocumentsComponent);
     fixture.componentRef.setInput('config', config);
@@ -102,6 +111,31 @@ describe('MktgIntakeDocumentsComponent', () => {
     component['onFilesSelected'](fileEvent(new File(['x'], 'brief.docx')));
     await fixture.whenStable();
     expect(component.busy()).toBe(false);
+  });
+
+  it('takes files through the LFX file-upload wrapper, limited to the readable types and disabled at the limit', async () => {
+    const upload = host().querySelector('[data-testid="mktg-intake-documents-upload"]');
+    const input = host().querySelector<HTMLInputElement>('input[type="file"]');
+
+    expect(upload).not.toBeNull();
+    expect(input?.accept).toBe(config.fileExtensions.join(','));
+    expect(input?.multiple).toBe(true);
+
+    component.documents.set(
+      Array.from({ length: config.maxDocuments }, (_, index) => ({
+        id: `file-${index}`,
+        kind: 'file' as const,
+        title: 'x',
+        text: 'x',
+        read: true,
+        words: 1,
+        truncated: false,
+      }))
+    );
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(host().querySelector<HTMLInputElement>('input[type="file"]')?.disabled).toBe(true);
   });
 
   it('removes a document', async () => {

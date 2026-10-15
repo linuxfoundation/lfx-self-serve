@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { PLATFORM_ID, signal, WritableSignal } from '@angular/core';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
@@ -109,6 +111,9 @@ describe('MktgAgentRunComponent', () => {
       providers: [
         provideRouter([]),
         provideNoopAnimations(),
+        // The documents section's file-upload wrapper (PrimeNG) injects HttpClient; the testing backend keeps every request local.
+        provideHttpClient(),
+        provideHttpClientTesting(),
         { provide: PLATFORM_ID, useValue: platformId },
         { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ agentId }) } } },
         { provide: ProjectContextService, useValue: { activeContext, activeContextUid: () => activeContext()?.uid ?? '' } },

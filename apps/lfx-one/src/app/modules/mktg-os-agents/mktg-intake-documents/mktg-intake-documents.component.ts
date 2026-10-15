@@ -6,10 +6,12 @@ import { Component, computed, DestroyRef, inject, input, model, Signal, signal }
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
+import { FileUploadComponent } from '@components/file-upload/file-upload.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { FOUNDATION_MESSAGE_READ_REASONS } from '@lfx-one/shared/constants';
 import { MktgDocumentExtractResponse, MktgIntakeDocumentEntry, MktgIntakeDocumentRow, MktgIntakeDocumentsConfig } from '@lfx-one/shared/interfaces';
 import { sourceUrlValidator } from '@lfx-one/shared/validators';
+import type { FileSelectEvent } from 'primeng/fileupload';
 import { finalize, Observable } from 'rxjs';
 
 import { MktgIntakeDocumentsService } from '@services/mktg-intake-documents.service';
@@ -20,7 +22,7 @@ import { MktgIntakeDocumentsService } from '@services/mktg-intake-documents.serv
 // · 6,100 words", or why it could not be read — before generating.
 @Component({
   selector: 'lfx-mktg-intake-documents',
-  imports: [NgClass, ReactiveFormsModule, ButtonComponent, InputTextComponent],
+  imports: [NgClass, ReactiveFormsModule, ButtonComponent, FileUploadComponent, InputTextComponent],
   templateUrl: './mktg-intake-documents.component.html',
 })
 export class MktgIntakeDocumentsComponent {
@@ -79,13 +81,10 @@ export class MktgIntakeDocumentsComponent {
     control.reset('');
   }
 
-  protected onFilesSelected(event: Event): void {
-    const element = event.target as HTMLInputElement;
-    const files = Array.from(element.files ?? []);
-    // Reset so choosing the same file again fires a change event.
-    element.value = '';
+  protected onFilesSelected(event: FileSelectEvent): void {
+    // `files` is this selection only (`currentFiles` is everything the uploader has seen); the uploader resets its input itself.
     this.errorText.set('');
-    for (const file of files) {
+    for (const file of Array.from(event.files)) {
       const rejection = this.fileRejection(file);
       if (rejection) {
         this.errorText.set(rejection);

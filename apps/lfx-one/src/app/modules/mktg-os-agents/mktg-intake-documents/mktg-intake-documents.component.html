@@ -52,15 +52,22 @@
       [disabled]="atLimit()"
       data-testid="mktg-intake-documents-add-link"
       (onClick)="onAddLink()" />
-    <!-- A styled label wraps the native file input: the input stays focusable for keyboard users (sr-only, not display:none). -->
-    <label
-      class="inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-3.5 text-sm font-medium text-gray-700 focus-within:ring-2 focus-within:ring-blue-300"
-      [ngClass]="atLimit() ? 'pointer-events-none opacity-50' : ''"
-      data-testid="mktg-intake-documents-upload">
-      <i class="fa-light fa-arrow-up-from-bracket" aria-hidden="true"></i>
-      Upload files
-      <input type="file" multiple class="sr-only" [accept]="acceptAttribute()" [disabled]="atLimit()" (change)="onFilesSelected($event)" />
-    </label>
+    <!-- Basic mode, auto + customUpload: choosing files hands them straight to onFilesSelected; nothing is posted by the uploader itself. -->
+    <lfx-file-upload
+      mode="basic"
+      [auto]="true"
+      [customUpload]="true"
+      [multiple]="true"
+      [accept]="acceptAttribute()"
+      [disabled]="atLimit()"
+      chooseLabel="Upload files"
+      chooseStyleClass="p-button-outlined"
+      dataTest="mktg-intake-documents-upload"
+      (onSelect)="onFilesSelected($event)">
+      <ng-template #chooseicon>
+        <i class="fa-light fa-arrow-up-from-bracket" aria-hidden="true"></i>
+      </ng-template>
+    </lfx-file-upload>
   </div>
 
   @if (pending() > 0) {
