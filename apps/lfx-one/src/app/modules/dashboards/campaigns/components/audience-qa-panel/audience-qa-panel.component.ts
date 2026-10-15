@@ -121,6 +121,9 @@ export class AudienceQaPanelComponent {
     return report === null ? '' : this.verdictClass(report.overall);
   });
 
+  /** What besides the list QA audits against: the event and the send-time suppressions, order-free. */
+  private readonly auditScopeKey = computed(() => `${this.eventName().trim()}|${[...this.sendSuppressionIds()].sort().join(',')}`);
+
   public constructor() {
     // A project change invalidates any in-flight QA request and clears the verdict, for the
     // same reason the parent resets its run state: the container stays mounted, so portal A's
@@ -133,6 +136,18 @@ export class AudienceQaPanelComponent {
         this.error.set(null);
         this.running.set(false);
         this.listRefControl.setValue('', { emitEvent: false });
+      });
+
+    // The event and the send-time suppressions are part of what QA audits. A change to either
+    // makes a shown verdict describe an audit that no longer matches, and a reply still in flight
+    // was asked about the old inputs -- so both are dropped, as on a project change.
+    toObservable(this.auditScopeKey)
+      .pipe(distinctUntilChanged(), skip(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.runGeneration += 1;
+        this.result.set(null);
+        this.error.set(null);
+        this.running.set(false);
       });
 
     toObservable(this.suggestedListRef)

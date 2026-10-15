@@ -9,7 +9,7 @@ import { AudienceCustomService } from '@services/audience-custom.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
 
 import { AUDIENCE_CUSTOM_OPERATORS, AUDIENCE_CUSTOM_REUSE_RECOMMENDATIONS, AUDIENCE_SPEAKER_SCOPES } from '@lfx-one/shared/constants';
-import { filter } from 'rxjs';
+import { filter, skip } from 'rxjs';
 import type {
   AudienceComposedList,
   AudienceCustomAnswer,
@@ -29,10 +29,14 @@ const DEFINITE_CREATE_FAILURES: ReadonlySet<number> = new Set([400, 401, 403, 40
 
 type FilterGroup = FormGroup<{ property: FormControl<string>; operator: FormControl<AudienceCustomOperator>; values: FormControl<string> }>;
 
-/** Splits a comma/newline-separated field into trimmed, non-blank values. */
+/**
+ * Splits a one-value-per-line field into trimmed, non-blank values. Lines, not commas: event names
+ * and filter values contain commas ("Summit, Japan 2026"), and a comma split changed exact values
+ * on a round trip the operator never edited.
+ */
 function splitValues(raw: string): string[] {
   return raw
-    .split(/[,\n]/)
+    .split('\n')
     .map((v) => v.trim())
     .filter(Boolean);
 }
@@ -66,6 +70,8 @@ export class AudienceCustomBuilderComponent {
   /** The discovered event's name, used as the default label for list names. */
   public readonly eventName = input('');
   public readonly preset = input<AudienceCustomPreset | null>(null);
+  /** Bumped by the container when its run resets (a new project or event): the builder starts over. */
+  public readonly resetKey = input(0);
 
   // === Outputs ===
   public readonly created = output<AudienceComposedList>();
@@ -141,7 +147,13 @@ export class AudienceCustomBuilderComponent {
   protected readonly busy = computed(() => this.interpreting() || this.previewing() || this.creating());
   protected readonly locked = computed(() => this.disabled() || this.busy());
   /** Create stays disabled until a preview of the CURRENT criteria exists. */
-  protected readonly canCreate = computed(() => !!this.preview() && !this.locked() && !this.unconfirmedName());
+  /** A create for this project still in flight from a builder that has since gone (navigation). */
+  protected readonly createInFlightElsewhere = computed(() => (this.creating() ? null : this.customService.inFlightCreate(this.projectSlug())));
+  /** The model's questions are blocking: a draft with any unanswered is provisional, and only preview may use it. */
+  protected readonly questionsOpen = computed(() => this.questions().length > 0);
+  protected readonly canCreate = computed(
+    () => !!this.preview() && !this.locked() && !this.unconfirmedName() && this.createInFlightElsewhere() === null && !this.questionsOpen()
+  );
   /** The similar lists with their recommendation's label, so the template reads values, not methods. */
   protected readonly similarRows = computed(() =>
     this.similar().map((item) => ({ item, label: item.recommendation ? AUDIENCE_CUSTOM_REUSE_RECOMMENDATIONS[item.recommendation] : 'Not assessed' }))
@@ -158,6 +170,8 @@ export class AudienceCustomBuilderComponent {
   // === Private state ===
   /** Guards replies: a reply to a superseded request must not overwrite newer state. */
   private seq = 0;
+  /** Set on destroy: a create is deliberately not cancelled then, but its reply must not emit. */
+  private destroyed = false;
 
   public get filterRows(): FormArray<FilterGroup> {
     return this.form.controls.propertyFilters;
@@ -175,6 +189,11 @@ export class AudienceCustomBuilderComponent {
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((preset) => this.applyPreset(preset));
+
+    toObservable(this.resetKey)
+      .pipe(skip(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.onContextReset());
+    this.destroyRef.onDestroy(() => (this.destroyed = true));
   }
 
   // === Protected Methods ===
@@ -281,32 +300,32 @@ export class AudienceCustomBuilderComponent {
     const seq = ++this.seq;
     this.setCreating(true);
     this.createError.set(null);
-    this.customService
-      .create(this.projectSlug(), this.request())
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (list) => {
-          if (seq !== this.seq) return;
-          this.setCreating(false);
-          this.confirming.set(false);
-          this.createdList.set(list);
-          this.created.emit(list);
-        },
-        error: (err: HttpErrorResponse) => {
-          if (seq !== this.seq) return;
-          this.setCreating(false);
-          this.confirming.set(false);
-          if (!DEFINITE_CREATE_FAILURES.has(err.status)) {
-            // Not retryable: a 502 partial, a timeout, a lost connection or any 5xx may each mean
-            // HubSpot created the list. Create stays disabled until the operator starts over, so a
-            // retry cannot make a second one.
-            const body = err.status === 502 ? (err.error as { masterName?: string } | null) : null;
-            this.unconfirmedName.set(body?.masterName || this.nameControl.value.trim() || this.preview()?.name || 'the custom list');
-            return;
-          }
-          this.createError.set(serverAuthoredMessage(err, 'The list could not be created.'));
-        },
-      });
+    // Deliberately NOT bound to this component's lifetime: cancelling a non-idempotent create on
+    // navigation would not stop HubSpot creating the list, only hide that it did. The service
+    // tracks it in flight, so a remounted builder holds Create until it settles.
+    this.customService.create(this.projectSlug(), this.request()).subscribe({
+      next: (list) => {
+        if (this.destroyed || seq !== this.seq) return;
+        this.setCreating(false);
+        this.confirming.set(false);
+        this.createdList.set(list);
+        this.created.emit(list);
+      },
+      error: (err: HttpErrorResponse) => {
+        if (this.destroyed || seq !== this.seq) return;
+        this.setCreating(false);
+        this.confirming.set(false);
+        if (!DEFINITE_CREATE_FAILURES.has(err.status)) {
+          // Not retryable: a 502 partial, a timeout, a lost connection or any 5xx may each mean
+          // HubSpot created the list. Create stays disabled until the operator starts over, so a
+          // retry cannot make a second one.
+          const body = err.status === 502 ? (err.error as { masterName?: string } | null) : null;
+          this.unconfirmedName.set(body?.masterName || this.nameControl.value.trim() || this.preview()?.name || 'the custom list');
+          return;
+        }
+        this.createError.set(serverAuthoredMessage(err, 'The list could not be created.'));
+      },
+    });
   }
 
   protected onStartOver(): void {
@@ -373,6 +392,20 @@ export class AudienceCustomBuilderComponent {
       });
   }
 
+  /**
+   * The container's run reset (a new project or event). Everything belongs to the old context, so
+   * the builder starts over -- but a create caught in flight is recorded as unconfirmed, exactly as
+   * the tab does for a stranded compose: its reply is about to be discarded, and losing it silently
+   * is how a duplicate gets created later.
+   */
+  private onContextReset(): void {
+    const stranded = this.creating() ? this.nameControl.value.trim() || this.preview()?.name || 'the custom list' : null;
+    this.onStartOver();
+    if (stranded) {
+      this.unconfirmedName.set(stranded);
+    }
+  }
+
   private applyPreset(preset: AudienceCustomPreset): void {
     // A preset resets the builder, which would drop an in-flight create's reply: the list would
     // exist in HubSpot with nothing here to say so. The container holds presets back meanwhile.
@@ -396,25 +429,25 @@ export class AudienceCustomBuilderComponent {
   private resetCriteria(c: Partial<AudienceCustomCriteria>): void {
     this.filterRows.clear({ emitEvent: false });
     for (const f of c.propertyFilters ?? []) {
-      this.filterRows.push(this.filterGroup(f.property, f.operator, f.values.join(', ')), { emitEvent: false });
+      this.filterRows.push(this.filterGroup(f.property, f.operator, f.values.join('\n')), { emitEvent: false });
     }
     this.form.patchValue({
-      cities: (c.cities ?? []).join(', '),
-      countries: (c.countries ?? []).join(', '),
+      cities: (c.cities ?? []).join('\n'),
+      countries: (c.countries ?? []).join('\n'),
       contactLocation: c.contactLocation === true,
       eventRegistered: c.eventRegistered === true,
       educationEnrolled: c.educationEnrolled === true,
-      registeredFor: (c.registeredFor ?? []).join(', '),
+      registeredFor: (c.registeredFor ?? []).join('\n'),
       gateEventHistory: c.gateEventHistory === true,
       gateListId: c.gateListId ?? '',
       speakersOn: !!c.speakers,
       speakerScope: c.speakers?.scope ?? 'current_past',
       speakerListId: c.speakers?.listId ?? '',
-      speakerEventNames: (c.speakers?.eventNames ?? []).join(', '),
+      speakerEventNames: (c.speakers?.eventNames ?? []).join('\n'),
       ambassadors: c.ambassadors === true,
-      educationTopics: (c.educationTopics ?? []).join(', '),
+      educationTopics: (c.educationTopics ?? []).join('\n'),
       educationTopicProperty: c.educationTopicProperty ?? '',
-      pageViewUrls: (c.pageViewUrls ?? []).join(', '),
+      pageViewUrls: (c.pageViewUrls ?? []).join('\n'),
       label: c.label ?? '',
     });
     this.invalidatePreview();

@@ -145,6 +145,24 @@ describe('AudienceQaPanelComponent', () => {
     expect(host().textContent, "portal A's verdict was rendered under portal B").not.toContain('PASS');
   });
 
+  // The event and send-time suppressions are part of what is audited: a verdict for other inputs is stale.
+  it.each([
+    ['the send-time suppressions', () => fixture.componentRef.setInput('sendSuppressionIds', [])],
+    ['the event', () => fixture.componentRef.setInput('eventName', 'Another Event')],
+  ])('drops a verdict when %s change', (_label, change) => {
+    fixture.componentRef.setInput('eventName', 'Synthetic Summit');
+    fixture.componentRef.setInput('sendSuppressionIds', ['201']);
+    fixture.detectChanges();
+    runAudienceQa.mockReturnValue(of(report()));
+    enterRefAndRun();
+    expect(host().textContent, 'precondition: a verdict is shown').toContain('PASS');
+
+    change();
+    fixture.detectChanges();
+
+    expect(host().textContent).not.toContain('PASS');
+  });
+
   it("shows the fallback copy rather than Angular's transport string", () => {
     // extractErrorMessage ends in `error.message || fallback` and HttpErrorResponse.message is
     // never empty, so on a body-less failure the fallback was unreachable and the operator got

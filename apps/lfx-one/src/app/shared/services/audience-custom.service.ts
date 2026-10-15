@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpClient } from '@angular/common/http';
-import { inject, Injectable } from '@angular/core';
-import { Observable } from 'rxjs';
+import { inject, Injectable, signal } from '@angular/core';
+import { defer, finalize, Observable } from 'rxjs';
 
 import type {
   AudienceComposedList,
@@ -24,6 +24,18 @@ import type {
 export class AudienceCustomService {
   private readonly http = inject(HttpClient);
 
+  /**
+   * Creates still on the wire, by project → the name they were sent with. Kept here, not in the
+   * builder, because a create outlives the builder that started it: navigating away must not let a
+   * remounted builder offer a second create while the first may still be landing in HubSpot.
+   */
+  private readonly inFlight = signal<ReadonlyMap<string, string>>(new Map());
+
+  /** The name of a create still in flight for this project, or null. */
+  public inFlightCreate(projectSlug: string): string | null {
+    return this.inFlight().get(projectSlug) ?? null;
+  }
+
   /** Free text → draft criteria and blocking questions. Uses a model; creates nothing. */
   public interpret(projectSlug: string, request: AudienceCustomInterpretRequest): Observable<AudienceCustomInterpretResult> {
     return this.http.post<AudienceCustomInterpretResult>('/api/campaigns/audience-builder/custom/interpret', request, { params: { project: projectSlug } });
@@ -36,6 +48,17 @@ export class AudienceCustomService {
 
   /** Creates ONE contact list in HubSpot. Not idempotent: only a refused request (4xx) is safe to retry. */
   public create(projectSlug: string, request: AudienceCustomRequest): Observable<AudienceComposedList> {
-    return this.http.post<AudienceComposedList>('/api/campaigns/audience-builder/custom/create', request, { params: { project: projectSlug } });
+    return defer(() => {
+      this.inFlight.update((all) => new Map(all).set(projectSlug, request.name ?? ''));
+      return this.http.post<AudienceComposedList>('/api/campaigns/audience-builder/custom/create', request, { params: { project: projectSlug } });
+    }).pipe(
+      finalize(() =>
+        this.inFlight.update((all) => {
+          const next = new Map(all);
+          next.delete(projectSlug);
+          return next;
+        })
+      )
+    );
   }
 }

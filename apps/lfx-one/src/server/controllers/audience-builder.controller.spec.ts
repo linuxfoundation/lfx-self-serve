@@ -767,6 +767,8 @@ describe('custom audiences', () => {
     ['answers that are not an array', { request: 'x', answers: 'yes' }, 'answers'],
     ['a non-string answer', { request: 'x', answers: [{ answer: 1 }] }, 'answers'],
     ['a blank answer', { request: 'x', answers: [{ answer: '   ' }] }, 'answers'],
+    ['an over-long question id (refused, never cut)', { request: 'x', answers: [{ answer: 'a', questionId: 'q'.repeat(65) }] }, 'answers'],
+    ['an over-long question', { request: 'x', answers: [{ answer: 'a', question: 'q'.repeat(501) }] }, 'answers'],
     ['more than 12 answers', { request: 'x', answers: Array.from({ length: 13 }, () => ({ answer: 'a' })) }, 'answers'],
   ])('refuses %s before calling the model', async (_label, body, field) => {
     await controller.interpretCustom(buildReq(body), buildRes(), next);

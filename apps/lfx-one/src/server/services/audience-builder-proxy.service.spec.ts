@@ -469,6 +469,17 @@ describe('AudienceBuilderProxyService custom audiences', () => {
     expect((error as AudienceComposePartialError).masterName).toBe('My list');
   });
 
+  // A dropped filter or scope would widen the audience the operator then creates, so an unknown
+  // criteria enum fails the reply instead.
+  it.each([
+    ['operator', { property_filters: [{ property: 'jobtitle', operator: 'is_like', values: ['x'] }] }, /property_filters.operator/],
+    ['speaker scope', { speakers: { scope: 'future', event_names: [] } }, /speakers.scope/],
+  ])('refuses an unknown upstream %s rather than dropping it', async (_label, criteria, field) => {
+    proxyRequest.mockResolvedValue({ criteria, questions: [], notes: [] });
+
+    await expect(service.interpretCustom(req, 'tlf', { request: 'x' })).rejects.toThrow(field);
+  });
+
   it('drops a planned event with no name and malformed questions', async () => {
     proxyRequest.mockResolvedValue({
       criteria: {},

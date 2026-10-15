@@ -35,7 +35,13 @@ import type {
   AudienceSuppressionList,
   CampaignAudience,
 } from '@lfx-one/shared/interfaces';
-import { AUDIENCE_BUILDER_REQUEST_TIMEOUT_MS, AUDIENCE_CUSTOM_REUSE_RECOMMENDATIONS, AUDIENCE_LAST_SENT_MATCH_REASONS } from '@lfx-one/shared/constants';
+import {
+  AUDIENCE_BUILDER_REQUEST_TIMEOUT_MS,
+  AUDIENCE_CUSTOM_OPERATORS,
+  AUDIENCE_CUSTOM_REUSE_RECOMMENDATIONS,
+  AUDIENCE_LAST_SENT_MATCH_REASONS,
+  AUDIENCE_SPEAKER_SCOPES,
+} from '@lfx-one/shared/constants';
 
 import { AUDIENCE_CAPABILITIES_TIMEOUT_MS } from '../constants/audience-builder.constants';
 import type { Request } from 'express';
@@ -452,6 +458,21 @@ function toPlannedEvent(wire: WireEventIdentity | undefined): AudienceDiscovered
   };
 }
 
+const UPSTREAM_OPERATORS: readonly AudienceCustomOperator[] = AUDIENCE_CUSTOM_OPERATORS.map((o) => o.value);
+const UPSTREAM_SPEAKER_SCOPES: readonly AudienceSpeakerScope[] = AUDIENCE_SPEAKER_SCOPES.map((s) => s.key);
+
+/**
+ * An upstream criteria enum, checked against the values the UI offers. Unlike a label enum, an
+ * unknown one is REFUSED rather than dropped: dropping a filter or a speaker scope would silently
+ * widen the audience the operator then previews and creates.
+ */
+function knownEnum<T extends string>(allowed: readonly T[], value: unknown, field: string): T {
+  if (typeof value === 'string' && (allowed as readonly string[]).includes(value)) {
+    return value as T;
+  }
+  throw new Error(`audience-builder: upstream response has an unknown value in \`${field}\``);
+}
+
 /** Upstream criteria → client criteria. Every array is present, never undefined. */
 function toCustomCriteria(wire: WireCustomCriteria): AudienceCustomCriteria {
   return {
@@ -465,11 +486,15 @@ function toCustomCriteria(wire: WireCustomCriteria): AudienceCustomCriteria {
     gateListId: wire.gate_list_id || undefined,
     propertyFilters: (wire.property_filters ?? []).map((f) => ({
       property: f.property,
-      operator: f.operator as AudienceCustomOperator,
+      operator: knownEnum(UPSTREAM_OPERATORS, f.operator, 'criteria.property_filters.operator'),
       values: f.values ?? [],
     })),
     speakers: wire.speakers
-      ? { scope: wire.speakers.scope as AudienceSpeakerScope, listId: wire.speakers.list_id || undefined, eventNames: wire.speakers.event_names ?? [] }
+      ? {
+          scope: knownEnum(UPSTREAM_SPEAKER_SCOPES, wire.speakers.scope, 'criteria.speakers.scope'),
+          listId: wire.speakers.list_id || undefined,
+          eventNames: wire.speakers.event_names ?? [],
+        }
       : undefined,
     ambassadors: wire.ambassadors === true,
     educationTopics: wire.education_topics ?? [],

@@ -45,6 +45,9 @@ const interpretation: AudienceCustomInterpretResult = {
   ],
 };
 
+/** The same draft with every blocking question answered: only a settled draft may be created. */
+const settled: AudienceCustomInterpretResult = { ...interpretation, questions: [] };
+
 const preview: AudienceCustomPreview = {
   name: '26Q4 - Seoul - Mailable Contacts - Synthetic Summit Seoul',
   criteria: criteria(),
@@ -58,10 +61,11 @@ const created: AudienceComposedList = { listId: '7777', name: preview.name, hubs
 
 describe('AudienceCustomBuilderComponent', () => {
   let fixture: ComponentFixture<AudienceCustomBuilderComponent>;
-  const service = { interpret: vi.fn(), preview: vi.fn(), create: vi.fn() };
+  const service = { interpret: vi.fn(), preview: vi.fn(), create: vi.fn(), inFlightCreate: vi.fn() };
 
   beforeEach(async () => {
-    service.interpret.mockReset().mockReturnValue(of(interpretation));
+    service.interpret.mockReset().mockReturnValue(of(settled));
+    service.inFlightCreate.mockReset().mockReturnValue(null);
     service.preview.mockReset().mockReturnValue(of(preview));
     service.create.mockReset().mockReturnValue(of(created));
     await TestBed.configureTestingModule({
@@ -114,6 +118,7 @@ describe('AudienceCustomBuilderComponent', () => {
   });
 
   it('re-interprets with the chosen answer, keeping the original request', () => {
+    service.interpret.mockReturnValue(of(interpretation));
     interpretSeoul();
     click('audience-custom-builder-option-mailability-1');
 
@@ -134,14 +139,14 @@ describe('AudienceCustomBuilderComponent', () => {
 
   it('sends the edited criteria to preview, not the draft', () => {
     interpretSeoul();
-    type('audience-custom-builder-countries', 'South Korea, ');
+    type('audience-custom-builder-countries', 'South Korea\n');
     click('audience-custom-builder-filter-add');
     const row = el('audience-custom-builder-filter-0');
     const prop = row.querySelector<HTMLInputElement>('input[formcontrolname="property"]')!;
     prop.value = 'jobtitle';
     prop.dispatchEvent(new Event('input'));
-    const values = row.querySelector<HTMLInputElement>('input[formcontrolname="values"]')!;
-    values.value = 'director, vp';
+    const values = row.querySelector<HTMLTextAreaElement>('textarea[formcontrolname="values"]')!;
+    values.value = 'director\nvp';
     values.dispatchEvent(new Event('input'));
     fixture.detectChanges();
 
@@ -250,6 +255,52 @@ describe('AudienceCustomBuilderComponent', () => {
     expect(service.create).toHaveBeenCalledWith('tlf', expect.objectContaining({ name: 'My own name' }));
   });
 
+  it('previews a draft with open questions but will not create it', () => {
+    service.interpret.mockReturnValue(of(interpretation));
+    interpretSeoul();
+    click('audience-custom-builder-preview');
+
+    expect(host().querySelector('[data-testid="audience-custom-builder-preview-result"]')).not.toBeNull();
+    expect(el<HTMLButtonElement>('audience-custom-builder-create').disabled, 'blocking questions are unanswered').toBe(true);
+    expect(host().querySelector('[data-testid="audience-custom-builder-questions-open"]')).not.toBeNull();
+  });
+
+  it('keeps commas inside a value: one value per line', () => {
+    interpretSeoul();
+    type('audience-custom-builder-registered-for', 'Summit, Japan 2026\nOther Event');
+    click('audience-custom-builder-preview');
+
+    expect(service.preview.mock.calls.at(-1)?.[1].criteria.registeredFor).toEqual(['Summit, Japan 2026', 'Other Event']);
+  });
+
+  it('holds Create while a create for this project is still in flight from a builder that has gone', () => {
+    service.inFlightCreate.mockReturnValue('Seoul audience');
+    fixture.componentRef.setInput('projectSlug', 'tlf2');
+    fixture.detectChanges();
+    interpretSeoul();
+    click('audience-custom-builder-preview');
+
+    expect(el<HTMLButtonElement>('audience-custom-builder-create').disabled).toBe(true);
+    expect(el('audience-custom-builder-in-flight').textContent).toContain('Seoul audience');
+  });
+
+  it('starts over on a context reset, keeping a create caught in flight as unconfirmed', () => {
+    service.create.mockReturnValue(new Subject<AudienceComposedList>());
+    const emitted: AudienceComposedList[] = [];
+    fixture.componentInstance.created.subscribe((list) => emitted.push(list));
+    interpretSeoul();
+    click('audience-custom-builder-preview');
+    click('audience-custom-builder-create');
+    click('audience-custom-builder-confirm-create');
+
+    fixture.componentRef.setInput('resetKey', 1);
+    fixture.detectChanges();
+
+    expect(host().querySelector('[data-testid="audience-custom-builder-criteria"]'), 'the old draft is gone').toBeNull();
+    expect(el('audience-custom-builder-unconfirmed').textContent).toContain(preview.name);
+    expect(emitted).toEqual([]);
+  });
+
   it('applies a deterministic preset without calling the model', () => {
     fixture.componentRef.setInput('preset', { version: 1, criteria: { label: 'Synthetic Summit', registeredFor: ['Synthetic Summit 2026'] } });
     fixture.detectChanges();
@@ -315,6 +366,7 @@ describe('AudienceCustomBuilderComponent', () => {
   });
 
   it('plans an event preset from its page, and keeps the page for answers', () => {
+    service.interpret.mockReturnValue(of(interpretation));
     fixture.componentRef.setInput('preset', { version: 3, eventUrl: 'https://events.example.org/x', request: 'Plan the event audience' });
     fixture.detectChanges();
 

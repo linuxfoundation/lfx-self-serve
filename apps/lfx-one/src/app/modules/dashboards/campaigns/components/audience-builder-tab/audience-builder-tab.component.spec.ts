@@ -107,7 +107,10 @@ describe('AudienceBuilderTabComponent', () => {
       imports: [AudienceBuilderTabComponent],
       providers: [
         // The custom builder child owns its own requests; none of these specs drive it.
-        { provide: AudienceCustomService, useValue: { interpret: vi.fn(() => NEVER), preview: vi.fn(() => NEVER), create: vi.fn(() => NEVER) } },
+        {
+          provide: AudienceCustomService,
+          useValue: { interpret: vi.fn(() => NEVER), preview: vi.fn(() => NEVER), create: vi.fn(() => NEVER), inFlightCreate: vi.fn(() => null) },
+        },
         {
           provide: CampaignService,
           useValue: {
@@ -2799,6 +2802,106 @@ describe('AudienceBuilderTabComponent', () => {
       expect(builder().preset()).toMatchObject({
         criteria: { label: 'Synthetic Summit 2026', speakers: { scope: 'current', eventNames: ['Synthetic Summit 2026'] } },
       });
+    });
+
+    it('holds compose while a custom create is still landing', async () => {
+      await renderWithDiscovery();
+      click('audience-card-grid-toggle-101');
+      const compose = (): HTMLButtonElement | null => host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose"]');
+      expect(compose()?.disabled, 'precondition: compose is offered').toBe(false);
+
+      builder().creatingChange.emit(true);
+      fixture.detectChanges();
+
+      expect(compose()?.disabled, 'compose would snapshot the selection before the created list joins it').toBe(true);
+    });
+
+    it('starts the custom builder over with the run, and forgets the planned event', async () => {
+      await renderWithDiscovery();
+      const before = builder().resetKey();
+
+      fixture.componentRef.setInput('projectSlug', 'another-foundation');
+      fixture.detectChanges();
+
+      expect(builder().resetKey()).toBeGreaterThan(before);
+    });
+
+    it('drops a suppression count when the project changes', async () => {
+      await renderWithDiscovery();
+      previewAudienceCount.mockReturnValue(of({ exact: true, estimate: 900, count: 900, reason: '' }));
+      click('campaigns-audience-suppression-count-run');
+      expect(host().querySelector('[data-testid="campaigns-audience-suppression-count-value"]')).not.toBeNull();
+
+      fixture.componentRef.setInput('projectSlug', 'another-foundation');
+      fixture.detectChanges();
+      // Portal B resolves a suppression list with the SAME numeric id, so the count's display key
+      // matches again: only the reset keeps A's count from reading as B's.
+      stream = new Subject<SSEEvent<AudienceDiscoverySSEEventType>>();
+      discoverAudience.mockReturnValue(stream.asObservable());
+      typeEventUrl('https://events.example.org/synthetic-summit');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-suppression-count-value"]'), "project A's count must not read as B's").toBeNull();
+    });
+
+    it('shows a zero estimate as unavailable, never as a measured zero', async () => {
+      await renderWithDiscovery();
+      previewAudienceCount.mockReturnValue(of({ exact: false, estimate: 0, count: 0, reason: 'a list did not report a size' }));
+      click('campaigns-audience-suppression-count-run');
+
+      const value = host().querySelector('[data-testid="campaigns-audience-suppression-count-value"]')?.textContent ?? '';
+      expect(value).toContain('unavailable');
+      expect(value).not.toContain('0 contacts');
+    });
+
+    it('keeps the existing-list search results to its own box', async () => {
+      await render();
+      searchAudienceLists.mockReturnValue(of([{ listId: '777', name: 'Prospects', size: 10, hubspotUrl: 'https://app.hubspot.com/x/777' }]));
+      const input = host().querySelector<HTMLInputElement>('[data-testid="campaigns-audience-use-existing-search"]');
+      if (input === null) throw new Error('the existing-list search is not rendered');
+      vi.useFakeTimers();
+      try {
+        input.value = 'prospects';
+        input.dispatchEvent(new Event('input'));
+        vi.advanceTimersByTime(AUDIENCE_LIST_TYPEAHEAD_DEBOUNCE_MS);
+      } finally {
+        vi.useRealTimers();
+      }
+      fixture.detectChanges();
+
+      // The Fill gaps search answers with a different list; the existing-list box must keep its own.
+      searchAudienceLists.mockReturnValue(of([{ listId: '888', name: 'Speakers', size: 5, hubspotUrl: 'https://app.hubspot.com/x/888' }]));
+      (fixture.componentInstance as unknown as { onSearch(q: string): void }).onSearch('speakers');
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-use-existing-777"]')).not.toBeNull();
+      expect(host().querySelector('[data-testid="campaigns-audience-use-existing-888"]')).toBeNull();
+    });
+
+    it('shows the URL typed in Event mode when switching to Reuse', async () => {
+      await render();
+      click('campaigns-audience-mode-event');
+      const planUrl = host().querySelector<HTMLInputElement>('[data-testid="campaigns-audience-event-plan-url"]');
+      if (planUrl === null) throw new Error('the event plan URL is not rendered');
+      planUrl.value = 'https://events.example.org/typed-in-event-mode';
+      planUrl.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+
+      click('campaigns-audience-mode-reuse');
+
+      expect(host().querySelector<HTMLInputElement>('[data-testid="campaigns-audience-event-url"]')?.value).toBe(
+        'https://events.example.org/typed-in-event-mode'
+      );
+    });
+
+    it('loads suppressions scoped to a planned event for a list used without discovery', async () => {
+      await render();
+      builder().eventPlanned.emit({ eventName: 'Synthetic Summit 2026', brandShort: 'SYN', eventDates: [] });
+      builder().created.emit({ listId: '7777', name: 'Seoul', hubspotUrl: 'https://app.hubspot.com/x/7777' });
+      fixture.detectChanges();
+
+      expect(getAudienceSuppressionLists).toHaveBeenLastCalledWith('tlf', 'SYN', 'Synthetic Summit 2026');
     });
 
     it('sends a typed master name with the compose', async () => {

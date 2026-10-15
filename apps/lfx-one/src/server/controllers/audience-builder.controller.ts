@@ -61,6 +61,7 @@ const LAST_SENT_DEFAULT_LIMIT = 3;
 /** Bounds on the custom-audience payload, mirroring the upstream design's limits. */
 const CUSTOM_REQUEST_MAX_LENGTH = 2000;
 const CUSTOM_ANSWER_MAX_LENGTH = 500;
+const CUSTOM_QUESTION_ID_MAX_LENGTH = 64;
 const CUSTOM_MAX_ANSWERS = 12;
 const CUSTOM_MAX_VALUES = 25;
 const CUSTOM_MAX_PAGE_VIEW_URLS = 10;
@@ -789,10 +790,19 @@ export class AudienceBuilderController {
         next(invalid(req, 'audience_custom_interpret', 'answers', `each answer must be a non-blank string of at most ${CUSTOM_ANSWER_MAX_LENGTH} characters`));
         return;
       }
+      // Refused, not cut: a cut question id no longer matches the question upstream asked.
+      if (a['questionId'] !== undefined && (typeof a['questionId'] !== 'string' || a['questionId'].length > CUSTOM_QUESTION_ID_MAX_LENGTH)) {
+        next(invalid(req, 'audience_custom_interpret', 'answers', `each questionId must be a string of at most ${CUSTOM_QUESTION_ID_MAX_LENGTH} characters`));
+        return;
+      }
+      if (a['question'] !== undefined && (typeof a['question'] !== 'string' || a['question'].length > CUSTOM_ANSWER_MAX_LENGTH)) {
+        next(invalid(req, 'audience_custom_interpret', 'answers', `each question must be a string of at most ${CUSTOM_ANSWER_MAX_LENGTH} characters`));
+        return;
+      }
       answers.push({
         answer,
-        ...(typeof a['questionId'] === 'string' ? { questionId: a['questionId'].slice(0, 64) } : {}),
-        ...(typeof a['question'] === 'string' ? { question: a['question'].slice(0, CUSTOM_ANSWER_MAX_LENGTH) } : {}),
+        ...(typeof a['questionId'] === 'string' ? { questionId: a['questionId'] } : {}),
+        ...(typeof a['question'] === 'string' ? { question: a['question'] } : {}),
       });
     }
 

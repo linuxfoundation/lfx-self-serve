@@ -176,20 +176,20 @@
           <legend class="mb-1 text-xs font-semibold text-gray-700">Location</legend>
           <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
             <label class="flex flex-col gap-1 text-xs text-gray-700">
-              Cities (comma-separated)
-              <input
-                type="text"
+              Cities, one per line
+              <textarea
+                rows="2"
                 formControlName="cities"
                 class="rounded-md border border-gray-300 px-2 py-1 text-sm"
-                data-testid="audience-custom-builder-cities" />
+                data-testid="audience-custom-builder-cities"></textarea>
             </label>
             <label class="flex flex-col gap-1 text-xs text-gray-700">
-              Countries — widens the reach (optional)
-              <input
-                type="text"
+              Countries, one per line — widens the reach (optional)
+              <textarea
+                rows="2"
                 formControlName="countries"
                 class="rounded-md border border-gray-300 px-2 py-1 text-sm"
-                data-testid="audience-custom-builder-countries" />
+                data-testid="audience-custom-builder-countries"></textarea>
             </label>
           </div>
           <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-700">
@@ -229,12 +229,12 @@
         <fieldset class="flex flex-col gap-2" [disabled]="locked()">
           <legend class="mb-1 text-xs font-semibold text-gray-700">Education courses (optional)</legend>
           <label class="flex flex-col gap-1 text-xs text-gray-700">
-            Course topics, comma-separated — limits education enrolment to the brand's own courses
-            <input
-              type="text"
+            Course topics, one per line — limits education enrolment to the brand's own courses
+            <textarea
+              rows="2"
               formControlName="educationTopics"
               class="rounded-md border border-gray-300 px-2 py-1 text-sm"
-              data-testid="audience-custom-builder-topics" />
+              data-testid="audience-custom-builder-topics"></textarea>
           </label>
           @if (topicCandidates().length > 1) {
             <label class="flex flex-col gap-1 text-xs text-gray-700">
@@ -256,24 +256,24 @@
         <fieldset class="flex flex-col gap-2" [disabled]="locked()">
           <legend class="mb-1 text-xs font-semibold text-gray-700">Web visitors (optional)</legend>
           <label class="flex flex-col gap-1 text-xs text-gray-700">
-            Page URLs, comma-separated — anyone who viewed a matching page
-            <input
-              type="text"
+            Page URLs, one per line — anyone who viewed a matching page
+            <textarea
+              rows="2"
               formControlName="pageViewUrls"
               class="rounded-md border border-gray-300 px-2 py-1 text-sm"
-              data-testid="audience-custom-builder-page-urls" />
+              data-testid="audience-custom-builder-page-urls"></textarea>
           </label>
         </fieldset>
 
         <fieldset class="flex flex-col gap-2" [disabled]="locked()">
           <legend class="mb-1 text-xs font-semibold text-gray-700">Registrants of specific events (optional)</legend>
           <label class="flex flex-col gap-1 text-xs text-gray-700">
-            Exact event names, comma-separated
-            <input
-              type="text"
+            Exact event names, one per line
+            <textarea
+              rows="2"
               formControlName="registeredFor"
               class="rounded-md border border-gray-300 px-2 py-1 text-sm"
-              data-testid="audience-custom-builder-registered-for" />
+              data-testid="audience-custom-builder-registered-for"></textarea>
           </label>
         </fieldset>
 
@@ -304,12 +304,12 @@
                   data-testid="audience-custom-builder-speaker-list" />
               </label>
               <label class="flex flex-col gap-1 text-xs text-gray-700">
-                Or exact event names, incl. co-located tracks
-                <input
-                  type="text"
+                Or exact event names, one per line, incl. co-located tracks
+                <textarea
+                  rows="2"
                   formControlName="speakerEventNames"
                   class="rounded-md border border-gray-300 px-2 py-1 text-sm"
-                  data-testid="audience-custom-builder-speaker-events" />
+                  data-testid="audience-custom-builder-speaker-events"></textarea>
               </label>
             </div>
           }
@@ -336,8 +336,8 @@
               </label>
               @if (filterTakesValues()[i] !== false) {
                 <label class="flex min-w-[12rem] flex-1 flex-col gap-1 text-xs text-gray-700">
-                  Values (comma-separated)
-                  <input type="text" formControlName="values" class="rounded-md border border-gray-300 px-2 py-1 text-sm" />
+                  Values, one per line
+                  <textarea rows="2" formControlName="values" class="rounded-md border border-gray-300 px-2 py-1 text-sm"></textarea>
                 </label>
               }
               <button
@@ -463,6 +463,9 @@
             </div>
           </div>
         } @else if (!unconfirmedName()) {
+          @if (questionsOpen()) {
+            <p class="text-xs text-amber-800" data-testid="audience-custom-builder-questions-open">Answer the questions above before creating the list.</p>
+          }
           <div>
             <button
               type="button"
@@ -477,6 +480,11 @@
       </div>
     }
 
+    @if (createInFlightElsewhere(); as name) {
+      <p class="text-xs text-amber-800" role="status" data-testid="audience-custom-builder-in-flight">
+        A list{{ name ? ' named "' + name + '"' : '' }} is still being created for this project. Wait for it to finish before creating another.
+      </p>
+    }
     <!-- Outside the preview block, so nothing that drops the preview can hide a create's outcome. -->
     @if (unconfirmedName(); as name) {
       <div

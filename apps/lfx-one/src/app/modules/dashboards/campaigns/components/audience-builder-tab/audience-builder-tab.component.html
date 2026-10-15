@@ -189,6 +189,7 @@
         [disabled]="selectionLocked() || degraded()"
         [eventName]="identity()?.eventName ?? ''"
         [preset]="customPreset()"
+        [resetKey]="customResetKey()"
         (created)="onCustomCreated($event)"
         (reuse)="onCustomReuse($event)"
         (eventPlanned)="onEventPlanned($event)"
@@ -206,11 +207,11 @@
         aria-label="Search HubSpot lists to use as the send list"
         class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
         data-testid="campaigns-audience-use-existing-search" />
-      @if (existingSearchActive() && searching()) {
+      @if (existingSearchActive() && existingSearching()) {
         <span class="text-xs text-gray-500">Searching...</span>
-      } @else if (existingSearchActive() && searchResults().length > 0) {
+      } @else if (existingSearchActive() && existingSearchResults().length > 0) {
         <div class="flex flex-col gap-1">
-          @for (list of searchResults(); track list.listId) {
+          @for (list of existingSearchResults(); track list.listId) {
             <div class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-gray-100 bg-gray-50 p-2">
               <div class="flex min-w-0 flex-col gap-0.5">
                 <span class="text-xs font-medium break-words text-gray-900">{{ list.name }}</span>
@@ -508,7 +509,13 @@
           </button>
           @if (suppressionCount(); as count) {
             <span class="text-gray-700" data-testid="campaigns-audience-suppression-count-value">
-              {{ count.count.toLocaleString('en-US') }} contacts suppressed{{ count.exact ? '' : ' (estimate)' }}
+              @if (count.exact) {
+                {{ count.count | number }} contacts suppressed
+              } @else if (count.count > 0) {
+                Up to {{ count.count | number }} contacts suppressed (estimate)
+              } @else {
+                Suppression count unavailable
+              }
             </span>
             @if (!count.exact && count.reason) {
               <span class="text-gray-500">— {{ count.reason }}</span>
