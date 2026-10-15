@@ -540,7 +540,7 @@ describe('OrgEasyclaManagersComponent', () => {
       expect(checkPermission).not.toHaveBeenCalled();
     });
 
-    it('disables Add without a reason and hides Remove when ACS denies a CLA manager on the roster both', async () => {
+    it('disables Add without a reason and hides Remove when ACS denies both for a viewer on the roster', async () => {
       checkPermission.mockReturnValue(of(false));
       await render();
       component.loadIfNeeded();
