@@ -22,24 +22,6 @@
             <span class="text-xs text-gray-400 truncate">{{ agentTagline }}</span>
           </div>
         </div>
-        @if (showVersionChips()) {
-          <div class="flex items-center gap-1.5 shrink-0" data-testid="mktg-agent-run-version-chips">
-            @for (version of versions(); track version.version) {
-              <button
-                type="button"
-                class="rounded-full border px-2.5 py-1 text-xs font-medium"
-                [ngClass]="
-                  version.version === currentVersion()?.version
-                    ? 'border-blue-300 bg-blue-50 text-blue-700'
-                    : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
-                "
-                [attr.data-testid]="'mktg-agent-run-version-chip-' + version.version"
-                (click)="onPickVersion(version.version)">
-                v{{ version.version }}
-              </button>
-            }
-          </div>
-        }
       </div>
 
       <!-- Body -->
