@@ -197,6 +197,7 @@
       [initialRegistrants]="roster().status === 'error' ? null : roster().registrants"
       [initialRegistrantsLoading]="roster().status === 'loading'"
       [visible]="drawerVisible()"
+      (registrantsRemoved)="onRegistrantsRemoved($event)"
       (refreshRequested)="onRosterChanged($event)" />
   }
 </p-drawer>

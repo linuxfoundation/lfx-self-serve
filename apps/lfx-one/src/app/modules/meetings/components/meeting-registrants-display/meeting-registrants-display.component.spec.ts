@@ -364,12 +364,12 @@ describe('MeetingRegistrantsDisplayComponent — guest emails', () => {
     const fixture = await mount();
 
     expect(fixture.nativeElement.querySelector('[data-testid="registrant-r1"]')).not.toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid="registrant-email-r1"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="registrant-display-email-r1"]')).toBeNull();
   });
 
   it('shows each guest email when asked', async () => {
     const fixture = await mount(true);
 
-    expect(fixture.nativeElement.querySelector('[data-testid="registrant-email-r1"]')?.textContent?.trim()).toBe('ada@acme-motors.example');
+    expect(fixture.nativeElement.querySelector('[data-testid="registrant-display-email-r1"]')?.textContent?.trim()).toBe('ada@acme-motors.example');
   });
 });

@@ -164,7 +164,8 @@
             }
           </div>
           @if (showEmail() && registrant.email) {
-            <p class="text-gray-500 text-sm leading-relaxed tracking-tight truncate" [attr.data-testid]="'registrant-email-' + registrant.uid">
+            <!-- Wraps rather than truncates: the organizer must be able to read and copy the whole address. -->
+            <p class="text-gray-500 text-sm leading-relaxed tracking-tight break-all" [attr.data-testid]="'registrant-display-email-' + registrant.uid">
               {{ registrant.email }}
             </p>
           }

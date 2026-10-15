@@ -35,6 +35,7 @@ class RegistrantsDisplayStubComponent {
   public readonly initialRegistrantsLoading = input(false);
   public readonly visible = input(false);
   public readonly refreshRequested = output<number>();
+  public readonly registrantsRemoved = output<string[]>();
 }
 
 type LoadedMeeting = Meeting & { project: PublicMeetingProject };
@@ -268,21 +269,50 @@ describe('MeetingPeopleComponent', () => {
     expect(text('people-section-count')).toBe('4 invited');
   });
 
-  // The index drops removed guests after the delete returns: the count does not wait for it (O-04).
-  it('counts removed guests off until the roster drops them', async () => {
+  // The index drops removed guests after the delete returns: the section does not wait for it (O-04).
+  const removeGuest = (uid: string): void => {
+    fixture.componentInstance.onRegistrantsRemoved([uid]);
+    fixture.componentInstance.onRosterChanged(-1);
+    fixture.detectChanges();
+  };
+
+  it('drops a removed guest from the rows and the count until the roster drops them too', async () => {
     let roster = [registrant('a'), registrant('b'), registrant('c')];
     await setup(() => of(roster));
     expect(text('people-section-count')).toBe('3 invited');
 
-    fixture.componentInstance.onRosterChanged(-1);
-    fixture.detectChanges();
-    // The refetch still returns all three: the count is already 2.
+    removeGuest('c');
+    // The refetch still returns all three: the guest is already gone from the section.
     expect(text('people-section-count')).toBe('2 invited');
+    expect(query('participant-row-c')).toBeNull();
 
     roster = [registrant('a'), registrant('b')];
     fixture.componentInstance.retry();
     fixture.detectChanges();
     expect(text('people-section-count')).toBe('2 invited');
+    expect(query('participant-row-a')).not.toBeNull();
+  });
+
+  it('says nobody is invited once the last guest is removed', async () => {
+    await setup(() => of([registrant('a')]));
+
+    removeGuest('a');
+
+    expect(query('people-section-empty')).not.toBeNull();
+    expect(query('participant-row-a')).toBeNull();
+  });
+
+  it('forgets removals on another meeting or occurrence', async () => {
+    await setup(() => of([registrant('a'), registrant('b')]));
+    removeGuest('a');
+    expect(query('participant-row-a')).toBeNull();
+
+    rosterRequest.set({ meetingId: 'meeting-1', occurrenceId: 'occ-2' });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(query('participant-row-a')).not.toBeNull();
   });
 
   it('shows no guest emails to a viewer who is not the organizer', async () => {

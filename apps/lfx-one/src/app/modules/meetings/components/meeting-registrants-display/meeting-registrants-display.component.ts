@@ -93,6 +93,11 @@ export class MeetingRegistrantsDisplayComponent {
 
   public readonly registrantsCountChange: OutputEmitterRef<number> = output<number>();
   public readonly refreshRequested: OutputEmitterRef<number> = output<number>();
+  /**
+   * The uids of guests just removed, beside `refreshRequested`'s negative count, for a parent that lists
+   * the roster too and should drop them before its refetch catches up (the V2 People section, O-04).
+   */
+  public readonly registrantsRemoved: OutputEmitterRef<string[]> = output<string[]>();
   public readonly totalCountChange: OutputEmitterRef<number> = output<number>();
   // Emits the host-flagged people (the organizer set) whenever the list resolves, so a parent
   // can feed the same set to the shared "Organized by" chip — keeping chip and modal in agreement.
@@ -470,6 +475,7 @@ export class MeetingRegistrantsDisplayComponent {
             this.deletedRegistrantUids.update((uids) => new Set([...uids, uid]));
             this.optimisticRegistrants.update((list) => list.filter((r) => r.uid !== uid));
             if (this.externallyManaged()) {
+              this.registrantsRemoved.emit([uid]);
               this.refreshRequested.emit(-response.summary.successful);
             } else {
               const meeting = this.meeting();
