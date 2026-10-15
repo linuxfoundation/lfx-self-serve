@@ -203,6 +203,38 @@ describe('VotesDashboardComponent personal summary', () => {
     }
   });
 
+  it.each<Lens>(['project', 'foundation'])('keeps the %s table mounted when leaving an empty Closing Soon list for All', async (lens) => {
+    await management(lens);
+    const service = TestBed.inject(VoteService);
+    const list = vi.mocked(service.getVotesByProjectPaginated);
+    const count = vi.mocked(service.getVotesCountByProject);
+    list.mockReturnValueOnce(of({ data: [], total_records: 0 }));
+    await selectSummary('closing-soon');
+    expect(rows()).toEqual([]);
+    const originalTable = table;
+    const destroyed = vi.fn();
+    table['destroyRef'].onDestroy(destroyed);
+    const pending = new Subject<VoteListResponse>();
+    list.mockReturnValueOnce(pending);
+    list.mockClear();
+    count.mockClear();
+    element('filter-pill-all')!.click();
+    fixture.detectChanges();
+    expect(element('votes-empty-state-card')).toBeNull();
+    expect(destroyed).not.toHaveBeenCalled();
+    await settle();
+    expect(fixture.debugElement.query(By.directive(VotesTableComponent)).componentInstance).toBe(originalTable);
+    expect(destroyed).not.toHaveBeenCalled();
+    expect(element('votes-empty-state-card')).toBeNull();
+    expect(list).toHaveBeenCalledExactlyOnceWith('project-a', 10, undefined, undefined, undefined, undefined);
+    expect(count).toHaveBeenCalledExactlyOnceWith('project-a', undefined, undefined);
+    pending.next({ data: [vote('restored', 1)] });
+    pending.complete();
+    await settle();
+    expect(rows()).toEqual(['restored']);
+    expect(destroyed).not.toHaveBeenCalled();
+  });
+
   it.each<Lens>(['project', 'foundation'])('hides the %s paginator until the closing list supplies its total', async (lens) => {
     await management(lens);
     const pending = new Subject<VoteListResponse>();
