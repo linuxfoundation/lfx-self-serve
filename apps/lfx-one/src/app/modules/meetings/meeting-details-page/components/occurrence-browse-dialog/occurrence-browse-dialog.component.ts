@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { afterNextRender, Component, computed, ElementRef, inject, Injector, Signal, signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, Signal, signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import {
   MeetingOccurrenceBrowseDialogData,
@@ -40,6 +40,8 @@ export class MeetingOccurrenceBrowseDialogComponent {
   private readonly ref = inject(DynamicDialogRef);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly injector = inject(Injector);
+  /** Set when the dialog closes, so a page that lands afterwards moves no focus. */
+  private destroyed = false;
   protected readonly data: MeetingOccurrenceBrowseDialogData = inject(DynamicDialogConfig).data;
 
   protected readonly headingId = MeetingOccurrenceBrowseDialogComponent.headingId;
@@ -77,6 +79,10 @@ export class MeetingOccurrenceBrowseDialogComponent {
   /** The Past tab with some rows but an unreadable rest of the history: said, so it does not read as all of it. */
   protected readonly pastPartial = computed(() => this.tab() === 'past' && this.data.pastIncomplete() && this.rows().length > 0);
 
+  public constructor() {
+    inject(DestroyRef).onDestroy(() => (this.destroyed = true));
+  }
+
   protected selectTab(tab: MeetingOccurrenceBrowseTab): void {
     this.tab.set(tab);
   }
@@ -105,8 +111,8 @@ export class MeetingOccurrenceBrowseDialogComponent {
   /**
    * Reads the next page on the open tab. The button stays enabled, so focus stays on it; when the read
    * adds rows to that tab, focus moves to the first one not there before, and if nothing more remains (the
-   * button goes) to the last row, so it never falls out of the dialog to the page behind. Nothing moves
-   * if the viewer has switched tabs meanwhile.
+   * button goes) to the last row, or to the panel when the tab is left empty, so it never falls out of
+   * the dialog to the page behind. Nothing moves if the viewer switched tabs or closed the dialog meanwhile.
    */
   protected async loadMore(): Promise<void> {
     if (this.loadingTab()) {
@@ -120,20 +126,23 @@ export class MeetingOccurrenceBrowseDialogComponent {
     } finally {
       this.loadingTab.set(null);
     }
-    if (this.tab() !== tab) {
+    if (this.destroyed || this.tab() !== tab) {
       return;
     }
     const rows = this.rows();
-    let target: MeetingOccurrenceBrowseRow | undefined = rows.find((row) => !before.has(row.item.startMs));
-    if (!target && !this.hasMore()) {
-      target = rows[rows.length - 1];
+    let selector: string | null = null;
+    const added = rows.find((row) => !before.has(row.item.startMs));
+    if (added) {
+      selector = `[data-start-ms="${added.item.startMs}"]`;
+    } else if (!this.hasMore()) {
+      selector = rows.length > 0 ? `[data-start-ms="${rows[rows.length - 1].item.startMs}"]` : '[role="tabpanel"]';
     }
-    if (target) {
-      const startMs = target.item.startMs;
+    if (selector) {
+      const target = selector;
       afterNextRender(
         () => {
-          if (this.tab() === tab) {
-            this.host.nativeElement.querySelector<HTMLElement>(`[data-start-ms="${startMs}"]`)?.focus();
+          if (!this.destroyed && this.tab() === tab) {
+            this.host.nativeElement.querySelector<HTMLElement>(target)?.focus();
           }
         },
         { injector: this.injector }

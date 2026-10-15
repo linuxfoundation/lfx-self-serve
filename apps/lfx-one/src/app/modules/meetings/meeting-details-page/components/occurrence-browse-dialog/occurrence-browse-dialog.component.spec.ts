@@ -199,6 +199,42 @@ describe('MeetingOccurrenceBrowseDialogComponent', () => {
     fixture.nativeElement.remove();
   });
 
+  it('moves no focus, and does not throw, when a page lands after the dialog closed', async () => {
+    more.past.set(true);
+    await render(at(-1));
+    let settleRead: (value: boolean) => void = () => undefined;
+    loadMore.mockImplementation(() => new Promise<boolean>((resolve) => (settleRead = resolve)));
+
+    (query('[data-testid="occurrence-browse-load-more"] button') as HTMLButtonElement).click();
+    fixture.destroy();
+    settleRead(true);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(loadMore).toHaveBeenCalledTimes(1);
+  });
+
+  it('focuses the panel when the last page leaves the tab empty', async () => {
+    items.set([item(0)]);
+    more.past.set(true);
+    await render(at(0));
+    document.body.appendChild(fixture.nativeElement);
+    tab('past')?.click();
+    fixture.detectChanges();
+    loadMore.mockImplementation(async () => {
+      more.past.set(false);
+      return true;
+    });
+
+    (query('[data-testid="occurrence-browse-load-more"] button') as HTMLButtonElement).click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(document.activeElement).toBe(query('[role="tabpanel"]'));
+    fixture.nativeElement.remove();
+  });
+
   it('makes an empty tab panel focusable, so its message is reached', async () => {
     items.set([item(0)]);
     await render(at(0));

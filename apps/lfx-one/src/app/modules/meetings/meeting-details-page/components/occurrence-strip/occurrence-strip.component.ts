@@ -176,6 +176,16 @@ export class MeetingOccurrenceStripComponent {
     });
 
     // A destroyed strip's reads are superseded like any other, so none of them acts after it.
+    // The dialog belongs to the page's occurrence view: when the page moves to another route (the
+    // browser's Back, say), it closes rather than float over the skeleton.
+    toObservable(this.state.matchesRoute)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((onRoute) => {
+        if (!onRoute) {
+          this.browseRef?.close();
+        }
+      });
+
     this.destroyRef.onDestroy(() => {
       this.runId++;
       this.browseRef?.close();

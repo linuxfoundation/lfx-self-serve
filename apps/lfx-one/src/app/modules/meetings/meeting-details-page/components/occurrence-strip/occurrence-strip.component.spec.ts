@@ -191,6 +191,17 @@ describe('MeetingOccurrenceStripComponent', () => {
       expect(open).toHaveBeenCalledTimes(1);
     });
 
+    it('closes an open dialog when the page moves to another route', async () => {
+      await loaded();
+      const { ref } = openBrowse();
+
+      (TestBed.inject(MeetingDetailsStateService).matchesRoute as WritableSignal<boolean>).set(false);
+      fixture.detectChanges();
+      await settle();
+
+      expect(ref.close).toHaveBeenCalled();
+    });
+
     it('closes an open dialog when the strip goes', async () => {
       await loaded();
       const { ref } = openBrowse();
