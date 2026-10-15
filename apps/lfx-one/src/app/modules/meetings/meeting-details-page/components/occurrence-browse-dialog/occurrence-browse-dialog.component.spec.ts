@@ -154,6 +154,18 @@ describe('MeetingOccurrenceBrowseDialogComponent', () => {
     fixture.nativeElement.remove();
   });
 
+  it('says when the past history is only partly loaded', async () => {
+    pastIncomplete.set(true);
+    await render(at(-1));
+
+    expect(rows()).toHaveLength(2);
+    expect(query('[data-testid="occurrence-browse-partial"]')?.textContent).toContain('Some past occurrences could not be loaded.');
+
+    tab('upcoming')?.click();
+    fixture.detectChanges();
+    expect(query('[data-testid="occurrence-browse-partial"]')).toBeNull();
+  });
+
   it('makes an empty tab panel focusable, so its message is reached', async () => {
     items.set([item(0)]);
     await render(at(0));

@@ -72,6 +72,8 @@ export class MeetingOccurrenceBrowseDialogComponent {
   protected readonly hasMore = computed(() => this.data.hasMore(this.tab()));
   /** The Past tab when the history could not be read: unknown, not empty. */
   protected readonly pastUnknown = computed(() => this.tab() === 'past' && this.data.pastIncomplete() && this.rows().length === 0);
+  /** The Past tab with some rows but an unreadable rest of the history: said, so it does not read as all of it. */
+  protected readonly pastPartial = computed(() => this.tab() === 'past' && this.data.pastIncomplete() && this.rows().length > 0);
 
   protected selectTab(tab: MeetingOccurrenceBrowseTab): void {
     this.tab.set(tab);

@@ -103,11 +103,16 @@
           </li>
         }
       </ul>
+      @if (pastPartial()) {
+        <p class="m-0 px-[12px] pt-[8px] text-[12.5px] text-[var(--md-text-muted)]" data-testid="occurrence-browse-partial">
+          Some past occurrences could not be loaded.
+        </p>
+      }
       @if (hasMore()) {
-        <!-- Not [loading]: that disables the button and drops its focus out of the dialog while it reads. -->
+        <!-- Not [loading]: that disables the button and drops its focus out of the dialog while it reads.
+             The label itself says it is reading. -->
         <lfx-button
           [label]="loadingMore() ? 'Loading…' : 'Load more'"
-          [attr.aria-busy]="loadingMore()"
           [styleClass]="loadMoreClass"
           (onClick)="loadMore()"
           data-testid="occurrence-browse-load-more" />

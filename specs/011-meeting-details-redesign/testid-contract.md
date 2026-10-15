@@ -249,6 +249,7 @@ data-state: idle | loading | ready | error
 | `occurrence-browse-load-more`           | Load more on the open tab, while that side has more                                                                                 |
 | `occurrence-browse-empty`               | "No upcoming / past occurrences."                                                                                                   |
 | `occurrence-browse-unavailable`         | The Past tab when the history could not be read                                                                                     |
+| `occurrence-browse-partial`             | Under Past rows when the rest of the past history could not be read                                                                 |
 
 Each chip carries `data-selected`, `data-cancelled` and `data-nextup` (`true` | `false`), and
 `data-start-ms`, its 13-digit start. The selected one has `aria-current="date"`; a cancelled one is
