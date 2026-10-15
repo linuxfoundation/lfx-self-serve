@@ -18,6 +18,7 @@ import {
   MeetingRegistrant,
   PastMeeting,
   PastMeetingArtifactKind,
+  PastOccurrenceSummary,
   Project,
   PublicMeetingOccurrencesResponse,
   PublicMeetingProject,
@@ -48,6 +49,7 @@ import {
   resolveOrganizerAndHostKey,
   stripHostKey,
 } from '../helpers/meeting.helper';
+import { pageOccurrenceTimeline, parseOccurrencesPageRequest } from '../helpers/meeting-occurrences.helper';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { AccessCheckService } from '../services/access-check.service';
 import { logger } from '../services/logger.service';
@@ -613,7 +615,20 @@ export class PublicMeetingController {
         return;
       }
 
-      const past = await this.meetingService.getPastOccurrencesForMeeting(req, id);
+      // Read before any upstream call past the gate, so a malformed parameter is a 400, not wasted work.
+      const page = parseOccurrencesPageRequest(req);
+
+      // throwOnFailure: a failed later page would otherwise return a silent prefix of the history. It
+      // is reported as past_incomplete with an empty past instead (#3585).
+      let pastIncomplete = false;
+      const past = await this.meetingService.getPastOccurrencesForMeeting(req, id, { throwOnFailure: true }).catch((error: unknown) => {
+        logger.warning(req, 'get_public_meeting_occurrences', 'Past occurrences unavailable, returning none and flagging it', {
+          meeting_id: id,
+          err: error,
+        });
+        pastIncomplete = true;
+        return [] as PastOccurrenceSummary[];
+      });
 
       // A projection, never the ITX payload, which carries sensitive fields (e.g. password). The
       // registrant count goes only to a caller the gate let in as a registrant or organizer (spec 011
@@ -631,16 +646,19 @@ export class PublicMeetingController {
         ...(showsRegistrantCount && { registrant_count: o.registrant_count }),
       }));
 
+      // No paging parameter: the whole timeline, as V1 reads it. V2 always sends one (#3585).
       const response: PublicMeetingOccurrencesResponse = {
-        past,
-        future,
+        ...(page ? pageOccurrenceTimeline(past, future, page) : { past, future }),
         cancelled_occurrences: liveMeeting?.cancelled_occurrences ?? undefined,
+        ...(pastIncomplete ? { past_incomplete: true } : {}),
       };
 
       logger.success(req, 'get_public_meeting_occurrences', startTime, {
         meeting_id: id,
-        past_count: past.length,
-        future_count: future.length,
+        paged: !!page,
+        past_count: response.past.length,
+        future_count: response.future.length,
+        past_incomplete: pastIncomplete,
       });
 
       res.json(response);
