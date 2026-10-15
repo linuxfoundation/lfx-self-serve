@@ -253,6 +253,9 @@
                 <div class="flex min-w-0 flex-col gap-0.5">
                   <span class="whitespace-normal break-words text-sm font-medium text-gray-900">{{ row.campaign.campaign_name }}</span>
                   <span class="text-xs text-gray-500">{{ row.campaign.platform }} · {{ row.status }}</span>
+                  @if (row.biddingSummary) {
+                    <span class="text-xs text-gray-500" [attr.data-testid]="'optimization-campaign-bidding-' + row.campaign.id">{{ row.biddingSummary }}</span>
+                  }
                   <!--
                     NOT `role="alert"`. The failure is already announced by the toast, which is
                     itself a live region — a second live role here made one failure speak twice.
@@ -302,9 +305,9 @@
                     >
                   }
                   <!-- The bid this session confirmed. No currency symbol: it is in the ad account's own currency. -->
-                  @if (confirmedBid()[row.campaign.id]; as bid) {
+                  @if (row.confirmedBidAmount !== null) {
                     <span class="text-xs text-gray-600" [attr.data-testid]="'optimization-campaign-bid-current-' + row.campaign.id"
-                      >Max CPC bid set here: {{ bid.bid }} (ad account currency)</span
+                      >Max CPC bid set here: {{ row.confirmedBidAmount }} (ad account currency)</span
                     >
                   }
                   @if (bidOutcome()[row.campaign.id]?.state === 'unconfirmed' && !bidEditorOpen()[row.campaign.id]) {
@@ -525,7 +528,7 @@
                   [id]="'campaign-bid-panel-' + row.campaign.id"
                   [campaignId]="row.campaign.id"
                   [campaignName]="row.campaign.campaign_name"
-                  [initialBid]="confirmedBid()[row.campaign.id]?.bid ?? null"
+                  [initialBid]="row.confirmedBidAmount"
                   [pending]="!!bidPending()[row.campaign.id]"
                   [blockedReason]="row.bidBlockedReason"
                   [outcome]="bidOutcome()[row.campaign.id] ?? null"

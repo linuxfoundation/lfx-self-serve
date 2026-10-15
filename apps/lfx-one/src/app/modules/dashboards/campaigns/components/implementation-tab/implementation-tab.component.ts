@@ -18,6 +18,9 @@ import {
 } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import {
+  CAMPAIGN_BIDDING_CREATE_PLATFORMS,
+  CAMPAIGN_BIDDING_PLATFORMS,
+  CAMPAIGN_BIDDING_RULES,
   CAMPAIGN_BUDGET_DEFAULTS,
   CAMPAIGN_CHAR_LIMITS,
   CAMPAIGN_JOB_POLL_INTERVAL_MS,
@@ -95,8 +98,16 @@ import { filter, map, merge, scan, skip, startWith, Subscription, take } from 'r
 
 import type { Signal } from '@angular/core';
 import type {
+  CampaignBiddingCapabilityBlock,
+  CampaignBiddingConfig,
+  CampaignBiddingContext,
+  CampaignBiddingControlView,
+  CampaignBiddingDraft,
+  CampaignBiddingDrafts,
+  CampaignBiddingPlatform,
   CampaignBriefOutput,
   CampaignBriefPersistenceState,
+  CampaignCapabilityReadState,
   CampaignCreateRequest,
   CampaignCreateResult,
   CampaignImplementationDraft,
@@ -125,7 +136,9 @@ import type {
   RedditCallToAction,
   RedditObjective,
 } from '@lfx-one/shared/interfaces';
-import { codePointLength } from '@lfx-one/shared/utils';
+import { campaignBiddingError, campaignBiddingPayload, codePointLength, defaultCampaignBiddingDraft } from '@lfx-one/shared/utils';
+
+import { CampaignBiddingControlComponent } from '../campaign-bidding-control/campaign-bidding-control.component';
 
 type ImplementationStep = 'form' | 'creating' | 'results';
 
@@ -151,7 +164,7 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
 
 @Component({
   selector: 'lfx-implementation-tab',
-  imports: [ReactiveFormsModule, ButtonComponent, SlicePipe],
+  imports: [ReactiveFormsModule, ButtonComponent, SlicePipe, CampaignBiddingControlComponent],
   templateUrl: './implementation-tab.component.html',
   styleUrl: './implementation-tab.component.scss',
 })
@@ -292,6 +305,27 @@ export class ImplementationTabComponent implements OnInit {
 
   /** @see redditCreativeEnabled — an explicit yes, never a `null`. */
   protected readonly redditCreativeAvailable = computed<boolean>(() => this.redditCreativeEnabled() === true);
+
+  /**
+   * Whether this deployment can honour a per-platform Bidding choice (#3299) —
+   * `CampaignListResult.biddingEnabled`, behind `LFX_CUTOVER_CAMPAIGN_SERVICE_BIDDING`. `null`
+   * (unanswered) and `false` hide the control and send no `bidding` at all, which is the create
+   * exactly as it was before the control existed.
+   */
+  public readonly biddingEnabled = input<boolean | null>(null);
+
+  /** @see biddingEnabled — an explicit yes, never a `null`. */
+  protected readonly biddingAvailable = computed<boolean>(() => this.biddingEnabled() === true);
+
+  /**
+   * Where the read behind `biddingEnabled` stands — what tells "still checking" from "the check
+   * failed" while `biddingEnabled` is `null`. Read only when a retained Manual choice needs the
+   * answer; see `biddingCapabilityBlock`.
+   */
+  public readonly biddingCapabilityRead = input<CampaignCapabilityReadState>('unknown');
+
+  /** Asks the parent to re-read the create capabilities after a failed read. */
+  public readonly retryBiddingCapability = output<void>();
 
   /**
    * Emitted whenever a user-editable field changes, so the parent's copy is current at the moment
@@ -665,6 +699,13 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly microsoftKeywords = signal<MicrosoftKeyword[]>([]);
   protected readonly microsoftBudgetUsd = signal(500);
   protected readonly microsoftCpcBid = signal('');
+
+  /**
+   * The Bidding choice per platform (#3299). A platform with no entry is on the default, automatic.
+   * Kept for every platform whatever is selected, like the other per-platform fields, so
+   * deselecting and reselecting a platform does not lose a typed bid.
+   */
+  protected readonly biddingDrafts = signal<CampaignBiddingDrafts>({});
   /**
    * Google's own geo targets, as ISO-2 country codes.
    *
@@ -1353,6 +1394,32 @@ export class ImplementationTabComponent implements OnInit {
     return accounts.find((a) => a.accountId === this.linkedInAccountId()) ?? accounts[0];
   });
 
+  /**
+   * What each platform's Bidding control renders (#3299): the choice, and why it cannot be sent —
+   * validated against the rest of that platform's config by the same shared rules
+   * `biddingPayloads` applies, so the message on screen is the reason the create is blocked.
+   */
+  protected readonly biddingViews: Signal<Record<CampaignBiddingPlatform, CampaignBiddingControlView>> = this.initBiddingViews();
+
+  /**
+   * The `bidding` object each platform's config carries, or `null` where the choice cannot be sent.
+   * `canSubmit` blocks on a `null` for a selected platform, so `submit` never has to choose between
+   * dropping a refused manual bid (which would create the campaign automatic) and sending it.
+   */
+  protected readonly biddingPayloads: Signal<Record<CampaignBiddingPlatform, CampaignBiddingConfig | null>> = this.initBiddingPayloads();
+
+  /**
+   * Why Create is blocked for a Manual bidding choice this tab still holds but cannot send (#3299),
+   * or `null`. While the capability is not an explicit yes the control is hidden and `bidding` is
+   * not sent — and campaign-service reads an absent `bidding` as AUTOMATIC. So a Manual choice
+   * retained in the draft (made earlier, before a tab round-trip left the capability unanswered or
+   * false) must block the create rather than be dropped: pending says it is checking, failed offers
+   * a Retry, and an explicit no asks the operator to switch to Automatic themselves.
+   */
+  protected readonly biddingCapabilityBlock: Signal<CampaignBiddingCapabilityBlock | null> = this.initBiddingCapabilityBlock();
+  /** The always-mounted live region's text for `biddingCapabilityBlock`; `''` when nothing blocks. */
+  protected readonly biddingCapabilityMessage = computed(() => this.biddingCapabilityBlock()?.message ?? '');
+
   protected readonly canSubmit = computed(() => {
     // Read FIRST and for its side effect only — see `campaignFormRevision`. Every direct form read
     // below is non-reactive, so without this dependency the memo never re-runs on a form edit.
@@ -1481,7 +1548,14 @@ export class ImplementationTabComponent implements OnInit {
       return false;
     if (microsoftSelected && this.microsoftEffectiveKeywords().length === 0) return false;
     if (microsoftSelected && this.microsoftEffectiveGeoTargets().length === 0) return false;
-    if (microsoftSelected && !this.microsoftCpcBidValid()) return false;
+    // The legacy max CPC field is hidden — and not sent — while the Bidding control is offered, so
+    // a stale value in it must not block a create the operator cannot see the reason for.
+    if (microsoftSelected && this.microsoftLegacyCpcBidApplies() && !this.microsoftCpcBidValid()) return false;
+    // A selected platform whose Bidding choice cannot be sent (#3299): its message is on screen,
+    // under that platform's control.
+    if (this.biddingAvailable() && CAMPAIGN_BIDDING_CREATE_PLATFORMS.some((p) => platforms.includes(p) && this.biddingPayloads()[p] === null)) return false;
+    // A retained Manual choice the deployment has not (yet) confirmed it can send: never dropped.
+    if (this.biddingCapabilityBlock() !== null) return false;
     // Backstop for a state the add handlers cannot produce but a RESTORED DRAFT can: a draft
     // written before these caps existed carries whatever list it had, and `applyDraft` replays it
     // verbatim by design (an emptied list must stay emptied). Without this the form would look
@@ -1682,6 +1756,18 @@ export class ImplementationTabComponent implements OnInit {
       if (this.seeding) return;
       this.emitDraft();
     });
+
+    // When the Bidding control becomes available, a bid typed into the legacy Microsoft field while
+    // it was not (#3299) would otherwise vanish with that field and Automatic would be sent. It is
+    // carried into the control as the Manual choice it always meant upstream (a `cpcBid` without
+    // `bidding` is a manual bid). Subscribed after the draft-restore effect is created, so a
+    // restored legacy value is seen too.
+    toObservable(this.biddingEnabled)
+      .pipe(
+        filter((enabled) => enabled === true),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(() => this.adoptLegacyMicrosoftCpcBid());
 
     // Re-run the two ad-copy array validators when the answer `searchCopyRequired` reads moves.
     //
@@ -2002,7 +2088,43 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   protected onMicrosoftCpcBidInput(event: Event): void {
-    this.microsoftCpcBid.set((event.target as HTMLInputElement).value);
+    const value = (event.target as HTMLInputElement).value;
+    this.microsoftCpcBid.set(value);
+    // Typing a bid into the legacy field is the operator's newest choice, so it supersedes an
+    // earlier explicit Automatic — otherwise the typed bid would be silently not sent
+    // (`microsoftLegacyCpcBidApplies`).
+    if (value.trim() !== '' && this.biddingDrafts()['microsoft-ads']?.strategy === 'automatic') {
+      this.biddingDrafts.update((drafts) => {
+        const next = { ...drafts };
+        delete next['microsoft-ads'];
+        return next;
+      });
+    }
+    this.emitDraft();
+  }
+
+  /**
+   * The explicit way out of an `unsupported` or `failed` block: the operator moves the retained
+   * Manual choices of the selected platforms to Automatic. The typed amounts are kept, so turning
+   * Manual back on later does not lose them.
+   */
+  protected switchRetainedBiddingToAutomatic(): void {
+    const platforms = this.retainedManualBiddingPlatforms();
+    this.biddingDrafts.update((drafts) => {
+      const next = { ...drafts };
+      for (const platform of platforms) {
+        const draft = next[platform];
+        if (draft) next[platform] = { ...draft, strategy: 'automatic' };
+      }
+      return next;
+    });
+    if (platforms.includes('microsoft-ads')) this.clearLegacyMicrosoftCpcBid();
+    this.emitDraft();
+  }
+
+  protected onBiddingChange(platform: CampaignBiddingPlatform, draft: CampaignBiddingDraft): void {
+    this.biddingDrafts.update((drafts) => ({ ...drafts, [platform]: { ...draft } }));
+    if (platform === 'microsoft-ads' && draft.strategy === 'automatic') this.clearLegacyMicrosoftCpcBid();
     this.emitDraft();
   }
 
@@ -2347,6 +2469,7 @@ export class ImplementationTabComponent implements OnInit {
               targetingProfile: this.linkedInTargetingProfile(),
               variants: this.linkedInVariants(),
               adAccountId: this.linkedInAccountId(),
+              ...this.biddingField('linkedin-ads'),
             },
           }
         : {}),
@@ -2398,6 +2521,7 @@ export class ImplementationTabComponent implements OnInit {
               ...(this.redditCreativeAvailable() && this.redditImageUrl() ? { imageUrl: this.redditImageUrl() } : {}),
               ...(this.redditCreativeAvailable() && this.redditCallToAction() ? { callToAction: this.redditCallToAction() as RedditCallToAction } : {}),
               project: this.briefData()?.eventDetails?.themes?.[0] || undefined,
+              ...this.biddingField('reddit-ads'),
             },
           }
         : {}),
@@ -2423,6 +2547,7 @@ export class ImplementationTabComponent implements OnInit {
               // reasonably take as meaningful. Trimmed to match the upstream trim.
               ...(this.metaRequiresPixel() ? { pixelId: this.metaPixelId().trim() } : {}),
               project: this.briefData()?.eventDetails?.themes?.[0] || undefined,
+              ...this.biddingField('meta-ads'),
             },
           }
         : {}),
@@ -2443,8 +2568,12 @@ export class ImplementationTabComponent implements OnInit {
               keywords: this.microsoftEffectiveKeywords(),
               // Sent only when set. An explicit 0 would claim a bid the account does not have,
               // whereas omitting it lets Microsoft apply the account-currency minimum.
-              ...(this.microsoftEffectiveCpcBid() !== null ? { cpcBid: this.microsoftEffectiveCpcBid() as number } : {}),
+              //
+              // Never beside `bidding` (#3299): the Bidding control replaces this field, and
+              // campaign-service refuses an automatic `bidding` with any `cpcBid`.
+              ...(this.microsoftLegacyCpcBidApplies() && this.microsoftEffectiveCpcBid() !== null ? { cpcBid: this.microsoftEffectiveCpcBid() as number } : {}),
               project: this.briefData()?.eventDetails?.themes?.[0] || undefined,
+              ...this.biddingField('microsoft-ads'),
             },
           }
         : {}),
@@ -2771,6 +2900,9 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.microsoftCpcBid !== undefined) {
       this.microsoftCpcBid.set(draft.microsoftCpcBid);
     }
+    if (draft.bidding !== undefined) {
+      this.biddingDrafts.set(Object.fromEntries(Object.entries(draft.bidding).map(([platform, choice]) => [platform, { ...choice }])));
+    }
   }
 
   /**
@@ -2870,6 +3002,9 @@ export class ImplementationTabComponent implements OnInit {
       microsoftGeoTargets: [...this.microsoftGeoTargets()],
       microsoftKeywords: this.microsoftKeywords().map((k) => ({ ...k })),
       microsoftCpcBid: this.microsoftCpcBid(),
+      // Snapshotted whatever `biddingAvailable()` says, like the Reddit creative below: a capability
+      // decides what is sent, not what the draft remembers. Entries copied so the parent holds values.
+      bidding: Object.fromEntries(Object.entries(this.biddingDrafts()).map(([platform, draft]) => [platform, { ...draft }])),
       // The remaining signal-backed values, on the same terms as the Meta block above: snapshotted
       // rather than referenced, and named explicitly rather than spread.
       //
@@ -3521,6 +3656,97 @@ export class ImplementationTabComponent implements OnInit {
     });
   }
 
+  private initBiddingCapabilityBlock(): Signal<CampaignBiddingCapabilityBlock | null> {
+    return computed(() => {
+      if (this.biddingAvailable()) return null;
+      const platforms = this.retainedManualBiddingPlatforms();
+      if (platforms.length === 0) return null;
+      const names = platforms.map((p) => CAMPAIGN_BIDDING_RULES[p].label).join(', ');
+      if (this.biddingEnabled() === false) {
+        return {
+          kind: 'unsupported',
+          message: `Manual bidding is not available on this deployment, so the manual max CPC bid chosen for ${names} cannot be sent. Switch to Automatic to create the campaign.`,
+        };
+      }
+      // Only an IN-FLIGHT read is "checking". `unknown` — no read out and none answered, as after a
+      // foundation switch — is treated like a failure: it gets a Retry, because nothing else will
+      // start the read the block is waiting for.
+      if (this.biddingCapabilityRead() === 'pending') {
+        return { kind: 'pending', message: 'Checking bidding support…' };
+      }
+      // No read out and no brief id to read against (none saved yet, or a save in flight): a Retry
+      // would be a no-op, since the parent's read needs a brief id. Saving the brief starts the read
+      // itself — the parent's persist success arm calls `loadCreateCapabilitiesFor` with the new
+      // id — so that is what the message asks for, and Retry is offered only when it can read.
+      if (!this.briefPersistence().briefId) {
+        return { kind: 'unsaved', message: "Bidding support can't be checked until this brief is saved. Save the brief, or switch to Automatic." };
+      }
+      return {
+        kind: 'failed',
+        message: `Could not confirm that manual bidding is supported, so the manual max CPC bid chosen for ${names} cannot be sent yet. Retry the check, or switch to Automatic.`,
+      };
+    });
+  }
+
+  /**
+   * Whether the legacy Microsoft max CPC field still speaks for the operator. Not while the Bidding
+   * control is offered (it replaces the field), and not once the operator has explicitly chosen
+   * Automatic for Microsoft: campaign-service reads a `cpcBid` without `bidding` as a MANUAL bid, so
+   * sending it then would create the campaign manual against the choice on screen.
+   */
+  private microsoftLegacyCpcBidApplies(): boolean {
+    return !this.biddingAvailable() && this.biddingDrafts()['microsoft-ads']?.strategy !== 'automatic';
+  }
+
+  /**
+   * Moves a legacy Microsoft max CPC into the Bidding control as a Manual choice, then clears the
+   * legacy field so the bid cannot be sent twice. Only when there is a value and no explicit
+   * Microsoft choice yet — an explicit choice is newer than the legacy field and wins.
+   */
+  private adoptLegacyMicrosoftCpcBid(): void {
+    const raw = this.microsoftCpcBid().trim();
+    if (raw === '' || this.biddingDrafts()['microsoft-ads'] !== undefined) return;
+    const amount = Number(raw);
+    this.biddingDrafts.update((drafts) => ({ ...drafts, 'microsoft-ads': { strategy: 'manual', bidAmount: Number.isFinite(amount) ? amount : null } }));
+    this.clearLegacyMicrosoftCpcBid();
+    this.emitDraft();
+  }
+
+  /** Choosing Automatic for Microsoft retires the legacy max CPC value, so it cannot resurface as a manual bid. */
+  private clearLegacyMicrosoftCpcBid(): void {
+    this.microsoftCpcBid.set('');
+  }
+
+  /** The selected bidding platforms whose retained choice is Manual. */
+  private retainedManualBiddingPlatforms(): CampaignBiddingPlatform[] {
+    const drafts = this.biddingDrafts();
+    const selected = this.selectedPlatforms();
+    return CAMPAIGN_BIDDING_CREATE_PLATFORMS.filter((p) => selected.includes(p) && drafts[p]?.strategy === 'manual');
+  }
+
+  private initBiddingViews(): Signal<Record<CampaignBiddingPlatform, CampaignBiddingControlView>> {
+    return computed(() => {
+      const drafts = this.biddingDrafts();
+      const views = {} as Record<CampaignBiddingPlatform, CampaignBiddingControlView>;
+      for (const platform of CAMPAIGN_BIDDING_PLATFORMS) {
+        const value = drafts[platform] ?? defaultCampaignBiddingDraft();
+        views[platform] = { platform, value, error: campaignBiddingError(platform, value, this.biddingContext(platform)) };
+      }
+      return views;
+    });
+  }
+
+  private initBiddingPayloads(): Signal<Record<CampaignBiddingPlatform, CampaignBiddingConfig | null>> {
+    return computed(() => {
+      const views = this.biddingViews();
+      const payloads = {} as Record<CampaignBiddingPlatform, CampaignBiddingConfig | null>;
+      for (const platform of CAMPAIGN_BIDDING_PLATFORMS) {
+        payloads[platform] = campaignBiddingPayload(platform, views[platform].value, this.biddingContext(platform));
+      }
+      return payloads;
+    });
+  }
+
   private initGoogleTakesCpcBid(): Signal<boolean> {
     return computed(() => this.googleBiddingStrategy() === 'manual-cpc');
   }
@@ -4136,6 +4362,36 @@ export class ImplementationTabComponent implements OnInit {
         group.controls[field.control].setValue(value, { emitEvent: false });
       }
     }
+  }
+
+  /**
+   * The rest of a platform's config its bidding rules read: Meta's objective and DAILY budget (a
+   * lifetime budget has no 5× rule), Reddit's objective. The same signals `submit` sends, so the
+   * check and the request cannot disagree.
+   */
+  private biddingContext(platform: CampaignBiddingPlatform): CampaignBiddingContext {
+    switch (platform) {
+      case 'meta-ads':
+        return { objective: this.metaObjective(), dailyBudget: this.metaLifetimeBudget() ? null : this.metaBudgetUsd() };
+      case 'reddit-ads':
+        return { objective: this.redditObjective() };
+      default:
+        return {};
+    }
+  }
+
+  /**
+   * The `bidding` key for one platform's config (#3299): nothing at all while the control is not
+   * offered, otherwise ALWAYS an explicit object — `{"strategy":"automatic"}` or
+   * `{"strategy":"manual","bidAmount":N}`. campaign-service treats an explicit automatic exactly as
+   * an omitted `bidding`, so the explicit form costs nothing and makes the request say what the
+   * screen shows. It also keeps the Microsoft request unambiguous: without `bidding`, a legacy
+   * `cpcBid` there means manual. Never `null` and never `''`, which campaign-service refuses.
+   */
+  private biddingField(platform: CampaignBiddingPlatform): { bidding?: CampaignBiddingConfig } {
+    if (!this.biddingAvailable()) return {};
+    const bidding = this.biddingPayloads()[platform];
+    return bidding === null ? {} : { bidding };
   }
 
   /**

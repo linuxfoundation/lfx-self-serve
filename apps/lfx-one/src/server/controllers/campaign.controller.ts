@@ -137,7 +137,7 @@ import { toAudienceDemographics, toKeywordMetricsResponse, toMicrosoftKeywordMet
 import { applyKeywordActionsViaCampaignService } from '../services/campaign-keyword-actions';
 import { toAccountMonitorClientError, toLinkedInMonitorResponse, toMetaMonitorResponse, toRedditMonitorResponse } from '../services/campaign-monitor-mapper';
 import { toUtmCreateResult, toUtmLookupResult } from '../services/campaign-utm-mapper';
-import { CampaignServiceClient, deriveEventSlug, isCampaignServiceJobId } from '../services/campaign-service.service';
+import { CampaignServiceClient, canCreateWithBidding, deriveEventSlug, isCampaignServiceJobId } from '../services/campaign-service.service';
 import { logger } from '../services/logger.service';
 import { addShutdownHook, isShuttingDown } from '../utils/shutdown';
 
@@ -589,6 +589,24 @@ export class CampaignController {
       if (oversizedGoogleField !== null) {
         next(
           ServiceValidationError.forField(oversizedGoogleField.field, oversizedGoogleField.message, {
+            operation: 'campaign_create',
+            service: 'campaign_controller',
+          })
+        );
+        return;
+      }
+
+      // A `bidding` object (#3299) is refused, not dropped, when this deployment cannot honour it.
+      // Neither creator that would serve it reads the key — the legacy one never did, and a
+      // campaign-service without linuxfoundation/lfx-v2-campaign-service#332 ignores it — so either
+      // would create the campaign on automatic bidding while the request asked for a manual bid.
+      // The form never sends it in that state (`biddingEnabled` hides the control); this protects
+      // the endpoint from a caller that is not the form. Forwarded untouched otherwise:
+      // campaign-service validates it and answers a broken one with a 400 naming the field.
+      const unservedBiddingField = this.unservedBiddingField(body);
+      if (unservedBiddingField !== null) {
+        next(
+          ServiceValidationError.forField(unservedBiddingField, 'bidding options are not enabled on this deployment; omit bidding to use automatic bidding', {
             operation: 'campaign_create',
             service: 'campaign_controller',
           })
@@ -3415,6 +3433,18 @@ export class CampaignController {
           })
       )
     );
+  }
+
+  /** The first lane config carrying `bidding` while this deployment cannot honour it (see `createCampaign`), or `null`. */
+  private unservedBiddingField(body: CampaignCreateRequest): string | null {
+    if (canCreateWithBidding()) return null;
+    for (const key of ['linkedInConfig', 'metaConfig', 'microsoftConfig', 'redditConfig'] as const) {
+      const config: unknown = body?.[key];
+      // `in`, not a truthiness test: an explicit `bidding: null` is still a bidding field, and
+      // campaign-service would refuse it rather than read it as automatic.
+      if (config !== null && typeof config === 'object' && 'bidding' in config) return `${key}.bidding`;
+    }
+    return null;
   }
 
   /**

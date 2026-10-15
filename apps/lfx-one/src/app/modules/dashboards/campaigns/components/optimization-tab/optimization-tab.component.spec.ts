@@ -150,6 +150,27 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-controls"]')).toBeNull();
   });
 
+  /**
+   * The bidding campaign-service RECORDED (#3299), read-only on the row. Absent fields render
+   * nothing — an unrecorded strategy is never shown as automatic — and only the two documented
+   * strategies are echoed.
+   */
+  it('shows the recorded bidding read-only, and nothing when none is recorded', () => {
+    render([
+      doc({ id: 'c-1', platform: 'linkedin-ads', bidding_strategy: 'manual', max_cpc_bid: 2.5 }),
+      doc({ id: 'c-2', platform: 'meta-ads', bidding_strategy: 'automatic' }),
+      doc({ id: 'c-3', platform: 'reddit-ads' }),
+      doc({ id: 'c-4', platform: 'meta-ads', bidding_strategy: 'Manual' }),
+    ]);
+
+    const bidding = (id: string): string | null =>
+      (fixture.nativeElement.querySelector(`[data-testid="optimization-campaign-bidding-${id}"]`) as HTMLElement | null)?.textContent?.trim() ?? null;
+    expect(bidding('c-1')).toBe('Bidding: manual · max CPC bid 2.5 USD');
+    expect(bidding('c-2')).toBe('Bidding: automatic');
+    expect(bidding('c-3')).toBeNull();
+    expect(bidding('c-4')).toBeNull();
+  });
+
   it('renders an empty state only when the read succeeded and returned nothing', () => {
     render([]);
 
@@ -3236,6 +3257,113 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
     expect(button.disabled).toBe(true);
     expect(button.getAttribute('aria-describedby')).toBe('campaign-bid-unavailable-c-1');
     expect(q('optimization-campaign-bid-unavailable-c-1')!.textContent!.trim()).toBe(CAMPAIGN_BID_UNAVAILABLE_PLATFORM_REASON);
+  });
+
+  /**
+   * The recorded-bidding line after a bid change (#3299). The index is asynchronous, so right after
+   * a change it still holds the old `max_cpc_bid`; the confirmed bid wins, for that campaign only,
+   * through refreshes that lag or have caught up, until the brief changes.
+   */
+  describe('recorded bidding after a bid change', () => {
+    const bidding = (id = 'c-1'): string | null => q(`optimization-campaign-bidding-${id}`)?.textContent?.trim() ?? null;
+
+    it('shows the confirmed bid, and keeps it through lagging and caught-up refreshes', () => {
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 0.5 }), doc({ id: 'c-2', bidding_strategy: 'manual', max_cpc_bid: 0.75, etag: '"7"' })]);
+      expect(bidding()).toBe('Bidding: manual · max CPC bid 0.5 in the ad account currency');
+
+      changeBid(1.25);
+
+      expect(bidding()).toBe('Bidding: manual · max CPC bid 1.25 in the ad account currency');
+      // Only the campaign that was changed.
+      expect(bidding('c-2')).toBe('Bidding: manual · max CPC bid 0.75 in the ad account currency');
+
+      // A refresh whose index has not caught up must not flip it back to the old bid.
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 0.5 }), doc({ id: 'c-2', bidding_strategy: 'manual', max_cpc_bid: 0.75, etag: '"7"' })]);
+      expect(bidding()).toBe('Bidding: manual · max CPC bid 1.25 in the ad account currency');
+
+      // One that has caught up (the write's own version) shows its own value — the same bid.
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 1.25, etag: '"4"', version: 4 })]);
+      expect(bidding()).toBe('Bidding: manual · max CPC bid 1.25 in the ad account currency');
+    });
+
+    it('keeps the confirmed bid against a lagging index (a strictly older version)', () => {
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 0.5 })]);
+      changeBid(1.25); // the write answered version 4 ("4")
+
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 0.5, etag: '"3"' })]);
+
+      expect(bidding()).toBe('Bidding: manual · max CPC bid 1.25 in the ad account currency');
+      expect(q('optimization-campaign-bid-current-c-1')?.textContent).toContain('1.25');
+    });
+
+    it('lets an index that has caught up (the SAME version) win', () => {
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 0.5 })]);
+      changeBid(1.25); // version 4
+
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 1.3, etag: '"4"', version: 4 })]);
+
+      expect(bidding()).toBe('Bidding: manual · max CPC bid 1.3 in the ad account currency');
+      expect(q('optimization-campaign-bid-current-c-1')).toBeNull();
+    });
+
+    it('shows a v5 refresh at 2.50 over a bid confirmed at v4', () => {
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 0.5 })]);
+      changeBid(1.25); // version 4
+
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 2.5, etag: '"5"', version: 5 })]);
+
+      expect(bidding()).toBe('Bidding: manual · max CPC bid 2.5 in the ad account currency');
+      expect(q('optimization-campaign-bid-current-c-1')).toBeNull();
+    });
+
+    it('gives way to a NEWER indexed bid someone else set, in the row line and the "set here" note alike', () => {
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 0.5 })]);
+      changeBid(1.25);
+
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 2, etag: '"5"', version: 5 })]);
+
+      expect(bidding()).toBe('Bidding: manual · max CPC bid 2 in the ad account currency');
+      expect(q('optimization-campaign-bid-current-c-1')).toBeNull();
+    });
+
+    it('keeps the confirmed bid when the write returned no parseable version', () => {
+      updateCampaignBid.mockReturnValue(of(bidResult({ etag: undefined })));
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 0.5 })]);
+      changeBid(1.25);
+
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 2, etag: '"9"', version: 9 })]);
+
+      expect(bidding()).toBe('Bidding: manual · max CPC bid 1.25 in the ad account currency');
+    });
+
+    it('reads a confirmed bid as manual, even on a row the index recorded as automatic or not at all', () => {
+      render([doc({ bidding_strategy: 'automatic' })]);
+
+      changeBid(1.25);
+
+      expect(bidding()).toBe('Bidding: manual · max CPC bid 1.25 in the ad account currency');
+    });
+
+    it('keeps the indexed value when the bid change fails', () => {
+      updateCampaignBid.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { message: 'automatic strategy' } })));
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 0.5 })]);
+
+      changeBid(1.25);
+
+      expect(bidding()).toBe('Bidding: manual · max CPC bid 0.5 in the ad account currency');
+    });
+
+    it('drops the confirmed bid when the brief changes', () => {
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 0.5 })]);
+      changeBid(1.25);
+
+      fixture.componentRef.setInput('briefCampaigns', null);
+      fixture.componentRef.setInput('briefId', 'b-2');
+      fixture.detectChanges();
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 0.5 })]);
+
+      expect(bidding()).toBe('Bidding: manual · max CPC bid 0.5 in the ad account currency');
+    });
   });
 
   it('opens the live-settings drawer for the row it was asked from', () => {

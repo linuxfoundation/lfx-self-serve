@@ -103,6 +103,7 @@ export * from './health-metrics-overview.utils';
 export * from './health-metrics-training.utils';
 export * from './gw-embed.utils';
 export * from './credential-redaction.utils';
+export * from './campaign-bidding.utils';
 export * from './campaign-event-details.utils';
 export * from './campaign.utils';
 export * from './campaign-optimize.utils';

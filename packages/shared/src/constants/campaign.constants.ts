@@ -5,6 +5,8 @@ import type {
   AudienceSignal,
   AudienceSpeakerScope,
   BriefMetricsActionRule,
+  CampaignBiddingPlatform,
+  CampaignBiddingPlatformRule,
   CampaignBidType,
   CampaignBudgetType,
   CampaignBudgetTypeOption,
@@ -902,6 +904,149 @@ export function isMicrosoftMatchType(value: unknown): boolean {
  */
 export const MICROSOFT_MIN_CPC_BID = 0.01;
 export const MICROSOFT_MAX_CPC_BID = 1000;
+
+// ---------------------------------------------------------------------------
+// Campaign Bidding at create time (#3299)
+// ---------------------------------------------------------------------------
+
+/**
+ * The bidding strategies a per-platform create config accepts, spelled exactly — campaign-service
+ * does no case folding (linuxfoundation/lfx-v2-campaign-service#332, `internal/dispatch/bidding.go`).
+ * The first is the default.
+ */
+export const CAMPAIGN_BIDDING_STRATEGIES = ['automatic', 'manual'] as const;
+
+/**
+ * Every platform whose create config takes a `bidding` object. Google Ads is NOT one: it has its
+ * own bidding plan (`googleAdsConfig.biddingStrategy`), and campaign-service refuses
+ * `googleAdsConfig.bidding` with a 400.
+ */
+export const CAMPAIGN_BIDDING_PLATFORMS = ['linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads', 'twitter-ads'] as const;
+
+/**
+ * The bidding platforms the create flow renders a control for, in section order. X is a bidding
+ * platform upstream but is not here: the create flow builds no `twitterConfig` yet, and the BFF
+ * refuses `twitter-ads` until one exists. Its rule below is ready for when it does.
+ */
+export const CAMPAIGN_BIDDING_CREATE_PLATFORMS: readonly CampaignBiddingPlatform[] = ['linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads'];
+
+/**
+ * campaign-service's own synchronous refusal of a `bidding` object, e.g.
+ * `invalid campaign config: metaConfig.bidding: bidAmount must be greater than zero` (`biddingInvalid`,
+ * `internal/dispatch/bidding.go`). Its text is the service's own: the only caller input it can echo is
+ * the amount, or an unknown key quoted and cut to 40 characters, and nothing comes from an ad
+ * platform. So unlike the other create refusals the BFF may show it — it is the one that tells the
+ * operator which bid to fix. Google's `googleAdsConfig.bidding` refusal is deliberately not matched.
+ */
+export const CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN = /invalid campaign config: (?:linkedIn|meta|microsoft|reddit|twitter)Config\.bidding: .+/;
+
+/** The largest starting bid campaign-service sets on any platform (`maxCreateBid`), in the platform's currency. */
+export const CAMPAIGN_BIDDING_MAX_BID = 1_000_000;
+
+/** One micro-unit per major unit: the finest unit any of these platforms bids in, so every bid is a whole number of them. */
+export const CAMPAIGN_BIDDING_MICRO_SCALE = 1_000_000;
+
+/** Whole cents. LinkedIn, Microsoft and Meta bids are refused with a third decimal rather than rounded. */
+export const CAMPAIGN_BIDDING_CENT_SCALE = 100;
+
+/**
+ * What each platform accepts as a manual create-time bid, mirroring the checks campaign-service
+ * runs before it accepts a create (linuxfoundation/lfx-v2-campaign-service#332):
+ *
+ * - LinkedIn (`linkedinBidPlan`, `linkedin.ValidateBidAmount`): USD, whole cents, 0.01–1,000,000.
+ *   Automatic is a WEBSITE_VISIT campaign bidding MAX_CLICK; manual a WEBSITE_CONVERSION campaign
+ *   with a CPC `unitCost`.
+ * - Meta (`metaBidPlan`, `meta.ManualBidSupported`, `meta.BidCapDailyBudgetMultiple`): two
+ *   decimals at most; only the traffic or leads objective (the ad set must optimise for link
+ *   clicks); and a DAILY budget of at least 5× the bid, checked by the Meta client before anything
+ *   is created. A lifetime budget has no such rule.
+ * - Microsoft (`microsoftBidPlan`, `microsoft.ValidateMaxCPCBid`): two decimals at most, 0.01–1,000.
+ * - Reddit (`redditBidPlan`, `reddit.ManualCPCBidSupported`): whole micro-units; only the traffic
+ *   objective, the one Reddit objective here that bids per click. campaign-service assumes
+ *   `conversions` when no objective is sent.
+ * - X (`twitterBidPlan`): whole micro-units; the bid may not exceed the campaign's daily budget.
+ *
+ * Every platform but LinkedIn bids in the ad ACCOUNT's own currency, which neither this app nor
+ * campaign-service converts. A platform's own floor (LinkedIn's depends on the audience) is checked
+ * when the campaign is created, so a bid inside these limits can still be refused there.
+ */
+export const CAMPAIGN_BIDDING_RULES: Readonly<Record<CampaignBiddingPlatform, CampaignBiddingPlatformRule>> = {
+  'linkedin-ads': {
+    label: 'LinkedIn',
+    currency: 'USD',
+    scale: CAMPAIGN_BIDDING_CENT_SCALE,
+    minBid: 0.01,
+    maxBid: CAMPAIGN_BIDDING_MAX_BID,
+    manualObjectives: null,
+    defaultObjective: null,
+    dailyBudgetMultiple: null,
+    bidAtMostDailyBudget: false,
+    automaticDescription: 'LinkedIn optimizes for website visits and sets every bid (maximum clicks).',
+    manualDescription: 'Creates a website-conversion campaign with a manual cost-per-click bid.',
+    currencyHint: 'In USD, whole cents (for example 2.50).',
+    limitText: "LinkedIn's own minimum depends on the audience and is checked when the campaign is created.",
+  },
+  'meta-ads': {
+    label: 'Meta',
+    currency: 'account',
+    scale: CAMPAIGN_BIDDING_CENT_SCALE,
+    minBid: 0.01,
+    maxBid: CAMPAIGN_BIDDING_MAX_BID,
+    manualObjectives: ['traffic', 'leads'],
+    defaultObjective: 'traffic',
+    dailyBudgetMultiple: 5,
+    bidAtMostDailyBudget: false,
+    automaticDescription: 'Meta bids for the lowest cost, with no cap.',
+    manualDescription: 'Caps the cost per link click on the ad set.',
+    currencyHint: "In the ad account's currency, at most two decimal places. Not converted from USD.",
+    limitText: 'Needs the Traffic or Leads objective, and a daily budget of at least 5× the bid.',
+  },
+  'microsoft-ads': {
+    label: 'Microsoft Ads',
+    currency: 'account',
+    scale: CAMPAIGN_BIDDING_CENT_SCALE,
+    minBid: MICROSOFT_MIN_CPC_BID,
+    maxBid: MICROSOFT_MAX_CPC_BID,
+    manualObjectives: null,
+    defaultObjective: null,
+    dailyBudgetMultiple: null,
+    bidAtMostDailyBudget: false,
+    automaticDescription: 'Microsoft Advertising maximizes clicks within the budget.',
+    manualDescription: 'Uses Enhanced CPC with this max CPC bid on the ad group.',
+    currencyHint: "In the ad account's currency, at most two decimal places. Not converted from USD.",
+    limitText: `Between ${MICROSOFT_MIN_CPC_BID} and ${MICROSOFT_MAX_CPC_BID}.`,
+  },
+  'reddit-ads': {
+    label: 'Reddit',
+    currency: 'account',
+    scale: CAMPAIGN_BIDDING_MICRO_SCALE,
+    minBid: 0.000001,
+    maxBid: CAMPAIGN_BIDDING_MAX_BID,
+    manualObjectives: ['traffic'],
+    defaultObjective: 'conversions',
+    dailyBudgetMultiple: null,
+    bidAtMostDailyBudget: false,
+    automaticDescription: 'Reddit sets every bid.',
+    manualDescription: 'Bids a manual cost per click on the campaign and ad group.',
+    currencyHint: "In the ad account's currency. Not converted from USD.",
+    limitText: 'Needs the Traffic objective — the other objectives bid per thousand impressions.',
+  },
+  'twitter-ads': {
+    label: 'X',
+    currency: 'account',
+    scale: CAMPAIGN_BIDDING_MICRO_SCALE,
+    minBid: 0.000001,
+    maxBid: CAMPAIGN_BIDDING_MAX_BID,
+    manualObjectives: null,
+    defaultObjective: null,
+    dailyBudgetMultiple: null,
+    bidAtMostDailyBudget: true,
+    automaticDescription: 'X sets every bid.',
+    manualDescription: 'Bids a maximum amount, charged per link click.',
+    currencyHint: "In the ad account's currency. Not converted from USD.",
+    limitText: 'May not exceed the daily budget.',
+  },
+};
 
 /** ISO 3166-1 alpha-2 shape for a Meta geo target, after normalization. */
 export const META_GEO_CODE_PATTERN = /^[A-Z]{2}$/;
