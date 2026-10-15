@@ -56,6 +56,9 @@ class MaterialsStubComponent {}
 @Component({ selector: 'lfx-meeting-recording', template: '<span data-testid="recording-stub"></span>' })
 class RecordingStubComponent {}
 
+@Component({ selector: 'lfx-meeting-join-details', template: '<span data-testid="join-details-stub"></span>' })
+class JoinDetailsStubComponent {}
+
 describe('MeetingDetailsPageComponent', () => {
   let fixture: ComponentFixture<MeetingDetailsPageComponent>;
   let status: WritableSignal<MeetingDetailsLoadStatus>;
@@ -94,6 +97,7 @@ describe('MeetingDetailsPageComponent', () => {
             HeaderStubComponent,
             IdentityBarStubComponent,
             ImpersonationBannerStubComponent,
+            JoinDetailsStubComponent,
             MaterialsStubComponent,
             OrganizerStubComponent,
             PeopleStubComponent,
