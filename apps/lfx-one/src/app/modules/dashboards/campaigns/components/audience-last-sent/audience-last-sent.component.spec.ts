@@ -495,4 +495,16 @@ describe('AudienceLastSentComponent', () => {
       expect(link?.href).toContain('/objectLists/301');
     });
   });
+
+  it('says why each prior send is listed', () => {
+    fixture.componentRef.setInput('emails', [
+      { ...email(), emailId: 'e1', subject: 'Join us in Tokyo', matchReason: 'subject' },
+      { ...email(), emailId: 'e2', emailName: 'CNCF Monthly Newsletter', matchReason: 'brand_only' },
+    ]);
+    fixture.detectChanges();
+
+    expect(host().querySelector('[data-testid="audience-last-sent-subject-e1"]')?.textContent).toContain('Join us in Tokyo');
+    expect(host().querySelector('[data-testid="audience-last-sent-reason-e1"]')?.textContent).toContain('subject line');
+    expect(host().querySelector('[data-testid="audience-last-sent-reason-e2"]')?.textContent).toContain('brand only');
+  });
 });

@@ -24,7 +24,7 @@ const request = (overrides: Partial<PendingActionItem> = {}): PendingActionItem 
 });
 
 const render = (item: PendingActionItem, testIdPrefix = PREFIX): ComponentFixture<JoinRequestSummaryComponent> => {
-  TestBed.configureTestingModule({ imports: [JoinRequestSummaryComponent], providers: [provideRouter([])] });
+  TestBed.configureTestingModule({ imports: [JoinRequestSummaryComponent], providers: [provideRouter([{ path: '**', children: [] }])] });
   const fixture = TestBed.createComponent(JoinRequestSummaryComponent);
   fixture.componentRef.setInput('item', item);
   fixture.componentRef.setInput('testIdPrefix', testIdPrefix);

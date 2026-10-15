@@ -9,7 +9,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { SelectComponent } from '@components/select/select.component';
-import { MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import { MEETING_V2_ENABLED_DEFAULT, MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { Meeting, MeetingDeleteType, MeetingDeleteTypeResult, MeetingOccurrence, MeetingOccurrenceOption } from '@lfx-one/shared/interfaces';
 import { buildMeetingOccurrenceOptions, isSameOccurrenceId } from '@lfx-one/shared/utils';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -32,7 +32,7 @@ export class MeetingDeleteTypeSelectionComponent {
   private readonly dialogRef = inject(DynamicDialogRef);
   private readonly dialogConfig = inject(DynamicDialogConfig);
 
-  protected readonly meetingsV2Enabled: Signal<boolean> = inject(FeatureFlagService).getBooleanFlag(MEETING_V2_ENABLED_FLAG, false);
+  protected readonly meetingsV2Enabled: Signal<boolean> = inject(FeatureFlagService).getBooleanFlag(MEETING_V2_ENABLED_FLAG, MEETING_V2_ENABLED_DEFAULT);
 
   public readonly meeting: Meeting = this.dialogConfig.data.meeting;
   public readonly occurrence: MeetingOccurrence | null = this.dialogConfig.data.occurrence ?? null;

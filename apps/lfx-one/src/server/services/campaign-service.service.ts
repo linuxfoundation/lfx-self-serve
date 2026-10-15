@@ -117,6 +117,8 @@ interface CampaignServiceJobPollResponse {
     campaign_id?: string;
     /** HubSpot app URL of the created draft; campaign-service builds it from the connection's portal id. */
     hubspot_url?: string;
+    /** Best-effort steps of a successful create that did not apply (email channel: a hero that could not be added). */
+    warnings?: string[];
     error?: string;
   }[];
   error?: string;
@@ -3575,6 +3577,24 @@ export function isCampaignServiceNotFound(errorBody: unknown): boolean {
 }
 
 /**
+ * The warnings campaign-service attached to one platform result, reduced to non-blank strings and bounded.
+ *
+ * They are rendered as text in the UI, so only the shape is policed here: a non-array, a non-string element or a
+ * blank one is dropped, duplicates are collapsed, and the count and each entry's length are capped so a malformed upstream response cannot
+ * flood the banner.
+ */
+function cleanWarnings(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((entry): entry is string => typeof entry === 'string' && entry.trim() !== '')
+    .map((entry) => entry.trim().slice(0, 500))
+    .filter((entry, index, all) => all.indexOf(entry) === index) // the UI keys warnings by their text
+    .slice(0, 10);
+}
+
+/**
  * Translate campaign-service's `job-poll-response` into the shape the poller expects.
  *
  * This is NOT a pass-through, and the difference matters more than it looks. The Angular
@@ -3602,13 +3622,17 @@ export function adaptJobPollResponse(response: CampaignServiceJobPollResponse): 
   // claim from "the job reported nothing yet"; the poller reaches here for terminal states
   // that legitimately carry no result (a job that failed before dispatch). The component
   // coalesces to `[]` at the point of rendering, where the distinction no longer matters.
-  const platformResults: CampaignPlatformResult[] | undefined = response.result?.map((r) => ({
-    platform: r.platform,
-    ok: r.ok,
-    campaignId: r.campaign_id,
-    hubspotUrl: r.hubspot_url,
-    error: r.error,
-  }));
+  const platformResults: CampaignPlatformResult[] | undefined = response.result?.map((r) => {
+    const warnings = cleanWarnings(r.warnings);
+    return {
+      platform: r.platform,
+      ok: r.ok,
+      campaignId: r.campaign_id,
+      hubspotUrl: r.hubspot_url,
+      ...(warnings.length > 0 ? { warnings } : {}),
+      error: r.error,
+    };
+  });
 
   switch (response.status) {
     case 'queued':

@@ -305,12 +305,11 @@ async function fillDateSchedule(page: Page): Promise<void> {
  * Separated from {@link openGuestsSection} so a spec can assert the rail's cold state — Guests
  * unreachable behind an empty Details & access — which walking to Guests necessarily destroys.
  *
- * Goes through the rail's Create flow rather than `/meetings/create`: while
- * `MEETING_V2_ENABLED_FLAG` gates v2, that URL is pointed at the pre-v2 wizard unconditionally
- * (see the comment in `meetings.routes.ts` for why a lazy route cannot read the flag), so it can
- * no longer reach the composer at all. The rail is the cheapest entry point that can — it renders
- * unconditionally, needs no project lens, and its target picker is stubbed above, so this still
- * runs without a real project or committee being involved.
+ * Goes through the rail's Create flow rather than `/meetings/create`. That URL does reach the
+ * composer when the flag is on (`meetingsV2Guard`), but only after a full SSR navigation and a
+ * LaunchDarkly round trip. The rail is cheaper: it renders unconditionally, needs no project lens,
+ * and its target picker is stubbed above, so this still runs without a real project or committee
+ * being involved.
  */
 export async function openComposerCreate(page: Page): Promise<void> {
   await stubComposerBackend(page);

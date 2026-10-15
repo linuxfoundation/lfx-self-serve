@@ -148,6 +148,44 @@ describe('adaptJobPollResponse', () => {
     expect(adapted.platformResults?.[0].hubspotUrl).toBe('https://app.hubspot.com/email/1/edit/c1/settings');
   });
 
+  it('passes the platform warnings through, dropping blank and non-string entries', () => {
+    const adapted = adaptJobPollResponse({
+      job_id: 'j1',
+      status: 'succeeded',
+      result: [
+        { platform: 'hubspot', ok: true, campaign_id: 'c1', warnings: ['The hero image could not be added.', '  ', 42 as never] },
+        { platform: 'google-ads', ok: true, campaign_id: 'g1' },
+      ],
+    });
+
+    expect(adapted.platformResults?.[0].warnings).toEqual(['The hero image could not be added.']);
+    expect(adapted.platformResults?.[1].warnings).toBeUndefined();
+  });
+
+  it('collapses duplicate warnings, which the UI keys by their text', () => {
+    const adapted = adaptJobPollResponse({
+      job_id: 'j1',
+      status: 'succeeded',
+      result: [{ platform: 'hubspot', ok: true, campaign_id: 'c1', warnings: ['Same.', ' Same. ', 'Other.'] }],
+    } as never);
+
+    expect(adapted.platformResults?.[0].warnings).toEqual(['Same.', 'Other.']);
+  });
+
+  it('bounds the warnings an upstream response can carry', () => {
+    const many = Array.from({ length: 25 }, (_, i) => `warning ${i}`);
+    const long = 'x'.repeat(2000);
+    const adapted = adaptJobPollResponse({
+      job_id: 'j1',
+      status: 'succeeded',
+      result: [{ platform: 'hubspot', ok: true, campaign_id: 'c1', warnings: [long, ...many] }],
+    });
+
+    const warnings = adapted.platformResults?.[0].warnings ?? [];
+    expect(warnings).toHaveLength(10);
+    expect(warnings[0]).toHaveLength(500);
+  });
+
   // A partial job created real campaigns. Reporting the JOB as failed would hide them; each
   // platform's own `ok` flag carries the per-platform truth.
   it('maps partial to done and keeps both the succeeded and the failed platform', () => {
