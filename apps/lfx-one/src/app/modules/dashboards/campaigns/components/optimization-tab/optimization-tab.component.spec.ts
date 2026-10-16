@@ -478,7 +478,7 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
 
   // campaign-service refuses ACTIVATE on every adopted campaign (409). The BFF re-codes that answer
   // CAMPAIGN_RESUME_REFUSED with a message naming where to resume, which replaces the "try again"
-  // copy: retrying cannot work. Branched on the code, so any other 409 keeps the per-direction copy.
+  // copy, which cannot help an adopted campaign. Branched on the code, so any other 409 keeps the per-direction copy.
   it('shows the BFF message for a resume refused as CAMPAIGN_RESUME_REFUSED, not "try again"', () => {
     const refusal = campaignResumeRefusedMessage('LinkedIn Ads', 'campaign is not fully provisioned');
     updateCampaignStatus.mockReturnValue(

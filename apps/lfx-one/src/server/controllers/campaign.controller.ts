@@ -3033,7 +3033,7 @@ export class CampaignController {
       res.json(result);
     } catch (error) {
       // A resume campaign-service refused (409) gets a message naming where an adopted campaign is
-      // resumed, instead of a "try again" that cannot work. See `asResumeRefusal`.
+      // resumed, instead of a bare "try again". See `asResumeRefusal`.
       next(viaCampaignService && body.status === 'ACTIVE' ? asResumeRefusal(error, body.platform, 'campaign_status_update') : error);
     }
   }

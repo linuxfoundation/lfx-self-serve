@@ -436,10 +436,11 @@ export const CAMPAIGN_RESUME_REFUSED_CODE = 'CAMPAIGN_RESUME_REFUSED';
 
 /**
  * Why a resume was refused (409), naming the platform where an adopted campaign is resumed.
+ * It does not say a retry is futile: one of those 409s (another write in progress) clears on retry.
  * `reason` is campaign-service's own sentence, kept for the refusals that are not about adoption.
  */
 export function campaignResumeRefusedMessage(platformLabel: string, reason?: string): string {
-  const adopted = `Could not resume this campaign; it is still paused, and trying again will not help. If it was adopted from ${platformLabel}, LFX One can pause it but not resume it — resume it in ${platformLabel} itself.`;
+  const adopted = `Could not resume this campaign; it is still paused. If it was adopted from ${platformLabel}, LFX One can pause it but not resume it — resume it in ${platformLabel} itself.`;
   const trimmed = reason?.trim();
   return trimmed ? `${adopted} Otherwise, the reason given was: ${trimmed}` : adopted;
 }

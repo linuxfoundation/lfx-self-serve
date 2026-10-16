@@ -5235,6 +5235,19 @@ describe('CampaignController.updateCampaignStatus', () => {
       expect(error.message).toBe(upstreamMessage);
     });
 
+    // A 409 that DOES clear on retry (another write holds the row lock) gets the same code, so the
+    // message must not call a retry futile, and must keep campaign-service's "retry shortly".
+    it('keeps a retryable 409 honest: no claim that retrying is futile', async () => {
+      const busy = 'another write to this campaign is already in progress; retry shortly';
+      toggleCampaignStatus.mockRejectedValueOnce(new MicroserviceError(busy, 409, 'CONFLICT', { errorBody: { code: '409', message: busy } }));
+
+      await controller.updateCampaignStatus(statusReq(UUID, { platform: 'google-ads', status: 'ACTIVE', briefId: 'b-1', etag: '1' }), res, next);
+
+      const text = (vi.mocked(next).mock.calls[0][0] as unknown as MicroserviceError).toResponse()['error'] as string;
+      expect(text).toContain(`Otherwise, the reason given was: ${busy}`);
+      expect(text).not.toMatch(/will not help|cannot work/);
+    });
+
     it('leaves a refused PAUSE unchanged', async () => {
       const upstream = answered409();
       toggleCampaignStatus.mockRejectedValueOnce(upstream);

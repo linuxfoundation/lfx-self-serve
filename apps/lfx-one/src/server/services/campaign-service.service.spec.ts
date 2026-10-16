@@ -51,7 +51,14 @@ import type { CampaignBriefOutput, CampaignType } from '@lfx-one/shared/interfac
 import { MicroserviceError } from '../errors/microservice.error';
 import { ServiceValidationError } from '../errors/service-validation.error';
 import { ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
-import { adaptJobPollResponse, CampaignServiceClient, deriveEventSlug, fromBriefResponse, isCampaignServiceJobId } from './campaign-service.service';
+import {
+  adaptJobPollResponse,
+  asResumeRefusal,
+  CampaignServiceClient,
+  deriveEventSlug,
+  fromBriefResponse,
+  isCampaignServiceJobId,
+} from './campaign-service.service';
 
 const req = {} as unknown as Request;
 
@@ -5063,5 +5070,38 @@ describe('CampaignServiceClient.getConnection', () => {
     proxyRequest.mockRejectedValueOnce(upstream);
 
     await expect(new CampaignServiceClient().getConnection(req, 'cncf', 'linkedin-ads')).rejects.toBe(upstream);
+  });
+});
+
+describe('asResumeRefusal', () => {
+  const answered = (body: Record<string, unknown>) => new MicroserviceError('upstream text', 409, 'CONFLICT', { errorBody: { code: '409', ...body } });
+  const clientText = (error: unknown) => (error as MicroserviceError).toResponse()['error'] as string;
+
+  it("names the platform and keeps campaign-service's sentence", () => {
+    const error = asResumeRefusal(answered({ message: 'not fully provisioned' }), 'reddit-ads', 'op') as MicroserviceError;
+
+    expect(error.code).toBe('CAMPAIGN_RESUME_REFUSED');
+    expect(clientText(error)).toContain('resume it in Reddit Ads itself.');
+    expect(clientText(error)).toContain('Otherwise, the reason given was: not fully provisioned');
+  });
+
+  it('falls back to a generic platform name for an unknown platform id', () => {
+    expect(clientText(asResumeRefusal(answered({ message: 'x' }), 'unknown-ads', 'op'))).toContain('resume it in the ad platform itself.');
+  });
+
+  it.each([
+    ['no message', {}],
+    ['a whitespace-only message', { message: '   ' }],
+    ['a non-string message', { message: 42 }],
+  ])('omits the reason sentence for %s', (_label, body) => {
+    const text = clientText(asResumeRefusal(answered(body), 'google-ads', 'op'));
+
+    expect(text).toContain('resume it in Google Ads itself.');
+    expect(text).not.toContain('Otherwise');
+  });
+
+  it('passes a non-MicroserviceError through unchanged', () => {
+    const error = new Error('boom');
+    expect(asResumeRefusal(error, 'google-ads', 'op')).toBe(error);
   });
 });
