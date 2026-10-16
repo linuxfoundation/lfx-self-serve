@@ -272,6 +272,20 @@ describe('MetaAdSetsPanelComponent', () => {
     expect(q('meta-ad-sets-record-check-advice')).toBeNull();
   });
 
+  it('announces the read in flight as a status', () => {
+    listMetaAdSets.mockReturnValueOnce(new Subject<CampaignServiceMetaAdSets>());
+    render();
+
+    expect(q('meta-ad-sets-loading')!.getAttribute('role')).toBe('status');
+  });
+
+  it('announces a failed read as an alert', () => {
+    listMetaAdSets.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 404, error: { error: 'Campaign not found', code: 'NOT_FOUND' } })));
+    render();
+
+    expect(q('meta-ad-sets-error')!.getAttribute('role')).toBe('alert');
+  });
+
   it('states a failed read with a retry', () => {
     listMetaAdSets.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 404, error: { error: 'Campaign not found', code: 'NOT_FOUND' } })));
     render();

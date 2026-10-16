@@ -52,12 +52,12 @@
   }
 
   @if (state() === 'loading' && !data()) {
-    <p class="flex items-center gap-2 text-sm text-gray-500" data-testid="meta-ad-sets-loading">
+    <p class="flex items-center gap-2 text-sm text-gray-500" role="status" data-testid="meta-ad-sets-loading">
       <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
       Loading ad sets...
     </p>
   } @else if (state() === 'error') {
-    <div class="flex flex-wrap items-center justify-between gap-3" data-testid="meta-ad-sets-error">
+    <div class="flex flex-wrap items-center justify-between gap-3" role="alert" data-testid="meta-ad-sets-error">
       <p class="text-sm text-gray-600">{{ errorMessage() }}</p>
       <lfx-button
         label="Retry"

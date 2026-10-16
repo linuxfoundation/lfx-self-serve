@@ -1338,6 +1338,30 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
     });
   });
 
+  describe('paid panel table headers and Retry names', () => {
+    it.each([
+      ['linkedin', 'getLinkedInMonitorData', 'LinkedIn Ads'],
+      ['reddit', 'getRedditMonitorData', 'Reddit Ads'],
+      ['meta', 'getMetaMonitorData', 'Meta Ads'],
+      ['microsoft', 'getMicrosoftMonitorData', 'Microsoft Ads'],
+    ] as const)('names what the %s Retry retries', async (platform, read, label) => {
+      await setup(allConnected);
+      service[read].mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, error: { error: 'boom' } })));
+      select(platform);
+
+      expect(el(`${platform}-retry`)?.getAttribute('aria-label')).toBe(`Retry loading ${label} campaigns`);
+    });
+
+    it('scopes every paid table header to its column', async () => {
+      await setup(allConnected);
+      select('microsoft');
+
+      const headers = Array.from(el('microsoft-campaign-table')?.querySelectorAll('th') ?? []);
+      expect(headers.length).toBeGreaterThan(0);
+      expect(headers.every((th) => th.getAttribute('scope') === 'col')).toBe(true);
+    });
+  });
+
   describe('screen-reader read status', () => {
     const live = (): string => text('monitoring-ad-panel-live');
 

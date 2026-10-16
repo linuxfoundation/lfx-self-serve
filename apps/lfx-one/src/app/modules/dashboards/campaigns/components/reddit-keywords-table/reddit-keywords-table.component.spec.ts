@@ -84,6 +84,7 @@ describe('RedditKeywordsTableComponent', () => {
     fixture.detectChanges();
 
     expect(q('reddit-keywords-loading')).not.toBeNull();
+    expect(q('reddit-keywords-loading')!.getAttribute('role')).toBe('status');
   });
 
   it.each([
@@ -98,6 +99,13 @@ describe('RedditKeywordsTableComponent', () => {
     const box = q(testId)!;
     expect(box.textContent).toContain(message);
     expect(box.textContent).not.toContain('secret detail');
+  });
+
+  it('announces a failed read as an alert', () => {
+    getRedditKeywords.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503, error: { error: 'x', code: 'SERVICE_UNAVAILABLE' } })));
+    fixture.detectChanges();
+
+    expect(q('reddit-keywords-error')!.getAttribute('role')).toBe('alert');
   });
 
   it('retries a failed read', () => {

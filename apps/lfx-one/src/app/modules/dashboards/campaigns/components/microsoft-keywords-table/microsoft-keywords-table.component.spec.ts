@@ -6,7 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MICROSOFT_KEYWORD_PREVIOUS_UNCONFIRMED_NOTE, MICROSOFT_KEYWORDS_WINDOWS } from '@lfx-one/shared/constants';
 import { MicrosoftKeywordActionRequest, MicrosoftKeywordMetrics, MicrosoftKeywordMetricsResponse } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
-import { of, throwError } from 'rxjs';
+import { NEVER, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MicrosoftKeywordsTableComponent } from './microsoft-keywords-table.component';
@@ -131,6 +131,25 @@ describe('MicrosoftKeywordsTableComponent', () => {
     expect(q('microsoft-keyword-conversions-microsoft-ads:111-222')!.textContent).toContain('Not measured');
     expect(q('microsoft-keyword-conversions-microsoft-ads:9-8')!.textContent!.trim()).toBe('3');
     expect(q('microsoft-keywords-total-conversions')!.textContent).toContain('Not measured');
+  });
+
+  it('announces the read in flight as a status', async () => {
+    getMicrosoftKeywords = vi.fn().mockReturnValue(NEVER);
+    await TestBed.configureTestingModule({
+      imports: [MicrosoftKeywordsTableComponent],
+      providers: [{ provide: CampaignService, useValue: { getMicrosoftKeywords } }],
+    }).compileComponents();
+    fixture = TestBed.createComponent(MicrosoftKeywordsTableComponent);
+    fixture.componentRef.setInput('projectSlug', 'tlf');
+    fixture.detectChanges();
+
+    expect(q('microsoft-keywords-loading')!.getAttribute('role')).toBe('status');
+  });
+
+  it('announces a failed read as an alert', async () => {
+    await render(Object.assign(new Error('boom'), { status: 503 }));
+
+    expect(q('microsoft-keywords-error')!.getAttribute('role')).toBe('alert');
   });
 
   it('shows an unreachable read as a calm, retryable message — not a red error box', async () => {
