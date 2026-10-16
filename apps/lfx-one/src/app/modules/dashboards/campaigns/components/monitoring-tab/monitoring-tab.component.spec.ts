@@ -1338,6 +1338,117 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
     });
   });
 
+  describe('screen-reader read status', () => {
+    const live = (): string => text('monitoring-ad-panel-live');
+
+    it('keeps one persistent polite live region, empty on the Google panel', async () => {
+      await setup(allConnected);
+
+      const region = el('monitoring-ad-panel-live');
+      expect(region?.getAttribute('role')).toBe('status');
+      expect(region?.getAttribute('aria-live')).toBe('polite');
+      expect(live()).toBe('');
+    });
+
+    it('announces a read in flight, then what the panel shows, in the same region', async () => {
+      await setup(allConnected);
+      const region = el('monitoring-ad-panel-live');
+      const reply = new Subject<ReportBackedMonitorResponse>();
+      service['getMicrosoftMonitorData'].mockReturnValue(reply);
+      select('microsoft');
+
+      expect(live()).toBe('Loading Microsoft Ads campaigns');
+
+      reply.next(reportBacked());
+      reply.complete();
+      fixture.detectChanges();
+
+      expect(el('monitoring-ad-panel-live')).toBe(region);
+      expect(live()).toBe('Microsoft Ads: 1 campaign shown.');
+    });
+
+    it("adds the totals-coverage note when some rows couldn't be read", async () => {
+      await setup(allConnected);
+      const campaigns = reportBacked().campaigns;
+      service['getMicrosoftMonitorData'].mockReturnValue(
+        of(reportBacked({ campaigns: [...campaigns, { ...campaigns[0], campaignId: '2', fetchFailed: true, pacingLabel: undefined }] }))
+      );
+      select('microsoft');
+
+      expect(live()).toBe('Microsoft Ads: 2 campaigns shown. Totals cover 1 of 2 campaigns.');
+    });
+
+    it('says when the account has no campaigns', async () => {
+      await setup(allConnected);
+      service['getMicrosoftMonitorData'].mockReturnValue(of(reportBacked({ campaigns: [] })));
+      select('microsoft');
+
+      expect(live()).toBe('No Microsoft Ads campaigns found for this account.');
+    });
+
+    const legacyPanel = (campaigns: Record<string, unknown>[]): Record<string, unknown> => ({
+      accountLabel: 'LF',
+      pulledAt: '2026-10-13T00:00:00.000Z',
+      dateRange: { mode: 'last_30_days' },
+      campaigns,
+      accountTotals: { spend: 10, impressions: 100, clicks: 5, conversions: 1, campaignCount: campaigns.length },
+      actionItems: [],
+    });
+    const legacyRow = (name: string): Record<string, unknown> => ({
+      campaignId: name,
+      campaignName: name,
+      eventName: name,
+      creatives: [],
+      status: 'ACTIVE',
+      totalBudget: 1000,
+      dailyBudget: 0,
+      spend: 10,
+      impressions: 100,
+      clicks: 5,
+      ctr: 5,
+      conversions: 1,
+      pacingPct: 50,
+      pacingLabel: 'normal',
+      startDate: '2026-09-01',
+      endDate: '',
+    });
+
+    it.each([
+      ['linkedin', 'getLinkedInMonitorData', 'LinkedIn'],
+      ['reddit', 'getRedditMonitorData', 'Reddit'],
+      ['meta', 'getMetaMonitorData', 'Meta'],
+    ])('announces what the %s panel shows, and its empty state in the visible wording', async (platform, method, label) => {
+      await setup(allConnected);
+      service[method].mockReturnValue(of(legacyPanel([legacyRow('A'), legacyRow('B')])));
+      select(platform);
+
+      expect(live()).toBe(`${label}: 2 campaigns shown.`);
+
+      service[method].mockReturnValue(of(legacyPanel([])));
+      (el(`${platform}-refresh`) as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      expect(live()).toBe(`No active ${label} campaigns found for this account.`);
+    });
+
+    it('says nothing while the panel shows a connection notice instead of a read', async () => {
+      await setup({ ...allConnected, platforms: { ...allConnected.platforms, reddit: none('no_connection') } });
+      select('reddit');
+
+      expect(el('reddit-connection-notice')).not.toBeNull();
+      expect(live()).toBe('');
+    });
+
+    it('leaves a failed read to the role="alert" error block, so it is announced once', async () => {
+      await setup(allConnected);
+      service['getRedditMonitorData'].mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+      select('reddit');
+
+      expect(el('reddit-error')?.getAttribute('role')).toBe('alert');
+      expect(live()).toBe('');
+    });
+  });
+
   describe('platform buttons', () => {
     /**
      * Selected colours come from MONITOR_PLATFORM_BUTTON_COLORS (whose own spec checks every ratio):
