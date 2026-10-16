@@ -15,6 +15,8 @@
 // inside the hashed bytes, or removing it would drop the revision.
 
 import type { MktgArtifactIntakeMode, MktgArtifactKey } from './mktg-artifact.interface';
+import type { MktgReadmeOutcome } from './mktg-run.interface';
+import type { MktgDocumentRunProgress } from './mktg-document-run.interface';
 
 /**
  * Agent key of a document type — the artifact namespace for the agents that
@@ -93,6 +95,8 @@ export interface MktgRevisionDeck {
 
 /** Where a generated revision came from. */
 export interface MktgRevisionSource {
+  /** Submission's README outcome, when the authenticated run client relayed it. Older revisions have none. */
+  readme?: MktgReadmeOutcome;
   /** Guild session that produced it; null for restored and migrated revisions. */
   sessionId: string | null;
   /** The envelope's draft version within its run (a label, never an ordering). */
@@ -163,6 +167,8 @@ export interface MktgDocumentGroup {
 export interface MktgDocumentsResponse {
   project: string;
   groups: MktgDocumentGroup[];
+  /** Server-visible unfinished runs, including documents with no revision yet; newest first. */
+  runs?: MktgDocumentRunProgress[];
 }
 
 /** Response of `GET /api/mktg-agents/documents/:agentKey/:documentId?project=<uid>`: the document and its revisions, newest first. */
@@ -171,12 +177,25 @@ export interface MktgDocumentDetailResponse {
   type: MktgDocumentType;
   documentId: string;
   revisions: MktgRevisionSummary[];
+  /** Server-visible unfinished runs for this document; revisions may be empty on a first run. */
+  runs?: MktgDocumentRunProgress[];
+}
+
+/** The exact stored revision produced by a result poll, never a lookup of whichever revision is latest. */
+export interface MktgDocumentLocation {
+  agentKey: MktgDocumentAgentKey;
+  documentId: string;
+  revisionId: string;
 }
 
 /** Response of `GET /api/mktg-agents/documents/:agentKey/:documentId/revisions/:revisionId?project=<uid>`. */
 export interface MktgRevisionResponse extends MktgDocumentDetailResponse {
   revision: MktgRevisionSummary;
   markdown: string;
+  /** Stored run provenance, including the whitelisted README outcome shown in About this document. */
+  source?: MktgRevisionSource;
+  /** Copyable derivative text from the validated envelope. */
+  derivatives?: Record<string, string>;
 }
 
 /** Body of `POST /api/mktg-agents/documents/:agentKey/:documentId/restore`. */

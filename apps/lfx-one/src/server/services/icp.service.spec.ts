@@ -36,7 +36,8 @@ const loggerMocks = vi.hoisted(() => ({
 vi.mock('@lfx-one/shared/utils', async () => {
   const icp = await vi.importActual('../../../../../packages/shared/src/utils/icp.utils');
   const envelope = await vi.importActual('../../../../../packages/shared/src/utils/mktg-envelope.utils');
-  return { ...(icp as object), ...(envelope as object) };
+  const session = await vi.importActual('../../../../../packages/shared/src/utils/mktg-session-event.utils');
+  return { ...(icp as object), ...(envelope as object), ...(session as object) };
 });
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/constants', async () => {
@@ -230,10 +231,34 @@ describe('IcpService', () => {
   });
 
   describe('getResult', () => {
+    it('fails on completed agent runtime without an envelope, returning the final reply', async () => {
+      guildMocks.getRawEventPayloads.mockResolvedValue([
+        JSON.stringify({ type: 'agent_notification_message', content: 'The intake was rejected.' }),
+        JSON.stringify({ type: 'runtime_done', task: { id: 'synthetic-task', entity_type: 'EntTaskAgent' } }),
+      ]);
+      await expect(service.getResult(req, 'session-1', PROJECT_UID)).resolves.toEqual({ status: 'failed', failureText: 'The intake was rejected.' });
+      expect(objectStoreMocks.putContentAddressedObject).not.toHaveBeenCalled();
+    });
     it('stays pending until a valid envelope appears', async () => {
       guildMocks.getRawEventPayloads.mockResolvedValue(['the agent is thinking about segments']);
 
       await expect(service.getResult(req, 'session-1', PROJECT_UID)).resolves.toEqual({ status: 'pending' });
+      expect(objectStoreMocks.putContentAddressedObject).not.toHaveBeenCalled();
+    });
+
+    it('does not persist the prior envelope for a server-tracked follow-up', async () => {
+      guildMocks.getRawEventPayloads.mockResolvedValue([toolResultPayload(buildEnvelope())]);
+      expect(await service.getResult(req, 'session-1', PROJECT_UID, undefined, 1)).toEqual({ status: 'pending' });
+      expect(objectStoreMocks.putContentAddressedObject).not.toHaveBeenCalled();
+    });
+
+    it('does not fail a queued follow-up from the prior turn completion', async () => {
+      guildMocks.getRawEventPayloads.mockResolvedValue([
+        toolResultPayload(buildEnvelope()),
+        JSON.stringify({ type: 'runtime_done', task: { id: 'synthetic-task', entity_type: 'EntTaskAgent' } }),
+        JSON.stringify({ type: 'mktg_session_turn_started' }),
+      ]);
+      expect(await service.getResult(req, 'session-1', PROJECT_UID, undefined, 1)).toEqual({ status: 'pending' });
       expect(objectStoreMocks.putContentAddressedObject).not.toHaveBeenCalled();
     });
 

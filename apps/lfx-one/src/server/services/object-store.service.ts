@@ -187,6 +187,24 @@ export class ObjectStoreService {
     }
   }
 
+  /** Read existing backend metadata without fetching object bytes or creating a bucket. */
+  public async headObject(req: Request, purpose: ObjectStorePurpose, key: string): Promise<Record<string, string> | null> {
+    const startTime = logger.startOperation(req, 'object_store_head_object', { purpose, key });
+    try {
+      const metadata = await this.getBackend(purpose).headObject(key);
+      logger.success(req, 'object_store_head_object', startTime, { purpose, key, found: metadata !== null });
+      return metadata;
+    } catch (error) {
+      logger.warning(req, 'object_store_head_object', 'Object metadata read failed; rethrowing for the caller', {
+        purpose,
+        key,
+        duration: Date.now() - startTime,
+        err: error,
+      });
+      throw error;
+    }
+  }
+
   /**
    * Fetch one object's UTF-8 body and user metadata from a purpose-keyed
    * bucket. Returns null only on a CONFIRMED missing object (404/NoSuchKey, or

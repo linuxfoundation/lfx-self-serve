@@ -371,9 +371,6 @@ export const MKTG_README_SKIP_NOTES: Record<MktgReadmeSkipReason, string> = {
   'fetch-failed': 'Generated without a README — GitHub couldn’t be reached for that repository, so the agent had no README to work from.',
 };
 
-/** Running-phase stage checklist labels, in order. */
-export const MKTG_RUN_STAGES = ['Submitting your intake', 'Agent drafting the document', 'Validating required sections'] as const;
-
 /**
  * Validation of the questions step: an answer that is not one. There is no
  * skip and no TBD there — the agent already suggested what it could settle,
@@ -418,7 +415,8 @@ export const MKTG_DOCUMENT_STATUS_LABEL_REGEX = /((?:Draft(?: v\d+)?|ED-reviewed
  */
 export const MKTG_DOCUMENT_STATUS_LEAD_REGEX = /^(?:[\s#>|*_-]*|[\s#>|*_-]*status[\s*_:|—–-]*)$/i;
 
-/** Prefix of the reviewed label — the one status that is no longer a draft. */
+/** Legacy result-UI exports retained until the intake migration/cleanup layers. */
+export const MKTG_RUN_STAGES = ['Submitting your intake', 'Agent drafting the document', 'Validating required sections'] as const;
 export const MKTG_DOCUMENT_STATUS_REVIEWED_PREFIX = 'ED-reviewed';
 
 /** localStorage key prefix for stored runs; full key is `<prefix>:<projectUid>:<agentId>`. */
@@ -498,3 +496,12 @@ export const MKTG_BRAND_KIT_FORM_POLL = {
  * run shell and the standalone intake form.
  */
 export const MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS = 3;
+
+/** Stable short hash identifying a questions block, not a session capability. */
+export const MKTG_RUN_QUESTIONS_ID_REGEX = /^[a-f0-9]{8}$/;
+
+/** Internal BFF marker: a capped event page cannot prove a session has nothing pending. */
+export const MKTG_SESSION_EVENTS_TRUNCATED = 'mktg_session_events_truncated';
+
+/** Content-free BFF marker: a user/trigger turn is queued even before runtime_start appears. */
+export const MKTG_SESSION_TURN_STARTED = 'mktg_session_turn_started';

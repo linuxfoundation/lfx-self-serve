@@ -35,6 +35,7 @@ vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-artifact.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-document-store.constants')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-run.constants')),
 }));
 vi.mock('./logger.service', () => ({ logger: loggerMocks }));
 vi.mock('./project.service', () => ({
@@ -74,7 +75,7 @@ vi.mock('./object-store.service', () => ({
 }));
 
 import { MKTG_ARTIFACT_SPECS, MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
-import type { MktgArtifactEnvelope, MktgDocumentType, MktgRevisionRecord } from '@lfx-one/shared/interfaces';
+import type { MktgArtifactEnvelope, MktgDocumentType, MktgReadmeSkipReason, MktgRevisionRecord } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
 import { MktgDocumentStoreService } from './mktg-document-store.service';
@@ -136,6 +137,7 @@ describe('MktgDocumentStoreService', () => {
       const receipt = await service.persistGeneration(req, SPEC, generated, PROJECT, 'session-1');
 
       expect(receipt?.s3_key).toBe(`brand-kit/${PROJECT}/${generated.content_sha256}.md`);
+      expect(receipt?.document).toEqual({ agentKey: 'brand-kit', documentId: 'living', revisionId: revisionKeys()[0].split('/').at(-1)?.slice(0, -5) });
       const keys = revisionKeys();
       expect(keys).toHaveLength(1);
       expect(keys[0]).toMatch(new RegExp(`^documents/${PROJECT}/brand-kit/living/000001-[0-9a-f]{64}\\.json$`));
@@ -165,6 +167,40 @@ describe('MktgDocumentStoreService', () => {
       expect(record.bundle.sidecar).not.toHaveProperty('document_markdown');
     });
 
+    it('returns the exact recorded revision with provenance and derivatives, including after another run lands', async () => {
+      const generated = { ...envelope('# First\n'), derivatives: { summary: 'Short copy', invalid: 1 } };
+      const first = await service.persistGeneration(req, SPEC, generated, PROJECT, 'session-1');
+      await service.persistGeneration(req, SPEC, envelope('# Second\n'), PROJECT, 'session-2');
+      const location = first?.document;
+      expect(location).toBeDefined();
+      const read = await service.getRevision(req, PROJECT, BRAND_KIT, location!.documentId, location!.revisionId);
+      expect(read?.markdown).toBe('# First\n');
+      expect(read?.source?.sessionId).toBe('session-1');
+      expect(read?.derivatives).toEqual({ summary: 'Short copy' });
+    });
+
+    it('records only a known README-less reason, never arbitrary client text', async () => {
+      const request = { ...req, body: { readme: { fetched: false, skipReason: 'no-readme', extra: 'not stored' } } } as Request;
+      const generated = { ...envelope('# First\n'), inputs: { readme_provided: false } };
+      const receipt = await service.persistGeneration(request, SPEC, generated, PROJECT, 'session-1', { fetched: false, skipReason: 'no-readme' });
+      const read = await service.getRevision(req, PROJECT, BRAND_KIT, 'living', receipt!.document!.revisionId);
+      expect(read?.source?.readme).toEqual({ fetched: false, skipReason: 'no-readme' });
+      const withReadme = { ...req, body: { readme: { fetched: true } } } as Request;
+      await service.persistGeneration(withReadme, SPEC, envelope('# Second\n'), PROJECT, 'session-2', { fetched: true });
+      expect(storedRecord(revisionKeys()[1]).source.readme).toBeUndefined();
+      await service.persistGeneration(
+        { ...req, body: { readme: { fetched: false, skipReason: 'invented' } } } as Request,
+        SPEC,
+        { ...generated, document_markdown: '# Third\n', content_sha256: sha('# Third\n') },
+        PROJECT,
+        'session-3',
+        { fetched: false, skipReason: 'invented' as MktgReadmeSkipReason }
+      );
+      expect(storedRecord(revisionKeys()[2]).source.readme).toBeUndefined();
+      await service.persistGeneration(request, SPEC, envelope('# No explicit outcome\n'), PROJECT, 'session-4');
+      expect(storedRecord(revisionKeys()[3]).source.readme).toBeUndefined();
+    });
+
     it('records a generation once, however often the result is polled', async () => {
       const generated = envelope('# Brand Kit\n');
 
@@ -173,6 +209,13 @@ describe('MktgDocumentStoreService', () => {
       await service.persistGeneration(req, SPEC, generated, PROJECT, 'session-1');
 
       expect(revisionKeys()).toHaveLength(1);
+    });
+
+    it('records a newer draft even when it repeats the prior document bytes on the same session', async () => {
+      await service.persistGeneration(req, SPEC, envelope('# Unchanged\n', 1), PROJECT, 'session-1');
+      await service.persistGeneration(req, SPEC, envelope('# Unchanged\n', 2), PROJECT, 'session-1');
+      await service.persistGeneration(req, SPEC, envelope('# Unchanged\n', 2), PROJECT, 'session-1');
+      expect(revisionKeys()).toHaveLength(2);
     });
 
     it('adds a new latest revision for each new generation of a living document', async () => {

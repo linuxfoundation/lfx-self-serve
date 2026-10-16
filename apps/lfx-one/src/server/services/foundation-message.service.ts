@@ -11,6 +11,7 @@ import {
   MktgIntakeDocument,
   MktgRunAnswer,
   MktgRunQuestion,
+  MktgReadmeOutcome,
 } from '@lfx-one/shared/interfaces';
 import {
   buildFoundationMessageFormPayload,
@@ -21,6 +22,7 @@ import {
   extractMktgToolResults,
   foundationMessageDerivatives,
   foundationMessageQuestionsId,
+  getMktgSessionOutcome,
   renderFoundationMessageAnswersText,
   renderFoundationMessageFormText,
   validateFoundationMessageEnvelope,
@@ -139,14 +141,26 @@ export class FoundationMessageService {
    * before anything is written; without it the document is still returned,
    * just not stored.
    */
-  public async getResult(req: Request, sessionId: string, projectUid?: string): Promise<FoundationMessageResultResponse> {
+  public async getResult(
+    req: Request,
+    sessionId: string,
+    projectUid?: string,
+    readme?: MktgReadmeOutcome,
+    minimumVersion = 0
+  ): Promise<FoundationMessageResultResponse> {
     const payloads = await this.guildService.getRawEventPayloads(req, sessionId);
     const envelope = this.findAuthoritativeEnvelope(req, payloads);
     // What the agent has done so far, in plain sentences, for the run page's live feed — on every status.
     const activity = buildMktgRunActivity(payloads);
 
-    if (!envelope) {
+    if (!envelope || envelope.version <= minimumVersion) {
+      const outcome = getMktgSessionOutcome(payloads);
       const questions = this.findLatestQuestions(req, payloads);
+      // A non-empty terminal rejection supersedes an older questions block.
+      // Without a final notification, preserve questions found in agent text.
+      if (outcome.ended && !extractFoundationMessageQuestions(outcome.replyText) && (outcome.replyText || !questions)) {
+        return { status: 'failed', failureText: outcome.replyText, activity };
+      }
       if (questions) {
         return { status: 'questions', questions, questionsId: foundationMessageQuestionsId(questions), activity };
       }
@@ -163,7 +177,7 @@ export class FoundationMessageService {
       document_chars: envelope.document_markdown.length,
     });
 
-    const persistence = await this.persistEnvelope(req, envelope, sessionId, projectUid);
+    const persistence = await this.persistEnvelope(req, envelope, sessionId, projectUid, readme);
 
     return {
       status: 'ready',
@@ -200,7 +214,8 @@ export class FoundationMessageService {
    * answer until the agent writes a newer block (or the envelope ends the
    * run). Only the agent's own text turns are read — never a tool result,
    * where a fetched page or a search hit could plant a block, and never a
-   * user event, which `getRawEventPayloads` drops anyway.
+   * user-message content, which `getRawEventPayloads` replaces with a
+   * content-free turn marker.
    */
   private findLatestQuestions(req: Request, payloads: string[]): MktgRunQuestion[] | null {
     let latest: MktgRunQuestion[] | null = null;
@@ -225,9 +240,10 @@ export class FoundationMessageService {
     req: Request,
     envelope: FoundationMessageEnvelope,
     sessionId: string,
-    projectUid?: string
+    projectUid?: string,
+    readme?: MktgReadmeOutcome
   ): Promise<FoundationMessagePersistReceipt | null> {
-    return this.documentStore.persistGeneration(req, this.artifactSpec, envelope, projectUid, sessionId);
+    return this.documentStore.persistGeneration(req, this.artifactSpec, envelope, projectUid, sessionId, readme);
   }
 
   /**
