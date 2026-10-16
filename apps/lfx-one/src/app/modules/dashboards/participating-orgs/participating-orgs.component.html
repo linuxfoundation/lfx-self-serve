@@ -121,28 +121,28 @@
                 <th scope="col" [attr.aria-sort]="aria.name">
                   <ng-container *ngTemplateOutlet="sortButton; context: { $implicit: 'name', label: 'Organization', icon: icons.name, end: false }" />
                 </th>
-                <th scope="col" class="text-right" [attr.aria-sort]="aria.commits">
+                <th scope="col" class="w-28 text-right" [attr.aria-sort]="aria.commits">
                   <ng-container *ngTemplateOutlet="sortButton; context: { $implicit: 'commits', label: 'Commits', icon: icons.commits, end: true }" />
                 </th>
-                <th scope="col" class="text-right" [attr.aria-sort]="aria.commits_change">
+                <th scope="col" class="w-24 text-right" [attr.aria-sort]="aria.commits_change">
                   <ng-container
                     *ngTemplateOutlet="
                       sortButton;
                       context: { $implicit: 'commits_change', label: 'Change', icon: icons.commits_change, end: true, srLabel: 'Commits change' }
                     " />
                 </th>
-                <th scope="col" class="text-right" [attr.aria-sort]="aria.contributors">
+                <th scope="col" class="w-32 text-right" [attr.aria-sort]="aria.contributors">
                   <ng-container
                     *ngTemplateOutlet="sortButton; context: { $implicit: 'contributors', label: 'Contributors', icon: icons.contributors, end: true }" />
                 </th>
-                <th scope="col" class="text-right" [attr.aria-sort]="aria.contributors_change">
+                <th scope="col" class="w-24 text-right" [attr.aria-sort]="aria.contributors_change">
                   <ng-container
                     *ngTemplateOutlet="
                       sortButton;
                       context: { $implicit: 'contributors_change', label: 'Change', icon: icons.contributors_change, end: true, srLabel: 'Contributors change' }
                     " />
                 </th>
-                <th scope="col" [attr.aria-sort]="aria.tier">
+                <th scope="col" class="w-44" [attr.aria-sort]="aria.tier">
                   <ng-container *ngTemplateOutlet="sortButton; context: { $implicit: 'tier', label: 'Membership', icon: icons.tier, end: false }" />
                 </th>
               </tr>
@@ -164,7 +164,7 @@
                     @switch (row.nameKind) {
                       @case ('org-lens-link') {
                         <a
-                          class="truncate text-sm font-medium text-gray-900 hover:underline"
+                          class="truncate rounded text-sm font-medium !text-gray-900 hover:!text-gray-900 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                           [routerLink]="row.orgLensLink"
                           [attr.data-testid]="'participating-orgs-row-' + row.participantKey + '-name'">
                           {{ row.name }}

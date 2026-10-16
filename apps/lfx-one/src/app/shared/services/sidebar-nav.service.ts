@@ -21,7 +21,6 @@ import {
   ORG_EASYCLA_PATH,
   ORG_LENS_CLA_M3_ENABLED_FLAG,
   ORG_LENS_ROI_ENABLED_FLAG,
-  PROJECT_PARTICIPATING_ORGS_ENABLED_FLAG,
   SURVEY_LABEL,
   VOTE_LABEL,
 } from '@lfx-one/shared/constants';
@@ -72,8 +71,6 @@ export class SidebarNavService {
   private readonly isMktgOsAgentsEnabled = this.featureFlagService.getBooleanFlag(MKTG_OS_AGENTS_ENABLED_FLAG, false);
   /** Dark-launch gate for the Project/Foundation lens Initiatives entry (#347), matching `crowdfundingAttributionEnabledGuard`. */
   private readonly isCrowdfundingAttributionEnabled = this.featureFlagService.getBooleanFlag(CROWDFUNDING_ATTRIBUTION_STEP_FLAG, false);
-  /** Dark-launch gate for the Project Lens Participating Organizations entry (#2091), matching `projectParticipatingOrgsEnabledGuard`. */
-  private readonly isProjectParticipatingOrgsEnabled = this.featureFlagService.getBooleanFlag(PROJECT_PARTICIPATING_ORGS_ENABLED_FLAG, false);
   /** Pilot gate: decides whether the Communications links point at the embed or at LFX's own pages. */
   private readonly isGatewazeEmbedEnabled = this.featureFlagService.getBooleanFlag(GATEWAZE_EMBED_ENABLED_FLAG, false);
   /** Dark-launch gate for the Org Lens ROI Metrics page; hides its org-lens nav entry when off. */
@@ -160,9 +157,8 @@ export class SidebarNavService {
         const mktgOsItems = this.isMktgOsAgentsEnabled() ? [this.mktgOsAgentsNavItem] : [];
         // Initiatives (#347) is dark-launched and follows canWrite — CF lists a project's initiatives to its writers only.
         const initiativesItems = this.isCrowdfundingAttributionEnabled() && this.projectContextService.canWrite() ? [this.projectInitiativesNavItem] : [];
-        // Participating Organizations (#2091) is dark-launched; shown to every project-lens viewer — the BFF enforces project `viewer`.
-        const participatingOrgsItems = this.isProjectParticipatingOrgsEnabled() ? [this.projectParticipatingOrgsNavItem] : [];
-        const base = [...this.projectLensItems, ...participatingOrgsItems, ...initiativesItems, ...mktgOsItems, this.projectGovernanceSection];
+        // Participating Organizations (#2091) is shown to every project-lens viewer — the BFF enforces project `viewer`.
+        const base = [...this.projectLensItems, this.projectParticipatingOrgsNavItem, ...initiativesItems, ...mktgOsItems, this.projectGovernanceSection];
         const withComms = this.canSeeNewsletters() ? [...base, this.buildProjectCommunicationsSection()] : base;
         // Marketing-only FGA users who are also hybrid personas (e.g. a project role plus a
         // marketing_auditor/campaign_manager grant) land here via getAllowedLensIds()/isHybridPersona
@@ -703,7 +699,7 @@ export class SidebarNavService {
 
   // --- Project — Participating Organizations (#2091) ---
   private readonly projectParticipatingOrgsNavItem: SidebarMenuItem = {
-    label: 'Participating Orgs',
+    label: 'Participating organizations',
     icon: 'fa-light fa-building',
     routerLink: '/project/participating-orgs',
     testId: 'sidebar-project-participating-orgs',
