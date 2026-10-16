@@ -1,6 +1,6 @@
 ---
 title: EasyCLA
-description: View and manage an organization's corporate CLAs in the Organization lens — the list, signing, CLA Managers, the Approved List, contributor acknowledgments, the activity log, and Auto ECLA.
+description: View and manage an organization's corporate CLAs in the Organization lens — the list, signing, CLA Managers, the Approved List, contributor acknowledgments, the activity log, and Auto Acknowledge.
 audience: [all]
 product_area: Organization
 tags: [organization, easycla, cla, ccla, cla-manager, approval-list, signing]
@@ -98,7 +98,7 @@ A corporate CLA has five tabs: **Overview**, **CLA Managers**, **Approval List**
 
 ### What does Overview show?
 
-Overview states whether this organization has signed the agreement, who signed it, when, and whether **Auto ECLA** is on.
+Overview states whether this organization has signed the agreement, who signed it, when, and whether **Auto Acknowledge** is on.
 
 The card heading is the CLA Group name followed by **Signed**, **Not yet signed**, or **Unavailable**. **Unavailable** is the sanctioned state. It is not a second word for "not signed." A sanctioned agreement may already be signed. The heading uses **Unavailable** either way, and the signed date is what tells you a signature exists.
 
@@ -157,11 +157,11 @@ Search uses **Search contributors…**. Each row shows **Name**, **LF Login/GitH
 | **Not Authorized** | The Approved List rule that covered this person was removed. Add the rule back if they should be covered. |
 | **Invalidated**    | A CLA Manager invalidated the acknowledgment on purpose                                                   |
 
-To invalidate an acknowledgment, select **Invalidate** on that row and confirm **Invalidate acknowledgment**. Invalidating does not by itself delete the Approved List rule. The confirmation says whether a matching individual entry should also be removed so the person cannot acknowledge again, and it says **Auto ECLA won't re-add them** once they are invalidated. If they still match a broader rule, such as an email domain or a GitHub org, they can acknowledge again unless that rule is removed too.
+To invalidate an acknowledgment, select **Invalidate** on that row and confirm **Invalidate acknowledgment**. Invalidating does not by itself delete the Approved List rule. The confirmation says whether a matching individual entry should also be removed so the person cannot acknowledge again, and it says **Auto Acknowledge won't re-add them** once they are invalidated. If they still match a broader rule, such as an email domain or a GitHub org, they can acknowledge again unless that rule is removed too.
 
 A signed agreement with no acknowledgments yet says **No contributor acknowledgments yet** and **No employee has acknowledged this agreement yet.** Until the agreement is signed, the tab says **No contributor acknowledgments yet** and explains that people appear here after signing.
 
-In prose, this record is an **employee acknowledgment**. The product still labels the automatic switch **Auto ECLA**. Use that on-screen label when you mean the switch.
+In prose, this record is an **employee acknowledgment**, and the switch that grants it automatically is **Auto Acknowledge**.
 
 ### What does the Activity Log show?
 
@@ -171,16 +171,16 @@ Search uses **Search activity…**. Columns are **Action**, **By**, and **When**
 
 Until the agreement is signed, the tab says **The activity log becomes available once this CLA is signed.**
 
-## What does Auto ECLA do?
+## What does Auto Acknowledge do?
 
-**Auto ECLA** is the switch on Overview that decides whether people who match the Approved List receive an employee acknowledgment automatically.
+**Auto Acknowledge** is the switch on Overview that decides whether people who match the Approved List receive an employee acknowledgment automatically.
 
 - **On** — employees matching the approval list are covered automatically.
 - **Off** — employees matching the approval list still need to individually acknowledge this CLA before they're covered.
 
 The switch is on every signed corporate CLA you can open, so you can see whether it is on. You can change it only when you are a CLA Manager named on that agreement and your access allows the change. It is hidden on the preview of an agreement that has not been signed, because there is no signature to store the setting on yet.
 
-The on-screen label is **Auto ECLA**. That name is what the switch says today.
+The switch is labelled **Auto Acknowledge** on Overview.
 
 ## What does a sanctioned organization look like on EasyCLA?
 
@@ -198,7 +198,7 @@ A control you cannot use is either disabled, with the reason written on the cont
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
 | Add or remove a CLA Manager  | **Add CLA Manager** is disabled when you are not named on this corporate CLA. **Remove** is hidden.                                                                     | `Only a CLA Manager named on this CCLA can add or remove CLA Managers`   |
 | Download the signed document | **Download signed CCLA PDF** is disabled                                                                                                                                | `Only a CLA Manager named on this CCLA can download the signed document` |
-| Change **Auto ECLA**         | The switch is disabled. The sentence under it appears only when you are not on the CLA Manager list. A CLA Manager on the list whose access is denied sees no sentence. | `Only CLA Managers can change this setting.`                             |
+| Change **Auto Acknowledge**  | The switch is disabled. The sentence under it appears only when you are not on the CLA Manager list. A CLA Manager on the list whose access is denied sees no sentence. | `Only CLA Managers can change this setting.`                             |
 | Change the Approval List     | **Add entries**, edit, and delete are absent. If a change is still refused, an error says the sentence below.                                                           | `Only a CLA manager named on this CLA can change its approval list.`     |
 | Invalidate an acknowledgment | **Invalidate** is absent. If a change is still refused, an error says the sentence below.                                                                               | `Only a CLA manager named on this CLA can invalidate acknowledgments`    |
 

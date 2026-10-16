@@ -28,9 +28,9 @@ On an agreement that is not signed yet, identify the initial CLA Manager while s
 
 **We couldn't load your CLAs** is the title for two different failures. **You don't have an EasyCLA role at this organization** means this page has nothing to show you, and **contact support** is there if you need EasyCLA assistance. **Something went wrong fetching this organization's corporate CLAs** means the load failed — refresh the page. The title alone does not say which one you hit. See [Who can see EasyCLA, and who can change a corporate CLA?](../easycla/#who-can-see-easycla-and-who-can-change-a-corporate-cla).
 
-## What does Auto ECLA do?
+## What does Auto Acknowledge do?
 
-**Auto ECLA** is the switch on Overview. On, employees matching the Approved List are covered automatically. Off, those employees still need to individually acknowledge the CLA before they are covered. You can see the switch on any signed corporate CLA you can open. You can change it only when you are a CLA Manager named on that agreement. See [What does Auto ECLA do?](../easycla/#what-does-auto-ecla-do).
+**Auto Acknowledge** is the switch on Overview. On, employees matching the Approved List are covered automatically. Off, those employees still need to individually acknowledge the CLA before they are covered. You can see the switch on any signed corporate CLA you can open. You can change it only when you are a CLA Manager named on that agreement. See [What does Auto Acknowledge do?](../easycla/#what-does-auto-acknowledge-do).
 
 ## How do I sign a corporate CLA?
 
