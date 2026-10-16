@@ -562,7 +562,7 @@ export class OrgEasyclaDetailComponent {
   protected readonly autoEclaDisabled = computed(() => !this.autoEclaWritable() || this.autoEclaPending());
 
   /** Carries the locked sentence whenever it shows, so the reason is not sighted-only. */
-  protected readonly autoEclaAriaLabel = computed(() => (this.autoEclaLocked() ? `Auto ECLA — ${this.autoEclaLockedHint}` : 'Auto ECLA'));
+  protected readonly autoEclaAriaLabel = computed(() => (this.autoEclaLocked() ? `Auto Acknowledge — ${this.autoEclaLockedHint}` : 'Auto Acknowledge'));
 
   /**
    * The current toggle value the template binds to.
@@ -989,8 +989,8 @@ export class OrgEasyclaDetailComponent {
    * is restored to the value shown before the click, which the producer did not change, and the
    * producer's own sentence is shown as an error toast. A 403 body carries the sanctions or ACL refusal upstream wrote. The BFF puts
    * that sentence on `error`, not `message`, so the toast reads both through
-   * `serverAuthoredMessage`. The toast summary names the value that failed to save
-   * ("Couldn't turn Auto ECLA off"). The request is not cancelled when the manager
+   * `serverAuthoredMessage`. The toast summary names the value that failed to save.
+   * The request is not cancelled when the manager
    * leaves the page: unsubscribing would abort a write the producer may already be recording.
    * The running write is tracked per organization and agreement above this page, so it survives
    * leaving and coming back. A late answer updates that agreement's remembered value. The toast is
@@ -1030,7 +1030,7 @@ export class OrgEasyclaDetailComponent {
         if (!this.autoEclaStillHere(target)) return;
         this.messageService.add({
           severity: 'success',
-          summary: written ? 'Auto ECLA turned on.' : 'Auto ECLA turned off.',
+          summary: written ? 'Auto Acknowledge turned on.' : 'Auto Acknowledge turned off.',
         });
       },
       error: (error: HttpErrorResponse) => {
@@ -1038,7 +1038,7 @@ export class OrgEasyclaDetailComponent {
         if (!this.autoEclaStillHere(target)) return;
         this.messageService.add({
           severity: 'error',
-          summary: next ? "Couldn't turn Auto ECLA on" : "Couldn't turn Auto ECLA off",
+          summary: next ? "Couldn't turn Auto Acknowledge on" : "Couldn't turn Auto Acknowledge off",
           detail: serverAuthoredMessage(error, 'Please try again in a moment.'),
         });
       },
