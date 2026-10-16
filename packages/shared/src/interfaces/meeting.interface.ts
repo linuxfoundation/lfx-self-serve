@@ -4,6 +4,7 @@
 import type { MEETING_ALLOWED_VOTING_STATUSES } from '../constants/committees.constants';
 import type { PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS } from '../constants/meeting-registrant.constants';
 import type { MEETING_COMPOSER_SECTIONS, PAST_MEETING_SORT, MEETING_FEATURE_BY_KEY } from '../constants/meeting.constants';
+import type { PUBLIC_ANONYMOUS_PAST_MEETING_KEYS } from '../constants/public-past-meeting.constants';
 import type { ArtifactVisibility, MeetingType, MeetingVisibility, RecurrenceType, CancelOnCommitteeRemoval } from '../enums';
 import type { TagSeverity } from './components.interface';
 import type { MeetingAttachment, PresignAttachmentResponse } from './meeting-attachment.interface';
@@ -1861,13 +1862,19 @@ export type PublicMeetingProject = {
 };
 
 /**
+ * Anonymous full-access past-meeting detail, projected through `PUBLIC_ANONYMOUS_PAST_MEETING_KEYS`.
+ * Fields absent upstream are omitted rather than returned as `undefined`.
+ */
+export type PublicAnonymousPastMeeting = Partial<Pick<PastMeeting, (typeof PUBLIC_ANONYMOUS_PAST_MEETING_KEYS)[number]>>;
+
+/**
  * Response from public past meeting endpoint
  * @description Returns meeting details with tiered access — full_access indicates whether
  * the user has permission to view enrichment data (summary, recording, attachments)
  * via the existing authenticated endpoints
  */
 export interface PublicPastMeetingResponse {
-  meeting: PastMeeting;
+  meeting: PastMeeting | PublicAnonymousPastMeeting;
   project: PublicMeetingProject;
   full_access: boolean;
 }
