@@ -363,15 +363,17 @@ export const CAMPAIGN_SETTINGS_READ_FALLBACK = 'The live settings could not be r
 // ---------------------------------------------------------------------------
 
 /**
- * The Monitor tables whose rows offer actions: LinkedIn, Reddit, Meta and Microsoft Ads (Google Ads is
- * another owner's lane). X shares Microsoft's report-backed panel but is not here: its toggle and
- * budget levers are not offered yet.
+ * The Monitor tables whose rows offer actions: LinkedIn, Reddit, Meta, Microsoft Ads and X (Google Ads
+ * is another owner's lane). X shares Microsoft's report-backed panel. Its rows are adopted ones, since X
+ * create is off, so the act dialog withholds Resume (`PAUSE_ONLY_CAMPAIGN_PLATFORMS`) and offers a
+ * daily budget only (`DAILY_ONLY_BUDGET_CAMPAIGN_PLATFORMS`).
  */
 export const CAMPAIGN_MONITOR_ACT_PLATFORMS: ReadonlySet<CampaignMonitorActPlatform> = new Set<CampaignMonitorActPlatform>([
   'linkedin-ads',
   'reddit-ads',
   'meta-ads',
   'microsoft-ads',
+  'twitter-ads',
 ]);
 
 /** The act dialog's header per lever, and the Monitor row button's visible text. */

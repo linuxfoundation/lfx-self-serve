@@ -295,9 +295,9 @@ export class MonitoringTabComponent implements OnInit {
     meta: `Retry loading ${this.paidPanelLabel('meta')} campaigns`,
   };
   protected readonly reportBackedRetryLabel = computed(() => `Retry loading ${this.reportBackedLabel()} campaigns`);
-  /** Only Microsoft's rows offer actions: X shares the panel, but its toggle and budget levers are not offered yet. */
-  protected readonly reportBackedActPlatform = computed<CampaignMonitorActPlatform | null>(() =>
-    this.reportBackedPanel() === 'microsoft' ? 'microsoft-ads' : null
+  /** The act platform of the report-backed panel's rows: Microsoft's or X's, whichever the panel shows. */
+  protected readonly reportBackedActPlatform = computed<CampaignMonitorActPlatform>(() =>
+    this.reportBackedPanel() === 'twitter' ? 'twitter-ads' : 'microsoft-ads'
   );
   protected readonly reportBackedFreshness: Signal<string | null> = this.initReportBackedFreshness();
   protected readonly hubSpotFreshness: Signal<string | null> = this.initHubSpotFreshness();
