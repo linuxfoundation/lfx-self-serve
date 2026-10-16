@@ -37,6 +37,7 @@ import type {
   MembershipTierClass,
   ProjectParticipatingOrgRowVm,
   ProjectParticipatingOrgsExportFilters,
+  ProjectParticipatingOrgsOrgLensLinksAnswer,
   ProjectParticipatingOrgsPage,
   ProjectParticipatingOrgsQuery,
   ProjectParticipatingOrgsRange,
@@ -49,9 +50,9 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, combineLatest, concat, debounceTime, distinctUntilChanged, filter, finalize, map, of, switchMap, take, tap } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, of, switchMap, take, tap } from 'rxjs';
 
-import { decorateParticipatingOrgRow } from './participating-orgs.util';
+import { decorateParticipatingOrgRow, linksKey, memberAccountIdsOf } from './participating-orgs.util';
 import { ParticipatingOrgsService } from './services/participating-orgs.service';
 
 /**
@@ -135,8 +136,17 @@ export class ParticipatingOrgsComponent {
 
   protected readonly summary: Signal<ProjectParticipatingOrgsSummary | null> = this.initSummary();
   protected readonly page: Signal<ProjectParticipatingOrgsPage> = this.initPage();
-  /** Which of the shown page's members the viewer can open in Org Lens; null while that is still loading, and on the server. */
-  private readonly readableAccountIds: Signal<ReadonlySet<string> | null> = this.initReadableAccountIds();
+  /** The shown page's canonical member account ids, sorted, so a re-sort of the same members compares equal. */
+  private readonly memberAccountIds = computed(() => memberAccountIdsOf(this.page()), { equal: (a, b) => a.join(',') === b.join(',') });
+  private readonly linksAnswer: Signal<ProjectParticipatingOrgsOrgLensLinksAnswer | null> = this.initLinksAnswer();
+  /**
+   * Which of the shown page's members the viewer can open in Org Lens; null while that is still loading (and on the
+   * server). An answer only counts for the member set it was asked about, so a new page never borrows the last one's.
+   */
+  private readonly readableAccountIds: Signal<ReadonlySet<string> | null> = computed(() => {
+    const answer = this.linksAnswer();
+    return answer && answer.key === linksKey(this.slug(), this.memberAccountIds()) ? answer.readable : null;
+  });
 
   protected readonly viewState: Signal<ProjectParticipatingOrgsViewState> = computed(() => this.initViewState());
   protected readonly rows: Signal<ProjectParticipatingOrgRowVm[]> = computed(() => {
@@ -293,19 +303,20 @@ export class ParticipatingOrgsComponent {
 
   /**
    * Org Lens links are per caller, so they load after the shared, cacheable page: the rows render first and member
-   * names become links when the answer arrives. Re-asked only when the page's member set changes.
+   * names become links when the answer arrives. Re-asked only when the page's member set changes (a re-sort of the
+   * same members keeps its links). Only canonical ids are sent: Org Lens cannot open any other, and one malformed
+   * warehouse id must not get the whole page's request rejected.
    */
-  private initReadableAccountIds(): Signal<ReadonlySet<string> | null> {
+  private initLinksAnswer(): Signal<ProjectParticipatingOrgsOrgLensLinksAnswer | null> {
     return toSignal(
-      toObservable(
-        computed(() => ({
-          slug: this.slug(),
-          accountIds: [...new Set(this.page().rows.flatMap((row) => (row.isMember && row.accountId ? [row.accountId] : [])))],
-        }))
-      ).pipe(
+      toObservable(computed(() => ({ slug: this.slug(), accountIds: this.memberAccountIds() }))).pipe(
         filter(({ slug }) => slug.length > 0),
-        distinctUntilChanged((a, b) => a.slug === b.slug && a.accountIds.join(',') === b.accountIds.join(',')),
-        switchMap(({ slug, accountIds }) => concat(of(null), this.dataService.getOrgLensReadableAccountIds(slug, accountIds)))
+        distinctUntilChanged((a, b) => linksKey(a.slug, a.accountIds) === linksKey(b.slug, b.accountIds)),
+        switchMap(({ slug, accountIds }) =>
+          this.dataService
+            .getOrgLensReadableAccountIds(slug, accountIds)
+            .pipe(map((readable) => (readable === null ? null : { key: linksKey(slug, accountIds), readable })))
+        )
       ),
       { initialValue: null }
     );

@@ -2,18 +2,31 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  ORG_ACCOUNT_ID_PATTERN,
   PROJECT_PARTICIPATING_ORGS_CHANGE_TONE_CLASSES,
   PROJECT_PARTICIPATING_ORGS_TIER_BADGE_CLASSES,
   PROJECT_PARTICIPATING_ORGS_TIER_BADGE_DEFAULT_CLASS,
 } from '@lfx-one/shared/constants';
 import type {
   ProjectParticipatingOrg,
+  ProjectParticipatingOrgsPage,
   ProjectParticipatingOrgChangeTone,
   ProjectParticipatingOrgMetricVm,
   ProjectParticipatingOrgNameKind,
   ProjectParticipatingOrgRowVm,
 } from '@lfx-one/shared/interfaces';
 import { orgUrlSegment } from '@lfx-one/shared/utils';
+
+/** A page's canonical member account ids, deduplicated and sorted, so the same members in another order compare equal. */
+export function memberAccountIdsOf(page: ProjectParticipatingOrgsPage): string[] {
+  const ids = page.rows.flatMap((row) => (row.isMember && row.accountId && ORG_ACCOUNT_ID_PATTERN.test(row.accountId) ? [row.accountId] : []));
+  return [...new Set(ids)].sort();
+}
+
+/** Identity of one Org Lens links question: the project and the member set asked about. */
+export function linksKey(slug: string, accountIds: readonly string[]): string {
+  return `${slug}|${accountIds.join(',')}`;
+}
 
 /**
  * Decorate a wire row for the table. Only a member the viewer can open in Org Lens (`readableAccountIds`) gets a

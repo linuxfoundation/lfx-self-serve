@@ -105,6 +105,12 @@ export interface ProjectParticipatingOrgsOrgLensLinksResponse {
   readableAccountIds: string[];
 }
 
+/** The viewer's Org Lens access for one page's member set (`key`), so it is never applied to another page's rows. */
+export interface ProjectParticipatingOrgsOrgLensLinksAnswer {
+  key: string;
+  readable: ReadonlySet<string>;
+}
+
 /** Filters the CSV export takes: the list query without paging. */
 export type ProjectParticipatingOrgsExportFilters = Omit<ProjectParticipatingOrgsQuery, 'pageSize' | 'offset'>;
 

@@ -192,6 +192,35 @@ describe('ParticipatingOrgsComponent', () => {
     expect(query(`participating-orgs-row-${SYNTHETIC_ORG_ACCOUNT_ID}-name`)?.tagName).toBe('A');
   });
 
+  it('asks for links once per member set: a re-sort keeps them, and a malformed id is left out of the request', async () => {
+    const second = org({ participantKey: SYNTHETIC_SECOND_ORG_ACCOUNT_ID, accountId: SYNTHETIC_SECOND_ORG_ACCOUNT_ID });
+    const malformed = org({ participantKey: '001SHORT', accountId: '001SHORT' });
+    getPage.mockReturnValue(of(page([org(), second, malformed])));
+    await render();
+    expect(getLinks).toHaveBeenCalledExactlyOnceWith(PROJECT_SLUG, [SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_SECOND_ORG_ACCOUNT_ID].sort());
+
+    getPage.mockReturnValue(of(page([second, malformed, org()])));
+    fixture.componentInstance['onSort']('name');
+    await settle();
+
+    expect(getLinks).toHaveBeenCalledOnce();
+    expect(query(`participating-orgs-row-${SYNTHETIC_ORG_ACCOUNT_ID}-name`)?.tagName).toBe('A');
+  });
+
+  it('never applies the previous page’s links answer to a new page’s members', async () => {
+    await render();
+    expect(query(`participating-orgs-row-${SYNTHETIC_ORG_ACCOUNT_ID}-name`)?.tagName).toBe('A');
+
+    getLinks.mockReturnValue(new Subject<ReadonlySet<string>>());
+    getPage.mockReturnValue(of(page([org({ participantKey: SYNTHETIC_SECOND_ORG_ACCOUNT_ID, accountId: SYNTHETIC_SECOND_ORG_ACCOUNT_ID })])));
+    fixture.componentInstance['offset'].set(10);
+    await settle();
+
+    const name = query(`participating-orgs-row-${SYNTHETIC_SECOND_ORG_ACCOUNT_ID}-name`);
+    expect(name?.tagName).toBe('SPAN');
+    expect(name?.getAttribute('role')).toBeNull();
+  });
+
   it('keeps the current rows on screen, marked busy, while the next page loads', async () => {
     await render();
     const next = new Subject<ProjectParticipatingOrgsPage>();

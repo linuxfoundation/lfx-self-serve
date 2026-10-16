@@ -62,10 +62,18 @@ export class ProjectParticipatingOrgsService {
 
   /**
    * Tiles and tab counts; null when the project has no code activity in the range. Shared-cached per
-   * (project, range): the summary carries no per-caller data and the gate runs before every read.
+   * (project, range), wrapped so an empty range is a cache hit too: the summary carries no per-caller
+   * data and the gate runs before every read.
    */
   public async getSummary(req: Request, slug: string, range: ProjectParticipatingOrgsRange): Promise<ProjectParticipatingOrgsSummary | null> {
-    return withProjectParticipatingOrgsCache(slug, 'summary', [range], () => this.fetchSummary(req, slug, range), isSummary);
+    const entry = await withProjectParticipatingOrgsCache(
+      slug,
+      'summary',
+      [range],
+      async () => ({ summary: await this.fetchSummary(req, slug, range) }),
+      isSummaryEntry
+    );
+    return entry.summary;
   }
 
   /**
@@ -291,9 +299,10 @@ function toNullableNumber(value: unknown): number | null {
   return value === null || value === undefined ? null : Number(value);
 }
 
-function isSummary(value: unknown): boolean {
-  const summary = value as Partial<ProjectParticipatingOrgsSummary> | null;
-  return !!summary && typeof summary.projectSlug === 'string' && typeof summary.orgsCount === 'number' && typeof summary.range === 'string';
+function isSummaryEntry(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || !('summary' in value)) return false;
+  const summary = (value as { summary: Partial<ProjectParticipatingOrgsSummary> | null }).summary;
+  return summary === null || (typeof summary.projectSlug === 'string' && typeof summary.orgsCount === 'number' && typeof summary.range === 'string');
 }
 
 function isPage(value: unknown): boolean {
