@@ -96,8 +96,7 @@ export class NavTooltipDirective {
     }
   }
 
-  @HostListener('document:keydown.escape')
-  protected onEscape(): void {
+  private onEscape(): void {
     const focusInside = !!this.tooltip?.contains(this.document.activeElement);
     this.hide();
     if (focusInside) this.host.nativeElement.focus();
@@ -154,6 +153,13 @@ export class NavTooltipDirective {
       this.renderer.setAttribute(tooltip, 'aria-hidden', 'true');
       this.renderer.appendChild(tooltip, this.buildTitle(label));
     }
+
+    // Escape closes the card; listening only while it is open keeps idle triggers off the document.
+    this.unlisten.push(
+      this.renderer.listen(this.document, 'keydown', (event: KeyboardEvent) => {
+        if (event.key === 'Escape') this.onEscape();
+      })
+    );
 
     // Close whichever other navbar tooltip is still open (e.g. one lingering in its hide delay).
     if (NavTooltipDirective.active && NavTooltipDirective.active !== this) NavTooltipDirective.active.hide();
