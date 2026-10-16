@@ -38,13 +38,15 @@ describe('countVotesByStatus', () => {
   it('buckets each recognized status, normalizing legacy mixed-case values', () => {
     const votes = [{ status: PollStatus.ACTIVE }, { status: 'AcTiVe' }, { status: PollStatus.DISABLED }, { status: 'ENDED' }, { status: PollStatus.ENDED }];
 
-    expect(countVotesByStatus(votes as { status: PollStatus }[])).toEqual({ all: 5, active: 2, disabled: 1, ended: 2 });
+    // @ts-expect-error Mixed-case legacy strings intentionally violate the canonical status enum.
+    expect(countVotesByStatus(votes)).toEqual({ all: 5, active: 2, disabled: 1, ended: 2 });
   });
 
   it('counts an unrecognized or missing status toward all only', () => {
     const votes = [{ status: 'unrecognized' }, { status: undefined }, { status: PollStatus.ACTIVE }];
 
-    expect(countVotesByStatus(votes as unknown as { status: PollStatus }[])).toEqual({ all: 3, active: 1, disabled: 0, ended: 0 });
+    // @ts-expect-error Unknown and missing statuses intentionally violate the required enum contract.
+    expect(countVotesByStatus(votes)).toEqual({ all: 3, active: 1, disabled: 0, ended: 0 });
   });
 });
 
