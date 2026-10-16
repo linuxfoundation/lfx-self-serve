@@ -35,8 +35,8 @@ export function decorateParticipatingOrgRow(row: ProjectParticipatingOrg, founda
     membershipBadgeClass: row.isMember
       ? ((tier && PROJECT_PARTICIPATING_ORGS_TIER_BADGE_CLASSES[tier]) ?? PROJECT_PARTICIPATING_ORGS_TIER_BADGE_DEFAULT_CLASS)
       : null,
-    commits: metric(row.commits, row.commitsPrev),
-    contributors: metric(row.contributors, row.contributorsPrev),
+    commits: metric(row.commits, row.commitsPrev, row.commitsChange),
+    contributors: metric(row.contributors, row.contributorsPrev, row.contributorsChange),
   };
 }
 
@@ -46,17 +46,18 @@ function nameKind(row: ProjectParticipatingOrg, linked: boolean): ProjectPartici
   return 'plain';
 }
 
-/** Whole-percent change against the previous window: no comparison for All Time (`prev` null) or zero-to-zero; "New" from zero. */
-function metric(value: number, prev: number | null): ProjectParticipatingOrgMetricVm {
-  const [changeLabel, changeTone] = change(value, prev);
+/** Whole-percent change from the modeled fraction; "New" from a zero baseline, "—" with no comparison (All Time, zero-to-zero). */
+function metric(value: number, prev: number | null, fraction: number | null): ProjectParticipatingOrgMetricVm {
+  const [changeLabel, changeTone] = change(value, prev, fraction);
   return { value, changeLabel, changeTone, changeClass: PROJECT_PARTICIPATING_ORGS_CHANGE_TONE_CLASSES[changeTone] };
 }
 
-function change(value: number, prev: number | null): [string, ProjectParticipatingOrgChangeTone] {
-  if (prev === null || (prev === 0 && value === 0)) return ['—', 'none'];
-  if (prev === 0) return ['New', 'new'];
+function change(value: number, prev: number | null, fraction: number | null): [string, ProjectParticipatingOrgChangeTone] {
+  if (fraction === null) {
+    return prev === 0 && value > 0 ? ['New', 'new'] : ['—', 'none'];
+  }
   // `+ 0` folds a rounded -0 into 0 so a tiny drop never reads "-0%".
-  const percent = Math.round(((value - prev) / prev) * 100) + 0;
+  const percent = Math.round(fraction * 100) + 0;
   if (percent > 0) return [`+${percent}%`, 'positive'];
   if (percent < 0) return [`${percent}%`, 'negative'];
   return ['0%', 'neutral'];

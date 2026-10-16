@@ -17,8 +17,10 @@ export interface ProjectParticipatingOrgsRow {
   TIER_RANK: number | null;
   COMMITS: number | null;
   COMMITS_PREV: number | null;
+  COMMITS_CHANGE: number | string | null;
   CONTRIBUTORS: number | null;
   CONTRIBUTORS_PREV: number | null;
+  CONTRIBUTORS_CHANGE: number | string | null;
 }
 
 /**

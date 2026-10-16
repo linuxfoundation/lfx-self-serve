@@ -68,8 +68,10 @@ const member: ProjectParticipatingOrg = {
   membershipTierClass: 'Gold',
   commits: 10,
   commitsPrev: 4,
+  commitsChange: 1.5,
   contributors: 3,
   contributorsPrev: null,
+  contributorsChange: null,
   canOpenOrgLens: false,
 };
 

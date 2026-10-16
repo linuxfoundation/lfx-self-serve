@@ -64,9 +64,13 @@ export interface ProjectParticipatingOrg {
   commits: number;
   /** Commits in the equal-length previous window; null for `all`. */
   commitsPrev: number | null;
+  /** Change against the previous window as a fraction (0.3 = +30%), modeled in lf-dbt; null for `all` or a zero baseline. */
+  commitsChange: number | null;
   contributors: number;
   /** Contributors in the equal-length previous window; null for `all`. */
   contributorsPrev: number | null;
+  /** Change against the previous window as a fraction, modeled in lf-dbt; null for `all` or a zero baseline. */
+  contributorsChange: number | null;
   /**
    * True only for a member row whose company the caller can open in Org Lens
    * (`b2b_org#auditor`, the Org Lens gate). Per-caller: never cached across users.

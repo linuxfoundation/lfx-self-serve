@@ -66,8 +66,10 @@ function org(overrides: Partial<ProjectParticipatingOrg> = {}): ProjectParticipa
     membershipTierClass: 'Gold',
     commits: 120,
     commitsPrev: 100,
+    commitsChange: 0.2,
     contributors: 8,
     contributorsPrev: 0,
+    contributorsChange: null,
     canOpenOrgLens: true,
     ...overrides,
   };
@@ -205,8 +207,26 @@ describe('ParticipatingOrgsComponent', () => {
     getPage.mockReturnValue(
       of(
         page([
-          org({ participantKey: 'cdev:up', accountId: null, commits: 134, commitsPrev: 100, contributors: 8, contributorsPrev: 0 }),
-          org({ participantKey: 'cdev:down', accountId: null, commits: 92, commitsPrev: 100, contributors: 5, contributorsPrev: 5 }),
+          org({
+            participantKey: 'cdev:up',
+            accountId: null,
+            commits: 134,
+            commitsPrev: 100,
+            commitsChange: 0.34,
+            contributors: 8,
+            contributorsPrev: 0,
+            contributorsChange: null,
+          }),
+          org({
+            participantKey: 'cdev:down',
+            accountId: null,
+            commits: 92,
+            commitsPrev: 100,
+            commitsChange: -0.08,
+            contributors: 5,
+            contributorsPrev: 5,
+            contributorsChange: 0,
+          }),
         ])
       )
     );
@@ -220,7 +240,9 @@ describe('ParticipatingOrgsComponent', () => {
     expect(change('cdev:down', 'commits')?.classList).toContain('text-red-600');
     expect(change('cdev:down', 'contributors')?.textContent?.trim()).toBe('0%');
 
-    getPage.mockReturnValue(of(page([org({ participantKey: 'cdev:up', accountId: null, commitsPrev: null, contributorsPrev: null })])));
+    getPage.mockReturnValue(
+      of(page([org({ participantKey: 'cdev:up', accountId: null, commitsPrev: null, commitsChange: null, contributorsPrev: null, contributorsChange: null })]))
+    );
     fixture.componentInstance['rangeForm'].controls.range.setValue('all');
     await settle();
 

@@ -49,8 +49,10 @@ function row(overrides: Record<string, unknown> = {}) {
     MEMBERSHIP_TIER_CLASS: 'Gold',
     COMMITS: 120,
     COMMITS_PREV: 80,
+    COMMITS_CHANGE: '0.500000',
     CONTRIBUTORS: 9,
     CONTRIBUTORS_PREV: null,
+    CONTRIBUTORS_CHANGE: null,
     ...overrides,
   };
 }
@@ -119,12 +121,12 @@ describe('ProjectParticipatingOrgsService.getPage', () => {
     expect(sql).toContain('ORDER BY commits DESC NULLS LAST');
   });
 
-  it.each(['asc', 'desc'] as const)('sorts on the %% change with no-baseline rows last (%s)', async (dir) => {
+  it.each(['asc', 'desc'] as const)('sorts the change keys on the modeled change columns, no-baseline rows last (%s)', async (dir) => {
     await service.getPage(req, 's', { ...baseQuery, sort: 'commits_change', dir });
-    expect(lastCall()[0]).toContain(`ORDER BY (commits - commits_prev) / NULLIF(commits_prev, 0) ${dir.toUpperCase()} NULLS LAST`);
+    expect(lastCall()[0]).toContain(`ORDER BY commits_change ${dir.toUpperCase()} NULLS LAST`);
 
     await service.getPage(req, 's', { ...baseQuery, sort: 'contributors_change', dir });
-    expect(lastCall()[0]).toContain(`ORDER BY (contributors - contributors_prev) / NULLIF(contributors_prev, 0) ${dir.toUpperCase()} NULLS LAST`);
+    expect(lastCall()[0]).toContain(`ORDER BY contributors_change ${dir.toUpperCase()} NULLS LAST`);
   });
 
   it('trims warehouse names, falling back to the row key when nothing is left', async () => {
@@ -161,8 +163,10 @@ describe('ProjectParticipatingOrgsService.getPage', () => {
           membershipTierClass: 'Gold',
           commits: 120,
           commitsPrev: 80,
+          commitsChange: 0.5,
           contributors: 9,
           contributorsPrev: null,
+          contributorsChange: null,
           canOpenOrgLens: false,
         },
       ],

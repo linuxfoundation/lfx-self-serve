@@ -33,19 +33,20 @@ import type {
 import type { Request } from 'express';
 
 const ORG_COLUMNS = `participant_key, account_id, participant_name, participant_logo_url, is_unidentified, is_member,
-          membership_tier_class, tier_rank, commits, commits_prev, contributors, contributors_prev`;
+          membership_tier_class, tier_rank, commits, commits_prev, commits_change, contributors, contributors_prev,
+          contributors_change`;
 
 // Allowlisted ORDER BY expressions; request input only ever selects a key, never reaches the SQL.
 // `tier` ranks members only, so non-members land last in both directions. The `*_change` keys sort on the
-// % change against the previous window; with no previous window (All Time) or a zero baseline (a new
-// company) the change is NULL and sorts last. Names are trimmed: warehouse names can carry leading spaces.
+// change columns modeled in lf-dbt (NULL for All Time or a zero baseline, so those rows sort last).
+// Names are trimmed: warehouse names can carry leading spaces.
 const SORT_EXPRESSIONS: Record<ProjectParticipatingOrgsSortField, (prefix: string) => string> = {
   name: (p) => `LOWER(TRIM(${p}participant_name))`,
   tier: (p) => `CASE WHEN ${p}is_member THEN ${p}tier_rank END`,
   commits: (p) => `${p}commits`,
-  commits_change: (p) => `(${p}commits - ${p}commits_prev) / NULLIF(${p}commits_prev, 0)`,
+  commits_change: (p) => `${p}commits_change`,
   contributors: (p) => `${p}contributors`,
-  contributors_change: (p) => `(${p}contributors - ${p}contributors_prev) / NULLIF(${p}contributors_prev, 0)`,
+  contributors_change: (p) => `${p}contributors_change`,
 };
 
 const SORT_DIRECTIONS: Record<ProjectParticipatingOrgsSortDirection, string> = { asc: 'ASC', desc: 'DESC' };
@@ -265,8 +266,10 @@ function mapOrg(row: ProjectParticipatingOrgsRow, readableAccountIds: Set<string
     membershipTierClass: isMember ? ((row.MEMBERSHIP_TIER_CLASS as MembershipTierClass | null) ?? null) : null,
     commits: Number(row.COMMITS ?? 0),
     commitsPrev: toNullableNumber(row.COMMITS_PREV),
+    commitsChange: toNullableNumber(row.COMMITS_CHANGE),
     contributors: Number(row.CONTRIBUTORS ?? 0),
     contributorsPrev: toNullableNumber(row.CONTRIBUTORS_PREV),
+    contributorsChange: toNullableNumber(row.CONTRIBUTORS_CHANGE),
     canOpenOrgLens: isMember && accountId !== null && readableAccountIds.has(accountId),
   };
 }
