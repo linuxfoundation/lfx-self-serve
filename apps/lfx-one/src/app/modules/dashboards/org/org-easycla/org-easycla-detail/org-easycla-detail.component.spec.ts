@@ -4089,7 +4089,7 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     expect(targets.length).toBe(1);
     expect((targets[0] as HTMLElement).tagName).toBe('INPUT');
     const link = byTestId(fixture, 'org-easycla-detail-auto-ecla-learn-more') as HTMLAnchorElement;
-    expect(link.getAttribute('href')).toBe('/docs');
+    expect(link.getAttribute('href')).toBe('/docs/organization/easycla#what-does-auto-acknowledge-do');
     expect(link.textContent?.trim()).toBe('Learn more about Auto ECLA →');
   });
 

@@ -150,6 +150,15 @@ describe('OrgEasyclaComponent', () => {
       expect(byTestId(fixture, 'org-easycla-title')?.textContent).toContain('Vertex Robotics');
     });
 
+    it('links the page to the EasyCLA documentation', async () => {
+      const fixture = await render();
+
+      const link = byTestId(fixture, 'org-easycla-docs-link') as HTMLAnchorElement;
+      expect(link.getAttribute('href')).toBe('/docs/organization/easycla');
+      expect(link.getAttribute('target')).toBe('_blank');
+      expect(link.textContent?.trim()).toBe('Learn more about EasyCLA →');
+    });
+
     it('falls back to the bare title before an account resolves', async () => {
       selectedAccount.set(null);
 
