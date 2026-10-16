@@ -34,8 +34,11 @@ On an agreement that is not signed yet, identify the initial CLA Manager while s
 
 ## How do I sign a corporate CLA?
 
-Select **Sign CLA** on EasyCLA, choose the CLA Group, confirm you are authorized to be a CLA Manager, complete **Authorization Confirmation** and **Compliance Confirmation**, then select **Review and Sign CCLA**. That opens DocuSign. Self Serve does not run the ceremony. If someone else must sign, select **I am not authorized** and send the request to their email. See [How do I sign a corporate CLA?](../easycla/#how-do-i-sign-a-corporate-cla).
+You sign a corporate CLA (CCLA) from **Sign CLA** on EasyCLA, either yourself in DocuSign or by sending it to the person who should sign. Select **Sign CLA**, choose the CLA Group, and, if asked, confirm you are authorized to be a CLA Manager. On **Confirm Authorization to Sign the CLA**, pick one branch:
+
+1. To sign yourself, complete **Authorization Confirmation** and **Compliance Confirmation**, select **Continue**, then **Review and Sign CCLA**. That opens DocuSign. Self Serve does not run the ceremony.
+2. To have someone else sign, select **I am not authorized** without completing the confirmations. In **Identify who should sign**, enter their name and email and select **Send Signature Request Email**. See [How do I sign a corporate CLA?](../easycla/#how-do-i-sign-a-corporate-cla).
 
 ## What does a sanctioned organization look like?
 
-A sanctioned organization has no status pill, and the Overview heading ends with **Unavailable**. There is no banner on the page. Signing and changes are refused. A refused change names the Office of Foreign Assets Control (OFAC) and says **This organization is on the OFAC list. Contact support.** See [What does a sanctioned organization look like on EasyCLA?](../easycla/#what-does-a-sanctioned-organization-look-like-on-easycla).
+A sanctioned organization has no status pill, and the Overview heading ends with **Unavailable**. There is no banner on the page. Signing and changes are refused. Answering the CLA Manager question while signing for that organization shows **Your organization cannot sign this CLA at this time. Contact support for more information.** Any other refused step shows an error when you try it. See [What does a sanctioned organization look like on EasyCLA?](../easycla/#what-does-a-sanctioned-organization-look-like-on-easycla).

@@ -60,7 +60,7 @@ Each card shows:
 - **Signed by** the signing entity, when that entity differs from the organization and the agreement is signed. Two cards can share a CLA Group name when the organization signed under more than one entity.
 - A coverage chip. One project is named on its own and opens nothing. Several projects show the foundation name, when there is one, and a **Covers N projects** chip that opens the project list.
 - A **Signed** pill when the agreement is signed. A sanctioned organization has no status pill on the card. See [What does a sanctioned organization look like on EasyCLA?](#what-does-a-sanctioned-organization-look-like-on-easycla).
-- A count of **approval entries** (the rules on the Approved List) and a count of **CLA Managers**. A count the page could not read shows as an em dash, not as zero. Zero means the page did read the count and it is zero. There is no separate "needs a CLA Manager" flag on the card.
+- A count of **approval entries** (the rules on the Approved List) and a count of **CLA Managers**. An approval-entry count the page could not read shows as an em dash, not as zero, so a zero approval-entry count means the page read it and it is zero. A CLA Manager count the page could not read shows as zero, so zero CLA Managers on the card is not proof there are none. The **CLA Managers** tab lists the managers themselves. There is no separate "needs a CLA Manager" flag on the card.
 
 Search uses the box labeled **Search CLAs…**. **Previous** and **Next** move between pages of cards. A search with no hits says **No CLAs match your search**. An organization with no signed corporate CLAs shows a title made of the organization name plus **hasn't signed any CLAs yet**, and points you at **Sign CLA**.
 
@@ -75,9 +75,11 @@ Signing a corporate CLA starts on EasyCLA and finishes in DocuSign. Self Serve p
 1. On EasyCLA, select **Sign CLA**.
 2. In **Sign a CLA**, search for the project, CLA Group, or repository, then select **Continue to sign**.
 3. On the agreement, select **Start the CLA process**. If you are not already the initial CLA Manager, the page asks **Are you authorized to be a CLA Manager for your organization?** **Yes** continues as you. **No** asks you to **Identify CLA Manager** — a name and email for the person at your company who will be the CLA Manager. That person needs an LF Login before they can become the designee.
-4. On **Confirm Authorization to Sign the CLA**, complete **Authorization Confirmation** and **Compliance Confirmation**, then select **Continue**. Compliance Confirmation is the export-control and sanctions statement on that screen, including the Office of Foreign Assets Control (OFAC) condition. The statement stays on that screen. This article does not repeat it.
-5. If you are not the person who should sign, select **I am not authorized**. **Identify who should sign** asks for the signatory's name and email and sends **Send Signature Request Email**. The form does not ask for an LF Login. You remain the initial CLA Manager once they sign.
-6. When the agreement is ready, the screen says **Review CCLA** and offers **Review and Sign CCLA**. That opens DocuSign. After you return, the page may say **Confirming your signature with EasyCLA. This can take a few seconds.**
+4. **Confirm Authorization to Sign the CLA** offers **Cancel**, **I am not authorized**, and **Continue**. Choose the branch that fits:
+   - **You sign it yourself.** Complete **Authorization Confirmation** and **Compliance Confirmation**, then select **Continue**. **Continue** stays disabled until both are complete. Compliance Confirmation is the export-control and sanctions statement on that screen, including the Office of Foreign Assets Control (OFAC) condition. The statement stays on that screen. This article does not repeat it.
+   - **Someone else signs it.** Select **I am not authorized**. You do not complete either confirmation for this branch.
+5. If you selected **Continue**, the screen says **Review CCLA** and offers **Review and Sign CCLA**. That opens DocuSign. After you return, the page may say **Confirming your signature with EasyCLA. This can take a few seconds.**
+6. If you selected **I am not authorized**, **Identify who should sign** asks for the signatory's name and email. Select **Send Signature Request Email**. The form does not ask for an LF Login. You remain the initial CLA Manager once they sign.
 
 Some rows in the picker stay visible and still cannot be signed from here:
 
@@ -120,7 +122,7 @@ To add someone:
 
 The person needs an LF Login, and an LF username, before they can be added. The page says so when either is missing. Someone who is already a CLA Manager for this CLA cannot be added again.
 
-To remove someone, select **Remove** on their row and confirm. You can remove yourself. The last CLA Manager cannot be removed: the page says **A CLA must always have at least one CLA Manager, so this person cannot be removed. Add another CLA Manager first.**
+To remove someone, select **Remove** on their row and confirm. You can remove yourself. The last CLA Manager cannot be removed: **Remove** is disabled on that row, with **A CLA must always have at least one CLA Manager.** under it. Add another CLA Manager first.
 
 On an agreement that is already signed and lists no CLA Managers, **Add CLA Manager** stays disabled. Only someone already named on the agreement can add another, so the first manager cannot be added from this page. That record needs EasyCLA support. On an agreement that is not signed yet, the initial CLA Manager is identified during [signing](#how-do-i-sign-a-corporate-cla), not from this tab.
 
@@ -186,21 +188,21 @@ The switch is labelled **Auto Acknowledge** on Overview.
 
 A sanctioned organization is shown as unavailable: the card has no status pill, and the Overview heading ends with **Unavailable**. EasyCLA does not show a standing banner on the page.
 
-Signing that organization, and changing its corporate CLA, is refused. A refused change names the Office of Foreign Assets Control (OFAC) and says **This organization is on the OFAC list. Contact support.** That sentence is the product's refusal. It appears when you try a change, not as a banner above the page.
+Signing that organization, and changing its corporate CLA, is refused. If you answer **Are you authorized to be a CLA Manager for your organization?** while signing for that organization, the error says **Your organization cannot sign this CLA at this time. Contact support for more information.** A refusal at any other step is an error shown when you try that step. Neither is a banner above the page.
 
-**Unavailable** does not tell you whether a signature already exists. A sanctioned agreement that was signed still shows its signed date, its CLA Managers, and **Download signed CCLA PDF** when you are allowed to download. An agreement that was never signed does not offer the download, and Overview does not walk you through how to start signing.
+**Unavailable** does not tell you whether a signature already exists. A sanctioned agreement that was signed still shows its signed date, its CLA Managers, and **Download signed CCLA PDF**, which works when you are a CLA Manager named on that agreement. An agreement that was never signed does not offer the download, and Overview does not walk you through how to start signing.
 
 ## Why is a control missing or disabled?
 
-A control you cannot use is either disabled, with the reason written on the control, or absent, with the reason shown only if a change is still refused.
+A control you cannot use is usually disabled or absent. The table shows what you see for each one, and the sentence the page uses when it shows one.
 
-| What you tried               | What you see                                                                                                                                                            | The words                                                                |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| Add or remove a CLA Manager  | **Add CLA Manager** is disabled when you are not named on this corporate CLA. **Remove** is hidden.                                                                     | `Only a CLA Manager named on this CCLA can add or remove CLA Managers`   |
-| Download the signed document | **Download signed CCLA PDF** is disabled                                                                                                                                | `Only a CLA Manager named on this CCLA can download the signed document` |
-| Change **Auto Acknowledge**  | The switch is disabled. The sentence under it appears only when you are not on the CLA Manager list. A CLA Manager on the list whose access is denied sees no sentence. | `Only CLA Managers can change this setting.`                             |
-| Change the Approval List     | **Add entries**, edit, and delete are absent. If a change is still refused, an error says the sentence below.                                                           | `Only a CLA manager named on this CLA can change its approval list.`     |
-| Invalidate an acknowledgment | **Invalidate** is absent. If a change is still refused, an error says the sentence below.                                                                               | `Only a CLA manager named on this CLA can invalidate acknowledgments`    |
+| What you tried               | What you see                                                                                                                                                                                                                        | The words                                                                |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Add or remove a CLA Manager  | When you are not on the CLA Manager list, **Add CLA Manager** is disabled with the sentence and **Remove** is hidden. A CLA Manager on the list can lose either control, depending on which access is denied, and sees no sentence. | `Only a CLA Manager named on this CCLA can add or remove CLA Managers`   |
+| Download the signed document | **Download signed CCLA PDF** is disabled                                                                                                                                                                                            | `Only a CLA Manager named on this CCLA can download the signed document` |
+| Change **Auto Acknowledge**  | The switch is disabled. The sentence under it appears only when you are not on the CLA Manager list. A CLA Manager on the list whose access is denied sees no sentence.                                                             | `Only CLA Managers can change this setting.`                             |
+| Change the Approval List     | **Add entries**, edit, and delete are absent. If a change is still refused, an error says the sentence below.                                                                                                                       | `Only a CLA manager named on this CLA can change its approval list.`     |
+| Invalidate an acknowledgment | **Invalidate** is absent. If a change is still refused, an error says the sentence below.                                                                                                                                           | `Only a CLA manager named on this CLA can invalidate acknowledgments`    |
 
 A CLA Manager who was added or removed in the last 30 minutes can see these disagree with the list until access catches up. Reload after waiting. See [Who can see EasyCLA, and who can change a corporate CLA?](#who-can-see-easycla-and-who-can-change-a-corporate-cla).
 
