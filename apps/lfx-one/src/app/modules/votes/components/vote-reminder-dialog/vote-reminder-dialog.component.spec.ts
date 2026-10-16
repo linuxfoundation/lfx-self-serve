@@ -7,7 +7,7 @@ import { VoteReminderRecipient } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { Observable, of, throwError } from 'rxjs';
+import { Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteReminderDialogComponent } from './vote-reminder-dialog.component';
@@ -134,6 +134,27 @@ describe('VoteReminderDialogComponent', () => {
     expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', detail: 'Reminder sent to 1 voter.' }));
     expect(close).toHaveBeenCalledWith(true);
     expect(component['sending']()).toBe(false);
+  });
+
+  it('keeps the dialog open and Cancel disabled while a send is in flight', async () => {
+    const pending = new Subject<{ recipient_count: number }>();
+    const { fixture, component, close } = await mount(of(RECIPIENTS), pending);
+    current = fixture;
+    const cancelButton = (): HTMLButtonElement => byTestId(fixture, 'vote-reminder-dialog-cancel')!.querySelector('button')!;
+
+    component['send']();
+    fixture.detectChanges();
+
+    expect(cancelButton().disabled).toBe(true);
+    component['cancel']();
+    expect(close).not.toHaveBeenCalled();
+
+    pending.next({ recipient_count: 2 });
+    pending.complete();
+    fixture.detectChanges();
+
+    expect(close).toHaveBeenCalledWith(true);
+    expect(cancelButton().disabled).toBe(false);
   });
 
   it('pluralizes the success toast', async () => {

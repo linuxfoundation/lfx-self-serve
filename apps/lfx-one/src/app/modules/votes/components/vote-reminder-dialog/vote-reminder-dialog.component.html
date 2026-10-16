@@ -94,7 +94,14 @@
     }
   </span>
   <div class="flex gap-2">
-    <lfx-button label="Cancel" severity="secondary" [outlined]="true" size="small" (onClick)="cancel()" data-testid="vote-reminder-dialog-cancel"></lfx-button>
+    <lfx-button
+      label="Cancel"
+      severity="secondary"
+      [outlined]="true"
+      size="small"
+      [disabled]="sending()"
+      (onClick)="cancel()"
+      data-testid="vote-reminder-dialog-cancel"></lfx-button>
     <lfx-button
       label="Send"
       icon="fa-light fa-paper-plane"

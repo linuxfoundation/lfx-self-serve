@@ -103,6 +103,8 @@ export class VoteReminderDialogComponent {
   }
 
   protected cancel(): void {
+    // Closing mid-send would drop the outcome toast while the emails still go out.
+    if (this.sending()) return;
     this.ref.close(false);
   }
 
