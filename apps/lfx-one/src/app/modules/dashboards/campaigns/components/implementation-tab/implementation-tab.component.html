@@ -1601,9 +1601,7 @@
                     <option [value]="goal" [selected]="goal === redditEffectiveVideoGoal()">{{ redditVideoGoalLabels[goal] }}</option>
                   }
                 </select>
-                <p id="reddit-video-goal-hint" class="text-xs text-gray-500">
-                  How long a view must last to count.
-                </p>
+                <p id="reddit-video-goal-hint" class="text-xs text-gray-500">How long a view must last to count.</p>
                 @if (redditVideoGoalError(); as error) {
                   <p id="reddit-video-goal-error" role="alert" class="text-xs text-red-600" data-testid="implementation-reddit-video-goal-error">{{ error }}</p>
                 }
