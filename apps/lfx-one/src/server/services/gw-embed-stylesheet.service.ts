@@ -193,7 +193,13 @@ export class GwEmbedStylesheetService {
       gzipAsync(body, { level: 9 }),
       brotliAsync(body, { params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 9, [zlibConstants.BROTLI_PARAM_SIZE_HINT]: body.length } }),
     ]);
-    const entry: GwEmbedScopedStylesheet = { css, etag: `"${createHash('sha256').update(body).digest('base64url')}"`, gzip: gzipped, br: brotli };
+    const entry: GwEmbedScopedStylesheet = {
+      css,
+      etag: `"${createHash('sha256').update(body).digest('base64url')}"`,
+      identity: body,
+      gzip: gzipped,
+      br: brotli,
+    };
 
     if (this.cache.size >= GW_EMBED_STYLESHEET_CACHE_MAX_ENTRIES) {
       // Insertion order is eviction order: the oldest release's sheet goes first.

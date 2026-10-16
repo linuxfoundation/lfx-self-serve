@@ -20,7 +20,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { UserService } from '../../../shared/services/user.service';
 import { DEFAULT_RUNTIME_CONFIG, RUNTIME_CONFIG_KEY } from '../../../shared/providers/runtime-config.provider';
 import { GwEmbedWarmupService } from '../../../shared/services/gw-embed-warmup.service';
-import { buildGwEmbedStylesheetUrl, GwModuleOutletComponent, resolveGwEmbedStylesheetName } from './gw-module-outlet.component';
+import { buildGwEmbedStylesheetUrl, gwEmbedHasPaintedContent, GwModuleOutletComponent, resolveGwEmbedStylesheetName } from './gw-module-outlet.component';
 
 // The loader is a real npm dependency that the unit-test builder bundles, so it cannot be mocked
 // at the module level; the mount path below stands it in through the component's loadEmbedLoader
@@ -656,6 +656,44 @@ describe('GwModuleOutletComponent', () => {
 
       expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'info' }));
     });
+  });
+});
+
+describe('gwEmbedHasPaintedContent', () => {
+  // The real predicate, with layout stood in: the test DOM gives every element a zero-size rect.
+  const rootWith = (html: string, height = 900): HTMLElement => {
+    const root = document.createElement('div');
+    root.innerHTML = html;
+    vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({ height } as DOMRect);
+    return root;
+  };
+
+  it("does not count the embed's empty provider wrappers, even with height", () => {
+    // What the embed renders while FeatureGuard is still loading: Radix's root Theme (min-height
+    // 100vh in the scoped stylesheet) around an empty router, plus an empty toaster region.
+    const root = rootWith('<div class="radix-themes" data-is-root-theme="true"><section aria-label="Notifications" tabindex="-1"></section></div>');
+
+    expect(gwEmbedHasPaintedContent(root)).toBe(false);
+  });
+
+  it("counts the embed's spinner, which has no visible text", () => {
+    const root = rootWith(
+      '<div class="radix-themes" data-is-root-theme="true"><div class="flex justify-center py-16" role="status"><div class="animate-spin"></div></div></div>'
+    );
+
+    expect(gwEmbedHasPaintedContent(root)).toBe(true);
+  });
+
+  it('counts routed content by its text', () => {
+    expect(gwEmbedHasPaintedContent(rootWith('<div class="radix-themes"><main><h1>Newsletters</h1></main></div>'))).toBe(true);
+  });
+
+  it('ignores text inside style, script and template elements', () => {
+    expect(gwEmbedHasPaintedContent(rootWith('<div><style>.a{color:red}</style><template><p>later</p></template></div>'))).toBe(false);
+  });
+
+  it('counts nothing while the root has no height', () => {
+    expect(gwEmbedHasPaintedContent(rootWith('<h1>Newsletters</h1>', 0))).toBe(false);
   });
 });
 

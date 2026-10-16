@@ -13,7 +13,13 @@ const getKey = vi.fn((): string => OWN_KEY);
 vi.mock('../helpers/gw-embed.helper', () => ({ getGwEmbedStylesheetKey: () => getKey() }));
 
 const NAME = 'admin-embed-C7yXdkZR.css';
-const SHEET = { css: '#scoped{color:red}', etag: '"abc123"', gzip: Buffer.from('gzip-bytes'), br: Buffer.from('br-bytes') };
+const SHEET = {
+  css: '#scoped{color:red}',
+  etag: '"abc123"',
+  identity: Buffer.from('#scoped{color:red}'),
+  gzip: Buffer.from('gzip-bytes'),
+  br: Buffer.from('br-bytes'),
+};
 
 type TestResponse = Response & { body?: Uint8Array; headers: Record<string, string>; statusCode: number; ended: boolean };
 
@@ -138,10 +144,10 @@ describe('GwEmbedStylesheetController', () => {
     expect(res.headers['etag']).toBe('"abc123-gzip"');
   });
 
-  it('falls back to the plain body when the client accepts no supported encoding', async () => {
+  it('falls back to the plain body, encoded once with the entry, when the client accepts no supported encoding', async () => {
     const res = await serve(NAME, { accepted: false });
     expect(res.headers['content-encoding']).toBeUndefined();
-    expect(Buffer.from(res.body ?? []).toString('utf8')).toBe(SHEET.css);
+    expect(res.body).toBe(SHEET.identity);
   });
 
   it('answers 304 to a matching If-None-Match without a body, keeping the cache headers', async () => {

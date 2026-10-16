@@ -2,16 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { NextFunction, Request, Response } from 'express';
-import {
-  GW_EMBED_STYLESHEET_IMMUTABLE_MAX_AGE_S,
-  GW_EMBED_STYLESHEET_KEY_PATTERN,
-  GW_EMBED_STYLESHEET_MAX_AGE_S,
-  GW_EMBED_STYLESHEET_NAME_PATTERN,
-  GW_EMBED_STYLESHEET_STALE_WHILE_REVALIDATE_S,
-} from '@lfx-one/shared/constants';
-import { GwEmbedScopedStylesheet } from '@lfx-one/shared/interfaces';
+import { GW_EMBED_STYLESHEET_KEY_PATTERN, GW_EMBED_STYLESHEET_NAME_PATTERN } from '@lfx-one/shared/constants';
 import { MicroserviceError } from '../errors';
-import { getGwEmbedStylesheetKey } from '../helpers/gw-embed.helper';
+import { gwEmbedStylesheetCacheControl, ifNoneMatchHits, pickGwEmbedStylesheetEncoding } from '../helpers/gw-embed-stylesheet-response.helper';
 import { GwEmbedStylesheetService } from '../services/gw-embed-stylesheet.service';
 
 const OPERATION = 'gw_embed_stylesheet';
@@ -53,12 +46,12 @@ export class GwEmbedStylesheetController {
 
     try {
       const sheet = await this.service.load(req, name);
-      const { encoding, body } = pickEncoding(req, sheet);
+      const { encoding, body } = pickGwEmbedStylesheetEncoding(req, sheet);
       // One ETag per encoding: the bytes differ, so a strong validator must too.
       const etag = encoding === 'identity' ? sheet.etag : `${sheet.etag.slice(0, -1)}-${encoding}"`;
 
       res.setHeader('ETag', etag);
-      res.setHeader('Cache-Control', cacheControlFor(key));
+      res.setHeader('Cache-Control', gwEmbedStylesheetCacheControl(key));
       res.setHeader('X-Content-Type-Options', 'nosniff');
       res.setHeader('Vary', 'Accept-Encoding');
       if (ifNoneMatchHits(req.headers['if-none-match'], etag)) {
@@ -78,42 +71,4 @@ export class GwEmbedStylesheetController {
       next(error);
     }
   }
-}
-
-function cacheControlFor(key: string | undefined): string {
-  if (key === undefined) {
-    return `public, max-age=${GW_EMBED_STYLESHEET_MAX_AGE_S}, stale-while-revalidate=${GW_EMBED_STYLESHEET_STALE_WHILE_REVALIDATE_S}`;
-  }
-  // The theme was read moments ago to build the sheet, so this does not throw in practice; if it
-  // did, the key cannot be vouched for, which is the same answer as a mismatch.
-  let ownKey: string | null;
-  try {
-    ownKey = getGwEmbedStylesheetKey(OPERATION);
-  } catch {
-    ownKey = null;
-  }
-  return key === ownKey ? `public, max-age=${GW_EMBED_STYLESHEET_IMMUTABLE_MAX_AGE_S}, immutable` : 'no-store';
-}
-
-/** Brotli, then gzip, then the plain body, honouring the client's q-values (Express's negotiator). */
-function pickEncoding(req: Request, sheet: GwEmbedScopedStylesheet): { encoding: 'br' | 'gzip' | 'identity'; body: Uint8Array } {
-  const accepted = req.acceptsEncodings('br', 'gzip', 'identity');
-  if (accepted === 'br') {
-    return { encoding: 'br', body: sheet.br };
-  }
-  if (accepted === 'gzip') {
-    return { encoding: 'gzip', body: sheet.gzip };
-  }
-  return { encoding: 'identity', body: Buffer.from(sheet.css, 'utf8') };
-}
-
-/** `If-None-Match` is a list and its entries may be weak; the comparison is weak, as RFC 9110 has it for GET. */
-function ifNoneMatchHits(header: string | undefined, etag: string): boolean {
-  if (!header) {
-    return false;
-  }
-  return header.split(',').some((entry) => {
-    const candidate = entry.trim().replace(/^W\//, '');
-    return candidate === '*' || candidate === etag;
-  });
 }

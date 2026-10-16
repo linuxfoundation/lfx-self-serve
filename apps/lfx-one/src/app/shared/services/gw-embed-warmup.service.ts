@@ -3,13 +3,10 @@
 
 import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { DestroyRef, inject, Injectable, PLATFORM_ID, TransferState } from '@angular/core';
-import { GW_EMBED_FOUNDATION_NEWSLETTERS_LINK, GW_EMBED_HOST_SESSION_ME_URL, GW_EMBED_PROJECT_NEWSLETTERS_LINK } from '@lfx-one/shared/constants';
+import { GW_EMBED_HOST_SESSION_ME_URL, GW_EMBED_NAV_LINK_PATHS } from '@lfx-one/shared/constants';
 
 import { getRuntimeConfig } from '../providers/runtime-config.provider';
 import { UserService } from './user.service';
-
-/** The sidebar destinations that open the embed; hovering or focusing one is the intent signal. */
-const EMBED_LINK_PATHS: ReadonlySet<string> = new Set([GW_EMBED_FOUNDATION_NEWSLETTERS_LINK, GW_EMBED_PROJECT_NEWSLETTERS_LINK]);
 
 /**
  * Starts the slow parts of opening the Gatewaze embed before the embed asks for them.
@@ -113,7 +110,7 @@ export class GwEmbedWarmupService {
     }
     const onIntent = (event: Event): void => {
       const anchor = event.target instanceof Element ? event.target.closest('a[href]') : null;
-      if (!(anchor instanceof HTMLAnchorElement) || !EMBED_LINK_PATHS.has(new URL(anchor.href, this.document.baseURI).pathname)) {
+      if (!(anchor instanceof HTMLAnchorElement) || !GW_EMBED_NAV_LINK_PATHS.includes(new URL(anchor.href, this.document.baseURI).pathname)) {
         return;
       }
       stop();

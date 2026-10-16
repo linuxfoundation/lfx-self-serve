@@ -105,6 +105,7 @@ describe('GwEmbedStylesheetService', () => {
     it('compresses the scoped body once, with gzip and Brotli, both decoding to the same CSS', async () => {
       const sheet = await load();
 
+      expect(Buffer.from(sheet.identity).toString('utf8')).toBe(sheet.css);
       expect(gunzipSync(sheet.gzip).toString('utf8')).toBe(sheet.css);
       expect(brotliDecompressSync(sheet.br).toString('utf8')).toBe(sheet.css);
       // Cached with the entry: a repeat request reuses the same buffers rather than compressing again.

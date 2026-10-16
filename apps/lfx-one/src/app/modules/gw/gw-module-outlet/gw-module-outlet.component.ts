@@ -29,6 +29,7 @@ import {
   GW_EMBED_LOGIN_PATH,
   GW_EMBED_NOTIFICATION_DEFAULT_LIFE_MS,
   GW_EMBED_NOTIFICATION_SEVERITY,
+  GW_EMBED_PAINTED_CONTENT_SELECTOR,
   GW_EMBED_STYLESHEET_ROUTE,
   GW_HOST_SESSION_PROXY_API_MOUNT,
   GW_HOST_SESSION_PROXY_SUPABASE_MOUNT,
@@ -289,9 +290,9 @@ export class GwModuleOutletComponent {
   }
 
   /**
-   * Resolves once `root` holds painted content: at least one element with a non-zero height. The
-   * first thing the embed draws may be its own loading spinner; that counts, so the skeleton hands
-   * over to it directly. Also resolves on teardown, as soon as the error panel is up, and after
+   * Resolves once `root` holds painted content (see `gwEmbedHasPaintedContent`). The first thing
+   * the embed draws may be its own loading spinner; that counts, so the skeleton hands over to it
+   * directly. Also resolves on teardown, as soon as the error panel is up, and after
    * `GW_EMBED_FIRST_PAINT_TIMEOUT_MS` so a render that never produces height cannot leave the
    * skeleton up forever.
    *
@@ -329,14 +330,15 @@ export class GwModuleOutletComponent {
         }
       };
       this.endPaintWait = finish;
-      // The root itself resizes when content arrives; a child appearing may not resize it first.
+      // The root itself resizes when content arrives; content appearing inside a wrapper that already
+      // has height (Radix's root Theme) does not resize it, so mutations are watched too.
       resizeObserver?.observe(root);
-      mutationObserver.observe(root, { childList: true, subtree: true });
+      mutationObserver.observe(root, { childList: true, subtree: true, characterData: true });
     });
   }
 
   /** The paint test, as a property so the spec can stand it in: the test DOM does no layout. */
-  private embedHasPainted = (root: HTMLElement): boolean => root.childElementCount > 0 && root.getBoundingClientRect().height > 0;
+  private embedHasPainted = (root: HTMLElement): boolean => gwEmbedHasPaintedContent(root);
 
   /**
    * Keeps the embed's router in step with host-initiated navigation.
@@ -497,6 +499,32 @@ export class GwModuleOutletComponent {
  */
 export function resolveGwEmbedStylesheetName(url: string): string {
   return new URL(url).pathname.split('/').pop() ?? '';
+}
+
+/**
+ * Whether the embed root holds something a user would see: the root has height, and somewhere in
+ * it there is non-whitespace text (outside `style`, `script` and `template`) or an element matching
+ * `GW_EMBED_PAINTED_CONTENT_SELECTOR`, such as the embed's spinner.
+ *
+ * A child with height is not enough. The embed renders its providers first, and Radix's root `Theme`
+ * among them has `min-height: 100vh` while the route below it still renders nothing, so that test
+ * dropped the skeleton onto a blank pane. Exported for the spec.
+ */
+export function gwEmbedHasPaintedContent(root: HTMLElement): boolean {
+  if (root.getBoundingClientRect().height <= 0) {
+    return false;
+  }
+  if (root.querySelector(GW_EMBED_PAINTED_CONTENT_SELECTOR)) {
+    return true;
+  }
+  const walker = root.ownerDocument.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const parent = node.parentElement;
+    if (node.nodeValue?.trim() && !parent?.closest('style, script, template')) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**

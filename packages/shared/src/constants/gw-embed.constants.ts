@@ -268,6 +268,21 @@ export const GW_EMBED_FOUNDATION_NEWSLETTERS_LINK = `${GW_EMBED_ROUTE_PREFIX}${G
 export const GW_EMBED_PROJECT_NEWSLETTERS_LINK = `${GW_EMBED_PROJECT_ROUTE_PREFIX}${GW_EMBED_LANDING_PATH}`;
 
 /**
+ * The sidebar destinations that open the embed. Hovering or focusing a link to one of them is the
+ * intent signal `GwEmbedWarmupService` warms the Gatewaze session on.
+ */
+export const GW_EMBED_NAV_LINK_PATHS: readonly string[] = [GW_EMBED_FOUNDATION_NEWSLETTERS_LINK, GW_EMBED_PROJECT_NEWSLETTERS_LINK];
+
+/**
+ * Elements that count as painted content in the embed even without text: a loading indicator
+ * (`role="status"`, which the embed's `PageLoadingSpinner` carries, or `aria-busy`) or media. Used
+ * with any non-whitespace text by the outlet's first-paint check, which must not count the embed's
+ * empty provider wrappers. Radix's root `Theme` is one of those and has `min-height: 100vh`, so a
+ * child-and-height test passes before anything is drawn.
+ */
+export const GW_EMBED_PAINTED_CONTENT_SELECTOR = '[role="status"], [aria-busy="true"], img, svg, canvas, video';
+
+/**
  * Maps the embed's notification levels onto PrimeNG toast severities and the summary line LFX
  * shows above the message.
  *

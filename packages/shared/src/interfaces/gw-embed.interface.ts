@@ -91,6 +91,8 @@ export interface GwEmbedSource {
 export interface GwEmbedScopedStylesheet {
   css: string;
   etag: string;
+  /** The UTF-8 body as sent uncompressed, encoded once rather than per request. */
+  identity: Uint8Array;
   /**
    * The UTF-8 body, compressed with gzip. `Uint8Array` (which `Buffer` satisfies) so this
    * browser-consumed package does not couple its types to Node's `Buffer` global.
@@ -98,6 +100,12 @@ export interface GwEmbedScopedStylesheet {
   gzip: Uint8Array;
   /** The UTF-8 body, compressed with Brotli. */
   br: Uint8Array;
+}
+
+/** One encoding of a scoped embed stylesheet, as picked for a request. */
+export interface GwEmbedStylesheetVariant {
+  encoding: 'br' | 'gzip' | 'identity';
+  body: Uint8Array;
 }
 
 /** Fatal error shape reported by `@gatewaze/admin-embed` via `GwHostContext.onFatal`. */
