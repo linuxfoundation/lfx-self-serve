@@ -75,6 +75,36 @@ describe('GatewazeSessionController', () => {
       expect(loggerMock.success).toHaveBeenCalledWith(expect.anything(), 'get_gatewaze_session_me', 0, { status_code: 200 });
     });
 
+    it('answers exactly { user } when the service has no admin context, never an empty admin key', async () => {
+      getGatewazeMe.mockResolvedValue({ outcome: 'ok', user: USER });
+
+      const { out } = await call('me');
+
+      expect(out.body).toEqual({ user: USER });
+    });
+
+    it('adds the admin context to the 200 when the service has one', async () => {
+      const admin = {
+        profile: {
+          id: 'profile-synthetic',
+          user_id: 'gw-user-synthetic',
+          email: 'admin@example.test',
+          name: null,
+          role: 'admin',
+          avatar_url: null,
+          is_active: true as const,
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-02T00:00:00Z',
+        },
+        features: ['newsletters'],
+      };
+      getGatewazeMe.mockResolvedValue({ outcome: 'ok', user: USER, admin });
+
+      const { out } = await call('me');
+
+      expect(out).toMatchObject({ status: 200, body: { user: USER, admin } });
+    });
+
     it('answers 403 not_admin with the email', async () => {
       getGatewazeMe.mockResolvedValue({ outcome: 'not_admin', email: USER.email });
 

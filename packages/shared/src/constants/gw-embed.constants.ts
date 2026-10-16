@@ -222,6 +222,20 @@ export const GW_EMBED_HOST_SESSION_LOGOUT_URL = `${GW_EMBED_HOST_SESSION_MOUNT}/
 export const GW_EMBED_CAPABILITY_MISSING_CODE = 'gw_embed_capability_missing';
 
 /**
+ * The manifest capability of a bundle that signals its own first paint, which makes the loader's
+ * `handle.rendered` mean "something is on screen". Without it `rendered` resolves with `ready`,
+ * before anything is drawn, and the outlet falls back to its own paint check.
+ */
+export const GW_EMBED_FIRST_PAINT_CAPABILITY = 'first-paint';
+
+/**
+ * Classes of LFX's standard loading spinner, which the outlet hands the embed as
+ * `GwHostContext.loadingIndicator` so the embed's loading states look like the rest of LFX. A
+ * Font Awesome icon: the kit loads as a webfont, so the `<i>` stays the element the embed placed.
+ */
+export const GW_EMBED_LOADING_INDICATOR_CLASS = 'fa-light fa-spinner-third fa-spin text-2xl text-gray-400';
+
+/**
  * Route prefixes the embed can be mounted under, and the value handed to the embed as
  * `GwHostContext.basename` so both routers agree on where its subtree begins.
  *

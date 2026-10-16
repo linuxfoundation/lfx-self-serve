@@ -42,7 +42,9 @@ The outlet follows the same SSR-safe lazy-mount shape as `rich-editor.component.
 
 A skeleton shows from the first browser render until the embed has painted or failed, because the bundle is large and the container would otherwise sit empty. The loader's `ready` resolves once the bundle is mounted, which is before React has drawn anything, so the outlet does not stop there. It keeps `#gw-embed-root` at `visibility: hidden` (not `display: none`, so it still lays out) and watches it with a `ResizeObserver` and a `MutationObserver` until it has height and holds visible content, capped at `GW_EMBED_FIRST_PAINT_TIMEOUT_MS`. Visible content is non-whitespace text, or an element matching `GW_EMBED_PAINTED_CONTENT_SELECTOR` such as the embed's `role="status"` spinner. A child with height is not enough, because the embed renders Radix's root `Theme` first and that wrapper has `min-height: 100vh` before the route below it draws anything. The wait also ends when the error panel goes up. The swap runs a synchronous change detection in the microtasks after the observer callback, so the skeleton and the embed change places in the same frame. The skeleton sits above the mount points, so a hidden root that already takes up space never pushes it down.
 
-`@gatewaze/admin-embed` 1.2.0 adds a `first-paint` capability with a `handle.rendered` promise. When the dependency moves to it, the outlet awaits that and keeps the observer as the fallback (`waitForFirstPaint`).
+For a bundle whose manifest lists the `first-paint` capability (`@gatewaze/admin-embed` 1.2.0), the outlet awaits the loader's `handle.rendered` instead (`waitForRendered`). The embed signals it once its first route content or spinner has committed, and the loader bounds the wait itself. Without the capability, `rendered` resolves with `ready`, before anything is drawn, so the outlet keeps its own paint check for those bundles. The error panel ends either wait at once.
+
+The outlet also passes `loadingIndicator`, which returns a new LFX spinner (`GW_EMBED_LOADING_INDICATOR_CLASS`, a Font Awesome `<i>`, `aria-hidden`). A bundle with the `host-loading-indicator` capability draws it in place of its own spinner, inside its own `role="status"` box, so the embed's loading states look like the rest of LFX. The loader passes it only to a bundle with that capability. The Font Awesome kit loads as a webfont, so the `<i>` is not replaced, and the embed's contained stylesheet leaves the icon font alone. The embed's own `.text-2xl` and `.text-gray-400` rules apply inside the root, so the size matches LFX and the grey is Tailwind's rather than LFX's.
 
 ### Starting the slow parts early
 
@@ -118,6 +120,7 @@ The outlet passes this context to the loader:
 | `supabase.publicUrl` | `GW_SUPABASE_URL`, so saved public storage URLs point at Supabase and not at LFX                                                                                    |
 | `supabase.anonKey`   | The publishable key                                                                                                                                                 |
 | `apiBaseUrl`         | `/api/gatewaze`. The embed calls `${apiBaseUrl}/api/...`, which lands on the `/api/gatewaze/api` proxy                                                              |
+| `loadingIndicator`   | A new LFX spinner element per call (see above)                                                                                                                      |
 
 It never passes the embed's `signIn` or `storageKeySuffix` fields. With them set, an embed would keep its own session in `localStorage`.
 

@@ -52,6 +52,14 @@ export interface GwHostContext {
   onFatal?: (err: GwEmbedFatalError) => void;
   navigateHost?: (path: string) => void;
   telemetry?: (event: { name: string; [key: string]: unknown }) => void;
+  /**
+   * The host's loading indicator. A bundle with the `host-loading-indicator` capability calls it
+   * for each loading state and draws the returned element in place of its own spinner, inside a
+   * `role="status"` box that carries the screen-reader label, so the element should be decorative.
+   * It must return a new element on every call; the embed removes it when loading ends. The loader
+   * passes it only to a bundle that lists the capability.
+   */
+  loadingIndicator?: () => HTMLElement;
 }
 
 /** `GwHostContext.session`: the routes LFX One serves for host-session mode (`gatewaze.route.ts`). */
@@ -146,6 +154,14 @@ export interface GwEmbedMountHandle {
    * loading failed — reported through `onFatal` — or `unmount()` was called first. Never rejects.
    */
   ready: Promise<GwEmbedManifest | null>;
+  /**
+   * Resolves once the embed has put something on screen, its first route content or its spinner,
+   * for a bundle with the `first-paint` capability. Without the capability it resolves when `ready`
+   * does, which is before anything is drawn, so the host trusts it only for a bundle that lists
+   * the capability. Also resolves on a loading failure, a fatal error after mounting and
+   * `unmount()`. Never rejects. Loader 1.2.0.
+   */
+  rendered: Promise<void>;
 }
 
 /** The deployment's `<baseUrl>/manifest.json`, as the loader hands it back. */

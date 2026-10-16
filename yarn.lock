@@ -4294,20 +4294,20 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@gatewaze/admin-embed@npm:1.1.0":
-  version: 1.1.0
-  resolution: "@gatewaze/admin-embed@npm:1.1.0"
-  checksum: 10c0/c047a504029b9419a7144ca767463934e7d52e4b310661c0725f3ad9bca5735f07e672d82c42bf4730bd72c3b5451ef83667a6d72c3f939e2e57dae956189f31
+"@gatewaze/admin-embed@npm:1.2.0":
+  version: 1.2.0
+  resolution: "@gatewaze/admin-embed@npm:1.2.0"
+  checksum: 10c0/6d7c110a774cf32a240168e58f7dd55a3deca4ea5e238bdd0210cf3bdfcd4fa72c3961394859665b94cc9f598aaa46dd5fa1a743aa696d0e176f51f58f4df9ce
   languageName: node
   linkType: hard
 
-"@gatewaze/host-session@npm:1.1.0":
-  version: 1.1.0
-  resolution: "@gatewaze/host-session@npm:1.1.0"
+"@gatewaze/host-session@npm:1.2.0":
+  version: 1.2.0
+  resolution: "@gatewaze/host-session@npm:1.2.0"
   dependencies:
     ioredis: "npm:^5.10.1"
     ws: "npm:^8.21.1"
-  checksum: 10c0/68159303643ccab5a9a1e8f8b73167fb1ce9d6d3b6eae7b5cad80233564495dcb60d75d85b0c5986623759877d97b7f8627c4d155c8bcdcac498f6f97c7d65d4
+  checksum: 10c0/7f39564cf8c593a346834d6eedfe9132faaa8a297e5599eb72d1ebf1cb6351cc6d91b227104f48b2abedba593c9987529c0dff164f0be8cad2ba1848bfec5e9a
   languageName: node
   linkType: hard
 
@@ -14555,8 +14555,8 @@ __metadata:
     "@fullcalendar/core": "npm:6.1.20"
     "@fullcalendar/daygrid": "npm:6.1.20"
     "@fullcalendar/timegrid": "npm:6.1.20"
-    "@gatewaze/admin-embed": "npm:1.1.0"
-    "@gatewaze/host-session": "npm:1.1.0"
+    "@gatewaze/admin-embed": "npm:1.2.0"
+    "@gatewaze/host-session": "npm:1.2.0"
     "@launchdarkly/node-server-sdk": "npm:^9.14.0"
     "@lfx-one/shared": "workspace:*"
     "@linuxfoundation/lfx-ui-core": "npm:^0.2.0"

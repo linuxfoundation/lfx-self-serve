@@ -24,7 +24,8 @@ export class GatewazeSessionController {
       const result = await getGatewazeSessionService().getGatewazeMe(req);
       if (result.outcome === 'ok') {
         logger.success(req, operation, startTime, { status_code: 200 });
-        res.json({ user: result.user });
+        // `admin` only when the service produced it; the embed reads the profile itself otherwise.
+        res.json(result.admin ? { user: result.user, admin: result.admin } : { user: result.user });
         return;
       }
       if (result.outcome === 'host_session_unavailable') {
