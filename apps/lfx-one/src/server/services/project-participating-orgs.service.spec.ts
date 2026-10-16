@@ -3,7 +3,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { execute, filterReadableAccountIds } = vi.hoisted(() => ({ execute: vi.fn(), filterReadableAccountIds: vi.fn() }));
+const { execute, filterConfirmedReadableAccountIds } = vi.hoisted(() => ({ execute: vi.fn(), filterConfirmedReadableAccountIds: vi.fn() }));
 
 vi.mock('./snowflake.service', () => ({
   SnowflakeService: class {
@@ -16,7 +16,7 @@ vi.mock('./snowflake.service', () => ({
 vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
-vi.mock('../helpers/org-analytics-access.helper', () => ({ filterReadableAccountIds }));
+vi.mock('../helpers/org-analytics-access.helper', () => ({ filterConfirmedReadableAccountIds }));
 // `validation.helper` reaches the `@lfx-one/shared/utils` barrel, which cannot load in this server-only runtime.
 vi.mock('@lfx-one/shared/utils', () => ({}));
 
@@ -69,7 +69,7 @@ describe('ProjectParticipatingOrgsService.getPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     execute.mockResolvedValue({ rows: [row()] });
-    filterReadableAccountIds.mockResolvedValue([]);
+    filterConfirmedReadableAccountIds.mockResolvedValue([]);
   });
 
   it.each([
@@ -181,11 +181,11 @@ describe('ProjectParticipatingOrgsService.getPage', () => {
         row({ PARTICIPANT_KEY: 'cdev:synthetic-1', ACCOUNT_ID: null, IS_MEMBER: false, IS_UNIDENTIFIED: true, MEMBERSHIP_TIER_CLASS: null }),
       ],
     });
-    filterReadableAccountIds.mockResolvedValue([MEMBER_A, NON_MEMBER]);
+    filterConfirmedReadableAccountIds.mockResolvedValue([MEMBER_A, NON_MEMBER]);
 
     const page = await service.getPage(req, 's', baseQuery);
 
-    expect(filterReadableAccountIds).toHaveBeenCalledWith(req, [MEMBER_A, MEMBER_B], 'get_project_participating_orgs');
+    expect(filterConfirmedReadableAccountIds).toHaveBeenCalledWith(req, [MEMBER_A, MEMBER_B], 'get_project_participating_orgs');
     expect(page.rows.map((r) => [r.participantKey, r.canOpenOrgLens])).toEqual([
       [MEMBER_A, true],
       [MEMBER_B, false],
@@ -195,7 +195,7 @@ describe('ProjectParticipatingOrgsService.getPage', () => {
   });
 
   it('degrades every link to false when the Org Lens check throws, still returning the page', async () => {
-    filterReadableAccountIds.mockRejectedValue(new Error('authorizer down'));
+    filterConfirmedReadableAccountIds.mockRejectedValue(new Error('authorizer down'));
 
     const page = await service.getPage(req, 's', baseQuery);
 
@@ -223,7 +223,7 @@ describe('ProjectParticipatingOrgsService.getExportRows', () => {
     expect(placeholders(sql)).toBe(binds.length);
     expect(result.truncated).toBe(true);
     expect(result.rows).toHaveLength(PROJECT_PARTICIPATING_ORGS_EXPORT_MAX_ROWS);
-    expect(filterReadableAccountIds).not.toHaveBeenCalled();
+    expect(filterConfirmedReadableAccountIds).not.toHaveBeenCalled();
   });
 
   it('is not truncated at exactly the cap', async () => {

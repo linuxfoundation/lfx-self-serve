@@ -9,7 +9,7 @@ import {
 } from '@lfx-one/shared/constants';
 
 import { toIsoDate } from '../helpers/date-format.helper';
-import { filterReadableAccountIds } from '../helpers/org-analytics-access.helper';
+import { filterConfirmedReadableAccountIds } from '../helpers/org-analytics-access.helper';
 import { resolveLfxOnePlatinumSchema } from '../helpers/snowflake-schema.helper';
 import { executeSnowflakeViewRead } from '../helpers/snowflake-view-read.helper';
 import { clampInteger, escapeSqlLikePattern } from '../helpers/validation.helper';
@@ -209,7 +209,8 @@ export class ProjectParticipatingOrgsService {
     if (memberIds.length === 0) return new Set();
 
     try {
-      return new Set(await filterReadableAccountIds(req, memberIds, 'get_project_participating_orgs'));
+      // Confirmed grants only: one member that cannot be verified (degraded roster) loses its link, not the whole page's.
+      return new Set(await filterConfirmedReadableAccountIds(req, memberIds, 'get_project_participating_orgs'));
     } catch (error) {
       logger.warning(req, 'get_project_participating_orgs', 'Org Lens access check failed; member links disabled for this page', {
         member_count: memberIds.length,
