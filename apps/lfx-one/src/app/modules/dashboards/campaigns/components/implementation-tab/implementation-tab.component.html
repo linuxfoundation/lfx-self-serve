@@ -1583,6 +1583,32 @@
                 }
               </select>
             </div>
+
+            <!-- Video goal, only for Video Views. Reddit has no bare VIDEO_VIEWS goal, so both
+                 creators refuse that objective without one; the empty first option is "not chosen
+                 yet", and canSubmit blocks until a real goal is picked. -->
+            @if (redditNeedsVideoGoal()) {
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-medium text-gray-700" for="reddit-video-goal">Video goal</label>
+                <select
+                  id="reddit-video-goal"
+                  (change)="onRedditVideoGoalChange($event)"
+                  required
+                  [attr.aria-invalid]="redditVideoGoalError() !== null"
+                  [attr.aria-describedby]="redditVideoGoalError() !== null ? 'reddit-video-goal-error' : 'reddit-video-goal-hint'"
+                  class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  data-testid="implementation-reddit-video-goal">
+                  <option value="" [selected]="redditEffectiveVideoGoal() === null" disabled>Select a video goal</option>
+                  @for (goal of redditVideoGoalOptions; track goal) {
+                    <option [value]="goal" [selected]="goal === redditEffectiveVideoGoal()">{{ redditVideoGoalLabels[goal] }}</option>
+                  }
+                </select>
+                <p id="reddit-video-goal-hint" class="text-xs text-gray-500">How long a view must last to count.</p>
+                @if (redditVideoGoalError(); as error) {
+                  <p id="reddit-video-goal-error" role="alert" class="text-xs text-red-600" data-testid="implementation-reddit-video-goal-error">{{ error }}</p>
+                }
+              </div>
+            }
           </div>
 
           <!-- The ad itself. Without one of these two routes the create still succeeds and still
@@ -1608,10 +1634,15 @@
                 data-testid="implementation-reddit-post-url" />
               <p class="text-xs text-gray-500">
                 An existing Reddit post to promote — a reddit.com post link, a redd.it link, or the post id on its own.
-                @if (redditCreativeAvailable()) {
+                @if (redditNeedsVideoGoal()) {
+                  Video Views needs an existing video post here; an image post cannot earn video views.
+                } @else if (redditCreativeAvailable()) {
                   Leave it blank to have one composed from the image below instead.
                 }
               </p>
+              @if (redditVideoPostError(); as error) {
+                <p role="alert" class="text-xs text-red-600" data-testid="implementation-reddit-video-post-error">{{ error }}</p>
+              }
             </div>
 
             <!-- Compose a NEW post. Withheld unless the capability says yes: the other creator
@@ -2027,7 +2058,7 @@
             <i class="fa-light fa-triangle-exclamation text-amber-600" aria-hidden="true"></i>
           }
           <h3 class="text-sm font-semibold text-gray-900">
-            {{ anyPlatformCreated() ? 'Campaigns Created' : 'Campaign Status Unconfirmed' }}
+            {{ platformResultsHeading() }}
           </h3>
         </div>
         <div class="flex flex-col gap-2">
@@ -2037,8 +2068,9 @@
             database write failed — `campaignId` is populated on purpose so the id is not lost)
             and an id-less remainder that mixes genuine rejections, concurrent-dispatch skips and
             responses whose upstream id was lost. Only the first is safely reportable as an
-            absence, and nothing on the wire distinguishes them. The classification and the
-            reasoning live in `platformOutcomes`.
+            absence, and nothing on the wire distinguishes them — except the fixed pre-create
+            sentences campaign-service #208 added, which render as `nothing-created`. The
+            classification and the reasoning live in `platformOutcomes`.
           -->
           @for (pr of platformOutcomes(); track pr.platform) {
             @let outcome = pr.outcome;
@@ -2054,6 +2086,9 @@
                   }
                   @case ('orphaned') {
                     <i class="fa-light fa-triangle-exclamation text-amber-600" aria-hidden="true"></i>
+                  }
+                  @case ('nothing-created') {
+                    <i class="fa-light fa-circle-xmark text-amber-600" aria-hidden="true"></i>
                   }
                   @default {
                     <i class="fa-light fa-circle-question text-amber-600" aria-hidden="true"></i>
@@ -2074,6 +2109,9 @@
                       @case ('orphaned') {
                         created upstream but not recorded — needs reconciliation
                       }
+                      @case ('nothing-created') {
+                        not created
+                      }
                       @default {
                         could not be confirmed — check the ad account before creating it again
                       }
@@ -2084,10 +2122,18 @@
                   <p class="text-xs text-gray-500">campaign {{ pr.campaignId }}</p>
                 }
               </div>
-              @if (pr.error) {
-                <p class="mt-1 text-xs" [class.text-amber-700]="outcome !== 'created'" [class.text-gray-600]="outcome === 'created'">
-                  {{ pr.error }}
+              @if (outcome === 'nothing-created') {
+                <p class="mt-1 text-xs font-medium text-gray-700" data-testid="implementation-platform-result-nothing-created">
+                  Nothing was created on the platform.
                 </p>
+              }
+              @if (pr.displayError) {
+                <p class="mt-1 text-xs" [class.text-amber-700]="outcome !== 'created'" [class.text-gray-600]="outcome === 'created'">
+                  {{ pr.displayError }}
+                </p>
+              }
+              @if (pr.nextStep) {
+                <p class="mt-1 text-xs font-medium text-gray-900" data-testid="implementation-platform-result-next-step">{{ pr.nextStep }}</p>
               }
             </div>
           }

@@ -358,8 +358,8 @@ export interface Meeting {
   invited: boolean;
   /**
    * The viewer is invited to the meeting through a committee (response only).
-   * @description True when any of the viewer's registrations for this meeting was added from a committee. Such a
-   * registration is managed by committee membership, so the viewer cannot remove themselves from the meeting.
+   * @description True when any of the viewer's registrations for this meeting was added from a committee. It only
+   * words the Remove Yourself confirmation, which tells the viewer the committee will not invite them again.
    * Unset when the viewer is not invited.
    */
   invited_via_committee?: boolean;

@@ -93,6 +93,8 @@ import {
   REDDIT_MAX_BUDGET_USD,
   REDDIT_OBJECTIVE_LABELS,
   REDDIT_SELECTABLE_OBJECTIVES,
+  REDDIT_VIDEO_GOAL_LABELS,
+  REDDIT_VIDEO_GOALS,
   googleAdsToLower,
   googleAdsTrimSpace,
   googleAdsUrlGoParseFlaw,
@@ -142,15 +144,23 @@ import type {
   RedditAdVariant,
   RedditCallToAction,
   RedditObjective,
+  RedditVideoGoal,
 } from '@lfx-one/shared/interfaces';
-import { campaignBiddingError, campaignBiddingPayload, codePointLength, defaultCampaignBiddingDraft } from '@lfx-one/shared/utils';
+import {
+  campaignBiddingError,
+  campaignBiddingPayload,
+  codePointLength,
+  defaultCampaignBiddingDraft,
+  describeCampaignDispatchFailure,
+} from '@lfx-one/shared/utils';
 
 import { CampaignBiddingControlComponent } from '../campaign-bidding-control/campaign-bidding-control.component';
 
 type ImplementationStep = 'form' | 'creating' | 'results';
 
 /**
- * One campaign-service platform result paired with the three-state outcome the row renders.
+ * One campaign-service platform result paired with the outcome the row renders, and the
+ * operator-facing reading of its `error` (`describeCampaignDispatchFailure`).
  *
  * A local intersection rather than a `@lfx-one/shared` interface: it is this component's view
  * model, derived from `CampaignPlatformResult` and consumed only by this template, so it is not
@@ -159,14 +169,26 @@ type ImplementationStep = 'form' | 'creating' | 'results';
  * `apps/lfx-one/`, while ESLint's `@typescript-eslint/consistent-type-definitions` rejects a
  * plain `type X = { … }` object literal.
  */
-type PlatformResultRow = CampaignPlatformResult & { outcome: 'created' | 'orphaned' | 'unconfirmed' };
+type PlatformResultRow = CampaignPlatformResult & {
+  outcome: 'created' | 'orphaned' | 'nothing-created' | 'unconfirmed';
+  displayError: string | null;
+  nextStep: string | null;
+};
 
 /** See `ImplementationTabComponent.platformOutcomes` for why `ok` alone is not the test. */
 function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow {
+  const failure = result.error ? describeCampaignDispatchFailure(result.error) : null;
+  const displayError = failure?.message ?? result.error ?? null;
+  // Pre-create rows only: an id-bearing row has a campaign upstream, and "create again" there is
+  // the duplicate-spend move this panel exists to prevent.
+  const nextStep = !result.ok && !result.campaignId ? (failure?.nextStep ?? null) : null;
   if (result.ok) {
-    return { ...result, outcome: 'created' };
+    return { ...result, outcome: 'created', displayError, nextStep };
   }
-  return { ...result, outcome: result.campaignId ? 'orphaned' : 'unconfirmed' };
+  if (result.campaignId) {
+    return { ...result, outcome: 'orphaned', displayError, nextStep };
+  }
+  return { ...result, outcome: failure?.nothingCreated ? 'nothing-created' : 'unconfirmed', displayError, nextStep };
 }
 
 @Component({
@@ -430,9 +452,12 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * Read from `REDDIT_SELECTABLE_OBJECTIVES`, not from the labels map's keys, for the reason
    * `metaObjectiveOptions` is: the labels map stays total over `RedditObjective` so a withheld
-   * objective still renders a name, and `video_views` is hidden from the picker only.
+   * objective would still render a name. Today the list holds all four objectives.
    */
   protected readonly redditObjectiveOptions = REDDIT_SELECTABLE_OBJECTIVES;
+  /** The goals offered for `video_views`, and their readable names. */
+  protected readonly redditVideoGoalOptions = REDDIT_VIDEO_GOALS;
+  protected readonly redditVideoGoalLabels = REDDIT_VIDEO_GOAL_LABELS;
   /**
    * The full CTA list, with no selectable/withheld split: upstream accepts every one of these,
    * resolving the value case-insensitively and rejecting anything outside the set. The empty
@@ -443,7 +468,9 @@ export class ImplementationTabComponent implements OnInit {
   /** Named in the empty option's label, so "send nothing" shows what upstream will apply. */
   protected readonly redditDefaultCallToAction = DEFAULT_REDDIT_CALL_TO_ACTION;
   /**
-   * True when the current objective is one the picker does not offer — today only `video_views`.
+   * True when the current objective is one the picker does not offer. Latent today — every
+   * `RedditObjective` is selectable now that `video_views` has its goal picker — and kept so an
+   * objective withheld later fails safe rather than silently showing index 0.
    *
    * Exactly the Meta case, and it fails the same way if left out: the template binds `[selected]`
    * per `<option>` rather than `[value]` on the select, so with no matching option the browser
@@ -467,12 +494,10 @@ export class ImplementationTabComponent implements OnInit {
    * it ends in a campaign built on the wrong objective; here it ends in an upstream refusal, since
    * `redditCTAs` rejects any label outside the set.
    *
-   * The two sets are not withheld the same way, which is why this one is latent rather than live:
-   * `REDDIT_SELECTABLE_OBJECTIVES` is deliberately a SUBSET of `RedditObjective` (`video_views` is
-   * held back — see {@link RedditCampaignCreateRequest.videoGoal}), so an unavailable objective is
-   * reachable by design, while `REDDIT_CALL_TO_ACTIONS` is the whole upstream set and a stale CTA
-   * only becomes possible once Reddit retires a label. Guarded anyway: the failure is identical in
-   * kind and the control is a sibling of the objective's, so the two should not drift.
+   * Both guards are latent today: `REDDIT_SELECTABLE_OBJECTIVES` currently offers every
+   * `RedditObjective`, and `REDDIT_CALL_TO_ACTIONS` is the whole upstream set, so a stale CTA only
+   * becomes possible once Reddit retires a label. Guarded anyway: the failure is identical in kind
+   * and the control is a sibling of the objective's, so the two should not drift.
    *
    * The empty string is NOT unavailable — it is the real "let upstream default" selection the
    * first `<option>` carries.
@@ -599,7 +624,7 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly platformResults = signal<CampaignPlatformResult[]>([]);
 
   /**
-   * `platformResults` with each row's outcome resolved to three states rather than the boolean
+   * `platformResults` with each row's outcome resolved to four states rather than the boolean
    * the wire carries. Derived here rather than in the template because only signal reads,
    * computed values and pipes may appear there (`docs/reviews/frontend-checklist.md` §4).
    *
@@ -612,14 +637,15 @@ export class ImplementationTabComponent implements OnInit {
    * being spent, so calling it a plain failure is wrong in the expensive direction: the reader's
    * next move is to create it again.
    *
-   * The third state is `unconfirmed`, NOT "not created", and the absence of a `campaign_id` is
-   * not evidence that nothing was created. `orchestrator.go` emits `ok: false` with no id for at
-   * least four distinct situations: a genuine upstream rejection (:869), a concurrent dispatch
-   * that skipped this platform (:780 — which campaign-service explicitly calls a skip, not a
-   * failure), and two responses in which an upstream campaign may well exist but its id did not
-   * survive — "dispatcher returned no campaign" (:879) and "dispatcher returned no upstream
-   * campaign id" (:887). Rendering all four as a definite "not created" tells an ED that no paid
-   * artifact exists, and their next move is to create a second one that really does spend money.
+   * The fallback state for an id-less failure is `unconfirmed`, NOT "not created", and the
+   * absence of a `campaign_id` is not evidence that nothing was created. `orchestrator.go` emits
+   * `ok: false` with no id for at least four distinct situations: a genuine upstream rejection
+   * (:869), a concurrent dispatch that skipped this platform (:780 — which campaign-service
+   * explicitly calls a skip, not a failure), and two responses in which an upstream campaign may
+   * well exist but its id did not survive — "dispatcher returned no campaign" (:879) and
+   * "dispatcher returned no upstream campaign id" (:887). Rendering all four as a definite "not
+   * created" tells an ED that no paid artifact exists, and their next move is to create a second
+   * one that really does spend money.
    *
    * So the row states what is known — this platform's campaign could not be confirmed — and
    * leaves the reader to check. That over-warns on the genuine-rejection and skip cases, which is
@@ -627,6 +653,17 @@ export class ImplementationTabComponent implements OnInit {
    * campaign costs budget. Note the skip is NOT detected by matching its human-readable sentence;
    * the wire has no dedicated `skipped` field yet (LFXV2-2665 tracks adding one) and a message
    * reworded upstream would silently flip the UI's verdict.
+   *
+   * The one exception is `nothing-created`, and it is matched on text deliberately. Since
+   * campaign-service #208 a failure the service PROVED happened before anything was created (the
+   * claim was released) carries a fixed sentence whose ending says so —
+   * `CAMPAIGN_DISPATCH_NOTHING_CREATED_SUFFIXES`, mirrored from `DispatchFailureMessage`. That
+   * differs from the skip in the one way the rule above cares about: the direction of drift. A
+   * reworded skip sentence would flip a row AWAY from the warning; a reworded pre-create sentence
+   * simply stops matching and the row falls back to `unconfirmed`, the over-warning direction. No
+   * sentence for the possibly-created case ends in those suffixes, and none of them is built from
+   * upstream text, so a match cannot downgrade a real campaign to "nothing was sent". An id-bearing
+   * row stays `orphaned` whatever its message says.
    */
   protected readonly platformOutcomes = computed<PlatformResultRow[]>(() => this.platformResults().map(toPlatformResultRow));
 
@@ -638,11 +675,24 @@ export class ImplementationTabComponent implements OnInit {
    * is how an orphaned `campaignId` reaches the page at all — so an all-failed result would
    * otherwise be announced as a success in green.
    *
-   * The negative case is headed "Campaign Status Unconfirmed" rather than "No Campaigns Created"
-   * for the same reason the row state is named `unconfirmed`: a heading is the one line a reader
-   * acts on without reading further, and this one must not assert an absence nobody verified.
+   * Drives the panel's colour and icon; the heading text is `platformResultsHeading`.
    */
-  protected readonly anyPlatformCreated = computed(() => this.platformOutcomes().some((r) => r.outcome !== 'unconfirmed'));
+  protected readonly anyPlatformCreated = computed(() => this.platformOutcomes().some((r) => r.outcome === 'created' || r.outcome === 'orphaned'));
+
+  /**
+   * The results panel heading. The negative case is "Campaign Status Unconfirmed" rather than "No
+   * Campaigns Created" for the same reason the row state is named `unconfirmed`: a heading is the
+   * one line a reader acts on without reading further, and it must not assert an absence nobody
+   * verified. The exception is when EVERY row is a proven pre-create failure — see
+   * `platformOutcomes` for what `nothing-created` is and is not.
+   */
+  protected readonly platformResultsHeading = computed(() => {
+    if (this.anyPlatformCreated()) {
+      return 'Campaigns Created';
+    }
+    const rows = this.platformOutcomes();
+    return rows.length > 0 && rows.every((r) => r.outcome === 'nothing-created') ? 'No Campaigns Created' : 'Campaign Status Unconfirmed';
+  });
 
   protected readonly errors = signal<string[]>([]);
   protected readonly briefKeywords = signal<CampaignKeyword[]>([]);
@@ -667,6 +717,39 @@ export class ImplementationTabComponent implements OnInit {
    * else would change what an operator who touches nothing receives.
    */
   protected readonly redditObjective = signal<RedditObjective>(DEFAULT_REDDIT_OBJECTIVE);
+  /**
+   * The concrete video goal a `video_views` campaign optimizes for. Reddit has no bare
+   * `VIDEO_VIEWS` goal, so both creators refuse that objective without one of `REDDIT_VIDEO_GOALS`.
+   * Starts unset (`''`) rather than on a default, so the operator picks the view length on purpose;
+   * `canSubmit` blocks a Video Views create until they do. Remembered across objective changes —
+   * only the request is gated on the objective.
+   */
+  protected readonly redditVideoGoal = signal<RedditVideoGoal | ''>('');
+  /** True when the objective needs a video goal — the condition that shows the goal picker. */
+  protected readonly redditNeedsVideoGoal = computed(() => this.redditObjective() === 'video_views');
+  /**
+   * The video goal as the request carries it, or `null` when Video Views is chosen without a usable
+   * goal. Read by the payload, by `canSubmit` and by the template's message, so all three agree.
+   * Membership-checked rather than truthiness-checked because a restored draft is not type-checked
+   * at runtime and both creators refuse anything outside `REDDIT_VIDEO_GOALS`.
+   */
+  protected readonly redditEffectiveVideoGoal = computed<RedditVideoGoal | null>(() => {
+    const goal = this.redditVideoGoal();
+    return (REDDIT_VIDEO_GOALS as readonly string[]).includes(goal) ? (goal as RedditVideoGoal) : null;
+  });
+  /** The message shown under the goal picker while Video Views has no usable goal, else `null`. */
+  protected readonly redditVideoGoalError = computed(() =>
+    this.redditNeedsVideoGoal() && this.redditEffectiveVideoGoal() === null ? 'Choose a video goal — Reddit needs one for a Video Views campaign.' : null
+  );
+  /**
+   * The message shown under the Post URL while Video Views has no post, else `null`. A video-views
+   * campaign has to promote an existing video post: the image-URL route authors an IMAGE post, which
+   * can never earn a video view, and with neither the campaign is created with no ad at all. Neither
+   * creator checks the creative against the objective, so this is the only place it is enforced.
+   */
+  protected readonly redditVideoPostError = computed(() =>
+    this.redditNeedsVideoGoal() && !this.redditPostUrl() ? 'Video Views promotes an existing Reddit video post — enter its Post URL.' : null
+  );
   /**
    * Link to an EXISTING Reddit post to promote. Ungated, because both creators read it: the
    * legacy path extracts the post id and builds the ad from it (`reddit-ads.service.ts`), exactly
@@ -1551,16 +1634,21 @@ export class ImplementationTabComponent implements OnInit {
     // must be a positive number"), and because creation is async that surfaces as a dead job
     // rather than an error on the request. Refuse locally instead.
     //
-    // Budget only: unlike Meta and LinkedIn, Reddit's remaining inputs are all AI-recommended
-    // from the brief and rendered read-only for review, so there is no user-entered value left to
-    // validate. The section exists so the operator SEES what will dispatch. Deliberately not an
-    // enumeration — listing which inputs those are is a claim the next added field falsifies.
+    // Most of Reddit's other inputs are AI-recommended from the brief and rendered read-only for
+    // review; the user-entered ones that can make a create fail are checked here and below (the
+    // video goal). Deliberately not an enumeration — a list is a claim the next field falsifies.
     if (redditSelected && !this.redditBudgetIsUsable()) return false;
     // No usable geo at all — the brief recommended none AND the country code is blank. The
     // request would carry [''], which Reddit cannot target and the operator cannot see, because
     // the preview correctly renders nothing. countryCode has no validator, so this state is
     // reachable by clearing one optional field.
     if (redditSelected && this.redditEffectiveGeoTargets().length === 0) return false;
+    // Video Views with no usable goal: both creators refuse it before anything is created, and
+    // because creation is async that refusal would arrive as a dead job. The message is on screen
+    // under the goal picker.
+    if (redditSelected && this.redditVideoGoalError() !== null) return false;
+    // Video Views without a post would build an image-post ad or no ad — never a video view.
+    if (redditSelected && this.redditVideoPostError() !== null) return false;
     if (metaSelected && !this.metaVariants().some((v) => v.primaryText.trim() && v.headline.trim())) return false;
     if (metaSelected && !this.metaHasPlacement()) return false;
     if (metaSelected && !this.metaPixelValid()) return false;
@@ -2038,6 +2126,11 @@ export class ImplementationTabComponent implements OnInit {
 
   protected onRedditObjectiveChange(event: Event): void {
     this.redditObjective.set((event.target as HTMLSelectElement).value as RedditObjective);
+    this.emitDraft();
+  }
+
+  protected onRedditVideoGoalChange(event: Event): void {
+    this.redditVideoGoal.set((event.target as HTMLSelectElement).value as RedditVideoGoal | '');
     this.emitDraft();
   }
 
@@ -2605,17 +2698,15 @@ export class ImplementationTabComponent implements OnInit {
               // back to the same objective when it is absent, so an explicit value is the only
               // thing that makes the payload say what the screen shows.
               //
-              // Sent even when `redditObjectiveIsUnavailable()`, and that is the deliberate half.
-              // The only withheld objective is `video_views`, which BOTH creators refuse outright
-              // unless a `videoGoal` accompanies it and nothing in this tier can set one. So such a
-              // create fails before anything is built rather than succeeding — where omitting
-              // the field would fall back to `conversions` and quietly build a campaign the
-              // operator never chose, against an objective the select is at that moment showing
-              // them as "(no longer available)". A refusal they can see and act on beats a
-              // substitution they cannot. Unreachable today: the signal seeds from
-              // DEFAULT_REDDIT_OBJECTIVE and the picker offers only the selectable three, so the
-              // sole route in is a draft written against a wider set.
+              // Sent even when `redditObjectiveIsUnavailable()`, and that is the deliberate half:
+              // omitting the field would fall back to `conversions` and quietly build a campaign the
+              // operator never chose, against an objective the select is showing them as
+              // "(no longer available)". Unreachable today — every objective is selectable.
               objective: this.redditObjective(),
+              // Only with `video_views`: both creators require it there and ignore it elsewhere, so
+              // a goal left over from an earlier Video Views choice is not sent with another
+              // objective. `canSubmit` guarantees it is present whenever the objective needs it.
+              ...this.redditVideoGoalPayload(),
               // Omitted when blank rather than sent empty: upstream treats an empty `postUrl` as
               // "author a post instead", and an empty `callToAction` as "use the default" — both
               // the same decision an absent key makes, so a blank string would only add a value
@@ -3045,6 +3136,9 @@ export class ImplementationTabComponent implements OnInit {
       this.redditImageAssetName.set(draft.redditImageAssetName ?? '');
       this.redditImageAssetBriefId.set(draft.redditImageAssetBriefId ?? '');
     }
+    if (draft.redditVideoGoal !== undefined) {
+      this.redditVideoGoal.set(draft.redditVideoGoal);
+    }
 
     // Microsoft (LFXV2-3312), on the same present-only rule. The arrays restore on `!== undefined`
     // rather than on truthiness, which is the whole point: an EMPTY list is a deliberate clear the
@@ -3212,6 +3306,7 @@ export class ImplementationTabComponent implements OnInit {
       redditImageAssetId: this.redditImageAssetId(),
       redditImageAssetName: this.redditImageAssetName(),
       redditImageAssetBriefId: this.redditImageAssetBriefId(),
+      redditVideoGoal: this.redditVideoGoal(),
     });
   }
 
@@ -4131,6 +4226,12 @@ export class ImplementationTabComponent implements OnInit {
       // Google, so creative added by hand upstream is never discovered here.
       return `${sentence} Activating it from LFX stays refused even after that, so launch it in Google Ads.`;
     });
+  }
+
+  /** `{ videoGoal }` for a Video Views campaign with a usable goal, otherwise `{}`. */
+  private redditVideoGoalPayload(): { videoGoal?: RedditVideoGoal } {
+    const goal = this.redditEffectiveVideoGoal();
+    return this.redditNeedsVideoGoal() && goal ? { videoGoal: goal } : {};
   }
 
   /**

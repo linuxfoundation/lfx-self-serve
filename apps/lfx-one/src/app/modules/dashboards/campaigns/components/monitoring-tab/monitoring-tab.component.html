@@ -84,6 +84,14 @@
     }
   </div>
 
+  <!--
+    Read status of the LinkedIn, Reddit, Meta and Microsoft Ads/X panels, mounted OUTSIDE the
+    per-platform @if below. An aria-live element inserted with its text already present is not
+    reliably announced, so the region exists first and only its CONTENTS change. A read failure is
+    not repeated here: the visible error block already carries role="alert".
+  -->
+  <div role="status" aria-live="polite" class="sr-only" data-testid="monitoring-ad-panel-live">{{ adPanelAnnouncement() }}</div>
+
   @if (selectedPlatform() === 'google') {
     <!-- Controls -->
     <div class="flex items-center justify-between">
@@ -506,7 +514,7 @@
           </div>
         </div>
       } @else if (linkedInError()) {
-        <div class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-red-300 bg-red-50 p-12" data-testid="linkedin-error">
+        <div class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-red-300 bg-red-50 p-12" role="alert" data-testid="linkedin-error">
           <i class="fa-light fa-triangle-exclamation text-3xl text-red-400" aria-hidden="true"></i>
           <p class="text-sm font-medium text-red-700">Failed to load LinkedIn data</p>
           <p class="text-xs text-red-500">{{ linkedInError() }}</p>
@@ -580,7 +588,7 @@
           </div>
         </div>
       } @else if (redditError()) {
-        <div class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-red-300 bg-red-50 p-12" data-testid="reddit-error">
+        <div class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-red-300 bg-red-50 p-12" role="alert" data-testid="reddit-error">
           <i class="fa-light fa-triangle-exclamation text-3xl text-red-400" aria-hidden="true"></i>
           <p class="text-sm font-medium text-red-700">Failed to load Reddit data</p>
           <p class="text-xs text-red-500">{{ redditError() }}</p>
@@ -645,7 +653,7 @@
           </div>
         </div>
       } @else if (metaError()) {
-        <div class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-red-300 bg-red-50 p-12" data-testid="meta-error">
+        <div class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-red-300 bg-red-50 p-12" role="alert" data-testid="meta-error">
           <i class="fa-light fa-triangle-exclamation text-3xl text-red-400" aria-hidden="true"></i>
           <p class="text-sm font-medium text-red-700">Failed to load Meta data</p>
           <p class="text-xs text-red-500">{{ metaError() }}</p>
@@ -711,6 +719,7 @@
       } @else if (reportBackedError()) {
         <div
           class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-red-300 bg-red-50 p-12"
+          role="alert"
           [attr.data-testid]="reportBackedPanel() + '-error'">
           <i class="fa-light fa-triangle-exclamation text-3xl text-red-400" aria-hidden="true"></i>
           <p class="text-sm font-medium text-red-700">Failed to load {{ reportBackedLabel() }} data</p>

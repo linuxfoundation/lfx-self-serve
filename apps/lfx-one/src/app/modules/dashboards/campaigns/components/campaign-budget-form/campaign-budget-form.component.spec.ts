@@ -126,6 +126,22 @@ describe('CampaignBudgetFormComponent', () => {
     expect((el().querySelector('[data-testid="optimization-campaign-budget-submit-c-1"] button') as HTMLButtonElement).disabled).toBe(true);
   });
 
+  // The reason can arrive after the editor opened (X's pacing read), so it is announced and described.
+  it('announces a blocked reason that arrives later and describes the amount with it', () => {
+    fixture.detectChanges();
+    const blocked = q('optimization-campaign-budget-blocked-c-1')!;
+    const amount = el().querySelector('#campaign-budget-amount-c-1')!;
+    expect(blocked.getAttribute('role')).toBe('status');
+    expect(blocked.getAttribute('aria-live')).toBe('polite');
+    expect(amount.getAttribute('aria-describedby')).not.toContain('campaign-budget-blocked-c-1');
+
+    fixture.componentRef.setInput('blockedReason', 'This X campaign has a lifetime (total) budget.');
+    fixture.detectChanges();
+
+    expect(blocked.textContent).toContain('lifetime (total) budget');
+    expect(amount.getAttribute('aria-describedby')).toContain('campaign-budget-blocked-c-1');
+  });
+
   it('emits cancel', () => {
     const cancelled = vi.fn();
     fixture.componentInstance.cancelEdit.subscribe(() => cancelled());
@@ -133,5 +149,54 @@ describe('CampaignBudgetFormComponent', () => {
     (el().querySelector('[data-testid="optimization-campaign-budget-cancel-c-1"] button') as HTMLButtonElement).click();
 
     expect(cancelled).toHaveBeenCalledTimes(1);
+  });
+
+  // X (#3299): campaign-service writes X budgets as a daily amount only and refuses `lifetime` with 409.
+  describe('daily-only platform', () => {
+    beforeEach(() => {
+      fixture.componentRef.setInput('dailyOnly', true);
+    });
+
+    it('offers Daily alone, pre-selected, with no Lifetime choice', () => {
+      fixture.detectChanges();
+
+      expect(el().querySelector('#campaign-budget-type-c-1-daily')).not.toBeNull();
+      expect(el().querySelector('#campaign-budget-type-c-1-lifetime')).toBeNull();
+      expect(q('optimization-campaign-budget-type-lifetime-c-1')).toBeNull();
+      expect(fixture.componentInstance.form.controls.budgetType.value).toBe('daily');
+      expect(q('optimization-campaign-budget-type-hint-c-1')!.textContent).toContain('daily amount only');
+    });
+
+    it('pre-selects Daily even when the parent names lifetime', () => {
+      fixture.componentRef.setInput('knownBudgetType', 'lifetime');
+      fixture.detectChanges();
+
+      expect(fixture.componentInstance.form.controls.budgetType.value).toBe('daily');
+    });
+
+    it('emits a daily change without the operator choosing a pacing', () => {
+      fixture.detectChanges();
+      typeAmount('40');
+      submit();
+
+      expect(submitted).toHaveBeenCalledWith({ budget: 40, budgetType: 'daily' });
+    });
+
+    it('never emits a lifetime change, even if the control is forced to one', () => {
+      fixture.detectChanges();
+      typeAmount('40');
+      fixture.componentInstance.form.controls.budgetType.setValue('lifetime');
+      submit();
+
+      expect(submitted).not.toHaveBeenCalled();
+    });
+
+    it('keeps the generic pacing hint off a platform that takes either pacing', () => {
+      fixture.componentRef.setInput('dailyOnly', false);
+      fixture.detectChanges();
+
+      expect(el().querySelector('#campaign-budget-type-c-1-lifetime')).not.toBeNull();
+      expect(q('optimization-campaign-budget-type-hint-c-1')!.textContent).toContain('Must match the pacing');
+    });
   });
 });

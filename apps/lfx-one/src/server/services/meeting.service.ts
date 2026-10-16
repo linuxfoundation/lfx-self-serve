@@ -1215,9 +1215,8 @@ export class MeetingService {
    * Removes the authenticated user as a registrant of a meeting using their own bearer token.
    * The caller's registrant records are resolved server-side (by email or username) so the client
    * never needs a registrant UID; upstream re-verifies ownership and returns 403 for anyone else's
-   * record. A committee-sourced registration is re-created by committee sync (and the ITX delete refuses it),
-   * so when the caller has one the request is rejected before anything is deleted: removing only their other
-   * rows would leave them invited while reporting success.
+   * record. Committee and mailing list registrations are removed like any other: the meeting service flags
+   * the delete as a self removal, so ITX records an exclusion that keeps later syncs from adding the user back.
    * The lookup must be complete, since a partial page walk would delete only a prefix of the caller's rows.
    * Every matching row is attempted; the call fails only when none could be removed, and a partial result is
    * returned to the client and logged rather than reported as a failure, since the rows already deleted stay deleted.
@@ -1234,13 +1233,6 @@ export class MeetingService {
 
     if (registrants.length === 0) {
       throw new ResourceNotFoundError('Meeting registration', meetingUid, {
-        operation: 'remove_meeting_registrant_self',
-        service: 'meeting_service',
-      });
-    }
-
-    if (registrants.some((registrant) => registrant.type === 'committee')) {
-      throw ServiceValidationError.forField('registrant', 'You were added to this meeting through a committee. Leave the committee to stop being invited.', {
         operation: 'remove_meeting_registrant_self',
         service: 'meeting_service',
       });
