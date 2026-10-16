@@ -517,7 +517,7 @@
                     [attr.aria-busy]="togglePending()[row.campaign.id] ? 'true' : null"
                     [attr.aria-disabled]="row.resumeAdopted ? 'true' : null"
                     [attr.aria-describedby]="row.describedBy"
-                    class="shrink-0 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+                    class="shrink-0 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:bg-transparent"
                     [attr.data-testid]="'optimization-campaign-toggle-' + row.campaign.id">
                     <!--
                       The visible label stays the ACTION word while pending, rather than becoming

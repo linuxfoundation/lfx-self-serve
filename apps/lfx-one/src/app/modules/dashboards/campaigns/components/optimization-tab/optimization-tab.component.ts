@@ -457,8 +457,9 @@ export class OptimizationTabComponent implements OnInit {
    * defect as the over-broad instruction it replaced, pointed the other way.
    *
    * Derived from the rendered rows rather than a count, so it agrees with the buttons by
-   * construction: a row is offerable exactly when it is not conflicted and its action is a real
-   * direction, which is the same condition the template's `[disabled]` uses.
+   * construction: a row is offerable exactly when it is not conflicted, its action is a real
+   * direction, and it is not an adopted campaign's Resume — the rows the template renders usable
+   * (`[disabled]` covers the first two, `aria-disabled` the adopted Resume).
    */
   protected readonly hasActionableSiblings = computed(() => {
     const rows = this.campaignRows();
@@ -3085,11 +3086,11 @@ export class OptimizationTabComponent implements OnInit {
    * in bindings, and as a template method this also re-ran for every row on every change
    * detection pass while reading `toggleError()` internally.
    *
-   * A helper rather than an inline expression because the choice is three-way, which inline would
-   * mean a nested ternary in a template — the construct this repo forbids. Both ids may be present
-   * at once (a disabled row can still hold an error from a click that raced the status), and
-   * `aria-describedby` takes a LIST, so both are named rather than one silently shadowing the
-   * other. A dangling reference to an element that renders conditionally is worse than none, so
+   * A helper rather than an inline expression because up to three ids combine (the row's error, its
+   * unavailable reason, an adopted campaign's Resume reason), which inline would mean nested
+   * ternaries in a template — the construct this repo forbids. Several may be present at once (a
+   * disabled row can still hold an error from a click that raced the status), and
+   * `aria-describedby` takes a LIST, so each is named rather than one silently shadowing another. A dangling reference to an element that renders conditionally is worse than none, so
    * each id is included only when its element is actually drawn.
    *
    * `static` in spirit — it reads no signals, so the computed above owns the reactivity.
