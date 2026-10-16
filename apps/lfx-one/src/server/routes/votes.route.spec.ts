@@ -6,17 +6,22 @@ import type { Response } from 'express';
 import type { Server } from 'node:http';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-const { summary, byId } = vi.hoisted(() => ({
+const { summary, byId, reminderRecipients, sendReminders, voteWriteRateLimiter } = vi.hoisted(() => ({
   summary: vi.fn((_req: unknown, res: Response) => res.json({ active_votes: 2, closing_soon: 1 })),
   byId: vi.fn(),
+  reminderRecipients: vi.fn((_req: unknown, res: Response) => res.json([{ uid: 'r-1' }])),
+  sendReminders: vi.fn((_req: unknown, res: Response) => res.json({ recipient_count: 1 })),
+  voteWriteRateLimiter: vi.fn((_req: unknown, _res: unknown, next: () => void) => next()),
 }));
 vi.mock('../controllers/vote.controller', () => ({
   VoteController: class {
     public getVotesSummary = summary;
     public getVoteById = byId;
+    public getVoteReminderRecipients = reminderRecipients;
+    public sendVoteReminders = sendReminders;
   },
 }));
-vi.mock('../middleware/rate-limit.middleware', () => ({ voteWriteRateLimiter: (_req: unknown, _res: unknown, next: () => void) => next() }));
+vi.mock('../middleware/rate-limit.middleware', () => ({ voteWriteRateLimiter }));
 
 import router from './votes.route';
 
@@ -41,5 +46,26 @@ describe('votes summary route dispatch', () => {
     expect(await response.json()).toEqual({ active_votes: 2, closing_soon: 1 });
     expect(summary).toHaveBeenCalledOnce();
     expect(byId).not.toHaveBeenCalled();
+  });
+});
+
+describe('vote reminder route dispatch (#3769)', () => {
+  it('dispatches GET /:uid/reminder-recipients to its handler, not the vote UID handler, without the write limiter', async () => {
+    voteWriteRateLimiter.mockClear();
+    const response = await fetch(`${baseUrl}/api/votes/vote-1/reminder-recipients`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual([{ uid: 'r-1' }]);
+    expect(reminderRecipients).toHaveBeenCalledOnce();
+    expect(byId).not.toHaveBeenCalled();
+    expect(voteWriteRateLimiter).not.toHaveBeenCalled();
+  });
+
+  it('dispatches POST /:uid/reminders through the vote write rate limiter', async () => {
+    voteWriteRateLimiter.mockClear();
+    const response = await fetch(`${baseUrl}/api/votes/vote-1/reminders`, { method: 'POST' });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ recipient_count: 1 });
+    expect(voteWriteRateLimiter).toHaveBeenCalledOnce();
+    expect(sendReminders).toHaveBeenCalledOnce();
   });
 });

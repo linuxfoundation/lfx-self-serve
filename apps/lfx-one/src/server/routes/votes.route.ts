@@ -33,6 +33,9 @@ router.get('/:uid/my-response', (req, res, next) => voteController.getMyVoteResp
 // GET /votes/:uid/results - get vote results
 router.get('/:uid/results', (req, res, next) => voteController.getVoteResults(req, res, next));
 
+// GET /votes/:uid/reminder-recipients - eligible voters who have not voted yet (vote#writer only)
+router.get('/:uid/reminder-recipients', (req, res, next) => voteController.getVoteReminderRecipients(req, res, next));
+
 // GET /votes/:uid - get a single vote
 router.get('/:uid', (req, res, next) => voteController.getVoteById(req, res, next));
 
@@ -47,5 +50,8 @@ router.delete('/:uid', (req, res, next) => voteController.deleteVote(req, res, n
 
 // PUT /votes/:uid/enable - enable a vote
 router.put('/:uid/enable', voteWriteRateLimiter, (req, res, next) => voteController.enableVote(req, res, next));
+
+// POST /votes/:uid/reminders - resend the vote email to selected recipients
+router.post('/:uid/reminders', voteWriteRateLimiter, (req, res, next) => voteController.sendVoteReminders(req, res, next));
 
 export default router;

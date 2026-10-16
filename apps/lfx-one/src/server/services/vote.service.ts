@@ -13,9 +13,11 @@ import {
   PaginatedResponse,
   QueryServiceCountResponse,
   QueryServiceResponse,
+  SendVoteReminderResponse,
   UpdateVoteRequest,
   Vote,
   VoteListResponse,
+  VoteReminderRecipient,
   VoteSummary,
   VoteResultsResponse,
 } from '@lfx-one/shared/interfaces';
@@ -511,6 +513,76 @@ export class VoteService {
         vote_response_uid: payload.vote_response_uid,
       });
     }
+  }
+
+  // ============================================
+  // Reminders (#3769)
+  // ============================================
+
+  /**
+   * Lists the eligible voters who have not voted on a vote yet — the recipients a manager can
+   * remind. Drains every `vote_response` row tagged with the vote and keeps the ones still
+   * awaiting a response, not yet cast and not removed from the electorate. `bulk_resend` does not
+   * check whether a recipient already voted, so this filter is the only guard against reminding
+   * someone who has. Returns an identity-only projection: ballot content is never forwarded.
+   * The caller must have run `assertVoteWrite` first — every vote auditor can read these rows.
+   */
+  public async getVoteReminderRecipients(req: Request, voteUid: string): Promise<VoteReminderRecipient[]> {
+    logger.debug(req, 'get_vote_reminder_recipients', 'Fetching vote_response rows for reminder recipients', { vote_uid: voteUid });
+
+    // failOnPartial: a truncated page set would silently leave voters out of the reminder list.
+    const rows = await fetchAllQueryResources<IndexedVoteResponse>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVoteResponse>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'vote_response',
+          filters: [`vote_uid:${voteUid}`],
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
+    );
+
+    const recipients = rows
+      .filter(
+        (row): row is IndexedVoteResponse & { uid: string } =>
+          row.vote_status === IndexedVoteResponseStatus.AWAITING_RESPONSE && !row.vote_creation_time && row.voter_removed !== true && !!row.uid
+      )
+      .map((row) => ({
+        uid: row.uid,
+        user_name: row.user_name,
+        user_email: row.user_email,
+        user_org_name: row.user_org_name,
+        user_role: row.user_role,
+        user_voting_status: row.user_voting_status,
+      }))
+      .sort((a, b) => (a.user_name ?? '').localeCompare(b.user_name ?? ''));
+
+    logger.debug(req, 'get_vote_reminder_recipients', 'Filtered reminder recipients', {
+      vote_uid: voteUid,
+      row_count: rows.length,
+      recipient_count: recipients.length,
+    });
+
+    return recipients;
+  }
+
+  /**
+   * Resends the vote email to the given recipients via POST /votes/{uid}/bulk_resend, with the
+   * user's bearer token (no M2M) — the gateway enforces `vote:{uid}#writer`. Upstream rejects the
+   * whole batch with a 400 when the vote is not active or any ID is no longer an eligible voter;
+   * that error propagates unchanged.
+   */
+  public async sendVoteReminders(req: Request, voteUid: string, recipientIds: string[]): Promise<SendVoteReminderResponse> {
+    logger.debug(req, 'send_vote_reminders', 'Resending vote email to recipients', {
+      vote_uid: voteUid,
+      recipient_count: recipientIds.length,
+    });
+
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/votes/${this.encodeVoteUid(voteUid)}/bulk_resend`, 'POST', undefined, {
+      recipient_ids: recipientIds,
+    });
+
+    return { recipient_count: recipientIds.length };
   }
 
   // ============================================

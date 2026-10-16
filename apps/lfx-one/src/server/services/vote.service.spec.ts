@@ -1672,4 +1672,104 @@ describe('VoteService', () => {
       expect(proxyRequest).not.toHaveBeenCalled();
     });
   });
+
+  describe('getVoteReminderRecipients (#3769)', () => {
+    const VOTE_UID = 'v0000000-0000-0000-0000-00000000r001';
+    const row = (overrides: Partial<IndexedVoteResponse & { poll_answers: unknown[]; comment_responses: unknown[] }> = {}) => ({
+      uid: 'r-1',
+      vote_uid: VOTE_UID,
+      user_name: 'Avery Example',
+      user_email: 'avery@acme-motors.example',
+      user_org_name: 'Acme Motors',
+      user_role: 'Member',
+      user_voting_status: 'Voting Rep',
+      vote_status: IndexedVoteResponseStatus.AWAITING_RESPONSE,
+      voter_removed: false,
+      vote_creation_time: '',
+      ...overrides,
+    });
+
+    it('drains the vote-scoped vote_response rows with failOnPartial, through the user-token proxy', async () => {
+      fetchAllQueryResources.mockImplementation(async (_req: Request, fetchPage: (pageToken?: string) => Promise<unknown>) => {
+        await fetchPage();
+        await fetchPage('next-token');
+        return [];
+      });
+      proxyRequest.mockResolvedValue({ resources: [] });
+
+      await service.getVoteReminderRecipients(req, VOTE_UID);
+
+      expect(fetchAllQueryResources).toHaveBeenCalledWith(req, expect.any(Function), { failOnPartial: true });
+      expect(proxyRequest).toHaveBeenNthCalledWith(1, req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        type: 'vote_response',
+        filters: [`vote_uid:${VOTE_UID}`],
+      });
+      expect(proxyRequest).toHaveBeenNthCalledWith(2, req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        type: 'vote_response',
+        filters: [`vote_uid:${VOTE_UID}`],
+        page_token: 'next-token',
+      });
+    });
+
+    it('keeps only awaiting, uncast, non-removed rows with a uid, sorted by name', async () => {
+      fetchAllQueryResources.mockResolvedValue([
+        row({ uid: 'r-zed', user_name: 'Zed Example' }),
+        row({ uid: 'r-responded', vote_status: IndexedVoteResponseStatus.RESPONDED }),
+        row({ uid: 'r-cast', vote_creation_time: '2026-10-01T00:00:00Z' }),
+        row({ uid: 'r-removed', voter_removed: true }),
+        row({ uid: undefined }),
+        row({ uid: 'r-ended', vote_status: 'awaiting_response_but_poll_ended' }),
+        row({ uid: 'r-avery' }),
+      ]);
+
+      const recipients = await service.getVoteReminderRecipients(req, VOTE_UID);
+
+      expect(recipients.map((r) => r.uid)).toEqual(['r-avery', 'r-zed']);
+    });
+
+    it('returns an identity-only projection — ballot content is never forwarded', async () => {
+      fetchAllQueryResources.mockResolvedValue([row({ poll_answers: [{ question_id: 'q-1' }], comment_responses: [{ comment: 'secret' }] })]);
+
+      const [recipient] = await service.getVoteReminderRecipients(req, VOTE_UID);
+
+      expect(recipient).toEqual({
+        uid: 'r-1',
+        user_name: 'Avery Example',
+        user_email: 'avery@acme-motors.example',
+        user_org_name: 'Acme Motors',
+        user_role: 'Member',
+        user_voting_status: 'Voting Rep',
+      });
+    });
+  });
+
+  describe('sendVoteReminders (#3769)', () => {
+    it('POSTs the recipient IDs to the vote bulk_resend endpoint with the user token and returns the count', async () => {
+      proxyRequest.mockResolvedValue(undefined);
+
+      const result = await service.sendVoteReminders(req, CANONICAL_UID, ['r-1', 'r-2']);
+
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', `/votes/${CANONICAL_UID}/bulk_resend`, 'POST', undefined, {
+        recipient_ids: ['r-1', 'r-2'],
+      });
+      // No ApiRequestOptions argument: the user's own bearer token is used, never an M2M override.
+      expect(proxyRequest.mock.calls[0]).toHaveLength(6);
+      expect(result).toEqual({ recipient_count: 2 });
+    });
+
+    it('encodes the vote uid in the upstream path', async () => {
+      proxyRequest.mockResolvedValue(undefined);
+
+      await service.sendVoteReminders(req, HOSTILE_UID, ['r-1']);
+
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/votes/abc%2Fdef/bulk_resend', 'POST', undefined, { recipient_ids: ['r-1'] });
+    });
+
+    it('propagates an upstream 400 unchanged', async () => {
+      const upstream = new MicroserviceError('poll is not active', 400, 'BAD_REQUEST', { service: 'LFX_V2_SERVICE' });
+      proxyRequest.mockRejectedValue(upstream);
+
+      await expect(service.sendVoteReminders(req, CANONICAL_UID, ['r-1'])).rejects.toBe(upstream);
+    });
+  });
 });

@@ -1,0 +1,200 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { HttpErrorResponse } from '@angular/common/http';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { VoteReminderRecipient } from '@lfx-one/shared/interfaces';
+import { VoteService } from '@services/vote.service';
+import { MessageService } from 'primeng/api';
+import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { Observable, of, throwError } from 'rxjs';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import { VoteReminderDialogComponent } from './vote-reminder-dialog.component';
+
+const RECIPIENTS: VoteReminderRecipient[] = [
+  { uid: 'r-1', user_name: 'Avery Example', user_email: 'avery@acme-motors.example', user_org_name: 'Acme Motors', user_voting_status: 'Voting Rep' },
+  { uid: 'r-2', user_name: 'Blake Example', user_email: 'blake@beta-coastal.example', user_role: 'Chair' },
+];
+
+/**
+ * Mounts the dialog over vote `vote-1`.
+ * @returns the fixture, the component, and the spies used to inspect sends, toasts and close.
+ */
+async function mount(recipients: Observable<VoteReminderRecipient[]>, send: Observable<{ recipient_count: number }> = of({ recipient_count: 2 })) {
+  TestBed.resetTestingModule();
+
+  const getReminderRecipients = vi.fn().mockReturnValue(recipients);
+  const sendReminders = vi.fn().mockReturnValue(send);
+  const add = vi.fn();
+  const close = vi.fn();
+
+  TestBed.configureTestingModule({
+    imports: [VoteReminderDialogComponent],
+    providers: [
+      { provide: DynamicDialogRef, useValue: { close } },
+      { provide: DynamicDialogConfig, useValue: { data: { vote: { uid: 'vote-1' } } } },
+      { provide: VoteService, useValue: { getReminderRecipients, sendReminders } },
+      { provide: MessageService, useValue: { add } },
+    ],
+  });
+
+  const fixture = TestBed.createComponent(VoteReminderDialogComponent);
+  fixture.detectChanges();
+  await fixture.whenStable();
+
+  return { fixture, component: fixture.componentInstance, getReminderRecipients, sendReminders, add, close };
+}
+
+function byTestId(fixture: ComponentFixture<VoteReminderDialogComponent>, id: string): HTMLElement | null {
+  return fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+}
+
+function sendButton(fixture: ComponentFixture<VoteReminderDialogComponent>): HTMLButtonElement {
+  return byTestId(fixture, 'vote-reminder-dialog-send')!.querySelector('button')!;
+}
+
+function selected(component: VoteReminderDialogComponent): string[] {
+  return [...component['selectedUids']()].sort();
+}
+
+describe('VoteReminderDialogComponent', () => {
+  let current: ComponentFixture<VoteReminderDialogComponent> | undefined;
+  afterEach(() => current?.destroy());
+
+  it('loads the recipients for the vote and starts with every one selected', async () => {
+    const { fixture, component, getReminderRecipients } = await mount(of(RECIPIENTS));
+    current = fixture;
+
+    expect(getReminderRecipients).toHaveBeenCalledWith('vote-1');
+    expect(selected(component)).toEqual(['r-1', 'r-2']);
+    expect(component['checkboxForm'].getRawValue()).toEqual({ 'r-1': true, 'r-2': true });
+    expect(component['selectAllForm'].controls.all.value).toBe(true);
+    expect(byTestId(fixture, 'vote-reminder-dialog-count')!.textContent).toContain('2 of 2 selected');
+    expect(byTestId(fixture, 'vote-reminder-dialog-row-r-1')).not.toBeNull();
+    expect(sendButton(fixture).disabled).toBe(false);
+  });
+
+  it('toggles one recipient and the select-all, keeping the checkboxes in sync', async () => {
+    const { fixture, component } = await mount(of(RECIPIENTS));
+    current = fixture;
+
+    component['toggleRecipient']('r-1');
+    expect(selected(component)).toEqual(['r-2']);
+    expect(component['checkboxForm'].getRawValue()).toEqual({ 'r-1': false, 'r-2': true });
+    expect(component['selectAllForm'].controls.all.value).toBe(false);
+
+    component['toggleSelectAll']();
+    expect(selected(component)).toEqual(['r-1', 'r-2']);
+    expect(component['selectAllForm'].controls.all.value).toBe(true);
+
+    component['toggleSelectAll']();
+    expect(selected(component)).toEqual([]);
+    expect(component['checkboxForm'].getRawValue()).toEqual({ 'r-1': false, 'r-2': false });
+  });
+
+  it('keeps the selection and checkboxes in sync when the checkbox inputs themselves are clicked', async () => {
+    const { fixture, component } = await mount(of(RECIPIENTS));
+    current = fixture;
+    const input = (id: string): HTMLInputElement => fixture.nativeElement.querySelector(`#${id}`);
+
+    input('vote-reminder-select-r-1').click();
+    fixture.detectChanges();
+    expect(selected(component)).toEqual(['r-2']);
+    expect(component['checkboxForm'].getRawValue()).toEqual({ 'r-1': false, 'r-2': true });
+    expect(component['selectAllForm'].controls.all.value).toBe(false);
+
+    input('vote-reminder-select-all').click();
+    fixture.detectChanges();
+    expect(selected(component)).toEqual(['r-1', 'r-2']);
+    expect(component['checkboxForm'].getRawValue()).toEqual({ 'r-1': true, 'r-2': true });
+    expect(component['selectAllForm'].controls.all.value).toBe(true);
+  });
+
+  it('disables Send while nothing is selected', async () => {
+    const { fixture, component, sendReminders } = await mount(of(RECIPIENTS));
+    current = fixture;
+
+    component['toggleSelectAll']();
+    fixture.detectChanges();
+
+    expect(sendButton(fixture).disabled).toBe(true);
+    component['send']();
+    expect(sendReminders).not.toHaveBeenCalled();
+  });
+
+  it('sends exactly the selected recipients, shows the success toast and closes', async () => {
+    const { fixture, component, sendReminders, add, close } = await mount(of(RECIPIENTS), of({ recipient_count: 1 }));
+    current = fixture;
+
+    component['toggleRecipient']('r-2');
+    component['send']();
+
+    expect(sendReminders).toHaveBeenCalledWith('vote-1', ['r-1']);
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', detail: 'Reminder sent to 1 voter.' }));
+    expect(close).toHaveBeenCalledWith(true);
+    expect(component['sending']()).toBe(false);
+  });
+
+  it('pluralizes the success toast', async () => {
+    const { fixture, component, add } = await mount(of(RECIPIENTS), of({ recipient_count: 2 }));
+    current = fixture;
+
+    component['send']();
+
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ detail: 'Reminder sent to 2 voters.' }));
+  });
+
+  it.each([
+    [400, 'This vote is no longer active, or some recipients are no longer eligible. Refresh and try again.'],
+    [403, "You don't have permission to send reminders for this vote."],
+    [429, 'Too many reminders were sent just now. Please try again in a minute.'],
+    [500, "We couldn't send the reminder. Please try again."],
+  ])('maps a %s send failure to plain-language copy and keeps the dialog open', async (status, detail) => {
+    const { fixture, component, add, close } = await mount(
+      of(RECIPIENTS),
+      throwError(() => new HttpErrorResponse({ status }))
+    );
+    current = fixture;
+
+    component['send']();
+
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail }));
+    expect(close).not.toHaveBeenCalled();
+    expect(component['sending']()).toBe(false);
+    expect(selected(component)).toEqual(['r-1', 'r-2']);
+  });
+
+  it('shows the "Everyone has voted" empty state with Send disabled when no one is left to remind', async () => {
+    const { fixture } = await mount(of([]));
+    current = fixture;
+
+    expect(byTestId(fixture, 'vote-reminder-dialog-empty')!.textContent).toContain('Everyone has voted.');
+    expect(byTestId(fixture, 'vote-reminder-dialog-table')).toBeNull();
+    expect(sendButton(fixture).disabled).toBe(true);
+  });
+
+  it('shows a retry state when loading fails, and retry reloads the recipients', async () => {
+    const { fixture, getReminderRecipients } = await mount(throwError(() => new HttpErrorResponse({ status: 503 })));
+    current = fixture;
+
+    expect(byTestId(fixture, 'vote-reminder-dialog-error')!.textContent).toContain("We couldn't load the voter list. Please try again.");
+    expect(sendButton(fixture).disabled).toBe(true);
+
+    getReminderRecipients.mockReturnValue(of(RECIPIENTS));
+    byTestId(fixture, 'vote-reminder-dialog-retry')!.querySelector('button')!.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(getReminderRecipients).toHaveBeenCalledTimes(2);
+    expect(byTestId(fixture, 'vote-reminder-dialog-error')).toBeNull();
+    expect(byTestId(fixture, 'vote-reminder-dialog-table')).not.toBeNull();
+  });
+
+  it('explains a 403 load failure as a permission error', async () => {
+    const { fixture } = await mount(throwError(() => new HttpErrorResponse({ status: 403 })));
+    current = fixture;
+
+    expect(byTestId(fixture, 'vote-reminder-dialog-error')!.textContent).toContain("You don't have permission to send reminders for this vote.");
+  });
+});

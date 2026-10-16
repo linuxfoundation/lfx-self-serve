@@ -330,6 +330,48 @@ export interface IndexedVoteResponse {
   vote_status?: string;
   /** Whether the voter has been removed from the poll's eligible list */
   voter_removed?: boolean;
+  /** Invitee's display name */
+  user_name?: string;
+  /** Invitee's organization name */
+  user_org_name?: string;
+  /** Invitee's committee role at invitation time */
+  user_role?: string;
+  /** Invitee's voting eligibility status (e.g. `'Voting Rep'`) */
+  user_voting_status?: string;
+  /** When the ballot was cast — empty until the invitee votes */
+  vote_creation_time?: string;
+}
+
+/**
+ * Eligible voter who has not voted yet, returned by GET /api/votes/:uid/reminder-recipients (#3769).
+ * An identity-only projection of an `IndexedVoteResponse` row — ballot content (`poll_answers`,
+ * `comment_responses`) is never forwarded.
+ */
+export interface VoteReminderRecipient {
+  /** Vote response row identifier — the ID `bulk_resend` expects */
+  uid: string;
+  /** Invitee's display name */
+  user_name?: string;
+  /** Invitee's email address */
+  user_email?: string;
+  /** Invitee's organization name */
+  user_org_name?: string;
+  /** Invitee's committee role */
+  user_role?: string;
+  /** Invitee's voting eligibility status */
+  user_voting_status?: string;
+}
+
+/** Request body for POST /api/votes/:uid/reminders (#3769) */
+export interface SendVoteReminderRequest {
+  /** Vote response row identifiers (`VoteReminderRecipient.uid`) to remind */
+  recipient_ids: string[];
+}
+
+/** Response for POST /api/votes/:uid/reminders (#3769) */
+export interface SendVoteReminderResponse {
+  /** Number of distinct voters the reminder was sent to */
+  recipient_count: number;
 }
 
 /**

@@ -75,7 +75,9 @@ export const aiRateLimiter = rateLimit({
 /**
  * Rate limiter for vote write endpoints (GH-2729 review m-10).
  *
- * Applied per-route to `POST /api/votes` (create) and `PUT /api/votes/:uid/enable`. A vote open
+ * Applied per-route to `POST /api/votes` (create), `PUT /api/votes/:uid/enable`, and
+ * `POST /api/votes/:uid/reminders` (#3769 — each send emails every selected voter, and this cap is
+ * the only guard against repeat sends). A vote open
  * fans out to as many as 22 upstream calls while convergence lags (1 POST, then on the enable
  * route up to 21 PUTs on the 600 ms grid under the 13 s deadline — see VoteService's budget
  * constants), so the global 500/min/IP `apiRateLimiter` would still allow ~22 such actions per
