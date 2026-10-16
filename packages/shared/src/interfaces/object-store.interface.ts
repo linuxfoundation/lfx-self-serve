@@ -4,8 +4,8 @@
 // The BFF object store: one service, two interchangeable backends. Deployed
 // environments talk to a purpose-keyed S3 bucket; a local run with no bucket
 // configured for a PRIVATE purpose gets a folder under the app directory with
-// the same list, get, put and metadata behaviour, so hand tests and unit tests
-// persist and restore documents with nothing installed and no credentials.
+// the object operations described below, so hand tests and unit tests persist
+// documents with nothing installed and no credentials. Write contention differs.
 // Public, CDN-fronted purposes always need their bucket.
 
 /**
@@ -33,6 +33,8 @@ export interface ObjectStoreListEntry {
 export interface ObjectStoreReadResult {
   body: string;
   metadata: Record<string, string>;
+  /** Opaque version token for conditional replacement. */
+  etag?: string;
 }
 
 /** Everything a write carries besides its key. `body` is a `Uint8Array` so the contract stays Node-free; callers pass a `Buffer`. */
@@ -41,6 +43,9 @@ export interface ObjectStorePutInput {
   contentType: string;
   cacheControl: string;
   metadata?: Record<string, string>;
+  /** Replace only this observed version, or create only when absent. */
+  ifMatch?: string;
+  ifNoneMatch?: '*';
 }
 
 /**
@@ -55,14 +60,19 @@ export interface ObjectStoreFileSidecar {
 
 /**
  * The primitive operations the object-store service orchestrates, bound to
- * ONE purpose (one bucket or one folder). Both backends honour the same
- * contract, so the shared Marketing OS artifact layer — the one caller whose
- * purpose may fall back to the folder — runs unchanged against either; the
- * public `avatars` purpose is always S3 (see `OBJECT_STORE_PURPOSE_FILE_FALLBACK`):
+ * ONE purpose (one bucket or one folder). Both backends provide the operations
+ * below, with an additional file-backend contention case for writes. The private
+ * Marketing OS purpose may fall back to a folder; the public `avatars` purpose
+ * is always S3 (see `OBJECT_STORE_PURPOSE_FILE_FALLBACK`):
  *
  * - `headObject` / `getObject` return `null` ONLY on a confirmed missing
  *   object; any other failure (403, timeout, 5xx, EACCES) throws and is never
  *   masqueraded as "absent".
+ * - `putObject` honours `ifMatch` / `ifNoneMatch`; a failed comparison throws
+ *   `PreconditionFailedError`. The file backend also throws that error for an
+ *   overlapping unconditional put, unlike S3's last-writer-wins behaviour. A
+ *   crashed file writer leaves a lock requiring operator recovery (see the
+ *   file backend's class documentation); callers must not assume all puts succeed.
  * - `listObjects` returns every object under the prefix, paginating or
  *   walking as the backend needs; the service never sees pages.
  * - `ensureBucket` applies the backend's own creation policy (S3: only when
@@ -79,6 +89,7 @@ export interface ObjectStoreBackend {
   ensureBucket(): Promise<{ created: boolean }>;
   /** The object's user metadata, or null on a confirmed missing object. */
   headObject(key: string): Promise<Record<string, string> | null>;
+  /** Write the object; comparison failures and file-backend write contention throw PreconditionFailedError. */
   putObject(key: string, input: ObjectStorePutInput): Promise<void>;
   /** The object's UTF-8 body and user metadata, or null on a confirmed missing object. */
   getObject(key: string): Promise<ObjectStoreReadResult | null>;

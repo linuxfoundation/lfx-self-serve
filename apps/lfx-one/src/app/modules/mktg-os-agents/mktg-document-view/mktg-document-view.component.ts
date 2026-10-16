@@ -9,7 +9,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { MessageComponent } from '@components/message/message.component';
 import { MktgRevisionResponse, MktgRevisionRow, MktgRevisionSummary } from '@lfx-one/shared/interfaces';
-import { describeMktgRevision } from '@lfx-one/shared/utils';
+import { describeMktgRevision, describeMktgRevisionAuthor } from '@lfx-one/shared/utils';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { catchError, distinctUntilChanged, filter, map, of, switchMap, tap } from 'rxjs';
@@ -50,7 +50,13 @@ export class MktgDocumentViewComponent {
   protected readonly title: Signal<string> = this.initTitle();
   protected readonly revisionRows: Signal<MktgRevisionRow[]> = computed(() => {
     const view = this.view();
-    return view ? view.revisions.map((revision) => ({ revision, how: describeMktgRevision(revision, view.type) })) : [];
+    return view
+      ? view.revisions.map((revision) => ({
+          revision,
+          how: describeMktgRevision(revision, view.type),
+          authorLabel: describeMktgRevisionAuthor(revision.author),
+        }))
+      : [];
   });
   protected readonly shortHash: Signal<string> = computed(() => {
     const sha = this.view()?.revision.contentSha256 ?? '';

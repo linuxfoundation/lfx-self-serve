@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { S3Client } from '@aws-sdk/client-s3';
-import { ObjectStoreBackend, ObjectStoreListEntry, ObjectStorePurpose, ObjectStoreReadResult } from '@lfx-one/shared/interfaces';
+import { ObjectStoreBackend, ObjectStoreListEntry, ObjectStorePurpose, ObjectStorePutInput, ObjectStoreReadResult } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 import { resolve } from 'node:path';
 
 import { OBJECT_STORE_LOCAL_DEFAULT_DIR, OBJECT_STORE_LOCAL_DIR_ENV, OBJECT_STORE_PURPOSE_BUCKET_ENV, OBJECT_STORE_PURPOSE_FILE_FALLBACK } from '../constants';
+import { PreconditionFailedError, ServiceValidationError } from '../errors';
 import { buildAvatarUrl, getAvatarCdnPrefix, toAvatarKeySegment } from '../utils/avatar-url.util';
 import { logger } from './logger.service';
 import { FileObjectStoreBackend } from './object-store-file.backend';
@@ -20,9 +21,9 @@ import { S3ObjectStoreBackend } from './object-store-s3.backend';
  * `OBJECT_STORE_PURPOSE_BUCKET_ENV`): a purpose whose bucket env var is set is
  * served by S3 (`S3ObjectStoreBackend`). The private `marketing-os-artifacts`
  * purpose with its var unset is served by a folder under the app directory
- * (`FileObjectStoreBackend`, `apps/lfx-one/.object-store/<purpose>/`) with the
- * same list, get, put and metadata behaviour — so a local run persists and
- * restores documents with nothing installed and no credentials. The public,
+ * (`FileObjectStoreBackend`, `apps/lfx-one/.object-store/<purpose>/`) using the
+ * shared ObjectStoreBackend contract, including its documented file-write
+ * contention case. Local runs persist documents without credentials. The public,
  * CDN-fronted `avatars` purpose never falls back (`OBJECT_STORE_PURPOSE_FILE_FALLBACK`):
  * its callers persist a `CDN_URL_PREFIX` URL, which a file on disk could not
  * serve, so its bucket var stays required as before. Under `NODE_ENV=production`
@@ -91,9 +92,12 @@ export class ObjectStoreService {
    * (true only for a strictly newer revision), or an idempotent no-op becomes
    * a write on every repeat call.
    *
-   * Note: HEAD-then-PUT is racy under concurrency, but the race is benign for
-   * content-addressed keys — concurrent writers PUT identical bytes and the
-   * last write is indistinguishable from the first.
+   * HEAD-then-PUT remains racy. On S3, concurrent content-addressed writers
+   * PUT identical body bytes; last-writer-wins does not change that content.
+   * On the file backend, the exclusive per-key lock can instead reject an
+   * overlapping put with PreconditionFailedError, even for identical bytes.
+   * This method WARNs and rethrows; the Marketing OS artifact caller degrades
+   * to no receipt and retries on the next result poll.
    *
    * @returns true when the object was written (absent, or metadata refreshed), false on the no-op.
    */
@@ -213,6 +217,30 @@ export class ObjectStoreService {
         duration: Date.now() - startTime,
         error: error instanceof Error ? error.message : String(error),
       });
+      throw error;
+    }
+  }
+
+  /** Metadata-only revision summaries; no bundle download. */
+  public async headObject(req: Request, purpose: ObjectStorePurpose, key: string): Promise<Record<string, string> | null> {
+    logger.debug(req, 'object_store_head', 'Reading object metadata', { purpose, key });
+    return this.getBackend(purpose).headObject(key);
+  }
+
+  /** Atomic create/replace. A false result is contention, never an outage or denial. */
+  public async putConditionalObject(req: Request, purpose: ObjectStorePurpose, key: string, input: ObjectStorePutInput): Promise<boolean> {
+    if ((!input.ifMatch && !input.ifNoneMatch) || (input.ifMatch && input.ifNoneMatch)) {
+      throw ServiceValidationError.forField('precondition', 'A conditional write requires exactly one precondition');
+    }
+    await this.ensureBucket(purpose, { degradable: true });
+    try {
+      await this.getBackend(purpose).putObject(key, input);
+      logger.debug(req, 'object_store_conditional_put', 'Conditional write committed', { purpose, key });
+      return true;
+    } catch (error) {
+      if (error instanceof PreconditionFailedError) {
+        return false;
+      }
       throw error;
     }
   }
