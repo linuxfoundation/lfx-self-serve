@@ -2111,16 +2111,6 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
-  private clearRedditImageAsset(): void {
-    this.redditImageUploadSub?.unsubscribe();
-    this.redditImageUploadSub = null;
-    this.redditImageAssetId.set('');
-    this.redditImageAssetName.set('');
-    this.redditImageAssetBriefId.set('');
-    this.redditImageUploadStatus.set('idle');
-    this.redditImageUploadError.set('');
-  }
-
   protected onRedditCallToActionChange(event: Event): void {
     this.redditCallToAction.set((event.target as HTMLSelectElement).value as RedditCallToAction | '');
     this.emitDraft();
@@ -2793,6 +2783,16 @@ export class ImplementationTabComponent implements OnInit {
     }
     if (this.redditCreativeAvailable() && this.redditImageUrl()) return { imageUrl: this.redditImageUrl() };
     return {};
+  }
+
+  private clearRedditImageAsset(): void {
+    this.redditImageUploadSub?.unsubscribe();
+    this.redditImageUploadSub = null;
+    this.redditImageAssetId.set('');
+    this.redditImageAssetName.set('');
+    this.redditImageAssetBriefId.set('');
+    this.redditImageUploadStatus.set('idle');
+    this.redditImageUploadError.set('');
   }
 
   private failRedditImageUpload(message: string): void {
