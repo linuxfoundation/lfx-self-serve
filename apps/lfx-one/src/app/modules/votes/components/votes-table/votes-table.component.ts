@@ -15,7 +15,7 @@ import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PollStatus, VOTE_LABEL, VoteResponseStatus } from '@lfx-one/shared';
-import { FilterPillOption, MyVotesQuickFilter, Vote, VoteFilterState, VoteTableRow } from '@lfx-one/shared/interfaces';
+import { FilterPillOption, MyVotesQuickFilter, Vote, VoteFilterState, VoteStatusCounts, VoteTableRow } from '@lfx-one/shared/interfaces';
 import {
   getEntityCommands,
   getUserTimezone,
@@ -100,6 +100,10 @@ export class VotesTableComponent {
   public readonly quickFilter = input<MyVotesQuickFilter | null>(null);
   public readonly quickFilterNowMs = input<number>(0);
   public readonly scopeActive = input<boolean>(false);
+  // Opt-in status-tab counts (#3687): when on, each tab label carries its count, and a null
+  // `statusCounts` (loading or failed) renders as unavailable rather than as a confirmed zero.
+  public readonly showStatusCounts = input<boolean>(false);
+  public readonly statusCounts = input<VoteStatusCounts | null>(null);
 
   // === Outputs ===
   public readonly viewVote = output<string>();
@@ -265,7 +269,13 @@ export class VotesTableComponent {
         base.push({ id: PollStatus.DISABLED, label: 'Draft' });
       }
       base.push({ id: PollStatus.ENDED, label: 'Ended' });
-      return base;
+      if (!this.showStatusCounts()) return base;
+
+      const counts = this.statusCounts();
+      return base.map((option) => {
+        if (!counts) return { ...option, label: `${option.label} (–)`, ariaLabel: `${option.label}, count unavailable` };
+        return { ...option, label: `${option.label} (${counts[option.id as keyof VoteStatusCounts]})` };
+      });
     });
   }
 

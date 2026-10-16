@@ -6,13 +6,15 @@ import type { Response } from 'express';
 import type { Server } from 'node:http';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-const { summary, byId } = vi.hoisted(() => ({
+const { summary, statusCounts, byId } = vi.hoisted(() => ({
   summary: vi.fn((_req: unknown, res: Response) => res.json({ active_votes: 2, closing_soon: 1 })),
+  statusCounts: vi.fn((_req: unknown, res: Response) => res.json({ all: 3, active: 1, disabled: 1, ended: 1 })),
   byId: vi.fn(),
 }));
 vi.mock('../controllers/vote.controller', () => ({
   VoteController: class {
     public getVotesSummary = summary;
+    public getVoteStatusCounts = statusCounts;
     public getVoteById = byId;
   },
 }));
@@ -40,6 +42,14 @@ describe('votes summary route dispatch', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ active_votes: 2, closing_soon: 1 });
     expect(summary).toHaveBeenCalledOnce();
+    expect(byId).not.toHaveBeenCalled();
+  });
+
+  it('dispatches the literal status-counts path before the vote UID handler', async () => {
+    const response = await fetch(`${baseUrl}/api/votes/status-counts?parent=project:synthetic`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ all: 3, active: 1, disabled: 1, ended: 1 });
+    expect(statusCounts).toHaveBeenCalledOnce();
     expect(byId).not.toHaveBeenCalled();
   });
 });

@@ -16,10 +16,18 @@ import {
   UpdateVoteRequest,
   Vote,
   VoteListResponse,
+  VoteStatusCounts,
   VoteSummary,
   VoteResultsResponse,
 } from '@lfx-one/shared/interfaces';
-import { compareVotesByRecency, computeIsFoundation, isVoteClosingSoon, normalizePollStatus, sortCommentResponsesByRecency } from '@lfx-one/shared/utils';
+import {
+  compareVotesByRecency,
+  computeIsFoundation,
+  countVotesByStatus,
+  isVoteClosingSoon,
+  normalizePollStatus,
+  sortCommentResponsesByRecency,
+} from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -153,8 +161,8 @@ export class VoteService {
    * Client `page_size`/`page_token`/`order` never go upstream: `page_token` is the BFF's own opaque
    * `offset:<n>` cursor (clients already treat the token as opaque) and `order` is the legacy param
    * the query-service ignores. `filters`/`filters_or`/`parent`/`tags`/`name` still narrow the
-   * drained set upstream, except `filters=status:active`: that predicate runs locally with the
-   * same status normalization as the summary. Ordering holds across pagination and filters.
+   * drained set upstream, except a recognized `status:<PollStatus>` filter: that predicate runs
+   * locally with the same status normalization as the summary and the status-tab counts (#3687). Ordering holds across pagination and filters.
    * Recently-opened interplay (GH-2730/GH-1558 review): a vote opened inside
    * the index-lag window still reads `disabled` in the drained set, so the status tier places it after
    * the active block and the client's `mergeRecentlyOpenedVotes` rebadge can't reposition it (or
@@ -220,6 +228,17 @@ export class VoteService {
   }
 
   /**
+   * Per-status totals for the votes table's status tabs (#3687) over the complete management scope,
+   * narrowed by the same `name` search and Group filter the list sends. One drain replaces a count
+   * request per tab, and bucketing with `countVotesByStatus` keeps each count equal to its tab's
+   * normalized list total. No project enrichment: only `status` is read.
+   */
+  public async getVoteStatusCounts(req: Request, parent: string, name?: string, group?: string): Promise<VoteStatusCounts> {
+    const votes = await this.fetchScopedIndexedVotes(req, { parent, ...(name && { name }), ...(group && { filters: [`committee_name:${group}`] }) });
+    return countVotesByStatus(votes);
+  }
+
+  /**
    * Fetches a single upstream cursor page of votes, forwarding the caller's params verbatim — the
    * pre-GH-1558 `getVotes` behavior, kept for internal consumers only (not mounted on any route).
    * Committee-activity's vote leg needs the query-service's `sort=updated_desc` truncation order and
@@ -270,8 +289,9 @@ export class VoteService {
       query_params: Object.keys(query),
     });
 
-    // The summary accepts legacy mixed-case active statuses; an exact upstream count would miss them.
-    if (this.hasActiveStatusFilter(query)) {
+    // Status filters accept legacy mixed-case statuses (as the summary and status-tab counts do);
+    // an exact upstream count would miss them.
+    if (this.getRecognizedStatusFilter(query)) {
       // Count is scope-wide even if a caller supplies list pagination parameters.
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { page_size: _pageSize, page_token: _pageToken, ...scope } = query;
@@ -748,21 +768,30 @@ export class VoteService {
     });
   }
 
-  private hasActiveStatusFilter(query: Record<string, unknown>): boolean {
-    const filters = query['filters'];
-    const active = `status:${PollStatus.ACTIVE}`;
-    return filters === active || (Array.isArray(filters) && filters.includes(active));
+  /** The first `status:<x>` filter clause whose value normalizes to a known `PollStatus`, or null. */
+  private getRecognizedStatusFilter(query: Record<string, unknown>): PollStatus | null {
+    const rawFilters = query['filters'];
+    const filters = Array.isArray(rawFilters) ? rawFilters : [rawFilters];
+    for (const clause of filters) {
+      const status = this.parseStatusFilterClause(clause);
+      if (status) return status;
+    }
+    return null;
+  }
+
+  private parseStatusFilterClause(clause: unknown): PollStatus | undefined {
+    return typeof clause === 'string' && clause.startsWith('status:') ? normalizePollStatus(clause.slice('status:'.length)) : undefined;
   }
 
   /** Offset pages and totals must reject incomplete scans rather than silently undercount. */
   private async fetchScopedIndexedVotes(req: Request, upstreamParams: Record<string, unknown>): Promise<Vote[]> {
-    const activeOnly = this.hasActiveStatusFilter(upstreamParams);
+    const status = this.getRecognizedStatusFilter(upstreamParams);
     const params = { ...upstreamParams };
-    if (activeOnly) {
-      // Preserve every other upstream filter, but do not discard mixed-case active rows before normalization.
+    if (status) {
+      // Preserve every other upstream filter, but do not discard mixed-case rows before normalization.
       const rawFilters = params['filters'];
       const filters = Array.isArray(rawFilters) ? rawFilters : [rawFilters];
-      const remaining = filters.filter((clause) => clause !== `status:${PollStatus.ACTIVE}`);
+      const remaining = filters.filter((clause) => this.parseStatusFilterClause(clause) !== status);
       if (remaining.length) params['filters'] = remaining;
       else delete params['filters'];
     }
@@ -778,7 +807,7 @@ export class VoteService {
       { failOnPartial: true }
     );
     const votes = drained.map((vote) => this.normalizeIndexedVote(req, vote));
-    return activeOnly ? votes.filter((vote) => normalizePollStatus(vote.status) === PollStatus.ACTIVE) : votes;
+    return status ? votes.filter((vote) => normalizePollStatus(vote.status) === status) : votes;
   }
 
   /**

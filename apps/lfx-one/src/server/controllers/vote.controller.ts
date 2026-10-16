@@ -73,6 +73,31 @@ export class VoteController {
     }
   }
 
+  /** GET /votes/status-counts — per-status tab totals; only project parent, name search and committee name affect them. */
+  public async getVoteStatusCounts(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_vote_status_counts');
+    try {
+      const context = { operation: 'get_vote_status_counts', service: 'vote_controller' };
+      const unsupported = Object.keys(req.query).find((key) => key !== 'parent' && key !== 'name' && key !== 'group');
+      if (unsupported) throw ServiceValidationError.forField(unsupported, 'Unsupported status-counts parameter', context);
+      const { parent, name, group } = req.query;
+      if (typeof parent !== 'string' || !/^project:[^\s:]+$/.test(parent)) {
+        throw ServiceValidationError.forField('parent', 'Expected one nonempty project:<uid> parent', context);
+      }
+      if (name !== undefined && (typeof name !== 'string' || !name.trim())) {
+        throw ServiceValidationError.forField('name', 'Expected one nonempty search term', context);
+      }
+      if (group !== undefined && (typeof group !== 'string' || !group.trim())) {
+        throw ServiceValidationError.forField('group', 'Expected one nonempty group name', context);
+      }
+      const counts = await this.voteService.getVoteStatusCounts(req, parent, name?.trim(), group?.trim());
+      logger.success(req, 'get_vote_status_counts', startTime, { ...counts });
+      res.json(counts);
+    } catch (error) {
+      return next(error);
+    }
+  }
+
   /**
    * GET /votes/count
    */

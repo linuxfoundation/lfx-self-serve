@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { PollStatus, VoteResponseStatus } from '../enums/poll.enum';
-import type { PollCommentResponse, UserVote, Vote } from '../interfaces/poll.interface';
+import type { PollCommentResponse, UserVote, Vote, VoteStatusCounts } from '../interfaces/poll.interface';
 
 /**
  * Combined vote status type
@@ -56,6 +56,23 @@ export function isVoteEndedEarly(vote: Pick<Vote, 'early_end_time'>): boolean {
 export function normalizePollStatus(status: string | null | undefined): PollStatus | undefined {
   const normalized = (status ?? '').toLowerCase();
   return (Object.values(PollStatus) as string[]).includes(normalized) ? (normalized as PollStatus) : undefined;
+}
+
+/**
+ * Bucket votes by normalized poll status for the votes table's status tabs (#3687).
+ * @description `all` counts every row; each recognized status (after `normalizePollStatus`)
+ * also counts toward its own bucket, so mixed-case legacy rows land where the status filters put
+ * them. A row with an unrecognized status counts toward `all` only. The BFF and the Me-lens
+ * dashboard share this helper so both lenses bucket identically.
+ */
+export function countVotesByStatus(votes: Pick<Vote, 'status'>[]): VoteStatusCounts {
+  const counts: VoteStatusCounts = { all: 0, active: 0, disabled: 0, ended: 0 };
+  for (const vote of votes) {
+    counts.all++;
+    const status = normalizePollStatus(vote.status);
+    if (status) counts[status]++;
+  }
+  return counts;
 }
 
 /**

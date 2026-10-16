@@ -4,11 +4,12 @@
 import type { Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getVotes, getVotesSummary } = vi.hoisted(() => ({ getVotes: vi.fn(), getVotesSummary: vi.fn() }));
+const { getVotes, getVotesSummary, getVoteStatusCounts } = vi.hoisted(() => ({ getVotes: vi.fn(), getVotesSummary: vi.fn(), getVoteStatusCounts: vi.fn() }));
 vi.mock('../services/vote.service', () => ({
   VoteService: class {
     public getVotes = getVotes;
     public getVotesSummary = getVotesSummary;
+    public getVoteStatusCounts = getVoteStatusCounts;
   },
 }));
 vi.mock('../services/logger.service', () => ({ logger: { startOperation: vi.fn(), success: vi.fn(), sanitize: vi.fn((value: unknown) => value) } }));
@@ -60,6 +61,49 @@ describe('VoteController management reads', () => {
     const error = new Error('scope failed');
     getVotesSummary.mockRejectedValue(error);
     await controller.getVotesSummary(request({ parent: 'project:synthetic' }), res, next);
+    expect(next).toHaveBeenCalledWith(error);
+    expect(json).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {},
+    { parent: '' },
+    { parent: 'project:' },
+    { parent: 'committee:synthetic' },
+    { parent: 'project:a:b' },
+    { parent: ['project:a', 'project:b'] },
+    { parent: 'project:a', name: '' },
+    { parent: 'project:a', name: ' ' },
+    { parent: 'project:a', name: ['A'] },
+    { parent: 'project:a', group: '' },
+    { parent: 'project:a', group: ['A'] },
+    { parent: 'project:a', group: { name: 'A' } },
+    ...['filters', 'status', 'page_token', 'page_size', 'type', 'closing_soon'].map((key) => ({ parent: 'project:a', [key]: 'anything' })),
+  ])('rejects malformed or unsupported status-counts queries %j', async (query) => {
+    await controller.getVoteStatusCounts(request(query), res, next);
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+    expect(getVoteStatusCounts).not.toHaveBeenCalled();
+    expect(json).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { name: undefined, group: undefined },
+    { name: 'Steering', group: 'Synthetic Board' },
+    { name: ' Steering ', group: ' Synthetic Board ' },
+  ])('forwards only the validated status-counts scope: %j', async ({ name, group }) => {
+    const counts = { all: 5, active: 2, disabled: 0, ended: 3 };
+    getVoteStatusCounts.mockResolvedValue(counts);
+    const req = request({ parent: 'project:synthetic', ...(name && { name }), ...(group && { group }) });
+    await controller.getVoteStatusCounts(req, res, next);
+    expect(getVoteStatusCounts).toHaveBeenCalledWith(req, 'project:synthetic', name?.trim(), group?.trim());
+    expect(json).toHaveBeenCalledWith(counts);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('propagates status-counts failure via next(error)', async () => {
+    const error = new Error('scope failed');
+    getVoteStatusCounts.mockRejectedValue(error);
+    await controller.getVoteStatusCounts(request({ parent: 'project:synthetic' }), res, next);
     expect(next).toHaveBeenCalledWith(error);
     expect(json).not.toHaveBeenCalled();
   });

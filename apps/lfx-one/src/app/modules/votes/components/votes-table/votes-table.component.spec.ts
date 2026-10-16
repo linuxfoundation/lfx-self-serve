@@ -6,7 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
-import { MyVotesQuickFilter, PollStatus, Vote, VoteResponseStatus } from '@lfx-one/shared';
+import { MyVotesQuickFilter, PollStatus, Vote, VoteResponseStatus, VoteStatusCounts } from '@lfx-one/shared';
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { VoteService } from '@services/vote.service';
 import { MessageService } from 'primeng/api';
@@ -55,6 +55,84 @@ class SummaryHostComponent {
     this.scoped.set(false);
   }
 }
+
+@Component({
+  selector: 'lfx-status-counts-test-host',
+  template: '',
+})
+class StatusCountsHostComponent {
+  public readonly votes = VOTES;
+  public readonly showCounts = signal(true);
+  public readonly counts = signal<VoteStatusCounts | null>({ all: 5, active: 3, disabled: 0, ended: 2 });
+  public readonly showDraft = signal(true);
+  public readonly status = signal<string>('all');
+  public readonly selected: string[] = [];
+}
+
+describe('VotesTableComponent — status tab counts', () => {
+  let fixture: ComponentFixture<StatusCountsHostComponent>;
+  let host: StatusCountsHostComponent;
+
+  beforeEach(async () => {
+    TestBed.overrideComponent(StatusCountsHostComponent, {
+      set: {
+        imports: [VotesTableComponent],
+        template: `<lfx-votes-table [votes]="votes" [showStatusCounts]="showCounts()" [statusCounts]="counts()"
+          [showDraftTab]="showDraft()" [(statusTab)]="status" (statusTabSelected)="selected.push($event)" />`,
+      },
+    });
+    await TestBed.configureTestingModule({
+      imports: [VotesTableComponent, StatusCountsHostComponent],
+      providers: [provideRouter([]), provideNoopAnimations(), { provide: VoteService, useValue: {} }, { provide: MessageService, useValue: {} }],
+    }).compileComponents();
+    fixture = TestBed.createComponent(StatusCountsHostComponent);
+    host = fixture.componentInstance;
+    await settle();
+  });
+  afterEach(() => fixture?.destroy());
+
+  async function settle(): Promise<void> {
+    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+  function pills(): HTMLButtonElement[] {
+    return Array.from(fixture.nativeElement.querySelectorAll('[data-testid="votes-status-tabs"] [data-testid^="filter-pill-"]'));
+  }
+  const labels = (): string[] => pills().map((pill) => pill.textContent!.trim());
+  const accessibleNames = (): (string | null)[] => pills().map((pill) => pill.getAttribute('aria-label'));
+
+  it('appends each tab count to its label and keeps a confirmed zero visible', () => {
+    expect(labels()).toEqual(['All (5)', 'Active (3)', 'Draft (0)', 'Ended (2)']);
+    expect(accessibleNames()).toEqual(labels());
+  });
+
+  it('omits the Draft tab when the view does not expose drafts', async () => {
+    host.showDraft.set(false);
+    await settle();
+    expect(labels()).toEqual(['All (5)', 'Active (3)', 'Ended (2)']);
+  });
+
+  it('renders unavailable counts as a dash and announces them as unavailable', async () => {
+    host.counts.set(null);
+    await settle();
+    expect(labels()).toEqual(['All (–)', 'Active (–)', 'Draft (–)', 'Ended (–)']);
+    expect(accessibleNames()).toEqual(['All, count unavailable', 'Active, count unavailable', 'Draft, count unavailable', 'Ended, count unavailable']);
+  });
+
+  it('renders plain labels for consumers that do not opt in', async () => {
+    host.showCounts.set(false);
+    await settle();
+    expect(labels()).toEqual(['All', 'Active', 'Draft', 'Ended']);
+  });
+
+  it('still selects counted tabs by their bare status id', async () => {
+    (fixture.nativeElement.querySelector('[data-testid="filter-pill-disabled"]') as HTMLButtonElement).click();
+    await settle();
+    expect(host.selected).toEqual([PollStatus.DISABLED]);
+    expect(host.status()).toBe(PollStatus.DISABLED);
+    expect(fixture.nativeElement.querySelector('[data-testid="filter-pill-disabled"]').getAttribute('aria-pressed')).toBe('true');
+  });
+});
 
 describe('VotesTableComponent — personal summary filters', () => {
   let fixture: ComponentFixture<unknown>;
