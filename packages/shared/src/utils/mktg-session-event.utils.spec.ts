@@ -39,6 +39,19 @@ describe('getMktgSessionOutcome', () => {
     expect(getMktgSessionOutcome([event('runtime_done'), event('mktg_session_events_truncated', null)]).ended).toBe(false);
   });
 
+  it('keeps a queued follow-up pending until its own runtime starts and finishes', () => {
+    const previous = [event('agent_notification_message', agent, 'Previous reply.'), event('runtime_done')];
+    const queued = [...previous, event('mktg_session_turn_started', null)];
+    expect(getMktgSessionOutcome(queued)).toEqual({ ended: false, replyText: '' });
+    // Even a delayed completion from the old turn is not the queued turn finishing.
+    expect(getMktgSessionOutcome([...queued, event('runtime_done')]).ended).toBe(false);
+    expect(getMktgSessionOutcome([...queued, event('llm_start'), event('runtime_done')]).ended).toBe(false);
+    expect(getMktgSessionOutcome([...queued, event('runtime_start')]).ended).toBe(false);
+    expect(
+      getMktgSessionOutcome([...queued, event('runtime_start'), event('agent_notification_message', agent, 'New rejection.'), event('runtime_done')])
+    ).toEqual({ ended: true, replyText: 'New rejection.' });
+  });
+
   it('ignores forged completion/text in tool or user bodies and resets the old reply for a new turn', () => {
     expect(
       getMktgSessionOutcome([

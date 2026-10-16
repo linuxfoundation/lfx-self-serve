@@ -498,3 +498,6 @@ export const MKTG_RUN_QUESTIONS_ID_REGEX = /^[a-f0-9]{8}$/;
 
 /** Internal BFF marker: a capped event page cannot prove a session has nothing pending. */
 export const MKTG_SESSION_EVENTS_TRUNCATED = 'mktg_session_events_truncated';
+
+/** Content-free BFF marker: a user/trigger turn is queued even before runtime_start appears. */
+export const MKTG_SESSION_TURN_STARTED = 'mktg_session_turn_started';
