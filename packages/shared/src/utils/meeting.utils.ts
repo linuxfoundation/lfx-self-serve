@@ -2001,3 +2001,22 @@ export function buildMeetingUpdateRequest(meeting: Meeting, changes: Partial<Upd
   };
   return { ...request, ...changes };
 }
+
+/**
+ * The V2 page's email to a meeting's organizer about the occurrence it shows (invitation required, and a
+ * not-registered join error): the selected occurrence's date, else the meeting's, in the meeting's own
+ * timezone so the server render and the browser agree, and a link back to the page. `null` when the
+ * organizer has no usable address.
+ */
+export function buildOccurrenceOrganizerMailto(
+  meeting: Pick<Meeting, 'id' | 'title' | 'start_time' | 'timezone' | 'created_by' | 'owner'>,
+  occurrenceStartTime: string | null | undefined,
+  homeUrl: string
+): string | null {
+  return buildMeetingOrganizerMailto({
+    email: resolveMeetingOrganizer(meeting)?.email,
+    meetingTitle: meeting.title,
+    meetingDate: formatMeetingMailtoDate(occurrenceStartTime ?? meeting.start_time, meeting.timezone),
+    detailUrl: `${homeUrl}/meetings/${encodeURIComponent(meeting.id)}`,
+  });
+}

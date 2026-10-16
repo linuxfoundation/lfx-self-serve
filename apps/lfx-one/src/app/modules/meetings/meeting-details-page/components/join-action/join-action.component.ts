@@ -4,11 +4,13 @@
 import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
+import { environment } from '@environments/environment';
 import { MeetingJoinUrlState } from '@lfx-one/shared/interfaces';
-import { buildJoinUrlWithParams } from '@lfx-one/shared/utils';
+import { buildJoinUrlWithParams, buildOccurrenceOrganizerMailto } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
+import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { MessageService } from 'primeng/api';
 import { BehaviorSubject, combineLatest, distinctUntilChanged, filter, map, of, switchMap, take } from 'rxjs';
 
@@ -26,18 +28,21 @@ import { MeetingGuestJoinComponent } from '../guest-join/guest-join.component';
  *
  * The fetch is browser-only, so the server renders the loading state, which is also what the
  * button shows until the URL resolves. An error offers a retry. A `NOT_REGISTERED_FOR_MEETING`
- * error says the viewer's email is not on the invite list and offers V1's escape hatch: joining
- * with a different email through the guest form (E2-06), during which auto-join stays off.
+ * error (keyed on the code, never the message) explains in one sentence why the invite does not
+ * match (E10-02, #3602) and offers three remedies: V1's escape hatch, joining with a different email
+ * through the guest form (E2-06, during which auto-join stays off); adding and verifying the invited
+ * address on the identities page, so it works from then on; and contacting the organizer (by email,
+ * or the support chat when the page has no organizer email).
  */
 @Component({
   selector: 'lfx-meeting-join-action',
-  imports: [ButtonComponent, MeetingGuestJoinComponent],
+  imports: [ButtonComponent, MeetingGuestJoinComponent, OpenIntercomDirective, RouterLink],
   templateUrl: './join-action.component.html',
 })
 export class MeetingJoinActionComponent {
   private readonly state = inject(MeetingDetailsStateService);
   private readonly joinUrlService = inject(MeetingJoinUrlService);
-  private readonly userService = inject(UserService);
+  protected readonly userService = inject(UserService);
   private readonly messageService = inject(MessageService);
   private readonly activatedRoute = inject(ActivatedRoute);
   private readonly platformId = inject(PLATFORM_ID);
@@ -56,6 +61,13 @@ export class MeetingJoinActionComponent {
 
   protected readonly joinState: Signal<MeetingJoinUrlState> = this.initJoinState();
   protected readonly notRegistered = computed(() => this.joinState().code === 'NOT_REGISTERED_FOR_MEETING');
+  /** The identities page, where the invited address is added and verified (the OTP add-email flow). */
+  protected readonly identitiesPath = '/profile/identities';
+  /** An email to the organizer about this occurrence, when the page knows their address. */
+  protected readonly organizerMailto: Signal<string | null> = this.initOrganizerMailto();
+  /** The error's text actions (the remedies and Try again): an underlined link in the alert's colour and size. */
+  protected readonly linkClass =
+    'w-fit rounded-[var(--md-radius-xs)] font-semibold text-[var(--md-status-live)] underline focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none';
 
   public constructor() {
     this.initAutoJoin();
@@ -131,5 +143,15 @@ export class MeetingJoinActionComponent {
           life: 5000,
         });
       });
+  }
+
+  private initOrganizerMailto(): Signal<string | null> {
+    return computed(() => {
+      const meeting = this.state.meeting();
+      if (!meeting || !this.notRegistered()) {
+        return null;
+      }
+      return buildOccurrenceOrganizerMailto(meeting, this.state.selectedOccurrence()?.start_time, environment.urls.home);
+    });
   }
 }
