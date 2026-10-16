@@ -62,8 +62,9 @@ import { UserService } from './user.service';
  * ICP) send the same through the validated generate endpoint on a FRESH
  * session, replacing the stored run's session while keeping its version
  * history; and `freshRunPerSubmission` intakes (the Messaging Document) send
- * every submission as a fresh first-run generate with no prior version and no
- * feedback, the run shell numbering the versions. An agent that researches
+ * every submission as a fresh first-run generate with no prior version or
+ * feedback. Revisions are numbered by the document store and shown in the
+ * document view. An agent that researches
  * first (the Messaging Document) may answer the poll with `questions` instead
  * of a document: the run stops at a questions step, and `answerQuestions`
  * sends the answers to the SAME session and polls on. Either way the

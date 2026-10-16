@@ -347,7 +347,7 @@ export class MktgAgentRunComponent {
     this.startGeneration();
   }
 
-  /** Sends the answers to the agent's questions on the same run; the page polls on for the document. */
+  /** Sends answers on the same session; once accepted, the document view takes over the result poll. */
   protected onAnswerQuestions(answers: MktgRunAnswer[]): void {
     const pending = this.questionsPending();
     const request = this.activeRequest;
