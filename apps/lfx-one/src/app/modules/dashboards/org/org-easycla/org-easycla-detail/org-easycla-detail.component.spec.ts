@@ -4119,6 +4119,16 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     expect(addMessage).toHaveBeenCalledWith({ severity: 'success', summary: 'Auto Acknowledge turned on.' });
   });
 
+  it('confirms a written off with its own success toast', async () => {
+    setAutoCreateEcla.mockReturnValue(of({ autoCreateEcla: false }));
+    const fixture = await render(row({ autoCreateEcla: true }));
+
+    (fixture.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void }).onAutoEclaToggle(false);
+    fixture.detectChanges();
+
+    expect(addMessage).toHaveBeenCalledWith({ severity: 'success', summary: 'Auto Acknowledge turned off.' });
+  });
+
   it('keeps the requested value when a successful write comes back without the echo', async () => {
     setAutoCreateEcla.mockReturnValue(of(null));
     const fixture = await render(row({ autoCreateEcla: false }));
