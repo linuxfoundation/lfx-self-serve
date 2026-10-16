@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { signal } from '@angular/core';
+import { signal, type WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { PROJECT_PARTICIPATING_ORGS_NO_ORG_LENS_ACCESS_TOOLTIP, PROJECT_PARTICIPATING_ORGS_UNAVAILABLE_MESSAGE } from '@lfx-one/shared/constants';
 import type {
+  ProjectContext,
   ProjectParticipatingOrg,
   ProjectParticipatingOrgsPage,
   ProjectParticipatingOrgsQuery,
@@ -84,6 +85,7 @@ describe('ParticipatingOrgsComponent', () => {
   let fixture: ComponentFixture<ParticipatingOrgsComponent>;
   let getSummary: Mock<(slug: string, range: ProjectParticipatingOrgsRange) => Observable<ProjectParticipatingOrgsSummaryResponse>>;
   let getPage: Mock<(slug: string, query: ProjectParticipatingOrgsQuery) => Observable<ProjectParticipatingOrgsPage>>;
+  let activeContext: WritableSignal<ProjectContext>;
 
   async function render(): Promise<void> {
     await TestBed.configureTestingModule({
@@ -91,7 +93,7 @@ describe('ParticipatingOrgsComponent', () => {
       providers: [
         provideRouter([]),
         MessageService,
-        { provide: ProjectContextService, useValue: { activeContext: signal({ uid: 'project-uid', name: 'Synthetic Project', slug: PROJECT_SLUG }) } },
+        { provide: ProjectContextService, useValue: { activeContext } },
         { provide: ParticipatingOrgsService, useValue: { getSummary, getPage, exportCsv: vi.fn(() => of(undefined)) } },
       ],
     }).compileComponents();
@@ -119,6 +121,20 @@ describe('ParticipatingOrgsComponent', () => {
       of({ summary: summary() })
     );
     getPage = vi.fn<(slug: string, query: ProjectParticipatingOrgsQuery) => Observable<ProjectParticipatingOrgsPage>>(() => of(page()));
+    activeContext = signal<ProjectContext>({ uid: 'project-uid', name: 'Synthetic Project', slug: PROJECT_SLUG });
+  });
+
+  it('returns to the first page when the viewer switches project', async () => {
+    await render();
+    fixture.componentInstance['offset'].set(50);
+    await settle();
+    expect(getPage).toHaveBeenLastCalledWith(PROJECT_SLUG, expect.objectContaining({ offset: 50 }));
+
+    activeContext.set({ uid: 'other-project-uid', name: 'Other Synthetic Project', slug: 'other-synthetic-project' });
+    await settle();
+
+    expect(getPage).toHaveBeenLastCalledWith('other-synthetic-project', expect.objectContaining({ offset: 0 }));
+    expect(getPage).not.toHaveBeenCalledWith('other-synthetic-project', expect.objectContaining({ offset: 50 }));
   });
 
   it('links a member the viewer can open to its Org Lens membership page for the parent foundation', async () => {
@@ -139,7 +155,8 @@ describe('ParticipatingOrgsComponent', () => {
     const name = query(`participating-orgs-row-${SYNTHETIC_ORG_ACCOUNT_ID}-name`);
     expect(name?.tagName).toBe('SPAN');
     expect(name?.getAttribute('tabindex')).toBe('0');
-    expect(name?.textContent).toContain(PROJECT_PARTICIPATING_ORGS_NO_ORG_LENS_ACCESS_TOOLTIP);
+    expect(name?.getAttribute('role')).toBe('note');
+    expect(name?.getAttribute('aria-label')).toBe(`${SYNTHETIC_ORG_NAME} — ${PROJECT_PARTICIPATING_ORGS_NO_ORG_LENS_ACCESS_TOOLTIP}`);
     expect(query(`participating-orgs-row-${SYNTHETIC_ORG_ACCOUNT_ID}`)?.querySelector('a')).toBeNull();
   });
 

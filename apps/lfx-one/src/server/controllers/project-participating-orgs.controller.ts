@@ -7,11 +7,13 @@ import {
   MEMBERSHIP_TIER_ORDER,
   PROJECT_PARTICIPATING_ORGS_DEFAULT_SORT,
   PROJECT_PARTICIPATING_ORGS_DEFAULT_SORT_DIR,
+  PROJECT_PARTICIPATING_ORGS_EXPORT_CSV_HEADER,
   PROJECT_PARTICIPATING_ORGS_EXPORT_TRUNCATED_HEADER,
   PROJECT_PARTICIPATING_ORGS_MAX_PAGE_SIZE,
   PROJECT_PARTICIPATING_ORGS_MAX_SEARCH_LENGTH,
   PROJECT_PARTICIPATING_ORGS_PAGE_SIZE,
   PROJECT_PARTICIPATING_ORGS_SEGMENTS,
+  PROJECT_PARTICIPATING_ORGS_SORT_DIRECTIONS,
   PROJECT_PARTICIPATING_ORGS_SORT_FIELDS,
 } from '@lfx-one/shared/constants';
 import { rowsToCsv } from '@lfx-one/shared/utils';
@@ -24,16 +26,7 @@ import { parseOffsetPagination } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { ProjectParticipatingOrgsService } from '../services/project-participating-orgs.service';
 
-import type {
-  MembershipTierClass,
-  ProjectParticipatingOrgsQuery,
-  ProjectParticipatingOrgsRange,
-  ProjectParticipatingOrgsSortDirection,
-} from '@lfx-one/shared/interfaces';
-
-const SORT_DIRECTIONS: readonly ProjectParticipatingOrgsSortDirection[] = ['asc', 'desc'];
-
-const CSV_HEADER = ['Company', 'Membership', 'Tier', 'Unidentified', 'Commits', 'Commits (previous period)', 'Contributors', 'Contributors (previous period)'];
+import type { MembershipTierClass, ProjectParticipatingOrgsExportFilters, ProjectParticipatingOrgsRange } from '@lfx-one/shared/interfaces';
 
 /**
  * Project Lens → Participating Organizations. Every route runs behind
@@ -110,7 +103,7 @@ export class ProjectParticipatingOrgsController {
       }
 
       const csv = rowsToCsv([
-        CSV_HEADER,
+        [...PROJECT_PARTICIPATING_ORGS_EXPORT_CSV_HEADER],
         ...rows.map((row) => [
           row.name,
           row.isMember ? 'Member' : 'Non-Member',
@@ -150,7 +143,7 @@ function parseRange(req: Request, operation: string): ProjectParticipatingOrgsRa
   return parseEnum(req, 'range', ranges, CONTRIBUTIONS_DEFAULT_DATE_RANGE, operation);
 }
 
-function parseFilters(req: Request, operation: string): Omit<ProjectParticipatingOrgsQuery, 'pageSize' | 'offset'> {
+function parseFilters(req: Request, operation: string): ProjectParticipatingOrgsExportFilters {
   const search = getStrictStringQueryParam(req, 'search', operation)?.trim();
   if (search && search.length > PROJECT_PARTICIPATING_ORGS_MAX_SEARCH_LENGTH) {
     throw ServiceValidationError.forField('search', `search must be at most ${PROJECT_PARTICIPATING_ORGS_MAX_SEARCH_LENGTH} characters`, { operation });
@@ -169,7 +162,7 @@ function parseFilters(req: Request, operation: string): Omit<ProjectParticipatin
     range: parseRange(req, operation),
     segment: parseEnum(req, 'segment', PROJECT_PARTICIPATING_ORGS_SEGMENTS, 'all', operation),
     sort: parseEnum(req, 'sort', PROJECT_PARTICIPATING_ORGS_SORT_FIELDS, PROJECT_PARTICIPATING_ORGS_DEFAULT_SORT, operation),
-    dir: parseEnum(req, 'dir', SORT_DIRECTIONS, PROJECT_PARTICIPATING_ORGS_DEFAULT_SORT_DIR, operation),
+    dir: parseEnum(req, 'dir', PROJECT_PARTICIPATING_ORGS_SORT_DIRECTIONS, PROJECT_PARTICIPATING_ORGS_DEFAULT_SORT_DIR, operation),
     ...(search ? { search } : {}),
     ...(tier ? { tier } : {}),
   };

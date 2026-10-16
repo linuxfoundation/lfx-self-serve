@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { NextFunction, Request, Response } from 'express';
+import type { Mock } from 'vitest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { isFlagEnabled, getProjectIdBySlug, checkSingleAccessStrict } = vi.hoisted(() => ({
@@ -33,14 +34,13 @@ import { requireProjectParticipatingOrgsAccess } from './require-project-partici
 
 const UID = '00000000-0000-4000-8000-000000000001';
 
-async function run(slug: string): Promise<{ next: ReturnType<typeof vi.fn>; res: Response }> {
+async function run(slug: string): Promise<{ next: Mock }> {
   const next = vi.fn();
-  const res = { locals: {} } as unknown as Response;
-  await requireProjectParticipatingOrgsAccess({ params: { slug } } as unknown as Request, res, next as unknown as NextFunction);
-  return { next, res };
+  await requireProjectParticipatingOrgsAccess({ params: { slug } } as unknown as Request, {} as Response, next as unknown as NextFunction);
+  return { next };
 }
 
-function errorOf(next: ReturnType<typeof vi.fn>): { statusCode?: number; message?: string; clientMessage?: string } | undefined {
+function errorOf(next: Mock): { statusCode?: number; message?: string; clientMessage?: string } | undefined {
   expect(next).toHaveBeenCalledTimes(1);
   return next.mock.calls[0][0];
 }
@@ -96,9 +96,8 @@ describe('requireProjectParticipatingOrgsAccess', () => {
     expect(errorOf(next)?.statusCode).toBe(503);
   });
 
-  it('allows a viewer and exposes the resolved uid', async () => {
-    const { next, res } = await run('synthetic-project');
+  it('lets a project viewer through', async () => {
+    const { next } = await run('synthetic-project');
     expect(errorOf(next)).toBeUndefined();
-    expect(res.locals['projectUid']).toBe(UID);
   });
 });

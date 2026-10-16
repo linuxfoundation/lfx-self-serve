@@ -55,7 +55,7 @@ import type {
 import { ProjectContextService } from '@services/project-context.service';
 import { formatLongDateUtc } from '@shared/utils/date-format.util';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, Observable, of, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, of, switchMap, take, tap } from 'rxjs';
 
 import { decorateParticipatingOrgRow } from './participating-orgs.util';
 import { ParticipatingOrgsService } from './services/participating-orgs.service';
@@ -134,9 +134,9 @@ export class ParticipatingOrgsComponent {
     initialValue: this.shareForm.controls.shareBase.value,
   });
 
-  /** Any filter, tab, range or sort change returns the table to its first page. */
+  /** Switching project, or any filter, tab, range or sort change, returns the table to its first page. */
   protected readonly offset = linkedSignal({
-    source: () => `${this.range()}|${this.segment()}|${this.search()}|${this.tier()}|${this.sort()}|${this.dir()}`,
+    source: () => `${this.slug()}|${this.range()}|${this.segment()}|${this.search()}|${this.tier()}|${this.sort()}|${this.dir()}`,
     computation: () => 0,
   });
 
@@ -213,7 +213,10 @@ export class ParticipatingOrgsComponent {
     this.exporting.set(true);
     this.dataService
       .exportCsv(slug, this.exportFilters())
-      .pipe(finalize(() => this.exporting.set(false)))
+      .pipe(
+        take(1),
+        finalize(() => this.exporting.set(false))
+      )
       .subscribe();
   }
 
@@ -247,12 +250,18 @@ export class ParticipatingOrgsComponent {
 
   private initSummary(): Signal<ProjectParticipatingOrgsSummary | null> {
     return toSignal(
-      combineLatest([this.slug$(), toObservable(this.range), toObservable(this.retryTrigger)]).pipe(
+      combineLatest([
+        toObservable(computed(() => ({ slug: this.slug(), range: this.range() }))).pipe(
+          filter(({ slug }) => slug.length > 0),
+          distinctUntilChanged((a, b) => a.slug === b.slug && a.range === b.range)
+        ),
+        toObservable(this.retryTrigger),
+      ]).pipe(
         tap(() => {
           this.summaryLoadingState.set(true);
           this.summaryErrorStatus.set(null);
         }),
-        switchMap(([slug, range]) =>
+        switchMap(([{ slug, range }]) =>
           this.dataService.getSummary(slug, range).pipe(
             map((response) => response.summary),
             tap(() => this.summaryLoadingState.set(false)),
@@ -271,15 +280,19 @@ export class ParticipatingOrgsComponent {
   private initPage(): Signal<ProjectParticipatingOrgsPage> {
     return toSignal(
       combineLatest([
-        this.slug$(),
-        toObservable(this.query).pipe(distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b))),
+        // Slug and query travel as one value, so a project switch arrives together with its page reset — never as the
+        // new slug paired with the previous project's offset.
+        toObservable(computed(() => ({ slug: this.slug(), query: this.query() }))).pipe(
+          filter(({ slug }) => slug.length > 0),
+          distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b))
+        ),
         toObservable(this.retryTrigger),
       ]).pipe(
         tap(() => {
           this.pageLoadingState.set(true);
           this.pageErrorStatus.set(null);
         }),
-        switchMap(([slug, query]) =>
+        switchMap(([{ slug, query }]) =>
           this.dataService.getPage(slug, query).pipe(
             tap(() => this.pageLoadingState.set(false)),
             catchError((error: unknown) => {
@@ -291,13 +304,6 @@ export class ParticipatingOrgsComponent {
         )
       ),
       { initialValue: EMPTY_PROJECT_PARTICIPATING_ORGS_PAGE }
-    );
-  }
-
-  private slug$(): Observable<string> {
-    return toObservable(this.slug).pipe(
-      filter((slug) => slug.length > 0),
-      distinctUntilChanged()
     );
   }
 

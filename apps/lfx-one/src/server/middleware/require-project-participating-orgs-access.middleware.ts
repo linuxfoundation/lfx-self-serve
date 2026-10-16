@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  HEALTH_METRICS_PROJECT_SLUG_PATTERN,
   PROJECT_PARTICIPATING_ORGS_ENABLED_FLAG,
+  PROJECT_PARTICIPATING_ORGS_SLUG_PATTERN,
   PROJECT_PARTICIPATING_ORGS_UNAVAILABLE_MESSAGE,
 } from '@lfx-one/shared/constants';
 import { NextFunction, Request, Response } from 'express';
@@ -25,12 +25,14 @@ const projectService = new ProjectService();
  * Gate for every `/api/projects/:slug/participating-orgs*` route, in order:
  * 1. the dark-launch flag, evaluated per user and failing closed (off → 404, as if the route did not exist);
  * 2. the slug format (400);
- * 3. slug → v2 project uid (unknown → 404; resolver failure → 503);
+ * 3. slug → v2 project uid (unknown → 404; a thrown resolver error → 503). `getProjectIdBySlug` reports a
+ *    NATS timeout or 503 as "not found", so that kind of outage answers 404 rather than 503;
  * 4. strict FGA `project#viewer` (false → 403; authorizer failure → 503, never a silent denial).
  *
- * On success the resolved uid is left on `res.locals.projectUid` for the handlers.
+ * The data reads stay keyed by slug: the warehouse tables carry Salesforce project ids, not v2 uids, so
+ * the slug is the one key both sides share (one slug, one project, on both).
  */
-export async function requireProjectParticipatingOrgsAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
+export async function requireProjectParticipatingOrgsAccess(req: Request, _res: Response, next: NextFunction): Promise<void> {
   try {
     const enabled = await LaunchDarklyServerService.getInstance().isFlagEnabled(req, PROJECT_PARTICIPATING_ORGS_ENABLED_FLAG, false);
     if (!enabled) {
@@ -38,7 +40,7 @@ export async function requireProjectParticipatingOrgsAccess(req: Request, res: R
     }
 
     const slug = req.params['slug'];
-    if (typeof slug !== 'string' || !HEALTH_METRICS_PROJECT_SLUG_PATTERN.test(slug)) {
+    if (typeof slug !== 'string' || !PROJECT_PARTICIPATING_ORGS_SLUG_PATTERN.test(slug)) {
       throw ServiceValidationError.forField('slug', 'Invalid project slug format', { operation: OPERATION });
     }
 
@@ -78,7 +80,6 @@ export async function requireProjectParticipatingOrgsAccess(req: Request, res: R
       });
     }
 
-    res.locals['projectUid'] = project.uid;
     next();
   } catch (error) {
     next(error);

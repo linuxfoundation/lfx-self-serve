@@ -179,11 +179,13 @@
                       <span
                         class="truncate text-sm font-medium text-gray-900"
                         tabindex="0"
+                        role="note"
+                        [attr.aria-label]="row.name + ' — ' + noAccessTooltip"
                         [pTooltip]="noAccessTooltip"
                         tooltipPosition="top"
+                        tooltipEvent="both"
                         [attr.data-testid]="'participating-orgs-row-' + row.participantKey + '-name'">
                         {{ row.name }}
-                        <span class="sr-only">({{ noAccessTooltip }})</span>
                       </span>
                     }
                     @case ('unidentified') {

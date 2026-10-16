@@ -19,53 +19,18 @@ import { SnowflakeService } from './snowflake.service';
 import type {
   MembershipTierClass,
   ProjectParticipatingOrg,
+  ProjectParticipatingOrgsExportFilters,
   ProjectParticipatingOrgsPage,
+  ProjectParticipatingOrgsPageRow,
   ProjectParticipatingOrgsQuery,
   ProjectParticipatingOrgsRange,
+  ProjectParticipatingOrgsRow,
   ProjectParticipatingOrgsSortDirection,
   ProjectParticipatingOrgsSortField,
   ProjectParticipatingOrgsSummary,
+  ProjectParticipatingOrgsSummaryRow,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
-
-/** The list filters without paging: what the CSV export takes. */
-type ParticipatingOrgsFilters = Omit<ProjectParticipatingOrgsQuery, 'pageSize' | 'offset'>;
-
-interface OrgRow {
-  PARTICIPANT_KEY: string | null;
-  ACCOUNT_ID: string | null;
-  PARTICIPANT_NAME: string | null;
-  PARTICIPANT_LOGO_URL: string | null;
-  IS_UNIDENTIFIED: boolean | null;
-  IS_MEMBER: boolean | null;
-  MEMBERSHIP_TIER_CLASS: string | null;
-  COMMITS: number | null;
-  COMMITS_PREV: number | null;
-  CONTRIBUTORS: number | null;
-  CONTRIBUTORS_PREV: number | null;
-}
-
-interface PageRow extends OrgRow {
-  TOTAL_RECORDS: number | null;
-  FOUNDATION_SLUG_TOTAL: string | null;
-  IS_PAGE_ROW: boolean | null;
-}
-
-interface SummaryRow {
-  PROJECT_SLUG: string;
-  FOUNDATION_SLUG: string | null;
-  FOUNDATION_NAME: string | null;
-  AS_OF_DATE: Date | string | null;
-  ORGS_COUNT: number | null;
-  MEMBERS_COUNT: number | null;
-  NON_MEMBERS_COUNT: number | null;
-  UNIDENTIFIED_COUNT: number | null;
-  MEMBER_COMMITS: number | null;
-  COMPANY_COMMITS: number | null;
-  ALL_COMMITS: number | null;
-  MEMBER_COMMIT_SHARE_OF_COMPANY_COMMITS: number | null;
-  MEMBER_COMMIT_SHARE_OF_ALL_COMMITS: number | null;
-}
 
 const ORG_COLUMNS = `participant_key, account_id, participant_name, participant_logo_url, is_unidentified, is_member,
           membership_tier_class, tier_rank, commits, commits_prev, contributors, contributors_prev`;
@@ -111,10 +76,12 @@ export class ProjectParticipatingOrgsService {
       FROM ${summaryTable} s
       WHERE s.project_slug = ?
         AND s.time_range = ?
+      -- One row per (project, range) by the dbt grain; the newest build wins if that ever breaks.
+      ORDER BY s.as_of_date DESC
       LIMIT 1
     `;
 
-    const result = await executeSnowflakeViewRead<SummaryRow>(this.snowflakeService, req, sql, [slug, range], {
+    const result = await executeSnowflakeViewRead<ProjectParticipatingOrgsSummaryRow>(this.snowflakeService, req, sql, [slug, range], {
       view: summaryTable,
       operation: 'get_project_participating_orgs_summary',
       clientMessage: 'Participating organizations are unavailable right now.',
@@ -177,7 +144,7 @@ export class ProjectParticipatingOrgsService {
       ORDER BY ${orderBy('page.', query.sort, query.dir)}
     `;
 
-    const result = await executeSnowflakeViewRead<PageRow>(this.snowflakeService, req, sql, binds, {
+    const result = await executeSnowflakeViewRead<ProjectParticipatingOrgsPageRow>(this.snowflakeService, req, sql, binds, {
       view: table,
       operation: 'get_project_participating_orgs',
       clientMessage: 'Participating organizations are unavailable right now.',
@@ -199,7 +166,11 @@ export class ProjectParticipatingOrgsService {
    * cap so a capped export can be told apart from one that fits exactly. No Org Lens checks: the CSV
    * carries no links.
    */
-  public async getExportRows(req: Request, slug: string, filters: ParticipatingOrgsFilters): Promise<{ rows: ProjectParticipatingOrg[]; truncated: boolean }> {
+  public async getExportRows(
+    req: Request,
+    slug: string,
+    filters: ProjectParticipatingOrgsExportFilters
+  ): Promise<{ rows: ProjectParticipatingOrg[]; truncated: boolean }> {
     const table = listTableName();
     const { matchClause, binds } = buildMatch(slug, filters);
 
@@ -215,7 +186,7 @@ export class ProjectParticipatingOrgsService {
       LIMIT ${PROJECT_PARTICIPATING_ORGS_EXPORT_MAX_ROWS + 1}
     `;
 
-    const result = await executeSnowflakeViewRead<OrgRow>(this.snowflakeService, req, sql, binds, {
+    const result = await executeSnowflakeViewRead<ProjectParticipatingOrgsRow>(this.snowflakeService, req, sql, binds, {
       view: table,
       operation: 'export_project_participating_orgs',
       clientMessage: 'Participating organizations are unavailable right now.',
@@ -231,7 +202,7 @@ export class ProjectParticipatingOrgsService {
    * The page's member account ids the caller can open in Org Lens. An authorizer outage degrades
    * every link to plain text rather than failing the list.
    */
-  private async readableMemberAccountIds(req: Request, rows: OrgRow[]): Promise<Set<string>> {
+  private async readableMemberAccountIds(req: Request, rows: ProjectParticipatingOrgsRow[]): Promise<Set<string>> {
     const memberIds = [...new Set(rows.filter((row) => row.IS_MEMBER === true && !!row.ACCOUNT_ID).map((row) => row.ACCOUNT_ID as string))];
     if (memberIds.length === 0) return new Set();
 
@@ -252,7 +223,7 @@ function listTableName(): string {
 }
 
 /** Segment, tier and search predicates over `scoped`, with binds in placeholder order (slug and range first). */
-function buildMatch(slug: string, filters: ParticipatingOrgsFilters): { matchClause: string; binds: string[] } {
+function buildMatch(slug: string, filters: ProjectParticipatingOrgsExportFilters): { matchClause: string; binds: string[] } {
   const binds: string[] = [slug, filters.range];
   const predicates: string[] = [];
 
@@ -277,7 +248,7 @@ function orderBy(prefix: string, sort: ProjectParticipatingOrgsSortField, dir: P
   return `${expression} ${direction} NULLS LAST, ${prefix}commits DESC NULLS LAST, ${prefix}participant_key ASC`;
 }
 
-function mapOrg(row: OrgRow, readableAccountIds: Set<string>): ProjectParticipatingOrg {
+function mapOrg(row: ProjectParticipatingOrgsRow, readableAccountIds: Set<string>): ProjectParticipatingOrg {
   const isMember = row.IS_MEMBER === true;
   const accountId = row.ACCOUNT_ID || null;
 

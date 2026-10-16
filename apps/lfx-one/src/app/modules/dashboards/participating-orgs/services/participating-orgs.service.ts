@@ -21,7 +21,7 @@ import type {
 import { downloadFromUrl, parseContentDispositionFilename } from '@lfx-one/shared/utils';
 import { strictHttpParams } from '@shared/utils/http-params.utils';
 import { MessageService } from 'primeng/api';
-import { catchError, map, Observable, of } from 'rxjs';
+import { catchError, map, Observable, of, throwError } from 'rxjs';
 
 /**
  * HTTP client for Project Lens → Participating Organizations (#2091). Reads propagate their errors so the page can
@@ -35,13 +35,23 @@ export class ParticipatingOrgsService {
 
   /** Tiles and tab counts; `summary` is null when the project has no company code activity in the range. */
   public getSummary(slug: string, range: ProjectParticipatingOrgsRange): Observable<ProjectParticipatingOrgsSummaryResponse> {
-    return this.http.get<ProjectParticipatingOrgsSummaryResponse>(`${baseUrl(slug)}/summary`, { params: strictHttpParams().set('range', range) });
+    return this.http.get<ProjectParticipatingOrgsSummaryResponse>(`${baseUrl(slug)}/summary`, { params: strictHttpParams().set('range', range) }).pipe(
+      catchError((error: unknown) => {
+        console.error('[participating-orgs] getSummary failed', { slug, error });
+        return throwError(() => error);
+      })
+    );
   }
 
   /** One server-sorted page of companies for the segment, search and tier. */
   public getPage(slug: string, query: ProjectParticipatingOrgsQuery): Observable<ProjectParticipatingOrgsPage> {
     const params = filterParams(query).set('pageSize', String(query.pageSize)).set('offset', String(query.offset));
-    return this.http.get<ProjectParticipatingOrgsPage>(baseUrl(slug), { params });
+    return this.http.get<ProjectParticipatingOrgsPage>(baseUrl(slug), { params }).pipe(
+      catchError((error: unknown) => {
+        console.error('[participating-orgs] getPage failed', { slug, error });
+        return throwError(() => error);
+      })
+    );
   }
 
   /**
@@ -67,7 +77,8 @@ export class ParticipatingOrgsService {
           this.toast('warn', 'Export truncated', PROJECT_PARTICIPATING_ORGS_EXPORT_TRUNCATED_MESSAGE);
         }
       }),
-      catchError(() => {
+      catchError((error: unknown) => {
+        console.error('[participating-orgs] export failed', { slug, error });
         this.toast('error', 'Export failed', PROJECT_PARTICIPATING_ORGS_EXPORT_ERROR_MESSAGE);
         return of(undefined);
       })

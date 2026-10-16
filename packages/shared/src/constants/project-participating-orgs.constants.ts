@@ -21,6 +21,26 @@ export const PROJECT_PARTICIPATING_ORGS_DEFAULT_SORT: ProjectParticipatingOrgsSo
 
 export const PROJECT_PARTICIPATING_ORGS_DEFAULT_SORT_DIR: ProjectParticipatingOrgsSortDirection = 'desc';
 
+export const PROJECT_PARTICIPATING_ORGS_SORT_DIRECTIONS: readonly ProjectParticipatingOrgsSortDirection[] = ['asc', 'desc'];
+
+/**
+ * Shape a `:slug` must have before the gate looks the project up (lowercase kebab-case, ≤64 chars).
+ * Same rule as the other features' project-slug patterns; kept per feature like they are.
+ */
+export const PROJECT_PARTICIPATING_ORGS_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
+
+/** CSV export columns, in order. */
+export const PROJECT_PARTICIPATING_ORGS_EXPORT_CSV_HEADER: readonly string[] = [
+  'Company',
+  'Membership',
+  'Tier',
+  'Unidentified',
+  'Commits',
+  'Commits (previous period)',
+  'Contributors',
+  'Contributors (previous period)',
+];
+
 export const PROJECT_PARTICIPATING_ORGS_PAGE_SIZE = 25;
 
 export const PROJECT_PARTICIPATING_ORGS_PAGE_SIZE_OPTIONS: readonly number[] = [25, 50, 100] as const;
