@@ -3950,7 +3950,7 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     expect(byTestId(fixture, 'org-easycla-detail-auto-ecla')).not.toBeNull();
     expect(autoEclaSwitch(fixture)?.disabled).toBe(true);
     expect(byTestId(fixture, 'org-easycla-detail-auto-ecla-locked-hint')).toBeNull();
-    expect(autoEclaSwitch(fixture)?.getAttribute('aria-label')).toBe('Auto ECLA');
+    expect(autoEclaSwitch(fixture)?.getAttribute('aria-label')).toBe('Auto Acknowledge');
   });
 
   it('explains the disabled toggle to a viewer off the roster while the ACS answer is still pending', async () => {
@@ -3965,14 +3965,14 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
   it('names the reason in the switch accessible name, so the sentence is not sighted-only', async () => {
     const fixture = await render(row({ viewerIsClaManager: false }));
 
-    expect(autoEclaSwitch(fixture)?.getAttribute('aria-label')).toBe('Auto ECLA — Only CLA Managers can change this setting.');
+    expect(autoEclaSwitch(fixture)?.getAttribute('aria-label')).toBe('Auto Acknowledge — Only CLA Managers can change this setting.');
   });
 
   it('leaves the accessible name unqualified for a viewer who can move the switch', async () => {
     const fixture = await render();
 
     expect(autoEclaSwitch(fixture)?.disabled).toBe(false);
-    expect(autoEclaSwitch(fixture)?.getAttribute('aria-label')).toBe('Auto ECLA');
+    expect(autoEclaSwitch(fixture)?.getAttribute('aria-label')).toBe('Auto Acknowledge');
   });
 
   it.each([
@@ -4080,17 +4080,17 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     expect(component.autoEclaValue()).toBe(true);
   });
 
-  it('labels the switch Auto ECLA and links to the docs', async () => {
+  it('labels the switch Auto Acknowledge and links to the docs', async () => {
     const fixture = await render(row({ autoCreateEcla: true }));
 
     const label = fixture.nativeElement.querySelector('label[for="org-easycla-detail-auto-ecla-toggle"]') as HTMLLabelElement;
-    expect(label.textContent?.trim()).toBe('Auto ECLA');
+    expect(label.textContent?.trim()).toBe('Auto Acknowledge');
     const targets = fixture.nativeElement.querySelectorAll('#org-easycla-detail-auto-ecla-toggle');
     expect(targets.length).toBe(1);
     expect((targets[0] as HTMLElement).tagName).toBe('INPUT');
     const link = byTestId(fixture, 'org-easycla-detail-auto-ecla-learn-more') as HTMLAnchorElement;
-    expect(link.getAttribute('href')).toBe('/docs');
-    expect(link.textContent?.trim()).toBe('Learn more about Auto ECLA →');
+    expect(link.getAttribute('href')).toBe('/docs/organization/easycla#what-does-auto-acknowledge-do');
+    expect(link.textContent?.trim()).toBe('Learn more about Auto Acknowledge →');
   });
 
   it('describes what on and off mean for people on the approval list', async () => {
@@ -4116,7 +4116,17 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     (fixture.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void }).onAutoEclaToggle(true);
     fixture.detectChanges();
 
-    expect(addMessage).toHaveBeenCalledWith({ severity: 'success', summary: 'Auto ECLA turned on.' });
+    expect(addMessage).toHaveBeenCalledWith({ severity: 'success', summary: 'Auto Acknowledge turned on.' });
+  });
+
+  it('confirms a written off with its own success toast', async () => {
+    setAutoCreateEcla.mockReturnValue(of({ autoCreateEcla: false }));
+    const fixture = await render(row({ autoCreateEcla: true }));
+
+    (fixture.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void }).onAutoEclaToggle(false);
+    fixture.detectChanges();
+
+    expect(addMessage).toHaveBeenCalledWith({ severity: 'success', summary: 'Auto Acknowledge turned off.' });
   });
 
   it('keeps the requested value when a successful write comes back without the echo', async () => {
@@ -4127,7 +4137,7 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     fixture.detectChanges();
 
     expect((fixture.componentInstance as unknown as { autoEclaValue: () => boolean }).autoEclaValue()).toBe(true);
-    expect(addMessage).toHaveBeenCalledWith({ severity: 'success', summary: 'Auto ECLA turned on.' });
+    expect(addMessage).toHaveBeenCalledWith({ severity: 'success', summary: 'Auto Acknowledge turned on.' });
   });
 
   it('does not confirm a write that finished after the manager left the agreement', async () => {
@@ -4171,7 +4181,7 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
   it('rolls back and toasts with the server sentence when the roster refusal carries only a message', async () => {
     const error = new HttpErrorResponse({
       status: 403,
-      error: { message: 'Only a CLA manager named on this CLA can change its Auto ECLA setting' },
+      error: { message: 'Only a CLA manager named on this CLA can change its Auto Acknowledge setting' },
     });
     setAutoCreateEcla.mockReturnValue(throwError(() => error));
     const fixture = await render(row({ autoCreateEcla: false }));
@@ -4186,7 +4196,7 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     expect(addMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         severity: 'error',
-        detail: 'Only a CLA manager named on this CLA can change its Auto ECLA setting',
+        detail: 'Only a CLA manager named on this CLA can change its Auto Acknowledge setting',
       })
     );
   });
@@ -4203,7 +4213,7 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     expect(addMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         severity: 'error',
-        summary: "Couldn't turn Auto ECLA on",
+        summary: "Couldn't turn Auto Acknowledge on",
         detail: 'Please try again in a moment.',
       })
     );

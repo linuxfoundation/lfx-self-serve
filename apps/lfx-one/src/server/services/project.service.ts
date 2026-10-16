@@ -294,6 +294,19 @@ function buildFoundationFilter(foundationSlug: string): { filter: string; filter
   };
 }
 
+/** The `error` code of a slug→uid JSON error reply (`{"error":"not_found",…}`); `unparseable` for any other JSON body. */
+function parseSlugLookupError(reply: string): string {
+  try {
+    const parsed: unknown = JSON.parse(reply);
+    if (parsed && typeof parsed === 'object' && 'error' in parsed && typeof parsed.error === 'string') {
+      return parsed.error;
+    }
+  } catch {
+    // Not JSON after all; reported as unparseable below.
+  }
+  return 'unparseable';
+}
+
 /**
  * Service for handling project business logic
  */
@@ -4080,10 +4093,13 @@ export class ProjectService {
     try {
       const response = await this.natsService.request(NatsSubjects.PROJECT_SLUG_TO_UID, codec.encode(slug), { timeout: NATS_CONFIG.REQUEST_TIMEOUT });
 
-      const uid = codec.decode(response.data);
+      const reply = codec.decode(response.data).trim();
 
-      // Check if we got a valid project ID
-      if (!uid || uid.trim() === '') {
+      // The responder answers a miss (unknown slug, or a project hidden from it) with a JSON error body
+      // such as {"error":"not_found","message":"project not found"} rather than an empty reply.
+      // Anything else in that shape is a real failure, never a uid.
+      const replyError = reply.startsWith('{') ? parseSlugLookupError(reply) : null;
+      if (!reply || replyError === 'not_found') {
         logger.debug(req, 'get_project_id_by_slug', 'Project slug not found via NATS', { slug });
         return {
           uid: '',
@@ -4091,9 +4107,12 @@ export class ProjectService {
           exists: false,
         };
       }
+      if (replyError !== null) {
+        throw new Error(`Project slug lookup failed: ${replyError}`);
+      }
 
       return {
-        uid: uid.trim(),
+        uid: reply,
         slug,
         exists: true,
       };

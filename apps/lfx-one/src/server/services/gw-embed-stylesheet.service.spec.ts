@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { brotliDecompressSync, gunzipSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   GW_EMBED_STYLESHEET_CACHE_MAX_ENTRIES,
@@ -99,6 +100,18 @@ describe('GwEmbedStylesheetService', () => {
       // The theme layer follows the contained CSS.
       expect(sheet.css).toContain('LFX theme for the embedded Gatewaze admin');
       expect(sheet.css.indexOf('gw-embed-enter')).toBeLessThan(sheet.css.indexOf('LFX theme for the embedded Gatewaze admin'));
+    });
+
+    it('compresses the scoped body once, with gzip and Brotli, both decoding to the same CSS', async () => {
+      const sheet = await load();
+
+      expect(Buffer.from(sheet.identity).toString('utf8')).toBe(sheet.css);
+      expect(gunzipSync(sheet.gzip).toString('utf8')).toBe(sheet.css);
+      expect(brotliDecompressSync(sheet.br).toString('utf8')).toBe(sheet.css);
+      // Cached with the entry: a repeat request reuses the same buffers rather than compressing again.
+      const again = await load();
+      expect(again.gzip).toBe(sheet.gzip);
+      expect(again.br).toBe(sheet.br);
     });
 
     it('serves a repeat request for the same name from memory', async () => {

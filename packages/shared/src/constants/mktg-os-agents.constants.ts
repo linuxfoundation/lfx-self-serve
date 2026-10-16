@@ -33,9 +33,26 @@ export const MKTG_OS_AGENTS_ROUTE_SEGMENT = 'mktg-os-agents';
 // `agent_id` (the bare name is not a Guild identifier — it 404s).
 // `brand-kit` is live (Guild agent linux-foundation~brand-kit).
 export const MKTG_AGENTS: MktgAgent[] = [
+  // Live Guild agent (linux-foundation~foundation-message), the Messaging
+  // Document Agent since its port to Paul's messaging-document 1.0.0; the
+  // catalog id and Guild name are unchanged. It runs first and needs no other
+  // document (dec-run-order-messaging-brand-guidelines-icp), so it has no
+  // `dependsOn` and its intake attaches nothing.
+  {
+    id: 'foundation-setup',
+    number: 1,
+    name: 'Messaging Document Agent',
+    tags: ['Messaging', 'Positioning'],
+    status: 'active',
+    description:
+      'Vision, mission, positioning, pillars, message house, proof points, objections and copy primitives. Reads your sources and researches on its own, then asks only what they leave open. Needs no other document.',
+    icon: 'fa-light fa-landmark',
+    accent: 'blue',
+    guildAgentHandle: 'foundation-message',
+  },
   {
     id: 'brand-kit',
-    number: 1,
+    number: 2,
     name: 'Brand Kit Agent',
     tags: ['Brand', 'Identity'],
     status: 'active',
@@ -45,27 +62,9 @@ export const MKTG_AGENTS: MktgAgent[] = [
     accent: 'violet',
     guildAgentHandle: 'brand-kit',
   },
-  // Live Guild agent (linux-foundation~foundation-message) with its batch
-  // intake form registered in MKTG_AGENT_INTAKES (wi-mf-lfx-selfserve).
-  // Consumes the Brand Kit (dec-agent-dependency-gating): the card stays
-  // disabled until the active project has a stored Brand Kit, and the intake
-  // auto-attaches that document instead of asking for it.
-  {
-    id: 'foundation-setup',
-    number: 2,
-    name: 'Message Foundation Agent',
-    tags: ['Messaging', 'Summaries'],
-    status: 'active',
-    description:
-      'Builds the messaging foundation for a Linux Foundation project — positioning, audiences, pillars, talking points, plus the 25/50-word summaries, boilerplate, llms.txt, and elevator pitch.',
-    icon: 'fa-light fa-landmark',
-    accent: 'blue',
-    guildAgentHandle: 'foundation-message',
-    dependsOn: ['brand-kit'],
-  },
   // Live Guild agent (linux-foundation~icp) with its batch intake form
   // registered in MKTG_AGENT_INTAKES (wi-icp-lfx-selfserve). It CONSUMES the
-  // Brand Kit and the Message Foundation, but only when the project has them:
+  // Brand Kit and the Messaging Document, but only when the project has them:
   // both are optional attachments on the intake, never `dependsOn`, because
   // the agent's own contract makes them optional and its author explicitly
   // allows proceeding on the interview answers plus the README with the
@@ -78,7 +77,7 @@ export const MKTG_AGENTS: MktgAgent[] = [
     tags: ['Personas', 'Research'],
     status: 'active',
     description:
-      'Defines one to two organization-level ideal customer profiles with their buyer personas, fit and warmth scoring inputs, and the messaging handoff — grounded in your project’s README, Brand Kit and Message Foundation.',
+      'Defines one to two organization-level ideal customer profiles with their buyer personas, fit and warmth scoring inputs, and the messaging handoff — grounded in your project’s README, Brand Kit and Messaging Document.',
     icon: 'fa-light fa-user-group',
     accent: 'emerald',
     guildAgentHandle: 'icp',

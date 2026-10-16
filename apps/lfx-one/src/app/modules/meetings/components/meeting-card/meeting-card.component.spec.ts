@@ -647,7 +647,7 @@ describe('MeetingCardComponent — remove myself', () => {
   });
 
   it.each([
-    ['an organizer', { ...INVITEE, organizer: true } as Meeting, {}],
+    ['an organizer with no registration of their own', { ...INVITEE, organizer: true, my_registrant_ids: [] } as Meeting, {}],
     ['someone who is not invited', { ...INVITEE, invited: false } as Meeting, {}],
     ['a past meeting', INVITEE, { past: true }],
     ['an anonymous viewer', INVITEE, { authenticated: false }],
@@ -657,11 +657,28 @@ describe('MeetingCardComponent — remove myself', () => {
     expect(component.canLeaveMeeting()).toBe(false);
   });
 
-  it('does not offer the action to someone invited through a committee, but still shows they are registered', async () => {
+  it.each([
+    ['their registrant IDs are listed', { my_registrant_ids: ['reg-1'] }],
+    ['the feed lists no IDs but the registrant lookup marked them invited', {}],
+  ])('offers the action to an organizer who is also registered when %s', async (_label, extra) => {
+    const component = await mount({ ...INVITEE, organizer: true, ...extra } as Meeting);
+
+    expect(component.canLeaveMeeting()).toBe(true);
+
+    component.confirmLeaveMeeting();
+
+    expect(confirm.mock.calls[0][0].message).toContain('You will still be an organizer of this meeting.');
+  });
+
+  it('offers the action to someone invited through a committee and says the committee will not invite them again', async () => {
     const component = await mount({ ...INVITEE, invited_via_committee: true } as Meeting);
 
     expect(component.isRegisteredAttendee()).toBe(true);
-    expect(component.canLeaveMeeting()).toBe(false);
+    expect(component.canLeaveMeeting()).toBe(true);
+
+    component.confirmLeaveMeeting();
+
+    expect(confirm.mock.calls[0][0].message).toContain("it won't invite you to this meeting again");
   });
 
   it.each([
@@ -683,6 +700,19 @@ describe('MeetingCardComponent — remove myself', () => {
     mountedFixture!.detectChanges();
 
     expect(component.userAttended()).toBe(true);
+  });
+
+  it('follows a refreshed input when an organizer gains or loses a registration of their own', async () => {
+    const component = await mount({ ...INVITEE, organizer: true, my_registrant_ids: [] } as Meeting);
+    expect(component.canLeaveMeeting()).toBe(false);
+
+    mountedFixture!.componentRef.setInput('meetingInput', { ...INVITEE, organizer: true, my_registrant_ids: ['reg-1'] } as Meeting);
+    mountedFixture!.detectChanges();
+    expect(component.canLeaveMeeting()).toBe(true);
+
+    mountedFixture!.componentRef.setInput('meetingInput', { ...INVITEE, organizer: true, my_registrant_ids: [] } as Meeting);
+    mountedFixture!.detectChanges();
+    expect(component.canLeaveMeeting()).toBe(false);
   });
 
   it('keeps the action hidden on a card rebuilt after the list refetched a stale invited flag', async () => {
@@ -724,9 +754,9 @@ describe('MeetingCardComponent — remove myself', () => {
     expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
   });
 
-  it('shows the BFF message when it rejected the request itself, such as a committee-added registrant', async () => {
+  it('shows the BFF message when it rejected the request itself, such as a validation failure', async () => {
     removeMyMeetingRegistration.mockReturnValue(
-      throwError(() => new HttpErrorResponse({ status: 400, error: { code: 'VALIDATION_ERROR', error: 'Leave the committee instead.' } }))
+      throwError(() => new HttpErrorResponse({ status: 400, error: { code: 'VALIDATION_ERROR', error: 'The registration could not be removed.' } }))
     );
     const component = await mount();
 
@@ -734,7 +764,9 @@ describe('MeetingCardComponent — remove myself', () => {
     confirm.mock.calls[0][0].accept();
 
     expect(component.canLeaveMeeting()).toBe(true);
-    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: expect.stringContaining('Leave the committee instead.') }));
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'error', detail: expect.stringContaining('The registration could not be removed.') })
+    );
   });
 
   it('shows generic copy for any other failure and keeps the action available', async () => {

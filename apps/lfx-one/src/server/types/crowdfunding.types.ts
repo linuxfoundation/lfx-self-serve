@@ -57,6 +57,17 @@ export interface BackendInitiative {
   };
   sponsorship_tiers?: BackendSponsorshipTier[];
   donation_mode?: string;
+  attribution?: BackendAttribution;
+  /** Set only on the manage read (`/initiatives/{id}/manage`); omitted when false. */
+  is_owner?: boolean;
+}
+
+/** Snake_case attribution as sent and returned by the upstream crowdfunding service. */
+export interface BackendAttribution {
+  type: string;
+  entity_uid?: string;
+  name?: string;
+  logo_url?: string;
 }
 
 export interface BackendCrowdfundingResponse {

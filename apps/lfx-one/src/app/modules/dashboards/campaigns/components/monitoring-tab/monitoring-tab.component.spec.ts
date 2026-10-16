@@ -966,6 +966,17 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       expect(text('meta-currency-note')).toBe("Spend and budgets are in the ad account's own currency.");
     });
 
+    it("prints a connection's amounts in the currency campaign-service names, and drops the note", async () => {
+      await setup(allConnected);
+      service['getMetaMonitorData'].mockReturnValue(of({ ...euroAccount, currency: 'EUR' }));
+      select('meta');
+
+      expect(text('meta-kpi-spend')).toBe('€100.00');
+      expect(text('meta-campaign-row-0')).toContain('€250.00');
+      expect(text('meta-campaign-row-0')).not.toContain('$');
+      expect(el('meta-currency-note')).toBeNull();
+    });
+
     it('keeps the legacy Meta panel in dollars, with no currency note', async () => {
       await setup({ viaCampaignService: false, platforms: {} });
       service['getMetaMonitorData'].mockReturnValue(of(euroAccount));
@@ -973,6 +984,15 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
 
       expect(text('meta-kpi-spend')).toBe('$100.00');
       expect(text('meta-campaign-row-0')).toContain('$250.00');
+      expect(el('meta-currency-note')).toBeNull();
+    });
+
+    it('keeps the legacy Meta panel in dollars even if its data names a currency', async () => {
+      await setup({ viaCampaignService: false, platforms: {} });
+      service['getMetaMonitorData'].mockReturnValue(of({ ...euroAccount, currency: 'EUR' }));
+      select('meta');
+
+      expect(text('meta-kpi-spend')).toBe('$100.00');
       expect(el('meta-currency-note')).toBeNull();
     });
   });
@@ -1045,6 +1065,51 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
 
       expect(text('microsoft-connection-notice-title')).toBe('No Microsoft Ads connection for this project');
       expect(service['getMicrosoftMonitorData']).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['monitor-act-toggle-1', 'pause_resume', 'Pause or resume: KubeCon NA 2026 - Search'],
+      ['monitor-act-budget-1', 'budget', 'Budget: KubeCon NA 2026 - Search'],
+      ['monitor-act-bid-1', 'bid', 'Bid: KubeCon NA 2026 - Search'],
+    ])("offers %s on a Microsoft row, opening the act dialog with Microsoft's campaign id", async (testId, lever, header) => {
+      await setup(allConnected);
+      select('microsoft');
+
+      expect(el('monitor-act-microsoft-ads-1')).not.toBeNull();
+      (fixture.nativeElement.querySelector(`[data-testid="${testId}"] button`) as HTMLButtonElement).click();
+
+      expect(TestBed.inject(DialogService).open).toHaveBeenCalledWith(
+        CampaignActDialogComponent,
+        expect.objectContaining({
+          header,
+          data: { projectSlug: 'cncf', platform: 'microsoft-ads', platformCampaignId: '1', campaignName: 'KubeCon NA 2026 - Search', lever },
+        })
+      );
+    });
+
+    it.each([
+      ['monitor-act-toggle-1a2b3c', 'pause_resume', 'Pause or resume: KubeCon NA 2026 - Search'],
+      ['monitor-act-budget-1a2b3c', 'budget', 'Budget: KubeCon NA 2026 - Search'],
+      ['monitor-act-bid-1a2b3c', 'bid', 'Bid: KubeCon NA 2026 - Search'],
+    ])("offers %s on an X row, opening the act dialog with X's campaign id", async (testId, lever, header) => {
+      await setup(allConnected);
+      const xRows = reportBacked().campaigns.map((c) => ({ ...c, campaignId: '1a2b3c' }));
+      service['getTwitterMonitorData'].mockReturnValue(of(reportBacked({ campaigns: xRows })));
+      // X's button is hidden while the app disables the platform, so the panel is selected directly.
+      (fixture.componentInstance as unknown as { setPlatform(p: string): void }).setPlatform('twitter');
+      fixture.detectChanges();
+
+      expect(service['getTwitterMonitorData']).toHaveBeenCalled();
+      expect(el('monitor-act-twitter-ads-1a2b3c')).not.toBeNull();
+      (fixture.nativeElement.querySelector(`[data-testid="${testId}"] button`) as HTMLButtonElement).click();
+
+      expect(TestBed.inject(DialogService).open).toHaveBeenCalledWith(
+        CampaignActDialogComponent,
+        expect.objectContaining({
+          header,
+          data: { projectSlug: 'cncf', platform: 'twitter-ads', platformCampaignId: '1a2b3c', campaignName: 'KubeCon NA 2026 - Search', lever },
+        })
+      );
     });
   });
 
@@ -1227,6 +1292,27 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       expect(text('microsoft-currency-note')).toBe("Spend and budgets are in the ad account's own currency.");
     });
 
+    it('prints spend and budgets in the currency campaign-service names, and drops the note', async () => {
+      await setup(allConnected);
+      service['getMicrosoftMonitorData'].mockReturnValue(of(reportBacked({ currency: 'EUR' })));
+      select('microsoft');
+
+      expect(text('microsoft-kpi-strip')).toContain('€412.50');
+      expect(text('microsoft-campaign-row-0')).toContain('€100.00');
+      expect(text('microsoft-kpi-strip')).not.toContain('$');
+      expect(el('microsoft-currency-note')).toBeNull();
+    });
+
+    it("uses the named currency's own minor units", async () => {
+      await setup(allConnected);
+      service['getMicrosoftMonitorData'].mockReturnValue(of(reportBacked({ currency: 'JPY' })));
+      select('microsoft');
+
+      expect(text('microsoft-kpi-strip')).toContain('¥413');
+      expect(text('microsoft-kpi-strip')).not.toContain('¥412.50');
+      expect(el('microsoft-currency-note')).toBeNull();
+    });
+
     it('formats the freshness and "Last pulled" times in en-US, whatever the browser locale', async () => {
       const spy = vi.spyOn(Date.prototype, 'toLocaleString');
       try {
@@ -1263,6 +1349,141 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       expect(el(table)).toBeNull();
       expect(el(loading)).not.toBeNull();
       expect(service[method]).toHaveBeenLastCalledWith(...(platform === 'hubspot' ? ['cncf', 7] : ['cncf', '187654321', 7]));
+    });
+  });
+
+  describe('paid panel table headers and Retry names', () => {
+    it.each([
+      ['linkedin', 'getLinkedInMonitorData', 'LinkedIn Ads'],
+      ['reddit', 'getRedditMonitorData', 'Reddit Ads'],
+      ['meta', 'getMetaMonitorData', 'Meta Ads'],
+      ['microsoft', 'getMicrosoftMonitorData', 'Microsoft Ads'],
+    ] as const)('names what the %s Retry retries', async (platform, read, label) => {
+      await setup(allConnected);
+      service[read].mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, error: { error: 'boom' } })));
+      select(platform);
+
+      expect(el(`${platform}-retry`)?.getAttribute('aria-label')).toBe(`Retry loading ${label} campaigns`);
+    });
+
+    it('scopes every paid table header to its column', async () => {
+      await setup(allConnected);
+      select('microsoft');
+
+      const headers = Array.from(el('microsoft-campaign-table')?.querySelectorAll('th') ?? []);
+      expect(headers.length).toBeGreaterThan(0);
+      expect(headers.every((th) => th.getAttribute('scope') === 'col')).toBe(true);
+    });
+  });
+
+  describe('screen-reader read status', () => {
+    const live = (): string => text('monitoring-ad-panel-live');
+
+    it('keeps one persistent polite live region, empty on the Google panel', async () => {
+      await setup(allConnected);
+
+      const region = el('monitoring-ad-panel-live');
+      expect(region?.getAttribute('role')).toBe('status');
+      expect(region?.getAttribute('aria-live')).toBe('polite');
+      expect(live()).toBe('');
+    });
+
+    it('announces a read in flight, then what the panel shows, in the same region', async () => {
+      await setup(allConnected);
+      const region = el('monitoring-ad-panel-live');
+      const reply = new Subject<ReportBackedMonitorResponse>();
+      service['getMicrosoftMonitorData'].mockReturnValue(reply);
+      select('microsoft');
+
+      expect(live()).toBe('Loading Microsoft Ads campaigns');
+
+      reply.next(reportBacked());
+      reply.complete();
+      fixture.detectChanges();
+
+      expect(el('monitoring-ad-panel-live')).toBe(region);
+      expect(live()).toBe('Microsoft Ads: 1 campaign shown.');
+    });
+
+    it("adds the totals-coverage note when some rows couldn't be read", async () => {
+      await setup(allConnected);
+      const campaigns = reportBacked().campaigns;
+      service['getMicrosoftMonitorData'].mockReturnValue(
+        of(reportBacked({ campaigns: [...campaigns, { ...campaigns[0], campaignId: '2', fetchFailed: true, pacingLabel: undefined }] }))
+      );
+      select('microsoft');
+
+      expect(live()).toBe('Microsoft Ads: 2 campaigns shown. Totals cover 1 of 2 campaigns.');
+    });
+
+    it('says when the account has no campaigns', async () => {
+      await setup(allConnected);
+      service['getMicrosoftMonitorData'].mockReturnValue(of(reportBacked({ campaigns: [] })));
+      select('microsoft');
+
+      expect(live()).toBe('No Microsoft Ads campaigns found for this account.');
+    });
+
+    const legacyPanel = (campaigns: Record<string, unknown>[]): Record<string, unknown> => ({
+      accountLabel: 'LF',
+      pulledAt: '2026-10-13T00:00:00.000Z',
+      dateRange: { mode: 'last_30_days' },
+      campaigns,
+      accountTotals: { spend: 10, impressions: 100, clicks: 5, conversions: 1, campaignCount: campaigns.length },
+      actionItems: [],
+    });
+    const legacyRow = (name: string): Record<string, unknown> => ({
+      campaignId: name,
+      campaignName: name,
+      eventName: name,
+      creatives: [],
+      status: 'ACTIVE',
+      totalBudget: 1000,
+      dailyBudget: 0,
+      spend: 10,
+      impressions: 100,
+      clicks: 5,
+      ctr: 5,
+      conversions: 1,
+      pacingPct: 50,
+      pacingLabel: 'normal',
+      startDate: '2026-09-01',
+      endDate: '',
+    });
+
+    it.each([
+      ['linkedin', 'getLinkedInMonitorData', 'LinkedIn'],
+      ['reddit', 'getRedditMonitorData', 'Reddit'],
+      ['meta', 'getMetaMonitorData', 'Meta'],
+    ])('announces what the %s panel shows, and its empty state in the visible wording', async (platform, method, label) => {
+      await setup(allConnected);
+      service[method].mockReturnValue(of(legacyPanel([legacyRow('A'), legacyRow('B')])));
+      select(platform);
+
+      expect(live()).toBe(`${label}: 2 campaigns shown.`);
+
+      service[method].mockReturnValue(of(legacyPanel([])));
+      (el(`${platform}-refresh`) as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      expect(live()).toBe(`No active ${label} campaigns found for this account.`);
+    });
+
+    it('says nothing while the panel shows a connection notice instead of a read', async () => {
+      await setup({ ...allConnected, platforms: { ...allConnected.platforms, reddit: none('no_connection') } });
+      select('reddit');
+
+      expect(el('reddit-connection-notice')).not.toBeNull();
+      expect(live()).toBe('');
+    });
+
+    it('leaves a failed read to the role="alert" error block, so it is announced once', async () => {
+      await setup(allConnected);
+      service['getRedditMonitorData'].mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+      select('reddit');
+
+      expect(el('reddit-error')?.getAttribute('role')).toBe('alert');
+      expect(live()).toBe('');
     });
   });
 
@@ -1445,7 +1666,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       expect(badge.className).not.toContain('bg-green-50');
     });
 
-    it("keeps LinkedIn's whole-dollar currency and the other panels' two decimals", async () => {
+    it("keeps LinkedIn's whole units and the other panels' two decimals", async () => {
       await setup(allConnected);
       const legacy = {
         accountLabel: 'LF',
@@ -1478,7 +1699,13 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       service['getRedditMonitorData'].mockReturnValue(of(legacy));
       select('linkedin');
 
-      expect(text('linkedin-kpi-spend')).toBe('$413');
+      // The connection's LinkedIn account names no currency here: whole units, no `$`, and the note.
+      // The note claims no currency: a campaign-service predating its local-currency read sends
+      // USD (`costInUsd`) with no `currency` too, so "the account's own currency" could be false.
+      expect(text('linkedin-kpi-spend')).toBe('413');
+      expect(text('linkedin-campaign-row-0')).not.toContain('$');
+      expect(text('linkedin-currency-note')).toBe('The ad account did not report its currency, so amounts are shown without a currency symbol.');
+      expect(text('linkedin-currency-note')).not.toContain('own currency');
       const linkedInRow = text('linkedin-campaign-row-0');
       expect(linkedInRow).toContain('KubeCon NA 2026');
       expect(linkedInRow).toContain('NA | KubeCon NA 2026 | Awareness');
@@ -1490,6 +1717,91 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       expect(text('reddit-kpi-spend')).toBe('$412.50');
       expect(text('reddit-kpi-ctr')).toBe('1.2%');
       expect(el('reddit-campaign-creatives')).toBeNull();
+    });
+
+    /** Only campaign-service's path can name a currency; LinkedIn keeps its whole units in it. */
+    it('prints LinkedIn and Reddit amounts in the currency campaign-service names', async () => {
+      await setup(allConnected);
+      const named = {
+        accountLabel: 'CNCF',
+        pulledAt: '2026-10-13T00:00:00.000Z',
+        dateRange: { mode: 'last_30_days' },
+        campaigns: [
+          {
+            campaignId: '1',
+            campaignName: 'EU | KubeCon EU 2027 | Awareness',
+            eventName: 'KubeCon EU 2027',
+            creatives: [],
+            creativesMeasured: false,
+            status: 'ACTIVE',
+            totalBudget: 1000,
+            dailyBudget: 0,
+            spend: 412.5,
+            impressions: 52000,
+            clicks: 610,
+            ctr: 1.17,
+            conversions: 14,
+            pacingPct: 88,
+            pacingLabel: 'normal',
+            startDate: '2026-09-01',
+            endDate: '',
+          },
+        ],
+        accountTotals: { spend: 412.5, impressions: 52000, clicks: 610, conversions: 14, campaignCount: 1 },
+        actionItems: [],
+        currency: 'EUR',
+      };
+      service['getLinkedInMonitorData'].mockReturnValue(of(named));
+      service['getRedditMonitorData'].mockReturnValue(of(named));
+      select('linkedin');
+
+      expect(text('linkedin-kpi-spend')).toBe('€413');
+      expect(text('linkedin-campaign-row-0')).toContain('€1,000');
+      expect(text('linkedin-campaign-row-0')).not.toContain('$');
+      expect(el('linkedin-currency-note')).toBeNull();
+
+      select('reddit');
+      expect(text('reddit-kpi-spend')).toBe('€412.50');
+      expect(text('reddit-campaign-row-0')).toContain('€1,000.00');
+    });
+
+    /** The legacy (flag-off) LinkedIn panel reads the allowlisted USD accounts: whole dollars, no note. */
+    it('keeps the legacy LinkedIn panel in whole dollars, with no currency note', async () => {
+      await setup({ viaCampaignService: false, platforms: {} });
+      service['getLinkedInMonitorData'].mockReturnValue(
+        of({
+          accountLabel: 'LF',
+          pulledAt: '2026-10-13T00:00:00.000Z',
+          dateRange: { mode: 'last_30_days' },
+          campaigns: [
+            {
+              campaignId: '1',
+              campaignName: 'NA | KubeCon NA 2026 | Awareness',
+              eventName: 'KubeCon NA 2026',
+              creatives: [{}],
+              status: 'ACTIVE',
+              totalBudget: 1000,
+              dailyBudget: 0,
+              spend: 412.5,
+              impressions: 52000,
+              clicks: 610,
+              ctr: 1.17,
+              conversions: 14,
+              pacingPct: 88,
+              pacingLabel: 'normal',
+              startDate: '2026-09-01',
+              endDate: '',
+            },
+          ],
+          accountTotals: { spend: 412.5, impressions: 52000, clicks: 610, conversions: 14, campaignCount: 1 },
+          actionItems: [],
+        })
+      );
+      select('linkedin');
+
+      expect(text('linkedin-kpi-spend')).toBe('$413');
+      expect(text('linkedin-campaign-row-0')).toContain('$1,000');
+      expect(el('linkedin-currency-note')).toBeNull();
     });
   });
 

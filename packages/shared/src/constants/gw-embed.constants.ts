@@ -154,13 +154,52 @@ export const GW_EMBED_STYLESHEET_FAILURE_CACHE_MAX_ENTRIES = 64;
 export const GW_EMBED_STYLESHEET_MAX_IN_FLIGHT = 2;
 
 /**
- * Browser/CDN caching for the scoped stylesheet. The body is LFX output (containment transform
- * plus theme layer) under an upstream-hashed name, so it is not immutable: a theme or transform
- * fix must reach users without a URL change. Short max-age with stale-while-revalidate and an
- * ETag keeps page loads fast while bounding staleness to minutes.
+ * Browser/CDN caching for the scoped stylesheet requested WITHOUT the server's key (the fallback
+ * form, `<route>/<name>`). The body is LFX output (containment transform plus theme layer) under an
+ * upstream-hashed name, so that URL is not content-addressed: a theme or transform fix must reach
+ * users without a URL change. Short max-age with stale-while-revalidate and an ETag bound the
+ * staleness. Cloudflare in front of the app raises a max-age below the zone's Browser Cache TTL
+ * (4 hours) to that TTL, so in practice this form can be stale for up to 4 hours.
  */
 export const GW_EMBED_STYLESHEET_MAX_AGE_S = 300;
 export const GW_EMBED_STYLESHEET_STALE_WHILE_REVALIDATE_S = 7 * 24 * 60 * 60;
+
+/**
+ * Browser/CDN lifetime of the content-addressed form, `<route>/<key>/<name>`: the name carries the
+ * upstream content hash and the key carries LFX's own share (theme layer and transform), so the URL
+ * names exactly one body and is served `immutable`. Only when the key matches this server's own.
+ *
+ * A week, not a year. The upstream body is not checked against the hash in its name (the embed
+ * build names it with Rollup's `[hash]`, an xxhash this server does not implement), so a bad body Gatewaze served under a valid
+ * name would be pinned for this long. A week still spans many visits, and both Gatewaze releases
+ * (a new name) and LFX releases that touch the theme or transform (a new key) change the URL long
+ * before it runs out. Recovery before then is in `docs/architecture/frontend/gw-embed.md`.
+ */
+export const GW_EMBED_STYLESHEET_IMMUTABLE_MAX_AGE_S = 7 * 24 * 60 * 60;
+
+/**
+ * What the server's stylesheet key looks like (`getGwEmbedStylesheetKey`): base64url, fixed
+ * length. Anything else in the key segment is a 404.
+ */
+export const GW_EMBED_STYLESHEET_KEY_PATTERN = /^[A-Za-z0-9_-]{16}$/;
+
+/**
+ * The containment transform's fingerprint: the SHA-256 (hex) of
+ * `apps/lfx-one/scripts/lib/contain-gw-embed-css.mjs`. It feeds the stylesheet key, so a transform
+ * change gives the scoped stylesheet a new URL instead of leaving browsers on the immutable old one.
+ * A spec (`gw-embed.helper.spec.ts`) fails when the file changes without this being updated, and
+ * prints the new value.
+ *
+ * A `postcss` upgrade does not rotate the key; if one changes the output, update this value by hand.
+ */
+export const GW_EMBED_STYLESHEET_TRANSFORM_FINGERPRINT = '7a789f6bbb63afd0d5d2abacc2a0c2c03551724421ebb0ae8c2fc4acde62d498';
+
+/**
+ * Longest the outlet keeps its skeleton up after the loader reports the embed mounted, waiting for
+ * the embed's first paint, in ms. After this the embed is shown whatever it holds, so a render that
+ * never produces height cannot strand the skeleton.
+ */
+export const GW_EMBED_FIRST_PAINT_TIMEOUT_MS = 10_000;
 
 /**
  * Where LFX One serves host-session mode (`gatewaze.route.ts`, mounted in `server.ts`). The
@@ -227,6 +266,21 @@ export const GW_EMBED_FOUNDATION_NEWSLETTERS_LINK = `${GW_EMBED_ROUTE_PREFIX}${G
  * constant repoints the embed entry; it does not restore the LFX page.
  */
 export const GW_EMBED_PROJECT_NEWSLETTERS_LINK = `${GW_EMBED_PROJECT_ROUTE_PREFIX}${GW_EMBED_LANDING_PATH}`;
+
+/**
+ * The sidebar destinations that open the embed. Hovering or focusing a link to one of them is the
+ * intent signal `GwEmbedWarmupService` warms the Gatewaze session on.
+ */
+export const GW_EMBED_NAV_LINK_PATHS: readonly string[] = [GW_EMBED_FOUNDATION_NEWSLETTERS_LINK, GW_EMBED_PROJECT_NEWSLETTERS_LINK];
+
+/**
+ * Elements that count as painted content in the embed even without text: a loading indicator
+ * (`role="status"`, which the embed's `PageLoadingSpinner` carries, or `aria-busy`) or media. Used
+ * with any non-whitespace text by the outlet's first-paint check, which must not count the embed's
+ * empty provider wrappers. Radix's root `Theme` is one of those and has `min-height: 100vh`, so a
+ * child-and-height test passes before anything is drawn.
+ */
+export const GW_EMBED_PAINTED_CONTENT_SELECTOR = '[role="status"], [aria-busy="true"], img, svg, canvas, video';
 
 /**
  * Maps the embed's notification levels onto PrimeNG toast severities and the summary line LFX

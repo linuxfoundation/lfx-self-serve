@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  CAMPAIGN_REF_INT64_PLATFORMS,
   CAMPAIGN_SETTINGS_BID_AMOUNT_FIELD,
   CAMPAIGN_SETTINGS_BID_CURRENCY_FIELD,
   CAMPAIGN_SETTINGS_FIELD_LABELS,
@@ -9,7 +10,7 @@ import {
   CAMPAIGN_SETTINGS_VERDICT_LABELS,
   CAMPAIGN_SETTINGS_VERDICT_SEVERITIES,
 } from '../constants/campaign-optimize.constants';
-import type { CampaignServiceCampaignRef } from '../interfaces/campaign.interface';
+import type { CampaignBudgetPacingRead, CampaignServiceCampaignRef } from '../interfaces/campaign.interface';
 import type {
   CampaignRefVerdict,
   CampaignServiceSettingsField,
@@ -100,8 +101,9 @@ export function readCampaignRefResolution(resolution: unknown, requestedId: stri
 /**
  * Whether the id the UI asked about and the id campaign-service echoed name the same campaign.
  *
- * Compared as trimmed exact strings first. Only where an id IS an integer — LinkedIn, whose campaign
- * ids are int64s, or either side arriving as a JSON number — are two all-digit ids also compared as
+ * Compared as trimmed exact strings first. Only where an id IS an integer — LinkedIn and Microsoft
+ * Ads (`CAMPAIGN_REF_INT64_PLATFORMS`), whose campaign ids are int64s, or either side arriving as a
+ * JSON number — are two all-digit ids also compared as
  * integers (leading zeros ignored). Elsewhere `0123` and `123` are different ids: a Reddit or Meta id
  * is an opaque string, and treating them as one would act on a campaign nobody named.
  */
@@ -114,7 +116,7 @@ export function sameCampaignId(requested: unknown, echoed: unknown, platform: st
   if (a === b) {
     return true;
   }
-  const integerIds = platform === 'linkedin-ads' || typeof requested === 'number' || typeof echoed === 'number';
+  const integerIds = (CAMPAIGN_REF_INT64_PLATFORMS as ReadonlySet<string>).has(platform) || typeof requested === 'number' || typeof echoed === 'number';
   return integerIds && ALL_DIGITS.test(a) && ALL_DIGITS.test(b) && stripLeadingZeros(a) === stripLeadingZeros(b);
 }
 
@@ -183,4 +185,32 @@ function hasValue(value: unknown): value is string {
 
 function isSettingsField(value: unknown): value is CampaignServiceSettingsField {
   return !!value && typeof value === 'object' && typeof (value as { field?: unknown }).field === 'string';
+}
+
+/**
+ * The budget pacing a campaign's live settings readback reports for it: the UPSTREAM side of its
+ * `budget_type` field, `daily` or `lifetime`, or `unknown` when the platform reported neither.
+ *
+ * Only the upstream value counts — the recorded side is what dispatch asked for, and an adopted
+ * campaign records none. On X the readback reports a pacing only under campaign budget optimization
+ * (a daily amount is `daily`, a total-only cap `lifetime`); anything else is absent and so `unknown`.
+ */
+export function campaignBudgetPacingFromSettings(readback: CampaignServiceSettingsReadback | null | undefined): Exclude<CampaignBudgetPacingRead, 'pending'> {
+  const fields = Array.isArray(readback?.fields) ? readback.fields : [];
+  const upstream = fields.find((field) => field?.field === 'budget_type')?.upstream;
+  return upstream === 'daily' || upstream === 'lifetime' ? upstream : 'unknown';
+}
+
+/**
+ * A campaign row from campaign-service or the index with its `adopted` marker normalized: kept only
+ * as a literal `true` (lfx-v2-campaign-service#366 documents `true` or absent, never `false`), and
+ * dropped otherwise, so a malformed value can never disable a control. Everything else is unchanged.
+ */
+export function withAdoptedMarker<T extends { adopted?: boolean }>(row: T): T {
+  if (row.adopted === true || !('adopted' in row)) {
+    return row;
+  }
+  const rest = { ...row };
+  delete rest.adopted;
+  return rest;
 }

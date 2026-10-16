@@ -1,0 +1,101 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<section class="w-full px-6 lg:px-10 pt-8 pb-12 flex flex-col gap-6" data-testid="mktg-run-activity">
+  <!-- Header: what is happening, and for how long -->
+  <div class="flex items-center gap-4">
+    <span class="relative flex items-center justify-center w-11 h-11 rounded-xl shrink-0" [ngClass]="iconClass()">
+      <i [class]="icon() + ' text-lg'" aria-hidden="true"></i>
+      <span
+        class="absolute -inset-1.5 rounded-full border-2 border-transparent border-t-blue-300 border-r-blue-300 motion-safe:animate-spin"
+        aria-hidden="true"></span>
+    </span>
+    <div class="flex flex-col min-w-0">
+      <h2 class="font-display font-light text-xl text-gray-900" data-testid="mktg-run-activity-title">{{ title() }}</h2>
+      <span class="text-xs text-gray-400" data-testid="mktg-run-activity-elapsed">{{ elapsed() }} · a run usually takes a few minutes</span>
+    </div>
+  </div>
+
+  <!-- Phases: where the run is in the whole -->
+  <ol class="flex flex-wrap items-center gap-1.5" aria-label="Progress" data-testid="mktg-run-activity-phases">
+    @for (phase of phases(); track phase.id) {
+      <li
+        class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium"
+        [ngClass]="phase.chipClass"
+        [attr.aria-current]="phase.state === 'active' ? 'step' : null"
+        [attr.data-testid]="'mktg-run-activity-phase-' + phase.id">
+        <i class="text-2xs" [ngClass]="phase.iconClass" aria-hidden="true"></i>
+        {{ phase.label }}
+      </li>
+    }
+  </ol>
+
+  <!-- Timeline -->
+  <div class="bg-white border border-gray-200 rounded-xl px-5 py-4 shadow-sm">
+    @if (hiddenCount() > 0 || showAll()) {
+      <button
+        type="button"
+        class="mb-2 inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-gray-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 rounded"
+        [attr.aria-expanded]="showAll()"
+        data-testid="mktg-run-activity-toggle-all"
+        (click)="onToggleAll()">
+        <i class="fa-light" [ngClass]="showAll() ? 'fa-chevron-up' : 'fa-chevron-down'" aria-hidden="true"></i>
+        @if (showAll()) {
+          Show only the latest steps
+        } @else {
+          Show all {{ rows().length }} steps
+        }
+      </button>
+    }
+
+    <ol class="flex flex-col" data-testid="mktg-run-activity-steps">
+      @if (rows().length === 0) {
+        <li class="flex items-center gap-3 py-2 motion-safe:animate-step-in" data-testid="mktg-run-activity-starting">
+          <span class="flex items-center justify-center w-8 h-8 rounded-full bg-blue-50 text-blue-600 ring-4 ring-blue-50 shrink-0">
+            <i class="fa-light fa-spinner-third motion-safe:animate-spin text-sm" aria-hidden="true"></i>
+          </span>
+          <span class="text-sm font-medium text-gray-900">Starting the agent</span>
+        </li>
+      }
+      @for (row of visibleRows(); track row.id; let last = $last) {
+        <li class="relative flex items-start gap-3 py-2 motion-safe:animate-step-in" [attr.data-testid]="'mktg-run-activity-step-' + row.id">
+          <!-- The line joining one step to the next -->
+          @if (!last) {
+            <span class="absolute left-4 top-10 -bottom-2 w-px bg-gray-100" aria-hidden="true"></span>
+          }
+          <span class="relative flex items-center justify-center w-8 h-8 rounded-full shrink-0" [ngClass]="row.bubbleClass">
+            <i class="text-sm" [ngClass]="row.iconClass" aria-hidden="true"></i>
+          </span>
+          <div class="flex flex-col min-w-0 flex-1 pt-1.5">
+            <span class="text-sm leading-snug" [ngClass]="row.labelClass">{{ row.label }}</span>
+            @if (row.detail) {
+              <span class="text-xs text-gray-400 truncate" [title]="row.detail">{{ row.detail }}</span>
+            }
+          </div>
+          <div class="flex items-center gap-2 pt-2 shrink-0 text-xs">
+            @if (row.duration) {
+              <span class="text-gray-400 tabular-nums">{{ row.duration }}</span>
+            }
+            @switch (row.status) {
+              @case ('running') {
+                <i class="fa-light fa-spinner-third motion-safe:animate-spin text-blue-500" aria-hidden="true"></i>
+                <span class="sr-only">in progress</span>
+              }
+              @case ('failed') {
+                <i class="fa-light fa-triangle-exclamation text-amber-600" aria-hidden="true"></i>
+                <span class="sr-only">did not work</span>
+              }
+              @default {
+                <i class="fa-light fa-check text-emerald-600" aria-hidden="true"></i>
+                <span class="sr-only">done</span>
+              }
+            }
+          </div>
+        </li>
+      }
+    </ol>
+  </div>
+
+  <!-- What a screen reader hears as the run moves on: only the step under way, not the whole list on every poll. -->
+  <span class="sr-only" role="status" aria-live="polite" data-testid="mktg-run-activity-status">{{ currentLabel() }}</span>
+</section>

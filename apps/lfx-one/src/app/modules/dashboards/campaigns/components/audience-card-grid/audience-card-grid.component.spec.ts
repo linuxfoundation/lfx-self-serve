@@ -124,6 +124,15 @@ describe('AudienceCardGridComponent', () => {
     expect(text).not.toContain('0 contacts');
   });
 
+  it('links to HubSpot only when the list has a URL', () => {
+    // A blank URL renders href="", which opens this app instead of the list.
+    render([bucket('event_registration', [list(), list({ listId: '102', hubspotUrl: '' })])]);
+
+    const link = host().querySelector<HTMLAnchorElement>('[data-testid="audience-card-grid-link-101"]');
+    expect(link?.getAttribute('href')).toBe('https://app.hubspot.com/contacts/1/objectLists/101');
+    expect(host().querySelector('[data-testid="audience-card-grid-link-102"]'), 'a blank URL rendered a link back to this app').toBeNull();
+  });
+
   describe('select all / clear', () => {
     it('emits every shown list that is neither included nor excluded, and clears only included ones', () => {
       const selected: string[][] = [];

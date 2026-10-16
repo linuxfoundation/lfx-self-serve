@@ -3,10 +3,15 @@
 
 import { DecimalPipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, inject, input, Signal, signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, inject, input, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
-import { DEFAULT_REDDIT_KEYWORDS_WINDOW, REDDIT_KEYWORDS_ERROR_MESSAGES, REDDIT_KEYWORDS_WINDOW_OPTIONS } from '@lfx-one/shared/constants';
+import {
+  DEFAULT_REDDIT_KEYWORDS_WINDOW,
+  LIVE_REGION_MOUNT_DELAY_MS,
+  REDDIT_KEYWORDS_ERROR_MESSAGES,
+  REDDIT_KEYWORDS_WINDOW_OPTIONS,
+} from '@lfx-one/shared/constants';
 import type { RedditKeywordDisplayRow, RedditKeywordsView, RedditKeywordsWindow } from '@lfx-one/shared/interfaces';
 import { AdsPctPipe } from '@pipes/campaign-optimization.pipe';
 import { CampaignService } from '@services/campaign.service';
@@ -45,6 +50,27 @@ export class RedditKeywordsTableComponent {
   protected readonly view: Signal<RedditKeywordsView> = this.initView();
   /** The rows with their campaign label precomputed, so the template calls no method. */
   protected readonly rows: Signal<RedditKeywordDisplayRow[]> = this.initRows();
+  /**
+   * Set LIVE_REGION_MOUNT_DELAY_MS after this component's first render, so the live region below
+   * exists, EMPTY, before any loading text reaches it. A role="status" element inserted with its text already
+   * present is not reliably announced — the parent mounts this panel conditionally, and the old
+   * loading block was itself inserted pre-filled — so the region is persistent and only its
+   * contents change, as the monitoring tab's own read-status region does.
+   */
+  private readonly liveRegionMounted = signal(false);
+  /** What the persistent live region says: the read in flight, and nothing otherwise. */
+  protected readonly loadingAnnouncement: Signal<string> = computed(() =>
+    this.liveRegionMounted() && this.view().state === 'loading' ? 'Loading Reddit keyword metrics' : ''
+  );
+
+  public constructor() {
+    const destroyRef = inject(DestroyRef);
+    afterNextRender(() => {
+      // Deferred past this render's own task, so the region is in the DOM, empty, before its text.
+      const handle = setTimeout(() => this.liveRegionMounted.set(true), LIVE_REGION_MOUNT_DELAY_MS);
+      destroyRef.onDestroy(() => clearTimeout(handle));
+    });
+  }
 
   protected selectWindow(window: RedditKeywordsWindow): void {
     this.selectedWindow.set(window);

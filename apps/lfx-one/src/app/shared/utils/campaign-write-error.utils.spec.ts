@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
+import { CAMPAIGN_RESUME_REFUSED_ADOPTED_CODE, CAMPAIGN_RESUME_REFUSED_CODE } from '@lfx-one/shared/constants';
 import { describe, expect, it } from 'vitest';
 
-import { classifyCampaignWriteFailure, isBffErrorEnvelope } from './campaign-write-error.utils';
+import { classifyCampaignWriteFailure, isBffErrorEnvelope, isCampaignResumeRefusal } from './campaign-write-error.utils';
 
 const httpError = (status: number, error: unknown): HttpErrorResponse => new HttpErrorResponse({ status, statusText: 'x', error });
 
@@ -92,5 +93,22 @@ describe('isBffErrorEnvelope', () => {
     [[{ error: 'x', code: 'y' }], false],
   ])('%j → %s', (body, expected) => {
     expect(isBffErrorEnvelope(body)).toBe(expected);
+  });
+});
+
+describe('isCampaignResumeRefusal', () => {
+  it.each([
+    ['a BFF 409 coded CAMPAIGN_RESUME_REFUSED', httpError(409, { error: 'resume it in LinkedIn Ads itself', code: CAMPAIGN_RESUME_REFUSED_CODE }), true],
+    [
+      'a BFF 409 coded CAMPAIGN_RESUME_REFUSED_ADOPTED',
+      httpError(409, { error: 'resume it in Reddit Ads itself', code: CAMPAIGN_RESUME_REFUSED_ADOPTED_CODE }),
+      true,
+    ],
+    ['a BFF 409 with another code', httpError(409, { error: 'refused', code: 'CLIENT_ERROR' }), false],
+    ['the code on another status', httpError(412, { error: 'stale', code: CAMPAIGN_RESUME_REFUSED_CODE }), false],
+    ["a proxy's plain-text 409", httpError(409, 'Conflict'), false],
+    ['a non-HTTP error', new Error(CAMPAIGN_RESUME_REFUSED_CODE), false],
+  ])('%s → %s', (_label, error, expected) => {
+    expect(isCampaignResumeRefusal(error)).toBe(expected);
   });
 });

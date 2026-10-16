@@ -12,20 +12,28 @@ import {
   CAMPAIGN_ACT_RESOLVE_UNEXPECTED_MESSAGE,
   CAMPAIGN_ACT_RESUME_ADOPTED_NOTE,
   CAMPAIGN_ACT_UNOWNED_MESSAGE,
+  CAMPAIGN_BID_UNAVAILABLE_X_ADOPTED_REASON,
+  CAMPAIGN_BUDGET_BLOCKED_PACING_CHECK_REASON,
+  CAMPAIGN_BUDGET_X_LIFETIME_REASON,
   CAMPAIGN_ETAG_STALE_MESSAGE,
+  CAMPAIGN_RESUME_REFUSED_CODE,
   CAMPAIGN_UNAVAILABLE_DEPLOYMENT_REASON,
+  CAMPAIGN_UNAVAILABLE_RESUME_PLATFORM_REASON,
+  campaignResumeAdoptedReason,
+  campaignResumeRefusedMessage,
 } from '@lfx-one/shared/constants';
 import type {
   CampaignActDialogData,
   CampaignRecordResult,
   CampaignServiceCampaign,
   CampaignServiceCampaignResolution,
+  CampaignServiceSettingsReadback,
   CampaignStatusToggleParams,
 } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { Observable, of, throwError } from 'rxjs';
+import { NEVER, Observable, of, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { CampaignBidFormComponent } from '../campaign-bid-form/campaign-bid-form.component';
@@ -49,6 +57,19 @@ function resolution(count: number): CampaignServiceCampaignResolution {
   return { platform_campaign_id: '123456', matches, match_count: count };
 }
 
+/** A live settings readback reporting `pacing` as the campaign's budget type (absent: unreported). */
+function settingsWith(pacing?: string): CampaignServiceSettingsReadback {
+  return {
+    campaign_id: 'c-1',
+    platform_campaign_id: '123456',
+    platform: 'twitter-ads',
+    read_at: '2026-10-15T10:00:00Z',
+    fields: [{ field: 'budget_type', ...(pacing === undefined ? {} : { upstream: pacing }), comparison: 'unknown' }],
+    diverged_count: 0,
+    unknown_count: 1,
+  };
+}
+
 /** A refusal in the BFF's own `{ error, code }` envelope. */
 function bffError(status: number, error: string): HttpErrorResponse {
   return new HttpErrorResponse({ status, error: { error, code: 'CLIENT_ERROR' } });
@@ -64,6 +85,7 @@ describe('CampaignActDialogComponent (#3299)', () => {
     updateCampaignStatus: ReturnType<typeof vi.fn>;
     updateCampaignBudget: ReturnType<typeof vi.fn>;
     updateCampaignBid: ReturnType<typeof vi.fn>;
+    getCampaignSettings: ReturnType<typeof vi.fn>;
   };
 
   async function setup(data: Partial<CampaignActDialogData> = {}, record: Partial<CampaignRecordResult> = {}, resolved = resolution(1)): Promise<void> {
@@ -76,6 +98,7 @@ describe('CampaignActDialogComponent (#3299)', () => {
       updateCampaignStatus: vi.fn(),
       updateCampaignBudget: vi.fn(),
       updateCampaignBid: vi.fn(),
+      getCampaignSettings: vi.fn(() => of(settingsWith('daily'))),
     };
     const dialogData: CampaignActDialogData = {
       projectSlug: 'tlf',
@@ -174,15 +197,59 @@ describe('CampaignActDialogComponent (#3299)', () => {
     expect((service.updateCampaignStatus.mock.calls[1][0] as CampaignStatusToggleParams).etag).toBe('"4"');
   });
 
-  it("shows campaign-service's own refusal for a resume (an adopted campaign) and does not retry it", async () => {
+  it("shows the BFF's CAMPAIGN_RESUME_REFUSED message for a refused resume (an adopted campaign) and does not retry it", async () => {
     await setup({}, { campaign: { ...CAMPAIGN, status: 'paused' } });
+    const refusal = campaignResumeRefusedMessage('LinkedIn Ads', 'campaign is not fully provisioned');
     service.updateCampaignStatus.mockReturnValue(
-      throwError(() => bffError(409, 'This campaign was adopted; activate it in the ad platform.')) as Observable<never>
+      throwError(() => new HttpErrorResponse({ status: 409, error: { error: refusal, code: CAMPAIGN_RESUME_REFUSED_CODE } })) as Observable<never>
     );
 
     click('campaign-act-dialog-toggle');
 
-    expect(q('campaign-act-dialog-toggle-error')?.textContent).toContain('This campaign was adopted');
+    expect(q('campaign-act-dialog-toggle-error')?.textContent).toContain('resume it in LinkedIn Ads itself');
+    expect(service.updateCampaignStatus).toHaveBeenCalledTimes(1);
+  });
+
+  // campaign-service marks an adopted campaign `adopted: true` and never resumes it, so Resume is
+  // withheld up front: still focusable (aria-disabled), described, and a click sends nothing.
+  it('withholds Resume on a campaign campaign-service marks adopted, and a click sends nothing', async () => {
+    await setup({}, { campaign: { ...CAMPAIGN, status: 'paused', adopted: true } });
+
+    const button = q('campaign-act-dialog-toggle') as HTMLButtonElement;
+    const reason = q('campaign-act-dialog-resume-adopted');
+    expect(button.textContent).toContain('Resume');
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    expect(button.disabled).toBe(false);
+    expect(reason?.textContent?.trim()).toBe(campaignResumeAdoptedReason('LinkedIn Ads'));
+    expect(button.getAttribute('aria-describedby')).toBe(reason?.id);
+    // The hedged note gives way to the precise reason.
+    expect(q('campaign-act-dialog-resume-note')).toBeNull();
+
+    click('campaign-act-dialog-toggle');
+
+    expect(service.updateCampaignStatus).not.toHaveBeenCalled();
+    expect(q('campaign-act-dialog-toggle-error')).toBeNull();
+  });
+
+  it('keeps Pause on a running adopted campaign', async () => {
+    await setup({}, { campaign: { ...CAMPAIGN, adopted: true } });
+    service.updateCampaignStatus.mockReturnValue(of({ platform: 'linkedin-ads', campaignId: 'c-1', newStatus: 'PAUSED', success: true, etag: '"4"' }));
+
+    expect(q('campaign-act-dialog-toggle')?.textContent).toContain('Pause');
+    expect(q('campaign-act-dialog-resume-adopted')).toBeNull();
+    click('campaign-act-dialog-toggle');
+
+    expect(service.updateCampaignStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers Resume as before when adopted is absent', async () => {
+    await setup({}, { campaign: { ...CAMPAIGN, status: 'paused' } });
+    service.updateCampaignStatus.mockReturnValue(of({ platform: 'linkedin-ads', campaignId: 'c-1', newStatus: 'ACTIVE', success: true, etag: '"4"' }));
+
+    expect(q('campaign-act-dialog-resume-adopted')).toBeNull();
+    expect(q('campaign-act-dialog-resume-note')?.textContent).toContain(CAMPAIGN_ACT_RESUME_ADOPTED_NOTE);
+    click('campaign-act-dialog-toggle');
+
     expect(service.updateCampaignStatus).toHaveBeenCalledTimes(1);
   });
 
@@ -218,6 +285,14 @@ describe('CampaignActDialogComponent (#3299)', () => {
     expect(q('campaign-act-dialog-toggle-unavailable')?.textContent).toContain(CAMPAIGN_UNAVAILABLE_DEPLOYMENT_REASON);
   });
 
+  // Every X row is adopted while X create is off, and upstream 409s ACTIVE on an adopted row.
+  it('withholds Resume on a paused X campaign, saying where to resume it', async () => {
+    await setup({}, { campaign: { ...CAMPAIGN, platform: 'twitter-ads', status: 'paused' } });
+
+    expect(q('campaign-act-dialog-toggle')).toBeNull();
+    expect(q('campaign-act-dialog-toggle-unavailable')?.textContent).toContain(CAMPAIGN_UNAVAILABLE_RESUME_PLATFORM_REASON);
+  });
+
   it('offers the bid editor for a LinkedIn campaign and sends the bid with the record ETag', async () => {
     await setup({ lever: 'bid' });
     service.updateCampaignBid.mockReturnValue(of({ campaignId: 'c-1', bid: 2.5, bidType: 'cpc', etag: '"4"' }));
@@ -230,6 +305,34 @@ describe('CampaignActDialogComponent (#3299)', () => {
       expect.objectContaining({ campaignId: 'c-1', briefId: 'b-1', bid: 2.5, bidType: 'cpc', etag: '"3"' })
     );
     expect(q('campaign-act-dialog-bid-current')?.textContent).toContain('2.5');
+  });
+
+  // An adopted X campaign records no line item, and X bids live on the line item, so campaign-service
+  // refuses the write (409). The editor is withheld with where to change it; Pause and Budget stay.
+  it('withholds the bid editor for an adopted X campaign and sends nothing', async () => {
+    await setup({ lever: 'bid', platform: 'twitter-ads' }, { campaign: { ...CAMPAIGN, platform: 'twitter-ads', adopted: true } });
+
+    expect(q('campaign-act-dialog-bid-unavailable')?.textContent?.trim()).toBe(CAMPAIGN_BID_UNAVAILABLE_X_ADOPTED_REASON);
+    expect(fixture.debugElement.query(By.directive(CampaignBidFormComponent))).toBeNull();
+    fixture.componentInstance['changeBid']({ bid: 2.5 });
+    expect(service.updateCampaignBid).not.toHaveBeenCalled();
+  });
+
+  it('keeps the bid editor for an X campaign created here', async () => {
+    await setup({ lever: 'bid', platform: 'twitter-ads' }, { campaign: { ...CAMPAIGN, platform: 'twitter-ads' } });
+
+    expect(q('campaign-act-dialog-bid-unavailable')).toBeNull();
+    expect(fixture.debugElement.query(By.directive(CampaignBidFormComponent))).not.toBeNull();
+  });
+
+  it('keeps Pause and Budget for an adopted X campaign', async () => {
+    const adoptedX = { campaign: { ...CAMPAIGN, platform: 'twitter-ads', adopted: true } };
+    await setup({ platform: 'twitter-ads' }, adoptedX);
+    expect(q('campaign-act-dialog-toggle')?.textContent).toContain('Pause');
+
+    await setup({ lever: 'budget', platform: 'twitter-ads' }, adoptedX);
+    expect(q('campaign-act-dialog-budget-unavailable')).toBeNull();
+    expect(fixture.debugElement.query(By.directive(CampaignBudgetFormComponent))).not.toBeNull();
   });
 
   it('does not refill the bid editor with a stale amount after a 412 and Reload', async () => {
@@ -275,5 +378,81 @@ describe('CampaignActDialogComponent (#3299)', () => {
     expect(q('campaign-act-dialog-budget-unavailable')).not.toBeNull();
     fixture.componentInstance['changeBudget']({ budget: 100, budgetType: 'daily' });
     expect(service.updateCampaignBudget).not.toHaveBeenCalled();
+  });
+
+  // X (#3299): campaign-service writes X budgets as a daily amount only and refuses `lifetime` with 409.
+  describe('daily-only platform (X)', () => {
+    const X_CAMPAIGN: CampaignServiceCampaign = { ...CAMPAIGN, platform: 'twitter-ads' };
+    const setupX = (): Promise<void> => setup({ lever: 'budget', platform: 'twitter-ads' }, { campaign: X_CAMPAIGN });
+    const budgetForm = (): CampaignBudgetFormComponent =>
+      fixture.debugElement.query(By.directive(CampaignBudgetFormComponent)).componentInstance as CampaignBudgetFormComponent;
+    const typeAmount = (value: string): void => {
+      const input = (fixture.nativeElement as HTMLElement).querySelector('#campaign-budget-amount-c-1') as HTMLInputElement;
+      input.value = value;
+      input.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+    };
+    const submit = (): void => {
+      q('optimization-campaign-budget-form-c-1')!.dispatchEvent(new Event('submit'));
+      fixture.detectChanges();
+    };
+
+    it('offers Daily alone, with the daily-only hint, and sends the X platform hint', async () => {
+      await setupX();
+      service.updateCampaignBudget.mockReturnValue(of({ campaignId: 'c-1', budget: 40, budgetType: 'daily', etag: '"4"' }));
+
+      expect(service.getCampaignSettings).toHaveBeenCalledWith('tlf', 'b-1', 'c-1');
+      expect(budgetForm().dailyOnly()).toBe(true);
+      expect((fixture.nativeElement as HTMLElement).querySelector('#campaign-budget-type-c-1-lifetime')).toBeNull();
+      expect(q('optimization-campaign-budget-type-hint-c-1')!.textContent).toContain('daily amount only');
+
+      typeAmount('40');
+      submit();
+
+      expect(service.updateCampaignBudget).toHaveBeenCalledWith(expect.objectContaining({ budget: 40, budgetType: 'daily', platform: 'twitter-ads' }));
+    });
+
+    it('never sends a lifetime change, even when one reaches the dialog', async () => {
+      await setupX();
+
+      fixture.componentInstance['changeBudget']({ budget: 40, budgetType: 'lifetime' });
+      typeAmount('40');
+      budgetForm().form.controls.budgetType.setValue('lifetime');
+      submit();
+
+      expect(service.updateCampaignBudget).not.toHaveBeenCalled();
+    });
+
+    it('cannot submit while the pacing read is out', async () => {
+      await setupX();
+      // Re-read the row with a pacing read that never answers.
+      service.getCampaignSettings.mockReturnValue(NEVER);
+      fixture.componentInstance['loadRecord']();
+      fixture.detectChanges();
+
+      expect(q('optimization-campaign-budget-blocked-c-1')!.textContent).toContain(CAMPAIGN_BUDGET_BLOCKED_PACING_CHECK_REASON);
+      fixture.componentInstance['changeBudget']({ budget: 40, budgetType: 'daily' });
+      expect(service.updateCampaignBudget).not.toHaveBeenCalled();
+    });
+
+    it('withholds the form, with its reason, for a lifetime-budgeted X campaign', async () => {
+      await setupX();
+      // Re-read the row with the platform reporting a lifetime budget.
+      service.getCampaignSettings.mockReturnValue(of(settingsWith('lifetime')));
+      fixture.componentInstance['loadRecord']();
+      fixture.detectChanges();
+
+      expect(q('campaign-act-dialog-budget-unavailable')!.textContent).toContain(CAMPAIGN_BUDGET_X_LIFETIME_REASON);
+      expect(fixture.debugElement.query(By.directive(CampaignBudgetFormComponent))).toBeNull();
+      fixture.componentInstance['changeBudget']({ budget: 40, budgetType: 'daily' });
+      expect(service.updateCampaignBudget).not.toHaveBeenCalled();
+    });
+
+    it('does not read the pacing of a platform that takes either pacing', async () => {
+      await setup({ lever: 'budget' });
+
+      expect(service.getCampaignSettings).not.toHaveBeenCalled();
+      expect(budgetForm().dailyOnly()).toBe(false);
+    });
   });
 });

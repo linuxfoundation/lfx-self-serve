@@ -286,6 +286,19 @@
                     >
                   }
                   <!--
+                    Why an adopted campaign's Resume does nothing: campaign-service never resumes an
+                    adopted campaign. Like the reason above, a standing property of the row and the
+                    button's `aria-describedby` target, so it is not a live region.
+                  -->
+                  @if (row.resumeAdopted) {
+                    <span
+                      class="text-xs text-gray-500"
+                      [id]="'campaign-resume-adopted-' + row.campaign.id"
+                      [attr.data-testid]="'optimization-campaign-resume-adopted-' + row.campaign.id"
+                      >{{ row.resumeAdoptedReason }}</span
+                    >
+                  }
+                  <!--
                     The budget this session confirmed. The index carries no budget, so nothing is shown
                     until a change lands here. No currency symbol: the amount is in the ad account's own
                     currency, which this app does not know, and it is shown exactly as accepted.
@@ -393,19 +406,25 @@
                   <!--
                     Discloses the row's budget editor. A raw button like the toggle beside it, because it
                     needs `aria-controls` and `aria-describedby`, which the `lfx-button` wrapper does not
-                    forward to its inner button. Disabled, with its reason described, for a platform or
-                    campaign that cannot take a budget change; held open while a change is in flight.
+                    forward to its inner button. `aria-disabled` (not `disabled`), with its reason described,
+                    for a platform or campaign that cannot take a budget change, so it stays focusable:
+                    an editor that is open when the row turns unavailable (an X campaign read as
+                    lifetime-budgeted) is closed by Cancel, which hands focus back here, and a `disabled`
+                    button would drop it. `toggleBudgetEditor()` refuses to open an unavailable row, and
+                    an open one can still be closed from here. Truly disabled only while a change is in
+                    flight, which holds the editor open.
                   -->
                   <button
                     type="button"
                     (click)="toggleBudgetEditor(row)"
                     [id]="'campaign-budget-edit-' + row.campaign.id"
-                    [disabled]="!row.budgetAvailable || budgetPending()[row.campaign.id]"
-                    [attr.aria-expanded]="row.budgetAvailable ? !!budgetEditorOpen()[row.campaign.id] : null"
+                    [disabled]="budgetPending()[row.campaign.id]"
+                    [attr.aria-disabled]="!row.budgetAvailable && !budgetEditorOpen()[row.campaign.id] ? 'true' : null"
+                    [attr.aria-expanded]="row.budgetAvailable || budgetEditorOpen()[row.campaign.id] ? !!budgetEditorOpen()[row.campaign.id] : null"
                     [attr.aria-controls]="budgetEditorOpen()[row.campaign.id] ? 'campaign-budget-panel-' + row.campaign.id : null"
                     [attr.aria-describedby]="row.budgetAvailable ? null : 'campaign-budget-unavailable-' + row.campaign.id"
                     [attr.aria-label]="'Change budget for ' + row.campaign.campaign_name"
-                    class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
                     [attr.data-testid]="'optimization-campaign-budget-edit-' + row.campaign.id">
                     Change budget
                   </button>
@@ -478,6 +497,10 @@
 
                     `aria-describedby` points at the row's error only when one exists; a dangling
                     reference to an element that renders conditionally is worse than none.
+
+                    An adopted campaign's Resume is `aria-disabled`, not `disabled`: it stays in the
+                    focus order so its reason (described) is reachable, and `toggleCampaign()` ignores
+                    the click.
                   -->
                   <button
                     type="button"
@@ -492,8 +515,9 @@
                     "
                     [attr.aria-label]="row.toggleLabel + ' ' + row.campaign.campaign_name"
                     [attr.aria-busy]="togglePending()[row.campaign.id] ? 'true' : null"
+                    [attr.aria-disabled]="row.resumeAdopted ? 'true' : null"
                     [attr.aria-describedby]="row.describedBy"
-                    class="shrink-0 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    class="shrink-0 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:bg-transparent"
                     [attr.data-testid]="'optimization-campaign-toggle-' + row.campaign.id">
                     <!--
                       The visible label stays the ACTION word while pending, rather than becoming
@@ -517,8 +541,9 @@
                   [campaignName]="row.campaign.campaign_name"
                   [knownBudgetType]="confirmedBudget()[row.campaign.id]?.budgetType ?? null"
                   [initialBudget]="confirmedBudget()[row.campaign.id]?.budget ?? null"
+                  [dailyOnly]="row.budgetDailyOnly"
                   [pending]="!!budgetPending()[row.campaign.id]"
-                  [blockedReason]="row.budgetBlockedReason"
+                  [blockedReason]="row.budgetAvailable ? row.budgetBlockedReason : row.budgetUnavailableReason"
                   [outcome]="budgetOutcome()[row.campaign.id] ?? null"
                   (submitBudget)="changeCampaignBudget(row, $event)"
                   (cancelEdit)="cancelBudgetEditor(row.campaign.id)" />

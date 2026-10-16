@@ -2,14 +2,28 @@
 // SPDX-License-Identifier: MIT
 
 import { PLATFORM_ID, signal, WritableSignal } from '@angular/core';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import {
+  FOUNDATION_MESSAGE_ANSWER_MAX_CHARS,
+  FOUNDATION_MESSAGE_READ_REASONS,
+  MKTG_AGENT_INTAKES,
+  MKTG_AGENTS,
+  MKTG_INTAKE_FORMAT_ERRORS,
+  MKTG_README_SKIP_NOTES,
+} from '@lfx-one/shared/constants';
+import {
   MktgAnswerMemory,
   MktgDependencyDocument,
+  MktgDocumentExtractResponse,
   MktgGenerateProgress,
   MktgGenerateRequest,
+  MktgRunAnswer,
+  MktgRunQuestionsPending,
   MktgRunVersion,
   MktgStoredAgentRun,
   Project,
@@ -19,13 +33,16 @@ import {
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgAnswerMemoryService } from '@services/mktg-answer-memory.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
+import { MktgIntakeDocumentsService } from '@services/mktg-intake-documents.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
-import { from, of } from 'rxjs';
+import { concat, from, NEVER, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MktgIntakeDocumentsComponent } from '../mktg-intake-documents/mktg-intake-documents.component';
+import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questions.component';
 import { MktgAgentRunComponent } from './mktg-agent-run.component';
 
 /**
@@ -55,9 +72,11 @@ describe('MktgAgentRunComponent', () => {
   let loadRun: ReturnType<typeof vi.fn>;
   let getProject: ReturnType<typeof vi.fn>;
   let generate: ReturnType<typeof vi.fn>;
+  let answerQuestions: ReturnType<typeof vi.fn>;
   let resolveDependencies: ReturnType<typeof vi.fn>;
   let rememberAnswers: ReturnType<typeof vi.fn>;
   let notifyDocumentsChanged: ReturnType<typeof vi.fn>;
+  let readFile: ReturnType<typeof vi.fn>;
 
   const storedRun = (projectUid: string, document: string, answers: Record<string, string>): MktgStoredAgentRun => ({
     agentId: 'brand-kit',
@@ -93,12 +112,14 @@ describe('MktgAgentRunComponent', () => {
     rememberedAnswers = {};
     rememberAnswers = vi.fn();
     notifyDocumentsChanged = vi.fn();
+    readFile = vi.fn();
     // Stored runs are keyed per agent: `<projectUid>` alone keeps the legacy
     // brand-kit fixtures working, `<projectUid>:<agentId>` scopes when a test
     // needs both the page agent's run AND a dependency source run.
     loadRun = vi.fn((projectUid: string, runAgentId: string) => storedRuns[`${projectUid}:${runAgentId}`] ?? storedRuns[projectUid] ?? null);
     getProject = vi.fn((slug: string) => of(projects[slug] ?? null));
     generate = vi.fn(() => of<MktgGenerateProgress>({ type: 'submitted' }));
+    answerQuestions = vi.fn(() => of<MktgGenerateProgress>({ type: 'submitted' }));
     resolveDependencies = vi.fn((projectUid: string, agentIds: string[]) =>
       of(Object.fromEntries(agentIds.map((agentId) => [agentId, dependencyDocs[`${projectUid}:${agentId}`] ?? null])))
     );
@@ -108,13 +129,17 @@ describe('MktgAgentRunComponent', () => {
       providers: [
         provideRouter([]),
         provideNoopAnimations(),
+        // The documents section's file-upload wrapper (PrimeNG) injects HttpClient; the testing backend keeps every request local.
+        provideHttpClient(),
+        provideHttpClientTesting(),
         { provide: PLATFORM_ID, useValue: platformId },
         { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ agentId }) } } },
         { provide: ProjectContextService, useValue: { activeContext, activeContextUid: () => activeContext()?.uid ?? '' } },
         { provide: ProjectService, useValue: { getProject } },
         { provide: UserService, useValue: { user: userSignal } },
-        { provide: MktgAgentRunService, useValue: { loadRun, generate } },
+        { provide: MktgAgentRunService, useValue: { loadRun, generate, answerQuestions } },
         { provide: MktgDependencyService, useValue: { resolveDependencies, notifyDocumentsChanged } },
+        { provide: MktgIntakeDocumentsService, useValue: { readFile } },
         {
           provide: MktgAnswerMemoryService,
           useValue: { load: (projectUid: string): MktgAnswerMemory => rememberedAnswers[projectUid] ?? {}, remember: rememberAnswers },
@@ -210,7 +235,7 @@ describe('MktgAgentRunComponent', () => {
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
 
-      expect(priorRunChip('github_url')?.textContent).toContain('From your Message Foundation run');
+      expect(priorRunChip('github_url')?.textContent).toContain('From your Messaging Document run');
       expect(fromLfxChip('github_url')).toBeNull();
     });
 
@@ -385,6 +410,30 @@ describe('MktgAgentRunComponent', () => {
     });
   });
 
+  describe('full width with a side margin — no inner max-width cap on the form or the result', () => {
+    beforeEach(async () => configure());
+
+    it('lets the form span the page container with a healthy margin', async () => {
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      const form = query('mktg-agent-run-form');
+      expect(form?.className).toContain('w-full');
+      expect(form?.className).toContain('px-6');
+      expect(form?.className).not.toMatch(/max-w-/);
+    });
+
+    it('lets the result span the page container too', async () => {
+      storedRuns = { 'proj-1': storedRun('proj-1', '# Doc', { project_name: 'P1' }) };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      const result = query('mktg-agent-run-result');
+      expect(result?.className).toContain('w-full');
+      expect(result?.className).not.toMatch(/max-w-/);
+    });
+  });
+
   describe('textarea field styling — full-width, never collapsed', () => {
     beforeEach(async () => configure());
 
@@ -525,8 +574,8 @@ describe('MktgAgentRunComponent', () => {
    * (hand test, 2026-10-12): its answer reaches the agent as text and no
    * README is fetched from it, so a GitHub organization URL is a usable
    * answer to "the project's GitHub repo or README". Only a value that is not a
-   * GitHub URL at all is refused. The Message Foundation block below keeps
-   * refusing the same account URL, because its BFF needs a repository README.
+   * GitHub URL at all is refused. The ICP block below keeps refusing the
+   * same account URL, because its BFF needs a repository README.
    */
   describe('Brand Kit — github_url accepts an organization URL', () => {
     beforeEach(async () => configure());
@@ -566,160 +615,382 @@ describe('MktgAgentRunComponent', () => {
     });
   });
 
-  describe('Message Foundation — dependency auto-attach (dec-agent-dependency-gating)', () => {
-    /** Fills the two always-required base fields. */
-    const fillBase = (): void => {
+  describe('Messaging Document — the form from the design canvas', () => {
+    const fillRequired = (): void => {
       component['intakeForm'].controls['project_name'].setValue('TestOrbit');
-      component['intakeForm'].controls['github_url'].setValue('https://github.com/example-org/testorbit');
     };
-    const brandKitDoc = (document: string, version = 2, source: 'server' | 'browser' = 'server'): MktgDependencyDocument => ({
-      agentId: 'brand-kit',
-      source,
-      version,
-      document,
+    const submitted = (): MktgGenerateRequest => generate.mock.calls[0][0] as MktgGenerateRequest;
+    const QUESTIONS = [
+      {
+        key: 'audiences',
+        label: 'Audiences',
+        question: 'Who are the primary audiences?',
+        why: 'The site names platform teams only.',
+        suggestedAnswer: 'Platform teams; SREs.',
+        basis: ['https://testorbit.example.org', 'the README'],
+      },
+      { key: 'tagline_ctas_constraints', label: 'Tagline, CTAs and constraints', question: 'Is a tagline locked?', why: '', suggestedAnswer: '', basis: [] },
+    ];
+    const pendingQuestions = (): MktgRunQuestionsPending => ({
+      attempt: { session: { agentId: 'foundation-setup', sessionId: 'sess-md', ownerToken: 'token-md' }, priorVersion: 0 },
+      questionsId: 'abc12345',
+      questions: QUESTIONS,
     });
-    const submittedAnswers = (): Record<string, string> => (generate.mock.calls[0][0] as MktgGenerateRequest).answers;
 
     beforeEach(async () => configure('browser', 'foundation-setup'));
 
-    it('renders no Brand Kit gate UI: only project name, GitHub URL and the optional gap-fill notes', async () => {
-      dependencyDocs = { 'proj-1:brand-kit': brandKitDoc('# TestOrbit Brand Kit v2') };
+    it('renders the sources as links — the four, a GitHub repo or organization page, the other links — and the existing documents; no questions on the first form', async () => {
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
 
-      // The retired use/paste/discovery gate — and Paul's raw
-      // "[Project Name] Brand Kit" template string — must not render.
-      expect(query('mktg-agent-run-gate')).toBeNull();
-      expect(host().textContent).not.toContain('[Project Name]');
-      expect(host().querySelector('[data-test="mktg-intake-brand_kit_markdown"]')).toBeNull();
-      expect(host().querySelector('[data-test="mktg-intake-one_line_description"]')).toBeNull();
-      expect(host().querySelector('[data-test="mktg-intake-project_name"]')).not.toBeNull();
-      expect(host().querySelector('[data-test="mktg-intake-github_url"]')).not.toBeNull();
-      expect(host().querySelector('[data-test="mktg-intake-gap_fill_notes"]')).not.toBeNull();
+      const sources = query('mktg-agent-run-group-sources');
+      for (const key of ['project_name', 'website_url', 'github_url', 'press_release_url', 'brand_page_url', 'other_links']) {
+        expect(sources?.querySelector(`[data-test="mktg-intake-${key}"]`)).not.toBeNull();
+      }
+      expect(query('mktg-agent-run-group-questions')).toBeNull();
+      expect(host().querySelectorAll('textarea').length).toBe(1);
+      expect(query('mktg-intake-documents')).not.toBeNull();
+      // Runs first: no Brand Kit chip and no missing-dependency gate.
+      expect(query('mktg-agent-run-attachments')).toBeNull();
+      expect(query('mktg-agent-run-missing-dependency')).toBeNull();
+    });
 
-      // The two base fields are all that is required.
-      fillBase();
+    it('names no one anywhere the user sees — this is a product, not a proof of concept', async () => {
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(host().textContent).not.toContain('Paul');
+      for (const copy of [MKTG_AGENT_INTAKES, MKTG_AGENTS, MKTG_INTAKE_FORMAT_ERRORS, MKTG_README_SKIP_NOTES, FOUNDATION_MESSAGE_READ_REASONS]) {
+        expect(JSON.stringify(copy)).not.toContain('Paul');
+      }
+    });
+
+    it('requires only the project name — every source is optional', async () => {
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      // Prefilled from the active project, so the form starts valid; clearing the one required field is what invalidates it.
+      expect(component['intakeForm'].valid).toBe(true);
+      component['intakeForm'].controls['project_name'].setValue('');
+      expect(component['intakeForm'].valid).toBe(false);
+
+      fillRequired();
       expect(component['intakeForm'].valid).toBe(true);
     });
 
-    it('shows the non-interactive "Using <project>\'s Brand Kit (vN)" chip and always submits the stored document', async () => {
-      dependencyDocs = { 'proj-1:brand-kit': brandKitDoc('# TestOrbit Brand Kit v2') };
+    it('takes "none" or an https:// link for a source, a repository or an organization page for GitHub, one link per line for the rest, and blocks anything else, saying why', async () => {
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
+      fillRequired();
 
-      const chip = query('mktg-agent-run-attachment-brand-kit');
-      expect(chip?.textContent).toContain('Using Project One’s Brand Kit (v2)');
-      // Non-interactive: a plain chip, not a form control or button.
-      expect(chip?.querySelector('input, button')).toBeNull();
+      component['intakeForm'].controls['press_release_url'].setValue('None');
+      await fixture.whenStable();
+      expect(fieldError('press_release_url')).toBeNull();
 
-      fillBase();
+      component['intakeForm'].controls['website_url'].setValue('http://testorbit.example.org');
+      await fixture.whenStable();
+      expect(fieldError('website_url')?.textContent).toContain('https://');
+      expect(component['submitDisabled']()).toBe(true);
+      component['intakeForm'].controls['website_url'].setValue('https://testorbit.example.org');
+      await fixture.whenStable();
+      expect(fieldError('website_url')).toBeNull();
+
+      // An organization page (https://github.com/aaif) is a usable GitHub source now that the agent reads it.
+      component['intakeForm'].controls['github_url'].setValue('https://github.com/aaif');
+      await fixture.whenStable();
+      expect(fieldError('github_url')).toBeNull();
+      component['intakeForm'].controls['github_url'].setValue('https://gitlab.example.org/aaif');
+      await fixture.whenStable();
+      expect(fieldError('github_url')?.textContent).toContain('GitHub');
+      component['intakeForm'].controls['github_url'].setValue('https://github.com/aaif/spec');
+      await fixture.whenStable();
+      expect(fieldError('github_url')).toBeNull();
+
+      component['intakeForm'].controls['other_links'].setValue('https://blog.example.org/a\nnot a link');
+      await fixture.whenStable();
+      expect(fieldError('other_links')?.textContent).toContain('Every line');
+      component['intakeForm'].controls['other_links'].setValue('https://blog.example.org/a\n\nhttps://blog.example.org/b');
+      await fixture.whenStable();
+      expect(fieldError('other_links')).toBeNull();
+      expect(component['submitDisabled']()).toBe(false);
+    });
+
+    it('submits the links and the documents — a link by its URL, a file by its text — and waits while a file is being read', async () => {
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      fillRequired();
+      component['intakeForm'].controls['website_url'].setValue('https://testorbit.example.org');
+      component['intakeForm'].controls['other_links'].setValue('https://blog.example.org/launch');
+      component['documents'].set([
+        { id: 'link-1', kind: 'link', title: 'https://wiki.example.org/note', url: 'https://wiki.example.org/note', read: false, words: 0, truncated: false },
+        { id: 'file-1', kind: 'file', title: 'brand.md', text: 'Brand guide.', read: true, words: 2, truncated: false },
+      ]);
+
+      component['documentsBusy'].set(true);
+      expect(component['submitDisabled']()).toBe(true);
+      component['documentsBusy'].set(false);
+
       component['onSubmit']();
+      await fixture.whenStable();
 
-      // brand_kit_markdown is ALWAYS the stored kit's document, fetched at
-      // submit time — satisfying the agent's conditional contract with the
-      // discovery fields omitted.
-      expect(generate).toHaveBeenCalledTimes(1);
-      expect(submittedAnswers()).toEqual({
+      expect(submitted().answers).toEqual({
         project_name: 'TestOrbit',
-        github_url: 'https://github.com/example-org/testorbit',
-        brand_kit_markdown: '# TestOrbit Brand Kit v2',
+        website_url: 'https://testorbit.example.org',
+        other_links: 'https://blog.example.org/launch',
+      });
+      expect(submitted().documents).toEqual([
+        { kind: 'link', title: 'https://wiki.example.org/note', url: 'https://wiki.example.org/note' },
+        { kind: 'file', title: 'brand.md', text: 'Brand guide.' },
+      ]);
+    });
+
+    it('never attaches a file picked for one project to another: a project switch cancels the read still in flight', async () => {
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      const response = new Subject<MktgDocumentExtractResponse>();
+      readFile.mockReturnValue(response.asObservable());
+      const section = fixture.debugElement.query(By.directive(MktgIntakeDocumentsComponent)).componentInstance as MktgIntakeDocumentsComponent;
+      section['onFilesSelected']({ originalEvent: new Event('change'), files: [new File(['Brand guide.'], 'brand.md')], currentFiles: [] });
+      expect(component['documentsBusy']()).toBe(true);
+
+      activeContext.set(PROJECT_2);
+      await fixture.whenStable();
+      // Project One's file answers after the switch.
+      response.next({ title: 'brand.md', read: true, words: 2, truncated: false, text: 'Brand guide.' });
+      response.complete();
+      await fixture.whenStable();
+
+      expect(component['documents']()).toEqual([]);
+      expect(component['documentsBusy']()).toBe(false);
+    });
+
+    describe('the live feed — what the agent does, in plain words, while it works', () => {
+      it('shows each step as it is reported, and switches to writing once the answers went back', async () => {
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+        fillRequired();
+        generate.mockReturnValue(
+          concat(
+            from<MktgGenerateProgress[]>([
+              { type: 'submitted' },
+              {
+                type: 'activity',
+                activity: [
+                  {
+                    id: 'step-1',
+                    kind: 'reading',
+                    label: 'Reading testorbit.example.org',
+                    status: 'done',
+                    startedAt: '2026-10-16T08:00:00Z',
+                    endedAt: '2026-10-16T08:00:02Z',
+                  },
+                  {
+                    id: 'step-2',
+                    kind: 'search',
+                    label: 'Searching the web',
+                    detail: '“TestOrbit adopters”',
+                    status: 'running',
+                    startedAt: '2026-10-16T08:00:03Z',
+                  },
+                ],
+              },
+            ]),
+            NEVER
+          )
+        );
+        component['onSubmit']();
+        await fixture.whenStable();
+
+        expect(component['phase']()).toBe('running');
+        expect(query('mktg-run-activity-title')?.textContent).toContain('Researching');
+        expect(query('mktg-run-activity-step-step-1')?.textContent).toContain('Reading testorbit.example.org');
+        expect(query('mktg-run-activity-step-step-2')?.textContent).toContain('“TestOrbit adopters”');
+        expect(query('mktg-run-activity-status')?.textContent).toContain('Searching the web');
+        // The old staged checklist is for agents without a feed.
+        expect(query('mktg-agent-run-running')).toBeNull();
       });
     });
 
-    it('falls back to the browser-stored Brand Kit run when server persistence has none', async () => {
-      dependencyDocs = { 'proj-1:brand-kit': brandKitDoc('# Browser-stored kit', 1, 'browser') };
-      activeContext.set(PROJECT_1);
-      await fixture.whenStable();
+    describe('the questions step — after research, only the gaps, one at a time, each answer starting as the suggestion', () => {
+      const stepper = (): MktgRunQuestionsComponent =>
+        fixture.debugElement.query(By.directive(MktgRunQuestionsComponent)).componentInstance as MktgRunQuestionsComponent;
+      // An lfx-button carries the test id on its host; the click has to reach the button inside.
+      const click = async (testId: string): Promise<void> => {
+        const target = query(testId);
+        (target?.tagName === 'LFX-BUTTON' ? target.querySelector('button') : target)?.click();
+        await fixture.whenStable();
+      };
+      const answerBox = (key: string): HTMLTextAreaElement | null =>
+        host().querySelector<HTMLTextAreaElement>(`[data-test="mktg-run-questions-answer-${key}"]`);
+      const type = async (key: string, text: string): Promise<void> => {
+        stepper()['answersForm'].controls[key].setValue(text);
+        await fixture.whenStable();
+      };
+      const sendWith = async (taglineAnswer: string): Promise<void> => {
+        await click('mktg-run-questions-next');
+        await type('tagline_ctas_constraints', taglineAnswer);
+        await click('mktg-run-questions-send');
+      };
 
-      expect(query('mktg-agent-run-attachment-brand-kit')?.textContent).toContain('(v1)');
-      fillBase();
-      component['onSubmit']();
+      beforeEach(async () => {
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+        fillRequired();
+        generate.mockReturnValue(from<MktgGenerateProgress[]>([{ type: 'submitted' }, { type: 'questions', pending: pendingQuestions() }]));
+        component['onSubmit']();
+        await fixture.whenStable();
+      });
 
-      expect(submittedAnswers()['brand_kit_markdown']).toBe('# Browser-stored kit');
+      it('asks one question at a time: the question, the why, the basis links, and one box holding the suggested answer', () => {
+        expect(component['phase']()).toBe('questions');
+        expect(query('mktg-run-questions-progress')?.textContent).toContain('Question 1 of 2');
+        expect(query('mktg-run-questions-card-audiences')?.textContent).toContain('Who are the primary audiences?');
+        expect(query('mktg-run-questions-card-tagline_ctas_constraints')).toBeNull();
+        expect(query('mktg-run-questions-why-audiences')?.textContent).toContain('platform teams only');
+        const basis = query('mktg-run-questions-basis-audiences');
+        expect(basis?.querySelector('a')?.getAttribute('href')).toBe('https://testorbit.example.org');
+        expect(basis?.textContent).toContain('the README');
+        expect(answerBox('audiences')?.value).toBe('Platform teams; SREs.');
+        expect(query('mktg-run-questions-hint-audiences')?.textContent).toContain('suggestion');
+        // One box, nothing to pick between, and no review step.
+        expect(host().querySelectorAll('[role="radio"]').length).toBe(0);
+        expect(host().querySelectorAll('textarea').length).toBe(1);
+        expect(query('mktg-run-questions-chip-audiences')?.textContent).toContain('Audiences');
+        expect(query('mktg-run-questions-chip-tagline_ctas_constraints')?.textContent).toContain('Tagline');
+        expect(query('mktg-agent-run-regenerate-button')).toBeNull();
+        expect(query('mktg-agent-run-form')).toBeNull();
+      });
+
+      it('needs a real answer where there is no suggestion — no skip, no TBD, no empty — and says so', async () => {
+        await click('mktg-run-questions-next');
+        expect(answerBox('tagline_ctas_constraints')?.value).toBe('');
+        expect(query('mktg-run-questions-hint-tagline_ctas_constraints')?.textContent).toContain('nothing to suggest');
+
+        await type('tagline_ctas_constraints', 'TBD');
+        await click('mktg-run-questions-send');
+        expect(query('mktg-run-questions-error-tagline_ctas_constraints')?.textContent).toContain('TBD');
+        expect(answerQuestions).not.toHaveBeenCalled();
+      });
+
+      it('refuses an answer longer than the answers turn takes before sending, naming the limit', async () => {
+        await type('audiences', 'a'.repeat(FOUNDATION_MESSAGE_ANSWER_MAX_CHARS + 1));
+        await click('mktg-run-questions-next');
+        expect(query('mktg-run-questions-error-audiences')?.textContent).toContain('4,000 characters');
+        expect(query('mktg-run-questions-progress')?.textContent).toContain('Question 1 of 2');
+
+        // Exactly the cap stands.
+        await type('audiences', 'a'.repeat(FOUNDATION_MESSAGE_ANSWER_MAX_CHARS));
+        await click('mktg-run-questions-next');
+        expect(query('mktg-run-questions-progress')?.textContent).toContain('Question 2 of 2');
+        expect(answerQuestions).not.toHaveBeenCalled();
+      });
+
+      it('lets the next run send its answers after a project switch cut the answers POST short', async () => {
+        // The POST is still out: nothing has come back to clear the flag.
+        answerQuestions.mockReturnValue(NEVER);
+        await sendWith('No tagline is locked.');
+        expect(component['answersSending']()).toBe(true);
+
+        activeContext.set(PROJECT_2);
+        await fixture.whenStable();
+
+        expect(component['answersSending']()).toBe(false);
+        expect(component['phase']()).toBe('form');
+      });
+
+      it('sends every answer with its origin from the last question, on the same run, and shows the document with what was asked', async () => {
+        const answers: MktgRunAnswer[] = [
+          { key: 'audiences', text: 'Platform teams; SREs.', origin: 'accepted' },
+          { key: 'tagline_ctas_constraints', text: 'No tagline is locked.', origin: 'requester' },
+        ];
+        const run: MktgStoredAgentRun = {
+          agentId: 'foundation-setup',
+          projectUid: 'proj-1',
+          sessionId: 'sess-md',
+          ownerToken: 'token-md',
+          answers: { project_name: 'TestOrbit' },
+          versions: [{ version: 1, document: '# TestOrbit Messaging Document', questions: QUESTIONS, answers, createdAt: '2026-10-15T00:00:00.000Z' }],
+          savedAt: new Date().toISOString(),
+        };
+        answerQuestions.mockReturnValue(from<MktgGenerateProgress[]>([{ type: 'submitted' }, { type: 'document', run }]));
+
+        await click('mktg-run-questions-next');
+        await type('tagline_ctas_constraints', 'No tagline is locked.');
+        // The result lands after a short pause; fake timers only from the send on.
+        vi.useFakeTimers();
+        try {
+          query('mktg-run-questions-send')?.querySelector('button')?.click();
+          await vi.advanceTimersByTimeAsync(700);
+        } finally {
+          vi.useRealTimers();
+        }
+        await fixture.whenStable();
+
+        const [request, pending, sent] = answerQuestions.mock.calls[0] as [MktgGenerateRequest, MktgRunQuestionsPending, MktgRunAnswer[]];
+        expect(request).toMatchObject({ agentId: 'foundation-setup', projectUid: 'proj-1', answers: { project_name: 'TestOrbit' } });
+        expect(pending.questionsId).toBe('abc12345');
+        expect(sent).toEqual(answers);
+        expect(generate).toHaveBeenCalledTimes(1);
+
+        expect(component['phase']()).toBe('result');
+        expect(query('mktg-agent-run-asked-toggle')?.textContent).toContain('asked 2 question(s)');
+        query('mktg-agent-run-asked-toggle')?.click();
+        await fixture.whenStable();
+        expect(query('mktg-agent-run-asked-audiences')?.textContent).toContain('Platform teams; SREs.');
+        expect(query('mktg-agent-run-asked-audiences')?.textContent).toContain('Suggested by the agent, accepted');
+        expect(query('mktg-agent-run-asked-tagline_ctas_constraints')?.textContent).toContain('Your answer');
+      });
+
+      it('marks an edited suggestion as edited, goes back with Back, and shows the writing feed once sent', async () => {
+        answerQuestions.mockReturnValue(concat(of<MktgGenerateProgress>({ type: 'submitted' }), NEVER));
+
+        await type('audiences', 'Platform teams only.');
+        await click('mktg-run-questions-next');
+        await click('mktg-run-questions-back');
+        expect(answerBox('audiences')?.value).toBe('Platform teams only.');
+        await sendWith('No tagline is locked.');
+
+        const sent = answerQuestions.mock.calls[0][2] as MktgRunAnswer[];
+        expect(sent[0]).toEqual({ key: 'audiences', text: 'Platform teams only.', origin: 'edited' });
+        expect(component['phase']()).toBe('running');
+        expect(query('mktg-run-activity-title')?.textContent).toContain('Writing your Messaging Document');
+      });
+
+      it('keeps the answers and returns to the questions step when the answers could not be sent', async () => {
+        answerQuestions.mockReturnValue(throwError(() => new Error('network')));
+
+        await sendWith('No tagline is locked.');
+
+        expect(component['phase']()).toBe('questions');
+        expect(component['errorText']()).toContain('kept');
+        expect(stepper()['answersForm'].controls['tagline_ctas_constraints'].value).toBe('No tagline is locked.');
+      });
     });
 
-    it('keeps submission disabled with an honest note when the project has no stored Brand Kit at all', async () => {
+    it('offers no "Request changes" box on the result — edit the inputs and generate a new revision instead', async () => {
+      storedRuns = {
+        'proj-1:foundation-setup': {
+          agentId: 'foundation-setup',
+          projectUid: 'proj-1',
+          sessionId: 'sess-md',
+          ownerToken: 'token-md',
+          answers: { project_name: 'TestOrbit' },
+          versions: [{ version: 1, document: '# TestOrbit Messaging Document', createdAt: '2026-10-15T00:00:00.000Z' }],
+          savedAt: new Date().toISOString(),
+        },
+      };
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
-      fillBase();
 
-      expect(query('mktg-agent-run-attachment-brand-kit')).toBeNull();
-      expect(query('mktg-agent-run-missing-dependency')).not.toBeNull();
-      expect(component['submitDisabled']()).toBe(true);
-      component['onSubmit']();
-      expect(generate).not.toHaveBeenCalled();
-    });
+      expect(query('mktg-agent-run-result')).not.toBeNull();
+      expect(query('mktg-agent-run-regenerate-button')).toBeNull();
+      expect(query('mktg-agent-run-new-run')).not.toBeNull();
+      // A version written without a questions round shows nothing about questions.
+      expect(query('mktg-agent-run-asked')).toBeNull();
 
-    it('gates "Request changes" on the dependency exactly like the first submit — both are full resubmits', async () => {
-      activeContext.set(PROJECT_1);
+      query('mktg-agent-run-edit-inputs-button')?.querySelector('button')?.click();
       await fixture.whenStable();
-      fillBase();
-      component['feedbackForm'].controls.feedback.setValue('Sharpen the pitch.');
-      await fixture.whenStable();
-
-      // No stored Brand Kit for this project: neither submit path may fire.
-      expect(component['submitDisabled']()).toBe(true);
-      expect(component['regenerateDisabled']()).toBe(true);
-      component['onRegenerate']();
-      expect(generate).not.toHaveBeenCalled();
-
-      // Once the dependency resolves, both paths open together.
-      component['dependencyDocs'].set({ 'brand-kit': brandKitDoc('# Kit') });
-      expect(component['regenerateDisabled']()).toBe(false);
-    });
-
-    it('re-resolves the attachment at submit time — a kit stored after page load is picked up', async () => {
-      activeContext.set(PROJECT_1);
-      await fixture.whenStable();
-      fillBase();
-      expect(component['submitDisabled']()).toBe(true);
-
-      // The user generates a Brand Kit in another tab, then a fresh resolution succeeds.
-      dependencyDocs = { 'proj-1:brand-kit': brandKitDoc('# Fresh kit', 3) };
-      component['startGeneration']();
-      await fixture.whenStable();
-
-      expect(generate).toHaveBeenCalledTimes(1);
-      expect(submittedAnswers()['brand_kit_markdown']).toBe('# Fresh kit');
-    });
-
-    it('omits the blank optional gap_fill_notes and includes it when filled', async () => {
-      dependencyDocs = { 'proj-1:brand-kit': brandKitDoc('# Kit') };
-      activeContext.set(PROJECT_1);
-      await fixture.whenStable();
-      fillBase();
-      component['onSubmit']();
-      expect(submittedAnswers()['gap_fill_notes']).toBeUndefined();
-
-      generate.mockClear();
-      // The mocked generate never delivers a document, so the first submit
-      // parked the page on 'running' — return to the form for the second one.
-      component['phase'].set('form');
-      component['intakeForm'].controls['gap_fill_notes'].setValue('Anchor to the v2 launch');
-      component['onSubmit']();
-      expect((generate.mock.calls[0][0] as MktgGenerateRequest).answers['gap_fill_notes']).toBe('Anchor to the v2 launch');
-    });
-
-    it('tells the memory a cleared optional field is blank, so the old answer cannot come back', async () => {
-      dependencyDocs = { 'proj-1:brand-kit': brandKitDoc('# Kit') };
-      activeContext.set(PROJECT_1);
-      await fixture.whenStable();
-      fillBase();
-      component['intakeForm'].controls['gap_fill_notes'].setValue('Anchor to the v2 launch');
-      component['onSubmit']();
-
-      expect(rememberAnswers).toHaveBeenLastCalledWith('proj-1', 'foundation-setup', expect.objectContaining({ gap_fill_notes: 'Anchor to the v2 launch' }));
-
-      // The user clears the note and runs again. The PAYLOAD still omits the
-      // blank optional field, but the memory is handed the full intake state:
-      // the note has to be erased there, or it returns to the form once this
-      // run's 24h record expires and the 30-day memory is the only copy left.
-      component['phase'].set('form');
-      component['intakeForm'].controls['gap_fill_notes'].setValue('   ');
-      component['onSubmit']();
-
-      expect((generate.mock.calls[1][0] as MktgGenerateRequest).answers['gap_fill_notes']).toBeUndefined();
-      expect(rememberAnswers).toHaveBeenLastCalledWith('proj-1', 'foundation-setup', expect.objectContaining({ gap_fill_notes: '' }));
+      expect(component['phase']()).toBe('form');
+      expect(component['intakeForm'].controls['project_name'].value).toBe('TestOrbit');
     });
 
     it('surfaces the five derivative chips as copyable values on the result', async () => {
@@ -729,7 +1000,7 @@ describe('MktgAgentRunComponent', () => {
           projectUid: 'proj-1',
           sessionId: 'sess-mf',
           ownerToken: 'token-mf',
-          answers: { project_name: 'TestOrbit', github_url: 'https://github.com/example-org/testorbit', brand_kit_markdown: '# Kit' },
+          answers: { project_name: 'TestOrbit' },
           versions: [
             {
               version: 1,
@@ -770,7 +1041,7 @@ describe('MktgAgentRunComponent', () => {
           projectUid: 'proj-1',
           sessionId: 'sess-mf',
           ownerToken: 'token-mf',
-          answers: { project_name: 'TestOrbit', github_url: 'https://github.com/example-org/testorbit', brand_kit_markdown: '# Kit' },
+          answers: { project_name: 'TestOrbit' },
           versions: [{ version: 1, document: '# Doc', derivatives: { summary_25: 'Twenty-five words.' }, createdAt: '2026-08-19T00:00:00.000Z' }],
           savedAt: new Date().toISOString(),
         },
@@ -804,119 +1075,8 @@ describe('MktgAgentRunComponent', () => {
       }
     });
 
-    /**
-     * `https://github.com/aaif` — an organization, not a repository — was
-     * accepted by this form, dropped by the BFF's README fetch at debug level,
-     * and surfaced only as a document that said no README was provided. The UI
-     * now refuses it outright (product ruling: don't accept a URL that
-     * provably cannot yield a README). Paul's contract still governs what the
-     * AGENT accepts — free text, missing README tolerated — and the question
-     * wording is untouched; it simply doesn't bind the collection UI.
-     */
-    describe('github_url format rule — blocking', () => {
-      const fillNameAndUrl = (url: string): void => {
-        component['intakeForm'].controls['project_name'].setValue('TestOrbit');
-        component['intakeForm'].controls['github_url'].setValue(url);
-      };
-
-      it('blocks submission on a bare account URL and says why, without guessing it is an organization', async () => {
-        dependencyDocs = { 'proj-1:brand-kit': brandKitDoc('# Kit') };
-        activeContext.set(PROJECT_1);
-        await fixture.whenStable();
-
-        fillNameAndUrl('https://github.com/aaif');
-        await fixture.whenStable();
-
-        // `github.com/<owner>` is a person as often as an organization, and the
-        // message must not tell the user which one their own account is.
-        expect(fieldError('github_url')?.textContent).toContain('GitHub account URL');
-        expect(fieldError('github_url')?.textContent).not.toContain('organization');
-        expect(fieldError('github_url')?.textContent).toContain('https://github.com/org/repo');
-        expect(component['intakeForm'].valid).toBe(false);
-        expect(component['submitDisabled']()).toBe(true);
-        component['onSubmit']();
-        expect(generate).not.toHaveBeenCalled();
-      });
-
-      it('associates the blocking error with the control so a screen reader can find it', async () => {
-        dependencyDocs = { 'proj-1:brand-kit': brandKitDoc('# Kit') };
-        activeContext.set(PROJECT_1);
-        await fixture.whenStable();
-
-        fillNameAndUrl('https://github.com/orgs/aaif/repositories');
-        await fixture.whenStable();
-
-        const input = host().querySelector<HTMLInputElement>('[data-test="mktg-intake-github_url"]');
-        expect(input?.getAttribute('aria-invalid')).toBe('true');
-        expect(input?.getAttribute('aria-describedby')).toBe('mktg-intake-github_url-error');
-        expect(fieldError('github_url')?.id).toBe('mktg-intake-github_url-error');
-
-        fillNameAndUrl('https://github.com/example-org/example-repo');
-        await fixture.whenStable();
-        expect(host().querySelector('[data-test="mktg-intake-github_url"]')?.getAttribute('aria-invalid')).toBeNull();
-      });
-
-      it('blocks submission on a URL that is not a GitHub repository at all', async () => {
-        dependencyDocs = { 'proj-1:brand-kit': brandKitDoc('# Kit') };
-        activeContext.set(PROJECT_1);
-        await fixture.whenStable();
-
-        fillNameAndUrl('https://gitlab.com/example-org/example-repo');
-        await fixture.whenStable();
-
-        expect(fieldError('github_url')?.textContent).toContain('doesn’t look like a GitHub repository URL');
-        expect(component['submitDisabled']()).toBe(true);
-        component['onSubmit']();
-        expect(generate).not.toHaveBeenCalled();
-      });
-
-      it('clears the error and re-enables submission once a real repository URL is entered', async () => {
-        dependencyDocs = { 'proj-1:brand-kit': brandKitDoc('# Kit') };
-        activeContext.set(PROJECT_1);
-        await fixture.whenStable();
-
-        fillNameAndUrl('https://github.com/aaif');
-        await fixture.whenStable();
-        expect(component['submitDisabled']()).toBe(true);
-
-        component['intakeForm'].controls['github_url'].setValue('https://github.com/example-org/example-repo');
-        await fixture.whenStable();
-
-        expect(fieldError('github_url')).toBeNull();
-        expect(component['submitDisabled']()).toBe(false);
-        component['onSubmit']();
-        expect(generate).toHaveBeenCalledTimes(1);
-      });
-
-      it('leaves an empty box to the required rule — no format error, and no double message', async () => {
-        dependencyDocs = { 'proj-1:brand-kit': brandKitDoc('# Kit') };
-        activeContext.set(PROJECT_1);
-        await fixture.whenStable();
-
-        fillNameAndUrl('');
-        await fixture.whenStable();
-
-        expect(fieldError('github_url')).toBeNull();
-        expect(component['submitDisabled']()).toBe(true);
-      });
-
-      it('blocks the regenerate path on the same rule — a resubmit is a full submit', async () => {
-        dependencyDocs = { 'proj-1:brand-kit': brandKitDoc('# Kit') };
-        activeContext.set(PROJECT_1);
-        await fixture.whenStable();
-
-        fillNameAndUrl('https://github.com/aaif');
-        component['feedbackForm'].controls.feedback.setValue('Sharpen the pitch.');
-        await fixture.whenStable();
-
-        expect(component['regenerateDisabled']()).toBe(true);
-        component['onRegenerate']();
-        expect(generate).not.toHaveBeenCalled();
-      });
-    });
-
     describe('README outcome on the result — a thin document is never a silent mystery', () => {
-      /** A stored Message Foundation run whose single version carries the given README outcome. */
+      /** A stored Messaging Document run whose single version carries the given README outcome. */
       const runWithReadme = (readme: MktgRunVersion['readme']): MktgStoredAgentRun => ({
         agentId: 'foundation-setup',
         projectUid: 'proj-1',
@@ -972,15 +1132,14 @@ describe('MktgAgentRunComponent', () => {
       });
     });
 
-    it('restores a run persisted by the retired gate UI cleanly — unknown answer keys are ignored', async () => {
-      dependencyDocs = { 'proj-1:brand-kit': brandKitDoc('# Kit') };
+    it('restores a run stored by the previous Message Foundation form cleanly — its retired answer keys are ignored', async () => {
       storedRuns = {
         'proj-1:foundation-setup': {
           agentId: 'foundation-setup',
           projectUid: 'proj-1',
           sessionId: 'sess-mf',
           ownerToken: 'token-mf',
-          answers: { project_name: 'TestOrbit', github_url: 'https://github.com/example-org/testorbit', brand_kit_markdown: '# Kit' },
+          answers: { project_name: 'TestOrbit', github_url: 'https://github.com/example-org/testorbit', brand_kit_markdown: '# Kit', gap_fill_notes: 'Old' },
           versions: [{ version: 1, document: '# Doc', createdAt: '2026-08-19T00:00:00.000Z' }],
           savedAt: new Date().toISOString(),
         },
@@ -991,14 +1150,11 @@ describe('MktgAgentRunComponent', () => {
       component['onEditInputs']();
       await fixture.whenStable();
 
-      // The retired brand_kit_markdown answer has no control anymore; the
-      // surviving fields restore and the form is submit-ready.
-      expect(component['intakeForm'].getRawValue()).toEqual({
-        project_name: 'TestOrbit',
-        github_url: 'https://github.com/example-org/testorbit',
-        gap_fill_notes: '',
-      });
-      expect(component['intakeForm'].valid).toBe(true);
+      const restored = component['intakeForm'].getRawValue();
+      expect(restored['project_name']).toBe('TestOrbit');
+      expect(restored['github_url']).toBe('https://github.com/example-org/testorbit');
+      expect(restored).not.toHaveProperty('brand_kit_markdown');
+      expect(restored).not.toHaveProperty('gap_fill_notes');
     });
   });
 
@@ -1050,7 +1206,7 @@ describe('MktgAgentRunComponent', () => {
       await fixture.whenStable();
 
       expect(query('mktg-agent-run-attachment-brand-kit')?.textContent).toContain('No Brand Kit stored for Project One');
-      expect(query('mktg-agent-run-attachment-foundation-setup')?.textContent).toContain('No Message Foundation stored for Project One');
+      expect(query('mktg-agent-run-attachment-foundation-setup')?.textContent).toContain('No Messaging Document stored for Project One');
     });
 
     it('attaches whichever stored documents the project has, and labels the rest honestly', async () => {
@@ -1059,7 +1215,7 @@ describe('MktgAgentRunComponent', () => {
       await fixture.whenStable();
 
       expect(query('mktg-agent-run-attachment-brand-kit')?.textContent).toContain('Using Project One’s Brand Kit (v2)');
-      expect(query('mktg-agent-run-attachment-foundation-setup')?.textContent).toContain('No Message Foundation stored');
+      expect(query('mktg-agent-run-attachment-foundation-setup')?.textContent).toContain('No Messaging Document stored');
 
       fillRequired();
       component['onSubmit']();
@@ -1102,6 +1258,112 @@ describe('MktgAgentRunComponent', () => {
       expect(submittedAnswers()['disqualifiers']).toBe('Single-developer hobby projects');
       expect(submittedAnswers()['competitive_landscape']).toBeUndefined();
       expect(submittedAnswers()['trigger_events']).toBeUndefined();
+    });
+
+    /**
+     * `https://github.com/aaif` — an organization, not a repository — was
+     * accepted by this form, dropped by the BFF's README fetch at debug level,
+     * and surfaced only as a document that said no README was provided. The UI
+     * now refuses it outright (product ruling: don't accept a URL that
+     * provably cannot yield a README). Paul's contract still governs what the
+     * AGENT accepts — free text, missing README tolerated — and the question
+     * wording is untouched; it simply doesn't bind the collection UI.
+     */
+    describe('github_url format rule — blocking', () => {
+      const fillNameAndUrl = (url: string): void => {
+        component['intakeForm'].controls['project_name'].setValue('TestOrbit');
+        component['intakeForm'].controls['business_outcome'].setValue('Membership growth');
+        component['intakeForm'].controls['github_url'].setValue(url);
+      };
+
+      it('blocks submission on a bare account URL and says why, without guessing it is an organization', async () => {
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+
+        fillNameAndUrl('https://github.com/aaif');
+        await fixture.whenStable();
+
+        // `github.com/<owner>` is a person as often as an organization, and the
+        // message must not tell the user which one their own account is.
+        expect(fieldError('github_url')?.textContent).toContain('GitHub account URL');
+        expect(fieldError('github_url')?.textContent).not.toContain('organization');
+        expect(fieldError('github_url')?.textContent).toContain('https://github.com/org/repo');
+        expect(component['intakeForm'].valid).toBe(false);
+        expect(component['submitDisabled']()).toBe(true);
+        component['onSubmit']();
+        expect(generate).not.toHaveBeenCalled();
+      });
+
+      it('associates the blocking error with the control so a screen reader can find it', async () => {
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+
+        fillNameAndUrl('https://github.com/orgs/aaif/repositories');
+        await fixture.whenStable();
+
+        const input = host().querySelector<HTMLInputElement>('[data-test="mktg-intake-github_url"]');
+        expect(input?.getAttribute('aria-invalid')).toBe('true');
+        expect(input?.getAttribute('aria-describedby')).toBe('mktg-intake-github_url-error');
+        expect(fieldError('github_url')?.id).toBe('mktg-intake-github_url-error');
+
+        fillNameAndUrl('https://github.com/example-org/example-repo');
+        await fixture.whenStable();
+        expect(host().querySelector('[data-test="mktg-intake-github_url"]')?.getAttribute('aria-invalid')).toBeNull();
+      });
+
+      it('blocks submission on a URL that is not a GitHub repository at all', async () => {
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+
+        fillNameAndUrl('https://gitlab.com/example-org/example-repo');
+        await fixture.whenStable();
+
+        expect(fieldError('github_url')?.textContent).toContain('doesn’t look like a GitHub repository URL');
+        expect(component['submitDisabled']()).toBe(true);
+        component['onSubmit']();
+        expect(generate).not.toHaveBeenCalled();
+      });
+
+      it('clears the error and re-enables submission once a real repository URL is entered', async () => {
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+
+        fillNameAndUrl('https://github.com/aaif');
+        await fixture.whenStable();
+        expect(component['submitDisabled']()).toBe(true);
+
+        component['intakeForm'].controls['github_url'].setValue('https://github.com/example-org/example-repo');
+        await fixture.whenStable();
+
+        expect(fieldError('github_url')).toBeNull();
+        expect(component['submitDisabled']()).toBe(false);
+        component['onSubmit']();
+        expect(generate).toHaveBeenCalledTimes(1);
+      });
+
+      it('leaves an empty box to the required rule — no format error, and no double message', async () => {
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+
+        fillNameAndUrl('');
+        await fixture.whenStable();
+
+        expect(fieldError('github_url')).toBeNull();
+        expect(component['submitDisabled']()).toBe(true);
+      });
+
+      it('blocks the regenerate path on the same rule — a resubmit is a full submit', async () => {
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+
+        fillNameAndUrl('https://github.com/aaif');
+        component['feedbackForm'].controls.feedback.setValue('Sharpen the pitch.');
+        await fixture.whenStable();
+
+        expect(component['regenerateDisabled']()).toBe(true);
+        component['onRegenerate']();
+        expect(generate).not.toHaveBeenCalled();
+      });
     });
 
     it('reuses the repository URL a prior agent already collected instead of re-asking', async () => {

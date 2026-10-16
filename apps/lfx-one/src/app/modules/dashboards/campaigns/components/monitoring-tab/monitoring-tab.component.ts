@@ -27,6 +27,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import type {
   AccountMonitorCampaignRowView,
   AccountMonitorKpisView,
+  AccountMonitorPanelReadState,
   AccountMonitorPanelView,
   CampaignActDialogData,
   CampaignActDialogResult,
@@ -118,6 +119,20 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly linkedInError = signal<string | null>(null);
   protected readonly linkedInCampaigns = computed(() => this.linkedInData()?.campaigns ?? []);
   protected readonly linkedInTotalsNote = computed(() => this.totalsCoverageNote(this.linkedInCampaigns()));
+  /**
+   * Whether the LinkedIn figures on screen came from campaign-service (the connection's account).
+   * Those figures never carry the legacy `$`: they are printed in the currency campaign-service
+   * names, or with no symbol and a note when it names none. An unnamed currency is NOT known to be
+   * the account's own: a campaign-service that predates its `costInLocalCurrency` read sends USD
+   * (`costInUsd`) with no `currency` either, so that note claims no currency. Recorded with the data.
+   */
+  protected readonly linkedInAmountsInAccountCurrency = signal(false);
+  /** The connection's named-currency format, in whole units; never applied to legacy figures. */
+  private readonly linkedInNamedCurrencyFormat = computed(() =>
+    this.linkedInAmountsInAccountCurrency() ? this.namedCurrencyFormat(this.linkedInData()?.currency, true) : null
+  );
+  /** The "did not report its currency" note: a connection's figures whose currency campaign-service did not name. */
+  protected readonly linkedInCurrencyNote = computed(() => this.linkedInAmountsInAccountCurrency() && this.linkedInNamedCurrencyFormat() === null);
   protected readonly linkedInPulledAt = computed(() => {
     const pulledAt = this.linkedInData()?.pulledAt;
     return pulledAt ? new Date(pulledAt).toLocaleString('en-US') : null;
@@ -148,10 +163,18 @@ export class MonitoringTabComponent implements OnInit {
   /**
    * Whether the Meta figures on screen came from campaign-service (the connection's account). Its
    * Meta monitor reports spend and budgets unconverted in the account's own currency, and the
-   * connection's account need not be a USD one, so those figures carry no `$` — see `initMetaView`.
-   * Recorded with the data it describes, not read from the live source flag.
+   * connection's account need not be a USD one, so those figures never carry the legacy `$`: they
+   * are printed in the currency campaign-service names, or with no symbol when it names none — see
+   * `initMetaView`. Recorded with the data it describes, not read from the live source flag.
    */
   protected readonly metaAmountsInAccountCurrency = signal(false);
+  /**
+   * Whether the Meta panel states the unit once in a note: only for a connection's figures whose
+   * currency campaign-service did not name. A named currency is printed on every amount instead.
+   */
+  protected readonly metaCurrencyNote = computed(() => this.metaAmountsInAccountCurrency() && this.metaNamedCurrencyFormat() === null);
+  /** The connection's named-currency format; never applied to legacy figures, which keep their `$`. */
+  private readonly metaNamedCurrencyFormat = computed(() => (this.metaAmountsInAccountCurrency() ? this.namedCurrencyFormat(this.metaData()?.currency) : null));
   protected readonly metaPulledAt = computed(() => {
     const pulledAt = this.metaData()?.pulledAt;
     return pulledAt ? new Date(pulledAt).toLocaleString('en-US') : null;
@@ -175,6 +198,8 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly reportBackedError = signal<string | null>(null);
   protected readonly reportBackedCampaigns = computed(() => this.reportBackedData()?.campaigns ?? []);
   protected readonly reportBackedTotalsNote = computed(() => this.totalsCoverageNote(this.reportBackedCampaigns()));
+  /** The "account's own currency" note shows only while campaign-service has not named the currency. */
+  protected readonly reportBackedCurrencyNote = computed(() => this.namedCurrencyFormat(this.reportBackedData()?.currency) === null);
   protected readonly reportBackedPulledAt = computed(() => {
     const pulledAt = this.reportBackedData()?.pulledAt;
     return pulledAt ? new Date(pulledAt).toLocaleString('en-US') : null;
@@ -263,6 +288,17 @@ export class MonitoringTabComponent implements OnInit {
   /** Which of the two report-backed platforms the shared panel is showing. */
   protected readonly reportBackedPanel = computed<'microsoft' | 'twitter'>(() => (this.selectedPlatform() === 'twitter' ? 'twitter' : 'microsoft'));
   protected readonly reportBackedLabel = computed(() => (this.reportBackedPanel() === 'twitter' ? 'X Ads' : 'Microsoft Ads'));
+  /** Each live-read paid panel's retry button's accessible name; the visible "Retry" alone does not say what it retries. */
+  protected readonly paidRetryLabels: Readonly<Record<'linkedin' | 'reddit' | 'meta', string>> = {
+    linkedin: `Retry loading ${this.paidPanelLabel('linkedin')} campaigns`,
+    reddit: `Retry loading ${this.paidPanelLabel('reddit')} campaigns`,
+    meta: `Retry loading ${this.paidPanelLabel('meta')} campaigns`,
+  };
+  protected readonly reportBackedRetryLabel = computed(() => `Retry loading ${this.reportBackedLabel()} campaigns`);
+  /** The act platform of the report-backed panel's rows: Microsoft's or X's, whichever the panel shows. */
+  protected readonly reportBackedActPlatform = computed<CampaignMonitorActPlatform>(() =>
+    this.reportBackedPanel() === 'twitter' ? 'twitter-ads' : 'microsoft-ads'
+  );
   protected readonly reportBackedFreshness: Signal<string | null> = this.initReportBackedFreshness();
   protected readonly hubSpotFreshness: Signal<string | null> = this.initHubSpotFreshness();
   protected readonly hubSpotCoverageNote: Signal<string | null> = this.initHubSpotCoverageNote();
@@ -278,6 +314,8 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly visibleKeywordRows: Signal<KeywordRowView[]> = this.initVisibleKeywordRows();
   protected readonly platformButtons: Signal<Record<MonitorTabPlatform, MonitorPlatformButtonView>> = this.initPlatformButtons();
   protected readonly hubSpotView: Signal<HubSpotMonitorView | null> = this.initHubSpotView();
+  /** What the persistent live region says about the selected LinkedIn/Reddit/Meta/Microsoft Ads/X panel's read. */
+  protected readonly adPanelAnnouncement: Signal<string> = this.initAdPanelAnnouncement();
 
   public constructor() {
     // toObservable + skip(1) per frontend-checklist §5 ("No effect() — use toObservable() with
@@ -546,12 +584,14 @@ export class MonitoringTabComponent implements OnInit {
     this.linkedInError.set(null);
     // Cleared per read, as `fetchReportBackedData` does: a stale "metrics not enabled" would hide a new error.
     this.setMetricsDisabled('linkedin', false);
+    const accountSource = this.monitorAccountSource();
     this.linkedInSub = this.campaignService
-      .getLinkedInMonitorData(this.activeFoundationSlug(), accountKey, this.selectedDays(), this.monitorAccountSource())
+      .getLinkedInMonitorData(this.activeFoundationSlug(), accountKey, this.selectedDays(), accountSource)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
           this.setMetricsDisabled('linkedin', false);
+          this.linkedInAmountsInAccountCurrency.set(accountSource === 'connection');
           this.linkedInData.set(data);
           this.linkedInLoading.set(false);
         },
@@ -651,6 +691,74 @@ export class MonitoringTabComponent implements OnInit {
       });
   }
 
+  /**
+   * The screen-reader status of the selected ad-platform panel, mirroring the branch its template
+   * shows: a notice says nothing (it is static guidance, not a read), a read in flight — first load
+   * or Refresh — says it is loading, and a finished read says how many campaigns the panel shows
+   * and what its totals leave out. Without it a read and a Refresh were visual only: the spinner
+   * and the changing figures were never announced.
+   *
+   * A failure returns '' on purpose: the visible error block carries role="alert", so repeating
+   * the message here would announce it twice. Google Ads and HubSpot are outside this region.
+   */
+  private initAdPanelAnnouncement(): Signal<string> {
+    return computed(() => {
+      const panel = this.selectedPlatform();
+      if (panel === 'google' || panel === 'hubspot' || this.panelNotices()[panel]) return '';
+      const read = this.adPanelReadState(panel);
+      if (read.loading) return `Loading ${read.label} campaigns`;
+      if (read.error || !read.loaded) return '';
+      const count = read.campaigns;
+      const shown = count === 0 ? read.emptyMessage : `${read.label}: ${count} ${count === 1 ? 'campaign' : 'campaigns'} shown.`;
+      return read.note ? `${shown} ${read.note}` : shown;
+    });
+  }
+
+  private adPanelReadState(panel: MonitorConnectionPlatform): AccountMonitorPanelReadState {
+    switch (panel) {
+      case 'linkedin':
+        return {
+          label: 'LinkedIn',
+          loading: this.linkedInLoading(),
+          error: this.linkedInError(),
+          loaded: this.linkedInData() !== null,
+          campaigns: this.linkedInCampaigns().length,
+          emptyMessage: 'No active LinkedIn campaigns found for this account.',
+          note: this.linkedInTotalsNote(),
+        };
+      case 'reddit':
+        return {
+          label: 'Reddit',
+          loading: this.redditLoading(),
+          error: this.redditError(),
+          loaded: this.redditData() !== null,
+          campaigns: this.redditCampaigns().length,
+          emptyMessage: 'No active Reddit campaigns found for this account.',
+          note: this.redditTotalsNote(),
+        };
+      case 'meta':
+        return {
+          label: 'Meta',
+          loading: this.metaLoading(),
+          error: this.metaError(),
+          loaded: this.metaData() !== null,
+          campaigns: this.metaCampaigns().length,
+          emptyMessage: 'No active Meta campaigns found for this account.',
+          note: this.metaTotalsNote(),
+        };
+      default:
+        return {
+          label: this.reportBackedLabel(),
+          loading: this.reportBackedLoading(),
+          error: this.reportBackedError(),
+          loaded: this.reportBackedData() !== null,
+          campaigns: this.reportBackedCampaigns().length,
+          emptyMessage: `No ${this.reportBackedLabel()} campaigns found for this account.`,
+          note: this.reportBackedTotalsNote(),
+        };
+    }
+  }
+
   private initPanelNotices(): Signal<Partial<Record<MonitorPanelKey, MonitorPanelNotice>>> {
     return computed(() => {
       const notices: Partial<Record<MonitorPanelKey, MonitorPanelNotice>> = {};
@@ -679,11 +787,11 @@ export class MonitoringTabComponent implements OnInit {
       const data = this.reportBackedData();
       // The report-backed rows keep the neutral status badge they always had: Microsoft's statuses are
       // not the uppercase ACTIVE the green badge keys on, and X's should not turn green by accident.
-      // Their amounts are in the account's own currency, which campaign-service does not name, so
-      // they carry no $ (see formatAccountAmount).
+      // Their amounts are in the account's own currency: printed in it when campaign-service names
+      // it, and otherwise with no symbol at all (see formatAccountAmount).
       return data
         ? this.buildAccountPanelView(data.campaigns, data.accountTotals, {
-            currency: (n) => this.formatAccountAmount(n),
+            currency: this.namedCurrencyFormat(data.currency) ?? ((n) => this.formatAccountAmount(n)),
             pct: (n) => this.formatPct(n),
             statusBadges: false,
           })
@@ -698,10 +806,20 @@ export class MonitoringTabComponent implements OnInit {
       // LinkedIn heads each row with the event name over the full campaign name, and adds the
       // creative count — "Not read" when campaign-service did not read creatives. Built from the
       // row's OWN campaign inside the builder, so no index join can pair a row with another's data.
+      // The legacy path keeps its whole-dollar `$` exactly as before. A connection's figures are
+      // printed in whole units of the currency campaign-service names, and otherwise currency-neutral,
+      // with a note that the currency was not reported (it may be USD from an older campaign-service).
+      const unnamed = this.linkedInAmountsInAccountCurrency()
+        ? (n: number): string => this.formatAccountAmount(n, 0)
+        : (n: number): string => this.formatLinkedInCurrency(n);
       return this.buildAccountPanelView(
         data.campaigns,
         data.accountTotals,
-        { currency: (n) => this.formatLinkedInCurrency(n), pct: (n) => this.formatLinkedInPct(n), statusBadges: true },
+        {
+          currency: this.linkedInNamedCurrencyFormat() ?? unnamed,
+          pct: (n) => this.formatLinkedInPct(n),
+          statusBadges: true,
+        },
         (camp: LinkedInCampaignMetrics) => ({
           title: camp.eventName,
           subtitle: camp.campaignName,
@@ -717,7 +835,11 @@ export class MonitoringTabComponent implements OnInit {
   private initRedditView(): Signal<AccountMonitorPanelView | null> {
     return computed(() => {
       const data = this.redditData();
-      return data ? this.buildAccountPanelView(data.campaigns, data.accountTotals, { ...this.standardFormats, statusBadges: true }) : null;
+      if (!data) return null;
+      // In the account's currency when campaign-service names it (only its path can); otherwise the
+      // `$` the panel has always shown.
+      const currency = this.namedCurrencyFormat(data.currency) ?? this.standardFormats.currency;
+      return this.buildAccountPanelView(data.campaigns, data.accountTotals, { ...this.standardFormats, currency, statusBadges: true });
     });
   }
 
@@ -727,12 +849,11 @@ export class MonitoringTabComponent implements OnInit {
       if (!data) return null;
       // The legacy path reads only the allowlisted (USD) LF accounts, so it keeps its `$` exactly as
       // before. A connection's account can be in any currency and campaign-service passes its amounts
-      // unconverted without naming it, so those are currency-neutral, as Microsoft/X are, and the
-      // panel states the unit once.
-      const formats = this.metaAmountsInAccountCurrency()
-        ? { currency: (n: number): string => this.formatAccountAmount(n), pct: (n: number): string => this.formatPct(n) }
-        : this.standardFormats;
-      return this.buildAccountPanelView(data.campaigns, data.accountTotals, { ...formats, statusBadges: true });
+      // unconverted: printed in that currency when campaign-service names it, and otherwise
+      // currency-neutral, as Microsoft/X are, with the panel stating the unit once.
+      const unnamed = this.metaAmountsInAccountCurrency() ? (n: number): string => this.formatAccountAmount(n) : this.standardFormats.currency;
+      const currency = this.metaNamedCurrencyFormat() ?? unnamed;
+      return this.buildAccountPanelView(data.campaigns, data.accountTotals, { ...this.standardFormats, currency, statusBadges: true });
     });
   }
 
@@ -832,8 +953,9 @@ export class MonitoringTabComponent implements OnInit {
    * One ad-platform panel, formatted: the KPI tiles and a row per campaign with every cell's text
    * and class. Shared by LinkedIn, Reddit, Meta and the report-backed Microsoft/X panel, which
    * render the same conventions — "Couldn't read" rows dashed, "Unknown" pacing, "Not measured"
-   * conversions. `formats` carries the one per-platform difference: LinkedIn's whole-dollar
-   * currency and its own percentage formatter.
+   * conversions. `formats` carries what differs per panel: the currency formatter (the account's
+   * named currency when campaign-service names one, else the panel's unnamed format — LinkedIn's
+   * in whole units) and LinkedIn's own percentage formatter.
    */
   private buildAccountPanelView<T extends RedditCampaignMetrics | LinkedInCampaignMetrics | MetaCampaignMetrics>(
     campaigns: readonly T[] | null | undefined,
@@ -1105,9 +1227,14 @@ export class MonitoringTabComponent implements OnInit {
     return extractErrorMessage(err, `Failed to load ${label} data`);
   }
 
+  /** A paid panel's platform name, as `CAMPAIGN_PLATFORMS` labels it. */
+  private paidPanelLabel(panel: MonitorConnectionPlatform): string {
+    return CAMPAIGN_PLATFORMS.find((p) => p.id === MONITOR_CONNECTION_PROVIDERS[panel])?.label ?? panel;
+  }
+
   /** The empty state for one panel: what is wrong, and who can fix it. */
   private noticeFor(panel: MonitorPanelKey, state: MonitorPanelNoticeState): MonitorPanelNotice {
-    const label = panel === 'hubspot' ? 'HubSpot' : (CAMPAIGN_PLATFORMS.find((p) => p.id === MONITOR_CONNECTION_PROVIDERS[panel])?.label ?? panel);
+    const label = panel === 'hubspot' ? 'HubSpot' : this.paidPanelLabel(panel);
     switch (state) {
       case 'no_connection':
         if (panel === 'hubspot') {
@@ -1502,13 +1629,35 @@ export class MonitoringTabComponent implements OnInit {
   }
 
   /**
-   * An amount in the ad account's OWN currency, with no symbol. campaign-service's Microsoft and X
-   * monitors report spend and budgets unconverted in the account's currency and do not say which
-   * (`account-monitor` carries no currency field), so a `$` would assert dollars nobody checked.
-   * The panel states the unit once instead. Two decimals, as `formatCurrency`.
+   * An amount in the ad account's OWN currency, with no symbol. campaign-service's monitors report
+   * spend and budgets unconverted in the account's currency, and `account-monitor`'s `currency` is
+   * optional: when it is absent nobody said which currency, so a `$` would assert dollars nobody
+   * checked. The panel states the unit once instead. Two decimals, as `formatCurrency`, unless the
+   * panel rounds to whole units (LinkedIn).
    */
-  private formatAccountAmount(value: number): string {
-    return value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  private formatAccountAmount(value: number, fractionDigits = 2): string {
+    return value.toLocaleString('en-US', { minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits });
+  }
+
+  /**
+   * Amounts in the ad account's NAMED currency (campaign-service's optional ISO 4217 `currency`,
+   * which the BFF passes on only as three uppercase letters), with its symbol and its own minor-unit
+   * digits — or whole units for LinkedIn's panel, which has always rounded to them. NULL when no
+   * currency is named, so the caller keeps its unnamed format; a code `Intl` rejects falls back the
+   * same way rather than failing the panel.
+   */
+  private namedCurrencyFormat(currency: string | undefined, wholeUnits = false): ((n: number) => string) | null {
+    if (!currency) return null;
+    try {
+      const formatter = new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency,
+        ...(wholeUnits ? { minimumFractionDigits: 0, maximumFractionDigits: 0 } : {}),
+      });
+      return (n: number): string => formatter.format(n);
+    } catch {
+      return null;
+    }
   }
 
   private linkedInPacingClass(label: LinkedInPacingLabel): string {

@@ -4,6 +4,7 @@
 import { FundType } from '../enums/crowdfunding.enum';
 import type {
   AllowedLogoMimeType,
+  CrowdfundingAttributionType,
   CrowdfundingInitiativesStats,
   CrowdfundingTransaction,
   CrowdfundingTransactionList,
@@ -114,6 +115,28 @@ export const MAX_LOGO_SIZE_BYTES = 2 * 1024 * 1024;
 
 // Runtime-checkable tuple of every valid initiative status value — used for server-side input validation.
 export const CROWDFUNDING_INITIATIVE_STATUSES = ['submitted', 'pending', 'published', 'declined', 'hidden'] as const;
+
+// Runtime-checkable tuple of every initiative attribution type — used for server-side input validation.
+// Matches the upstream crowdfunding service's attribution.type enum (lfx-crowdfunding#342).
+export const CROWDFUNDING_ATTRIBUTION_TYPES = ['personal', 'organization', 'project'] as const;
+
+// Upstream bounds on the attribution display values (lfx-crowdfunding Attribution.Validate).
+export const CROWDFUNDING_ATTRIBUTION_NAME_MAX_CHARS = 255;
+export const CROWDFUNDING_ATTRIBUTION_LOGO_URL_MAX_CHARS = 2048;
+
+// Choices in the Edit attribution dialog, in display order.
+export const CROWDFUNDING_ATTRIBUTION_TYPE_OPTIONS: { label: string; value: CrowdfundingAttributionType }[] = [
+  { label: 'Personal', value: 'personal' },
+  { label: 'On behalf of an organization', value: 'organization' },
+  { label: 'On behalf of a project or foundation', value: 'project' },
+];
+
+// Avatar fallback when an attribution has no logo. Empty for personal, which the initiative header doesn't show.
+export const CROWDFUNDING_ATTRIBUTION_TYPE_ICONS: Record<CrowdfundingAttributionType, string> = {
+  personal: '',
+  organization: 'fa-light fa-building',
+  project: 'fa-light fa-folder',
+};
 
 // Runtime-checkable tuple of every valid sponsorship tier name — used for server-side input validation.
 export const SPONSORSHIP_TIER_NAMES = ['platinum', 'gold', 'silver', 'bronze'] as const;

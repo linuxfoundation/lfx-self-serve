@@ -562,6 +562,20 @@ describe('CampaignOptimizeService.getCampaign', () => {
 
     expect((await new CampaignOptimizeService().getCampaign(req, ref)).etag).toBe('"3"');
   });
+
+  // lfx-v2-campaign-service#366: `adopted` is `true` or absent; only a literal `true` is carried.
+  it.each([
+    [true, true],
+    ['true', undefined],
+    [false, undefined],
+  ])('carries adopted %s as %s', async (sent, expected) => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'c-1', etag: '"3"', adopted: sent }));
+
+    const result = await new CampaignOptimizeService().getCampaign(req, ref);
+
+    expect(result.adopted).toBe(expected);
+    expect('adopted' in result).toBe(expected === true);
+  });
 });
 
 describe('CampaignOptimizeService.listAdoptableBriefs', () => {

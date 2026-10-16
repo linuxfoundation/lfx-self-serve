@@ -39,6 +39,21 @@
           }
         }
       </div>
+      <!-- Source label: the org or project the initiative is run on behalf of, as on the CF public page. Personal shows nothing. -->
+      @if (attributionIcon() && initiative().attribution?.name; as attributionName) {
+        <div
+          class="flex items-center gap-2 w-fit"
+          tabindex="0"
+          role="note"
+          [attr.aria-label]="'On behalf of ' + attributionName + '. ' + attributionTooltip()"
+          [pTooltip]="attributionTooltip()"
+          tooltipPosition="bottom"
+          data-testid="initiative-attribution">
+          <span class="text-sm text-gray-500">On behalf of</span>
+          <lfx-avatar [image]="initiative().attribution?.logoUrl ?? ''" [icon]="attributionIcon()" styleClass="!w-5 !h-5 !text-xs" />
+          <span class="text-sm text-gray-600">{{ attributionName }}</span>
+        </div>
+      }
       <lfx-markdown-renderer class="text-sm text-gray-500" [content]="initiative().description" />
       @if (industryTags().length > 0) {
         <div class="flex items-center gap-1.5 flex-wrap mt-1" data-testid="initiative-tags">
@@ -60,6 +75,15 @@
         View Public Page
         <i class="fa-light fa-arrow-up-right-from-square text-xs" aria-hidden="true"></i>
       </a>
+      @if (canEditAttribution()) {
+        <lfx-button
+          label="Edit attribution"
+          icon="fa-light fa-building"
+          severity="secondary"
+          size="small"
+          data-testid="initiative-edit-attribution-btn"
+          (click)="editAttributionClick.emit()" />
+      }
       <lfx-button
         label="Settings"
         icon="fa-light fa-gear"

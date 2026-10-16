@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { CAMPAIGN_SETTINGS_UNKNOWN_NOTES } from '../constants/campaign-optimize.constants';
 import type { CampaignServiceSettingsField, CampaignServiceSettingsReadback } from '../interfaces/campaign-optimize.interface';
-import { buildCampaignSettingsDrift, readCampaignRefResolution } from './campaign-optimize.utils';
+import { buildCampaignSettingsDrift, campaignBudgetPacingFromSettings, readCampaignRefResolution, withAdoptedMarker } from './campaign-optimize.utils';
 
 function readback(fields: CampaignServiceSettingsField[], platform = 'linkedin-ads'): CampaignServiceSettingsReadback {
   return {
@@ -112,6 +112,7 @@ describe('readCampaignRefResolution', () => {
     ['a LinkedIn id passed as a string', 'linkedin-ads', '5123456789', '5123456789'],
     ['a LinkedIn id with leading zeros', 'linkedin-ads', '005123456789', '5123456789'],
     ['a LinkedIn id echoed as a number', 'linkedin-ads', '5123456789', 5123456789],
+    ['a Microsoft id with leading zeros', 'microsoft-ads', '00413296582', '413296582'],
     ['a Meta id passed as a number', 'meta-ads', 120210000000555, '120210000000555'],
     ['an id with surrounding spaces', 'reddit-ads', ' t2_abc ', 't2_abc'],
   ])('matches %s against its echo', (_label, platform, requested, echoed) => {
@@ -145,5 +146,42 @@ describe('readCampaignRefResolution', () => {
     ['no answer at all', null],
   ])('refuses %s as unexpected', (_label, answer) => {
     expect(readCampaignRefResolution(answer, '42', 'meta-ads')).toEqual({ kind: 'unexpected' });
+  });
+});
+
+describe('campaignBudgetPacingFromSettings (#3299)', () => {
+  it.each(['daily', 'lifetime'] as const)('reads an upstream %s pacing', (pacing) => {
+    expect(campaignBudgetPacingFromSettings(readback([{ field: 'budget_type', upstream: pacing, comparison: 'unknown' }], 'twitter-ads'))).toBe(pacing);
+  });
+
+  // The recorded side is what dispatch ASKED for; only the platform's own answer says what it holds.
+  it('ignores the recorded pacing when the platform reported none', () => {
+    expect(campaignBudgetPacingFromSettings(readback([{ field: 'budget_type', recorded: 'daily', comparison: 'unknown' }], 'twitter-ads'))).toBe('unknown');
+  });
+
+  it.each([
+    ['no budget_type field', readback([{ field: 'campaign_name', upstream: 'x', comparison: 'unknown' }], 'twitter-ads')],
+    ['an unmapped upstream value', readback([{ field: 'budget_type', upstream: 'total', comparison: 'unknown' }], 'twitter-ads')],
+    ['no readback', null],
+    ['a readback with no fields array', { fields: null } as unknown as CampaignServiceSettingsReadback],
+  ])('answers unknown for %s', (_label, value) => {
+    expect(campaignBudgetPacingFromSettings(value)).toBe('unknown');
+  });
+});
+
+describe('withAdoptedMarker', () => {
+  it('keeps a literal true', () => {
+    expect(withAdoptedMarker({ id: 'c-1', adopted: true })).toEqual({ id: 'c-1', adopted: true });
+  });
+
+  it('leaves a row without the field untouched', () => {
+    const row = { id: 'c-1' } as { id: string; adopted?: boolean };
+    expect(withAdoptedMarker(row)).toBe(row);
+  });
+
+  it.each([[false], ['true'], [1], [null]])('drops %s rather than keeping a non-true value', (value) => {
+    const result = withAdoptedMarker({ id: 'c-1', adopted: value as unknown as boolean });
+    expect('adopted' in result).toBe(false);
+    expect(result).toEqual({ id: 'c-1' });
   });
 });

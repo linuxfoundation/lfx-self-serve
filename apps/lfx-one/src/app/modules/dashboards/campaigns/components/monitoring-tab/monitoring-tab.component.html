@@ -84,6 +84,14 @@
     }
   </div>
 
+  <!--
+    Read status of the LinkedIn, Reddit, Meta and Microsoft Ads/X panels, mounted OUTSIDE the
+    per-platform @if below. An aria-live element inserted with its text already present is not
+    reliably announced, so the region exists first and only its CONTENTS change. A read failure is
+    not repeated here: the visible error block already carries role="alert".
+  -->
+  <div role="status" aria-live="polite" class="sr-only" data-testid="monitoring-ad-panel-live">{{ adPanelAnnouncement() }}</div>
+
   @if (selectedPlatform() === 'google') {
     <!-- Controls -->
     <div class="flex items-center justify-between">
@@ -506,11 +514,16 @@
           </div>
         </div>
       } @else if (linkedInError()) {
-        <div class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-red-300 bg-red-50 p-12" data-testid="linkedin-error">
+        <div class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-red-300 bg-red-50 p-12" role="alert" data-testid="linkedin-error">
           <i class="fa-light fa-triangle-exclamation text-3xl text-red-400" aria-hidden="true"></i>
           <p class="text-sm font-medium text-red-700">Failed to load LinkedIn data</p>
           <p class="text-xs text-red-500">{{ linkedInError() }}</p>
-          <button type="button" (click)="retryPanelRead()" class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700">
+          <button
+            type="button"
+            (click)="retryPanelRead()"
+            [attr.aria-label]="paidRetryLabels.linkedin"
+            class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+            data-testid="linkedin-retry">
             Retry
           </button>
         </div>
@@ -520,6 +533,15 @@
           <p class="text-sm text-gray-500">No active LinkedIn campaigns found for this account.</p>
         </div>
       } @else if (linkedInView(); as view) {
+        @if (linkedInCurrencyNote()) {
+          <!--
+            campaign-service named no currency for a connection's LinkedIn amounts. A pod predating its local-currency
+            read sends costInUsd with no currency either, so the note must not claim the account's own currency.
+          -->
+          <p class="text-xs text-gray-500" data-testid="linkedin-currency-note">
+            The ad account did not report its currency, so amounts are shown without a currency symbol.
+          </p>
+        }
         <ng-container
           [ngTemplateOutlet]="accountPanel"
           [ngTemplateOutletContext]="{ $implicit: view, panel: 'linkedin', actPlatform: 'linkedin-ads', note: linkedInTotalsNote() }" />
@@ -571,11 +593,16 @@
           </div>
         </div>
       } @else if (redditError()) {
-        <div class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-red-300 bg-red-50 p-12" data-testid="reddit-error">
+        <div class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-red-300 bg-red-50 p-12" role="alert" data-testid="reddit-error">
           <i class="fa-light fa-triangle-exclamation text-3xl text-red-400" aria-hidden="true"></i>
           <p class="text-sm font-medium text-red-700">Failed to load Reddit data</p>
           <p class="text-xs text-red-500">{{ redditError() }}</p>
-          <button type="button" (click)="retryPanelRead()" class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700">
+          <button
+            type="button"
+            (click)="retryPanelRead()"
+            [attr.aria-label]="paidRetryLabels.reddit"
+            class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+            data-testid="reddit-retry">
             Retry
           </button>
         </div>
@@ -636,11 +663,16 @@
           </div>
         </div>
       } @else if (metaError()) {
-        <div class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-red-300 bg-red-50 p-12" data-testid="meta-error">
+        <div class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-red-300 bg-red-50 p-12" role="alert" data-testid="meta-error">
           <i class="fa-light fa-triangle-exclamation text-3xl text-red-400" aria-hidden="true"></i>
           <p class="text-sm font-medium text-red-700">Failed to load Meta data</p>
           <p class="text-xs text-red-500">{{ metaError() }}</p>
-          <button type="button" (click)="retryPanelRead()" class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700">
+          <button
+            type="button"
+            (click)="retryPanelRead()"
+            [attr.aria-label]="paidRetryLabels.meta"
+            class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+            data-testid="meta-retry">
             Retry
           </button>
         </div>
@@ -650,8 +682,8 @@
           <p class="text-sm text-gray-500">No active Meta campaigns found for this account.</p>
         </div>
       } @else if (metaView(); as view) {
-        @if (metaAmountsInAccountCurrency()) {
-          <!-- campaign-service reports a connection's Meta amounts unconverted and does not say in which currency. -->
+        @if (metaCurrencyNote()) {
+          <!-- campaign-service reported a connection's Meta amounts unconverted and did not say in which currency. -->
           <p class="text-xs text-gray-500" data-testid="meta-currency-note">Spend and budgets are in the ad account's own currency.</p>
         }
         <ng-container
@@ -702,11 +734,17 @@
       } @else if (reportBackedError()) {
         <div
           class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-red-300 bg-red-50 p-12"
+          role="alert"
           [attr.data-testid]="reportBackedPanel() + '-error'">
           <i class="fa-light fa-triangle-exclamation text-3xl text-red-400" aria-hidden="true"></i>
           <p class="text-sm font-medium text-red-700">Failed to load {{ reportBackedLabel() }} data</p>
           <p class="text-xs text-red-500">{{ reportBackedError() }}</p>
-          <button type="button" (click)="retryPanelRead()" class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700">
+          <button
+            type="button"
+            (click)="retryPanelRead()"
+            [attr.aria-label]="reportBackedRetryLabel()"
+            class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+            [attr.data-testid]="reportBackedPanel() + '-retry'">
             Retry
           </button>
         </div>
@@ -714,8 +752,12 @@
         @if (reportBackedFreshness(); as freshness) {
           <p class="text-xs text-gray-500" [attr.data-testid]="reportBackedPanel() + '-freshness'">{{ freshness }}</p>
         }
-        <!-- campaign-service reports these amounts unconverted and does not say in which currency. -->
-        <p class="text-xs text-gray-500" [attr.data-testid]="reportBackedPanel() + '-currency-note'">Spend and budgets are in the ad account's own currency.</p>
+        @if (reportBackedCurrencyNote()) {
+          <!-- campaign-service reported these amounts unconverted and did not say in which currency. -->
+          <p class="text-xs text-gray-500" [attr.data-testid]="reportBackedPanel() + '-currency-note'">
+            Spend and budgets are in the ad account's own currency.
+          </p>
+        }
         @if (view.rows.length === 0) {
           <div
             class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-12"
@@ -728,7 +770,12 @@
         } @else {
           <ng-container
             [ngTemplateOutlet]="accountPanel"
-            [ngTemplateOutletContext]="{ $implicit: view, panel: reportBackedPanel(), note: reportBackedTotalsNote() }" />
+            [ngTemplateOutletContext]="{
+              $implicit: view,
+              panel: reportBackedPanel(),
+              actPlatform: reportBackedActPlatform(),
+              note: reportBackedTotalsNote(),
+            }" />
         }
       }
     </div>
@@ -909,8 +956,8 @@
 
   <!-- An ad platform's KPI strip and campaign table (LinkedIn, Reddit, Meta, Microsoft Ads, X), from its
        precomputed AccountMonitorPanelView: "Couldn't read" rows are dashed, "Unknown" pacing and "Not
-       measured" conversions are grey. LinkedIn adds its creatives column; LinkedIn, Reddit and Meta
-       (`actPlatform`) add the row actions. -->
+       measured" conversions are grey. LinkedIn adds its creatives column; every panel given an
+       `actPlatform` adds the row actions. -->
   <ng-template #accountPanel let-view let-panel="panel" let-note="note" let-actPlatform="actPlatform">
     @if (view.kpis; as kpis) {
       <!-- KPI Strip -->
@@ -947,21 +994,21 @@
         <table class="w-full text-left text-sm">
           <thead>
             <tr class="border-b border-gray-200 bg-gray-50">
-              <th class="px-4 py-3 text-xs font-medium text-gray-500">Campaign</th>
-              <th class="px-4 py-3 text-xs font-medium text-gray-500">Status</th>
-              <th class="px-4 py-3 text-xs font-medium text-gray-500">Flight</th>
-              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Budget</th>
-              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Spend</th>
-              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Pacing</th>
-              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Impr.</th>
-              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Clicks</th>
-              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">CTR</th>
-              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Conv.</th>
+              <th scope="col" class="px-4 py-3 text-xs font-medium text-gray-500">Campaign</th>
+              <th scope="col" class="px-4 py-3 text-xs font-medium text-gray-500">Status</th>
+              <th scope="col" class="px-4 py-3 text-xs font-medium text-gray-500">Flight</th>
+              <th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-500">Budget</th>
+              <th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-500">Spend</th>
+              <th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-500">Pacing</th>
+              <th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-500">Impr.</th>
+              <th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-500">Clicks</th>
+              <th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-500">CTR</th>
+              <th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-500">Conv.</th>
               @if (panel === 'linkedin') {
-                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Creatives</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-500">Creatives</th>
               }
               @if (actPlatform) {
-                <th class="px-4 py-3 text-xs font-medium text-gray-500"><span class="sr-only">Actions</span></th>
+                <th scope="col" class="px-4 py-3 text-xs font-medium text-gray-500"><span class="sr-only">Actions</span></th>
               }
             </tr>
           </thead>

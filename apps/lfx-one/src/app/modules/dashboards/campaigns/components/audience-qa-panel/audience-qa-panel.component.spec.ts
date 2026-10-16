@@ -233,6 +233,20 @@ describe('AudienceQaPanelComponent', () => {
     }
   });
 
+  it('links the audited list to HubSpot only when the report carries a URL', () => {
+    // A blank URL renders href="", which opens this app instead of the list.
+    runAudienceQa.mockReturnValue(of(report()));
+    enterRefAndRun();
+    expect(host().querySelector('[data-testid="audience-qa-panel-report-link"]')?.getAttribute('href')).toBe(
+      'https://app.hubspot.com/contacts/1/objectLists/601'
+    );
+
+    runAudienceQa.mockReturnValue(of(report({ hubspotUrl: '' })));
+    enterRefAndRun();
+    expect(host().querySelector('[data-testid="audience-qa-panel-overall"]'), 'fixture precondition: the report must render').not.toBeNull();
+    expect(host().querySelector('[data-testid="audience-qa-panel-report-link"]'), 'a blank URL rendered a link back to this app').toBeNull();
+  });
+
   it('shows candidates and no verdict when the name matched several lists', () => {
     // `AudienceQaResult` is a union discriminated on `needsDisambiguation` precisely so the
     // ambiguous arm cannot be read as if it carried an `overall`. Rendering a verdict here would

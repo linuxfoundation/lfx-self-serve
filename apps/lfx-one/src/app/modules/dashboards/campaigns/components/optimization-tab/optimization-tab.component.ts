@@ -11,6 +11,7 @@ import type {
   CampaignConfirmedBid,
   CampaignBudgetChange,
   CampaignBudgetOutcome,
+  CampaignBudgetPacingRead,
   CampaignIndexDoc,
   CampaignMonitorResponse,
   CampaignNegativeKeywordsRequestState,
@@ -53,11 +54,13 @@ import {
   CAMPAIGN_BID_UNAVAILABLE_UNPROVISIONED_REASON,
   CAMPAIGN_BUDGET_BLOCKED_AD_SET_REASON,
   CAMPAIGN_BUDGET_BLOCKED_BID_REASON,
+  CAMPAIGN_BUDGET_BLOCKED_PACING_CHECK_REASON,
   CAMPAIGN_BUDGET_BLOCKED_STALE_REASON,
   CAMPAIGN_BUDGET_BLOCKED_TOGGLE_REASON,
   CAMPAIGN_BUDGET_CONFLICT_MESSAGE,
   CAMPAIGN_BUDGET_UNAVAILABLE_PLATFORM_REASON,
   CAMPAIGN_BUDGET_UNAVAILABLE_UNPROVISIONED_REASON,
+  CAMPAIGN_BUDGET_X_LIFETIME_REASON,
   CAMPAIGN_FINDING_ALREADY_PAUSED_REASON,
   CAMPAIGN_NEGATIVE_KEYWORDS_UNAVAILABLE_UNPROVISIONED_REASON,
   CAMPAIGN_OPTIMIZE_LEVER_LABELS,
@@ -71,6 +74,8 @@ import {
   CAMPAIGN_UNAVAILABLE_DEFAULT_REASON,
   CAMPAIGN_UNAVAILABLE_DEPLOYMENT_REASON,
   CAMPAIGN_UNAVAILABLE_PLATFORM_REASON,
+  CAMPAIGN_UNAVAILABLE_RESUME_PLATFORM_REASON,
+  campaignResumeWithheldForPlatform,
   CAMPAIGN_UNAVAILABLE_REASONS,
   DEFAULT_CAMPAIGN_BID_TYPE,
   KEYWORD_ACTION_OUTCOME_CLASSES,
@@ -85,6 +90,7 @@ import {
   NEGATIVE_KEYWORD_CAMPAIGN_PLATFORMS,
   PLATFORM_BRAND_COLORS,
   TOGGLEABLE_CAMPAIGN_PLATFORMS,
+  campaignResumeAdoptedReason,
   campaignToggleAction,
   normalizeCampaignStatus,
 } from '@lfx-one/shared/constants';
@@ -101,7 +107,8 @@ import { AdsCurrencyPipe, AdsPctPipe, EventLabelPipe, PacingClassPipe, PriorityC
 import { metaAdSetFailureOutcome, metaAdSetWriteLeftValidatorKnown } from '@shared/utils/campaign-ad-set-error.utils';
 import { campaignBidFailureOutcome } from '@shared/utils/campaign-bid-error.utils';
 import { campaignBudgetFailureOutcome } from '@shared/utils/campaign-budget-error.utils';
-import { classifyCampaignWriteFailure } from '@shared/utils/campaign-write-error.utils';
+import { isDailyOnlyBudgetPlatform, readCampaignBudgetPacing } from '@shared/utils/campaign-budget-pacing.utils';
+import { classifyCampaignWriteFailure, isCampaignResumeRefusal } from '@shared/utils/campaign-write-error.utils';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { CampaignKeywordTargetingService } from '@services/campaign-keyword-targeting.service';
 import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
@@ -246,6 +253,13 @@ export class OptimizationTabComponent implements OnInit {
    * the only budget the row can show, and the only pacing it can pre-select on the next change.
    */
   protected readonly confirmedBudget = signal<Partial<Record<string, CampaignBudgetChange>>>({});
+  /**
+   * The CURRENT budget pacing of daily-only-platform rows (X), per campaign id, read from each
+   * campaign's live settings when its editor first opens. The index carries no budget, and X takes
+   * daily changes only, so a lifetime-budgeted X campaign is told so up front instead of being
+   * offered a form whose every submit is a 409.
+   */
+  protected readonly budgetPacing = signal<Partial<Record<string, CampaignBudgetPacingRead>>>({});
 
   /**
    * Bid-change state, per campaign id: the budget editor's sibling write on the same row, sharing
@@ -443,15 +457,16 @@ export class OptimizationTabComponent implements OnInit {
    * defect as the over-broad instruction it replaced, pointed the other way.
    *
    * Derived from the rendered rows rather than a count, so it agrees with the buttons by
-   * construction: a row is offerable exactly when it is not conflicted and its action is a real
-   * direction, which is the same condition the template's `[disabled]` uses.
+   * construction: a row is offerable exactly when it is not conflicted, its action is a real
+   * direction, and it is not an adopted campaign's Resume — the rows the template renders usable
+   * (`[disabled]` covers the first two, `aria-disabled` the adopted Resume).
    */
   protected readonly hasActionableSiblings = computed(() => {
     const rows = this.campaignRows();
     if (rows === null) {
       return false;
     }
-    return rows.some((row) => !row.conflicted && row.action !== 'unavailable');
+    return rows.some((row) => !row.conflicted && !row.resumeAdopted && row.action !== 'unavailable');
   });
 
   /**
@@ -609,6 +624,7 @@ export class OptimizationTabComponent implements OnInit {
     const toggleErrors = this.toggleError();
     const conflictedIds = this.conflictedCampaignIds();
     const budgetPending = this.budgetPending();
+    const budgetPacing = this.budgetPacing();
     const bidPending = this.bidPending();
     const confirmedBids = this.confirmedBid();
     const adSetPending = this.adSetPending();
@@ -658,7 +674,7 @@ export class OptimizationTabComponent implements OnInit {
       // are untested, not disproved, and disabling them would withdraw controls from campaigns
       // that are spending on no evidence at all.
       const conflicted = conflictedIds.has(campaign.id);
-      const budgetUnavailableReason = this.budgetUnavailableReasonFor(campaign, status);
+      const budgetUnavailableReason = this.budgetUnavailableReasonFor(campaign, status, budgetPacing[campaign.id]);
       const bidUnavailableReason = this.bidUnavailableReasonFor(campaign, status);
       const negativeKeywordsOffered = typeof campaign.platform === 'string' && NEGATIVE_KEYWORD_CAMPAIGN_PLATFORMS.has(campaign.platform);
       const negativeKeywordsUnavailableReason = negativeKeywordsOffered ? this.negativeKeywordsUnavailableReasonFor(campaign, status) : '';
@@ -668,6 +684,10 @@ export class OptimizationTabComponent implements OnInit {
       const keywordTargetingOffered = typeof campaign.platform === 'string' && KEYWORD_TARGETING_CAMPAIGN_PLATFORMS.has(campaign.platform);
       const keywordTargetingUnavailableReason = keywordTargetingOffered ? this.keywordTargetingUnavailableReasonFor(campaign, status) : '';
       const confirmedBidAmount = this.currentConfirmedBid(campaign, confirmedBids[campaign.id]);
+      // An adopted campaign is never resumed by campaign-service (409 `campaign_adopted`), so its
+      // Resume is withheld up front. Only a literal `true`: absent (not adopted, or not recorded by
+      // this deployment) keeps today's button, and upstream stays the authority.
+      const resumeAdopted = action === 'resume' && campaign.adopted === true;
       return {
         campaign,
         // The bidding campaign-service RECORDED (#3299) — what the create asked for and the last bid
@@ -677,12 +697,21 @@ export class OptimizationTabComponent implements OnInit {
         status,
         action,
         conflicted,
-        unavailableReason: action === 'unavailable' ? this.unavailableReasonFor(status, deploymentDisabled, platformUnsupported) : '',
+        unavailableReason: action === 'unavailable' ? this.unavailableReasonFor(status, deploymentDisabled, platformUnsupported, campaign.platform) : '',
         toggleLabel: CAMPAIGN_TOGGLE_LABELS[action],
-        describedBy: this.describedByFor(campaign.id, action, toggleErrors),
+        describedBy: this.describedByFor(campaign.id, action, toggleErrors, resumeAdopted),
+        resumeAdopted,
+        resumeAdoptedReason: resumeAdopted ? campaignResumeAdoptedReason(this.platformLabels[campaign.platform] ?? 'the ad platform') : '',
         budgetAvailable: budgetUnavailableReason === '',
         budgetUnavailableReason,
-        budgetBlockedReason: this.budgetBlockedReasonFor(conflicted, pendingDirection !== undefined, !!bidPending[campaign.id], adSetBusy),
+        budgetBlockedReason: this.budgetBlockedReasonFor(
+          conflicted,
+          pendingDirection !== undefined,
+          !!bidPending[campaign.id],
+          adSetBusy,
+          budgetPacing[campaign.id] === 'pending'
+        ),
+        budgetDailyOnly: isDailyOnlyBudgetPlatform(campaign.platform),
         bidAvailable: bidUnavailableReason === '',
         bidUnavailableReason,
         bidBlockedReason: this.bidBlockedReasonFor(conflicted, pendingDirection !== undefined || !!budgetPending[campaign.id] || adSetBusy),
@@ -817,6 +846,11 @@ export class OptimizationTabComponent implements OnInit {
     // A budget change in flight on this row holds the same validator; a toggle sent alongside it
     // would race it to the same `If-Match` and one of the two would 412.
     if (this.togglePending()[campaign.id] || this.budgetPending()[campaign.id] || this.bidPending()[campaign.id] || this.adSetPending()[campaign.id]) {
+      return;
+    }
+    // An adopted campaign's Resume is `aria-disabled`, not `disabled`, so it stays focusable and a
+    // click still lands here. It does nothing: the reason is already stated beside the button.
+    if (row.resumeAdopted) {
       return;
     }
     // The template disables the button for these rows, so reaching here means the DOM and the
@@ -954,9 +988,10 @@ export class OptimizationTabComponent implements OnInit {
             failureFallback: CAMPAIGN_TOGGLE_FAILURE_MESSAGES[direction],
           });
           const conflict = outcome.state === 'conflict';
-          // A definite failure keeps the per-direction copy, which states which way it left the row.
+          // A definite failure keeps the per-direction copy, which states which way it left the row,
+          // except a refused resume: its message already says so, and says where to resume instead.
           let message = CAMPAIGN_TOGGLE_FAILURE_MESSAGES[direction];
-          if (outcome.state !== 'failed') {
+          if (outcome.state !== 'failed' || isCampaignResumeRefusal(err)) {
             message = outcome.message;
           }
           this.announceToggleFailure(campaignName, message, outcome.state === 'unconfirmed' ? 'warn' : 'error');
@@ -1010,6 +1045,7 @@ export class OptimizationTabComponent implements OnInit {
       return;
     }
     this.budgetEditorOpen.update((open) => ({ ...open, [id]: true }));
+    this.readBudgetPacing(row);
   }
 
   protected closeBudgetEditor(campaignId: string): void {
@@ -1120,6 +1156,9 @@ export class OptimizationTabComponent implements OnInit {
         budget: change.budget,
         budgetType: change.budgetType,
         etag,
+        // A wording hint for the BFF only (an X refusal explained in X's terms); never sent upstream.
+        // `budgetAvailable` already proved the platform is one of BUDGET_WRITABLE_CAMPAIGN_PLATFORMS.
+        platform: campaign.platform as CampaignPlatform,
       })
       .pipe(take(1))
       .subscribe({
@@ -2255,6 +2294,7 @@ export class OptimizationTabComponent implements OnInit {
         this.budgetPending.set({});
         this.budgetOutcome.set({});
         this.confirmedBudget.set({});
+        this.budgetPacing.set({});
         this.bidEditorOpen.set({});
         this.bidPending.set({});
         this.bidOutcome.set({});
@@ -2556,6 +2596,7 @@ export class OptimizationTabComponent implements OnInit {
     if (!this.budgetEditorOpen()[id]) {
       this.budgetEditorOpen.update((open) => ({ ...open, [id]: true }));
     }
+    this.readBudgetPacing(row);
     this.focusAfterRender(`campaign-budget-amount-${id}`);
   }
 
@@ -2658,12 +2699,15 @@ export class OptimizationTabComponent implements OnInit {
    * Ordered `if`s rather than a chained ternary: the repo forbids nested ternaries, and the
    * precedence is the whole point of this function rather than an incidental shape.
    */
-  private unavailableReasonFor(status: string, deploymentDisabled: boolean, platformUnsupported: boolean): string {
+  private unavailableReasonFor(status: string, deploymentDisabled: boolean, platformUnsupported: boolean, platform: string): string {
     if (deploymentDisabled) {
       return CAMPAIGN_UNAVAILABLE_DEPLOYMENT_REASON;
     }
     if (platformUnsupported) {
       return CAMPAIGN_UNAVAILABLE_PLATFORM_REASON;
+    }
+    if (campaignResumeWithheldForPlatform(status, platform)) {
+      return CAMPAIGN_UNAVAILABLE_RESUME_PLATFORM_REASON;
     }
     // `status` arrives normalized from `campaignRows`; no `.toLowerCase()` here, which is
     // exactly the call that threw on a non-string wire value.
@@ -2679,7 +2723,7 @@ export class OptimizationTabComponent implements OnInit {
    * NOT gated on the toggle's deployment flag or its status sets — the budget route has neither,
    * and a paused campaign's budget is still changeable.
    */
-  private budgetUnavailableReasonFor(campaign: CampaignIndexDoc, status: string): string {
+  private budgetUnavailableReasonFor(campaign: CampaignIndexDoc, status: string, pacing: CampaignBudgetPacingRead | undefined): string {
     if (typeof campaign.platform !== 'string' || !BUDGET_WRITABLE_CAMPAIGN_PLATFORMS.has(campaign.platform)) {
       return CAMPAIGN_BUDGET_UNAVAILABLE_PLATFORM_REASON;
     }
@@ -2689,11 +2733,16 @@ export class OptimizationTabComponent implements OnInit {
     if (status === 'deleted') {
       return CAMPAIGN_UNAVAILABLE_REASONS['deleted'];
     }
+    // A daily-only platform (X) reporting a lifetime budget: every change upstream accepts is daily,
+    // so each submit would be a 409. `pacing` is only ever set for daily-only platforms.
+    if (pacing === 'lifetime') {
+      return CAMPAIGN_BUDGET_X_LIFETIME_REASON;
+    }
     return '';
   }
 
   /** Why an available budget editor cannot submit right now, or `''`. Stale validator first. */
-  private budgetBlockedReasonFor(conflicted: boolean, togglePending: boolean, bidPending: boolean, adSetPending: boolean): string {
+  private budgetBlockedReasonFor(conflicted: boolean, togglePending: boolean, bidPending: boolean, adSetPending: boolean, pacingPending: boolean): string {
     if (conflicted) {
       return CAMPAIGN_BUDGET_BLOCKED_STALE_REASON;
     }
@@ -2706,7 +2755,45 @@ export class OptimizationTabComponent implements OnInit {
     if (adSetPending) {
       return CAMPAIGN_BUDGET_BLOCKED_AD_SET_REASON;
     }
+    if (pacingPending) {
+      return CAMPAIGN_BUDGET_BLOCKED_PACING_CHECK_REASON;
+    }
     return '';
+  }
+
+  /**
+   * Reads a daily-only-platform row's CURRENT budget pacing from its live settings, once per
+   * session: X takes daily budget changes only, and the index carries no budget, so without this a
+   * lifetime-budgeted X campaign would be offered a form whose every submit is a 409.
+   *
+   * A pure read of the settings readback (never persisted, no mutating call). While it is out the
+   * form cannot submit. `lifetime` withholds the editor with its reason; `daily` lets it submit. A
+   * failed read or an unreported pacing is `unknown` and does NOT block: upstream still refuses a
+   * campaign it cannot write, and its refusal is shown in full. `unknown` is re-read on the next
+   * opening, since a failure may have been transient.
+   *
+   * Bound to the tab's `DestroyRef`, unlike the mutations: it changes nothing upstream, so leaving
+   * the tab cancels the read rather than letting it write `budgetPacing` after teardown.
+   */
+  private readBudgetPacing(row: CampaignRow): void {
+    const campaign = row.campaign;
+    const id = campaign.id;
+    if (!isDailyOnlyBudgetPlatform(campaign.platform)) {
+      return;
+    }
+    const known = this.budgetPacing()[id];
+    if (known === 'pending' || known === 'daily' || known === 'lifetime') {
+      return;
+    }
+    this.budgetPacing.update((p) => ({ ...p, [id]: 'pending' }));
+    const askedIn = this.contextGeneration;
+    readCampaignBudgetPacing(this.campaignService.getCampaignSettings(this.projectSlug(), this.briefId(), id))
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((pacing) => {
+        if (askedIn === this.contextGeneration) {
+          this.budgetPacing.update((p) => ({ ...p, [id]: pacing }));
+        }
+      });
   }
 
   /** Why a Meta row's ad-set panel cannot be opened, or `''`. Only asked for offered rows. */
@@ -2999,22 +3086,26 @@ export class OptimizationTabComponent implements OnInit {
    * in bindings, and as a template method this also re-ran for every row on every change
    * detection pass while reading `toggleError()` internally.
    *
-   * A helper rather than an inline expression because the choice is three-way, which inline would
-   * mean a nested ternary in a template — the construct this repo forbids. Both ids may be present
-   * at once (a disabled row can still hold an error from a click that raced the status), and
-   * `aria-describedby` takes a LIST, so both are named rather than one silently shadowing the
-   * other. A dangling reference to an element that renders conditionally is worse than none, so
-   * each id is included only when its element is actually drawn.
+   * A helper rather than an inline expression because up to three ids combine (the row's error, its
+   * unavailable reason, an adopted campaign's Resume reason), which inline would mean nested
+   * ternaries in a template — the construct this repo forbids. Several may be present at once (a
+   * disabled row can still hold an error from a click that raced the status), and
+   * `aria-describedby` takes a LIST, so each is named rather than one silently shadowing another.
+   * A dangling reference to an element that renders conditionally is worse than none, so each id
+   * is included only when its element is actually drawn.
    *
    * `static` in spirit — it reads no signals, so the computed above owns the reactivity.
    */
-  private describedByFor(campaignId: string, action: CampaignToggleAction, toggleErrors: Record<string, string>): string | null {
+  private describedByFor(campaignId: string, action: CampaignToggleAction, toggleErrors: Record<string, string>, resumeAdopted: boolean): string | null {
     const ids: string[] = [];
     if (toggleErrors[campaignId]) {
       ids.push(`campaign-error-${campaignId}`);
     }
     if (action === 'unavailable') {
       ids.push(`campaign-unavailable-${campaignId}`);
+    }
+    if (resumeAdopted) {
+      ids.push(`campaign-resume-adopted-${campaignId}`);
     }
     return ids.length > 0 ? ids.join(' ') : null;
   }

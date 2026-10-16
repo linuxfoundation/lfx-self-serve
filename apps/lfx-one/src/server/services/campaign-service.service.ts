@@ -10,6 +10,11 @@ import {
   CAMPAIGN_NEGATIVE_KEYWORD_OUTCOMES,
   CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED,
   CAMPAIGN_PLATFORMS,
+  CAMPAIGN_ADOPTED_REFUSAL_REASON,
+  CAMPAIGN_RESUME_REFUSED_ADOPTED_CODE,
+  CAMPAIGN_RESUME_REFUSED_CODE,
+  campaignResumeRefusedAdoptedMessage,
+  campaignResumeRefusedMessage,
   COUNTRIES,
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
@@ -20,6 +25,7 @@ import {
 } from '@lfx-one/shared/constants';
 import { encodePathSegment } from '../helpers/url-validation';
 import { coerceCampaignEventDetails } from '@lfx-one/shared/utils/campaign-event-details.utils';
+import { withAdoptedMarker } from '@lfx-one/shared/utils/campaign-optimize.utils';
 import { escapeHtml, hasVisibleHtmlText, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
 import type {
   ApiResponse,
@@ -576,7 +582,10 @@ export class CampaignServiceClient {
     // `"<version>"` — quotes included (`briefETag` in internal/service/brief.go). Deriving it once
     // beats leaving each caller to rediscover a quoting rule that only Go source states; a caller
     // that got it wrong would see a 412 and read it as someone else's concurrent edit.
-    const campaigns = docs.filter((d) => d?.brief_id === briefId).map((d) => ({ ...d, etag: typeof d.version === 'number' ? `"${d.version}"` : undefined }));
+    // `adopted` is kept only as a literal `true` (`withAdoptedMarker`): it withholds Resume on the row.
+    const campaigns = docs
+      .filter((d) => d?.brief_id === briefId)
+      .map((d) => withAdoptedMarker({ ...d, etag: typeof d.version === 'number' ? `"${d.version}"` : undefined }));
     if (campaigns.length !== docs.length) {
       // The filter matched rows this brief does not own — the field is analysed, not a term, or
       // the contract moved. Report it loudly: the rows are dropped here, but every other consumer
@@ -1565,8 +1574,9 @@ export class CampaignServiceClient {
    * this replaces called the Meta and Reddit SDKs directly and could only ever reach those two,
    * while six dispatchers implement the toggle UPSTREAM (Google Ads, LinkedIn, Meta, Reddit,
    * Microsoft, X). That six is campaign-service's capability, NOT this app's reach: the caller
-   * is gated on `CAMPAIGN_SERVICE_STATUS_PLATFORMS`, which admits only the platforms this app
-   * offers. HubSpot is absent from both and always will be: an email send has no run state.
+   * is gated on `CAMPAIGN_SERVICE_STATUS_PLATFORMS`, which admits only the platforms whose
+   * campaigns this app creates or adopts. HubSpot is absent from both and always will be: an
+   * email send has no run state.
    *
    * `If-Match` is REQUIRED, not optional — `toggle-campaign-status` answers a missing header with
    * 428, so an omitted etag is a guaranteed failure rather than a lenient write. Passing the
@@ -2936,6 +2946,41 @@ export function asUnconfirmedWriteFailure(error: unknown, operation: string, cli
     originalError: error,
     transportFailure: error.transportFailure,
     clientMessage,
+  });
+}
+
+/**
+ * The error a refused RESUME should surface: campaign-service's own 409, re-coded with a message
+ * that says what to do.
+ *
+ * - `reason: "campaign_adopted"` (lfx-v2-campaign-service#366): the campaign was adopted, which
+ *   campaign-service never resumes. Re-coded `CAMPAIGN_RESUME_REFUSED_ADOPTED` with a message that
+ *   says so plainly.
+ * - Any other answered 409 (no `reason`, or another one): re-coded `CAMPAIGN_RESUME_REFUSED`. The
+ *   message states adoption as a condition, because a service deployed before #366 refuses an
+ *   adopted campaign without a `reason`, and keeps campaign-service's sentence for the others.
+ *
+ * Decided by the status and the `reason` field alone, never the wording. Everything else passes
+ * through unchanged. `message` stays as it was, so the log keeps the upstream text.
+ *
+ * `platform` is the caller's label: it names the console in the message and is never sent upstream.
+ */
+export function asResumeRefusal(error: unknown, platform: string, operation: string): unknown {
+  if (!(error instanceof MicroserviceError) || error.statusCode !== 409 || !upstreamAnswered(error)) {
+    return error;
+  }
+  const label = CAMPAIGN_PLATFORMS.find((p) => p.id === platform)?.label ?? 'the ad platform';
+  const adopted = error.errorBody?.reason === CAMPAIGN_ADOPTED_REFUSAL_REASON;
+  const reason = typeof error.errorBody?.message === 'string' ? error.errorBody.message : undefined;
+  return new MicroserviceError(error.message, error.statusCode, adopted ? CAMPAIGN_RESUME_REFUSED_ADOPTED_CODE : CAMPAIGN_RESUME_REFUSED_CODE, {
+    operation,
+    service: error.service,
+    path: error.path,
+    errorBody: error.errorBody,
+    originalMessage: error.originalMessage,
+    originalError: error,
+    transportFailure: error.transportFailure,
+    clientMessage: adopted ? campaignResumeRefusedAdoptedMessage(label) : campaignResumeRefusedMessage(label, reason),
   });
 }
 

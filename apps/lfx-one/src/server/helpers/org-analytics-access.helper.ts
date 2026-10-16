@@ -49,22 +49,42 @@ export async function assertOrgAnalyticsRead(req: Request, accountId: string, op
  * roster could not be fully loaded, fails the whole call closed (503) — never a silent "no access".
  */
 export async function filterReadableAccountIds(req: Request, accountIds: string[], operation: string): Promise<string[]> {
-  const canonical = accountIds.filter((accountId) => ORG_ACCOUNT_ID_PATTERN.test(accountId));
-  const username = getEffectiveUsername(req);
-  if (canonical.length === 0 || !username) {
-    return [];
+  const { canonical, readable, rosterUnverified } = await resolveReadableAccountIds(req, accountIds, operation);
+
+  // A denial is only verified when the roster loaded completely; otherwise it could be a grant we missed.
+  if (rosterUnverified && readable.size < canonical.length) {
+    throw unavailableError(operation, '/query/resources');
   }
 
-  const unavailable = (path?: string, error?: unknown): MicroserviceError =>
-    new MicroserviceError(ORG_ACCESS_UNVERIFIABLE_MESSAGE, 503, 'ROLE_GRANTS_UNAVAILABLE', {
-      operation,
-      service: 'LFX_V2_SERVICE',
-      ...(path ? { path } : {}),
-      originalError: error instanceof Error ? error : undefined,
-    });
+  return canonical.filter((accountId) => readable.has(accountId));
+}
 
+/**
+ * The subset of `accountIds` the caller is CONFIRMED to read, in request order — same sources as
+ * `filterReadableAccountIds`, but an id that could not be verified (degraded roster) is simply left out
+ * instead of failing the whole batch. For optional affordances such as a per-row Org Lens link, where a
+ * missed grant costs one link rather than access. An authorizer failure still throws (503).
+ */
+export async function filterConfirmedReadableAccountIds(req: Request, accountIds: string[], operation: string): Promise<string[]> {
+  const { canonical, readable } = await resolveReadableAccountIds(req, accountIds, operation);
+  return canonical.filter((accountId) => readable.has(accountId));
+}
+
+interface ReadableAccountIds {
+  canonical: string[];
+  readable: Set<string>;
+  /** True when the roster gave no trustworthy signal (failed) or only a lower bound (degraded). */
+  rosterUnverified: boolean;
+}
+
+async function resolveReadableAccountIds(req: Request, accountIds: string[], operation: string): Promise<ReadableAccountIds> {
+  const canonical = accountIds.filter((accountId) => ORG_ACCOUNT_ID_PATTERN.test(accountId));
   const readable = new Set<string>();
-  // True when the roster gave no trustworthy signal (failed) or only a lower bound (degraded).
+  const username = getEffectiveUsername(req);
+  if (canonical.length === 0 || !username) {
+    return { canonical: [], readable, rosterUnverified: false };
+  }
+
   let rosterUnverified = false;
   try {
     const { resolved, upstreamFailed, degraded } = await roleGrants.getAccessAwareOrgs(req, username);
@@ -87,17 +107,21 @@ export async function filterReadableAccountIds(req: Request, accountIds: string[
         remaining.map((id) => ({ resource: 'b2b_org', id, access: 'auditor' }))
       );
     } catch (error) {
-      throw unavailable('/access-check', error);
+      throw unavailableError(operation, '/access-check', error);
     }
     for (const accountId of remaining) {
       if (granted.get(`${accountId}#auditor`) === true) readable.add(accountId);
     }
   }
 
-  // A denial is only verified when the roster loaded completely; otherwise it could be a grant we missed.
-  if (rosterUnverified && readable.size < canonical.length) {
-    throw unavailable('/query/resources');
-  }
+  return { canonical, readable, rosterUnverified };
+}
 
-  return canonical.filter((accountId) => readable.has(accountId));
+function unavailableError(operation: string, path?: string, error?: unknown): MicroserviceError {
+  return new MicroserviceError(ORG_ACCESS_UNVERIFIABLE_MESSAGE, 503, 'ROLE_GRANTS_UNAVAILABLE', {
+    operation,
+    service: 'LFX_V2_SERVICE',
+    ...(path ? { path } : {}),
+    originalError: error instanceof Error ? error : undefined,
+  });
 }

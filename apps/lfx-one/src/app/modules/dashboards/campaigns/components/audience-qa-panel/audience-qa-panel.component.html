@@ -89,14 +89,16 @@
       <div class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-200 bg-white p-4">
         <div class="flex min-w-0 flex-col gap-1">
           <span class="text-sm font-medium break-words text-gray-900">{{ result.name }}</span>
-          <a
-            [href]="result.hubspotUrl"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="text-xs text-blue-600 hover:underline"
-            data-testid="audience-qa-panel-report-link">
-            Open list in HubSpot
-          </a>
+          @if (result.hubspotUrl) {
+            <a
+              [href]="result.hubspotUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-xs text-blue-600 hover:underline"
+              data-testid="audience-qa-panel-report-link">
+              Open list in HubSpot
+            </a>
+          }
         </div>
         <span class="rounded-md px-3 py-1 text-xs font-semibold ring-1" [class]="overallCss()" data-testid="audience-qa-panel-overall">
           {{ result.overall }}

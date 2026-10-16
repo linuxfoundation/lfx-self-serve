@@ -109,20 +109,25 @@ export const CAMPAIGN_AUDIENCE_FAILED_MESSAGE = 'The audience read failed. Try a
  * campaign-service's `localCampaignRefMethod` calls (`design/connection.go`). The id is a query
  * parameter upstream, so this refuses early what upstream would refuse with a 400.
  *
- * Google Ads and Microsoft Advertising are absent: their resolves are internal to the keyword
- * actions and have no BFF route. LinkedIn's is the decoder Pattern of `resolve-linkedin-ads-campaign`
- * (a positive int64 with no leading zero; upstream also refuses one past int64 with 400).
+ * Google Ads is absent: its resolve is internal to the keyword actions and has no BFF route.
+ * LinkedIn's is the decoder Pattern of `resolve-linkedin-ads-campaign` and Microsoft's that of
+ * `resolve-microsoft-ads-campaign` (each a positive int64 with no leading zero; upstream also refuses
+ * one past int64 with 400).
  */
 export const CAMPAIGN_REF_ID_PATTERNS: Readonly<Record<CampaignRefPlatform, RegExp>> = {
   'meta-ads': /^[1-9][0-9]{0,31}$/,
   'reddit-ads': /^[A-Za-z0-9_]{1,64}$/,
   'twitter-ads': /^[A-Za-z0-9]{1,64}$/,
   'linkedin-ads': /^[1-9][0-9]{0,18}$/,
+  'microsoft-ads': /^[1-9][0-9]{0,18}$/,
 };
+
+/** The campaign-ref platforms whose ids are int64 upstream, so must also be within its range. */
+export const CAMPAIGN_REF_INT64_PLATFORMS: ReadonlySet<CampaignRefPlatform> = new Set<CampaignRefPlatform>(['linkedin-ads', 'microsoft-ads']);
 
 /**
  * Whether a platform campaign id passes the campaign-ref resolve's id rule. The pattern is the shape;
- * LinkedIn's ids must also be within int64 (upstream refuses one past 9223372036854775807 with 400),
+ * LinkedIn's and Microsoft's ids must also be within int64 (upstream refuses one past 9223372036854775807 with 400),
  * which a regex states badly, so that range is checked arithmetically.
  */
 export function isValidCampaignRefId(platform: CampaignRefPlatform, value: unknown): boolean {
@@ -132,7 +137,7 @@ export function isValidCampaignRefId(platform: CampaignRefPlatform, value: unkno
   if (!CAMPAIGN_REF_ID_PATTERNS[platform].test(value)) {
     return false;
   }
-  return platform === 'linkedin-ads' ? isCanonicalPositiveInt64(value) : true;
+  return CAMPAIGN_REF_INT64_PLATFORMS.has(platform) ? isCanonicalPositiveInt64(value) : true;
 }
 
 /**
@@ -357,11 +362,18 @@ export const CAMPAIGN_SETTINGS_READ_FALLBACK = 'The live settings could not be r
 // Act from Monitor
 // ---------------------------------------------------------------------------
 
-/** The Monitor tables whose rows offer actions: LinkedIn, Reddit and Meta (Google Ads is another owner's lane). */
+/**
+ * The Monitor tables whose rows offer actions: LinkedIn, Reddit, Meta, Microsoft Ads and X (Google Ads
+ * is another owner's lane). X shares Microsoft's report-backed panel. Its rows are adopted ones, since X
+ * create is off, so the act dialog withholds Resume (`PAUSE_ONLY_CAMPAIGN_PLATFORMS`) and offers a
+ * daily budget only (`DAILY_ONLY_BUDGET_CAMPAIGN_PLATFORMS`).
+ */
 export const CAMPAIGN_MONITOR_ACT_PLATFORMS: ReadonlySet<CampaignMonitorActPlatform> = new Set<CampaignMonitorActPlatform>([
   'linkedin-ads',
   'reddit-ads',
   'meta-ads',
+  'microsoft-ads',
+  'twitter-ads',
 ]);
 
 /** The act dialog's header per lever, and the Monitor row button's visible text. */
@@ -410,6 +422,54 @@ export const CAMPAIGN_ACT_FOUNDATION_CHANGED_MESSAGE =
 /** Shown beside a Resume: campaign-service refuses to activate an adopted campaign on every platform. */
 export const CAMPAIGN_ACT_RESUME_ADOPTED_NOTE =
   "A campaign adopted into LFX One cannot be resumed from here; resume it in the ad platform's own UI. Pausing always works.";
+
+/**
+ * The BFF's `code` for a resume that campaign-service refused with 409 for a reason it did not name
+ * as adoption. The UI branches on this code, never on the wording.
+ *
+ * Besides adoption, campaign-service answers a resume with 409 when the campaign is not fully
+ * provisioned for another reason, a Meta ad set paused on purpose is running again, the campaign is
+ * under another ad account, or another write holds its lock. A service deployed before
+ * `reason: "campaign_adopted"` (lfx-v2-campaign-service#366) also refuses an adopted campaign this
+ * way, so the message (`campaignResumeRefusedMessage`) states the adoption case as a condition and
+ * keeps campaign-service's own sentence for the others.
+ */
+export const CAMPAIGN_RESUME_REFUSED_CODE = 'CAMPAIGN_RESUME_REFUSED';
+
+/**
+ * The BFF's `code` for a resume campaign-service refused because the campaign was ADOPTED: its 409
+ * carries `reason: "campaign_adopted"` (lfx-v2-campaign-service#366). The message
+ * (`campaignResumeRefusedAdoptedMessage`) says so without hedging.
+ */
+export const CAMPAIGN_RESUME_REFUSED_ADOPTED_CODE = 'CAMPAIGN_RESUME_REFUSED_ADOPTED';
+
+/** campaign-service's `reason` on the 409 that refuses to resume an adopted campaign. Matched exactly; the message text is never read. */
+export const CAMPAIGN_ADOPTED_REFUSAL_REASON = 'campaign_adopted';
+
+/**
+ * Why an ADOPTED campaign cannot be resumed from LFX One, naming its platform. Shown beside the
+ * unavailable Resume of a row campaign-service marks `adopted: true`, and inside
+ * `campaignResumeRefusedAdoptedMessage`.
+ */
+export function campaignResumeAdoptedReason(platformLabel: string): string {
+  return `This campaign was adopted from ${platformLabel}, so LFX One can pause it but not resume it — resume it in ${platformLabel} itself.`;
+}
+
+/** The message for `CAMPAIGN_RESUME_REFUSED_ADOPTED`: the resume was refused because the campaign was adopted. */
+export function campaignResumeRefusedAdoptedMessage(platformLabel: string): string {
+  return `Could not resume this campaign; it is still paused. ${campaignResumeAdoptedReason(platformLabel)}`;
+}
+
+/**
+ * Why a resume was refused (409), naming the platform where an adopted campaign is resumed.
+ * It does not say a retry is futile: one of those 409s (another write in progress) clears on retry.
+ * `reason` is campaign-service's own sentence, kept for the refusals that are not about adoption.
+ */
+export function campaignResumeRefusedMessage(platformLabel: string, reason?: string): string {
+  const adopted = `Could not resume this campaign; it is still paused. If it was adopted from ${platformLabel}, LFX One can pause it but not resume it — resume it in ${platformLabel} itself.`;
+  const trimmed = reason?.trim();
+  return trimmed ? `${adopted} Otherwise, the reason given was: ${trimmed}` : adopted;
+}
 
 /**
  * Shown beside a Meta Resume. campaign-service keeps an ad set paused on purpose PAUSED through a

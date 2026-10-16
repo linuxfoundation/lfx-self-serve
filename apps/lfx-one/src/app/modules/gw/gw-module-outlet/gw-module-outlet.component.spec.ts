@@ -7,6 +7,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { NavigationEnd, NavigationStart, provideRouter, Router, Event as RouterEvent } from '@angular/router';
 import {
   GW_EMBED_CAPABILITY_MISSING_CODE,
+  GW_EMBED_FIRST_PAINT_TIMEOUT_MS,
   GW_EMBED_HOST_SESSION_LOGOUT_URL,
   GW_EMBED_HOST_SESSION_ME_URL,
   GW_EMBED_STYLESHEET_ROUTE,
@@ -18,7 +19,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UserService } from '../../../shared/services/user.service';
 import { DEFAULT_RUNTIME_CONFIG, RUNTIME_CONFIG_KEY } from '../../../shared/providers/runtime-config.provider';
-import { GwModuleOutletComponent, resolveGwEmbedStylesheetName } from './gw-module-outlet.component';
+import { GwEmbedWarmupService } from '../../../shared/services/gw-embed-warmup.service';
+import { buildGwEmbedStylesheetUrl, gwEmbedHasPaintedContent, GwModuleOutletComponent, resolveGwEmbedStylesheetName } from './gw-module-outlet.component';
 
 // The loader is a real npm dependency that the unit-test builder bundles, so it cannot be mocked
 // at the module level; the mount path below stands it in through the component's loadEmbedLoader
@@ -150,6 +152,8 @@ describe('GwModuleOutletComponent', () => {
     // loader. The stand-in's `ready` is a deferred promise so the skeleton can be observed in
     // flight, resolved with a manifest, or resolved with null (the loader's "nothing mounted").
     let browserComponent: GwModuleOutletComponent;
+    let browserFixture: ComponentFixture<GwModuleOutletComponent>;
+    let warmSession: ReturnType<typeof vi.spyOn>;
     let resolveReady: (manifest: GwEmbedManifest | null) => void;
     let innerUnmount: ReturnType<typeof vi.fn>;
 
@@ -182,9 +186,18 @@ describe('GwModuleOutletComponent', () => {
         gwHostSession: true,
         ...runtimeConfig,
       });
-      browserComponent = TestBed.createComponent(GwModuleOutletComponent).componentInstance;
+      warmSession = vi.spyOn(TestBed.inject(GwEmbedWarmupService), 'warmSession').mockImplementation(() => undefined);
+      browserFixture = TestBed.createComponent(GwModuleOutletComponent);
+      browserComponent = browserFixture.componentInstance;
       (browserComponent as unknown as { loadEmbedLoader: () => Promise<unknown> }).loadEmbedLoader = async () => ({ mount: loaderMount });
+      // The test DOM does no layout, so nothing ever has height: by default the embed counts as
+      // painted at once, and the paint cases below swap in a child-count test of their own.
+      setPaintTest(() => true);
     };
+    const setPaintTest = (test: (root: HTMLElement) => boolean): void => {
+      (browserComponent as unknown as { embedHasPainted: (root: HTMLElement) => boolean }).embedHasPainted = test;
+    };
+    const embedRootEl = (): HTMLElement => browserFixture.nativeElement.querySelector('#gw-embed-root');
 
     beforeEach(() => {
       innerUnmount = vi.fn();
@@ -238,17 +251,101 @@ describe('GwModuleOutletComponent', () => {
       await pending;
     });
 
-    it('keeps the skeleton up until the loader reports the embed mounted', async () => {
+    it("puts the server's stylesheet key in the path, so the URL is content-addressed", async () => {
+      configure({ gwEmbedStylesheetKey: 'ownKey0123456789' });
       const pending = mount();
+      await settle();
+      const ctx = loaderMount.mock.calls[0][1] as GwHostContext;
+      expect(ctx.source.resolveStylesheetUrl?.(`${EMBED_URL}/admin-embed-def.css`)).toBe(`${GW_EMBED_STYLESHEET_ROUTE}/ownKey0123456789/admin-embed-def.css`);
+      resolveReady(MANIFEST);
+      await pending;
+    });
+
+    it('starts warming the Gatewaze session as soon as it starts mounting, before the loader', async () => {
+      const pending = mount();
+      expect(warmSession).toHaveBeenCalledTimes(1);
+      expect(loaderMount).not.toHaveBeenCalled();
+      await settle();
+      resolveReady(MANIFEST);
+      await pending;
+    });
+
+    it('keeps the skeleton up past the loader reporting the embed mounted, until the embed paints', async () => {
+      setPaintTest((root) => root.childElementCount > 0);
+      // Rendered for real, so the template bindings can be checked: afterNextRender starts the mount.
+      await browserFixture.whenStable();
       await settle();
       // The loader has returned, but nothing is on screen yet.
       expect(browserComponent['mounting']()).toBe(true);
       expect(browserComponent['mountError']()).toBeNull();
 
+      // Mounted, but React has drawn nothing yet: this is the gap that used to show a blank pane.
       resolveReady(MANIFEST);
-      await pending;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(browserComponent['mounting']()).toBe(true);
+      expect(embedRootEl().style.visibility).toBe('hidden');
+
+      // The embed's first paint may be its own spinner; that is enough to hand over to.
+      const spinner = document.createElement('div');
+      spinner.className = 'gw-spinner';
+      embedRootEl().appendChild(spinner);
+      // Microtasks only, no timer: the browser renders no frame in between, so the swap below is
+      // already in the DOM for the frame the spinner first paints in. Waiting on Angular's own
+      // scheduled change detection would need a timer here, and could show a blank frame.
+      for (let i = 0; i < 10; i++) {
+        await Promise.resolve();
+      }
       expect(browserComponent['mounting']()).toBe(false);
       expect(browserComponent['mountError']()).toBeNull();
+      expect(browserFixture.nativeElement.querySelector('[data-testid="gw-embed-loading"]')).toBeNull();
+      expect(embedRootEl().style.visibility).toBe('');
+    });
+
+    it('shows the embed anyway once the first-paint wait runs out', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        setPaintTest(() => false);
+        const pending = mount();
+        await vi.waitFor(() => expect(loaderMount).toHaveBeenCalledTimes(1));
+        resolveReady(MANIFEST);
+        await vi.advanceTimersByTimeAsync(GW_EMBED_FIRST_PAINT_TIMEOUT_MS - 1);
+        expect(browserComponent['mounting']()).toBe(true);
+        await vi.advanceTimersByTimeAsync(1);
+        await pending;
+        expect(browserComponent['mounting']()).toBe(false);
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('painted nothing'));
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('drops the skeleton at once when a terminal error arrives while waiting for the first paint', async () => {
+      setPaintTest(() => false);
+      await browserFixture.whenStable();
+      await settle();
+      resolveReady(MANIFEST);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(browserComponent['mounting']()).toBe(true);
+
+      const onFatal = (loaderMount.mock.calls[0][1] as GwHostContext).onFatal;
+      onFatal?.({ error_type: 'render_crash', code: 'GW_RENDER_CRASH', message: 'The embed crashed.', recoverable: false });
+      await browserFixture.whenStable();
+
+      // Well inside the 10s paint cap: the error panel ended the wait, not the timeout.
+      await vi.waitFor(() => expect(browserComponent['mounting']()).toBe(false), { timeout: 1000 });
+      expect(browserFixture.nativeElement.querySelector('[data-testid="gw-embed-loading"]')).toBeNull();
+      expect(browserFixture.nativeElement.querySelector('[role="alert"]')?.textContent).toContain('The embed crashed.');
+    });
+
+    it('stops waiting for the first paint when the outlet is torn down', async () => {
+      setPaintTest(() => false);
+      const pending = mount();
+      await settle();
+      resolveReady(MANIFEST);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      browserFixture.destroy();
+      await expect(pending).resolves.toBeUndefined();
     });
 
     it('treats a null ready result as terminal and shows the error panel', async () => {
@@ -559,6 +656,54 @@ describe('GwModuleOutletComponent', () => {
 
       expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'info' }));
     });
+  });
+});
+
+describe('gwEmbedHasPaintedContent', () => {
+  // The real predicate, with layout stood in: the test DOM gives every element a zero-size rect.
+  const rootWith = (html: string, height = 900): HTMLElement => {
+    const root = document.createElement('div');
+    root.innerHTML = html;
+    vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({ height } as DOMRect);
+    return root;
+  };
+
+  it("does not count the embed's empty provider wrappers, even with height", () => {
+    // What the embed renders while FeatureGuard is still loading: Radix's root Theme (min-height
+    // 100vh in the scoped stylesheet) around an empty router, plus an empty toaster region.
+    const root = rootWith('<div class="radix-themes" data-is-root-theme="true"><section aria-label="Notifications" tabindex="-1"></section></div>');
+
+    expect(gwEmbedHasPaintedContent(root)).toBe(false);
+  });
+
+  it("counts the embed's spinner, which has no visible text", () => {
+    const root = rootWith(
+      '<div class="radix-themes" data-is-root-theme="true"><div class="flex justify-center py-16" role="status"><div class="animate-spin"></div></div></div>'
+    );
+
+    expect(gwEmbedHasPaintedContent(root)).toBe(true);
+  });
+
+  it('counts routed content by its text', () => {
+    expect(gwEmbedHasPaintedContent(rootWith('<div class="radix-themes"><main><h1>Newsletters</h1></main></div>'))).toBe(true);
+  });
+
+  it('ignores text inside style, script and template elements', () => {
+    expect(gwEmbedHasPaintedContent(rootWith('<div><style>.a{color:red}</style><template><p>later</p></template></div>'))).toBe(false);
+  });
+
+  it('counts nothing while the root has no height', () => {
+    expect(gwEmbedHasPaintedContent(rootWith('<h1>Newsletters</h1>', 0))).toBe(false);
+  });
+});
+
+describe('buildGwEmbedStylesheetUrl', () => {
+  it('puts the key between the route and the name when there is one', () => {
+    expect(buildGwEmbedStylesheetUrl('admin-embed-def.css', 'ownKey0123456789')).toBe(`${GW_EMBED_STYLESHEET_ROUTE}/ownKey0123456789/admin-embed-def.css`);
+  });
+
+  it('falls back to the unkeyed form without one', () => {
+    expect(buildGwEmbedStylesheetUrl('admin-embed-def.css', '')).toBe(`${GW_EMBED_STYLESHEET_ROUTE}/admin-embed-def.css`);
   });
 });
 

@@ -1003,6 +1003,9 @@ export class MeetingManageComponent {
             this.mode.set('edit');
             this.meetingId.set(meetingId);
             this.meetingLoadError.set(false);
+            // getMeeting -> getMeetingDetail already retries a 403/404 with backoff (#501) in
+            // case the ITX index / FGA organizer tuple it reads from is still catching up with a
+            // create this user just made — by the time an error reaches here it is final.
             return this.meetingService.getMeeting(meetingId).pipe(
               catchError((error) => {
                 console.error('Error getting meeting:', error);

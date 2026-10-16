@@ -1,229 +1,238 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Message Foundation output envelope contract (message-foundation-output/v1)
-// and batch intake form contract, shared between the Express BFF and the
-// Angular form-first run shell. Transcribed from marketing-os-agents
-// agents/foundation-message-ts (src/envelope.ts, src/form.ts) — the agent's
-// zod schemas are normative; this must stay in sync (reviewed at PR).
+// Messaging Document output envelope (messaging-document-output/v1), the
+// generate form contract and the questions/answers turns
+// (messaging-document-questions/v1, messaging-document-answers/v1), shared
+// between the Express BFF and the Angular run page. Transcribed from
+// marketing-os-agents agents/foundation-message (src/envelope.ts, src/form.ts,
+// src/questions-turn.ts); the agent's JSON Schema is normative and this must
+// stay in sync (reviewed at PR).
 
+import {
+  FOUNDATION_MESSAGE_FIELD_STATUSES,
+  FOUNDATION_MESSAGE_GENERATE_SHAPES,
+  FOUNDATION_MESSAGE_SOURCE_KINDS,
+} from '../constants/foundation-message.constants';
 import type { MktgArtifactPersistReceipt, MktgArtifactStoredResponse } from './mktg-artifact.interface';
-import type { MktgReadmeOutcome, MktgRunGenerateBody, MktgRunResultBody, MktgRunResultResponse, MktgRunSessionResponse } from './mktg-run.interface';
+import type {
+  MktgRunAnswer,
+  MktgRunAnswersBody,
+  MktgRunAnswersResponse,
+  MktgRunGenerateBody,
+  MktgRunResultBody,
+  MktgRunResultResponse,
+  MktgRunSessionResponse,
+} from './mktg-run.interface';
 
-/** One verbatim intake Q/A pair from the variable-length interview log. */
-export interface FoundationMessageIntakeAnswer {
-  /** 1-based position in the order the question was asked, 1–20. */
-  question_number: number;
-  /** The question text as asked (Paul's exact wording for fixed questions). */
-  question: string;
-  /** The user's answer, verbatim and untranslated. */
-  answer: string;
+/** One of Paul's four Step 0b sources. */
+export type FoundationMessageSourceKind = (typeof FOUNDATION_MESSAGE_SOURCE_KINDS)[number];
+
+/** The generate form's shape, which follows from the answers and documents present. */
+export type FoundationMessageGenerateShape = (typeof FOUNDATION_MESSAGE_GENERATE_SHAPES)[number];
+
+/** A sidecar field's review status. */
+export type FoundationMessageFieldStatus = (typeof FOUNDATION_MESSAGE_FIELD_STATUSES)[number];
+
+/** One field of the sidecar: a string, or a list of objects for the four multi-item fields. */
+export interface FoundationMessageField {
+  /** The field's value — verbatim from the document for the copy primitives. */
+  value: string | Record<string, unknown>[];
+  /** The provenance label plus its citation (`Asked` for the requester's own answer). */
+  source: string;
+  /** `approved` only after the reviewer's Approve; `draft`; `tbd` = Needs input. */
+  status: FoundationMessageFieldStatus;
 }
 
-/** How the intake answers were collected. */
-export type FoundationMessageIntakeMode = 'form' | 'conversational';
+/** Paul's brand.json seed: logo URLs found in a source, palette and fonts only when a brand page states them. */
+export interface FoundationMessageBrandSeed {
+  project_name: string;
+  logo: { light: string | null; dark: string | null };
+  palette: Record<string, string> | null;
+  fonts: Record<string, string> | null;
+  _source: { logo: string; palette: string; fonts: string };
+}
 
-/** Machine-readable log of the interview (2–20 answers; variable-length). */
+/** How the run was produced, recorded by the agent wrapper. */
 export interface FoundationMessageIntake {
-  /** How the answers were collected. */
-  mode: FoundationMessageIntakeMode;
-  /** ISO-8601 timestamp when intake completed — UTC by producer contract, but the shape gate accepts any offset. */
+  /** Always `form` (dec-qa-form-path-only). */
+  mode: 'form';
+  /** The generate form's shape; null on a revise. */
+  shape: FoundationMessageGenerateShape | null;
+  /** ISO-8601 timestamp when the intake completed. */
   completed_at: string;
-  /** 2–20 entries, in the order asked. */
-  answers: FoundationMessageIntakeAnswer[];
-}
-
-/**
- * The five word-count-locked derivative assets from the document's §3 Copy
- * Primitives — each a VERBATIM substring of `document_markdown` (contract
- * gate G3).
- */
-export interface FoundationMessageDerivatives {
-  /** 25-word summary (hard cap 25 words). */
-  summary_25: string;
-  /** 50-word summary (hard cap 50 words). */
-  summary_50: string;
-  /** Boilerplate paragraph (~100–150 words; sanity band 50–250). */
-  boilerplate: string;
-  /** llms.txt content (starts with an `# ` H1 line). */
-  llms_txt: string;
-  /** The full elevator pitch (hard cap 90 words; 0.5.0 template §3). */
-  elevator_pitch: string;
-}
-
-/** Which inputs the run consumed, as recorded by the agent wrapper. */
-export interface FoundationMessageInputs {
-  /** Whether a Brand Kit document was consumed for this run. */
-  brand_kit_provided: boolean;
-  /** SHA-256 of the consumed Brand Kit markdown, when one was provided. */
-  brand_kit_sha256?: string;
 }
 
 /** Producer provenance, filled deterministically by the agent wrapper. */
 export interface FoundationMessageAgentProvenance {
   /** Guild agent identifier (owner~name). */
-  identifier?: string;
-  /** Published agent version that produced the document (semver). */
-  agent_version?: string;
+  identifier: string;
+  /** Published agent version that produced the bundle (semver). */
+  agent_version: string;
   /** SHA-256 of the FIDELITY-MANIFEST the prompt substance verified against. */
-  prompt_manifest_sha256?: string;
+  prompt_manifest_sha256: string;
 }
 
 /**
- * The Message Foundation output envelope — the typed output of the
- * linux-foundation~foundation-message agent and the exact payload the BFF
- * validates (schema gates + sha256 recompute) before surfacing the document.
+ * The Messaging Document output envelope — Paul's bundle minus the deck: the
+ * Markdown on his template, the field sidecar, the Project Inputs record and
+ * the brand seed. The exact payload the BFF validates (schema gates and the
+ * sha256 recompute) before storing it as a revision.
  */
 export interface FoundationMessageEnvelope {
   /** Contract discriminator + version; consumers reject unknown majors. */
   contract: string;
-  /** Document kind — always 'message-foundation' for this contract. */
+  /** Always `messaging-document`. */
   kind: string;
-  /** Project slug (lowercase kebab-case). */
+  /** Project slug (lowercase kebab-case) of `project_name`. */
   project: string;
-  /** The project's display name exactly as given in intake Q1a. */
+  /** The project name exactly as the intake form gave it. */
   project_name: string;
-  /** Document draft version, starting at 1; regeneration increments by 1. */
+  /** 1 on a generate; the stored revision + 1 on a revise. */
   version: number;
-  /** The complete Message Foundation document in Markdown. */
+  /** How the bundle was produced. */
+  mode: 'generate' | 'revise';
+  /** The front matter's Status cell — one of Paul's draft labels. */
+  status: string;
+  /** The complete Messaging Document in Markdown. */
   document_markdown: string;
   /** Lowercase hex SHA-256 of the UTF-8 bytes of document_markdown. */
   content_sha256: string;
-  /** The five word-count-locked derivative assets. */
-  derivatives: FoundationMessageDerivatives;
-  /** Which inputs the run consumed. */
-  inputs: FoundationMessageInputs;
-  /** Verbatim intake log. */
+  /** The field sidecar, keyed by md.* field id. */
+  fields: Record<string, FoundationMessageField>;
+  /** The brand.json seed. */
+  brand_seed: FoundationMessageBrandSeed;
+  /** The Project Inputs record (open: sibling agents append to it). */
+  inputs_record: Record<string, unknown> | null;
+  /** How the run was produced. */
   intake: FoundationMessageIntake;
-  /** ISO-8601 timestamp when this draft was emitted — UTC by producer contract, but the shape gate accepts any offset. */
-  generated_at?: string;
+  /** The comments a revise applied; null on a generate. */
+  revision: { prior_version: number; comments: Record<string, unknown>[] } | null;
+  /** The tool reality of the run. */
+  capabilities: { web_fetch: boolean; lfx_mcp: boolean };
+  /** ISO-8601 timestamp when the bundle was emitted. */
+  generated_at: string;
   /** Producer provenance. */
-  agent?: FoundationMessageAgentProvenance;
+  agent: FoundationMessageAgentProvenance;
+}
+
+/** One existing document as the agent's generate form takes it: an uploaded file's text, or a link the agent reads itself. */
+export interface FoundationMessageExistingDocument {
+  /** Human label (one line). */
+  title?: string;
+  /** Link to the document; the agent fetches it. */
+  url?: string;
+  /** The document's text as LFX One read it from the uploaded file. */
+  text?: string;
 }
 
 /**
- * The batch (form-mode) `agent_input` payload the BFF sends when creating the
- * Guild session — the agent's `message_foundation_intake_form` contract
- * (marketing-os-agents agents/foundation-message-ts src/form.ts). Discovery
- * answers are required exactly when no `brand_kit_markdown` is provided
- * (Paul's five brand-discovery questions apply); the BFF enforces the same
- * conditional contract before submission.
+ * The agent's `messaging_document_intake_form` — what the BFF renders into
+ * the one text message it sends (src/form.ts). Sources travel as URLs only:
+ * the agent fetches and researches them itself. Every text passes through
+ * verbatim.
  */
 export interface FoundationMessageFormPayload {
-  /** Payload discriminator the agent's input preprocess keys on. */
-  type: 'message_foundation_intake_form';
-  /** Q1a: the name of the LF project (verbatim). */
+  type: 'messaging_document_intake_form';
   project_name: string;
-  /** Q1b: URL of the project's GitHub repo or README. */
-  github_url: string;
-  /** README content fetched by the BFF (the agent has no web access). Omitted when the fetch fails. */
-  readme_markdown?: string;
-  /** Q1c: the full Brand Kit document (Markdown), when one exists. */
-  brand_kit_markdown?: string;
-  /** Discovery 1 (required when no brand kit): one line, what does it do. */
-  one_line_description?: string;
-  /** Discovery 2 (required when no brand kit): primary audience. */
-  primary_audience?: string;
-  /** Discovery 3 (required when no brand kit): three adjectives for the voice. */
-  voice_adjectives?: string;
-  /** Discovery 4 (required when no brand kit): constraints. */
-  constraints?: string;
-  /** Discovery 5 (required when no brand kit): reference brands or projects. */
-  reference_brands?: string;
-  /** Optional free-text answers to Paul's Step 1d gap areas. */
-  gap_fill_notes?: string;
-  /** Feedback on a prior draft; when present the agent regenerates incorporating it. */
-  feedback?: string;
-  /** Version of the prior draft being revised; the new envelope carries prior_version + 1. */
-  prior_version?: number;
+  /** The LFX project uid, for the agent's LFX lookups. */
+  project_uid?: string;
+  run_date?: string;
+  website_url?: string;
+  github_url?: string;
+  press_release_url?: string;
+  brand_page_url?: string;
+  /** Further links the requester gave, in order. */
+  other_links?: string[];
+  existing_documents?: FoundationMessageExistingDocument[];
+}
+
+/** What the BFF layers onto the validated answers to build the form. */
+export interface FoundationMessageFormInputs {
+  /** The existing documents, as the agent takes them. */
+  documents?: FoundationMessageExistingDocument[];
+  /** The LFX project uid the run belongs to. */
+  projectUid?: string;
+  /** The run date, YYYY-MM-DD; the renderer defaults it to today (UTC). */
+  runDate?: string;
 }
 
 /**
- * Request body for `POST /api/mktg-agents/foundation-message/generate` — the
- * form answers keyed by intake field key (generic run-flow body; discovery
- * keys conditional, `gap_fill_notes` optional), plus `feedback`/`priorVersion`
- * on regenerations (regenerate-via-generate: every follow-up is a full
- * resubmit on a fresh session).
+ * One question of the agent's questions turn (messaging-document-questions/v1)
+ * — a gap the sources and research left open, with the agent's best guess.
+ * Field names mirror the agent's JSON block verbatim.
  */
+export interface FoundationMessageQuestion {
+  /** The field the answer fills (snake_case, e.g. `audiences`). */
+  key: string;
+  /** Short label. */
+  label: string;
+  /** The question itself. */
+  question: string;
+  /** Why the agent could not settle it from the sources. */
+  why: string;
+  /** The agent's suggested answer; empty when it has none. */
+  suggested_answer: string;
+  /** Links (or source names) the suggestion rests on. */
+  basis: string[];
+}
+
+/** The agent's questions block: the fenced JSON of the questions turn. */
+export interface FoundationMessageQuestionsBlock {
+  /** Always `messaging-document-questions/v1`. */
+  contract: string;
+  /** The project name as the agent calls it. */
+  project: string;
+  /** The gap questions, in the agent's order. */
+  questions: FoundationMessageQuestion[];
+}
+
+/** One answer of the answers turn (messaging-document-answers/v1): the run shell's answer shape, rendered per key with its origin. */
+export type FoundationMessageAnswer = MktgRunAnswer;
+
+/** Request body for `POST /api/mktg-agents/foundation-message/generate` — the sources plus the existing documents. */
 export type FoundationMessageGenerateRequest = MktgRunGenerateBody;
 
-/**
- * Response of `POST /api/mktg-agents/foundation-message/generate` — the
- * session to poll (generic run-flow shape). The generic shape carries the
- * optional `readme` outcome, which this agent always populates: its README is
- * fetched server-side while composing the submission, so the run can tell the
- * user when the document was written WITHOUT one.
- */
+/** Response of `POST /api/mktg-agents/foundation-message/generate` — the session to poll. */
 export type FoundationMessageGenerateResponse = MktgRunSessionResponse;
 
-/**
- * What starting a Message Foundation generation produced inside the BFF: the
- * Guild session to poll plus the README fetch outcome. The controller turns
- * this into the wire response by minting the creator-binding owner token for
- * the session.
- */
-export interface FoundationMessageGenerationStart {
-  /** Guild session id running the one-shot form-mode generation. */
-  sessionId: string;
-  /** Outcome of the server-side README fetch that fed this submission. */
-  readme: MktgReadmeOutcome;
-}
+/** Request body for `POST /api/mktg-agents/foundation-message/answers` — the answers to the session's questions turn. */
+export type FoundationMessageAnswersRequest = MktgRunAnswersBody;
 
-/**
- * Request body for `POST /api/mktg-agents/foundation-message/result` — the
- * owner token travels in the body, never the query string. Carries the run's
- * LFX project scope (`project`), which decides the storage partition the
- * validated document is persisted into; the BFF resolves it server-side and
- * requires the caller's writer grant before writing.
- */
+/** Response of `POST /api/mktg-agents/foundation-message/answers`. */
+export type FoundationMessageAnswersResponse = MktgRunAnswersResponse;
+
+/** Request body for `POST /api/mktg-agents/foundation-message/result`. */
 export type FoundationMessageResultRequest = MktgRunResultBody;
 
-/**
- * Receipt of a successful Message Foundation persistence write — an alias of
- * the SHARED agent-artifact receipt ({@link MktgArtifactPersistReceipt}), so
- * the Brand Kit and the Message Foundation report the same receipt shape from
- * the same write path. `s3_key` is always
- * `foundation-message/{project}/{content_sha256}.md`.
- */
+/** Receipt of a successful persistence write (`foundation-message/{project}/{content_sha256}.md`). */
 export type FoundationMessagePersistReceipt = MktgArtifactPersistReceipt;
 
-/**
- * Response of `GET /api/mktg-agents/foundation-message/stored?project=<uid>` —
- * the project's LATEST server-persisted Message Foundation document. This is
- * what makes a Message Foundation reachable OUTSIDE the browser that generated
- * it: before it existed, a Message Foundation lived only in a browser-stored
- * run (24 h TTL, same browser), so no dependent agent could resolve one.
- * Entitlement-gated (project writer), partitioned by the server-resolved
- * project uid, 404 when nothing is stored.
- */
+/** Response of `GET /api/mktg-agents/foundation-message/stored?project=<uid>` — the latest stored revision. */
 export type FoundationMessageStoredResponse = MktgArtifactStoredResponse;
 
 /**
- * Response of `POST /api/mktg-agents/foundation-message/result`:
- * `pending` until the session emits a schema-valid, sha256-verified envelope,
- * then `ready` with the validated document, its version, and the five
- * word-count-locked derivatives (surfaced as copyable chips in the UI). On
- * `ready` the BFF also persists the document through the shared
- * agent-artifact layer and reports the receipt.
+ * Response of `POST /api/mktg-agents/foundation-message/result`: `ready`
+ * once the session holds a schema-valid, sha256-verified envelope, with the
+ * document, its copy primitives (surfaced as copyable chips) and, when the
+ * write succeeded, the persistence receipt of the stored revision;
+ * `questions` whenever the session holds a questions block the agent wrote
+ * and no valid envelope yet — the latest block, reported on every poll until
+ * a newer block or the envelope appears, so the run shell tells an
+ * already-answered block apart by its `questionsId`; `pending` otherwise.
  */
 export interface FoundationMessageResultResponse extends MktgRunResultResponse {
-  /** Project display name from the envelope (intake Q1a verbatim). Present when ready. */
+  /** Project display name from the envelope. Present when ready. */
   projectName?: string;
   /** Project slug from the envelope. Present when ready. */
   project?: string;
-  /** How the intake answers were collected, from the envelope. Present when ready. */
-  intakeMode?: FoundationMessageIntakeMode;
-  /**
-   * Persistence receipt for the returned document. Present when ready AND the
-   * object-store write succeeded. Absent on a ready result means either a
-   * transient write failure the next poll retries idempotently (the run
-   * shell's bounded persistence retry), or a permanent refusal — no project
-   * scope, no writer grant, or a document over the size cap.
-   */
+  /** The document's draft status from the envelope. Present when ready. */
+  documentStatus?: string;
+  /** Persistence receipt; absent on a ready result when the write did not happen (retried on the next poll). */
   persistence?: FoundationMessagePersistReceipt;
 }
 
-/** Structured result of validating a candidate envelope or an answers record. */
+/** Structured result of validating a candidate envelope or a request body. */
 export interface FoundationMessageValidationResult {
   /** True when every gate passed. */
   valid: boolean;

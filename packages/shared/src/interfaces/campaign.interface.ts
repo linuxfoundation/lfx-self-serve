@@ -706,6 +706,12 @@ export interface CampaignImplementationDraft {
   redditImageUrl?: string;
   redditCallToAction?: RedditCallToAction | '';
   /**
+   * The Reddit video goal, carried for the same reason as the objective. Kept whatever the
+   * objective is, so switching away from Video Views and back does not lose the choice; only the
+   * REQUEST is gated on the objective. `''` is "not chosen yet", which blocks a Video Views create.
+   */
+  redditVideoGoal?: RedditVideoGoal | '';
+  /**
    * Microsoft's four editable controls (LFXV2-3312): budget, the geo chip list, the keyword list
    * and the optional CPC bid.
    *
@@ -1181,8 +1187,8 @@ export interface RedditCampaignCreateRequest {
    * `VIDEO_VIEWS` goal, so a video-view campaign has to name a concrete duration goal and neither
    * arm can invent one. Read it through `resolveRedditOptimizationGoal` (#3449).
    *
-   * No control populates it, which is why `REDDIT_SELECTABLE_OBJECTIVES` withholds `video_views`:
-   * offering that objective with no way to set this field would offer a create both arms refuse.
+   * The implementation tab collects it with a goal picker shown only for `video_views`, sends it
+   * only with that objective, and blocks the create until one is chosen.
    */
   videoGoal?: RedditVideoGoal;
   /** Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means automatic. */
@@ -1430,6 +1436,11 @@ export interface MetaMonitorResponse {
   campaigns: MetaCampaignMetrics[];
   accountTotals: MetaAccountTotals;
   actionItems: MetaActionItem[];
+  /**
+   * Campaign-service path only: the ad account's ISO 4217 code, set only when campaign-service
+   * named one in the expected shape. ABSENT on the legacy path and whenever it is unknown.
+   */
+  currency?: string;
 }
 
 export interface CampaignBriefRefineRequest {
@@ -2184,6 +2195,19 @@ export interface CampaignPlatformResult {
 }
 
 /**
+ * What the UI makes of one failed platform's `error` (see `describeCampaignDispatchFailure`).
+ *
+ * `message` is the backend sentence to show, with the `(reason: <token>)` fragment removed when
+ * `nextStep` replaces it. `nothingCreated` is true only for the fixed pre-create sentence endings
+ * in `CAMPAIGN_DISPATCH_NOTHING_CREATED_SUFFIXES`.
+ */
+export interface CampaignDispatchFailureDescription {
+  message: string;
+  nextStep: string | null;
+  nothingCreated: boolean;
+}
+
+/**
  * What a finished creation job left behind, normalized across both sources.
  *
  * `campaigns` is populated by the vendor-direct path and `platformResults` by the
@@ -2670,6 +2694,11 @@ export interface CampaignServiceAccountMonitor {
   metrics_window_end?: string;
   /** Report-backed platforms only: a newer report is building. */
   metrics_pending?: boolean;
+  /**
+   * The ad account's ISO 4217 code (`^[A-Z]{3}$`): spend and budgets are in it, unconverted.
+   * ABSENT when the platform did not report one (always on Google Ads) — unknown, never a default.
+   */
+  currency?: string;
 }
 
 /** campaign-service `hubspot-email-monitor-email`. Rates are FRACTIONS, absent on a zero denominator. */
@@ -2833,6 +2862,8 @@ export interface ReportBackedMonitorResponse {
   metricsWindowEnd: string | null;
   /** A newer report is building on the platform, so a later refresh returns newer (or the first) metrics. */
   metricsPending: boolean;
+  /** The ad account's ISO 4217 code when campaign-service named one in the expected shape; ABSENT when unknown. */
+  currency?: string;
 }
 
 /** One HubSpot marketing email on the Monitor tab. Rates are FRACTIONS (0.3 = 30%), NULL when their denominator is 0 — unknown, not 0. */
@@ -2921,6 +2952,20 @@ export interface AccountMonitorKpisView {
   ctr: string;
   spend: string;
   conversions: MonitorCellView;
+}
+
+/** The read state of one LinkedIn/Reddit/Meta/Microsoft Ads/X Monitor panel, as its screen-reader status describes it. */
+export interface AccountMonitorPanelReadState {
+  label: string;
+  loading: boolean;
+  error: string | null;
+  /** A read has answered, so `campaigns` and `note` describe what the panel shows. */
+  loaded: boolean;
+  campaigns: number;
+  /** What the panel's visible empty state says, repeated verbatim so both audiences hear the same claim. */
+  emptyMessage: string;
+  /** The panel's totals-coverage note, or null when the totals cover every campaign. */
+  note: string | null;
 }
 
 /** One campaign row of an ad-platform panel. Every metric cell is a dash when `fetchFailed`. */
@@ -3272,6 +3317,11 @@ export interface LinkedInMonitorResponse {
   campaigns: LinkedInCampaignMetrics[];
   accountTotals: LinkedInAccountTotals;
   actionItems: LinkedInActionItem[];
+  /**
+   * Campaign-service path only: the ad account's ISO 4217 code, set only when campaign-service
+   * named one in the expected shape. ABSENT on the legacy path and whenever it is unknown.
+   */
+  currency?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -3342,6 +3392,11 @@ export interface RedditMonitorResponse {
   campaigns: RedditCampaignMetrics[];
   accountTotals: RedditAccountTotals;
   actionItems: RedditActionItem[];
+  /**
+   * Campaign-service path only: the ad account's ISO 4217 code, set only when campaign-service
+   * named one in the expected shape. ABSENT on the legacy path and whenever it is unknown.
+   */
+  currency?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -3586,6 +3641,14 @@ export interface CampaignIndexDoc {
    * ABSENT when the service never set one.
    */
   max_cpc_bid?: number;
+  /**
+   * `true` when campaign-service bound this campaign by adopting it rather than creating it
+   * (lfx-v2-campaign-service#366), ABSENT otherwise — never `false`. Absent also means "not
+   * recorded": a deployment before #366, or a campaign adopted before the marker existed on its
+   * platform. An adopted campaign can be paused from LFX One but never resumed (campaign-service
+   * refuses with 409 `reason: "campaign_adopted"`). The BFF keeps only a literal `true`.
+   */
+  adopted?: boolean;
 }
 
 /**
@@ -3622,6 +3685,15 @@ export interface CampaignRow {
    * has not seen falls into it rather than into a doomed button.
    */
   action: CampaignToggleAction;
+  /**
+   * The row offers Resume, but the campaign was ADOPTED (`campaign.adopted === true`), which
+   * campaign-service never resumes. The button stays labelled Resume and focusable, rendered
+   * `aria-disabled` with `resumeAdoptedReason` as its description, and a click does nothing.
+   * `action` stays `resume`: the campaign is paused, and Pause is not on offer.
+   */
+  resumeAdopted: boolean;
+  /** Why an adopted campaign cannot be resumed here, naming its platform — set when `resumeAdopted`, empty otherwise. */
+  resumeAdoptedReason: string;
   /**
    * Why the toggle is disabled — set for `unavailable` rows only, empty otherwise.
    *
@@ -3676,6 +3748,11 @@ export interface CampaignRow {
    * row's validator stale and only a refresh can replace it.
    */
   budgetBlockedReason: string;
+  /**
+   * The row's platform takes a DAILY budget only (X — `DAILY_ONLY_BUDGET_CAMPAIGN_PLATFORMS`), so
+   * its editor offers no lifetime pacing.
+   */
+  budgetDailyOnly: boolean;
   /**
    * Whether the row offers the bid editor: a platform campaign-service can write a manual max CPC
    * bid on (`BID_WRITABLE_CAMPAIGN_PLATFORMS`) and a campaign that exists on it. Whether the
@@ -4127,6 +4204,14 @@ export interface CampaignServiceCampaign {
   status: string;
   version: number;
   etag?: string;
+  /**
+   * `true` when campaign-service bound this campaign by adopting it rather than creating it
+   * (lfx-v2-campaign-service#366), ABSENT otherwise — never `false`. Absent also means "not
+   * recorded": a deployment before #366, or a campaign adopted before the marker existed on its
+   * platform. An adopted campaign can be paused from LFX One but never resumed (campaign-service
+   * refuses with 409 `reason: "campaign_adopted"`). The BFF keeps only a literal `true`.
+   */
+  adopted?: boolean;
 }
 
 export interface CampaignStatusUpdateResult {
@@ -4296,11 +4381,19 @@ export interface CampaignBudgetUpdateRequest {
    */
   budget: number;
   budgetType: CampaignBudgetType;
+  /**
+   * The row's platform as the caller read it from the index. A HINT for the BFF's wording only — it
+   * is never sent upstream, which decides platform support from the row itself — used to explain an
+   * X refusal in X's terms (`CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE`). Optional: absent, every
+   * upstream message passes through unchanged.
+   */
+  platform?: CampaignPlatform;
 }
 
 /**
  * Everything needed to address and authorize one budget change, as the server client takes it.
- * Every field is required. A wrong one is a 404, 428 or 412 upstream rather than a type error.
+ * Every field but `platform` is required. A wrong one is a 404, 428 or 412 upstream rather than a
+ * type error.
  */
 export interface CampaignBudgetUpdateParams {
   projectSlug: string;
@@ -4310,7 +4403,17 @@ export interface CampaignBudgetUpdateParams {
   budgetType: CampaignBudgetType;
   /** The etag read WITH the campaign, not one cached from an earlier render. */
   etag: string;
+  /** The row's platform, forwarded to the BFF as `CampaignBudgetUpdateRequest.platform`. Never sent to campaign-service. */
+  platform?: CampaignPlatform;
 }
+
+/**
+ * What the Optimize tab knows about a daily-only platform's CURRENT budget pacing, from the
+ * campaign's live settings readback: `pending` while that read is out, `daily` or `lifetime` once
+ * the platform reported one, and `unknown` when it reported neither or the read failed — in which
+ * case the editor stays usable and upstream remains the authority.
+ */
+export type CampaignBudgetPacingRead = 'pending' | 'daily' | 'lifetime' | 'unknown';
 
 export interface CampaignBudgetUpdateResult {
   /**

@@ -10,13 +10,18 @@ import {
   CAMPAIGN_BID_CONFLICT_MESSAGE,
   CAMPAIGN_BID_OUTCOME_UNCONFIRMED,
   CAMPAIGN_BID_UNAVAILABLE_PLATFORM_REASON,
+  CAMPAIGN_BUDGET_BLOCKED_PACING_CHECK_REASON,
   CAMPAIGN_BUDGET_CONFLICT_MESSAGE,
   CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED,
   CAMPAIGN_BUDGET_UNAVAILABLE_PLATFORM_REASON,
   CAMPAIGN_BUDGET_UNAVAILABLE_UNPROVISIONED_REASON,
+  CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE,
+  CAMPAIGN_BUDGET_X_LIFETIME_REASON,
   CAMPAIGN_FINDING_ALREADY_PAUSED_REASON,
+  CAMPAIGN_RESUME_REFUSED_CODE,
   CAMPAIGN_TOGGLE_FAILURE_MESSAGES,
   CAMPAIGN_TOGGLE_UNCONFIRMED_MESSAGES,
+  CAMPAIGN_UNAVAILABLE_RESUME_PLATFORM_REASON,
   META_AD_SET_BLOCKED_STALE_REASON,
   META_AD_SET_CONFLICT_MESSAGE,
   META_AD_SET_DELIBERATE_PAUSE_ADVICE,
@@ -27,6 +32,10 @@ import {
   META_AD_SET_STATUS_UNCONFIRMED_CODE,
   META_AD_SET_UNCONFIRMED_MESSAGE,
   META_AD_SETS_UNAVAILABLE_UNPROVISIONED_REASON,
+  CAMPAIGN_RESUME_REFUSED_ADOPTED_CODE,
+  campaignResumeAdoptedReason,
+  campaignResumeRefusedAdoptedMessage,
+  campaignResumeRefusedMessage,
 } from '@lfx-one/shared/constants';
 import {
   BriefMetrics,
@@ -38,6 +47,7 @@ import {
   CampaignRow,
   CampaignServiceMetaAdSet,
   CampaignServiceMetaAdSets,
+  CampaignServiceSettingsReadback,
   CampaignStatusUpdateResult,
 } from '@lfx-one/shared/interfaces';
 import { CampaignKeywordTargetingService } from '@services/campaign-keyword-targeting.service';
@@ -461,6 +471,7 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     [500, 'created', 'Could not pause this campaign. It is still running — try again.'],
     [409, 'created', 'Could not pause this campaign. It is still running — try again.'],
     [500, 'paused', 'Could not resume this campaign. It is still paused — try again.'],
+    [409, 'paused', 'Could not resume this campaign. It is still paused — try again.'],
   ])('keeps the per-direction copy for a BFF %s failure on a %s campaign', (status, campaignStatus, expected) => {
     updateCampaignStatus.mockReturnValue(throwError(() => new HttpErrorResponse({ status, statusText: 'nope', error: { error: 'refused', code: 'X' } })));
     render([doc({ status: campaignStatus })]);
@@ -471,6 +482,98 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-error-c-1"]').textContent).toContain(expected);
     // And no conflict banner: nothing proved this list is stale.
     expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).toBeNull();
+  });
+
+  // campaign-service refuses ACTIVATE on every adopted campaign (409). The BFF re-codes that answer
+  // CAMPAIGN_RESUME_REFUSED with a message naming where to resume, which replaces the "try again"
+  // copy, which cannot help an adopted campaign. Branched on the code, so any other 409 keeps the per-direction copy.
+  it('shows the BFF message for a resume refused as CAMPAIGN_RESUME_REFUSED, not "try again"', () => {
+    const refusal = campaignResumeRefusedMessage('LinkedIn Ads', 'campaign is not fully provisioned');
+    updateCampaignStatus.mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 409, error: { error: refusal, code: CAMPAIGN_RESUME_REFUSED_CODE } }))
+    );
+    render([doc({ status: 'paused', platform: 'linkedin-ads' })]);
+
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+
+    const message = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-error-c-1"]').textContent;
+    expect(message).toContain(refusal);
+    expect(message).toContain('resume it in LinkedIn Ads itself');
+    expect(message).not.toContain('try again.');
+    // Still offering Resume, and no conflict banner: nothing proved this list is stale.
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').textContent).toContain('Resume');
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).toBeNull();
+  });
+
+  // The BFF's CAMPAIGN_RESUME_REFUSED_ADOPTED (campaign-service's 409 `reason: campaign_adopted`)
+  // replaces the "try again" copy the same way, with the unhedged message.
+  it('shows the BFF message for a resume refused as CAMPAIGN_RESUME_REFUSED_ADOPTED', () => {
+    const refusal = campaignResumeRefusedAdoptedMessage('Reddit Ads');
+    updateCampaignStatus.mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 409, error: { error: refusal, code: CAMPAIGN_RESUME_REFUSED_ADOPTED_CODE } }))
+    );
+    render([doc({ status: 'paused', platform: 'reddit-ads' })]);
+
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+
+    const message = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-error-c-1"]').textContent;
+    expect(message).toContain('This campaign was adopted from Reddit Ads');
+    expect(message).not.toContain('try again.');
+  });
+
+  describe('an adopted campaign', () => {
+    // campaign-service never resumes an adopted campaign (409 `campaign_adopted`), so a row it marks
+    // `adopted: true` withholds Resume up front: aria-disabled (still focusable), described, inert.
+    it('shows Resume aria-disabled and described, and a click sends nothing', () => {
+      render([doc({ status: 'paused', platform: 'linkedin-ads', adopted: true })]);
+
+      const button: HTMLButtonElement = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
+      const reason = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-resume-adopted-c-1"]');
+      expect(button.textContent).toContain('Resume');
+      expect(button.getAttribute('aria-disabled')).toBe('true');
+      expect(button.disabled).toBe(false);
+      expect(reason.textContent.trim()).toBe(campaignResumeAdoptedReason('LinkedIn Ads'));
+      expect(reason.textContent).toContain(
+        'This campaign was adopted from LinkedIn Ads, so LFX One can pause it but not resume it — resume it in LinkedIn Ads itself.'
+      );
+      expect(button.getAttribute('aria-describedby')?.split(' ')).toContain(reason.id);
+
+      button.click();
+      fixture.detectChanges();
+
+      expect(updateCampaignStatus).not.toHaveBeenCalled();
+      expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-error-c-1"]')).toBeNull();
+    });
+
+    it('keeps Pause available on a running adopted campaign', () => {
+      render([doc({ status: 'created', platform: 'linkedin-ads', adopted: true })]);
+
+      const button: HTMLButtonElement = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
+      expect(button.textContent).toContain('Pause');
+      expect(button.getAttribute('aria-disabled')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-resume-adopted-c-1"]')).toBeNull();
+
+      button.click();
+      fixture.detectChanges();
+
+      expect(updateCampaignStatus).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves Resume as today when adopted is absent', () => {
+      render([doc({ status: 'paused', platform: 'linkedin-ads' })]);
+
+      const button: HTMLButtonElement = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
+      expect(button.getAttribute('aria-disabled')).toBeNull();
+      expect(button.getAttribute('aria-describedby')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-resume-adopted-c-1"]')).toBeNull();
+
+      button.click();
+      fixture.detectChanges();
+
+      expect(updateCampaignStatus).toHaveBeenCalledTimes(1);
+    });
   });
 
   // A non-HTTP failure — a thrown TypeError, an rxjs error with no status — must not be mistaken
@@ -584,15 +687,11 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     expect(updateCampaignStatus).not.toHaveBeenCalled();
   });
 
-  // Platform, not just status. X is `disabled: true` in CAMPAIGN_PLATFORMS, so the BFF's
-  // CAMPAIGN_SERVICE_STATUS_PLATFORMS refuses it outright — a `created` row of X's is pausable
-  // UPSTREAM but not through this app, and status alone would enable a doomed button.
-  //
-  // Microsoft was the other example until LFXV2-3312 ENABLED it. `TOGGLEABLE_CAMPAIGN_PLATFORMS`
-  // is derived from the same `!p.disabled` flag, so Microsoft now belongs in the companion test
-  // below rather than here — keeping it in this list would have asserted the opposite of the
-  // shipped behaviour.
-  it.each(['twitter-ads'])('disables the toggle for the unsupported platform %s', (platform) => {
+  // Platform, not just status. A platform outside TOGGLEABLE_CAMPAIGN_PLATFORMS is refused by the
+  // BFF's CAMPAIGN_SERVICE_STATUS_PLATFORMS outright, so status alone would enable a doomed
+  // button. Every paid platform is toggleable now that adopted X campaigns are, so the subject is
+  // a platform string this app does not know.
+  it.each(['tiktok-ads'])('disables the toggle for the unsupported platform %s', (platform) => {
     render([doc({ platform, status: 'created' })]);
 
     const button = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
@@ -608,16 +707,40 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     expect(updateCampaignStatus).not.toHaveBeenCalled();
   });
 
-  // The other half of the derivation (LFXV2-3312): Microsoft is now an offered platform, so a
-  // `created` Microsoft row must be pausable from this tab. Re-adding `disabled: true` to the
-  // shared constant would silently strand the channel — selectable in Plan, unpausable here —
-  // and this fails if that happens.
-  it('enables the toggle for microsoft-ads, which this app now offers', () => {
-    render([doc({ platform: 'microsoft-ads', status: 'created' })]);
+  // Microsoft (LFXV2-3312) and X are offered for pause. X's CREATE stays disabled, but an adopted
+  // X campaign is live and spending, so the toggle is decoupled from the create flag: a `created`
+  // X row must be pausable from this tab.
+  it.each(['microsoft-ads', 'twitter-ads'])('enables the toggle for %s', (platform) => {
+    render([doc({ platform, status: 'created' })]);
 
     const button = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
     expect(button.disabled).toBe(false);
     expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-unavailable-c-1"]')).toBeNull();
+  });
+
+  it('offers Pause on a running X row and dispatches PAUSED', () => {
+    render([doc({ platform: 'twitter-ads', status: 'created' })]);
+
+    const button = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
+    expect(button.disabled).toBe(false);
+    expect(button.textContent).toContain('Pause');
+
+    button.click();
+    expect(updateCampaignStatus).toHaveBeenCalledWith(expect.objectContaining({ platform: 'twitter-ads', status: 'PAUSED' }));
+  });
+
+  // Upstream refuses ACTIVE on every adopted row with 409, and every X row is adopted while X
+  // create is off: Resume would be a dead control, so it is withheld with where to resume instead.
+  it('withholds Resume on a paused X row, with the reason, and dispatches nothing', () => {
+    render([doc({ platform: 'twitter-ads', status: 'paused' })]);
+
+    const button = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
+    expect(button.disabled).toBe(true);
+    const reason = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-unavailable-c-1"]');
+    expect(reason.textContent).toContain(CAMPAIGN_UNAVAILABLE_RESUME_PLATFORM_REASON);
+
+    button.click();
+    expect(updateCampaignStatus).not.toHaveBeenCalled();
   });
 
   // The platform guard must not swallow the platforms this app DOES offer — the mutation that
@@ -2455,7 +2578,19 @@ describe('OptimizationTabComponent — budget change (#3299)', () => {
   let fixture: ComponentFixture<OptimizationTabComponent>;
   let updateCampaignBudget: ReturnType<typeof vi.fn>;
   let updateCampaignStatus: ReturnType<typeof vi.fn>;
+  let getCampaignSettings: ReturnType<typeof vi.fn>;
   let messageAdd: ReturnType<typeof vi.fn>;
+
+  /** A live settings readback whose upstream `budget_type` is `pacing` (absent when undefined). */
+  const settingsWith = (pacing?: string): CampaignServiceSettingsReadback => ({
+    campaign_id: 'c-1',
+    platform_campaign_id: '1234567890',
+    platform: 'twitter-ads',
+    read_at: '2026-10-15T10:00:00Z',
+    fields: [{ field: 'budget_type', ...(pacing === undefined ? {} : { upstream: pacing }), comparison: 'unknown' }],
+    diverged_count: 0,
+    unknown_count: 1,
+  });
 
   const doc = (over: Partial<CampaignIndexDoc> = {}): CampaignIndexDoc => ({
     id: 'c-1',
@@ -2482,6 +2617,7 @@ describe('OptimizationTabComponent — budget change (#3299)', () => {
 
   beforeEach(async () => {
     updateCampaignBudget = vi.fn().mockReturnValue(of(budgetResult()));
+    getCampaignSettings = vi.fn().mockReturnValue(of(settingsWith('daily')));
     updateCampaignStatus = vi
       .fn()
       .mockReturnValue(of({ platform: 'google-ads', campaignId: 'c-1', newStatus: 'PAUSED', success: true, serviceStatus: 'paused', etag: '"5"' }));
@@ -2497,6 +2633,7 @@ describe('OptimizationTabComponent — budget change (#3299)', () => {
           useValue: {
             updateCampaignBudget,
             updateCampaignStatus,
+            getCampaignSettings,
             getMonitorData: vi.fn().mockReturnValue(of(null)),
             getKeywords: vi.fn().mockReturnValue(of({ keywords: [] })),
             getMicrosoftKeywords: vi.fn().mockReturnValue(of(null)),
@@ -2558,11 +2695,12 @@ describe('OptimizationTabComponent — budget change (#3299)', () => {
     submit(id);
   }
 
-  it.each(['google-ads', 'linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads'])('offers the budget editor for %s', (platform) => {
+  it.each(['google-ads', 'linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads', 'twitter-ads'])('offers the budget editor for %s', (platform) => {
     render([doc({ platform })]);
 
     const button = q('optimization-campaign-budget-edit-c-1') as HTMLButtonElement;
     expect(button.disabled).toBe(false);
+    expect(button.getAttribute('aria-disabled')).toBeNull();
     expect(button.getAttribute('aria-label')).toBe('Change budget for KubeCon EU');
     expect(button.getAttribute('aria-expanded')).toBe('false');
     expect(q('optimization-campaign-budget-unavailable-c-1')).toBeNull();
@@ -2576,18 +2714,25 @@ describe('OptimizationTabComponent — budget change (#3299)', () => {
   });
 
   it('withholds the editor, with its reason, for a platform without budget-write support', () => {
-    render([doc({ platform: 'twitter-ads' })]);
+    render([doc({ platform: 'hubspot' })]);
 
+    // aria-disabled, not disabled: it stays focusable, and a click opens nothing.
     const button = q('optimization-campaign-budget-edit-c-1') as HTMLButtonElement;
-    expect(button.disabled).toBe(true);
+    expect(button.disabled).toBe(false);
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    expect(button.getAttribute('aria-expanded')).toBeNull();
     expect(button.getAttribute('aria-describedby')).toBe('campaign-budget-unavailable-c-1');
     expect(q('optimization-campaign-budget-unavailable-c-1')!.textContent).toContain(CAMPAIGN_BUDGET_UNAVAILABLE_PLATFORM_REASON);
+
+    button.click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('#campaign-budget-panel-c-1')).toBeNull();
   });
 
   it('withholds the editor for a campaign that was never created on its platform', () => {
     render([doc({ platform_campaign_id: undefined })]);
 
-    expect((q('optimization-campaign-budget-edit-c-1') as HTMLButtonElement).disabled).toBe(true);
+    expect(q('optimization-campaign-budget-edit-c-1')!.getAttribute('aria-disabled')).toBe('true');
     expect(q('optimization-campaign-budget-unavailable-c-1')!.textContent).toContain(CAMPAIGN_BUDGET_UNAVAILABLE_UNPROVISIONED_REASON);
   });
 
@@ -2599,6 +2744,7 @@ describe('OptimizationTabComponent — budget change (#3299)', () => {
 
     expect((q('optimization-campaign-toggle-c-1') as HTMLButtonElement).disabled).toBe(true);
     expect((q('optimization-campaign-budget-edit-c-1') as HTMLButtonElement).disabled).toBe(false);
+    expect(q('optimization-campaign-budget-edit-c-1')!.getAttribute('aria-disabled')).toBeNull();
   });
 
   it.each([
@@ -2654,6 +2800,165 @@ describe('OptimizationTabComponent — budget change (#3299)', () => {
       budget: 1234.567,
       budgetType: 'lifetime',
       etag: '"9"',
+      platform: 'google-ads',
+    });
+  });
+
+  // Only a daily-only platform needs its pacing read; every other one takes either pacing.
+  it('does not read live settings for a platform that takes either pacing', () => {
+    render([doc()]);
+    openEditor();
+
+    expect(getCampaignSettings).not.toHaveBeenCalled();
+    expect(budgetForm().dailyOnly()).toBe(false);
+  });
+
+  /**
+   * X (#3299): campaign-service writes X budgets as a daily amount only and refuses `lifetime` with
+   * 409, so the editor offers Daily alone and a lifetime-budgeted campaign is told so up front.
+   */
+  describe('X (daily only)', () => {
+    const xDoc = (over: Partial<CampaignIndexDoc> = {}): CampaignIndexDoc => doc({ platform: 'twitter-ads', ...over });
+
+    it('reads the live pacing when the editor opens and offers Daily alone, pre-selected', () => {
+      render([xDoc()]);
+      openEditor();
+
+      expect(getCampaignSettings).toHaveBeenCalledWith('tlf', 'b-1', 'c-1');
+      expect(budgetForm().dailyOnly()).toBe(true);
+      expect(budgetForm().form.controls.budgetType.value).toBe('daily');
+      expect(fixture.nativeElement.querySelector('#campaign-budget-type-c-1-lifetime')).toBeNull();
+    });
+
+    it('sends a daily change with the X platform hint', () => {
+      render([xDoc()]);
+      openEditor();
+      typeAmount('40');
+      submit();
+
+      expect(updateCampaignBudget).toHaveBeenCalledWith(expect.objectContaining({ budget: 40, budgetType: 'daily', platform: 'twitter-ads' }));
+    });
+
+    // A pure read: leaving the tab cancels it rather than letting it write after teardown.
+    it('cancels an in-flight pacing read when the Optimize tab is destroyed', () => {
+      const inFlight = new Subject<CampaignServiceSettingsReadback>();
+      getCampaignSettings.mockReturnValue(inFlight.asObservable());
+      render([xDoc()]);
+      openEditor();
+      expect(inFlight.observed).toBe(true);
+
+      fixture.destroy();
+
+      expect(inFlight.observed).toBe(false);
+    });
+
+    it('cannot submit while the pacing read is out', () => {
+      getCampaignSettings.mockReturnValue(NEVER);
+      render([xDoc()]);
+      openEditor();
+      typeAmount('40');
+      submit();
+
+      expect(updateCampaignBudget).not.toHaveBeenCalled();
+      expect(q('optimization-campaign-budget-blocked-c-1')!.textContent).toContain(CAMPAIGN_BUDGET_BLOCKED_PACING_CHECK_REASON);
+    });
+
+    it('withholds the lever, with its reason, for a lifetime-budgeted campaign rather than letting a 409 happen', () => {
+      getCampaignSettings.mockReturnValue(of(settingsWith('lifetime')));
+      render([xDoc()]);
+      openEditor();
+      typeAmount('40');
+      submit();
+
+      expect(updateCampaignBudget).not.toHaveBeenCalled();
+      expect(q('optimization-campaign-budget-blocked-c-1')!.textContent).toContain(CAMPAIGN_BUDGET_X_LIFETIME_REASON);
+      expect(q('optimization-campaign-budget-unavailable-c-1')!.textContent).toContain(CAMPAIGN_BUDGET_X_LIFETIME_REASON);
+
+      // Still closable from its disclosure, then aria-disabled (still focusable) with the reason described.
+      const button = q('optimization-campaign-budget-edit-c-1') as HTMLButtonElement;
+      expect(button.disabled).toBe(false);
+      expect(button.getAttribute('aria-disabled')).toBeNull();
+      button.click();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('#campaign-budget-panel-c-1')).toBeNull();
+      expect(button.disabled).toBe(false);
+      expect(button.getAttribute('aria-disabled')).toBe('true');
+      expect(button.getAttribute('aria-describedby')).toBe('campaign-budget-unavailable-c-1');
+
+      // And it stays shut: a click on the unavailable disclosure opens nothing.
+      button.click();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('#campaign-budget-panel-c-1')).toBeNull();
+
+      // Known for the session: not read again.
+      expect(getCampaignSettings).toHaveBeenCalledTimes(1);
+    });
+
+    // Cancel hands focus back to the disclosure; were the now-unavailable disclosure `disabled`, it would be lost.
+    it('returns focus to the disclosure when Cancel closes an editor the pacing read made unavailable', () => {
+      getCampaignSettings.mockReturnValue(of(settingsWith('lifetime')));
+      render([xDoc()]);
+      openEditor();
+      const cancel = q('optimization-campaign-budget-cancel-c-1')!.querySelector('button') as HTMLButtonElement;
+      cancel.focus();
+      cancel.click();
+      fixture.detectChanges();
+
+      const disclosure = q('optimization-campaign-budget-edit-c-1') as HTMLButtonElement;
+      expect(fixture.nativeElement.querySelector('#campaign-budget-panel-c-1')).toBeNull();
+      expect(disclosure.getAttribute('aria-disabled')).toBe('true');
+      expect(document.activeElement).toBe(disclosure);
+    });
+
+    // A failed read or an unreported pacing does not block: upstream stays the authority.
+    it.each([
+      ['a failed read', () => throwError(() => new HttpErrorResponse({ status: 503, statusText: 'x' }))],
+      ['an unreported pacing', () => of(settingsWith())],
+    ])('lets a daily change through after %s, and reads again on the next opening', (_label, answer) => {
+      getCampaignSettings.mockImplementation(answer);
+      render([xDoc()]);
+      openEditor();
+      typeAmount('40');
+      submit();
+
+      expect(updateCampaignBudget).toHaveBeenCalledWith(expect.objectContaining({ budgetType: 'daily', platform: 'twitter-ads' }));
+      openEditor();
+      expect(getCampaignSettings).toHaveBeenCalledTimes(2);
+    });
+
+    // A read that answers after a project/brief switch belongs to the abandoned context.
+    it('drops a pacing read that answers after the context changed, and reads again in the new one', () => {
+      const late = new Subject<CampaignServiceSettingsReadback>();
+      getCampaignSettings.mockReturnValue(late.asObservable());
+      render([xDoc()]);
+      openEditor();
+
+      fixture.componentRef.setInput('briefId', 'b-2');
+      fixture.detectChanges();
+      late.next(settingsWith('lifetime'));
+      late.complete();
+      fixture.detectChanges();
+
+      const button = q('optimization-campaign-budget-edit-c-1') as HTMLButtonElement;
+      expect(button.disabled).toBe(false);
+      expect(q('optimization-campaign-budget-unavailable-c-1')).toBeNull();
+
+      getCampaignSettings.mockReturnValue(of(settingsWith('daily')));
+      openEditor();
+      expect(getCampaignSettings).toHaveBeenCalledTimes(2);
+      expect(getCampaignSettings).toHaveBeenLastCalledWith('tlf', 'b-2', 'c-1');
+    });
+
+    it("shows the BFF's X explanation of a 409 in full", () => {
+      updateCampaignBudget.mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 409, statusText: 'x', error: { error: CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE, code: 'CONFLICT' } }))
+      );
+      render([xDoc()]);
+      openEditor();
+      typeAmount('40');
+      submit();
+
+      expect(q('optimization-campaign-budget-error-c-1')!.textContent!.trim()).toBe(CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE);
     });
   });
 
@@ -3063,15 +3368,8 @@ describe('OptimizationTabComponent — monitor findings and their levers', () =>
     expect(q('optimization-finding-no-lever-c-1-paused_should_run')).not.toBeNull();
   });
 
-  // X has no budget write; offering the editor would invite a change upstream refuses.
-  it('offers no budget lever on an X campaign', async () => {
-    await render([doc({ platform: 'twitter-ads' })], [item({ platform: 'twitter-ads' })]);
-
-    expect(lever('c-1-underspending')).toBeNull();
-    expect(q('optimization-finding-no-lever-c-1-underspending')).not.toBeNull();
-  });
-
-  it.each(['linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads'])('offers the budget lever on %s', async (platform) => {
+  // X budgets are writable (daily only) since #3299, so its findings get the lever too.
+  it.each(['linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads', 'twitter-ads'])('offers the budget lever on %s', async (platform) => {
     await render([doc({ platform })], [item({ platform })]);
 
     expect(lever('c-1-underspending')).not.toBeNull();
