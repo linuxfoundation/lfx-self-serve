@@ -2189,6 +2189,19 @@ export interface CampaignPlatformResult {
 }
 
 /**
+ * What the UI makes of one failed platform's `error` (see `describeCampaignDispatchFailure`).
+ *
+ * `message` is the backend sentence to show, with the `(reason: <token>)` fragment removed when
+ * `nextStep` replaces it. `nothingCreated` is true only for the fixed pre-create sentence endings
+ * in `CAMPAIGN_DISPATCH_NOTHING_CREATED_SUFFIXES`.
+ */
+export interface CampaignDispatchFailureDescription {
+  message: string;
+  nextStep: string | null;
+  nothingCreated: boolean;
+}
+
+/**
  * What a finished creation job left behind, normalized across both sources.
  *
  * `campaigns` is populated by the vendor-direct path and `platformResults` by the
@@ -3713,6 +3726,11 @@ export interface CampaignRow {
    */
   budgetBlockedReason: string;
   /**
+   * The row's platform takes a DAILY budget only (X — `DAILY_ONLY_BUDGET_CAMPAIGN_PLATFORMS`), so
+   * its editor offers no lifetime pacing.
+   */
+  budgetDailyOnly: boolean;
+  /**
    * Whether the row offers the bid editor: a platform campaign-service can write a manual max CPC
    * bid on (`BID_WRITABLE_CAMPAIGN_PLATFORMS`) and a campaign that exists on it. Whether the
    * campaign's bid STRATEGY takes a manual bid is only known upstream, which refuses with 409.
@@ -4332,11 +4350,19 @@ export interface CampaignBudgetUpdateRequest {
    */
   budget: number;
   budgetType: CampaignBudgetType;
+  /**
+   * The row's platform as the caller read it from the index. A HINT for the BFF's wording only — it
+   * is never sent upstream, which decides platform support from the row itself — used to explain an
+   * X refusal in X's terms (`CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE`). Optional: absent, every
+   * upstream message passes through unchanged.
+   */
+  platform?: CampaignPlatform;
 }
 
 /**
  * Everything needed to address and authorize one budget change, as the server client takes it.
- * Every field is required. A wrong one is a 404, 428 or 412 upstream rather than a type error.
+ * Every field but `platform` is required. A wrong one is a 404, 428 or 412 upstream rather than a
+ * type error.
  */
 export interface CampaignBudgetUpdateParams {
   projectSlug: string;
@@ -4346,7 +4372,17 @@ export interface CampaignBudgetUpdateParams {
   budgetType: CampaignBudgetType;
   /** The etag read WITH the campaign, not one cached from an earlier render. */
   etag: string;
+  /** The row's platform, forwarded to the BFF as `CampaignBudgetUpdateRequest.platform`. Never sent to campaign-service. */
+  platform?: CampaignPlatform;
 }
+
+/**
+ * What the Optimize tab knows about a daily-only platform's CURRENT budget pacing, from the
+ * campaign's live settings readback: `pending` while that read is out, `daily` or `lifetime` once
+ * the platform reported one, and `unknown` when it reported neither or the read failed — in which
+ * case the editor stays usable and upstream remains the authority.
+ */
+export type CampaignBudgetPacingRead = 'pending' | 'daily' | 'lifetime' | 'unknown';
 
 export interface CampaignBudgetUpdateResult {
   /**

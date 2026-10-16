@@ -18,10 +18,12 @@ import {
   CAMPAIGN_BID_BLOCKED_STALE_REASON,
   CAMPAIGN_BID_UNAVAILABLE_PLATFORM_REASON,
   CAMPAIGN_BID_UNAVAILABLE_UNPROVISIONED_REASON,
+  CAMPAIGN_BUDGET_BLOCKED_PACING_CHECK_REASON,
   CAMPAIGN_BUDGET_BLOCKED_STALE_REASON,
   CAMPAIGN_BUDGET_BLOCKED_TOGGLE_REASON,
   CAMPAIGN_BUDGET_UNAVAILABLE_PLATFORM_REASON,
   CAMPAIGN_BUDGET_UNAVAILABLE_UNPROVISIONED_REASON,
+  CAMPAIGN_BUDGET_X_LIFETIME_REASON,
   CAMPAIGN_ETAG_STALE_MESSAGE,
   CAMPAIGN_PLATFORMS,
   CAMPAIGN_TOGGLE_DONE_VERBS,
@@ -45,6 +47,7 @@ import type {
   CampaignBidOutcome,
   CampaignBudgetChange,
   CampaignBudgetOutcome,
+  CampaignBudgetPacingRead,
   CampaignPlatform,
   CampaignServiceCampaign,
   CampaignServiceCampaignRef,
@@ -54,11 +57,12 @@ import { readCampaignRefResolution } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
 import { campaignBidFailureOutcome } from '@shared/utils/campaign-bid-error.utils';
 import { campaignBudgetFailureOutcome } from '@shared/utils/campaign-budget-error.utils';
+import { isDailyOnlyBudgetPlatform, readCampaignBudgetPacing } from '@shared/utils/campaign-budget-pacing.utils';
 import { campaignActResolveErrorMessage } from '@shared/utils/campaign-optimize-error.utils';
 import { classifyCampaignWriteFailure } from '@shared/utils/campaign-write-error.utils';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { take } from 'rxjs';
+import { type Subscription, take } from 'rxjs';
 
 import { CampaignBidFormComponent } from '../campaign-bid-form/campaign-bid-form.component';
 import { CampaignBudgetFormComponent } from '../campaign-budget-form/campaign-budget-form.component';
@@ -110,6 +114,14 @@ export class CampaignActDialogComponent {
   protected readonly bidOutcome = signal<CampaignBidOutcome | null>(null);
   protected readonly confirmedBudget = signal<CampaignBudgetChange | null>(null);
   protected readonly confirmedBid = signal<CampaignBidChange | null>(null);
+  /**
+   * The CURRENT budget pacing of a daily-only-platform campaign (X), read from its live settings
+   * with the Optimize tab's helper when the budget lever's row loads; `null` for any other platform.
+   * X takes daily budget changes only, so a lifetime-budgeted X campaign is told so up front.
+   */
+  protected readonly budgetPacing = signal<CampaignBudgetPacingRead | null>(null);
+  /** The budget form offers Daily alone for a daily-only platform: upstream refuses `lifetime` with 409. */
+  protected readonly budgetDailyOnly = computed(() => isDailyOnlyBudgetPlatform(this.record()?.platform));
 
   protected readonly unownedMessage = CAMPAIGN_ACT_UNOWNED_MESSAGE;
   protected readonly ambiguousMessage = CAMPAIGN_ACT_AMBIGUOUS_MESSAGE;
@@ -127,20 +139,27 @@ export class CampaignActDialogComponent {
     }
     return this.data.platform === 'meta-ads' ? [CAMPAIGN_ACT_RESUME_ADOPTED_NOTE, CAMPAIGN_ACT_META_RESUME_NOTE] : [CAMPAIGN_ACT_RESUME_ADOPTED_NOTE];
   });
-  protected readonly budgetUnavailableReason: Signal<string> = computed(() =>
-    this.leverUnavailableReason(
-      BUDGET_WRITABLE_CAMPAIGN_PLATFORMS,
-      CAMPAIGN_BUDGET_UNAVAILABLE_PLATFORM_REASON,
-      CAMPAIGN_BUDGET_UNAVAILABLE_UNPROVISIONED_REASON
-    )
+  protected readonly budgetUnavailableReason: Signal<string> = computed(
+    () =>
+      this.leverUnavailableReason(
+        BUDGET_WRITABLE_CAMPAIGN_PLATFORMS,
+        CAMPAIGN_BUDGET_UNAVAILABLE_PLATFORM_REASON,
+        CAMPAIGN_BUDGET_UNAVAILABLE_UNPROVISIONED_REASON
+      ) || (this.budgetPacing() === 'lifetime' ? CAMPAIGN_BUDGET_X_LIFETIME_REASON : '')
   );
   protected readonly bidUnavailableReason: Signal<string> = computed(() =>
     this.leverUnavailableReason(BID_WRITABLE_CAMPAIGN_PLATFORMS, CAMPAIGN_BID_UNAVAILABLE_PLATFORM_REASON, CAMPAIGN_BID_UNAVAILABLE_UNPROVISIONED_REASON)
   );
-  protected readonly budgetBlockedReason = computed(() => this.blockedReason(CAMPAIGN_BUDGET_BLOCKED_STALE_REASON, CAMPAIGN_BUDGET_BLOCKED_TOGGLE_REASON));
+  protected readonly budgetBlockedReason = computed(
+    () =>
+      this.blockedReason(CAMPAIGN_BUDGET_BLOCKED_STALE_REASON, CAMPAIGN_BUDGET_BLOCKED_TOGGLE_REASON) ||
+      (this.budgetPacing() === 'pending' ? CAMPAIGN_BUDGET_BLOCKED_PACING_CHECK_REASON : '')
+  );
   protected readonly bidBlockedReason = computed(() => this.blockedReason(CAMPAIGN_BID_BLOCKED_STALE_REASON, CAMPAIGN_BID_BLOCKED_BUSY_REASON));
 
   private match: CampaignServiceCampaignRef | null = null;
+  /** The budget-pacing read in flight, dropped when a record reload starts a fresh one. */
+  private pacingRead: Subscription | null = null;
 
   public constructor() {
     this.resolve();
@@ -206,6 +225,7 @@ export class CampaignActDialogComponent {
           this.toggleOutcome.set(null);
           this.budgetOutcome.set(null);
           this.bidOutcome.set(null);
+          this.readBudgetPacing(result.campaign);
           this.state.set('ready');
         },
         error: () => {
@@ -277,7 +297,11 @@ export class CampaignActDialogComponent {
 
   protected changeBudget(change: CampaignBudgetChange): void {
     const campaign = this.record();
-    if (!campaign || this.pending() || this.conflicted() || this.budgetUnavailableReason() !== '') {
+    if (!campaign || this.pending() || this.conflicted() || this.budgetUnavailableReason() !== '' || this.budgetBlockedReason() !== '') {
+      return;
+    }
+    // Never a lifetime change on a daily-only platform: upstream always refuses it 409.
+    if (this.budgetDailyOnly() && change.budgetType !== 'daily') {
       return;
     }
     const etag = this.etagOrRefuse((message) => this.budgetOutcome.set({ state: 'failed', message }));
@@ -296,6 +320,9 @@ export class CampaignActDialogComponent {
         budget: change.budget,
         budgetType: change.budgetType,
         etag,
+        // A wording hint for the BFF only (an X refusal explained in X's terms); never sent upstream.
+        // `budgetUnavailableReason` already proved the platform is one of BUDGET_WRITABLE_CAMPAIGN_PLATFORMS.
+        platform: campaign.platform as CampaignPlatform,
       })
       .pipe(take(1))
       .subscribe({
@@ -357,6 +384,25 @@ export class CampaignActDialogComponent {
           this.recordFailure(campaignBidFailureOutcome(error), this.bidOutcome, name, 'Bid not changed');
         },
       });
+  }
+
+  /**
+   * Reads a daily-only-platform campaign's CURRENT budget pacing for the budget lever, through the
+   * Optimize tab's shared `readCampaignBudgetPacing`: while it is out the form cannot submit,
+   * `lifetime` withholds the form with its reason, and a failed or unreported read (`unknown`) does
+   * not block — upstream stays the authority. Read again on every record load (a reload follows a 412).
+   */
+  private readBudgetPacing(campaign: CampaignServiceCampaign): void {
+    this.pacingRead?.unsubscribe();
+    this.pacingRead = null;
+    if (this.data.lever !== 'budget' || !isDailyOnlyBudgetPlatform(campaign.platform)) {
+      this.budgetPacing.set(null);
+      return;
+    }
+    this.budgetPacing.set('pending');
+    this.pacingRead = readCampaignBudgetPacing(this.campaignService.getCampaignSettings(this.data.projectSlug, campaign.brief_id, campaign.id))
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((pacing) => this.budgetPacing.set(pacing));
   }
 
   /** The row's ETag, or `null` after reporting why no write can be sent without one (upstream 428). */

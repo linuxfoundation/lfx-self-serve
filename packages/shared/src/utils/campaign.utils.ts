@@ -3,7 +3,11 @@
 
 import {
   CAMPAIGN_ACTION_RULE_LEVERS,
+  CAMPAIGN_DISPATCH_CONNECTION_NOT_USABLE_PATTERN,
+  CAMPAIGN_DISPATCH_CONNECTION_REASON_NEXT_STEPS,
+  CAMPAIGN_DISPATCH_NOTHING_CREATED_SUFFIXES,
   CAMPAIGN_OPTIMIZE_LEVER_PLATFORMS,
+  CAMPAIGN_PLATFORMS,
   MAX_NEGATIVE_KEYWORD_TEXT_LENGTH,
   MAX_SPONSORS,
   MAX_SPONSOR_NAME_LENGTH,
@@ -11,6 +15,7 @@ import {
 } from '../constants/campaign.constants';
 import type {
   BriefMetricsActionRule,
+  CampaignDispatchFailureDescription,
   CampaignEventSponsor,
   CampaignOptimizeLever,
   KeywordActionPlatform,
@@ -64,9 +69,9 @@ export function campaignActionRuleLever(rule: unknown): CampaignOptimizeLever {
 /**
  * The lever that resolves a monitor finding on a campaign of `platform`, or `none`.
  *
- * `none` when the rule has no lever, and also when the platform cannot take it — X has no budget
- * write, and keyword actions are Google Ads and Microsoft Advertising only — so a finding never offers a control that would
- * refuse its campaign.
+ * `none` when the rule has no lever, and also when the platform cannot take it — X has no
+ * pause/resume here, and keyword actions are Google Ads and Microsoft Advertising only — so a
+ * finding never offers a control that would refuse its campaign.
  */
 export function campaignActionItemLever(rule: unknown, platform: unknown): CampaignOptimizeLever {
   const lever = campaignActionRuleLever(rule);
@@ -162,4 +167,38 @@ export function campaignEtagVersion(etag: string | null | undefined): number | n
   }
   const match = /^"(\d{1,15})"$/.exec(etag);
   return match ? Number(match[1]) : null;
+}
+
+/**
+ * Reads a campaign-service platform `error` (issue #208's `DispatchFailureMessage`) for display.
+ *
+ * Two things, both keyed on backend-fixed text only (see the constants' docs for why that text is
+ * safe to match and what happens when it drifts):
+ *
+ * - a project-connection sentence with a known reason token gets an operator next step, and its
+ *   `(reason: <token>)` fragment is dropped from `message` because the step replaces it; an
+ *   unknown token, or any other sentence, is returned verbatim with no step;
+ * - a sentence ending in one of the pre-create suffixes is flagged `nothingCreated`.
+ *
+ * `error` is only ever rendered as text by the caller, never as HTML.
+ */
+export function describeCampaignDispatchFailure(error: string): CampaignDispatchFailureDescription {
+  const nothingCreated = CAMPAIGN_DISPATCH_NOTHING_CREATED_SUFFIXES.some((suffix) => error.endsWith(suffix));
+  const match = CAMPAIGN_DISPATCH_CONNECTION_NOT_USABLE_PATTERN.exec(error);
+  if (!match) {
+    return { message: error, nextStep: null, nothingCreated };
+  }
+  const [, provider, token] = match;
+  const template = Object.prototype.hasOwnProperty.call(CAMPAIGN_DISPATCH_CONNECTION_REASON_NEXT_STEPS, token)
+    ? CAMPAIGN_DISPATCH_CONNECTION_REASON_NEXT_STEPS[token]
+    : undefined;
+  if (!template) {
+    return { message: error, nextStep: null, nothingCreated };
+  }
+  const label = CAMPAIGN_PLATFORMS.find((p) => p.id === provider)?.label ?? provider;
+  return {
+    message: error.replace(` (reason: ${token})`, ''),
+    nextStep: template.replace('{platform}', label),
+    nothingCreated,
+  };
 }

@@ -37,7 +37,7 @@
   <fieldset class="flex flex-col gap-1" [attr.aria-describedby]="typeDescribedBy()">
     <legend class="mb-1 text-xs font-medium text-gray-700" [id]="ids().typeLegend">Budget pacing</legend>
     <div class="flex items-center gap-4">
-      @for (option of budgetTypeOptions; track option.value) {
+      @for (option of budgetTypeOptions(); track option.value) {
         <lfx-radio-button
           [form]="form"
           control="budgetType"
@@ -48,8 +48,12 @@
           [attr.data-testid]="'optimization-campaign-budget-type-' + option.value + '-' + campaignId()" />
       }
     </div>
-    <p class="text-xs text-gray-500" [id]="ids().typeHint">
-      Must match the pacing the campaign already uses in the ad platform. This changes the amount only; a different pacing is refused.
+    <p class="text-xs text-gray-500" [id]="ids().typeHint" [attr.data-testid]="'optimization-campaign-budget-type-hint-' + campaignId()">
+      @if (dailyOnly()) {
+        This platform's budget can be changed here as a daily amount only. A lifetime (total) budget has to be changed in the ad platform.
+      } @else {
+        Must match the pacing the campaign already uses in the ad platform. This changes the amount only; a different pacing is refused.
+      }
     </p>
     @if (budgetTypeMissing()) {
       <p class="text-xs text-red-600" [id]="ids().typeError" [attr.data-testid]="'optimization-campaign-budget-type-error-' + campaignId()">
@@ -87,9 +91,19 @@
     }
   }
 
-  @if (visibleBlockedReason(); as reason) {
-    <p class="text-xs text-gray-600" [attr.data-testid]="'optimization-campaign-budget-blocked-' + campaignId()">{{ reason }}</p>
-  }
+  <!--
+    Always rendered, so the polite live region exists before its text changes: the X pacing read
+    lands after the editor opened (and after a finding moved focus to the amount), and a
+    lifetime-budgeted campaign must still be announced. Also in the amount's describedby.
+  -->
+  <p
+    class="text-xs text-gray-600"
+    role="status"
+    aria-live="polite"
+    [id]="ids().blocked"
+    [attr.data-testid]="'optimization-campaign-budget-blocked-' + campaignId()">
+    {{ visibleBlockedReason() }}
+  </p>
 
   <div class="flex items-center gap-2">
     <lfx-button

@@ -2077,9 +2077,10 @@ export const MICROSOFT_KEYWORDS_WINDOWS = ['today', 'last_7_days', 'last_30_days
  * The platforms whose campaign budget campaign-service can change (`update-campaign-budget`).
  *
  * Hand-listed rather than derived from `CAMPAIGN_PLATFORMS`, because budget writing is wired per
- * platform upstream and is a narrower capability than pause/resume: X has neither, and a platform
- * can be toggleable long before its budget model is. Upstream refuses any other platform with 400,
- * so the Optimize tab withholds the editor for them rather than offering a doomed form.
+ * platform upstream and is a separate capability from pause/resume: X has a budget writer but no
+ * status toggle here, and a platform can be toggleable long before its budget model is. Upstream
+ * refuses any other platform with 400, so the Optimize tab withholds the editor for them rather
+ * than offering a doomed form.
  */
 export const BUDGET_WRITABLE_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<string>([
   'google-ads',
@@ -2087,7 +2088,19 @@ export const BUDGET_WRITABLE_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<s
   'meta-ads',
   'microsoft-ads',
   'reddit-ads',
+  'twitter-ads',
 ]);
+
+/**
+ * The budget-writable platforms whose budget campaign-service writes as a DAILY amount only.
+ *
+ * X: `update-campaign-budget` writes only the campaign's `daily_budget_amount_local_micro`, and a
+ * `lifetime` request is always refused 409 — so the editor offers no lifetime pacing for these
+ * platforms, and a campaign read as lifetime-budgeted has its editor withheld instead. Applied by
+ * every surface that mounts the budget form (the Optimize tab and the Monitor act dialog) through
+ * `isDailyOnlyBudgetPlatform` / `readCampaignBudgetPacing` in `campaign-budget-pacing.utils`.
+ */
+export const DAILY_ONLY_BUDGET_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<string>(['twitter-ads']);
 
 /** The pacing choices the budget editor offers, in display order. Mirrors `VALID_CAMPAIGN_BUDGET_TYPES`. */
 export const CAMPAIGN_BUDGET_TYPE_OPTIONS: readonly CampaignBudgetTypeOption[] = [
@@ -2120,6 +2133,30 @@ export const CAMPAIGN_BUDGET_BLOCKED_TOGGLE_REASON = 'A pause or resume of this 
 
 /** Why the budget editor cannot submit while a bid change of the same row is in flight (both need the row's validator). */
 export const CAMPAIGN_BUDGET_BLOCKED_BID_REASON = 'A bid change of this campaign is still in progress. Change the budget once it finishes.';
+
+/** Why the budget editor cannot submit while it reads a daily-only campaign's current pacing from its platform. */
+export const CAMPAIGN_BUDGET_BLOCKED_PACING_CHECK_REASON = "Checking this campaign's current budget on X…";
+
+/**
+ * Why the budget editor is withheld for an X campaign the platform reports as lifetime-budgeted
+ * (a total budget with no daily one). LFX One writes only X daily budgets, and campaign-service
+ * refuses anything else with 409, so the operator is told where the change can be made instead.
+ */
+export const CAMPAIGN_BUDGET_X_LIFETIME_REASON =
+  'This X campaign has a lifetime (total) budget. LFX One can change only a daily X budget, so change this one in X Ads Manager.';
+
+/**
+ * The opening of campaign-service's 409 for a budget it cannot address for a write
+ * (`ErrBudgetUnwritable`, `internal/service/brief_budget.go`). Its sentence is platform-neutral and
+ * tells the operator to change the pacing — advice that does not apply to X, so the BFF replaces it
+ * for an X campaign with `CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE`. Matched as a prefix; any other 409
+ * (provenance, account mismatch) passes through unchanged.
+ */
+export const CAMPAIGN_SERVICE_BUDGET_UNWRITABLE_MESSAGE_PREFIX = "this campaign's budget could not be changed as requested";
+
+/** What an X budget change refused 409 as unwritable tells the operator, in place of the platform-neutral sentence. */
+export const CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE =
+  "This X campaign's budget can't be changed from LFX One. LFX One can change only the daily budget of an X campaign that uses campaign budget optimization and has no total (lifetime) budget cap. Change this campaign's budget in X Ads Manager.";
 
 /**
  * HTTP statuses that, when the response carries no message, mean nobody answered for a budget
@@ -2173,7 +2210,7 @@ export const KEYWORD_ACTION_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<st
 /**
  * Which platforms each lever works on. The SAME sets the row controls are gated on, so a finding
  * can never offer a lever whose control would refuse the platform: the budget editor's
- * `BUDGET_WRITABLE_CAMPAIGN_PLATFORMS` (X has no budget write) and the toggle's
+ * `BUDGET_WRITABLE_CAMPAIGN_PLATFORMS` (X included, daily only) and the toggle's
  * `TOGGLEABLE_CAMPAIGN_PLATFORMS`.
  */
 export const CAMPAIGN_OPTIMIZE_LEVER_PLATFORMS: Readonly<Record<CampaignOptimizeControlLever, ReadonlySet<string>>> = {
@@ -2195,7 +2232,7 @@ export const CAMPAIGN_OPTIMIZE_LEVER_LABELS: Readonly<Record<Exclude<CampaignOpt
  * it rather than offering a doomed form.
  *
  * Hand-listed for the reason `BUDGET_WRITABLE_CAMPAIGN_PLATFORMS` is: bid writing is wired per
- * platform upstream, and X has a bid write while it has no budget write or pause/resume here.
+ * platform upstream, and Google Ads has a budget write while it has no bid write here.
  */
 export const BID_WRITABLE_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<string>(['microsoft-ads', 'reddit-ads', 'meta-ads', 'twitter-ads', 'linkedin-ads']);
 
@@ -3626,3 +3663,77 @@ export const GOOGLE_ADS_BIDDING_BOUNDS = {
   targetCpa: { min: 0.01, max: 1_000_000 },
   targetRoas: { min: 0.01, max: 1000 },
 } as const;
+
+/**
+ * The one dispatch-failure sentence whose reason token this application turns into a next step:
+ * a PROJECT connection that exists but cannot be used. Mirrors the `ErrConnectionNotUsable` arm
+ * of `DispatchFailureMessage` (`internal/service/dispatch_failure.go` in
+ * lfx-v2-campaign-service, issue #208) completed by `reasonSuffix`:
+ * `this project's <provider> connection cannot be used as configured (reason: <token>); nothing was sent`.
+ *
+ * Anchored at both ends and the token restricted to `[a-z_]`, so only that fixed sentence
+ * matches. The backend builds it from a fixed format, its own provider name and a token from
+ * `unusableConnectionReason`'s fixed vocabulary (`internal/service/connection.go`) — never from
+ * upstream text — so nothing a platform said can reach the capture groups. The LF SYSTEM
+ * connection's sentence is deliberately not matched: that connection is not the project's to
+ * repair, so a project-level next step would send the operator to the wrong place.
+ */
+export const CAMPAIGN_DISPATCH_CONNECTION_NOT_USABLE_PATTERN =
+  /^this project's ([a-z][a-z-]*) connection cannot be used as configured \(reason: ([a-z_]+)\); nothing was sent$/;
+
+/**
+ * Operator next step per connection reason token, `{platform}` standing for the platform's label.
+ *
+ * Covers only the tokens whose remedy an operator can apply to the project connection. The
+ * service-side tokens (`token_request_rejected`, `account_discovery_rejected`, the `*_unwired`
+ * probes) and the ambiguous ones (`provider_config_invalid`, `application_credentials_invalid`)
+ * are left out on purpose: a missing entry renders the backend's sentence verbatim, which is the
+ * honest answer when this application has no remedy to offer.
+ *
+ * Every step is a handoff naming who can apply it: campaign users have no controls for project
+ * connections in this application, so each one reads "Ask an LFX administrator to …" — the same
+ * phrasing the Monitoring tab's connection notices use (`monitoring-tab.component.ts`).
+ */
+export const CAMPAIGN_DISPATCH_CONNECTION_REASON_NEXT_STEPS: Readonly<Record<string, string>> = {
+  account_not_selected: "Ask an LFX administrator to choose an ad account on this project's {platform} connection, then create again.",
+  connection_inactive: "Ask an LFX administrator to reactivate this project's {platform} connection, then create again.",
+  credentials_undecodable: "Ask an LFX administrator to reconnect this project's {platform} connection to save fresh credentials, then create again.",
+  credentials_incomplete: "Ask an LFX administrator to reconnect this project's {platform} connection to save fresh credentials, then create again.",
+  credential_blob_malformed: "Ask an LFX administrator to reconnect this project's {platform} connection to save fresh credentials, then create again.",
+  credentials_absent: "Ask an LFX administrator to reconnect this project's {platform} connection to save fresh credentials, then create again.",
+  credentials_expired: "Ask an LFX administrator to re-authorize this project's {platform} connection, then create again.",
+};
+
+/**
+ * Endings of the dispatch-failure sentences that campaign-service emits ONLY once it has proved
+ * nothing was created on the platform and released the claim (`preCreate` in
+ * `DispatchFailureMessage`, `internal/service/dispatch_failure.go` in lfx-v2-campaign-service).
+ * Each is the fixed tail of a `fmt.Sprintf` format whose only variables are the provider name, a
+ * reason token and an HTTP status number — never upstream text:
+ *
+ * - `; nothing was sent` — no project connection, undecryptable credentials, an unusable project
+ *   or LF system connection, a missing LF system connection;
+ * - `so nothing was sent; the connection may need re-authorizing` — a token refresh failure;
+ * - `; nothing was created` — the platform answered a non-2xx before anything was created;
+ * - `; the connection is not at fault` — a defect in campaign-service stopped the create before
+ *   anything was sent.
+ *
+ * The one verbatim text that arm can return, a service-authored pre-flight refusal, is likewise
+ * returned only on the `preCreate` path, so even a refusal that happened to end in one of these
+ * still describes a create that never happened. Every sentence for the opposite case (`preCreate`
+ * false) reads "could not be confirmed … verify on the platform before retrying" and matches none
+ * of them, and none of the orchestrator's other fixed `res.Error` strings does either.
+ *
+ * A match is a FACT (nothing was created), not advice: whether the operator can fix the cause is
+ * what `CAMPAIGN_DISPATCH_CONNECTION_REASON_NEXT_STEPS` answers, row by row.
+ *
+ * Text, not a field: the wire carries no machine-readable pre-create flag yet. A reworded
+ * backend sentence stops matching and the row falls back to "could not be confirmed" — the
+ * over-warning direction — so drift can never upgrade an unconfirmed row to "nothing created".
+ */
+export const CAMPAIGN_DISPATCH_NOTHING_CREATED_SUFFIXES: readonly string[] = [
+  '; nothing was sent',
+  'so nothing was sent; the connection may need re-authorizing',
+  '; nothing was created',
+  '; the connection is not at fault',
+];

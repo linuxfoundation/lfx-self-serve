@@ -393,19 +393,25 @@
                   <!--
                     Discloses the row's budget editor. A raw button like the toggle beside it, because it
                     needs `aria-controls` and `aria-describedby`, which the `lfx-button` wrapper does not
-                    forward to its inner button. Disabled, with its reason described, for a platform or
-                    campaign that cannot take a budget change; held open while a change is in flight.
+                    forward to its inner button. `aria-disabled` (not `disabled`), with its reason described,
+                    for a platform or campaign that cannot take a budget change, so it stays focusable:
+                    an editor that is open when the row turns unavailable (an X campaign read as
+                    lifetime-budgeted) is closed by Cancel, which hands focus back here, and a `disabled`
+                    button would drop it. `toggleBudgetEditor()` refuses to open an unavailable row, and
+                    an open one can still be closed from here. Truly disabled only while a change is in
+                    flight, which holds the editor open.
                   -->
                   <button
                     type="button"
                     (click)="toggleBudgetEditor(row)"
                     [id]="'campaign-budget-edit-' + row.campaign.id"
-                    [disabled]="!row.budgetAvailable || budgetPending()[row.campaign.id]"
-                    [attr.aria-expanded]="row.budgetAvailable ? !!budgetEditorOpen()[row.campaign.id] : null"
+                    [disabled]="budgetPending()[row.campaign.id]"
+                    [attr.aria-disabled]="!row.budgetAvailable && !budgetEditorOpen()[row.campaign.id] ? 'true' : null"
+                    [attr.aria-expanded]="row.budgetAvailable || budgetEditorOpen()[row.campaign.id] ? !!budgetEditorOpen()[row.campaign.id] : null"
                     [attr.aria-controls]="budgetEditorOpen()[row.campaign.id] ? 'campaign-budget-panel-' + row.campaign.id : null"
                     [attr.aria-describedby]="row.budgetAvailable ? null : 'campaign-budget-unavailable-' + row.campaign.id"
                     [attr.aria-label]="'Change budget for ' + row.campaign.campaign_name"
-                    class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
                     [attr.data-testid]="'optimization-campaign-budget-edit-' + row.campaign.id">
                     Change budget
                   </button>
@@ -517,8 +523,9 @@
                   [campaignName]="row.campaign.campaign_name"
                   [knownBudgetType]="confirmedBudget()[row.campaign.id]?.budgetType ?? null"
                   [initialBudget]="confirmedBudget()[row.campaign.id]?.budget ?? null"
+                  [dailyOnly]="row.budgetDailyOnly"
                   [pending]="!!budgetPending()[row.campaign.id]"
-                  [blockedReason]="row.budgetBlockedReason"
+                  [blockedReason]="row.budgetAvailable ? row.budgetBlockedReason : row.budgetUnavailableReason"
                   [outcome]="budgetOutcome()[row.campaign.id] ?? null"
                   (submitBudget)="changeCampaignBudget(row, $event)"
                   (cancelEdit)="cancelBudgetEditor(row.campaign.id)" />
