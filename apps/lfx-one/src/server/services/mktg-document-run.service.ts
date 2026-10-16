@@ -158,8 +158,8 @@ export class MktgDocumentRunService {
       has_receipt: !!result.persistence?.document,
     });
     if (result.status === 'failed') {
-      if (!projectUid) {
-        logger.warning(req, 'mktg_run_record_result', 'No validated project scope; returning the failure reply without recording it');
+      if (!projectUid || !MKTG_ARTIFACT_PARTITION_REGEX.test(projectUid)) {
+        logger.debug(req, 'mktg_run_record_result', 'No valid project scope; returning the failure reply without recording it');
         return;
       }
       // Failure tracking is best effort: revoked access or unavailable storage

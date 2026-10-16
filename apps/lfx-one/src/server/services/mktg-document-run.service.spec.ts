@@ -183,8 +183,24 @@ describe('MktgDocumentRunService', () => {
     await expect(service.recordResult(request, 'synthetic-session', { status: 'failed', failureText: 'Rejected.' })).resolves.toBeUndefined();
     expect(flows.getProjectById).not.toHaveBeenCalled();
     expect(io.get).not.toHaveBeenCalled();
-    expect(logs.warning).toHaveBeenCalled();
+    expect(logs.debug).toHaveBeenCalledWith(request, 'mktg_run_record_result', 'No valid project scope; returning the failure reply without recording it');
+    expect(logs.warning).not.toHaveBeenCalled();
   });
+
+  it.each(['', 'a/../b', 'x?y', 'nested/path', 'uid#fragment', 'x%2Fy', ' padded-uid', 'u'.repeat(65)])(
+    'rejects malformed failure scope before any authenticated project lookup: %s',
+    async (projectUid) => {
+      const result = { status: 'failed' as const, failureText: 'The agent rejected this run.' };
+      await expect(service.recordResult(req, 'synthetic-session', result, projectUid)).resolves.toBeUndefined();
+      expect(result).toEqual({ status: 'failed', failureText: 'The agent rejected this run.' });
+      expect(flows.getProjectById).not.toHaveBeenCalled();
+      expect(flows.getResult).not.toHaveBeenCalled();
+      expect(io.get).not.toHaveBeenCalled();
+      expect(io.put).not.toHaveBeenCalled();
+      expect(logs.warning).not.toHaveBeenCalled();
+      expect(logs.debug).toHaveBeenCalledWith(req, 'mktg_run_record_result', 'No valid project scope; returning the failure reply without recording it');
+    }
+  );
 
   it.each(['revoked', 'lookup', 'storage-read', 'storage-write'])(
     'keeps the terminal reply available when failure tracking is unavailable: %s',

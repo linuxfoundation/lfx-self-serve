@@ -542,8 +542,8 @@ export class MktgAgentsController {
    * Sends the requester's answers to the session's questions turn — one per
    * question, each accepted, edited or written from scratch; no skip, no TBD,
    * no empty — as the answers turn on the SAME session. Only the session's
-   * creator may answer (owner-token proof, like every session write). The
-   * run page polls the result again afterwards.
+   * creator may answer (owner-token proof, like every session write). After
+   * the answers are accepted, the document view takes over the result poll.
    */
   public async foundationMessageAnswers(req: Request, res: Response, next: NextFunction): Promise<void> {
     // Normalize a missing/null body so malformed requests get a 400, not a throw.

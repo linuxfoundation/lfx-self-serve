@@ -214,7 +214,8 @@ export class FoundationMessageService {
    * answer until the agent writes a newer block (or the envelope ends the
    * run). Only the agent's own text turns are read — never a tool result,
    * where a fetched page or a search hit could plant a block, and never a
-   * user event, which `getRawEventPayloads` drops anyway.
+   * user-message content, which `getRawEventPayloads` replaces with a
+   * content-free turn marker.
    */
   private findLatestQuestions(req: Request, payloads: string[]): MktgRunQuestion[] | null {
     let latest: MktgRunQuestion[] | null = null;
