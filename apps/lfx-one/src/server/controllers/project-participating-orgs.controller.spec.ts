@@ -4,13 +4,19 @@
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getSummary, getPage, getExportRows } = vi.hoisted(() => ({ getSummary: vi.fn(), getPage: vi.fn(), getExportRows: vi.fn() }));
+const { getSummary, getPage, getExportRows, getOrgLensReadableAccountIds } = vi.hoisted(() => ({
+  getSummary: vi.fn(),
+  getPage: vi.fn(),
+  getExportRows: vi.fn(),
+  getOrgLensReadableAccountIds: vi.fn(),
+}));
 
 vi.mock('../services/project-participating-orgs.service', () => ({
   ProjectParticipatingOrgsService: class {
     public getSummary = getSummary;
     public getPage = getPage;
     public getExportRows = getExportRows;
+    public getOrgLensReadableAccountIds = getOrgLensReadableAccountIds;
   },
 }));
 vi.mock('../services/logger.service', () => ({
@@ -23,6 +29,7 @@ vi.mock('@lfx-one/shared/utils', () => ({
 
 import {
   PROJECT_PARTICIPATING_ORGS_EXPORT_CSV_HEADER,
+  PROJECT_PARTICIPATING_ORGS_MAX_PAGE_SIZE,
   PROJECT_PARTICIPATING_ORGS_MAX_SEARCH_LENGTH,
   PROJECT_PARTICIPATING_ORGS_PAGE_SIZE,
 } from '@lfx-one/shared/constants';
@@ -32,7 +39,7 @@ import { ProjectParticipatingOrgsController } from './project-participating-orgs
 
 import type { ProjectParticipatingOrg } from '@lfx-one/shared/interfaces';
 
-type Handler = 'getSummary' | 'getList' | 'export';
+type Handler = 'getSummary' | 'getList' | 'getOrgLensLinks' | 'export';
 
 function buildRes() {
   const headers: Record<string, string> = {};
@@ -72,7 +79,6 @@ const member: ProjectParticipatingOrg = {
   contributors: 3,
   contributorsPrev: null,
   contributorsChange: null,
-  canOpenOrgLens: false,
 };
 
 describe('ProjectParticipatingOrgsController validation', () => {
@@ -126,6 +132,41 @@ describe('ProjectParticipatingOrgsController validation', () => {
       pageSize: 50,
       offset: 50,
     });
+  });
+});
+
+describe('ProjectParticipatingOrgsController.getOrgLensLinks', () => {
+  const A = '001SYNTHMEMBERAAAA';
+  const B = '001SYNTHMEMBERBBBB';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getOrgLensReadableAccountIds.mockResolvedValue([A]);
+  });
+
+  it.each([
+    ['missing', {}],
+    ['empty', { accountIds: '' }],
+    ['non-canonical (15-char)', { accountIds: '001SYNTHMEMBERAA' }],
+    ['repeated param', { accountIds: [A, B] }],
+    [
+      'over one max page',
+      { accountIds: Array.from({ length: PROJECT_PARTICIPATING_ORGS_MAX_PAGE_SIZE + 1 }, (_, i) => `001SYNTH${String(i).padStart(10, '0')}`).join(',') },
+    ],
+  ] as const)('rejects %s account ids with a 400', async (_label, query) => {
+    const { next } = await call('getOrgLensLinks', query);
+    const error = next.mock.calls[0][0];
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.validationErrors[0].field).toBe('accountIds');
+    expect(getOrgLensReadableAccountIds).not.toHaveBeenCalled();
+  });
+
+  it('dedupes the ids and answers the readable subset, uncacheable', async () => {
+    const { res } = await call('getOrgLensLinks', { accountIds: ` ${A},${B},${A}` });
+
+    expect(getOrgLensReadableAccountIds).toHaveBeenCalledWith(expect.anything(), [A, B]);
+    expect(res.json).toHaveBeenCalledWith({ readableAccountIds: [A] });
+    expect(res.headers['Cache-Control']).toBe('private, no-store');
   });
 });
 

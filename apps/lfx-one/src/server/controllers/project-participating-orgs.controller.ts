@@ -5,10 +5,12 @@ import {
   CONTRIBUTIONS_DATE_RANGE_OPTIONS,
   CONTRIBUTIONS_DEFAULT_DATE_RANGE,
   MEMBERSHIP_TIER_ORDER,
+  ORG_ACCOUNT_ID_PATTERN,
   PROJECT_PARTICIPATING_ORGS_DEFAULT_SORT,
   PROJECT_PARTICIPATING_ORGS_DEFAULT_SORT_DIR,
   PROJECT_PARTICIPATING_ORGS_EXPORT_CSV_HEADER,
   PROJECT_PARTICIPATING_ORGS_EXPORT_TRUNCATED_HEADER,
+  PROJECT_PARTICIPATING_ORGS_LINKS_ACCOUNT_IDS_PARAM,
   PROJECT_PARTICIPATING_ORGS_MAX_PAGE_SIZE,
   PROJECT_PARTICIPATING_ORGS_MAX_SEARCH_LENGTH,
   PROJECT_PARTICIPATING_ORGS_PAGE_SIZE,
@@ -80,6 +82,24 @@ export class ProjectParticipatingOrgsController {
         total: page.totalRecords,
       });
       res.json(page);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /api/projects/:slug/participating-orgs/org-lens-links?accountIds=a,b -> { readableAccountIds }, per caller
+  public async getOrgLensLinks(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'get_project_participating_orgs_org_lens_links';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      const accountIds = parseAccountIds(req, operation);
+      const readableAccountIds = await this.service.getOrgLensReadableAccountIds(req, accountIds);
+
+      logger.success(req, operation, startTime, { slug: req.params['slug'], requested: accountIds.length, readable: readableAccountIds.length });
+      // Per-caller answer: never let a shared cache keep it.
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.json({ readableAccountIds });
     } catch (error) {
       next(error);
     }
@@ -166,4 +186,20 @@ function parseFilters(req: Request, operation: string): ProjectParticipatingOrgs
     ...(search ? { search } : {}),
     ...(tier ? { tier } : {}),
   };
+}
+
+/** The member account ids of one shown page: comma-separated canonical ids, deduplicated, at most one max-size page. */
+function parseAccountIds(req: Request, operation: string): string[] {
+  const name = PROJECT_PARTICIPATING_ORGS_LINKS_ACCOUNT_IDS_PARAM;
+  const value = getStrictStringQueryParam(req, name, operation);
+  if (!value) throw ServiceValidationError.forField(name, `${name} is required`, { operation });
+
+  const accountIds = [...new Set(value.split(',').map((id) => id.trim()))];
+  if (accountIds.length > PROJECT_PARTICIPATING_ORGS_MAX_PAGE_SIZE) {
+    throw ServiceValidationError.forField(name, `${name} must list at most ${PROJECT_PARTICIPATING_ORGS_MAX_PAGE_SIZE} ids`, { operation });
+  }
+  if (accountIds.some((id) => !ORG_ACCOUNT_ID_PATTERN.test(id))) {
+    throw ServiceValidationError.forField(name, `${name} must be canonical organization account ids`, { operation });
+  }
+  return accountIds;
 }

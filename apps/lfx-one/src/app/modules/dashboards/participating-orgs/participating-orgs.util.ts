@@ -16,12 +16,18 @@ import type {
 import { orgUrlSegment } from '@lfx-one/shared/utils';
 
 /**
- * Decorate a wire row for the table. Only a member the viewer can open in Org Lens gets a link — to the company's
- * membership page for this project's parent foundation; it falls back to the no-access hint when either half of the
- * address is missing, so a link is never built to a page that cannot resolve.
+ * Decorate a wire row for the table. Only a member the viewer can open in Org Lens (`readableAccountIds`) gets a
+ * link — to the company's membership page for this project's parent foundation; it falls back to the no-access hint
+ * when either half of the address is missing, so a link is never built to a page that cannot resolve. While the
+ * viewer's access is still loading (`readableAccountIds` null) a member name renders plain, with no hint yet.
  */
-export function decorateParticipatingOrgRow(row: ProjectParticipatingOrg, foundationSlug: string | null): ProjectParticipatingOrgRowVm {
-  const segment = row.isMember && row.canOpenOrgLens && foundationSlug ? orgUrlSegment({ uid: row.accountId }) : null;
+export function decorateParticipatingOrgRow(
+  row: ProjectParticipatingOrg,
+  foundationSlug: string | null,
+  readableAccountIds: ReadonlySet<string> | null
+): ProjectParticipatingOrgRowVm {
+  const readable = row.isMember && row.accountId !== null && !!readableAccountIds?.has(row.accountId);
+  const segment = readable && foundationSlug ? orgUrlSegment({ uid: row.accountId }) : null;
   const orgLensLink = segment && foundationSlug ? ['/org', segment, 'memberships', foundationSlug] : null;
   const tier = row.isMember ? row.membershipTierClass : null;
   return {
@@ -29,7 +35,7 @@ export function decorateParticipatingOrgRow(row: ProjectParticipatingOrg, founda
     name: row.name,
     logoUrl: row.logoUrl,
     initial: row.name.trim().charAt(0).toUpperCase() || '?',
-    nameKind: nameKind(row, orgLensLink !== null),
+    nameKind: nameKind(row, orgLensLink !== null, readableAccountIds === null),
     orgLensLink,
     membershipLabel: row.isMember ? `${tier ?? ''} Member`.trim() : null,
     membershipBadgeClass: row.isMember
@@ -40,9 +46,9 @@ export function decorateParticipatingOrgRow(row: ProjectParticipatingOrg, founda
   };
 }
 
-function nameKind(row: ProjectParticipatingOrg, linked: boolean): ProjectParticipatingOrgNameKind {
+function nameKind(row: ProjectParticipatingOrg, linked: boolean, accessPending: boolean): ProjectParticipatingOrgNameKind {
   if (linked) return 'org-lens-link';
-  if (row.isMember) return 'no-access';
+  if (row.isMember && !accessPending) return 'no-access';
   return 'plain';
 }
 

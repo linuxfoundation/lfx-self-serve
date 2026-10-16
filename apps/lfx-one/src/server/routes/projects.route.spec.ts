@@ -6,11 +6,12 @@ import type { NextFunction, Request, Response } from 'express';
 import type { Server } from 'node:http';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { gate, getProjectBySlug, getSummary, getList, exportCsv } = vi.hoisted(() => ({
+const { gate, getProjectBySlug, getSummary, getList, getOrgLensLinks, exportCsv } = vi.hoisted(() => ({
   gate: vi.fn(),
   getProjectBySlug: vi.fn((_req: unknown, res: Response) => res.json({ handler: 'project' })),
   getSummary: vi.fn((_req: unknown, res: Response) => res.json({ handler: 'summary' })),
   getList: vi.fn((_req: unknown, res: Response) => res.json({ handler: 'list' })),
+  getOrgLensLinks: vi.fn((_req: unknown, res: Response) => res.json({ handler: 'org-lens-links' })),
   exportCsv: vi.fn((_req: unknown, res: Response) => res.json({ handler: 'export' })),
 }));
 
@@ -23,6 +24,7 @@ vi.mock('../controllers/project-participating-orgs.controller', () => ({
   ProjectParticipatingOrgsController: class {
     public getSummary = getSummary;
     public getList = getList;
+    public getOrgLensLinks = getOrgLensLinks;
     public export = exportCsv;
   },
 }));
@@ -49,6 +51,7 @@ afterAll(() => new Promise<void>((resolve, reject) => server.close((error) => (e
 const PATHS = [
   ['/synthetic-project/participating-orgs/summary', 'summary'],
   ['/synthetic-project/participating-orgs/export', 'export'],
+  ['/synthetic-project/participating-orgs/org-lens-links', 'org-lens-links'],
   ['/synthetic-project/participating-orgs', 'list'],
 ] as const;
 
@@ -64,6 +67,7 @@ describe('participating-orgs routes', () => {
     expect(gate).toHaveBeenCalledOnce();
     expect(getSummary).not.toHaveBeenCalled();
     expect(getList).not.toHaveBeenCalled();
+    expect(getOrgLensLinks).not.toHaveBeenCalled();
     expect(exportCsv).not.toHaveBeenCalled();
   });
 

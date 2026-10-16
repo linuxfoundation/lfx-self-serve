@@ -49,7 +49,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, of, switchMap, take, tap } from 'rxjs';
+import { catchError, combineLatest, concat, debounceTime, distinctUntilChanged, filter, finalize, map, of, switchMap, take, tap } from 'rxjs';
 
 import { decorateParticipatingOrgRow } from './participating-orgs.util';
 import { ParticipatingOrgsService } from './services/participating-orgs.service';
@@ -135,12 +135,18 @@ export class ParticipatingOrgsComponent {
 
   protected readonly summary: Signal<ProjectParticipatingOrgsSummary | null> = this.initSummary();
   protected readonly page: Signal<ProjectParticipatingOrgsPage> = this.initPage();
+  /** Which of the shown page's members the viewer can open in Org Lens; null while that is still loading, and on the server. */
+  private readonly readableAccountIds: Signal<ReadonlySet<string> | null> = this.initReadableAccountIds();
 
   protected readonly viewState: Signal<ProjectParticipatingOrgsViewState> = computed(() => this.initViewState());
   protected readonly rows: Signal<ProjectParticipatingOrgRowVm[]> = computed(() => {
     const foundationSlug = this.page().foundationSlug ?? this.summary()?.foundationSlug ?? null;
-    return this.page().rows.map((row) => decorateParticipatingOrgRow(row, foundationSlug));
+    const readable = this.readableAccountIds();
+    return this.page().rows.map((row) => decorateParticipatingOrgRow(row, foundationSlug, readable));
   });
+  /** Skeleton rows only before there is anything to show; a refresh keeps the current rows on screen, dimmed. */
+  protected readonly showSkeleton = computed(() => this.pageLoading() && this.page().rows.length === 0);
+  protected readonly refreshing = computed(() => this.pageLoading() && this.page().rows.length > 0);
   protected readonly totalRecords = computed(() => this.page().totalRecords);
   protected readonly subtitle = computed(() => this.initSubtitle());
   protected readonly tiles: Signal<StatCardItem[]> = computed(() => this.initTiles());
@@ -282,6 +288,26 @@ export class ParticipatingOrgsComponent {
         )
       ),
       { initialValue: EMPTY_PROJECT_PARTICIPATING_ORGS_PAGE }
+    );
+  }
+
+  /**
+   * Org Lens links are per caller, so they load after the shared, cacheable page: the rows render first and member
+   * names become links when the answer arrives. Re-asked only when the page's member set changes.
+   */
+  private initReadableAccountIds(): Signal<ReadonlySet<string> | null> {
+    return toSignal(
+      toObservable(
+        computed(() => ({
+          slug: this.slug(),
+          accountIds: [...new Set(this.page().rows.flatMap((row) => (row.isMember && row.accountId ? [row.accountId] : [])))],
+        }))
+      ).pipe(
+        filter(({ slug }) => slug.length > 0),
+        distinctUntilChanged((a, b) => a.slug === b.slug && a.accountIds.join(',') === b.accountIds.join(',')),
+        switchMap(({ slug, accountIds }) => concat(of(null), this.dataService.getOrgLensReadableAccountIds(slug, accountIds)))
+      ),
+      { initialValue: null }
     );
   }
 

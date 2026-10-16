@@ -10,9 +10,11 @@ import {
   PROJECT_PARTICIPATING_ORGS_EXPORT_FALLBACK_FILENAME,
   PROJECT_PARTICIPATING_ORGS_EXPORT_TRUNCATED_HEADER,
   PROJECT_PARTICIPATING_ORGS_EXPORT_TRUNCATED_MESSAGE,
+  PROJECT_PARTICIPATING_ORGS_LINKS_ACCOUNT_IDS_PARAM,
 } from '@lfx-one/shared/constants';
 import type {
   ProjectParticipatingOrgsExportFilters,
+  ProjectParticipatingOrgsOrgLensLinksResponse,
   ProjectParticipatingOrgsPage,
   ProjectParticipatingOrgsQuery,
   ProjectParticipatingOrgsRange,
@@ -50,6 +52,23 @@ export class ParticipatingOrgsService {
       catchError((error: unknown) => {
         console.error('[participating-orgs] getPage failed', { slug, error });
         return throwError(() => error);
+      })
+    );
+  }
+
+  /**
+   * The page's member companies the viewer can open in Org Lens. Browser only: on the server it emits `null`
+   * (links pending), so server rendering never waits on the per-caller access check. A failed read yields no links.
+   */
+  public getOrgLensReadableAccountIds(slug: string, accountIds: string[]): Observable<ReadonlySet<string> | null> {
+    if (!isPlatformBrowser(this.platformId)) return of(null);
+    if (accountIds.length === 0) return of(new Set<string>());
+    const params = strictHttpParams().set(PROJECT_PARTICIPATING_ORGS_LINKS_ACCOUNT_IDS_PARAM, accountIds.join(','));
+    return this.http.get<ProjectParticipatingOrgsOrgLensLinksResponse>(`${baseUrl(slug)}/org-lens-links`, { params }).pipe(
+      map((response) => new Set(response.readableAccountIds)),
+      catchError((error: unknown) => {
+        console.error('[participating-orgs] getOrgLensReadableAccountIds failed', { slug, error });
+        return of(new Set<string>());
       })
     );
   }

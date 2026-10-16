@@ -60,6 +60,9 @@ export const PROJECT_PARTICIPATING_ORGS_EXPORT_MAX_ROWS = 50_000;
 /** Tooltip on a member name the viewer cannot open in Org Lens. */
 export const PROJECT_PARTICIPATING_ORGS_NO_ORG_LENS_ACCESS_TOOLTIP = "Ask the company's admins or LF staff for access.";
 
+/** Query param carrying the comma-separated member account ids of the shown page for the Org Lens links read. */
+export const PROJECT_PARTICIPATING_ORGS_LINKS_ACCOUNT_IDS_PARAM = 'accountIds';
+
 /** 503 copy when the authorizer cannot decide the project gate. */
 export const PROJECT_PARTICIPATING_ORGS_UNAVAILABLE_MESSAGE = 'Unable to verify access to this project right now. Please try again.';
 

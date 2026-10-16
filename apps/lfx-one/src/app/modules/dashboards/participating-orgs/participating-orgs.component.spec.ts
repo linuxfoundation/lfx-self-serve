@@ -20,7 +20,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
-import { type Observable, of, throwError } from 'rxjs';
+import { type Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import {
@@ -70,7 +70,6 @@ function org(overrides: Partial<ProjectParticipatingOrg> = {}): ProjectParticipa
     contributors: 8,
     contributorsPrev: 0,
     contributorsChange: null,
-    canOpenOrgLens: true,
     ...overrides,
   };
 }
@@ -87,6 +86,7 @@ describe('ParticipatingOrgsComponent', () => {
   let fixture: ComponentFixture<ParticipatingOrgsComponent>;
   let getSummary: Mock<(slug: string, range: ProjectParticipatingOrgsRange) => Observable<ProjectParticipatingOrgsSummaryResponse>>;
   let getPage: Mock<(slug: string, query: ProjectParticipatingOrgsQuery) => Observable<ProjectParticipatingOrgsPage>>;
+  let getLinks: Mock<(slug: string, accountIds: string[]) => Observable<ReadonlySet<string> | null>>;
   let activeContext: WritableSignal<ProjectContext>;
 
   async function render(): Promise<void> {
@@ -96,7 +96,10 @@ describe('ParticipatingOrgsComponent', () => {
         provideRouter([]),
         MessageService,
         { provide: ProjectContextService, useValue: { activeContext } },
-        { provide: ParticipatingOrgsService, useValue: { getSummary, getPage, exportCsv: vi.fn(() => of(undefined)) } },
+        {
+          provide: ParticipatingOrgsService,
+          useValue: { getSummary, getPage, getOrgLensReadableAccountIds: getLinks, exportCsv: vi.fn(() => of(undefined)) },
+        },
       ],
     }).compileComponents();
 
@@ -123,6 +126,7 @@ describe('ParticipatingOrgsComponent', () => {
       of({ summary: summary() })
     );
     getPage = vi.fn<(slug: string, query: ProjectParticipatingOrgsQuery) => Observable<ProjectParticipatingOrgsPage>>(() => of(page()));
+    getLinks = vi.fn<(slug: string, accountIds: string[]) => Observable<ReadonlySet<string> | null>>(() => of(new Set([SYNTHETIC_ORG_ACCOUNT_ID])));
     activeContext = signal<ProjectContext>({ uid: 'project-uid', name: 'Synthetic Project', slug: PROJECT_SLUG });
   });
 
@@ -153,7 +157,7 @@ describe('ParticipatingOrgsComponent', () => {
   });
 
   it('renders a member the viewer cannot open as focusable plain text carrying the access hint', async () => {
-    getPage.mockReturnValue(of(page([org({ canOpenOrgLens: false })])));
+    getLinks.mockReturnValue(of(new Set<string>()));
     await render();
 
     const name = query(`participating-orgs-row-${SYNTHETIC_ORG_ACCOUNT_ID}-name`);
@@ -162,6 +166,43 @@ describe('ParticipatingOrgsComponent', () => {
     expect(name?.getAttribute('role')).toBe('note');
     expect(name?.getAttribute('aria-label')).toBe(`${SYNTHETIC_ORG_NAME} — ${PROJECT_PARTICIPATING_ORGS_NO_ORG_LENS_ACCESS_TOOLTIP}`);
     expect(query(`participating-orgs-row-${SYNTHETIC_ORG_ACCOUNT_ID}`)?.querySelector('a')).toBeNull();
+  });
+
+  it('shows member names plain, without the access hint, until the viewer’s links arrive, asking only for members', async () => {
+    const links = new Subject<ReadonlySet<string>>();
+    getLinks.mockReturnValue(links);
+    getPage.mockReturnValue(
+      of(
+        page([
+          org(),
+          org({ participantKey: SYNTHETIC_SECOND_ORG_ACCOUNT_ID, accountId: SYNTHETIC_SECOND_ORG_ACCOUNT_ID, isMember: false, membershipTierClass: null }),
+        ])
+      )
+    );
+    await render();
+
+    const pending = query(`participating-orgs-row-${SYNTHETIC_ORG_ACCOUNT_ID}-name`);
+    expect(pending?.tagName).toBe('SPAN');
+    expect(pending?.getAttribute('role')).toBeNull();
+    expect(getLinks).toHaveBeenCalledWith(PROJECT_SLUG, [SYNTHETIC_ORG_ACCOUNT_ID]);
+
+    links.next(new Set([SYNTHETIC_ORG_ACCOUNT_ID]));
+    await settle();
+
+    expect(query(`participating-orgs-row-${SYNTHETIC_ORG_ACCOUNT_ID}-name`)?.tagName).toBe('A');
+  });
+
+  it('keeps the current rows on screen, marked busy, while the next page loads', async () => {
+    await render();
+    const next = new Subject<ProjectParticipatingOrgsPage>();
+    getPage.mockReturnValue(next);
+
+    fixture.componentInstance['onSegmentChange']('members');
+    await settle();
+
+    expect(query(`participating-orgs-row-${SYNTHETIC_ORG_ACCOUNT_ID}`)).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('.lfx-skeleton-row')).toBeNull();
+    expect(query('participating-orgs-table')?.parentElement?.getAttribute('aria-busy')).toBe('true');
   });
 
   it('shows an Unidentified company as a plain, unlinked name, and badges non-members', async () => {
@@ -175,24 +216,25 @@ describe('ParticipatingOrgsComponent', () => {
             name: SYNTHETIC_SECOND_ORG_LEGAL_NAME,
             isMember: false,
             membershipTierClass: null,
-            canOpenOrgLens: true,
           }),
         ])
       )
     );
+    // Even if the access check named a non-member, it is never linked.
+    getLinks.mockReturnValue(of(new Set([SYNTHETIC_SECOND_ORG_ACCOUNT_ID])));
     await render();
 
     expect(text(`participating-orgs-row-${UNIDENTIFIED_KEY}-name`)).toBe('unmatched-org');
     expect(query(`participating-orgs-row-${UNIDENTIFIED_KEY}`)?.textContent).not.toContain('Unidentified');
     expect(query(`participating-orgs-row-${UNIDENTIFIED_KEY}`)?.querySelector('a')).toBeNull();
     expect(text(`participating-orgs-row-${UNIDENTIFIED_KEY}-membership`)).toBe('Non-member');
-    // A non-member is never linked, even if the flag were set.
+    // A non-member is never linked.
     expect(query(`participating-orgs-row-${SYNTHETIC_SECOND_ORG_ACCOUNT_ID}`)?.querySelector('a')).toBeNull();
   });
 
   it('badges members "{Tier} Member" in the tier colour, falling back to slate for unlisted tiers', async () => {
     const member = (key: string, tier: MembershipTierClass): ProjectParticipatingOrg =>
-      org({ participantKey: key, accountId: null, membershipTierClass: tier, canOpenOrgLens: false });
+      org({ participantKey: key, accountId: null, membershipTierClass: tier });
     getPage.mockReturnValue(of(page([member('cdev:platinum', 'Platinum'), member('cdev:gold', 'Gold'), member('cdev:premier', 'Premier')])));
     await render();
     const badge = (key: string): Element | null | undefined => query(`participating-orgs-row-${key}-membership`)?.firstElementChild;

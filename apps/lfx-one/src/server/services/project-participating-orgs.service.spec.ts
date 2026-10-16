@@ -3,7 +3,12 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { execute, filterConfirmedReadableAccountIds } = vi.hoisted(() => ({ execute: vi.fn(), filterConfirmedReadableAccountIds: vi.fn() }));
+const { execute, filterConfirmedReadableAccountIds, withCache } = vi.hoisted(() => ({
+  execute: vi.fn(),
+  filterConfirmedReadableAccountIds: vi.fn(),
+  // Pass-through: these tests cover the reads; the key only has to separate every query that reads different rows.
+  withCache: vi.fn((_slug: string, _resource: string, _discriminator: unknown[], fetcher: () => Promise<unknown>) => fetcher()),
+}));
 
 vi.mock('./snowflake.service', () => ({
   SnowflakeService: class {
@@ -17,6 +22,7 @@ vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
 vi.mock('../helpers/org-analytics-access.helper', () => ({ filterConfirmedReadableAccountIds }));
+vi.mock('./valkey.service', () => ({ withProjectParticipatingOrgsCache: withCache }));
 // `validation.helper` reaches the `@lfx-one/shared/utils` barrel, which cannot load in this server-only runtime.
 vi.mock('@lfx-one/shared/utils', () => ({}));
 
@@ -71,7 +77,6 @@ describe('ProjectParticipatingOrgsService.getPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     execute.mockResolvedValue({ rows: [row()] });
-    filterConfirmedReadableAccountIds.mockResolvedValue([]);
   });
 
   it.each([
@@ -167,7 +172,6 @@ describe('ProjectParticipatingOrgsService.getPage', () => {
           contributors: 9,
           contributorsPrev: null,
           contributorsChange: null,
-          canOpenOrgLens: false,
         },
       ],
     });
@@ -176,35 +180,40 @@ describe('ProjectParticipatingOrgsService.getPage', () => {
     expect(await service.getPage(req, 's', baseQuery)).toEqual({ rows: [], totalRecords: 0, foundationSlug: 'synthetic-foundation' });
   });
 
-  it('marks canOpenOrgLens only on readable member rows and asks only about members', async () => {
-    execute.mockResolvedValue({
-      rows: [
-        row(),
-        row({ PARTICIPANT_KEY: MEMBER_B, ACCOUNT_ID: MEMBER_B, PARTICIPANT_NAME: 'Synthetic Member B' }),
-        row({ PARTICIPANT_KEY: NON_MEMBER, ACCOUNT_ID: NON_MEMBER, IS_MEMBER: false, MEMBERSHIP_TIER_CLASS: null }),
-        row({ PARTICIPANT_KEY: 'cdev:synthetic-1', ACCOUNT_ID: null, IS_MEMBER: false, IS_UNIDENTIFIED: true, MEMBERSHIP_TIER_CLASS: null }),
-      ],
-    });
-    filterConfirmedReadableAccountIds.mockResolvedValue([MEMBER_A, NON_MEMBER]);
+  it('keys the shared page cache on every query dimension, after clamping', async () => {
+    await service.getPage(req, 's', { ...baseQuery, search: 'syn', tier: 'Gold', pageSize: 10_000, offset: -5 });
+    expect(withCache).toHaveBeenLastCalledWith(
+      's',
+      'page',
+      ['12mo', 'all', 'syn', 'Gold', 'commits', 'desc', PROJECT_PARTICIPATING_ORGS_MAX_PAGE_SIZE, 0],
+      expect.any(Function),
+      expect.any(Function)
+    );
 
-    const page = await service.getPage(req, 's', baseQuery);
+    await service.getPage(req, 's', baseQuery);
+    expect(withCache).toHaveBeenLastCalledWith('s', 'page', ['12mo', 'all', '', '', 'commits', 'desc', 25, 0], expect.any(Function), expect.any(Function));
+  });
+});
 
-    expect(filterConfirmedReadableAccountIds).toHaveBeenCalledWith(req, [MEMBER_A, MEMBER_B], 'get_project_participating_orgs');
-    expect(page.rows.map((r) => [r.participantKey, r.canOpenOrgLens])).toEqual([
-      [MEMBER_A, true],
-      [MEMBER_B, false],
-      [NON_MEMBER, false],
-      ['cdev:synthetic-1', false],
-    ]);
+describe('ProjectParticipatingOrgsService.getOrgLensReadableAccountIds', () => {
+  const service = new ProjectParticipatingOrgsService();
+
+  beforeEach(() => vi.clearAllMocks());
+
+  it('returns the confirmed-readable subset, and asks nothing for an empty page', async () => {
+    filterConfirmedReadableAccountIds.mockResolvedValue([MEMBER_A]);
+
+    expect(await service.getOrgLensReadableAccountIds(req, [MEMBER_A, MEMBER_B])).toEqual([MEMBER_A]);
+    expect(filterConfirmedReadableAccountIds).toHaveBeenCalledWith(req, [MEMBER_A, MEMBER_B], 'get_project_participating_orgs_org_lens_links');
+
+    expect(await service.getOrgLensReadableAccountIds(req, [])).toEqual([]);
+    expect(filterConfirmedReadableAccountIds).toHaveBeenCalledOnce();
   });
 
-  it('degrades every link to false when the Org Lens check throws, still returning the page', async () => {
+  it('degrades to no links when the Org Lens check throws', async () => {
     filterConfirmedReadableAccountIds.mockRejectedValue(new Error('authorizer down'));
 
-    const page = await service.getPage(req, 's', baseQuery);
-
-    expect(page.rows).toHaveLength(1);
-    expect(page.rows[0].canOpenOrgLens).toBe(false);
+    expect(await service.getOrgLensReadableAccountIds(req, [MEMBER_A, NON_MEMBER])).toEqual([]);
     expect(logger.warning).toHaveBeenCalled();
   });
 });

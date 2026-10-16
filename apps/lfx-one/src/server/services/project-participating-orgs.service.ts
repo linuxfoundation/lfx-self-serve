@@ -15,6 +15,7 @@ import { executeSnowflakeViewRead } from '../helpers/snowflake-view-read.helper'
 import { clampInteger, escapeSqlLikePattern } from '../helpers/validation.helper';
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
+import { withProjectParticipatingOrgsCache } from './valkey.service';
 
 import type {
   MembershipTierClass,
@@ -59,15 +60,87 @@ export class ProjectParticipatingOrgsService {
     this.snowflakeService = SnowflakeService.getInstance();
   }
 
-  /** Tiles and tab counts; null when the project has no code activity in the range. */
+  /**
+   * Tiles and tab counts; null when the project has no code activity in the range. Shared-cached per
+   * (project, range): the summary carries no per-caller data and the gate runs before every read.
+   */
   public async getSummary(req: Request, slug: string, range: ProjectParticipatingOrgsRange): Promise<ProjectParticipatingOrgsSummary | null> {
+    return withProjectParticipatingOrgsCache(slug, 'summary', [range], () => this.fetchSummary(req, slug, range), isSummary);
+  }
+
+  /**
+   * One page plus the filtered total and the parent foundation slug, in one round trip. Shared-cached
+   * per (project, query): rows carry no per-caller data; Org Lens links are resolved separately, per caller.
+   */
+  public async getPage(req: Request, slug: string, query: ProjectParticipatingOrgsQuery): Promise<ProjectParticipatingOrgsPage> {
+    const pageSize = clampInteger(query.pageSize, 1, PROJECT_PARTICIPATING_ORGS_MAX_PAGE_SIZE, PROJECT_PARTICIPATING_ORGS_PAGE_SIZE);
+    const offset = clampInteger(query.offset, 0, MAX_SNOWFLAKE_PAGINATION_PAGE * pageSize, 0);
+    const discriminator = [query.range, query.segment, query.search ?? '', query.tier ?? '', query.sort, query.dir, pageSize, offset];
+    return withProjectParticipatingOrgsCache(slug, 'page', discriminator, () => this.fetchPage(req, slug, { ...query, pageSize, offset }), isPage);
+  }
+
+  /**
+   * The given member account ids the caller is confirmed to open in Org Lens, in request order. Per caller and
+   * never cached here (the grant roster underneath has its own per-user cache). An authorizer outage degrades
+   * every link to plain text rather than failing the read.
+   */
+  public async getOrgLensReadableAccountIds(req: Request, accountIds: string[]): Promise<string[]> {
+    if (accountIds.length === 0) return [];
+    try {
+      // Confirmed grants only: one member that cannot be verified (degraded roster) loses its link, not the whole page's.
+      return await filterConfirmedReadableAccountIds(req, accountIds, 'get_project_participating_orgs_org_lens_links');
+    } catch (error) {
+      logger.warning(req, 'get_project_participating_orgs_org_lens_links', 'Org Lens access check failed; member links disabled for this page', {
+        member_count: accountIds.length,
+        err: error,
+      });
+      return [];
+    }
+  }
+
+  /**
+   * The full filtered list for the CSV, in list order, up to the export cap. Reads one row past the
+   * cap so a capped export can be told apart from one that fits exactly. No Org Lens checks: the CSV
+   * carries no links.
+   */
+  public async getExportRows(
+    req: Request,
+    slug: string,
+    filters: ProjectParticipatingOrgsExportFilters
+  ): Promise<{ rows: ProjectParticipatingOrg[]; truncated: boolean }> {
+    const table = listTableName();
+    const { matchClause, binds } = buildMatch(slug, filters);
+
+    const sql = `
+      WITH scoped AS (
+        SELECT ${ORG_COLUMNS}
+        FROM ${table}
+        WHERE project_slug = ?
+          AND time_range = ?
+      )
+      SELECT * FROM scoped ${matchClause}
+      ORDER BY ${orderBy('', filters.sort, filters.dir)}
+      LIMIT ${PROJECT_PARTICIPATING_ORGS_EXPORT_MAX_ROWS + 1}
+    `;
+
+    const result = await executeSnowflakeViewRead<ProjectParticipatingOrgsRow>(this.snowflakeService, req, sql, binds, {
+      view: table,
+      operation: 'export_project_participating_orgs',
+      clientMessage: 'Participating organizations are unavailable right now.',
+    });
+
+    const rows = result.rows.filter((row) => !!row.PARTICIPANT_KEY);
+    const truncated = rows.length > PROJECT_PARTICIPATING_ORGS_EXPORT_MAX_ROWS;
+    return { rows: rows.slice(0, PROJECT_PARTICIPATING_ORGS_EXPORT_MAX_ROWS).map(mapOrg), truncated };
+  }
+
+  private async fetchSummary(req: Request, slug: string, range: ProjectParticipatingOrgsRange): Promise<ProjectParticipatingOrgsSummary | null> {
     const summaryTable = `${resolveLfxOnePlatinumSchema()}.PROJECT_PARTICIPATING_ORGS_SUMMARY`;
     const sql = `
       SELECT
         s.project_slug,
         s.foundation_slug,
-        -- The summary table has no foundation name; every list row of the project carries the same one.
-        (SELECT MAX(o.foundation_name) FROM ${listTableName()} o WHERE o.project_slug = s.project_slug AND o.time_range = s.time_range) AS foundation_name,
+        s.foundation_name,
         s.as_of_date,
         s.orgs_count,
         s.members_count,
@@ -111,12 +184,11 @@ export class ProjectParticipatingOrgsService {
     };
   }
 
-  /** One page plus the filtered total and the parent foundation slug, in one round trip. */
-  public async getPage(req: Request, slug: string, query: ProjectParticipatingOrgsQuery): Promise<ProjectParticipatingOrgsPage> {
+  /** `query` arrives with page size and offset already clamped. */
+  private async fetchPage(req: Request, slug: string, query: ProjectParticipatingOrgsQuery): Promise<ProjectParticipatingOrgsPage> {
     const table = listTableName();
     const { matchClause, binds } = buildMatch(slug, query);
-    const pageSize = clampInteger(query.pageSize, 1, PROJECT_PARTICIPATING_ORGS_MAX_PAGE_SIZE, PROJECT_PARTICIPATING_ORGS_PAGE_SIZE);
-    const offset = clampInteger(query.offset, 0, MAX_SNOWFLAKE_PAGINATION_PAGE * pageSize, 0);
+    const { pageSize, offset } = query;
 
     const sql = `
       WITH scoped AS (
@@ -155,70 +227,12 @@ export class ProjectParticipatingOrgsService {
 
     const first = result.rows[0];
     const pageRows = result.rows.filter((row) => row.IS_PAGE_ROW === true && !!row.PARTICIPANT_KEY);
-    const readable = await this.readableMemberAccountIds(req, pageRows);
 
     return {
-      rows: pageRows.map((row) => mapOrg(row, readable)),
+      rows: pageRows.map(mapOrg),
       totalRecords: Number(first?.TOTAL_RECORDS ?? 0),
       foundationSlug: first?.FOUNDATION_SLUG_TOTAL || null,
     };
-  }
-
-  /**
-   * The full filtered list for the CSV, in list order, up to the export cap. Reads one row past the
-   * cap so a capped export can be told apart from one that fits exactly. No Org Lens checks: the CSV
-   * carries no links.
-   */
-  public async getExportRows(
-    req: Request,
-    slug: string,
-    filters: ProjectParticipatingOrgsExportFilters
-  ): Promise<{ rows: ProjectParticipatingOrg[]; truncated: boolean }> {
-    const table = listTableName();
-    const { matchClause, binds } = buildMatch(slug, filters);
-
-    const sql = `
-      WITH scoped AS (
-        SELECT ${ORG_COLUMNS}
-        FROM ${table}
-        WHERE project_slug = ?
-          AND time_range = ?
-      )
-      SELECT * FROM scoped ${matchClause}
-      ORDER BY ${orderBy('', filters.sort, filters.dir)}
-      LIMIT ${PROJECT_PARTICIPATING_ORGS_EXPORT_MAX_ROWS + 1}
-    `;
-
-    const result = await executeSnowflakeViewRead<ProjectParticipatingOrgsRow>(this.snowflakeService, req, sql, binds, {
-      view: table,
-      operation: 'export_project_participating_orgs',
-      clientMessage: 'Participating organizations are unavailable right now.',
-    });
-
-    const rows = result.rows.filter((row) => !!row.PARTICIPANT_KEY);
-    const truncated = rows.length > PROJECT_PARTICIPATING_ORGS_EXPORT_MAX_ROWS;
-    const none = new Set<string>();
-    return { rows: rows.slice(0, PROJECT_PARTICIPATING_ORGS_EXPORT_MAX_ROWS).map((row) => mapOrg(row, none)), truncated };
-  }
-
-  /**
-   * The page's member account ids the caller can open in Org Lens. An authorizer outage degrades
-   * every link to plain text rather than failing the list.
-   */
-  private async readableMemberAccountIds(req: Request, rows: ProjectParticipatingOrgsRow[]): Promise<Set<string>> {
-    const memberIds = [...new Set(rows.filter((row) => row.IS_MEMBER === true && !!row.ACCOUNT_ID).map((row) => row.ACCOUNT_ID as string))];
-    if (memberIds.length === 0) return new Set();
-
-    try {
-      // Confirmed grants only: one member that cannot be verified (degraded roster) loses its link, not the whole page's.
-      return new Set(await filterConfirmedReadableAccountIds(req, memberIds, 'get_project_participating_orgs'));
-    } catch (error) {
-      logger.warning(req, 'get_project_participating_orgs', 'Org Lens access check failed; member links disabled for this page', {
-        member_count: memberIds.length,
-        err: error,
-      });
-      return new Set();
-    }
   }
 }
 
@@ -252,7 +266,7 @@ function orderBy(prefix: string, sort: ProjectParticipatingOrgsSortField, dir: P
   return `${expression} ${direction} NULLS LAST, ${prefix}commits DESC NULLS LAST, ${prefix}participant_key ASC`;
 }
 
-function mapOrg(row: ProjectParticipatingOrgsRow, readableAccountIds: Set<string>): ProjectParticipatingOrg {
+function mapOrg(row: ProjectParticipatingOrgsRow): ProjectParticipatingOrg {
   const isMember = row.IS_MEMBER === true;
   const accountId = row.ACCOUNT_ID || null;
 
@@ -270,10 +284,19 @@ function mapOrg(row: ProjectParticipatingOrgsRow, readableAccountIds: Set<string
     contributors: Number(row.CONTRIBUTORS ?? 0),
     contributorsPrev: toNullableNumber(row.CONTRIBUTORS_PREV),
     contributorsChange: toNullableNumber(row.CONTRIBUTORS_CHANGE),
-    canOpenOrgLens: isMember && accountId !== null && readableAccountIds.has(accountId),
   };
 }
 
 function toNullableNumber(value: unknown): number | null {
   return value === null || value === undefined ? null : Number(value);
+}
+
+function isSummary(value: unknown): boolean {
+  const summary = value as Partial<ProjectParticipatingOrgsSummary> | null;
+  return !!summary && typeof summary.projectSlug === 'string' && typeof summary.orgsCount === 'number' && typeof summary.range === 'string';
+}
+
+function isPage(value: unknown): boolean {
+  const page = value as Partial<ProjectParticipatingOrgsPage> | null;
+  return !!page && Array.isArray(page.rows) && typeof page.totalRecords === 'number';
 }

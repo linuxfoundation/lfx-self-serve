@@ -47,7 +47,7 @@ export interface ProjectParticipatingOrgsSummaryResponse {
   summary: ProjectParticipatingOrgsSummary | null;
 }
 
-/** One company row. */
+/** One company row. Holds no per-caller data, so a page is shared-cacheable across viewers. */
 export interface ProjectParticipatingOrg {
   /** Stable row key: the Salesforce account id, or `cdev:<organization id>` for an Unidentified company. */
   participantKey: string;
@@ -71,11 +71,6 @@ export interface ProjectParticipatingOrg {
   contributorsPrev: number | null;
   /** Change against the previous window as a fraction, modeled in lf-dbt; null for `all` or a zero baseline. */
   contributorsChange: number | null;
-  /**
-   * True only for a member row whose company the caller can open in Org Lens
-   * (`b2b_org#auditor`, the Org Lens gate). Per-caller: never cached across users.
-   */
-  canOpenOrgLens: boolean;
 }
 
 /** List query (validated server-side; the export takes the same filters without paging). */
@@ -99,6 +94,15 @@ export interface ProjectParticipatingOrgsPage {
   totalRecords: number;
   /** Parent foundation slug, used to build the member → Org Lens membership link. */
   foundationSlug: string | null;
+}
+
+/**
+ * `GET /api/projects/:slug/participating-orgs/org-lens-links?accountIds=` — which of the given member
+ * companies the caller can open in Org Lens (`b2b_org#auditor`, the Org Lens gate). Per caller, never
+ * shared-cached; empty when the access check fails, so names fall back to plain text.
+ */
+export interface ProjectParticipatingOrgsOrgLensLinksResponse {
+  readableAccountIds: string[];
 }
 
 /** Filters the CSV export takes: the list query without paging. */

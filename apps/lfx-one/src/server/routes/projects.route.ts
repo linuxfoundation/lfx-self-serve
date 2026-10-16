@@ -30,6 +30,9 @@ router.get('/:slug/participating-orgs/summary', requireProjectParticipatingOrgsA
   participatingOrgsController.getSummary(req, res, next)
 );
 router.get('/:slug/participating-orgs/export', requireProjectParticipatingOrgsAccess, (req, res, next) => participatingOrgsController.export(req, res, next));
+router.get('/:slug/participating-orgs/org-lens-links', requireProjectParticipatingOrgsAccess, (req, res, next) =>
+  participatingOrgsController.getOrgLensLinks(req, res, next)
+);
 router.get('/:slug/participating-orgs', requireProjectParticipatingOrgsAccess, (req, res, next) => participatingOrgsController.getList(req, res, next));
 
 router.get('/:uid/permissions', (req, res, next) => projectController.getProjectPermissions(req, res, next));
