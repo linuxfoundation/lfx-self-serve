@@ -5,6 +5,7 @@ import { PLATFORM_ID, signal, WritableSignal } from '@angular/core';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import { FOUNDATION_MESSAGE_READ_REASONS, MKTG_AGENT_INTAKES, MKTG_AGENTS, MKTG_INTAKE_FORMAT_ERRORS, MKTG_README_SKIP_NOTES } from '@lfx-one/shared/constants';
@@ -29,9 +30,10 @@ import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
-import { from, of, throwError } from 'rxjs';
+import { concat, from, NEVER, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questions.component';
 import { MktgAgentRunComponent } from './mktg-agent-run.component';
 
 /**
@@ -730,8 +732,72 @@ describe('MktgAgentRunComponent', () => {
       ]);
     });
 
-    describe('the questions step — after research, only the gaps, each with a suggested answer', () => {
-      const answerBox = (key: string): HTMLElement | null => host().querySelector<HTMLElement>(`[data-test="mktg-question-${key}"]`);
+    describe('the live feed — what the agent does, in plain words, while it works', () => {
+      it('shows each step as it is reported, and switches to writing once the answers went back', async () => {
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+        fillRequired();
+        generate.mockReturnValue(
+          concat(
+            from<MktgGenerateProgress[]>([
+              { type: 'submitted' },
+              {
+                type: 'activity',
+                activity: [
+                  {
+                    id: 'step-1',
+                    kind: 'reading',
+                    label: 'Reading testorbit.example.org',
+                    status: 'done',
+                    startedAt: '2026-10-16T08:00:00Z',
+                    endedAt: '2026-10-16T08:00:02Z',
+                  },
+                  {
+                    id: 'step-2',
+                    kind: 'search',
+                    label: 'Searching the web',
+                    detail: '“TestOrbit adopters”',
+                    status: 'running',
+                    startedAt: '2026-10-16T08:00:03Z',
+                  },
+                ],
+              },
+            ]),
+            NEVER
+          )
+        );
+        component['onSubmit']();
+        await fixture.whenStable();
+
+        expect(component['phase']()).toBe('running');
+        expect(query('mktg-run-activity-title')?.textContent).toContain('Researching');
+        expect(query('mktg-run-activity-step-step-1')?.textContent).toContain('Reading testorbit.example.org');
+        expect(query('mktg-run-activity-step-step-2')?.textContent).toContain('“TestOrbit adopters”');
+        expect(query('mktg-run-activity-status')?.textContent).toContain('Searching the web');
+        // The old staged checklist is for agents without a feed.
+        expect(query('mktg-agent-run-running')).toBeNull();
+      });
+    });
+
+    describe('the questions step — after research, only the gaps, one at a time, each with a suggested answer', () => {
+      const stepper = (): MktgRunQuestionsComponent =>
+        fixture.debugElement.query(By.directive(MktgRunQuestionsComponent)).componentInstance as MktgRunQuestionsComponent;
+      // An lfx-button carries the test id on its host; the click has to reach the button inside.
+      const click = async (testId: string): Promise<void> => {
+        const target = query(testId);
+        (target?.tagName === 'LFX-BUTTON' ? target.querySelector('button') : target)?.click();
+        await fixture.whenStable();
+      };
+      const press = async (key: string, target?: Element | null): Promise<void> => {
+        (target ?? query('mktg-run-questions-card-' + currentKey()))?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+        await fixture.whenStable();
+      };
+      const currentKey = (): string =>
+        (host().querySelector('[data-testid^="mktg-run-questions-card-"]')?.getAttribute('data-testid') ?? '').replace('mktg-run-questions-card-', '');
+      const typeOwn = async (key: string, text: string): Promise<void> => {
+        stepper()['ownForm'].controls[key].setValue(text);
+        await fixture.whenStable();
+      };
 
       beforeEach(async () => {
         activeContext.set(PROJECT_1);
@@ -742,44 +808,56 @@ describe('MktgAgentRunComponent', () => {
         await fixture.whenStable();
       });
 
-      it('shows each question with its label, the why, the basis links, and the suggested answer pre-filled', () => {
+      it('asks one question at a time: its label, the why, the basis links, and the suggested answer as option 1', () => {
         expect(component['phase']()).toBe('questions');
-        expect(query('mktg-agent-run-questions')).not.toBeNull();
-        expect(query('mktg-agent-run-question-audiences')?.textContent).toContain('Audiences');
-        expect(query('mktg-agent-run-question-audiences')?.textContent).toContain('Who are the primary audiences?');
-        expect(query('mktg-agent-run-question-why-audiences')?.textContent).toContain('platform teams only');
-        const basis = query('mktg-agent-run-question-basis-audiences');
+        expect(query('mktg-run-questions-progress')?.textContent).toContain('Question 1 of 2');
+        expect(query('mktg-run-questions-card-audiences')?.textContent).toContain('Who are the primary audiences?');
+        expect(query('mktg-run-questions-card-tagline_ctas_constraints')).toBeNull();
+        expect(query('mktg-run-questions-why-audiences')?.textContent).toContain('platform teams only');
+        const basis = query('mktg-run-questions-basis-audiences');
         expect(basis?.querySelector('a')?.getAttribute('href')).toBe('https://testorbit.example.org');
         expect(basis?.textContent).toContain('the README');
-        expect(component['questionsForm'].controls['audiences'].value).toBe('Platform teams; SREs.');
-        expect(query('mktg-agent-run-question-suggested-audiences')).not.toBeNull();
-        // No suggestion: an empty box the requester has to fill, said plainly.
-        expect(component['questionsForm'].controls['tagline_ctas_constraints'].value).toBe('');
-        expect(query('mktg-agent-run-question-unsuggested-tagline_ctas_constraints')).not.toBeNull();
-        expect(query('mktg-agent-run-question-why-tagline_ctas_constraints')).toBeNull();
-        expect(answerBox('audiences')).not.toBeNull();
+        const suggested = query('mktg-run-questions-option-suggested-audiences');
+        expect(suggested?.textContent).toContain('Platform teams; SREs.');
+        expect(suggested?.getAttribute('aria-checked')).toBe('true');
+        // A short chip per question, and the review at the end.
+        expect(query('mktg-run-questions-chip-audiences')?.textContent).toContain('Audiences');
+        expect(query('mktg-run-questions-chip-tagline_ctas_constraints')?.textContent).toContain('Tagline');
+        expect(query('mktg-run-questions-chip-review')).not.toBeNull();
         // No "Request changes" box and no first form on this step.
         expect(query('mktg-agent-run-regenerate-button')).toBeNull();
         expect(query('mktg-agent-run-form')).toBeNull();
       });
 
-      it('requires every answer — no skip, no TBD, no empty — and says so on the field', async () => {
-        expect(component['answersDisabled']()).toBe(true);
+      it('needs a real answer where there is no suggestion — no skip, no TBD, no empty — and says so', async () => {
+        await click('mktg-run-questions-next');
+        expect(query('mktg-run-questions-card-tagline_ctas_constraints')).not.toBeNull();
+        // Nothing to suggest: only "Write my own", with the box open.
+        expect(query('mktg-run-questions-option-suggested-tagline_ctas_constraints')).toBeNull();
+        expect(host().querySelector('[data-test="mktg-run-questions-own-tagline_ctas_constraints"]')).not.toBeNull();
 
-        component['questionsForm'].controls['tagline_ctas_constraints'].setValue('TBD');
-        await fixture.whenStable();
-        expect(query('mktg-agent-run-answer-error-tagline_ctas_constraints')?.textContent).toContain('TBD');
-        expect(component['answersDisabled']()).toBe(true);
+        await typeOwn('tagline_ctas_constraints', 'TBD');
+        await click('mktg-run-questions-next');
+        expect(query('mktg-run-questions-error-tagline_ctas_constraints')?.textContent).toContain('TBD');
+        expect(query('mktg-run-questions-review')).toBeNull();
 
-        component['questionsForm'].controls['tagline_ctas_constraints'].setValue('No tagline is locked; name the Silver tier.');
-        await fixture.whenStable();
-        expect(query('mktg-agent-run-answer-error-tagline_ctas_constraints')).toBeNull();
-        expect(component['answersDisabled']()).toBe(false);
+        await typeOwn('tagline_ctas_constraints', 'No tagline is locked; name the Silver tier.');
+        await click('mktg-run-questions-next');
+        expect(query('mktg-run-questions-review')).not.toBeNull();
       });
 
-      it('sends the answers with their origins on the same run and shows the document with what was asked', async () => {
-        component['questionsForm'].controls['audiences'].setValue('Platform teams; SREs.');
-        component['questionsForm'].controls['tagline_ctas_constraints'].setValue('No tagline is locked.');
+      it('takes Claude Code’s keys: 1 and 2 choose, Enter continues, Esc goes back', async () => {
+        await press('2');
+        expect(query('mktg-run-questions-option-own-audiences')?.getAttribute('aria-checked')).toBe('true');
+        await press('1');
+        expect(query('mktg-run-questions-option-suggested-audiences')?.getAttribute('aria-checked')).toBe('true');
+        await press('Enter');
+        expect(currentKey()).toBe('tagline_ctas_constraints');
+        await press('Escape');
+        expect(currentKey()).toBe('audiences');
+      });
+
+      it('sends every answer with its origin from the review, on the same run, and shows the document with what was asked', async () => {
         const answers: MktgRunAnswer[] = [
           { key: 'audiences', text: 'Platform teams; SREs.', origin: 'accepted' },
           { key: 'tagline_ctas_constraints', text: 'No tagline is locked.', origin: 'requester' },
@@ -794,9 +872,16 @@ describe('MktgAgentRunComponent', () => {
           savedAt: new Date().toISOString(),
         };
         answerQuestions.mockReturnValue(from<MktgGenerateProgress[]>([{ type: 'submitted' }, { type: 'document', run }]));
+
+        await click('mktg-run-questions-next');
+        await typeOwn('tagline_ctas_constraints', 'No tagline is locked.');
+        await click('mktg-run-questions-next');
+        expect(query('mktg-run-questions-review-audiences')?.textContent).toContain('Suggested answer');
+        expect(query('mktg-run-questions-review-tagline_ctas_constraints')?.textContent).toContain('Your answer');
+
         vi.useFakeTimers();
         try {
-          component['onAnswerQuestions']();
+          query('mktg-run-questions-send')?.querySelector('button')?.click();
           await vi.advanceTimersByTimeAsync(700);
         } finally {
           vi.useRealTimers();
@@ -818,29 +903,41 @@ describe('MktgAgentRunComponent', () => {
         expect(query('mktg-agent-run-asked-tagline_ctas_constraints')?.textContent).toContain('Your answer');
       });
 
-      it('marks an edited suggestion as edited', async () => {
-        component['questionsForm'].controls['audiences'].setValue('Platform teams only.');
-        component['questionsForm'].controls['tagline_ctas_constraints'].setValue('No tagline is locked.');
-        answerQuestions.mockReturnValue(of<MktgGenerateProgress>({ type: 'submitted' }));
+      it('marks an edited suggestion as edited, and an Edit from the review goes back to that question', async () => {
+        answerQuestions.mockReturnValue(concat(of<MktgGenerateProgress>({ type: 'submitted' }), NEVER));
 
-        component['onAnswerQuestions']();
+        await click('mktg-run-questions-option-own-audiences');
+        await typeOwn('audiences', 'Platform teams only.');
+        await click('mktg-run-questions-next');
+        await typeOwn('tagline_ctas_constraints', 'No tagline is locked.');
+        await click('mktg-run-questions-next');
+        expect(query('mktg-run-questions-review-audiences')?.textContent).toContain('Suggested answer, edited');
+
+        await click('mktg-run-questions-edit-tagline_ctas_constraints');
+        expect(currentKey()).toBe('tagline_ctas_constraints');
+        await click('mktg-run-questions-chip-review');
+
+        query('mktg-run-questions-send')?.querySelector('button')?.click();
         await fixture.whenStable();
 
         const sent = answerQuestions.mock.calls[0][2] as MktgRunAnswer[];
         expect(sent[0]).toEqual({ key: 'audiences', text: 'Platform teams only.', origin: 'edited' });
         expect(component['phase']()).toBe('running');
+        expect(query('mktg-run-activity-title')?.textContent).toContain('Writing your Messaging Document');
       });
 
       it('keeps the answers and returns to the questions step when the answers could not be sent', async () => {
-        component['questionsForm'].controls['tagline_ctas_constraints'].setValue('No tagline is locked.');
         answerQuestions.mockReturnValue(throwError(() => new Error('network')));
 
-        component['onAnswerQuestions']();
+        await click('mktg-run-questions-next');
+        await typeOwn('tagline_ctas_constraints', 'No tagline is locked.');
+        await click('mktg-run-questions-next');
+        query('mktg-run-questions-send')?.querySelector('button')?.click();
         await fixture.whenStable();
 
         expect(component['phase']()).toBe('questions');
         expect(component['errorText']()).toContain('kept');
-        expect(component['questionsForm'].controls['tagline_ctas_constraints'].value).toBe('No tagline is locked.');
+        expect(stepper()['ownForm'].controls['tagline_ctas_constraints'].value).toBe('No tagline is locked.');
       });
     });
 

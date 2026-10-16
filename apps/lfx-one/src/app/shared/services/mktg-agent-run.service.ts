@@ -25,7 +25,24 @@ import {
   MktgStoredAgentRun,
 } from '@lfx-one/shared/interfaces';
 import { renderMktgIntakeMessage } from '@lfx-one/shared/utils';
-import { catchError, concat, EMPTY, exhaustMap, filter, map, Observable, of, switchMap, take, takeWhile, throwError, timeout, timer } from 'rxjs';
+import {
+  catchError,
+  concat,
+  concatMap,
+  defer,
+  EMPTY,
+  exhaustMap,
+  filter,
+  map,
+  Observable,
+  of,
+  switchMap,
+  take,
+  takeWhile,
+  throwError,
+  timer,
+  TimeoutError,
+} from 'rxjs';
 
 import { isTransientHttpError } from '@shared/utils/http-error.utils';
 
@@ -293,15 +310,24 @@ export class MktgAgentRunService {
     answered?: { questions: MktgRunQuestionsPending['questions']; answers: MktgRunAnswer[]; questionsId: string }
   ): Observable<MktgGenerateProgress> {
     return this.pollForOutcome(request.intake, attempt.session, attempt.priorVersion, request.projectUid, answered?.questionsId).pipe(
-      switchMap((result) => {
+      concatMap(({ result, terminal }) => {
+        // Intakes with a live feed get the whole feed so far on every poll that changed it, the last one included.
+        const activity$ = result.activity && request.intake.liveActivity ? of<MktgGenerateProgress>({ type: 'activity', activity: result.activity }) : EMPTY;
+        if (!terminal) {
+          return activity$;
+        }
         if (result.status === 'questions') {
           // pollForOutcome let it through, so the block is present and new.
-          return of<MktgGenerateProgress>({
-            type: 'questions',
-            pending: { attempt, questionsId: result.questionsId ?? '', questions: result.questions ?? [] },
-          });
+          return concat(
+            activity$,
+            of<MktgGenerateProgress>({
+              type: 'questions',
+              pending: { attempt, questionsId: result.questionsId ?? '', questions: result.questions ?? [] },
+            })
+          );
         }
         return concat(
+          activity$,
           of<MktgGenerateProgress>({ type: 'document', run: this.appendVersion(request, attempt, result, answered) }),
           this.retryPersistence(request, attempt.session, result)
         );
@@ -341,7 +367,7 @@ export class MktgAgentRunService {
     priorVersion: number,
     projectUid: string,
     answeredQuestionsId?: string
-  ): Observable<MktgRunResultResponse> {
+  ): Observable<{ result: MktgRunResultResponse; terminal: boolean }> {
     const body = this.resultBody(session, projectUid);
     const isDocument = (result: MktgRunResultResponse): boolean =>
       result.status === 'ready' && typeof result.documentMarkdown === 'string' && (result.version ?? 0) > priorVersion;
@@ -351,21 +377,43 @@ export class MktgAgentRunService {
       (result.questions?.length ?? 0) > 0 &&
       !!result.questionsId &&
       result.questionsId !== answeredQuestionsId;
-    return timer(MKTG_RUN_POLL.initialDelayMs, MKTG_RUN_POLL.intervalMs).pipe(
-      exhaustMap(() =>
-        this.http.post<MktgRunResultResponse>(intake.endpoints.result, body).pipe(
-          catchError((error: unknown) => {
-            if (isTransientHttpError(error)) {
-              return of<MktgRunResultResponse>({ status: 'pending' });
-            }
-            return throwError(() => error);
-          })
-        )
-      ),
-      filter((result) => isDocument(result) || isNewQuestions(result)),
-      take(1),
-      timeout(MKTG_RUN_POLL.timeoutMs)
-    );
+    const isTerminal = (result: MktgRunResultResponse): boolean => isDocument(result) || isNewQuestions(result);
+    return defer(() => {
+      // One wall-clock deadline for the whole wait: with a live feed the poll
+      // emits along the way, so a per-emission timeout would never fire.
+      const deadline = Date.now() + MKTG_RUN_POLL.timeoutMs;
+      let lastActivity = '';
+      // Only a feed that changed is worth an emission; intakes without a feed emit their terminal result alone.
+      const isNewActivity = (result: MktgRunResultResponse): boolean => {
+        if (!intake.liveActivity || !result.activity) {
+          return false;
+        }
+        const key = JSON.stringify(result.activity);
+        if (key === lastActivity) {
+          return false;
+        }
+        lastActivity = key;
+        return true;
+      };
+      return timer(MKTG_RUN_POLL.initialDelayMs, MKTG_RUN_POLL.intervalMs).pipe(
+        exhaustMap(() => {
+          if (Date.now() > deadline) {
+            return throwError(() => new TimeoutError());
+          }
+          return this.http.post<MktgRunResultResponse>(intake.endpoints.result, body).pipe(
+            catchError((error: unknown) => {
+              if (isTransientHttpError(error)) {
+                return of<MktgRunResultResponse>({ status: 'pending' });
+              }
+              return throwError(() => error);
+            })
+          );
+        }),
+        takeWhile((result) => !isTerminal(result), true),
+        filter((result) => isTerminal(result) || isNewActivity(result)),
+        map((result) => ({ result, terminal: isTerminal(result) }))
+      );
+    });
   }
 
   /**

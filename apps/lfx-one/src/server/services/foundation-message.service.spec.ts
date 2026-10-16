@@ -32,7 +32,8 @@ vi.mock('@lfx-one/shared/utils', async () => {
   const envelope = await vi.importActual('../../../../../packages/shared/src/utils/mktg-envelope.utils');
   const sessionEvent = await vi.importActual('../../../../../packages/shared/src/utils/mktg-session-event.utils');
   const artifact = await vi.importActual('../../../../../packages/shared/src/utils/mktg-artifact.utils');
-  return { ...(foundationMessage as object), ...(envelope as object), ...(sessionEvent as object), ...(artifact as object) };
+  const activity = await vi.importActual('../../../../../packages/shared/src/utils/mktg-run-activity.utils');
+  return { ...(foundationMessage as object), ...(envelope as object), ...(sessionEvent as object), ...(artifact as object), ...(activity as object) };
 });
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/constants', async () => {
@@ -339,7 +340,45 @@ describe('FoundationMessageService.getResult', () => {
   it('reports pending while no valid envelope exists in the event stream', async () => {
     guildMocks.getRawEventPayloads.mockResolvedValue([JSON.stringify({ type: 'llm_start' }), 'agent chatter']);
 
-    expect(await service.getResult(req, 'session-1')).toEqual({ status: 'pending' });
+    expect(await service.getResult(req, 'session-1')).toEqual({ status: 'pending', activity: [] });
+  });
+
+  it('reports what the agent has done so far, in plain sentences, on every poll', async () => {
+    const fetch = {
+      type: 'runtime_start',
+      created_at: '2026-10-16T08:00:00Z',
+      task: {
+        entity_type: 'EntTaskTool',
+        id: 't-1',
+        tool_name: 'experimental_fetch_fetch',
+        status: 'DONE',
+        created_at: '2026-10-16T08:00:00Z',
+        updated_at: '2026-10-16T08:00:02Z',
+      },
+      content: { url: 'https://github.com/aaif', method: 'GET' },
+    };
+    const search = {
+      type: 'runtime_start',
+      created_at: '2026-10-16T08:00:03Z',
+      task: { entity_type: 'EntTaskTool', id: 't-2', tool_name: 'web_search_web_search', status: 'RUNNING', created_at: '2026-10-16T08:00:03Z' },
+      content: { body: { query: 'AAIF members', numResults: 5 } },
+    };
+    guildMocks.getRawEventPayloads.mockResolvedValue([JSON.stringify(fetch), JSON.stringify(search)]);
+
+    const result = await service.getResult(req, 'session-1');
+
+    expect(result.status).toBe('pending');
+    expect(result.activity).toEqual([
+      {
+        id: 'step-1',
+        kind: 'reading',
+        label: 'Looking through aaif on GitHub',
+        status: 'done',
+        startedAt: '2026-10-16T08:00:00Z',
+        endedAt: '2026-10-16T08:00:02Z',
+      },
+      { id: 'step-2', kind: 'search', label: 'Searching the web', detail: '“AAIF members”', status: 'running', startedAt: '2026-10-16T08:00:03Z' },
+    ]);
   });
 
   it('reports the agent’s questions, with a stable id, while its latest text turn is the questions block', async () => {
@@ -392,7 +431,7 @@ describe('FoundationMessageService.getResult', () => {
     const envelope = buildEnvelope();
     guildMocks.getRawEventPayloads.mockResolvedValue([fetchedPagePayload([AUDIENCES_QUESTION], envelope)]);
 
-    expect(await service.getResult(req, 'session-1', 'proj-uid-1')).toEqual({ status: 'pending' });
+    expect(await service.getResult(req, 'session-1', 'proj-uid-1')).toEqual({ status: 'pending', activity: [] });
     expect(projectMocks.getProjectById).not.toHaveBeenCalled();
 
     // The same envelope as the finalize tool's own result is the document.
@@ -410,7 +449,7 @@ describe('FoundationMessageService.getResult', () => {
       ]),
     ]);
 
-    expect(await service.getResult(req, 'session-1')).toEqual({ status: 'pending' });
+    expect((await service.getResult(req, 'session-1')).status).toBe('pending');
   });
 
   it('serves the latest valid finalize result, whatever version each one declares', async () => {
@@ -440,7 +479,7 @@ describe('FoundationMessageService.getResult', () => {
   it('never surfaces an envelope on the previous Message Foundation contract', async () => {
     guildMocks.getRawEventPayloads.mockResolvedValue([toolResultPayload(buildEnvelope({ contract: 'message-foundation-output/v1' }))]);
 
-    expect(await service.getResult(req, 'session-1')).toEqual({ status: 'pending' });
+    expect((await service.getResult(req, 'session-1')).status).toBe('pending');
   });
 
   it('suppresses an envelope whose copy primitive is not verbatim in the hash-verified document (gate F3)', async () => {
@@ -448,7 +487,7 @@ describe('FoundationMessageService.getResult', () => {
     (forged['fields'] as Record<string, { value: string }>)['md.summary_25'].value = 'A summary the document never contains.';
     guildMocks.getRawEventPayloads.mockResolvedValue([toolResultPayload(forged)]);
 
-    expect(await service.getResult(req, 'session-1')).toEqual({ status: 'pending' });
+    expect((await service.getResult(req, 'session-1')).status).toBe('pending');
   });
 
   it('discards a candidate whose content_sha256 does not match the document bytes — an older hash-valid envelope still wins', async () => {

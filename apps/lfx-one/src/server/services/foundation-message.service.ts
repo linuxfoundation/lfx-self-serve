@@ -14,6 +14,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   buildFoundationMessageFormPayload,
+  buildMktgRunActivity,
   extractFoundationMessageQuestions,
   extractMktgAgentTexts,
   extractMktgEnvelopeCandidates,
@@ -141,13 +142,15 @@ export class FoundationMessageService {
   public async getResult(req: Request, sessionId: string, projectUid?: string): Promise<FoundationMessageResultResponse> {
     const payloads = await this.guildService.getRawEventPayloads(req, sessionId);
     const envelope = this.findAuthoritativeEnvelope(req, payloads);
+    // What the agent has done so far, in plain sentences, for the run page's live feed — on every status.
+    const activity = buildMktgRunActivity(payloads);
 
     if (!envelope) {
       const questions = this.findLatestQuestions(req, payloads);
       if (questions) {
-        return { status: 'questions', questions, questionsId: foundationMessageQuestionsId(questions) };
+        return { status: 'questions', questions, questionsId: foundationMessageQuestionsId(questions), activity };
       }
-      return { status: 'pending' };
+      return { status: 'pending', activity };
     }
 
     logger.info(req, 'foundation_message_result', 'Messaging Document ready', {
@@ -170,6 +173,7 @@ export class FoundationMessageService {
       projectName: envelope.project_name,
       project: envelope.project,
       documentStatus: envelope.status,
+      activity,
       ...(persistence && { persistence }),
     };
   }

@@ -4,7 +4,7 @@
 import { isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
 import { Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -14,7 +14,6 @@ import { TextareaComponent } from '@components/textarea/textarea.component';
 import {
   MKTG_AGENT_INTAKES,
   MKTG_AGENTS,
-  MKTG_ANSWER_NOT_SUBSTANTIVE_ERROR,
   MKTG_DOCUMENT_STATUS_REVIEWED_PREFIX,
   MKTG_DOCUMENT_TYPES,
   MKTG_INTAKE_FORMAT_ERRORS,
@@ -38,17 +37,17 @@ import {
   MktgResolvedFieldGroup,
   MktgRunAnswer,
   MktgRunAnsweredQuestionRow,
+  MktgRunActivity,
   MktgRunAnswerOrigin,
   MktgRunPhase,
-  MktgRunQuestionRow,
   MktgRunQuestionsPending,
   MktgRunVersion,
   MktgStoredAgentRun,
   ProjectContext,
   User,
 } from '@lfx-one/shared/interfaces';
-import { findMktgDocumentStatus, foundationMessageAnswerOrigin, mktgAgentDocumentName } from '@lfx-one/shared/utils';
-import { githubRepoUrlValidator, sourceUrlValidator, substantiveAnswerValidator, trimmedRequired } from '@lfx-one/shared/validators';
+import { findMktgDocumentStatus, mktgAgentDocumentName } from '@lfx-one/shared/utils';
+import { githubRepoUrlValidator, sourceUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 import { MessageService } from 'primeng/api';
 import { combineLatest, distinctUntilChanged, EMPTY, filter, map, Subscription, switchMap } from 'rxjs';
 
@@ -60,11 +59,14 @@ import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 
 import { MktgIntakeDocumentsComponent } from '../mktg-intake-documents/mktg-intake-documents.component';
+import { MktgRunActivityComponent } from '../mktg-run-activity/mktg-run-activity.component';
+import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questions.component';
 
 // Form-first agent run page (approved Marketing OS design): batch intake form
-// → staged running checklist → (for agents that research first, the
-// questions they could not settle, each with a suggested answer to accept or
-// edit, answered on the same run →) document result with versions and a
+// → staged running checklist, or for agents with a live feed the agent's
+// activity as it happens → (for agents that research first, the questions
+// they could not settle, one at a time, each with a suggested answer to take
+// or replace, answered on the same run →) document result with versions and a
 // "Request changes" feedback box that regenerates as v+1 through the existing
 // chat/session BFF. The page is driven entirely by the shared intake registry
 // (MKTG_AGENT_INTAKES), so additional agent forms slot in without touching the
@@ -81,6 +83,8 @@ import { MktgIntakeDocumentsComponent } from '../mktg-intake-documents/mktg-inta
     MarkdownRendererComponent,
     MessageComponent,
     MktgIntakeDocumentsComponent,
+    MktgRunActivityComponent,
+    MktgRunQuestionsComponent,
   ],
   templateUrl: './mktg-agent-run.component.html',
 })
@@ -128,20 +132,12 @@ export class MktgAgentRunComponent {
 
   // === Constants ===
   protected readonly stageLabels = MKTG_RUN_STAGES;
-  protected readonly answerNotSubstantiveError = MKTG_ANSWER_NOT_SUBSTANTIVE_ERROR;
 
   // === Forms ===
   protected readonly intakeForm: FormGroup<Record<string, FormControl<string>>> = this.buildIntakeForm();
   protected readonly feedbackForm = new FormGroup({
     feedback: new FormControl('', { nonNullable: true }),
   });
-  /**
-   * The questions step's answers, one control per question the agent asked —
-   * rebuilt each time a questions turn arrives, pre-filled with the agent's
-   * suggested answers. Every control is required to hold a real answer: no
-   * skip, no TBD, no empty.
-   */
-  protected readonly questionsForm = new FormGroup<Record<string, AbstractControl<string>>>({});
 
   // === Signals ===
   protected readonly phase = signal<MktgRunPhase>('form');
@@ -204,15 +200,21 @@ export class MktgAgentRunComponent {
   protected readonly questionsPending = signal<MktgRunQuestionsPending | null>(null);
   /** Whether the result card shows what the agent asked and what went back. */
   protected readonly askedExpanded = signal(false);
+  /** The agent's activity so far (intakes with a live feed), as the result endpoint last reported it. */
+  protected readonly activity = signal<MktgRunActivity[]>([]);
+  /** Epoch ms the current stretch of the run started — the feed's timer. */
+  protected readonly activityStartedAt = signal(Date.now());
+  /** True once the answers went back: the run is writing, not researching. */
+  protected readonly writingStretch = signal(false);
+  /** The answers last sent, by key — they come back on the questions step if sending failed. */
+  protected readonly lastAnswers = signal<Record<string, string>>({});
+  /** True while the answers are on their way to the agent. */
+  protected readonly answersSending = signal(false);
 
   // === Computed ===
   private readonly intakeValid = toSignal(this.intakeForm.statusChanges.pipe(map((status) => status === 'VALID')), { initialValue: this.intakeForm.valid });
   private readonly feedbackValue = toSignal(this.feedbackForm.controls.feedback.valueChanges, { initialValue: '' });
   private readonly intakeValue = toSignal(this.intakeForm.valueChanges, { initialValue: this.intakeForm.getRawValue() });
-  private readonly questionsValid = toSignal(this.questionsForm.statusChanges.pipe(map((status) => status === 'VALID')), {
-    initialValue: this.questionsForm.valid,
-  });
-  private readonly questionsValue = toSignal(this.questionsForm.valueChanges, { initialValue: this.questionsForm.getRawValue() });
 
   protected readonly projectName = computed(() => this.projectContext.activeContext()?.name || 'Your Project');
   protected readonly formTitle = computed(() => `${this.intake?.formTitleAction} the ${this.projectName()} ${this.intake?.documentName}`);
@@ -228,12 +230,12 @@ export class MktgAgentRunComponent {
   );
   /** Field labels as shown: the registered question per field key. */
   protected readonly fieldLabels: Record<string, string> = Object.fromEntries((this.intake?.fields ?? []).map((field) => [field.key, field.question]));
-  /** The questions step's rows, precomputed so the template binds properties only. */
-  protected readonly questionRows: Signal<MktgRunQuestionRow[]> = this.initQuestionRows();
-  /** Which answers currently fail the substantive-answer rule — the message is shown per field, submission is already blocked. */
-  protected readonly answerErrors: Signal<Record<string, boolean>> = this.initAnswerErrors();
-  /** The answers go only when every question holds a real answer and nothing is in flight. */
-  protected readonly answersDisabled = computed(() => !this.questionsValid() || this.phase() === 'running' || !this.questionsPending());
+  /** The questions the agent is waiting on, for the stepper. */
+  protected readonly pendingQuestions = computed(() => this.questionsPending()?.questions ?? []);
+  /** The feed's header line. */
+  protected readonly activityTitle = computed(() =>
+    this.writingStretch() ? `Writing your ${this.intake?.documentName ?? 'document'}…` : `Researching ${this.projectName()}…`
+  );
   /** What the agent asked before writing the current version, with the answers that went back. */
   protected readonly askedRows: Signal<MktgRunAnsweredQuestionRow[]> = this.initAskedRows();
   /**
@@ -480,17 +482,17 @@ export class MktgAgentRunComponent {
   }
 
   /** Sends the answers to the agent's questions on the same run; the page polls on for the document. */
-  protected onAnswerQuestions(): void {
+  protected onAnswerQuestions(answers: MktgRunAnswer[]): void {
     const pending = this.questionsPending();
     const request = this.activeRequest;
-    if (this.answersDisabled() || !pending || !request) {
+    if (!pending || !request || this.answersSending()) {
       return;
     }
-    const answers: MktgRunAnswer[] = pending.questions.map((question) => {
-      const text = (this.questionsForm.controls[question.key]?.value ?? '').trim();
-      return { key: question.key, text, origin: foundationMessageAnswerOrigin(text, question.suggestedAnswer) };
-    });
+    this.lastAnswers.set(Object.fromEntries(answers.map((answer) => [answer.key, answer.text])));
     this.errorText.set('');
+    this.answersSending.set(true);
+    this.writingStretch.set(true);
+    this.activityStartedAt.set(Date.now());
     this.phase.set('running');
     this.stage.set(0);
     this.generationSub?.unsubscribe();
@@ -498,9 +500,14 @@ export class MktgAgentRunComponent {
       .answerQuestions(request, pending, answers)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: (progress) => this.onProgress(progress, request.projectUid),
+        next: (progress) => {
+          this.answersSending.set(false);
+          this.onProgress(progress, request.projectUid);
+        },
         error: () => {
-          // The answers are kept on the form: back to the questions step, not to square one.
+          // The answers come back on the questions step, as given: not square one.
+          this.answersSending.set(false);
+          this.writingStretch.set(false);
           this.errorText.set('The agent could not take your answers. They are kept — try again.');
           this.phase.set('questions');
         },
@@ -666,31 +673,6 @@ export class MktgAgentRunComponent {
       footnote: group.footnote ?? '',
       fields: group.fieldKeys.map((key) => this.intake?.fields.find((field) => field.key === key)).filter((field): field is MktgIntakeField => !!field),
     }));
-  }
-
-  private initQuestionRows(): Signal<MktgRunQuestionRow[]> {
-    return computed(() =>
-      (this.questionsPending()?.questions ?? []).map((question) => ({
-        key: question.key,
-        label: question.label,
-        question: question.question,
-        why: question.why,
-        suggested: !!question.suggestedAnswer,
-        basis: question.basis.map((entry) => ({ text: entry, href: /^https?:\/\/\S+$/.test(entry) ? entry : null })),
-        controlId: `mktg-question-${question.key}`,
-      }))
-    );
-  }
-
-  private initAnswerErrors(): Signal<Record<string, boolean>> {
-    return computed(() => {
-      // Depend on the form's value so the flags follow every keystroke; the
-      // validators have already re-run when valueChanges emits.
-      this.questionsValue();
-      return Object.fromEntries(
-        (this.questionsPending()?.questions ?? []).map((question) => [question.key, !!this.questionsForm.controls[question.key]?.errors?.['substantiveAnswer']])
-      );
-    });
   }
 
   private initAskedRows(): Signal<MktgRunAnsweredQuestionRow[]> {
@@ -1019,6 +1001,10 @@ export class MktgAgentRunComponent {
     this.errorText.set('');
     this.docExpanded.set(false);
     this.clearQuestions();
+    this.activity.set([]);
+    this.activityStartedAt.set(Date.now());
+    this.writingStretch.set(false);
+    this.lastAnswers.set({});
     this.phase.set('running');
     this.stage.set(0);
 
@@ -1063,6 +1049,11 @@ export class MktgAgentRunComponent {
       this.stage.set(1);
       return;
     }
+    if (progress.type === 'activity') {
+      // The whole feed so far, every time it changed.
+      this.activity.set(progress.activity);
+      return;
+    }
     if (progress.type === 'questions') {
       // The agent read the sources and wants the gaps answered before it
       // writes: a second step on the same run, pre-filled with its
@@ -1082,20 +1073,14 @@ export class MktgAgentRunComponent {
     this.completeRun(progress.run);
   }
 
-  /** Puts the agent's questions on the page: one required control per question, pre-filled with the suggested answer. */
+  /** Puts the agent's questions on the page; the stepper asks them one at a time. */
   private showQuestions(pending: MktgRunQuestionsPending): void {
-    this.clearQuestions();
-    for (const question of pending.questions) {
-      this.questionsForm.addControl(question.key, new FormControl(question.suggestedAnswer, { nonNullable: true, validators: [substantiveAnswerValidator()] }));
-    }
+    this.lastAnswers.set({});
     this.questionsPending.set(pending);
     this.phase.set('questions');
   }
 
   private clearQuestions(): void {
-    for (const key of Object.keys(this.questionsForm.controls)) {
-      this.questionsForm.removeControl(key);
-    }
     this.questionsPending.set(null);
   }
 

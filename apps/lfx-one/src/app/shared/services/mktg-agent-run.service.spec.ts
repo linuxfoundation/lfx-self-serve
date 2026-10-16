@@ -16,6 +16,7 @@ import {
 import {
   MktgGenerateProgress,
   MktgGenerateRequest,
+  MktgRunActivity,
   MktgRunQuestion,
   MktgRunQuestionsPending,
   MktgRunResultResponse,
@@ -688,6 +689,58 @@ describe('MktgAgentRunService', () => {
       // Polling stopped with the questions: nothing more is asked of the result endpoint.
       await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 3);
       expect(mfResultCalls()).toHaveLength(2);
+    });
+
+    it('streams the agent’s live feed — only when it changed — ahead of the questions', async () => {
+      const reading: MktgRunActivity = {
+        id: 'step-1',
+        kind: 'reading',
+        label: 'Looking through aaif on GitHub',
+        status: 'running',
+        startedAt: '2026-10-16T08:00:00Z',
+      };
+      const searching: MktgRunActivity = { id: 'step-2', kind: 'search', label: 'Searching the web', status: 'running', startedAt: '2026-10-16T08:00:05Z' };
+      resultResponses = [
+        { status: 'pending', activity: [reading] },
+        { status: 'pending', activity: [reading] },
+        { status: 'pending', activity: [{ ...reading, status: 'done' }, searching] },
+        {
+          ...QUESTIONS_RESULT,
+          activity: [
+            { ...reading, status: 'done' },
+            { ...searching, status: 'done' },
+          ],
+        },
+      ];
+      const events: MktgGenerateProgress[] = [];
+      service.generate(mfRequest()).subscribe((event) => events.push(event));
+
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs + MKTG_RUN_POLL.intervalMs * 3);
+
+      expect(events.map((event) => event.type)).toEqual(['submitted', 'activity', 'activity', 'activity', 'questions']);
+      expect(events[1]).toEqual({ type: 'activity', activity: [reading] });
+      // The repeated feed of the second poll was not emitted again.
+      expect(events[2]).toEqual({ type: 'activity', activity: [{ ...reading, status: 'done' }, searching] });
+    });
+
+    it('still gives up after the overall deadline while the feed keeps arriving', async () => {
+      let tick = 0;
+      httpPost.mockImplementation((url: string) => {
+        if (url === FOUNDATION_MESSAGE_INTAKE.endpoints.generate) {
+          return of({ sessionId: 'sess-2', ownerToken: 'token-2' });
+        }
+        tick += 1;
+        return of({
+          status: 'pending',
+          activity: [{ id: 'step-1', kind: 'reading', label: `Reading page ${tick}`, status: 'running', startedAt: '2026-10-16T08:00:00Z' }],
+        });
+      });
+      let failed: unknown = null;
+      service.generate(mfRequest()).subscribe({ error: (error: unknown) => (failed = error) });
+
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.timeoutMs + MKTG_RUN_POLL.intervalMs * 2);
+
+      expect(failed).not.toBeNull();
     });
 
     it('answers on the SAME session, ignores the block it just answered, and stores the questions and answers with the version', async () => {

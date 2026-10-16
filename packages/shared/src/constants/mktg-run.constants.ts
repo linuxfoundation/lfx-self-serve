@@ -207,6 +207,7 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
   },
   derivativeChips: FOUNDATION_MESSAGE_DERIVATIVE_CHIPS.map((chip) => ({ key: chip.key, label: chip.label })),
   freshRunPerSubmission: true,
+  liveActivity: true,
   submitsProject: true,
   sections: FOUNDATION_MESSAGE_REQUIRED_HEADINGS.map((heading) => heading.replace(/^## /, '')),
   endpoints: {

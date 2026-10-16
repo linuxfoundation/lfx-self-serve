@@ -11,6 +11,7 @@
 // version so the marketplace can badge agents that already have output.
 
 import { FOUNDATION_MESSAGE_ANSWER_ORIGINS } from '../constants/foundation-message.constants';
+import type { MKTG_RUN_ACTIVITY_KINDS } from '../constants/mktg-run-activity.constants';
 import type { MktgSessionInfo } from './mktg-chat.interface';
 
 /** How a single intake field is rendered on the run page. */
@@ -548,6 +549,40 @@ export interface MktgRunAnsweredQuestionRow {
   originLabel: string;
 }
 
+/** Which option a question is answered with on the questions step: the agent's suggestion, or the requester's own words. */
+export type MktgRunQuestionChoice = 'suggested' | 'own';
+
+/** Where one question stands in the questions stepper's header. */
+export type MktgRunQuestionChipState = 'current' | 'answered' | 'open';
+
+/** One header chip of the questions stepper. */
+export interface MktgRunQuestionChip {
+  /** The question's key; the `@for` track key. */
+  key: string;
+  /** The question's label, shortened ("Vision", "Proof points"). */
+  label: string;
+  /** Its position, 0-based. */
+  index: number;
+  /** Current, answered or still open. */
+  state: MktgRunQuestionChipState;
+}
+
+/** One row of the questions stepper's review: the question with the answer that will go back. */
+export interface MktgRunQuestionReviewRow {
+  /** The question's key; the `@for` track key. */
+  key: string;
+  /** Its position, 0-based — where "Edit" jumps back to. */
+  index: number;
+  /** Short label. */
+  label: string;
+  /** The question itself. */
+  question: string;
+  /** The answer as it stands. */
+  answer: string;
+  /** Where the answer comes from, in words. */
+  originLabel: string;
+}
+
 /**
  * Receipt of an agent's server-side persistence write, returned on a `ready`
  * result by agents whose contract persists the validated document (the Brand
@@ -614,6 +649,61 @@ export interface MktgRunResultResponse {
    * persistence retry polls for.
    */
   persistence?: MktgRunPersistReceipt;
+  /**
+   * What the agent has done so far, in order, for agents whose intake
+   * declares {@link MktgAgentIntake.liveActivity}: present on every status,
+   * pending, questions and ready alike, so the run page can show the work as
+   * it happens.
+   */
+  activity?: MktgRunActivity[];
+}
+
+/** One kind of step in a run's live activity feed — also the header phase it belongs to. */
+export type MktgRunActivityKind = (typeof MKTG_RUN_ACTIVITY_KINDS)[number];
+
+/** Where one step of the feed stands. */
+export type MktgRunActivityStatus = 'running' | 'done' | 'failed';
+
+/**
+ * One step of a run's live activity feed, built server-side from the
+ * session's raw events. It carries only a plain sentence written by LFX One
+ * and, for a web search, the query the agent typed: never a tool name, a
+ * tool's output, an id, or the model's own reasoning.
+ */
+export interface MktgRunActivity {
+  /** Position-based id, stable while the run goes on (`step-1`, `step-2`, … and `writing`). */
+  id: string;
+  /** What kind of work it is; picks the icon and the header phase. */
+  kind: MktgRunActivityKind;
+  /** The sentence, e.g. "Reading the aaif/spec README". */
+  label: string;
+  /** A muted second line, e.g. the search query in quotes. */
+  detail?: string;
+  /** Running, done or failed. */
+  status: MktgRunActivityStatus;
+  /** ISO-8601 time the step started. */
+  startedAt: string;
+  /** ISO-8601 time it ended, once it has. */
+  endedAt?: string;
+}
+
+/** One step as the feed renders it: the activity plus its icon. */
+export interface MktgRunActivityRow extends MktgRunActivity {
+  /** Font Awesome classes of the kind's icon. */
+  iconClass: string;
+}
+
+/** Where one header phase stands: under way, done, passed without a step, or not reached. */
+export type MktgRunActivityPhaseState = 'active' | 'done' | 'skipped' | 'pending';
+
+/** One phase of the feed's header. */
+export interface MktgRunActivityPhase {
+  /** The kind the phase groups. */
+  kind: MktgRunActivityKind;
+  /** Its name, e.g. "Reading sources". */
+  label: string;
+  /** Where it stands. */
+  state: MktgRunActivityPhaseState;
 }
 
 /**
@@ -689,6 +779,12 @@ export interface MktgAgentIntake {
   fieldGroups?: MktgIntakeFieldGroup[];
   /** The optional existing-documents section, shown after the fields. */
   documents?: MktgIntakeDocumentsConfig;
+  /**
+   * The result endpoint reports the agent's live activity
+   * ({@link MktgRunResultResponse.activity}): the run page shows it as a
+   * timeline while the agent works.
+   */
+  liveActivity?: boolean;
 }
 
 /** One generated document version for an agent run. */
@@ -801,6 +897,9 @@ export interface MktgRunQuestionsPending {
 /**
  * Progress events emitted while a generation request is in flight.
  *
+ * `activity` repeats on every poll that reports the agent's live activity,
+ * with the whole feed so far.
+ *
  * `questions` ends the stream: the agent wants answers before it writes, and
  * the run continues through the service's `answerQuestions` on the same
  * session.
@@ -814,6 +913,7 @@ export interface MktgRunQuestionsPending {
  */
 export type MktgGenerateProgress =
   | { type: 'submitted' }
+  | { type: 'activity'; activity: MktgRunActivity[] }
   | { type: 'questions'; pending: MktgRunQuestionsPending }
   | { type: 'document'; run: MktgStoredAgentRun }
   | { type: 'persisted' };

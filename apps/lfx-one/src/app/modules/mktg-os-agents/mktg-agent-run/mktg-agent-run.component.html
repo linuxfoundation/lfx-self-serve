@@ -198,124 +198,55 @@
 
           <!-- RUNNING phase -->
           @case ('running') {
-            <div class="flex flex-col items-center gap-4 px-7 pt-32 pb-16" data-testid="mktg-agent-run-running">
-              <span class="relative flex items-center justify-center w-12 h-12 rounded-xl" [ngClass]="agentIconClass">
-                <i [class]="agent.icon + ' text-xl'" aria-hidden="true"></i>
-                <span
-                  class="absolute -inset-1.5 rounded-full border-2 border-transparent border-t-blue-300 border-r-blue-300 animate-spin"
-                  aria-hidden="true"></span>
-              </span>
-              <div class="flex flex-col gap-2" role="status" aria-live="polite">
-                @for (runStage of stages(); track runStage.label) {
-                  <div class="flex items-center gap-2">
-                    @switch (runStage.state) {
-                      @case ('done') {
-                        <i class="fa-light fa-check text-xs text-gray-400" aria-hidden="true"></i>
+            @if (intake.liveActivity) {
+              <!-- What the agent is doing, step by step, as it happens. -->
+              <lfx-mktg-run-activity
+                [activity]="activity()"
+                [title]="activityTitle()"
+                [startedAt]="activityStartedAt()"
+                [icon]="agent.icon"
+                [iconClass]="agentIconClass" />
+            } @else {
+              <div class="flex flex-col items-center gap-4 px-7 pt-32 pb-16" data-testid="mktg-agent-run-running">
+                <span class="relative flex items-center justify-center w-12 h-12 rounded-xl" [ngClass]="agentIconClass">
+                  <i [class]="agent.icon + ' text-xl'" aria-hidden="true"></i>
+                  <span
+                    class="absolute -inset-1.5 rounded-full border-2 border-transparent border-t-blue-300 border-r-blue-300 animate-spin"
+                    aria-hidden="true"></span>
+                </span>
+                <div class="flex flex-col gap-2" role="status" aria-live="polite">
+                  @for (runStage of stages(); track runStage.label) {
+                    <div class="flex items-center gap-2">
+                      @switch (runStage.state) {
+                        @case ('done') {
+                          <i class="fa-light fa-check text-xs text-gray-400" aria-hidden="true"></i>
+                        }
+                        @case ('active') {
+                          <span class="w-2 h-2 rounded-full bg-blue-500 animate-pulse" aria-hidden="true"></span>
+                        }
+                        @default {
+                          <span class="w-2 h-2 rounded-full bg-gray-200" aria-hidden="true"></span>
+                        }
                       }
-                      @case ('active') {
-                        <span class="w-2 h-2 rounded-full bg-blue-500 animate-pulse" aria-hidden="true"></span>
-                      }
-                      @default {
-                        <span class="w-2 h-2 rounded-full bg-gray-200" aria-hidden="true"></span>
-                      }
-                    }
-                    <span class="text-sm" [ngClass]="runStage.labelClass">{{ runStage.label }}</span>
-                  </div>
-                }
+                      <span class="text-sm" [ngClass]="runStage.labelClass">{{ runStage.label }}</span>
+                    </div>
+                  }
+                </div>
               </div>
-            </div>
+            }
           }
 
-          <!-- QUESTIONS phase: the agent read the sources and asks only the gaps, each with a suggested answer to accept or edit. -->
+          <!-- QUESTIONS phase: the agent read the sources and asks only the gaps, one at a time, each with a suggested answer. -->
           @case ('questions') {
-            <form
-              class="w-full px-6 lg:px-10 pt-7 pb-10 flex flex-col gap-5"
-              [formGroup]="questionsForm"
-              (ngSubmit)="onAnswerQuestions()"
-              data-testid="mktg-agent-run-questions">
-              <div>
-                <h1 class="font-display font-light text-xl text-gray-900" data-testid="mktg-agent-run-questions-title">A few questions before the draft</h1>
-                <p class="mt-1 text-sm leading-relaxed text-gray-500">
-                  The agent read your sources and researched the rest. These are the points it could not settle on its own — each comes with its best guess.
-                  Accept or edit every one; it writes the {{ intake.documentName }} from your answers.
-                </p>
-              </div>
-
-              @for (row of questionRows(); track row.key) {
-                <section
-                  class="bg-white border border-gray-200 rounded-xl p-5 flex flex-col gap-2.5"
-                  [attr.aria-labelledby]="row.controlId + '-label'"
-                  [attr.data-testid]="'mktg-agent-run-question-' + row.key">
-                  <div class="flex flex-col gap-1">
-                    <label class="text-sm font-semibold text-gray-900" [id]="row.controlId + '-label'" [for]="row.controlId">
-                      {{ row.label }}
-                      <span class="text-red-600">*</span>
-                    </label>
-                    <p class="text-sm leading-relaxed text-gray-700">{{ row.question }}</p>
-                    @if (row.why) {
-                      <p class="text-xs text-gray-500" [attr.data-testid]="'mktg-agent-run-question-why-' + row.key">{{ row.why }}</p>
-                    }
-                  </div>
-                  <lfx-textarea
-                    [id]="row.controlId"
-                    [form]="questionsForm"
-                    [control]="row.key"
-                    [rows]="3"
-                    placeholder="Your answer"
-                    styleClass="w-full min-h-20 resize-y"
-                    [describedBy]="answerErrors()[row.key] ? row.controlId + '-error' : ''"
-                    [invalid]="!!answerErrors()[row.key]"
-                    [dataTest]="row.controlId" />
-                  <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
-                    @if (row.suggested) {
-                      <span class="inline-flex items-center gap-1" [attr.data-testid]="'mktg-agent-run-question-suggested-' + row.key">
-                        <i class="fa-light fa-wand-magic-sparkles" aria-hidden="true"></i>
-                        Suggested by the agent — edit it if it is wrong
-                      </span>
-                    } @else {
-                      <span [attr.data-testid]="'mktg-agent-run-question-unsuggested-' + row.key"
-                        >The agent found nothing to suggest — your answer is needed.</span
-                      >
-                    }
-                    @if (row.basis.length > 0) {
-                      <span class="flex flex-wrap items-center gap-x-2" [attr.data-testid]="'mktg-agent-run-question-basis-' + row.key">
-                        <span>Based on:</span>
-                        @for (basis of row.basis; track basis.text) {
-                          @if (basis.href) {
-                            <a class="text-blue-600 hover:underline break-all" [href]="basis.href" target="_blank" rel="noopener noreferrer">{{
-                              basis.text
-                            }}</a>
-                          } @else {
-                            <span>{{ basis.text }}</span>
-                          }
-                        }
-                      </span>
-                    }
-                  </div>
-                  <!-- Blocking: no skip and no TBD — the agent already suggested what it could, so what is left needs a real answer. -->
-                  @if (answerErrors()[row.key]) {
-                    <span
-                      class="flex items-start gap-1.5 text-xs text-red-600"
-                      [id]="row.controlId + '-error'"
-                      [attr.data-testid]="'mktg-agent-run-answer-error-' + row.key"
-                      role="alert">
-                      <i class="fa-light fa-circle-exclamation mt-0.5 shrink-0" aria-hidden="true"></i>
-                      <span>{{ answerNotSubstantiveError }}</span>
-                    </span>
-                  }
-                </section>
-              }
-
-              <div class="flex items-center gap-3 mt-2">
-                <lfx-button
-                  type="submit"
-                  label="Send answers and write the draft"
-                  icon="fa-light fa-paper-plane"
-                  [disabled]="answersDisabled()"
-                  data-testid="mktg-agent-run-answers-submit-button" />
-                <span class="text-xs text-gray-400">* every question needs an answer — accept the suggestion or write your own</span>
-              </div>
-            </form>
+            <div data-testid="mktg-agent-run-questions">
+              <lfx-mktg-run-questions
+                [questions]="pendingQuestions()"
+                [documentName]="intake.documentName"
+                [projectName]="projectName()"
+                [previousAnswers]="lastAnswers()"
+                [busy]="answersSending()"
+                (answered)="onAnswerQuestions($event)" />
+            </div>
           }
 
           <!-- RESULT phase -->
