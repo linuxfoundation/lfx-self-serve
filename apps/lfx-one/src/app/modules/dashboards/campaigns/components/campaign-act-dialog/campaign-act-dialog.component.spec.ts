@@ -12,6 +12,7 @@ import {
   CAMPAIGN_ACT_RESOLVE_UNEXPECTED_MESSAGE,
   CAMPAIGN_ACT_RESUME_ADOPTED_NOTE,
   CAMPAIGN_ACT_UNOWNED_MESSAGE,
+  CAMPAIGN_BID_UNAVAILABLE_X_ADOPTED_REASON,
   CAMPAIGN_BUDGET_BLOCKED_PACING_CHECK_REASON,
   CAMPAIGN_BUDGET_X_LIFETIME_REASON,
   CAMPAIGN_ETAG_STALE_MESSAGE,
@@ -304,6 +305,34 @@ describe('CampaignActDialogComponent (#3299)', () => {
       expect.objectContaining({ campaignId: 'c-1', briefId: 'b-1', bid: 2.5, bidType: 'cpc', etag: '"3"' })
     );
     expect(q('campaign-act-dialog-bid-current')?.textContent).toContain('2.5');
+  });
+
+  // An adopted X campaign records no line item, and X bids live on the line item, so campaign-service
+  // refuses the write (409). The editor is withheld with where to change it; Pause and Budget stay.
+  it('withholds the bid editor for an adopted X campaign and sends nothing', async () => {
+    await setup({ lever: 'bid', platform: 'twitter-ads' }, { campaign: { ...CAMPAIGN, platform: 'twitter-ads', adopted: true } });
+
+    expect(q('campaign-act-dialog-bid-unavailable')?.textContent?.trim()).toBe(CAMPAIGN_BID_UNAVAILABLE_X_ADOPTED_REASON);
+    expect(fixture.debugElement.query(By.directive(CampaignBidFormComponent))).toBeNull();
+    fixture.componentInstance['changeBid']({ bid: 2.5 });
+    expect(service.updateCampaignBid).not.toHaveBeenCalled();
+  });
+
+  it('keeps the bid editor for an X campaign created here', async () => {
+    await setup({ lever: 'bid', platform: 'twitter-ads' }, { campaign: { ...CAMPAIGN, platform: 'twitter-ads' } });
+
+    expect(q('campaign-act-dialog-bid-unavailable')).toBeNull();
+    expect(fixture.debugElement.query(By.directive(CampaignBidFormComponent))).not.toBeNull();
+  });
+
+  it('keeps Pause and Budget for an adopted X campaign', async () => {
+    const adoptedX = { campaign: { ...CAMPAIGN, platform: 'twitter-ads', adopted: true } };
+    await setup({ platform: 'twitter-ads' }, adoptedX);
+    expect(q('campaign-act-dialog-toggle')?.textContent).toContain('Pause');
+
+    await setup({ lever: 'budget', platform: 'twitter-ads' }, adoptedX);
+    expect(q('campaign-act-dialog-budget-unavailable')).toBeNull();
+    expect(fixture.debugElement.query(By.directive(CampaignBudgetFormComponent))).not.toBeNull();
   });
 
   it('does not refill the bid editor with a stale amount after a 412 and Reload', async () => {
