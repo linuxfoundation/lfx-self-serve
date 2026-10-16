@@ -96,7 +96,7 @@
                         aria-describedby="campaign-act-resume-adopted"
                         [attr.aria-label]="toggleLabel() + ' ' + campaign.campaign_name"
                         (click)="toggle()"
-                        class="cursor-not-allowed rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 opacity-50"
+                        class="cursor-not-allowed rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
                         data-testid="campaign-act-dialog-toggle">
                         {{ toggleLabel() }}
                       </button>

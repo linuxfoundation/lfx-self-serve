@@ -3090,8 +3090,9 @@ export class OptimizationTabComponent implements OnInit {
    * unavailable reason, an adopted campaign's Resume reason), which inline would mean nested
    * ternaries in a template — the construct this repo forbids. Several may be present at once (a
    * disabled row can still hold an error from a click that raced the status), and
-   * `aria-describedby` takes a LIST, so each is named rather than one silently shadowing another. A dangling reference to an element that renders conditionally is worse than none, so
-   * each id is included only when its element is actually drawn.
+   * `aria-describedby` takes a LIST, so each is named rather than one silently shadowing another.
+   * A dangling reference to an element that renders conditionally is worse than none, so each id
+   * is included only when its element is actually drawn.
    *
    * `static` in spirit — it reads no signals, so the computed above owns the reactivity.
    */
