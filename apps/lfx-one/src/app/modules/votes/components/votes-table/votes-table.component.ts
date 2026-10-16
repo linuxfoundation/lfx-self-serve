@@ -14,7 +14,8 @@ import { MenuComponent } from '@components/menu/menu.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { PollStatus, VOTE_LABEL, VoteResponseStatus, VoteRowParticipationState } from '@lfx-one/shared';
+import { PollStatus, VOTE_LABEL, VoteResponseStatus } from '@lfx-one/shared';
+import { VoteRowParticipationState } from '@lfx-one/shared/enums';
 import { FilterPillOption, MyVotesQuickFilter, Vote, VoteFilterState, VoteTableRow } from '@lfx-one/shared/interfaces';
 import {
   computeVoteRowParticipation,
