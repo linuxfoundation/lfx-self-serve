@@ -113,6 +113,7 @@
                   [campaignName]="campaign.campaign_name"
                   [knownBudgetType]="confirmedBudget()?.budgetType ?? null"
                   [initialBudget]="confirmedBudget()?.budget ?? null"
+                  [dailyOnly]="budgetDailyOnly()"
                   [pending]="pending()"
                   [blockedReason]="budgetBlockedReason()"
                   [outcome]="budgetOutcome()"

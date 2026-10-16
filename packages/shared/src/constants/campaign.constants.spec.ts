@@ -7,6 +7,8 @@ import { GoogleCreativeEitherOrRule, GoogleCreativeFieldSpec, RedditObjective } 
 import { lfxColors } from './colors.constants';
 import {
   isCanonicalGoogleAdsResourceId,
+  BUDGET_WRITABLE_CAMPAIGN_PLATFORMS,
+  DAILY_ONLY_BUDGET_CAMPAIGN_PLATFORMS,
   CAMPAIGN_ALERT_THRESHOLDS,
   MONITOR_PLATFORM_BUTTON_COLORS,
   CAMPAIGN_EMAIL_TYPES,
@@ -1105,5 +1107,24 @@ describe('Google Ads campaign criteria vocabularies', () => {
 
   it('caps each demographic exclusion list at 20, the per-list bound upstream checks twice', () => {
     expect(GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS).toBe(20);
+  });
+});
+
+describe('budget-writable platforms (#3299)', () => {
+  // campaign-service's `update-campaign-budget` serves Google, LinkedIn, Meta, Microsoft, Reddit
+  // and X (docs/api-catalog.md); every other platform is a 400 upstream.
+  it('includes X alongside the other five platforms campaign-service writes budgets on', () => {
+    expect([...BUDGET_WRITABLE_CAMPAIGN_PLATFORMS].sort()).toEqual(['google-ads', 'linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads', 'twitter-ads']);
+  });
+
+  // X budgets are written as a daily amount only: a `lifetime` request is always a 409 upstream.
+  it('marks X, and only X, as daily-only', () => {
+    expect([...DAILY_ONLY_BUDGET_CAMPAIGN_PLATFORMS]).toEqual(['twitter-ads']);
+  });
+
+  it('never marks a platform daily-only that it cannot write a budget on', () => {
+    for (const platform of DAILY_ONLY_BUDGET_CAMPAIGN_PLATFORMS) {
+      expect(BUDGET_WRITABLE_CAMPAIGN_PLATFORMS.has(platform)).toBe(true);
+    }
   });
 });
