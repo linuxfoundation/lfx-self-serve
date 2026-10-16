@@ -11,6 +11,7 @@ import '@angular/compiler';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { LEGACY_VOTE_TIMEZONE } from '../constants/timezones.constants';
+import { getUserTimezone } from './date-time.utils';
 import { PollStatus, VoteResponseStatus, VoteRowParticipationState } from '../enums';
 import type { Vote, VoteFormValue, VoteResultsResponse } from '../interfaces/poll.interface';
 import {
@@ -281,6 +282,18 @@ describe('mapVoteToCloneFormValue', () => {
     expect(form.title).toBe('Copy of Board election');
   });
 
+  it('does not double-prefix when cloning an already-cloned vote', () => {
+    const form = mapVoteToCloneFormValue(vote({ name: 'Copy of Board election' }), NOW);
+    expect(form.title).toBe('Copy of Board election');
+  });
+
+  it('clamps the prefixed title to the 200-character form limit', () => {
+    const longName = 'B'.repeat(199);
+    const form = mapVoteToCloneFormValue(vote({ name: longName }), NOW);
+    expect(form.title.length).toBe(200);
+    expect(form.title.startsWith('Copy of ')).toBe(true);
+  });
+
   it('keeps the source deadline when it is still in the future', () => {
     const source = mapVoteToFormValue(vote({ end_time: '2025-06-01T00:00:00Z' }));
     const cloned = mapVoteToCloneFormValue(vote({ end_time: '2025-06-01T00:00:00Z' }), NOW);
@@ -298,6 +311,11 @@ describe('mapVoteToCloneFormValue', () => {
     expect(cloned.close_date?.getMonth()).toBe(4);
     expect(cloned.close_date?.getDate()).toBe(8);
     expect(cloned.close_time).toBe('11:59 PM');
+  });
+
+  it("resets into the organizer's own timezone, not the legacy-vote fallback, when the source stored no zone", () => {
+    const cloned = mapVoteToCloneFormValue(vote({ end_time: '2025-04-01T00:00:00Z', end_time_timezone: undefined }), NOW);
+    expect(cloned.timezone).toBe(getUserTimezone());
   });
 
   it('preserves committee, eligibility and questions from the source vote', () => {

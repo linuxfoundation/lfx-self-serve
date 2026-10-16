@@ -7,6 +7,7 @@ import { TestBed } from '@angular/core/testing';
 import { FormArray, FormGroup } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, NavigationEnd, Router } from '@angular/router';
+import { PollStatus } from '@lfx-one/shared/enums';
 import { Vote } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -426,27 +427,57 @@ describe('VoteManageComponent', () => {
   describe('clone flow (?clone=<uid>)', () => {
     const CLONE_SOURCE_UID = 'vote-uid-source';
 
-    const sourceVote = () =>
-      ({
-        uid: CLONE_SOURCE_UID,
-        name: 'Original board election',
-        status: 'active',
-        project_uid: PROJECT_UID,
-        end_time: '2099-01-01T00:00:00Z',
-      }) as unknown as Vote;
+    const sourceVote = (overrides: Partial<Vote> = {}): Vote => ({
+      uid: CLONE_SOURCE_UID,
+      name: 'Original board election',
+      status: PollStatus.ACTIVE,
+      project_uid: PROJECT_UID,
+      end_time: '2099-01-01T00:00:00Z',
+      ...overrides,
+    });
 
     beforeEach(() => {
       setRouteMode(null); // create mode — clone only applies without an :id route param
       routeMock.queryParamMap = of(convertToParamMap({ clone: CLONE_SOURCE_UID }));
     });
 
-    it('prefills the create form with the source vote, prefixing the title, and stays in create mode', async () => {
-      fetchVote.mockReturnValue(of(sourceVote()));
+    it('prefills the create form with the source vote, prefixing the title, and stays in create mode, without creating a vote', async () => {
+      fetchVote.mockReturnValue(
+        of(
+          sourceVote({
+            committee_uid: COMMITTEE_UID,
+            committee_filters: ['voting_rep'],
+            poll_questions: [
+              {
+                question_id: 'q1',
+                prompt: 'Who should join?',
+                type: 'single_choice',
+                choices: [
+                  { choice_id: 'c1', choice_text: 'Alice' },
+                  { choice_id: 'c2', choice_text: 'Bob' },
+                ],
+              },
+            ],
+            poll_comment_prompts: [{ prompt_id: 'p1', prompt: 'Any concerns?' }],
+          })
+        )
+      );
       const fixture = await createComponent();
 
-      expect(voteServiceMock.getVote).toHaveBeenCalledWith(CLONE_SOURCE_UID);
+      // Uses the tap-free fetch — getVote's signal write would leak the source vote into shared vote-detail state.
+      expect(voteServiceMock.fetchVote).toHaveBeenCalledWith(CLONE_SOURCE_UID);
+      expect(voteServiceMock.getVote).not.toHaveBeenCalled();
       expect(fixture.componentInstance.mode()).toBe('create');
-      expect(fixture.componentInstance.form().get('title')?.value).toBe('Copy of Original board election');
+
+      const form = fixture.componentInstance.form();
+      expect(form.get('title')?.value).toBe('Copy of Original board election');
+      expect(form.get('committee')?.value).toEqual({ uid: COMMITTEE_UID, name: undefined });
+      expect(form.get('eligible_participants')?.value).toBe('voting_rep');
+      expect((form.get('questions') as FormArray).length).toBe(1);
+      expect((form.get('questions') as FormArray).at(0).get('question')?.value).toBe('Who should join?');
+      expect((form.get('commentPrompts') as FormArray).length).toBe(1);
+      expect((form.get('commentPrompts') as FormArray).at(0).get('prompt')?.value).toBe('Any concerns?');
+      expect(voteServiceMock.createVote).not.toHaveBeenCalled();
     });
 
     it('does not fetch a clone source when an :id route param is present (edit mode)', async () => {
@@ -454,7 +485,7 @@ describe('VoteManageComponent', () => {
       fetchVote.mockReturnValue(of(enrichedVote()));
       await createComponent();
 
-      expect(voteServiceMock.getVote).not.toHaveBeenCalledWith(CLONE_SOURCE_UID);
+      expect(voteServiceMock.fetchVote).not.toHaveBeenCalledWith(CLONE_SOURCE_UID);
     });
 
     it('surfaces an error and leaves the form blank when the clone source fails to load', async () => {
@@ -463,6 +494,17 @@ describe('VoteManageComponent', () => {
 
       expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
       expect(fixture.componentInstance.form().get('title')?.value).toBe('');
+    });
+
+    it('leaves the clone prefill in control when both ?clone and ?committee_uid are present (committee_uid is ignored)', async () => {
+      routeMock.queryParamMap = of(convertToParamMap({ clone: CLONE_SOURCE_UID, committee_uid: 'other-committee-uid' }));
+      fetchVote.mockReturnValue(of(sourceVote({ committee_uid: COMMITTEE_UID })));
+      fetchCommittee.mockReturnValue(of({ uid: 'other-committee-uid', name: 'Other Committee' }));
+      const fixture = await createComponent();
+
+      const committeeControl = fixture.componentInstance.form().get('committee');
+      expect(committeeControl?.value).toEqual({ uid: COMMITTEE_UID, name: undefined });
+      expect(committeeControl?.disabled).toBe(false);
     });
   });
 });

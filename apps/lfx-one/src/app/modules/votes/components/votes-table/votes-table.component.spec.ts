@@ -396,6 +396,24 @@ describe('VotesTableComponent — row More menu', () => {
     expect(navigate).toHaveBeenCalledWith(['/votes', 'create'], { queryParams: { clone: 'active' } });
   });
 
+  it("carries the row's own project/committee context when cloning (dashboard rows can span projects)", async () => {
+    fixture.componentRef.setInput('hasPMOAccess', true);
+    fixture.componentRef.setInput('votes', [...ROWS, vote('foreign', { project_slug: 'other-project', committee_uid: 'other-committee-uid' })]);
+    const router = TestBed.inject(Router);
+    const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+    await settle();
+
+    moreButton('foreign')!.click();
+    await settle();
+
+    const items = table['rowActionMenuItems']();
+    items[1].command!({});
+
+    expect(navigate).toHaveBeenCalledWith(['/votes', 'create'], {
+      queryParams: { project: 'other-project', committee_uid: 'other-committee-uid', clone: 'foreign' },
+    });
+  });
+
   it('omits Clone from the menu without hasPMOAccess', async () => {
     fixture.componentRef.setInput('hasPMOAccess', false);
     await settle();

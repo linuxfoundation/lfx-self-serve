@@ -375,9 +375,9 @@ export class VotesTableComponent {
     this.clipboardShare.copyLink(toAbsoluteUrl(votePermalinkPath(uid), isPlatformBrowser(this.platformId)), 'Vote link copied to clipboard.');
   }
 
-  /** Opens the create form prefilled from this vote, scoped to the viewer's current project context (not the source vote's). */
+  /** Opens the create form prefilled from this vote, carrying the row's own project/committee context (dashboard rows can span projects). */
   private cloneVote(vote: VoteTableRow): void {
-    this.router.navigate(['/votes', 'create'], { queryParams: { clone: vote.uid } });
+    this.router.navigate(['/votes', 'create'], { queryParams: { ...vote.editQueryParams, clone: vote.uid } });
   }
 
   private toVoteTableRow(vote: Vote): VoteTableRow {
