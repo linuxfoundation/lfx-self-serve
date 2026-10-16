@@ -77,6 +77,17 @@ describe('VoteReminderDialogComponent', () => {
     expect(sendButton(fixture).disabled).toBe(false);
   });
 
+  it('layers the sticky header above the positioned recipient checkboxes', async () => {
+    const { fixture } = await mount(of(RECIPIENTS));
+    current = fixture;
+    const header = byTestId(fixture, 'vote-reminder-dialog-table')!.querySelector('thead tr')!;
+
+    expect(header.classList.contains('sticky')).toBe(true);
+    expect(header.classList.contains('top-0')).toBe(true);
+    expect(header.classList.contains('z-10')).toBe(true);
+    expect(header.classList.contains('bg-gray-50')).toBe(true);
+  });
+
   it('toggles one recipient and the select-all, keeping the checkboxes in sync', async () => {
     const { fixture, component } = await mount(of(RECIPIENTS));
     current = fixture;
