@@ -18,6 +18,7 @@ import {
   CAMPAIGN_RESUME_REFUSED_CODE,
   CAMPAIGN_UNAVAILABLE_DEPLOYMENT_REASON,
   CAMPAIGN_UNAVAILABLE_RESUME_PLATFORM_REASON,
+  campaignResumeAdoptedReason,
   campaignResumeRefusedMessage,
 } from '@lfx-one/shared/constants';
 import type {
@@ -205,6 +206,49 @@ describe('CampaignActDialogComponent (#3299)', () => {
     click('campaign-act-dialog-toggle');
 
     expect(q('campaign-act-dialog-toggle-error')?.textContent).toContain('resume it in LinkedIn Ads itself');
+    expect(service.updateCampaignStatus).toHaveBeenCalledTimes(1);
+  });
+
+  // campaign-service marks an adopted campaign `adopted: true` and never resumes it, so Resume is
+  // withheld up front: still focusable (aria-disabled), described, and a click sends nothing.
+  it('withholds Resume on a campaign campaign-service marks adopted, and a click sends nothing', async () => {
+    await setup({}, { campaign: { ...CAMPAIGN, status: 'paused', adopted: true } });
+
+    const button = q('campaign-act-dialog-toggle') as HTMLButtonElement;
+    const reason = q('campaign-act-dialog-resume-adopted');
+    expect(button.textContent).toContain('Resume');
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    expect(button.disabled).toBe(false);
+    expect(reason?.textContent?.trim()).toBe(campaignResumeAdoptedReason('LinkedIn Ads'));
+    expect(button.getAttribute('aria-describedby')).toBe(reason?.id);
+    // The hedged note gives way to the precise reason.
+    expect(q('campaign-act-dialog-resume-note')).toBeNull();
+
+    click('campaign-act-dialog-toggle');
+
+    expect(service.updateCampaignStatus).not.toHaveBeenCalled();
+    expect(q('campaign-act-dialog-toggle-error')).toBeNull();
+  });
+
+  it('keeps Pause on a running adopted campaign', async () => {
+    await setup({}, { campaign: { ...CAMPAIGN, adopted: true } });
+    service.updateCampaignStatus.mockReturnValue(of({ platform: 'linkedin-ads', campaignId: 'c-1', newStatus: 'PAUSED', success: true, etag: '"4"' }));
+
+    expect(q('campaign-act-dialog-toggle')?.textContent).toContain('Pause');
+    expect(q('campaign-act-dialog-resume-adopted')).toBeNull();
+    click('campaign-act-dialog-toggle');
+
+    expect(service.updateCampaignStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers Resume as before when adopted is absent', async () => {
+    await setup({}, { campaign: { ...CAMPAIGN, status: 'paused' } });
+    service.updateCampaignStatus.mockReturnValue(of({ platform: 'linkedin-ads', campaignId: 'c-1', newStatus: 'ACTIVE', success: true, etag: '"4"' }));
+
+    expect(q('campaign-act-dialog-resume-adopted')).toBeNull();
+    expect(q('campaign-act-dialog-resume-note')?.textContent).toContain(CAMPAIGN_ACT_RESUME_ADOPTED_NOTE);
+    click('campaign-act-dialog-toggle');
+
     expect(service.updateCampaignStatus).toHaveBeenCalledTimes(1);
   });
 

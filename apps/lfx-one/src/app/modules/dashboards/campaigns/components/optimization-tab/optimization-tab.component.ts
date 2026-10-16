@@ -90,6 +90,7 @@ import {
   NEGATIVE_KEYWORD_CAMPAIGN_PLATFORMS,
   PLATFORM_BRAND_COLORS,
   TOGGLEABLE_CAMPAIGN_PLATFORMS,
+  campaignResumeAdoptedReason,
   campaignToggleAction,
   normalizeCampaignStatus,
 } from '@lfx-one/shared/constants';
@@ -464,7 +465,7 @@ export class OptimizationTabComponent implements OnInit {
     if (rows === null) {
       return false;
     }
-    return rows.some((row) => !row.conflicted && row.action !== 'unavailable');
+    return rows.some((row) => !row.conflicted && !row.resumeAdopted && row.action !== 'unavailable');
   });
 
   /**
@@ -682,6 +683,10 @@ export class OptimizationTabComponent implements OnInit {
       const keywordTargetingOffered = typeof campaign.platform === 'string' && KEYWORD_TARGETING_CAMPAIGN_PLATFORMS.has(campaign.platform);
       const keywordTargetingUnavailableReason = keywordTargetingOffered ? this.keywordTargetingUnavailableReasonFor(campaign, status) : '';
       const confirmedBidAmount = this.currentConfirmedBid(campaign, confirmedBids[campaign.id]);
+      // An adopted campaign is never resumed by campaign-service (409 `campaign_adopted`), so its
+      // Resume is withheld up front. Only a literal `true`: absent (not adopted, or not recorded by
+      // this deployment) keeps today's button, and upstream stays the authority.
+      const resumeAdopted = action === 'resume' && campaign.adopted === true;
       return {
         campaign,
         // The bidding campaign-service RECORDED (#3299) — what the create asked for and the last bid
@@ -693,7 +698,9 @@ export class OptimizationTabComponent implements OnInit {
         conflicted,
         unavailableReason: action === 'unavailable' ? this.unavailableReasonFor(status, deploymentDisabled, platformUnsupported, campaign.platform) : '',
         toggleLabel: CAMPAIGN_TOGGLE_LABELS[action],
-        describedBy: this.describedByFor(campaign.id, action, toggleErrors),
+        describedBy: this.describedByFor(campaign.id, action, toggleErrors, resumeAdopted),
+        resumeAdopted,
+        resumeAdoptedReason: resumeAdopted ? campaignResumeAdoptedReason(this.platformLabels[campaign.platform] ?? 'the ad platform') : '',
         budgetAvailable: budgetUnavailableReason === '',
         budgetUnavailableReason,
         budgetBlockedReason: this.budgetBlockedReasonFor(
@@ -838,6 +845,11 @@ export class OptimizationTabComponent implements OnInit {
     // A budget change in flight on this row holds the same validator; a toggle sent alongside it
     // would race it to the same `If-Match` and one of the two would 412.
     if (this.togglePending()[campaign.id] || this.budgetPending()[campaign.id] || this.bidPending()[campaign.id] || this.adSetPending()[campaign.id]) {
+      return;
+    }
+    // An adopted campaign's Resume is `aria-disabled`, not `disabled`, so it stays focusable and a
+    // click still lands here. It does nothing: the reason is already stated beside the button.
+    if (row.resumeAdopted) {
       return;
     }
     // The template disables the button for these rows, so reaching here means the DOM and the
@@ -3082,13 +3094,16 @@ export class OptimizationTabComponent implements OnInit {
    *
    * `static` in spirit — it reads no signals, so the computed above owns the reactivity.
    */
-  private describedByFor(campaignId: string, action: CampaignToggleAction, toggleErrors: Record<string, string>): string | null {
+  private describedByFor(campaignId: string, action: CampaignToggleAction, toggleErrors: Record<string, string>, resumeAdopted: boolean): string | null {
     const ids: string[] = [];
     if (toggleErrors[campaignId]) {
       ids.push(`campaign-error-${campaignId}`);
     }
     if (action === 'unavailable') {
       ids.push(`campaign-unavailable-${campaignId}`);
+    }
+    if (resumeAdopted) {
+      ids.push(`campaign-resume-adopted-${campaignId}`);
     }
     return ids.length > 0 ? ids.join(' ') : null;
   }

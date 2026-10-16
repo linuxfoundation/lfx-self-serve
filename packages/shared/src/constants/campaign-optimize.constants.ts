@@ -422,17 +422,41 @@ export const CAMPAIGN_ACT_RESUME_ADOPTED_NOTE =
   "A campaign adopted into LFX One cannot be resumed from here; resume it in the ad platform's own UI. Pausing always works.";
 
 /**
- * The BFF's `code` for a resume that campaign-service refused with 409. The UI branches on this
- * code, never on the wording.
+ * The BFF's `code` for a resume that campaign-service refused with 409 for a reason it did not name
+ * as adoption. The UI branches on this code, never on the wording.
  *
- * campaign-service refuses ACTIVATE on every adopted campaign, on every platform. Its 409 carries
- * only `{ code: "409", message }`, the same shape as its other toggle 409s: a campaign that is not
- * fully provisioned for another reason, a Meta ad set paused on purpose that is running again, or a
- * campaign under another ad account. Nothing in the answer, the campaign record or the index says
- * a row was adopted. So the message (`campaignResumeRefusedMessage`) states the adoption case as a
- * condition and keeps campaign-service's own sentence for the others.
+ * Besides adoption, campaign-service answers a resume with 409 when the campaign is not fully
+ * provisioned for another reason, a Meta ad set paused on purpose is running again, the campaign is
+ * under another ad account, or another write holds its lock. A service deployed before
+ * `reason: "campaign_adopted"` (lfx-v2-campaign-service#366) also refuses an adopted campaign this
+ * way, so the message (`campaignResumeRefusedMessage`) states the adoption case as a condition and
+ * keeps campaign-service's own sentence for the others.
  */
 export const CAMPAIGN_RESUME_REFUSED_CODE = 'CAMPAIGN_RESUME_REFUSED';
+
+/**
+ * The BFF's `code` for a resume campaign-service refused because the campaign was ADOPTED: its 409
+ * carries `reason: "campaign_adopted"` (lfx-v2-campaign-service#366). The message
+ * (`campaignResumeRefusedAdoptedMessage`) says so without hedging.
+ */
+export const CAMPAIGN_RESUME_REFUSED_ADOPTED_CODE = 'CAMPAIGN_RESUME_REFUSED_ADOPTED';
+
+/** campaign-service's `reason` on the 409 that refuses to resume an adopted campaign. Matched exactly; the message text is never read. */
+export const CAMPAIGN_ADOPTED_REFUSAL_REASON = 'campaign_adopted';
+
+/**
+ * Why an ADOPTED campaign cannot be resumed from LFX One, naming its platform. Shown beside the
+ * unavailable Resume of a row campaign-service marks `adopted: true`, and inside
+ * `campaignResumeRefusedAdoptedMessage`.
+ */
+export function campaignResumeAdoptedReason(platformLabel: string): string {
+  return `This campaign was adopted from ${platformLabel}, so LFX One can pause it but not resume it — resume it in ${platformLabel} itself.`;
+}
+
+/** The message for `CAMPAIGN_RESUME_REFUSED_ADOPTED`: the resume was refused because the campaign was adopted. */
+export function campaignResumeRefusedAdoptedMessage(platformLabel: string): string {
+  return `Could not resume this campaign; it is still paused. ${campaignResumeAdoptedReason(platformLabel)}`;
+}
 
 /**
  * Why a resume was refused (409), naming the platform where an adopted campaign is resumed.

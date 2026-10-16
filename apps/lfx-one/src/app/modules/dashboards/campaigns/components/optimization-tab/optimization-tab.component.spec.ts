@@ -32,6 +32,9 @@ import {
   META_AD_SET_STATUS_UNCONFIRMED_CODE,
   META_AD_SET_UNCONFIRMED_MESSAGE,
   META_AD_SETS_UNAVAILABLE_UNPROVISIONED_REASON,
+  CAMPAIGN_RESUME_REFUSED_ADOPTED_CODE,
+  campaignResumeAdoptedReason,
+  campaignResumeRefusedAdoptedMessage,
   campaignResumeRefusedMessage,
 } from '@lfx-one/shared/constants';
 import {
@@ -501,6 +504,76 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     // Still offering Resume, and no conflict banner: nothing proved this list is stale.
     expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').textContent).toContain('Resume');
     expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).toBeNull();
+  });
+
+  // The BFF's CAMPAIGN_RESUME_REFUSED_ADOPTED (campaign-service's 409 `reason: campaign_adopted`)
+  // replaces the "try again" copy the same way, with the unhedged message.
+  it('shows the BFF message for a resume refused as CAMPAIGN_RESUME_REFUSED_ADOPTED', () => {
+    const refusal = campaignResumeRefusedAdoptedMessage('Reddit Ads');
+    updateCampaignStatus.mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 409, error: { error: refusal, code: CAMPAIGN_RESUME_REFUSED_ADOPTED_CODE } }))
+    );
+    render([doc({ status: 'paused', platform: 'reddit-ads' })]);
+
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+
+    const message = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-error-c-1"]').textContent;
+    expect(message).toContain('This campaign was adopted from Reddit Ads');
+    expect(message).not.toContain('try again.');
+  });
+
+  describe('an adopted campaign', () => {
+    // campaign-service never resumes an adopted campaign (409 `campaign_adopted`), so a row it marks
+    // `adopted: true` withholds Resume up front: aria-disabled (still focusable), described, inert.
+    it('shows Resume aria-disabled and described, and a click sends nothing', () => {
+      render([doc({ status: 'paused', platform: 'linkedin-ads', adopted: true })]);
+
+      const button: HTMLButtonElement = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
+      const reason = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-resume-adopted-c-1"]');
+      expect(button.textContent).toContain('Resume');
+      expect(button.getAttribute('aria-disabled')).toBe('true');
+      expect(button.disabled).toBe(false);
+      expect(reason.textContent.trim()).toBe(campaignResumeAdoptedReason('LinkedIn Ads'));
+      expect(reason.textContent).toContain(
+        'This campaign was adopted from LinkedIn Ads, so LFX One can pause it but not resume it — resume it in LinkedIn Ads itself.'
+      );
+      expect(button.getAttribute('aria-describedby')?.split(' ')).toContain(reason.id);
+
+      button.click();
+      fixture.detectChanges();
+
+      expect(updateCampaignStatus).not.toHaveBeenCalled();
+      expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-error-c-1"]')).toBeNull();
+    });
+
+    it('keeps Pause available on a running adopted campaign', () => {
+      render([doc({ status: 'created', platform: 'linkedin-ads', adopted: true })]);
+
+      const button: HTMLButtonElement = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
+      expect(button.textContent).toContain('Pause');
+      expect(button.getAttribute('aria-disabled')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-resume-adopted-c-1"]')).toBeNull();
+
+      button.click();
+      fixture.detectChanges();
+
+      expect(updateCampaignStatus).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves Resume as today when adopted is absent', () => {
+      render([doc({ status: 'paused', platform: 'linkedin-ads' })]);
+
+      const button: HTMLButtonElement = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
+      expect(button.getAttribute('aria-disabled')).toBeNull();
+      expect(button.getAttribute('aria-describedby')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-resume-adopted-c-1"]')).toBeNull();
+
+      button.click();
+      fixture.detectChanges();
+
+      expect(updateCampaignStatus).toHaveBeenCalledTimes(1);
+    });
   });
 
   // A non-HTTP failure — a thrown TypeError, an rxjs error with no status — must not be mistaken

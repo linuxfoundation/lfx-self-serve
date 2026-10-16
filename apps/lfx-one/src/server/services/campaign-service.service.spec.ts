@@ -4153,6 +4153,26 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     );
   });
 
+  // lfx-v2-campaign-service#366: the index carries `adopted: true` on an adopted campaign, absent
+  // otherwise. Carried through as a literal `true` only; anything else is dropped, never `false`.
+  it('carries adopted: true through and drops any other adopted value', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      resources: [
+        { data: doc({ adopted: true }) },
+        { data: doc({ id: 'c-2' }) },
+        { data: doc({ id: 'c-3', adopted: 'true' }) },
+        { data: doc({ id: 'c-4', adopted: false }) },
+      ],
+    });
+
+    const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+    expect(result.campaigns[0].adopted).toBe(true);
+    for (const campaign of result.campaigns.slice(1)) {
+      expect('adopted' in campaign).toBe(false);
+    }
+  });
+
   /**
    * The all-foreign case, which the mixed test above does not reach: `possiblyStale` is derived
    * from `campaigns.length`, NOT `docs.length`, and only a read where every row is dropped tells
@@ -5083,6 +5103,30 @@ describe('asResumeRefusal', () => {
     expect(error.code).toBe('CAMPAIGN_RESUME_REFUSED');
     expect(clientText(error)).toContain('resume it in Reddit Ads itself.');
     expect(clientText(error)).toContain('Otherwise, the reason given was: not fully provisioned');
+  });
+
+  // lfx-v2-campaign-service#366: `reason: "campaign_adopted"` gets its own code and the unhedged message.
+  it('re-codes a 409 with reason campaign_adopted as CAMPAIGN_RESUME_REFUSED_ADOPTED with the precise message', () => {
+    const error = asResumeRefusal(answered({ message: 'campaign was adopted', reason: 'campaign_adopted' }), 'microsoft-ads', 'op') as MicroserviceError;
+
+    expect(error.code).toBe('CAMPAIGN_RESUME_REFUSED_ADOPTED');
+    expect(clientText(error)).toBe(
+      'Could not resume this campaign; it is still paused. This campaign was adopted from Microsoft Ads, so LFX One can pause it but not resume it — resume it in Microsoft Ads itself.'
+    );
+    expect(clientText(error)).not.toContain('If it was adopted');
+    expect(error.statusCode).toBe(409);
+  });
+
+  it.each([
+    ['no reason', { message: 'not fully provisioned' }],
+    ['another reason', { message: 'not fully provisioned', reason: 'stale_approval' }],
+    // Branched on the field, never the text: a message that mentions adoption changes nothing.
+    ['adoption named only in the message', { message: 'campaign_adopted' }],
+  ])("keeps #3741's hedged message for a 409 with %s", (_label, body) => {
+    const error = asResumeRefusal(answered(body), 'reddit-ads', 'op') as MicroserviceError;
+
+    expect(error.code).toBe('CAMPAIGN_RESUME_REFUSED');
+    expect(clientText(error)).toContain('If it was adopted from Reddit Ads');
   });
 
   it('falls back to a generic platform name for an unknown platform id', () => {

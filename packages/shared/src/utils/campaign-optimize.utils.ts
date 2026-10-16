@@ -200,3 +200,17 @@ export function campaignBudgetPacingFromSettings(readback: CampaignServiceSettin
   const upstream = fields.find((field) => field?.field === 'budget_type')?.upstream;
   return upstream === 'daily' || upstream === 'lifetime' ? upstream : 'unknown';
 }
+
+/**
+ * A campaign row from campaign-service or the index with its `adopted` marker normalized: kept only
+ * as a literal `true` (lfx-v2-campaign-service#366 documents `true` or absent, never `false`), and
+ * dropped otherwise, so a malformed value can never disable a control. Everything else is unchanged.
+ */
+export function withAdoptedMarker<T extends { adopted?: boolean }>(row: T): T {
+  if (row.adopted === true || !('adopted' in row)) {
+    return row;
+  }
+  const rest = { ...row };
+  delete rest.adopted;
+  return rest;
+}

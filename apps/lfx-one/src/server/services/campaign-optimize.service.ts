@@ -51,6 +51,7 @@ import type {
   QueryServiceResponse,
   RedditKeywordsWindow,
 } from '@lfx-one/shared/interfaces';
+import { withAdoptedMarker } from '@lfx-one/shared/utils/campaign-optimize.utils';
 import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors/microservice.error';
@@ -195,7 +196,8 @@ export class CampaignOptimizeService {
   public async getCampaign(req: Request, ref: CampaignServiceCampaignTarget): Promise<CampaignServiceCampaign> {
     logger.debug(req, 'get_campaign', 'Reading campaign row from campaign-service', { campaign_id: ref.campaignId });
     const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceCampaign>(req, 'LFX_V2_CAMPAIGN_SERVICE', campaignPath(ref), 'GET');
-    return { ...response.data, etag: readEtag(response) ?? response.data.etag };
+    // `adopted` is kept only as a literal `true`: the act dialog withholds Resume on it.
+    return withAdoptedMarker({ ...response.data, etag: readEtag(response) ?? response.data.etag });
   }
 
   /**
