@@ -8,10 +8,12 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { MessageComponent } from '@components/message/message.component';
+import { MKTG_DOCUMENT_REVISION_PREVIEW_COUNT } from '@lfx-one/shared/constants';
 import { MktgRevisionResponse, MktgRevisionRow, MktgRevisionSummary } from '@lfx-one/shared/interfaces';
 import { describeMktgRevision, describeMktgRevisionAuthor } from '@lfx-one/shared/utils';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { TooltipModule } from 'primeng/tooltip';
 import { catchError, distinctUntilChanged, filter, map, of, switchMap, tap } from 'rxjs';
 
 // One revision of a Marketing OS document (design of record: "Document
@@ -24,7 +26,7 @@ import { catchError, distinctUntilChanged, filter, map, of, switchMap, tap } fro
   // Excluding layout gutters: ~620px host at 1024, ~876px at 1280.
   // The 800px switch leaves headroom for classic scrollbars.
   host: { class: '@container block w-full min-w-0', 'data-testid': 'mktg-document-view-width' },
-  imports: [DatePipe, NgClass, RouterLink, MarkdownRendererComponent, MessageComponent],
+  imports: [DatePipe, NgClass, RouterLink, MarkdownRendererComponent, MessageComponent, TooltipModule],
   templateUrl: './mktg-document-view.component.html',
 })
 export class MktgDocumentViewComponent {
@@ -44,6 +46,7 @@ export class MktgDocumentViewComponent {
   protected readonly notice = signal('');
   protected readonly view = signal<MktgRevisionResponse | null>(null);
   protected readonly restoringId = signal<string | null>(null);
+  protected readonly showAllRevisions = signal(false);
 
   private readonly params = toSignal(
     this.route.paramMap.pipe(map((params) => ({ agentKey: params.get('agentKey') ?? '', documentId: params.get('documentId') ?? '' }))),
@@ -63,6 +66,9 @@ export class MktgDocumentViewComponent {
         }))
       : [];
   });
+  protected readonly viewedAuthorLabel: Signal<string> = this.initViewedAuthorLabel();
+  protected readonly currentRevision: Signal<MktgRevisionSummary | null> = this.initCurrentRevision();
+  protected readonly visibleRevisionRows: Signal<MktgRevisionRow[]> = this.initVisibleRevisionRows();
   protected readonly shortHash: Signal<string> = computed(() => {
     const sha = this.view()?.revision.contentSha256 ?? '';
     return sha ? `${sha.slice(0, 4)}…${sha.slice(-4)}` : '';
@@ -74,11 +80,17 @@ export class MktgDocumentViewComponent {
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
+      let shownDocument = '';
       this.request$
         .pipe(
           filter((request) => !!request.project && !!request.agentKey && !!request.documentId),
           distinctUntilChanged((previous, current) => JSON.stringify(previous) === JSON.stringify(current)),
-          tap(() => {
+          tap((request) => {
+            const documentKey = JSON.stringify([request.project, request.agentKey, request.documentId]);
+            if (documentKey !== shownDocument) {
+              this.showAllRevisions.set(false);
+              shownDocument = documentKey;
+            }
             this.loading.set(true);
             this.errorText.set('');
             this.notice.set('');
@@ -116,6 +128,10 @@ export class MktgDocumentViewComponent {
   }
 
   // === Protected methods ===
+  protected onToggleAllRevisions(): void {
+    this.showAllRevisions.update((expanded) => !expanded);
+  }
+
   protected onRestore(revision: MktgRevisionSummary): void {
     const view = this.view();
     const project = this.projectContext.activeContextUid();
@@ -150,6 +166,23 @@ export class MktgDocumentViewComponent {
   }
 
   // === Private initializers ===
+  private initViewedAuthorLabel(): Signal<string> {
+    return computed(() => describeMktgRevisionAuthor(this.view()?.revision.author));
+  }
+
+  private initCurrentRevision(): Signal<MktgRevisionSummary | null> {
+    return computed(() => this.view()?.revisions.find((revision) => revision.latest) ?? null);
+  }
+
+  private initVisibleRevisionRows(): Signal<MktgRevisionRow[]> {
+    return computed(() => {
+      const rows = this.revisionRows();
+      if (this.showAllRevisions()) return rows;
+      const openId = this.view()?.revision.id;
+      return rows.filter((row, index) => index < MKTG_DOCUMENT_REVISION_PREVIEW_COUNT || row.revision.latest || row.revision.id === openId);
+    });
+  }
+
   private initTitle(): Signal<string> {
     return computed(() => {
       const view = this.view();
