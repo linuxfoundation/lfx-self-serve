@@ -5,6 +5,8 @@ import { DOCUMENT } from '@angular/common';
 import { DestroyRef, Directive, ElementRef, HostListener, inject, input, output, Renderer2 } from '@angular/core';
 import { NAV_TOOLTIP_HIDE_DELAY_MS, NAV_TOOLTIP_OFFSET_PX, NAV_TOOLTIP_SHOW_DELAY_MS } from '@lfx-one/shared/constants';
 import { NavTooltipItem, NavTooltipPlacement } from '@lfx-one/shared/interfaces';
+import { PrimeNG } from 'primeng/config';
+import { ZIndexUtils } from 'primeng/utils';
 
 /**
  * Lightweight tooltip for the navbar — a compact dark chip that fades in after a short hover delay
@@ -32,6 +34,7 @@ export class NavTooltipDirective {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly renderer = inject(Renderer2);
   private readonly document = inject(DOCUMENT);
+  private readonly primeng = inject(PrimeNG);
 
   public readonly text = input.required<string>({ alias: 'lfxNavTooltip' });
   public readonly placement = input<NavTooltipPlacement>('top', { alias: 'lfxNavTooltipPlacement' });
@@ -151,6 +154,11 @@ export class NavTooltipDirective {
       this.renderer.appendChild(tooltip, this.buildTitle(label));
       this.renderer.appendChild(tooltip, this.buildChips());
       this.unlisten.push(
+        // A tap elsewhere closes a tap-opened card: on touch it never sees mouseleave or focusout.
+        this.renderer.listen(this.document, 'pointerdown', (event: PointerEvent) => {
+          const target = event.target as Node | null;
+          if (!tooltip.contains(target) && !host.contains(target)) this.hide();
+        }),
         this.renderer.listen(tooltip, 'mouseenter', () => this.cancelHide()),
         this.renderer.listen(tooltip, 'mouseleave', () => this.dismiss()),
         this.renderer.listen(tooltip, 'focusout', (event: FocusEvent) => {
@@ -175,6 +183,8 @@ export class NavTooltipDirective {
     NavTooltipDirective.active = this;
 
     this.renderer.appendChild(this.document.body, tooltip);
+    // Layer above whatever overlay is open (the mobile navbar sits in a modal drawer), as pTooltip does.
+    ZIndexUtils.set('tooltip', tooltip, this.primeng.zIndex.tooltip);
     this.tooltip = tooltip;
 
     this.position(tooltip);
@@ -270,6 +280,7 @@ export class NavTooltipDirective {
     this.cancelHide();
     this.unlisten.splice(0).forEach((stop) => stop());
     if (this.tooltip) {
+      ZIndexUtils.clear(this.tooltip);
       // Detach directly: the animation-aware renderer defers removal to the next change-detection
       // pass, which a timer-driven hide in this zoneless app never triggers — the card would linger.
       this.tooltip.remove();

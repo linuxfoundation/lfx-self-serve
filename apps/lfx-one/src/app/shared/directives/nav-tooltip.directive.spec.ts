@@ -132,4 +132,23 @@ describe('NavTooltipDirective', () => {
     expect(tooltips()).toHaveLength(0);
     expect(document.activeElement).toBe(first);
   });
+
+  it('closes a tap-opened card on a pointer press outside it', () => {
+    host.items.set([{ key: 'k8s', label: 'Kubernetes' }]);
+    TestBed.tick();
+    first.click();
+
+    tooltips()[0].dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    expect(tooltips()).toHaveLength(1);
+
+    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    expect(tooltips()).toHaveLength(0);
+  });
+
+  it('layers the card through the overlay z-index manager', () => {
+    first.dispatchEvent(new MouseEvent('mouseenter'));
+    vi.advanceTimersByTime(NAV_TOOLTIP_SHOW_DELAY_MS);
+
+    expect(Number(tooltips()[0].style.zIndex)).toBeGreaterThan(0);
+  });
 });
