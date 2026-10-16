@@ -1723,7 +1723,7 @@
                     data-testid="implementation-reddit-image-status">
                     @if (redditImageUploadStatus() === 'uploading') {
                       Uploading image…
-                    } @else if (redditImageAssetId()) {
+                    } @else if (redditImageAssetForThisBrief()) {
                       Uploaded: {{ redditImageAssetName() || 'image' }}
                     }
                   </p>

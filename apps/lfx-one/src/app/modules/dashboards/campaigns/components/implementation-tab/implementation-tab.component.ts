@@ -1558,6 +1558,10 @@ export class ImplementationTabComponent implements OnInit {
    * asset is withheld then by design, since that post already has its image.
    */
   protected readonly redditImageAssetBlock: Signal<CampaignRedditImageAssetBlock | null> = this.initRedditImageAssetBlock();
+  /** Whether the draft holds an uploaded Reddit image made for the brief now open — the only one sent. */
+  protected readonly redditImageAssetForThisBrief = computed(
+    () => this.redditImageAssetId() !== '' && this.redditImageAssetBriefId() === (this.briefPersistence().briefId ?? '')
+  );
   /** The always-mounted live region's text for `redditImageAssetBlock`; `''` when nothing blocks. */
   protected readonly redditImageAssetBlockMessage = computed(() => this.redditImageAssetBlock()?.message ?? '');
 
@@ -2894,15 +2898,20 @@ export class ImplementationTabComponent implements OnInit {
     return {};
   }
 
-  /** Whether the draft holds an uploaded Reddit image made for the brief now open. */
-  private redditImageAssetForThisBrief(): boolean {
-    return this.redditImageAssetId() !== '' && this.redditImageAssetBriefId() === (this.briefPersistence().briefId ?? '');
-  }
-
   private initRedditImageAssetBlock(): Signal<CampaignRedditImageAssetBlock | null> {
     return computed(() => {
-      if (!this.showRedditSection() || this.redditAssetUploadAvailable()) return null;
-      if (!this.redditImageAssetForThisBrief() || this.redditPostUrl()) return null;
+      if (!this.showRedditSection() || this.redditPostUrl()) return null;
+      // An upload made for another brief, retained across a brief switch: `redditImageField` never
+      // sends it, whatever the capability says, so it must not read as usable either.
+      const briefId = this.briefPersistence().briefId;
+      if (this.redditImageAssetId() !== '' && briefId && this.redditImageAssetBriefId() !== briefId) {
+        return {
+          kind: 'otherBrief',
+          message:
+            'The uploaded Reddit image was uploaded for a different brief, so it cannot be sent with this one. Remove it, then upload it again or use an image URL.',
+        };
+      }
+      if (this.redditAssetUploadAvailable() || !this.redditImageAssetForThisBrief()) return null;
       if (this.redditCreativeEnabled() === false || this.redditAssetUploadEnabled() === false) {
         return {
           kind: 'unsupported',

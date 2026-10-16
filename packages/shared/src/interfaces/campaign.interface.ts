@@ -4351,10 +4351,11 @@ export interface CampaignBiddingCapabilityBlock {
 /**
  * Why Create is blocked for an uploaded Reddit image the draft still holds but the request cannot
  * carry, because the upload capability is unanswered or answered no. The kinds mean what they do on
- * `CampaignBiddingCapabilityBlock`: the same capability read answers both.
+ * `CampaignBiddingCapabilityBlock`: the same capability read answers both. `otherBrief`: the upload
+ * was made for a different brief than the one now open, so it is never sent whatever the capability.
  */
 export interface CampaignRedditImageAssetBlock {
-  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported';
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'otherBrief';
   message: string;
 }
 

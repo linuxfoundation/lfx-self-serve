@@ -7742,8 +7742,26 @@ describe('ImplementationTabComponent reddit image upload', () => {
     first.fixture.destroy();
 
     const second = await mount(true, true, draft);
+    const f = second.fixture;
+    const q = (id: string): HTMLElement | null => f.nativeElement.querySelector(`[data-testid="${id}"]`);
 
-    expect('imageAssetId' in submit(second.fixture)).toBe(false);
+    // Never sent, so never shown as usable: no "Uploaded", and Create blocked with a way out.
+    expect(q('implementation-reddit-image-status')?.textContent).not.toContain('Uploaded');
+    expect(q('implementation-reddit-image-asset-block-otherBrief')?.textContent).toContain('uploaded for a different brief');
+    const c = at(f);
+    c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
+    c.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
+    c.campaignForm.controls['startDate'].setValue('2026-09-01');
+    c.campaignForm.controls['endDate'].setValue('2026-09-30');
+    expect(c.canSubmit()).toBe(false);
+    c.submit();
+    expect(createCampaign).not.toHaveBeenCalled();
+
+    (q('implementation-reddit-image-asset-block-remove')?.querySelector('button') as HTMLButtonElement).click();
+    f.detectChanges();
+
+    expect(q('implementation-reddit-image-asset-block-otherBrief')).toBeNull();
+    expect('imageAssetId' in submit(f)).toBe(false);
   });
 
   it('replaces the previous upload when a new pick is refused, and links the refusal to the input', async () => {
