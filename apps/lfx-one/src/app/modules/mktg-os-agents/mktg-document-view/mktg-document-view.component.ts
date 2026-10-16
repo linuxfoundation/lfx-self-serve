@@ -8,6 +8,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { MessageComponent } from '@components/message/message.component';
+import { MKTG_DOCUMENT_REVISION_PREVIEW_COUNT } from '@lfx-one/shared/constants';
 import {
   BrandKitRevision,
   MktgBoilerplatesAsset,
@@ -28,6 +29,7 @@ import {
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { TooltipModule } from 'primeng/tooltip';
 import { catchError, distinctUntilChanged, filter, map, of, startWith, switchMap, tap } from 'rxjs';
 
 import { BrandKitWebViewComponent } from '../brand-kit-web-view/brand-kit-web-view.component';
@@ -56,6 +58,7 @@ import { MktgFrameworkViewComponent } from '../mktg-framework-view/mktg-framewor
     MessageComponent,
     MktgBoilerplatesViewComponent,
     MktgFrameworkViewComponent,
+    TooltipModule,
   ],
   templateUrl: './mktg-document-view.component.html',
 })
@@ -77,6 +80,7 @@ export class MktgDocumentViewComponent {
   protected readonly notice = signal('');
   protected readonly view = signal<MktgRevisionResponse | null>(null);
   protected readonly restoringId = signal<string | null>(null);
+  protected readonly showAllRevisions = signal(false);
 
   private readonly params = toSignal(
     this.route.paramMap.pipe(map((params) => ({ agentKey: params.get('agentKey') ?? '', documentId: params.get('documentId') ?? '' }))),
@@ -97,6 +101,9 @@ export class MktgDocumentViewComponent {
       : [];
   });
   protected readonly currentSelectorLabel = computed(() => describeMktgRevisionAuthor(this.view()?.current?.changedBy));
+  protected readonly viewedAuthorLabel: Signal<string> = this.initViewedAuthorLabel();
+  protected readonly currentRevision: Signal<MktgRevisionSummary | null> = this.initCurrentRevision();
+  protected readonly visibleRevisionRows: Signal<MktgRevisionRow[]> = this.initVisibleRevisionRows();
   protected readonly shortHash: Signal<string> = computed(() => {
     const sha = this.view()?.revision.contentSha256 ?? '';
     return sha ? `${sha.slice(0, 4)}…${sha.slice(-4)}` : '';
@@ -157,11 +164,17 @@ export class MktgDocumentViewComponent {
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
+      let shownDocument = '';
       this.request$
         .pipe(
           filter((request) => !!request.project && !!request.agentKey && !!request.documentId),
           distinctUntilChanged((previous, current) => JSON.stringify(previous) === JSON.stringify(current)),
-          tap(() => {
+          tap((request) => {
+            const documentKey = JSON.stringify([request.project, request.agentKey, request.documentId]);
+            if (documentKey !== shownDocument) {
+              this.showAllRevisions.set(false);
+              shownDocument = documentKey;
+            }
             this.loading.set(true);
             this.errorText.set('');
             this.notice.set('');
@@ -199,6 +212,10 @@ export class MktgDocumentViewComponent {
   }
 
   // === Protected methods ===
+  protected onToggleAllRevisions(): void {
+    this.showAllRevisions.update((expanded) => !expanded);
+  }
+
   protected onRestore(revision: MktgRevisionSummary): void {
     const view = this.view();
     const project = this.projectContext.activeContextUid();
@@ -249,6 +266,23 @@ export class MktgDocumentViewComponent {
       ),
       { initialValue: null }
     );
+  }
+
+  private initViewedAuthorLabel(): Signal<string> {
+    return computed(() => describeMktgRevisionAuthor(this.view()?.revision.author));
+  }
+
+  private initCurrentRevision(): Signal<MktgRevisionSummary | null> {
+    return computed(() => this.view()?.revisions.find((revision) => revision.latest) ?? null);
+  }
+
+  private initVisibleRevisionRows(): Signal<MktgRevisionRow[]> {
+    return computed(() => {
+      const rows = this.revisionRows();
+      if (this.showAllRevisions()) return rows;
+      const openId = this.view()?.revision.id;
+      return rows.filter((row, index) => index < MKTG_DOCUMENT_REVISION_PREVIEW_COUNT || row.revision.latest || row.revision.id === openId);
+    });
   }
 
   private initTitle(): Signal<string> {
