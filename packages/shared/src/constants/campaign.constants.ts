@@ -2394,6 +2394,15 @@ export const CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNKNOWN =
 /** Shown for a negative-keywords refusal whose response carried no readable message. */
 export const CAMPAIGN_NEGATIVE_KEYWORDS_FAILURE_FALLBACK = 'The negative keywords could not be added.';
 
+/**
+ * How long a panel's persistent read-status live region sits EMPTY after its first render before
+ * it may carry text. A role="status" region inserted and filled within the same task is, to a
+ * screen reader, inserted pre-filled — not reliably announced. The panels that own such a region
+ * are mounted conditionally, so their first read would otherwise go unannounced. 100ms matches the
+ * delay the Angular CDK's LiveAnnouncer leaves between clearing and setting its region.
+ */
+export const LIVE_REGION_MOUNT_DELAY_MS = 100;
+
 /** The window selector of the Microsoft keyword table, in display order, over `MICROSOFT_KEYWORDS_WINDOWS`. */
 export const MICROSOFT_KEYWORDS_WINDOW_OPTIONS: readonly MicrosoftKeywordsWindowOption[] = [
   { value: 'today', label: 'Today' },

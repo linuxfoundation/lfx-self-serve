@@ -518,7 +518,12 @@
           <i class="fa-light fa-triangle-exclamation text-3xl text-red-400" aria-hidden="true"></i>
           <p class="text-sm font-medium text-red-700">Failed to load LinkedIn data</p>
           <p class="text-xs text-red-500">{{ linkedInError() }}</p>
-          <button type="button" (click)="retryPanelRead()" class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700">
+          <button
+            type="button"
+            (click)="retryPanelRead()"
+            [attr.aria-label]="paidRetryLabels.linkedin"
+            class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+            data-testid="linkedin-retry">
             Retry
           </button>
         </div>
@@ -592,7 +597,12 @@
           <i class="fa-light fa-triangle-exclamation text-3xl text-red-400" aria-hidden="true"></i>
           <p class="text-sm font-medium text-red-700">Failed to load Reddit data</p>
           <p class="text-xs text-red-500">{{ redditError() }}</p>
-          <button type="button" (click)="retryPanelRead()" class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700">
+          <button
+            type="button"
+            (click)="retryPanelRead()"
+            [attr.aria-label]="paidRetryLabels.reddit"
+            class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+            data-testid="reddit-retry">
             Retry
           </button>
         </div>
@@ -657,7 +667,12 @@
           <i class="fa-light fa-triangle-exclamation text-3xl text-red-400" aria-hidden="true"></i>
           <p class="text-sm font-medium text-red-700">Failed to load Meta data</p>
           <p class="text-xs text-red-500">{{ metaError() }}</p>
-          <button type="button" (click)="retryPanelRead()" class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700">
+          <button
+            type="button"
+            (click)="retryPanelRead()"
+            [attr.aria-label]="paidRetryLabels.meta"
+            class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+            data-testid="meta-retry">
             Retry
           </button>
         </div>
@@ -724,7 +739,12 @@
           <i class="fa-light fa-triangle-exclamation text-3xl text-red-400" aria-hidden="true"></i>
           <p class="text-sm font-medium text-red-700">Failed to load {{ reportBackedLabel() }} data</p>
           <p class="text-xs text-red-500">{{ reportBackedError() }}</p>
-          <button type="button" (click)="retryPanelRead()" class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700">
+          <button
+            type="button"
+            (click)="retryPanelRead()"
+            [attr.aria-label]="reportBackedRetryLabel()"
+            class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+            [attr.data-testid]="reportBackedPanel() + '-retry'">
             Retry
           </button>
         </div>
@@ -974,21 +994,21 @@
         <table class="w-full text-left text-sm">
           <thead>
             <tr class="border-b border-gray-200 bg-gray-50">
-              <th class="px-4 py-3 text-xs font-medium text-gray-500">Campaign</th>
-              <th class="px-4 py-3 text-xs font-medium text-gray-500">Status</th>
-              <th class="px-4 py-3 text-xs font-medium text-gray-500">Flight</th>
-              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Budget</th>
-              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Spend</th>
-              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Pacing</th>
-              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Impr.</th>
-              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Clicks</th>
-              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">CTR</th>
-              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Conv.</th>
+              <th scope="col" class="px-4 py-3 text-xs font-medium text-gray-500">Campaign</th>
+              <th scope="col" class="px-4 py-3 text-xs font-medium text-gray-500">Status</th>
+              <th scope="col" class="px-4 py-3 text-xs font-medium text-gray-500">Flight</th>
+              <th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-500">Budget</th>
+              <th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-500">Spend</th>
+              <th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-500">Pacing</th>
+              <th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-500">Impr.</th>
+              <th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-500">Clicks</th>
+              <th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-500">CTR</th>
+              <th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-500">Conv.</th>
               @if (panel === 'linkedin') {
-                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Creatives</th>
+                <th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-500">Creatives</th>
               }
               @if (actPlatform) {
-                <th class="px-4 py-3 text-xs font-medium text-gray-500"><span class="sr-only">Actions</span></th>
+                <th scope="col" class="px-4 py-3 text-xs font-medium text-gray-500"><span class="sr-only">Actions</span></th>
               }
             </tr>
           </thead>

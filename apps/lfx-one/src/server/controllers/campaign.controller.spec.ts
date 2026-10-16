@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE,
+  CAMPAIGN_RESUME_REFUSED_CODE,
   GOOGLE_ADS_LANGUAGE_MAP,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   MAX_BULK_KEYWORD_ACTIONS,
@@ -5161,19 +5162,30 @@ describe('CampaignController.updateCampaignStatus', () => {
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ platform: 'twitter-ads', newStatus: 'PAUSED', success: true, etag: '2' }));
   });
 
-  // Upstream refuses ACTIVE on every adopted row with 409, and a stale If-Match with 412. An X
-  // refusal must reach the error handler unchanged, exactly as any other platform's does.
-  it.each([
-    [409, 'campaign was adopted; activate it in the platform console'],
-    [412, 'ETag mismatch'],
-  ])('passes an upstream %s on an X toggle to the error handler unchanged', async (status, message) => {
-    const upstream = new MicroserviceError(message, status, 'UPSTREAM', { errorBody: { code: String(status), message } });
+  // A stale If-Match is 412: an X refusal reaches the error handler unchanged, exactly as any other
+  // platform's does.
+  it('passes an upstream 412 on an X toggle to the error handler unchanged', async () => {
+    const upstream = new MicroserviceError('ETag mismatch', 412, 'UPSTREAM', { errorBody: { code: '412', message: 'ETag mismatch' } });
     toggleCampaignStatus.mockRejectedValue(upstream);
 
     await controller.updateCampaignStatus(statusReq(UUID, { platform: 'twitter-ads', status: 'ACTIVE', briefId: 'b-1', etag: '1' }), res, next);
 
     expect(res.json).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledWith(upstream);
+  });
+
+  // Upstream refuses ACTIVE on every adopted row with 409: on X, as on every platform, the answered
+  // 409 is re-coded CAMPAIGN_RESUME_REFUSED so the operator reads where to resume it.
+  it('re-codes an upstream 409 on an X resume as CAMPAIGN_RESUME_REFUSED', async () => {
+    const message = 'campaign was adopted; activate it in the platform console';
+    toggleCampaignStatus.mockRejectedValue(new MicroserviceError(message, 409, 'UPSTREAM', { errorBody: { code: '409', message } }));
+
+    await controller.updateCampaignStatus(statusReq(UUID, { platform: 'twitter-ads', status: 'ACTIVE', briefId: 'b-1', etag: '1' }), res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as MicroserviceError;
+    expect(error.statusCode).toBe(409);
+    expect(error.toResponse()['code']).toBe(CAMPAIGN_RESUME_REFUSED_CODE);
   });
 
   // Also found by mutation: dropping `.trim()` left these green. A whitespace-only etag then
@@ -5228,6 +5240,74 @@ describe('CampaignController.updateCampaignStatus', () => {
     await controller.updateCampaignStatus(statusReq(UUID, { platform: 'google-ads', status: 'PAUSED', briefId: 'b-1', etag: '1' }), res, next);
 
     expect(logger.warning).not.toHaveBeenCalled();
+  });
+
+  // campaign-service refuses ACTIVATE on every adopted campaign with a plain `{ code: "409" }`,
+  // the same shape as its other toggle 409s, so the BFF re-codes the answered 409 and keeps the
+  // upstream sentence for the refusals that are not about adoption.
+  describe('a resume campaign-service refuses with 409', () => {
+    const upstreamMessage = 'campaign is not fully provisioned — finish or recreate the campaign before toggling its status';
+    const answered409 = () => new MicroserviceError(upstreamMessage, 409, 'CONFLICT', { errorBody: { code: '409', message: upstreamMessage } });
+
+    it.each([
+      ['linkedin-ads', 'LinkedIn Ads'],
+      ['microsoft-ads', 'Microsoft Ads'],
+      ['meta-ads', 'Meta Ads'],
+    ])('re-codes it CAMPAIGN_RESUME_REFUSED and names %s as where to resume', async (platform, label) => {
+      toggleCampaignStatus.mockRejectedValueOnce(answered409());
+
+      await controller.updateCampaignStatus(statusReq(UUID, { platform, status: 'ACTIVE', briefId: 'b-1', etag: '1' }), res, next);
+
+      const error = vi.mocked(next).mock.calls[0][0] as unknown as MicroserviceError;
+      expect(error).toBeInstanceOf(MicroserviceError);
+      expect(error.statusCode).toBe(409);
+      const body = error.toResponse();
+      expect(body['code']).toBe(CAMPAIGN_RESUME_REFUSED_CODE);
+      expect(body['error']).toContain(`If it was adopted from ${label}, LFX One can pause it but not resume it — resume it in ${label} itself.`);
+      expect(body['error']).toContain(`Otherwise, the reason given was: ${upstreamMessage}`);
+      // The log keeps campaign-service's own sentence.
+      expect(error.message).toBe(upstreamMessage);
+    });
+
+    // A 409 that DOES clear on retry (another write holds the row lock) gets the same code, so the
+    // message must not call a retry futile, and must keep campaign-service's "retry shortly".
+    it('keeps a retryable 409 honest: no claim that retrying is futile', async () => {
+      const busy = 'another write to this campaign is already in progress; retry shortly';
+      toggleCampaignStatus.mockRejectedValueOnce(new MicroserviceError(busy, 409, 'CONFLICT', { errorBody: { code: '409', message: busy } }));
+
+      await controller.updateCampaignStatus(statusReq(UUID, { platform: 'google-ads', status: 'ACTIVE', briefId: 'b-1', etag: '1' }), res, next);
+
+      const text = (vi.mocked(next).mock.calls[0][0] as unknown as MicroserviceError).toResponse()['error'] as string;
+      expect(text).toContain(`Otherwise, the reason given was: ${busy}`);
+      expect(text).not.toMatch(/will not help|cannot work/);
+    });
+
+    it('leaves a refused PAUSE unchanged', async () => {
+      const upstream = answered409();
+      toggleCampaignStatus.mockRejectedValueOnce(upstream);
+
+      await controller.updateCampaignStatus(statusReq(UUID, { platform: 'google-ads', status: 'PAUSED', briefId: 'b-1', etag: '1' }), res, next);
+
+      expect(next).toHaveBeenCalledWith(upstream);
+    });
+
+    it('leaves a 409 campaign-service did not answer (no Goa envelope) unchanged', async () => {
+      const gateway = new MicroserviceError('Conflict', 409, 'CONFLICT');
+      toggleCampaignStatus.mockRejectedValueOnce(gateway);
+
+      await controller.updateCampaignStatus(statusReq(UUID, { platform: 'google-ads', status: 'ACTIVE', briefId: 'b-1', etag: '1' }), res, next);
+
+      expect(next).toHaveBeenCalledWith(gateway);
+    });
+
+    it('leaves a resume refused with another status (412) unchanged', async () => {
+      const stale = new MicroserviceError('version mismatch', 412, 'PRECONDITION_FAILED', { errorBody: { code: '412', message: 'version mismatch' } });
+      toggleCampaignStatus.mockRejectedValueOnce(stale);
+
+      await controller.updateCampaignStatus(statusReq(UUID, { platform: 'google-ads', status: 'ACTIVE', briefId: 'b-1', etag: '1' }), res, next);
+
+      expect(next).toHaveBeenCalledWith(stale);
+    });
   });
 
   it('rejects an id that is neither numeric nor a UUID', async () => {

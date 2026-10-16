@@ -15,8 +15,10 @@ import {
   CAMPAIGN_BUDGET_BLOCKED_PACING_CHECK_REASON,
   CAMPAIGN_BUDGET_X_LIFETIME_REASON,
   CAMPAIGN_ETAG_STALE_MESSAGE,
+  CAMPAIGN_RESUME_REFUSED_CODE,
   CAMPAIGN_UNAVAILABLE_DEPLOYMENT_REASON,
   CAMPAIGN_UNAVAILABLE_RESUME_PLATFORM_REASON,
+  campaignResumeRefusedMessage,
 } from '@lfx-one/shared/constants';
 import type {
   CampaignActDialogData,
@@ -193,15 +195,16 @@ describe('CampaignActDialogComponent (#3299)', () => {
     expect((service.updateCampaignStatus.mock.calls[1][0] as CampaignStatusToggleParams).etag).toBe('"4"');
   });
 
-  it("shows campaign-service's own refusal for a resume (an adopted campaign) and does not retry it", async () => {
+  it("shows the BFF's CAMPAIGN_RESUME_REFUSED message for a refused resume (an adopted campaign) and does not retry it", async () => {
     await setup({}, { campaign: { ...CAMPAIGN, status: 'paused' } });
+    const refusal = campaignResumeRefusedMessage('LinkedIn Ads', 'campaign is not fully provisioned');
     service.updateCampaignStatus.mockReturnValue(
-      throwError(() => bffError(409, 'This campaign was adopted; activate it in the ad platform.')) as Observable<never>
+      throwError(() => new HttpErrorResponse({ status: 409, error: { error: refusal, code: CAMPAIGN_RESUME_REFUSED_CODE } })) as Observable<never>
     );
 
     click('campaign-act-dialog-toggle');
 
-    expect(q('campaign-act-dialog-toggle-error')?.textContent).toContain('This campaign was adopted');
+    expect(q('campaign-act-dialog-toggle-error')?.textContent).toContain('resume it in LinkedIn Ads itself');
     expect(service.updateCampaignStatus).toHaveBeenCalledTimes(1);
   });
 
