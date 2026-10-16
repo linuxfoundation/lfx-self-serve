@@ -331,21 +331,21 @@ export class ParticipatingOrgsComponent {
     const unidentified = summary?.unidentifiedCount ?? 0;
     return [
       {
-        value: (summary?.orgsCount ?? 0).toLocaleString(),
+        value: (summary?.orgsCount ?? 0).toLocaleString('en-US'),
         label: 'Orgs Participating',
         icon: 'fa-light fa-building',
         iconContainerClass: 'bg-blue-100 text-blue-600',
       },
       {
-        value: (summary?.membersCount ?? 0).toLocaleString(),
+        value: (summary?.membersCount ?? 0).toLocaleString('en-US'),
         label: 'Members',
         icon: 'fa-light fa-id-badge',
         iconContainerClass: 'bg-emerald-100 text-emerald-600',
       },
       {
-        value: (summary?.nonMembersCount ?? 0).toLocaleString(),
+        value: (summary?.nonMembersCount ?? 0).toLocaleString('en-US'),
         label: 'Non-Members',
-        subLine: unidentified > 0 ? `${unidentified.toLocaleString()} Unidentified` : undefined,
+        subLine: unidentified > 0 ? `${unidentified.toLocaleString('en-US')} Unidentified` : undefined,
         icon: 'fa-light fa-building-circle-xmark',
         iconContainerClass: 'bg-amber-100 text-amber-600',
       },
@@ -360,7 +360,8 @@ export class ParticipatingOrgsComponent {
 
   private initTabs(): FilterPillOption[] {
     const summary = this.summary();
-    const label = (name: string, count: number | undefined): string => (count === undefined ? name : `${name} (${count.toLocaleString()})`);
+    // Locale pinned so SSR on Node and the browser render the same digits (no hydration mismatch).
+    const label = (name: string, count: number | undefined): string => (count === undefined ? name : `${name} (${count.toLocaleString('en-US')})`);
     return [
       { id: 'all', label: label('All', summary?.orgsCount) },
       { id: 'members', label: label('Members', summary?.membersCount) },
