@@ -26,6 +26,16 @@ export const WG_ENGAGEMENT_METRICS_FLAG = 'wg-engagement-metrics';
 /** Browser-only flag for the Org Lens ROI page — it gates no endpoint. */
 export const ORG_LENS_ROI_ENABLED_FLAG = 'org-lens-roi-enabled';
 /**
+ * Dark-launch gate for Project Lens → Participating Organizations (#2091): the
+ * `project/participating-orgs` route, its sidebar entry, and the BFF endpoints under
+ * `/api/projects/:slug/participating-orgs`. Default false; the route guard fails closed.
+ *
+ * **Server-paired** — the BFF evaluates the same key through `LaunchDarklyServerService.isFlagEnabled`
+ * and answers 404 while it is off, so the data is not reachable by a direct API call before the
+ * page-gate audience (`viewer` vs `auditor_guard` on the project) is signed off.
+ */
+export const PROJECT_PARTICIPATING_ORGS_ENABLED_FLAG = 'project-participating-orgs-enabled';
+/**
  * Dark-launch gate for the M3 Organization Lens CLA module (#1982) — the EasyCLA
  * route and sidebar entry. The org-lens prefix keeps it in the lens family alongside
  * `ORG_LENS_ROI_ENABLED_FLAG`; the `m3` suffix follows the `MY_CLAS_M2_ENABLED_FLAG`
