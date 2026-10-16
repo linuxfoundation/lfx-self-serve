@@ -4,10 +4,13 @@
 import express, { Router } from 'express';
 
 import { ProjectController } from '../controllers/project.controller';
+import { ProjectParticipatingOrgsController } from '../controllers/project-participating-orgs.controller';
+import { requireProjectParticipatingOrgsAccess } from '../middleware/require-project-participating-orgs-access.middleware';
 
 const router = Router();
 
 const projectController = new ProjectController();
+const participatingOrgsController = new ProjectParticipatingOrgsController();
 
 // Project CRUD routes - using new controller pattern
 router.get('/', (req, res, next) => projectController.getProjects(req, res, next));
@@ -21,6 +24,16 @@ router.get('/writer-summary', (req, res, next) => projectController.getWriterSum
 router.get('/slugs', (req, res, next) => projectController.getProjectSlugs(req, res, next));
 
 router.get('/:slug', (req, res, next) => projectController.getProjectBySlug(req, res, next));
+
+// ── Project Lens → Participating Organizations (#2091), flag + project#viewer gated ──
+router.get('/:slug/participating-orgs/summary', requireProjectParticipatingOrgsAccess, (req, res, next) =>
+  participatingOrgsController.getSummary(req, res, next)
+);
+router.get('/:slug/participating-orgs/export', requireProjectParticipatingOrgsAccess, (req, res, next) => participatingOrgsController.export(req, res, next));
+router.get('/:slug/participating-orgs/org-lens-links', requireProjectParticipatingOrgsAccess, (req, res, next) =>
+  participatingOrgsController.getOrgLensLinks(req, res, next)
+);
+router.get('/:slug/participating-orgs', requireProjectParticipatingOrgsAccess, (req, res, next) => participatingOrgsController.getList(req, res, next));
 
 router.get('/:uid/permissions', (req, res, next) => projectController.getProjectPermissions(req, res, next));
 

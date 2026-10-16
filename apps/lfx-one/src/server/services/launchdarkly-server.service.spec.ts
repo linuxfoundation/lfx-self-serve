@@ -117,6 +117,29 @@ describe('LaunchDarklyServerService', () => {
     expect(boolVariation).not.toHaveBeenCalled();
   });
 
+  it('lets evaluations that arrive during the first connection wait for it instead of failing closed', async () => {
+    let ready = false;
+    let connect = (): void => undefined;
+    initialized.mockImplementation(() => ready);
+    waitForInitialization.mockReset().mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          connect = () => {
+            ready = true;
+            resolve();
+          };
+        })
+    );
+
+    // Both start before LaunchDarkly connects, as the page's parallel summary and list reads do.
+    const first = service.isFlagEnabled(req, 'insights-public-api-token-access');
+    const second = service.isFlagEnabled(req, 'insights-public-api-token-access');
+    connect();
+
+    expect(await Promise.all([first, second])).toEqual([true, true]);
+    expect(waitForInitialization).toHaveBeenCalledTimes(1);
+  });
+
   it('does not open a new connection after shutdown', async () => {
     await service.isFlagEnabled(req, 'insights-public-api-token-access');
     await LaunchDarklyServerService.shutdownIfInitialized();
