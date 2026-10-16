@@ -59,7 +59,7 @@ import {
   UpdatePastMeetingSummaryRequest,
 } from '@lfx-one/shared/interfaces';
 import { isBatchRegistrantOperationResponse, mergeBatchRegistrantResponses } from '@lfx-one/shared/utils';
-import { catchError, concatMap, from, map, Observable, of, shareReplay, take, tap, throwError, toArray } from 'rxjs';
+import { catchError, concatMap, from, identity, map, Observable, of, shareReplay, take, tap, throwError, toArray } from 'rxjs';
 
 import { extractErrorMessage, retryPropagationLag } from '@shared/utils/http-error.utils';
 
@@ -268,7 +268,7 @@ export class MeetingService {
     const createdAt = this.recentlyCreatedMeetingIds.get(id);
     const isRecentlyCreated = createdAt !== undefined && Date.now() - createdAt < RECENTLY_CREATED_MEETING_WINDOW_MS;
     const request$ = this.http.get<Meeting>(`/api/meetings/${id}`).pipe(
-      isRecentlyCreated ? retryPropagationLag() : (source) => source,
+      isRecentlyCreated ? retryPropagationLag() : identity,
       tap({ error: () => this.meetingDetailCache.delete(id) }),
       catchError((error) => {
         console.error(`Failed to load meeting ${id}:`, error);
