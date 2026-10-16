@@ -12,6 +12,8 @@ import {
   CAMPAIGN_BID_UNAVAILABLE_PLATFORM_REASON,
   CAMPAIGN_BUDGET_CONFLICT_MESSAGE,
   CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED,
+  CAMPAIGN_RESUME_REFUSED_CODE,
+  campaignResumeRefusedMessage,
   CAMPAIGN_BUDGET_UNAVAILABLE_PLATFORM_REASON,
   CAMPAIGN_BUDGET_UNAVAILABLE_UNPROVISIONED_REASON,
   CAMPAIGN_FINDING_ALREADY_PAUSED_REASON,
@@ -461,6 +463,7 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     [500, 'created', 'Could not pause this campaign. It is still running — try again.'],
     [409, 'created', 'Could not pause this campaign. It is still running — try again.'],
     [500, 'paused', 'Could not resume this campaign. It is still paused — try again.'],
+    [409, 'paused', 'Could not resume this campaign. It is still paused — try again.'],
   ])('keeps the per-direction copy for a BFF %s failure on a %s campaign', (status, campaignStatus, expected) => {
     updateCampaignStatus.mockReturnValue(throwError(() => new HttpErrorResponse({ status, statusText: 'nope', error: { error: 'refused', code: 'X' } })));
     render([doc({ status: campaignStatus })]);
@@ -470,6 +473,28 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
 
     expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-error-c-1"]').textContent).toContain(expected);
     // And no conflict banner: nothing proved this list is stale.
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).toBeNull();
+  });
+
+  // campaign-service refuses ACTIVATE on every adopted campaign (409). The BFF re-codes that answer
+  // CAMPAIGN_RESUME_REFUSED with a message naming where to resume, which replaces the "try again"
+  // copy: retrying cannot work. Branched on the code, so any other 409 keeps the per-direction copy.
+  it('shows the BFF message for a resume refused as CAMPAIGN_RESUME_REFUSED, not "try again"', () => {
+    const refusal = campaignResumeRefusedMessage('LinkedIn Ads', 'campaign is not fully provisioned');
+    updateCampaignStatus.mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 409, error: { error: refusal, code: CAMPAIGN_RESUME_REFUSED_CODE } }))
+    );
+    render([doc({ status: 'paused', platform: 'linkedin-ads' })]);
+
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+
+    const message = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-error-c-1"]').textContent;
+    expect(message).toContain(refusal);
+    expect(message).toContain('resume it in LinkedIn Ads itself');
+    expect(message).not.toContain('try again.');
+    // Still offering Resume, and no conflict banner: nothing proved this list is stale.
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').textContent).toContain('Resume');
     expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).toBeNull();
   });
 

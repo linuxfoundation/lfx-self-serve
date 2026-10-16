@@ -10,6 +10,8 @@ import {
   CAMPAIGN_NEGATIVE_KEYWORD_OUTCOMES,
   CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED,
   CAMPAIGN_PLATFORMS,
+  CAMPAIGN_RESUME_REFUSED_CODE,
+  campaignResumeRefusedMessage,
   COUNTRIES,
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
@@ -2936,6 +2938,37 @@ export function asUnconfirmedWriteFailure(error: unknown, operation: string, cli
     originalError: error,
     transportFailure: error.transportFailure,
     clientMessage,
+  });
+}
+
+/**
+ * The error a refused RESUME should surface: campaign-service's own 409, re-coded
+ * `CAMPAIGN_RESUME_REFUSED` with a message that says what to do.
+ *
+ * campaign-service refuses ACTIVATE on every adopted campaign, but its 409 has the same
+ * `{ code: "409", message }` shape as its other toggle refusals, and nothing in the campaign record
+ * says a row was adopted. So the match is on the shape alone (an answered 409 to a resume), never
+ * the wording, and the message states adoption as a condition. campaign-service's sentence is kept
+ * in it for the other refusals. Everything else passes through unchanged. `message` stays as it
+ * was, so the log keeps the upstream text.
+ *
+ * `platform` is the caller's label: it names the console in the message and is never sent upstream.
+ */
+export function asResumeRefusal(error: unknown, platform: string, operation: string): unknown {
+  if (!(error instanceof MicroserviceError) || error.statusCode !== 409 || !upstreamAnswered(error)) {
+    return error;
+  }
+  const label = CAMPAIGN_PLATFORMS.find((p) => p.id === platform)?.label ?? 'the ad platform';
+  const reason = typeof error.errorBody?.message === 'string' ? error.errorBody.message : undefined;
+  return new MicroserviceError(error.message, error.statusCode, CAMPAIGN_RESUME_REFUSED_CODE, {
+    operation,
+    service: error.service,
+    path: error.path,
+    errorBody: error.errorBody,
+    originalMessage: error.originalMessage,
+    originalError: error,
+    transportFailure: error.transportFailure,
+    clientMessage: campaignResumeRefusedMessage(label, reason),
   });
 }
 

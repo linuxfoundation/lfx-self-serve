@@ -169,6 +169,7 @@ import {
 } from '../services/campaign-monitor-mapper';
 import { toUtmCreateResult, toUtmLookupResult } from '../services/campaign-utm-mapper';
 import {
+  asResumeRefusal,
   CampaignServiceClient,
   canCreateWithBidding,
   deriveEventSlug,
@@ -3031,7 +3032,9 @@ export class CampaignController {
       logger.success(req, 'campaign_status_update', startTime, { campaignId, newStatus: result.newStatus });
       res.json(result);
     } catch (error) {
-      next(error);
+      // A resume campaign-service refused (409) gets a message naming where an adopted campaign is
+      // resumed, instead of a "try again" that cannot work. See `asResumeRefusal`.
+      next(viaCampaignService && body.status === 'ACTIVE' ? asResumeRefusal(error, body.platform, 'campaign_status_update') : error);
     }
   }
 

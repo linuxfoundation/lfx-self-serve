@@ -101,7 +101,7 @@ import { AdsCurrencyPipe, AdsPctPipe, EventLabelPipe, PacingClassPipe, PriorityC
 import { metaAdSetFailureOutcome, metaAdSetWriteLeftValidatorKnown } from '@shared/utils/campaign-ad-set-error.utils';
 import { campaignBidFailureOutcome } from '@shared/utils/campaign-bid-error.utils';
 import { campaignBudgetFailureOutcome } from '@shared/utils/campaign-budget-error.utils';
-import { classifyCampaignWriteFailure } from '@shared/utils/campaign-write-error.utils';
+import { classifyCampaignWriteFailure, isCampaignResumeRefusal } from '@shared/utils/campaign-write-error.utils';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { CampaignKeywordTargetingService } from '@services/campaign-keyword-targeting.service';
 import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
@@ -954,9 +954,10 @@ export class OptimizationTabComponent implements OnInit {
             failureFallback: CAMPAIGN_TOGGLE_FAILURE_MESSAGES[direction],
           });
           const conflict = outcome.state === 'conflict';
-          // A definite failure keeps the per-direction copy, which states which way it left the row.
+          // A definite failure keeps the per-direction copy, which states which way it left the row,
+          // except a refused resume: its message already says so, and says where to resume instead.
           let message = CAMPAIGN_TOGGLE_FAILURE_MESSAGES[direction];
-          if (outcome.state !== 'failed') {
+          if (outcome.state !== 'failed' || isCampaignResumeRefusal(err)) {
             message = outcome.message;
           }
           this.announceToggleFailure(campaignName, message, outcome.state === 'unconfirmed' ? 'warn' : 'error');

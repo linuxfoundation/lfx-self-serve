@@ -422,6 +422,29 @@ export const CAMPAIGN_ACT_RESUME_ADOPTED_NOTE =
   "A campaign adopted into LFX One cannot be resumed from here; resume it in the ad platform's own UI. Pausing always works.";
 
 /**
+ * The BFF's `code` for a resume that campaign-service refused with 409. The UI branches on this
+ * code, never on the wording.
+ *
+ * campaign-service refuses ACTIVATE on every adopted campaign, on every platform. Its 409 carries
+ * only `{ code: "409", message }`, the same shape as its other toggle 409s: a campaign that is not
+ * fully provisioned for another reason, a Meta ad set paused on purpose that is running again, or a
+ * campaign under another ad account. Nothing in the answer, the campaign record or the index says
+ * a row was adopted. So the message (`campaignResumeRefusedMessage`) states the adoption case as a
+ * condition and keeps campaign-service's own sentence for the others.
+ */
+export const CAMPAIGN_RESUME_REFUSED_CODE = 'CAMPAIGN_RESUME_REFUSED';
+
+/**
+ * Why a resume was refused (409), naming the platform where an adopted campaign is resumed.
+ * `reason` is campaign-service's own sentence, kept for the refusals that are not about adoption.
+ */
+export function campaignResumeRefusedMessage(platformLabel: string, reason?: string): string {
+  const adopted = `Could not resume this campaign; it is still paused, and trying again will not help. If it was adopted from ${platformLabel}, LFX One can pause it but not resume it — resume it in ${platformLabel} itself.`;
+  const trimmed = reason?.trim();
+  return trimmed ? `${adopted} Otherwise, the reason given was: ${trimmed}` : adopted;
+}
+
+/**
  * Shown beside a Meta Resume. campaign-service keeps an ad set paused on purpose PAUSED through a
  * campaign resume, and refuses the resume (409) when Meta reports that ad set ACTIVE.
  */

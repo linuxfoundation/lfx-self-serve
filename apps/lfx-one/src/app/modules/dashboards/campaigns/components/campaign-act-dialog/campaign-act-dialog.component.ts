@@ -263,8 +263,9 @@ export class CampaignActDialogComponent {
         },
         error: (error: unknown) => {
           this.pending.set(false);
-          // A definite refusal keeps campaign-service's own sentence: it is what says an adopted
-          // campaign cannot be activated, or that a Meta ad set paused on purpose is running again.
+          // A definite refusal keeps the BFF's message verbatim. For a refused resume that is
+          // `CAMPAIGN_RESUME_REFUSED`, which says where an adopted campaign is resumed and keeps
+          // campaign-service's own sentence (e.g. a Meta ad set paused on purpose is running again).
           const outcome = classifyCampaignWriteFailure(error, {
             conflict: CAMPAIGN_ETAG_STALE_MESSAGE,
             unconfirmed: CAMPAIGN_TOGGLE_UNCONFIRMED_MESSAGES[action],
