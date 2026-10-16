@@ -3415,15 +3415,18 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     at(f).selectedPlatforms.set(['reddit-ads']);
     makeSubmittable(f);
     pickRedditObjective(f, 'video_views');
+    // The Post URL is valid first, so the goal is the ONLY thing blocking the submit below: without
+    // it the Post URL guard alone would keep canSubmit() false and hide a missing goal guard.
+    typeRedditPostUrl(f, 'https://www.reddit.com/r/kubernetes/comments/abc123/video/');
 
     expect(at(f).canSubmit()).toBe(false);
     expect(f.nativeElement.querySelector('[data-testid="implementation-reddit-video-goal-error"]')?.textContent).toContain('Choose a video goal');
+    expect(f.nativeElement.querySelector('[data-testid="implementation-reddit-video-post-error"]')).toBeNull();
 
     at(f).submit();
     expect(createCampaign).not.toHaveBeenCalled();
 
     pickRedditVideoGoal(f, 'VIDEO_VIEW_6S');
-    typeRedditPostUrl(f, 'https://www.reddit.com/r/kubernetes/comments/abc123/video/');
     expect(at(f).canSubmit()).toBe(true);
     expect(f.nativeElement.querySelector('[data-testid="implementation-reddit-video-goal-error"]')).toBeNull();
   });
