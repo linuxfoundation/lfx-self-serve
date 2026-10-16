@@ -2038,12 +2038,6 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
-  /** `{ videoGoal }` for a Video Views campaign with a usable goal, otherwise `{}`. */
-  private redditVideoGoalPayload(): { videoGoal?: RedditVideoGoal } {
-    const goal = this.redditEffectiveVideoGoal();
-    return this.redditNeedsVideoGoal() && goal ? { videoGoal: goal } : {};
-  }
-
   protected onRedditVideoGoalChange(event: Event): void {
     this.redditVideoGoal.set((event.target as HTMLSelectElement).value as RedditVideoGoal | '');
     this.emitDraft();
@@ -4023,6 +4017,12 @@ export class ImplementationTabComponent implements OnInit {
       // Google, so creative added by hand upstream is never discovered here.
       return `${sentence} Activating it from LFX stays refused even after that, so launch it in Google Ads.`;
     });
+  }
+
+  /** `{ videoGoal }` for a Video Views campaign with a usable goal, otherwise `{}`. */
+  private redditVideoGoalPayload(): { videoGoal?: RedditVideoGoal } {
+    const goal = this.redditEffectiveVideoGoal();
+    return this.redditNeedsVideoGoal() && goal ? { videoGoal: goal } : {};
   }
 
   /**
