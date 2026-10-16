@@ -46,6 +46,7 @@ Request → Controller → Service → Microservice/Data Layer
 | [Authentication](./authentication.md)                                 | Auth0 integration, selective auth middleware, M2M tokens, session management    |
 | [Logging & Monitoring](./logging-monitoring.md)                       | Pino logger service, operation lifecycle, log levels, CloudWatch format         |
 | [Error Handling](./error-handling-architecture.md)                    | Error classification, ServiceValidationError, error middleware                  |
+| [Marketing OS Document Revisions](./mktg-document-revisions.md)       | Immutable revision history, conditional current pointers, reads and attribution |
 | [Server Helpers](./server-helpers.md)                                 | Validation type guards, pagination helper, polling, URL validation              |
 | [Pagination](./pagination.md)                                         | Cursor-based pagination, fetchAllQueryResources, frontend patterns              |
 | [AI Service](./ai-service.md)                                         | LiteLLM proxy, meeting agenda generation, JSON schema validation                |
