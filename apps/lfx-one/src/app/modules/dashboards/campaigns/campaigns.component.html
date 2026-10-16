@@ -52,7 +52,7 @@
     <!-- Email container. Mounted and visibility-toggled for the same reason the paid one below
        is: PlanningTabComponent owns its brief/URL/copy state locally, so a structural @if would
        destroy an in-progress email brief on every round-trip to Paid Marketing. -->
-    <div class="flex flex-col gap-6" [style.display]="isEmail() ? null : 'none'" data-testid="campaigns-email">
+    <div class="flex flex-col gap-6" [style.display]="isEmailLike() ? null : 'none'" data-testid="campaigns-email">
       <!-- Tab Navigation. Bound to emailTabs — a per-container constant, so this list cannot
          change when the OTHER container becomes active.
 
@@ -174,21 +174,27 @@
             brief's stage — and answered "no brief" for a series sitting in storage.
           -->
           <div class="flex flex-col gap-2" data-testid="campaigns-email-stage-picker">
-            <label for="email-stage" class="font-mono text-xs uppercase tracking-wide text-gray-400">Email type</label>
+            <label for="email-stage" class="font-mono text-xs uppercase tracking-wide text-gray-400">{{ isSurvey() ? 'Asset type' : 'Email type' }}</label>
             <lfx-select
               [form]="selectorForm"
               control="emailType"
               inputId="email-stage"
-              [options]="emailTypes"
+              [options]="sendTypeOptions()"
               optionLabel="label"
               optionValue="id"
               size="small"
-              ariaLabel="Email type"
+              [ariaLabel]="isSurvey() ? 'Asset type' : 'Email type'"
               dataTest="campaigns-email-stage-select" />
-            <p class="text-xs text-gray-500">
-              Each <em>stage</em> is its own brief for this event, so a campaign can run as a series. Some types share a stage and therefore the same brief;
-              switching to a type in a different stage opens that send&apos;s brief.
-            </p>
+            @if (isSurvey()) {
+              <p class="text-xs text-gray-500">
+                Each asset is its own brief, so a survey and a report for the same programme are separate campaigns with their own audience and copy.
+              </p>
+            } @else {
+              <p class="text-xs text-gray-500">
+                Each <em>stage</em> is its own brief for this event, so a campaign can run as a series. Some types share a stage and therefore the same brief;
+                switching to a type in a different stage opens that send&apos;s brief.
+              </p>
+            }
           </div>
 
           <!--
@@ -217,7 +223,7 @@
 
           <lfx-planning-tab
             [programTypeConfig]="activeProgramTypeConfig()"
-            deliveryType="email"
+            [deliveryType]="selectedDeliveryType()"
             [emailStage]="selectedEmailStage() ?? ''"
             (proceedToImplementation)="onEmailProceedFromPlanning($event)"
             (restoreSavedBriefRequested)="onRestoreSavedEmailBrief($event.brief, $event.briefId, $event.etag, $event.approved)"
@@ -1371,7 +1377,7 @@
        Uses an inline [style.display] rather than [hidden]: the `flex` utility sets
        display:flex, which overrides Preflight's `[hidden]{display:none}` in the cascade,
        so [hidden] alone would leave both views rendered. An inline style always wins. -->
-    <div class="flex flex-col gap-6" [style.display]="!isEmail() ? null : 'none'" data-testid="campaigns-paid-marketing">
+    <div class="flex flex-col gap-6" [style.display]="!isEmailLike() ? null : 'none'" data-testid="campaigns-paid-marketing">
       <!-- Tab Navigation -->
       <div class="flex gap-1 rounded-lg bg-gray-100 p-1" role="tablist" aria-label="Campaign tabs" data-testid="campaigns-tab-nav">
         @for (tab of tabs; track tab.id; let i = $index) {

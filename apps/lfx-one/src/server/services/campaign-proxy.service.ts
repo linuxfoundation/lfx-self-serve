@@ -1434,7 +1434,9 @@ export class CampaignProxyService {
     // message further down promises "generating copy from URL" — which is false for email, where
     // no copy is generated at all. A status line that names work the stream will not do is the
     // same class of falsehood as a silent skip.
-    const isEmail = body.deliveryType === 'email';
+    // Every SEND surface. Email and survey both skip ad-copy, keyword and targeting generation --
+    // upstream writes their copy from the brief instead -- so the gate asks "is this not paid?".
+    const isEmail = body.deliveryType !== undefined && body.deliveryType !== 'paid-marketing';
 
     // `/brief/generate` has its OWN refinement mode — `refineFeedback` + `previousCopy` — and it is
     // a second door onto the same refusal. Left open, an email refinement here skipped the scrape
@@ -1446,6 +1448,75 @@ export class CampaignProxyService {
     // read as two different problems.
     if (isEmail && isRefinement) {
       yield { type: 'error', data: 'Refining email copy is not supported yet.' };
+      return;
+    }
+
+    // The SURVEY surface takes its facts from the pasted document, so it neither fetches nor
+    // extracts. Placed before the scrape block rather than threaded through it: every step below
+    // -- validate the URL, fetch it, run the extraction model over the HTML, verify links against
+    // the page's anchors -- asks a question about a page that is not the source of truth here. A
+    // survey's call-to-action often opens a bare form with nothing to read.
+    //
+    // Deterministic, with no model call: the operator supplied the facts, so inventing a second
+    // interpretation of them would be the thing the generator's own prompt forbids.
+    if (body.deliveryType === 'survey') {
+      const sourceText = typeof body.sourceText === 'string' ? body.sourceText.trim() : '';
+      if (sourceText === '') {
+        yield { type: 'error', data: 'Paste the survey or report text to write the email from.' };
+        return;
+      }
+
+      yield { type: 'status', data: 'Reading the source document...' };
+
+      // The first non-empty line names the asset. The brief needs an identity -- upstream keys it
+      // on `(project, slug, delivery, stage)` and the Implement tab titles campaigns from it --
+      // and a document's own opening line is what its author called it. Bounded because this
+      // becomes a campaign name, and a pasted document can open with a paragraph.
+      const firstLine =
+        sourceText
+          .split('\n')
+          .map((line) => line.trim())
+          .find((line) => line !== '') ?? '';
+      const name = firstLine.slice(0, 120);
+
+      // Derived from the promoted URL's own path, the same shape the event path falls back to, so
+      // two assets promoted from one link collide rather than silently becoming separate briefs.
+      let slug = '';
+      try {
+        slug = new URL(body.url).pathname.split('/').filter(Boolean).pop() ?? '';
+      } catch {
+        slug = '';
+      }
+
+      yield {
+        type: 'event',
+        data: {
+          // The whole factual basis of the copy. campaign-service reads it back as `sourceText`
+          // and renders it into the prompt as "Source document".
+          sourceText,
+          name,
+          slug,
+          // The call-to-action destination. Named `registrationUrl` because that is the field the
+          // generator already resolves a button's href from; on this surface it is the survey or
+          // report being promoted.
+          registrationUrl: body.url,
+          dates: '',
+          city: '',
+          countryCode: '',
+          audience: typeof body.targetAudience === 'string' ? body.targetAudience.trim() : '',
+          themes: [],
+          speakers: [],
+          formatNotes: '',
+          description: '',
+          agendaUrl: '',
+          cfpUrl: '',
+          venueUrl: '',
+          sponsorshipUrl: '',
+          heroImageUrl: '',
+          sponsors: [],
+        },
+      };
+      yield { type: 'done', data: null };
       return;
     }
 

@@ -45,7 +45,7 @@ import {
   CampaignCreateResponse,
   CampaignDeliveryType,
   CampaignEmailSegment,
-  CampaignEmailStage,
+  CampaignSendStage,
   CampaignEmailVariant,
   CampaignJobOutcome,
   CampaignJobStatus,
@@ -192,8 +192,9 @@ export class CampaignService {
     eventSlug: string,
     projectSlug: string,
     deliveryType: CampaignDeliveryType = 'paid-marketing',
-    // Which send in an email series to open. Empty addresses the paid brief, which has no series.
-    stage: CampaignEmailStage | '' = ''
+    // Which send to open: one of the event series on email, or the promoted asset on survey.
+    // Empty addresses the paid brief, which has no series.
+    stage: CampaignSendStage | '' = ''
   ): Observable<CampaignBriefLoadResult> {
     return this.http.get<CampaignBriefLoadResult>('/api/campaigns/brief', {
       // `delivery_type` and `stage` are two of the four parts of a brief's identity upstream, which
@@ -232,7 +233,7 @@ export class CampaignService {
   public generateEmailCopy(
     projectSlug: string,
     briefId: string,
-    stage?: CampaignEmailStage,
+    stage?: CampaignSendStage,
     variant?: CampaignEmailVariant,
     segment?: CampaignEmailSegment
   ): Observable<GenerateEmailCopyResult> {

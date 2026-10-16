@@ -65,6 +65,7 @@ const req = {} as unknown as Request;
 function briefWithSlug(slug: string): CampaignBriefOutput {
   return {
     eventDetails: {
+      sourceText: '',
       name: 'KubeCon EU 2026',
       dates: '2026-03-23 to 2026-03-26',
       city: 'Amsterdam',

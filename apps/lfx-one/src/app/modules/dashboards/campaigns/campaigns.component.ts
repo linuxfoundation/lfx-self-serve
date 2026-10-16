@@ -13,6 +13,8 @@ import {
   CAMPAIGN_EMAIL_SEGMENTS,
   CAMPAIGN_EMAIL_TABS,
   CAMPAIGN_EMAIL_TYPES,
+  CAMPAIGN_SURVEY_TYPES,
+  DEFAULT_CAMPAIGN_SURVEY_TYPE_ID,
   CAMPAIGN_JOB_POLL_INTERVAL_MS,
   CAMPAIGN_PROGRAM_TYPES,
   CAMPAIGN_TABS,
@@ -44,7 +46,9 @@ import type {
   CampaignCreateRequest,
   CampaignDeliveryType,
   CampaignEmailSegment,
-  CampaignEmailStage,
+  CampaignEmailTypeOption,
+  CampaignSendStage,
+  CampaignSurveyTypeOption,
   CampaignEmailTab,
   CampaignEventSponsor,
   CampaignImplementationDraft,
@@ -1282,9 +1286,26 @@ export class CampaignsComponent {
    */
   protected readonly selectedEmailTypeId = signal<string>(DEFAULT_CAMPAIGN_EMAIL_TYPE_ID);
 
+  /**
+   * The type list for the ACTIVE send surface.
+   *
+   * One picker, two vocabularies. Upstream keys a brief on `(project, slug, delivery, stage)` and
+   * refuses a cross-surface pair, so offering the event stages on the survey surface would offer a
+   * choice the server rejects.
+   */
+  protected readonly sendTypes = computed<readonly CampaignEmailTypeOption[] | readonly CampaignSurveyTypeOption[]>(() =>
+    this.isSurvey() ? CAMPAIGN_SURVEY_TYPES : CAMPAIGN_EMAIL_TYPES
+  );
+
+  /**
+   * A mutable COPY for the template, for the reason `emailTypes` below is one: `lfx-select` types
+   * `options` as `any[]` and will not take a readonly array.
+   */
+  protected readonly sendTypeOptions = computed(() => [...this.sendTypes()]);
+
   /** The stage that type generates from — what campaign-service actually takes. */
-  protected readonly selectedEmailStage = computed<CampaignEmailStage | undefined>(
-    () => CAMPAIGN_EMAIL_TYPES.find((t) => t.id === this.selectedEmailTypeId())?.stage
+  protected readonly selectedEmailStage = computed<CampaignSendStage | undefined>(
+    () => this.sendTypes().find((t) => t.id === this.selectedEmailTypeId())?.stage
   );
 
   /**
@@ -1296,7 +1317,7 @@ export class CampaignsComponent {
    * `onGenerateEmailCopy()` then sent the new stage against the old brief's id. The picker lives
    * above the planner, where the lookup can answer it.
    */
-  protected readonly selectedEmailTypeLabel = computed<string>(() => CAMPAIGN_EMAIL_TYPES.find((t) => t.id === this.selectedEmailTypeId())?.label ?? '');
+  protected readonly selectedEmailTypeLabel = computed<string>(() => this.sendTypes().find((t) => t.id === this.selectedEmailTypeId())?.label ?? '');
 
   /** The full type list, for the selector. */
   // A mutable COPY for the template. `lfx-select` types `options` as `any[]`, and a readonly
@@ -1958,6 +1979,23 @@ export class CampaignsComponent {
    */
   protected readonly isEmail = computed(() => this.selectedDeliveryType() === 'email');
 
+  /** Survey & Report — the surface whose brief is written from a pasted document, not a scraped event. */
+  protected readonly isSurvey = computed(() => this.selectedDeliveryType() === 'survey');
+
+  /**
+   * Both SEND surfaces: email and survey.
+   *
+   * They share one container because they share the pipeline -- the same tabs, the same audience
+   * builder, the same HubSpot staging, the same draft link. What differs is where the facts come
+   * from (a scraped event page vs a pasted source document) and which stage vocabulary the picker
+   * offers, and each of those is handled where it differs rather than by a second container.
+   *
+   * Written as "not paid" rather than "email or survey" deliberately: paid is the surface with a
+   * genuinely different page, so a fourth send surface should join this one automatically rather
+   * than silently render nothing.
+   */
+  protected readonly isEmailLike = computed(() => this.selectedDeliveryType() !== 'paid-marketing');
+
   /**
    * The Email side's tab set — a plain field, NOT a computed over the active delivery type.
    *
@@ -2439,6 +2477,16 @@ export class CampaignsComponent {
       }
       this.selectedDeliveryType.set(value);
 
+      // The two send surfaces have DISJOINT type lists, so the id selected on one names nothing on
+      // the other. Left alone, `selectedEmailStage` resolves to undefined and the brief lookup
+      // addresses no row -- the planner then looks permanently empty with no error to explain it.
+      // Reset to the surface's own default, which is what a fresh selection on it would show.
+      if (value === 'survey') {
+        this.selectedEmailTypeId.set(DEFAULT_CAMPAIGN_SURVEY_TYPE_ID);
+      } else if (value === 'email') {
+        this.selectedEmailTypeId.set(DEFAULT_CAMPAIGN_EMAIL_TYPE_ID);
+      }
+
       // Re-evaluate the picker on RETURN to email, for the reason the foundation-switch handler
       // documents one condition over: resetting a guard's inputs does nothing if nothing runs it.
       // The switch handler's reload is gated on `selectedDeliveryType()` AS IT READS AT THAT
@@ -2449,7 +2497,7 @@ export class CampaignsComponent {
       //
       // The same never-answered guard, so a channel-off or failed answer is not retried on every
       // round-trip and a healthy list is not re-fetched.
-      if (value === 'email' && this.selectedEmailTab() === 'implementation') {
+      if (value !== 'paid-marketing' && this.selectedEmailTab() === 'implementation') {
         this.loadEmailTemplatesIfNeverAnswered();
       }
 
@@ -2459,7 +2507,7 @@ export class CampaignsComponent {
       // whatever was on screen before. Unlike the picker this is not merely stale-looking: these
       // numbers change when a human presses send in HubSpot, entirely outside this app, which is
       // the whole reason the tab is re-read on every entry rather than cached.
-      if (value === 'email' && this.selectedEmailTab() === 'insights') {
+      if (value !== 'paid-marketing' && this.selectedEmailTab() === 'insights') {
         this.loadEmailMetrics();
       }
     });
@@ -2545,7 +2593,8 @@ export class CampaignsComponent {
    * tablist passing index 2 against a four-length list would select Optimize and focus nothing.
    */
   protected onTabKeydown(event: KeyboardEvent, currentIndex: number, owner: CampaignDeliveryType): void {
-    const tabs = owner === 'email' ? this.emailTabs : this.tabs;
+    // Both send surfaces share the email tab set; only paid has its own (it alone has Optimize).
+    const tabs = owner === 'paid-marketing' ? this.tabs : this.emailTabs;
     let newIndex: number | null = null;
 
     if (event.key === 'ArrowRight') {
@@ -4460,7 +4509,7 @@ export class CampaignsComponent {
    * what the picker showed before ranking existed.
    */
   private rankTemplatesForSelectedType(templates: HubSpotMarketingEmail[]): HubSpotMarketingEmail[] {
-    const keywords = CAMPAIGN_EMAIL_TYPES.find((t) => t.id === this.selectedEmailTypeId())?.keywords ?? [];
+    const keywords = this.sendTypes().find((t) => t.id === this.selectedEmailTypeId())?.keywords ?? [];
     const eventTerms = this.eventTemplateTerms();
     const hasEventTerms = eventTerms.decisive.length > 0 || eventTerms.ranking.length > 0 || eventTerms.year !== '';
     if (keywords.length === 0 && !hasEventTerms) {

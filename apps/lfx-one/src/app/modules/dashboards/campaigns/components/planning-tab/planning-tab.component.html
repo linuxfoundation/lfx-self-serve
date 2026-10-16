@@ -5,19 +5,44 @@
 @if (step() === 'input') {
   <div class="flex flex-col gap-6" data-testid="planning-input-step">
     <form [formGroup]="briefForm" class="flex flex-col gap-6">
+      <!--
+        The SOURCE DOCUMENT card, survey surface only, above the link because it is what the email
+        is actually written from. The event surfaces scrape their facts; this one is handed them.
+      -->
+      @if (isSurvey()) {
+        <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="planning-source-text-section">
+          <h3 class="mb-2 text-sm font-semibold text-gray-900">What are you promoting?</h3>
+          <p class="mb-4 text-xs text-gray-500">
+            Paste the source material — survey blurb, report summary, key findings, deadline, incentive. The email is written from this alone: nothing is
+            scraped, and facts, deadlines or statistics that are not in what you paste will not be invented.
+          </p>
+          <div class="flex flex-col gap-1">
+            <label for="planning-source-text" class="text-xs font-medium text-gray-700">Source text</label>
+            <textarea
+              id="planning-source-text"
+              formControlName="sourceText"
+              rows="8"
+              placeholder="Paste the survey or report description, key findings, deadline, incentive, audience..."
+              class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              data-testid="planning-source-text-input"></textarea>
+            <p class="text-xs text-gray-500">Its first line names the campaign.</p>
+          </div>
+        </div>
+      }
+
       <!-- Event URL Card -->
       <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="planning-url-section">
-        <h3 class="mb-4 text-sm font-semibold text-gray-900">{{ programTypeConfig().urlLabel }}</h3>
+        <h3 class="mb-4 text-sm font-semibold text-gray-900">{{ urlCardLabel() }}</h3>
         <div class="flex flex-col gap-4">
           <div class="flex flex-col gap-1">
             <input
               type="url"
               formControlName="url"
-              [placeholder]="programTypeConfig().urlPlaceholder"
+              [placeholder]="urlCardPlaceholder()"
               (input)="onUrlInput()"
               class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               data-testid="planning-url-input" />
-            <p class="text-xs text-gray-500">{{ programTypeConfig().urlHelp }}</p>
+            <p class="text-xs text-gray-500">{{ urlCardHelp() }}</p>
           </div>
 
           <!--
@@ -256,7 +281,7 @@
         the prompt (campaign-proxy.service.ts:1535) — so leaving it visible does not just show a
         dead field, it feeds a paid-ad number into an email brief.
       -->
-      @if (!isEmail()) {
+      @if (!isEmailLike()) {
         <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="planning-budget-section">
           <h3 class="mb-4 text-sm font-semibold text-gray-900">Budget & Assets</h3>
           <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -292,7 +317,7 @@
 
     <!-- Ad Channels Card — paid only. Email has no ad channel to pick; its destination is the
          HubSpot template chosen on the Implement tab (LFXV2-3198). -->
-    @if (!isEmail()) {
+    @if (!isEmailLike()) {
       <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="planning-platforms-section">
         <h3 class="mb-4 text-sm font-semibold text-gray-900">Ad Channels</h3>
         <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
@@ -441,7 +466,7 @@
         </div>
         <!-- The header's Edit entry point. Same reason as the action row below: an email brief
              has no `structuredCopy`, so this opens an empty editor. -->
-        @if (!isEditing() && !isEmail()) {
+        @if (!isEditing() && !isEmailLike()) {
           <button
             type="button"
             (click)="enterEditMode()"
@@ -452,7 +477,7 @@
           </button>
         }
       </div>
-      @if (!isEmail() && eventDetails(); as details) {
+      @if (!isEmailLike() && eventDetails(); as details) {
         <div class="mt-2 flex flex-wrap items-center gap-3 pl-7 text-xs text-gray-600" data-testid="planning-event-strip">
           <span class="font-medium text-gray-900">{{ details.name }}</span>
           <!-- Guarded for the same reason the event card above is: `normalizeEventDetails` turns a
@@ -488,7 +513,7 @@
       verbatim. Without this the only remedy for a wrong date is to fix the event page and
       re-scrape.
     -->
-    @if (isEmail() && eventDetails(); as details) {
+    @if (isEmailLike() && eventDetails(); as details) {
       <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" data-testid="planning-email-brief">
         <div class="flex items-center justify-between">
           <h3 class="text-sm font-semibold text-gray-900">Event details</h3>
@@ -858,11 +883,11 @@
              Audience step and Paid still goes straight to Implement. A shared "Proceed to
              Implement" was the kind of label an operator only discovers is wrong by pressing it. -->
         <lfx-button
-          [label]="isEmail() ? 'Save & Choose Audience' : 'Save & Proceed to Implement'"
+          [label]="isEmailLike() ? 'Save & Choose Audience' : 'Save & Proceed to Implement'"
           icon="fa-light fa-arrow-right"
           severity="primary"
           (onClick)="onProceedToImplementation()"
-          [ariaLabel]="isEmail() ? 'Save edits and choose the send audience' : 'Save edits and proceed to implement'"
+          [ariaLabel]="isEmailLike() ? 'Save edits and choose the send audience' : 'Save edits and proceed to implement'"
           data-testid="planning-save-proceed-btn" />
         <lfx-button
           label="Save Edits"
@@ -1160,11 +1185,11 @@
       <div class="flex items-center gap-3">
         <!-- See the edit-mode button above: the destination differs by flow, so the label does. -->
         <lfx-button
-          [label]="isEmail() ? 'Choose Audience' : 'Proceed to Implement'"
+          [label]="isEmailLike() ? 'Choose Audience' : 'Proceed to Implement'"
           icon="fa-light fa-arrow-right"
           severity="primary"
           (onClick)="onProceedToImplementation()"
-          [ariaLabel]="isEmail() ? 'Choose the send audience for this brief' : 'Proceed to implement with this brief'"
+          [ariaLabel]="isEmailLike() ? 'Choose the send audience for this brief' : 'Proceed to implement with this brief'"
           data-testid="planning-proceed-btn" />
         <!--
           The three copy actions, hidden together for email because all three operate on ad copy
@@ -1183,12 +1208,12 @@
           that reaches here with nothing to copy. A Microsoft-ONLY paid brief skips the ad-copy
           stage too — Microsoft contributes no copy keys, so `campaign-proxy` emits an empty
           `copy_structured` and never streams a copy token (see `someContributesCopy` there).
-          That brief is NOT email, so `!isEmail()` admits it and the button wrote an empty
+          That brief is NOT email, so `!isEmailLike()` admits it and the button wrote an empty
           clipboard with no feedback. Guarding on the buffer the button actually copies covers
           that case and any future copy-less platform, rather than naming Microsoft here and
           needing the same fix again for the next one.
         -->
-        @if (!isEmail()) {
+        @if (!isEmailLike()) {
           <lfx-button
             label="Refine Brief"
             icon="fa-light fa-wand-magic-sparkles"

@@ -7,6 +7,7 @@ import type {
   CAMPAIGN_BIDDING_STRATEGIES,
   CAMPAIGN_EMAIL_SEGMENTS,
   CAMPAIGN_EMAIL_STAGES,
+  CAMPAIGN_SURVEY_STAGES,
   CAMPAIGN_EMAIL_VARIANTS,
   CAMPAIGN_METRICS_WINDOWS,
   GOOGLE_ADS_AGE_RANGE_MAP,
@@ -88,8 +89,16 @@ export type CampaignGoal = 'conversions' | 'brand-awareness' | 'traffic' | 'lead
 
 export type CampaignProgramType = 'events' | 'education';
 
-/** How a campaign reaches its audience — the second selector after the program type. */
-export type CampaignDeliveryType = 'paid-marketing' | 'email';
+/**
+ * How a campaign reaches its audience — the second selector after the program type.
+ *
+ * `survey` is a SURFACE, not a kind of email: its brief is authored from a pasted source document
+ * and a promoted URL rather than a scraped event page, and its stages name which ASSET is promoted
+ * rather than which send in a series it is. Upstream keys a brief on `(project, slug, delivery,
+ * stage)`, so modelling it as an email stage would put a survey brief in the same identity slot as
+ * that event's sends and let one displace the other.
+ */
+export type CampaignDeliveryType = 'paid-marketing' | 'email' | 'survey';
 
 export type RedditObjective = 'awareness' | 'traffic' | 'conversions' | 'video_views';
 
@@ -237,6 +246,15 @@ export interface CampaignBriefRequest {
    * two different things. This field is what distinguishes them.
    */
   deliveryType?: CampaignDeliveryType;
+  /**
+   * The SURVEY surface's source document: the survey instrument or report text the copy is written
+   * from. Required when `deliveryType` is `survey` and ignored otherwise.
+   *
+   * It replaces the scrape rather than supplementing it. A survey's facts live in the document the
+   * operator pasted, not on the page the call-to-action opens -- that page is often a bare form --
+   * so the survey path skips fetching and extraction entirely and takes this as the whole truth.
+   */
+  sourceText?: string;
   programType?: CampaignProgramType;
   campaignGoal?: CampaignGoal;
   targetAudience?: string;
@@ -277,6 +295,15 @@ export interface CampaignEventSponsor {
 }
 
 export interface CampaignEventDetails {
+  /**
+   * The SURVEY surface's primary input: the survey instrument or report text the copy is written
+   * from, pasted by the operator rather than scraped. Empty on every event brief.
+   *
+   * It rides in this blob rather than in a column of its own because upstream stores
+   * `event_details` as an opaque JSON document, so carrying it costs no migration -- the
+   * generator reads it back as `sourceText` and renders it into the prompt as "Source document".
+   */
+  sourceText: string;
   name: string;
   dates: string;
   city: string;
@@ -363,7 +390,7 @@ export interface CampaignBriefOutput {
    * campaign be the series it actually is -- a CFP Launch and a Final Countdown for the same
    * event, both live at once.
    */
-  emailStage?: CampaignEmailStage;
+  emailStage?: CampaignSendStage;
   selectedPlatforms?: CampaignPlatform[];
   linkedInCopy?: LinkedInBriefCopy;
   redditCopy?: RedditBriefCopy;
@@ -4865,6 +4892,20 @@ export interface BriefMetrics {
 export type CampaignEmailStage = (typeof CAMPAIGN_EMAIL_STAGES)[number];
 
 /**
+ * A stage on the SURVEY surface. Derived from `CAMPAIGN_SURVEY_STAGES` for the same reason
+ * `CampaignEmailStage` is derived from its list: the runtime value that goes on the wire and the
+ * type that describes it cannot then drift apart.
+ */
+export type CampaignSurveyStage = (typeof CAMPAIGN_SURVEY_STAGES)[number];
+
+/**
+ * A stage on any send surface. The wire field is one column upstream, so the places that merely
+ * carry a stage — the brief payload, the copy request — take this union, while the places that
+ * OFFER a choice take the surface's own list.
+ */
+export type CampaignSendStage = CampaignEmailStage | CampaignSurveyStage;
+
+/**
  * Requests a differently-styled draft of the same stage's copy from `generate-email-copy` --
  * currently just `'urgency-fomo'`, an urgency/FOMO-forward structure instead of the stage's normal
  * copy. Free text upstream, same lenient-fallback shape as `CampaignEmailStage`: an unrecognised
@@ -4902,6 +4943,18 @@ export interface CampaignEmailTypeOption {
   id: string;
   label: string;
   stage: CampaignEmailStage;
+  keywords: readonly string[];
+}
+
+/**
+ * What the operator picks on the survey surface. Structurally the same as
+ * `CampaignEmailTypeOption` but carrying a survey stage, so the two cannot be assigned to each
+ * other by accident -- the stage is what upstream keys the brief on.
+ */
+export interface CampaignSurveyTypeOption {
+  id: string;
+  label: string;
+  stage: CampaignSurveyStage;
   keywords: readonly string[];
 }
 

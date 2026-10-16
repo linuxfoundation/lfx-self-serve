@@ -126,8 +126,32 @@ export class PlanningTabComponent implements OnInit {
    */
   protected readonly utmFieldId = computed(() => `planning-hubspot-utm-value-${this.deliveryType()}`);
 
-  /** Whether this planner is planning an email rather than paid ads. */
-  protected readonly isEmail = computed(() => this.deliveryType() === 'email');
+  /**
+   * Whether this planner is planning a SEND rather than paid ads.
+   *
+   * Named for what it actually gates. Every use of it asks "is this not paid?" -- hide the budget
+   * card, hide the ad channels, skip the platform requirement, omit `platforms` from the request --
+   * and all of those are equally true of the survey surface. It was called `isEmail` when email
+   * was the only send surface; keeping that name while survey rode on it would have made eleven
+   * template sites read as a claim the code no longer makes.
+   */
+  protected readonly isEmailLike = computed(() => this.deliveryType() !== 'paid-marketing');
+
+  /** Survey & Report: planned from a pasted source document rather than a scraped event page. */
+  protected readonly isSurvey = computed(() => this.deliveryType() === 'survey');
+
+  /**
+   * The URL card's wording. On survey the field is not a page to scrape but the link the call to
+   * action opens, so the event copy would describe work this surface does not do.
+   *
+   * Overridden here rather than in `programTypeConfig`, which describes the PROGRAM (events vs
+   * education) and is orthogonal to the delivery surface.
+   */
+  protected readonly urlCardLabel = computed(() => (this.isSurvey() ? 'Link being promoted' : this.programTypeConfig().urlLabel));
+  protected readonly urlCardPlaceholder = computed(() => (this.isSurvey() ? 'https://...' : this.programTypeConfig().urlPlaceholder));
+  protected readonly urlCardHelp = computed(() =>
+    this.isSurvey() ? 'The survey or report landing page — whatever the call to action should open.' : this.programTypeConfig().urlHelp
+  );
 
   // === Outputs ===
   public readonly proceedToImplementation = output<CampaignBriefOutput>();
@@ -152,6 +176,10 @@ export class PlanningTabComponent implements OnInit {
   // === Forms ===
   protected readonly briefForm = this.fb.nonNullable.group({
     url: ['', [Validators.required]],
+    // The SURVEY surface's source document. Not `Validators.required`: the control exists on every
+    // surface, and requiring it unconditionally would make the paid and email forms invalid for a
+    // field they never show. `canGenerate` applies the requirement on the one surface that has it.
+    sourceText: [''],
     campaignGoal: ['conversions'],
     targetAudience: [''],
     valueProp: [''],
@@ -194,6 +222,8 @@ export class PlanningTabComponent implements OnInit {
    * consequence.
    */
   protected readonly emailEditForm = this.fb.group({
+    // Survey surface only; the event surface leaves it empty and the generator omits the line.
+    sourceText: [''],
     name: [''],
     dates: [''],
     city: [''],
@@ -534,7 +564,22 @@ export class PlanningTabComponent implements OnInit {
    * under a tab labelled Email and had to pick Google Ads before the channel would let them
    * proceed, which is not a requirement so much as a bug wearing one's clothes.
    */
-  protected readonly canGenerate = computed(() => this.formValid() === 'VALID' && (this.isEmail() || this.selectedPlatforms().size > 0));
+  /** The pasted source document, trimmed. Empty on every surface but survey. */
+  protected readonly sourceTextValue = toSignal(this.briefForm.controls.sourceText.valueChanges, {
+    initialValue: this.briefForm.controls.sourceText.value,
+  });
+
+  protected readonly canGenerate = computed(() => {
+    if (this.formValid() !== 'VALID') {
+      return false;
+    }
+    // Survey writes the email from the pasted document and scrapes nothing, so an empty one
+    // leaves the generator with no facts at all -- it would return three lines or refuse.
+    if (this.isSurvey()) {
+      return (this.sourceTextValue() ?? '').trim() !== '';
+    }
+    return this.isEmailLike() || this.selectedPlatforms().size > 0;
+  });
   protected readonly isGenerating = computed(() => this.step() === 'generating');
   protected readonly hasResults = computed(() => this.step() === 'review');
   protected readonly linkedInSponsoredCopy = computed<Record<string, unknown> | null>(() => {
@@ -616,7 +661,7 @@ export class PlanningTabComponent implements OnInit {
     // foundation the user has already left.
     combineLatest([this.slugInput$, this.activeFoundationSlug$, this.deliveryType$, this.emailStage$])
       .pipe(
-        // Runs for BOTH surfaces. This was `filter(() => !this.isEmail())` while brief storage had
+        // Runs for BOTH surfaces. This was `filter(() => !this.isEmailLike())` while brief storage had
         // no delivery dimension: one row per `(foundation, event)` meant the row an email caller
         // found was whatever surface wrote last, and restoring a paid brief into an email plan
         // brings RSA headlines, a keyword list and a platform selection that mean nothing there.
@@ -1220,10 +1265,13 @@ export class PlanningTabComponent implements OnInit {
       // already means "use the default" for every paid caller and cannot also mean email. This
       // field is what makes the server skip ad-copy and keyword generation entirely.
       deliveryType: this.deliveryType(),
+      // Survey only. Sent trimmed and omitted elsewhere, so the paid and email requests stay
+      // byte-identical to what they were before this surface existed.
+      ...(this.isSurvey() ? { sourceText: (this.briefForm.controls.sourceText.value ?? '').trim() } : {}),
       // Still omitted for email — `[]` would claim the user deselected every channel rather than
       // that ad channels do not apply here. With `deliveryType` above, the server no longer has
       // to infer anything from its absence.
-      ...(this.isEmail() ? {} : { platforms: [...this.selectedPlatforms()] as CampaignPlatform[] }),
+      ...(this.isEmailLike() ? {} : { platforms: [...this.selectedPlatforms()] as CampaignPlatform[] }),
       campaignGoal: (this.briefForm.controls.campaignGoal.value || undefined) as CampaignGoal | undefined,
       targetAudience: this.briefForm.controls.targetAudience.value.trim() || undefined,
       valueProp: this.briefForm.controls.valueProp.value.trim() || undefined,
@@ -1231,7 +1279,7 @@ export class PlanningTabComponent implements OnInit {
       // a value could reach it without the card being visible — a restored paid brief repopulates
       // the form. The server appends "Total Campaign Budget: $N" to the copy prompt, so a stray
       // value would put a paid-ad number into an email brief rather than merely go unread.
-      totalBudget: !this.isEmail() && budgetStr && Number.isFinite(Number(budgetStr)) ? Number(budgetStr) : undefined,
+      totalBudget: !this.isEmailLike() && budgetStr && Number.isFinite(Number(budgetStr)) ? Number(budgetStr) : undefined,
       programType: this.programTypeConfig().id,
     };
 
@@ -1360,6 +1408,7 @@ export class PlanningTabComponent implements OnInit {
       return;
     }
     this.emailEditForm.setValue({
+      sourceText: d.sourceText,
       name: d.name,
       dates: d.dates,
       city: d.city,
@@ -1384,6 +1433,7 @@ export class PlanningTabComponent implements OnInit {
     }
     this.eventDetails.set({
       ...d,
+      sourceText: (this.emailEditForm.controls.sourceText.value ?? '').trim(),
       name: (this.emailEditForm.controls.name.value ?? '').trim(),
       dates: (this.emailEditForm.controls.dates.value ?? '').trim(),
       city: (this.emailEditForm.controls.city.value ?? '').trim(),
@@ -1489,7 +1539,7 @@ export class PlanningTabComponent implements OnInit {
     // An email brief generates no copy, so `structuredCopy` is null and that guard returns
     // silently — leaving a user who reached Refine (via a restored paid brief, or any future
     // caller) pressing Regenerate and watching nothing happen. Says why instead.
-    if (this.isEmail()) {
+    if (this.isEmailLike()) {
       this.errorMessage.set('Refining email copy is not supported yet.');
       return;
     }
@@ -1510,7 +1560,7 @@ export class PlanningTabComponent implements OnInit {
       eventDetails: this.eventDetails(),
       // Same pair as the generate request: the delivery type is the signal the server acts on,
       // PAID-ONLY by construction: `submitRefine` returns above for email, so this request can
-      // never carry `deliveryType: 'email'`. An earlier version branched on `isEmail()` here and
+      // never carry `deliveryType: 'email'`. An earlier version branched on `isEmailLike()` here and
       // documented a server refusal it could not reach — which made the client look as though it
       // exercised that path when nothing did. The server guard stays for direct callers; this
       // sends the paid shape unconditionally.

@@ -13,8 +13,11 @@ import {
   CAMPAIGN_ALERT_THRESHOLDS,
   CAMPAIGN_PLATFORMS,
   MONITOR_PLATFORM_BUTTON_COLORS,
+  CAMPAIGN_DELIVERY_TYPES,
   CAMPAIGN_EMAIL_TYPES,
+  CAMPAIGN_SURVEY_TYPES,
   DEFAULT_CAMPAIGN_EMAIL_TYPE_ID,
+  DEFAULT_CAMPAIGN_SURVEY_TYPE_ID,
   DEFAULT_REDDIT_CALL_TO_ACTION,
   DEFAULT_REDDIT_OBJECTIVE,
   GOOGLE_ADS_AGE_RANGE_MAP,
@@ -462,6 +465,53 @@ describe('CAMPAIGN_EMAIL_TYPES', () => {
   it('gives every type at least one keyword to rank clones by', () => {
     for (const t of CAMPAIGN_EMAIL_TYPES) {
       expect(t.keywords.length, t.id).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('CAMPAIGN_SURVEY_TYPES', () => {
+  it('has a default id that actually exists in the list', () => {
+    // Same failure as the email default one block up: a renamed id leaves `selectedEmailStage()`
+    // undefined, the brief lookup addresses no row, and the planner looks permanently empty.
+    expect(CAMPAIGN_SURVEY_TYPES.some((t) => t.id === DEFAULT_CAMPAIGN_SURVEY_TYPE_ID)).toBe(true);
+  });
+
+  it('maps every type to a stage campaign-service enumerates', () => {
+    // The survey surface's own vocabulary. Upstream refuses a stage outside it with a 400.
+    const upstream = new Set(['Survey Promo', 'Report Promo']);
+    for (const t of CAMPAIGN_SURVEY_TYPES) {
+      expect(upstream.has(t.stage), `${t.id} -> ${t.stage}`).toBe(true);
+    }
+  });
+
+  it('gives every type at least one keyword to rank clones by', () => {
+    for (const t of CAMPAIGN_SURVEY_TYPES) {
+      expect(t.keywords.length, t.id).toBeGreaterThan(0);
+    }
+  });
+
+  it('shares no stage with the email surface', () => {
+    // The two surfaces are separate identity spaces upstream: `(email, 'Survey Promo')` and
+    // `(survey, 'Final Countdown')` are both refused by the delivery/stage pair rule. Offering a
+    // stage on the wrong surface would offer a choice the server rejects.
+    const emailStages = new Set<string>(CAMPAIGN_EMAIL_TYPES.map((t) => t.stage));
+    for (const t of CAMPAIGN_SURVEY_TYPES) {
+      expect(emailStages.has(t.stage), `${t.stage} appears on both surfaces`).toBe(false);
+    }
+  });
+});
+
+describe('CAMPAIGN_DELIVERY_TYPES', () => {
+  it('offers the three surfaces campaign-service accepts', () => {
+    // The dropdown IS the contract here: the BFF derives its validation set from this list, so a
+    // surface missing from it is unreachable and one that upstream does not know is a 400.
+    expect(CAMPAIGN_DELIVERY_TYPES.map((d) => d.id)).toEqual(['paid-marketing', 'email', 'survey']);
+  });
+
+  it('gives every surface a label and a breadcrumb label', () => {
+    for (const d of CAMPAIGN_DELIVERY_TYPES) {
+      expect(d.label.trim(), d.id).not.toBe('');
+      expect(d.breadcrumbLabel.trim(), d.id).not.toBe('');
     }
   });
 });
