@@ -51,8 +51,11 @@
     <p class="text-xs text-gray-500" [id]="'meta-ad-sets-blocked-' + campaignId()" data-testid="meta-ad-sets-blocked">{{ blockedReason() }}</p>
   }
 
+  <!-- Persistent and empty until a read starts: only its text changes (see liveRegionMounted). -->
+  <div role="status" aria-live="polite" class="sr-only" data-testid="meta-ad-sets-live">{{ loadingAnnouncement() }}</div>
+
   @if (state() === 'loading' && !data()) {
-    <p class="flex items-center gap-2 text-sm text-gray-500" role="status" data-testid="meta-ad-sets-loading">
+    <p class="flex items-center gap-2 text-sm text-gray-500" data-testid="meta-ad-sets-loading">
       <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
       Loading ad sets...
     </p>

@@ -5,6 +5,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import {
+  LIVE_REGION_MOUNT_DELAY_MS,
   META_AD_SET_CHANGE_BLOCKED_CAMPAIGN_STATE_REASON,
   META_AD_SET_DELIBERATE_PAUSE_ADVICE,
   META_AD_SET_DELIBERATE_RESUME_ADVICE,
@@ -272,11 +273,34 @@ describe('MetaAdSetsPanelComponent', () => {
     expect(q('meta-ad-sets-record-check-advice')).toBeNull();
   });
 
-  it('announces the read in flight as a status', () => {
-    listMetaAdSets.mockReturnValueOnce(new Subject<CampaignServiceMetaAdSets>());
+  // The parent mounts this panel only when it opens, so a region inserted pre-filled would miss the
+  // FIRST read: the persistent region starts empty and gains the text after its first render, and
+  // the SAME element announces a Retry's read.
+  it('announces each read in flight through one persistent, initially empty live region', async () => {
+    const first = new Subject<CampaignServiceMetaAdSets>();
+    listMetaAdSets.mockReturnValueOnce(first);
     render();
+    const region = q('meta-ad-sets-live')!;
+    expect(region.getAttribute('role')).toBe('status');
+    expect(region.getAttribute('aria-live')).toBe('polite');
+    expect(q('meta-ad-sets-loading')!.getAttribute('role')).toBeNull();
+    // Empty on the render that mounts it: the loading text arrives as a CHANGE, which is announced.
+    expect(region.textContent!.trim()).toBe('');
 
-    expect(q('meta-ad-sets-loading')!.getAttribute('role')).toBe('status');
+    await new Promise((resolve) => setTimeout(resolve, LIVE_REGION_MOUNT_DELAY_MS + 20));
+    fixture.detectChanges();
+    expect(region.textContent!.trim()).toBe('Loading ad sets');
+
+    first.error(new HttpErrorResponse({ status: 503 }));
+    fixture.detectChanges();
+    expect(q('meta-ad-sets-live')).toBe(region);
+    expect(region.textContent!.trim()).toBe('');
+
+    listMetaAdSets.mockReturnValueOnce(new Subject<CampaignServiceMetaAdSets>());
+    (q('meta-ad-sets-retry')!.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(q('meta-ad-sets-live')).toBe(region);
+    expect(region.textContent!.trim()).toBe('Loading ad sets');
   });
 
   it('announces a failed read as an alert', () => {

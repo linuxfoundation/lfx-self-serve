@@ -3,7 +3,7 @@
 
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { REDDIT_KEYWORDS_ERROR_MESSAGES } from '@lfx-one/shared/constants';
+import { LIVE_REGION_MOUNT_DELAY_MS, REDDIT_KEYWORDS_ERROR_MESSAGES } from '@lfx-one/shared/constants';
 import type { RedditKeywordMetricsResponse } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { of, Subject, throwError } from 'rxjs';
@@ -84,7 +84,36 @@ describe('RedditKeywordsTableComponent', () => {
     fixture.detectChanges();
 
     expect(q('reddit-keywords-loading')).not.toBeNull();
-    expect(q('reddit-keywords-loading')!.getAttribute('role')).toBe('status');
+  });
+
+  // A status region inserted pre-filled is not reliably announced, so one persistent region, empty
+  // when first mounted, carries the loading text — and the SAME element announces the next read.
+  it('announces each read in flight through one persistent, initially empty live region', async () => {
+    const first = new Subject<RedditKeywordMetricsResponse>();
+    getRedditKeywords.mockReturnValue(first);
+    fixture.detectChanges();
+    const region = q('reddit-keywords-live')!;
+    expect(region.getAttribute('role')).toBe('status');
+    expect(region.getAttribute('aria-live')).toBe('polite');
+    expect(q('reddit-keywords-loading')!.getAttribute('role')).toBeNull();
+    // Empty on the render that mounts it: the loading text arrives as a CHANGE, which is announced.
+    expect(region.textContent!.trim()).toBe('');
+
+    await new Promise((resolve) => setTimeout(resolve, LIVE_REGION_MOUNT_DELAY_MS + 20));
+    fixture.detectChanges();
+    expect(region.textContent!.trim()).toBe('Loading Reddit keyword metrics');
+
+    first.next(report());
+    first.complete();
+    fixture.detectChanges();
+    expect(q('reddit-keywords-live')).toBe(region);
+    expect(region.textContent!.trim()).toBe('');
+
+    getRedditKeywords.mockReturnValue(new Subject());
+    q('reddit-keywords-window-this_month')!.click();
+    fixture.detectChanges();
+    expect(q('reddit-keywords-live')).toBe(region);
+    expect(region.textContent!.trim()).toBe('Loading Reddit keyword metrics');
   });
 
   it.each([
