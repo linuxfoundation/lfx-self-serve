@@ -989,8 +989,8 @@ export class OrgEasyclaDetailComponent {
    * is restored to the value shown before the click, which the producer did not change, and the
    * producer's own sentence is shown as an error toast. A 403 body carries the sanctions or ACL refusal upstream wrote. The BFF puts
    * that sentence on `error`, not `message`, so the toast reads both through
-   * `serverAuthoredMessage`. The toast summary names the value that failed to save
-   * ("Couldn't turn Auto ECLA off"). The request is not cancelled when the manager
+   * `serverAuthoredMessage`. The toast summary names the value that failed to save.
+   * The request is not cancelled when the manager
    * leaves the page: unsubscribing would abort a write the producer may already be recording.
    * The running write is tracked per organization and agreement above this page, so it survives
    * leaving and coming back. A late answer updates that agreement's remembered value. The toast is
