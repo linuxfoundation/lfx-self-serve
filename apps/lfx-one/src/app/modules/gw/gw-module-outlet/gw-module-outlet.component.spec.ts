@@ -10,6 +10,7 @@ import {
   GW_EMBED_FIRST_PAINT_CAPABILITY,
   GW_EMBED_FIRST_PAINT_TIMEOUT_MS,
   GW_EMBED_LOADING_INDICATOR_CLASS,
+  lfxColors,
   GW_EMBED_HOST_SESSION_LOGOUT_URL,
   GW_EMBED_HOST_SESSION_ME_URL,
   GW_EMBED_STYLESHEET_ROUTE,
@@ -409,9 +410,16 @@ describe('GwModuleOutletComponent', () => {
       const first = factory?.();
       const second = factory?.();
 
-      expect(first?.tagName).toBe('I');
+      // A CSS ring, not a Font Awesome icon: the kit is deferred and an unloaded icon draws nothing.
+      expect(first?.tagName).toBe('DIV');
       expect(first?.className).toBe(GW_EMBED_LOADING_INDICATOR_CLASS);
+      expect(first?.className).not.toContain('fa-');
       expect(first?.getAttribute('aria-hidden')).toBe('true');
+      // Inline, so LFX's blues win over the embed's own border-blue-200 inside its root.
+      expect(first?.style.borderRightColor).toBe(hexToRgb(lfxColors.blue[200]));
+      expect(first?.style.borderBottomColor).toBe(hexToRgb(lfxColors.blue[200]));
+      expect(first?.style.borderLeftColor).toBe(hexToRgb(lfxColors.blue[200]));
+      expect(first?.style.borderTopColor).toBe(hexToRgb(lfxColors.blue[500]));
       expect(second).not.toBe(first);
       resolveReady(MANIFEST);
       await pending;
@@ -737,6 +745,12 @@ describe('GwModuleOutletComponent', () => {
     });
   });
 });
+
+/** How the test DOM serialises an inline hex colour. */
+function hexToRgb(hex: string): string {
+  const n = Number.parseInt(hex.slice(1), 16);
+  return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
+}
 
 describe('gwEmbedHasPaintedContent', () => {
   // The real predicate, with layout stood in: the test DOM gives every element a zero-size rect.

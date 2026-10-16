@@ -231,11 +231,14 @@ export const GW_EMBED_CAPABILITY_MISSING_CODE = 'gw_embed_capability_missing';
 export const GW_EMBED_FIRST_PAINT_CAPABILITY = 'first-paint';
 
 /**
- * Classes of LFX's standard loading spinner, which the outlet hands the embed as
- * `GwHostContext.loadingIndicator` so the embed's loading states look like the rest of LFX. A
- * Font Awesome icon: the kit loads as a webfont, so the `<i>` stays the element the embed placed.
+ * Classes of the spinner the outlet hands the embed as `GwHostContext.loadingIndicator`, so the
+ * embed's loading states look like the rest of LFX. The CSS ring LFX uses for first-paint spinners
+ * (`invite.component.html`), not a Font Awesome icon: the kit is deferred, and an icon whose font
+ * has not loaded draws nothing (`.claude/rules/styling.md`). 21px, the size `text-2xl` gave the
+ * icon. The embed's stylesheet defines `border-blue-200` with Tailwind's own blue, which wins inside
+ * the embed root, so the outlet also sets both border colours inline from `lfxColors`.
  */
-export const GW_EMBED_LOADING_INDICATOR_CLASS = 'fa-light fa-spinner-third fa-spin text-2xl text-gray-400';
+export const GW_EMBED_LOADING_INDICATOR_CLASS = 'h-6 w-6 shrink-0 rounded-full border-2 border-blue-200 border-t-blue-500 animate-spin';
 
 /**
  * Route prefixes the embed can be mounted under, and the value handed to the embed as

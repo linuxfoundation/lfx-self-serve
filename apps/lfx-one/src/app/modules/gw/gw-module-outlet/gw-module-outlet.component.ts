@@ -35,6 +35,7 @@ import {
   GW_EMBED_STYLESHEET_ROUTE,
   GW_HOST_SESSION_PROXY_API_MOUNT,
   GW_HOST_SESSION_PROXY_SUPABASE_MOUNT,
+  lfxColors,
 } from '@lfx-one/shared/constants';
 import { resolveGwEmbedRoutePrefix } from '@lfx-one/shared/utils';
 import { GwEmbedFatalError, GwEmbedMountHandle, GwEmbedNotification, GwHostContext } from '@lfx-one/shared/interfaces';
@@ -242,8 +243,8 @@ export class GwModuleOutletComponent {
         notify: (notification) => this.showHostToast(notification),
         onFatal: (err) => this.onFatal(err),
         navigateHost: (path) => this.handleHostNavigation(path),
-        // LFX's own spinner in place of the embed's, so its loading states match the rest of the
-        // app. The loader passes this only to a bundle with the `host-loading-indicator` capability.
+        // LFX's own CSS spinner ring in place of the embed's, so its loading states match the rest
+        // of the app. The loader passes this only to a bundle with the `host-loading-indicator` capability.
         loadingIndicator: () => createGwEmbedLoadingIndicator(document),
       };
 
@@ -560,15 +561,18 @@ export function gwEmbedHasPaintedContent(root: HTMLElement): boolean {
 }
 
 /**
- * LFX's standard spinner, as `GwHostContext.loadingIndicator` hands it to the embed: a new element
+ * LFX's CSS spinner ring, as `GwHostContext.loadingIndicator` hands it to the embed: a new element
  * on every call, decorative, since the embed wraps it in its own `role="status"` box with a
- * screen-reader label. Exported for the spec.
+ * screen-reader label. The border colours are inline because the embed's own `border-blue-200`
+ * rule (Tailwind's blue) wins over LFX's class inside the embed root. Exported for the spec.
  */
 export function createGwEmbedLoadingIndicator(doc: Document): HTMLElement {
-  const icon = doc.createElement('i');
-  icon.className = GW_EMBED_LOADING_INDICATOR_CLASS;
-  icon.setAttribute('aria-hidden', 'true');
-  return icon;
+  const ring = doc.createElement('div');
+  ring.className = GW_EMBED_LOADING_INDICATOR_CLASS;
+  ring.style.borderColor = lfxColors.blue[200];
+  ring.style.borderTopColor = lfxColors.blue[500];
+  ring.setAttribute('aria-hidden', 'true');
+  return ring;
 }
 
 /**
