@@ -20,7 +20,11 @@
 // (`runtime_start` with the tool's input, `runtime_done` with its output —
 // the fetched page itself) are never entered: a page that is JSON would
 // otherwise be walked like a transcript, and a call-and-result pair written
-// into it would pass for the agent's.
+// into it would pass for the agent's. Inside a transcript, the readers only
+// ever descend through message and content wrappers; a block is read for
+// what it is (a text, a call, a result) and never entered, since its body
+// is prose, a tool's input or a tool's output — all of which can carry a
+// fetched page, quoted or failed, and none of which is the transcript.
 
 import { MKTG_ENVELOPE_EXTRACTION_MAX_DEPTH, MKTG_SESSION_PLATFORM_TOOL_EVENT_TYPES } from '../constants/mktg-run.constants';
 
@@ -86,6 +90,19 @@ function isToolResultBlock(record: UnknownRecord): boolean {
   return record['type'] === 'tool_result' || record['type'] === 'tool-result';
 }
 
+function isToolCallBlock(record: UnknownRecord): boolean {
+  return record['type'] === 'tool_use' || record['type'] === 'tool-call';
+}
+
+/**
+ * A message whose `content` is one string rather than blocks: the
+ * requester's own text, or prose the model wrote as a whole turn. Prose is
+ * never a transcript, however it is shaped.
+ */
+function isProseMessage(record: UnknownRecord): boolean {
+  return typeof record['role'] === 'string' && typeof record['content'] === 'string';
+}
+
 /** The text of a tool result's content: a string, the joined text blocks, or the JSON of anything else. */
 function toolResultText(content: unknown): string | null {
   if (typeof content === 'string') {
@@ -114,8 +131,10 @@ function toolResultText(content: unknown): string | null {
  * the runtime's text output (`agent_notification_message` content). Nothing
  * inside a `tool_result` block or a `user`-role message is ever returned —
  * that is where fetched pages, search results and the requester's own
- * messages sit, nor anything in a platform tool's own event. A payload that
- * is not JSON yields nothing: free text is never attributed to the agent.
+ * messages sit — nor the input of a tool call, which the agent fills from
+ * what it has read, nor anything in a platform tool's own event. A payload
+ * that is not JSON yields nothing: free text is never attributed to the
+ * agent.
  */
 export function extractMktgAgentTexts(payload: string): string[] {
   const event = readableEvent(payload);
@@ -124,7 +143,7 @@ export function extractMktgAgentTexts(payload: string): string[] {
   }
   const texts: string[] = [];
   walk(event, 0, (record) => {
-    if (isToolResultBlock(record) || record['role'] === 'user') {
+    if (isToolResultBlock(record) || isToolCallBlock(record) || record['role'] === 'user') {
       return false;
     }
     if (record['type'] === 'agent_notification_message' && typeof record['content'] === 'string') {
@@ -155,7 +174,11 @@ export function extractMktgAgentTexts(payload: string): string[] {
  * and callers de-duplicate by content (the latest valid one wins). A
  * platform tool's own event is never read: its content is what the tool
  * returned, where a pair of blocks shaped like a call and its result proves
- * nothing.
+ * nothing. Nor is a pair read out of the BODY of any block — a text block,
+ * a call's input (any tool's), a result's content (any tool's, failed or
+ * not) or a message written as one string: each is read for what it is and
+ * never entered, so a page the agent quoted, passed to a tool, or had a
+ * fetch fail on cannot plant the pair where only a transcript block counts.
  */
 export function extractMktgToolResults(payload: string, toolName: string): string[] {
   const event = readableEvent(payload);
@@ -165,26 +188,25 @@ export function extractMktgToolResults(payload: string, toolName: string): strin
   const callIds = new Set<string>();
   const results: { id: string; text: string }[] = [];
   walk(event, 0, (record) => {
-    const type = record['type'];
-    if (type === 'tool_use' && record['name'] === toolName && typeof record['id'] === 'string') {
-      callIds.add(record['id']);
+    if (isProseMessage(record) || record['type'] === 'text') {
       return false;
     }
-    if (type === 'tool-call' && record['toolName'] === toolName && typeof record['toolCallId'] === 'string') {
-      callIds.add(record['toolCallId']);
-      return false;
-    }
-    if (type === 'tool_result' && typeof record['tool_use_id'] === 'string' && record['is_error'] !== true) {
-      const text = toolResultText(record['content']);
-      if (text !== null) {
-        results.push({ id: record['tool_use_id'], text });
+    if (isToolCallBlock(record)) {
+      const id = record['type'] === 'tool_use' ? record['id'] : record['toolCallId'];
+      const name = record['type'] === 'tool_use' ? record['name'] : record['toolName'];
+      if (name === toolName && typeof id === 'string') {
+        callIds.add(id);
       }
       return false;
     }
-    if (type === 'tool-result' && typeof record['toolCallId'] === 'string') {
-      const text = toolResultText(record['output']);
-      if (text !== null) {
-        results.push({ id: record['toolCallId'], text });
+    if (isToolResultBlock(record)) {
+      const id = record['type'] === 'tool_result' ? record['tool_use_id'] : record['toolCallId'];
+      const output = record['type'] === 'tool_result' ? record['content'] : record['output'];
+      if (typeof id === 'string' && record['is_error'] !== true) {
+        const text = toolResultText(output);
+        if (text !== null) {
+          results.push({ id, text });
+        }
       }
       return false;
     }
