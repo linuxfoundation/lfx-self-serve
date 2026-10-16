@@ -2720,6 +2720,19 @@ describe('OptimizationTabComponent — budget change (#3299)', () => {
       expect(updateCampaignBudget).toHaveBeenCalledWith(expect.objectContaining({ budget: 40, budgetType: 'daily', platform: 'twitter-ads' }));
     });
 
+    // A pure read: leaving the tab cancels it rather than letting it write after teardown.
+    it('cancels an in-flight pacing read when the Optimize tab is destroyed', () => {
+      const inFlight = new Subject<CampaignServiceSettingsReadback>();
+      getCampaignSettings.mockReturnValue(inFlight.asObservable());
+      render([xDoc()]);
+      openEditor();
+      expect(inFlight.observed).toBe(true);
+
+      fixture.destroy();
+
+      expect(inFlight.observed).toBe(false);
+    });
+
     it('cannot submit while the pacing read is out', () => {
       getCampaignSettings.mockReturnValue(NEVER);
       render([xDoc()]);

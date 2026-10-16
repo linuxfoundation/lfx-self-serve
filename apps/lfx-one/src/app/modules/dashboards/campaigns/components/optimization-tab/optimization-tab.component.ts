@@ -2752,6 +2752,9 @@ export class OptimizationTabComponent implements OnInit {
    * failed read or an unreported pacing is `unknown` and does NOT block: upstream still refuses a
    * campaign it cannot write, and its refusal is shown in full. `unknown` is re-read on the next
    * opening, since a failure may have been transient.
+   *
+   * Bound to the tab's `DestroyRef`, unlike the mutations: it changes nothing upstream, so leaving
+   * the tab cancels the read rather than letting it write `budgetPacing` after teardown.
    */
   private readBudgetPacing(row: CampaignRow): void {
     const campaign = row.campaign;
@@ -2765,11 +2768,13 @@ export class OptimizationTabComponent implements OnInit {
     }
     this.budgetPacing.update((p) => ({ ...p, [id]: 'pending' }));
     const askedIn = this.contextGeneration;
-    readCampaignBudgetPacing(this.campaignService.getCampaignSettings(this.projectSlug(), this.briefId(), id)).subscribe((pacing) => {
-      if (askedIn === this.contextGeneration) {
-        this.budgetPacing.update((p) => ({ ...p, [id]: pacing }));
-      }
-    });
+    readCampaignBudgetPacing(this.campaignService.getCampaignSettings(this.projectSlug(), this.briefId(), id))
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((pacing) => {
+        if (askedIn === this.contextGeneration) {
+          this.budgetPacing.update((p) => ({ ...p, [id]: pacing }));
+        }
+      });
   }
 
   /** Why a Meta row's ad-set panel cannot be opened, or `''`. Only asked for offered rows. */
