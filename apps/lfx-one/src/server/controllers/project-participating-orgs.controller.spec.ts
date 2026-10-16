@@ -21,7 +21,11 @@ vi.mock('@lfx-one/shared/utils', () => ({
   rowsToCsv: (rows: (string | number)[][]) => rows.map((r) => r.join(',')).join('\r\n'),
 }));
 
-import { PROJECT_PARTICIPATING_ORGS_MAX_SEARCH_LENGTH } from '@lfx-one/shared/constants';
+import {
+  PROJECT_PARTICIPATING_ORGS_EXPORT_CSV_HEADER,
+  PROJECT_PARTICIPATING_ORGS_MAX_SEARCH_LENGTH,
+  PROJECT_PARTICIPATING_ORGS_PAGE_SIZE,
+} from '@lfx-one/shared/constants';
 
 import { ServiceValidationError } from '../errors';
 import { ProjectParticipatingOrgsController } from './project-participating-orgs.controller';
@@ -105,7 +109,7 @@ describe('ProjectParticipatingOrgsController validation', () => {
       segment: 'all',
       sort: 'commits',
       dir: 'desc',
-      pageSize: 25,
+      pageSize: PROJECT_PARTICIPATING_ORGS_PAGE_SIZE,
       offset: 0,
     });
 
@@ -138,9 +142,7 @@ describe('ProjectParticipatingOrgsController.export', () => {
     expect(res.headers['Content-Disposition']).toMatch(/participating-orgs-synthetic-project-90d-\d{4}-\d{2}-\d{2}\.csv/);
     expect(res.headers['X-Export-Truncated']).toBeUndefined();
     const body = res.send.mock.calls[0][0] as string;
-    expect(body.startsWith('\ufeffCompany,Membership,Tier,Unidentified,Commits,Commits (previous period),Contributors,Contributors (previous period)')).toBe(
-      true
-    );
+    expect(body.startsWith(`\ufeff${PROJECT_PARTICIPATING_ORGS_EXPORT_CSV_HEADER.join(',')}`)).toBe(true);
     expect(body).toContain('Synthetic, Member,Member,Gold,No,10,4,3,');
   });
 

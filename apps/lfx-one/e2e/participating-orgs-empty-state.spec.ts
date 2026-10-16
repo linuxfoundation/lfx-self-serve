@@ -63,7 +63,6 @@ function summaryWithActivity(): ProjectParticipatingOrgsSummary {
     companyCommits: 100,
     allCommits: 160,
     memberCommitShareOfCompanyCommits: 0.4,
-    memberCommitShareOfAllCommits: 0.25,
   };
 }
 
@@ -157,8 +156,9 @@ test.describe('Project Lens Participating Organizations empty states', () => {
 
     const noMatch = page.getByTestId('participating-orgs-no-match');
     await expect(noMatch).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
-    await expect(noMatch).toContainText('No companies match these filters.');
+    await expect(noMatch).toContainText('No organizations match these filters.');
     await expect(page.getByTestId('participating-orgs-tiles')).toBeVisible();
+    await expect(page.getByTestId('stat-card-Member Commit Share')).toContainText('40%');
     await expect(page.getByTestId('participating-orgs-empty')).toHaveCount(0);
   });
 });

@@ -4,18 +4,18 @@
 // Project Lens → Participating Organizations (#2091). Time-range options are shared with
 // Org Lens → Code Contributions (CONTRIBUTIONS_DATE_RANGE_OPTIONS / CONTRIBUTIONS_DEFAULT_DATE_RANGE).
 
+import type { MembershipTierClass } from '../interfaces/org-lens.interface';
 import type {
+  ProjectParticipatingOrgChangeTone,
   ProjectParticipatingOrgsPage,
-  ProjectParticipatingOrgsShareBaseOption,
   ProjectParticipatingOrgsSortDirection,
   ProjectParticipatingOrgsSortField,
 } from '../interfaces/project-participating-orgs.interface';
 
 export const PROJECT_PARTICIPATING_ORGS_SEGMENTS = ['all', 'members', 'non_members'] as const;
 
-export const PROJECT_PARTICIPATING_ORGS_SORT_FIELDS = ['name', 'tier', 'commits', 'contributors'] as const;
-
-export const PROJECT_PARTICIPATING_ORGS_SHARE_BASES = ['company', 'all'] as const;
+/** `*_change` sort on the % change against the previous window; rows without one (All Time, new) sort last. */
+export const PROJECT_PARTICIPATING_ORGS_SORT_FIELDS = ['name', 'tier', 'commits', 'commits_change', 'contributors', 'contributors_change'] as const;
 
 export const PROJECT_PARTICIPATING_ORGS_DEFAULT_SORT: ProjectParticipatingOrgsSortField = 'commits';
 
@@ -31,7 +31,7 @@ export const PROJECT_PARTICIPATING_ORGS_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,
 
 /** CSV export columns, in order. */
 export const PROJECT_PARTICIPATING_ORGS_EXPORT_CSV_HEADER: readonly string[] = [
-  'Company',
+  'Organization',
   'Membership',
   'Tier',
   'Unidentified',
@@ -41,9 +41,9 @@ export const PROJECT_PARTICIPATING_ORGS_EXPORT_CSV_HEADER: readonly string[] = [
   'Contributors (previous period)',
 ];
 
-export const PROJECT_PARTICIPATING_ORGS_PAGE_SIZE = 25;
+export const PROJECT_PARTICIPATING_ORGS_PAGE_SIZE = 10;
 
-export const PROJECT_PARTICIPATING_ORGS_PAGE_SIZE_OPTIONS: readonly number[] = [25, 50, 100] as const;
+export const PROJECT_PARTICIPATING_ORGS_PAGE_SIZE_OPTIONS: readonly number[] = [10, 25, 50] as const;
 
 /** Server clamp for `pageSize`. */
 export const PROJECT_PARTICIPATING_ORGS_MAX_PAGE_SIZE = 100;
@@ -80,11 +80,23 @@ export const PROJECT_PARTICIPATING_ORGS_EXPORT_TRUNCATED_MESSAGE = `The export h
 
 export const PROJECT_PARTICIPATING_ORGS_SEARCH_DEBOUNCE_MS = 300;
 
-/** Member Commit Share denominators, default first. */
-export const PROJECT_PARTICIPATING_ORGS_SHARE_BASE_OPTIONS: readonly ProjectParticipatingOrgsShareBaseOption[] = [
-  { label: 'Of company commits', value: 'company' },
-  { label: 'Of all commits', value: 'all' },
-];
-
 /** Table value before the first page arrives and after a failed read. */
 export const EMPTY_PROJECT_PARTICIPATING_ORGS_PAGE: ProjectParticipatingOrgsPage = { rows: [], totalRecords: 0, foundationSlug: null };
+
+/** Member badge colours for the tiers the design calls out; every other tier uses `..._DEFAULT_CLASS`. */
+export const PROJECT_PARTICIPATING_ORGS_TIER_BADGE_CLASSES: Partial<Record<MembershipTierClass, string>> = {
+  Platinum: 'bg-emerald-100 text-emerald-800',
+  Gold: 'bg-amber-100 text-amber-800',
+  Silver: 'bg-gray-100 text-gray-700',
+};
+
+export const PROJECT_PARTICIPATING_ORGS_TIER_BADGE_DEFAULT_CLASS = 'bg-slate-100 text-slate-700';
+
+/** Text colour of a Commits / Contributors change cell. */
+export const PROJECT_PARTICIPATING_ORGS_CHANGE_TONE_CLASSES: Record<ProjectParticipatingOrgChangeTone, string> = {
+  positive: 'text-emerald-700',
+  negative: 'text-red-600',
+  neutral: 'text-gray-500',
+  new: 'text-emerald-700',
+  none: 'text-gray-400',
+};

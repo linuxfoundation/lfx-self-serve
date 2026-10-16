@@ -1,10 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DecimalPipe } from '@angular/common';
+import { DecimalPipe, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, linkedSignal, type Signal, signal } from '@angular/core';
-import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -12,9 +12,7 @@ import { CardComponent } from '@components/card/card.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
-import { MetricDeltaComponent } from '@components/metric-delta/metric-delta.component';
 import { SelectComponent } from '@components/select/select.component';
-import { SelectButtonComponent } from '@components/select-button/select-button.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -31,7 +29,7 @@ import {
   PROJECT_PARTICIPATING_ORGS_PAGE_SIZE_OPTIONS,
   PROJECT_PARTICIPATING_ORGS_SEARCH_DEBOUNCE_MS,
   PROJECT_PARTICIPATING_ORGS_SEGMENTS,
-  PROJECT_PARTICIPATING_ORGS_SHARE_BASE_OPTIONS,
+  PROJECT_PARTICIPATING_ORGS_SORT_FIELDS,
   PROJECT_PARTICIPATING_ORGS_UNAVAILABLE_MESSAGE,
   PROJECT_PARTICIPATING_ORGS_UNIDENTIFIED_TOOLTIP,
 } from '@lfx-one/shared/constants';
@@ -45,7 +43,6 @@ import type {
   ProjectParticipatingOrgsQuery,
   ProjectParticipatingOrgsRange,
   ProjectParticipatingOrgsSegment,
-  ProjectParticipatingOrgsShareBase,
   ProjectParticipatingOrgsSortDirection,
   ProjectParticipatingOrgsSortField,
   ProjectParticipatingOrgsSummary,
@@ -53,7 +50,6 @@ import type {
   StatCardItem,
 } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
-import { formatLongDateUtc } from '@shared/utils/date-format.util';
 import { TooltipModule } from 'primeng/tooltip';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, of, switchMap, take, tap } from 'rxjs';
 
@@ -69,6 +65,7 @@ import { ParticipatingOrgsService } from './services/participating-orgs.service'
   selector: 'lfx-participating-orgs',
   imports: [
     DecimalPipe,
+    NgTemplateOutlet,
     ReactiveFormsModule,
     RouterLink,
     TooltipModule,
@@ -77,9 +74,7 @@ import { ParticipatingOrgsService } from './services/participating-orgs.service'
     CardTabsBarComponent,
     EmptyStateComponent,
     InputTextComponent,
-    MetricDeltaComponent,
     SelectComponent,
-    SelectButtonComponent,
     StatCardGridComponent,
     TableComponent,
     TagComponent,
@@ -92,7 +87,6 @@ export class ParticipatingOrgsComponent {
 
   protected readonly rangeOptions: ContributionsDateRangeOption[] = [...CONTRIBUTIONS_DATE_RANGE_OPTIONS];
   protected readonly tierOptions = MEMBERSHIP_TIER_ORDER.map((tier) => ({ label: tier, value: tier }));
-  protected readonly shareBaseOptions = [...PROJECT_PARTICIPATING_ORGS_SHARE_BASE_OPTIONS];
   protected readonly pageSizeOptions: number[] = [...PROJECT_PARTICIPATING_ORGS_PAGE_SIZE_OPTIONS];
   protected readonly maxSearchLength = PROJECT_PARTICIPATING_ORGS_MAX_SEARCH_LENGTH;
   protected readonly noAccessTooltip = PROJECT_PARTICIPATING_ORGS_NO_ORG_LENS_ACCESS_TOOLTIP;
@@ -104,9 +98,6 @@ export class ParticipatingOrgsComponent {
   });
   protected readonly rangeForm = new FormGroup({
     range: new FormControl<ProjectParticipatingOrgsRange>(CONTRIBUTIONS_DEFAULT_DATE_RANGE, { nonNullable: true }),
-  });
-  protected readonly shareForm = new FormGroup({
-    shareBase: new FormControl<ProjectParticipatingOrgsShareBase>(this.shareBaseOptions[0].value, { nonNullable: true }),
   });
 
   protected readonly segment = signal<ProjectParticipatingOrgsSegment>('all');
@@ -130,9 +121,6 @@ export class ParticipatingOrgsComponent {
   });
   private readonly search: Signal<string> = this.initSearch();
   private readonly tier: Signal<MembershipTierClass | null> = toSignal(this.filterForm.controls.tier.valueChanges, { initialValue: null });
-  private readonly shareBase: Signal<ProjectParticipatingOrgsShareBase> = toSignal(this.shareForm.controls.shareBase.valueChanges, {
-    initialValue: this.shareForm.controls.shareBase.value,
-  });
 
   /** Switching project, or any filter, tab, range or sort change, returns the table to its first page. */
   protected readonly offset = linkedSignal({
@@ -156,10 +144,6 @@ export class ParticipatingOrgsComponent {
   });
   protected readonly totalRecords = computed(() => this.page().totalRecords);
   protected readonly subtitle = computed(() => this.initSubtitle());
-  protected readonly asOfLabel = computed(() => {
-    const asOf = this.summary()?.asOfDate;
-    return asOf ? `Data as of ${formatLongDateUtc(asOf)}` : null;
-  });
   protected readonly tiles: Signal<StatCardItem[]> = computed(() => this.initTiles());
   protected readonly tabs: Signal<FilterPillOption[]> = computed(() => this.initTabs());
   protected readonly sortIconMap: Signal<Record<ProjectParticipatingOrgsSortField, string>> = computed(() => this.initSortIconMap());
@@ -170,26 +154,21 @@ export class ParticipatingOrgsComponent {
     this.summaryErrorStatus() === 503 || this.pageErrorStatus() === 503 ? PROJECT_PARTICIPATING_ORGS_UNAVAILABLE_MESSAGE : 'Please try again.'
   );
 
-  public constructor() {
-    // The tier filter narrows to members of one tier, so it has no meaning on the Non-Members tab.
-    toObservable(this.segment)
-      .pipe(takeUntilDestroyed())
-      .subscribe((segment) => {
-        const tier = this.filterForm.controls.tier;
-        if (segment === 'non_members') {
-          tier.setValue(null);
-          tier.disable();
-          return;
-        }
-        tier.enable();
-      });
-  }
-
+  /**
+   * The tier filter narrows to members of one tier, so it has no meaning on the Non-Members tab. It is cleared and
+   * disabled in the same synchronous step as the tab change, so the switch issues one read without a stray tier.
+   */
   protected onSegmentChange(id: string): void {
     const segment = PROJECT_PARTICIPATING_ORGS_SEGMENTS.find((value) => value === id);
-    if (segment) {
-      this.segment.set(segment);
+    if (!segment) return;
+    const tier = this.filterForm.controls.tier;
+    if (segment === 'non_members') {
+      tier.setValue(null);
+      tier.disable();
+    } else {
+      tier.enable();
     }
+    this.segment.set(segment);
   }
 
   protected onSort(field: ProjectParticipatingOrgsSortField): void {
@@ -198,7 +177,7 @@ export class ParticipatingOrgsComponent {
       return;
     }
     this.sort.set(field);
-    // Name A→Z and tier Platinum-first read naturally ascending; the counts lead with the largest.
+    // Name A→Z and tier Platinum-first read naturally ascending; counts and changes lead with the largest.
     this.dir.set(field === 'name' || field === 'tier' ? 'asc' : 'desc');
   }
 
@@ -321,38 +300,37 @@ export class ParticipatingOrgsComponent {
     const summary = this.summary();
     const foundation = summary?.foundationName ?? summary?.foundationSlug;
     return foundation
-      ? `Companies contributing code to ${project}, split by ${foundation} membership.`
-      : `Companies contributing code to ${project}, split by parent foundation membership.`;
+      ? `Every organization contributing to ${project}, ranked by activity and split by ${foundation} membership.`
+      : `Every organization contributing to ${project}, ranked by activity and split by parent foundation membership.`;
   }
 
   private initTiles(): StatCardItem[] {
     const summary = this.summary();
-    const share = this.shareBase() === 'all' ? summary?.memberCommitShareOfAllCommits : summary?.memberCommitShareOfCompanyCommits;
-    const unidentified = summary?.unidentifiedCount ?? 0;
+    const share = summary?.memberCommitShareOfCompanyCommits;
+    // Locale pinned so SSR on Node and the browser render the same digits (no hydration mismatch).
     return [
       {
         value: (summary?.orgsCount ?? 0).toLocaleString('en-US'),
         label: 'Orgs Participating',
-        icon: 'fa-light fa-building',
+        icon: 'fa-solid fa-building',
         iconContainerClass: 'bg-blue-100 text-blue-600',
       },
       {
         value: (summary?.membersCount ?? 0).toLocaleString('en-US'),
         label: 'Members',
-        icon: 'fa-light fa-id-badge',
+        icon: 'fa-solid fa-circle-check',
         iconContainerClass: 'bg-emerald-100 text-emerald-600',
       },
       {
         value: (summary?.nonMembersCount ?? 0).toLocaleString('en-US'),
         label: 'Non-Members',
-        subLine: unidentified > 0 ? `${unidentified.toLocaleString('en-US')} Unidentified` : undefined,
-        icon: 'fa-light fa-building-circle-xmark',
+        icon: 'fa-solid fa-user-plus',
         iconContainerClass: 'bg-amber-100 text-amber-600',
       },
       {
-        value: share === null || share === undefined ? '—' : `${(share * 100).toFixed(1)}%`,
+        value: share === null || share === undefined ? '—' : `${Math.round(share * 100)}%`,
         label: 'Member Commit Share',
-        icon: 'fa-light fa-chart-pie',
+        icon: 'fa-solid fa-chart-pie',
         iconContainerClass: 'bg-violet-100 text-violet-600',
       },
     ];
@@ -371,15 +349,19 @@ export class ParticipatingOrgsComponent {
 
   private initSortIconMap(): Record<ProjectParticipatingOrgsSortField, string> {
     const active = this.sort();
-    const activeIcon = this.dir() === 'asc' ? 'fa-light fa-sort-up' : 'fa-light fa-sort-down';
-    const iconFor = (field: ProjectParticipatingOrgsSortField): string => (active === field ? activeIcon : 'fa-light fa-sort');
-    return { name: iconFor('name'), tier: iconFor('tier'), commits: iconFor('commits'), contributors: iconFor('contributors') };
+    const activeIcon = this.dir() === 'asc' ? 'fa-solid fa-arrow-up' : 'fa-solid fa-arrow-down';
+    return Object.fromEntries(PROJECT_PARTICIPATING_ORGS_SORT_FIELDS.map((field) => [field, active === field ? activeIcon : 'fa-light fa-sort'])) as Record<
+      ProjectParticipatingOrgsSortField,
+      string
+    >;
   }
 
   private initAriaSortMap(): Record<ProjectParticipatingOrgsSortField, 'ascending' | 'descending' | 'none'> {
     const active = this.sort();
     const direction: 'ascending' | 'descending' = this.dir() === 'asc' ? 'ascending' : 'descending';
-    const sortFor = (field: ProjectParticipatingOrgsSortField): 'ascending' | 'descending' | 'none' => (active === field ? direction : 'none');
-    return { name: sortFor('name'), tier: sortFor('tier'), commits: sortFor('commits'), contributors: sortFor('contributors') };
+    return Object.fromEntries(PROJECT_PARTICIPATING_ORGS_SORT_FIELDS.map((field) => [field, active === field ? direction : 'none'])) as Record<
+      ProjectParticipatingOrgsSortField,
+      'ascending' | 'descending' | 'none'
+    >;
   }
 }

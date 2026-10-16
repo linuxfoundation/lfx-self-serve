@@ -36,12 +36,16 @@ const ORG_COLUMNS = `participant_key, account_id, participant_name, participant_
           membership_tier_class, tier_rank, commits, commits_prev, contributors, contributors_prev`;
 
 // Allowlisted ORDER BY expressions; request input only ever selects a key, never reaches the SQL.
-// `tier` ranks members only, so non-members land last in both directions.
+// `tier` ranks members only, so non-members land last in both directions. The `*_change` keys sort on the
+// % change against the previous window; with no previous window (All Time) or a zero baseline (a new
+// company) the change is NULL and sorts last. Names are trimmed: warehouse names can carry leading spaces.
 const SORT_EXPRESSIONS: Record<ProjectParticipatingOrgsSortField, (prefix: string) => string> = {
-  name: (p) => `LOWER(${p}participant_name)`,
+  name: (p) => `LOWER(TRIM(${p}participant_name))`,
   tier: (p) => `CASE WHEN ${p}is_member THEN ${p}tier_rank END`,
   commits: (p) => `${p}commits`,
+  commits_change: (p) => `(${p}commits - ${p}commits_prev) / NULLIF(${p}commits_prev, 0)`,
   contributors: (p) => `${p}contributors`,
+  contributors_change: (p) => `(${p}contributors - ${p}contributors_prev) / NULLIF(${p}contributors_prev, 0)`,
 };
 
 const SORT_DIRECTIONS: Record<ProjectParticipatingOrgsSortDirection, string> = { asc: 'ASC', desc: 'DESC' };
@@ -71,8 +75,7 @@ export class ProjectParticipatingOrgsService {
         s.member_commits,
         s.company_commits,
         s.all_commits,
-        s.member_commit_share_of_company_commits,
-        s.member_commit_share_of_all_commits
+        s.member_commit_share_of_company_commits
       FROM ${summaryTable} s
       WHERE s.project_slug = ?
         AND s.time_range = ?
@@ -104,7 +107,6 @@ export class ProjectParticipatingOrgsService {
       companyCommits: Number(row.COMPANY_COMMITS ?? 0),
       allCommits: Number(row.ALL_COMMITS ?? 0),
       memberCommitShareOfCompanyCommits: toNullableNumber(row.MEMBER_COMMIT_SHARE_OF_COMPANY_COMMITS),
-      memberCommitShareOfAllCommits: toNullableNumber(row.MEMBER_COMMIT_SHARE_OF_ALL_COMMITS),
     };
   }
 
@@ -255,7 +257,7 @@ function mapOrg(row: ProjectParticipatingOrgsRow, readableAccountIds: Set<string
   return {
     participantKey: row.PARTICIPANT_KEY as string,
     accountId,
-    name: row.PARTICIPANT_NAME || (row.PARTICIPANT_KEY as string),
+    name: row.PARTICIPANT_NAME?.trim() || (row.PARTICIPANT_KEY as string),
     logoUrl: row.PARTICIPANT_LOGO_URL || null,
     isUnidentified: row.IS_UNIDENTIFIED === true,
     isMember,

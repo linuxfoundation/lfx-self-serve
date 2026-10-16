@@ -6,13 +6,8 @@
 // project_lens models): every company contributing code to a project, split into
 // current members of the project's parent foundation and non-members.
 
-import type {
-  PROJECT_PARTICIPATING_ORGS_SEGMENTS,
-  PROJECT_PARTICIPATING_ORGS_SHARE_BASES,
-  PROJECT_PARTICIPATING_ORGS_SORT_FIELDS,
-} from '../constants/project-participating-orgs.constants';
+import type { PROJECT_PARTICIPATING_ORGS_SEGMENTS, PROJECT_PARTICIPATING_ORGS_SORT_FIELDS } from '../constants/project-participating-orgs.constants';
 import type { ContributionsDateRange } from './org-contributions.interface';
-import type { PeriodDelta } from './metric-trend.interface';
 import type { MembershipTierClass } from './org-lens.interface';
 
 /** Activity window; same vocabulary and options as Org Lens → Code Contributions. */
@@ -21,13 +16,10 @@ export type ProjectParticipatingOrgsRange = ContributionsDateRange;
 /** Tab: every listed company, current members only, or non-members (including Unidentified). */
 export type ProjectParticipatingOrgsSegment = (typeof PROJECT_PARTICIPATING_ORGS_SEGMENTS)[number];
 
-/** Server-side sortable columns. `tier` orders members by tier rank (Platinum first); non-members sort last. */
+/** Server-side sortable columns. `tier` orders members by tier rank (Platinum first); non-members, and rows with no % change, sort last. */
 export type ProjectParticipatingOrgsSortField = (typeof PROJECT_PARTICIPATING_ORGS_SORT_FIELDS)[number];
 
 export type ProjectParticipatingOrgsSortDirection = 'asc' | 'desc';
-
-/** Member Commit Share denominator: listed-company commits (default) or all commits including individuals. */
-export type ProjectParticipatingOrgsShareBase = (typeof PROJECT_PARTICIPATING_ORGS_SHARE_BASES)[number];
 
 /** Tiles and tab counts for one project and range. Counts ignore search and tier filters. */
 export interface ProjectParticipatingOrgsSummary {
@@ -48,8 +40,6 @@ export interface ProjectParticipatingOrgsSummary {
   allCommits: number;
   /** `memberCommits / companyCommits` in [0, 1]; null when there are no company commits. */
   memberCommitShareOfCompanyCommits: number | null;
-  /** `memberCommits / allCommits` in [0, 1]; null when there are no commits. */
-  memberCommitShareOfAllCommits: number | null;
 }
 
 /** `GET /api/projects/:slug/participating-orgs/summary` — `summary` is null when the project has no code activity in the range. */
@@ -110,12 +100,6 @@ export interface ProjectParticipatingOrgsPage {
 /** Filters the CSV export takes: the list query without paging. */
 export type ProjectParticipatingOrgsExportFilters = Omit<ProjectParticipatingOrgsQuery, 'pageSize' | 'offset'>;
 
-/** Share-base toggle option on the Member Commit Share tile. */
-export interface ProjectParticipatingOrgsShareBaseOption {
-  label: string;
-  value: ProjectParticipatingOrgsShareBase;
-}
-
 /** Page body state: data (possibly still loading), no activity in the range, no access, or a failed read. */
 export type ProjectParticipatingOrgsViewState = 'ready' | 'empty' | 'forbidden' | 'error';
 
@@ -125,13 +109,17 @@ export type ProjectParticipatingOrgsViewState = 'ready' | 'empty' | 'forbidden' 
  */
 export type ProjectParticipatingOrgNameKind = 'org-lens-link' | 'no-access' | 'unidentified' | 'plain';
 
+/** Colour of a change cell: up (green), down (red), flat (gray), first-period ("New"), or no comparison ("—"). */
+export type ProjectParticipatingOrgChangeTone = 'positive' | 'negative' | 'neutral' | 'new' | 'none';
+
 /** One row metric with its change against the equal-length previous window. */
 export interface ProjectParticipatingOrgMetricVm {
   value: number;
-  /** Percent change; null for All Time, a first-period company (`isNew`), or a zero-to-zero window. */
-  delta: PeriodDelta | null;
-  /** Zero in the previous window, active in this one. */
-  isNew: boolean;
+  /** Signed whole percent (`+34%`, `-8%`, `0%`), `New` when the previous window was zero, `—` for All Time or zero-to-zero. */
+  changeLabel: string;
+  changeTone: ProjectParticipatingOrgChangeTone;
+  /** Text colour for `changeTone`, from `PROJECT_PARTICIPATING_ORGS_CHANGE_TONE_CLASSES`. */
+  changeClass: string;
 }
 
 /** Table row view model for the Participating Organizations page. */
@@ -139,13 +127,15 @@ export interface ProjectParticipatingOrgRowVm {
   participantKey: string;
   name: string;
   logoUrl: string | null;
-  initials: string;
-  avatarColorClass: string;
+  /** Uppercase first letter of the name, shown when there is no logo. */
+  initial: string;
   nameKind: ProjectParticipatingOrgNameKind;
   /** `routerLink` commands to the company's Org Lens membership page for this foundation; set only for `org-lens-link`. */
   orgLensLink: string[] | null;
-  /** Member tag text — the tier class, or `Member` when the class is unknown; null for non-members. */
+  /** Member badge text (`Gold Member`, or `Member` when the tier is unknown); null for non-members. */
   membershipLabel: string | null;
+  /** Tailwind classes for the member badge; null for non-members. */
+  membershipBadgeClass: string | null;
   commits: ProjectParticipatingOrgMetricVm;
   contributors: ProjectParticipatingOrgMetricVm;
 }

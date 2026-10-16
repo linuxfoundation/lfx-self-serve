@@ -48,5 +48,4 @@ export interface ProjectParticipatingOrgsSummaryRow {
   COMPANY_COMMITS: number | null;
   ALL_COMMITS: number | null;
   MEMBER_COMMIT_SHARE_OF_COMPANY_COMMITS: number | string | null;
-  MEMBER_COMMIT_SHARE_OF_ALL_COMMITS: number | string | null;
 }

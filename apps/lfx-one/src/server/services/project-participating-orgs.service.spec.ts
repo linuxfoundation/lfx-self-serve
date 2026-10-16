@@ -108,7 +108,7 @@ describe('ProjectParticipatingOrgsService.getPage', () => {
 
   it('maps sort keys to allowlisted expressions and ignores unknown ones', async () => {
     await service.getPage(req, 's', { ...baseQuery, sort: 'name', dir: 'asc' });
-    expect(lastCall()[0]).toContain('ORDER BY LOWER(participant_name) ASC NULLS LAST');
+    expect(lastCall()[0]).toContain('ORDER BY LOWER(TRIM(participant_name)) ASC NULLS LAST');
 
     await service.getPage(req, 's', { ...baseQuery, sort: 'contributors' });
     expect(lastCall()[0]).toContain('ORDER BY contributors DESC NULLS LAST');
@@ -117,6 +117,24 @@ describe('ProjectParticipatingOrgsService.getPage', () => {
     const sql = lastCall()[0];
     expect(sql).not.toContain('DROP');
     expect(sql).toContain('ORDER BY commits DESC NULLS LAST');
+  });
+
+  it.each(['asc', 'desc'] as const)('sorts on the %% change with no-baseline rows last (%s)', async (dir) => {
+    await service.getPage(req, 's', { ...baseQuery, sort: 'commits_change', dir });
+    expect(lastCall()[0]).toContain(`ORDER BY (commits - commits_prev) / NULLIF(commits_prev, 0) ${dir.toUpperCase()} NULLS LAST`);
+
+    await service.getPage(req, 's', { ...baseQuery, sort: 'contributors_change', dir });
+    expect(lastCall()[0]).toContain(`ORDER BY (contributors - contributors_prev) / NULLIF(contributors_prev, 0) ${dir.toUpperCase()} NULLS LAST`);
+  });
+
+  it('trims warehouse names, falling back to the row key when nothing is left', async () => {
+    execute.mockResolvedValue({
+      rows: [row({ PARTICIPANT_NAME: '  Synthetic Spaced Co  ' }), row({ PARTICIPANT_KEY: MEMBER_B, ACCOUNT_ID: MEMBER_B, PARTICIPANT_NAME: '   ' })],
+    });
+
+    const page = await service.getPage(req, 's', baseQuery);
+
+    expect(page.rows.map((r) => r.name)).toEqual(['Synthetic Spaced Co', MEMBER_B]);
   });
 
   it('clamps page size and offset before interpolating them', async () => {
@@ -243,7 +261,6 @@ describe('ProjectParticipatingOrgsService.getSummary', () => {
           COMPANY_COMMITS: 0,
           ALL_COMMITS: 5,
           MEMBER_COMMIT_SHARE_OF_COMPANY_COMMITS: null,
-          MEMBER_COMMIT_SHARE_OF_ALL_COMMITS: 0,
         },
       ],
     });
@@ -262,7 +279,6 @@ describe('ProjectParticipatingOrgsService.getSummary', () => {
       companyCommits: 0,
       allCommits: 5,
       memberCommitShareOfCompanyCommits: null,
-      memberCommitShareOfAllCommits: 0,
     });
   });
 });

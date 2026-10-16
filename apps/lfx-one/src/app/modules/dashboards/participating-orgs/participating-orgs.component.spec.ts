@@ -9,6 +9,7 @@ import { provideRouter } from '@angular/router';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { PROJECT_PARTICIPATING_ORGS_NO_ORG_LENS_ACCESS_TOOLTIP, PROJECT_PARTICIPATING_ORGS_UNAVAILABLE_MESSAGE } from '@lfx-one/shared/constants';
 import type {
+  MembershipTierClass,
   ProjectContext,
   ProjectParticipatingOrg,
   ProjectParticipatingOrgsPage,
@@ -50,7 +51,6 @@ function summary(overrides: Partial<ProjectParticipatingOrgsSummary> = {}): Proj
     companyCommits: 400,
     allCommits: 600,
     memberCommitShareOfCompanyCommits: 0.75,
-    memberCommitShareOfAllCommits: 0.5,
     ...overrides,
   };
 }
@@ -137,15 +137,17 @@ describe('ParticipatingOrgsComponent', () => {
     expect(getPage).not.toHaveBeenCalledWith('other-synthetic-project', expect.objectContaining({ offset: 50 }));
   });
 
-  it('links a member the viewer can open to its Org Lens membership page for the parent foundation', async () => {
+  it('links a member the viewer can open to its Org Lens membership page and names the split in the subtitle', async () => {
     await render();
 
     const name = query(`participating-orgs-row-${SYNTHETIC_ORG_ACCOUNT_ID}-name`);
     expect(name?.tagName).toBe('A');
     expect(name?.getAttribute('href')).toBe(`/org/${SYNTHETIC_ORG_ACCOUNT_ID}/memberships/${FOUNDATION_SLUG}`);
-    expect(text(`participating-orgs-row-${SYNTHETIC_ORG_ACCOUNT_ID}-membership`)).toBe('Gold');
+    expect(text('participating-orgs-subtitle')).toBe(
+      'Every organization contributing to Synthetic Project, ranked by activity and split by Synthetic Foundation membership.'
+    );
     expect(getSummary).toHaveBeenCalledWith(PROJECT_SLUG, '12mo');
-    expect(getPage).toHaveBeenCalledWith(PROJECT_SLUG, { range: '12mo', segment: 'all', sort: 'commits', dir: 'desc', pageSize: 25, offset: 0 });
+    expect(getPage).toHaveBeenCalledWith(PROJECT_SLUG, { range: '12mo', segment: 'all', sort: 'commits', dir: 'desc', pageSize: 10, offset: 0 });
   });
 
   it('renders a member the viewer cannot open as focusable plain text carrying the access hint', async () => {
@@ -160,7 +162,7 @@ describe('ParticipatingOrgsComponent', () => {
     expect(query(`participating-orgs-row-${SYNTHETIC_ORG_ACCOUNT_ID}`)?.querySelector('a')).toBeNull();
   });
 
-  it('tags an Unidentified company, never links it, and labels non-members', async () => {
+  it('tags an Unidentified company, never links it, and badges non-members', async () => {
     getPage.mockReturnValue(
       of(
         page([
@@ -185,55 +187,93 @@ describe('ParticipatingOrgsComponent', () => {
     expect(query(`participating-orgs-row-${SYNTHETIC_SECOND_ORG_ACCOUNT_ID}`)?.querySelector('a')).toBeNull();
   });
 
-  it('shows the change against the previous window, "New" for a first-period company, and nothing for All Time', async () => {
+  it('badges members "{Tier} Member" in the tier colour, falling back to slate for unlisted tiers', async () => {
+    const member = (key: string, tier: MembershipTierClass): ProjectParticipatingOrg =>
+      org({ participantKey: key, accountId: null, membershipTierClass: tier, canOpenOrgLens: false });
+    getPage.mockReturnValue(of(page([member('cdev:platinum', 'Platinum'), member('cdev:gold', 'Gold'), member('cdev:premier', 'Premier')])));
     await render();
+    const badge = (key: string): Element | null | undefined => query(`participating-orgs-row-${key}-membership`)?.firstElementChild;
 
-    expect(text(`participating-orgs-row-${SYNTHETIC_ORG_ACCOUNT_ID}-commits-delta`)).toContain('20.0%');
-    expect(text(`participating-orgs-row-${SYNTHETIC_ORG_ACCOUNT_ID}-contributors`)).toMatch(/^8\s*New$/);
+    expect(text('participating-orgs-row-cdev:platinum-membership')).toBe('Platinum Member');
+    expect(badge('cdev:platinum')?.classList).toContain('bg-emerald-100');
+    expect(badge('cdev:gold')?.classList).toContain('bg-amber-100');
+    expect(badge('cdev:premier')?.classList).toContain('bg-slate-100');
+  });
 
-    getPage.mockReturnValue(of(page([org({ commitsPrev: null, contributorsPrev: null })])));
+  it('shows each change as a signed whole percent, "New" from zero, and a dash for All Time', async () => {
+    getPage.mockReturnValue(
+      of(
+        page([
+          org({ participantKey: 'cdev:up', accountId: null, commits: 134, commitsPrev: 100, contributors: 8, contributorsPrev: 0 }),
+          org({ participantKey: 'cdev:down', accountId: null, commits: 92, commitsPrev: 100, contributors: 5, contributorsPrev: 5 }),
+        ])
+      )
+    );
+    await render();
+    const change = (key: string, metric: 'commits' | 'contributors'): HTMLElement | null => query(`participating-orgs-row-${key}-${metric}-change`);
+
+    expect(change('cdev:up', 'commits')?.textContent?.trim()).toBe('+34%');
+    expect(change('cdev:up', 'commits')?.classList).toContain('text-emerald-700');
+    expect(change('cdev:up', 'contributors')?.textContent?.trim()).toBe('New');
+    expect(change('cdev:down', 'commits')?.textContent?.trim()).toBe('-8%');
+    expect(change('cdev:down', 'commits')?.classList).toContain('text-red-600');
+    expect(change('cdev:down', 'contributors')?.textContent?.trim()).toBe('0%');
+
+    getPage.mockReturnValue(of(page([org({ participantKey: 'cdev:up', accountId: null, commitsPrev: null, contributorsPrev: null })])));
     fixture.componentInstance['rangeForm'].controls.range.setValue('all');
     await settle();
 
-    expect(text(`participating-orgs-row-${SYNTHETIC_ORG_ACCOUNT_ID}-commits`)).toBe('120');
-    expect(text(`participating-orgs-row-${SYNTHETIC_ORG_ACCOUNT_ID}-contributors`)).toBe('8');
+    expect(change('cdev:up', 'commits')?.textContent?.trim()).toBe('—');
+    expect(change('cdev:up', 'contributors')?.textContent?.trim()).toBe('—');
   });
 
-  it('clears and disables the tier filter on the Non-Members tab and requests that segment from the first page', async () => {
+  it('sorts by a change column, largest first, and marks it as the sorted header', async () => {
+    await render();
+
+    query('participating-orgs-sort-commits_change')?.click();
+    await settle();
+
+    expect(getPage).toHaveBeenLastCalledWith(PROJECT_SLUG, expect.objectContaining({ sort: 'commits_change', dir: 'desc', offset: 0 }));
+    expect(query('participating-orgs-sort-commits_change')?.closest('th')?.getAttribute('aria-sort')).toBe('descending');
+    expect(query('participating-orgs-sort-commits')?.closest('th')?.getAttribute('aria-sort')).toBe('none');
+  });
+
+  it('clears and disables the tier filter on the Non-Members tab in one request, from the first page', async () => {
     await render();
     const tier = fixture.componentInstance['filterForm'].controls.tier;
 
     tier.setValue('Gold');
-    fixture.componentInstance['offset'].set(25);
+    fixture.componentInstance['offset'].set(20);
     await settle();
-    expect(getPage).toHaveBeenLastCalledWith(PROJECT_SLUG, expect.objectContaining({ segment: 'all', tier: 'Gold', offset: 25 }));
+    expect(getPage).toHaveBeenLastCalledWith(PROJECT_SLUG, expect.objectContaining({ segment: 'all', tier: 'Gold', offset: 20 }));
+    getPage.mockClear();
 
     fixture.debugElement.query(By.directive(CardTabsBarComponent)).componentInstance.filterChange.emit('non_members');
     await settle();
 
     expect(tier.disabled).toBe(true);
     expect(tier.value).toBeNull();
-    const [, lastQuery] = getPage.mock.lastCall ?? [];
-    expect(lastQuery).toEqual({ range: '12mo', segment: 'non_members', sort: 'commits', dir: 'desc', pageSize: 25, offset: 0 });
+    // Exactly one read: no stray `segment=non_members&tier=Gold` before the tier clears.
+    expect(getPage).toHaveBeenCalledTimes(1);
+    expect(getPage).toHaveBeenCalledWith(PROJECT_SLUG, { range: '12mo', segment: 'non_members', sort: 'commits', dir: 'desc', pageSize: 10, offset: 0 });
 
     fixture.debugElement.query(By.directive(CardTabsBarComponent)).componentInstance.filterChange.emit('members');
     await settle();
     expect(tier.enabled).toBe(true);
   });
 
-  it('switches the Member Commit Share tile between company and all commits, and dashes a missing share', async () => {
-    getSummary.mockReturnValue(of({ summary: summary({ memberCommitShareOfAllCommits: null }) }));
+  it('shows the Member Commit Share as a whole percent, or a dash when there are no company commits', async () => {
+    getSummary.mockReturnValue(of({ summary: summary({ memberCommitShareOfCompanyCommits: 0.846 }) }));
     await render();
-    const shareTile = (): string | undefined => text('stat-card-Member Commit Share');
 
-    expect(shareTile()).toContain('75.0%');
-    expect(text('stat-card-Non-Members')).toContain('1 Unidentified');
+    expect(text('stat-card-Member Commit Share')).toContain('85%');
+    expect(text('stat-card-Non-Members')).not.toContain('Unidentified');
 
-    fixture.componentInstance['shareForm'].controls.shareBase.setValue('all');
+    getSummary.mockReturnValue(of({ summary: summary({ memberCommitShareOfCompanyCommits: null }) }));
+    fixture.componentInstance['rangeForm'].controls.range.setValue('90d');
     await settle();
 
-    expect(shareTile()).toContain('—');
-    expect(shareTile()).not.toContain('75.0%');
+    expect(text('stat-card-Member Commit Share')).toContain('—');
   });
 
   it('shows the no-access state on a 403', async () => {
