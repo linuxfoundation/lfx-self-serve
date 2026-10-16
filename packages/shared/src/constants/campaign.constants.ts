@@ -51,6 +51,7 @@ import type {
   ParsedCampaignName,
   RedditObjective,
   RedditObjectiveParams,
+  RedditVideoGoal,
   SelectableMetaObjective,
 } from '../interfaces/campaign.interface';
 import { lfxColors } from './colors.constants';
@@ -2466,17 +2467,17 @@ export const DEFAULT_REDDIT_OBJECTIVE: RedditObjective = 'conversions';
 /**
  * The objectives the picker offers, as distinct from the four `RedditObjective` admits.
  *
- * `video_views` is withheld because it cannot currently succeed. Reddit has no bare `VIDEO_VIEWS`
- * optimization goal, so a video-view campaign must name a concrete one; both creators require a
- * `videoGoal` from `REDDIT_VIDEO_GOALS` for that objective and refuse the create without it, and no
- * control collects one yet. Offer it once a goal control exists — the creators are ready for it,
- * the form is not.
+ * Today that is all four. `video_views` was withheld until the form could collect the `videoGoal`
+ * it requires — Reddit has no bare `VIDEO_VIEWS` optimization goal, so both creators refuse that
+ * objective without a goal from `REDDIT_VIDEO_GOALS`. The implementation tab now shows a goal picker
+ * for it and blocks the create until one is chosen, so it is offered.
  *
- * `REDDIT_OBJECTIVE_LABELS` stays total over `RedditObjective` rather than being narrowed to this
- * list, so a draft holding a withheld objective still renders a name instead of `undefined` — the
- * same split, for the same reason, as `META_SELECTABLE_OBJECTIVES` and `META_OBJECTIVE_LABELS`.
+ * Kept as its own list rather than read off `REDDIT_OBJECTIVE_LABELS`, so a later objective can be
+ * withheld without narrowing the labels: those stay total over `RedditObjective`, so a draft
+ * holding a withheld objective still renders a name instead of `undefined` — the same split, for
+ * the same reason, as `META_SELECTABLE_OBJECTIVES` and `META_OBJECTIVE_LABELS`.
  */
-export const REDDIT_SELECTABLE_OBJECTIVES = ['awareness', 'traffic', 'conversions'] as const;
+export const REDDIT_SELECTABLE_OBJECTIVES = ['awareness', 'traffic', 'conversions', 'video_views'] as const;
 
 /**
  * The call-to-action button labels Reddit accepts on a promoted post.
@@ -2551,6 +2552,15 @@ export const MAX_REDDIT_HEADLINE_LENGTH = 300;
  * pointless, not fatal.
  */
 export const REDDIT_VIDEO_GOALS = ['VIDEO_VIEW_6S', 'VIDEO_VIEW_15S'] as const;
+
+/**
+ * Readable names for `REDDIT_VIDEO_GOALS`, for the goal picker. Total over `RedditVideoGoal`, so
+ * adding a goal without a label is a type error rather than a blank option.
+ */
+export const REDDIT_VIDEO_GOAL_LABELS: Readonly<Record<RedditVideoGoal, string>> = {
+  VIDEO_VIEW_6S: '6-second video views',
+  VIDEO_VIEW_15S: '15-second video views',
+} as const;
 
 /**
  * The `REDDIT_OBJECTIVE_PARAMS` row for an objective, or a refusal.

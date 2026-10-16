@@ -706,6 +706,12 @@ export interface CampaignImplementationDraft {
   redditImageUrl?: string;
   redditCallToAction?: RedditCallToAction | '';
   /**
+   * The Reddit video goal, carried for the same reason as the objective. Kept whatever the
+   * objective is, so switching away from Video Views and back does not lose the choice; only the
+   * REQUEST is gated on the objective. `''` is "not chosen yet", which blocks a Video Views create.
+   */
+  redditVideoGoal?: RedditVideoGoal | '';
+  /**
    * Microsoft's four editable controls (LFXV2-3312): budget, the geo chip list, the keyword list
    * and the optional CPC bid.
    *
@@ -1181,8 +1187,8 @@ export interface RedditCampaignCreateRequest {
    * `VIDEO_VIEWS` goal, so a video-view campaign has to name a concrete duration goal and neither
    * arm can invent one. Read it through `resolveRedditOptimizationGoal` (#3449).
    *
-   * No control populates it, which is why `REDDIT_SELECTABLE_OBJECTIVES` withholds `video_views`:
-   * offering that objective with no way to set this field would offer a create both arms refuse.
+   * The implementation tab collects it with a goal picker shown only for `video_views`, sends it
+   * only with that objective, and blocks the create until one is chosen.
    */
   videoGoal?: RedditVideoGoal;
   /** Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means automatic. */
