@@ -694,11 +694,21 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly redditImageAssetId = signal('');
   protected readonly redditImageAssetName = signal('');
+  /** The brief the asset was uploaded to; upstream refuses the id for any other brief. */
+  protected readonly redditImageAssetBriefId = signal('');
   protected readonly redditImageUploadStatus = signal<CreativeAssetUploadStatus>('idle');
   /** The readable reason the last upload was refused; empty unless the status is `error`. */
   protected readonly redditImageUploadError = signal('');
   /** The `accept` list for the file picker — the same allowlist the BFF route enforces. */
   protected readonly creativeAssetAccept = CREATIVE_ASSET_MIME_TYPES.join(',');
+  /**
+   * The file input's descriptions: hint and live status always, the refusal while there is one, so
+   * returning to the input re-reads why the last file was refused. The input stays enabled during
+   * an upload (disabling it would drop keyboard focus); a new pick replaces the one in flight.
+   */
+  protected readonly redditImageFileDescribedBy = computed(() =>
+    ['reddit-image-file-hint', 'reddit-image-file-status', ...(this.redditImageUploadStatus() === 'error' ? ['reddit-image-file-error'] : [])].join(' ')
+  );
   /** The in-flight upload, cancelled when another file is chosen or the upload is removed. */
   private redditImageUploadSub: Subscription | null = null;
   /**
@@ -1623,6 +1633,9 @@ export class ImplementationTabComponent implements OnInit {
     // straight after Proceed submitted an empty brief id and hit the terminal refusal. The
     // dedicated input answers "is a save running" for every save, first or not.
     if (this.briefSaveInFlight()) return false;
+    // A create sent mid-upload would go out with the pasted URL (or no image) instead of the file
+    // the operator just chose, and the upload would then land for a create already sent.
+    if (this.showRedditSection() && this.redditImageUploadStatus() === 'uploading') return false;
 
     const persistence = this.briefPersistence();
     if (persistence.status === 'saving') return false;
@@ -2051,8 +2064,9 @@ export class ImplementationTabComponent implements OnInit {
     input.value = '';
     if (!file) return;
 
-    this.redditImageUploadSub?.unsubscribe();
-    this.redditImageUploadSub = null;
+    // A new pick replaces the previous upload outright, so a refusal below can never leave an older
+    // image silently in place while the screen reports this one as refused.
+    this.clearRedditImageAsset();
 
     if (!isCreativeAssetMimeType(file.type)) {
       this.failRedditImageUpload(CREATIVE_ASSET_WRONG_TYPE_MESSAGE);
@@ -2076,8 +2090,14 @@ export class ImplementationTabComponent implements OnInit {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (asset) => {
+          // The brief changed while the upload was in flight: the asset belongs to the old one.
+          if ((this.briefPersistence().briefId ?? '') !== briefId) {
+            this.failRedditImageUpload('The brief changed during the upload. Choose the image again.');
+            return;
+          }
           this.redditImageAssetId.set(asset.id);
           this.redditImageAssetName.set(file.name);
+          this.redditImageAssetBriefId.set(briefId);
           this.redditImageUploadStatus.set('idle');
           this.emitDraft();
         },
@@ -2087,13 +2107,18 @@ export class ImplementationTabComponent implements OnInit {
 
   /** Forget the uploaded image (the stored asset stays upstream, unused) and fall back to the image URL. */
   protected onRedditImageAssetRemove(): void {
+    this.clearRedditImageAsset();
+    this.emitDraft();
+  }
+
+  private clearRedditImageAsset(): void {
     this.redditImageUploadSub?.unsubscribe();
     this.redditImageUploadSub = null;
     this.redditImageAssetId.set('');
     this.redditImageAssetName.set('');
+    this.redditImageAssetBriefId.set('');
     this.redditImageUploadStatus.set('idle');
     this.redditImageUploadError.set('');
-    this.emitDraft();
   }
 
   protected onRedditCallToActionChange(event: Event): void {
@@ -2762,7 +2787,8 @@ export class ImplementationTabComponent implements OnInit {
    * when a post URL is set.
    */
   private redditImageField(): { imageAssetId: string } | { imageUrl: string } | Record<string, never> {
-    if (this.redditAssetUploadAvailable() && this.redditImageAssetId() && !this.redditPostUrl()) {
+    const assetForThisBrief = this.redditImageAssetId() !== '' && this.redditImageAssetBriefId() === (this.briefPersistence().briefId ?? '');
+    if (this.redditAssetUploadAvailable() && assetForThisBrief && !this.redditPostUrl()) {
       return { imageAssetId: this.redditImageAssetId() };
     }
     if (this.redditCreativeAvailable() && this.redditImageUrl()) return { imageUrl: this.redditImageUrl() };
@@ -3017,6 +3043,7 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.redditImageAssetId !== undefined) {
       this.redditImageAssetId.set(draft.redditImageAssetId);
       this.redditImageAssetName.set(draft.redditImageAssetName ?? '');
+      this.redditImageAssetBriefId.set(draft.redditImageAssetBriefId ?? '');
     }
 
     // Microsoft (LFXV2-3312), on the same present-only rule. The arrays restore on `!== undefined`
@@ -3184,6 +3211,7 @@ export class ImplementationTabComponent implements OnInit {
       redditCallToAction: this.redditCallToAction(),
       redditImageAssetId: this.redditImageAssetId(),
       redditImageAssetName: this.redditImageAssetName(),
+      redditImageAssetBriefId: this.redditImageAssetBriefId(),
     });
   }
 

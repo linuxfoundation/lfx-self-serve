@@ -147,6 +147,17 @@ describe('POST /api/campaigns/brief/creative-assets', () => {
     expect(uploadCreativeAsset).not.toHaveBeenCalled();
   });
 
+  it('keeps a body-parser refusal other than size as a 4xx, not a 500', async () => {
+    const response = await fetch(`${baseUrl}/api/campaigns/brief/creative-assets?project=tlf&brief_id=${BRIEF}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'image/png', 'Content-Encoding': 'br-unknown' },
+      body: new Uint8Array(PNG),
+    });
+
+    expect(response.status).toBe(415);
+    expect(uploadCreativeAsset).not.toHaveBeenCalled();
+  });
+
   it.each([
     ['no brief', 'project=tlf'],
     ['no project', `brief_id=${BRIEF}`],

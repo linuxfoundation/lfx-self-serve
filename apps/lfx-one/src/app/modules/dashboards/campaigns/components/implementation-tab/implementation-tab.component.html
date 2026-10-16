@@ -773,7 +773,9 @@
           }
 
           @if (googleBiddingError()) {
-            <p role="alert" class="text-xs text-red-600" data-testid="implementation-google-bidding-error">{{ googleBiddingError() }}</p>
+            <p id="reddit-image-file-error" role="alert" class="text-xs text-red-600" data-testid="implementation-google-bidding-error">
+              {{ googleBiddingError() }}
+            </p>
           }
         </div>
       }
@@ -1672,9 +1674,9 @@
                     id="reddit-image-file"
                     type="file"
                     [attr.accept]="creativeAssetAccept"
-                    [disabled]="redditImageUploadStatus() === 'uploading'"
                     (change)="onRedditImageFileChange($event)"
-                    aria-describedby="reddit-image-file-hint reddit-image-file-status"
+                    [attr.aria-describedby]="redditImageFileDescribedBy()"
+                    [attr.aria-invalid]="redditImageUploadStatus() === 'error' ? 'true' : null"
                     class="text-sm text-gray-900 file:mr-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:text-gray-700 hover:file:bg-gray-50"
                     data-testid="implementation-reddit-image-file" />
                   <p id="reddit-image-file-hint" class="text-xs text-gray-500">

@@ -3861,7 +3861,6 @@ export class CampaignController {
     );
   }
 
-  /** The first lane config carrying `bidding` while this deployment cannot honour it (see `createCampaign`), or `null`. */
   /** 415 for an upload that is not a PNG or JPEG, or whose bytes are not the type declared. */
   private unsupportedCreativeAsset(req: Request, operation: string): MicroserviceError {
     return new MicroserviceError(CREATIVE_ASSET_WRONG_TYPE_MESSAGE, 415, 'UNSUPPORTED_MEDIA_TYPE', {
@@ -3885,6 +3884,7 @@ export class CampaignController {
     return null;
   }
 
+  /** The first lane config carrying `bidding` while this deployment cannot honour it (see `createCampaign`), or `null`. */
   private unservedBiddingField(body: CampaignCreateRequest): string | null {
     if (canCreateWithBidding()) return null;
     for (const key of ['linkedInConfig', 'metaConfig', 'microsoftConfig', 'redditConfig'] as const) {

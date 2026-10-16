@@ -7396,6 +7396,7 @@ describe('ImplementationTabComponent reddit image upload', () => {
     redditImageAssetId: () => string;
     redditImageUploadStatus: () => string;
     redditImageUploadError: () => string;
+    canSubmit: () => boolean;
     submit(): void;
   }
   const at = (f: ComponentFixture<ImplementationTabComponent>): Internals => f.componentInstance as unknown as Internals;
@@ -7522,7 +7523,37 @@ describe('ImplementationTabComponent reddit image upload', () => {
 
     const status = f.nativeElement.querySelector('[data-testid="implementation-reddit-image-status"]') as HTMLElement;
     expect(status.textContent).toContain('Uploading image');
-    expect(fileInput(f)?.disabled).toBe(true);
+    // Not disabled (that would drop keyboard focus), but the create waits for the upload.
+    expect(fileInput(f)?.disabled).toBe(false);
+    const c = at(f);
+    c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
+    c.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
+    c.campaignForm.controls['startDate'].setValue('2026-09-01');
+    c.campaignForm.controls['endDate'].setValue('2026-09-30');
+    expect(c.canSubmit()).toBe(false);
+    pending.next({ id: ASSET_ID, mimeType: 'image/png', byteSize: 16, checksum: 'ab'.repeat(32), created: true });
+    expect(c.canSubmit()).toBe(true);
+  });
+
+  it('does not send an asset uploaded to a different brief', async () => {
+    const first = await mount(true);
+    choose(first.fixture, png());
+    const draft = { ...(first.latest() as CampaignImplementationDraft), eventSlug: 'kubecon-eu-2026', redditImageAssetBriefId: 'another-brief' };
+    first.fixture.destroy();
+
+    const second = await mount(true, true, draft);
+
+    expect('imageAssetId' in submit(second.fixture)).toBe(false);
+  });
+
+  it('replaces the previous upload when a new pick is refused, and links the refusal to the input', async () => {
+    const f = (await mount(true)).fixture;
+    choose(f, png());
+    choose(f, new File([new Uint8Array(4)], 'promo.gif', { type: 'image/gif' }));
+
+    expect(at(f).redditImageAssetId()).toBe('');
+    expect(fileInput(f)?.getAttribute('aria-describedby')).toContain('reddit-image-file-error');
+    expect(fileInput(f)?.getAttribute('aria-invalid')).toBe('true');
   });
 
   it('sends imageAssetId instead of imageUrl once an image is uploaded', async () => {
@@ -7572,6 +7603,7 @@ describe('ImplementationTabComponent reddit image upload', () => {
 
     expect(draft?.redditImageAssetId).toBe(ASSET_ID);
     expect(draft?.redditImageAssetName).toBe('promo.png');
+    expect(draft?.redditImageAssetBriefId).toBe(BRIEF_ID);
 
     const second = await mount(true, true, { ...(draft as CampaignImplementationDraft), eventSlug: 'kubecon-eu-2026' });
     expect(submit(second.fixture)['imageAssetId']).toBe(ASSET_ID);

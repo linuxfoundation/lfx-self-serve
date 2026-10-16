@@ -26,6 +26,19 @@ function handleCreativeAssetParseError(err: unknown, req: Request, _res: Respons
     );
     return;
   }
+  // Every other body-parser refusal (an aborted upload, an unsupported Content-Encoding, a size
+  // that disagrees with Content-Length) is the client's, and keeps its 4xx rather than becoming a 500.
+  const status = err && typeof err === 'object' ? (err as { status?: unknown }).status : undefined;
+  if (typeof status === 'number' && status >= 400 && status < 500) {
+    next(
+      new MicroserviceError('The image upload could not be read. Please try again.', status, status === 415 ? 'UNSUPPORTED_MEDIA_TYPE' : 'BAD_REQUEST', {
+        operation: 'campaign_upload_creative_asset',
+        service: 'campaign_controller',
+        path: req.path,
+      })
+    );
+    return;
+  }
   next(err);
 }
 

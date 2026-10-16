@@ -743,12 +743,15 @@ export interface CampaignImplementationDraft {
   redditImageUrl?: string;
   redditCallToAction?: RedditCallToAction | '';
   /**
-   * An uploaded Reddit image (`RedditCampaignCreateRequest.imageAssetId`) and the file name it was
-   * chosen as, so a tab switch keeps the upload rather than asking for it again. Round-trips
-   * regardless of `redditAssetUploadEnabled`, for the reason the three above do.
+   * An uploaded Reddit image (`RedditCampaignCreateRequest.imageAssetId`), the file name it was
+   * chosen as, and the brief it was uploaded to, so a tab switch keeps the upload rather than
+   * asking for it again. The asset exists upstream for that ONE brief, so it is sent only while the
+   * brief being created from is still that brief. Round-trips regardless of
+   * `redditAssetUploadEnabled`, for the reason the three above do.
    */
   redditImageAssetId?: string;
   redditImageAssetName?: string;
+  redditImageAssetBriefId?: string;
   /**
    * Microsoft's four editable controls (LFXV2-3312): budget, the geo chip list, the keyword list
    * and the optional CPC bid.
