@@ -337,6 +337,42 @@ describe('FoundationMessageService.getResult', () => {
     service = new FoundationMessageService();
   });
 
+  it('fails immediately when the agent ends with a text rejection, even after an older questions turn', async () => {
+    const reply = 'The batch intake was rejected. <b>Provide project sources.</b>';
+    const done = JSON.stringify({ type: 'runtime_done', task: { id: 'synthetic-task', entity_type: 'EntTaskAgent' } });
+    guildMocks.getRawEventPayloads.mockResolvedValue([
+      questionsPayload([AUDIENCES_QUESTION]),
+      JSON.stringify({ type: 'agent_notification_message', content: { type: 'text', data: reply } }),
+      done,
+    ]);
+    expect(await service.getResult(req, 'session-1')).toMatchObject({ status: 'failed', failureText: reply });
+    expect(objectStoreMocks.putContentAddressedObject).not.toHaveBeenCalled();
+
+    guildMocks.getRawEventPayloads.mockResolvedValue([questionsPayload([AUDIENCES_QUESTION]), done]);
+    expect(await service.getResult(req, 'session-1')).toMatchObject({ status: 'questions' });
+
+    guildMocks.getRawEventPayloads.mockResolvedValue([toolResultPayload(buildEnvelope()), done]);
+    expect(await service.getResult(req, 'session-1')).toMatchObject({ status: 'ready' });
+  });
+
+  it('preserves agent questions when completion has no final notification text', async () => {
+    guildMocks.getRawEventPayloads.mockResolvedValue([
+      llmStartPayload([{ role: 'assistant', content: [{ type: 'text', text: questionsText([AUDIENCES_QUESTION]) }] }]),
+      JSON.stringify({ type: 'runtime_done', task: { id: 'synthetic-task', entity_type: 'EntTaskAgent' } }),
+    ]);
+    expect(await service.getResult(req, 'session-1')).toMatchObject({ status: 'questions' });
+  });
+
+  it('does not fail a queued turn from the prior completion while its runtime_start is pending', async () => {
+    guildMocks.getRawEventPayloads.mockResolvedValue([
+      toolResultPayload(buildEnvelope()),
+      JSON.stringify({ type: 'runtime_done', task: { id: 'synthetic-task', entity_type: 'EntTaskAgent' } }),
+      JSON.stringify({ type: 'mktg_session_turn_started' }),
+    ]);
+    expect(await service.getResult(req, 'session-1', 'synthetic-project', undefined, 1)).toMatchObject({ status: 'pending' });
+    expect(objectStoreMocks.putContentAddressedObject).not.toHaveBeenCalled();
+  });
+
   it('reports pending while no valid envelope exists in the event stream', async () => {
     guildMocks.getRawEventPayloads.mockResolvedValue([JSON.stringify({ type: 'llm_start' }), 'agent chatter']);
 
@@ -461,6 +497,12 @@ describe('FoundationMessageService.getResult', () => {
 
     expect(result.status).toBe('ready');
     expect(result.version).toBe(1);
+  });
+
+  it('does not persist the prior envelope for a server-tracked follow-up', async () => {
+    guildMocks.getRawEventPayloads.mockResolvedValue([toolResultPayload(buildEnvelope())]);
+    expect(await service.getResult(req, 'session-1', 'synthetic-project', undefined, 1)).toMatchObject({ status: 'pending' });
+    expect(objectStoreMocks.putContentAddressedObject).not.toHaveBeenCalled();
   });
 
   it('returns the validated document with its copy primitives when the envelope passes every gate', async () => {

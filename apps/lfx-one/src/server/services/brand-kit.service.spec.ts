@@ -40,7 +40,8 @@ const projectMocks = vi.hoisted(() => ({
 vi.mock('@lfx-one/shared/utils', async () => {
   const brandKitUtils = await vi.importActual('../../../../../packages/shared/src/utils/brand-kit.utils');
   const artifactUtils = await vi.importActual('../../../../../packages/shared/src/utils/mktg-artifact.utils');
-  return { ...artifactUtils, ...brandKitUtils };
+  const sessionUtils = await vi.importActual('../../../../../packages/shared/src/utils/mktg-session-event.utils');
+  return { ...artifactUtils, ...brandKitUtils, ...sessionUtils };
 });
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/constants', async () => {
@@ -182,6 +183,14 @@ describe('BrandKitService', () => {
   });
 
   describe('getResult', () => {
+    it('fails on completed agent runtime without an envelope, returning the final reply', async () => {
+      guildMocks.getRawEventPayloads.mockResolvedValue([
+        JSON.stringify({ type: 'agent_notification_message', content: 'The intake was rejected.' }),
+        JSON.stringify({ type: 'runtime_done', task: { id: 'synthetic-task', entity_type: 'EntTaskAgent' } }),
+      ]);
+      await expect(service.getResult(req, 'session-1', PROJECT_UID)).resolves.toEqual({ status: 'failed', failureText: 'The intake was rejected.' });
+      expect(objectStoreMocks.putContentAddressedObject).not.toHaveBeenCalled();
+    });
     it('returns pending when no envelope is present in the events — and resolves no project', async () => {
       guildMocks.getRawEventPayloads.mockResolvedValue([JSON.stringify({ type: 'runtime_start' })]);
 
@@ -204,6 +213,31 @@ describe('BrandKitService', () => {
       expect(result.projectName).toBe('TestOrbit');
       expect(result.version).toBe(1);
       expect(result.intakeMode).toBe('form');
+    });
+
+    it('does not materialize the prior envelope while a reused-session run waits for a newer draft', async () => {
+      guildMocks.getRawEventPayloads.mockResolvedValue([JSON.stringify({ type: 'llm_done', content: buildEnvelope() })]);
+      expect(await service.getResult(req, 's', PROJECT_UID, undefined, 1)).toEqual({ status: 'pending' });
+      expect(objectStoreMocks.putContentAddressedObject).not.toHaveBeenCalled();
+    });
+
+    it('keeps a queued same-session follow-up pending after the prior runtime_done and before runtime_start', async () => {
+      const previous = [
+        JSON.stringify({ type: 'llm_done', content: buildEnvelope() }),
+        JSON.stringify({ type: 'agent_notification_message', content: 'Previous draft completed.' }),
+        JSON.stringify({ type: 'runtime_done', task: { id: 'synthetic-task', entity_type: 'EntTaskAgent' } }),
+      ];
+      guildMocks.getRawEventPayloads.mockResolvedValue([...previous, JSON.stringify({ type: 'mktg_session_turn_started' })]);
+      expect(await service.getResult(req, 's', PROJECT_UID, undefined, 1)).toEqual({ status: 'pending' });
+      expect(objectStoreMocks.putContentAddressedObject).not.toHaveBeenCalled();
+      guildMocks.getRawEventPayloads.mockResolvedValue([
+        ...previous,
+        JSON.stringify({ type: 'mktg_session_turn_started' }),
+        JSON.stringify({ type: 'runtime_start', task: { id: 'synthetic-task', entity_type: 'EntTaskAgent' } }),
+        JSON.stringify({ type: 'agent_notification_message', content: 'The follow-up was rejected.' }),
+        JSON.stringify({ type: 'runtime_done', task: { id: 'synthetic-task', entity_type: 'EntTaskAgent' } }),
+      ]);
+      expect(await service.getResult(req, 's', PROJECT_UID, undefined, 1)).toEqual({ status: 'failed', failureText: 'The follow-up was rejected.' });
     });
 
     it('persists the ready document under the SERVER-resolved project partition and returns the receipt', async () => {
