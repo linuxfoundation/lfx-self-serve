@@ -19,8 +19,8 @@ const projectService = new ProjectService();
 /**
  * Gate for every `/api/projects/:slug/participating-orgs*` route, in order:
  * 1. the slug format (400);
- * 2. slug → v2 project uid (unknown → 404; a thrown resolver error → 503). `getProjectIdBySlug` reports a
- *    NATS timeout or 503 as "not found", so that kind of outage answers 404 rather than 503;
+ * 2. slug → v2 project uid (unknown or `not_found` reply → 404; a NATS timeout or other lookup error → 503).
+ *    `getProjectIdBySlug` reports NATS no-responders (`503`) as "not found", so only that outage answers 404;
  * 3. strict FGA `project#viewer` (false → 403; authorizer failure → 503, never a silent denial).
  *
  * The data reads stay keyed by slug: the warehouse tables carry Salesforce project ids, not v2 uids, so
