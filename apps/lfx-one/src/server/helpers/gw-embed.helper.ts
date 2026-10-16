@@ -1,9 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { GW_EMBED_STYLESHEET_TRANSFORM_FINGERPRINT } from '@lfx-one/shared/constants';
 import { MicroserviceError } from '../errors';
 
 const MISCONFIGURED = 'GW_EMBED_URL_MISCONFIGURED';
@@ -80,6 +82,20 @@ export function loadGwEmbedTheme(operation: string): string {
     });
   }
   return themeCache;
+}
+
+/**
+ * This server's key for its own share of the scoped embed stylesheet: a hash of the theme layer and
+ * the containment transform's fingerprint (`GW_EMBED_STYLESHEET_TRANSFORM_FINGERPRINT`), 16
+ * base64url characters. The upstream half of the content is already addressed by the hashed file
+ * name, so `<key>/<name>` names exactly one body and that URL can be cached as immutable.
+ *
+ * Every replica of one release computes the same key, and a release that changes the theme or the
+ * transform computes a new one. Throws what `loadGwEmbedTheme` throws.
+ */
+export function getGwEmbedStylesheetKey(operation: string): string {
+  const theme = loadGwEmbedTheme(operation);
+  return createHash('sha256').update(GW_EMBED_STYLESHEET_TRANSFORM_FINGERPRINT).update('\n').update(theme).digest('base64url').slice(0, 16);
 }
 
 /** Test seam: forget the memoised theme so a spec can exercise the read path again. */

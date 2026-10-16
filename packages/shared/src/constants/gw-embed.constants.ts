@@ -154,13 +154,45 @@ export const GW_EMBED_STYLESHEET_FAILURE_CACHE_MAX_ENTRIES = 64;
 export const GW_EMBED_STYLESHEET_MAX_IN_FLIGHT = 2;
 
 /**
- * Browser/CDN caching for the scoped stylesheet. The body is LFX output (containment transform
- * plus theme layer) under an upstream-hashed name, so it is not immutable: a theme or transform
- * fix must reach users without a URL change. Short max-age with stale-while-revalidate and an
- * ETag keeps page loads fast while bounding staleness to minutes.
+ * Browser/CDN caching for the scoped stylesheet requested WITHOUT the server's key (the fallback
+ * form, `<route>/<name>`). The body is LFX output (containment transform plus theme layer) under an
+ * upstream-hashed name, so that URL is not content-addressed: a theme or transform fix must reach
+ * users without a URL change. Short max-age with stale-while-revalidate and an ETag bound the
+ * staleness. Cloudflare in front of the app raises a max-age below the zone's Browser Cache TTL
+ * (4 hours) to that TTL, so in practice this form can be stale for up to 4 hours.
  */
 export const GW_EMBED_STYLESHEET_MAX_AGE_S = 300;
 export const GW_EMBED_STYLESHEET_STALE_WHILE_REVALIDATE_S = 7 * 24 * 60 * 60;
+
+/**
+ * Browser/CDN lifetime of the content-addressed form, `<route>/<key>/<name>`: the name carries the
+ * upstream content hash and the key carries LFX's own share (theme layer and transform), so the URL
+ * names exactly one body and is served `immutable`. Only when the key matches this server's own.
+ */
+export const GW_EMBED_STYLESHEET_IMMUTABLE_MAX_AGE_S = 365 * 24 * 60 * 60;
+
+/**
+ * What the server's stylesheet key looks like (`buildGwEmbedStylesheetKey`): base64url, fixed
+ * length. Anything else in the key segment is a 404.
+ */
+export const GW_EMBED_STYLESHEET_KEY_PATTERN = /^[A-Za-z0-9_-]{16}$/;
+
+/**
+ * The containment transform's fingerprint: the SHA-256 (hex) of
+ * `apps/lfx-one/scripts/lib/contain-gw-embed-css.mjs`. It feeds the stylesheet key, so a transform
+ * change gives the scoped stylesheet a new URL instead of leaving browsers on the immutable old one.
+ * A spec (`gw-embed.helper.spec.ts`) fails when the file changes without this being updated, and
+ * prints the new value. A `postcss` upgrade is not covered: it would have to change the output of an
+ * unchanged transform, and a theme or transform change in the same release still rolls the key.
+ */
+export const GW_EMBED_STYLESHEET_TRANSFORM_FINGERPRINT = '7a789f6bbb63afd0d5d2abacc2a0c2c03551724421ebb0ae8c2fc4acde62d498';
+
+/**
+ * Longest the outlet keeps its skeleton up after the loader reports the embed mounted, waiting for
+ * the embed's first paint, in ms. After this the embed is shown whatever it holds, so a render that
+ * never produces height cannot strand the skeleton.
+ */
+export const GW_EMBED_FIRST_PAINT_TIMEOUT_MS = 10_000;
 
 /**
  * Where LFX One serves host-session mode (`gatewaze.route.ts`, mounted in `server.ts`). The

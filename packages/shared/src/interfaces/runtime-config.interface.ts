@@ -81,4 +81,12 @@ export interface RuntimeConfig {
    * use, so the two cannot disagree.
    */
   gwHostSession: boolean;
+
+  /**
+   * The server's key for its own share of the scoped embed stylesheet (the LFX theme layer and the
+   * containment transform). The outlet puts it in the stylesheet URL beside the upstream-hashed file
+   * name, which makes the URL content-addressed, so the server can serve it as immutable. Empty when
+   * the theme cannot be read; the outlet then uses the short-lived form of the URL.
+   */
+  gwEmbedStylesheetKey: string;
 }
