@@ -18,7 +18,7 @@ import type {
   CampaignBriefOutput,
   CampaignBriefRefineRequest,
   CampaignDeliveryType,
-  CampaignEmailStage,
+  CampaignSendStage,
   CampaignEventDetails,
   CampaignGoal,
   CampaignKeyword,
@@ -111,7 +111,7 @@ export class PlanningTabComponent implements OnInit {
    *
    * Empty for paid, which has no series, and the default keeps every paid caller unchanged.
    */
-  public readonly emailStage = input<CampaignEmailStage | ''>('');
+  public readonly emailStage = input<CampaignSendStage | ''>('');
 
   /**
    * DOM id for the readonly UTM field, unique per INSTANCE.
