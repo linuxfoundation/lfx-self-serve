@@ -130,6 +130,20 @@ describe('ParticipatingOrgsComponent', () => {
     activeContext = signal<ProjectContext>({ uid: 'project-uid', name: 'Synthetic Project', slug: PROJECT_SLUG });
   });
 
+  it('never shows the previous project’s rows or tiles while the new project loads', async () => {
+    await render();
+    expect(query(`participating-orgs-row-${SYNTHETIC_ORG_ACCOUNT_ID}`)).not.toBeNull();
+    getPage.mockReturnValue(new Subject<ProjectParticipatingOrgsPage>());
+    getSummary.mockReturnValue(new Subject<ProjectParticipatingOrgsSummaryResponse>());
+
+    activeContext.set({ uid: 'other-project-uid', name: 'Other Synthetic Project', slug: 'other-synthetic-project' });
+    await settle();
+
+    expect(query(`participating-orgs-row-${SYNTHETIC_ORG_ACCOUNT_ID}`)).toBeNull();
+    expect(fixture.nativeElement.querySelector('.lfx-skeleton-row')).not.toBeNull();
+    expect(text('participating-orgs-subtitle')).not.toContain('Synthetic Foundation');
+  });
+
   it('returns to the first page when the viewer switches project', async () => {
     await render();
     fixture.componentInstance['offset'].set(50);

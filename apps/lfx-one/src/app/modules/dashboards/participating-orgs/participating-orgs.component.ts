@@ -134,8 +134,18 @@ export class ParticipatingOrgsComponent {
     offset: this.offset(),
   }));
 
-  protected readonly summary: Signal<ProjectParticipatingOrgsSummary | null> = this.initSummary();
-  protected readonly page: Signal<ProjectParticipatingOrgsPage> = this.initPage();
+  // Results carry the project they were read for, so a refresh of the same project keeps its rows on screen while a
+  // project switch never shows the previous project's tiles or rows (it shows skeletons until its own data lands).
+  private readonly summaryState: Signal<{ slug: string; summary: ProjectParticipatingOrgsSummary | null }> = this.initSummary();
+  private readonly pageState: Signal<{ slug: string; page: ProjectParticipatingOrgsPage }> = this.initPage();
+  protected readonly summary: Signal<ProjectParticipatingOrgsSummary | null> = computed(() => {
+    const state = this.summaryState();
+    return state.slug === this.slug() ? state.summary : null;
+  });
+  protected readonly page: Signal<ProjectParticipatingOrgsPage> = computed(() => {
+    const state = this.pageState();
+    return state.slug === this.slug() ? state.page : EMPTY_PROJECT_PARTICIPATING_ORGS_PAGE;
+  });
   /** The shown page's canonical member account ids, sorted, so a re-sort of the same members compares equal. */
   private readonly memberAccountIds = computed(() => memberAccountIdsOf(this.page()), { equal: (a, b) => a.join(',') === b.join(',') });
   private readonly linksAnswer: Signal<ProjectParticipatingOrgsOrgLensLinksAnswer | null> = this.initLinksAnswer();
@@ -242,7 +252,7 @@ export class ParticipatingOrgsComponent {
     );
   }
 
-  private initSummary(): Signal<ProjectParticipatingOrgsSummary | null> {
+  private initSummary(): Signal<{ slug: string; summary: ProjectParticipatingOrgsSummary | null }> {
     return toSignal(
       combineLatest([
         toObservable(computed(() => ({ slug: this.slug(), range: this.range() }))).pipe(
@@ -257,21 +267,21 @@ export class ParticipatingOrgsComponent {
         }),
         switchMap(([{ slug, range }]) =>
           this.dataService.getSummary(slug, range).pipe(
-            map((response) => response.summary),
+            map((response) => ({ slug, summary: response.summary })),
             tap(() => this.summaryLoadingState.set(false)),
             catchError((error: unknown) => {
               this.summaryErrorStatus.set(error instanceof HttpErrorResponse ? error.status : 0);
               this.summaryLoadingState.set(false);
-              return of(null);
+              return of({ slug, summary: null });
             })
           )
         )
       ),
-      { initialValue: null }
+      { initialValue: { slug: '', summary: null } }
     );
   }
 
-  private initPage(): Signal<ProjectParticipatingOrgsPage> {
+  private initPage(): Signal<{ slug: string; page: ProjectParticipatingOrgsPage }> {
     return toSignal(
       combineLatest([
         // Slug and query travel as one value, so a project switch arrives together with its page reset — never as the
@@ -288,16 +298,17 @@ export class ParticipatingOrgsComponent {
         }),
         switchMap(([{ slug, query }]) =>
           this.dataService.getPage(slug, query).pipe(
+            map((page) => ({ slug, page })),
             tap(() => this.pageLoadingState.set(false)),
             catchError((error: unknown) => {
               this.pageErrorStatus.set(error instanceof HttpErrorResponse ? error.status : 0);
               this.pageLoadingState.set(false);
-              return of(EMPTY_PROJECT_PARTICIPATING_ORGS_PAGE);
+              return of({ slug, page: EMPTY_PROJECT_PARTICIPATING_ORGS_PAGE });
             })
           )
         )
       ),
-      { initialValue: EMPTY_PROJECT_PARTICIPATING_ORGS_PAGE }
+      { initialValue: { slug: '', page: EMPTY_PROJECT_PARTICIPATING_ORGS_PAGE } }
     );
   }
 
