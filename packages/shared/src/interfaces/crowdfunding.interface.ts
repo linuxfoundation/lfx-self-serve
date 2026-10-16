@@ -2,7 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { FundType } from '../enums/crowdfunding.enum';
-import type { CROWDFUNDING_INITIATIVE_STATUSES, SPONSORSHIP_TIER_NAMES, SPONSORSHIP_DONATION_MODES } from '../constants/crowdfunding.constants';
+import type {
+  CROWDFUNDING_ATTRIBUTION_TYPES,
+  CROWDFUNDING_INITIATIVE_STATUSES,
+  SPONSORSHIP_TIER_NAMES,
+  SPONSORSHIP_DONATION_MODES,
+} from '../constants/crowdfunding.constants';
 import { OffsetPaginatedResponse } from './api.interface';
 import { DonutRing } from './donut-chart.interface';
 
@@ -39,6 +44,8 @@ export interface InitiativeBase {
   eventEndDate?: string;
   initiativeStats?: InitiativeStats;
   fundingStatus?: FundingStatus;
+  /** Who the initiative is run on behalf of. Absent when upstream omits it; treat as personal. */
+  attribution?: InitiativeAttribution;
 }
 
 export type InitiativesResponse = OffsetPaginatedResponse<InitiativeBase>;
@@ -163,6 +170,43 @@ export interface InitiativeDetail extends InitiativeBase {
   beneficiaries?: Beneficiary[];
   sponsorshipTiers?: SponsorshipTier[];
   donationMode?: SponsorshipDonationMode;
+
+  /** True when the caller created the initiative. Only the creator may change the attribution (lfx-crowdfunding#342). */
+  isOwner: boolean;
+}
+
+export type CrowdfundingAttributionType = (typeof CROWDFUNDING_ATTRIBUTION_TYPES)[number];
+
+/** The entity an initiative is attributed to. `entityUid` is an 18-char b2b_org SFID or a project UUID; absent for personal. */
+export interface InitiativeAttribution {
+  type: CrowdfundingAttributionType;
+  entityUid?: string;
+  name?: string;
+  logoUrl?: string;
+}
+
+/** Body of PUT /api/crowdfunding/initiatives/:id/attribution. The server fills the display name and logo. */
+export interface UpdateInitiativeAttributionInput {
+  type: CrowdfundingAttributionType;
+  entityUid?: string;
+}
+
+/** An organization or project the caller may attribute an initiative to. */
+export interface AttributionEntity {
+  id: string;
+  name: string;
+  logoUrl?: string;
+}
+
+/** Attribution targets offered to the caller, from the same lookups as the crowdfunding create flow. */
+export interface AttributionOptions {
+  organizations: AttributionEntity[];
+  projects: AttributionEntity[];
+}
+
+/** Data passed to the Edit attribution dialog; it closes with the updated `InitiativeDetail`, or nothing on cancel. */
+export interface EditAttributionDialogData {
+  initiative: InitiativeDetail;
 }
 
 export type CrowdfundingInitiativeStatus = (typeof CROWDFUNDING_INITIATIVE_STATUSES)[number];

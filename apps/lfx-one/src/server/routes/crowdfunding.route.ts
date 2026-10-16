@@ -23,6 +23,7 @@ router.get('/recurring-donations', (req, res, next) => crowdfundingController.ge
 router.get('/my-donations', (req, res, next) => crowdfundingController.getMyDonations(req, res, next));
 router.post('/presigned-url', blockDuringImpersonation, (req, res, next) => crowdfundingController.getPresignedUrl(req, res, next));
 router.delete('/subscriptions/:id', blockDuringImpersonation, (req, res, next) => crowdfundingController.cancelSubscription(req, res, next));
+router.get('/attribution-options', (req, res, next) => crowdfundingController.getAttributionOptions(req, res, next));
 router.get('/initiatives-stats', (req, res, next) => crowdfundingController.getInitiativesStats(req, res, next));
 router.get('/initiatives', (req, res, next) => crowdfundingController.getMyInitiatives(req, res, next));
 router.get('/initiatives/:id/announcements', (req, res, next) => crowdfundingController.getAnnouncements(req, res, next));
@@ -35,6 +36,7 @@ router.delete('/initiatives/:id/announcements/:announcementId', blockDuringImper
 );
 router.get('/initiatives/:slug/transactions', (req, res, next) => crowdfundingController.getInitiativeTransactions(req, res, next));
 router.get('/initiatives/:slug/my-transactions', (req, res, next) => crowdfundingController.getMyInitiativeTransactions(req, res, next));
+router.put('/initiatives/:id/attribution', blockDuringImpersonation, (req, res, next) => crowdfundingController.updateInitiativeAttribution(req, res, next));
 router.patch('/initiatives/:id', blockDuringImpersonation, (req, res, next) => crowdfundingController.updateInitiative(req, res, next));
 router.get('/initiatives/:slug', (req, res, next) => crowdfundingController.getInitiativeBySlug(req, res, next));
 

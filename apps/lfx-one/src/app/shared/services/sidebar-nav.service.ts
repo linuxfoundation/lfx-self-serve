@@ -690,14 +690,14 @@ export class SidebarNavService {
 
   // --- Project / Foundation — Initiatives (#347; the My Initiatives page scoped to the lens project) ---
   private readonly projectInitiativesNavItem: SidebarMenuItem = {
-    label: 'Initiatives',
+    label: 'Crowdfunding Initiatives',
     icon: 'fa-light fa-box-dollar',
     routerLink: '/project/initiatives',
     testId: 'sidebar-project-initiatives',
   };
 
   private readonly foundationInitiativesNavItem: SidebarMenuItem = {
-    label: 'Initiatives',
+    label: 'Crowdfunding Initiatives',
     icon: 'fa-light fa-box-dollar',
     routerLink: '/foundation/initiatives',
     testId: 'sidebar-foundation-initiatives',
@@ -783,7 +783,7 @@ export class SidebarNavService {
   }));
 
   private readonly orgInitiativesNavItem: Signal<SidebarMenuItem> = computed(() => ({
-    label: 'Initiatives',
+    label: 'Crowdfunding Initiatives',
     icon: 'fa-light fa-box-dollar',
     routerLink: this.orgLensNavigation.orgLensPath('initiatives'),
     testId: 'sidebar-org-initiatives',
