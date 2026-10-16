@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { SlicePipe } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, effect, inject, input, OnInit, output, signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import {
@@ -24,6 +25,11 @@ import {
   CAMPAIGN_BUDGET_DEFAULTS,
   CAMPAIGN_CHAR_LIMITS,
   CAMPAIGN_JOB_POLL_INTERVAL_MS,
+  CREATIVE_ASSET_MAX_BYTES,
+  CREATIVE_ASSET_MIME_TYPES,
+  CREATIVE_ASSET_TOO_LARGE_MESSAGE,
+  CREATIVE_ASSET_WRONG_TYPE_MESSAGE,
+  isCreativeAssetMimeType,
   LINKEDIN_CHAR_LIMITS,
   LINKEDIN_GEO_RESOLVE_MAP,
   META_CHAR_LIMITS,
@@ -117,6 +123,7 @@ import type {
   CampaignPlatformResult,
   CampaignSitelink,
   CampaignType,
+  CreativeAssetUploadStatus,
   GoogleBiddingOption,
   GoogleBiddingStrategy,
   GoogleCampaignChannel,
@@ -305,6 +312,19 @@ export class ImplementationTabComponent implements OnInit {
 
   /** @see redditCreativeEnabled — an explicit yes, never a `null`. */
   protected readonly redditCreativeAvailable = computed<boolean>(() => this.redditCreativeEnabled() === true);
+
+  /**
+   * Whether the Reddit section may offer an image UPLOAD (`CampaignListResult.redditAssetUploadEnabled`,
+   * decision D3). `null` (unknown) withholds it; nothing uploaded is ever cleared on a `false`.
+   *
+   * Read only together with `redditCreativeAvailable()`: an upload is one more way to supply the
+   * authored post's image, so it can never be offered where the image URL is not. The pasted image
+   * URL stays offered whatever this answers.
+   */
+  public readonly redditAssetUploadEnabled = input<boolean | null>(null);
+
+  /** @see redditAssetUploadEnabled — both capabilities an explicit yes. */
+  protected readonly redditAssetUploadAvailable = computed<boolean>(() => this.redditCreativeAvailable() && this.redditAssetUploadEnabled() === true);
 
   /**
    * Whether this deployment can honour a per-platform Bidding choice (#3299) —
@@ -667,6 +687,20 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly redditImageUrl = signal('');
   protected readonly redditCallToAction = signal<RedditCallToAction | ''>('');
+  /**
+   * An image UPLOADED for this brief — the creative-asset id campaign-service returned and the file
+   * name it was chosen as. Sent as `imageAssetId` in place of `imageUrl` while
+   * `redditAssetUploadAvailable()`; see `redditImageField`.
+   */
+  protected readonly redditImageAssetId = signal('');
+  protected readonly redditImageAssetName = signal('');
+  protected readonly redditImageUploadStatus = signal<CreativeAssetUploadStatus>('idle');
+  /** The readable reason the last upload was refused; empty unless the status is `error`. */
+  protected readonly redditImageUploadError = signal('');
+  /** The `accept` list for the file picker — the same allowlist the BFF route enforces. */
+  protected readonly creativeAssetAccept = CREATIVE_ASSET_MIME_TYPES.join(',');
+  /** The in-flight upload, cancelled when another file is chosen or the upload is removed. */
+  private redditImageUploadSub: Subscription | null = null;
   /**
    * Microsoft's four editable inputs (LFXV2-3312). Signal-backed like the Meta and Reddit blocks,
    * so `campaignForm.valueChanges` never sees them and each handler must `emitDraft()` by hand.
@@ -2004,6 +2038,64 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
+  /**
+   * Upload the chosen image for this brief and keep its asset id.
+   *
+   * Type and size are checked here against the same shared allowlist the BFF route enforces, so
+   * the common refusals need no round trip and read the same either way. The input is cleared
+   * afterwards so choosing the same file again (after a failure) fires `change` again.
+   */
+  protected onRedditImageFileChange(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+    input.value = '';
+    if (!file) return;
+
+    this.redditImageUploadSub?.unsubscribe();
+    this.redditImageUploadSub = null;
+
+    if (!isCreativeAssetMimeType(file.type)) {
+      this.failRedditImageUpload(CREATIVE_ASSET_WRONG_TYPE_MESSAGE);
+      return;
+    }
+    if (file.size > CREATIVE_ASSET_MAX_BYTES) {
+      this.failRedditImageUpload(CREATIVE_ASSET_TOO_LARGE_MESSAGE);
+      return;
+    }
+    const briefId = this.briefPersistence().briefId ?? '';
+    const projectSlug = this.projectContextService.activeContext()?.slug ?? '';
+    if (!briefId || !projectSlug) {
+      this.failRedditImageUpload('Save the brief before uploading an image for it.');
+      return;
+    }
+
+    this.redditImageUploadStatus.set('uploading');
+    this.redditImageUploadError.set('');
+    this.redditImageUploadSub = this.campaignService
+      .uploadCreativeAsset(file, projectSlug, briefId)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (asset) => {
+          this.redditImageAssetId.set(asset.id);
+          this.redditImageAssetName.set(file.name);
+          this.redditImageUploadStatus.set('idle');
+          this.emitDraft();
+        },
+        error: (err: unknown) => this.failRedditImageUpload(this.redditImageUploadErrorMessage(err)),
+      });
+  }
+
+  /** Forget the uploaded image (the stored asset stays upstream, unused) and fall back to the image URL. */
+  protected onRedditImageAssetRemove(): void {
+    this.redditImageUploadSub?.unsubscribe();
+    this.redditImageUploadSub = null;
+    this.redditImageAssetId.set('');
+    this.redditImageAssetName.set('');
+    this.redditImageUploadStatus.set('idle');
+    this.redditImageUploadError.set('');
+    this.emitDraft();
+  }
+
   protected onRedditCallToActionChange(event: Event): void {
     this.redditCallToAction.set((event.target as HTMLSelectElement).value as RedditCallToAction | '');
     this.emitDraft();
@@ -2518,7 +2610,9 @@ export class ImplementationTabComponent implements OnInit {
               // creative is: with the cutover dark these two reach a creator that reads neither,
               // and a create that silently discards them still reports success. The draft keeps
               // what was typed; only the request drops it.
-              ...(this.redditCreativeAvailable() && this.redditImageUrl() ? { imageUrl: this.redditImageUrl() } : {}),
+              //
+              // The image is ONE of an uploaded asset or the pasted URL — see `redditImageField`.
+              ...this.redditImageField(),
               ...(this.redditCreativeAvailable() && this.redditCallToAction() ? { callToAction: this.redditCallToAction() as RedditCallToAction } : {}),
               project: this.briefData()?.eventDetails?.themes?.[0] || undefined,
               ...this.biddingField('reddit-ads'),
@@ -2655,6 +2749,43 @@ export class ImplementationTabComponent implements OnInit {
    */
   private acceptedMetaGeos(codes: readonly string[]): string[] {
     return normalizeGeoTargets(codes).filter((c) => !META_INELIGIBLE_COUNTRIES.has(c));
+  }
+
+  /**
+   * The Reddit image field the create request carries: the uploaded asset, else the pasted URL.
+   *
+   * Exactly one, because campaign-service refuses `imageAssetId` alongside `imageUrl` (or
+   * `postUrl`) with a 400. The asset is withheld while a post URL is set — that post already has
+   * its image, and the combination is refused rather than ignored — and while the upload
+   * capability is off, where the legacy creator would drop it or campaign-service refuse it. The
+   * pasted URL keeps its existing rule: sent on `redditCreativeAvailable()`, and ignored upstream
+   * when a post URL is set.
+   */
+  private redditImageField(): { imageAssetId: string } | { imageUrl: string } | Record<string, never> {
+    if (this.redditAssetUploadAvailable() && this.redditImageAssetId() && !this.redditPostUrl()) {
+      return { imageAssetId: this.redditImageAssetId() };
+    }
+    if (this.redditCreativeAvailable() && this.redditImageUrl()) return { imageUrl: this.redditImageUrl() };
+    return {};
+  }
+
+  private failRedditImageUpload(message: string): void {
+    this.redditImageUploadStatus.set('error');
+    this.redditImageUploadError.set(message);
+  }
+
+  /**
+   * A readable reason for a refused upload. Size and type use the shared copy the pre-upload check
+   * shows; an unreachable or overloaded service (0, 503 — campaign-service sheds concurrent uploads
+   * with a 503) says to retry; any other refusal shows what the server wrote, since campaign-service
+   * names the problem with the image (not decodable, too many pixels, …).
+   */
+  private redditImageUploadErrorMessage(err: unknown): string {
+    const status = err instanceof HttpErrorResponse ? err.status : 0;
+    if (status === 413) return CREATIVE_ASSET_TOO_LARGE_MESSAGE;
+    if (status === 415) return CREATIVE_ASSET_WRONG_TYPE_MESSAGE;
+    if (status === 0 || status === 503) return 'The image service is unavailable right now. Try again in a moment, or paste an image URL instead.';
+    return serverAuthoredMessage(err, 'The image could not be uploaded. Try again, or paste an image URL instead.');
   }
 
   private loadLinkedInAccounts(): void {
@@ -2883,6 +3014,10 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.redditCallToAction !== undefined) {
       this.redditCallToAction.set(draft.redditCallToAction);
     }
+    if (draft.redditImageAssetId !== undefined) {
+      this.redditImageAssetId.set(draft.redditImageAssetId);
+      this.redditImageAssetName.set(draft.redditImageAssetName ?? '');
+    }
 
     // Microsoft (LFXV2-3312), on the same present-only rule. The arrays restore on `!== undefined`
     // rather than on truthiness, which is the whole point: an EMPTY list is a deliberate clear the
@@ -3047,6 +3182,8 @@ export class ImplementationTabComponent implements OnInit {
       redditPostUrl: this.redditPostUrl(),
       redditImageUrl: this.redditImageUrl(),
       redditCallToAction: this.redditCallToAction(),
+      redditImageAssetId: this.redditImageAssetId(),
+      redditImageAssetName: this.redditImageAssetName(),
     });
   }
 
@@ -3994,7 +4131,7 @@ export class ImplementationTabComponent implements OnInit {
     return computed(() => {
       if (!this.showRedditSection()) return null;
       if (this.redditPostUrl()) return null;
-      if (this.redditCreativeAvailable() && this.redditImageUrl()) return null;
+      if (Object.keys(this.redditImageField()).length > 0) return null;
       // Names only the fields the operator can actually see: with the authored-post controls
       // withheld, an image URL is not a remedy and telling them to supply one would be advice they
       // cannot take.
