@@ -162,7 +162,7 @@ describe('ParticipatingOrgsComponent', () => {
     expect(query(`participating-orgs-row-${SYNTHETIC_ORG_ACCOUNT_ID}`)?.querySelector('a')).toBeNull();
   });
 
-  it('tags an Unidentified company, never links it, and badges non-members', async () => {
+  it('shows an Unidentified company as a plain, unlinked name, and badges non-members', async () => {
     getPage.mockReturnValue(
       of(
         page([
@@ -180,7 +180,8 @@ describe('ParticipatingOrgsComponent', () => {
     );
     await render();
 
-    expect(text(`participating-orgs-row-${UNIDENTIFIED_KEY}-unidentified`)).toBe('Unidentified');
+    expect(text(`participating-orgs-row-${UNIDENTIFIED_KEY}-name`)).toBe('unmatched-org');
+    expect(query(`participating-orgs-row-${UNIDENTIFIED_KEY}`)?.textContent).not.toContain('Unidentified');
     expect(query(`participating-orgs-row-${UNIDENTIFIED_KEY}`)?.querySelector('a')).toBeNull();
     expect(text(`participating-orgs-row-${UNIDENTIFIED_KEY}-membership`)).toBe('Non-member');
     // A non-member is never linked, even if the flag were set.

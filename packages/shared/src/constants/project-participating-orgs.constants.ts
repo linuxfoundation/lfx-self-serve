@@ -57,9 +57,6 @@ export const PROJECT_PARTICIPATING_ORGS_MAX_SEARCH_LENGTH = 100;
  */
 export const PROJECT_PARTICIPATING_ORGS_EXPORT_MAX_ROWS = 50_000;
 
-/** Tooltip on the Unidentified tag. */
-export const PROJECT_PARTICIPATING_ORGS_UNIDENTIFIED_TOOLTIP = 'Not matched to a company record; may duplicate a listed company.';
-
 /** Tooltip on a member name the viewer cannot open in Org Lens. */
 export const PROJECT_PARTICIPATING_ORGS_NO_ORG_LENS_ACCESS_TOOLTIP = "Ask the company's admins or LF staff for access.";
 

@@ -15,7 +15,6 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { TableComponent } from '@components/table/table.component';
-import { TagComponent } from '@components/tag/tag.component';
 import {
   CONTRIBUTIONS_DATE_RANGE_OPTIONS,
   CONTRIBUTIONS_DEFAULT_DATE_RANGE,
@@ -31,7 +30,6 @@ import {
   PROJECT_PARTICIPATING_ORGS_SEGMENTS,
   PROJECT_PARTICIPATING_ORGS_SORT_FIELDS,
   PROJECT_PARTICIPATING_ORGS_UNAVAILABLE_MESSAGE,
-  PROJECT_PARTICIPATING_ORGS_UNIDENTIFIED_TOOLTIP,
 } from '@lfx-one/shared/constants';
 import type {
   ContributionsDateRangeOption,
@@ -77,7 +75,6 @@ import { ParticipatingOrgsService } from './services/participating-orgs.service'
     SelectComponent,
     StatCardGridComponent,
     TableComponent,
-    TagComponent,
   ],
   templateUrl: './participating-orgs.component.html',
 })
@@ -87,10 +84,12 @@ export class ParticipatingOrgsComponent {
 
   protected readonly rangeOptions: ContributionsDateRangeOption[] = [...CONTRIBUTIONS_DATE_RANGE_OPTIONS];
   protected readonly tierOptions = MEMBERSHIP_TIER_ORDER.map((tier) => ({ label: tier, value: tier }));
-  protected readonly pageSizeOptions: number[] = [...PROJECT_PARTICIPATING_ORGS_PAGE_SIZE_OPTIONS];
+  /** Page-size choices only once there is more than one page, as on the Groups and Documents tables. */
+  protected readonly rppOptions = computed<number[] | undefined>(() =>
+    this.totalRecords() > PROJECT_PARTICIPATING_ORGS_PAGE_SIZE ? [...PROJECT_PARTICIPATING_ORGS_PAGE_SIZE_OPTIONS] : undefined
+  );
   protected readonly maxSearchLength = PROJECT_PARTICIPATING_ORGS_MAX_SEARCH_LENGTH;
   protected readonly noAccessTooltip = PROJECT_PARTICIPATING_ORGS_NO_ORG_LENS_ACCESS_TOOLTIP;
-  protected readonly unidentifiedTooltip = PROJECT_PARTICIPATING_ORGS_UNIDENTIFIED_TOOLTIP;
 
   protected readonly filterForm = new FormGroup({
     search: new FormControl<string>('', { nonNullable: true }),

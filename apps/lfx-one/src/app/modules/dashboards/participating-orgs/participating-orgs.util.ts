@@ -41,7 +41,6 @@ export function decorateParticipatingOrgRow(row: ProjectParticipatingOrg, founda
 }
 
 function nameKind(row: ProjectParticipatingOrg, linked: boolean): ProjectParticipatingOrgNameKind {
-  if (row.isUnidentified) return 'unidentified';
   if (linked) return 'org-lens-link';
   if (row.isMember) return 'no-access';
   return 'plain';

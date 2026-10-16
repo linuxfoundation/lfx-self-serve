@@ -105,9 +105,9 @@ export type ProjectParticipatingOrgsViewState = 'ready' | 'empty' | 'forbidden' 
 
 /**
  * How a row's company name renders for the viewer: an Org Lens membership link, a member the viewer
- * cannot open (plain text + access tooltip), an Unidentified company (tag), or a plain non-member name.
+ * cannot open (plain text + access tooltip), or a plain name (non-members, including Unidentified companies).
  */
-export type ProjectParticipatingOrgNameKind = 'org-lens-link' | 'no-access' | 'unidentified' | 'plain';
+export type ProjectParticipatingOrgNameKind = 'org-lens-link' | 'no-access' | 'plain';
 
 /** Colour of a change cell: up (green), down (red), flat (gray), first-period ("New"), or no comparison ("—"). */
 export type ProjectParticipatingOrgChangeTone = 'positive' | 'negative' | 'neutral' | 'new' | 'none';
