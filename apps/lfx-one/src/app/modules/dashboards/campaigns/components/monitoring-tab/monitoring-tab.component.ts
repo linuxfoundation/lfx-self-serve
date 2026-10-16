@@ -288,6 +288,13 @@ export class MonitoringTabComponent implements OnInit {
   /** Which of the two report-backed platforms the shared panel is showing. */
   protected readonly reportBackedPanel = computed<'microsoft' | 'twitter'>(() => (this.selectedPlatform() === 'twitter' ? 'twitter' : 'microsoft'));
   protected readonly reportBackedLabel = computed(() => (this.reportBackedPanel() === 'twitter' ? 'X Ads' : 'Microsoft Ads'));
+  /** Each live-read paid panel's retry button's accessible name; the visible "Retry" alone does not say what it retries. */
+  protected readonly paidRetryLabels: Readonly<Record<'linkedin' | 'reddit' | 'meta', string>> = {
+    linkedin: `Retry loading ${this.paidPanelLabel('linkedin')} campaigns`,
+    reddit: `Retry loading ${this.paidPanelLabel('reddit')} campaigns`,
+    meta: `Retry loading ${this.paidPanelLabel('meta')} campaigns`,
+  };
+  protected readonly reportBackedRetryLabel = computed(() => `Retry loading ${this.reportBackedLabel()} campaigns`);
   /** Only Microsoft's rows offer actions: X shares the panel, but its toggle and budget levers are not offered yet. */
   protected readonly reportBackedActPlatform = computed<CampaignMonitorActPlatform | null>(() =>
     this.reportBackedPanel() === 'microsoft' ? 'microsoft-ads' : null
@@ -1220,9 +1227,14 @@ export class MonitoringTabComponent implements OnInit {
     return extractErrorMessage(err, `Failed to load ${label} data`);
   }
 
+  /** A paid panel's platform name, as `CAMPAIGN_PLATFORMS` labels it. */
+  private paidPanelLabel(panel: MonitorConnectionPlatform): string {
+    return CAMPAIGN_PLATFORMS.find((p) => p.id === MONITOR_CONNECTION_PROVIDERS[panel])?.label ?? panel;
+  }
+
   /** The empty state for one panel: what is wrong, and who can fix it. */
   private noticeFor(panel: MonitorPanelKey, state: MonitorPanelNoticeState): MonitorPanelNotice {
-    const label = panel === 'hubspot' ? 'HubSpot' : (CAMPAIGN_PLATFORMS.find((p) => p.id === MONITOR_CONNECTION_PROVIDERS[panel])?.label ?? panel);
+    const label = panel === 'hubspot' ? 'HubSpot' : this.paidPanelLabel(panel);
     switch (state) {
       case 'no_connection':
         if (panel === 'hubspot') {

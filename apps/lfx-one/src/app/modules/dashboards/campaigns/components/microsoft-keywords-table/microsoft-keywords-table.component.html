@@ -31,6 +31,9 @@
     </div>
   </div>
 
+  <!-- Persistent and empty until a read starts: only its text changes (see liveRegionMounted). -->
+  <div role="status" aria-live="polite" class="sr-only" data-testid="microsoft-keywords-live">{{ loadingAnnouncement() }}</div>
+
   @switch (state()) {
     @case ('loading') {
       <div class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-500" data-testid="microsoft-keywords-loading">
@@ -44,7 +47,10 @@
       </div>
     }
     @case ('error') {
-      <div class="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3" data-testid="microsoft-keywords-error">
+      <div
+        class="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3"
+        role="alert"
+        data-testid="microsoft-keywords-error">
         <p class="text-sm text-gray-600">{{ errorMessage() }}</p>
         <lfx-button
           label="Retry"

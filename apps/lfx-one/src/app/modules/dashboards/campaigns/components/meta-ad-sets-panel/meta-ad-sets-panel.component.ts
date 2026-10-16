@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe } from '@angular/common';
-import { Component, computed, inject, input, output, Signal, signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, inject, input, output, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import {
+  LIVE_REGION_MOUNT_DELAY_MS,
   META_AD_SET_CLEAR_RECORD_LABEL,
   META_AD_SET_DELIBERATE_PAUSE_ADVICE,
   META_AD_SET_DELIBERATE_RESUME_ADVICE,
@@ -100,7 +101,24 @@ export class MetaAdSetsPanelComponent {
   /** The check as the panel words it: campaign-service's advice for the direction, and the verdict. */
   protected readonly recordCheckView: Signal<{ advice: string; text: string; tone: string } | null> = this.initRecordCheckView();
 
+  /**
+   * Set LIVE_REGION_MOUNT_DELAY_MS after this component's first render, so the live region below
+   * exists, EMPTY, before any loading text reaches it. A role="status" element inserted with its text already
+   * present is not reliably announced — the parent mounts this panel conditionally, and the old
+   * loading block was itself inserted pre-filled — so the region is persistent and only its
+   * contents change, as the monitoring tab's own read-status region does.
+   */
+  private readonly liveRegionMounted = signal(false);
+  /** What the persistent live region says: the read in flight, and nothing otherwise. */
+  protected readonly loadingAnnouncement: Signal<string> = computed(() => (this.liveRegionMounted() && this.state() === 'loading' ? 'Loading ad sets' : ''));
+
   public constructor() {
+    const destroyRef = inject(DestroyRef);
+    afterNextRender(() => {
+      // Deferred past this render's own task, so the region is in the DOM, empty, before its text.
+      const handle = setTimeout(() => this.liveRegionMounted.set(true), LIVE_REGION_MOUNT_DELAY_MS);
+      destroyRef.onDestroy(() => clearTimeout(handle));
+    });
     this.initLoad();
   }
 

@@ -3,15 +3,16 @@
 
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, inject, input, output, Signal, signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, inject, input, output, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import {
   DEFAULT_MICROSOFT_KEYWORDS_WINDOW,
   KEYWORD_ACTION_OUTCOME_CLASSES,
   KEYWORD_ACTION_OUTCOME_LABELS,
-  MICROSOFT_KEYWORD_PREVIOUS_UNCONFIRMED_NOTE,
+  LIVE_REGION_MOUNT_DELAY_MS,
   MICROSOFT_KEYWORDS_NOT_CONNECTED_MESSAGES,
   MICROSOFT_KEYWORDS_WINDOW_OPTIONS,
+  MICROSOFT_KEYWORD_PREVIOUS_UNCONFIRMED_NOTE,
 } from '@lfx-one/shared/constants';
 import type {
   KeywordActionOutcome,
@@ -94,7 +95,26 @@ export class MicrosoftKeywordsTableComponent {
   /** False when the conversions total may be understated, because some rows' conversions were left blank. */
   protected readonly conversionsTotalMeasured: Signal<boolean> = computed(() => this.data()?.conversionsComplete === true);
 
+  /**
+   * Set LIVE_REGION_MOUNT_DELAY_MS after this component's first render, so the live region below
+   * exists, EMPTY, before any loading text reaches it. A role="status" element inserted with its text already
+   * present is not reliably announced — the parent mounts this panel conditionally, and the old
+   * loading block was itself inserted pre-filled — so the region is persistent and only its
+   * contents change, as the monitoring tab's own read-status region does.
+   */
+  private readonly liveRegionMounted = signal(false);
+  /** What the persistent live region says: the read in flight, and nothing otherwise. */
+  protected readonly loadingAnnouncement: Signal<string> = computed(() =>
+    this.liveRegionMounted() && this.state() === 'loading' ? 'Loading Microsoft keyword metrics' : ''
+  );
+
   public constructor() {
+    const destroyRef = inject(DestroyRef);
+    afterNextRender(() => {
+      // Deferred past this render's own task, so the region is in the DOM, empty, before its text.
+      const handle = setTimeout(() => this.liveRegionMounted.set(true), LIVE_REGION_MOUNT_DELAY_MS);
+      destroyRef.onDestroy(() => clearTimeout(handle));
+    });
     this.initLoad();
   }
 
