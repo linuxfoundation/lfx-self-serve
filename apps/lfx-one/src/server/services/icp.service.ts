@@ -3,7 +3,14 @@
 
 import { ICP_CONTRACT_ID, ICP_MAX_DOCUMENT_BYTES, ICP_PROJECT_UID_REGEX } from '@lfx-one/shared/constants';
 import { IcpEnvelope, IcpGenerationStart, IcpResultResponse, MktgReadmeOutcome, MktgRunPersistReceipt } from '@lfx-one/shared/interfaces';
-import { buildIcpFormPayload, buildIcpObjectKey, extractIcpEnvelopeCandidates, renderIcpFormText, validateIcpEnvelope } from '@lfx-one/shared/utils';
+import {
+  buildIcpFormPayload,
+  buildIcpObjectKey,
+  extractIcpEnvelopeCandidates,
+  getMktgSessionOutcome,
+  renderIcpFormText,
+  validateIcpEnvelope,
+} from '@lfx-one/shared/utils';
 import { createHash } from 'node:crypto';
 import { Request } from 'express';
 
@@ -129,7 +136,8 @@ export class IcpService {
     const envelope = this.findAuthoritativeEnvelope(req, payloads);
 
     if (!envelope || envelope.version <= minimumVersion) {
-      return { status: 'pending' };
+      const outcome = getMktgSessionOutcome(payloads);
+      return outcome.ended ? { status: 'failed', failureText: outcome.replyText } : { status: 'pending' };
     }
 
     logger.info(req, 'icp_result', 'ICP document ready', {

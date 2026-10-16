@@ -337,6 +337,24 @@ describe('FoundationMessageService.getResult', () => {
     service = new FoundationMessageService();
   });
 
+  it('fails immediately when the agent ends with a text rejection, even after an older questions turn', async () => {
+    const reply = 'The batch intake was rejected. <b>Provide project sources.</b>';
+    const done = JSON.stringify({ type: 'runtime_done', task: { id: 'synthetic-task', entity_type: 'EntTaskAgent' } });
+    guildMocks.getRawEventPayloads.mockResolvedValue([
+      questionsPayload([AUDIENCES_QUESTION]),
+      JSON.stringify({ type: 'agent_notification_message', content: { type: 'text', data: reply } }),
+      done,
+    ]);
+    expect(await service.getResult(req, 'session-1')).toMatchObject({ status: 'failed', failureText: reply });
+    expect(objectStoreMocks.putContentAddressedObject).not.toHaveBeenCalled();
+
+    guildMocks.getRawEventPayloads.mockResolvedValue([questionsPayload([AUDIENCES_QUESTION]), done]);
+    expect(await service.getResult(req, 'session-1')).toMatchObject({ status: 'questions' });
+
+    guildMocks.getRawEventPayloads.mockResolvedValue([toolResultPayload(buildEnvelope()), done]);
+    expect(await service.getResult(req, 'session-1')).toMatchObject({ status: 'ready' });
+  });
+
   it('reports pending while no valid envelope exists in the event stream', async () => {
     guildMocks.getRawEventPayloads.mockResolvedValue([JSON.stringify({ type: 'llm_start' }), 'agent chatter']);
 

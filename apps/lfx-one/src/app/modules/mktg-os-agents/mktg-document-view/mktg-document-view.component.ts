@@ -74,7 +74,7 @@ export class MktgDocumentViewComponent {
   protected readonly intakeAgentId = computed(() => findMktgDocumentType(this.params().agentKey)?.catalogAgentId ?? null);
   protected readonly title: Signal<string> = this.initTitle();
   protected readonly nextRevisionNumber = computed(() => (this.view()?.revisions[0]?.number ?? 0) + 1);
-  protected readonly storing = computed(() => this.generationProgress() !== null && this.generationProgress() !== 'submitted');
+  protected readonly storing = computed(() => this.generationProgress() === 'document' || this.generationProgress() === 'persisted');
   protected readonly revisionRows: Signal<MktgRevisionRow[]> = computed(() => {
     const view = this.view();
     return view ? view.revisions.map((revision) => ({ revision, how: describeMktgRevision(revision, view.type) })) : [];
@@ -295,7 +295,24 @@ export class MktgDocumentViewComponent {
       switchMap((progress) => {
         this.loading.set(false);
         this.generationProgress.set(progress.type);
-        if (progress.type === 'submitted') {
+        if (progress.type === 'submitted' || progress.type === 'activity') {
+          return EMPTY;
+        }
+        if (progress.type === 'failed') {
+          this.errorText.set(progress.failureText || 'The agent finished without producing a document. Return to the intake or retry the run.');
+          return EMPTY;
+        }
+        if (progress.type === 'questions') {
+          if (intake) {
+            const request = prepared ?? { projectUid: project, agentId, intake, answers: this.runService.loadRun(project, agentId)?.answers ?? {} };
+            const questions = this.runService.prepareGeneration({ ...request, pendingQuestions: progress.pending });
+            landed = true;
+            this.router.navigate(['../../..', agentId], {
+              relativeTo: this.route,
+              queryParams: { questions, generation: null, revision: null },
+              queryParamsHandling: 'merge',
+            });
+          }
           return EMPTY;
         }
         this.dependencies.notifyDocumentsChanged(project);
@@ -377,6 +394,9 @@ export class MktgDocumentViewComponent {
           this.generationProgress.set(run.state === 'storing' ? 'document' : 'submitted');
           this.canResume.set(run.state === 'failed');
           this.retryRun.set(run.state === 'failed');
+          if (run.state === 'failed') {
+            this.errorText.set(run.failureText || 'This run did not finish. Return to the intake or retry the run.');
+          }
         } else {
           const agentId = findMktgDocumentType(agentKey)?.catalogAgentId ?? '';
           const legacyFailed = detail.runs === undefined && !revisionId && !!this.runService.loadRun(project, agentId)?.failedAttempt;

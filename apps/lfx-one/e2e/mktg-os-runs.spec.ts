@@ -4,7 +4,7 @@
 import { BRAND_KIT_INTAKE, FEATURE_FLAG_OVERRIDE_STORAGE_KEY, MKTG_OS_AGENTS_ENABLED_FLAG, MKTG_RUN_STORAGE_KEY_PREFIX } from '@lfx-one/shared/constants';
 import { expect, test } from '@playwright/test';
 
-import { DATA_LOAD_TIMEOUT, fillRunIntake, RUN_REVISION_ID, setupRunPage } from './helpers/mktg-os-runs.helper';
+import { DATA_LOAD_TIMEOUT, FAILED_RUN_REPLY, fillRunIntake, RUN_REVISION_ID, setupRunPage } from './helpers/mktg-os-runs.helper';
 
 test.describe('Marketing OS runs land on documents', () => {
   test.use({ viewport: { width: 1440, height: 900 } });
@@ -130,7 +130,8 @@ test.describe('Marketing OS runs land on documents', () => {
     await expect(page.getByTestId('mktg-agent-run-form')).toBeVisible();
     await fillRunIntake(page);
     await page.getByTestId('mktg-agent-run-submit-button').click();
-    await expect(page.getByTestId('mktg-document-view-error')).toContainText('could not finish', { timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('mktg-document-view-error')).toContainText(FAILED_RUN_REPLY, { timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('mktg-document-view-error').locator('b')).toHaveCount(0);
     await expect(page.getByTestId('mktg-document-view-generating')).toHaveCount(0);
     await expect(page.getByTestId('mktg-document-view-document')).toContainText('Synthetic revision 1');
     await testInfo.attach('generation-error', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });

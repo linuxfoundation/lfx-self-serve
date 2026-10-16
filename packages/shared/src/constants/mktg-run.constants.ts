@@ -492,3 +492,9 @@ export const MKTG_BRAND_KIT_FORM_POLL = {
  * run shell and the standalone intake form.
  */
 export const MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS = 3;
+
+/** Stable short hash identifying a questions block, not a session capability. */
+export const MKTG_RUN_QUESTIONS_ID_REGEX = /^[a-f0-9]{8}$/;
+
+/** Internal BFF marker: a capped event page cannot prove a session has nothing pending. */
+export const MKTG_SESSION_EVENTS_TRUNCATED = 'mktg_session_events_truncated';

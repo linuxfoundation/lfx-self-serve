@@ -26,7 +26,8 @@
 // is prose, a tool's input or a tool's output — all of which can carry a
 // fetched page, quoted or failed, and none of which is the transcript.
 
-import { MKTG_ENVELOPE_EXTRACTION_MAX_DEPTH, MKTG_SESSION_PLATFORM_TOOL_EVENT_TYPES } from '../constants/mktg-run.constants';
+import { MKTG_ENVELOPE_EXTRACTION_MAX_DEPTH, MKTG_SESSION_PLATFORM_TOOL_EVENT_TYPES, MKTG_SESSION_EVENTS_TRUNCATED } from '../constants/mktg-run.constants';
+import type { MktgSessionOutcome } from '../interfaces/mktg-run.interface';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -213,4 +214,51 @@ export function extractMktgToolResults(payload: string, toolName: string): strin
     return true;
   });
   return results.filter((result) => callIds.has(result.id)).map((result) => result.text);
+}
+
+/**
+ * A session ends only on an agent runtime's completion with no runtime still
+ * pending. Tool completions never end it, and newer runtime/LLM work reopens
+ * it. Read the final notification as text, not a document or HTML; never walk
+ * tool bodies, fetched pages or user messages looking for a completion.
+ */
+export function getMktgSessionOutcome(payloads: string[]): MktgSessionOutcome {
+  const active = new Set<string>();
+  let ended = false;
+  let replyText = '';
+  for (const payload of payloads) {
+    const event = parseEmbeddedJson(payload);
+    if (!isRecord(event)) {
+      continue;
+    }
+    if (event['type'] === MKTG_SESSION_EVENTS_TRUNCATED) {
+      return { ended: false, replyText };
+    }
+    const task = isRecord(event['task']) ? event['task'] : null;
+    const id = task?.['id'];
+    const agent = task?.['entity_type'] === 'EntTaskAgent';
+    if (event['type'] === 'runtime_start' && typeof id === 'string') {
+      active.add(id);
+      ended = false;
+      if (agent) {
+        replyText = '';
+      }
+    } else if (event['type'] === 'runtime_done' && typeof id === 'string') {
+      active.delete(id);
+      if (agent) {
+        ended = true;
+      }
+    } else if (event['type'] === 'llm_start') {
+      ended = false;
+    }
+    if (event['type'] === 'agent_notification_message') {
+      const content = event['content'];
+      if (typeof content === 'string') {
+        replyText = content.trim();
+      } else if (isRecord(content) && content['type'] === 'text' && typeof content['data'] === 'string') {
+        replyText = content['data'].trim();
+      }
+    }
+  }
+  return { ended: ended && active.size === 0, replyText };
 }

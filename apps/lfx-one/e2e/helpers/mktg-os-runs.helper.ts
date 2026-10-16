@@ -11,6 +11,7 @@ import {
 } from '@lfx-one/shared/constants';
 import type { MktgDocumentRunProgress, MktgRevisionResponse, MktgRevisionSummary, PersistedPersonaState, Project } from '@lfx-one/shared/interfaces';
 import { expect, Page, Route } from '@playwright/test';
+import { getMktgSessionOutcome } from '@lfx-one/shared/utils/mktg-session-event.utils';
 
 import { mockProjects } from '../fixtures/mock-data/projects.mock';
 import { ApiMockHelper } from './api-mock.helper';
@@ -18,6 +19,11 @@ import { ApiMockHelper } from './api-mock.helper';
 export const RUN_PROJECT = { uid: 'p0000000-0000-0000-0000-000000000719', slug: 'synthetic-orbit', name: 'Synthetic Orbit' };
 export const RUN_REVISION_ID = `000001-${'a'.repeat(64)}`;
 export const DATA_LOAD_TIMEOUT = 20_000;
+export const FAILED_RUN_REPLY = 'The batch intake was rejected. <b>Provide project sources.</b>';
+const failedSession = [
+  JSON.stringify({ type: 'agent_notification_message', content: { type: 'text', data: FAILED_RUN_REPLY } }),
+  JSON.stringify({ type: 'runtime_done', task: { id: 'synthetic-task', entity_type: 'EntTaskAgent' } }),
+];
 
 function revision(number: number): MktgRevisionSummary {
   return {
@@ -115,7 +121,17 @@ export async function setupRunPage(
     } else if (serverState.generated) {
       state = 'storing';
     }
-    return [{ project: RUN_PROJECT.uid, agentKey: 'brand-kit', documentId: 'living', runId: 'c'.repeat(64), startedAt: serverState.startedAt, state }];
+    return [
+      {
+        project: RUN_PROJECT.uid,
+        agentKey: 'brand-kit',
+        documentId: 'living',
+        runId: 'c'.repeat(64),
+        startedAt: serverState.startedAt,
+        state,
+        ...(options.fail && { failureText: getMktgSessionOutcome(failedSession).replyText }),
+      },
+    ];
   };
   let submitted: Record<string, unknown> | null = null;
   let releaseRead: () => void = () => undefined;
@@ -135,7 +151,7 @@ export async function setupRunPage(
     }
     if (path.endsWith('/result')) {
       if (options.fail) {
-        return json(route, { message: 'Synthetic run failure' }, 422);
+        return json(route, { status: 'failed', failureText: getMktgSessionOutcome(failedSession).replyText });
       }
       const response = runRevision('brand-kit', options.existing ? 2 : 1);
       const persistence = serverState.persisted

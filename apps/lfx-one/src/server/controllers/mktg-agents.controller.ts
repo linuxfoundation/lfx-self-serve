@@ -10,6 +10,7 @@ import {
   MKTG_AGENTS,
   MKTG_ARTIFACT_PARTITION_REGEX,
   MKTG_DOCUMENT_TYPES,
+  MKTG_RUN_QUESTIONS_ID_REGEX,
 } from '@lfx-one/shared/constants';
 import {
   BrandKitGenerateRequest,
@@ -365,7 +366,13 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'brand_kit_result', {});
 
     try {
-      const result: BrandKitResultResponse = await this.brandKitService.getResult(req, validSessionId, validProjectUid, readme);
+      const result: BrandKitResultResponse = await this.brandKitService.getResult(
+        req,
+        validSessionId,
+        validProjectUid,
+        readme,
+        this.resultMinimumVersion(req.body?.priorVersion)
+      );
       await this.documentRuns.recordResult(req, validSessionId, result);
       logger.success(req, 'brand_kit_result', startTime, { status: result.status });
       res.json(result);
@@ -540,13 +547,17 @@ export class MktgAgentsController {
    */
   public async foundationMessageAnswers(req: Request, res: Response, next: NextFunction): Promise<void> {
     // Normalize a missing/null body so malformed requests get a 400, not a throw.
-    const { sessionId, ownerToken, answers } = (req.body ?? {}) as Partial<FoundationMessageAnswersRequest>;
+    const { sessionId, ownerToken, answers, project, questionsId } = (req.body ?? {}) as Partial<FoundationMessageAnswersRequest>;
     const fail = (field: string, message: string): void =>
       next(ServiceValidationError.forField(field, message, { operation: 'foundation_message_answers', service: 'mktg_agents_controller', path: req.path }));
 
     const validSessionId = typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : undefined;
     if (!validSessionId) {
       fail('sessionId', 'sessionId is required and must be a non-empty string');
+      return;
+    }
+    if (questionsId !== undefined && (typeof questionsId !== 'string' || !MKTG_RUN_QUESTIONS_ID_REGEX.test(questionsId))) {
+      fail('questionsId', 'questionsId must identify a questions block.');
       return;
     }
     const answersResult = validateFoundationMessageAnswers(answers);
@@ -592,7 +603,11 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'foundation_message_answers', { answers: validAnswers.length });
 
     try {
+      const projectUid = project === undefined ? undefined : await this.documentRuns.resolveProject(req, project);
       await this.foundationMessageService.sendAnswers(req, validSessionId, validAnswers, agent.guildAgentHandle);
+      if (projectUid) {
+        await this.documentRuns.resumeAfterQuestions(req, projectUid, validSessionId, questionsId);
+      }
       logger.success(req, 'foundation_message_answers', startTime, { answers: validAnswers.length });
       const response: FoundationMessageAnswersResponse = { success: true };
       res.json(response);
@@ -710,7 +725,13 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'foundation_message_result', {});
 
     try {
-      const result: FoundationMessageResultResponse = await this.foundationMessageService.getResult(req, validSessionId, validProjectUid, readme);
+      const result: FoundationMessageResultResponse = await this.foundationMessageService.getResult(
+        req,
+        validSessionId,
+        validProjectUid,
+        readme,
+        this.resultMinimumVersion(req.body?.priorVersion)
+      );
       await this.documentRuns.recordResult(req, validSessionId, result);
       logger.success(req, 'foundation_message_result', startTime, { status: result.status });
       res.json(result);
@@ -895,7 +916,13 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'icp_result', {});
 
     try {
-      const result: IcpResultResponse = await this.icpService.getResult(req, validSessionId, validProjectUid, readme);
+      const result: IcpResultResponse = await this.icpService.getResult(
+        req,
+        validSessionId,
+        validProjectUid,
+        readme,
+        this.resultMinimumVersion(req.body?.priorVersion)
+      );
       await this.documentRuns.recordResult(req, validSessionId, result);
       logger.success(req, 'icp_result', startTime, { status: result.status });
       res.json(result);
@@ -973,6 +1000,17 @@ export class MktgAgentsController {
     } catch (error) {
       next(error);
     }
+  }
+
+  /** A version gate selects a draft; it confers no access to a session or project. */
+  private resultMinimumVersion(value: unknown): number {
+    if (value === undefined) {
+      return 0;
+    }
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+      throw ServiceValidationError.forField('priorVersion', 'priorVersion must be a non-negative safe integer.');
+    }
+    return value;
   }
 
   /** What reading an uploaded file produced, as the form shows it, with the text the run submits back. */

@@ -22,6 +22,7 @@ import {
   extractMktgToolResults,
   foundationMessageDerivatives,
   foundationMessageQuestionsId,
+  getMktgSessionOutcome,
   renderFoundationMessageAnswersText,
   renderFoundationMessageFormText,
   validateFoundationMessageEnvelope,
@@ -153,6 +154,12 @@ export class FoundationMessageService {
     const activity = buildMktgRunActivity(payloads);
 
     if (!envelope || envelope.version <= minimumVersion) {
+      const outcome = getMktgSessionOutcome(payloads);
+      // A questions turn is a deliberate pause, not a rejected generation.
+      // A later terminal reply without questions supersedes an older block.
+      if (outcome.ended && !extractFoundationMessageQuestions(outcome.replyText)) {
+        return { status: 'failed', failureText: outcome.replyText, activity };
+      }
       const questions = this.findLatestQuestions(req, payloads);
       if (questions) {
         return { status: 'questions', questions, questionsId: foundationMessageQuestionsId(questions), activity };

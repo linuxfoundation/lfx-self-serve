@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MKTG_SESSION_EVENTS_TRUNCATED } from '@lfx-one/shared/constants';
 import { GuildSessionEvent, MktgChatMessage } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
@@ -206,6 +207,8 @@ export class GuildService {
    * could otherwise plant a schema-valid envelope in an answer and have it
    * selected as the agent's output. The authoritative envelope only ever rides
    * agent/system events (llm_start/llm_done bodies, notifications, runtime_done).
+   * A full unfiltered page appends an internal incomplete-page marker: it
+   * cannot prove that nothing remains pending beyond the event cap.
    */
   public async getRawEventPayloads(req: Request, sessionId: string): Promise<string[]> {
     this.assertConfigured('guild_get_raw_events');
@@ -237,7 +240,13 @@ export class GuildService {
       });
     }
 
-    return sorted.map((item) => JSON.stringify(item));
+    const payloads = sorted.map((item) => JSON.stringify(item));
+    if (rawItems.length >= GUILD_RAW_EVENTS_LIMIT) {
+      // Completion consumers must not treat an older runtime_done at the cap
+      // as proof that there is no newer work beyond this page.
+      payloads.push(JSON.stringify({ type: MKTG_SESSION_EVENTS_TRUNCATED }));
+    }
+    return payloads;
   }
 
   /**

@@ -124,6 +124,26 @@ describe('MktgAgentRunService', () => {
     expect(httpPost).not.toHaveBeenCalled();
   });
 
+  it('stops at the first runtime-ended failure instead of spending the deadline or storing a document', async () => {
+    resultResponses = [{ status: 'failed', failureText: 'The intake was rejected. <b>Supply sources.</b>' }];
+    const events: MktgGenerateProgress[] = [];
+    let completed = false;
+    service.generate(generateRequest()).subscribe({
+      next: (event) => events.push(event),
+      complete: () => {
+        completed = true;
+      },
+    });
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+    expect(events).toEqual([{ type: 'submitted' }, { type: 'failed', failureText: 'The intake was rejected. <b>Supply sources.</b>' }]);
+    expect(completed).toBe(true);
+    expect(service.loadRun('proj-1', 'brand-kit')?.versions).toEqual([]);
+    expect(service.loadRun('proj-1', 'brand-kit')?.pendingAttempt).toBeUndefined();
+    expect(service.loadRun('proj-1', 'brand-kit')?.failedAttempt?.session.sessionId).toBe('sess-1');
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.timeoutMs);
+    expect(httpPost.mock.calls.filter(([url]) => url === BRAND_KIT_INTAKE.endpoints.result)).toHaveLength(1);
+  });
+
   it('saves a pending attempt and resumes only result polling, without another generation or duplicate version', async () => {
     const first = service.generate(generateRequest()).subscribe();
     const stored = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? 'null') as MktgStoredAgentRun;
@@ -190,7 +210,8 @@ describe('MktgAgentRunService', () => {
   it('removes a timed-out attempt from automatic resume while retaining an explicit retry', async () => {
     const failed = vi.fn();
     service.generate(generateRequest()).subscribe({ error: failed });
-    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.timeoutMs);
+    // The merged live-feed poll checks the wall-clock deadline on its next tick.
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.timeoutMs + MKTG_RUN_POLL.intervalMs);
     expect(failed).toHaveBeenCalledOnce();
     expect(service.loadRun('proj-1', 'brand-kit')?.pendingAttempt).toBeUndefined();
     expect(service.loadRun('proj-1', 'brand-kit')?.failedAttempt).toBeDefined();
@@ -731,6 +752,21 @@ describe('MktgAgentRunService', () => {
       });
     });
 
+    it('continues already-submitted answers in the document view without generating or posting the answers twice', async () => {
+      const pending: MktgRunQuestionsPending = {
+        attempt: { session: { agentId: 'foundation-setup', sessionId: 'sess-2', ownerToken: 'token-2' }, priorVersion: 0 },
+        questionsId: 'abc12345',
+        questions: QUESTIONS,
+      };
+      resultResponses = [QUESTIONS_RESULT, { status: 'failed', failureText: 'The answers were rejected.' }];
+      const events: MktgGenerateProgress[] = [];
+      service.generate({ ...mfRequest(), answersRound: { pending, answers: ANSWERS, submitted: true } }).subscribe((event) => events.push(event));
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs + MKTG_RUN_POLL.intervalMs);
+      expect(events).toEqual([{ type: 'submitted' }, { type: 'failed', failureText: 'The answers were rejected.' }]);
+      expect(answersCalls).toEqual([]);
+      expect(httpPost.mock.calls.filter(([url]) => url === FOUNDATION_MESSAGE_INTAKE.endpoints.generate)).toHaveLength(0);
+    });
+
     it('resubmits as a FRESH run — no priorVersion, no feedback — with the project uid, and numbers the run’s own history', async () => {
       window.localStorage.setItem(MF_STORAGE_KEY, JSON.stringify(mfStoredV1Run()));
       // The generate envelope always says version 1; the poll's gate stays 0 so it is accepted.
@@ -760,6 +796,7 @@ describe('MktgAgentRunService', () => {
     });
 
     it('stops at the agent’s questions: emits them with the session to continue and completes, storing no version', async () => {
+      const startedAt = new Date().toISOString();
       resultResponses = [{ status: 'pending' }, QUESTIONS_RESULT];
       const events: MktgGenerateProgress[] = [];
       let completed = false;
@@ -772,14 +809,14 @@ describe('MktgAgentRunService', () => {
         {
           type: 'questions',
           pending: {
-            attempt: { session: { agentId: 'foundation-setup', sessionId: 'sess-2', ownerToken: 'token-2' }, priorVersion: 0 },
+            attempt: { session: { agentId: 'foundation-setup', sessionId: 'sess-2', ownerToken: 'token-2' }, priorVersion: 0, readme: undefined, startedAt },
             questionsId: 'abc12345',
             questions: QUESTIONS,
           },
         },
       ]);
       expect(completed).toBe(true);
-      expect(window.localStorage.getItem(MF_STORAGE_KEY)).toBeNull();
+      expect(service.loadRun('proj-1', 'foundation-setup')).toMatchObject({ versions: [], pendingAttempt: { session: { sessionId: 'sess-2' }, startedAt } });
       // Polling stopped with the questions: nothing more is asked of the result endpoint.
       await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 3);
       expect(mfResultCalls()).toHaveLength(2);
@@ -869,7 +906,12 @@ describe('MktgAgentRunService', () => {
       const events: MktgGenerateProgress[] = [];
       service.answerQuestions(mfRequest(), pending, ANSWERS).subscribe((event) => events.push(event));
 
-      expect(answersCalls).toEqual([[FOUNDATION_MESSAGE_INTAKE.endpoints.answers, { sessionId: 'sess-2', ownerToken: 'token-2', answers: ANSWERS }]]);
+      expect(answersCalls).toEqual([
+        [
+          FOUNDATION_MESSAGE_INTAKE.endpoints.answers,
+          { sessionId: 'sess-2', ownerToken: 'token-2', answers: ANSWERS, project: 'proj-1', questionsId: 'abc12345' },
+        ],
+      ]);
       expect(httpPost).not.toHaveBeenCalledWith(FOUNDATION_MESSAGE_INTAKE.endpoints.generate, expect.anything());
       expect(events).toEqual([{ type: 'submitted' }]);
 
@@ -1027,6 +1069,7 @@ describe('MktgAgentRunService', () => {
       // priorVersion is derived from the STORED run, never passed by the caller.
       expect(httpPost).toHaveBeenCalledWith(ICP_INTAKE.endpoints.generate, {
         answers: ICP_ANSWERS,
+        project: 'proj-1',
         feedback: 'Sharpen the pitch.',
         priorVersion: 1,
       });
@@ -1052,7 +1095,7 @@ describe('MktgAgentRunService', () => {
 
       service.generate(icpRequest()).subscribe();
 
-      expect(httpPost).toHaveBeenCalledWith(ICP_INTAKE.endpoints.generate, { answers: ICP_ANSWERS, priorVersion: 1 });
+      expect(httpPost).toHaveBeenCalledWith(ICP_INTAKE.endpoints.generate, { answers: ICP_ANSWERS, priorVersion: 1, project: 'proj-1' });
     });
   });
 });

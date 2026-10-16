@@ -30,7 +30,7 @@
     </div>
 
     @if (errorText()) {
-      <lfx-message severity="error" [text]="errorText()" data-testid="mktg-document-view-error" />
+      <lfx-message severity="error" [text]="errorText()" [escape]="true" data-testid="mktg-document-view-error" />
       @if (intakeAgentId(); as agentId) {
         <a
           [routerLink]="['../../..', agentId]"

@@ -165,6 +165,15 @@ export class MktgAgentRunService {
    * switch, a new submission, leaving the page) cancels the retry with it.
    */
   public generate(request: MktgGenerateRequest): Observable<MktgGenerateProgress> {
+    if (request.answersRound) {
+      const { pending, answers, submitted } = request.answersRound;
+      return submitted
+        ? concat(
+            of<MktgGenerateProgress>({ type: 'submitted' }),
+            this.awaitOutcome(request, pending.attempt, { questions: pending.questions, answers, questionsId: pending.questionsId })
+          )
+        : this.answerQuestions(request, pending, answers);
+    }
     const stored = this.loadRun(request.projectUid, request.agentId);
     const startedAt = request.startedAt ?? new Date().toISOString();
     let attempt$: Observable<MktgRunAttempt>;
@@ -214,7 +223,13 @@ export class MktgAgentRunService {
     if (!answersPath) {
       return throwError(() => new Error(`The ${request.intake.documentName} agent takes no answers.`));
     }
-    const body: MktgRunAnswersBody = { sessionId: pending.attempt.session.sessionId, ownerToken: pending.attempt.session.ownerToken, answers };
+    const body: MktgRunAnswersBody = {
+      sessionId: pending.attempt.session.sessionId,
+      ownerToken: pending.attempt.session.ownerToken,
+      answers,
+      project: request.projectUid,
+      questionsId: pending.questionsId,
+    };
     return this.http
       .post<MktgRunAnswersResponse>(answersPath, body)
       .pipe(
@@ -387,12 +402,19 @@ export class MktgAgentRunService {
     attempt: MktgRunAttempt,
     answered?: { questions: MktgRunQuestionsPending['questions']; answers: MktgRunAnswer[]; questionsId: string }
   ): Observable<MktgGenerateProgress> {
-    return this.pollForOutcome(request.intake, attempt.session, attempt.priorVersion, request.projectUid, answered?.questionsId).pipe(
+    return this.pollForOutcome(request.intake, attempt.session, attempt.priorVersion, request.projectUid, answered?.questionsId, attempt.readme).pipe(
       concatMap(({ result, terminal }) => {
         // Intakes with a live feed get the whole feed so far on every poll that changed it, the last one included.
         const activity$ = result.activity && request.intake.liveActivity ? of<MktgGenerateProgress>({ type: 'activity', activity: result.activity }) : EMPTY;
         if (!terminal) {
           return activity$;
+        }
+        if (result.status === 'failed') {
+          const stored = this.loadRun(request.projectUid, request.agentId);
+          if (stored?.sessionId === attempt.session.sessionId) {
+            this.saveRun({ ...stored, pendingAttempt: undefined, failedAttempt: attempt });
+          }
+          return concat(activity$, of<MktgGenerateProgress>({ type: 'failed', failureText: result.failureText ?? '' }));
         }
         if (result.status === 'questions') {
           // pollForOutcome let it through, so the block is present and new.
@@ -406,7 +428,11 @@ export class MktgAgentRunService {
         }
         return concat(
           activity$,
-          of<MktgGenerateProgress>({ type: 'document', run: this.appendVersion(request, attempt, result, answered), ...(result.persistence?.document && { location: result.persistence.document }) }),
+          of<MktgGenerateProgress>({
+            type: 'document',
+            run: this.appendVersion(request, attempt, result, answered),
+            ...(result.persistence?.document && { location: result.persistence.document }),
+          }),
           this.retryPersistence(request, attempt.session, result, attempt.readme)
         );
       })
@@ -447,9 +473,10 @@ export class MktgAgentRunService {
     session: MktgSessionInfo,
     priorVersion: number,
     projectUid: string,
-    answeredQuestionsId?: string
+    answeredQuestionsId?: string,
+    readme?: MktgReadmeOutcome
   ): Observable<{ result: MktgRunResultResponse; terminal: boolean }> {
-    const body = this.resultBody(session, projectUid);
+    const body = this.resultBody(session, projectUid, readme, priorVersion);
     const isDocument = (result: MktgRunResultResponse): boolean =>
       result.status === 'ready' && typeof result.documentMarkdown === 'string' && (result.version ?? 0) > priorVersion;
     const isNewQuestions = (result: MktgRunResultResponse): boolean =>
@@ -458,7 +485,7 @@ export class MktgAgentRunService {
       (result.questions?.length ?? 0) > 0 &&
       !!result.questionsId &&
       result.questionsId !== answeredQuestionsId;
-    const isTerminal = (result: MktgRunResultResponse): boolean => isDocument(result) || isNewQuestions(result);
+    const isTerminal = (result: MktgRunResultResponse): boolean => result.status === 'failed' || isDocument(result) || isNewQuestions(result);
     return defer(() => {
       // One wall-clock deadline for the whole wait: with a live feed the poll
       // emits along the way, so a per-emission timeout would never fire.
@@ -563,8 +590,14 @@ export class MktgAgentRunService {
   }
 
   /** Result-endpoint body: the owner token travels in the body (never the query string), with the run's project scope when there is one. */
-  private resultBody(session: MktgSessionInfo, projectUid: string, readme?: MktgReadmeOutcome): MktgRunResultBody {
-    return { sessionId: session.sessionId, ownerToken: session.ownerToken, ...(projectUid && { project: projectUid }), ...(readme && { readme }) };
+  private resultBody(session: MktgSessionInfo, projectUid: string, readme?: MktgReadmeOutcome, priorVersion = 0): MktgRunResultBody {
+    return {
+      sessionId: session.sessionId,
+      ownerToken: session.ownerToken,
+      ...(projectUid && { project: projectUid }),
+      ...(readme && { readme }),
+      ...(priorVersion > 0 && { priorVersion }),
+    };
   }
 
   /** Appends the validated document as the next version — with the questions and answers that produced it, when any — and persists the run. */

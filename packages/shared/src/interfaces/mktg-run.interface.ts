@@ -402,13 +402,6 @@ export interface MktgRunGenerateBody {
   priorVersion?: number;
   /** Existing documents, for intakes with a documents section. */
   documents?: MktgIntakeDocument[];
-  /**
-   * LFX project uid the run belongs to, for intakes that declare
-   * {@link MktgAgentIntake.submitsProject}: the agent receives it with the
-   * form for its own LFX lookups. Never the storage partition — the result
-   * endpoint resolves that server-side from {@link MktgRunResultBody.project}.
-   */
-  project?: string;
 }
 
 /**
@@ -416,6 +409,8 @@ export interface MktgRunGenerateBody {
  * body (never the query string) so it stays out of access logs and proxies.
  */
 export interface MktgRunResultBody {
+  /** Ignore envelopes from the previous draft on a same-session follow-up; never authorization evidence. */
+  priorVersion?: number;
   /** Relay of this submission's README outcome for the stored revision's About panel. Not used for authorization. */
   readme?: MktgReadmeOutcome;
   /** Guild session id returned by the generate endpoint. */
@@ -485,6 +480,10 @@ export interface MktgRunAnswer {
  * the body like every session write: only the session's creator may answer.
  */
 export interface MktgRunAnswersBody {
+  /** Project scope for renewing a durable run's budget after its questions pause. */
+  project?: string;
+  /** The block just answered, so an echoed old block is not mistaken for a new pause. */
+  questionsId?: string;
   /** Guild session id the questions came from. */
   sessionId: string;
   /** Creator-binding owner token returned by the generate endpoint. */
@@ -597,7 +596,9 @@ export interface MktgRunPersistReceipt {
  */
 export interface MktgRunResultResponse {
   /** Generation state. */
-  status: 'pending' | 'ready' | 'questions';
+  status: 'pending' | 'ready' | 'questions' | 'failed';
+  /** Final agent reply when its runtime ended without a validated document; plain text only. */
+  failureText?: string;
   /** The agent's questions, present when `questions`. */
   questions?: MktgRunQuestion[];
   /**
@@ -864,8 +865,8 @@ export interface MktgRunAttempt {
   readme?: MktgReadmeOutcome;
 }
 
-/** Run-page phase: intake form → staged running → (the agent's questions →) document result. */
-export type MktgRunPhase = 'form' | 'running' | 'questions' | 'result';
+/** Intake page: form, research and the agent's questions; results live in Documents. */
+export type MktgRunPhase = 'form' | 'running' | 'questions';
 
 /**
  * A questions turn waiting for the requester's answers: the session it came
@@ -901,6 +902,7 @@ export interface MktgRunQuestionsPending {
  */
 export type MktgGenerateProgress =
   | { type: 'submitted' }
+  | { type: 'failed'; failureText: string }
   | { type: 'activity'; activity: MktgRunActivity[] }
   | { type: 'questions'; pending: MktgRunQuestionsPending }
   | { type: 'document'; run: MktgStoredAgentRun; location?: MktgDocumentLocation }
@@ -912,10 +914,20 @@ export interface MktgPreparedGeneration {
   request: MktgGenerateRequest;
 }
 
+/** Runtime completion observed in trusted top-level Guild events, never tool output. */
+export interface MktgSessionOutcome {
+  ended: boolean;
+  replyText: string;
+}
+
 /** Request to generate (or regenerate) an agent document from intake answers. */
 export interface MktgGenerateRequest {
   /** When Generate was pressed; presentation metadata, not a generation/version directive. */
   startedAt?: string;
+  /** In-memory continuation after questions; session capabilities never enter a URL. */
+  answersRound?: { pending: MktgRunQuestionsPending; answers: MktgRunAnswer[]; submitted: boolean };
+  /** In-memory return to the intake if the agent asks another questions round. */
+  pendingQuestions?: MktgRunQuestionsPending;
   /** Catalog agent id — must be an `active` agent. */
   agentId: string;
   /** LFX project uid the run is scoped to. */

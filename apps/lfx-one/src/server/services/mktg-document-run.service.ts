@@ -6,6 +6,7 @@ import {
   MKTG_LIVING_DOCUMENT_ID,
   MKTG_REVISION_ID_REGEX,
   MKTG_RUN_POLL,
+  MKTG_RUN_QUESTIONS_ID_REGEX,
   MKTG_STARTED_RUN_ID_REGEX,
   MKTG_STARTED_RUN_PREFIX,
   MKTG_STARTED_RUN_SCHEMA,
@@ -156,6 +157,21 @@ export class MktgDocumentRunService {
       ready: result.status === 'ready',
       has_receipt: !!result.persistence?.document,
     });
+    if (result.status === 'failed' && typeof req.body?.project === 'string') {
+      const project = await this.resolveProject(req, req.body.project);
+      const key = `${this.prefix(project)}${this.hash(sessionId)}.json`;
+      const object = await this.store.getObject(req, 'marketing-os-artifacts', key);
+      const stored = object ? this.parse(req, key, object.body, object.metadata, project) : null;
+      if (stored && !this.isTerminal(stored.record.state) && stored.record.state !== 'failed') {
+        // The creator's version gate is not authority to fail a different
+        // tracked attempt: confirm against the server-recorded prior draft.
+        const confirmed = await this.result(req, stored.record);
+        if (confirmed.status === 'failed') {
+          await this.mark(req, stored, 'failed', undefined, undefined, true);
+        }
+      }
+      return;
+    }
     const receipt = result.persistence;
     if (!receipt?.document) {
       return;
@@ -212,12 +228,22 @@ export class MktgDocumentRunService {
     const runs: MktgDocumentRunProgress[] = [];
     for (const stored of storedRuns) {
       let current = stored.record;
+      let failureText: string | undefined;
       if (current.state === 'failed') {
         const type = findMktgDocumentType(current.agentKey);
         const document = type ? await this.documents.getDocument(req, project, type, current.documentId) : null;
         const createdAt = document?.revisions[0]?.createdAt;
         if (createdAt && Date.parse(createdAt) > Date.parse(current.retryAt ?? current.startedAt)) {
           current = await this.mark(req, stored, 'superseded');
+        } else if (current.failedWithoutDocument) {
+          // Full text belongs in the private session, not size-limited S3 metadata.
+          // A failed run does not timer-poll; navigation/retry reads it once.
+          try {
+            const result = await this.result(req, current);
+            failureText = result.status === 'failed' ? result.failureText : undefined;
+          } catch (error) {
+            logger.warning(req, 'mktg_run_reconcile', 'Could not read the failed run reply', { project, run: current.runId, err: error });
+          }
         }
       } else {
         let result: MktgRunResultResponse | undefined;
@@ -238,7 +264,11 @@ export class MktgDocumentRunService {
           if (state !== current.state) {
             current = await this.mark(req, stored, state, location);
           }
-        } else if (expired) {
+        } else if (result?.status === 'failed') {
+          failureText = result.failureText;
+          current = await this.mark(req, stored, 'failed', undefined, undefined, true);
+        } else if (expired && !(result?.status === 'questions' && result.questionsId !== current.answeredQuestionsId)) {
+          // A deliberate questions pause does not spend the writing deadline.
           // Check Guild first; both unresolved writing and ready-but-unpersisted storing are bounded.
           current = await this.mark(req, stored, 'failed');
         }
@@ -252,6 +282,7 @@ export class MktgDocumentRunService {
           documentId: current.documentId,
           startedAt: current.startedAt,
           state: current.state,
+          ...(failureText !== undefined && { failureText }),
         });
       }
     }
@@ -276,6 +307,22 @@ export class MktgDocumentRunService {
     }
   }
 
+  /** Answers continue the same session after an unbounded human pause, preserving its original Started label. */
+  public async resumeAfterQuestions(req: Request, project: string, sessionId: string, questionsId?: string): Promise<void> {
+    if (questionsId !== undefined && (typeof questionsId !== 'string' || !MKTG_RUN_QUESTIONS_ID_REGEX.test(questionsId))) {
+      throw ServiceValidationError.forField('questionsId', 'Invalid questions block.');
+    }
+    const key = `${this.prefix(project)}${this.hash(sessionId)}.json`;
+    const object = await this.store.getObject(req, 'marketing-os-artifacts', key);
+    const stored = object ? this.parse(req, key, object.body, object.metadata, project) : null;
+    if (!stored || stored.record.agentKey !== 'foundation-message') {
+      throw new ResourceNotFoundError('Marketing OS run', this.hash(sessionId));
+    }
+    if (stored.record.state === 'writing' || stored.record.state === 'failed') {
+      await this.mark(req, stored, 'writing', undefined, new Date().toISOString(), false, questionsId);
+    }
+  }
+
   private async result(req: Request, record: MktgStartedRunRecord): Promise<MktgRunResultResponse> {
     const args: [Request, string, string, MktgReadmeOutcome | undefined, number] = [req, record.sessionId, record.project, record.readme, record.priorVersion];
     switch (record.agentKey) {
@@ -295,7 +342,9 @@ export class MktgDocumentRunService {
     stored: MktgStoredStartedRun,
     state: MktgStoredDocumentRunState,
     result?: MktgDocumentLocation,
-    retryAt = stored.record.retryAt
+    retryAt = stored.record.retryAt,
+    failedWithoutDocument = false,
+    answeredQuestionsId = stored.record.answeredQuestionsId
   ): Promise<MktgStartedRunRecord> {
     if (state === stored.record.state && retryAt === stored.record.retryAt) {
       return stored.record;
@@ -314,6 +363,8 @@ export class MktgDocumentRunService {
         'prior-version': String(stored.record.priorVersion),
         ...(result && { 'revision-id': result.revisionId }),
         ...(retryAt && { 'retry-at': retryAt }),
+        ...(failedWithoutDocument && { 'failure-reason': 'no-document' }),
+        ...(answeredQuestionsId && { 'answered-questions-id': answeredQuestionsId }),
       },
       { refreshMetadataWhen: (metadata) => this.canAdvance(metadata, stored.record, state, retryAt) }
     );
@@ -354,7 +405,8 @@ export class MktgDocumentRunService {
         !Number.isInteger(priorVersion) ||
         priorVersion < 0 ||
         !Object.hasOwn(MKTG_STARTED_RUN_STATE_ORDER, state) ||
-        (metadata['retry-at'] !== undefined && Number.isNaN(Date.parse(metadata['retry-at'])))
+        (metadata['retry-at'] !== undefined && Number.isNaN(Date.parse(metadata['retry-at']))) ||
+        (metadata['answered-questions-id'] !== undefined && !MKTG_RUN_QUESTIONS_ID_REGEX.test(metadata['answered-questions-id']))
       ) {
         logger.warning(req, 'mktg_run_read', 'Ignoring invalid started-run data or namespace', { project, key });
         return null;
@@ -367,7 +419,16 @@ export class MktgDocumentRunService {
       return {
         key,
         body: hasLegacyIdentity ? JSON.stringify(record) : body,
-        record: { ...record, startedAt, priorVersion, state: state as MktgStoredDocumentRunState, result, retryAt: metadata['retry-at'] },
+        record: {
+          ...record,
+          startedAt,
+          priorVersion,
+          state: state as MktgStoredDocumentRunState,
+          result,
+          retryAt: metadata['retry-at'],
+          answeredQuestionsId: metadata['answered-questions-id'],
+          failedWithoutDocument: state === 'failed' && metadata['failure-reason'] === 'no-document',
+        },
       };
     } catch {
       logger.warning(req, 'mktg_run_read', 'Ignoring malformed started-run record', { key });
@@ -396,7 +457,7 @@ export class MktgDocumentRunService {
       return false;
     }
     if (nextRetry > previousRetry) {
-      return current === 'failed' && state === 'writing';
+      return (current === 'failed' || current === 'writing') && state === 'writing';
     }
     return MKTG_STARTED_RUN_STATE_ORDER[state] > MKTG_STARTED_RUN_STATE_ORDER[current];
   }

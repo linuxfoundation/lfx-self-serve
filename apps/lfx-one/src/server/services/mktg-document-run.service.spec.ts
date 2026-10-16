@@ -128,6 +128,63 @@ describe('MktgDocumentRunService', () => {
   });
   afterEach(() => vi.useRealTimers());
 
+  it('records runtime-ended failure immediately and returns its full plain reply across browsers and retry', async () => {
+    const reply = `The intake was rejected. <b>Supply sources.</b> ${'Synthetic explanation. '.repeat(300)}`;
+    await service.start(req, project, 'brand-kit', 'synthetic-session');
+    vi.advanceTimersByTime(14_000);
+    flows.getResult.mockResolvedValue({ status: 'failed', failureText: reply });
+    expect(await service.reconcile(req, project)).toMatchObject([{ state: 'failed', failureText: reply }]);
+    expect(stored().metadata['failure-reason']).toBe('no-document');
+    expect(JSON.stringify(stored())).not.toContain(reply);
+    expect(await new MktgDocumentRunService().reconcile(req, project)).toMatchObject([{ state: 'failed', failureText: reply }]);
+    await service.retry(req, project, 'brand-kit', 'living', runId);
+    expect(await service.reconcile(req, project)).toMatchObject([{ state: 'failed', failureText: reply }]);
+    expect(flows.getResult).toHaveBeenCalledWith(req, 'synthetic-session', project, undefined, 0);
+  });
+
+  it('does not expire a questions pause as a failed writing run', async () => {
+    await service.start(req, project, 'brand-kit', 'synthetic-session');
+    vi.advanceTimersByTime(20 * 60_000);
+    flows.getResult.mockResolvedValue({ status: 'questions', questionsId: 'synthetic-block' });
+    expect(await service.reconcile(req, project)).toMatchObject([{ state: 'writing' }]);
+  });
+
+  it('renews the budget and polling mtime after a long questions pause without changing the Started label', async () => {
+    await service.start(req, project, 'foundation-message', 'synthetic-session');
+    const startedAt = stored().metadata['started-at'];
+    vi.advanceTimersByTime(2 * 60 * 60_000);
+    flows.getResult.mockResolvedValue({ status: 'questions', questionsId: 'abc12345' });
+    expect(await service.reconcile(req, project)).toMatchObject([{ state: 'writing' }]);
+    await service.resumeAfterQuestions(req, project, 'synthetic-session', 'abc12345');
+    expect(stored().metadata['started-at']).toBe(startedAt);
+    expect(stored().metadata['retry-at']).toBe(new Date().toISOString());
+    expect(await service.reconcile(req, project, undefined, undefined, true)).toMatchObject([{ state: 'writing' }]);
+    vi.advanceTimersByTime(11 * 60_000);
+    flows.getResult.mockResolvedValue({ status: 'questions', questionsId: 'def67890' });
+    expect(await service.reconcile(req, project)).toMatchObject([{ state: 'writing' }]);
+    // A genuinely new block is a pause; the already-answered block is not.
+    flows.getResult.mockResolvedValue({ status: 'questions', questionsId: 'abc12345' });
+    expect(await service.reconcile(req, project)).toMatchObject([{ state: 'failed' }]);
+  });
+
+  it('records the creator result poll failure only after resolving writer access', async () => {
+    await service.start(req, project, 'brand-kit', 'synthetic-session');
+    const request = { ...req, body: { project } } as Request;
+    flows.getResult.mockResolvedValue({ status: 'failed', failureText: 'Rejected.' });
+    await service.recordResult(request, 'synthetic-session', { status: 'failed', failureText: 'Rejected.' });
+    expect(stored().metadata['state']).toBe('failed');
+    expect(flows.getProjectById).toHaveBeenCalledWith(request, project, true);
+  });
+
+  it('does not fail a tracked attempt merely because a creator poll used a different version gate', async () => {
+    await service.start(req, project, 'brand-kit', 'synthetic-session');
+    const request = { ...req, body: { project, priorVersion: 999 } } as Request;
+    flows.getResult.mockResolvedValue(ready);
+    await service.recordResult(request, 'synthetic-session', { status: 'failed', failureText: 'Not the tracked attempt.' });
+    expect(stored().metadata['state']).toBe('writing');
+    expect(flows.getResult).toHaveBeenCalledWith(request, 'synthetic-session', project, undefined, 0);
+  });
+
   it('shape-gates and requires writer access before storage preflight or a usable partition', async () => {
     await expect(service.resolveProject(req, '../other')).rejects.toBeInstanceOf(ServiceValidationError);
     expect(flows.getProjectById).not.toHaveBeenCalled();

@@ -24,6 +24,8 @@ export interface MktgDocumentRunProgress {
   /** Original server-recorded start, preserved across devices and retries. */
   startedAt: string;
   state: MktgDocumentRunState;
+  /** Final agent reply for a runtime-ended failure, rendered as plain text only. */
+  failureText?: string;
 }
 
 /**
@@ -42,8 +44,12 @@ export interface MktgStartedRunRecord {
   /** Only a strictly newer validated envelope can finish this attempt. */
   priorVersion: number;
   state: MktgStoredDocumentRunState;
-  /** Explicit retry budget origin; does not change the original Started label. */
+  /** Retry/answers-continuation budget origin; does not change the original Started label. */
   retryAt?: string;
+  /** Latest questions block answered on this session; a different block is a new human pause. */
+  answeredQuestionsId?: string;
+  /** Metadata marker; the full reply is read from Guild, never squeezed into object metadata. */
+  failedWithoutDocument?: boolean;
   /** Submission provenance obtained by the BFF, not an arbitrary client note. */
   readme?: MktgReadmeOutcome;
   /** Exact persisted result after recording this session through the existing generation path. */

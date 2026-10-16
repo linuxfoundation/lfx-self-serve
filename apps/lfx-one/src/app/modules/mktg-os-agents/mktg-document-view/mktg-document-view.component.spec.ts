@@ -188,6 +188,33 @@ describe('MktgDocumentViewComponent', () => {
     expect(runService.generate).toHaveBeenCalledTimes(1);
   });
 
+  it('shows the completed session reply as plain text, with retry and no generating card or invented revision', async () => {
+    const failureText = 'The batch intake was rejected. <b>Provide project sources.</b>';
+    store.getDocument.mockReturnValueOnce(
+      of({
+        ...detail,
+        runs: [
+          {
+            project: PROJECT.uid,
+            runId: 'a'.repeat(64),
+            agentKey: 'brand-kit',
+            documentId: 'living',
+            startedAt: '2026-10-15T12:00:00Z',
+            state: 'failed',
+            failureText,
+          },
+        ],
+      })
+    );
+    await render('/documents/brand-kit/living');
+    expect(query('mktg-document-view-error')?.textContent).toContain(failureText);
+    expect(query('mktg-document-view-error')?.querySelector('b')).toBeNull();
+    expect(query('mktg-document-view-generating')).toBeNull();
+    expect(query('mktg-document-view-document')?.textContent).toContain('Revision 2');
+    expect(query('mktg-document-view-retry-note')?.textContent).toContain('no new generation is started');
+    expect(runService.generate).not.toHaveBeenCalled();
+  });
+
   it('retries a failed server run without using a browser owner token or starting generation', async () => {
     const run = {
       project: PROJECT.uid,

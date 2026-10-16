@@ -3,7 +3,7 @@
 
 import { MKTG_ARTIFACT_SPECS } from '@lfx-one/shared/constants';
 import { BrandKitEnvelope, BrandKitPersistReceipt, BrandKitResultResponse, BrandKitStoredResponse, MktgReadmeOutcome } from '@lfx-one/shared/interfaces';
-import { extractBrandKitEnvelopeCandidates, renderBrandKitFormMessage, validateBrandKitEnvelope } from '@lfx-one/shared/utils';
+import { extractBrandKitEnvelopeCandidates, getMktgSessionOutcome, renderBrandKitFormMessage, validateBrandKitEnvelope } from '@lfx-one/shared/utils';
 import { createHash } from 'node:crypto';
 import { Request } from 'express';
 
@@ -80,7 +80,8 @@ export class BrandKitService {
     const envelope = this.findAuthoritativeEnvelope(req, payloads);
 
     if (!envelope || envelope.version <= minimumVersion) {
-      return { status: 'pending' };
+      const outcome = getMktgSessionOutcome(payloads);
+      return outcome.ended ? { status: 'failed', failureText: outcome.replyText } : { status: 'pending' };
     }
 
     logger.info(req, 'brand_kit_result', 'Brand Kit document ready', {
