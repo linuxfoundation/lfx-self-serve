@@ -31,6 +31,8 @@ import {
   CAMPAIGN_UNAVAILABLE_DEFAULT_REASON,
   CAMPAIGN_UNAVAILABLE_DEPLOYMENT_REASON,
   CAMPAIGN_UNAVAILABLE_PLATFORM_REASON,
+  CAMPAIGN_UNAVAILABLE_RESUME_PLATFORM_REASON,
+  campaignResumeWithheldForPlatform,
   CAMPAIGN_UNAVAILABLE_REASONS,
   DEFAULT_CAMPAIGN_BID_TYPE,
   TOGGLEABLE_CAMPAIGN_PLATFORMS,
@@ -441,6 +443,9 @@ export class CampaignActDialogComponent {
         return CAMPAIGN_UNAVAILABLE_PLATFORM_REASON;
       }
       const status = this.status();
+      if (campaignResumeWithheldForPlatform(status, campaign.platform)) {
+        return CAMPAIGN_UNAVAILABLE_RESUME_PLATFORM_REASON;
+      }
       return Object.prototype.hasOwnProperty.call(CAMPAIGN_UNAVAILABLE_REASONS, status)
         ? CAMPAIGN_UNAVAILABLE_REASONS[status]
         : CAMPAIGN_UNAVAILABLE_DEFAULT_REASON;

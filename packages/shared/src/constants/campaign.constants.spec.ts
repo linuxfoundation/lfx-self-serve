@@ -63,6 +63,8 @@ import {
   googleAdsTrimSpace,
   googleAdsUrlGoParseFlaw,
   isGoSpaceCode,
+  PAUSE_ONLY_CAMPAIGN_PLATFORMS,
+  campaignResumeWithheldForPlatform,
 } from './campaign.constants';
 
 /**
@@ -126,9 +128,21 @@ describe('campaignToggleAction', () => {
     expect(campaignToggleAction('paused', 'tiktok-ads')).toBe('unavailable');
   });
 
-  it.each(['microsoft-ads', 'twitter-ads'])('offers pause and resume for %s', (platform) => {
-    expect(campaignToggleAction('created', platform)).toBe('pause');
-    expect(campaignToggleAction('paused', platform)).toBe('resume');
+  it('offers pause and resume for microsoft-ads', () => {
+    expect(campaignToggleAction('created', 'microsoft-ads')).toBe('pause');
+    expect(campaignToggleAction('paused', 'microsoft-ads')).toBe('resume');
+    expect(campaignResumeWithheldForPlatform('paused', 'microsoft-ads')).toBe(false);
+  });
+
+  // Every X row is adopted (X create is off) and upstream 409s ACTIVE on an adopted row, so X is
+  // pause-only: Resume is withheld rather than offered as a button whose every click fails.
+  it('offers pause but withholds resume for twitter-ads', () => {
+    expect([...PAUSE_ONLY_CAMPAIGN_PLATFORMS]).toEqual(['twitter-ads']);
+    expect(campaignToggleAction('created', 'twitter-ads')).toBe('pause');
+    expect(campaignToggleAction('paused', 'twitter-ads')).toBe('unavailable');
+    expect(campaignResumeWithheldForPlatform('paused', 'twitter-ads')).toBe(true);
+    expect(campaignResumeWithheldForPlatform('created', 'twitter-ads')).toBe(false);
+    expect(campaignResumeWithheldForPlatform('deleted', 'twitter-ads')).toBe(false);
   });
 
   /** Optional so the status-only question stays askable; absence is not "unsupported". */

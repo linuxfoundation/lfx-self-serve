@@ -27,6 +27,7 @@ import {
   META_AD_SET_STATUS_UNCONFIRMED_CODE,
   META_AD_SET_UNCONFIRMED_MESSAGE,
   META_AD_SETS_UNAVAILABLE_UNPROVISIONED_REASON,
+  CAMPAIGN_UNAVAILABLE_RESUME_PLATFORM_REASON,
 } from '@lfx-one/shared/constants';
 import {
   BriefMetrics,
@@ -615,20 +616,29 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-unavailable-c-1"]')).toBeNull();
   });
 
-  // Both directions for an X row. Upstream refuses ACTIVE on an adopted row with 409, but that is a
-  // per-row answer the toggle surfaces like any other 409, not a reason to hide Resume.
-  it.each([
-    ['created', 'Pause', 'PAUSED'],
-    ['paused', 'Resume', 'ACTIVE'],
-  ])('offers %s -> %s on an X row and dispatches %s', (status, label, wire) => {
-    render([doc({ platform: 'twitter-ads', status })]);
+  it('offers Pause on a running X row and dispatches PAUSED', () => {
+    render([doc({ platform: 'twitter-ads', status: 'created' })]);
 
     const button = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
     expect(button.disabled).toBe(false);
-    expect(button.textContent).toContain(label);
+    expect(button.textContent).toContain('Pause');
 
     button.click();
-    expect(updateCampaignStatus).toHaveBeenCalledWith(expect.objectContaining({ platform: 'twitter-ads', status: wire }));
+    expect(updateCampaignStatus).toHaveBeenCalledWith(expect.objectContaining({ platform: 'twitter-ads', status: 'PAUSED' }));
+  });
+
+  // Upstream refuses ACTIVE on every adopted row with 409, and every X row is adopted while X
+  // create is off: Resume would be a dead control, so it is withheld with where to resume instead.
+  it('withholds Resume on a paused X row, with the reason, and dispatches nothing', () => {
+    render([doc({ platform: 'twitter-ads', status: 'paused' })]);
+
+    const button = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
+    expect(button.disabled).toBe(true);
+    const reason = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-unavailable-c-1"]');
+    expect(reason.textContent).toContain(CAMPAIGN_UNAVAILABLE_RESUME_PLATFORM_REASON);
+
+    button.click();
+    expect(updateCampaignStatus).not.toHaveBeenCalled();
   });
 
   // The platform guard must not swallow the platforms this app DOES offer — the mutation that

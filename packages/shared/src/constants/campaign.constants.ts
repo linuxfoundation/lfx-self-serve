@@ -326,7 +326,8 @@ export function campaignToggleAction(status: string, platform?: string): Campaig
     return 'pause';
   }
   if (RESUMABLE_CAMPAIGN_STATUSES.has(normalized)) {
-    return 'resume';
+    // A pause-only platform (adopted X rows) would 409 on every Resume click — withheld instead.
+    return platform !== undefined && PAUSE_ONLY_CAMPAIGN_PLATFORMS.has(platform) ? 'unavailable' : 'resume';
   }
   return 'unavailable';
 }
@@ -370,9 +371,9 @@ export const CAMPAIGN_UNAVAILABLE_DEFAULT_REASON = 'This campaign is not in a st
  *
  * Note an adopted row can be PAUSED but not resumed through LFX One: campaign-service refuses
  * `ACTIVE` on every adopted row with 409 (it never recorded the child ids its cascade flips). Since
- * X create is disabled, that is every X row today. Resume is still offered, and the 409 surfaces
- * as the generic per-direction toggle failure, not upstream's reason; showing that reason (or
- * withholding Resume on adopted rows) is a follow-up across every adoptable platform.
+ * X create is disabled, that is every X row today, so X is in `PAUSE_ONLY_CAMPAIGN_PLATFORMS` and
+ * its Resume is withheld with `CAMPAIGN_UNAVAILABLE_RESUME_PLATFORM_REASON` rather than offered as
+ * a button whose every click fails.
  */
 export const TOGGLEABLE_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<string>([
   'google-ads',
@@ -382,6 +383,32 @@ export const TOGGLEABLE_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<string
   'reddit-ads',
   'twitter-ads',
 ] satisfies CampaignPlatform[]);
+
+/**
+ * Toggleable platforms whose campaigns LFX One can pause but not resume.
+ *
+ * X: its create is disabled, so every X row is adopted, and campaign-service refuses `ACTIVE` on
+ * every adopted row with 409. Offering Resume there would be a dead control on a spend-affecting
+ * action, so `campaignToggleAction` answers `unavailable` for a resumable X row and the row says
+ * where to resume it instead. Remove X from this set once X create ships (rows it creates resume).
+ */
+export const PAUSE_ONLY_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<string>(['twitter-ads'] satisfies CampaignPlatform[]);
+
+/** Why a paused row on a `PAUSE_ONLY_CAMPAIGN_PLATFORMS` platform offers no Resume. */
+export const CAMPAIGN_UNAVAILABLE_RESUME_PLATFORM_REASON = 'Resume is not available for X campaigns in LFX One yet. Resume it in X Ads Manager.';
+
+/**
+ * Whether `campaignToggleAction` withheld Resume for this row's platform: the status would offer
+ * Resume, but the platform is pause-only. Lets a caller give the platform's reason instead of a
+ * status one, which would wrongly suggest the campaign's state is the problem.
+ */
+export function campaignResumeWithheldForPlatform(status: string, platform?: string): boolean {
+  if (platform === undefined || !PAUSE_ONLY_CAMPAIGN_PLATFORMS.has(platform)) {
+    return false;
+  }
+  const normalized = normalizeCampaignStatus(status);
+  return !RUNNING_CAMPAIGN_STATUSES.has(normalized) && RESUMABLE_CAMPAIGN_STATUSES.has(normalized);
+}
 
 /**
  * Why a row's toggle is disabled because of its PLATFORM rather than its status.
