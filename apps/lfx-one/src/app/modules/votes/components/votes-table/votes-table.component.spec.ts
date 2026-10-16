@@ -5,7 +5,7 @@ import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { MyVotesQuickFilter, PollStatus, Vote, VoteResponseStatus, VoteStatusCounts } from '@lfx-one/shared';
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { VoteService } from '@services/vote.service';
@@ -377,6 +377,33 @@ describe('VotesTableComponent — row More menu', () => {
     expect(moreButton('active')).not.toBeNull();
     expect(moreButton('ended')).not.toBeNull();
     expect(moreButton('draft')).toBeNull();
+  });
+
+  it('adds a Clone item gated by hasPMOAccess, which navigates to the create form with ?clone=<uid>', async () => {
+    fixture.componentRef.setInput('hasPMOAccess', true);
+    const router = TestBed.inject(Router);
+    const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+    await settle();
+
+    moreButton('active')!.click();
+    await settle();
+
+    const items = table['rowActionMenuItems']();
+    expect(items.map((item) => item.label)).toEqual(['Copy link', 'Clone']);
+
+    items[1].command!({});
+
+    expect(navigate).toHaveBeenCalledWith(['/votes', 'create'], { queryParams: { clone: 'active' } });
+  });
+
+  it('omits Clone from the menu without hasPMOAccess', async () => {
+    fixture.componentRef.setInput('hasPMOAccess', false);
+    await settle();
+
+    moreButton('active')!.click();
+    await settle();
+
+    expect(table['rowActionMenuItems']().map((item) => item.label)).toEqual(['Copy link']);
   });
 
   it('opens the menu without selecting the row, and Copy link copies the absolute permalink', async () => {

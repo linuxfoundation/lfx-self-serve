@@ -22,6 +22,7 @@ import {
   computeVoteParticipationStats,
   computeVoteRowParticipation,
   isVoteClosingSoon,
+  mapVoteToCloneFormValue,
   mapVoteToFormValue,
   matchesMyVotesQuickFilter,
   votePermalinkPath,
@@ -257,6 +258,59 @@ describe('mapVoteToFormValue', () => {
     expect(form.timezone).toBe('America/Los_Angeles');
     expect(form.close_time).toBe('12:00 AM');
     expect(form.close_date?.getDate()).toBe(1);
+  });
+});
+
+describe('mapVoteToCloneFormValue', () => {
+  /** Minimal Vote fixture — the mapper only reads the fields set here. */
+  function vote(overrides: Partial<Vote> = {}): Vote {
+    return {
+      uid: 'vote-uid',
+      name: 'Board election',
+      end_time: '2025-06-01T00:00:00Z',
+      status: PollStatus.DISABLED,
+      project_uid: 'project-uid',
+      ...overrides,
+    };
+  }
+
+  const NOW = Date.parse('2025-05-01T00:00:00Z');
+
+  it('prefixes the title with "Copy of "', () => {
+    const form = mapVoteToCloneFormValue(vote({ name: 'Board election' }), NOW);
+    expect(form.title).toBe('Copy of Board election');
+  });
+
+  it('keeps the source deadline when it is still in the future', () => {
+    const source = mapVoteToFormValue(vote({ end_time: '2025-06-01T00:00:00Z' }));
+    const cloned = mapVoteToCloneFormValue(vote({ end_time: '2025-06-01T00:00:00Z' }), NOW);
+
+    expect(cloned.close_date?.getTime()).toBe(source.close_date?.getTime());
+    expect(cloned.close_time).toBe(source.close_time);
+  });
+
+  it('resets the deadline to 7 days out when the source deadline has already passed', () => {
+    // NOW is 2025-05-01T00:00Z; +7 days in UTC is 2025-05-08 — stored zone pinned to UTC so the
+    // carrier's calendar fields land on that day regardless of the host's own local timezone.
+    const cloned = mapVoteToCloneFormValue(vote({ end_time: '2025-04-01T00:00:00Z', end_time_timezone: 'UTC' }), NOW);
+
+    expect(cloned.close_date?.getFullYear()).toBe(2025);
+    expect(cloned.close_date?.getMonth()).toBe(4);
+    expect(cloned.close_date?.getDate()).toBe(8);
+    expect(cloned.close_time).toBe('11:59 PM');
+  });
+
+  it('preserves committee, eligibility and questions from the source vote', () => {
+    const source = vote({
+      committee_uid: 'committee-uid',
+      committee_filters: 'voting_rep',
+      poll_questions: [{ question_id: 'q1', prompt: 'Who should join?', type: 'single_choice', choices: [{ choice_text: 'Alice' }, { choice_text: 'Bob' }] }],
+    });
+    const cloned = mapVoteToCloneFormValue(source, NOW);
+
+    expect(cloned.committee?.uid).toBe('committee-uid');
+    expect(cloned.eligible_participants).toBe('voting_rep');
+    expect(cloned.questions).toEqual([{ question: 'Who should join?', response_type: 'single', options: ['Alice', 'Bob'] }]);
   });
 });
 

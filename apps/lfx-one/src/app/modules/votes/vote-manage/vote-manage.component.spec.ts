@@ -421,4 +421,48 @@ describe('VoteManageComponent', () => {
       expect(router.navigate).toHaveBeenCalledWith(['/votes']);
     });
   });
+
+  // GH-3660: cloning opens the create form prefilled from a source vote, via ?clone=<uid>.
+  describe('clone flow (?clone=<uid>)', () => {
+    const CLONE_SOURCE_UID = 'vote-uid-source';
+
+    const sourceVote = () =>
+      ({
+        uid: CLONE_SOURCE_UID,
+        name: 'Original board election',
+        status: 'active',
+        project_uid: PROJECT_UID,
+        end_time: '2099-01-01T00:00:00Z',
+      }) as unknown as Vote;
+
+    beforeEach(() => {
+      setRouteMode(null); // create mode — clone only applies without an :id route param
+      routeMock.queryParamMap = of(convertToParamMap({ clone: CLONE_SOURCE_UID }));
+    });
+
+    it('prefills the create form with the source vote, prefixing the title, and stays in create mode', async () => {
+      fetchVote.mockReturnValue(of(sourceVote()));
+      const fixture = await createComponent();
+
+      expect(voteServiceMock.getVote).toHaveBeenCalledWith(CLONE_SOURCE_UID);
+      expect(fixture.componentInstance.mode()).toBe('create');
+      expect(fixture.componentInstance.form().get('title')?.value).toBe('Copy of Original board election');
+    });
+
+    it('does not fetch a clone source when an :id route param is present (edit mode)', async () => {
+      setRouteMode(VOTE_UID);
+      fetchVote.mockReturnValue(of(enrichedVote()));
+      await createComponent();
+
+      expect(voteServiceMock.getVote).not.toHaveBeenCalledWith(CLONE_SOURCE_UID);
+    });
+
+    it('surfaces an error and leaves the form blank when the clone source fails to load', async () => {
+      fetchVote.mockReturnValue(throwError(() => new Error('not found')));
+      const fixture = await createComponent();
+
+      expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
+      expect(fixture.componentInstance.form().get('title')?.value).toBe('');
+    });
+  });
 });
