@@ -7754,6 +7754,32 @@ describe('ImplementationTabComponent reddit image upload', () => {
     expect(at(f).redditImageAssetId()).toBe('');
     expect(fileInput(f)?.getAttribute('aria-describedby')).toContain('reddit-image-file-error');
     expect(fileInput(f)?.getAttribute('aria-invalid')).toBe('true');
+    // The id the input names is the upload's own alert, not another platform's error.
+    const described = f.nativeElement.querySelector('#reddit-image-file-error') as HTMLElement;
+    expect(described.getAttribute('data-testid')).toBe('implementation-reddit-image-error');
+    expect(described.textContent?.trim()).toBe(CREATIVE_ASSET_WRONG_TYPE_MESSAGE);
+  });
+
+  // The pick clears the old asset in the PARENT's draft too: otherwise a tab switch right after a
+  // refused (or still-uploading) replacement restores the image the operator replaced.
+  it.each([
+    ['refused', (): File => new File([new Uint8Array(4)], 'promo.gif', { type: 'image/gif' })],
+    ['still uploading', (): File => png()],
+  ])('drops the replaced upload from the draft when the replacement is %s', async (label, replacement) => {
+    const first = await mount(true);
+    choose(first.fixture, png());
+    expect(first.latest()?.redditImageAssetId).toBe(ASSET_ID);
+    if (label === 'still uploading') {
+      uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
+    }
+
+    choose(first.fixture, replacement());
+
+    expect(first.latest()?.redditImageAssetId).toBe('');
+    const draft = first.latest() as CampaignImplementationDraft;
+    first.fixture.destroy();
+    const second = await mount(true, true, { ...draft, eventSlug: 'kubecon-eu-2026' });
+    expect('imageAssetId' in submit(second.fixture)).toBe(false);
   });
 
   it('sends imageAssetId instead of imageUrl once an image is uploaded', async () => {

@@ -1173,6 +1173,11 @@ describe('creative-asset upload allowlist', () => {
     expect(sniffCreativeAssetMimeType(new Uint8Array([0x89, 0x50, 0x4e, 0x47]))).toBeNull();
     expect(sniffCreativeAssetMimeType(new TextEncoder().encode('GIF89a'))).toBeNull();
     expect(sniffCreativeAssetMimeType(new Uint8Array())).toBeNull();
+    // Only a real byte buffer is read: a request body tampered into an array or a string whose
+    // indexes spell a PNG signature is not an image (CodeQL type confusion).
+    expect(sniffCreativeAssetMimeType([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00])).toBeNull();
+    expect(sniffCreativeAssetMimeType('\x89PNG\r\n\x1a\n')).toBeNull();
+    expect(sniffCreativeAssetMimeType(undefined)).toBeNull();
   });
 });
 

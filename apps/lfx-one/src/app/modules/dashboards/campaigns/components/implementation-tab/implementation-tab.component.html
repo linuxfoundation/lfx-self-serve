@@ -773,7 +773,7 @@
           }
 
           @if (googleBiddingError()) {
-            <p id="reddit-image-file-error" role="alert" class="text-xs text-red-600" data-testid="implementation-google-bidding-error">
+            <p role="alert" class="text-xs text-red-600" data-testid="implementation-google-bidding-error">
               {{ googleBiddingError() }}
             </p>
           }
@@ -1739,7 +1739,9 @@
                     </div>
                   }
                   @if (redditImageUploadStatus() === 'error') {
-                    <p role="alert" class="text-xs text-red-600" data-testid="implementation-reddit-image-error">{{ redditImageUploadError() }}</p>
+                    <p id="reddit-image-file-error" role="alert" class="text-xs text-red-600" data-testid="implementation-reddit-image-error">
+                      {{ redditImageUploadError() }}
+                    </p>
                   }
                 </div>
               }

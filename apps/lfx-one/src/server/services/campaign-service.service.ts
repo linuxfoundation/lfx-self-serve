@@ -12,12 +12,12 @@ import {
   CAMPAIGN_PLATFORMS,
   COUNTRIES,
   GOOGLE_CAMPAIGN_CHANNELS,
-  isCreativeAssetMimeType,
   GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
   GOOGLE_CAMPAIGN_CHANNEL_LABELS,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   JOB_LOST_MESSAGE,
+  isCreativeAssetMimeType,
 } from '@lfx-one/shared/constants';
 import { encodePathSegment } from '../helpers/url-validation';
 import { coerceCampaignEventDetails } from '@lfx-one/shared/utils/campaign-event-details.utils';

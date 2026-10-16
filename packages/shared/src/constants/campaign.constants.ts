@@ -2577,7 +2577,10 @@ export const CREATIVE_ASSET_WRONG_TYPE_MESSAGE = 'Only PNG and JPEG images can b
  * into the same readable refusal the wrong-type case gets, without a round trip. PNG is its fixed
  * eight-byte signature; JPEG is the SOI marker followed by the start of the next marker.
  */
-export function sniffCreativeAssetMimeType(bytes: Uint8Array): CreativeAssetMimeType | null {
+export function sniffCreativeAssetMimeType(bytes: unknown): CreativeAssetMimeType | null {
+  // Only a real byte buffer is read: the BFF hands this a request body, which a tampered request
+  // could make an array or a string whose `length`/indexes would be read as bytes.
+  if (Array.isArray(bytes) || !(bytes instanceof Uint8Array)) return null;
   const png = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
   if (bytes.length >= png.length && png.every((b, i) => bytes[i] === b)) return 'image/png';
   if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';

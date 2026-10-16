@@ -2158,8 +2158,11 @@ export class ImplementationTabComponent implements OnInit {
     if (!file) return;
 
     // A new pick replaces the previous upload outright, so a refusal below can never leave an older
-    // image silently in place while the screen reports this one as refused.
+    // image silently in place while the screen reports this one as refused. Emitted at once: the
+    // parent's draft still holds the old asset, and a tab switch before any other edit would
+    // restore it — and Create would send the image the operator replaced.
     this.clearRedditImageAsset();
+    this.emitDraft();
 
     if (!isCreativeAssetMimeType(file.type)) {
       this.failRedditImageUpload(CREATIVE_ASSET_WRONG_TYPE_MESSAGE);
