@@ -69,9 +69,9 @@ export function campaignActionRuleLever(rule: unknown): CampaignOptimizeLever {
 /**
  * The lever that resolves a monitor finding on a campaign of `platform`, or `none`.
  *
- * `none` when the rule has no lever, and also when the platform cannot take it — X has no budget
- * write, and keyword actions are Google Ads and Microsoft Advertising only — so a finding never offers a control that would
- * refuse its campaign.
+ * `none` when the rule has no lever, and also when the platform cannot take it — X has no
+ * pause/resume here, and keyword actions are Google Ads and Microsoft Advertising only — so a
+ * finding never offers a control that would refuse its campaign.
  */
 export function campaignActionItemLever(rule: unknown, platform: unknown): CampaignOptimizeLever {
   const lever = campaignActionRuleLever(rule);

@@ -54,11 +54,13 @@ import {
   ACCOUNT_MONITOR_DEFAULT_DAYS,
   ACCOUNT_MONITOR_MAX_DAYS,
   ACCOUNT_MONITOR_MIN_DAYS,
+  CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE,
   CAMPAIGN_DELIVERY_TYPES,
   CAMPAIGN_EMAIL_STAGES,
   CAMPAIGN_ETAG_HEADER_PATTERN,
   CAMPAIGN_METRICS_WINDOWS,
   CAMPAIGN_PLATFORMS,
+  CAMPAIGN_SERVICE_BUDGET_UNWRITABLE_MESSAGE_PREFIX,
   DEFAULT_CAMPAIGN_BID_TYPE,
   GOOGLE_ADS_AGE_RANGES,
   GOOGLE_ADS_AGE_RANGE_MAP,
@@ -135,6 +137,7 @@ import {
   MONITOR_CUTOVER_MISMATCH_MESSAGE,
   NEGATIVE_KEYWORD_TEXT_PATTERN,
   REDDIT_ADS_MONITOR_ACCOUNT_ID_PATTERN,
+  TOGGLEABLE_CAMPAIGN_PLATFORMS,
   TWITTER_ADS_MONITOR_ACCOUNT_ID_PATTERN,
   VALID_CAMPAIGN_BID_TYPES,
   VALID_CAMPAIGN_BUDGET_TYPES,
@@ -185,22 +188,18 @@ const SUPPORTED_STATUS_PLATFORMS: ReadonlySet<CampaignPlatform> = new Set<Campai
 /**
  * Platforms whose status toggle campaign-service can serve.
  *
- * DERIVED from `CAMPAIGN_PLATFORMS` rather than listed, because a hardcoded set is a claim that
- * goes stale silently: enabling a platform in the shared constant would leave pause unreachable
- * for it with nothing failing. Every paid platform in that constant has a `ToggleStatus`
- * dispatcher upstream, so the shared list IS the correct source.
+ * DERIVED from the shared `TOGGLEABLE_CAMPAIGN_PLATFORMS` rather than listed, so the control the
+ * UI offers and the request this route accepts cannot drift apart. That set is the create-enabled
+ * platforms plus the ADOPTABLE ones, deliberately independent of `CAMPAIGN_PLATFORMS`' `disabled`
+ * flag: the flag gates create, and X's create stays off while an adopted X campaign is live and
+ * spending and campaign-service's `ToggleStatus` serves X. Excluding it would leave that spend
+ * with no stop button here.
  *
- * `disabled: true` entries (currently X only — LFXV2-3312 enabled Microsoft) are excluded
- * deliberately. Their
- * dispatchers exist upstream, but disabling a platform means this app does not offer it, and
- * accepting a toggle for a campaign the UI cannot create is a route to nowhere. They join by
- * flipping the flag in the shared constant — one edit, not two.
- *
- * HubSpot is absent because it is not in `CAMPAIGN_PLATFORMS` at all: `CampaignPlatform` covers
- * the six paid channels, and an email send has no run state to pause.
+ * Filtered through `CAMPAIGN_PLATFORMS` only to narrow the type to `CampaignPlatform`. HubSpot is
+ * absent because it is in neither list: an email send has no run state to pause.
  */
 const CAMPAIGN_SERVICE_STATUS_PLATFORMS: ReadonlySet<CampaignPlatform> = new Set<CampaignPlatform>(
-  CAMPAIGN_PLATFORMS.filter((p) => !p.disabled).map((p) => p.id)
+  CAMPAIGN_PLATFORMS.filter((p) => TOGGLEABLE_CAMPAIGN_PLATFORMS.has(p.id)).map((p) => p.id)
 );
 
 /** Derived from the shared constant so the validation and its error message cannot drift apart. */
@@ -2877,11 +2876,11 @@ export class CampaignController {
     // throws, so widening it would turn a clear refusal into a confusing platform error;
     // keeping the campaign-service set at two would refuse Google Ads and LinkedIn, which this app
     // does offer. Note these are two different sets and must not be conflated: campaign-service
-    // implements a toggle dispatcher for every paid platform upstream, while this set is only the
-    // NON-DISABLED entries of CAMPAIGN_PLATFORMS — a platform can be dispatchable upstream and
-    // still not offered here (X is, today). Deliberately not stated as a count: the roster changes
-    // whenever a `disabled` flag flips, and a number here goes stale silently. HubSpot is in
-    // NEITHER set — an email send has no run state to pause.
+    // implements a toggle dispatcher for every paid platform upstream, while this set is the
+    // shared TOGGLEABLE_CAMPAIGN_PLATFORMS (create-enabled plus adoptable) — so X is accepted for
+    // its adopted campaigns although its create stays disabled. Deliberately not stated as a
+    // count: the roster changes as platforms are enabled or become adoptable, and a number here
+    // goes stale silently. HubSpot is in NEITHER set — an email send has no run state to pause.
     //
     // On the campaign-service path this check is a FAST REJECT, not the policy boundary, and the
     // distinction is load-bearing. `platform` is caller-supplied and never sent upstream — the
@@ -3096,6 +3095,18 @@ export class CampaignController {
       return;
     }
 
+    // The platform is a wording hint only (see `CampaignBudgetUpdateRequest.platform`), never sent
+    // upstream. Optional, but a present value must be a known platform rather than silently ignored.
+    if (body.platform !== undefined && !CAMPAIGN_PLATFORMS.some((p) => p.id === body.platform)) {
+      next(
+        ServiceValidationError.forField('platform', `platform must be one of: ${CAMPAIGN_PLATFORMS.map((p) => p.id).join(', ')}`, {
+          operation: 'campaign_budget_update',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
     // Refused rather than defaulted, for the same reasons as the status toggle: a guessed brief
     // addresses a route that 404s, and a missing If-Match is a 428 upstream.
     const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
@@ -3168,7 +3179,7 @@ export class CampaignController {
       logger.success(req, 'campaign_budget_update', startTime, { campaignId, budgetType, platform: result.platform });
       res.json(result);
     } catch (error) {
-      next(error);
+      next(body.platform === 'twitter-ads' ? this.explainTwitterBudgetConflict(error) : error);
     }
   }
 
@@ -3698,6 +3709,34 @@ export class CampaignController {
   /** A 404 for a campaign-service-only monitor route while its flag is off — as if it were not mounted. */
   private monitorDisabledError(operation: string): MicroserviceError {
     return new MicroserviceError('Not found', 404, 'NOT_FOUND', { operation, service: 'campaign_controller' });
+  }
+
+  /**
+   * Rewords campaign-service's platform-neutral "budget could not be addressed" 409 for an X
+   * campaign. Its sentence tells the operator to change the pacing in the ad platform, which is not
+   * the remedy on X: LFX One writes only the daily budget of a campaign-budget-optimized X campaign
+   * with no total cap, and anything else has to be changed in X Ads Manager. The status, code and
+   * upstream body are kept, and the upstream text stays on `message` for the log; only what the
+   * client reads changes. Any other error — another 409 (provenance, account mismatch), a 412, an
+   * unconfirmed 503 — is returned untouched.
+   */
+  private explainTwitterBudgetConflict(error: unknown): unknown {
+    if (!(error instanceof MicroserviceError) || error.transportFailure || error.statusCode !== 409) {
+      return error;
+    }
+    const upstreamMessage = typeof error.errorBody?.['message'] === 'string' ? (error.errorBody['message'] as string) : error.message;
+    if (!upstreamMessage.trim().toLowerCase().startsWith(CAMPAIGN_SERVICE_BUDGET_UNWRITABLE_MESSAGE_PREFIX)) {
+      return error;
+    }
+    return new MicroserviceError(error.message, error.statusCode, error.code, {
+      operation: error.operation,
+      service: error.service,
+      path: error.path,
+      errorBody: error.errorBody,
+      originalMessage: error.originalMessage,
+      originalError: error,
+      clientMessage: CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE,
+    });
   }
 
   /**

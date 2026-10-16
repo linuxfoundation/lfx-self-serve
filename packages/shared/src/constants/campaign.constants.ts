@@ -51,6 +51,7 @@ import type {
   ParsedCampaignName,
   RedditObjective,
   RedditObjectiveParams,
+  RedditVideoGoal,
   SelectableMetaObjective,
 } from '../interfaces/campaign.interface';
 import { lfxColors } from './colors.constants';
@@ -299,8 +300,9 @@ export function normalizeCampaignStatus(status: string): string {
  */
 export function campaignToggleAction(status: string, platform?: string): CampaignToggleAction {
   // Platform is checked FIRST and independently of status, because it is the stronger refusal:
-  // a `created` Microsoft row is pausable upstream but not through this app's BFF, so deciding on
-  // status alone would hand it an enabled button whose every click 400s on the platform check.
+  // a `created` row on a platform outside `TOGGLEABLE_CAMPAIGN_PLATFORMS` is refused by the BFF's
+  // platform check, so deciding on status alone would hand it an enabled button whose every click
+  // 400s.
   //
   // An ABSENT platform is not treated as unsupported. `platform` is optional so the status-only
   // question stays askable, and a row whose platform this UI cannot read must not be silently
@@ -325,7 +327,8 @@ export function campaignToggleAction(status: string, platform?: string): Campaig
     return 'pause';
   }
   if (RESUMABLE_CAMPAIGN_STATUSES.has(normalized)) {
-    return 'resume';
+    // A pause-only platform (adopted X rows) would 409 on every Resume click — withheld instead.
+    return platform !== undefined && PAUSE_ONLY_CAMPAIGN_PLATFORMS.has(platform) ? 'unavailable' : 'resume';
   }
   return 'unavailable';
 }
@@ -354,20 +357,59 @@ export const CAMPAIGN_UNAVAILABLE_DEFAULT_REASON = 'This campaign is not in a st
 /**
  * The platforms whose campaigns this app can actually toggle.
  *
- * DERIVED from `CAMPAIGN_PLATFORMS` rather than hand-listed, and it is the same derivation the
- * BFF performs for `CAMPAIGN_SERVICE_STATUS_PLATFORMS` (`campaign.controller.ts`) — one shared
- * rule, so the control the UI offers and the request the server accepts cannot drift apart. A
- * platform joins by flipping `disabled` in the constant above, which is one edit rather than
- * three.
+ * Deliberately NOT derived from `CAMPAIGN_PLATFORMS`' `disabled` flag. That flag gates the CREATE
+ * flow, and a campaign reaches this app either by being created here or by being ADOPTED
+ * (`CAMPAIGN_ADOPT_PLATFORMS`). X is the case that splits them: its create stays disabled, but an
+ * adopted X campaign is live and spending, and campaign-service's status toggle serves X. Tying
+ * pause to create would leave that spend with no stop button in LFX One.
  *
- * `disabled: true` entries (currently X only, since LFXV2-3312 enabled Microsoft) have working
- * toggle dispatchers upstream,
- * so status alone says a `created`/`active` row of theirs is pausable. It is not pausable HERE:
- * the BFF refuses the platform outright, so the row's Pause button could only ever fail. Status
- * and platform are therefore two independent reasons a toggle is unavailable, and the row must
- * consider both.
+ * So the set is the create-enabled platforms plus the adoptable ones, listed explicitly because
+ * `CAMPAIGN_ADOPT_PLATFORMS` lives in `campaign-optimize.constants`, which imports this file. The
+ * shared constants spec pins it to exactly that union, so enabling a create platform or adding an
+ * adopt platform without updating this list goes red. The BFF's `CAMPAIGN_SERVICE_STATUS_PLATFORMS`
+ * (`campaign.controller.ts`) is derived from this set, so the control the UI offers and the
+ * request the server accepts cannot drift apart.
+ *
+ * Note an adopted row can be PAUSED but not resumed through LFX One: campaign-service refuses
+ * `ACTIVE` on every adopted row with 409 (it never recorded the child ids its cascade flips). Since
+ * X create is disabled, that is every X row today, so X is in `PAUSE_ONLY_CAMPAIGN_PLATFORMS` and
+ * its Resume is withheld with `CAMPAIGN_UNAVAILABLE_RESUME_PLATFORM_REASON` rather than offered as
+ * a button whose every click fails.
  */
-export const TOGGLEABLE_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<string>(CAMPAIGN_PLATFORMS.filter((p) => !p.disabled).map((p) => p.id));
+export const TOGGLEABLE_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<string>([
+  'google-ads',
+  'microsoft-ads',
+  'linkedin-ads',
+  'meta-ads',
+  'reddit-ads',
+  'twitter-ads',
+] satisfies CampaignPlatform[]);
+
+/**
+ * Toggleable platforms whose campaigns LFX One can pause but not resume.
+ *
+ * X: its create is disabled, so every X row is adopted, and campaign-service refuses `ACTIVE` on
+ * every adopted row with 409. Offering Resume there would be a dead control on a spend-affecting
+ * action, so `campaignToggleAction` answers `unavailable` for a resumable X row and the row says
+ * where to resume it instead. Remove X from this set once X create ships (rows it creates resume).
+ */
+export const PAUSE_ONLY_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<string>(['twitter-ads'] satisfies CampaignPlatform[]);
+
+/** Why a paused row on a `PAUSE_ONLY_CAMPAIGN_PLATFORMS` platform offers no Resume. */
+export const CAMPAIGN_UNAVAILABLE_RESUME_PLATFORM_REASON = 'Resume is not available for X campaigns in LFX One yet. Resume it in X Ads Manager.';
+
+/**
+ * Whether `campaignToggleAction` withheld Resume for this row's platform: the status would offer
+ * Resume, but the platform is pause-only. Lets a caller give the platform's reason instead of a
+ * status one, which would wrongly suggest the campaign's state is the problem.
+ */
+export function campaignResumeWithheldForPlatform(status: string, platform?: string): boolean {
+  if (platform === undefined || !PAUSE_ONLY_CAMPAIGN_PLATFORMS.has(platform)) {
+    return false;
+  }
+  const normalized = normalizeCampaignStatus(status);
+  return !RUNNING_CAMPAIGN_STATUSES.has(normalized) && RESUMABLE_CAMPAIGN_STATUSES.has(normalized);
+}
 
 /**
  * Why a row's toggle is disabled because of its PLATFORM rather than its status.
@@ -2077,9 +2119,10 @@ export const MICROSOFT_KEYWORDS_WINDOWS = ['today', 'last_7_days', 'last_30_days
  * The platforms whose campaign budget campaign-service can change (`update-campaign-budget`).
  *
  * Hand-listed rather than derived from `CAMPAIGN_PLATFORMS`, because budget writing is wired per
- * platform upstream and is a narrower capability than pause/resume: X has neither, and a platform
- * can be toggleable long before its budget model is. Upstream refuses any other platform with 400,
- * so the Optimize tab withholds the editor for them rather than offering a doomed form.
+ * platform upstream and is a separate capability from pause/resume: X has a budget writer but no
+ * status toggle here, and a platform can be toggleable long before its budget model is. Upstream
+ * refuses any other platform with 400, so the Optimize tab withholds the editor for them rather
+ * than offering a doomed form.
  */
 export const BUDGET_WRITABLE_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<string>([
   'google-ads',
@@ -2087,7 +2130,19 @@ export const BUDGET_WRITABLE_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<s
   'meta-ads',
   'microsoft-ads',
   'reddit-ads',
+  'twitter-ads',
 ]);
+
+/**
+ * The budget-writable platforms whose budget campaign-service writes as a DAILY amount only.
+ *
+ * X: `update-campaign-budget` writes only the campaign's `daily_budget_amount_local_micro`, and a
+ * `lifetime` request is always refused 409 — so the editor offers no lifetime pacing for these
+ * platforms, and a campaign read as lifetime-budgeted has its editor withheld instead. Applied by
+ * every surface that mounts the budget form (the Optimize tab and the Monitor act dialog) through
+ * `isDailyOnlyBudgetPlatform` / `readCampaignBudgetPacing` in `campaign-budget-pacing.utils`.
+ */
+export const DAILY_ONLY_BUDGET_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<string>(['twitter-ads']);
 
 /** The pacing choices the budget editor offers, in display order. Mirrors `VALID_CAMPAIGN_BUDGET_TYPES`. */
 export const CAMPAIGN_BUDGET_TYPE_OPTIONS: readonly CampaignBudgetTypeOption[] = [
@@ -2120,6 +2175,30 @@ export const CAMPAIGN_BUDGET_BLOCKED_TOGGLE_REASON = 'A pause or resume of this 
 
 /** Why the budget editor cannot submit while a bid change of the same row is in flight (both need the row's validator). */
 export const CAMPAIGN_BUDGET_BLOCKED_BID_REASON = 'A bid change of this campaign is still in progress. Change the budget once it finishes.';
+
+/** Why the budget editor cannot submit while it reads a daily-only campaign's current pacing from its platform. */
+export const CAMPAIGN_BUDGET_BLOCKED_PACING_CHECK_REASON = "Checking this campaign's current budget on X…";
+
+/**
+ * Why the budget editor is withheld for an X campaign the platform reports as lifetime-budgeted
+ * (a total budget with no daily one). LFX One writes only X daily budgets, and campaign-service
+ * refuses anything else with 409, so the operator is told where the change can be made instead.
+ */
+export const CAMPAIGN_BUDGET_X_LIFETIME_REASON =
+  'This X campaign has a lifetime (total) budget. LFX One can change only a daily X budget, so change this one in X Ads Manager.';
+
+/**
+ * The opening of campaign-service's 409 for a budget it cannot address for a write
+ * (`ErrBudgetUnwritable`, `internal/service/brief_budget.go`). Its sentence is platform-neutral and
+ * tells the operator to change the pacing — advice that does not apply to X, so the BFF replaces it
+ * for an X campaign with `CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE`. Matched as a prefix; any other 409
+ * (provenance, account mismatch) passes through unchanged.
+ */
+export const CAMPAIGN_SERVICE_BUDGET_UNWRITABLE_MESSAGE_PREFIX = "this campaign's budget could not be changed as requested";
+
+/** What an X budget change refused 409 as unwritable tells the operator, in place of the platform-neutral sentence. */
+export const CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE =
+  "This X campaign's budget can't be changed from LFX One. LFX One can change only the daily budget of an X campaign that uses campaign budget optimization and has no total (lifetime) budget cap. Change this campaign's budget in X Ads Manager.";
 
 /**
  * HTTP statuses that, when the response carries no message, mean nobody answered for a budget
@@ -2173,7 +2252,7 @@ export const KEYWORD_ACTION_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<st
 /**
  * Which platforms each lever works on. The SAME sets the row controls are gated on, so a finding
  * can never offer a lever whose control would refuse the platform: the budget editor's
- * `BUDGET_WRITABLE_CAMPAIGN_PLATFORMS` (X has no budget write) and the toggle's
+ * `BUDGET_WRITABLE_CAMPAIGN_PLATFORMS` (X included, daily only) and the toggle's
  * `TOGGLEABLE_CAMPAIGN_PLATFORMS`.
  */
 export const CAMPAIGN_OPTIMIZE_LEVER_PLATFORMS: Readonly<Record<CampaignOptimizeControlLever, ReadonlySet<string>>> = {
@@ -2195,7 +2274,7 @@ export const CAMPAIGN_OPTIMIZE_LEVER_LABELS: Readonly<Record<Exclude<CampaignOpt
  * it rather than offering a doomed form.
  *
  * Hand-listed for the reason `BUDGET_WRITABLE_CAMPAIGN_PLATFORMS` is: bid writing is wired per
- * platform upstream, and X has a bid write while it has no budget write or pause/resume here.
+ * platform upstream, and Google Ads has a budget write while it has no bid write here.
  */
 export const BID_WRITABLE_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<string>(['microsoft-ads', 'reddit-ads', 'meta-ads', 'twitter-ads', 'linkedin-ads']);
 
@@ -2388,17 +2467,17 @@ export const DEFAULT_REDDIT_OBJECTIVE: RedditObjective = 'conversions';
 /**
  * The objectives the picker offers, as distinct from the four `RedditObjective` admits.
  *
- * `video_views` is withheld because it cannot currently succeed. Reddit has no bare `VIDEO_VIEWS`
- * optimization goal, so a video-view campaign must name a concrete one; both creators require a
- * `videoGoal` from `REDDIT_VIDEO_GOALS` for that objective and refuse the create without it, and no
- * control collects one yet. Offer it once a goal control exists — the creators are ready for it,
- * the form is not.
+ * Today that is all four. `video_views` was withheld until the form could collect the `videoGoal`
+ * it requires — Reddit has no bare `VIDEO_VIEWS` optimization goal, so both creators refuse that
+ * objective without a goal from `REDDIT_VIDEO_GOALS`. The implementation tab now shows a goal picker
+ * for it and blocks the create until one is chosen, so it is offered.
  *
- * `REDDIT_OBJECTIVE_LABELS` stays total over `RedditObjective` rather than being narrowed to this
- * list, so a draft holding a withheld objective still renders a name instead of `undefined` — the
- * same split, for the same reason, as `META_SELECTABLE_OBJECTIVES` and `META_OBJECTIVE_LABELS`.
+ * Kept as its own list rather than read off `REDDIT_OBJECTIVE_LABELS`, so a later objective can be
+ * withheld without narrowing the labels: those stay total over `RedditObjective`, so a draft
+ * holding a withheld objective still renders a name instead of `undefined` — the same split, for
+ * the same reason, as `META_SELECTABLE_OBJECTIVES` and `META_OBJECTIVE_LABELS`.
  */
-export const REDDIT_SELECTABLE_OBJECTIVES = ['awareness', 'traffic', 'conversions'] as const;
+export const REDDIT_SELECTABLE_OBJECTIVES = ['awareness', 'traffic', 'conversions', 'video_views'] as const;
 
 /**
  * The call-to-action button labels Reddit accepts on a promoted post.
@@ -2473,6 +2552,15 @@ export const MAX_REDDIT_HEADLINE_LENGTH = 300;
  * pointless, not fatal.
  */
 export const REDDIT_VIDEO_GOALS = ['VIDEO_VIEW_6S', 'VIDEO_VIEW_15S'] as const;
+
+/**
+ * Readable names for `REDDIT_VIDEO_GOALS`, for the goal picker. Total over `RedditVideoGoal`, so
+ * adding a goal without a label is a type error rather than a blank option.
+ */
+export const REDDIT_VIDEO_GOAL_LABELS: Readonly<Record<RedditVideoGoal, string>> = {
+  VIDEO_VIEW_6S: '6-second video views',
+  VIDEO_VIEW_15S: '15-second video views',
+} as const;
 
 /**
  * The `REDDIT_OBJECTIVE_PARAMS` row for an objective, or a refusal.

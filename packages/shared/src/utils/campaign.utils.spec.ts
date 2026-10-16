@@ -158,15 +158,10 @@ describe('campaignActionRuleLever', () => {
 describe('campaignActionItemLever', () => {
   const allPlatforms = ['google-ads', 'microsoft-ads', 'linkedin-ads', 'meta-ads', 'reddit-ads', 'twitter-ads'];
 
-  it.each(['google-ads', 'linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads'])('offers the budget lever on %s', (platform) => {
+  // X included since #3299: campaign-service writes its budget as a daily amount.
+  it.each(['google-ads', 'linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads', 'twitter-ads'])('offers the budget lever on %s', (platform) => {
     expect(campaignActionItemLever('underspending', platform)).toBe('budget');
     expect(campaignActionItemLever('budget_constrained', platform)).toBe('budget');
-  });
-
-  // X has no budget write upstream; offering the lever would open an editor whose every save 400s.
-  it('offers no budget lever on X', () => {
-    expect(campaignActionItemLever('underspending', 'twitter-ads')).toBe('none');
-    expect(campaignActionItemLever('budget_constrained', 'twitter-ads')).toBe('none');
   });
 
   // Gated on the SAME set the row toggle uses, so the lever can never be offered where the toggle

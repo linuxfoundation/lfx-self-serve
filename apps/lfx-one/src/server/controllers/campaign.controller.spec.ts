@@ -6,6 +6,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE,
   CAMPAIGN_RESUME_REFUSED_CODE,
   GOOGLE_ADS_LANGUAGE_MAP,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
@@ -5123,18 +5124,10 @@ describe('CampaignController.updateCampaignStatus', () => {
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ newStatus: 'PAUSED', serviceStatus: 'created_degraded' }));
   });
 
-  // Found by mutation: deleting `.filter((p) => !p.disabled)` from
-  // CAMPAIGN_SERVICE_STATUS_PLATFORMS left all 77 tests green, silently admitting microsoft-ads
-  // and twitter-ads. The filter is the entire subject of that constant's doc block, so nothing
-  // pinned the one thing it claims to do — this is the test that makes the claim binding.
-  //
-  // Narrowed to twitter-ads by LFXV2-3312, which ENABLED Microsoft: the set is derived from
-  // `!p.disabled`, so dropping that flag in the shared constant admits microsoft-ads here by
-  // design. X stays disabled for a capability reason rather than a plumbing one, so it remains
-  // the subject — and the mutation this test was born from still fails, because admitting X is
-  // still wrong. The companion case below asserts the other half: that Microsoft is now ALLOWED,
-  // so a future re-disabling cannot pass silently either.
-  it.each([['twitter-ads']])('refuses %s, which this app does not offer', async (platform) => {
+  // CAMPAIGN_SERVICE_STATUS_PLATFORMS is derived from the shared TOGGLEABLE_CAMPAIGN_PLATFORMS,
+  // which now covers every paid platform. A platform outside it is still refused before a round
+  // trip; `hubspot` is the real one, since an email send has no run state to pause.
+  it.each([['hubspot'], ['tiktok-ads']])('refuses %s, which this app cannot toggle', async (platform) => {
     await controller.updateCampaignStatus(statusReq(UUID, { platform, status: 'PAUSED', briefId: 'b-1', etag: '1' }), res, next);
 
     expect(toggleCampaignStatus).not.toHaveBeenCalled();
@@ -5143,14 +5136,56 @@ describe('CampaignController.updateCampaignStatus', () => {
   });
 
   it('allows a Microsoft status toggle now that the channel is enabled', async () => {
-    // The other half of the narrowed allowlist spec above: CAMPAIGN_SERVICE_STATUS_PLATFORMS is
-    // DERIVED from `!p.disabled`, so re-adding `disabled: true` to the shared constant would make
-    // pause unreachable for a channel the UI offers. This fails if that happens.
     toggleCampaignStatus.mockResolvedValue({ id: UUID, status: 'paused', version: 2, etag: '2' });
 
     await controller.updateCampaignStatus(statusReq(UUID, { platform: 'microsoft-ads', status: 'PAUSED', briefId: 'b-1', etag: '1' }), res, next);
 
     expect(toggleCampaignStatus).toHaveBeenCalledTimes(1);
+  });
+
+  // X's CREATE stays disabled, but an adopted X campaign is live and spending, so its toggle is
+  // forwarded like any other platform's. This fails if the allowlist is re-tied to the create flag.
+  it('forwards an X status change to campaign-service', async () => {
+    toggleCampaignStatus.mockResolvedValue({ id: UUID, platform: 'twitter-ads', status: 'paused', version: 2, etag: '2' });
+
+    await controller.updateCampaignStatus(statusReq(UUID, { platform: 'twitter-ads', status: 'PAUSED', briefId: 'b-1', etag: '1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(toggleCampaignStatus).toHaveBeenCalledWith(expect.anything(), {
+      projectSlug: 'tlf',
+      briefId: 'b-1',
+      campaignId: UUID,
+      status: 'PAUSED',
+      etag: '1',
+    });
+    expect(logger.warning).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ platform: 'twitter-ads', newStatus: 'PAUSED', success: true, etag: '2' }));
+  });
+
+  // A stale If-Match is 412: an X refusal reaches the error handler unchanged, exactly as any other
+  // platform's does.
+  it('passes an upstream 412 on an X toggle to the error handler unchanged', async () => {
+    const upstream = new MicroserviceError('ETag mismatch', 412, 'UPSTREAM', { errorBody: { code: '412', message: 'ETag mismatch' } });
+    toggleCampaignStatus.mockRejectedValue(upstream);
+
+    await controller.updateCampaignStatus(statusReq(UUID, { platform: 'twitter-ads', status: 'ACTIVE', briefId: 'b-1', etag: '1' }), res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(upstream);
+  });
+
+  // Upstream refuses ACTIVE on every adopted row with 409: on X, as on every platform, the answered
+  // 409 is re-coded CAMPAIGN_RESUME_REFUSED so the operator reads where to resume it.
+  it('re-codes an upstream 409 on an X resume as CAMPAIGN_RESUME_REFUSED', async () => {
+    const message = 'campaign was adopted; activate it in the platform console';
+    toggleCampaignStatus.mockRejectedValue(new MicroserviceError(message, 409, 'UPSTREAM', { errorBody: { code: '409', message } }));
+
+    await controller.updateCampaignStatus(statusReq(UUID, { platform: 'twitter-ads', status: 'ACTIVE', briefId: 'b-1', etag: '1' }), res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as MicroserviceError;
+    expect(error.statusCode).toBe(409);
+    expect(error.toResponse()['code']).toBe(CAMPAIGN_RESUME_REFUSED_CODE);
   });
 
   // Also found by mutation: dropping `.trim()` left these green. A whitespace-only etag then
@@ -5182,12 +5217,11 @@ describe('CampaignController.updateCampaignStatus', () => {
   // and logged rather than refused. The response still reports the row's platform, so the caller
   // is not told their label was accepted.
   //
-  // The example row platform is `twitter-ads` rather than `microsoft-ads` as of LFXV2-3312:
-  // Microsoft is now an OFFERED platform, so using it here would assert the warning on a row this
-  // app does offer and the test would be checking the opposite of its own name. X is still
-  // disabled, so it remains a true example of the case this guard describes.
+  // The example row platform is `hubspot`: every paid platform is now toggleable (X joined for its
+  // adopted campaigns), so only a non-paid row is still a true example of the case this guard
+  // describes.
   it('logs when the toggled row is a platform this app does not offer', async () => {
-    toggleCampaignStatus.mockResolvedValue({ id: UUID, platform: 'twitter-ads', status: 'paused', version: 2, etag: '2' });
+    toggleCampaignStatus.mockResolvedValue({ id: UUID, platform: 'hubspot', status: 'paused', version: 2, etag: '2' });
 
     await controller.updateCampaignStatus(statusReq(UUID, { platform: 'google-ads', status: 'PAUSED', briefId: 'b-1', etag: '1' }), res, next);
 
@@ -5195,9 +5229,9 @@ describe('CampaignController.updateCampaignStatus', () => {
       expect.anything(),
       'campaign_status_update',
       expect.stringContaining('does not offer'),
-      expect.objectContaining({ requestedPlatform: 'google-ads', rowPlatform: 'twitter-ads' })
+      expect.objectContaining({ requestedPlatform: 'google-ads', rowPlatform: 'hubspot' })
     );
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ platform: 'twitter-ads' }));
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ platform: 'hubspot' }));
   });
 
   it('does not log the platform warning for an offered platform', async () => {
@@ -5452,6 +5486,65 @@ describe('CampaignController.updateCampaignBudget', () => {
     expect(res.json).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledWith(upstream);
     expect(logger.success).not.toHaveBeenCalled();
+  });
+
+  // X (#3299): campaign-service writes X budgets as a daily amount, so the BFF forwards an X
+  // change like any other — there is no platform allowlist here — and never sends the hint upstream.
+  it('forwards an X daily budget change and reports the X row', async () => {
+    updateCampaignBudget.mockResolvedValue({ id: UUID, platform: 'twitter-ads', status: 'active', version: 2, etag: '"2"' });
+
+    await controller.updateCampaignBudget(budgetReq(UUID, { ...validBody, platform: 'twitter-ads' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(updateCampaignBudget).toHaveBeenCalledWith(expect.anything(), {
+      projectSlug: 'tlf',
+      briefId: 'b-1',
+      campaignId: UUID,
+      budget: 150.25,
+      budgetType: 'daily',
+      etag: '"1"',
+    });
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ platform: 'twitter-ads', budgetType: 'daily', etag: '"2"' }));
+  });
+
+  it('refuses a platform hint outside CampaignPlatform before calling upstream', async () => {
+    await controller.updateCampaignBudget(budgetReq(UUID, { ...validBody, platform: 'twitter' }), res, next);
+
+    expect(updateCampaignBudget).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+  });
+
+  const unwritable =
+    "this campaign's budget could not be changed as requested — the ad platform did not report the budget it is attached to, or that budget is paced differently from the requested budget_type; this endpoint changes an amount, never a pacing model, so change the pacing in the ad platform first";
+
+  // The platform-neutral 409 tells the operator to change the pacing, which is not X's remedy.
+  it('explains an X 409 for an unwritable budget in X terms, keeping the status and the upstream text for the log', async () => {
+    const upstream = new MicroserviceError(unwritable, 409, 'CONFLICT', { errorBody: { code: '409', message: unwritable } });
+    updateCampaignBudget.mockRejectedValue(upstream);
+
+    await controller.updateCampaignBudget(budgetReq(UUID, { ...validBody, platform: 'twitter-ads' }), res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    const forwarded = (next as ReturnType<typeof vi.fn>).mock.calls[0][0] as MicroserviceError;
+    expect(forwarded).toBeInstanceOf(MicroserviceError);
+    expect(forwarded.statusCode).toBe(409);
+    expect(forwarded.code).toBe('CONFLICT');
+    expect(forwarded.message).toBe(unwritable);
+    expect(forwarded.toResponse()['error']).toBe(CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE);
+  });
+
+  it.each([
+    ['another X 409', 'twitter-ads', 409, 'the campaign was created under a different ad account'],
+    ['the same 409 on another platform', 'reddit-ads', 409, unwritable],
+    ['the same 409 with no platform hint', undefined, 409, unwritable],
+    ['an X 412', 'twitter-ads', 412, 'ETag mismatch'],
+  ])('passes %s through unchanged', async (_label, platform, status, message) => {
+    const upstream = new MicroserviceError(message, status, 'UPSTREAM', { errorBody: { code: String(status), message } });
+    updateCampaignBudget.mockRejectedValue(upstream);
+
+    await controller.updateCampaignBudget(budgetReq(UUID, { ...validBody, platform }), res, next);
+
+    expect(next).toHaveBeenCalledWith(upstream);
   });
 });
 

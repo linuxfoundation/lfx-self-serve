@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { CAMPAIGN_SETTINGS_UNKNOWN_NOTES } from '../constants/campaign-optimize.constants';
 import type { CampaignServiceSettingsField, CampaignServiceSettingsReadback } from '../interfaces/campaign-optimize.interface';
-import { buildCampaignSettingsDrift, readCampaignRefResolution } from './campaign-optimize.utils';
+import { buildCampaignSettingsDrift, campaignBudgetPacingFromSettings, readCampaignRefResolution } from './campaign-optimize.utils';
 
 function readback(fields: CampaignServiceSettingsField[], platform = 'linkedin-ads'): CampaignServiceSettingsReadback {
   return {
@@ -146,5 +146,25 @@ describe('readCampaignRefResolution', () => {
     ['no answer at all', null],
   ])('refuses %s as unexpected', (_label, answer) => {
     expect(readCampaignRefResolution(answer, '42', 'meta-ads')).toEqual({ kind: 'unexpected' });
+  });
+});
+
+describe('campaignBudgetPacingFromSettings (#3299)', () => {
+  it.each(['daily', 'lifetime'] as const)('reads an upstream %s pacing', (pacing) => {
+    expect(campaignBudgetPacingFromSettings(readback([{ field: 'budget_type', upstream: pacing, comparison: 'unknown' }], 'twitter-ads'))).toBe(pacing);
+  });
+
+  // The recorded side is what dispatch ASKED for; only the platform's own answer says what it holds.
+  it('ignores the recorded pacing when the platform reported none', () => {
+    expect(campaignBudgetPacingFromSettings(readback([{ field: 'budget_type', recorded: 'daily', comparison: 'unknown' }], 'twitter-ads'))).toBe('unknown');
+  });
+
+  it.each([
+    ['no budget_type field', readback([{ field: 'campaign_name', upstream: 'x', comparison: 'unknown' }], 'twitter-ads')],
+    ['an unmapped upstream value', readback([{ field: 'budget_type', upstream: 'total', comparison: 'unknown' }], 'twitter-ads')],
+    ['no readback', null],
+    ['a readback with no fields array', { fields: null } as unknown as CampaignServiceSettingsReadback],
+  ])('answers unknown for %s', (_label, value) => {
+    expect(campaignBudgetPacingFromSettings(value)).toBe('unknown');
   });
 });

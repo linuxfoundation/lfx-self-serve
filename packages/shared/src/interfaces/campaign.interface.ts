@@ -706,6 +706,12 @@ export interface CampaignImplementationDraft {
   redditImageUrl?: string;
   redditCallToAction?: RedditCallToAction | '';
   /**
+   * The Reddit video goal, carried for the same reason as the objective. Kept whatever the
+   * objective is, so switching away from Video Views and back does not lose the choice; only the
+   * REQUEST is gated on the objective. `''` is "not chosen yet", which blocks a Video Views create.
+   */
+  redditVideoGoal?: RedditVideoGoal | '';
+  /**
    * Microsoft's four editable controls (LFXV2-3312): budget, the geo chip list, the keyword list
    * and the optional CPC bid.
    *
@@ -1181,8 +1187,8 @@ export interface RedditCampaignCreateRequest {
    * `VIDEO_VIEWS` goal, so a video-view campaign has to name a concrete duration goal and neither
    * arm can invent one. Read it through `resolveRedditOptimizationGoal` (#3449).
    *
-   * No control populates it, which is why `REDDIT_SELECTABLE_OBJECTIVES` withholds `video_views`:
-   * offering that objective with no way to set this field would offer a create both arms refuse.
+   * The implementation tab collects it with a goal picker shown only for `video_views`, sends it
+   * only with that objective, and blocks the create until one is chosen.
    */
   videoGoal?: RedditVideoGoal;
   /** Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means automatic. */
@@ -2948,6 +2954,20 @@ export interface AccountMonitorKpisView {
   conversions: MonitorCellView;
 }
 
+/** The read state of one LinkedIn/Reddit/Meta/Microsoft Ads/X Monitor panel, as its screen-reader status describes it. */
+export interface AccountMonitorPanelReadState {
+  label: string;
+  loading: boolean;
+  error: string | null;
+  /** A read has answered, so `campaigns` and `note` describe what the panel shows. */
+  loaded: boolean;
+  campaigns: number;
+  /** What the panel's visible empty state says, repeated verbatim so both audiences hear the same claim. */
+  emptyMessage: string;
+  /** The panel's totals-coverage note, or null when the totals cover every campaign. */
+  note: string | null;
+}
+
 /** One campaign row of an ad-platform panel. Every metric cell is a dash when `fetchFailed`. */
 export interface AccountMonitorCampaignRowView {
   campaignId: string;
@@ -3712,6 +3732,11 @@ export interface CampaignRow {
    */
   budgetBlockedReason: string;
   /**
+   * The row's platform takes a DAILY budget only (X — `DAILY_ONLY_BUDGET_CAMPAIGN_PLATFORMS`), so
+   * its editor offers no lifetime pacing.
+   */
+  budgetDailyOnly: boolean;
+  /**
    * Whether the row offers the bid editor: a platform campaign-service can write a manual max CPC
    * bid on (`BID_WRITABLE_CAMPAIGN_PLATFORMS`) and a campaign that exists on it. Whether the
    * campaign's bid STRATEGY takes a manual bid is only known upstream, which refuses with 409.
@@ -4331,11 +4356,19 @@ export interface CampaignBudgetUpdateRequest {
    */
   budget: number;
   budgetType: CampaignBudgetType;
+  /**
+   * The row's platform as the caller read it from the index. A HINT for the BFF's wording only — it
+   * is never sent upstream, which decides platform support from the row itself — used to explain an
+   * X refusal in X's terms (`CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE`). Optional: absent, every
+   * upstream message passes through unchanged.
+   */
+  platform?: CampaignPlatform;
 }
 
 /**
  * Everything needed to address and authorize one budget change, as the server client takes it.
- * Every field is required. A wrong one is a 404, 428 or 412 upstream rather than a type error.
+ * Every field but `platform` is required. A wrong one is a 404, 428 or 412 upstream rather than a
+ * type error.
  */
 export interface CampaignBudgetUpdateParams {
   projectSlug: string;
@@ -4345,7 +4378,17 @@ export interface CampaignBudgetUpdateParams {
   budgetType: CampaignBudgetType;
   /** The etag read WITH the campaign, not one cached from an earlier render. */
   etag: string;
+  /** The row's platform, forwarded to the BFF as `CampaignBudgetUpdateRequest.platform`. Never sent to campaign-service. */
+  platform?: CampaignPlatform;
 }
+
+/**
+ * What the Optimize tab knows about a daily-only platform's CURRENT budget pacing, from the
+ * campaign's live settings readback: `pending` while that read is out, `daily` or `lifetime` once
+ * the platform reported one, and `unknown` when it reported neither or the read failed — in which
+ * case the editor stays usable and upstream remains the authority.
+ */
+export type CampaignBudgetPacingRead = 'pending' | 'daily' | 'lifetime' | 'unknown';
 
 export interface CampaignBudgetUpdateResult {
   /**
