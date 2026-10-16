@@ -283,6 +283,21 @@ describe('MktgAgentsController', () => {
     expect(service.getResult).toHaveBeenCalledWith(req, 'sess-1', 'proj-uid-1', readme, 0);
   });
 
+  it.each([
+    ['brandKitResult', brandKitMocks],
+    ['foundationMessageResult', foundationMessageMocks],
+    ['icpResult', icpMocks],
+  ] as const)('%s forwards validated project scope and preserves the terminal reply', async (method, service) => {
+    const result = { status: 'failed', failureText: 'Synthetic rejection.' };
+    service.getResult.mockResolvedValue(result);
+    const req = buildResultReq({ sessionId: 'sess-1', ownerToken: 'token-1', project: ' proj-uid-1 ' });
+    const res = buildRes();
+    await controller[method](req, res, next);
+    expect(runMocks.recordResult).toHaveBeenCalledWith(req, 'sess-1', result, 'proj-uid-1');
+    expect(res.json).toHaveBeenCalledWith(result);
+    expect(next).not.toHaveBeenCalled();
+  });
+
   describe('storedBrandKit (GET /api/mktg-agents/brand-kit/stored)', () => {
     it('rejects a missing project query param with a validation error, resolving nothing', async () => {
       const res = buildRes();

@@ -373,7 +373,7 @@ export class MktgAgentsController {
         readme,
         this.resultMinimumVersion(req.body?.priorVersion)
       );
-      await this.documentRuns.recordResult(req, validSessionId, result);
+      await this.documentRuns.recordResult(req, validSessionId, result, validProjectUid);
       logger.success(req, 'brand_kit_result', startTime, { status: result.status });
       res.json(result);
     } catch (error) {
@@ -732,7 +732,7 @@ export class MktgAgentsController {
         readme,
         this.resultMinimumVersion(req.body?.priorVersion)
       );
-      await this.documentRuns.recordResult(req, validSessionId, result);
+      await this.documentRuns.recordResult(req, validSessionId, result, validProjectUid);
       logger.success(req, 'foundation_message_result', startTime, { status: result.status });
       res.json(result);
     } catch (error) {
@@ -923,7 +923,7 @@ export class MktgAgentsController {
         readme,
         this.resultMinimumVersion(req.body?.priorVersion)
       );
-      await this.documentRuns.recordResult(req, validSessionId, result);
+      await this.documentRuns.recordResult(req, validSessionId, result, validProjectUid);
       logger.success(req, 'icp_result', startTime, { status: result.status });
       res.json(result);
     } catch (error) {
