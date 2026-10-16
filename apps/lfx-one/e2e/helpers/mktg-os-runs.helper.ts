@@ -15,6 +15,7 @@ import { getMktgSessionOutcome } from '@lfx-one/shared/utils/mktg-session-event.
 
 import { mockProjects } from '../fixtures/mock-data/projects.mock';
 import { ApiMockHelper } from './api-mock.helper';
+import { suppressCookieBanner } from './account-settings-email.helper';
 
 export const RUN_PROJECT = { uid: 'p0000000-0000-0000-0000-000000000719', slug: 'synthetic-orbit', name: 'Synthetic Orbit' };
 export const RUN_REVISION_ID = `000001-${'a'.repeat(64)}`;
@@ -78,6 +79,7 @@ export async function setupRunPage(
     serverState?: { started: boolean; generated: boolean; persisted: boolean; startedAt: string };
   } = {}
 ) {
+  await suppressCookieBanner(page);
   const writer = options.writer ?? true;
   mockProjects[RUN_PROJECT.slug] = {
     ...RUN_PROJECT,
