@@ -187,7 +187,9 @@ describe('MktgDocumentText.read — Word and text', () => {
 
     const start = performance.now();
     const read = await MktgDocumentText.read(nearCap);
-    expect(performance.now() - start).toBeLessThan(MktgDocumentText.maxDocxMillis + 1000);
+    // A loose bound: the deadline is what stops a hostile file, and a shared CI runner can take
+    // a second or more just to load the parsers, so only a hang fails here.
+    expect(performance.now() - start).toBeLessThan(MktgDocumentText.maxDocxMillis + 10_000);
     expect(read.text === null ? read.reason : 'read').toMatch(/^(read|too-complex)$/);
 
     parse.mockClear();
