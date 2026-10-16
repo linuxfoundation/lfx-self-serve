@@ -3,7 +3,13 @@
 
 import { addDays } from 'date-fns';
 import { FormControl, type FormGroup } from '@angular/forms';
-import { DRAFT_VOTE_DEFAULT_DURATION_DAYS, DRAFT_VOTE_PLACEHOLDER_QUESTION, VOTE_COMMENT_RESPONSE_MAX_LENGTH } from '../constants/poll.constants';
+import {
+  CLONE_VOTE_DEFAULT_DURATION_DAYS,
+  CLONE_VOTE_TITLE_PREFIX,
+  DRAFT_VOTE_DEFAULT_DURATION_DAYS,
+  DRAFT_VOTE_PLACEHOLDER_QUESTION,
+  VOTE_COMMENT_RESPONSE_MAX_LENGTH,
+} from '../constants/poll.constants';
 import { LEGACY_VOTE_TIMEZONE } from '../constants/timezones.constants';
 import { VOTES_STATS_WINDOW_DAYS } from '../constants/vote.constants';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
@@ -149,6 +155,36 @@ export function mapVoteToFormValue(vote: Vote): VoteFormValue {
     allow_abstain: vote.allow_abstain ?? false,
     questions: (vote.poll_questions?.filter((question) => !isDraftPlaceholderPollQuestion(question)) ?? []).map(mapApiQuestionToFormValue),
     commentPrompts: (vote.poll_comment_prompts ?? []).map(mapApiCommentPromptToFormValue),
+  };
+}
+
+/**
+ * Maps a Vote API response to a VoteFormValue for prefilling the create form when cloning a vote
+ * @description Same field set as {@link mapVoteToFormValue} (committee, eligibility, questions, comment
+ * prompts, abstain) — cast ballots, results, and the source vote's status/uid are never part of a form
+ * value, so there is nothing to strip there. Only two fields are deliberately mutated: the title gets a
+ * "Copy of " prefix so the organizer can tell the draft apart from the source vote, and a deadline that
+ * has already elapsed resets to CLONE_VOTE_DEFAULT_DURATION_DAYS out (a still-future deadline is reused as-is).
+ * @param vote - The source Vote entity to clone
+ * @param nowMs - Current time in epoch ms, injectable for deterministic tests (defaults to Date.now())
+ * @returns VoteFormValue to patch into the create form
+ */
+export function mapVoteToCloneFormValue(vote: Vote, nowMs: number = Date.now()): VoteFormValue {
+  const base = mapVoteToFormValue(vote);
+  const title = `${CLONE_VOTE_TITLE_PREFIX}${base.title}`;
+
+  const endMs = vote.end_time ? Date.parse(vote.end_time) : NaN;
+  const deadlineInFuture = Number.isFinite(endMs) && endMs > nowMs;
+  if (deadlineInFuture) {
+    return { ...base, title };
+  }
+
+  const resetDate = addDays(new Date(nowMs), CLONE_VOTE_DEFAULT_DURATION_DAYS);
+  return {
+    ...base,
+    title,
+    close_date: toZonedDateCarrier(resetDate, base.timezone),
+    close_time: '11:59 PM',
   };
 }
 

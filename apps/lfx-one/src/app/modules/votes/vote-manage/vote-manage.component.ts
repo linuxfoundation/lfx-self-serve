@@ -23,6 +23,7 @@ import {
   buildDraftVoteRequest,
   buildUpdateVoteRequest,
   getUserTimezone,
+  mapVoteToCloneFormValue,
   mapVoteToFormValue,
   markFormControlsAsTouched,
 } from '@lfx-one/shared/utils';
@@ -114,6 +115,7 @@ export class VoteManageComponent {
 
   public constructor() {
     this.initCommitteeContext();
+    this.initCloneFromQuery();
     evictOnWriteAccessLoss(this.writeAccess);
 
     // Context-less edit links land in the VOTE's project (not the cookie-restored one);
@@ -492,7 +494,18 @@ export class VoteManageComponent {
    * Rebuilds the questions FormArray to match the vote's poll_questions.
    */
   private patchFormWithVote(vote: Vote): void {
-    const formValue = mapVoteToFormValue(vote);
+    this.patchFormWithValue(mapVoteToFormValue(vote));
+  }
+
+  /**
+   * Patches the (create-mode) form with a clone of a fetched Vote entity.
+   * Rebuilds the questions FormArray to match the source vote's poll_questions.
+   */
+  private patchFormWithClonedVote(vote: Vote): void {
+    this.patchFormWithValue(mapVoteToCloneFormValue(vote));
+  }
+
+  private patchFormWithValue(formValue: VoteFormValue): void {
     const form = this.form();
 
     // Patch scalar fields (Step 1)
@@ -893,6 +906,35 @@ export class VoteManageComponent {
         const committeeControl = this.form().get('committee');
         committeeControl?.setValue(ref);
         committeeControl?.disable();
+      });
+  }
+
+  /** Reads ?clone=<uid> from queryParams and prefills the create form from the source vote (create mode only). */
+  private initCloneFromQuery(): void {
+    this.route.queryParamMap
+      .pipe(
+        take(1),
+        map((params) => params.get('clone')),
+        filter((cloneId): cloneId is string => !!cloneId && !this.route.snapshot.paramMap.has('id')),
+        switchMap((cloneId) => {
+          this.loading.set(true);
+          return this.voteService.getVote(cloneId).pipe(
+            catchError(() => {
+              this.loading.set(false);
+              this.messageService.add({
+                severity: 'error',
+                summary: 'Error',
+                detail: `Failed to load ${this.voteLabel.singular.toLowerCase()} to clone.`,
+              });
+              return of(null);
+            })
+          );
+        })
+      )
+      .subscribe((vote) => {
+        this.loading.set(false);
+        if (!vote) return;
+        this.patchFormWithClonedVote(vote);
       });
   }
 }
