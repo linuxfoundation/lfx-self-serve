@@ -12,10 +12,10 @@
  * (390 - 300px gutter - 40px page padding).
  *
  * The breakpoint moved from `lg` (1024px) to `2xl` (1440px) in a LFXV2-3285 follow-up: the hub
- * spends 704px on fixed chrome before any content — 348px left sidebar (lg:ml-[348px] on <main>,
- * unrelated and unchanged by this follow-up) + 300px rail + 56px page padding (md:px-8, which is
+ * spends 644px on fixed chrome before any content — 288px left navbar (lg:ml-[288px] on <main>,
+ * unrelated to this follow-up) + 300px rail + 56px page padding (md:px-8, which is
  * 2rem per side at this app's 14px root — not the 64px a 16px-root assumption would give). At `lg`
- * that left a 320px content column, narrower than the rail beside it; at `2xl` it leaves 736px.
+ * that leaves a 380px content column, narrower than the rail beside it; at `2xl` it leaves 796px.
  * Keeping the inline card until `2xl` also covers iPad landscape and split-screen laptop windows.
  *
  * The existing profile specs (profile-edit-drawer.spec.ts, profile-visibility-drawer.spec.ts) pass
@@ -41,8 +41,8 @@
  * projects render a classic scrollbar that mobile-emulated overlay scrollbars don't.
  *
  * The content-width expectation has to account for two more things once the viewport crosses `lg`
- * (1024px, the *sidebar's own*, unrelated breakpoint): the 348px left sidebar starts reserving space
- * via <main>'s lg:ml-[348px], and the content column itself is capped at max-w-[1024px] on the inner
+ * (1024px, the *sidebar's own*, unrelated breakpoint): the 288px left navbar starts reserving space
+ * via <main>'s lg:ml-[288px], and the content column itself is capped at max-w-[1024px] on the inner
  * wrapper in profile-layout.component.html, so it stops growing well before `2xl`.
  *
  * A separate desktop-control test above 2xl (TWO_XL_BREAKPOINT + 40, not exactly 1440px — see the
@@ -80,16 +80,16 @@ const PAGE_PADDING_REM_BELOW_MD = 2.5; // px-5 = 1.25rem per side x 2
 const PAGE_PADDING_REM_AT_MD = 4; // md:px-8 = 2rem per side x 2
 
 // The sidebar's own breakpoint (unrelated to the profile-rail breakpoint this follow-up moves) —
-// <main> picks up lg:ml-[348px] here, which the content-width expectation below must account for.
+// <main> picks up lg:ml-[288px] here, which the content-width expectation below must account for.
 const LG_BREAKPOINT = 1024;
-const SIDEBAR_WIDTH = 348;
+const SIDEBAR_WIDTH = 288;
 
 // The profile-panel-rail breakpoint this follow-up moves from lg (1024px) to 2xl (1440px, per
 // apps/lfx-one/tailwind.config.js). Below this, the rail renders inline; at and above it, fixed.
 const TWO_XL_BREAKPOINT = 1440;
 
 // max-w-[1024px] on the inner content wrapper in profile-layout.component.html — the content
-// column stops growing here even once the sidebar's 348px and the page padding are accounted for.
+// column stops growing here even once the navbar's 288px and the page padding are accounted for.
 const CONTENT_MAX = 1024;
 
 // Sub-2xl matrix: narrow phone, the mobile-chrome project's own size (Pixel 5), a landscape-phone
@@ -202,7 +202,7 @@ test.describe('Profile & Account hub — mobile/tablet/laptop layout (LFXV2-3285
         // an unconditional right gutter reserved for a rail that, below 2xl, no longer renders as a
         // fixed overlay. Page padding is px-5 below md, md:px-8 at md and up — derived from rem times
         // the real root font-size, not the 40px/64px a 16px-root assumption would give (35px/56px
-        // here). Once the viewport crosses lg (the sidebar's own, unrelated breakpoint), the 348px
+        // here). Once the viewport crosses lg (the sidebar's own, unrelated breakpoint), the 288px
         // sidebar also reserves space, and the content column stops growing past max-w-[1024px]
         // regardless.
         //

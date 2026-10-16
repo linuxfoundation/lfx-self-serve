@@ -235,7 +235,7 @@ Note that persona detection (step 2) resolves the **target** user's persona even
 **Components:**
 
 - **Impersonation banner** (`main-layout.component.html`) — fixed yellow bar at the top showing who is being impersonated and a "Stop" button
-- **Impersonation trigger** (`lens-switcher.component.html`) — user-secret icon in the sidebar footer (visible only when `canImpersonate` is true), opens a dialog to enter a target email/username
+- **Impersonation trigger** (`navbar.component.html`) — user-secret icon in the navbar footer (visible only when `canImpersonate` is true), opens a dialog to enter a target email/username
 
 **Services:**
 

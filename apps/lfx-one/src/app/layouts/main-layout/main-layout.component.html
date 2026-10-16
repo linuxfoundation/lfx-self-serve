@@ -5,60 +5,42 @@
 <lfx-impersonation-banner />
 
 <div class="flex min-h-screen" [ngClass]="{ 'pt-12': userService.impersonating() }">
-  <!-- Sidebar - Desktop: lens switcher (48px) + nav panel (300px) = 348px -->
+  <!-- Navbar - Desktop: floating 280px panel, 8px inset (288px gutter) -->
   <div
-    class="hidden lg:flex flex-row flex-shrink-0 fixed left-0 bottom-0 z-40"
+    class="hidden lg:flex flex-shrink-0 fixed left-0 bottom-0 z-40"
     [ngClass]="{
       'top-12': userService.impersonating(),
       'top-0': !userService.impersonating(),
-    }">
-    <!-- Lens Switcher Column (48px) -->
-    <div class="w-[48px] flex-shrink-0" data-testid="lens-switcher-column">
-      <lfx-lens-switcher [showLensButtons]="false" [bannerOffset]="userService.impersonating()"></lfx-lens-switcher>
-    </div>
-    <!-- Nav Panel (300px) -->
-    <div class="w-[300px] flex-shrink-0">
-      <lfx-sidebar
-        [items]="sidebarItems()"
-        [showMeSelector]="activeLens() === 'me'"
-        [showProjectSelector]="activeLens() === 'project' || activeLens() === 'foundation'"
-        [showOrgSelector]="activeLens() === 'org'"
-        [(selectorPanelOpen)]="selectorPanelOpen"></lfx-sidebar>
-    </div>
+    }"
+    data-testid="navbar-column">
+    <lfx-navbar
+      [items]="sidebarItems()"
+      [showMeSelector]="activeLens() === 'me'"
+      [showProjectSelector]="activeLens() === 'project' || activeLens() === 'foundation'"
+      [showOrgSelector]="activeLens() === 'org'"
+      [bannerOffset]="userService.impersonating()"
+      [(selectorPanelOpen)]="selectorPanelOpen"></lfx-navbar>
   </div>
 
-  <!-- Sidebar - Mobile Drawer -->
+  <!-- Navbar - Mobile Drawer -->
   <p-drawer
     [visible]="showMobileSidebar()"
     (visibleChange)="onDrawerVisibilityChange($event)"
     position="left"
     [modal]="true"
     [dismissible]="true"
-    [showCloseIcon]="true"
-    styleClass="lg:hidden w-[344px] mobile-sidebar-drawer"
+    [showCloseIcon]="false"
+    styleClass="lg:hidden mobile-navbar-drawer"
     data-testid="mobile-sidebar-drawer">
-    <ng-template #header>
-      <div class="flex items-center gap-3">
-        <a [routerLink]="['/']" class="flex items-center">
-          <img src="/images/logo_lfx.svg" alt="LFX Logo" class="w-auto h-5" />
-        </a>
-      </div>
+    <ng-template #headless>
+      <lfx-navbar
+        [items]="sidebarItems()"
+        [showMeSelector]="activeLens() === 'me'"
+        [showProjectSelector]="activeLens() === 'project' || activeLens() === 'foundation'"
+        [showOrgSelector]="activeLens() === 'org'"
+        [(selectorPanelOpen)]="selectorPanelOpen"
+        [mobile]="true"></lfx-navbar>
     </ng-template>
-    <!-- Mobile: lens switcher horizontal strip + nav -->
-    <div class="flex flex-col h-full">
-      <div class="border-b border-gray-100">
-        <lfx-lens-switcher [mobile]="true" [showLensButtons]="false"></lfx-lens-switcher>
-      </div>
-      <div class="flex-1 min-h-0">
-        <lfx-sidebar
-          [items]="sidebarItems()"
-          [showMeSelector]="activeLens() === 'me'"
-          [showProjectSelector]="activeLens() === 'project' || activeLens() === 'foundation'"
-          [showOrgSelector]="activeLens() === 'org'"
-          [(selectorPanelOpen)]="selectorPanelOpen"
-          [mobile]="true"></lfx-sidebar>
-      </div>
-    </div>
   </p-drawer>
 
   <!-- Selector backdrop — covers main content area when project/foundation selector is open -->
@@ -75,7 +57,7 @@
 
   <!-- Main Content Area -->
   <!-- On the profile hub, reserve a right gutter (2xl:pr-[300px]) so content and the footer clear the fixed profile rail at 2xl and up; below 2xl the panel renders inline instead. -->
-  <main class="flex-1 min-w-0 lg:ml-[348px] flex flex-col" [ngClass]="{ '2xl:pr-[300px]': isProfileHub() }" data-testid="main-content">
+  <main class="flex-1 min-w-0 lg:ml-[288px] flex flex-col" [ngClass]="{ '2xl:pr-[300px]': isProfileHub() }" data-testid="main-content">
     <!-- Mobile Menu Button -->
     <div
       class="lg:hidden sticky z-30 bg-white border-b border-gray-200 px-5 py-3"

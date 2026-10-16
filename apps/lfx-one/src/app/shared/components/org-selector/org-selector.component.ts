@@ -6,18 +6,22 @@ import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, I
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import {
+  NAVBAR_ORG_ROLE_DIRECT_SUFFIX,
+  NAVBAR_ORG_ROLE_TOOLTIPS,
+  NAVBAR_ORG_ROLE_UNKNOWN_SOURCE,
   ORG_CATALOGUE_SEARCH_MIN_CHARS,
   ORG_LENS_LIST_INCOMPLETE_NOTICE,
   ORG_LENS_LIST_INCOMPLETE_RETRY_LABEL,
   ORG_LENS_LIST_INCOMPLETE_RETRYING_LABEL,
 } from '@lfx-one/shared/constants';
-import { Account, DisplayOrgItem, OrgItem, OrgSelectorRow } from '@lfx-one/shared/interfaces';
+import { Account, ContextSelectorVariant, DisplayOrgItem, OrgItem, OrgSelectorRow } from '@lfx-one/shared/interfaces';
 import { resolveOrgRolePersona } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService, OrgRolePersona } from '@services/org-role-grants.service';
+import { NavTooltipDirective } from '@shared/directives/nav-tooltip.directive';
 import { OnRenderDirective } from '@shared/directives/on-render.directive';
 import { AutoFocus } from 'primeng/autofocus';
 import { InputTextModule } from 'primeng/inputtext';
@@ -27,7 +31,7 @@ import { distinctUntilChanged, filter } from 'rxjs';
 
 @Component({
   selector: 'lfx-org-selector',
-  imports: [NgClass, ReactiveFormsModule, PopoverModule, InputTextModule, AutoFocus, TooltipModule, OnRenderDirective],
+  imports: [NavTooltipDirective, NgClass, ReactiveFormsModule, PopoverModule, InputTextModule, AutoFocus, TooltipModule, OnRenderDirective],
   templateUrl: './org-selector.component.html',
   styleUrl: './org-selector.component.scss',
 })
@@ -65,10 +69,14 @@ export class OrgSelectorComponent {
   public readonly isPanelOpen = model<boolean>(false);
   /** When false the trigger is hidden by the sidebar gate — skip list bootstrap so zero-grants users don't hit /api/nav/org-items. */
   public readonly enabled = input<boolean>(true);
+  /** `navbar` renders the navbar's dark context card as the trigger and pins the panel beside the 288px navbar. */
+  public readonly variant = input<ContextSelectorVariant>('default');
 
   protected readonly searchControl = new FormControl<string>('', { nonNullable: true });
 
-  protected readonly panelStyleClass = 'org-selector-panel';
+  protected readonly panelStyleClass: Signal<string> = computed(() =>
+    this.variant() === 'navbar' ? 'org-selector-panel org-selector-panel-navbar' : 'org-selector-panel'
+  );
 
   protected readonly selectedAccount: Signal<Account> = this.accountContextService.selectedAccount;
   protected readonly selectedAccountUid: Signal<string | null> = computed(() => this.selectedAccount().uid ?? null);
@@ -121,6 +129,25 @@ export class OrgSelectorComponent {
     if (!uid || !persona) return '';
     const parentName = this.orgRoleGrantsService.parentNameByUid().get(uid) ?? '';
     return this.personaToTooltip(persona, parentName);
+  });
+
+  /**
+   * Nothing to switch to: a non-staff caller (no catalogue search) whose fully loaded, complete list
+   * holds a single organization. The trigger then renders as a static card and never opens the panel.
+   */
+  protected readonly isSingleOrg: Signal<boolean> = computed(
+    () => !this.isStaff() && !this.loading() && !this.hasMore() && !this.listIncomplete() && this.items().length === 1
+  );
+
+  /** Navbar card tooltip: what the role lets the user do, in plain language (rather than repeating the label). */
+  protected readonly navbarRoleTooltip: Signal<string> = computed(() => {
+    const uid = this.selectedAccountUid();
+    const persona = this.selectedRolePersona();
+    if (!uid || !persona) return '';
+    const source = this.orgRoleGrantsService.parentNameByUid().get(uid) || NAVBAR_ORG_ROLE_UNKNOWN_SOURCE;
+    const description = NAVBAR_ORG_ROLE_TOOLTIPS[persona].replace('{source}', source);
+    const isDirect = persona === 'direct-writer' || persona === 'direct-auditor';
+    return isDirect && this.hasHierarchyAssociation() ? `${description} ${NAVBAR_ORG_ROLE_DIRECT_SUFFIX}` : description;
   });
 
   protected readonly displayedItems: Signal<DisplayOrgItem[]> = computed(() => {
@@ -294,6 +321,7 @@ export class OrgSelectorComponent {
   }
 
   protected togglePanel(event: Event, popover: Popover): void {
+    if (this.isSingleOrg()) return;
     popover.toggle(event);
   }
 
