@@ -352,10 +352,9 @@ describe('CampaignActDialogComponent (#3299)', () => {
   });
 
   // X (#3299): campaign-service writes X budgets as a daily amount only and refuses `lifetime` with 409.
-  // No Monitor row opens the dialog for X today, but the dialog must not depend on that.
   describe('daily-only platform (X)', () => {
     const X_CAMPAIGN: CampaignServiceCampaign = { ...CAMPAIGN, platform: 'twitter-ads' };
-    const setupX = (): Promise<void> => setup({ lever: 'budget', platform: 'twitter-ads' as CampaignActDialogData['platform'] }, { campaign: X_CAMPAIGN });
+    const setupX = (): Promise<void> => setup({ lever: 'budget', platform: 'twitter-ads' }, { campaign: X_CAMPAIGN });
     const budgetForm = (): CampaignBudgetFormComponent =>
       fixture.debugElement.query(By.directive(CampaignBudgetFormComponent)).componentInstance as CampaignBudgetFormComponent;
     const typeAmount = (value: string): void => {

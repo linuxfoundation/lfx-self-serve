@@ -766,7 +766,7 @@ export interface CampaignAdoptableBriefsResponse {
 }
 
 /** The platforms whose Monitor rows offer actions: each has a campaign-ref resolve and adoption. */
-export type CampaignMonitorActPlatform = 'linkedin-ads' | 'reddit-ads' | 'meta-ads' | 'microsoft-ads';
+export type CampaignMonitorActPlatform = 'linkedin-ads' | 'reddit-ads' | 'meta-ads' | 'microsoft-ads' | 'twitter-ads';
 
 /** The lever a Monitor row action opens. */
 export type CampaignMonitorActLever = 'pause_resume' | 'budget' | 'bid';
