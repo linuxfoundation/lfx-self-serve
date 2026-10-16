@@ -267,20 +267,6 @@ describe('OrgEasyclaSignHandoffComponent', () => {
     expect(shown).not.toContain('Http failure response');
   });
 
-  // By the time this state is reached the agreement and its DocuSign envelope exist upstream, and
-  // the address on screen is the only way anyone reaches them. A back-out here would strand a real
-  // agreement that this application cannot cancel or reuse, so the state offers no way back.
-  it('offers no way out of an open session except continuing to sign it', async () => {
-    requestCorporateSignature.mockReturnValue(of(response));
-
-    const fixture = await render();
-
-    expect(testid(fixture, 'org-easycla-sign-cancel')).toBeNull();
-    expect(testid(fixture, 'org-easycla-sign-handoff-close')).toBeNull();
-    expect(testid(fixture, 'org-easycla-sign-review')).not.toBeNull();
-    expect(close).not.toHaveBeenCalled();
-  });
-
   it('fails closed when it is opened without a selection', async () => {
     const fixture = await renderWith(undefined);
 
@@ -289,12 +275,16 @@ describe('OrgEasyclaSignHandoffComponent', () => {
   });
 
   /**
-   * The signing request runs while this dialog is on screen, and it is the call that creates both
-   * the signature record and the DocuSign envelope. Dismissing the dialog destroys the component
-   * and its subscription, so the address that comes back is discarded and the envelope is left
-   * with nobody holding it. Neither exit is available until there is something to lose.
+   * Sealed only while the signing request is in flight, so a back-out and an immediate restart
+   * cannot race two requests that each create a signature record. Once the request settles the
+   * signatory can leave (#3756): the CLA service reuses the unsigned record on the next request.
    */
-  describe('while the signing request is in flight', () => {
+  describe('dismissing the dialog', () => {
+    const settled: [string, () => Observable<OrgClaSignResponse>][] = [
+      ['open', () => of(response)],
+      ['failed', () => throwError(() => bffError(500, { error: 'nope' }))],
+    ];
+
     it('cannot be dismissed by the in-content close control while preparing', async () => {
       requestCorporateSignature.mockReturnValue(new Observable<OrgClaSignResponse>(() => undefined));
 
@@ -303,26 +293,11 @@ describe('OrgEasyclaSignHandoffComponent', () => {
       expect(testid(fixture, 'org-easycla-sign-handoff-close')).toBeNull();
     });
 
-    // Still sealed on success, not just in flight. The envelope exists by then and the address on
-    // screen is the only copy, so an Escape here abandons a real agreement — and `ready` waits for
-    // a person, where the request itself usually answers in under a second. Sealing only the
-    // in-flight window would close the smaller of the two holes.
-    it('still cannot be dismissed once the session is open', async () => {
-      requestCorporateSignature.mockReturnValue(of(response));
+    it.each(settled)('can be dismissed by the close control once the session is %s', async (_state, source) => {
+      requestCorporateSignature.mockReturnValue(source());
 
       const fixture = await render();
 
-      expect(testid(fixture, 'org-easycla-sign-handoff-close')).toBeNull();
-    });
-
-    // The one dismissible state: no envelope to strand, and trapping someone in a dialog that
-    // reports a failure would leave them no way out at all.
-    it('can be dismissed once it reaches failed', async () => {
-      requestCorporateSignature.mockReturnValue(throwError(() => bffError(500, { error: 'nope' })));
-
-      const fixture = await render();
-
-      expect(testid(fixture, 'org-easycla-sign-handoff-close')).not.toBeNull();
       (testid(fixture, 'org-easycla-sign-handoff-close') as HTMLButtonElement).click();
       expect(close).toHaveBeenCalledWith(null);
     });
@@ -332,11 +307,8 @@ describe('OrgEasyclaSignHandoffComponent', () => {
         globalThis.document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       }
 
-      it.each([
-        ['in flight', () => new Observable<OrgClaSignResponse>(() => undefined)],
-        ['open', () => of(response)],
-      ])('does not leave a session that is %s', async (_state, source) => {
-        requestCorporateSignature.mockReturnValue(source());
+      it('does not leave a session that is in flight', async () => {
+        requestCorporateSignature.mockReturnValue(new Observable<OrgClaSignResponse>(() => undefined));
 
         await render();
         pressEscape();
@@ -344,21 +316,8 @@ describe('OrgEasyclaSignHandoffComponent', () => {
         expect(close).not.toHaveBeenCalled();
       });
 
-      it('does not leave an open session after the review copy was refused', async () => {
-        requestCorporateSignature.mockReturnValue(of(response));
-        getCclaPreview.mockReturnValue(throwError(() => ({ status: 404 })));
-
-        const fixture = await render();
-        testid(fixture, 'org-easycla-sign-review-copy')?.click();
-        fixture.detectChanges();
-        pressEscape();
-
-        expect(testid(fixture, 'org-easycla-sign-review-copy-error')).not.toBeNull();
-        expect(close).not.toHaveBeenCalled();
-      });
-
-      it('leaves a failure', async () => {
-        requestCorporateSignature.mockReturnValue(throwError(() => bffError(500, { error: 'nope' })));
+      it.each(settled)('leaves a session that is %s', async (_state, source) => {
+        requestCorporateSignature.mockReturnValue(source());
 
         await render();
         pressEscape();
@@ -522,7 +481,6 @@ describe('OrgEasyclaSignHandoffComponent', () => {
       expect(testid(fixture, 'org-easycla-sign-review-copy-error')?.getAttribute('role')).toBe('alert');
       expect(testid(fixture, 'org-easycla-sign-ready')).not.toBeNull();
       expect(testid(fixture, 'org-easycla-sign-failed')).toBeNull();
-      expect(testid(fixture, 'org-easycla-sign-handoff-close')).toBeNull();
       expect(testid(fixture, 'org-easycla-sign-handoff-heading')?.textContent).toBe(CCLA_SIGN_COPY.ready.header);
 
       testid(fixture, 'org-easycla-sign-review')?.querySelector('button')?.click();
