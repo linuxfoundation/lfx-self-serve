@@ -30,6 +30,7 @@ import {
   isPastMeetingArtifactPublic,
   isPastMeetingSummaryAwaitingApproval,
   joinAsSentenceList,
+  maskEmailForLogs,
   toPublicPastMeetingRecording,
   toPublicPastMeetingRoster,
   toPublicPastMeetingSummary,
@@ -51,10 +52,12 @@ import {
 } from '../helpers/meeting.helper';
 import { pageOccurrenceTimeline, parseOccurrencesPageRequest } from '../helpers/meeting-occurrences.helper';
 import { validateUidParameter } from '../helpers/validation.helper';
+import { resolveVerifiedUserEmailSet } from '../helpers/user-emails.helper';
 import { AccessCheckService } from '../services/access-check.service';
+import { EmailVerificationService } from '../services/email-verification.service';
 import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
-import { getEffectiveEmail, getEffectiveUsername } from '../utils/auth-helper';
+import { getEffectiveEmail, getEffectiveUsername, stripAuthPrefix } from '../utils/auth-helper';
 import { ProjectService } from '../services/project.service';
 import { generateM2MToken } from '../utils/m2m-token.util';
 import { validatePassword } from '../utils/security.util';
@@ -66,6 +69,7 @@ export class PublicMeetingController {
   private meetingService: MeetingService = new MeetingService();
   private projectService: ProjectService = new ProjectService();
   private accessCheckService: AccessCheckService = new AccessCheckService();
+  private emailVerificationService: EmailVerificationService = new EmailVerificationService();
   /**
    * GET /public/api/meetings/:id
    * Retrieves a single meeting by ID without requiring authentication
@@ -689,6 +693,10 @@ export class PublicMeetingController {
         return;
       }
 
+      // Captured before fetchMeetingWithM2M puts the M2M token on req.bearerToken. On this optional-auth
+      // route a refresh failure can leave isAuthenticated() true with no user token; such a session
+      // does not get its verified aliases looked up (see restrictedMeetingCheck).
+      const hasUserToken = !!req.oidc?.isAuthenticated() && req.bearerToken !== undefined;
       const meeting = await this.fetchMeetingWithM2M(req, id, 'v1_meeting');
 
       if (!meeting) {
@@ -718,12 +726,12 @@ export class PublicMeetingController {
         return;
       }
 
-      // For restricted meetings, validate the user is registered. Match by email OR username
-      // so accounts whose auth email differs from their invited registrant email still resolve.
-      // The matched registrant's stored email is then used for the upstream join_link call.
+      // For restricted meetings, validate the user is registered. Match by username or any email the
+      // caller can prove (or typed); see restrictedMeetingCheck. The matched registrant's stored email
+      // is then used for the upstream join_link call.
       let joinEmail = email;
       if (meeting.restricted) {
-        const matchedRegistrant = await this.restrictedMeetingCheck(req, email, username, id);
+        const matchedRegistrant = await this.restrictedMeetingCheck(req, email, username, id, hasUserToken);
         if (matchedRegistrant.email) {
           joinEmail = matchedRegistrant.email;
         }
@@ -734,7 +742,8 @@ export class PublicMeetingController {
       // Log the success
       logger.success(req, 'post_meeting_link', startTime, {
         meeting_id: id,
-        email: joinEmail,
+        // Masked: it can now be one of the caller's verified alternates, and INFO logs are kept.
+        email: maskEmailForLogs(joinEmail),
         project_uid: meeting.project_uid,
         title: meeting.title,
       });
@@ -1390,7 +1399,7 @@ export class PublicMeetingController {
     return now >= earliestJoinTime;
   }
 
-  private async restrictedMeetingCheck(req: Request, email: string, username: string | null, id: string): Promise<MeetingRegistrant> {
+  private async restrictedMeetingCheck(req: Request, email: string, username: string | null, id: string, hasUserToken: boolean): Promise<MeetingRegistrant> {
     const helperStartTime = logger.startOperation(req, 'restricted_meeting_check', {
       meeting_id: id,
       has_email: !!email,
@@ -1405,21 +1414,40 @@ export class PublicMeetingController {
       });
     }
 
-    // Username is the primary check — it's the auth-provider-verified identity and survives
-    // accounts with multiple emails. Email is the fallback for unauthenticated flows or when
-    // no username is available.
+    // One query for every identity the caller can prove (E10-01): the username (the
+    // auth-provider-verified identity, which survives accounts with several emails), every email
+    // auth-service has verified for a signed-in caller, and the email they gave (typed, or the
+    // session's). Unverified alternates are never used, and a failed auth-service lookup falls back to
+    // the session email, so this never hard-fails on it. The aliases are looked up only for a session
+    // that still holds a user token: a tokenless one keeps the username and the email given.
+    const verified = hasUserToken ? await resolveVerifiedUserEmailSet(req, this.emailVerificationService) : { emails: [], alternates: [] };
+    const givenEmail = email?.trim().toLowerCase() || '';
+    const candidateEmails = [...new Set([...verified.emails, givenEmail].filter(Boolean))];
+    // failOnPartial: the ranking below needs every matching row, so a failed later page fails the
+    // join rather than ranking a partial prefix or refusing a registrant on the missing page.
+    const found = await this.meetingService.getMeetingRegistrantsForUser(req, id, candidateEmails, username ?? undefined, undefined, true);
+
+    // Only rows that match one of those identities count, re-checked here rather than trusting the
+    // query's clause semantics, and the strongest kind wins: the username, then an address
+    // auth-service verified (primary, then alternate), then the email given, which is the one identity
+    // the caller has not proven. `matched_by` records which.
+    const plainUsername = username ? stripAuthPrefix(username).toLowerCase() : '';
+    const emailOf = (registrant: MeetingRegistrant): string => registrant.email?.trim().toLowerCase() ?? '';
+    const verifiedPrimaries = verified.emails.filter((address) => !verified.alternates.includes(address));
+    const ranked: { kind: 'username' | 'primary_email' | 'alternate_email' | 'email'; matches: (registrant: MeetingRegistrant) => boolean }[] = [
+      { kind: 'username', matches: (registrant) => !!plainUsername && registrant.username?.toLowerCase() === plainUsername },
+      { kind: 'primary_email', matches: (registrant) => verifiedPrimaries.includes(emailOf(registrant)) },
+      { kind: 'alternate_email', matches: (registrant) => verified.alternates.includes(emailOf(registrant)) },
+      { kind: 'email', matches: (registrant) => !!givenEmail && emailOf(registrant) === givenEmail },
+    ];
     let registrants: MeetingRegistrant[] = [];
-    let matchedBy: 'username' | 'email' | null = null;
-    if (username) {
-      registrants = await this.meetingService.getMeetingRegistrantsByUsername(req, id, username);
-      if (registrants.length > 0) {
-        matchedBy = 'username';
-      }
-    }
-    if (registrants.length === 0 && email) {
-      registrants = await this.meetingService.getMeetingRegistrantsByEmail(req, id, email);
-      if (registrants.length > 0) {
-        matchedBy = 'email';
+    let matchedBy: (typeof ranked)[number]['kind'] | null = null;
+    for (const { kind, matches } of ranked) {
+      const hits = found.filter(matches);
+      if (hits.length > 0) {
+        registrants = hits;
+        matchedBy = kind;
+        break;
       }
     }
 

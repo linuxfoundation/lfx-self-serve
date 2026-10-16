@@ -16,7 +16,7 @@ vi.mock('../services/logger.service', () => ({ logger: { debug: vi.fn(), warning
 import type { Request } from 'express';
 
 import type { EmailVerificationService } from '../services/email-verification.service';
-import { resolveVerifiedUserEmails } from './user-emails.helper';
+import { resolveVerifiedUserEmails, resolveVerifiedUserEmailSet } from './user-emails.helper';
 
 const req = {} as unknown as Request;
 
@@ -84,5 +84,22 @@ describe('resolveVerifiedUserEmails', () => {
     getUserEmails.mockResolvedValue(null);
 
     await expect(resolveVerifiedUserEmails(req, svc, { strict: true })).rejects.toMatchObject({ statusCode: 503, code: 'USER_EMAILS_UNAVAILABLE' });
+  });
+
+  it('lists the verified alternates on their own for the set variant, and none on the fallback', async () => {
+    getUserEmails.mockResolvedValue({
+      primary_email: 'Jane@Acme-Motors.example',
+      alternate_emails: [
+        { email: 'Jane@Beta-Coastal.example', verified: true },
+        { email: 'jane@unverified.example', verified: false },
+      ],
+    });
+    await expect(resolveVerifiedUserEmailSet(req, svc)).resolves.toEqual({
+      emails: ['jane@acme-motors.example', 'jane@beta-coastal.example'],
+      alternates: ['jane@beta-coastal.example'],
+    });
+
+    getUserEmails.mockResolvedValue(null);
+    await expect(resolveVerifiedUserEmailSet(req, svc)).resolves.toEqual({ emails: ['jane@acme-motors.example'], alternates: [] });
   });
 });

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ResolveVerifiedUserEmailsOptions } from '@lfx-one/shared/interfaces';
+import { ResolveVerifiedUserEmailsOptions, VerifiedUserEmails } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
@@ -26,9 +26,22 @@ export async function resolveVerifiedUserEmails(
   emailVerificationService: EmailVerificationService,
   options: ResolveVerifiedUserEmailsOptions = {}
 ): Promise<string[]> {
+  return (await resolveVerifiedUserEmailSet(req, emailVerificationService, options)).emails;
+}
+
+/**
+ * The same lookup as `resolveVerifiedUserEmails`, with the verified alternates also listed on their
+ * own, for a caller that ranks which kind of address matched (the restricted-meeting join, E10-01).
+ * The session-email fallback has no alternates.
+ */
+export async function resolveVerifiedUserEmailSet(
+  req: Request,
+  emailVerificationService: EmailVerificationService,
+  options: ResolveVerifiedUserEmailsOptions = {}
+): Promise<VerifiedUserEmails> {
   const effectiveEmail = getEffectiveEmail(req)?.toLowerCase() ?? null;
   const userIdentifier = getEffectiveUsername(req) ?? getEffectiveSub(req);
-  const fallback = effectiveEmail ? [effectiveEmail] : [];
+  const fallback: VerifiedUserEmails = { emails: effectiveEmail ? [effectiveEmail] : [], alternates: [] };
 
   if (!userIdentifier) {
     logger.debug(req, 'resolve_user_emails', 'No effective identity for user, using session email only', {});
@@ -54,8 +67,9 @@ export async function resolveVerifiedUserEmails(
 
   const seen = new Set<string>();
   const verifiedEmails: string[] = [];
+  const alternates: string[] = [];
 
-  const add = (email: string): void => {
+  const add = (email: string, isAlternate: boolean): void => {
     if (!email) return;
     const trimmed = email.trim();
     if (!trimmed) return;
@@ -63,12 +77,13 @@ export async function resolveVerifiedUserEmails(
     if (!seen.has(lower)) {
       seen.add(lower);
       verifiedEmails.push(lower);
+      if (isAlternate) alternates.push(lower);
     }
   };
 
-  if (effectiveEmail) add(emailData.primary_email);
+  if (effectiveEmail) add(emailData.primary_email, false);
   for (const alt of emailData.alternate_emails) {
-    if (alt.verified) add(alt.email);
+    if (alt.verified) add(alt.email, true);
   }
 
   logger.debug(req, 'resolve_user_emails', 'Resolved verified emails from auth-service', {
@@ -76,5 +91,5 @@ export async function resolveVerifiedUserEmails(
     verified_count: verifiedEmails.length,
   });
 
-  return verifiedEmails.length > 0 ? verifiedEmails : fallback;
+  return verifiedEmails.length > 0 ? { emails: verifiedEmails, alternates } : fallback;
 }
