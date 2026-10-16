@@ -128,7 +128,17 @@ describe('campaignAdoptFailure', () => {
     });
   });
 
-  it("reports the BFF's own unconfirmed adoption as unconfirmed, keeping its words", () => {
+  it('keeps the words of an envelope sentence that says the outcome is unconfirmed', () => {
+    const message = 'the campaign adoption is unconfirmed — it may or may not have been recorded';
+    expect(campaignAdoptFailure(httpError(503, { error: message, code: 'SERVICE_UNAVAILABLE' }), platform)).toEqual({
+      state: 'unconfirmed',
+      title: CAMPAIGN_ADOPT_UNCONFIRMED_TITLE,
+      message,
+      detail: '',
+    });
+  });
+
+  it("reports the BFF's own unconfirmed adoption as unconfirmed", () => {
     expect(campaignAdoptFailure(httpError(504, { error: CAMPAIGN_ADOPT_OUTCOME_UNCONFIRMED, code: 'TIMEOUT' }), platform)).toEqual({
       state: 'unconfirmed',
       title: CAMPAIGN_ADOPT_UNCONFIRMED_TITLE,

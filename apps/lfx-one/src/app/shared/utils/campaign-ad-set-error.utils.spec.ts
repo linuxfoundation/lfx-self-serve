@@ -8,6 +8,8 @@ import {
   META_AD_SET_PAUSE_RECORD_OUTCOME_UNCONFIRMED,
   META_AD_SET_PAUSE_RECORD_UNCONFIRMED_CODE,
   META_AD_SET_PRE_SEND_REFUSAL_STATUSES,
+  META_AD_SET_STATUS_OUTCOME_UNCONFIRMED,
+  META_AD_SET_STATUS_UNCONFIRMED_CODE,
   META_AD_SET_UNCONFIRMED_MESSAGE,
 } from '@lfx-one/shared/constants';
 import { describe, expect, it } from 'vitest';
@@ -50,9 +52,11 @@ describe('metaAdSetFailureOutcome', () => {
   });
 
   // Any other unconfirmed sentence is replaced by this UI's own "reload to verify".
-  it("restates campaign-service's unconfirmed 503 in this UI's words", () => {
-    const message = 'the ad set status change is unconfirmed — it may or may not have been applied on Meta';
-    expect(metaAdSetFailureOutcome(httpError(503, { error: message, code: 'META_AD_SET_STATUS_UNCONFIRMED' }))).toEqual({
+  it.each([
+    ["the BFF's own status-unconfirmed sentence", META_AD_SET_STATUS_OUTCOME_UNCONFIRMED],
+    ["campaign-service's unconfirmed sentence", 'the ad set status change is unconfirmed — it may or may not have been applied on Meta'],
+  ])("restates %s in this UI's words", (_label, message) => {
+    expect(metaAdSetFailureOutcome(httpError(503, { error: message, code: META_AD_SET_STATUS_UNCONFIRMED_CODE }))).toEqual({
       state: 'unconfirmed',
       message: META_AD_SET_UNCONFIRMED_MESSAGE,
     });
