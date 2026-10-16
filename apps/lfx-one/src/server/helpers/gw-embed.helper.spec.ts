@@ -1,8 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { afterEach, describe, expect, it } from 'vitest';
-import { getGwEmbedBaseUrl, loadGwEmbedTheme, resetGwEmbedThemeCache } from './gw-embed.helper';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { GW_EMBED_STYLESHEET_KEY_PATTERN, GW_EMBED_STYLESHEET_TRANSFORM_FINGERPRINT } from '@lfx-one/shared/constants';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { getGwEmbedBaseUrl, getGwEmbedStylesheetKey, loadGwEmbedTheme, resetGwEmbedThemeCache } from './gw-embed.helper';
 
 describe('getGwEmbedBaseUrl', () => {
   afterEach(() => {
@@ -52,5 +56,46 @@ describe('loadGwEmbedTheme', () => {
     const first = loadGwEmbedTheme('spec');
     expect(first).toContain('LFX theme for the embedded Gatewaze admin');
     expect(loadGwEmbedTheme('spec')).toBe(first);
+  });
+});
+
+describe('getGwEmbedStylesheetKey', () => {
+  afterEach(() => {
+    resetGwEmbedThemeCache();
+  });
+
+  it('is a fixed-length base64url key that the route accepts, stable within a process', () => {
+    const key = getGwEmbedStylesheetKey('spec');
+    expect(key).toMatch(GW_EMBED_STYLESHEET_KEY_PATTERN);
+    expect(getGwEmbedStylesheetKey('spec')).toBe(key);
+  });
+
+  it('remembers a failure too, so a missing theme is not probed again on every page', () => {
+    // No theme beside the bundle (this spec runs from source) and none under this cwd.
+    const cwd = vi.spyOn(process, 'cwd').mockReturnValue('/nonexistent-gw-embed-spec');
+    try {
+      expect(() => getGwEmbedStylesheetKey('spec')).toThrowError(expect.objectContaining({ code: 'GW_EMBED_THEME_UNAVAILABLE' }));
+      const probes = cwd.mock.calls.length;
+      expect(() => getGwEmbedStylesheetKey('spec')).toThrowError(expect.objectContaining({ code: 'GW_EMBED_THEME_UNAVAILABLE' }));
+      expect(cwd.mock.calls.length).toBe(probes);
+    } finally {
+      cwd.mockRestore();
+    }
+  });
+
+  it('is derived from the theme layer and the transform fingerprint', () => {
+    const theme = loadGwEmbedTheme('spec');
+    const expected = createHash('sha256').update(GW_EMBED_STYLESHEET_TRANSFORM_FINGERPRINT).update('\n').update(theme).digest('base64url').slice(0, 16);
+    expect(getGwEmbedStylesheetKey('spec')).toBe(expected);
+  });
+
+  it('has a transform fingerprint that matches the transform on disk', () => {
+    // The scoped stylesheet is served as immutable under this key. A transform change that kept the
+    // old fingerprint would leave every browser on the old output for a year, so the constant must
+    // move with the file. If this fails, set GW_EMBED_STYLESHEET_TRANSFORM_FINGERPRINT to `actual`.
+    const actual = createHash('sha256')
+      .update(readFileSync(join(process.cwd(), 'scripts', 'lib', 'contain-gw-embed-css.mjs')))
+      .digest('hex');
+    expect(GW_EMBED_STYLESHEET_TRANSFORM_FINGERPRINT).toBe(actual);
   });
 });

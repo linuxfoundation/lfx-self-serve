@@ -18,6 +18,7 @@ The server half — the `/api/gatewaze` session routes and proxies, their author
 | `apps/lfx-one/scripts/lib/contain-gw-embed-css.mjs`        | Stylesheet containment transform                            |
 | `src/server/services/gw-embed-stylesheet.service.ts`       | Fetches, scopes, themes and caches the stylesheet           |
 | `src/server/controllers/gw-embed-stylesheet.controller.ts` | HTTP boundary for it (`GW_EMBED_STYLESHEET_ROUTE`)          |
+| `src/app/shared/services/gw-embed-warmup.service.ts`       | Session warm-up and connection hints before the embed loads |
 
 ## Why embed rather than port
 
@@ -39,7 +40,16 @@ The outlet follows the same SSR-safe lazy-mount shape as `rich-editor.component.
 - `@gatewaze/admin-embed` is a **dynamic `import()`** inside that guard, never a static top-level import, so nothing of the embed is pulled into the SSR graph.
 - Teardown on `DestroyRef.onDestroy` calls the handle's `unmount()`. Calling it before the handle's `ready` promise resolves cancels the mount.
 
-A skeleton shows from the first browser render until the embed mounts or fails, because the bundle is large and the container would otherwise sit empty.
+A skeleton shows from the first browser render until the embed has painted or failed, because the bundle is large and the container would otherwise sit empty. The loader's `ready` resolves once the bundle is mounted, which is before React has drawn anything, so the outlet does not stop there. It keeps `#gw-embed-root` at `visibility: hidden` (not `display: none`, so it still lays out) and watches it with a `ResizeObserver` and a `MutationObserver` until it has height and holds visible content, capped at `GW_EMBED_FIRST_PAINT_TIMEOUT_MS`. Visible content is non-whitespace text, or an element matching `GW_EMBED_PAINTED_CONTENT_SELECTOR` such as the embed's `role="status"` spinner. A child with height is not enough, because the embed renders Radix's root `Theme` first and that wrapper has `min-height: 100vh` before the route below it draws anything. The wait also ends when the error panel goes up. The swap runs a synchronous change detection in the microtasks after the observer callback, so the skeleton and the embed change places in the same frame. The skeleton sits above the mount points, so a hidden root that already takes up space never pushes it down.
+
+`@gatewaze/admin-embed` 1.2.0 adds a `first-paint` capability with a `handle.rendered` promise. When the dependency moves to it, the outlet awaits that and keeps the observer as the fallback (`waitForFirstPaint`).
+
+### Starting the slow parts early
+
+`GwEmbedWarmupService` starts two things before the embed asks for them:
+
+- **The session.** The first `/api/gatewaze/session/me` of an LFX session mints a Gatewaze session on the server, which takes about a second or more, and the embed only sends it after the manifest and bundle have loaded. The outlet sends the same request (`credentials: 'include'`, the anon key as `apikey`) as soon as it starts mounting, and the sidebar sends it when the pointer or focus reaches a Newsletters link that opens the embed. It goes once per page session and its answer is never read. The session store takes a create lock per session, and a second caller polls until the first one has stored its session, so the embed's own request reads the warmed session rather than minting again.
+- **The connection.** `preconnect` adds `<link rel="preconnect" crossorigin>` and `dns-prefetch` for the `GW_EMBED_URL` origin. The outlet calls it during SSR too, so a page rendered on an embed route carries the hint in its HTML. `crossorigin` matters: the loader's manifest fetch and module import are CORS requests without credentials, which use a separate connection.
 
 ## Where the admin comes from
 
@@ -70,7 +80,13 @@ Navigations triggered by `popstate` are skipped. A real Back or Forward already 
 
 The embed ships one large stylesheet. Loaded as-is it would restyle the host.
 
-The loader lets the host swap the stylesheet URL it fetches (`GwEmbedSource.resolveStylesheetUrl`). The outlet points it at `GW_EMBED_STYLESHEET_ROUTE` with the hashed file name, and `gw-embed-stylesheet.service.ts` fetches that file from `GW_EMBED_URL`, runs `scripts/lib/contain-gw-embed-css.mjs` over it, appends the theme layer and caches the result by name (the name is content-hashed on the Gatewaze side, so the server cache never goes stale). Browsers get a short `max-age` with `stale-while-revalidate` and an `ETag` rather than an immutable year: the body is LFX output under an upstream-hashed name, so a theme or transform fix must reach users without a URL change. The route is anonymous, so it brakes itself: failed names are remembered for a minute, only a few upstream fetches run at once, the upstream must answer `text/css` within the size cap, and a body with no rules is refused. The transform therefore runs once per Gatewaze release per pod, not in every browser, and no CSS parser ships to the client. It:
+The loader lets the host swap the stylesheet URL it fetches (`GwEmbedSource.resolveStylesheetUrl`). The outlet points it at `GW_EMBED_STYLESHEET_ROUTE` with the hashed file name, and `gw-embed-stylesheet.service.ts` fetches that file from `GW_EMBED_URL`, runs `scripts/lib/contain-gw-embed-css.mjs` over it, appends the theme layer and caches the result by name (the name is content-hashed on the Gatewaze side, so the server cache never goes stale). The body is LFX output under an upstream-hashed name, so the name alone does not address it. `RuntimeConfig.gwEmbedStylesheetKey` covers LFX's share: a hash of the theme layer and `GW_EMBED_STYLESHEET_TRANSFORM_FINGERPRINT` (the transform file's SHA-256, kept honest by a spec). The outlet requests `<route>/<key>/<name>`, which names exactly one body and is served `public, max-age=604800, immutable`. A week rather than a year, because the fetched upstream body is not checked against the hash in its name: the Gatewaze embed build names it with Rollup's `[hash]`, an xxhash this server has no implementation of, so checking it is not cheap. A bad body served under a valid name would be pinned for that week. A key that is not the serving pod's own, which happens while a rollout overlaps two releases, gets the current body as `no-store`. Without a key the outlet falls back to `<route>/<name>`, which keeps the short `max-age` with `stale-while-revalidate` and an `ETag`. The body is compressed once per name with gzip and Brotli and sent in whichever encoding the client accepts, so the app-wide compression middleware never re-gzips it per request. Errors are `no-store`.
+
+To recover from a bad pinned body before the week is out, change the URL or clear the copies: a Gatewaze release gives the file a new name; an LFX release that changes the theme layer or bumps `GW_EMBED_STYLESHEET_TRANSFORM_FINGERPRINT` gives it a new key; or purge `/public/api/gw-embed-stylesheet/*` in Cloudflare. A purge clears the edge only; browsers that already hold the body keep it until the week ends, which is what the shorter lifetime bounds. Restarting the pods clears the server's in-memory copy.
+
+Cloudflare sits in front of the app and caches `.css` paths by extension. It raises a `max-age` below the zone's Browser Cache TTL (4 hours) to `max-age=14400`, and stamps the same on error responses that carry no `Cache-Control`. That is why the unkeyed form was seen at 14400 rather than 300, and why errors from this route are marked `no-store`. A week is above the zone TTL, so the keyed form passes through unchanged.
+
+The route is anonymous, so it brakes itself: failed names are remembered for a minute, only a few upstream fetches run at once, the upstream must answer `text/css` within the size cap, and a body with no rules is refused. The transform therefore runs once per Gatewaze release per pod, not in every browser, and no CSS parser ships to the client. It:
 
 - scopes every selector under the embed containers,
 - remaps root-element rules (`:root`/`html`/`body`) onto the embed containers so their declarations survive,

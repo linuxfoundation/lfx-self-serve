@@ -2,7 +2,20 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, PLATFORM_ID, signal, TransferState, viewChild } from '@angular/core';
+import {
+  afterNextRender,
+  ChangeDetectorRef,
+  Component,
+  computed,
+  DestroyRef,
+  effect,
+  ElementRef,
+  inject,
+  PLATFORM_ID,
+  signal,
+  TransferState,
+  viewChild,
+} from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, NavigationStart, Router } from '@angular/router';
 import { filter } from 'rxjs';
@@ -10,11 +23,13 @@ import {
   GW_EMBED_CAPABILITY_MISSING_CODE,
   GW_EMBED_ENABLED_FEATURES,
   GW_EMBED_ENABLED_MODULE_IDS,
+  GW_EMBED_FIRST_PAINT_TIMEOUT_MS,
   GW_EMBED_HOST_SESSION_LOGOUT_URL,
   GW_EMBED_HOST_SESSION_ME_URL,
   GW_EMBED_LOGIN_PATH,
   GW_EMBED_NOTIFICATION_DEFAULT_LIFE_MS,
   GW_EMBED_NOTIFICATION_SEVERITY,
+  GW_EMBED_PAINTED_CONTENT_SELECTOR,
   GW_EMBED_STYLESHEET_ROUTE,
   GW_HOST_SESSION_PROXY_API_MOUNT,
   GW_HOST_SESSION_PROXY_SUPABASE_MOUNT,
@@ -24,6 +39,7 @@ import { GwEmbedFatalError, GwEmbedMountHandle, GwEmbedNotification, GwHostConte
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
 
+import { GwEmbedWarmupService } from '../../../shared/services/gw-embed-warmup.service';
 import { UserService } from '../../../shared/services/user.service';
 
 import { getRuntimeConfig } from '../../../shared/providers/runtime-config.provider';
@@ -67,6 +83,8 @@ export class GwModuleOutletComponent {
   private readonly transferState = inject(TransferState);
   private readonly messageService = inject(MessageService);
   private readonly userService = inject(UserService);
+  private readonly warmup = inject(GwEmbedWarmupService);
+  private readonly changeDetectorRef = inject(ChangeDetectorRef);
 
   // viewChild mount points — both are unconditional siblings in the template so they exist in the
   // DOM (and are stable references) before the embed ever mounts.
@@ -77,13 +95,16 @@ export class GwModuleOutletComponent {
   protected readonly mountError = signal<string | null>(null);
 
   /**
-   * True from the first BROWSER render until the embed has mounted or failed — never during SSR.
+   * True from the first BROWSER render until the embed has painted something or failed — never
+   * during SSR.
    *
    * `mountEmbed` runs from `afterNextRender` and returns early off-browser, so the server-rendered
    * HTML carries the mount points and no skeleton.
    *
-   * Template-bound: the embed is a large React bundle fetched on demand, so without this the user
-   * watches an empty container for as long as the import takes.
+   * Template-bound: it shows the skeleton and keeps `#gw-embed-root` at `visibility: hidden`. The
+   * loader's `ready` resolves once the bundle is mounted, which is before React has drawn anything,
+   * so clearing this on `ready` left a blank pane until the embed's own first paint. It is cleared
+   * when `waitForFirstPaint` sees content instead.
    */
   protected readonly mounting = signal(false);
 
@@ -102,11 +123,24 @@ export class GwModuleOutletComponent {
   private pendingNavigation: Pick<NavigationStart, 'id' | 'navigationTrigger'> | null = null;
   /** Which mount path this instance is serving; see resolveGwEmbedRoutePrefix. */
   private routePrefix: string = resolveGwEmbedRoutePrefix('');
+  /** Ends a `waitForFirstPaint` in progress; null when none is. */
+  private endPaintWait: (() => void) | null = null;
 
   // 7. Constructor
   public constructor() {
+    // Runs during SSR too, so a page rendered on this route carries the hint in its <head> and the
+    // browser opens the connection to GW_EMBED_URL while it is still parsing the HTML.
+    this.warmup.preconnect();
     afterNextRender(() => {
       void this.mountEmbed();
+    });
+    // A terminal error during the paint wait (a non-recoverable fatal, or the sign-in bounce after a
+    // 401 from /session/me) raises the error panel; the skeleton must go with it rather than sit
+    // above the panel until the wait times out.
+    effect(() => {
+      if (this.hostPanelShowing()) {
+        this.endPaintWait?.();
+      }
     });
     this.destroyRef.onDestroy(() => {
       this.destroyed = true;
@@ -137,6 +171,9 @@ export class GwModuleOutletComponent {
       return;
     }
     this.mounting.set(true);
+    // Start the session mint now rather than when the embed asks for it, after the manifest and the
+    // bundle have loaded. Fire and forget: the embed's own /session/me waits on the same mint.
+    this.warmup.warmSession();
 
     try {
       const runtimeConfig = getRuntimeConfig(this.transferState);
@@ -193,7 +230,9 @@ export class GwModuleOutletComponent {
           baseUrl: runtimeConfig.gwEmbedUrl,
           // The bundle's stylesheet is unscoped; the server scopes and caches it by hashed name
           // (gw-embed-stylesheet.service.ts), so only the file name crosses over.
-          resolveStylesheetUrl: (url) => `${GW_EMBED_STYLESHEET_ROUTE}/${resolveGwEmbedStylesheetName(url)}`,
+          // The server's key for its own share of the output (theme and transform) goes in the path,
+          // so the URL is content-addressed and can be cached as immutable.
+          resolveStylesheetUrl: (url) => buildGwEmbedStylesheetUrl(resolveGwEmbedStylesheetName(url), runtimeConfig.gwEmbedStylesheetKey),
         },
         portalContainer: this.embedPortals().nativeElement,
         notify: (notification) => this.showHostToast(notification),
@@ -214,12 +253,13 @@ export class GwModuleOutletComponent {
       // `unmount()` before `ready` cancels the mount, so teardown needs no extra bookkeeping.
       this.mountHandle = mod.mount(this.embedRoot().nativeElement, ctx);
       this.watchHostNavigation();
-      // Keep the skeleton up until the embed is actually in the DOM: `mounting` is cleared in the
-      // finally below, and clearing it on the synchronous return would leave the outlet blank
-      // while the loader is still fetching.
+      // Keep the skeleton up until the embed has painted: `mounting` is cleared in the finally
+      // below. Clearing it on the synchronous return would leave the outlet blank while the loader
+      // is still fetching, and clearing it on `ready` leaves it blank until React's first render.
       const manifest = await this.mountHandle.ready;
       if (manifest) {
         console.info(`[GwModuleOutlet] Gatewaze embed ${manifest.version} mounted (contract ${manifest.contract})`);
+        await this.waitForFirstPaint(this.embedRoot().nativeElement);
       } else if (!this.destroyed && !this.hostPanelShowing()) {
         // Nothing mounted. The loader has already said why through `onFatal`, but it marks a
         // manifest or bundle fetch failure as recoverable (a retry may work), which `onFatal`
@@ -239,8 +279,66 @@ export class GwModuleOutletComponent {
       });
     } finally {
       this.mounting.set(false);
+      // Swap the skeleton for the embed in the same frame the embed painted in. The paint is seen
+      // from an observer callback, and this runs in the microtasks that follow it, before the
+      // browser renders; the scheduled change detection could land a frame later and show both
+      // the hidden embed's space and no skeleton, the blank frame this exists to avoid.
+      if (!this.destroyed) {
+        this.changeDetectorRef.detectChanges();
+      }
     }
   }
+
+  /**
+   * Resolves once `root` holds painted content (see `gwEmbedHasPaintedContent`). The first thing
+   * the embed draws may be its own loading spinner; that counts, so the skeleton hands over to it
+   * directly. Also resolves on teardown, as soon as the error panel is up, and after
+   * `GW_EMBED_FIRST_PAINT_TIMEOUT_MS` so a render that never produces height cannot leave the
+   * skeleton up forever.
+   *
+   * The root keeps laying out while hidden (`visibility`, not `display`), which is what lets the
+   * observers measure it.
+   *
+   * Seam: `@gatewaze/admin-embed` 1.2.0 adds a `first-paint` capability and a `handle.rendered`
+   * promise that resolves on the embed's own first paint. When the dependency moves to it, await
+   * that here when the handle has it and keep this observer as the fallback for older bundles.
+   */
+  private waitForFirstPaint(root: HTMLElement): Promise<void> {
+    return new Promise((resolve) => {
+      if (this.destroyed || this.hostPanelShowing() || this.embedHasPainted(root)) {
+        resolve();
+        return;
+      }
+      const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => check());
+      const mutationObserver = new MutationObserver(() => check());
+      const timer = setTimeout(() => {
+        console.warn(`[GwModuleOutlet] The embed painted nothing within ${GW_EMBED_FIRST_PAINT_TIMEOUT_MS} ms of mounting; showing it anyway`);
+        finish();
+      }, GW_EMBED_FIRST_PAINT_TIMEOUT_MS);
+      const unregisterDestroy = this.destroyRef.onDestroy(() => finish());
+      const finish = (): void => {
+        clearTimeout(timer);
+        resizeObserver?.disconnect();
+        mutationObserver.disconnect();
+        unregisterDestroy();
+        this.endPaintWait = null;
+        resolve();
+      };
+      const check = (): void => {
+        if (this.hostPanelShowing() || this.embedHasPainted(root)) {
+          finish();
+        }
+      };
+      this.endPaintWait = finish;
+      // The root itself resizes when content arrives; content appearing inside a wrapper that already
+      // has height (Radix's root Theme) does not resize it, so mutations are watched too.
+      resizeObserver?.observe(root);
+      mutationObserver.observe(root, { childList: true, subtree: true, characterData: true });
+    });
+  }
+
+  /** The paint test, as a property so the spec can stand it in: the test DOM does no layout. */
+  private embedHasPainted = (root: HTMLElement): boolean => gwEmbedHasPaintedContent(root);
 
   /**
    * Keeps the embed's router in step with host-initiated navigation.
@@ -401,4 +499,39 @@ export class GwModuleOutletComponent {
  */
 export function resolveGwEmbedStylesheetName(url: string): string {
   return new URL(url).pathname.split('/').pop() ?? '';
+}
+
+/**
+ * Whether the embed root holds something a user would see: the root has height, and somewhere in
+ * it there is non-whitespace text (outside `style`, `script` and `template`) or an element matching
+ * `GW_EMBED_PAINTED_CONTENT_SELECTOR`, such as the embed's spinner.
+ *
+ * A child with height is not enough. The embed renders its providers first, and Radix's root `Theme`
+ * among them has `min-height: 100vh` while the route below it still renders nothing, so that test
+ * dropped the skeleton onto a blank pane. Exported for the spec.
+ */
+export function gwEmbedHasPaintedContent(root: HTMLElement): boolean {
+  if (root.getBoundingClientRect().height <= 0) {
+    return false;
+  }
+  if (root.querySelector(GW_EMBED_PAINTED_CONTENT_SELECTOR)) {
+    return true;
+  }
+  const walker = root.ownerDocument.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const parent = node.parentElement;
+    if (node.nodeValue?.trim() && !parent?.closest('style, script, template')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * The scoped stylesheet's same-origin URL. With the server's key the path is content-addressed
+ * (upstream hash in the name, LFX's theme and transform in the key) and served as immutable;
+ * without one it falls back to the short-lived, revalidated form. Exported for the spec.
+ */
+export function buildGwEmbedStylesheetUrl(name: string, key: string): string {
+  return key ? `${GW_EMBED_STYLESHEET_ROUTE}/${encodeURIComponent(key)}/${name}` : `${GW_EMBED_STYLESHEET_ROUTE}/${name}`;
 }

@@ -5,6 +5,7 @@ import { RuntimeConfig } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
 import { isGatewazeHostSessionEnabled } from '../services/gatewaze-session.service';
+import { getGwEmbedStylesheetKey } from './gw-embed.helper';
 import { resolvePublishableGwSupabaseKey } from './supabase-key.helper';
 
 /**
@@ -12,7 +13,10 @@ import { resolvePublishableGwSupabaseKey } from './supabase-key.helper';
  * See RuntimeConfig's doc comments for each field. Empty values mean "not configured", and the
  * outlet fails closed on them.
  */
-export function buildGwRuntimeConfig(req: Request): Pick<RuntimeConfig, 'gwSupabaseUrl' | 'gwSupabaseAnonKey' | 'gwEmbedUrl' | 'gwHostSession'> {
+export function buildGwRuntimeConfig(
+  req: Request
+): Pick<RuntimeConfig, 'gwSupabaseUrl' | 'gwSupabaseAnonKey' | 'gwEmbedUrl' | 'gwHostSession' | 'gwEmbedStylesheetKey'> {
+  const hostSession = isGatewazeHostSessionEnabled();
   return {
     gwSupabaseUrl: process.env['GW_SUPABASE_URL'] || '',
     // Withheld unless it is actually publishable. This value lands in the SSR payload of every
@@ -23,6 +27,20 @@ export function buildGwRuntimeConfig(req: Request): Pick<RuntimeConfig, 'gwSupab
     gwEmbedUrl: process.env['GW_EMBED_URL'] || '',
     // The same check that gates /api/gatewaze, so the outlet never mounts the embed on a pod whose
     // routes would answer 404. It shows its not-configured panel instead.
-    gwHostSession: isGatewazeHostSessionEnabled(),
+    gwHostSession: hostSession,
+    // The outlet never mounts without host-session mode, so the key is only worked out with it on.
+    gwEmbedStylesheetKey: hostSession ? resolveStylesheetKey() : '',
   };
+}
+
+/**
+ * The stylesheet key, or '' when the theme layer cannot be read. A page must still render then:
+ * the outlet falls back to the unkeyed stylesheet URL, and that request reports the missing theme.
+ */
+function resolveStylesheetKey(): string {
+  try {
+    return getGwEmbedStylesheetKey('build_gw_runtime_config');
+  } catch {
+    return '';
+  }
 }

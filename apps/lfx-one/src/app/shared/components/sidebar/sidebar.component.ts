@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass, NgTemplateOutlet } from '@angular/common';
-import { afterNextRender, Component, computed, inject, input, model, Signal, signal, viewChild } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, input, model, Signal, signal, viewChild } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterModule } from '@angular/router';
 import type { IsActiveMatchOptions } from '@angular/router';
@@ -17,6 +17,7 @@ import { LensItem, NavLens, PersonaType, ProfileTab, ProjectContext, SidebarMenu
 import { buildProfileTabs, lensItemToProjectContext, orgLensDestinationKey, toTitleCase } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
+import { GwEmbedWarmupService } from '@services/gw-embed-warmup.service';
 import { LensService } from '@services/lens.service';
 import { NavigationService } from '@services/navigation.service';
 import { PersonaService } from '@services/persona.service';
@@ -70,6 +71,9 @@ export class SidebarComponent {
   private readonly userService = inject(UserService);
   private readonly accountContextService = inject(AccountContextService);
   private readonly featureFlagService = inject(FeatureFlagService);
+  private readonly gwEmbedWarmup = inject(GwEmbedWarmupService);
+  private readonly elementRef = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly destroyRef = inject(DestroyRef);
 
   private static readonly exactPathMatch: IsActiveMatchOptions = { paths: 'exact', queryParams: 'ignored', matrixParams: 'ignored', fragment: 'ignored' };
   private static readonly subpathMatch: IsActiveMatchOptions = { ...SidebarComponent.exactPathMatch, paths: 'subset' };
@@ -174,7 +178,12 @@ export class SidebarComponent {
   public constructor() {
     // Runs browser-only, after the first client render is committed — flips the menu from skeleton to
     // the client-resolved lens menu once hydration is safely past the SSR/CSR reconciliation boundary.
-    afterNextRender(() => this.hydrated.set(true));
+    afterNextRender(() => {
+      this.hydrated.set(true);
+      // Hovering or focusing the Newsletters link that opens the Gatewaze embed starts its session
+      // mint and its connection early (GwEmbedWarmupService). Browser-only, like this callback.
+      this.gwEmbedWarmup.watchNavIntent(this.elementRef.nativeElement, this.destroyRef);
+    });
   }
 
   protected toggleGroup(label: string): void {
