@@ -99,6 +99,7 @@ export * from './mktg-artifact.constants';
 export * from './mktg-document-store.constants';
 export * from './mktg-os-agents.constants';
 export * from './mktg-run.constants';
+export * from './mktg-run-activity.constants';
 
 export * from './project-context.constants';
 export * from './project-formation.constants';

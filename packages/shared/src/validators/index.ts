@@ -15,4 +15,6 @@ export * from './meeting.validators';
 export * from './newsletter.validators';
 export * from './plain-text-message.validator';
 export * from './project-application.validators';
+export * from './source-url.validator';
+export * from './substantive-answer.validator';
 export * from './vote.validators';

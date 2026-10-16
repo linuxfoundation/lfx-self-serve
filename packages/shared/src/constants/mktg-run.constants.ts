@@ -4,13 +4,25 @@
 import type { GithubRepoUrlErrorReason, MktgAgentIntake, MktgIntakeField, MktgIntakeFieldFormat, MktgReadmeSkipReason } from '../interfaces';
 import { BRAND_KIT_FORM_PREAMBLE_LINES, BRAND_KIT_INTAKE_QUESTIONS } from './brand-kit.constants';
 import {
+  FOUNDATION_MESSAGE_ANSWER_MAX_CHARS,
+  FOUNDATION_MESSAGE_ANSWERS_ENDPOINT,
   FOUNDATION_MESSAGE_DERIVATIVE_CHIPS,
-  FOUNDATION_MESSAGE_FORM_PREAMBLE_LINES,
-  FOUNDATION_MESSAGE_Q_GITHUB_URL,
-  FOUNDATION_MESSAGE_Q_PROJECT_NAME,
+  FOUNDATION_MESSAGE_DOCUMENT_ENDPOINTS,
+  FOUNDATION_MESSAGE_FILE_EXTENSIONS,
+  FOUNDATION_MESSAGE_MAX_DOCUMENTS,
+  FOUNDATION_MESSAGE_MAX_FILE_BYTES,
+  FOUNDATION_MESSAGE_MAX_OTHER_LINKS,
+  FOUNDATION_MESSAGE_OTHER_LINKS_KEY,
   FOUNDATION_MESSAGE_REQUIRED_HEADINGS,
+  FOUNDATION_MESSAGE_SOURCE_KINDS,
+  FOUNDATION_MESSAGE_SOURCE_LABELS,
+  FOUNDATION_MESSAGE_SOURCE_URL_KEYS,
 } from './foundation-message.constants';
 import { ICP_FORM_PREAMBLE_LINES, ICP_GAP_FILL_QUESTIONS, ICP_Q_GITHUB_URL, ICP_Q_PROJECT_NAME, ICP_REQUIRED_HEADINGS } from './icp.constants';
+
+/** Paul's label for each source, sentence-cased for the form. */
+const sourceLabel = (kind: (typeof FOUNDATION_MESSAGE_SOURCE_KINDS)[number]): string =>
+  FOUNDATION_MESSAGE_SOURCE_LABELS[kind].charAt(0).toUpperCase() + FOUNDATION_MESSAGE_SOURCE_LABELS[kind].slice(1);
 
 // Form-first run-page configuration for the Marketing OS Agents marketplace
 // (LFXAI-95 workstream): per-agent batch intake registry, running-phase stage
@@ -91,75 +103,123 @@ export const BRAND_KIT_INTAKE: MktgAgentIntake = {
 };
 
 /**
- * Message Foundation batch intake (wi-mf-lfx-selfserve). Fixed question
- * wording is quoted VERBATIM from the agent's own `src/questions.ts`
- * (marketing-os-agents `agents/foundation-message-ts`), never paraphrased.
- * The agent consumes the Brand Kit as a dependency
- * (dec-agent-dependency-gating): the form never asks for it — the project's
- * stored Brand Kit document (server-persisted preferred, browser-stored run
- * fallback) is auto-attached as `brand_kit_markdown` at submit time, which
- * satisfies the agent's conditional contract (discovery answers are required
- * exactly when no Brand Kit is provided, so they are never collected here).
- * Every follow-up is a full resubmit through the generate endpoint
- * (`regenerateViaGenerate`): the BFF re-fetches the README and submits the
- * typed `message_foundation_intake_form` payload with `feedback` +
- * `prior_version`, so a chat-text follow-up (which could carry neither) is
- * never used.
+ * Messaging Document intake (marketing-os-agents agents/foundation-message,
+ * Paul's messaging-document 1.0.0; wi-message-foundation-existing-documents-form).
+ * The form from the design canvas, in two parts:
+ *
+ * - Sources: the project name, Paul's four Step 0b sources and any other
+ *   links, as URLs only. The agent fetches every link itself and researches
+ *   the rest (web fetch, Exa search); "none" is a valid answer. The project
+ *   name and the GitHub page come from LFX; the GitHub field takes a
+ *   repository or an organization page.
+ * - Existing documents, optional and last: PDF, Word, Markdown or text files,
+ *   turned into text by the BFF, and links the agent reads itself. The agent
+ *   maps them first.
+ *
+ * There are no questions on this form. After reading and researching, the
+ * agent asks only the gaps it could not settle, each with a suggested answer
+ * (`endpoints.answers`): the run page shows them as a second step on the
+ * same run, every answer required, and the answers go back to the same
+ * session. The questions and answers are stored with the version.
+ *
+ * It runs first and needs no other document, so nothing is attached. Every
+ * submission is a fresh generate (`freshRunPerSubmission`): the generate form
+ * carries no prior version or feedback, and each result is stored as a new
+ * revision of the project's foundation-message document.
  */
 export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
   agentId: 'foundation-setup',
   formTitleAction: 'Build',
-  documentName: 'Message Foundation',
-  intro: 'One form, then the agent drafts the full document. Fields marked “From LFX” are pre-filled from your project — edit anything.',
-  // The agent's own form-mode preamble (src/form.ts renderFormMessage),
-  // verbatim — the same FOUNDATION_MESSAGE_FORM_PREAMBLE_LINES the BFF's
-  // `renderFoundationMessageFormText` opens the batch submission with, so
-  // the agent's MODE RULES trigger identically wherever the message is
-  // composed.
-  batchPreamble: [...FOUNDATION_MESSAGE_FORM_PREAMBLE_LINES],
+  documentName: 'Messaging Document',
+  intro:
+    'Runs first; it needs no other document. Give the agent your sources as links: it reads every one, researches the rest on its own, and comes back with questions only for what the sources leave open — each with a suggested answer for you to accept or edit. Existing messaging or positioning documents can be attached at the end; the agent reads them first. Every result is stored as a new revision of the document in Documents.',
+  // Never sent: the generate endpoint renders the agent's own intake form
+  // server-side, and with fresh runs there is no chat follow-up to prefix.
+  batchPreamble: [],
   fields: [
-    { key: 'project_name', question: FOUNDATION_MESSAGE_Q_PROJECT_NAME, kind: 'text', prefill: 'project-name' },
+    { key: 'project_name', question: 'Project name', kind: 'text', prefill: 'project-name' },
     {
-      key: 'github_url',
-      question: FOUNDATION_MESSAGE_Q_GITHUB_URL,
+      key: FOUNDATION_MESSAGE_SOURCE_URL_KEYS.website,
+      question: sourceLabel('website'),
       kind: 'text',
-      prefill: 'repository-url',
-      hint: 'The README is fetched automatically from this repo and passed to the agent.',
-      // Blocking. Paul's contract keeps this answer free text for the AGENT
-      // (which tolerates a missing README) — it does not bind the LFX
-      // collection UI, and the question wording above is still verbatim.
-      // Product ruling: a URL that provably cannot yield a README is not
-      // accepted, because the user would only find out minutes later, as a
-      // thinner document.
-      format: 'github-repo-url',
+      optional: true,
+      placeholder: 'https://… or none',
+      format: 'source-url',
     },
-    // Paul's Step 1d gap areas, offered as one optional free-text field — the
-    // placeholder names his five areas so form mode never has to ask.
     {
-      key: 'gap_fill_notes',
-      question: 'Anything else the messaging should build on? (optional)',
+      // A repository or an organization page: the agent reads either (hand
+      // test, 2026-10-15 — https://github.com/aaif is an organization page).
+      key: FOUNDATION_MESSAGE_SOURCE_URL_KEYS.readme,
+      question: sourceLabel('readme'),
+      kind: 'text',
+      optional: true,
+      prefill: 'repository-url',
+      placeholder: 'https://github.com/org or https://github.com/org/repo',
+      format: 'github-url',
+    },
+    {
+      key: FOUNDATION_MESSAGE_SOURCE_URL_KEYS.press_release,
+      question: sourceLabel('press_release'),
+      kind: 'text',
+      optional: true,
+      placeholder: 'https://… or none',
+      format: 'source-url',
+    },
+    {
+      key: FOUNDATION_MESSAGE_SOURCE_URL_KEYS.brand_page,
+      question: sourceLabel('brand_page'),
+      kind: 'text',
+      optional: true,
+      placeholder: 'https://… or none',
+      format: 'source-url',
+    },
+    {
+      key: FOUNDATION_MESSAGE_OTHER_LINKS_KEY,
+      question: 'Other links',
       kind: 'textarea',
       rows: 3,
       optional: true,
-      placeholder:
-        'Proof points to cite (adopters, benchmarks) · audiences beyond technical personas + outreach goals · who this is positioned against (“unlike ___”) · a specific membership tier or CTA · an upcoming milestone or event to anchor to',
+      placeholder: 'One link per line — docs, blog posts, talks, anything the agent should read',
+      hint: `Up to ${FOUNDATION_MESSAGE_MAX_OTHER_LINKS} links.`,
+      format: 'source-url-list',
     },
   ],
-  attachments: [{ sourceAgentId: 'brand-kit', answerKey: 'brand_kit_markdown', documentName: 'Brand Kit' }],
-  derivativeChips: [...FOUNDATION_MESSAGE_DERIVATIVE_CHIPS],
-  regenerateViaGenerate: true,
+  fieldGroups: [
+    {
+      id: 'sources',
+      title: 'Sources',
+      hint: 'links only — “none” is a valid answer',
+      footnote: 'The agent reads every link itself and researches the rest on its own, so it never asks you to restate what the sources say.',
+      fieldKeys: [
+        'project_name',
+        ...FOUNDATION_MESSAGE_SOURCE_KINDS.map((kind) => FOUNDATION_MESSAGE_SOURCE_URL_KEYS[kind]),
+        FOUNDATION_MESSAGE_OTHER_LINKS_KEY,
+      ],
+    },
+  ],
+  documents: {
+    title: 'Existing documents',
+    hint: 'Messaging, positioning, brand, audience or competitive documents. Several allowed.',
+    footnote: `Accepted: PDF, Word (.docx), Markdown and plain text, up to ${FOUNDATION_MESSAGE_MAX_FILE_BYTES / (1024 * 1024)} MB each — read here and sent as text. A link (a Google Doc, a wiki page) is sent as is; the agent reads it.`,
+    maxDocuments: FOUNDATION_MESSAGE_MAX_DOCUMENTS,
+    maxFileBytes: FOUNDATION_MESSAGE_MAX_FILE_BYTES,
+    fileExtensions: [...FOUNDATION_MESSAGE_FILE_EXTENSIONS],
+    endpoints: { ...FOUNDATION_MESSAGE_DOCUMENT_ENDPOINTS },
+  },
+  derivativeChips: FOUNDATION_MESSAGE_DERIVATIVE_CHIPS.map((chip) => ({ key: chip.key, label: chip.label })),
+  freshRunPerSubmission: true,
+  liveActivity: true,
+  submitsProject: true,
   sections: FOUNDATION_MESSAGE_REQUIRED_HEADINGS.map((heading) => heading.replace(/^## /, '')),
   endpoints: {
     generate: '/api/mktg-agents/foundation-message/generate',
     result: '/api/mktg-agents/foundation-message/result',
+    answers: FOUNDATION_MESSAGE_ANSWERS_ENDPOINT,
     stored: '/api/mktg-agents/foundation-message/stored',
   },
-  // The result endpoint writes every validated document to the project's
-  // storage partition through the SHARED agent-artifact layer and reports the
-  // receipt, so a receipt-less ready result is a failed write the run shell
-  // must retry. Without the server copy a Message Foundation would live only
-  // in the browser that generated it (TTL-bounded stored run) — which is
-  // exactly what kept its dependents locked everywhere else.
+  // The result endpoint stores every validated bundle as a revision of the
+  // project's foundation-message document and reports the receipt, so a
+  // receipt-less ready result is a failed write the run shell must retry.
   persistsDocument: true,
 };
 
@@ -194,7 +254,7 @@ export const ICP_INTAKE: MktgAgentIntake = {
   formTitleAction: 'Define',
   documentName: 'ICP & Target Markets',
   intro:
-    'One form, then the agent drafts the full ICP & Target Markets document. Fields marked “From LFX” are pre-filled from your project — edit anything. Your project’s Brand Kit and Message Foundation are attached automatically when they exist.',
+    'One form, then the agent drafts the full ICP & Target Markets document. Fields marked “From LFX” are pre-filled from your project — edit anything. Your project’s Brand Kit and Messaging Document are attached automatically when they exist.',
   // The agent's own form-mode preamble (src/form.ts renderFormMessage),
   // verbatim — the same ICP_FORM_PREAMBLE_LINES the BFF's `renderIcpFormText`
   // opens the batch submission with, so the agent's MODE RULES trigger
@@ -208,8 +268,7 @@ export const ICP_INTAKE: MktgAgentIntake = {
       kind: 'text',
       prefill: 'repository-url',
       hint: 'The README is fetched automatically from this repo and passed to the agent.',
-      // Blocking, for the same reason as the Message Foundation's Q1b: Paul's
-      // contract keeps the answer free text for the AGENT, but a URL that
+      // Blocking: Paul's contract keeps the answer free text for the AGENT, but a URL that
       // provably cannot yield a README is refused by the LFX collection UI
       // rather than accepted and discovered minutes later as a thin document.
       format: 'github-repo-url',
@@ -229,7 +288,7 @@ export const ICP_INTAKE: MktgAgentIntake = {
   ],
   attachments: [
     { sourceAgentId: 'brand-kit', answerKey: 'brand_kit_markdown', documentName: 'Brand Kit', optional: true },
-    { sourceAgentId: 'foundation-setup', answerKey: 'message_foundation_markdown', documentName: 'Message Foundation', optional: true },
+    { sourceAgentId: 'foundation-setup', answerKey: 'message_foundation_markdown', documentName: 'Messaging Document', optional: true },
   ],
   regenerateViaGenerate: true,
   sections: ICP_REQUIRED_HEADINGS.map((heading) => heading.replace(/^## /, '')),
@@ -262,6 +321,14 @@ export const MKTG_AGENT_INTAKES: Record<string, MktgAgentIntake> = {
 export const MKTG_ENVELOPE_EXTRACTION_MAX_DEPTH = 16;
 
 /**
+ * Raw Guild session events whose `content` is a platform tool's input or
+ * output (a fetched page, a search's results, an LFX lookup) — never the
+ * agent speaking, never one of its own tool results. The event readers skip
+ * them whole, so nothing a third-party page carries can pass for either.
+ */
+export const MKTG_SESSION_PLATFORM_TOOL_EVENT_TYPES = ['runtime_start', 'runtime_done'] as const;
+
+/**
  * Blocking field-error copy for an intake value that fails its `format` rule.
  * Keyed by the rule and by what the value turned out to be, so the message
  * names the ACTUAL problem instead of a generic "invalid" — an account
@@ -280,6 +347,12 @@ export const MKTG_INTAKE_FORMAT_ERRORS: Record<MktgIntakeFieldFormat, Partial<Re
   'github-url': {
     unrecognized:
       'That doesn’t look like a GitHub URL. Enter the project’s repository or organization URL, e.g. https://github.com/org/repo or https://github.com/org.',
+  },
+  'source-url': {
+    unrecognized: 'Enter the full link, starting with https://, or “none”.',
+  },
+  'source-url-list': {
+    unrecognized: 'Every line must be a full link, starting with https://.',
   },
 };
 
@@ -300,6 +373,21 @@ export const MKTG_README_SKIP_NOTES: Record<MktgReadmeSkipReason, string> = {
 
 /** Running-phase stage checklist labels, in order. */
 export const MKTG_RUN_STAGES = ['Submitting your intake', 'Agent drafting the document', 'Validating required sections'] as const;
+
+/**
+ * Validation of the questions step: an answer that is not one. There is no
+ * skip and no TBD there — the agent already suggested what it could settle,
+ * so what is left needs the requester's answer.
+ */
+export const MKTG_ANSWER_NOT_SUBSTANTIVE_ERROR =
+  'An answer is needed here — the agent could not settle this from the sources, and “TBD” or “skip” leaves the gap.';
+
+/**
+ * Validation of the questions step: an answer longer than the answers turn
+ * takes (`FOUNDATION_MESSAGE_ANSWER_MAX_CHARS`, the BFF's own cap), said
+ * before it is sent rather than refused on the way out.
+ */
+export const MKTG_ANSWER_TOO_LONG_ERROR = `An answer can be at most ${FOUNDATION_MESSAGE_ANSWER_MAX_CHARS.toLocaleString('en-US')} characters — shorten this one.`;
 
 /**
  * The document review-status labels, as the re-pinned agents write them

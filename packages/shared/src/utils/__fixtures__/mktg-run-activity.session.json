@@ -1,0 +1,904 @@
+{
+  "session": "01a140f6-eb0d-f268-0000-23b0c8b3f0d3",
+  "note": "Trimmed from a live Messaging Document 3.0.0 session (OpenSearch, 15 Oct 2026): tool inputs, task metadata and timings as recorded; every tool output, prompt and model text removed.",
+  "events": [
+    {
+      "type": "runtime_start",
+      "created_at": "2026-10-15T19:08:41.070771+00:00",
+      "task": {
+        "entity_type": "EntTaskAgent",
+        "id": "01a140f6-ebf6-4aa6-0000-75711c8751c9",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:06.518940+00:00",
+        "updated_at": "2026-10-15T19:14:23.529155+00:00"
+      },
+      "content": {
+        "note": "trimmed"
+      }
+    },
+    {
+      "type": "llm_start",
+      "created_at": "2026-10-15T19:08:41.612588+00:00",
+      "task": {
+        "entity_type": "EntTaskAgent",
+        "id": "01a140f6-ebf6-4aa6-0000-75711c8751c9",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:06.518940+00:00",
+        "updated_at": "2026-10-15T19:14:23.529155+00:00"
+      },
+      "content": {
+        "note": "request trimmed"
+      }
+    },
+    {
+      "type": "llm_done",
+      "created_at": "2026-10-15T19:08:47.462370+00:00",
+      "task": {
+        "entity_type": "EntTaskAgent",
+        "id": "01a140f6-ebf6-4aa6-0000-75711c8751c9",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:06.518940+00:00",
+        "updated_at": "2026-10-15T19:14:23.529155+00:00"
+      },
+      "body": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_01BHcDw9kWohGVKqJFQxr41g\",\"name\":\"experimental_fetch_fetch\",\"input\":{}}}\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_01KRz5VtZr3xsUe9ULb589k1\",\"name\":\"experimental_fetch_fetch\",\"input\":{}}}\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_01AHzZVxaSXD7WCThTxdGFBn\",\"name\":\"experimental_fetch_fetch\",\"input\":{}}}\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_01WAH3EYs9Tk5dNqW1Yo9na2\",\"name\":\"experimental_fetch_fetch\",\"input\":{}}}\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_01HdjjR1QnRjsxkjgNYjF4yo\",\"name\":\"lfx_mcp_search_projects\",\"input\":{}}}"
+    },
+    {
+      "type": "agent_notification_progress",
+      "created_at": "2026-10-15T19:08:47.531221+00:00",
+      "task": {
+        "entity_type": "EntTaskAgent",
+        "id": "01a140f6-ebf6-4aa6-0000-75711c8751c9",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:06.518940+00:00",
+        "updated_at": "2026-10-15T19:14:23.529155+00:00"
+      },
+      "content": {
+        "type": "text",
+        "data": "(trimmed)"
+      }
+    },
+    {
+      "type": "runtime_start",
+      "created_at": "2026-10-15T19:08:47.838480+00:00",
+      "task": {
+        "entity_type": "EntTaskTool",
+        "id": "01a140f7-8cfc-bce2-0000-143496864cc8",
+        "tool_name": "experimental_fetch_fetch",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:47.740929+00:00",
+        "updated_at": "2026-10-15T19:08:48.504221+00:00"
+      },
+      "content": {
+        "max_bytes": 60000,
+        "method": "GET",
+        "url": "https://opensearch.org"
+      }
+    },
+    {
+      "type": "runtime_start",
+      "created_at": "2026-10-15T19:08:47.981009+00:00",
+      "task": {
+        "entity_type": "EntTaskTool",
+        "id": "01a140f7-8daf-bce2-0000-7c21869403e5",
+        "tool_name": "experimental_fetch_fetch",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:47.919285+00:00",
+        "updated_at": "2026-10-15T19:08:48.732154+00:00"
+      },
+      "content": {
+        "max_bytes": 80000,
+        "method": "GET",
+        "url": "https://www.linuxfoundation.org/press/linux-foundation-announces-opensearch-software-foundation-to-foster-open-collaboration-in-search-and-analytics"
+      }
+    },
+    {
+      "type": "runtime_start",
+      "created_at": "2026-10-15T19:08:48.136519+00:00",
+      "task": {
+        "entity_type": "EntTaskTool",
+        "id": "01a140f7-8e5f-bce2-0000-e1ebcc4d30a3",
+        "tool_name": "experimental_fetch_fetch",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:48.095590+00:00",
+        "updated_at": "2026-10-15T19:08:49.650644+00:00"
+      },
+      "content": {
+        "max_bytes": 60000,
+        "method": "GET",
+        "url": "https://opensearch.org/trademark-brand-policy/"
+      }
+    },
+    {
+      "type": "runtime_start",
+      "created_at": "2026-10-15T19:08:48.344318+00:00",
+      "task": {
+        "entity_type": "EntTaskTool",
+        "id": "01a140f7-8f1b-bce2-0000-1c195175c200",
+        "tool_name": "experimental_fetch_fetch",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:48.283618+00:00",
+        "updated_at": "2026-10-15T19:08:48.876773+00:00"
+      },
+      "content": {
+        "max_bytes": 20000,
+        "method": "GET",
+        "url": "https://raw.githubusercontent.com/opensearch-project/OpenSearch/HEAD/README.md"
+      }
+    },
+    {
+      "type": "runtime_done",
+      "created_at": "2026-10-15T19:08:48.534691+00:00",
+      "task": {
+        "entity_type": "EntTaskTool",
+        "id": "01a140f7-8cfc-bce2-0000-143496864cc8",
+        "tool_name": "experimental_fetch_fetch",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:47.740929+00:00",
+        "updated_at": "2026-10-15T19:08:48.504221+00:00"
+      },
+      "content": {
+        "note": "tool output trimmed — the feed never reads it"
+      }
+    },
+    {
+      "type": "runtime_start",
+      "created_at": "2026-10-15T19:08:48.537141+00:00",
+      "task": {
+        "entity_type": "EntTaskTool",
+        "id": "01a140f7-8fe9-bce2-0000-0f7be3ffd9e5",
+        "tool_name": "lfx_mcp_search_projects",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:48.489521+00:00",
+        "updated_at": "2026-10-15T19:08:50.216190+00:00"
+      },
+      "content": {
+        "name": "OpenSearch",
+        "page_size": 20
+      }
+    },
+    {
+      "type": "runtime_done",
+      "created_at": "2026-10-15T19:08:48.765034+00:00",
+      "task": {
+        "entity_type": "EntTaskTool",
+        "id": "01a140f7-8daf-bce2-0000-7c21869403e5",
+        "tool_name": "experimental_fetch_fetch",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:47.919285+00:00",
+        "updated_at": "2026-10-15T19:08:48.732154+00:00"
+      },
+      "content": {
+        "note": "tool output trimmed — the feed never reads it"
+      }
+    },
+    {
+      "type": "runtime_done",
+      "created_at": "2026-10-15T19:08:48.889107+00:00",
+      "task": {
+        "entity_type": "EntTaskTool",
+        "id": "01a140f7-8f1b-bce2-0000-1c195175c200",
+        "tool_name": "experimental_fetch_fetch",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:48.283618+00:00",
+        "updated_at": "2026-10-15T19:08:48.876773+00:00"
+      },
+      "content": {
+        "note": "tool output trimmed — the feed never reads it"
+      }
+    },
+    {
+      "type": "runtime_done",
+      "created_at": "2026-10-15T19:08:49.664276+00:00",
+      "task": {
+        "entity_type": "EntTaskTool",
+        "id": "01a140f7-8e5f-bce2-0000-e1ebcc4d30a3",
+        "tool_name": "experimental_fetch_fetch",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:48.095590+00:00",
+        "updated_at": "2026-10-15T19:08:49.650644+00:00"
+      },
+      "content": {
+        "note": "tool output trimmed — the feed never reads it"
+      }
+    },
+    {
+      "type": "runtime_done",
+      "created_at": "2026-10-15T19:08:50.243739+00:00",
+      "task": {
+        "entity_type": "EntTaskTool",
+        "id": "01a140f7-8fe9-bce2-0000-0f7be3ffd9e5",
+        "tool_name": "lfx_mcp_search_projects",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:48.489521+00:00",
+        "updated_at": "2026-10-15T19:08:50.216190+00:00"
+      },
+      "content": {
+        "note": "tool output trimmed — the feed never reads it"
+      }
+    },
+    {
+      "type": "llm_start",
+      "created_at": "2026-10-15T19:08:51.057928+00:00",
+      "task": {
+        "entity_type": "EntTaskAgent",
+        "id": "01a140f6-ebf6-4aa6-0000-75711c8751c9",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:06.518940+00:00",
+        "updated_at": "2026-10-15T19:14:23.529155+00:00"
+      },
+      "content": {
+        "note": "request trimmed"
+      }
+    },
+    {
+      "type": "llm_done",
+      "created_at": "2026-10-15T19:08:56.278677+00:00",
+      "task": {
+        "entity_type": "EntTaskAgent",
+        "id": "01a140f6-ebf6-4aa6-0000-75711c8751c9",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:06.518940+00:00",
+        "updated_at": "2026-10-15T19:14:23.529155+00:00"
+      },
+      "body": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_01HR7YsPjEU7Cr3k2ghPTtiM\",\"name\":\"experimental_fetch_fetch\",\"input\":{}}}\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_015Pu4fL9SaTiZor3ERN9SRo\",\"name\":\"experimental_fetch_fetch\",\"input\":{}}}\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_01UCJ7Y9vYJ7UyJ29howTWNj\",\"name\":\"web_search_web_search\",\"input\":{}}}"
+    },
+    {
+      "type": "agent_notification_progress",
+      "created_at": "2026-10-15T19:08:56.394697+00:00",
+      "task": {
+        "entity_type": "EntTaskAgent",
+        "id": "01a140f6-ebf6-4aa6-0000-75711c8751c9",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:06.518940+00:00",
+        "updated_at": "2026-10-15T19:14:23.529155+00:00"
+      },
+      "content": {
+        "type": "text",
+        "data": "(trimmed)"
+      }
+    },
+    {
+      "type": "runtime_start",
+      "created_at": "2026-10-15T19:08:56.896147+00:00",
+      "task": {
+        "entity_type": "EntTaskTool",
+        "id": "01a140f7-b0a6-bce2-0000-e78e8900231f",
+        "tool_name": "experimental_fetch_fetch",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:56.870780+00:00",
+        "updated_at": "2026-10-15T19:08:57.745032+00:00"
+      },
+      "content": {
+        "max_bytes": 30000,
+        "method": "GET",
+        "url": "https://opensearch.org/wp-json/wp/v2/pages/6?_fields=title,content"
+      }
+    },
+    {
+      "type": "runtime_start",
+      "created_at": "2026-10-15T19:08:57.079690+00:00",
+      "task": {
+        "entity_type": "EntTaskTool",
+        "id": "01a140f7-b13f-bce2-0000-d0ae039430ab",
+        "tool_name": "experimental_fetch_fetch",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:57.023497+00:00",
+        "updated_at": "2026-10-15T19:08:58.455930+00:00"
+      },
+      "content": {
+        "max_bytes": 30000,
+        "method": "GET",
+        "url": "https://opensearch.org/wp-json/wp/v2/pages/3224?_fields=title,content"
+      }
+    },
+    {
+      "type": "runtime_start",
+      "created_at": "2026-10-15T19:08:57.212923+00:00",
+      "task": {
+        "entity_type": "EntTaskTool",
+        "id": "01a140f7-b1dc-bce2-0000-0433902247cf",
+        "tool_name": "web_search_web_search",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:57.180353+00:00",
+        "updated_at": "2026-10-15T19:09:02.681730+00:00"
+      },
+      "content": {
+        "body": {
+          "contents": {
+            "highlights": true
+          },
+          "numResults": 5,
+          "query": "Elasticsearch AGPL open source again OpenSearch comparison 2024",
+          "type": "auto"
+        }
+      }
+    },
+    {
+      "type": "runtime_done",
+      "created_at": "2026-10-15T19:08:57.758912+00:00",
+      "task": {
+        "entity_type": "EntTaskTool",
+        "id": "01a140f7-b0a6-bce2-0000-e78e8900231f",
+        "tool_name": "experimental_fetch_fetch",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:56.870780+00:00",
+        "updated_at": "2026-10-15T19:08:57.745032+00:00"
+      },
+      "content": {
+        "note": "tool output trimmed — the feed never reads it"
+      }
+    },
+    {
+      "type": "runtime_done",
+      "created_at": "2026-10-15T19:08:58.496498+00:00",
+      "task": {
+        "entity_type": "EntTaskTool",
+        "id": "01a140f7-b13f-bce2-0000-d0ae039430ab",
+        "tool_name": "experimental_fetch_fetch",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:57.023497+00:00",
+        "updated_at": "2026-10-15T19:08:58.455930+00:00"
+      },
+      "content": {
+        "note": "tool output trimmed — the feed never reads it"
+      }
+    },
+    {
+      "type": "runtime_done",
+      "created_at": "2026-10-15T19:09:02.694125+00:00",
+      "task": {
+        "entity_type": "EntTaskTool",
+        "id": "01a140f7-b1dc-bce2-0000-0433902247cf",
+        "tool_name": "web_search_web_search",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:57.180353+00:00",
+        "updated_at": "2026-10-15T19:09:02.681730+00:00"
+      },
+      "content": {
+        "note": "tool output trimmed — the feed never reads it"
+      }
+    },
+    {
+      "type": "llm_start",
+      "created_at": "2026-10-15T19:09:03.532211+00:00",
+      "task": {
+        "entity_type": "EntTaskAgent",
+        "id": "01a140f6-ebf6-4aa6-0000-75711c8751c9",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:06.518940+00:00",
+        "updated_at": "2026-10-15T19:14:23.529155+00:00"
+      },
+      "content": {
+        "note": "request trimmed"
+      }
+    },
+    {
+      "type": "llm_done",
+      "created_at": "2026-10-15T19:09:08.651690+00:00",
+      "task": {
+        "entity_type": "EntTaskAgent",
+        "id": "01a140f6-ebf6-4aa6-0000-75711c8751c9",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:06.518940+00:00",
+        "updated_at": "2026-10-15T19:14:23.529155+00:00"
+      },
+      "body": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_016GXSRP2vGfyC5dhffLDD9w\",\"name\":\"web_search_web_search\",\"input\":{}}}\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_016tCLMvbfCFZJNGhHZTcY8V\",\"name\":\"lfx_mcp_query_lfx_semantic_layer\",\"input\":{}}}"
+    },
+    {
+      "type": "agent_notification_progress",
+      "created_at": "2026-10-15T19:09:08.709502+00:00",
+      "task": {
+        "entity_type": "EntTaskAgent",
+        "id": "01a140f6-ebf6-4aa6-0000-75711c8751c9",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:06.518940+00:00",
+        "updated_at": "2026-10-15T19:14:23.529155+00:00"
+      },
+      "content": {
+        "type": "text",
+        "data": "(trimmed)"
+      }
+    },
+    {
+      "type": "runtime_start",
+      "created_at": "2026-10-15T19:09:09.225574+00:00",
+      "task": {
+        "entity_type": "EntTaskTool",
+        "id": "01a140f7-e0ce-bce2-0000-24d5769f8e98",
+        "tool_name": "web_search_web_search",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:09:09.198383+00:00",
+        "updated_at": "2026-10-15T19:09:12.372255+00:00"
+      },
+      "content": {
+        "body": {
+          "contents": {
+            "highlights": true
+          },
+          "includeDomains": ["opensearch.org", "foundation.opensearch.org"],
+          "numResults": 6,
+          "query": "OpenSearch Software Foundation members premier general join",
+          "type": "auto"
+        }
+      }
+    },
+    {
+      "type": "runtime_start",
+      "created_at": "2026-10-15T19:09:09.402757+00:00",
+      "task": {
+        "entity_type": "EntTaskTool",
+        "id": "01a140f7-e17e-bce2-0000-f5fd1e4dd320",
+        "tool_name": "lfx_mcp_query_lfx_semantic_layer",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:09:09.374521+00:00",
+        "updated_at": "2026-10-15T19:09:10.344378+00:00"
+      },
+      "content": {
+        "action": "list_metrics",
+        "project_slug": "opensearch-foundation",
+        "search": "contributor"
+      }
+    },
+    {
+      "type": "runtime_done",
+      "created_at": "2026-10-15T19:09:10.361860+00:00",
+      "task": {
+        "entity_type": "EntTaskTool",
+        "id": "01a140f7-e17e-bce2-0000-f5fd1e4dd320",
+        "tool_name": "lfx_mcp_query_lfx_semantic_layer",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:09:09.374521+00:00",
+        "updated_at": "2026-10-15T19:09:10.344378+00:00"
+      },
+      "content": {
+        "note": "tool output trimmed — the feed never reads it"
+      }
+    },
+    {
+      "type": "runtime_done",
+      "created_at": "2026-10-15T19:09:12.390911+00:00",
+      "task": {
+        "entity_type": "EntTaskTool",
+        "id": "01a140f7-e0ce-bce2-0000-24d5769f8e98",
+        "tool_name": "web_search_web_search",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:09:09.198383+00:00",
+        "updated_at": "2026-10-15T19:09:12.372255+00:00"
+      },
+      "content": {
+        "note": "tool output trimmed — the feed never reads it"
+      }
+    },
+    {
+      "type": "llm_start",
+      "created_at": "2026-10-15T19:09:13.231011+00:00",
+      "task": {
+        "entity_type": "EntTaskAgent",
+        "id": "01a140f6-ebf6-4aa6-0000-75711c8751c9",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:06.518940+00:00",
+        "updated_at": "2026-10-15T19:14:23.529155+00:00"
+      },
+      "content": {
+        "note": "request trimmed"
+      }
+    },
+    {
+      "type": "llm_done",
+      "created_at": "2026-10-15T19:09:17.046505+00:00",
+      "task": {
+        "entity_type": "EntTaskAgent",
+        "id": "01a140f6-ebf6-4aa6-0000-75711c8751c9",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:06.518940+00:00",
+        "updated_at": "2026-10-15T19:14:23.529155+00:00"
+      },
+      "body": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_01FdnvH6FXhmDnCDUMwYW12y\",\"name\":\"experimental_fetch_fetch\",\"input\":{}}}\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_01JiyLWRwyEcXNMjNHBGTGAd\",\"name\":\"lfx_mcp_get_project\",\"input\":{}}}"
+    },
+    {
+      "type": "agent_notification_progress",
+      "created_at": "2026-10-15T19:09:17.412825+00:00",
+      "task": {
+        "entity_type": "EntTaskAgent",
+        "id": "01a140f6-ebf6-4aa6-0000-75711c8751c9",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:06.518940+00:00",
+        "updated_at": "2026-10-15T19:14:23.529155+00:00"
+      },
+      "content": {
+        "type": "text",
+        "data": "(trimmed)"
+      }
+    },
+    {
+      "type": "runtime_start",
+      "created_at": "2026-10-15T19:09:18.162115+00:00",
+      "task": {
+        "entity_type": "EntTaskTool",
+        "id": "01a140f8-03b3-bce2-0000-a7265141899a",
+        "tool_name": "experimental_fetch_fetch",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:09:18.131118+00:00",
+        "updated_at": "2026-10-15T19:09:20.135955+00:00"
+      },
+      "content": {
+        "max_bytes": 400000,
+        "method": "GET",
+        "url": "https://opensearch.org/announcements/opensearch-software-foundation-expands-enterprise-ecosystem-with-new-members/"
+      }
+    },
+    {
+      "type": "runtime_start",
+      "created_at": "2026-10-15T19:09:18.381900+00:00",
+      "task": {
+        "entity_type": "EntTaskTool",
+        "id": "01a140f8-047d-bce2-0000-3953fbf3dc23",
+        "tool_name": "lfx_mcp_get_project",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:09:18.333387+00:00",
+        "updated_at": "2026-10-15T19:09:19.686962+00:00"
+      },
+      "content": {
+        "uid": "db8e5c9a-7822-423f-960c-bd60fadfcc60"
+      }
+    },
+    {
+      "type": "runtime_done",
+      "created_at": "2026-10-15T19:09:19.720651+00:00",
+      "task": {
+        "entity_type": "EntTaskTool",
+        "id": "01a140f8-047d-bce2-0000-3953fbf3dc23",
+        "tool_name": "lfx_mcp_get_project",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:09:18.333387+00:00",
+        "updated_at": "2026-10-15T19:09:19.686962+00:00"
+      },
+      "content": {
+        "note": "tool output trimmed — the feed never reads it"
+      }
+    },
+    {
+      "type": "runtime_done",
+      "created_at": "2026-10-15T19:09:20.491422+00:00",
+      "task": {
+        "entity_type": "EntTaskTool",
+        "id": "01a140f8-03b3-bce2-0000-a7265141899a",
+        "tool_name": "experimental_fetch_fetch",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:09:18.131118+00:00",
+        "updated_at": "2026-10-15T19:09:20.135955+00:00"
+      },
+      "content": {
+        "note": "tool output trimmed — the feed never reads it"
+      }
+    },
+    {
+      "type": "llm_start",
+      "created_at": "2026-10-15T19:09:21.526525+00:00",
+      "task": {
+        "entity_type": "EntTaskAgent",
+        "id": "01a140f6-ebf6-4aa6-0000-75711c8751c9",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:06.518940+00:00",
+        "updated_at": "2026-10-15T19:14:23.529155+00:00"
+      },
+      "content": {
+        "note": "request trimmed"
+      }
+    },
+    {
+      "type": "llm_done",
+      "created_at": "2026-10-15T19:09:41.983903+00:00",
+      "task": {
+        "entity_type": "EntTaskAgent",
+        "id": "01a140f6-ebf6-4aa6-0000-75711c8751c9",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:06.518940+00:00",
+        "updated_at": "2026-10-15T19:14:23.529155+00:00"
+      },
+      "body": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_015fb1CCAi6Xfs4TaAowYWu6\",\"name\":\"ask_requester\",\"input\":{}}}"
+    },
+    {
+      "type": "agent_notification_progress",
+      "created_at": "2026-10-15T19:09:42.509305+00:00",
+      "task": {
+        "entity_type": "EntTaskAgent",
+        "id": "01a140f6-ebf6-4aa6-0000-75711c8751c9",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:06.518940+00:00",
+        "updated_at": "2026-10-15T19:14:23.529155+00:00"
+      },
+      "content": {
+        "type": "text",
+        "data": "(trimmed)"
+      }
+    },
+    {
+      "type": "llm_start",
+      "created_at": "2026-10-15T19:09:43.634089+00:00",
+      "task": {
+        "entity_type": "EntTaskAgent",
+        "id": "01a140f6-ebf6-4aa6-0000-75711c8751c9",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:06.518940+00:00",
+        "updated_at": "2026-10-15T19:14:23.529155+00:00"
+      },
+      "content": {
+        "note": "request trimmed"
+      }
+    },
+    {
+      "type": "llm_done",
+      "created_at": "2026-10-15T19:09:56.363335+00:00",
+      "task": {
+        "entity_type": "EntTaskAgent",
+        "id": "01a140f6-ebf6-4aa6-0000-75711c8751c9",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:06.518940+00:00",
+        "updated_at": "2026-10-15T19:14:23.529155+00:00"
+      },
+      "body": "trimmed"
+    },
+    {
+      "type": "agent_notification_message",
+      "created_at": "2026-10-15T19:09:56.494104+00:00",
+      "task": {
+        "entity_type": "EntTaskAgent",
+        "id": "01a140f6-ebf6-4aa6-0000-75711c8751c9",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:06.518940+00:00",
+        "updated_at": "2026-10-15T19:14:23.529155+00:00"
+      },
+      "content": {
+        "type": "text",
+        "data": "(trimmed)"
+      }
+    },
+    {
+      "type": "runtime_start",
+      "created_at": "2026-10-15T19:09:56.755366+00:00",
+      "task": {
+        "entity_type": "EntTaskTool",
+        "id": "01a140f8-9a43-bce2-0000-777452da809c",
+        "tool_name": "ui_notify",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:09:56.675271+00:00",
+        "updated_at": "2026-10-15T19:09:56.878552+00:00"
+      },
+      "content": {
+        "note": "trimmed"
+      }
+    },
+    {
+      "type": "agent_notification_progress",
+      "created_at": "2026-10-15T19:09:56.804393+00:00",
+      "task": {
+        "entity_type": "EntTaskTool",
+        "id": "01a140f8-9a43-bce2-0000-777452da809c",
+        "tool_name": "ui_notify",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:09:56.675271+00:00",
+        "updated_at": "2026-10-15T19:09:56.878552+00:00"
+      },
+      "content": {
+        "type": "text",
+        "data": "MESSAGING DOCUMENT — QUESTIONS (messaging-document-questions/v1)\n(trimmed)"
+      }
+    },
+    {
+      "type": "runtime_done",
+      "created_at": "2026-10-15T19:09:56.906855+00:00",
+      "task": {
+        "entity_type": "EntTaskTool",
+        "id": "01a140f8-9a43-bce2-0000-777452da809c",
+        "tool_name": "ui_notify",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:09:56.675271+00:00",
+        "updated_at": "2026-10-15T19:09:56.878552+00:00"
+      },
+      "content": {
+        "note": "tool output trimmed — the feed never reads it"
+      }
+    },
+    {
+      "type": "agent_notification_message",
+      "created_at": "2026-10-15T19:09:57.856660+00:00",
+      "task": {
+        "entity_type": "EntTaskAgent",
+        "id": "01a140f6-ebf6-4aa6-0000-75711c8751c9",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:06.518940+00:00",
+        "updated_at": "2026-10-15T19:14:23.529155+00:00"
+      },
+      "content": {
+        "type": "text",
+        "data": "MESSAGING DOCUMENT — QUESTIONS (messaging-document-questions/v1)\n(trimmed)"
+      }
+    },
+    {
+      "type": "runtime_done",
+      "created_at": "2026-10-15T19:09:58.033184+00:00",
+      "task": {
+        "entity_type": "EntTaskAgent",
+        "id": "01a140f6-ebf6-4aa6-0000-75711c8751c9",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:06.518940+00:00",
+        "updated_at": "2026-10-15T19:14:23.529155+00:00"
+      },
+      "content": {
+        "note": "tool output trimmed — the feed never reads it"
+      }
+    },
+    {
+      "type": "runtime_start",
+      "created_at": "2026-10-15T19:10:03.559180+00:00",
+      "task": {
+        "entity_type": "EntTaskAgent",
+        "id": "01a140f6-ebf6-4aa6-0000-75711c8751c9",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:06.518940+00:00",
+        "updated_at": "2026-10-15T19:14:23.529155+00:00"
+      },
+      "content": {
+        "note": "trimmed"
+      }
+    },
+    {
+      "type": "llm_start",
+      "created_at": "2026-10-15T19:10:04.727792+00:00",
+      "task": {
+        "entity_type": "EntTaskAgent",
+        "id": "01a140f6-ebf6-4aa6-0000-75711c8751c9",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:06.518940+00:00",
+        "updated_at": "2026-10-15T19:14:23.529155+00:00"
+      },
+      "content": {
+        "note": "request trimmed"
+      }
+    },
+    {
+      "type": "llm_done",
+      "created_at": "2026-10-15T19:12:13.825379+00:00",
+      "task": {
+        "entity_type": "EntTaskAgent",
+        "id": "01a140f6-ebf6-4aa6-0000-75711c8751c9",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:06.518940+00:00",
+        "updated_at": "2026-10-15T19:14:23.529155+00:00"
+      },
+      "body": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_01Jac3MHEJQ9WvwtfNK61V9p\",\"name\":\"finalize_messaging_document\",\"input\":{}}}"
+    },
+    {
+      "type": "agent_notification_message",
+      "created_at": "2026-10-15T19:12:15.329290+00:00",
+      "task": {
+        "entity_type": "EntTaskAgent",
+        "id": "01a140f6-ebf6-4aa6-0000-75711c8751c9",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:06.518940+00:00",
+        "updated_at": "2026-10-15T19:14:23.529155+00:00"
+      },
+      "content": {
+        "type": "text",
+        "data": "(trimmed)"
+      }
+    },
+    {
+      "type": "agent_notification_progress",
+      "created_at": "2026-10-15T19:12:15.495579+00:00",
+      "task": {
+        "entity_type": "EntTaskAgent",
+        "id": "01a140f6-ebf6-4aa6-0000-75711c8751c9",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:06.518940+00:00",
+        "updated_at": "2026-10-15T19:14:23.529155+00:00"
+      },
+      "content": {
+        "type": "text",
+        "data": "(trimmed)"
+      }
+    },
+    {
+      "type": "runtime_start",
+      "created_at": "2026-10-15T19:12:15.502406+00:00",
+      "task": {
+        "entity_type": "EntTaskTool",
+        "id": "01a140fa-b86d-bce2-0000-cf13365a68fb",
+        "tool_name": "ui_notify",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:12:15.469990+00:00",
+        "updated_at": "2026-10-15T19:12:15.576922+00:00"
+      },
+      "content": {
+        "note": "trimmed"
+      }
+    },
+    {
+      "type": "agent_notification_progress",
+      "created_at": "2026-10-15T19:12:15.550285+00:00",
+      "task": {
+        "entity_type": "EntTaskTool",
+        "id": "01a140fa-b86d-bce2-0000-cf13365a68fb",
+        "tool_name": "ui_notify",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:12:15.469990+00:00",
+        "updated_at": "2026-10-15T19:12:15.576922+00:00"
+      },
+      "content": {
+        "type": "text",
+        "data": "(trimmed)"
+      }
+    },
+    {
+      "type": "runtime_done",
+      "created_at": "2026-10-15T19:12:15.600002+00:00",
+      "task": {
+        "entity_type": "EntTaskTool",
+        "id": "01a140fa-b86d-bce2-0000-cf13365a68fb",
+        "tool_name": "ui_notify",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:12:15.469990+00:00",
+        "updated_at": "2026-10-15T19:12:15.576922+00:00"
+      },
+      "content": {
+        "note": "tool output trimmed — the feed never reads it"
+      }
+    },
+    {
+      "type": "llm_start",
+      "created_at": "2026-10-15T19:12:17.107502+00:00",
+      "task": {
+        "entity_type": "EntTaskAgent",
+        "id": "01a140f6-ebf6-4aa6-0000-75711c8751c9",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:06.518940+00:00",
+        "updated_at": "2026-10-15T19:14:23.529155+00:00"
+      },
+      "content": {
+        "note": "request trimmed"
+      }
+    },
+    {
+      "type": "llm_done",
+      "created_at": "2026-10-15T19:14:17.948567+00:00",
+      "task": {
+        "entity_type": "EntTaskAgent",
+        "id": "01a140f6-ebf6-4aa6-0000-75711c8751c9",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:06.518940+00:00",
+        "updated_at": "2026-10-15T19:14:23.529155+00:00"
+      },
+      "body": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_01FahLsmKkipQoeCwfxNnNgN\",\"name\":\"__submit__\",\"input\":{}}}"
+    },
+    {
+      "type": "agent_notification_message",
+      "created_at": "2026-10-15T19:14:23.478972+00:00",
+      "task": {
+        "entity_type": "EntTaskAgent",
+        "id": "01a140f6-ebf6-4aa6-0000-75711c8751c9",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:06.518940+00:00",
+        "updated_at": "2026-10-15T19:14:23.529155+00:00"
+      },
+      "content": {
+        "type": "text",
+        "data": "(trimmed)"
+      }
+    },
+    {
+      "type": "runtime_done",
+      "created_at": "2026-10-15T19:14:23.570827+00:00",
+      "task": {
+        "entity_type": "EntTaskAgent",
+        "id": "01a140f6-ebf6-4aa6-0000-75711c8751c9",
+        "status": "DONE",
+        "created_at": "2026-10-15T19:08:06.518940+00:00",
+        "updated_at": "2026-10-15T19:14:23.529155+00:00"
+      },
+      "content": {
+        "note": "tool output trimmed — the feed never reads it"
+      }
+    }
+  ]
+}
