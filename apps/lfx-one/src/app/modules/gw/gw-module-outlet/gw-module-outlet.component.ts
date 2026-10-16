@@ -107,7 +107,8 @@ export class GwModuleOutletComponent {
    * Template-bound: it shows the skeleton and keeps `#gw-embed-root` at `visibility: hidden`. The
    * loader's `ready` resolves once the bundle is mounted, which is before React has drawn anything,
    * so clearing this on `ready` left a blank pane until the embed's own first paint. It is cleared
-   * when `waitForFirstPaint` sees content instead.
+   * when the embed has painted instead: `waitForRendered` for a bundle with the `first-paint`
+   * capability, `waitForFirstPaint` for any other.
    */
   protected readonly mounting = signal(false);
 
@@ -126,7 +127,7 @@ export class GwModuleOutletComponent {
   private pendingNavigation: Pick<NavigationStart, 'id' | 'navigationTrigger'> | null = null;
   /** Which mount path this instance is serving; see resolveGwEmbedRoutePrefix. */
   private routePrefix: string = resolveGwEmbedRoutePrefix('');
-  /** Ends a `waitForFirstPaint` in progress; null when none is. */
+  /** Ends a `waitForRendered` or `waitForFirstPaint` in progress; null when none is. */
   private endPaintWait: (() => void) | null = null;
 
   // 7. Constructor
@@ -257,18 +258,20 @@ export class GwModuleOutletComponent {
       // Returns at once; the loader fetches the manifest, stylesheet and bundle, then mounts.
       // Failures on that path come back through `onFatal` (and `ready` resolves null), and an
       // `unmount()` before `ready` cancels the mount, so teardown needs no extra bookkeeping.
-      this.mountHandle = mod.mount(this.embedRoot().nativeElement, ctx);
+      // Held in a local: teardown nulls `this.mountHandle` while the awaits below are pending.
+      const handle = mod.mount(this.embedRoot().nativeElement, ctx);
+      this.mountHandle = handle;
       this.watchHostNavigation();
       // Keep the skeleton up until the embed has painted: `mounting` is cleared in the finally
       // below. Clearing it on the synchronous return would leave the outlet blank while the loader
       // is still fetching, and clearing it on `ready` leaves it blank until React's first render.
-      const manifest = await this.mountHandle.ready;
+      const manifest = await handle.ready;
       if (manifest) {
         console.info(`[GwModuleOutlet] Gatewaze embed ${manifest.version} mounted (contract ${manifest.contract})`);
         // A bundle that signals its own first paint makes `rendered` exact; any other resolves it
         // with `ready`, before anything is drawn, so the outlet watches the root itself instead.
         await (manifest.capabilities?.includes(GW_EMBED_FIRST_PAINT_CAPABILITY)
-          ? this.waitForRendered(this.mountHandle.rendered)
+          ? this.waitForRendered(handle.rendered)
           : this.waitForFirstPaint(this.embedRoot().nativeElement));
       } else if (!this.destroyed && !this.hostPanelShowing()) {
         // Nothing mounted. The loader has already said why through `onFatal`, but it marks a

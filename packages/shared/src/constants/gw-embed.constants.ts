@@ -195,9 +195,11 @@ export const GW_EMBED_STYLESHEET_KEY_PATTERN = /^[A-Za-z0-9_-]{16}$/;
 export const GW_EMBED_STYLESHEET_TRANSFORM_FINGERPRINT = '7a789f6bbb63afd0d5d2abacc2a0c2c03551724421ebb0ae8c2fc4acde62d498';
 
 /**
- * Longest the outlet keeps its skeleton up after the loader reports the embed mounted, waiting for
- * the embed's first paint, in ms. After this the embed is shown whatever it holds, so a render that
- * never produces height cannot strand the skeleton.
+ * Longest the outlet's own paint check keeps the skeleton up after the loader reports the embed
+ * mounted, in ms. After this the embed is shown whatever it holds, so a render that never produces
+ * content cannot strand the skeleton. It applies only to bundles without the `first-paint`
+ * capability; for those with it the outlet waits on `handle.rendered`, which the loader bounds
+ * itself.
  */
 export const GW_EMBED_FIRST_PAINT_TIMEOUT_MS = 10_000;
 

@@ -33,6 +33,7 @@ import {
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
 import {
+  GatewazeAdminContext,
   GatewazeHostSessionSettings,
   GatewazeMeResult,
   GatewazeRealtimeSession,
@@ -455,8 +456,13 @@ export class GatewazeSessionService {
     }
     const hostConfig = toHostConfig(config);
     // Started before getUser so the two run in parallel, and only for an admin: the 403 never carries
-    // it. It never rejects; it resolves null on any failure, and `admin` is then left out.
-    const adminContext = session.is_admin ? getAdminContext(hostConfig, session.access_token, session.user_id) : Promise.resolve(null);
+    // it. It resolves null on any failure, and `admin` is then left out. It is documented never to
+    // reject, but when getUser throws below nothing awaits it, so the catch keeps a future reject from
+    // becoming an unhandled rejection. Its own warnings (no usable row, a non-200, a timeout) go
+    // through the filtered logger, which drops the GoTrue user id.
+    const adminContext: Promise<GatewazeAdminContext | null> = session.is_admin
+      ? getAdminContext({ ...hostConfig, log: hostSessionCoreLogger('get_gatewaze_me', req) }, session.access_token, session.user_id).catch(() => null)
+      : Promise.resolve(null);
     let user: Record<string, unknown>;
     try {
       user = await getUser(hostConfig, session.access_token);

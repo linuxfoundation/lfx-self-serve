@@ -7,10 +7,21 @@ import type { KeyValue, SetIfLockHeldResult } from '@gatewaze/host-session';
 import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { loggerMock, lfxSessionGet } = vi.hoisted(() => ({
+const { loggerMock, lfxSessionGet, adminContextOverride } = vi.hoisted(() => ({
   loggerMock: { warning: vi.fn(), debug: vi.fn(), info: vi.fn(), error: vi.fn() },
   lfxSessionGet: vi.fn(),
+  /** When set, stands in for getAdminContext; otherwise the package's own runs against the fakes. */
+  adminContextOverride: { impl: null as null | ((...args: unknown[]) => Promise<unknown>) },
 }));
+
+vi.mock('@gatewaze/host-session', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@gatewaze/host-session')>();
+  return {
+    ...actual,
+    getAdminContext: (...args: Parameters<typeof actual.getAdminContext>) =>
+      adminContextOverride.impl ? adminContextOverride.impl(...args) : actual.getAdminContext(...args),
+  };
+});
 
 vi.mock('./logger.service', () => ({ logger: loggerMock }));
 // The LFX session a Realtime socket checks before each refresh.
@@ -552,10 +563,40 @@ describe('GatewazeSessionService me and logout', () => {
         expect(upstreams.calls.some((url) => url.startsWith(`${SUPABASE_URL}/rest/v1/admin_profiles?select=id,`))).toBe(true);
       });
 
-      it('leaves admin out when the context cannot be read, and still answers ok', async () => {
+      it('leaves admin out when the context cannot be read, and logs why without the user id', async () => {
         upstreams.state.profileStatus = 500;
 
         await expect(service.getGatewazeMe(buildReq())).resolves.toEqual({ outcome: 'ok', user: { id: SESSION_USER_ID, email: USER_EMAIL } });
+        const warning = loggerMock.warning.mock.calls.find((call) => String(call[2]).includes('admin context read failed'));
+        expect(warning).toBeDefined();
+        expect(warning?.[1]).toBe('get_gatewaze_me');
+        expect(warning?.[3]).toEqual({ err: expect.stringContaining('500') });
+        expect(JSON.stringify(warning)).not.toContain(SESSION_USER_ID);
+      });
+
+      it('answers unavailable, with no unhandled rejection, when getUser fails while the admin context is pending', async () => {
+        upstreams.state.userStatuses = [500];
+        // A getAdminContext that broke its never-rejects promise, rejecting after getUser has failed
+        // and nothing is awaiting it any more.
+        let releaseProfile: () => void = () => undefined;
+        const held = new Promise<void>((resolve) => {
+          releaseProfile = resolve;
+        });
+        adminContextOverride.impl = async () => {
+          await held;
+          throw new Error('synthetic late failure');
+        };
+        const unhandled = vi.fn();
+        process.on('unhandledRejection', unhandled);
+        try {
+          await expect(service.getGatewazeMe(buildReq())).resolves.toEqual({ outcome: 'unavailable' });
+          releaseProfile();
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          expect(unhandled).not.toHaveBeenCalled();
+        } finally {
+          process.off('unhandledRejection', unhandled);
+          adminContextOverride.impl = null;
+        }
       });
 
       it('leaves admin out when the profile is in an unexpected shape', async () => {
@@ -565,6 +606,9 @@ describe('GatewazeSessionService me and logout', () => {
 
         expect(result).toMatchObject({ outcome: 'ok' });
         expect(result).not.toHaveProperty('admin');
+        expect(loggerMock.warning).toHaveBeenCalledWith(expect.anything(), 'get_gatewaze_me', expect.stringContaining('admin context unusable'), {
+          reason: 'admin_profiles row in an unexpected shape',
+        });
       });
 
       it("leaves admin out when GoTrue's user is not the profile's user", async () => {
