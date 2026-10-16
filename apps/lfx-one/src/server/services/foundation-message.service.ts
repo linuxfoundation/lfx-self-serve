@@ -155,12 +155,12 @@ export class FoundationMessageService {
 
     if (!envelope || envelope.version <= minimumVersion) {
       const outcome = getMktgSessionOutcome(payloads);
-      // A questions turn is a deliberate pause, not a rejected generation.
-      // A later terminal reply without questions supersedes an older block.
-      if (outcome.ended && !extractFoundationMessageQuestions(outcome.replyText)) {
+      const questions = this.findLatestQuestions(req, payloads);
+      // A non-empty terminal rejection supersedes an older questions block.
+      // Without a final notification, preserve questions found in agent text.
+      if (outcome.ended && !extractFoundationMessageQuestions(outcome.replyText) && (outcome.replyText || !questions)) {
         return { status: 'failed', failureText: outcome.replyText, activity };
       }
-      const questions = this.findLatestQuestions(req, payloads);
       if (questions) {
         return { status: 'questions', questions, questionsId: foundationMessageQuestionsId(questions), activity };
       }

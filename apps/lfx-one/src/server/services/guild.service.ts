@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MKTG_SESSION_EVENTS_TRUNCATED } from '@lfx-one/shared/constants';
+import { MKTG_SESSION_EVENTS_TRUNCATED, MKTG_SESSION_TURN_STARTED } from '@lfx-one/shared/constants';
 import { GuildSessionEvent, MktgChatMessage } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
@@ -202,10 +202,11 @@ export class GuildService {
    * for the contract envelope; this method makes no shape assumptions beyond
    * `{ items: [...] }` with an optional `type` per item.
    *
-   * User-originated events (`user_message`, `trigger_message`) are EXCLUDED:
-   * intake answers are echoed verbatim into the trigger message, so a caller
-   * could otherwise plant a schema-valid envelope in an answer and have it
-   * selected as the agent's output. The authoritative envelope only ever rides
+   * User/trigger message CONTENT is excluded: intake answers are echoed into
+   * the trigger message, so returning it could let a caller plant an envelope.
+   * Each such event becomes a content-free chronological turn marker, so a
+   * queued follow-up invalidates the previous completion before runtime_start.
+   * The authoritative envelope only ever rides
    * agent/system events (llm_start/llm_done bodies, notifications, runtime_done).
    * A full unfiltered page appends an internal incomplete-page marker: it
    * cannot prove that nothing remains pending beyond the event cap.
@@ -222,7 +223,9 @@ export class GuildService {
 
     const data = (await response.json()) as { items?: { created_at?: string; type?: string }[] };
     const rawItems = data.items || [];
-    const items = rawItems.filter((item) => item?.type !== 'user_message' && item?.type !== 'trigger_message');
+    const items = rawItems.map((item) =>
+      item?.type === 'user_message' || item?.type === 'trigger_message' ? { type: MKTG_SESSION_TURN_STARTED, created_at: item.created_at } : item
+    );
 
     // Last-valid-wins selection downstream depends on chronological order —
     // normalize it here instead of trusting the API's ordering.
@@ -231,8 +234,8 @@ export class GuildService {
     // Truncation guard: a full page means the session may have more events than
     // the cap, so the terminal envelope could be missing (or a stale draft could
     // win). Surface it loudly; pagination is a follow-up if real sessions hit it.
-    // The limit applies to the UNFILTERED response — check the raw count, or a
-    // full page would slip under the threshold after user-event filtering.
+    // Measure the original API page, independently of any content filtering
+    // or turn-marker normalization.
     if (rawItems.length >= GUILD_RAW_EVENTS_LIMIT) {
       logger.warning(req, 'guild_get_raw_events', 'Raw event page is full — session may be truncated', {
         count: rawItems.length,

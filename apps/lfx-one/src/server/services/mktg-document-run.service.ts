@@ -152,23 +152,40 @@ export class MktgDocumentRunService {
   }
 
   /** The creator's normal result poll may finish a run before a Documents read does. */
-  public async recordResult(req: Request, sessionId: string, result: MktgRunResultResponse): Promise<void> {
+  public async recordResult(req: Request, sessionId: string, result: MktgRunResultResponse, projectUid?: string): Promise<void> {
     logger.debug(req, 'mktg_run_record_result', 'Checking the returned session result', {
       ready: result.status === 'ready',
       has_receipt: !!result.persistence?.document,
     });
-    if (result.status === 'failed' && typeof req.body?.project === 'string') {
-      const project = await this.resolveProject(req, req.body.project);
-      const key = `${this.prefix(project)}${this.hash(sessionId)}.json`;
-      const object = await this.store.getObject(req, 'marketing-os-artifacts', key);
-      const stored = object ? this.parse(req, key, object.body, object.metadata, project) : null;
-      if (stored && !this.isTerminal(stored.record.state) && stored.record.state !== 'failed') {
-        // The creator's version gate is not authority to fail a different
-        // tracked attempt: confirm against the server-recorded prior draft.
-        const confirmed = await this.result(req, stored.record);
-        if (confirmed.status === 'failed') {
-          await this.mark(req, stored, 'failed', undefined, undefined, true);
+    if (result.status === 'failed') {
+      if (!projectUid) {
+        logger.warning(req, 'mktg_run_record_result', 'No validated project scope; returning the failure reply without recording it');
+        return;
+      }
+      // Failure tracking is best effort: revoked access or unavailable storage
+      // must not replace the agent's terminal reply with a transport error.
+      try {
+        const project = await this.projects.getProjectById(req, projectUid, true);
+        if (!project.writer || !MKTG_ARTIFACT_PARTITION_REGEX.test(project.uid)) {
+          logger.warning(req, 'mktg_run_record_result', 'No project writer grant; returning the failure reply without recording it', { project: projectUid });
+          return;
         }
+        const key = `${this.prefix(project.uid)}${this.hash(sessionId)}.json`;
+        const object = await this.store.getObject(req, 'marketing-os-artifacts', key);
+        const stored = object ? this.parse(req, key, object.body, object.metadata, project.uid) : null;
+        if (!stored) {
+          logger.warning(req, 'mktg_run_record_result', 'No tracked run exists; returning the failure reply without recording it', { project: project.uid });
+          return;
+        }
+        if (!this.isTerminal(stored.record.state) && stored.record.state !== 'failed') {
+          // Confirm against the tracked prior draft, not the creator's gate.
+          const confirmed = await this.result(req, stored.record);
+          if (confirmed.status === 'failed') {
+            await this.mark(req, stored, 'failed', undefined, undefined, true);
+          }
+        }
+      } catch (error) {
+        logger.warning(req, 'mktg_run_record_result', 'Could not record the failed run; returning the agent reply', { project: projectUid, err: error });
       }
       return;
     }
@@ -307,19 +324,24 @@ export class MktgDocumentRunService {
     }
   }
 
-  /** Answers continue the same session after an unbounded human pause, preserving its original Started label. */
+  /** Best-effort budget renewal AFTER answers were delivered; never invite a duplicate send on tracking failure. */
   public async resumeAfterQuestions(req: Request, project: string, sessionId: string, questionsId?: string): Promise<void> {
-    if (questionsId !== undefined && (typeof questionsId !== 'string' || !MKTG_RUN_QUESTIONS_ID_REGEX.test(questionsId))) {
-      throw ServiceValidationError.forField('questionsId', 'Invalid questions block.');
-    }
-    const key = `${this.prefix(project)}${this.hash(sessionId)}.json`;
-    const object = await this.store.getObject(req, 'marketing-os-artifacts', key);
-    const stored = object ? this.parse(req, key, object.body, object.metadata, project) : null;
-    if (!stored || stored.record.agentKey !== 'foundation-message') {
-      throw new ResourceNotFoundError('Marketing OS run', this.hash(sessionId));
-    }
-    if (stored.record.state === 'writing' || stored.record.state === 'failed') {
-      await this.mark(req, stored, 'writing', undefined, new Date().toISOString(), false, questionsId);
+    try {
+      if (questionsId !== undefined && (typeof questionsId !== 'string' || !MKTG_RUN_QUESTIONS_ID_REGEX.test(questionsId))) {
+        throw ServiceValidationError.forField('questionsId', 'Invalid questions block.');
+      }
+      const key = `${this.prefix(project)}${this.hash(sessionId)}.json`;
+      const object = await this.store.getObject(req, 'marketing-os-artifacts', key);
+      const stored = object ? this.parse(req, key, object.body, object.metadata, project) : null;
+      if (!stored || stored.record.agentKey !== 'foundation-message') {
+        logger.warning(req, 'mktg_run_answers_resume', 'Answers delivered but no matching tracked run exists; no budget was changed', { project });
+        return;
+      }
+      if (stored.record.state === 'writing' || stored.record.state === 'failed') {
+        await this.mark(req, stored, 'writing', undefined, new Date().toISOString(), false, questionsId);
+      }
+    } catch (error) {
+      logger.warning(req, 'mktg_run_answers_resume', 'Answers delivered but tracking could not be renewed; do not resend them', { project, err: error });
     }
   }
 

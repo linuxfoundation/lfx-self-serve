@@ -252,6 +252,16 @@ describe('IcpService', () => {
       expect(objectStoreMocks.putContentAddressedObject).not.toHaveBeenCalled();
     });
 
+    it('does not fail a queued follow-up from the prior turn completion', async () => {
+      guildMocks.getRawEventPayloads.mockResolvedValue([
+        toolResultPayload(buildEnvelope()),
+        JSON.stringify({ type: 'runtime_done', task: { id: 'synthetic-task', entity_type: 'EntTaskAgent' } }),
+        JSON.stringify({ type: 'mktg_session_turn_started' }),
+      ]);
+      expect(await service.getResult(req, 'session-1', PROJECT_UID, undefined, 1)).toEqual({ status: 'pending' });
+      expect(objectStoreMocks.putContentAddressedObject).not.toHaveBeenCalled();
+    });
+
     it('returns the validated document and persists it under the ICP key prefix', async () => {
       const envelope = buildEnvelope();
       guildMocks.getRawEventPayloads.mockResolvedValue([toolResultPayload(envelope)]);

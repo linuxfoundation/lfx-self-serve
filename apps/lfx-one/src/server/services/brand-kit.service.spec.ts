@@ -221,6 +221,25 @@ describe('BrandKitService', () => {
       expect(objectStoreMocks.putContentAddressedObject).not.toHaveBeenCalled();
     });
 
+    it('keeps a queued same-session follow-up pending after the prior runtime_done and before runtime_start', async () => {
+      const previous = [
+        JSON.stringify({ type: 'llm_done', content: buildEnvelope() }),
+        JSON.stringify({ type: 'agent_notification_message', content: 'Previous draft completed.' }),
+        JSON.stringify({ type: 'runtime_done', task: { id: 'synthetic-task', entity_type: 'EntTaskAgent' } }),
+      ];
+      guildMocks.getRawEventPayloads.mockResolvedValue([...previous, JSON.stringify({ type: 'mktg_session_turn_started' })]);
+      expect(await service.getResult(req, 's', PROJECT_UID, undefined, 1)).toEqual({ status: 'pending' });
+      expect(objectStoreMocks.putContentAddressedObject).not.toHaveBeenCalled();
+      guildMocks.getRawEventPayloads.mockResolvedValue([
+        ...previous,
+        JSON.stringify({ type: 'mktg_session_turn_started' }),
+        JSON.stringify({ type: 'runtime_start', task: { id: 'synthetic-task', entity_type: 'EntTaskAgent' } }),
+        JSON.stringify({ type: 'agent_notification_message', content: 'The follow-up was rejected.' }),
+        JSON.stringify({ type: 'runtime_done', task: { id: 'synthetic-task', entity_type: 'EntTaskAgent' } }),
+      ]);
+      expect(await service.getResult(req, 's', PROJECT_UID, undefined, 1)).toEqual({ status: 'failed', failureText: 'The follow-up was rejected.' });
+    });
+
     it('persists the ready document under the SERVER-resolved project partition and returns the receipt', async () => {
       const envelope = buildEnvelope();
       guildMocks.getRawEventPayloads.mockResolvedValue([JSON.stringify({ type: 'llm_done', content: { envelope_json: JSON.stringify(envelope) } })]);

@@ -91,7 +91,7 @@ vi.mock('./object-store.service', () => ({
 }));
 
 import { MktgDocumentRunService } from './mktg-document-run.service';
-import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import type { MktgStartedRunRecord } from '@lfx-one/shared/interfaces';
 const req = {} as Request;
 const project = 'synthetic-project';
@@ -171,16 +171,67 @@ describe('MktgDocumentRunService', () => {
     await service.start(req, project, 'brand-kit', 'synthetic-session');
     const request = { ...req, body: { project } } as Request;
     flows.getResult.mockResolvedValue({ status: 'failed', failureText: 'Rejected.' });
-    await service.recordResult(request, 'synthetic-session', { status: 'failed', failureText: 'Rejected.' });
+    await service.recordResult(request, 'synthetic-session', { status: 'failed', failureText: 'Rejected.' }, project);
     expect(stored().metadata['state']).toBe('failed');
     expect(flows.getProjectById).toHaveBeenCalledWith(request, project, true);
+    expect(flows.ensureBucket).not.toHaveBeenCalled();
+    expect(flows.readiness).not.toHaveBeenCalled();
+  });
+
+  it('does not obtain failure scope from the HTTP body', async () => {
+    const request = { ...req, body: { project } } as Request;
+    await expect(service.recordResult(request, 'synthetic-session', { status: 'failed', failureText: 'Rejected.' })).resolves.toBeUndefined();
+    expect(flows.getProjectById).not.toHaveBeenCalled();
+    expect(io.get).not.toHaveBeenCalled();
+    expect(logs.warning).toHaveBeenCalled();
+  });
+
+  it.each(['revoked', 'lookup', 'storage-read', 'storage-write'])(
+    'keeps the terminal reply available when failure tracking is unavailable: %s',
+    async (reason) => {
+      await service.start(req, project, 'brand-kit', 'synthetic-session');
+      flows.getResult.mockResolvedValue({ status: 'failed', failureText: 'Rejected.' });
+      if (reason === 'revoked') {
+        flows.getProjectById.mockResolvedValueOnce({ uid: project, writer: false });
+      } else if (reason === 'lookup') {
+        flows.getProjectById.mockRejectedValueOnce(new AuthorizationError('Synthetic access lookup refusal'));
+      } else if (reason === 'storage-read') {
+        io.get.mockImplementationOnce(() => {
+          throw new MicroserviceError('Synthetic read unavailable', 503, 'OBJECT_STORE_UNAVAILABLE');
+        });
+      } else {
+        io.put.mockImplementationOnce(() => {
+          throw new MicroserviceError('Synthetic write unavailable', 503, 'OBJECT_STORE_UNAVAILABLE');
+        });
+      }
+      await expect(service.recordResult(req, 'synthetic-session', { status: 'failed', failureText: 'Rejected.' }, project)).resolves.toBeUndefined();
+      expect(stored().metadata['state']).toBe('writing');
+      expect(logs.warning).toHaveBeenCalled();
+      expect(flows.ensureBucket).not.toHaveBeenCalled();
+      expect(flows.readiness).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each(['missing', 'mismatched', 'storage-write'])('does not reject already-delivered answers when tracking is %s', async (reason) => {
+    if (reason !== 'missing') {
+      await service.start(req, project, reason === 'mismatched' ? 'brand-kit' : 'foundation-message', 'synthetic-session');
+    }
+    if (reason === 'storage-write') {
+      vi.advanceTimersByTime(1000);
+      io.put.mockImplementationOnce(() => {
+        throw new MicroserviceError('Synthetic write unavailable', 503, 'OBJECT_STORE_UNAVAILABLE');
+      });
+    }
+    await expect(service.resumeAfterQuestions(req, project, 'synthetic-session', 'abc12345')).resolves.toBeUndefined();
+    expect(logs.warning).toHaveBeenCalled();
+    expect(flows.getResult).not.toHaveBeenCalled();
   });
 
   it('does not fail a tracked attempt merely because a creator poll used a different version gate', async () => {
     await service.start(req, project, 'brand-kit', 'synthetic-session');
     const request = { ...req, body: { project, priorVersion: 999 } } as Request;
     flows.getResult.mockResolvedValue(ready);
-    await service.recordResult(request, 'synthetic-session', { status: 'failed', failureText: 'Not the tracked attempt.' });
+    await service.recordResult(request, 'synthetic-session', { status: 'failed', failureText: 'Not the tracked attempt.' }, project);
     expect(stored().metadata['state']).toBe('writing');
     expect(flows.getResult).toHaveBeenCalledWith(request, 'synthetic-session', project, undefined, 0);
   });
