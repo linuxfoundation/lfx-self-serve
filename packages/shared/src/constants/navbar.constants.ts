@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { COMMITTEE_LABEL } from './committees.constants';
 import type { Lens, LensOption, NavbarGhostItem, NavbarRoleStyle, OrgRolePersona, PersonaType } from '../interfaces';
 
 /**
@@ -63,7 +64,7 @@ export const NAVBAR_ORG_ROLE_DIRECT_SUFFIX = 'Granted directly on this organizat
 export const NAVBAR_NO_ACCESS_GHOST_ITEMS: readonly NavbarGhostItem[] = [
   { label: 'Dashboard', icon: 'fa-light fa-grid-2' },
   { label: 'Meetings', icon: 'fa-light fa-calendar' },
-  { label: 'Groups', icon: 'fa-light fa-users-between-lines' },
+  { label: COMMITTEE_LABEL.plural, icon: 'fa-light fa-users-between-lines' },
   { label: 'Mailing Lists', icon: 'fa-light fa-envelope' },
   { label: 'Documents', icon: 'fa-light fa-folder-open' },
   { label: 'Votes', icon: 'fa-light fa-check-to-slot' },

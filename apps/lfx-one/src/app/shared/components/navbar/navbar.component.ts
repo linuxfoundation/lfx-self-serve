@@ -35,10 +35,12 @@ import {
   SidebarMenuItem,
 } from '@lfx-one/shared/interfaces';
 import { buildInsightsUrl, toTitleCase } from '@lfx-one/shared/utils';
+import { AppService } from '@services/app.service';
 import { ChangelogService } from '@services/changelog.service';
 import { CreatePermissionService } from '@services/create-permission.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
+import { SidebarNavService } from '@services/sidebar-nav.service';
 import { UserService } from '@services/user.service';
 import { LogoutLinkDirective } from '@shared/directives/logout-link.directive';
 import { NavTooltipDirective } from '@shared/directives/nav-tooltip.directive';
@@ -55,7 +57,7 @@ import { Popover, PopoverModule } from 'primeng/popover';
  *
  * Menu building, active-route highlighting, context switching and the SSR hydration gate are
  * inherited unchanged from {@link SidebarComponent}; this component only re-renders them in the
- * navbar markup and folds in the rail actions that used to live in `LensSwitcherComponent`.
+ * navbar markup and folds in the rail actions that used to live in the former lens-switcher rail.
  *
  * Styles are unencapsulated (`lfxn-` prefixed) because the context card is also rendered by the
  * project/org selectors' `navbar` variant, inside their own host elements.
@@ -88,6 +90,8 @@ export class NavbarComponent extends SidebarComponent {
   private readonly navbarUserService = inject(UserService);
   private readonly dialogService = inject(DialogService);
   private readonly changelogService = inject(ChangelogService);
+  private readonly sidebarNavService = inject(SidebarNavService);
+  private readonly appService = inject(AppService);
   protected readonly createPermissionService = inject(CreatePermissionService);
 
   /** Whether the host layout shifts the navbar down to clear the impersonation banner (main layout only). */
@@ -139,6 +143,8 @@ export class NavbarComponent extends SidebarComponent {
   protected readonly showNoAccessState: Signal<'foundation' | 'project' | null> = computed(() => {
     const lens = this.navLens();
     if (!lens || this.itemsWithTestIds().length > 0 || this.footerMenuItems().length > 0) return null;
+    // An empty menu only means "no role" once everything that shapes it has resolved.
+    if (this.sidebarNavService.sidebarItemsPending()) return null;
     return lens;
   });
 
@@ -273,8 +279,39 @@ export class NavbarComponent extends SidebarComponent {
     nameDynamicDialog(this.dialogService, dialogRef, CreateArtifactDialogComponent.headingId);
   }
 
+  protected closeMobileDrawer(): void {
+    this.appService.closeMobileSidebar();
+  }
+
   protected openChangelogDrawer(): void {
     this.changelogDrawerVisible.set(true);
+  }
+
+  private initRoleMarks(): Signal<NavbarRoleMark[]> {
+    return computed(() => {
+      // Hidden for root-writers — executive-director is spoofed for them, not naturally detected.
+      if (!this.showPersonaBadge()) return [];
+      const personaProjects = this.navbarPersonaService.personaProjects();
+      const foundationByUid = new Map(this.navbarPersonaService.detectedProjects().map((project) => [project.projectUid, project.isFoundation]));
+      const priority = new Map(PERSONA_PRIORITY.map((persona, index) => [persona, index]));
+      return [...this.navbarPersonaService.allPersonas()]
+        .sort((a, b) => (priority.get(a) ?? Number.MAX_SAFE_INTEGER) - (priority.get(b) ?? Number.MAX_SAFE_INTEGER))
+        .slice(0, 3)
+        .map((persona) => {
+          const label = PERSONA_OPTIONS.find((option) => option.value === persona)?.label ?? toTitleCase(persona);
+          const projects = (personaProjects[persona] ?? []).map((project) => ({
+            uid: project.projectUid,
+            slug: project.projectSlug,
+            name: project.projectName || project.projectSlug,
+            // The role's own entry carries no tier; take it from detection, else from the role's scope.
+            isFoundation: foundationByUid.get(project.projectUid) ?? BOARD_SCOPED_PERSONAS.has(persona),
+          }));
+          const chips: NavTooltipItem[] = projects.map((project) => ({ key: project.slug, label: project.name }));
+          const ariaLabel = projects.length ? `Role: ${label} (${projects.map((project) => project.name).join(', ')})` : `Role: ${label}`;
+          const title = projects.length ? `${label} ${NAVBAR_ROLE_PREPOSITIONS[persona]}` : label;
+          return { ...NAVBAR_ROLE_STYLES[persona], persona, label, title, projects, chips, ariaLabel };
+        });
+    });
   }
 
   /**
@@ -298,33 +335,5 @@ export class NavbarComponent extends SidebarComponent {
       run.items.push(item);
     }
     return blocks;
-  }
-
-  private initRoleMarks(): Signal<NavbarRoleMark[]> {
-    return computed(() => {
-      // Hidden for root-writers — executive-director is spoofed for them, not naturally detected.
-      if (!this.showPersonaBadge()) return [];
-      const personaProjects = this.navbarPersonaService.personaProjects();
-      const foundationByUid = new Map(this.navbarPersonaService.detectedProjects().map((project) => [project.projectUid, project.isFoundation]));
-      const priority = new Map(PERSONA_PRIORITY.map((persona, index) => [persona, index]));
-      return [...this.navbarPersonaService.allPersonas()]
-        .sort((a, b) => (priority.get(a) ?? Number.MAX_SAFE_INTEGER) - (priority.get(b) ?? Number.MAX_SAFE_INTEGER))
-        .slice(0, 3)
-        .map((persona) => {
-          const label = PERSONA_OPTIONS.find((option) => option.value === persona)?.label ?? toTitleCase(persona);
-          const detected = (personaProjects[persona] ?? []).map((project) => ({
-            uid: project.projectUid,
-            slug: project.projectSlug,
-            name: project.projectName || project.projectSlug,
-            // The role's own entry carries no tier; take it from detection, else from the role's scope.
-            isFoundation: foundationByUid.get(project.projectUid) ?? BOARD_SCOPED_PERSONAS.has(persona),
-          }));
-          const projects = detected;
-          const chips: NavTooltipItem[] = projects.map((project) => ({ key: project.slug, label: project.name }));
-          const ariaLabel = projects.length ? `Role: ${label} (${projects.map((project) => project.name).join(', ')})` : `Role: ${label}`;
-          const title = projects.length ? `${label} ${NAVBAR_ROLE_PREPOSITIONS[persona]}` : label;
-          return { ...NAVBAR_ROLE_STYLES[persona], persona, label, title, projects, chips, ariaLabel };
-        });
-    });
   }
 }

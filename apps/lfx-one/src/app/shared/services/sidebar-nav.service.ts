@@ -120,6 +120,21 @@ export class SidebarNavService {
   // active foundation/project. canWrite() is reactive to context changes.
   private readonly canSeeNewsletters: Signal<boolean> = this.initCanSeeNewsletters();
 
+  /**
+   * True while `sidebarItems` is empty only because what decides its shape is still loading — the
+   * persona detection, or (formation flag on) the active project's stage. Consumers that read an
+   * empty list as "no access" must wait for this to clear.
+   */
+  public readonly sidebarItemsPending = computed((): boolean => {
+    if (!this.personaService.personaLoaded()) return true;
+    return (
+      this.activeLens() === 'project' &&
+      this.isFormationEnabled() &&
+      !this.formationOverviewAllowed() &&
+      !this.projectContextService.activeProjectStageResolved()
+    );
+  });
+
   // Lens-aware sidebar items
   public readonly sidebarItems = computed((): SidebarMenuItem[] => {
     switch (this.activeLens()) {

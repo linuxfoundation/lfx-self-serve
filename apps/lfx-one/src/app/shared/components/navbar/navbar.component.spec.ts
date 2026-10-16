@@ -6,7 +6,7 @@ import type { Signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { DefaultUrlSerializer, Router } from '@angular/router';
 import { ALL_LENSES, NAVBAR_ROLE_STYLES } from '@lfx-one/shared/constants';
-import type { LensOption, NavbarMenuBlock, NavbarRoleMark, PersonaProject, PersonaType, SidebarMenuItem, User } from '@lfx-one/shared/interfaces';
+import type { Lens, LensOption, NavbarMenuBlock, NavbarRoleMark, PersonaProject, PersonaType, SidebarMenuItem, User } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { ChangelogService } from '@services/changelog.service';
 import { CreatePermissionService } from '@services/create-permission.service';
@@ -15,6 +15,7 @@ import { LensService } from '@services/lens.service';
 import { NavigationService } from '@services/navigation.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { SidebarNavService } from '@services/sidebar-nav.service';
 import { UserService } from '@services/user.service';
 import { DialogService } from 'primeng/dynamicdialog';
 import { EMPTY } from 'rxjs';
@@ -27,12 +28,14 @@ interface NavbarView {
   menuBlocks: Signal<NavbarMenuBlock<SidebarMenuItem & { trackKey: string }>[]>;
   lensTabs: Signal<LensOption[]>;
   roleMarks: Signal<NavbarRoleMark[]>;
+  showNoAccessState: Signal<'foundation' | 'project' | null>;
 }
 
 const createNavbar = async (
   items: SidebarMenuItem[],
   personas: PersonaType[] = [],
-  personaProjects: Partial<Record<PersonaType, PersonaProject[]>> = {}
+  personaProjects: Partial<Record<PersonaType, PersonaProject[]>> = {},
+  { lens = 'me', itemsPending = false }: { lens?: Lens; itemsPending?: boolean } = {}
 ): Promise<NavbarView> => {
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
@@ -43,11 +46,11 @@ const createNavbar = async (
       {
         provide: LensService,
         useValue: {
-          activeLens: signal('me'),
+          activeLens: signal(lens),
           isHybridPersona: signal(false),
           availableLenses: signal([ALL_LENSES.me, ALL_LENSES.project]),
           displayLenses: signal([ALL_LENSES.me, ALL_LENSES.project]),
-          displayActiveLens: signal('me'),
+          displayActiveLens: signal(lens),
           setLens: vi.fn(),
           switchLens: vi.fn(),
         },
@@ -77,6 +80,7 @@ const createNavbar = async (
       { provide: AccountContextService, useValue: { hasOrgSelectorAccess: vi.fn(() => false) } },
       { provide: ChangelogService, useValue: { unseenChangelogCount: signal(0), loadUnseenCount: vi.fn() } },
       { provide: DialogService, useValue: { open: vi.fn() } },
+      { provide: SidebarNavService, useValue: { sidebarItemsPending: signal(itemsPending) } },
       { provide: CreatePermissionService, useValue: { canShowCreateButton: signal(false), creatableTypes: signal([]) } },
     ],
   });
@@ -136,5 +140,16 @@ describe('NavbarComponent', () => {
       { key: 'kubernetes', label: 'Kubernetes' },
       { key: 'cncf', label: 'cncf' },
     ]);
+  });
+
+  it('shows the no-access state once an empty project or foundation menu has resolved', async () => {
+    expect((await createNavbar([], [], {}, { lens: 'foundation' })).showNoAccessState()).toBe('foundation');
+    expect((await createNavbar([], [], {}, { lens: 'project' })).showNoAccessState()).toBe('project');
+  });
+
+  it('keeps the no-access state hidden while the menu is still pending, when it has items, or off a nav lens', async () => {
+    expect((await createNavbar([], [], {}, { lens: 'project', itemsPending: true })).showNoAccessState()).toBeNull();
+    expect((await createNavbar([{ label: 'Dashboard', routerLink: '/project/overview' }], [], {}, { lens: 'project' })).showNoAccessState()).toBeNull();
+    expect((await createNavbar([], [], {}, { lens: 'me' })).showNoAccessState()).toBeNull();
   });
 });

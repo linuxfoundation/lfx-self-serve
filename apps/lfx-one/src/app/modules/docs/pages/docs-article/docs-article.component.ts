@@ -172,7 +172,7 @@ export class DocsArticleComponent {
 
     // Use the shared `isDocsPath` predicate so the SPA-navigation contract
     // here, the auth middleware's public-route regex, and the active-state
-    // checks in lens-switcher / docs-sidebar-nav all agree on what counts
+    // checks in the navbar / docs-sidebar-nav all agree on what counts
     // as a docs URL. A bare `[Docs home](/docs)` from authored markdown is
     // intercepted; non-docs prefixes like `/docs-admin` or `/docsx` are not.
     if (!isDocsPath(href)) {

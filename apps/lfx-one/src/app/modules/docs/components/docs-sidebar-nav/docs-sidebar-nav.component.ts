@@ -13,7 +13,7 @@ import { filter, map, startWith } from 'rxjs';
  * Public minimal small-left-nav surfaced inside `DocsLayoutComponent` for
  * unauthenticated visitors (FR-009b).
  *
- * Layout matches `LensSwitcherComponent`'s 64-px column so the visual gestalt
+ * Layout keeps the 64-px column of the former lens-switcher rail so the visual gestalt
  * stays continuous across auth states (FR-009c). No lens switcher, no avatar
  * — just the docs icon, the "What's new" placeholder, and a sign-in entry.
  *
@@ -36,7 +36,7 @@ import { filter, map, startWith } from 'rxjs';
 export class DocsSidebarNavComponent {
   private readonly router = inject(Router);
 
-  /** Active when the route lives under `/docs/*` — matches the lens-switcher behaviour. */
+  /** Active when the route lives under `/docs/*` — matches the navbar's Documentation action. */
   protected readonly isDocsActive = this.initIsDocsActive();
 
   /**

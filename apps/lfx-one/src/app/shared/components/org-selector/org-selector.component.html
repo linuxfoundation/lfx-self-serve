@@ -15,6 +15,7 @@
     [attr.aria-expanded]="isSingleOrg() ? null : popover.overlayVisible"
     [attr.aria-disabled]="isSingleOrg() || null"
     [attr.aria-label]="'Organization switcher, currently ' + displayName()"
+    [attr.aria-describedby]="navbarRoleTooltip() ? 'org-selector-role-description' : null"
     data-testid="org-selector">
     <span class="lfxn__context-body">
       <span class="lfxn__tile lfxn__tile--logo" data-testid="org-selector-trigger-logo">
@@ -38,6 +39,10 @@
             [lfxNavTooltip]="navbarRoleTooltip() || selectedRoleLabel()">
             <i [ngClass]="selectedRoleIcon()" aria-hidden="true"></i>{{ selectedRoleLabel() }}
           </span>
+          @if (navbarRoleTooltip()) {
+            <!-- The hover tooltip is out of reach for keyboard and screen-reader users; describe the button with it instead. -->
+            <span id="org-selector-role-description" class="sr-only">{{ navbarRoleTooltip() }}</span>
+          }
         } @else {
           <span class="lfxn__org-role" data-testid="org-selector-trigger-lens-label">Organization</span>
         }
