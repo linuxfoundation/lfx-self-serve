@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { MktgRunActivityKind } from '../interfaces';
+import type { MktgRunActivityKind, MktgRunActivityPhaseDefinition } from '../interfaces';
 import { FOUNDATION_MESSAGE_FINALIZE_TOOL } from './foundation-message.constants';
 
 // The live activity feed of an agent run: what the agent is doing while it
@@ -12,15 +12,18 @@ import { FOUNDATION_MESSAGE_FINALIZE_TOOL } from './foundation-message.constants
 /** The feed's kinds, in the order a run moves through them; each one is also a phase of the header. */
 export const MKTG_RUN_ACTIVITY_KINDS = ['reading', 'lfx', 'search', 'questions', 'writing', 'checking'] as const;
 
-/** The header's phase names, one per kind. */
-export const MKTG_RUN_ACTIVITY_PHASE_LABELS: Record<MktgRunActivityKind, string> = {
-  reading: 'Reading sources',
-  lfx: 'Checking LFX',
-  search: 'Searching the web',
-  questions: 'Questions',
-  writing: 'Writing',
-  checking: 'Checking',
-};
+/**
+ * The header's phases, in run order, each grouping the kinds of step it
+ * covers: the web search and the LFX lookups are one stretch of research to
+ * the requester, so they share a phase.
+ */
+export const MKTG_RUN_ACTIVITY_PHASES: readonly MktgRunActivityPhaseDefinition[] = [
+  { id: 'reading', label: 'Reading sources', kinds: ['reading'] },
+  { id: 'research', label: 'Searching the web and LFX', kinds: ['search', 'lfx'] },
+  { id: 'questions', label: 'Questions', kinds: ['questions'] },
+  { id: 'writing', label: 'Writing', kinds: ['writing'] },
+  { id: 'checking', label: 'Checking', kinds: ['checking'] },
+];
 
 /** The tools the feed knows, by the name the session records. */
 export const MKTG_RUN_ACTIVITY_TOOLS = {

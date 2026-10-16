@@ -123,19 +123,18 @@ describe('mktgRunActivityReadingLabel', () => {
 });
 
 describe('mktgRunActivityPhases', () => {
-  it('marks the phase under way, the ones done, and passes over the ones the run skipped', () => {
+  it('marks the phase under way and the ones done, with the web search and LFX as one phase', () => {
     const phases = mktgRunActivityPhases([
       { id: 'step-1', kind: 'reading', label: 'Reading a page', status: 'done', startedAt: '2026-10-16T08:00:00Z' },
       { id: 'step-2', kind: 'search', label: 'Searching the web', status: 'running', startedAt: '2026-10-16T08:00:01Z' },
     ]);
-    expect(Object.fromEntries(phases.map((phase) => [phase.kind, phase.state]))).toEqual({
-      reading: 'done',
-      lfx: 'skipped',
-      search: 'active',
-      questions: 'pending',
-      writing: 'pending',
-      checking: 'pending',
-    });
+    expect(phases.map((phase) => [phase.label, phase.state])).toEqual([
+      ['Reading sources', 'done'],
+      ['Searching the web and LFX', 'active'],
+      ['Questions', 'pending'],
+      ['Writing', 'pending'],
+      ['Checking', 'pending'],
+    ]);
   });
 });
 

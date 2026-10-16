@@ -25,13 +25,13 @@ import {
   MKTG_RUN_ACTIVITY_DONE_STATUSES,
   MKTG_RUN_ACTIVITY_FAILED_STATUSES,
   MKTG_RUN_ACTIVITY_HIDDEN_TOOLS,
-  MKTG_RUN_ACTIVITY_KINDS,
   MKTG_RUN_ACTIVITY_LABELS,
+  MKTG_RUN_ACTIVITY_KINDS,
   MKTG_RUN_ACTIVITY_LFX_TOOL_PREFIX,
   MKTG_RUN_ACTIVITY_NAME_MAX_CHARS,
   MKTG_RUN_ACTIVITY_OPAQUE_PATH_SEGMENTS,
   MKTG_RUN_ACTIVITY_PATH_SEGMENT_MAX_CHARS,
-  MKTG_RUN_ACTIVITY_PHASE_LABELS,
+  MKTG_RUN_ACTIVITY_PHASES,
   MKTG_RUN_ACTIVITY_QUESTIONS_MARKER,
   MKTG_RUN_ACTIVITY_TOOLS,
   MKTG_RUN_QUESTION_SHORT_LABELS,
@@ -307,9 +307,10 @@ function collapseRepeatedReads(steps: Step[]): Step[] {
 
 /** The feed header's phases: under way, done, passed over, or not reached yet. */
 export function mktgRunActivityPhases(activity: MktgRunActivity[]): MktgRunActivityPhase[] {
-  const lastReached = Math.max(-1, ...activity.map((step) => MKTG_RUN_ACTIVITY_KINDS.indexOf(step.kind)));
-  return MKTG_RUN_ACTIVITY_KINDS.map((kind, position) => {
-    const steps = activity.filter((step) => step.kind === kind);
+  const phaseOf = (kind: MktgRunActivityKind): number => MKTG_RUN_ACTIVITY_PHASES.findIndex((phase) => phase.kinds.includes(kind));
+  const lastReached = Math.max(-1, ...activity.map((step) => phaseOf(step.kind)));
+  return MKTG_RUN_ACTIVITY_PHASES.map((phase, position) => {
+    const steps = activity.filter((step) => phase.kinds.includes(step.kind));
     let state: MktgRunActivityPhase['state'];
     if (steps.some((step) => step.status === 'running')) {
       state = 'active';
@@ -318,7 +319,7 @@ export function mktgRunActivityPhases(activity: MktgRunActivity[]): MktgRunActiv
     } else {
       state = position < lastReached ? 'skipped' : 'pending';
     }
-    return { kind, label: MKTG_RUN_ACTIVITY_PHASE_LABELS[kind], state };
+    return { id: phase.id, label: phase.label, state };
   });
 }
 

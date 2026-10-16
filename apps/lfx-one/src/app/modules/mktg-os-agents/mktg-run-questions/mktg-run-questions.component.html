@@ -5,12 +5,12 @@
   <div>
     <h1 class="font-display font-light text-xl text-gray-900" data-testid="mktg-run-questions-title">A few questions before the draft</h1>
     <p class="mt-1 text-sm leading-relaxed text-gray-500">
-      The agent read your sources and researched {{ projectName() }}. These are the points it could not settle on its own — each comes with its best answer.
-      Take it or write your own.
+      The agent read your sources and researched {{ projectName() }}. These are the points it could not settle on its own. Each answer starts as its suggestion:
+      keep it or change it.
     </p>
   </div>
 
-  <!-- One chip per question; the current one is highlighted, answered ones ticked. Any chip jumps back to its question. -->
+  <!-- One chip per question; the current one is highlighted, answered ones ticked. Any chip jumps to its question. -->
   <nav class="flex flex-wrap items-center gap-1.5" aria-label="Questions" data-testid="mktg-run-questions-chips">
     @for (chip of chips(); track chip.key) {
       <button
@@ -26,33 +26,17 @@
         {{ chip.label }}
       </button>
     }
-    <button
-      type="button"
-      class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
-      [ngClass]="onReview() ? chipClass.current : chipClass.open"
-      [attr.aria-current]="onReview() ? 'step' : null"
-      data-testid="mktg-run-questions-chip-review"
-      (click)="onJump(total())">
-      <i class="fa-light fa-list-check" aria-hidden="true"></i>
-      Review
-    </button>
   </nav>
 
   @if (current(); as question) {
-    <!-- One question at a time. Keys: 1 and 2 pick an option, Enter continues, Shift+Enter is a new line, Esc goes back. -->
     <div
-      #card
-      tabindex="-1"
-      class="bg-white border border-gray-200 rounded-xl shadow-sm p-6 flex flex-col gap-5 outline-none motion-safe:animate-step-in"
-      role="group"
-      [attr.aria-labelledby]="question.controlId + '-question'"
-      [attr.data-testid]="'mktg-run-questions-card-' + question.key"
-      (keydown)="onKeydown($event)">
+      class="bg-white border border-gray-200 rounded-xl shadow-sm p-6 flex flex-col gap-4 motion-safe:animate-step-in"
+      [attr.data-testid]="'mktg-run-questions-card-' + question.key">
       <div class="flex flex-col gap-1.5">
         <span class="text-xs font-medium text-gray-400" data-testid="mktg-run-questions-progress">
           Question {{ question.index + 1 }} of {{ total() }} · {{ question.label }}
         </span>
-        <h2 class="text-base font-semibold leading-snug text-gray-900" [id]="question.controlId + '-question'">{{ question.question }}</h2>
+        <label class="text-base font-semibold leading-snug text-gray-900" [for]="question.controlId">{{ question.question }}</label>
         @if (question.why) {
           <p class="text-sm leading-relaxed text-gray-500" [attr.data-testid]="'mktg-run-questions-why-' + question.key">{{ question.why }}</p>
         }
@@ -64,8 +48,7 @@
                   class="inline-flex items-center gap-1 max-w-full rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-100 hover:text-gray-900"
                   [href]="basis.href"
                   target="_blank"
-                  rel="noopener noreferrer"
-                  [attr.data-testid]="'mktg-run-questions-basis-link-' + question.key">
+                  rel="noopener noreferrer">
                   <i class="fa-light fa-link text-2xs" aria-hidden="true"></i>
                   <span class="truncate">{{ basis.text }}</span>
                 </a>
@@ -77,71 +60,28 @@
         }
       </div>
 
-      <!-- The options, numbered like Claude Code's: the agent's answer, or your own. -->
-      <div class="flex flex-col gap-2" role="radiogroup" [attr.aria-labelledby]="question.controlId + '-question'">
-        @if (question.hasSuggestion) {
-          <button
-            type="button"
-            role="radio"
-            class="group flex items-start gap-3 rounded-lg border p-3.5 text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
-            [ngClass]="currentChoice() === 'suggested' ? 'border-blue-300 bg-blue-50/60' : 'border-gray-200 bg-white hover:bg-gray-50'"
-            [attr.aria-checked]="currentChoice() === 'suggested'"
-            [attr.data-testid]="'mktg-run-questions-option-suggested-' + question.key"
-            (click)="onChoose('suggested')">
-            <span
-              class="flex items-center justify-center w-6 h-6 rounded-md border text-xs font-semibold shrink-0"
-              [ngClass]="currentChoice() === 'suggested' ? 'border-blue-300 bg-white text-blue-700' : 'border-gray-200 text-gray-500'"
-              aria-hidden="true"
-              >1</span
-            >
-            <span class="flex flex-col gap-1 min-w-0">
-              <span class="text-sm font-medium text-gray-900">Use the suggested answer</span>
-              <span class="text-sm leading-relaxed text-gray-600 whitespace-pre-wrap">{{ question.suggestedAnswer }}</span>
-            </span>
-          </button>
-        }
-
-        <div
-          class="flex flex-col rounded-lg border transition-colors"
-          [ngClass]="currentChoice() === 'own' ? 'border-blue-300 bg-blue-50/60' : 'border-gray-200 bg-white hover:bg-gray-50'">
-          <button
-            type="button"
-            role="radio"
-            class="flex items-start gap-3 p-3.5 text-left rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
-            [attr.aria-checked]="currentChoice() === 'own'"
-            [attr.data-testid]="'mktg-run-questions-option-own-' + question.key"
-            (click)="onChoose('own')">
-            <span
-              class="flex items-center justify-center w-6 h-6 rounded-md border text-xs font-semibold shrink-0"
-              [ngClass]="currentChoice() === 'own' ? 'border-blue-300 bg-white text-blue-700' : 'border-gray-200 text-gray-500'"
-              aria-hidden="true"
-              >{{ question.hasSuggestion ? 2 : 1 }}</span
-            >
-            <span class="flex flex-col gap-1">
-              <span class="text-sm font-medium text-gray-900">Write my own</span>
-              @if (currentChoice() !== 'own') {
-                <span class="text-xs text-gray-500">Start from the suggestion and change what is wrong.</span>
-              }
-            </span>
-          </button>
-          @if (currentChoice() === 'own') {
-            <div class="px-3.5 pb-3.5 pl-[3.25rem]">
-              <lfx-textarea
-                [id]="question.controlId"
-                [form]="ownForm"
-                [control]="question.key"
-                [rows]="3"
-                [autoResize]="true"
-                placeholder="Your answer"
-                styleClass="w-full min-h-20 bg-white"
-                [describedBy]="showError() ? question.controlId + '-error' : ''"
-                [invalid]="showError() && !currentValid()"
-                [required]="true"
-                [dataTest]="'mktg-run-questions-own-' + question.key" />
-            </div>
+      <div class="flex flex-col gap-1.5">
+        <span class="text-xs text-gray-500" [attr.data-testid]="'mktg-run-questions-hint-' + question.key">
+          @if (question.hasSuggestion) {
+            <i class="fa-light fa-wand-magic-sparkles mr-1" aria-hidden="true"></i>The agent’s suggestion — edit it if it is wrong
+          } @else {
+            The agent found nothing to suggest — your answer is needed
           }
-        </div>
-
+        </span>
+        @for (key of [question.key]; track key) {
+          <lfx-textarea
+            [id]="question.controlId"
+            [form]="answersForm"
+            [control]="key"
+            [rows]="4"
+            [autoResize]="true"
+            placeholder="Your answer"
+            styleClass="w-full min-h-24"
+            [describedBy]="showError() && !currentValid() ? question.controlId + '-error' : ''"
+            [invalid]="showError() && !currentValid()"
+            [required]="true"
+            [dataTest]="'mktg-run-questions-answer-' + key" />
+        }
         @if (showError() && !currentValid()) {
           <span
             class="flex items-start gap-1.5 text-xs text-red-600"
@@ -155,66 +95,25 @@
       </div>
 
       <div class="flex flex-wrap items-center justify-between gap-3 pt-1">
-        <div class="flex items-center gap-2">
+        <div>
           @if (question.index > 0) {
             <lfx-button label="Back" icon="fa-light fa-arrow-left" [text]="true" size="small" data-testid="mktg-run-questions-back" (onClick)="onBack()" />
           }
         </div>
-        <div class="flex items-center gap-3">
-          <span class="hidden sm:inline text-xs text-gray-400">
-            <kbd class="rounded border border-gray-200 bg-gray-50 px-1 font-sans">1</kbd>
-            <kbd class="rounded border border-gray-200 bg-gray-50 px-1 font-sans">2</kbd> choose ·
-            <kbd class="rounded border border-gray-200 bg-gray-50 px-1 font-sans">Enter</kbd> continue
-          </span>
+        @if (isLast()) {
           <lfx-button
-            [label]="question.index + 1 === total() ? 'Review answers' : 'Continue'"
-            icon="fa-light fa-arrow-right"
-            iconPos="right"
-            data-testid="mktg-run-questions-next"
+            label="Send answers and write the draft"
+            icon="fa-light fa-paper-plane"
+            [loading]="busy()"
+            [disabled]="busy()"
+            data-testid="mktg-run-questions-send"
             (onClick)="onNext()" />
-        </div>
-      </div>
-    </div>
-  } @else {
-    <!-- Review: every answer before it goes back to the agent. -->
-    <div
-      class="bg-white border border-gray-200 rounded-xl shadow-sm p-6 flex flex-col gap-4 motion-safe:animate-step-in"
-      data-testid="mktg-run-questions-review">
-      <div class="flex flex-col gap-1">
-        <h2 class="text-base font-semibold text-gray-900">Your answers</h2>
-        <p class="text-sm text-gray-500">The agent writes the {{ documentName() }} from these. Edit any of them before you send.</p>
-      </div>
-      <dl class="flex flex-col divide-y divide-gray-100">
-        @for (row of reviewRows(); track row.key) {
-          <div class="flex flex-col gap-1 py-3 first:pt-0" [attr.data-testid]="'mktg-run-questions-review-' + row.key">
-            <div class="flex items-center justify-between gap-3">
-              <dt class="text-sm font-medium text-gray-900">{{ row.label }}</dt>
-              <button
-                type="button"
-                class="text-xs font-medium text-blue-600 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 rounded"
-                [attr.aria-label]="'Edit the answer to ' + row.label"
-                [attr.data-testid]="'mktg-run-questions-edit-' + row.key"
-                (click)="onJump(row.index)">
-                Edit
-              </button>
-            </div>
-            <dd class="text-sm leading-relaxed text-gray-700 whitespace-pre-wrap">{{ row.answer }}</dd>
-            <dd class="text-xs text-gray-400">{{ row.originLabel }}</dd>
-          </div>
+        } @else {
+          <lfx-button label="Continue" icon="fa-light fa-arrow-right" iconPos="right" data-testid="mktg-run-questions-next" (onClick)="onNext()" />
         }
-      </dl>
-      <div class="flex flex-wrap items-center justify-between gap-3 pt-1">
-        <lfx-button label="Back" icon="fa-light fa-arrow-left" [text]="true" size="small" data-testid="mktg-run-questions-review-back" (onClick)="onBack()" />
-        <lfx-button
-          label="Send answers and write the draft"
-          icon="fa-light fa-paper-plane"
-          [disabled]="!allValid() || busy()"
-          [loading]="busy()"
-          data-testid="mktg-run-questions-send"
-          (onClick)="onSend()" />
       </div>
     </div>
   }
 
-  <span class="sr-only" role="status" aria-live="polite">{{ onReview() ? 'Review your answers' : 'Question ' + (index() + 1) + ' of ' + total() }}</span>
+  <span class="sr-only" role="status" aria-live="polite">{{ 'Question ' + (index() + 1) + ' of ' + total() }}</span>
 </section>

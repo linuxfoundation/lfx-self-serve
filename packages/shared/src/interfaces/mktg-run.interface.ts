@@ -549,9 +549,6 @@ export interface MktgRunAnsweredQuestionRow {
   originLabel: string;
 }
 
-/** Which option a question is answered with on the questions step: the agent's suggestion, or the requester's own words. */
-export type MktgRunQuestionChoice = 'suggested' | 'own';
-
 /** Where one question stands in the questions stepper's header. */
 export type MktgRunQuestionChipState = 'current' | 'answered' | 'open';
 
@@ -565,22 +562,6 @@ export interface MktgRunQuestionChip {
   index: number;
   /** Current, answered or still open. */
   state: MktgRunQuestionChipState;
-}
-
-/** One row of the questions stepper's review: the question with the answer that will go back. */
-export interface MktgRunQuestionReviewRow {
-  /** The question's key; the `@for` track key. */
-  key: string;
-  /** Its position, 0-based — where "Edit" jumps back to. */
-  index: number;
-  /** Short label. */
-  label: string;
-  /** The question itself. */
-  question: string;
-  /** The answer as it stands. */
-  answer: string;
-  /** Where the answer comes from, in words. */
-  originLabel: string;
 }
 
 /**
@@ -698,12 +679,22 @@ export type MktgRunActivityPhaseState = 'active' | 'done' | 'skipped' | 'pending
 
 /** One phase of the feed's header. */
 export interface MktgRunActivityPhase {
-  /** The kind the phase groups. */
-  kind: MktgRunActivityKind;
-  /** Its name, e.g. "Reading sources". */
+  /** The phase's id, e.g. `research`. */
+  id: string;
+  /** Its name, e.g. "Searching the web and LFX". */
   label: string;
   /** Where it stands. */
   state: MktgRunActivityPhaseState;
+}
+
+/** One phase of the feed's header and the kinds of step it groups. */
+export interface MktgRunActivityPhaseDefinition {
+  /** The phase's id, e.g. `research`. */
+  id: string;
+  /** Its name, e.g. "Searching the web and LFX". */
+  label: string;
+  /** The kinds of step it covers. */
+  kinds: readonly MktgRunActivityKind[];
 }
 
 /**

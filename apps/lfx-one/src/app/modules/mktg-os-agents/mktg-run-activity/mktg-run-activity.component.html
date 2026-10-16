@@ -18,12 +18,12 @@
 
   <!-- Phases: where the run is in the whole -->
   <ol class="flex flex-wrap items-center gap-1.5" aria-label="Progress" data-testid="mktg-run-activity-phases">
-    @for (phase of phases(); track phase.kind) {
+    @for (phase of phases(); track phase.id) {
       <li
         class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium"
         [ngClass]="phase.chipClass"
         [attr.aria-current]="phase.state === 'active' ? 'step' : null"
-        [attr.data-testid]="'mktg-run-activity-phase-' + phase.kind">
+        [attr.data-testid]="'mktg-run-activity-phase-' + phase.id">
         <i class="text-2xs" [ngClass]="phase.iconClass" aria-hidden="true"></i>
         {{ phase.label }}
       </li>
