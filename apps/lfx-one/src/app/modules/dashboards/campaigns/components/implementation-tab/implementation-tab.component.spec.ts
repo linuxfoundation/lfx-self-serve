@@ -7866,4 +7866,93 @@ describe('ImplementationTabComponent reddit image upload', () => {
     expect(at(f).redditImageUploadError()).toBe(message);
     expect(at(f).redditImageAssetId()).toBe('');
   });
+
+  /**
+   * An upload retained across a tab round-trip while the capabilities are cleared (Optimize, then
+   * back). The upload control is hidden then and the asset is withheld from the request, so the
+   * create must be BLOCKED — never sent with no image — with a way out outside that hidden control.
+   */
+  describe('a retained upload while the capability is unknown or off', () => {
+    async function remount(
+      upload: boolean | null,
+      creative: boolean | null,
+      read: 'unknown' | 'pending' | 'ready' | 'failed'
+    ): Promise<ComponentFixture<ImplementationTabComponent>> {
+      const first = await mount(true);
+      choose(first.fixture, png());
+      const draft = { ...(first.latest() as CampaignImplementationDraft), eventSlug: 'kubecon-eu-2026' };
+      first.fixture.destroy();
+      const f = (await mount(upload, creative as boolean, draft)).fixture;
+      f.componentRef.setInput('redditCreativeEnabled', creative);
+      f.componentRef.setInput('biddingCapabilityRead', read);
+      const c = at(f);
+      c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
+      c.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
+      c.campaignForm.controls['startDate'].setValue('2026-09-01');
+      c.campaignForm.controls['endDate'].setValue('2026-09-30');
+      f.detectChanges();
+      await f.whenStable();
+      return f;
+    }
+    const q = (f: ComponentFixture<ImplementationTabComponent>, id: string): HTMLElement | null => f.nativeElement.querySelector(`[data-testid="${id}"]`);
+
+    it('blocks Create while the capability read is pending, then sends the asset once it answers yes', async () => {
+      const f = await remount(null, null, 'pending');
+
+      expect(fileInput(f)).toBeNull();
+      expect(at(f).canSubmit()).toBe(false);
+      expect(q(f, 'implementation-reddit-image-asset-block-pending')?.textContent).toContain('Checking Reddit image upload support');
+      expect(q(f, 'implementation-reddit-image-asset-block-live')?.textContent?.trim()).toBe('Checking Reddit image upload support…');
+      at(f).submit();
+      expect(createCampaign).not.toHaveBeenCalled();
+
+      f.componentRef.setInput('redditCreativeEnabled', true);
+      f.componentRef.setInput('redditAssetUploadEnabled', true);
+      f.componentRef.setInput('biddingCapabilityRead', 'ready');
+      f.detectChanges();
+      await f.whenStable();
+
+      expect(q(f, 'implementation-reddit-image-asset-block-live')?.textContent?.trim()).toBe('');
+      expect(submit(f)['imageAssetId']).toBe(ASSET_ID);
+    });
+
+    it.each(['failed', 'unknown'] as const)('blocks Create with a Retry when the read is %s', async (read) => {
+      const f = await remount(null, null, read);
+      const retried = vi.fn();
+      f.componentRef.instance.retryBiddingCapability.subscribe(retried);
+
+      expect(at(f).canSubmit()).toBe(false);
+      expect(q(f, 'implementation-reddit-image-asset-block-failed')?.textContent).toContain('Could not confirm that Reddit image upload is supported');
+      (q(f, 'implementation-reddit-image-asset-block-retry')?.querySelector('button') as HTMLButtonElement).click();
+
+      expect(retried).toHaveBeenCalledTimes(1);
+      expect(createCampaign).not.toHaveBeenCalled();
+    });
+
+    it('blocks Create when the upload capability is off, until the operator removes the image', async () => {
+      const f = await remount(false, true, 'ready');
+
+      expect(at(f).canSubmit()).toBe(false);
+      expect(q(f, 'implementation-reddit-image-asset-block-unsupported')).not.toBeNull();
+
+      (q(f, 'implementation-reddit-image-asset-block-remove')?.querySelector('button') as HTMLButtonElement).click();
+      f.detectChanges();
+      await f.whenStable();
+
+      expect(q(f, 'implementation-reddit-image-asset-block-unsupported')).toBeNull();
+      expect(at(f).redditImageAssetId()).toBe('');
+      expect('imageAssetId' in submit(f)).toBe(false);
+    });
+
+    it('does not block while a post URL is set, since the asset is withheld by design then', async () => {
+      const f = await remount(null, null, 'pending');
+      const post = f.nativeElement.querySelector('[data-testid="implementation-reddit-post-url"]') as HTMLInputElement;
+      post.value = 'https://www.reddit.com/r/kubernetes/comments/abc123/attend/';
+      post.dispatchEvent(new Event('input'));
+      f.detectChanges();
+
+      expect(q(f, 'implementation-reddit-image-asset-block-pending')).toBeNull();
+      expect(at(f).canSubmit()).toBe(true);
+    });
+  });
 });

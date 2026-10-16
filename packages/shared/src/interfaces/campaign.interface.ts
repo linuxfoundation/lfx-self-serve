@@ -4348,6 +4348,16 @@ export interface CampaignBiddingCapabilityBlock {
   message: string;
 }
 
+/**
+ * Why Create is blocked for an uploaded Reddit image the draft still holds but the request cannot
+ * carry, because the upload capability is unanswered or answered no. The kinds mean what they do on
+ * `CampaignBiddingCapabilityBlock`: the same capability read answers both.
+ */
+export interface CampaignRedditImageAssetBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported';
+  message: string;
+}
+
 /** The rest of a platform's config that its bidding rules read. */
 export interface CampaignBiddingContext {
   /** The config's objective, where the platform has one. Manual bidding needs particular objectives on Meta and Reddit. */

@@ -123,6 +123,7 @@ import type {
   CampaignKeyword,
   CampaignPlatform,
   CampaignPlatformResult,
+  CampaignRedditImageAssetBlock,
   CampaignSitelink,
   CampaignType,
   CreativeAssetUploadStatus,
@@ -1547,6 +1548,19 @@ export class ImplementationTabComponent implements OnInit {
   /** The always-mounted live region's text for `biddingCapabilityBlock`; `''` when nothing blocks. */
   protected readonly biddingCapabilityMessage = computed(() => this.biddingCapabilityBlock()?.message ?? '');
 
+  /**
+   * Why Create is blocked for an uploaded Reddit image this tab still holds but cannot send, or
+   * `null`. `redditImageField` withholds the asset unless the upload capability is an explicit yes,
+   * so after a tab round-trip clears the capabilities (Optimize, then back) a restored upload would
+   * be silently left out of the request — creating the campaign with no image at all. The block
+   * keeps the operator's choice explicit instead: pending says it is checking, failed offers a
+   * Retry, and an explicit no asks them to remove the image. Not raised while a post URL is set: the
+   * asset is withheld then by design, since that post already has its image.
+   */
+  protected readonly redditImageAssetBlock: Signal<CampaignRedditImageAssetBlock | null> = this.initRedditImageAssetBlock();
+  /** The always-mounted live region's text for `redditImageAssetBlock`; `''` when nothing blocks. */
+  protected readonly redditImageAssetBlockMessage = computed(() => this.redditImageAssetBlock()?.message ?? '');
+
   protected readonly canSubmit = computed(() => {
     // Read FIRST and for its side effect only — see `campaignFormRevision`. Every direct form read
     // below is non-reactive, so without this dependency the memo never re-runs on a form edit.
@@ -1688,6 +1702,8 @@ export class ImplementationTabComponent implements OnInit {
     if (this.biddingAvailable() && CAMPAIGN_BIDDING_CREATE_PLATFORMS.some((p) => platforms.includes(p) && this.biddingPayloads()[p] === null)) return false;
     // A retained Manual choice the deployment has not (yet) confirmed it can send: never dropped.
     if (this.biddingCapabilityBlock() !== null) return false;
+    // Likewise a retained Reddit image upload: never silently left out of the request.
+    if (this.redditImageAssetBlock() !== null) return false;
     // Backstop for a state the add handlers cannot produce but a RESTORED DRAFT can: a draft
     // written before these caps existed carries whatever list it had, and `applyDraft` replays it
     // verbatim by design (an emptied list must stay emptied). Without this the form would look
@@ -2871,12 +2887,46 @@ export class ImplementationTabComponent implements OnInit {
    * when a post URL is set.
    */
   private redditImageField(): { imageAssetId: string } | { imageUrl: string } | Record<string, never> {
-    const assetForThisBrief = this.redditImageAssetId() !== '' && this.redditImageAssetBriefId() === (this.briefPersistence().briefId ?? '');
-    if (this.redditAssetUploadAvailable() && assetForThisBrief && !this.redditPostUrl()) {
+    if (this.redditAssetUploadAvailable() && this.redditImageAssetForThisBrief() && !this.redditPostUrl()) {
       return { imageAssetId: this.redditImageAssetId() };
     }
     if (this.redditCreativeAvailable() && this.redditImageUrl()) return { imageUrl: this.redditImageUrl() };
     return {};
+  }
+
+  /** Whether the draft holds an uploaded Reddit image made for the brief now open. */
+  private redditImageAssetForThisBrief(): boolean {
+    return this.redditImageAssetId() !== '' && this.redditImageAssetBriefId() === (this.briefPersistence().briefId ?? '');
+  }
+
+  private initRedditImageAssetBlock(): Signal<CampaignRedditImageAssetBlock | null> {
+    return computed(() => {
+      if (!this.showRedditSection() || this.redditAssetUploadAvailable()) return null;
+      if (!this.redditImageAssetForThisBrief() || this.redditPostUrl()) return null;
+      if (this.redditCreativeEnabled() === false || this.redditAssetUploadEnabled() === false) {
+        return {
+          kind: 'unsupported',
+          message:
+            'Image upload is not available on this deployment, so the uploaded Reddit image cannot be sent. Remove it to create the campaign without it.',
+        };
+      }
+      // The same create-capability read answers this and the bidding capability, so its state says
+      // whether a read is out; see `initBiddingCapabilityBlock` for why `unknown` gets a Retry.
+      if (this.biddingCapabilityRead() === 'pending') {
+        return { kind: 'pending', message: 'Checking Reddit image upload support…' };
+      }
+      if (!this.briefPersistence().briefId) {
+        return {
+          kind: 'unsaved',
+          message: "Reddit image upload support can't be checked until this brief is saved. Save the brief, or remove the uploaded image.",
+        };
+      }
+      return {
+        kind: 'failed',
+        message:
+          'Could not confirm that Reddit image upload is supported, so the uploaded image cannot be sent yet. Retry the check, or remove the uploaded image.',
+      };
+    });
   }
 
   private clearRedditImageAsset(): void {
