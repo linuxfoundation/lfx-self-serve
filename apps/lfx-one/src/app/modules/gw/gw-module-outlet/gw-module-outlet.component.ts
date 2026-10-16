@@ -8,6 +8,7 @@ import {
   Component,
   computed,
   DestroyRef,
+  effect,
   ElementRef,
   inject,
   PLATFORM_ID,
@@ -121,6 +122,8 @@ export class GwModuleOutletComponent {
   private pendingNavigation: Pick<NavigationStart, 'id' | 'navigationTrigger'> | null = null;
   /** Which mount path this instance is serving; see resolveGwEmbedRoutePrefix. */
   private routePrefix: string = resolveGwEmbedRoutePrefix('');
+  /** Ends a `waitForFirstPaint` in progress; null when none is. */
+  private endPaintWait: (() => void) | null = null;
 
   // 7. Constructor
   public constructor() {
@@ -129,6 +132,14 @@ export class GwModuleOutletComponent {
     this.warmup.preconnect();
     afterNextRender(() => {
       void this.mountEmbed();
+    });
+    // A terminal error during the paint wait (a non-recoverable fatal, or the sign-in bounce after a
+    // 401 from /session/me) raises the error panel; the skeleton must go with it rather than sit
+    // above the panel until the wait times out.
+    effect(() => {
+      if (this.hostPanelShowing()) {
+        this.endPaintWait?.();
+      }
     });
     this.destroyRef.onDestroy(() => {
       this.destroyed = true;
@@ -280,8 +291,9 @@ export class GwModuleOutletComponent {
   /**
    * Resolves once `root` holds painted content: at least one element with a non-zero height. The
    * first thing the embed draws may be its own loading spinner; that counts, so the skeleton hands
-   * over to it directly. Also resolves on teardown, and after `GW_EMBED_FIRST_PAINT_TIMEOUT_MS`
-   * so a render that never produces height cannot leave the skeleton up forever.
+   * over to it directly. Also resolves on teardown, as soon as the error panel is up, and after
+   * `GW_EMBED_FIRST_PAINT_TIMEOUT_MS` so a render that never produces height cannot leave the
+   * skeleton up forever.
    *
    * The root keeps laying out while hidden (`visibility`, not `display`), which is what lets the
    * observers measure it.
@@ -292,7 +304,7 @@ export class GwModuleOutletComponent {
    */
   private waitForFirstPaint(root: HTMLElement): Promise<void> {
     return new Promise((resolve) => {
-      if (this.destroyed || this.embedHasPainted(root)) {
+      if (this.destroyed || this.hostPanelShowing() || this.embedHasPainted(root)) {
         resolve();
         return;
       }
@@ -308,13 +320,15 @@ export class GwModuleOutletComponent {
         resizeObserver?.disconnect();
         mutationObserver.disconnect();
         unregisterDestroy();
+        this.endPaintWait = null;
         resolve();
       };
       const check = (): void => {
-        if (this.embedHasPainted(root)) {
+        if (this.hostPanelShowing() || this.embedHasPainted(root)) {
           finish();
         }
       };
+      this.endPaintWait = finish;
       // The root itself resizes when content arrives; a child appearing may not resize it first.
       resizeObserver?.observe(root);
       mutationObserver.observe(root, { childList: true, subtree: true });

@@ -168,11 +168,17 @@ export const GW_EMBED_STYLESHEET_STALE_WHILE_REVALIDATE_S = 7 * 24 * 60 * 60;
  * Browser/CDN lifetime of the content-addressed form, `<route>/<key>/<name>`: the name carries the
  * upstream content hash and the key carries LFX's own share (theme layer and transform), so the URL
  * names exactly one body and is served `immutable`. Only when the key matches this server's own.
+ *
+ * A week, not a year. The upstream body is not checked against the hash in its name (the embed
+ * build names it with Rollup's `[hash]`, an xxhash this server does not implement), so a bad body Gatewaze served under a valid
+ * name would be pinned for this long. A week still spans many visits, and both Gatewaze releases
+ * (a new name) and LFX releases that touch the theme or transform (a new key) change the URL long
+ * before it runs out. Recovery before then is in `docs/architecture/frontend/gw-embed.md`.
  */
-export const GW_EMBED_STYLESHEET_IMMUTABLE_MAX_AGE_S = 365 * 24 * 60 * 60;
+export const GW_EMBED_STYLESHEET_IMMUTABLE_MAX_AGE_S = 7 * 24 * 60 * 60;
 
 /**
- * What the server's stylesheet key looks like (`buildGwEmbedStylesheetKey`): base64url, fixed
+ * What the server's stylesheet key looks like (`getGwEmbedStylesheetKey`): base64url, fixed
  * length. Anything else in the key segment is a 404.
  */
 export const GW_EMBED_STYLESHEET_KEY_PATTERN = /^[A-Za-z0-9_-]{16}$/;
@@ -182,8 +188,9 @@ export const GW_EMBED_STYLESHEET_KEY_PATTERN = /^[A-Za-z0-9_-]{16}$/;
  * `apps/lfx-one/scripts/lib/contain-gw-embed-css.mjs`. It feeds the stylesheet key, so a transform
  * change gives the scoped stylesheet a new URL instead of leaving browsers on the immutable old one.
  * A spec (`gw-embed.helper.spec.ts`) fails when the file changes without this being updated, and
- * prints the new value. A `postcss` upgrade is not covered: it would have to change the output of an
- * unchanged transform, and a theme or transform change in the same release still rolls the key.
+ * prints the new value.
+ *
+ * A `postcss` upgrade does not rotate the key; if one changes the output, update this value by hand.
  */
 export const GW_EMBED_STYLESHEET_TRANSFORM_FINGERPRINT = '7a789f6bbb63afd0d5d2abacc2a0c2c03551724421ebb0ae8c2fc4acde62d498';
 

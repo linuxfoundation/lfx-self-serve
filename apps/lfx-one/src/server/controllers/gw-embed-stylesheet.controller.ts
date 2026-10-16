@@ -29,7 +29,7 @@ const OPERATION = 'gw_embed_stylesheet';
  *
  * - `<route>/<key>/<name>`, which the outlet builds from `RuntimeConfig.gwEmbedStylesheetKey`. The
  *   name carries the upstream content hash and the key carries LFX's own share (theme layer and
- *   transform), so the URL names exactly one body: `immutable`, for a year. A key that is not this
+ *   transform), so the URL names exactly one body: `immutable`, for a week (see `GW_EMBED_STYLESHEET_IMMUTABLE_MAX_AGE_S`). A key that is not this
  *   server's own (a page rendered by a replica of another release, during a rollout) still gets the
  *   current body, but `no-store`, so that body is never pinned under a URL that names another.
  * - `<route>/<name>`, the fallback when the page had no key. It is not content-addressed, so it

@@ -94,11 +94,29 @@ export function loadGwEmbedTheme(operation: string): string {
  * transform computes a new one. Throws what `loadGwEmbedTheme` throws.
  */
 export function getGwEmbedStylesheetKey(operation: string): string {
-  const theme = loadGwEmbedTheme(operation);
-  return createHash('sha256').update(GW_EMBED_STYLESHEET_TRANSFORM_FINGERPRINT).update('\n').update(theme).digest('base64url').slice(0, 16);
+  // Memoised, failure included: every SSR render asks for it, and with the theme missing an
+  // unmemoised call would repeat the synchronous file probe on every page. The build copy cannot
+  // appear later in a running process, so remembering the failure loses nothing.
+  if (stylesheetKeyCache === undefined) {
+    try {
+      const theme = loadGwEmbedTheme(operation);
+      stylesheetKeyCache = {
+        key: createHash('sha256').update(GW_EMBED_STYLESHEET_TRANSFORM_FINGERPRINT).update('\n').update(theme).digest('base64url').slice(0, 16),
+      };
+    } catch (error) {
+      stylesheetKeyCache = { error };
+    }
+  }
+  if ('error' in stylesheetKeyCache) {
+    throw stylesheetKeyCache.error;
+  }
+  return stylesheetKeyCache.key;
 }
+
+let stylesheetKeyCache: { key: string } | { error: unknown } | undefined;
 
 /** Test seam: forget the memoised theme so a spec can exercise the read path again. */
 export function resetGwEmbedThemeCache(): void {
   themeCache = undefined;
+  stylesheetKeyCache = undefined;
 }

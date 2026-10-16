@@ -320,6 +320,24 @@ describe('GwModuleOutletComponent', () => {
       }
     });
 
+    it('drops the skeleton at once when a terminal error arrives while waiting for the first paint', async () => {
+      setPaintTest(() => false);
+      await browserFixture.whenStable();
+      await settle();
+      resolveReady(MANIFEST);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(browserComponent['mounting']()).toBe(true);
+
+      const onFatal = (loaderMount.mock.calls[0][1] as GwHostContext).onFatal;
+      onFatal?.({ error_type: 'render_crash', code: 'GW_RENDER_CRASH', message: 'The embed crashed.', recoverable: false });
+      await browserFixture.whenStable();
+
+      // Well inside the 10s paint cap: the error panel ended the wait, not the timeout.
+      await vi.waitFor(() => expect(browserComponent['mounting']()).toBe(false), { timeout: 1000 });
+      expect(browserFixture.nativeElement.querySelector('[data-testid="gw-embed-loading"]')).toBeNull();
+      expect(browserFixture.nativeElement.querySelector('[role="alert"]')?.textContent).toContain('The embed crashed.');
+    });
+
     it('stops waiting for the first paint when the outlet is torn down', async () => {
       setPaintTest(() => false);
       const pending = mount();

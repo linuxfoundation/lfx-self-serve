@@ -16,6 +16,7 @@ import { resolvePublishableGwSupabaseKey } from './supabase-key.helper';
 export function buildGwRuntimeConfig(
   req: Request
 ): Pick<RuntimeConfig, 'gwSupabaseUrl' | 'gwSupabaseAnonKey' | 'gwEmbedUrl' | 'gwHostSession' | 'gwEmbedStylesheetKey'> {
+  const hostSession = isGatewazeHostSessionEnabled();
   return {
     gwSupabaseUrl: process.env['GW_SUPABASE_URL'] || '',
     // Withheld unless it is actually publishable. This value lands in the SSR payload of every
@@ -26,8 +27,9 @@ export function buildGwRuntimeConfig(
     gwEmbedUrl: process.env['GW_EMBED_URL'] || '',
     // The same check that gates /api/gatewaze, so the outlet never mounts the embed on a pod whose
     // routes would answer 404. It shows its not-configured panel instead.
-    gwHostSession: isGatewazeHostSessionEnabled(),
-    gwEmbedStylesheetKey: resolveStylesheetKey(),
+    gwHostSession: hostSession,
+    // The outlet never mounts without host-session mode, so the key is only worked out with it on.
+    gwEmbedStylesheetKey: hostSession ? resolveStylesheetKey() : '',
   };
 }
 

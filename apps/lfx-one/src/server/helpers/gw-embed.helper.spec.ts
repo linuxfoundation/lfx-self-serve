@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { GW_EMBED_STYLESHEET_KEY_PATTERN, GW_EMBED_STYLESHEET_TRANSFORM_FINGERPRINT } from '@lfx-one/shared/constants';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getGwEmbedBaseUrl, getGwEmbedStylesheetKey, loadGwEmbedTheme, resetGwEmbedThemeCache } from './gw-embed.helper';
 
 describe('getGwEmbedBaseUrl', () => {
@@ -68,6 +68,19 @@ describe('getGwEmbedStylesheetKey', () => {
     const key = getGwEmbedStylesheetKey('spec');
     expect(key).toMatch(GW_EMBED_STYLESHEET_KEY_PATTERN);
     expect(getGwEmbedStylesheetKey('spec')).toBe(key);
+  });
+
+  it('remembers a failure too, so a missing theme is not probed again on every page', () => {
+    // No theme beside the bundle (this spec runs from source) and none under this cwd.
+    const cwd = vi.spyOn(process, 'cwd').mockReturnValue('/nonexistent-gw-embed-spec');
+    try {
+      expect(() => getGwEmbedStylesheetKey('spec')).toThrowError(expect.objectContaining({ code: 'GW_EMBED_THEME_UNAVAILABLE' }));
+      const probes = cwd.mock.calls.length;
+      expect(() => getGwEmbedStylesheetKey('spec')).toThrowError(expect.objectContaining({ code: 'GW_EMBED_THEME_UNAVAILABLE' }));
+      expect(cwd.mock.calls.length).toBe(probes);
+    } finally {
+      cwd.mockRestore();
+    }
   });
 
   it('is derived from the theme layer and the transform fingerprint', () => {
