@@ -11,7 +11,7 @@ import '@angular/compiler';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { LEGACY_VOTE_TIMEZONE } from '../constants/timezones.constants';
-import { PollStatus, VoteResponseStatus } from '../enums';
+import { PollStatus, VoteResponseStatus, VoteRowParticipationState } from '../enums';
 import type { Vote, VoteFormValue, VoteResultsResponse } from '../interfaces/poll.interface';
 import {
   buildCreateVoteRequest,
@@ -20,6 +20,7 @@ import {
   buildUpdateVoteRequest,
   compareVotesByRecency,
   computeVoteParticipationStats,
+  computeVoteRowParticipation,
   isVoteClosingSoon,
   mapVoteToFormValue,
   matchesMyVotesQuickFilter,
@@ -291,6 +292,109 @@ describe('computeVoteParticipationStats', () => {
 
   it('keeps participationRate as the share of eligible voters (abstentions count as responses)', () => {
     expect(computeVoteParticipationStats(results()).participationRate).toBe(75);
+  });
+});
+
+describe('computeVoteRowParticipation', () => {
+  /** Minimal Vote fixture — the participation summary only reads status and the two indexed counts. */
+  function rowVote(overrides: Partial<Vote> = {}): Vote {
+    return {
+      uid: 'vote-uid',
+      name: 'Board election',
+      end_time: '2025-06-01T00:00:00Z',
+      status: PollStatus.ACTIVE,
+      project_uid: 'project-uid',
+      num_response_received: 8,
+      total_voting_request_invitations: 12,
+      ...overrides,
+    };
+  }
+
+  it('summarises an active vote as responses of invited with a rounded percent', () => {
+    expect(computeVoteRowParticipation(rowVote())).toEqual({
+      state: VoteRowParticipationState.PROGRESS,
+      responses: 8,
+      invited: 12,
+      percent: 67,
+      label: '8 of 12 responded · 67%',
+      secondaryLabel: null,
+      ariaLabel: 'Participation: 8 of 12 responded, 67%',
+    });
+  });
+
+  it('applies the same math to an ended vote, whatever the raw status casing', () => {
+    const participation = computeVoteRowParticipation(rowVote({ status: 'ENDED' as PollStatus }));
+
+    expect(participation.state).toBe(VoteRowParticipationState.PROGRESS);
+    expect(participation.label).toBe('8 of 12 responded · 67%');
+  });
+
+  it('shows a draft as not open, even when the payload carries counts', () => {
+    expect(computeVoteRowParticipation(rowVote({ status: PollStatus.DISABLED }))).toMatchObject({
+      state: VoteRowParticipationState.NOT_OPEN,
+      responses: null,
+      invited: null,
+      percent: null,
+      label: 'Not open yet',
+    });
+  });
+
+  it('reports missing responses as unavailable rather than zero', () => {
+    expect(computeVoteRowParticipation(rowVote({ num_response_received: undefined }))).toMatchObject({
+      state: VoteRowParticipationState.UNAVAILABLE,
+      responses: null,
+      percent: null,
+      label: 'Unavailable',
+    });
+  });
+
+  it('never coerces a string count from upstream', () => {
+    expect(computeVoteRowParticipation(rowVote({ num_response_received: '8' as unknown as number })).state).toBe(VoteRowParticipationState.UNAVAILABLE);
+  });
+
+  it('shows the response count alone when the invited total is missing', () => {
+    expect(computeVoteRowParticipation(rowVote({ total_voting_request_invitations: undefined }))).toMatchObject({
+      state: VoteRowParticipationState.COUNT_ONLY,
+      responses: 8,
+      invited: null,
+      percent: null,
+      label: '8 responded',
+      secondaryLabel: 'Total unavailable',
+    });
+  });
+
+  it('never produces a percent for a zero-person electorate', () => {
+    const participation = computeVoteRowParticipation(rowVote({ num_response_received: 0, total_voting_request_invitations: 0 }));
+
+    expect(participation).toMatchObject({ state: VoteRowParticipationState.NO_ELECTORATE, percent: null, label: 'No one invited' });
+    expect(participation.label).not.toMatch(/%/);
+  });
+
+  it('treats zero responses with a known electorate as a confirmed 0%', () => {
+    expect(computeVoteRowParticipation(rowVote({ num_response_received: 0 }))).toMatchObject({
+      state: VoteRowParticipationState.PROGRESS,
+      percent: 0,
+      label: '0 of 12 responded · 0%',
+    });
+  });
+
+  it('clamps the percent to 100 under index lag but keeps the raw counts in the label', () => {
+    expect(computeVoteRowParticipation(rowVote({ num_response_received: 13 }))).toMatchObject({ percent: 100, label: '13 of 12 responded · 100%' });
+  });
+
+  it('never words participation as quorum, approval, or an outcome', () => {
+    const rows = [
+      rowVote(),
+      rowVote({ status: PollStatus.DISABLED }),
+      rowVote({ num_response_received: undefined }),
+      rowVote({ total_voting_request_invitations: undefined }),
+      rowVote({ total_voting_request_invitations: 0 }),
+    ];
+
+    for (const participation of rows.map(computeVoteRowParticipation)) {
+      const text = [participation.label, participation.secondaryLabel, participation.ariaLabel].join(' ');
+      expect(text).not.toMatch(/quorum|approv|pass|win/i);
+    }
   });
 });
 
