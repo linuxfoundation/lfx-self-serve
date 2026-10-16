@@ -101,6 +101,10 @@ export class NavbarComponent extends SidebarComponent {
   protected readonly createMenu = viewChild<Popover>('createMenu');
   protected readonly userMenu = viewChild<Popover>('userMenu');
   protected readonly brandMenuOpen = signal(false);
+  // Popover open state as signals: zoneless, an outside click or Escape closes a popover without
+  // re-rendering the trigger, so `overlayVisible` would leave it styled and announced as open.
+  protected readonly createMenuOpen = signal(false);
+  protected readonly userMenuOpen = signal(false);
   /** Scroll-edge state of the menu body — drives the top/bottom fade masks. */
   protected readonly menuScroll = viewChild(ScrollShadowDirective);
 

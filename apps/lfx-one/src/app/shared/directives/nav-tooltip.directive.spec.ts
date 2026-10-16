@@ -108,4 +108,28 @@ describe('NavTooltipDirective', () => {
 
     expect(tooltips()).toHaveLength(0);
   });
+
+  it('toggles an interactive card on click so a tap can open it', () => {
+    host.items.set([{ key: 'k8s', label: 'Kubernetes' }]);
+    TestBed.tick();
+
+    first.click();
+    expect(tooltips()).toHaveLength(1);
+
+    first.click();
+    expect(tooltips()).toHaveLength(0);
+  });
+
+  it('stays dismissed after Escape returns focus from a chip to the trigger', () => {
+    host.items.set([{ key: 'k8s', label: 'Kubernetes' }]);
+    TestBed.tick();
+    first.click();
+    document.body.querySelector<HTMLElement>('[data-testid="nav-tooltip-chip-k8s"]')?.focus();
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    vi.runOnlyPendingTimers();
+
+    expect(tooltips()).toHaveLength(0);
+    expect(document.activeElement).toBe(first);
+  });
 });

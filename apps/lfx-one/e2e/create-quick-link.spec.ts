@@ -360,7 +360,7 @@ test.describe('Create Quick-Link — mobile trigger (LFXV2-3248)', () => {
     // change out of scope for this test-only commit. The class this test already relies on to
     // scope the SCSS override is the stable hook available today.
     //
-    // `.filter({ visible: true })`: `lfx-lens-switcher` mounts twice at once (desktop rail +
+    // `.filter({ visible: true })`: `lfx-navbar` mounts twice at once (desktop rail +
     // mobile drawer instances in main-layout.component.html), each with its own `.p-popover
     // .lfx-create-popover` panel. This only resolves to one element today because PrimeNG lazily
     // creates the panel DOM on first `show()`/`toggle()` — the never-toggled desktop instance's

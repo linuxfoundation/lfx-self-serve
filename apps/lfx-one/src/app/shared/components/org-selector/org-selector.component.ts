@@ -3,8 +3,9 @@
 
 import { isPlatformBrowser, NgClass } from '@angular/common';
 import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, input, model, PLATFORM_ID, Signal, viewChild } from '@angular/core';
-import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
+import { NavigationEnd, Router } from '@angular/router';
 import {
   NAVBAR_ORG_ROLE_DIRECT_SUFFIX,
   NAVBAR_ORG_ROLE_TOOLTIPS,
@@ -27,7 +28,7 @@ import { AutoFocus } from 'primeng/autofocus';
 import { InputTextModule } from 'primeng/inputtext';
 import { Popover, PopoverModule } from 'primeng/popover';
 import { TooltipModule } from 'primeng/tooltip';
-import { distinctUntilChanged, filter } from 'rxjs';
+import { distinctUntilChanged, filter, map } from 'rxjs';
 
 @Component({
   selector: 'lfx-org-selector',
@@ -36,9 +37,13 @@ import { distinctUntilChanged, filter } from 'rxjs';
   styleUrl: './org-selector.component.scss',
 })
 export class OrgSelectorComponent {
+  /** Per-instance suffix — main-layout mounts the navbar twice (desktop column + mobile drawer). */
+  private static nextInstanceId = 0;
+
   private readonly accountContextService = inject(AccountContextService);
   private readonly orgNavigationService = inject(OrgNavigationService);
   private readonly orgLensNavigation = inject(OrgLensNavigationService);
+  private readonly router = inject(Router);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   protected readonly emptyState = inject(OrgLensEmptyStateService);
   /** Captured at construction so the afterNextRender callback below has an explicit DestroyRef + Injector — both `takeUntilDestroyed()` and `toObservable()` call inject() internally and would otherwise throw NG0203 outside the injection context. */
@@ -131,13 +136,29 @@ export class OrgSelectorComponent {
     return this.personaToTooltip(persona, parentName);
   });
 
+  /** Whether the router sits on the org-lens not-found dead end, re-read on every navigation. */
+  private readonly onNotFound: Signal<boolean> = toSignal(
+    this.router.events.pipe(
+      filter((event) => event instanceof NavigationEnd),
+      map(() => this.orgLensNavigation.isOnNotFound())
+    ),
+    { initialValue: this.orgLensNavigation.isOnNotFound() }
+  );
+
   /**
    * Nothing to switch to: a non-staff caller (no catalogue search) whose fully loaded, complete list
-   * holds a single organization. The trigger then renders as a static card and never opens the panel.
+   * holds a single organization — the one already selected. The trigger then renders as a static card and never opens the panel.
    */
-  protected readonly isSingleOrg: Signal<boolean> = computed(
-    () => !this.isStaff() && !this.loading() && !this.hasMore() && !this.listIncomplete() && this.items().length === 1
-  );
+  protected readonly isSingleOrg: Signal<boolean> = computed(() => {
+    const items = this.items();
+    if (this.isStaff() || this.loading() || this.hasMore() || this.listIncomplete() || items.length !== 1) return false;
+    // The one row must be the selection: a deep-linked selection outside the list still needs the
+    // panel to switch back, and the not-found dead end recovers through picking the selected row.
+    return items[0].uid === this.selectedAccountUid() && !this.onNotFound();
+  });
+
+  /** Unique per instance, so each card's `aria-describedby` resolves to its own description. */
+  protected readonly roleDescriptionId = `org-selector-role-description-${OrgSelectorComponent.nextInstanceId++}`;
 
   /** Navbar card tooltip: what the role lets the user do, in plain language (rather than repeating the label). */
   protected readonly navbarRoleTooltip: Signal<string> = computed(() => {

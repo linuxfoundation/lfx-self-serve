@@ -30,7 +30,7 @@
                 (click)="toggleCreateMenu($event)"
                 aria-label="Create new artifact"
                 aria-haspopup="menu"
-                [attr.aria-expanded]="createMenu.overlayVisible"
+                [attr.aria-expanded]="createMenuOpen()"
                 lfxNavTooltip="Create"
                 lfxNavTooltipPlacement="bottom"
                 [attr.data-testid]="mobile() ? 'create-rail-button-mobile' : 'create-rail-button'">
@@ -222,11 +222,11 @@
       <button
         type="button"
         class="lfxn__user"
-        [class.is-open]="userMenu.overlayVisible"
+        [class.is-open]="userMenuOpen()"
         (click)="toggleUserMenu($event)"
         aria-label="Account menu"
         aria-haspopup="menu"
-        [attr.aria-expanded]="userMenu.overlayVisible"
+        [attr.aria-expanded]="userMenuOpen()"
         data-testid="lens-user-avatar">
         <span class="lfxn__avatar">
           @if (photoUrl(); as photo) {
@@ -405,7 +405,12 @@
 </p-popover>
 
 <!-- Create menu — pick an artifact type, then a dialog resolves the project/foundation. -->
-<p-popover #createMenu appendTo="body" styleClass="w-72 lfxn-menu-popover">
+<p-popover
+  #createMenu
+  appendTo="body"
+  styleClass="w-72 lfxn-menu-popover lfx-create-popover"
+  (onShow)="createMenuOpen.set(true)"
+  (onHide)="createMenuOpen.set(false)">
   <ng-template #content>
     @let creatables = creatableArtifacts();
     <div class="py-1" [attr.data-testid]="mobile() ? 'create-menu-mobile' : 'create-menu'">
@@ -431,7 +436,7 @@
 </p-popover>
 
 <!-- Account menu — pinned just above the footer, styled like the brand menu. -->
-<p-popover #userMenu appendTo="body" styleClass="lfxn-menu-popover lfxn-account-popover">
+<p-popover #userMenu appendTo="body" styleClass="lfxn-menu-popover lfxn-account-popover" (onShow)="userMenuOpen.set(true)" (onHide)="userMenuOpen.set(false)">
   <ng-template #content>
     <div class="lfxn-account-menu" data-testid="navbar-account-menu">
       <div class="lfxn-account-menu__head">

@@ -12,10 +12,10 @@
     [attr.role]="isSingleOrg() ? null : 'combobox'"
     [attr.aria-haspopup]="isSingleOrg() ? null : 'listbox'"
     [attr.aria-controls]="isSingleOrg() ? null : 'org-selector-listbox'"
-    [attr.aria-expanded]="isSingleOrg() ? null : popover.overlayVisible"
+    [attr.aria-expanded]="isSingleOrg() ? null : isPanelOpen()"
     [attr.aria-disabled]="isSingleOrg() || null"
     [attr.aria-label]="'Organization switcher, currently ' + displayName()"
-    [attr.aria-describedby]="navbarRoleTooltip() ? 'org-selector-role-description' : null"
+    [attr.aria-describedby]="navbarRoleTooltip() ? roleDescriptionId : null"
     data-testid="org-selector">
     <span class="lfxn__context-body">
       <span class="lfxn__tile lfxn__tile--logo" data-testid="org-selector-trigger-logo">
@@ -41,7 +41,7 @@
           </span>
           @if (navbarRoleTooltip()) {
             <!-- The hover tooltip is out of reach for keyboard and screen-reader users; describe the button with it instead. -->
-            <span id="org-selector-role-description" class="sr-only">{{ navbarRoleTooltip() }}</span>
+            <span [id]="roleDescriptionId" class="sr-only">{{ navbarRoleTooltip() }}</span>
           }
         } @else {
           <span class="lfxn__org-role" data-testid="org-selector-trigger-lens-label">Organization</span>

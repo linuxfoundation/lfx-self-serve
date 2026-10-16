@@ -208,11 +208,15 @@ describe('OrgSelectorComponent navbar card', () => {
     return fixture.componentInstance as unknown as NavbarCardView;
   };
 
-  it('is a static card only for a non-staff viewer whose complete list holds one organization', async () => {
+  it('is a static card only for a non-staff viewer whose complete list holds just the selected organization', async () => {
     expect((await createCard({})).isSingleOrg()).toBe(true);
     expect((await createCard({ items: [rowA, rowB] })).isSingleOrg()).toBe(false);
     expect((await createCard({ hasMore: true })).isSingleOrg()).toBe(false);
     expect((await createCard({ isStaff: true })).isSingleOrg()).toBe(false);
+  });
+
+  it('keeps the panel when the one listed organization is not the selected one', async () => {
+    expect((await createCard({ items: [rowB] })).isSingleOrg()).toBe(false);
   });
 
   it('describes an inherited role through the organization it comes from', async () => {

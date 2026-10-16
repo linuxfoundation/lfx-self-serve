@@ -8,7 +8,8 @@ import { NavTooltipItem, NavTooltipPlacement } from '@lfx-one/shared/interfaces'
 
 /**
  * Lightweight tooltip for the navbar — a compact dark chip that fades in after a short hover delay
- * (immediately on keyboard focus) and hides on leave, blur, click or Escape. Deliberately separate
+ * (immediately on keyboard focus) and hides on leave, blur, click or Escape — interactive cards
+ * toggle on click instead, so touch users can open them. Deliberately separate
  * from PrimeNG's `pTooltip`: it carries the navbar's own styling (`.lfxn-tooltip`, defined in the
  * navbar stylesheet).
  *
@@ -82,7 +83,14 @@ export class NavTooltipDirective {
 
   @HostListener('click')
   protected onClick(): void {
-    this.hide();
+    // Interactive cards toggle on click so a tap (no hover) can open the chips; label-only ones just dismiss.
+    if (!this.isInteractive() || this.tooltip) {
+      this.hide();
+      return;
+    }
+    this.cancelHide();
+    this.clearShowTimer();
+    this.show();
   }
 
   @HostListener('keydown', ['$event'])
@@ -98,8 +106,9 @@ export class NavTooltipDirective {
 
   private onEscape(): void {
     const focusInside = !!this.tooltip?.contains(this.document.activeElement);
-    this.hide();
+    // Refocus before hiding: the trigger's focusin schedules a reopen that hide() then clears.
     if (focusInside) this.host.nativeElement.focus();
+    this.hide();
   }
 
   private isInteractive(): boolean {
@@ -217,36 +226,43 @@ export class NavTooltipDirective {
   /**
    * Centre the card on the trigger on its preferred side, flipping to the other side when it would
    * cross the viewport edge (e.g. a long chip list above an icon near the top), clamped horizontally.
+   * When neither side has room, it takes the roomier side and scrolls within that height.
    */
   private position(tooltip: HTMLElement): void {
     const trigger = this.host.nativeElement.getBoundingClientRect();
-    const { width, height } = tooltip.getBoundingClientRect();
     const { clientWidth: viewportWidth, clientHeight: viewportHeight } = this.document.documentElement;
-
-    const centred = trigger.left + trigger.width / 2 - width / 2;
-    const left = Math.min(Math.max(centred, NAV_TOOLTIP_OFFSET_PX), viewportWidth - width - NAV_TOOLTIP_OFFSET_PX);
-
-    const above = trigger.top - height - NAV_TOOLTIP_OFFSET_PX;
-    const below = trigger.bottom + NAV_TOOLTIP_OFFSET_PX;
-    const fits: Record<NavTooltipPlacement, boolean> = {
-      top: above >= NAV_TOOLTIP_OFFSET_PX,
-      bottom: below + height <= viewportHeight - NAV_TOOLTIP_OFFSET_PX,
+    const room: Record<NavTooltipPlacement, number> = {
+      top: trigger.top - 2 * NAV_TOOLTIP_OFFSET_PX,
+      bottom: viewportHeight - trigger.bottom - 2 * NAV_TOOLTIP_OFFSET_PX,
     };
-    const placement = this.resolvePlacement(fits);
+
+    const natural = tooltip.getBoundingClientRect();
+    const placement = this.resolvePlacement(room, natural.height);
+    if (natural.height > room[placement]) {
+      this.renderer.setStyle(tooltip, 'max-height', `${Math.max(Math.floor(room[placement]), 0)}px`);
+      this.renderer.setStyle(tooltip, 'overflow-y', 'auto');
+    }
+    const { width, height } = tooltip.getBoundingClientRect();
     if (placement !== this.placement()) {
       this.renderer.removeClass(tooltip, `lfxn-tooltip--${this.placement()}`);
       this.renderer.addClass(tooltip, `lfxn-tooltip--${placement}`);
     }
 
+    const centred = trigger.left + trigger.width / 2 - width / 2;
+    const left = Math.min(Math.max(centred, NAV_TOOLTIP_OFFSET_PX), viewportWidth - width - NAV_TOOLTIP_OFFSET_PX);
+    const top = placement === 'bottom' ? trigger.bottom + NAV_TOOLTIP_OFFSET_PX : trigger.top - height - NAV_TOOLTIP_OFFSET_PX;
+
     this.renderer.setStyle(tooltip, 'left', `${Math.round(left)}px`);
-    this.renderer.setStyle(tooltip, 'top', `${Math.round(placement === 'bottom' ? below : above)}px`);
+    this.renderer.setStyle(tooltip, 'top', `${Math.round(top)}px`);
   }
 
-  /** The preferred side, unless only the opposite side has room. */
-  private resolvePlacement(fits: Record<NavTooltipPlacement, boolean>): NavTooltipPlacement {
+  /** The preferred side if the card fits there, else the opposite side if it fits, else the roomier side. */
+  private resolvePlacement(room: Record<NavTooltipPlacement, number>, height: number): NavTooltipPlacement {
     const preferred = this.placement();
     const opposite: NavTooltipPlacement = preferred === 'top' ? 'bottom' : 'top';
-    return !fits[preferred] && fits[opposite] ? opposite : preferred;
+    if (height <= room[preferred]) return preferred;
+    if (height <= room[opposite]) return opposite;
+    return room[opposite] > room[preferred] ? opposite : preferred;
   }
 
   private hide(): void {
