@@ -30,7 +30,7 @@ const vote = (uid: string, days: number, overrides: Partial<Vote> = {}): Vote =>
   end_time: new Date(NOW + days * 86400000).toISOString(),
   project_uid: 'project-a',
   parent_project_uid: 'foundation-a',
-  committee_name: 'Audi Group',
+  committee_name: 'Alpha Group',
   response_status: VoteResponseStatus.AWAITING_RESPONSE,
   ...overrides,
 });
@@ -431,8 +431,8 @@ describe('VotesDashboardComponent personal summary', () => {
     expect(cards().map((card) => card.value)).toEqual([4, 4]);
     dashboard['onProjectFilterChange']('project-a');
     await settle();
-    expect(table.groupOptions().map((option) => option.value)).toEqual([null, 'Audi Group']);
-    table.searchForm.patchValue({ group: 'Audi Group', search: 'not a ballot' });
+    expect(table.groupOptions().map((option) => option.value)).toEqual([null, 'Alpha Group']);
+    table.searchForm.patchValue({ group: 'Alpha Group', search: 'not a ballot' });
     table['onStatusTabChange'](PollStatus.ENDED);
     dashboard['onPageChange']({ first: 25, rows: 25 });
     await settle();
@@ -448,7 +448,7 @@ describe('VotesDashboardComponent personal summary', () => {
   });
 
   it('coordinates Ended, summary toggles, explicit Active and Reset without losing pending controls', async () => {
-    table.searchForm.patchValue({ group: 'Audi Group', foundationFilter: 'foundation-a', projectFilter: 'project-a' });
+    table.searchForm.patchValue({ group: 'Alpha Group', foundationFilter: 'foundation-a', projectFilter: 'project-a' });
     dashboard['onFoundationFilterChange']('foundation-a');
     dashboard['onProjectFilterChange']('project-a');
     table['onStatusTabChange'](PollStatus.ENDED);
@@ -462,7 +462,7 @@ describe('VotesDashboardComponent personal summary', () => {
     expect(rows()).toEqual(['responded', 'soon']);
     expect(table.first()).toBe(0);
     expect(table.rowsPerPage()).toBe(25);
-    expect(table.searchForm.getRawValue()).toEqual({ search: 'Ballot', group: 'Audi Group', foundationFilter: 'foundation-a', projectFilter: 'project-a' });
+    expect(table.searchForm.getRawValue()).toEqual({ search: 'Ballot', group: 'Alpha Group', foundationFilter: 'foundation-a', projectFilter: 'project-a' });
     expect([dashboard['foundationFilter'](), dashboard['projectFilter']()]).toEqual(['foundation-a', 'project-a']);
     await selectSummary('closing-soon');
     expect(rows()).toEqual(['responded', 'soon', 'later']);
@@ -492,7 +492,7 @@ describe('VotesDashboardComponent personal summary', () => {
   });
 
   it.each([false, true])('keeps controls through loading/failure and retries to confirmed %s-empty success', async (empty) => {
-    table.searchForm.patchValue({ search: 'Ballot', group: 'Audi Group' });
+    table.searchForm.patchValue({ search: 'Ballot', group: 'Alpha Group' });
     await settle();
     const request = new Subject<Vote[]>();
     getMyVotes.mockReturnValueOnce(request);
@@ -507,7 +507,7 @@ describe('VotesDashboardComponent personal summary', () => {
     expect(cards().map((card) => card.value)).toEqual(['—', '—']);
     expect(button.disabled).toBe(true);
     expect(fixture.debugElement.query(By.directive(VotesTableComponent)).componentInstance).toBe(table);
-    expect(table.searchForm.controls.group.value).toBe('Audi Group');
+    expect(table.searchForm.controls.group.value).toBe('Alpha Group');
     expect(table.searchForm.controls.search.value).toBe('Ballot');
     expect(fixture.nativeElement.textContent).not.toContain("Votes you've been invited to participate in will appear here.");
     getMyVotes.mockReturnValueOnce(of(empty ? [] : feed));
@@ -518,8 +518,18 @@ describe('VotesDashboardComponent personal summary', () => {
     expect(button.disabled).toBe(false);
     expect(table.searchForm.controls.search.value).toBe('Ballot');
     expect(rows()).toEqual(empty ? [] : ['responded', 'soon', 'later', 'ended']);
-    expect(table.searchForm.controls.group.value).toBe(empty ? null : 'Audi Group');
+    expect(table.searchForm.controls.group.value).toBe(empty ? null : 'Alpha Group');
     if (empty) expect(fixture.nativeElement.textContent).toContain('No results found');
+  });
+
+  it('preserves plain status labels in the Org lens where counts are not sourced', async () => {
+    await management('org');
+    const service = TestBed.inject(VoteService);
+
+    expect(rows()).toEqual(['first-page']);
+    expect(tabLabels()).toEqual(['All', 'Active', 'Draft', 'Ended']);
+    expect(table.showStatusCounts()).toBe(false);
+    expect(service.getVoteStatusCountsByProject).not.toHaveBeenCalled();
   });
 
   for (const lens of ['project', 'foundation'] as const) {
@@ -593,7 +603,7 @@ describe('VotesDashboardComponent personal summary', () => {
     await settle();
     expect(counts()).toEqual({ all: 6, active: 5, disabled: 0, ended: 1 });
     dashboard['onProjectFilterChange']('project-a');
-    table.searchForm.patchValue({ group: 'Audi Group', search: 'ballot ' });
+    table.searchForm.patchValue({ group: 'Alpha Group', search: 'ballot ' });
     await settle();
     expect(counts()).toEqual({ all: 4, active: 3, disabled: 0, ended: 1 });
     for (const [tab, key] of [
