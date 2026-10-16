@@ -11,8 +11,10 @@ import {
   COMMITTEE_LABEL,
   OPEN_VOTE_CONFIRMATION,
   VOTE_COMMENT_PROMPT_MAX_LENGTH,
+  VOTE_DEFAULT_CLOSE_TIME,
   VOTE_LABEL,
   VOTE_QUESTION_MIN_LENGTH,
+  VOTE_TITLE_MAX_LENGTH,
   VOTE_TOTAL_STEPS,
 } from '@lfx-one/shared/constants';
 import { Committee, CommitteeReference, EntityWithProject, Vote, VoteFormValue } from '@lfx-one/shared/interfaces';
@@ -561,12 +563,12 @@ export class VoteManageComponent {
     return new FormGroup(
       {
         // Step 1: Vote Basics
-        title: new FormControl('', [trimmedRequired(), trimmedMinLength(3), Validators.maxLength(200)]),
+        title: new FormControl('', [trimmedRequired(), trimmedMinLength(3), Validators.maxLength(VOTE_TITLE_MAX_LENGTH)]),
         description: new FormControl(''),
         committee: new FormControl<CommitteeReference | null>(null, [Validators.required, validCommitteeReference()]),
         eligible_participants: new FormControl('', [Validators.required]),
         close_date: new FormControl<Date | null>(null, [Validators.required]),
-        close_time: new FormControl<string>('11:59 PM', { nonNullable: true, validators: [Validators.required, validTimeFormat()] }),
+        close_time: new FormControl<string>(VOTE_DEFAULT_CLOSE_TIME, { nonNullable: true, validators: [Validators.required, validTimeFormat()] }),
         // The v2 mutation contract requires end_time_timezone on every request (responses keep it
         // optional for legacy votes); combineDateTime also needs a zone to build a meaningful end_time.
         timezone: new FormControl<string>(getUserTimezone(), { nonNullable: true, validators: [Validators.required] }),
@@ -891,6 +893,7 @@ export class VoteManageComponent {
     this.route.queryParamMap
       .pipe(
         take(1),
+        filter((params) => !params.get('clone')), // clone's own committee prefill stays editable; locking it here would fight that
         map((params) => params.get('committee_uid')),
         filter((uid): uid is string => !!uid && !this.route.snapshot.paramMap.has('id')),
         switchMap((uid) => this.committeeService.getCommittee(uid)),
@@ -918,7 +921,7 @@ export class VoteManageComponent {
         filter((cloneId): cloneId is string => !!cloneId && !this.route.snapshot.paramMap.has('id')),
         switchMap((cloneId) => {
           this.loading.set(true);
-          return this.voteService.getVote(cloneId).pipe(
+          return this.voteService.fetchVote(cloneId).pipe(
             catchError(() => {
               this.loading.set(false);
               this.messageService.add({
