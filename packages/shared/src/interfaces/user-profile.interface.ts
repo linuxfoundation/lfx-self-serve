@@ -57,6 +57,20 @@ export interface ResolveVerifiedUserEmailsOptions {
 }
 
 /**
+ * A signed-in user's verified emails for matching their records.
+ */
+export interface UserVerifiedEmails {
+  /** Lowercased, deduped, in priority order: meeting-invite preference, primary, verified alternates. */
+  emails: string[];
+  /** The meeting-invite preference, when set; also `emails[0]`. */
+  preferenceEmail: string | null;
+  /** The user's v1 contact id (what registrant rows store as `user_id`), or null when unavailable. */
+  contactId: string | null;
+  /** True when a source that should have been queried failed, so `emails` or `contactId` may be missing. */
+  incomplete: boolean;
+}
+
+/**
  * Preferred meeting-invitation email from the meeting-service.
  * Both fields are null when the user has no explicit override (i.e. meeting invitations
  * fall back to the primary email).
