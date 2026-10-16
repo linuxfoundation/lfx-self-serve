@@ -349,7 +349,10 @@ describe('computeVoteRowParticipation', () => {
   });
 
   it('never coerces a string count from upstream', () => {
-    expect(computeVoteRowParticipation(rowVote({ num_response_received: '8' as unknown as number })).state).toBe(VoteRowParticipationState.UNAVAILABLE);
+    // @ts-expect-error: malformed upstream data intentionally violates the numeric count contract.
+    const participation = computeVoteRowParticipation(rowVote({ num_response_received: '8' }));
+
+    expect(participation.state).toBe(VoteRowParticipationState.UNAVAILABLE);
   });
 
   it('shows the response count alone when the invited total is missing', () => {

@@ -402,6 +402,13 @@ describe('VotesTableComponent — participation progress', () => {
     expect(bar.getAttribute('aria-label')).toBe('Participation: 8 of 12 responded, 67%');
   });
 
+  it('uses visible participation summaries without prohibited names on generic spans', async () => {
+    await render();
+
+    const summaries = fixture.nativeElement.querySelectorAll('[data-testid^="votes-participation-"] span[aria-label]');
+    expect(summaries.length).toBe(0);
+  });
+
   it('summarises an ended vote the same way', async () => {
     await render();
 
