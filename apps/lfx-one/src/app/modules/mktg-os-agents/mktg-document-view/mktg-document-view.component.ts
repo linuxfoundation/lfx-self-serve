@@ -5,7 +5,7 @@ import { DatePipe, isPlatformBrowser, NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { MessageComponent } from '@components/message/message.component';
 import {
@@ -40,11 +40,13 @@ import { MktgFrameworkViewComponent } from '../mktg-framework-view/mktg-framewor
 // revision (JSON content), the framework's own view, for a Boilerplates
 // revision (JSON content) the Boilerplates view, and for a Brand Kit
 // revision the kit's web view, rendered from the revision's sidecar — and the
-// Revisions panel opens or restores any other revision. `?revision=` picks
-// the revision; without it the latest is shown. Fetched in the browser only,
+// Revisions panel opens or makes another revision current. `?revision=` picks
+// the revision; without it current is shown. Fetched in the browser only,
 // after hydration.
 @Component({
   selector: 'lfx-mktg-document-view',
+  // Excluding layout gutters: 800px leaves classic-scrollbar headroom.
+  host: { class: '@container block w-full min-w-0', 'data-testid': 'mktg-document-view-width' },
   imports: [
     DatePipe,
     NgClass,
@@ -65,7 +67,9 @@ export class MktgDocumentViewComponent {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly projectContext = inject(ProjectContextService);
   private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
+
+  // Explicit parent target works for both project and foundation route hosts.
+  protected readonly documentsRoute = this.route.parent;
 
   // === Signals ===
   protected readonly loading = signal(true);
@@ -132,7 +136,7 @@ export class MktgDocumentViewComponent {
   /** The project name the framework view titles itself with. */
   protected readonly projectName = computed(() => this.projectContext.activeContext()?.name ?? '');
   /** A short word on the revision's standing, beside the asset's version. */
-  protected readonly revisionNote = computed(() => (this.view()?.revision.latest ? 'latest' : ''));
+  protected readonly revisionNote = computed(() => (this.view()?.revision.latest ? 'current' : ''));
   /** The project's stored Brand Kit, which a framework revision's print (Download PDF) is set in; null for the LF look. */
   protected readonly printKit: Signal<BrandKitRevision | null> = this.initPrintKit();
   /** The revision on screen as Export to Google Slides reads it: a framework or a kit revision of the active project; null otherwise. */
@@ -159,17 +163,27 @@ export class MktgDocumentViewComponent {
           tap(() => {
             this.loading.set(true);
             this.errorText.set('');
+            this.notice.set('');
           }),
           switchMap((request) => {
-            // Without `?revision=`, open the latest: the document's newest revision.
+            // Without `?revision=`, open current, which may not be newest.
             const revision$ = request.revisionId
               ? this.documentStore.getRevision(request.project, request.agentKey, request.documentId, request.revisionId)
               : this.documentStore
                   .getDocument(request.project, request.agentKey, request.documentId)
-                  .pipe(switchMap((detail) => this.documentStore.getRevision(request.project, request.agentKey, request.documentId, detail.revisions[0].id)));
+                  .pipe(
+                    switchMap((detail) =>
+                      this.documentStore.getRevision(
+                        request.project,
+                        request.agentKey,
+                        request.documentId,
+                        (detail.revisions.find((revision) => revision.latest) ?? detail.revisions[0]).id
+                      )
+                    )
+                  );
             return revision$.pipe(
               catchError((error: HttpErrorResponse) => {
-                this.errorText.set(this.loadErrorText(error.status));
+                this.errorText.set(this.loadErrorText(error.status, error.error?.code));
                 return of(null);
               })
             );
@@ -187,27 +201,34 @@ export class MktgDocumentViewComponent {
   protected onRestore(revision: MktgRevisionSummary): void {
     const view = this.view();
     const project = this.projectContext.activeContextUid();
-    if (!view || !project || this.restoringId()) {
+    if (!view || view.type.kind === 'run' || !project || this.restoringId()) {
       return;
     }
 
     this.restoringId.set(revision.id);
     this.notice.set('');
     this.errorText.set('');
-    this.documentStore
-      .restoreRevision(project, view.type.agentKey, view.documentId, revision.id)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (restored) => {
-          this.restoringId.set(null);
-          this.notice.set(`Revision ${revision.number} restored as revision ${restored.revision.number}, now the latest.`);
-          this.router.navigate([], { relativeTo: this.route, queryParams: { revision: restored.revision.id }, queryParamsHandling: 'merge' });
-        },
-        error: () => {
-          this.restoringId.set(null);
-          this.errorText.set(`Revision ${revision.number} could not be restored. Nothing was changed; try again.`);
-        },
-      });
+    const selection = this.revisionParam();
+    // This one-shot write outlives the page. Only its presentation is scoped to
+    // the initiating project/revision, so navigation cannot cancel the save.
+    this.documentStore.restoreRevision(project, view.type.agentKey, view.documentId, revision.id).subscribe({
+      next: (restored) => {
+        this.restoringId.set(null);
+        if (!this.sameView(project, view, selection)) return;
+        this.view.set({
+          ...view,
+          revisions: restored.revisions,
+          current: restored.current ?? null,
+          revision: restored.revisions.find((entry) => entry.id === view.revision.id) ?? view.revision,
+        });
+        this.notice.set(`Revision ${revision.number} is now current. No revision was added.`);
+      },
+      error: (error: HttpErrorResponse) => {
+        this.restoringId.set(null);
+        if (!this.sameView(project, view, selection)) return;
+        this.errorText.set(this.writeErrorText(error));
+      },
+    });
   }
 
   // === Private initializers ===
@@ -243,12 +264,28 @@ export class MktgDocumentViewComponent {
   }
 
   // === Private helpers ===
-  private loadErrorText(status: number): string {
+  private sameView(project: string, view: MktgRevisionResponse, selection: string): boolean {
+    return (
+      !this.destroyRef.destroyed &&
+      this.projectContext.activeContextUid() === project &&
+      this.params().agentKey === view.type.agentKey &&
+      this.params().documentId === view.documentId &&
+      this.revisionParam() === selection
+    );
+  }
+
+  private writeErrorText(error: HttpErrorResponse): string {
+    if (error.status === 403 || error.status === 404) return this.loadErrorText(error.status, error.error?.code);
+    if (error.status === 412) return 'The document changed. Reload before making a revision current.';
+    return 'The revision could not be made current. Reload to check its state, then try again.';
+  }
+
+  private loadErrorText(status: number, code?: string): string {
     if (status === 403) {
       return 'You need write access to this project to see its Marketing OS documents.';
     }
     if (status === 404) {
-      return 'This document has no such revision.';
+      return code === 'MKTG_DOCUMENT_NOT_FOUND' ? 'This document could not be found.' : 'This document has no such revision.';
     }
     return 'This revision could not be loaded. Try again in a moment.';
   }
