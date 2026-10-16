@@ -41,6 +41,8 @@ If everyone has voted, the dialog says so and there is no one to remind. If the 
 
 The voter list is checked again before sending. If a selected voter is no longer eligible, no reminders are sent for that batch. Reload the voter list and choose recipients again. A voter who submits while reminders are being queued may still receive one.
 
+If the access or voter-list checks fail before sending starts, the dialog confirms that no reminders were sent and asks you to try again.
+
 While sending, the dialog's close button, Escape, and Cancel are disabled. If the connection is lost or the request times out, the outcome may be unconfirmed: reminders might already have been queued. Retrying may send duplicate emails.
 
 ## Edit a poll

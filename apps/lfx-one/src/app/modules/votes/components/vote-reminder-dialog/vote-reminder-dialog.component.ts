@@ -8,7 +8,7 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import { VOTE_REMINDER_INACTIVE, VOTE_REMINDER_SELECTION_STALE } from '@lfx-one/shared/constants';
+import { VOTE_REMINDER_INACTIVE, VOTE_REMINDER_PRECHECK_FAILED, VOTE_REMINDER_SELECTION_STALE } from '@lfx-one/shared/constants';
 import { VoteReminderRecipient, VoteTableRow } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
 import { lockDynamicDialogWhile } from '@shared/utils/lock-dynamic-dialog.util';
@@ -174,7 +174,12 @@ export class VoteReminderDialogComponent {
     return error instanceof HttpErrorResponse && error.status === 409 && error.error?.code === code;
   }
 
+  private isPreSendFailure(error: unknown): boolean {
+    return error instanceof HttpErrorResponse && error.error?.code === VOTE_REMINDER_PRECHECK_FAILED;
+  }
+
   private isUnconfirmedSend(error: unknown): boolean {
+    if (this.isPreSendFailure(error)) return false;
     if (!(error instanceof HttpErrorResponse) || isBffTransportFailure(error)) return true;
     return (
       ![400, 403, 429].includes(error.status) &&
@@ -184,6 +189,9 @@ export class VoteReminderDialogComponent {
   }
 
   private sendErrorMessage(error: unknown): string {
+    if (this.isPreSendFailure(error)) {
+      return "We couldn't verify access or the voter list. No reminders were sent. Please try again.";
+    }
     if (this.isReminderConflict(error, VOTE_REMINDER_INACTIVE)) return 'This vote is no longer active. Reminders cannot be sent.';
     if (this.isReminderConflict(error, VOTE_REMINDER_SELECTION_STALE)) {
       return 'Some selected voters are no longer eligible. No reminders were sent. Reload the voter list and select recipients again.';

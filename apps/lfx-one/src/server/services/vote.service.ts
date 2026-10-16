@@ -6,6 +6,7 @@ import {
   VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT,
   VOTE_FGA_TUPLE_PROPAGATION_GRACE_MS,
   VOTE_REMINDER_INACTIVE,
+  VOTE_REMINDER_PRECHECK_FAILED,
   VOTE_REMINDER_SELECTION_STALE,
 } from '@lfx-one/shared/constants';
 import { IndexedVoteResponseStatus, PollStatus, VoteResponseStatus } from '@lfx-one/shared/enums';
@@ -30,7 +31,7 @@ import {
 import { compareVotesByRecency, computeIsFoundation, isVoteClosingSoon, normalizePollStatus, sortCommentResponsesByRecency } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
-import { ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { BaseApiError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-project-enrichment.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
@@ -603,14 +604,35 @@ export class VoteService {
    * rather than silently sending to a different set. Upstream still validates membership/state.
    */
   public async sendVoteReminders(req: Request, voteUid: string, recipientIds: string[]): Promise<SendVoteReminderResponse> {
-    await assertVoteWrite(req, voteUid, 'send_vote_reminders');
-    const recipients = await this.getVoteReminderRecipients(req, voteUid);
-    const eligibleIds = new Set(recipients.map((recipient) => recipient.uid));
-    if (recipientIds.some((id) => !eligibleIds.has(id))) {
-      throw new ConflictError('The selected voters have changed. Refresh the voter list before sending.', VOTE_REMINDER_SELECTION_STALE, {
-        operation: 'send_vote_reminders',
-        service: 'vote_service',
-      });
+    try {
+      await assertVoteWrite(req, voteUid, 'send_vote_reminders');
+      const recipients = await this.getVoteReminderRecipients(req, voteUid);
+      const eligibleIds = new Set(recipients.map((recipient) => recipient.uid));
+      if (recipientIds.some((id) => !eligibleIds.has(id))) {
+        throw new ConflictError('The selected voters have changed. Refresh the voter list before sending.', VOTE_REMINDER_SELECTION_STALE, {
+          operation: 'send_vote_reminders',
+          service: 'vote_service',
+        });
+      }
+    } catch (error) {
+      // Keep the existing actionable permission, validation, rate-limit and state-conflict replies.
+      if (
+        error instanceof BaseApiError &&
+        ([400, 403, 429].includes(error.statusCode) || error.code === VOTE_REMINDER_INACTIVE || error.code === VOTE_REMINDER_SELECTION_STALE)
+      ) {
+        throw error;
+      }
+      // Only these checks are known not to have sent anything. Never mark a bulk_resend failure this way.
+      throw new MicroserviceError(
+        'No reminders were sent because the pre-send checks failed. Please try again.',
+        error instanceof BaseApiError ? error.statusCode : 500,
+        VOTE_REMINDER_PRECHECK_FAILED,
+        {
+          operation: 'send_vote_reminders',
+          service: 'vote_service',
+          originalError: error instanceof Error ? error : undefined,
+        }
+      );
     }
 
     logger.debug(req, 'send_vote_reminders', 'Resending vote email to recipients', {

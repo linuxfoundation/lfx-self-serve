@@ -3,7 +3,7 @@
 
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { VOTE_REMINDER_INACTIVE, VOTE_REMINDER_SELECTION_STALE } from '@lfx-one/shared/constants';
+import { VOTE_REMINDER_INACTIVE, VOTE_REMINDER_PRECHECK_FAILED, VOTE_REMINDER_SELECTION_STALE } from '@lfx-one/shared/constants';
 import { VoteReminderRecipient } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
 import { MessageService } from 'primeng/api';
@@ -75,6 +75,16 @@ describe('VoteReminderDialogComponent', () => {
     expect(byTestId(fixture, 'vote-reminder-dialog-count')!.textContent).toContain('2 of 2 selected');
     expect(byTestId(fixture, 'vote-reminder-dialog-row-r-1')).not.toBeNull();
     expect(sendButton(fixture).disabled).toBe(false);
+  });
+
+  it('allows both horizontal and vertical scrolling within the recipient table height limit', async () => {
+    const { fixture } = await mount(of(RECIPIENTS));
+    current = fixture;
+    const table = byTestId(fixture, 'vote-reminder-dialog-table')!;
+    expect(table.classList.contains('overflow-auto')).toBe(true);
+    expect(table.classList.contains('overflow-hidden')).toBe(false);
+    expect(table.classList.contains('overflow-y-auto')).toBe(false);
+    expect(table.classList.contains('max-h-80')).toBe(true);
   });
 
   it('layers the sticky header above the positioned recipient checkboxes', async () => {
@@ -240,9 +250,30 @@ describe('VoteReminderDialogComponent', () => {
     expect(close).not.toHaveBeenCalled();
   });
 
+  it.each([404, 408, 500, 502, 503, 504])('allows retry without a duplicate warning for a marked %s pre-send failure', async (status) => {
+    const { fixture, component, add, close } = await mount(
+      of(RECIPIENTS),
+      throwError(() => new HttpErrorResponse({ status, error: { code: VOTE_REMINDER_PRECHECK_FAILED } }))
+    );
+    current = fixture;
+    component['send']();
+    fixture.detectChanges();
+    expect(add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        summary: "Couldn't send reminder",
+        detail: "We couldn't verify access or the voter list. No reminders were sent. Please try again.",
+      })
+    );
+    expect(selected(component)).toEqual(['r-1', 'r-2']);
+    expect(sendButton(fixture).disabled).toBe(false);
+    expect(close).not.toHaveBeenCalled();
+  });
+
   it.each([
     new HttpErrorResponse({ status: 0 }),
     new HttpErrorResponse({ status: 408 }),
+    new HttpErrorResponse({ status: 502 }),
+    new HttpErrorResponse({ status: 503 }),
     new HttpErrorResponse({ status: 503, error: { transport: true } }),
     new HttpErrorResponse({ status: 504 }),
   ])('warns about duplicates when the send outcome cannot be confirmed (%s)', async (error) => {

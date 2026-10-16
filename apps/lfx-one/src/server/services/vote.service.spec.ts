@@ -14,7 +14,7 @@ import '@angular/compiler';
 import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { VOTE_REMINDER_INACTIVE, VOTE_REMINDER_SELECTION_STALE } from '@lfx-one/shared/constants';
+import { VOTE_REMINDER_INACTIVE, VOTE_REMINDER_PRECHECK_FAILED, VOTE_REMINDER_SELECTION_STALE } from '@lfx-one/shared/constants';
 import { IndexedVoteResponseStatus, VoteResponseStatus } from '@lfx-one/shared/enums';
 import type { CreateVoteResponseRequest, IndexedVote, IndexedVoteResponse, QueryServiceResponse } from '@lfx-one/shared/interfaces';
 
@@ -115,7 +115,7 @@ vi.mock('../utils/auth-helper', () => ({
   },
 }));
 
-import { MicroserviceError, ServiceValidationError } from '../errors';
+import { ConflictError, MicroserviceError, ServiceValidationError } from '../errors';
 import type { PollEndpointOptions } from '../helpers/poll-endpoint.helper';
 import { logger } from './logger.service';
 import { VoteService } from './vote.service';
@@ -1817,6 +1817,37 @@ describe('VoteService', () => {
       expect(proxyRequest).not.toHaveBeenCalled();
     });
 
+    it('marks an unavailable writer check as a confirmed pre-send failure', async () => {
+      const unavailable = new MicroserviceError('Access unavailable', 503, 'ACCESS_CHECK_UNAVAILABLE');
+      assertVoteWrite.mockRejectedValueOnce(unavailable);
+      const failure = await service.sendVoteReminders(req, CANONICAL_UID, ['r-1']).catch((error: unknown) => error);
+      expect(failure).toMatchObject({ statusCode: 503, code: VOTE_REMINDER_PRECHECK_FAILED, originalError: unavailable });
+      expect((failure as MicroserviceError).toResponse()).toMatchObject({ code: VOTE_REMINDER_PRECHECK_FAILED });
+      expect(service.getVoteReminderRecipients).not.toHaveBeenCalled();
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    it('preserves the inactive-vote conflict from the eligibility check', async () => {
+      const inactive = new ConflictError('Inactive vote', VOTE_REMINDER_INACTIVE);
+      vi.mocked(service.getVoteReminderRecipients).mockRejectedValueOnce(inactive);
+      await expect(service.sendVoteReminders(req, CANONICAL_UID, ['r-1'])).rejects.toBe(inactive);
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    it.each(['vote lookup', 'query drain'])('marks a failed %s as not sent without attempting bulk_resend', async (phase) => {
+      vi.mocked(service.getVoteReminderRecipients).mockRestore();
+      const upstream = new MicroserviceError('Read failed', 502, 'BAD_GATEWAY', { transportFailure: true });
+      proxyRequest.mockResolvedValue({ uid: CANONICAL_UID, status: 'active', end_time: new Date(Date.now() + 60000).toISOString() });
+      if (phase === 'vote lookup') proxyRequest.mockRejectedValueOnce(upstream);
+      else fetchAllQueryResources.mockRejectedValueOnce(upstream);
+      const failure = await service.sendVoteReminders(req, CANONICAL_UID, ['r-1']).catch((error: unknown) => error);
+      expect(failure).toMatchObject({ statusCode: 502, code: VOTE_REMINDER_PRECHECK_FAILED, originalError: upstream });
+      expect((failure as MicroserviceError).toResponse()).toMatchObject({ code: VOTE_REMINDER_PRECHECK_FAILED });
+      expect((failure as MicroserviceError).toResponse()).not.toHaveProperty('transport');
+      expect(proxyRequest.mock.calls.every((call) => call[3] === 'GET')).toBe(true);
+      expect(fetchAllQueryResources).toHaveBeenCalledTimes(phase === 'query drain' ? 1 : 0);
+    });
+
     it('rejects the whole stale selection without sending an eligible subset', async () => {
       vi.mocked(service.getVoteReminderRecipients).mockResolvedValue([{ uid: 'r-2' }]);
       await expect(service.sendVoteReminders(req, CANONICAL_UID, ['r-1', 'r-2'])).rejects.toMatchObject({
@@ -1829,8 +1860,13 @@ describe('VoteService', () => {
     });
 
     it('does not send when fresh eligibility cannot be verified', async () => {
-      vi.mocked(service.getVoteReminderRecipients).mockRejectedValue(new Error('query failed'));
-      await expect(service.sendVoteReminders(req, CANONICAL_UID, ['r-1'])).rejects.toThrow('query failed');
+      const originalError = new Error('query failed');
+      vi.mocked(service.getVoteReminderRecipients).mockRejectedValue(originalError);
+      await expect(service.sendVoteReminders(req, CANONICAL_UID, ['r-1'])).rejects.toMatchObject({
+        statusCode: 500,
+        code: VOTE_REMINDER_PRECHECK_FAILED,
+        originalError,
+      });
       expect(proxyRequest).not.toHaveBeenCalled();
     });
 
@@ -1853,6 +1889,13 @@ describe('VoteService', () => {
       await service.sendVoteReminders(req, HOSTILE_UID, ['r-1']);
 
       expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/votes/abc%2Fdef/bulk_resend', 'POST', undefined, { recipient_ids: ['r-1'] });
+    });
+
+    it.each([408, 500, 503, 504])('does not mark an upstream %s send failure as a pre-send failure', async (status) => {
+      const upstream = new MicroserviceError('Send outcome unknown', status, 'UPSTREAM_FAILURE', { transportFailure: true });
+      proxyRequest.mockRejectedValueOnce(upstream);
+      await expect(service.sendVoteReminders(req, CANONICAL_UID, ['r-1'])).rejects.toBe(upstream);
+      expect(upstream.toResponse()).not.toMatchObject({ code: VOTE_REMINDER_PRECHECK_FAILED });
     });
 
     it('propagates an upstream 400 unchanged', async () => {

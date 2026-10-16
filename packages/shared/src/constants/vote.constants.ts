@@ -53,3 +53,6 @@ export const VOTE_REMINDER_INACTIVE = 'VOTE_REMINDER_INACTIVE';
 
 /** No reminders were sent because at least one selected recipient is no longer eligible. */
 export const VOTE_REMINDER_SELECTION_STALE = 'VOTE_REMINDER_SELECTION_STALE';
+
+/** Pre-send checks failed before bulk_resend was attempted; retrying cannot duplicate this attempt. */
+export const VOTE_REMINDER_PRECHECK_FAILED = 'VOTE_REMINDER_PRECHECK_FAILED';
