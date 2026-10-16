@@ -542,8 +542,8 @@ export class VoteController {
 
   /**
    * POST /votes/:uid/reminders — resends the vote email to the selected recipients (#3769).
-   * The IDs are not re-checked against the recipient list: upstream validates membership and
-   * active state, and its 400 propagates.
+   * The service writer-checks before re-reading eligible non-voters; a stale selection rejects
+   * the whole batch. Upstream additionally validates membership and active state.
    */
   public async sendVoteReminders(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;

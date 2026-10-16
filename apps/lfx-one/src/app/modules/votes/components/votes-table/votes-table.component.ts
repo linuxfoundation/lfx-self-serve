@@ -212,7 +212,7 @@ export class VotesTableComponent {
     this.rowActionMenuVoteUid.set(vote.uid);
     const items: MenuItem[] = [{ label: 'Copy link', icon: 'fa-light fa-link', command: () => this.copyVoteLink(vote.uid) }];
     // Managers only, and only while the vote is open — upstream rejects reminders for any other status.
-    if (this.hasPMOAccess() && vote.status === PollStatus.ACTIVE) {
+    if (vote.writer === true && vote.status === PollStatus.ACTIVE) {
       items.push({ label: 'Send reminder', icon: 'fa-light fa-envelope', command: () => this.openReminderDialog(vote) });
     }
     this.rowActionMenuItems.set(items);

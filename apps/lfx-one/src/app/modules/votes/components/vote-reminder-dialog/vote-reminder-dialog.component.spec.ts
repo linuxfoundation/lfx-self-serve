@@ -3,6 +3,7 @@
 
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { VOTE_REMINDER_INACTIVE, VOTE_REMINDER_SELECTION_STALE } from '@lfx-one/shared/constants';
 import { VoteReminderRecipient } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
 import { MessageService } from 'primeng/api';
@@ -28,12 +29,13 @@ async function mount(recipients: Observable<VoteReminderRecipient[]>, send: Obse
   const sendReminders = vi.fn().mockReturnValue(send);
   const add = vi.fn();
   const close = vi.fn();
+  const config = { data: { vote: { uid: 'vote-1' } }, closable: true };
 
   TestBed.configureTestingModule({
     imports: [VoteReminderDialogComponent],
     providers: [
       { provide: DynamicDialogRef, useValue: { close } },
-      { provide: DynamicDialogConfig, useValue: { data: { vote: { uid: 'vote-1' } } } },
+      { provide: DynamicDialogConfig, useValue: config },
       { provide: VoteService, useValue: { getReminderRecipients, sendReminders } },
       { provide: MessageService, useValue: { add } },
     ],
@@ -43,7 +45,7 @@ async function mount(recipients: Observable<VoteReminderRecipient[]>, send: Obse
   fixture.detectChanges();
   await fixture.whenStable();
 
-  return { fixture, component: fixture.componentInstance, getReminderRecipients, sendReminders, add, close };
+  return { fixture, component: fixture.componentInstance, config, getReminderRecipients, sendReminders, add, close };
 }
 
 function byTestId(fixture: ComponentFixture<VoteReminderDialogComponent>, id: string): HTMLElement | null {
@@ -170,7 +172,7 @@ describe('VoteReminderDialogComponent', () => {
     [400, 'This vote is no longer active, or some recipients are no longer eligible. Refresh and try again.'],
     [403, "You don't have permission to send reminders for this vote."],
     [429, 'Too many reminders were sent just now. Please try again in a minute.'],
-    [500, "We couldn't send the reminder. Please try again."],
+    [500, "We couldn't confirm whether reminders were sent. Retrying may send duplicate emails."],
   ])('maps a %s send failure to plain-language copy and keeps the dialog open', async (status, detail) => {
     const { fixture, component, add, close } = await mount(
       of(RECIPIENTS),
@@ -184,6 +186,115 @@ describe('VoteReminderDialogComponent', () => {
     expect(close).not.toHaveBeenCalled();
     expect(component['sending']()).toBe(false);
     expect(selected(component)).toEqual(['r-1', 'r-2']);
+  });
+
+  it('locks the host header and Escape only while sending, restoring dismissal on failure', async () => {
+    const pending = new Subject<{ recipient_count: number }>();
+    const { fixture, component, config } = await mount(of(RECIPIENTS), pending);
+    current = fixture;
+    const escape = (): KeyboardEvent => {
+      const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+      document.dispatchEvent(event);
+      return event;
+    };
+    expect(config.closable).toBe(true);
+    expect(escape().defaultPrevented).toBe(false);
+    component['send']();
+    // Escape protection reads the signal synchronously, even before the reactive header updates.
+    expect(escape().defaultPrevented).toBe(true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(config.closable).toBe(false);
+    pending.error(new HttpErrorResponse({ status: 429 }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(config.closable).toBe(true);
+    expect(escape().defaultPrevented).toBe(false);
+  });
+
+  it.each(['success', 'failure'])('keeps an initiated send subscribed after destruction and reports %s', async (outcome) => {
+    const pending = new Subject<{ recipient_count: number }>();
+    const { fixture, component, add, close } = await mount(of(RECIPIENTS), pending);
+    component['send']();
+    fixture.destroy();
+    expect(pending.observed).toBe(true);
+    if (outcome === 'success') {
+      pending.next({ recipient_count: 2 });
+      expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+    } else {
+      pending.error(new HttpErrorResponse({ status: 429 }));
+      expect(add).toHaveBeenCalledWith(expect.objectContaining({ detail: 'Too many reminders were sent just now. Please try again in a minute.' }));
+    }
+    expect(pending.observed).toBe(false);
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    new HttpErrorResponse({ status: 0 }),
+    new HttpErrorResponse({ status: 408 }),
+    new HttpErrorResponse({ status: 503, error: { transport: true } }),
+    new HttpErrorResponse({ status: 504 }),
+  ])('warns about duplicates when the send outcome cannot be confirmed (%s)', async (error) => {
+    const { fixture, component, add } = await mount(
+      of(RECIPIENTS),
+      throwError(() => error)
+    );
+    current = fixture;
+    component['send']();
+    fixture.detectChanges();
+    expect(add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        summary: 'Outcome unconfirmed',
+        detail: "We couldn't confirm whether reminders were sent. Retrying may send duplicate emails.",
+      })
+    );
+    expect(sendButton(fixture).disabled).toBe(false);
+  });
+
+  it('requires a recipient reload after a stale-selection rejection without claiming any sends', async () => {
+    const { fixture, component, getReminderRecipients, add, close } = await mount(
+      of(RECIPIENTS),
+      throwError(() => new HttpErrorResponse({ status: 409, error: { code: VOTE_REMINDER_SELECTION_STALE } }))
+    );
+    current = fixture;
+    component['send']();
+    fixture.detectChanges();
+    expect(add).toHaveBeenCalledWith(
+      expect.objectContaining({ summary: "Couldn't send reminder", detail: expect.stringContaining('No reminders were sent.') })
+    );
+    expect(selected(component)).toEqual([]);
+    expect(sendButton(fixture).disabled).toBe(true);
+    expect(close).not.toHaveBeenCalled();
+    getReminderRecipients.mockReturnValue(of([RECIPIENTS[1]]));
+    byTestId(fixture, 'vote-reminder-dialog-retry')!.querySelector('button')!.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(selected(component)).toEqual(['r-2']);
+    expect(sendButton(fixture).disabled).toBe(false);
+  });
+
+  it('shows an inactive-vote state rather than everyone voted when loading a closed poll', async () => {
+    const { fixture } = await mount(throwError(() => new HttpErrorResponse({ status: 409, error: { code: VOTE_REMINDER_INACTIVE } })));
+    current = fixture;
+    expect(byTestId(fixture, 'vote-reminder-dialog-inactive')!.textContent).toContain('This vote is no longer active.');
+    expect(byTestId(fixture, 'vote-reminder-dialog-empty')).toBeNull();
+    expect(byTestId(fixture, 'vote-reminder-dialog-retry')).toBeNull();
+    expect(sendButton(fixture).disabled).toBe(true);
+  });
+
+  it('shows an inactive-vote state when the poll closes between loading and sending', async () => {
+    const { fixture, component, add } = await mount(
+      of(RECIPIENTS),
+      throwError(() => new HttpErrorResponse({ status: 409, error: { code: VOTE_REMINDER_INACTIVE } }))
+    );
+    current = fixture;
+    component['send']();
+    fixture.detectChanges();
+    expect(byTestId(fixture, 'vote-reminder-dialog-inactive')).not.toBeNull();
+    expect(sendButton(fixture).disabled).toBe(true);
+    expect(add).toHaveBeenCalledWith(
+      expect.objectContaining({ summary: "Couldn't send reminder", detail: 'This vote is no longer active. Reminders cannot be sent.' })
+    );
   });
 
   it('shows the "Everyone has voted" empty state with Send disabled when no one is left to remind', async () => {

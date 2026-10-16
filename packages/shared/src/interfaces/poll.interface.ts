@@ -212,6 +212,8 @@ export interface Vote {
   end_time_timezone?: string;
   /** Current poll status */
   status: PollStatus;
+  /** BFF list decoration: effective vote#writer access, including committee-derived grants. */
+  writer?: boolean;
   /** V2 project UID */
   project_uid: string;
   /** Project display name. Carried by indexed list rows (and optionally by the upstream detail payload); the authenticated BFF detail response (GET /api/votes/:uid) re-enriches it canonically from the project record. */

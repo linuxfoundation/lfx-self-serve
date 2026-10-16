@@ -316,8 +316,12 @@ describe('VotesTableComponent — row More menu', () => {
     expect(detail).toBe('Vote link copied to clipboard.');
   });
 
-  it('adds Send reminder for a manager on an active row, and it opens the reminder dialog with the row (#3769)', async () => {
-    fixture.componentRef.setInput('hasPMOAccess', true);
+  it.each([false, true])('uses per-vote writer access and opens reminders even without project write access (%s) (#3769)', async (hasPMOAccess) => {
+    fixture.componentRef.setInput('hasPMOAccess', hasPMOAccess);
+    fixture.componentRef.setInput(
+      'votes',
+      ROWS.map((row) => ({ ...row, writer: true }))
+    );
     await settle();
 
     moreButton('active')!.click();
@@ -335,10 +339,16 @@ describe('VotesTableComponent — row More menu', () => {
   });
 
   it.each([
-    { hasPMOAccess: false, uid: 'active' },
-    { hasPMOAccess: true, uid: 'ended' },
-  ])('omits Send reminder for $uid with manager access $hasPMOAccess (#3769)', async ({ hasPMOAccess, uid }) => {
+    { hasPMOAccess: true, writer: false, uid: 'active' },
+    { hasPMOAccess: true, writer: undefined, uid: 'active' },
+    { hasPMOAccess: false, writer: false, uid: 'active' },
+    { hasPMOAccess: true, writer: true, uid: 'ended' },
+  ])('omits reminders for $uid with project access $hasPMOAccess and vote writer $writer (#3769)', async ({ hasPMOAccess, writer, uid }) => {
     fixture.componentRef.setInput('hasPMOAccess', hasPMOAccess);
+    fixture.componentRef.setInput(
+      'votes',
+      ROWS.map((row) => ({ ...row, writer }))
+    );
     await settle();
 
     moreButton(uid)!.click();

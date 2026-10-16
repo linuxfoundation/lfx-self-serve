@@ -37,7 +37,11 @@ Remind eligible voters who haven't voted yet on an active poll. Only users who c
 4. Clear the voters you don't want to remind, or use the header checkbox to select or clear everyone.
 5. Select **Send**. Each selected voter receives the poll email again.
 
-If everyone has voted, the dialog says so and there is no one to remind. If the poll has closed or a voter is no longer eligible, refresh the page and try again.
+If everyone has voted, the dialog says so and there is no one to remind. If the poll has closed, it explains that reminders can no longer be sent.
+
+The voter list is checked again before sending. If a selected voter is no longer eligible, no reminders are sent for that batch. Reload the voter list and choose recipients again. A voter who submits while reminders are being queued may still receive one.
+
+While sending, the dialog's close button, Escape, and Cancel are disabled. If the connection is lost or the request times out, the outcome may be unconfirmed: reminders might already have been queued. Retrying may send duplicate emails.
 
 ## Edit a poll
 

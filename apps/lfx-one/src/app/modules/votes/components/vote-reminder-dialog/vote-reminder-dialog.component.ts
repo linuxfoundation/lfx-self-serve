@@ -8,12 +8,15 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { VOTE_REMINDER_INACTIVE, VOTE_REMINDER_SELECTION_STALE } from '@lfx-one/shared/constants';
 import { VoteReminderRecipient, VoteTableRow } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
+import { lockDynamicDialogWhile } from '@shared/utils/lock-dynamic-dialog.util';
+import { isBffTransportFailure } from '@shared/utils/upstream-error.utils';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { finalize } from 'rxjs';
+import { finalize, take } from 'rxjs';
 
 /**
  * Lets a vote manager remind the eligible voters who have not voted on an active vote yet (#3769).
@@ -41,6 +44,7 @@ export class VoteReminderDialogComponent {
   protected readonly recipients = signal<VoteReminderRecipient[]>([]);
   protected readonly loading = signal(true);
   protected readonly loadError = signal<string | null>(null);
+  protected readonly inactive = signal(false);
   protected readonly sending = signal(false);
   protected readonly selectedUids = signal<Set<string>>(new Set());
 
@@ -48,6 +52,7 @@ export class VoteReminderDialogComponent {
   protected readonly allSelected = computed(() => this.recipients().length > 0 && this.selectedCount() === this.recipients().length);
 
   public constructor() {
+    lockDynamicDialogWhile(this.sending);
     this.loadRecipients();
   }
 
@@ -86,18 +91,30 @@ export class VoteReminderDialogComponent {
     this.voteService
       .sendReminders(this.voteUid, recipientIds)
       .pipe(
-        finalize(() => this.sending.set(false)),
-        takeUntilDestroyed(this.destroyRef)
+        // An initiated write must finish even if navigation destroys this dialog.
+        take(1),
+        finalize(() => this.sending.set(false))
       )
       .subscribe({
         next: (result) => {
           const count = result.recipient_count;
           const noun = count === 1 ? 'voter' : 'voters';
           this.messageService.add({ severity: 'success', summary: 'Reminder sent', detail: `Reminder sent to ${count} ${noun}.` });
-          this.ref.close(true);
+          if (!this.destroyRef.destroyed) this.ref.close(true);
         },
         error: (error: unknown) => {
-          this.messageService.add({ severity: 'error', summary: "Couldn't send reminder", detail: this.sendErrorMessage(error) });
+          const detail = this.sendErrorMessage(error);
+          this.messageService.add({
+            severity: 'error',
+            summary: this.isUnconfirmedSend(error) ? 'Outcome unconfirmed' : "Couldn't send reminder",
+            detail,
+          });
+          if (this.isReminderConflict(error, VOTE_REMINDER_INACTIVE) || this.isReminderConflict(error, VOTE_REMINDER_SELECTION_STALE)) {
+            this.recipients.set([]);
+            this.setSelection(new Set());
+            this.inactive.set(this.isReminderConflict(error, VOTE_REMINDER_INACTIVE));
+            if (!this.inactive()) this.loadError.set(detail);
+          }
         },
       });
   }
@@ -111,6 +128,7 @@ export class VoteReminderDialogComponent {
   private loadRecipients(): void {
     this.loading.set(true);
     this.loadError.set(null);
+    this.inactive.set(false);
     this.voteService
       .getReminderRecipients(this.voteUid)
       .pipe(
@@ -130,7 +148,8 @@ export class VoteReminderDialogComponent {
         error: (error: unknown) => {
           this.recipients.set([]);
           this.setSelection(new Set());
-          this.loadError.set(this.loadErrorMessage(error));
+          this.inactive.set(this.isReminderConflict(error, VOTE_REMINDER_INACTIVE));
+          if (!this.inactive()) this.loadError.set(this.loadErrorMessage(error));
         },
       });
   }
@@ -151,7 +170,27 @@ export class VoteReminderDialogComponent {
     return "We couldn't load the voter list. Please try again.";
   }
 
+  private isReminderConflict(error: unknown, code: string): boolean {
+    return error instanceof HttpErrorResponse && error.status === 409 && error.error?.code === code;
+  }
+
+  private isUnconfirmedSend(error: unknown): boolean {
+    if (!(error instanceof HttpErrorResponse) || isBffTransportFailure(error)) return true;
+    return (
+      ![400, 403, 429].includes(error.status) &&
+      !this.isReminderConflict(error, VOTE_REMINDER_INACTIVE) &&
+      !this.isReminderConflict(error, VOTE_REMINDER_SELECTION_STALE)
+    );
+  }
+
   private sendErrorMessage(error: unknown): string {
+    if (this.isReminderConflict(error, VOTE_REMINDER_INACTIVE)) return 'This vote is no longer active. Reminders cannot be sent.';
+    if (this.isReminderConflict(error, VOTE_REMINDER_SELECTION_STALE)) {
+      return 'Some selected voters are no longer eligible. No reminders were sent. Reload the voter list and select recipients again.';
+    }
+    if (this.isUnconfirmedSend(error)) {
+      return "We couldn't confirm whether reminders were sent. Retrying may send duplicate emails.";
+    }
     const status = error instanceof HttpErrorResponse ? error.status : 0;
     switch (status) {
       case 400:
@@ -161,7 +200,7 @@ export class VoteReminderDialogComponent {
       case 429:
         return 'Too many reminders were sent just now. Please try again in a minute.';
       default:
-        return "We couldn't send the reminder. Please try again.";
+        return "We couldn't confirm whether reminders were sent. Retrying may send duplicate emails.";
     }
   }
 }
