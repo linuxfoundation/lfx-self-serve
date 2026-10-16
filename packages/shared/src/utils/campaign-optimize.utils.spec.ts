@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { CAMPAIGN_SETTINGS_UNKNOWN_NOTES } from '../constants/campaign-optimize.constants';
 import type { CampaignServiceSettingsField, CampaignServiceSettingsReadback } from '../interfaces/campaign-optimize.interface';
-import { buildCampaignSettingsDrift, campaignBudgetPacingFromSettings, readCampaignRefResolution } from './campaign-optimize.utils';
+import { buildCampaignSettingsDrift, campaignBudgetPacingFromSettings, readCampaignRefResolution, withAdoptedMarker } from './campaign-optimize.utils';
 
 function readback(fields: CampaignServiceSettingsField[], platform = 'linkedin-ads'): CampaignServiceSettingsReadback {
   return {
@@ -166,5 +166,22 @@ describe('campaignBudgetPacingFromSettings (#3299)', () => {
     ['a readback with no fields array', { fields: null } as unknown as CampaignServiceSettingsReadback],
   ])('answers unknown for %s', (_label, value) => {
     expect(campaignBudgetPacingFromSettings(value)).toBe('unknown');
+  });
+});
+
+describe('withAdoptedMarker', () => {
+  it('keeps a literal true', () => {
+    expect(withAdoptedMarker({ id: 'c-1', adopted: true })).toEqual({ id: 'c-1', adopted: true });
+  });
+
+  it('leaves a row without the field untouched', () => {
+    const row = { id: 'c-1' } as { id: string; adopted?: boolean };
+    expect(withAdoptedMarker(row)).toBe(row);
+  });
+
+  it.each([[false], ['true'], [1], [null]])('drops %s rather than keeping a non-true value', (value) => {
+    const result = withAdoptedMarker({ id: 'c-1', adopted: value as unknown as boolean });
+    expect('adopted' in result).toBe(false);
+    expect(result).toEqual({ id: 'c-1' });
   });
 });

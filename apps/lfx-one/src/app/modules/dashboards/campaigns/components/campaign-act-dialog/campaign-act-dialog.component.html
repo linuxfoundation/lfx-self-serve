@@ -79,16 +79,40 @@
                   @for (note of resumeNotes(); track note) {
                     <p class="text-xs text-gray-600" data-testid="campaign-act-dialog-resume-note">{{ note }}</p>
                   }
-                  <div>
-                    <lfx-button
-                      [label]="toggleLabel()"
-                      size="small"
-                      [ariaLabel]="toggleLabel() + ' ' + campaign.campaign_name"
-                      [disabled]="pending() || conflicted()"
-                      [loading]="pending()"
-                      (onClick)="toggle()"
-                      data-testid="campaign-act-dialog-toggle" />
-                  </div>
+                  @if (resumeAdopted()) {
+                    <!--
+                      An adopted campaign: campaign-service never resumes it. A raw button because
+                      lfx-button forwards neither aria-disabled nor aria-describedby to its inner
+                      button; aria-disabled (not disabled) keeps it focusable so the reason is read
+                      with it, and toggle() ignores the click.
+                    -->
+                    <p class="text-xs text-gray-600" id="campaign-act-resume-adopted" data-testid="campaign-act-dialog-resume-adopted">
+                      {{ resumeAdoptedReason() }}
+                    </p>
+                    <div>
+                      <button
+                        type="button"
+                        aria-disabled="true"
+                        aria-describedby="campaign-act-resume-adopted"
+                        [attr.aria-label]="toggleLabel() + ' ' + campaign.campaign_name"
+                        (click)="toggle()"
+                        class="cursor-not-allowed rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                        data-testid="campaign-act-dialog-toggle">
+                        {{ toggleLabel() }}
+                      </button>
+                    </div>
+                  } @else {
+                    <div>
+                      <lfx-button
+                        [label]="toggleLabel()"
+                        size="small"
+                        [ariaLabel]="toggleLabel() + ' ' + campaign.campaign_name"
+                        [disabled]="pending() || conflicted()"
+                        [loading]="pending()"
+                        (onClick)="toggle()"
+                        data-testid="campaign-act-dialog-toggle" />
+                    </div>
+                  }
                 }
                 @if (toggleOutcome(); as outcome) {
                   @if (outcome.state === 'unconfirmed') {

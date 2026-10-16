@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE,
+  CAMPAIGN_RESUME_REFUSED_ADOPTED_CODE,
   CAMPAIGN_RESUME_REFUSED_CODE,
   GOOGLE_ADS_LANGUAGE_MAP,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
@@ -5186,6 +5187,21 @@ describe('CampaignController.updateCampaignStatus', () => {
     const error = vi.mocked(next).mock.calls[0][0] as unknown as MicroserviceError;
     expect(error.statusCode).toBe(409);
     expect(error.toResponse()['code']).toBe(CAMPAIGN_RESUME_REFUSED_CODE);
+  });
+
+  // lfx-v2-campaign-service#366 names the adoption case with `reason: "campaign_adopted"`.
+  it('re-codes an upstream 409 with reason campaign_adopted as CAMPAIGN_RESUME_REFUSED_ADOPTED', async () => {
+    const message = 'campaign was adopted; resume it in the ad platform';
+    toggleCampaignStatus.mockRejectedValue(
+      new MicroserviceError(message, 409, 'UPSTREAM', { errorBody: { code: '409', message, reason: 'campaign_adopted' } })
+    );
+
+    await controller.updateCampaignStatus(statusReq(UUID, { platform: 'twitter-ads', status: 'ACTIVE', briefId: 'b-1', etag: '1' }), res, next);
+
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as MicroserviceError;
+    expect(error.statusCode).toBe(409);
+    expect(error.toResponse()['code']).toBe(CAMPAIGN_RESUME_REFUSED_ADOPTED_CODE);
+    expect(error.toResponse()['error']).toContain('This campaign was adopted from X / Twitter Ads');
   });
 
   // Also found by mutation: dropping `.trim()` left these green. A whitespace-only etag then

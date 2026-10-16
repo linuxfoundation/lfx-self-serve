@@ -90,6 +90,7 @@ import {
   NEGATIVE_KEYWORD_CAMPAIGN_PLATFORMS,
   PLATFORM_BRAND_COLORS,
   TOGGLEABLE_CAMPAIGN_PLATFORMS,
+  campaignResumeAdoptedReason,
   campaignToggleAction,
   normalizeCampaignStatus,
 } from '@lfx-one/shared/constants';
@@ -456,15 +457,16 @@ export class OptimizationTabComponent implements OnInit {
    * defect as the over-broad instruction it replaced, pointed the other way.
    *
    * Derived from the rendered rows rather than a count, so it agrees with the buttons by
-   * construction: a row is offerable exactly when it is not conflicted and its action is a real
-   * direction, which is the same condition the template's `[disabled]` uses.
+   * construction: a row is offerable exactly when it is not conflicted, its action is a real
+   * direction, and it is not an adopted campaign's Resume — the rows the template renders usable
+   * (`[disabled]` covers the first two, `aria-disabled` the adopted Resume).
    */
   protected readonly hasActionableSiblings = computed(() => {
     const rows = this.campaignRows();
     if (rows === null) {
       return false;
     }
-    return rows.some((row) => !row.conflicted && row.action !== 'unavailable');
+    return rows.some((row) => !row.conflicted && !row.resumeAdopted && row.action !== 'unavailable');
   });
 
   /**
@@ -682,6 +684,10 @@ export class OptimizationTabComponent implements OnInit {
       const keywordTargetingOffered = typeof campaign.platform === 'string' && KEYWORD_TARGETING_CAMPAIGN_PLATFORMS.has(campaign.platform);
       const keywordTargetingUnavailableReason = keywordTargetingOffered ? this.keywordTargetingUnavailableReasonFor(campaign, status) : '';
       const confirmedBidAmount = this.currentConfirmedBid(campaign, confirmedBids[campaign.id]);
+      // An adopted campaign is never resumed by campaign-service (409 `campaign_adopted`), so its
+      // Resume is withheld up front. Only a literal `true`: absent (not adopted, or not recorded by
+      // this deployment) keeps today's button, and upstream stays the authority.
+      const resumeAdopted = action === 'resume' && campaign.adopted === true;
       return {
         campaign,
         // The bidding campaign-service RECORDED (#3299) — what the create asked for and the last bid
@@ -693,7 +699,9 @@ export class OptimizationTabComponent implements OnInit {
         conflicted,
         unavailableReason: action === 'unavailable' ? this.unavailableReasonFor(status, deploymentDisabled, platformUnsupported, campaign.platform) : '',
         toggleLabel: CAMPAIGN_TOGGLE_LABELS[action],
-        describedBy: this.describedByFor(campaign.id, action, toggleErrors),
+        describedBy: this.describedByFor(campaign.id, action, toggleErrors, resumeAdopted),
+        resumeAdopted,
+        resumeAdoptedReason: resumeAdopted ? campaignResumeAdoptedReason(this.platformLabels[campaign.platform] ?? 'the ad platform') : '',
         budgetAvailable: budgetUnavailableReason === '',
         budgetUnavailableReason,
         budgetBlockedReason: this.budgetBlockedReasonFor(
@@ -838,6 +846,11 @@ export class OptimizationTabComponent implements OnInit {
     // A budget change in flight on this row holds the same validator; a toggle sent alongside it
     // would race it to the same `If-Match` and one of the two would 412.
     if (this.togglePending()[campaign.id] || this.budgetPending()[campaign.id] || this.bidPending()[campaign.id] || this.adSetPending()[campaign.id]) {
+      return;
+    }
+    // An adopted campaign's Resume is `aria-disabled`, not `disabled`, so it stays focusable and a
+    // click still lands here. It does nothing: the reason is already stated beside the button.
+    if (row.resumeAdopted) {
       return;
     }
     // The template disables the button for these rows, so reaching here means the DOM and the
@@ -3073,22 +3086,26 @@ export class OptimizationTabComponent implements OnInit {
    * in bindings, and as a template method this also re-ran for every row on every change
    * detection pass while reading `toggleError()` internally.
    *
-   * A helper rather than an inline expression because the choice is three-way, which inline would
-   * mean a nested ternary in a template — the construct this repo forbids. Both ids may be present
-   * at once (a disabled row can still hold an error from a click that raced the status), and
-   * `aria-describedby` takes a LIST, so both are named rather than one silently shadowing the
-   * other. A dangling reference to an element that renders conditionally is worse than none, so
-   * each id is included only when its element is actually drawn.
+   * A helper rather than an inline expression because up to three ids combine (the row's error, its
+   * unavailable reason, an adopted campaign's Resume reason), which inline would mean nested
+   * ternaries in a template — the construct this repo forbids. Several may be present at once (a
+   * disabled row can still hold an error from a click that raced the status), and
+   * `aria-describedby` takes a LIST, so each is named rather than one silently shadowing another.
+   * A dangling reference to an element that renders conditionally is worse than none, so each id
+   * is included only when its element is actually drawn.
    *
    * `static` in spirit — it reads no signals, so the computed above owns the reactivity.
    */
-  private describedByFor(campaignId: string, action: CampaignToggleAction, toggleErrors: Record<string, string>): string | null {
+  private describedByFor(campaignId: string, action: CampaignToggleAction, toggleErrors: Record<string, string>, resumeAdopted: boolean): string | null {
     const ids: string[] = [];
     if (toggleErrors[campaignId]) {
       ids.push(`campaign-error-${campaignId}`);
     }
     if (action === 'unavailable') {
       ids.push(`campaign-unavailable-${campaignId}`);
+    }
+    if (resumeAdopted) {
+      ids.push(`campaign-resume-adopted-${campaignId}`);
     }
     return ids.length > 0 ? ids.join(' ') : null;
   }

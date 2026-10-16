@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { CAMPAIGN_BUDGET_UNANSWERED_STATUSES, CAMPAIGN_RESUME_REFUSED_CODE, ERROR_CODES, MAX_PLAIN_TEXT_BODY_LENGTH } from '@lfx-one/shared/constants';
+import {
+  CAMPAIGN_BUDGET_UNANSWERED_STATUSES,
+  CAMPAIGN_RESUME_REFUSED_ADOPTED_CODE,
+  CAMPAIGN_RESUME_REFUSED_CODE,
+  ERROR_CODES,
+  MAX_PLAIN_TEXT_BODY_LENGTH,
+} from '@lfx-one/shared/constants';
 import type { CampaignBudgetOutcome, CampaignNegativeKeywordsBatchOutcome, CampaignWriteFailureMessages } from '@lfx-one/shared/interfaces';
 
 /**
@@ -77,15 +83,17 @@ export function isBffErrorEnvelope(body: unknown): boolean {
 }
 
 /**
- * Whether a failed toggle is the BFF's `CAMPAIGN_RESUME_REFUSED`: campaign-service refused a resume
- * (409), and the message says where an adopted campaign is resumed. Decided by the envelope's code,
+ * Whether a failed toggle is one of the BFF's resume refusals: `CAMPAIGN_RESUME_REFUSED_ADOPTED`
+ * (campaign-service said the campaign was adopted) or `CAMPAIGN_RESUME_REFUSED` (any other resume
+ * 409). Either message says where an adopted campaign is resumed. Decided by the envelope's code,
  * never its wording.
  */
 export function isCampaignResumeRefusal(error: unknown): boolean {
   if (!(error instanceof HttpErrorResponse) || error.status !== 409 || !isBffErrorEnvelope(error.error)) {
     return false;
   }
-  return (error.error as { code: string }).code === CAMPAIGN_RESUME_REFUSED_CODE;
+  const code = (error.error as { code: string }).code;
+  return code === CAMPAIGN_RESUME_REFUSED_CODE || code === CAMPAIGN_RESUME_REFUSED_ADOPTED_CODE;
 }
 
 /**

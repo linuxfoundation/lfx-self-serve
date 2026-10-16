@@ -3641,6 +3641,14 @@ export interface CampaignIndexDoc {
    * ABSENT when the service never set one.
    */
   max_cpc_bid?: number;
+  /**
+   * `true` when campaign-service bound this campaign by adopting it rather than creating it
+   * (lfx-v2-campaign-service#366), ABSENT otherwise — never `false`. Absent also means "not
+   * recorded": a deployment before #366, or a campaign adopted before the marker existed on its
+   * platform. An adopted campaign can be paused from LFX One but never resumed (campaign-service
+   * refuses with 409 `reason: "campaign_adopted"`). The BFF keeps only a literal `true`.
+   */
+  adopted?: boolean;
 }
 
 /**
@@ -3677,6 +3685,15 @@ export interface CampaignRow {
    * has not seen falls into it rather than into a doomed button.
    */
   action: CampaignToggleAction;
+  /**
+   * The row offers Resume, but the campaign was ADOPTED (`campaign.adopted === true`), which
+   * campaign-service never resumes. The button stays labelled Resume and focusable, rendered
+   * `aria-disabled` with `resumeAdoptedReason` as its description, and a click does nothing.
+   * `action` stays `resume`: the campaign is paused, and Pause is not on offer.
+   */
+  resumeAdopted: boolean;
+  /** Why an adopted campaign cannot be resumed here, naming its platform — set when `resumeAdopted`, empty otherwise. */
+  resumeAdoptedReason: string;
   /**
    * Why the toggle is disabled — set for `unavailable` rows only, empty otherwise.
    *
@@ -4187,6 +4204,14 @@ export interface CampaignServiceCampaign {
   status: string;
   version: number;
   etag?: string;
+  /**
+   * `true` when campaign-service bound this campaign by adopting it rather than creating it
+   * (lfx-v2-campaign-service#366), ABSENT otherwise — never `false`. Absent also means "not
+   * recorded": a deployment before #366, or a campaign adopted before the marker existed on its
+   * platform. An adopted campaign can be paused from LFX One but never resumed (campaign-service
+   * refuses with 409 `reason: "campaign_adopted"`). The BFF keeps only a literal `true`.
+   */
+  adopted?: boolean;
 }
 
 export interface CampaignStatusUpdateResult {
