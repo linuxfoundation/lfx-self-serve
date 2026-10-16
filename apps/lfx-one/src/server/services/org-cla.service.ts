@@ -1099,7 +1099,7 @@ export class OrgClaService {
           body: { auto_create_ecla: enable },
           operation: 'org_cla_update_ecla_auto_create',
           service: SERVICE,
-          errorMessage: 'Failed to update the Auto ECLA setting',
+          errorMessage: 'Failed to update the Auto Acknowledge setting',
           errorCode: 'UPSTREAM_ERROR',
           // The refusal body is the copy the CLA manager needs to see (sanctions reason and
           // support route). Kept out of application logs; the `withoutUpstreamBody` at the throw
@@ -1825,7 +1825,7 @@ export class OrgClaService {
         entries,
         entry,
         operation,
-        'This CLA shares its company and CLA group with another agreement, so its Auto ECLA setting cannot be changed here yet.',
+        'This CLA shares its company and CLA group with another agreement, so its Auto Acknowledge setting cannot be changed here yet.',
         'AMBIGUOUS_AGREEMENT_TARGET'
       );
     }

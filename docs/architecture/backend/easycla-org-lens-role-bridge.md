@@ -51,7 +51,7 @@ The Overview's Auto ECLA toggle is the one control here that is **read-visible a
 
 Enablement fails closed, including while the ACS answer is still in flight. The sentence follows the roster alone, so it shows at once for a viewer off the roster and never for a CLA manager on it. A row whose project|organization pair cannot be resolved is never asked about, which counts as denied rather than pending.
 
-The BFF route refuses a caller off the roster with a 403 before calling EasyCLA (`Only a CLA manager named on this CLA can change its Auto ECLA setting`); EasyCLA itself refuses one too, and also 403s a sanctioned organization with its own sentence. The disabled switch is not what stops the write — both refusals stand whatever the browser sends.
+The BFF route refuses a caller off the roster with a 403 before calling EasyCLA (`Only a CLA manager named on this CLA can change its Auto Acknowledge setting`); EasyCLA itself refuses one too, and also 403s a sanctioned organization with its own sentence. The disabled switch is not what stops the write — both refusals stand whatever the browser sends.
 
 On a row with no CLA Manager list at all, the BFF cannot check the roster, so the Auto ECLA and approval-list writes are passed through to EasyCLA, which re-checks them. Invalidate is the exception and is refused, because EasyCLA does not check the roster on it.
 

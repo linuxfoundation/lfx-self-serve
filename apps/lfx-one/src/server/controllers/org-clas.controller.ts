@@ -562,13 +562,13 @@ export class OrgClasController {
 
       if (result.outcome === 'not-signed') {
         logger.success(req, 'update_org_cla_ecla_auto_create', startTime, { org_uid: orgUid, signature_id: signatureId, signed: false });
-        res.status(400).json({ message: 'This CLA has not been signed yet, so its Auto ECLA setting cannot be changed' });
+        res.status(400).json({ message: 'This CLA has not been signed yet, so its Auto Acknowledge setting cannot be changed' });
         return;
       }
 
       if (result.outcome === 'forbidden') {
         logger.success(req, 'update_org_cla_ecla_auto_create', startTime, { org_uid: orgUid, signature_id: signatureId, can_edit: false });
-        res.status(403).json({ message: 'Only a CLA manager named on this CLA can change its Auto ECLA setting' });
+        res.status(403).json({ message: 'Only a CLA manager named on this CLA can change its Auto Acknowledge setting' });
         return;
       }
 

@@ -562,7 +562,7 @@ export class OrgEasyclaDetailComponent {
   protected readonly autoEclaDisabled = computed(() => !this.autoEclaWritable() || this.autoEclaPending());
 
   /** Carries the locked sentence whenever it shows, so the reason is not sighted-only. */
-  protected readonly autoEclaAriaLabel = computed(() => (this.autoEclaLocked() ? `Auto ECLA — ${this.autoEclaLockedHint}` : 'Auto ECLA'));
+  protected readonly autoEclaAriaLabel = computed(() => (this.autoEclaLocked() ? `Auto Acknowledge — ${this.autoEclaLockedHint}` : 'Auto Acknowledge'));
 
   /**
    * The current toggle value the template binds to.
@@ -1030,7 +1030,7 @@ export class OrgEasyclaDetailComponent {
         if (!this.autoEclaStillHere(target)) return;
         this.messageService.add({
           severity: 'success',
-          summary: written ? 'Auto ECLA turned on.' : 'Auto ECLA turned off.',
+          summary: written ? 'Auto Acknowledge turned on.' : 'Auto Acknowledge turned off.',
         });
       },
       error: (error: HttpErrorResponse) => {
@@ -1038,7 +1038,7 @@ export class OrgEasyclaDetailComponent {
         if (!this.autoEclaStillHere(target)) return;
         this.messageService.add({
           severity: 'error',
-          summary: next ? "Couldn't turn Auto ECLA on" : "Couldn't turn Auto ECLA off",
+          summary: next ? "Couldn't turn Auto Acknowledge on" : "Couldn't turn Auto Acknowledge off",
           detail: serverAuthoredMessage(error, 'Please try again in a moment.'),
         });
       },

@@ -2244,7 +2244,7 @@ describe('OrgClaService.updateEclaAutoCreate — the outcomes that are not failu
     await expect(new OrgClaService().updateEclaAutoCreate(req(), ORG_UID, 'signature-b', true)).rejects.toMatchObject({
       statusCode: 409,
       code: 'AMBIGUOUS_AGREEMENT_TARGET',
-      message: 'This CLA shares its company and CLA group with another agreement, so its Auto ECLA setting cannot be changed here yet.',
+      message: 'This CLA shares its company and CLA group with another agreement, so its Auto Acknowledge setting cannot be changed here yet.',
     });
     expect(gatewayFetch).toHaveBeenCalledTimes(1);
     expect(gatewayFetch).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('/ecla-auto-create'), expect.anything());
