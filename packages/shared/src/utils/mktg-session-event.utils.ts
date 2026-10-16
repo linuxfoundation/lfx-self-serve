@@ -16,9 +16,13 @@
 // `agent_notification_message` carries the runtime's output as
 // `content.data`. The SDK's persisted transcript parts (`tool-call` /
 // `tool-result` with `toolCallId`, `toolName`, `output`) are read the same
-// way, in case an event carries them instead.
+// way, in case an event carries them instead. A platform tool's own events
+// (`runtime_start` with the tool's input, `runtime_done` with its output —
+// the fetched page itself) are never entered: a page that is JSON would
+// otherwise be walked like a transcript, and a call-and-result pair written
+// into it would pass for the agent's.
 
-import { MKTG_ENVELOPE_EXTRACTION_MAX_DEPTH } from '../constants/mktg-run.constants';
+import { MKTG_ENVELOPE_EXTRACTION_MAX_DEPTH, MKTG_SESSION_PLATFORM_TOOL_EVENT_TYPES } from '../constants/mktg-run.constants';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -37,6 +41,19 @@ function parseEmbeddedJson(value: string): unknown {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * One raw event, parsed and worth reading: undefined for a payload that is
+ * not JSON, and for a platform tool's own event, whose content is the tool's
+ * input or output and not the agent's.
+ */
+function readableEvent(payload: string): unknown {
+  const event = parseEmbeddedJson(payload);
+  if (isRecord(event) && (MKTG_SESSION_PLATFORM_TOOL_EVENT_TYPES as readonly unknown[]).includes(event['type'])) {
+    return undefined;
+  }
+  return event;
 }
 
 /**
@@ -97,11 +114,11 @@ function toolResultText(content: unknown): string | null {
  * the runtime's text output (`agent_notification_message` content). Nothing
  * inside a `tool_result` block or a `user`-role message is ever returned —
  * that is where fetched pages, search results and the requester's own
- * messages sit. A payload that is not JSON yields nothing: free text is
- * never attributed to the agent.
+ * messages sit, nor anything in a platform tool's own event. A payload that
+ * is not JSON yields nothing: free text is never attributed to the agent.
  */
 export function extractMktgAgentTexts(payload: string): string[] {
-  const event = parseEmbeddedJson(payload);
+  const event = readableEvent(payload);
   if (event === undefined) {
     return [];
   }
@@ -135,10 +152,13 @@ export function extractMktgAgentTexts(payload: string): string[] {
  * error result (`is_error`, an SDK error output) never is. Every `llm_start`
  * event repeats the whole request so far, so the call and its result sit in
  * the same event; the same result found in later events is returned again
- * and callers de-duplicate by content (the latest valid one wins).
+ * and callers de-duplicate by content (the latest valid one wins). A
+ * platform tool's own event is never read: its content is what the tool
+ * returned, where a pair of blocks shaped like a call and its result proves
+ * nothing.
  */
 export function extractMktgToolResults(payload: string, toolName: string): string[] {
-  const event = parseEmbeddedJson(payload);
+  const event = readableEvent(payload);
   if (event === undefined) {
     return [];
   }

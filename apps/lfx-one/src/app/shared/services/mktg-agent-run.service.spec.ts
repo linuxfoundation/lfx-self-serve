@@ -25,7 +25,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { renderMktgIntakeMessage } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
-import { concatMap, of, throwError, timer } from 'rxjs';
+import { concatMap, NEVER, of, throwError, TimeoutError, timer } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgAgentRunService } from './mktg-agent-run.service';
@@ -741,6 +741,27 @@ describe('MktgAgentRunService', () => {
       await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.timeoutMs + MKTG_RUN_POLL.intervalMs * 2);
 
       expect(failed).not.toBeNull();
+    });
+
+    it('gives up at the deadline even when a result request never answers — a stalled poll cannot hide it', async () => {
+      httpPost.mockImplementation((url: string) => {
+        if (url === FOUNDATION_MESSAGE_INTAKE.endpoints.generate) {
+          return of({ sessionId: 'sess-2', ownerToken: 'token-2' });
+        }
+        return NEVER;
+      });
+      let failed: unknown = null;
+      service.generate(mfRequest()).subscribe({ error: (error: unknown) => (failed = error) });
+
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs + MKTG_RUN_POLL.intervalMs);
+      // One request went out and is still hanging; the ticks after it are dropped, not the deadline.
+      expect(mfResultCalls()).toHaveLength(1);
+      expect(failed).toBeNull();
+
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.timeoutMs);
+
+      expect(failed).toBeInstanceOf(TimeoutError);
+      expect(mfResultCalls()).toHaveLength(1);
     });
 
     it('answers on the SAME session, ignores the block it just answered, and stores the questions and answers with the version', async () => {

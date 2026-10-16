@@ -7,7 +7,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
-import { MKTG_ANSWER_NOT_SUBSTANTIVE_ERROR } from '@lfx-one/shared/constants';
+import { FOUNDATION_MESSAGE_ANSWER_MAX_CHARS, MKTG_ANSWER_NOT_SUBSTANTIVE_ERROR, MKTG_ANSWER_TOO_LONG_ERROR } from '@lfx-one/shared/constants';
 import { MktgRunAnswer, MktgRunQuestion, MktgRunQuestionChip } from '@lfx-one/shared/interfaces';
 import { foundationMessageAnswerOrigin, isFoundationMessageAnswerSubstantive, mktgRunQuestionShortLabel } from '@lfx-one/shared/utils';
 import { map } from 'rxjs';
@@ -70,12 +70,16 @@ export class MktgRunQuestionsComponent {
   protected readonly total = computed(() => this.questions().length);
   protected readonly current: Signal<QuestionView | null> = this.initCurrent();
   protected readonly isLast = computed(() => this.index() === this.total() - 1);
-  protected readonly currentValid = computed(() => {
+  /** What is wrong with the answer on screen, or nothing. */
+  protected readonly currentError = computed(() => {
     const current = this.current();
-    return !!current && isFoundationMessageAnswerSubstantive(this.values()[current.key] ?? this.answersForm.controls[current.key]?.value ?? '');
+    if (!current) {
+      return MKTG_ANSWER_NOT_SUBSTANTIVE_ERROR;
+    }
+    return this.answerError(this.values()[current.key] ?? this.answersForm.controls[current.key]?.value ?? '');
   });
+  protected readonly currentValid = computed(() => this.currentError() === '');
   protected readonly chips: Signal<MktgRunQuestionChip[]> = this.initChips();
-  protected readonly notSubstantiveError = MKTG_ANSWER_NOT_SUBSTANTIVE_ERROR;
 
   // Literal class names so Tailwind's content scan generates them.
   protected readonly chipClass: Record<MktgRunQuestionChip['state'], string> = {
@@ -111,9 +115,9 @@ export class MktgRunQuestionsComponent {
       return;
     }
     // Every answer has to stand before they go: an earlier one may have been emptied after a jump back.
-    const firstEmpty = this.questions().findIndex((question) => !isFoundationMessageAnswerSubstantive(this.answersForm.controls[question.key]?.value ?? ''));
-    if (firstEmpty >= 0) {
-      this.goTo(firstEmpty);
+    const firstFailing = this.questions().findIndex((question) => this.answerError(this.answersForm.controls[question.key]?.value ?? '') !== '');
+    if (firstFailing >= 0) {
+      this.goTo(firstFailing);
       this.showError.set(true);
       return;
     }
@@ -170,6 +174,21 @@ export class MktgRunQuestionsComponent {
   }
 
   // === Private helpers ===
+  /**
+   * Why an answer would be refused — the two rules the BFF applies to the
+   * answers turn (`validateFoundationMessageAnswers`), on the trimmed text
+   * that is sent — or '' when it stands.
+   */
+  private answerError(text: string): string {
+    if (!isFoundationMessageAnswerSubstantive(text)) {
+      return MKTG_ANSWER_NOT_SUBSTANTIVE_ERROR;
+    }
+    if (text.trim().length > FOUNDATION_MESSAGE_ANSWER_MAX_CHARS) {
+      return MKTG_ANSWER_TOO_LONG_ERROR;
+    }
+    return '';
+  }
+
   private reset(questions: MktgRunQuestion[], previous: Record<string, string>): void {
     for (const key of Object.keys(this.answersForm.controls)) {
       this.answersForm.removeControl(key);

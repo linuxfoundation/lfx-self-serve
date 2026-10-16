@@ -4,6 +4,7 @@
 import type { GithubRepoUrlErrorReason, MktgAgentIntake, MktgIntakeField, MktgIntakeFieldFormat, MktgReadmeSkipReason } from '../interfaces';
 import { BRAND_KIT_FORM_PREAMBLE_LINES, BRAND_KIT_INTAKE_QUESTIONS } from './brand-kit.constants';
 import {
+  FOUNDATION_MESSAGE_ANSWER_MAX_CHARS,
   FOUNDATION_MESSAGE_ANSWERS_ENDPOINT,
   FOUNDATION_MESSAGE_DERIVATIVE_CHIPS,
   FOUNDATION_MESSAGE_DOCUMENT_ENDPOINTS,
@@ -320,6 +321,14 @@ export const MKTG_AGENT_INTAKES: Record<string, MktgAgentIntake> = {
 export const MKTG_ENVELOPE_EXTRACTION_MAX_DEPTH = 16;
 
 /**
+ * Raw Guild session events whose `content` is a platform tool's input or
+ * output (a fetched page, a search's results, an LFX lookup) — never the
+ * agent speaking, never one of its own tool results. The event readers skip
+ * them whole, so nothing a third-party page carries can pass for either.
+ */
+export const MKTG_SESSION_PLATFORM_TOOL_EVENT_TYPES = ['runtime_start', 'runtime_done'] as const;
+
+/**
  * Blocking field-error copy for an intake value that fails its `format` rule.
  * Keyed by the rule and by what the value turned out to be, so the message
  * names the ACTUAL problem instead of a generic "invalid" — an account
@@ -372,6 +381,13 @@ export const MKTG_RUN_STAGES = ['Submitting your intake', 'Agent drafting the do
  */
 export const MKTG_ANSWER_NOT_SUBSTANTIVE_ERROR =
   'An answer is needed here — the agent could not settle this from the sources, and “TBD” or “skip” leaves the gap.';
+
+/**
+ * Validation of the questions step: an answer longer than the answers turn
+ * takes (`FOUNDATION_MESSAGE_ANSWER_MAX_CHARS`, the BFF's own cap), said
+ * before it is sent rather than refused on the way out.
+ */
+export const MKTG_ANSWER_TOO_LONG_ERROR = `An answer can be at most ${FOUNDATION_MESSAGE_ANSWER_MAX_CHARS.toLocaleString('en-US')} characters — shorten this one.`;
 
 /**
  * The document review-status labels, as the re-pinned agents write them

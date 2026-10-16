@@ -12,7 +12,7 @@ import { FOUNDATION_MESSAGE_READ_REASONS } from '@lfx-one/shared/constants';
 import { MktgDocumentExtractResponse, MktgIntakeDocumentEntry, MktgIntakeDocumentRow, MktgIntakeDocumentsConfig } from '@lfx-one/shared/interfaces';
 import { sourceUrlValidator } from '@lfx-one/shared/validators';
 import type { FileSelectEvent } from 'primeng/fileupload';
-import { finalize, Observable } from 'rxjs';
+import { finalize, Observable, Subject, takeUntil } from 'rxjs';
 
 import { MktgIntakeDocumentsService } from '@services/mktg-intake-documents.service';
 
@@ -49,6 +49,9 @@ export class MktgIntakeDocumentsComponent {
   protected readonly pending = signal(0);
   protected readonly errorText = signal('');
 
+  /** Fires to drop every read in flight (`cancelReads`). */
+  private readonly cancelled$ = new Subject<void>();
+
   // === Computed ===
   protected readonly rows: Signal<MktgIntakeDocumentRow[]> = this.initRows();
   protected readonly atLimit = computed(() => this.documents().length + this.pending() >= this.config().maxDocuments);
@@ -60,6 +63,18 @@ export class MktgIntakeDocumentsComponent {
     unread: 'text-amber-700',
     link: 'text-gray-500',
   };
+
+  // === Public methods ===
+  /**
+   * Drops every read still in flight, so a file picked for one intake is
+   * never added to another: the run page keeps this section mounted across
+   * a project or effective-user switch and empties `documents`, and a read
+   * that answered after that would otherwise land in the new intake.
+   */
+  public cancelReads(): void {
+    this.cancelled$.next();
+    this.errorText.set('');
+  }
 
   // === Protected methods ===
   /** A link is listed as given and sent to the agent as its URL; nothing is read here. */
@@ -157,11 +172,12 @@ export class MktgIntakeDocumentsComponent {
     return '';
   }
 
-  /** Counts a read in flight for the `busy` flag, for as long as it runs. */
+  /** Counts a read in flight for the `busy` flag, for as long as it runs; `cancelReads` ends it early. */
   private track<T>(request: Observable<T>): Observable<T> {
     this.pending.update((count) => count + 1);
     this.busy.set(true);
     return request.pipe(
+      takeUntil(this.cancelled$),
       finalize(() => {
         this.pending.update((count) => count - 1);
         this.busy.set(this.pending() > 0);

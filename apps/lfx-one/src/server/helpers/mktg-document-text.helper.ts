@@ -4,6 +4,9 @@
 import { MktgPdfWorkerReply, MktgReadText } from '@lfx-one/shared/interfaces';
 import JSZip from 'jszip';
 import mammoth from 'mammoth';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
 
 /**
@@ -15,8 +18,17 @@ import { Worker } from 'node:worker_threads';
  * back with its reason.
  */
 export class MktgDocumentText {
-  /** Wall-clock limit for one PDF; a caller whose own budget has less left may only lower it. */
-  public static readonly maxPdfMillis = 200;
+  /**
+   * Wall-clock limit for one PDF, from the moment pdf.js has it; a caller
+   * whose own budget has less left may only lower it. pdf.js takes well under
+   * a second over a brand guide of a few dozen pages, so this is room for a
+   * long press kit on a busy pod, not a ceiling ordinary uploads reach. It
+   * can be generous because the read runs in its own worker thread: the
+   * BFF's event loop is never held, and a worker past the deadline is simply
+   * terminated. Reads through the gate run one at a time, so this is also
+   * the longest one upload can keep the next one waiting.
+   */
+  public static readonly maxPdfMillis = 5_000;
 
   /** Most pages one PDF may have; a longer one is refused as too complex before any page is read. */
   private static readonly maxPdfPages = 300;
@@ -28,12 +40,28 @@ export class MktgDocumentText {
   private static readonly pdfStartMillis = 5_000;
 
   /**
-   * The PDF worker: loads pdf.js (through unpdf), says it is ready, then reads
-   * the one PDF it is sent and posts back its text or the reason it has none.
+   * Where `unpdf` is on disk, resolved once by the server itself and handed
+   * to the worker as an absolute path. A worker started from source
+   * (`eval: true`) resolves a bare `require('unpdf')` from the process's
+   * working directory — in production `apps/lfx-one`, under the image's one
+   * hoisted `node_modules`, which works but only by that accident of cwd.
+   * Resolving from the server bundle first (`dist/lfx-one/server/` in
+   * production) ties the worker to the same copy the bundle was built from,
+   * wherever the process was started; the working directory is the fallback
+   * for the dev server, where `import.meta.url` is Vite's virtual root
+   * (pdf-template.helper). Undefined until first asked, null when neither
+   * resolves: every PDF is then `unsupported` without a worker starting.
+   */
+  private static unpdfPath: string | null | undefined;
+
+  /**
+   * The PDF worker: loads pdf.js (through unpdf, at the path it is started
+   * with), says it is ready, then reads the one PDF it is sent and posts back
+   * its text or the reason it has none.
    */
   private static readonly pdfWorkerSource = `
-    const { parentPort } = require('node:worker_threads');
-    require('unpdf').getResolvedPDFJS().then(({ getDocument }) => {
+    const { parentPort, workerData } = require('node:worker_threads');
+    require(workerData.unpdfPath).getResolvedPDFJS().then(({ getDocument }) => {
       parentPort.once('message', async ({ bytes, maxPages }) => {
         try {
           const pdf = await getDocument({ data: bytes, disableFontFace: true, verbosity: 0 }).promise;
@@ -79,6 +107,15 @@ export class MktgDocumentText {
    * @param maxMillis - A tighter wall-clock limit than the format's own (`maxPdfMillis`, `maxDocxMillis`)
    */
   public static async read(bytes: Buffer, maxMillis = Number.POSITIVE_INFINITY): Promise<MktgReadText> {
+    // Bytes only, settled here where they are searched: a request body that
+    // another parser left as a string or an array is not a document. The
+    // `typeof` test is the shape CodeQL's js/type-confusion-through-parameter-tampering
+    // query takes as settling string-versus-array (`Buffer.isBuffer` alone it
+    // does not read), so the body's taint stops here rather than at every
+    // `includes` and `indexOf` below.
+    if (typeof bytes !== 'object' || !Buffer.isBuffer(bytes)) {
+      return MktgDocumentText.none('unsupported');
+    }
     try {
       return await MktgDocumentText.readBytes(bytes, maxMillis);
     } catch {
@@ -127,8 +164,13 @@ export class MktgDocumentText {
    * PDF is `encrypted`; a scan is `no-text`.
    */
   private static async pdfText(bytes: Buffer, maxMillis: number): Promise<MktgReadText> {
+    const unpdfPath = MktgDocumentText.resolveUnpdf();
+    if (unpdfPath === null) {
+      return MktgDocumentText.none('unsupported');
+    }
     const worker = new Worker(MktgDocumentText.pdfWorkerSource, {
       eval: true,
+      workerData: { unpdfPath },
       resourceLimits: { maxOldGenerationSizeMb: MktgDocumentText.maxPdfHeapMb },
     });
     try {
@@ -150,6 +192,31 @@ export class MktgDocumentText {
     } finally {
       await worker.terminate();
     }
+  }
+
+  /** The absolute path `require('unpdf')` means from the server bundle, else from the working directory; null when neither has it. */
+  private static resolveUnpdf(): string | null {
+    if (MktgDocumentText.unpdfPath !== undefined) {
+      return MktgDocumentText.unpdfPath;
+    }
+    const roots: string[] = [];
+    try {
+      roots.push(dirname(fileURLToPath(import.meta.url)));
+    } catch {
+      // Not a file URL (a bundler's virtual module): the working directory is all there is.
+    }
+    roots.push(process.cwd());
+    MktgDocumentText.unpdfPath = null;
+    for (const root of roots) {
+      try {
+        // `createRequire` takes a file in the directory to resolve from; the file itself need not exist.
+        MktgDocumentText.unpdfPath = createRequire(join(root, 'resolve.cjs')).resolve('unpdf');
+        break;
+      } catch {
+        continue;
+      }
+    }
+    return MktgDocumentText.unpdfPath;
   }
 
   /** The worker's next message, or null when it fails, exits or stays silent for `millis`. */

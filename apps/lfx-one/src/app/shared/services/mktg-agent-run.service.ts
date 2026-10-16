@@ -39,6 +39,7 @@ import {
   switchMap,
   take,
   takeWhile,
+  tap,
   throwError,
   timer,
   TimeoutError,
@@ -355,7 +356,10 @@ export class MktgAgentRunService {
    * a poll is still in flight is dropped instead of cancelling it. With
    * `switchMap`, result-endpoint latency consistently above the interval would
    * abort every attempt before it resolved, timing out a multi-minute
-   * generation whose document may already be ready.
+   * generation whose document may already be ready. The deadline is checked
+   * on every tick BEFORE `exhaustMap`, so a poll that never answers (a
+   * stalled request has no timeout of its own) cannot hide the deadline
+   * behind it: the tick past it errors the stream and tears the request down.
    *
    * The run's project uid rides every poll: agents that persist their output
    * partition storage by the SERVER-resolved project and require the caller's
@@ -396,19 +400,21 @@ export class MktgAgentRunService {
         return true;
       };
       return timer(MKTG_RUN_POLL.initialDelayMs, MKTG_RUN_POLL.intervalMs).pipe(
-        exhaustMap(() => {
+        tap(() => {
           if (Date.now() > deadline) {
-            return throwError(() => new TimeoutError());
+            throw new TimeoutError();
           }
-          return this.http.post<MktgRunResultResponse>(intake.endpoints.result, body).pipe(
+        }),
+        exhaustMap(() =>
+          this.http.post<MktgRunResultResponse>(intake.endpoints.result, body).pipe(
             catchError((error: unknown) => {
               if (isTransientHttpError(error)) {
                 return of<MktgRunResultResponse>({ status: 'pending' });
               }
               return throwError(() => error);
             })
-          );
-        }),
+          )
+        ),
         takeWhile((result) => !isTerminal(result), true),
         filter((result) => isTerminal(result) || isNewActivity(result)),
         map((result) => ({ result, terminal: isTerminal(result) }))

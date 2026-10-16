@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
-import { Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -108,6 +108,8 @@ export class MktgAgentRunComponent {
   private readonly effectiveUser$ = toObservable(this.userService.user);
   /** In-flight generation — cancelled when the active project changes so a run can never land on another project. */
   private generationSub: Subscription | null = null;
+  /** The existing-documents section, when the intake has one and the form is on screen: its file reads are cancelled with the generation. */
+  private readonly documentsSection = viewChild(MktgIntakeDocumentsComponent);
   /** Deferred phase-set timer from completeRun — cleared on destroy so no timer outlives the view. */
   private phaseTimer: ReturnType<typeof setTimeout> | null = null;
   /** Reset timer for the transient "Copied" chip state — cleared on destroy. */
@@ -852,6 +854,8 @@ export class MktgAgentRunComponent {
 
     this.generationSub?.unsubscribe();
     this.generationSub = null;
+    // The answers POST was cut with it: its callbacks will never clear the flag, so the next questions step must not inherit it.
+    this.answersSending.set(false);
     this.run.set(null);
     this.viewVersion.set(null);
     this.phase.set('form');
@@ -864,6 +868,8 @@ export class MktgAgentRunComponent {
     this.filledFromMemoryApplied.set({});
     this.prefillAppliedValues.set({});
     this.copiedDerivative.set('');
+    // A file still being read for the previous context must not land in this one: the section stays mounted, so its reads are cancelled here.
+    this.documentsSection()?.cancelReads();
     this.documents.set([]);
     this.askedExpanded.set(false);
     this.activeRequest = null;

@@ -28,10 +28,18 @@ export function sourceUrlValidator(options: { list?: boolean } = {}): ValidatorF
   };
 }
 
-/** One `https://` link with no whitespace inside it. */
+/**
+ * One `https://` link with no whitespace inside it. The prefix is checked on
+ * the value as typed, because that is what is submitted: `new URL` repairs
+ * `https:example.org` to a valid URL, but the BFF reads the literal value and
+ * refuses it.
+ */
 function isHttpsLink(value: string): boolean {
+  if (!value.startsWith('https://') || /\s/.test(value)) {
+    return false;
+  }
   try {
-    return new URL(value).protocol === 'https:' && !/\s/.test(value);
+    return new URL(value).protocol === 'https:';
   } catch {
     return false;
   }

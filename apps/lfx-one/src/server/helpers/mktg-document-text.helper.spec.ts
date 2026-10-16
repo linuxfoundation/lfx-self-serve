@@ -123,8 +123,9 @@ describe('MktgDocumentText.read — PDF', () => {
     let read: Awaited<ReturnType<typeof MktgDocumentText.read>> | undefined;
 
     expect(heavy.length).toBeLessThan(200 * 1024);
+    // A caller's tighter budget: inflating the stream takes seconds, so the default would let it finish (to no text).
     const stall = await longestStall(async () => {
-      read = await MktgDocumentText.read(heavy);
+      read = await MktgDocumentText.read(heavy, 200);
     });
     expect(read?.reason).toBe('too-complex');
     expect(stall).toBeLessThan(300);
@@ -199,5 +200,10 @@ describe('MktgDocumentText.read — Word and text', () => {
   it('keeps Markdown and plain text as written, and refuses binary data', async () => {
     expect((await MktgDocumentText.read(Buffer.from('﻿# Notes\r\n\r\nKeep <b>this</b>.', 'utf8'))).text).toBe('# Notes\n\nKeep <b>this</b>.');
     expect((await MktgDocumentText.read(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01]))).reason).toBe('unsupported');
+  });
+
+  it('reads bytes only: a body another parser left as a string or an array is unsupported, not searched', async () => {
+    expect((await MktgDocumentText.read('%PDF-1.4' as unknown as Buffer)).reason).toBe('unsupported');
+    expect((await MktgDocumentText.read(['PK\u0003\u0004'] as unknown as Buffer)).reason).toBe('unsupported');
   });
 });

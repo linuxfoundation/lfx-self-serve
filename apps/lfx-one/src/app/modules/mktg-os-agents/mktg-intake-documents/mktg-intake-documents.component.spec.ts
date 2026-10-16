@@ -80,6 +80,23 @@ describe('MktgIntakeDocumentsComponent', () => {
     expect(component.documents()).toEqual([expect.objectContaining({ kind: 'file', title: 'notes.md', text: '# Notes', read: true })]);
   });
 
+  it('drops a read in flight when its reads are cancelled: the file never lands, and the section is no longer busy', async () => {
+    const response = new Subject<MktgDocumentExtractResponse>();
+    readFile.mockReturnValue(response.asObservable());
+
+    component['onFilesSelected'](fileEvent(new File(['# Notes'], 'notes.md')));
+    expect(component.busy()).toBe(true);
+
+    component.cancelReads();
+    response.next({ title: 'notes.md', read: true, words: 1, truncated: false, text: '# Notes' });
+    response.complete();
+    await fixture.whenStable();
+
+    expect(component.documents()).toEqual([]);
+    expect(component.busy()).toBe(false);
+    expect(component['errorText']()).toBe('');
+  });
+
   it('refuses a file type it cannot read before uploading it, and never adds a file with no text', async () => {
     component['onFilesSelected'](fileEvent(new File(['x'], 'deck.pptx')));
     expect(readFile).not.toHaveBeenCalled();

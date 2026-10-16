@@ -8,10 +8,18 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
-import { FOUNDATION_MESSAGE_READ_REASONS, MKTG_AGENT_INTAKES, MKTG_AGENTS, MKTG_INTAKE_FORMAT_ERRORS, MKTG_README_SKIP_NOTES } from '@lfx-one/shared/constants';
+import {
+  FOUNDATION_MESSAGE_ANSWER_MAX_CHARS,
+  FOUNDATION_MESSAGE_READ_REASONS,
+  MKTG_AGENT_INTAKES,
+  MKTG_AGENTS,
+  MKTG_INTAKE_FORMAT_ERRORS,
+  MKTG_README_SKIP_NOTES,
+} from '@lfx-one/shared/constants';
 import {
   MktgAnswerMemory,
   MktgDependencyDocument,
+  MktgDocumentExtractResponse,
   MktgGenerateProgress,
   MktgGenerateRequest,
   MktgRunAnswer,
@@ -30,9 +38,10 @@ import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
-import { concat, from, NEVER, of, throwError } from 'rxjs';
+import { concat, from, NEVER, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MktgIntakeDocumentsComponent } from '../mktg-intake-documents/mktg-intake-documents.component';
 import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questions.component';
 import { MktgAgentRunComponent } from './mktg-agent-run.component';
 
@@ -67,6 +76,7 @@ describe('MktgAgentRunComponent', () => {
   let resolveDependencies: ReturnType<typeof vi.fn>;
   let rememberAnswers: ReturnType<typeof vi.fn>;
   let notifyDocumentsChanged: ReturnType<typeof vi.fn>;
+  let readFile: ReturnType<typeof vi.fn>;
 
   const storedRun = (projectUid: string, document: string, answers: Record<string, string>): MktgStoredAgentRun => ({
     agentId: 'brand-kit',
@@ -102,6 +112,7 @@ describe('MktgAgentRunComponent', () => {
     rememberedAnswers = {};
     rememberAnswers = vi.fn();
     notifyDocumentsChanged = vi.fn();
+    readFile = vi.fn();
     // Stored runs are keyed per agent: `<projectUid>` alone keeps the legacy
     // brand-kit fixtures working, `<projectUid>:<agentId>` scopes when a test
     // needs both the page agent's run AND a dependency source run.
@@ -128,7 +139,7 @@ describe('MktgAgentRunComponent', () => {
         { provide: UserService, useValue: { user: userSignal } },
         { provide: MktgAgentRunService, useValue: { loadRun, generate, answerQuestions } },
         { provide: MktgDependencyService, useValue: { resolveDependencies, notifyDocumentsChanged } },
-        { provide: MktgIntakeDocumentsService, useValue: { readFile: vi.fn() } },
+        { provide: MktgIntakeDocumentsService, useValue: { readFile } },
         {
           provide: MktgAnswerMemoryService,
           useValue: { load: (projectUid: string): MktgAnswerMemory => rememberedAnswers[projectUid] ?? {}, remember: rememberAnswers },
@@ -732,6 +743,26 @@ describe('MktgAgentRunComponent', () => {
       ]);
     });
 
+    it('never attaches a file picked for one project to another: a project switch cancels the read still in flight', async () => {
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      const response = new Subject<MktgDocumentExtractResponse>();
+      readFile.mockReturnValue(response.asObservable());
+      const section = fixture.debugElement.query(By.directive(MktgIntakeDocumentsComponent)).componentInstance as MktgIntakeDocumentsComponent;
+      section['onFilesSelected']({ originalEvent: new Event('change'), files: [new File(['Brand guide.'], 'brand.md')], currentFiles: [] });
+      expect(component['documentsBusy']()).toBe(true);
+
+      activeContext.set(PROJECT_2);
+      await fixture.whenStable();
+      // Project One's file answers after the switch.
+      response.next({ title: 'brand.md', read: true, words: 2, truncated: false, text: 'Brand guide.' });
+      response.complete();
+      await fixture.whenStable();
+
+      expect(component['documents']()).toEqual([]);
+      expect(component['documentsBusy']()).toBe(false);
+    });
+
     describe('the live feed — what the agent does, in plain words, while it works', () => {
       it('shows each step as it is reported, and switches to writing once the answers went back', async () => {
         activeContext.set(PROJECT_1);
@@ -838,6 +869,32 @@ describe('MktgAgentRunComponent', () => {
         await click('mktg-run-questions-send');
         expect(query('mktg-run-questions-error-tagline_ctas_constraints')?.textContent).toContain('TBD');
         expect(answerQuestions).not.toHaveBeenCalled();
+      });
+
+      it('refuses an answer longer than the answers turn takes before sending, naming the limit', async () => {
+        await type('audiences', 'a'.repeat(FOUNDATION_MESSAGE_ANSWER_MAX_CHARS + 1));
+        await click('mktg-run-questions-next');
+        expect(query('mktg-run-questions-error-audiences')?.textContent).toContain('4,000 characters');
+        expect(query('mktg-run-questions-progress')?.textContent).toContain('Question 1 of 2');
+
+        // Exactly the cap stands.
+        await type('audiences', 'a'.repeat(FOUNDATION_MESSAGE_ANSWER_MAX_CHARS));
+        await click('mktg-run-questions-next');
+        expect(query('mktg-run-questions-progress')?.textContent).toContain('Question 2 of 2');
+        expect(answerQuestions).not.toHaveBeenCalled();
+      });
+
+      it('lets the next run send its answers after a project switch cut the answers POST short', async () => {
+        // The POST is still out: nothing has come back to clear the flag.
+        answerQuestions.mockReturnValue(NEVER);
+        await sendWith('No tagline is locked.');
+        expect(component['answersSending']()).toBe(true);
+
+        activeContext.set(PROJECT_2);
+        await fixture.whenStable();
+
+        expect(component['answersSending']()).toBe(false);
+        expect(component['phase']()).toBe('form');
       });
 
       it('sends every answer with its origin from the last question, on the same run, and shows the document with what was asked', async () => {

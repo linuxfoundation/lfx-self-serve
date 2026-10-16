@@ -16,6 +16,8 @@ describe('sourceUrlValidator', () => {
     expect(validate('https://search.example.org/about')).toBeNull();
     expect(validate('http://search.example.org')).toEqual({ sourceUrl: { reason: 'unrecognized' } });
     expect(validate('search.example.org')).toEqual({ sourceUrl: { reason: 'unrecognized' } });
+    // `new URL` would repair this one; the BFF reads it as typed and refuses it, so the form must too.
+    expect(validate('https:search.example.org')).toEqual({ sourceUrl: { reason: 'unrecognized' } });
     expect(validate('https://a.example.org https://b.example.org')).toEqual({ sourceUrl: { reason: 'unrecognized' } });
   });
 

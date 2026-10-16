@@ -610,7 +610,13 @@ export class MktgAgentsController {
 
       const read = await this.mktgSourceTextService.readFile(req, fileName, file, FOUNDATION_MESSAGE_DOCUMENT_MAX_CHARS);
       const response = this.extractResponse(fileName, read);
-      logger.success(req, operation, startTime, { extension: fileName.slice(fileName.lastIndexOf('.')), size_bytes: file.byteLength, read: response.read });
+      // The reason a file was not read rides the log with the operation's duration, so a read limit that bites can be seen and tuned.
+      logger.success(req, operation, startTime, {
+        extension: fileName.slice(fileName.lastIndexOf('.')),
+        size_bytes: file.byteLength,
+        read: response.read,
+        ...(read.reason && { reason: read.reason }),
+      });
       res.json(response);
     } catch (error) {
       next(error);
