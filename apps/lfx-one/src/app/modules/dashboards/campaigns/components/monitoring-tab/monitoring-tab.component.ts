@@ -702,8 +702,7 @@ export class MonitoringTabComponent implements OnInit {
       if (read.loading) return `Loading ${read.label} campaigns`;
       if (read.error || !read.loaded) return '';
       const count = read.campaigns;
-      const shown =
-        count === 0 ? `No ${read.label} campaigns found for this account.` : `${read.label}: ${count} ${count === 1 ? 'campaign' : 'campaigns'} shown.`;
+      const shown = count === 0 ? read.emptyMessage : `${read.label}: ${count} ${count === 1 ? 'campaign' : 'campaigns'} shown.`;
       return read.note ? `${shown} ${read.note}` : shown;
     });
   }
@@ -717,6 +716,7 @@ export class MonitoringTabComponent implements OnInit {
           error: this.linkedInError(),
           loaded: this.linkedInData() !== null,
           campaigns: this.linkedInCampaigns().length,
+          emptyMessage: 'No active LinkedIn campaigns found for this account.',
           note: this.linkedInTotalsNote(),
         };
       case 'reddit':
@@ -726,6 +726,7 @@ export class MonitoringTabComponent implements OnInit {
           error: this.redditError(),
           loaded: this.redditData() !== null,
           campaigns: this.redditCampaigns().length,
+          emptyMessage: 'No active Reddit campaigns found for this account.',
           note: this.redditTotalsNote(),
         };
       case 'meta':
@@ -735,6 +736,7 @@ export class MonitoringTabComponent implements OnInit {
           error: this.metaError(),
           loaded: this.metaData() !== null,
           campaigns: this.metaCampaigns().length,
+          emptyMessage: 'No active Meta campaigns found for this account.',
           note: this.metaTotalsNote(),
         };
       default:
@@ -744,6 +746,7 @@ export class MonitoringTabComponent implements OnInit {
           error: this.reportBackedError(),
           loaded: this.reportBackedData() !== null,
           campaigns: this.reportBackedCampaigns().length,
+          emptyMessage: `No ${this.reportBackedLabel()} campaigns found for this account.`,
           note: this.reportBackedTotalsNote(),
         };
     }

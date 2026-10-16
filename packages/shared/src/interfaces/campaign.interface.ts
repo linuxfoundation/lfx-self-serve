@@ -2943,6 +2943,8 @@ export interface AccountMonitorPanelReadState {
   /** A read has answered, so `campaigns` and `note` describe what the panel shows. */
   loaded: boolean;
   campaigns: number;
+  /** What the panel's visible empty state says, repeated verbatim so both audiences hear the same claim. */
+  emptyMessage: string;
   /** The panel's totals-coverage note, or null when the totals cover every campaign. */
   note: string | null;
 }
