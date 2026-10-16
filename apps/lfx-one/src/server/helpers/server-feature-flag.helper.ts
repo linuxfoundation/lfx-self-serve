@@ -231,11 +231,11 @@ export enum ServerFeatureFlag {
    *
    * Two SETS live here and conflating them invites deleting a guard that is doing its job:
    * campaign-service implements a toggle dispatcher for every paid platform upstream, but what
-   * this flag exposes is only the non-disabled entries of `CAMPAIGN_PLATFORMS` — a platform can be
-   * dispatchable upstream and simply not offered by this app (X is, today). Deliberately not
-   * stated as a count: the roster changes whenever a `disabled` flag flips — LFXV2-3312 enabled
-   * Microsoft — and a number here goes stale silently. See
-   * `CAMPAIGN_SERVICE_STATUS_PLATFORMS` for why the narrowing is deliberate.
+   * this flag exposes is the shared `TOGGLEABLE_CAMPAIGN_PLATFORMS` (create-enabled plus
+   * adoptable platforms) — a platform can be dispatchable upstream and not reachable here.
+   * Deliberately not stated as a count: the roster changes as platforms are enabled or become
+   * adoptable, and a number here goes stale silently. See `CAMPAIGN_SERVICE_STATUS_PLATFORMS`
+   * for why the narrowing is deliberate.
    *
    * MISROUTING IS IMPOSSIBLE HERE, unlike `CampaignServiceJobs`, and the reason is worth stating
    * because that flag's hazard looks identical. Routing depends on the campaign id's SHAPE as

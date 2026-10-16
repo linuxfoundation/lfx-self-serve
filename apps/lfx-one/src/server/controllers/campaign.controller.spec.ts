@@ -5123,18 +5123,10 @@ describe('CampaignController.updateCampaignStatus', () => {
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ newStatus: 'PAUSED', serviceStatus: 'created_degraded' }));
   });
 
-  // Found by mutation: deleting `.filter((p) => !p.disabled)` from
-  // CAMPAIGN_SERVICE_STATUS_PLATFORMS left all 77 tests green, silently admitting microsoft-ads
-  // and twitter-ads. The filter is the entire subject of that constant's doc block, so nothing
-  // pinned the one thing it claims to do — this is the test that makes the claim binding.
-  //
-  // Narrowed to twitter-ads by LFXV2-3312, which ENABLED Microsoft: the set is derived from
-  // `!p.disabled`, so dropping that flag in the shared constant admits microsoft-ads here by
-  // design. X stays disabled for a capability reason rather than a plumbing one, so it remains
-  // the subject — and the mutation this test was born from still fails, because admitting X is
-  // still wrong. The companion case below asserts the other half: that Microsoft is now ALLOWED,
-  // so a future re-disabling cannot pass silently either.
-  it.each([['twitter-ads']])('refuses %s, which this app does not offer', async (platform) => {
+  // CAMPAIGN_SERVICE_STATUS_PLATFORMS is derived from the shared TOGGLEABLE_CAMPAIGN_PLATFORMS,
+  // which now covers every paid platform. A platform outside it is still refused before a round
+  // trip; `hubspot` is the real one, since an email send has no run state to pause.
+  it.each([['hubspot'], ['tiktok-ads']])('refuses %s, which this app cannot toggle', async (platform) => {
     await controller.updateCampaignStatus(statusReq(UUID, { platform, status: 'PAUSED', briefId: 'b-1', etag: '1' }), res, next);
 
     expect(toggleCampaignStatus).not.toHaveBeenCalled();
@@ -5143,14 +5135,45 @@ describe('CampaignController.updateCampaignStatus', () => {
   });
 
   it('allows a Microsoft status toggle now that the channel is enabled', async () => {
-    // The other half of the narrowed allowlist spec above: CAMPAIGN_SERVICE_STATUS_PLATFORMS is
-    // DERIVED from `!p.disabled`, so re-adding `disabled: true` to the shared constant would make
-    // pause unreachable for a channel the UI offers. This fails if that happens.
     toggleCampaignStatus.mockResolvedValue({ id: UUID, status: 'paused', version: 2, etag: '2' });
 
     await controller.updateCampaignStatus(statusReq(UUID, { platform: 'microsoft-ads', status: 'PAUSED', briefId: 'b-1', etag: '1' }), res, next);
 
     expect(toggleCampaignStatus).toHaveBeenCalledTimes(1);
+  });
+
+  // X's CREATE stays disabled, but an adopted X campaign is live and spending, so its toggle is
+  // forwarded like any other platform's. This fails if the allowlist is re-tied to the create flag.
+  it('forwards an X status change to campaign-service', async () => {
+    toggleCampaignStatus.mockResolvedValue({ id: UUID, platform: 'twitter-ads', status: 'paused', version: 2, etag: '2' });
+
+    await controller.updateCampaignStatus(statusReq(UUID, { platform: 'twitter-ads', status: 'PAUSED', briefId: 'b-1', etag: '1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(toggleCampaignStatus).toHaveBeenCalledWith(expect.anything(), {
+      projectSlug: 'tlf',
+      briefId: 'b-1',
+      campaignId: UUID,
+      status: 'PAUSED',
+      etag: '1',
+    });
+    expect(logger.warning).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ platform: 'twitter-ads', newStatus: 'PAUSED', success: true, etag: '2' }));
+  });
+
+  // Upstream refuses ACTIVE on every adopted row with 409, and a stale If-Match with 412. An X
+  // refusal must reach the error handler unchanged, exactly as any other platform's does.
+  it.each([
+    [409, 'campaign was adopted; activate it in the platform console'],
+    [412, 'ETag mismatch'],
+  ])('passes an upstream %s on an X toggle to the error handler unchanged', async (status, message) => {
+    const upstream = new MicroserviceError(message, status, 'UPSTREAM', { errorBody: { code: String(status), message } });
+    toggleCampaignStatus.mockRejectedValue(upstream);
+
+    await controller.updateCampaignStatus(statusReq(UUID, { platform: 'twitter-ads', status: 'ACTIVE', briefId: 'b-1', etag: '1' }), res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(upstream);
   });
 
   // Also found by mutation: dropping `.trim()` left these green. A whitespace-only etag then
@@ -5182,12 +5205,11 @@ describe('CampaignController.updateCampaignStatus', () => {
   // and logged rather than refused. The response still reports the row's platform, so the caller
   // is not told their label was accepted.
   //
-  // The example row platform is `twitter-ads` rather than `microsoft-ads` as of LFXV2-3312:
-  // Microsoft is now an OFFERED platform, so using it here would assert the warning on a row this
-  // app does offer and the test would be checking the opposite of its own name. X is still
-  // disabled, so it remains a true example of the case this guard describes.
+  // The example row platform is `hubspot`: every paid platform is now toggleable (X joined for its
+  // adopted campaigns), so only a non-paid row is still a true example of the case this guard
+  // describes.
   it('logs when the toggled row is a platform this app does not offer', async () => {
-    toggleCampaignStatus.mockResolvedValue({ id: UUID, platform: 'twitter-ads', status: 'paused', version: 2, etag: '2' });
+    toggleCampaignStatus.mockResolvedValue({ id: UUID, platform: 'hubspot', status: 'paused', version: 2, etag: '2' });
 
     await controller.updateCampaignStatus(statusReq(UUID, { platform: 'google-ads', status: 'PAUSED', briefId: 'b-1', etag: '1' }), res, next);
 
@@ -5195,9 +5217,9 @@ describe('CampaignController.updateCampaignStatus', () => {
       expect.anything(),
       'campaign_status_update',
       expect.stringContaining('does not offer'),
-      expect.objectContaining({ requestedPlatform: 'google-ads', rowPlatform: 'twitter-ads' })
+      expect.objectContaining({ requestedPlatform: 'google-ads', rowPlatform: 'hubspot' })
     );
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ platform: 'twitter-ads' }));
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ platform: 'hubspot' }));
   });
 
   it('does not log the platform warning for an offered platform', async () => {

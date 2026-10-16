@@ -74,6 +74,8 @@ import {
   CAMPAIGN_UNAVAILABLE_DEFAULT_REASON,
   CAMPAIGN_UNAVAILABLE_DEPLOYMENT_REASON,
   CAMPAIGN_UNAVAILABLE_PLATFORM_REASON,
+  CAMPAIGN_UNAVAILABLE_RESUME_PLATFORM_REASON,
+  campaignResumeWithheldForPlatform,
   CAMPAIGN_UNAVAILABLE_REASONS,
   DEFAULT_CAMPAIGN_BID_TYPE,
   KEYWORD_ACTION_OUTCOME_CLASSES,
@@ -689,7 +691,7 @@ export class OptimizationTabComponent implements OnInit {
         status,
         action,
         conflicted,
-        unavailableReason: action === 'unavailable' ? this.unavailableReasonFor(status, deploymentDisabled, platformUnsupported) : '',
+        unavailableReason: action === 'unavailable' ? this.unavailableReasonFor(status, deploymentDisabled, platformUnsupported, campaign.platform) : '',
         toggleLabel: CAMPAIGN_TOGGLE_LABELS[action],
         describedBy: this.describedByFor(campaign.id, action, toggleErrors),
         budgetAvailable: budgetUnavailableReason === '',
@@ -2683,12 +2685,15 @@ export class OptimizationTabComponent implements OnInit {
    * Ordered `if`s rather than a chained ternary: the repo forbids nested ternaries, and the
    * precedence is the whole point of this function rather than an incidental shape.
    */
-  private unavailableReasonFor(status: string, deploymentDisabled: boolean, platformUnsupported: boolean): string {
+  private unavailableReasonFor(status: string, deploymentDisabled: boolean, platformUnsupported: boolean, platform: string): string {
     if (deploymentDisabled) {
       return CAMPAIGN_UNAVAILABLE_DEPLOYMENT_REASON;
     }
     if (platformUnsupported) {
       return CAMPAIGN_UNAVAILABLE_PLATFORM_REASON;
+    }
+    if (campaignResumeWithheldForPlatform(status, platform)) {
+      return CAMPAIGN_UNAVAILABLE_RESUME_PLATFORM_REASON;
     }
     // `status` arrives normalized from `campaignRows`; no `.toLowerCase()` here, which is
     // exactly the call that threw on a non-string wire value.

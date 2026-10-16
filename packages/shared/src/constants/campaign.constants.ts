@@ -299,8 +299,9 @@ export function normalizeCampaignStatus(status: string): string {
  */
 export function campaignToggleAction(status: string, platform?: string): CampaignToggleAction {
   // Platform is checked FIRST and independently of status, because it is the stronger refusal:
-  // a `created` Microsoft row is pausable upstream but not through this app's BFF, so deciding on
-  // status alone would hand it an enabled button whose every click 400s on the platform check.
+  // a `created` row on a platform outside `TOGGLEABLE_CAMPAIGN_PLATFORMS` is refused by the BFF's
+  // platform check, so deciding on status alone would hand it an enabled button whose every click
+  // 400s.
   //
   // An ABSENT platform is not treated as unsupported. `platform` is optional so the status-only
   // question stays askable, and a row whose platform this UI cannot read must not be silently
@@ -325,7 +326,8 @@ export function campaignToggleAction(status: string, platform?: string): Campaig
     return 'pause';
   }
   if (RESUMABLE_CAMPAIGN_STATUSES.has(normalized)) {
-    return 'resume';
+    // A pause-only platform (adopted X rows) would 409 on every Resume click — withheld instead.
+    return platform !== undefined && PAUSE_ONLY_CAMPAIGN_PLATFORMS.has(platform) ? 'unavailable' : 'resume';
   }
   return 'unavailable';
 }
@@ -354,20 +356,59 @@ export const CAMPAIGN_UNAVAILABLE_DEFAULT_REASON = 'This campaign is not in a st
 /**
  * The platforms whose campaigns this app can actually toggle.
  *
- * DERIVED from `CAMPAIGN_PLATFORMS` rather than hand-listed, and it is the same derivation the
- * BFF performs for `CAMPAIGN_SERVICE_STATUS_PLATFORMS` (`campaign.controller.ts`) — one shared
- * rule, so the control the UI offers and the request the server accepts cannot drift apart. A
- * platform joins by flipping `disabled` in the constant above, which is one edit rather than
- * three.
+ * Deliberately NOT derived from `CAMPAIGN_PLATFORMS`' `disabled` flag. That flag gates the CREATE
+ * flow, and a campaign reaches this app either by being created here or by being ADOPTED
+ * (`CAMPAIGN_ADOPT_PLATFORMS`). X is the case that splits them: its create stays disabled, but an
+ * adopted X campaign is live and spending, and campaign-service's status toggle serves X. Tying
+ * pause to create would leave that spend with no stop button in LFX One.
  *
- * `disabled: true` entries (currently X only, since LFXV2-3312 enabled Microsoft) have working
- * toggle dispatchers upstream,
- * so status alone says a `created`/`active` row of theirs is pausable. It is not pausable HERE:
- * the BFF refuses the platform outright, so the row's Pause button could only ever fail. Status
- * and platform are therefore two independent reasons a toggle is unavailable, and the row must
- * consider both.
+ * So the set is the create-enabled platforms plus the adoptable ones, listed explicitly because
+ * `CAMPAIGN_ADOPT_PLATFORMS` lives in `campaign-optimize.constants`, which imports this file. The
+ * shared constants spec pins it to exactly that union, so enabling a create platform or adding an
+ * adopt platform without updating this list goes red. The BFF's `CAMPAIGN_SERVICE_STATUS_PLATFORMS`
+ * (`campaign.controller.ts`) is derived from this set, so the control the UI offers and the
+ * request the server accepts cannot drift apart.
+ *
+ * Note an adopted row can be PAUSED but not resumed through LFX One: campaign-service refuses
+ * `ACTIVE` on every adopted row with 409 (it never recorded the child ids its cascade flips). Since
+ * X create is disabled, that is every X row today, so X is in `PAUSE_ONLY_CAMPAIGN_PLATFORMS` and
+ * its Resume is withheld with `CAMPAIGN_UNAVAILABLE_RESUME_PLATFORM_REASON` rather than offered as
+ * a button whose every click fails.
  */
-export const TOGGLEABLE_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<string>(CAMPAIGN_PLATFORMS.filter((p) => !p.disabled).map((p) => p.id));
+export const TOGGLEABLE_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<string>([
+  'google-ads',
+  'microsoft-ads',
+  'linkedin-ads',
+  'meta-ads',
+  'reddit-ads',
+  'twitter-ads',
+] satisfies CampaignPlatform[]);
+
+/**
+ * Toggleable platforms whose campaigns LFX One can pause but not resume.
+ *
+ * X: its create is disabled, so every X row is adopted, and campaign-service refuses `ACTIVE` on
+ * every adopted row with 409. Offering Resume there would be a dead control on a spend-affecting
+ * action, so `campaignToggleAction` answers `unavailable` for a resumable X row and the row says
+ * where to resume it instead. Remove X from this set once X create ships (rows it creates resume).
+ */
+export const PAUSE_ONLY_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<string>(['twitter-ads'] satisfies CampaignPlatform[]);
+
+/** Why a paused row on a `PAUSE_ONLY_CAMPAIGN_PLATFORMS` platform offers no Resume. */
+export const CAMPAIGN_UNAVAILABLE_RESUME_PLATFORM_REASON = 'Resume is not available for X campaigns in LFX One yet. Resume it in X Ads Manager.';
+
+/**
+ * Whether `campaignToggleAction` withheld Resume for this row's platform: the status would offer
+ * Resume, but the platform is pause-only. Lets a caller give the platform's reason instead of a
+ * status one, which would wrongly suggest the campaign's state is the problem.
+ */
+export function campaignResumeWithheldForPlatform(status: string, platform?: string): boolean {
+  if (platform === undefined || !PAUSE_ONLY_CAMPAIGN_PLATFORMS.has(platform)) {
+    return false;
+  }
+  const normalized = normalizeCampaignStatus(status);
+  return !RUNNING_CAMPAIGN_STATUSES.has(normalized) && RESUMABLE_CAMPAIGN_STATUSES.has(normalized);
+}
 
 /**
  * Why a row's toggle is disabled because of its PLATFORM rather than its status.

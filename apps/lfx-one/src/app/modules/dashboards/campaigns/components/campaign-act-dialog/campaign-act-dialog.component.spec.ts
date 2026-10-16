@@ -16,6 +16,7 @@ import {
   CAMPAIGN_BUDGET_X_LIFETIME_REASON,
   CAMPAIGN_ETAG_STALE_MESSAGE,
   CAMPAIGN_UNAVAILABLE_DEPLOYMENT_REASON,
+  CAMPAIGN_UNAVAILABLE_RESUME_PLATFORM_REASON,
 } from '@lfx-one/shared/constants';
 import type {
   CampaignActDialogData,
@@ -234,6 +235,14 @@ describe('CampaignActDialogComponent (#3299)', () => {
 
     expect(q('campaign-act-dialog-toggle')).toBeNull();
     expect(q('campaign-act-dialog-toggle-unavailable')?.textContent).toContain(CAMPAIGN_UNAVAILABLE_DEPLOYMENT_REASON);
+  });
+
+  // Every X row is adopted while X create is off, and upstream 409s ACTIVE on an adopted row.
+  it('withholds Resume on a paused X campaign, saying where to resume it', async () => {
+    await setup({}, { campaign: { ...CAMPAIGN, platform: 'twitter-ads', status: 'paused' } });
+
+    expect(q('campaign-act-dialog-toggle')).toBeNull();
+    expect(q('campaign-act-dialog-toggle-unavailable')?.textContent).toContain(CAMPAIGN_UNAVAILABLE_RESUME_PLATFORM_REASON);
   });
 
   it('offers the bid editor for a LinkedIn campaign and sends the bid with the record ETag', async () => {
