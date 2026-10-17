@@ -39,6 +39,9 @@ import {
   CAMPAIGN_BID_OUTCOME_UNCONFIRMED,
   CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED,
   CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED,
+  GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
+  GOOGLE_ADS_MAX_CALLOUTS,
+  GOOGLE_ADS_MAX_FINAL_URL_BYTES,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   JOB_LOST_MESSAGE,
 } from '@lfx-one/shared/constants';
@@ -1255,6 +1258,116 @@ describe('fromBriefResponse', () => {
     const keywords = [{ term: '  ' }, 'kubecon', { term: 'cloud native', matchType: 'Fuzzy', intentLevel: 'Urgent' }];
 
     expect(fromBriefResponse(storedBrief({ keywords }))?.keywords).toEqual([{ term: 'cloud native', matchType: 'Broad', intentLevel: 'Medium', notes: '' }]);
+  });
+
+  // The Implementation tab seeds both extension editors on `!== undefined`, so this is the one
+  // field pair where absent and empty must NOT collapse: returning `[]` for a brief written before
+  // extension generation shipped would clear an editor the operator had typed into rather than
+  // leave it alone. `toBriefInput` writes `null` for a brief that carries no list, which is what
+  // lands here.
+  it.each([
+    ['an absent googleCallouts', undefined],
+    ['a null googleCallouts', null],
+    ['a non-array googleCallouts', 'Free Admission'],
+  ])('restores %s as absent, not as an empty list', (_label, googleCallouts) => {
+    expect(fromBriefResponse(storedBrief({ copy: { googleCallouts } }))?.googleCallouts).toBeUndefined();
+  });
+
+  // The other side of the same distinction: a list the generator shaped away to nothing WAS
+  // recorded, and comes back as the empty list rather than as absent.
+  it('restores a stored empty callout list as an empty list', () => {
+    expect(fromBriefResponse(storedBrief({ copy: { googleCallouts: [] } }))?.googleCallouts).toEqual([]);
+  });
+
+  // Bounded by the same rules the editor applies on an add, so a row written by an older build or
+  // another client cannot open the editor holding entries it would refuse the operator for typing.
+  it('bounds, trims and de-duplicates a stored callout list the way the editor would', () => {
+    const googleCallouts = ['  Free To Attend  ', 'free to attend', 42, '', 'A'.repeat(GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES + 5)];
+
+    expect(fromBriefResponse(storedBrief({ copy: { googleCallouts } }))?.googleCallouts).toEqual([
+      'Free To Attend',
+      'A'.repeat(GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES),
+    ]);
+  });
+
+  // The cap is the editor's own: it refuses an add past the maximum rather than growing, so a
+  // longer stored list is filled to the cap and the overflow left out.
+  it('fills a stored callout list to the cap and drops the overflow', () => {
+    const googleCallouts = Array.from({ length: GOOGLE_ADS_MAX_CALLOUTS + 5 }, (_unused, i) => `Callout ${i}`);
+
+    expect(fromBriefResponse(storedBrief({ copy: { googleCallouts } }))?.googleCallouts).toHaveLength(GOOGLE_ADS_MAX_CALLOUTS);
+  });
+
+  it.each([
+    ['an absent googleSitelinks', undefined],
+    ['a null googleSitelinks', null],
+    ['a non-array googleSitelinks', 'View the Agenda'],
+  ])('restores %s as absent, not as an empty list', (_label, googleSitelinks) => {
+    expect(fromBriefResponse(storedBrief({ copy: { googleSitelinks } }))?.googleSitelinks).toBeUndefined();
+  });
+
+  // `finalUrl` lands in an href the operator clicks and in an ad's destination, and `copy` is an
+  // opaque blob upstream never validated — so the scheme is re-checked here rather than trusted
+  // because this app only ever writes URLs `verifyPageLink` confirmed.
+  it.each([
+    ['a javascript: destination', 'javascript:alert(1)'],
+    ['a data: destination', 'data:text/html,<p>x</p>'],
+    ['a relative destination', '/agenda'],
+    ['an unparseable destination', 'not a url'],
+    ['a missing destination', undefined],
+  ])('drops a sitelink with %s', (_label, finalUrl) => {
+    const googleSitelinks = [
+      { text: 'View the Agenda', finalUrl },
+      { text: 'Venue & Travel', finalUrl: 'https://example.test/venue' },
+    ];
+
+    expect(fromBriefResponse(storedBrief({ copy: { googleSitelinks } }))?.googleSitelinks).toEqual([
+      { text: 'Venue & Travel', finalUrl: 'https://example.test/venue' },
+    ]);
+  });
+
+  // The byte cap is the editor's add-guard and the controller's dispatch check; without it here a
+  // stored row would open the editor holding a chip the operator could not have typed and could not
+  // submit. Bytes of the encoded URL, so the boundary is asserted on both sides of the cap.
+  it('drops a stored sitelink whose finalUrl is over the byte cap and keeps one exactly at it', () => {
+    const prefix = 'https://example.test/';
+    const atCap = prefix + 'a'.repeat(GOOGLE_ADS_MAX_FINAL_URL_BYTES - prefix.length);
+    const overCap = `${atCap}a`;
+    const googleSitelinks = [
+      { text: 'View the Agenda', finalUrl: overCap },
+      { text: 'Venue & Travel', finalUrl: atCap },
+    ];
+
+    expect(fromBriefResponse(storedBrief({ copy: { googleSitelinks } }))?.googleSitelinks).toEqual([{ text: 'Venue & Travel', finalUrl: atCap }]);
+  });
+
+  // De-duplicated on the LABEL, which is the editor's guard and upstream's rule: Google Ads
+  // refuses duplicate sitelink text and is indifferent to two labels sharing one URL.
+  it('de-duplicates stored sitelinks on their label, not their destination', () => {
+    const googleSitelinks = [
+      { text: 'View the Agenda', finalUrl: 'https://example.test/agenda' },
+      { text: 'view the agenda', finalUrl: 'https://example.test/schedule' },
+      { text: 'Venue & Travel', finalUrl: 'https://example.test/agenda' },
+    ];
+
+    expect(fromBriefResponse(storedBrief({ copy: { googleSitelinks } }))?.googleSitelinks).toEqual([
+      { text: 'View the Agenda', finalUrl: 'https://example.test/agenda' },
+      { text: 'Venue & Travel', finalUrl: 'https://example.test/agenda' },
+    ]);
+  });
+
+  // The description pair is all-or-nothing upstream (`googleads/assets.go`), so a lone line is
+  // dropped rather than carried — otherwise the editor opens on a sitelink that cannot dispatch.
+  it('keeps a complete description pair and drops a lone description line', () => {
+    const googleSitelinks = [
+      { text: 'View the Agenda', finalUrl: 'https://example.test/agenda', description1: 'Two days', description2: 'Sixty sessions' },
+      { text: 'Venue & Travel', finalUrl: 'https://example.test/venue', description1: 'Hotel block open' },
+    ];
+
+    expect(fromBriefResponse(storedBrief({ copy: { googleSitelinks } }))?.googleSitelinks).toEqual([
+      { text: 'View the Agenda', finalUrl: 'https://example.test/agenda', description1: 'Two days', description2: 'Sixty sessions' },
+      { text: 'Venue & Travel', finalUrl: 'https://example.test/venue' },
+    ]);
   });
 
   // An unknown platform id reaches a template that indexes icon and label maps by it and

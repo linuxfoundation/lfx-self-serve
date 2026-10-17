@@ -16,11 +16,19 @@ import {
   campaignResumeRefusedAdoptedMessage,
   campaignResumeRefusedMessage,
   COUNTRIES,
+  GOOGLE_ADS_MAX_CALLOUTS,
+  GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
+  GOOGLE_ADS_MAX_FINAL_URL_BYTES,
+  GOOGLE_ADS_MAX_SITELINKS,
+  GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES,
+  GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES,
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
   GOOGLE_CAMPAIGN_CHANNEL_LABELS,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
+  googleAdsBoundExtensionText,
+  googleAdsToLower,
   JOB_LOST_MESSAGE,
 } from '@lfx-one/shared/constants';
 import { encodePathSegment } from '../helpers/url-validation';
@@ -68,6 +76,7 @@ import type {
   CampaignServiceNegativeKeywordInput,
   CampaignServiceNegativeKeywordResult,
   CampaignServiceNegativeKeywords,
+  CampaignSitelink,
   CampaignToggleStatus,
   GenerateEmailCopyResult,
   HubSpotEmailSearchResult,
@@ -3210,6 +3219,17 @@ function toBriefInput(brief: CampaignBriefOutput, eventSlug: string): CampaignSe
       linkedIn: brief.linkedInCopy ?? null,
       reddit: brief.redditCopy ?? null,
       meta: brief.metaCopy ?? null,
+      // Written as `null` when the brief has no list, NOT as `[]`, and the difference is load-bearing
+      // on the way back: `populateFromBrief` seeds these two on `!== undefined`, so a stored `[]`
+      // restores as "the generator ran and produced nothing" and CLEARS an editor the operator may
+      // have typed into, while `null` restores as absent and leaves it alone. `fromBriefResponse`
+      // below is the half that holds up this end of the contract.
+      //
+      // Under `copy` rather than a new top-level field because `BriefInput` has no first-class home
+      // for them and `copy` is the opaque slot whose meaning — "the creative this brief generated" —
+      // these fit; the same reasoning `targeting` carries for the planning fields.
+      googleCallouts: brief.googleCallouts ?? null,
+      googleSitelinks: brief.googleSitelinks ?? null,
     },
     keywords: brief.keywords,
     targeting: {
@@ -3319,6 +3339,11 @@ export function fromBriefResponse(found: CampaignServiceBrief): CampaignBriefOut
     redditCopy: asVariantCopy<RedditBriefCopy>(copy['reddit'], REDDIT_VARIANT_FIELDS),
     metaCopy: asVariantCopy<MetaBriefCopy>(copy['meta'], META_VARIANT_FIELDS),
     keywords: asKeywords(found.keywords),
+    // `undefined` rather than `[]` for anything that is not an array, which is what makes a brief
+    // written before extension generation shipped restore as ABSENT instead of as an empty list —
+    // see the write side for why the Implementation tab needs those to stay distinguishable.
+    googleCallouts: asCallouts(copy['googleCallouts']),
+    googleSitelinks: asSitelinks(copy['googleSitelinks']),
     campaignGoal: CAMPAIGN_GOALS.some((o) => o.id === targeting['campaignGoal']) ? (targeting['campaignGoal'] as CampaignGoal) : null,
     totalBudget: typeof targeting['totalBudget'] === 'number' && Number.isFinite(targeting['totalBudget']) ? targeting['totalBudget'] : null,
     hsUtm: typeof targeting['hsUtm'] === 'string' ? targeting['hsUtm'] : null,
@@ -3603,6 +3628,125 @@ function asKeywords(value: unknown): CampaignKeyword[] {
     });
     return keywords;
   }, []);
+}
+
+/**
+ * A stored callout list, or `undefined` when the field is absent or not an array.
+ *
+ * `undefined` and `[]` are NOT interchangeable here, unlike in `asKeywords` above: the
+ * Implementation tab seeds `googleCallouts` on `!== undefined`, so returning `[]` for a brief
+ * written before this feature existed would clear an editor rather than leave it untouched. A
+ * stored `[]` — the generator ran and shaped everything away — still returns `[]`, which is the
+ * same seed an absent list produces on a first mount and differs only on a re-mount.
+ *
+ * Bounded and de-duplicated exactly as the generator bounds it, so a row written by an older or
+ * foreign client cannot open the editor holding a list it would refuse the operator for typing.
+ */
+function asCallouts(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const callouts: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of value) {
+    const text = googleAdsBoundExtensionText(entry, GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES);
+    if (text === '') {
+      continue;
+    }
+    // Case-insensitive under Go's rules, matching the editor's own add-guard
+    // (`googleAdsToLower(c) === key`): it refuses a second "Free Admission" for an existing
+    // "free admission", so a restore that seeded both would leave the operator holding a pair
+    // they could not have created.
+    const key = googleAdsToLower(text);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    callouts.push(text);
+    if (callouts.length === GOOGLE_ADS_MAX_CALLOUTS) {
+      break;
+    }
+  }
+  return callouts;
+}
+
+/**
+ * A stored sitelink list, or `undefined` when the field is absent or not an array.
+ *
+ * Held on the same `undefined`-vs-`[]` terms as {@link asCallouts}, and dropping an entry rather
+ * than the list for anything unusable — a sitelink with no text, no servable destination, or a
+ * `finalUrl` past the byte cap is one the operator could not have saved and campaign-service would
+ * refuse.
+ *
+ * `finalUrl` is re-checked for an http(s) scheme even though this app only ever writes URLs that
+ * `verifyPageLink` already confirmed, because what comes back is whatever the opaque `copy` blob
+ * holds — and this value lands in an `href` the operator clicks and in an ad's destination.
+ *
+ * The two description lines are ALL-OR-NOTHING, as upstream requires: a lone `description1` is
+ * dropped rather than carried, so the editor never opens on a pair that `googleads/assets.go`
+ * would reject on dispatch.
+ */
+function asSitelinks(value: unknown): CampaignSitelink[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const sitelinks: CampaignSitelink[] = [];
+  const seen = new Set<string>();
+  for (const entry of value) {
+    const record = asRecord(entry);
+    if (record === null) {
+      continue;
+    }
+
+    const text = googleAdsBoundExtensionText(record['text'], GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES);
+    const finalUrl = asText(record['finalUrl']).trim();
+    if (text === '' || !isServableSitelinkUrl(finalUrl)) {
+      continue;
+    }
+    // The byte cap is checked here and not only at dispatch, because the three other places that
+    // know about it all sit AFTER this one: `addGoogleSitelink` refuses an over-long URL on the
+    // add path, and the controller refuses the create. A restored row that skipped this would open
+    // the editor holding a chip the operator cannot have typed and cannot submit — a dead end whose
+    // only exit is deleting a row they did not add. Bytes, not runes: the limit is Google's and it
+    // counts the encoded URL.
+    if (new TextEncoder().encode(finalUrl).length > GOOGLE_ADS_MAX_FINAL_URL_BYTES) {
+      continue;
+    }
+    // Keyed on the LABEL, not the destination, because that is the editor's guard
+    // (`googleAdsToLower(s.text)`) and upstream's: Google Ads refuses duplicate sitelink TEXT and
+    // is indifferent to two labels sharing one URL, which a combined "venue and agenda" page
+    // legitimately produces.
+    const key = googleAdsToLower(text);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+
+    const description1 = googleAdsBoundExtensionText(record['description1'], GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES);
+    const description2 = googleAdsBoundExtensionText(record['description2'], GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES);
+    const descriptions = description1 !== '' && description2 !== '' ? { description1, description2 } : {};
+
+    sitelinks.push({ text, finalUrl, ...descriptions });
+    if (sitelinks.length === GOOGLE_ADS_MAX_SITELINKS) {
+      break;
+    }
+  }
+  return sitelinks;
+}
+
+/** Whether a stored sitelink destination is an absolute http(s) URL — the only kind Google Ads serves. */
+function isServableSitelinkUrl(url: string): boolean {
+  if (url === '') {
+    return false;
+  }
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
 }
 
 /**

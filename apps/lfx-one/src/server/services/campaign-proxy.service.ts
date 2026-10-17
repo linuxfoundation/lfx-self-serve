@@ -1,7 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AI_MODEL, CAMPAIGN_DELIVERY_TYPES, GOOGLE_ADS_GEO_TARGET_MAP, JOB_LOST_MESSAGE, META_CHAR_LIMITS } from '@lfx-one/shared/constants';
+import {
+  AI_MODEL,
+  CAMPAIGN_DELIVERY_TYPES,
+  GOOGLE_ADS_GEO_TARGET_MAP,
+  GOOGLE_ADS_MAX_CALLOUTS,
+  GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
+  GOOGLE_ADS_MAX_SITELINKS,
+  GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES,
+  googleAdsBoundExtensionText,
+  googleAdsToLower,
+  JOB_LOST_MESSAGE,
+  META_CHAR_LIMITS,
+} from '@lfx-one/shared/constants';
 
 import { isConfidentMatch, scoreCampaignName } from './campaign-utm-mapper';
 
@@ -18,6 +30,7 @@ import type {
   CampaignKeyword,
   CampaignPlatform,
   CampaignProgramType,
+  CampaignSitelink,
   CampaignSSEEventType,
   CampaignStatusUpdateRequest,
   CampaignStatusUpdateResult,
@@ -640,6 +653,14 @@ function buildCopySystemPrompt(platforms: string[], programType?: CampaignProgra
 // alone, since the model has to pick. Keywords are a search-intent concept and identical
 // across the two platforms, so neutral wording loses nothing.
 const KEYWORD_SYSTEM_PROMPT = `You are a paid search keyword strategist for Google Ads and Microsoft Advertising. Return only a valid JSON array. No markdown fences, no explanation.`;
+
+/**
+ * Names Google Ads ALONE, unlike {@link KEYWORD_SYSTEM_PROMPT}, because the gate below is narrower
+ * than the keyword gate: callouts are a Google extension asset, dispatched only on `googleCallouts`
+ * and validated only by `googleads/assets.go`. A Microsoft-only brief reaches the keyword block and
+ * does not reach this one, so naming both platforms here would describe a caller that cannot exist.
+ */
+const CALLOUT_SYSTEM_PROMPT = `You are a Google Ads extensions strategist. Return only a valid JSON array of strings. No markdown fences, no explanation.`;
 
 const LINKEDIN_STRATEGY_SYSTEM_PROMPT_EVENTS = `You are a LinkedIn Ads strategist specializing in developer and open-source technology events.
 Analyze the event details and generate a comprehensive targeting strategy for LinkedIn Sponsored Content campaigns.
@@ -1710,6 +1731,44 @@ export class CampaignProxyService {
       }
     }
 
+    // Narrower than the keyword gate above, and not by oversight. Callouts and sitelinks are
+    // GOOGLE extension assets: `CampaignCreateRequest` carries them under `callouts`/`sitelinks`
+    // SEARCH-only, the Implementation tab renders their editors behind `googleCalloutsAvailable`,
+    // and only `googleads/assets.go` validates them. A Microsoft-only brief takes the keyword
+    // block and skips this one, which is right — seeding extensions it has no way to dispatch
+    // would fill an editor the operator never sees with text nothing reads.
+    //
+    // `!isRefinement` covers both halves for one reason each. Sitelinks are derived from
+    // `pageLinks`, which a refinement never populated (it does not scrape), so every URL would
+    // fail verification and the block would yield an empty list OVER the operator's edited one —
+    // a silent wipe, not a no-op, since absent and empty are the same value on this wire.
+    // Callouts are excluded on the matching rule rather than a different one: a refinement that
+    // regenerated them would discard the operator's edits the same way.
+    if (!isEmail && !isRefinement && selectedPlatforms.includes('google-ads')) {
+      // Deterministic and free — no model call, so no try/catch and no status line of its own.
+      // An empty result is the honest answer for a page that carries none of the four links.
+      const sitelinks = buildSitelinksFromPage(eventDetails, pageLinks, pageBaseUrl);
+      if (sitelinks.length > 0) {
+        yield { type: 'sitelinks', data: sitelinks };
+      }
+
+      yield { type: 'status', data: 'Generating callout extensions...' };
+      try {
+        const calloutPrompt = buildCalloutPrompt(body, eventDetails);
+        const calloutText = stripJsonFences(await aiChat(CALLOUT_SYSTEM_PROMPT, calloutPrompt, signal));
+        const callouts = shapeCallouts(JSON.parse(calloutText));
+        // Guarded rather than yielded unconditionally, for the reason the sitelink yield is: an
+        // empty array is a value the client assigns, so a response that shaped away to nothing
+        // would clear a list the operator may already be holding.
+        if (callouts.length > 0) {
+          yield { type: 'callouts', data: callouts };
+        }
+      } catch (error) {
+        logger.warning(req, 'campaign_brief_callouts', 'Callout generation failed', { err: error });
+        yield { type: 'status', data: 'Callout generation failed, skipping...' };
+      }
+    }
+
     // `!isEmail` is not redundant with the platform check. Today's client never sends
     // `linkedin-ads` alongside `deliveryType: 'email'`, but that is a CLIENT guarantee and this is
     // a server the client does not own — `{deliveryType:'email', platforms:['linkedin-ads']}` is
@@ -2572,6 +2631,122 @@ ${platformInstruction}`;
   return `Generate ad copy for this ${contentLabel}: ${body.url}${extraBlock}${refinementBlock}
 
 ${platformInstruction}`;
+}
+
+/**
+ * The event-page links that become sitelinks, each with the label it is given.
+ *
+ * `registration_url` is deliberately NOT here. It is the ad's own final URL, so a sitelink built
+ * from it would offer the operator a second control pointing where the headline already points —
+ * paying for the same destination twice in the same ad and crowding out a link that goes somewhere
+ * new. The four below are the ones that add a destination.
+ *
+ * Labels are fixed strings rather than model output, so no sitelink can be labelled something the
+ * page does not support. Each is well inside {@link GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES}; the
+ * builder bounds them anyway rather than trusting this table to stay that way.
+ */
+const SITELINK_SOURCES: readonly { key: string; text: string }[] = [
+  { key: 'agenda_url', text: 'View the Agenda' },
+  { key: 'cfp_url', text: 'Submit a Talk' },
+  { key: 'venue_url', text: 'Venue & Travel' },
+  { key: 'sponsorship_url', text: 'Become a Sponsor' },
+];
+
+/**
+ * Build sitelinks from the event page's own verified links.
+ *
+ * Deterministic and model-free on purpose. The destinations come from {@link verifyPageLink}, which
+ * refuses any URL the scraped page does not actually carry, so this cannot produce a sitelink
+ * pointing at a composed `/schedule/` that 404s — the failure the extraction prompt's URL rule
+ * already exists to prevent, reproduced here rather than re-earned.
+ *
+ * No descriptions. The pair is all-or-nothing upstream and both lines would have to be WRITTEN —
+ * nothing on the page supplies them — so every sitelink would carry two sentences asserting what
+ * is behind a link this code has not read. An operator who wants them has the editor.
+ *
+ * Over-cap entries are dropped silently, matching the Implementation tab's own editor: it refuses
+ * an add past {@link GOOGLE_ADS_MAX_SITELINKS} rather than growing. Four candidates against a cap
+ * of twenty means the slice is inert today; it is here so the cap is enforced by the code that
+ * produces the list rather than by the table's current length.
+ */
+function buildSitelinksFromPage(eventDetails: Record<string, unknown> | null, pageLinks: Map<string, string>, pageBaseUrl: string): CampaignSitelink[] {
+  if (!eventDetails) return [];
+  const sitelinks: CampaignSitelink[] = [];
+  const seen = new Set<string>();
+  for (const source of SITELINK_SOURCES) {
+    const finalUrl = verifyPageLink(eventDetails[source.key], pageLinks, pageBaseUrl);
+    if (!finalUrl) continue;
+    // One page can legitimately answer two of these keys with the same href — a combined
+    // "attend" page serving as both venue and agenda is common. Google refuses duplicate
+    // sitelink TEXT, not duplicate destinations, so this is about the operator's list rather
+    // than upstream: two rows they must read twice to tell apart, one of them mislabelled.
+    if (seen.has(finalUrl)) continue;
+    seen.add(finalUrl);
+    const text = googleAdsBoundExtensionText(source.text, GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES);
+    if (!text) continue;
+    sitelinks.push({ text, finalUrl });
+  }
+  return sitelinks.slice(0, GOOGLE_ADS_MAX_SITELINKS);
+}
+
+/**
+ * Shape a model's callout response into the bounded, de-duplicated list the editor opens on.
+ *
+ * Accepts the wrapped object form (`{ "callouts": [...] }`) alongside the bare array the prompt
+ * asks for, exactly as the keyword block accepts `{ "keywords": [...] }` — the same model answers
+ * both, and it wraps intermittently.
+ *
+ * De-duplication is case-insensitive because the editor's own add-guard is
+ * (`googleAdsToLower(c) === key`): a list seeded with both "Free To Attend" and "free to attend"
+ * would show the operator two rows they then cannot re-add after deleting either.
+ */
+function shapeCallouts(parsed: unknown): string[] {
+  const raw = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>)['callouts'] : parsed;
+  if (!Array.isArray(raw)) return [];
+  const callouts: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of raw) {
+    const text = googleAdsBoundExtensionText(entry, GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES);
+    if (!text) continue;
+    const key = googleAdsToLower(text);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    callouts.push(text);
+    if (callouts.length === GOOGLE_ADS_MAX_CALLOUTS) break;
+  }
+  return callouts;
+}
+
+function buildCalloutPrompt(body: CampaignBriefRequest, eventDetails: Record<string, unknown> | null): string {
+  const e = eventDetails || {};
+  const isEducation = body.programType === 'education';
+  const subject = (e['name'] as string) || body.url;
+  const themes = Array.isArray(e['themes']) ? (e['themes'] as string[]).join(', ') : '';
+  const extraParts: string[] = [];
+  if (body.campaignGoal) extraParts.push(`Campaign Goal: ${body.campaignGoal}`);
+  if (body.targetAudience) extraParts.push(`Target Audience: ${body.targetAudience}`);
+  if (body.valueProp) extraParts.push(`Key Value Prop / Offer: ${body.valueProp}`);
+  const extraBlock = extraParts.length > 0 ? `\n\nADDITIONAL CAMPAIGN CONTEXT:\n${extraParts.join('\n')}` : '';
+  const detailBlock = isEducation
+    ? `COURSE: ${subject}\nThemes: ${themes}\nAudience: ${e['audience'] || ''}`
+    : `EVENT: ${subject}\nDates: ${e['dates'] || ''}\nLocation: ${e['city'] || ''}\nThemes: ${themes}\nAudience: ${e['audience'] || ''}`;
+
+  return `Generate 8-12 Google Ads callout extensions for this ${isEducation ? 'training/certification program' : 'event'}.
+
+${detailBlock}${extraBlock}
+
+A callout is a short, standalone benefit phrase shown under a search ad. It is not a link and not a sentence.
+
+Return a JSON array of plain strings. No objects, no keys.
+
+CRITICAL RULES:
+- Each callout must be ${GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES} characters or fewer. Shorter is better.
+- Use Title Case. No ending punctuation.
+- State only what the details above support. Do NOT invent prices, discounts, deadlines, attendee counts, speaker names, or claims like "Award Winning" that nothing here establishes.
+- No superlatives you cannot back ("Best", "#1", "World's Largest").
+- No calls to action ("Register Now", "Sign Up Today") — those belong in the ad copy, not a callout.
+- No phone numbers, URLs, or special characters beyond & and -.
+- Each callout must say something DIFFERENT from the others.`;
 }
 
 function buildKeywordPrompt(body: CampaignBriefRequest, eventDetails: Record<string, unknown> | null): string {

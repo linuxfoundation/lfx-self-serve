@@ -1841,6 +1841,33 @@ export function googleAdsToLower(text: string): string {
 }
 
 /**
+ * An untrusted extension string \u2014 a callout, a sitelink label, a sitelink description \u2014 trimmed and
+ * bounded to `maxRunes`, or `''` when there is nothing usable in it.
+ *
+ * Shared rather than written twice because two places take extension text from outside this app and
+ * must agree with the editor's own guard to the character: the brief generator shaping a model
+ * response, and the brief restore reading a row campaign-service stored opaquely. A list either of
+ * them seeds must be one the operator could have typed, or the editor opens holding entries it
+ * would refuse them for adding.
+ *
+ * {@link googleAdsTrimSpace} rather than `String.prototype.trim`, and the spread rather than
+ * `.slice`, for the reasons those two carry: JS and Go disagree about U+0085 and U+FEFF at the
+ * edges, and `.slice` counts UTF-16 units where upstream counts runes, so it can both cut an astral
+ * character's string shorter than needed and leave a lone surrogate behind.
+ *
+ * The trailing re-trim matters: cutting at a rune boundary can land immediately after a space, and a
+ * trailing space is a difference upstream's duplicate check sees.
+ */
+export function googleAdsBoundExtensionText(value: unknown, maxRunes: number): string {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  const trimmed = googleAdsTrimSpace(value);
+  const runes = [...trimmed];
+  return runes.length > maxRunes ? googleAdsTrimSpace(runes.slice(0, maxRunes).join('')) : trimmed;
+}
+
+/**
  * Upstream's own bound on a Google Ads sitelink list (`assets.go`'s `maxSitelinks`), checked on the
  * raw slice before any entry is inspected — the same shape as {@link GOOGLE_ADS_MAX_CALLOUTS}.
  */

@@ -220,6 +220,8 @@ export type CampaignSSEEventType =
   | 'copy_done'
   | 'copy_structured'
   | 'keywords'
+  | 'callouts'
+  | 'sitelinks'
   | 'linkedin_strategy'
   | 'error'
   | 'done'
@@ -368,6 +370,37 @@ export interface CampaignBriefOutput {
   linkedInCopy?: LinkedInBriefCopy;
   redditCopy?: RedditBriefCopy;
   metaCopy?: MetaBriefCopy;
+  /**
+   * Google callout extensions the brief generated, for the Implementation tab's editor to open on.
+   *
+   * A SEED, not a decision: the operator adds, edits and removes entries there exactly as before,
+   * and {@link CampaignImplementationDraft.googleCallouts} is what survives a tab leave. Absent
+   * and empty agree — both open an empty editor, which is what every brief did before generation
+   * existed — so an older brief restored from storage is not a special case here.
+   *
+   * Already capped to {@link GOOGLE_ADS_MAX_CALLOUTS} and trimmed to
+   * {@link GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES} by the generator, so the editor never opens holding
+   * a list it would refuse the operator for typing.
+   */
+  googleCallouts?: string[];
+  /**
+   * Google sitelink extensions the brief derived from the event page's own links.
+   *
+   * Held on exactly the same terms as {@link googleCallouts}: a seed the operator edits, absent
+   * and empty agreeing.
+   *
+   * Every entry's `finalUrl` is a link the scraped page actually carries — the generator builds
+   * these from the URLs `verifyPageLink` already confirmed, never from model output — so a
+   * sitelink cannot point at a destination the model composed.
+   *
+   * The URLs are UNTAGGED here, and deliberately. campaign-service tags every sitelink
+   * destination itself (`googleads/assets.go` calls the same `buildTaggedFinalURL` the ad's own
+   * final URL goes through), so a click on one attributes to google/cpc under this campaign's
+   * `utm_campaign` with no help from this app. Tagging here as well would hand that builder a
+   * pre-tagged URL whose `utm_campaign` it preserves rather than sets, which is how a sitelink
+   * would end up attributed to a campaign other than the one that bought the click.
+   */
+  googleSitelinks?: CampaignSitelink[];
 }
 
 /**

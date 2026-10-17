@@ -3190,6 +3190,35 @@ export class ImplementationTabComponent implements OnInit {
       this.replaceCopyArray(this.campaignForm.controls.descriptions as FormArray, descriptions, CAMPAIGN_CHAR_LIMITS.searchDescription, true);
     }
 
+    // Seeded on PRESENCE, not unconditionally, and NOT dead the way the `linkedInCopy` guard below
+    // was. `applyDraft` runs after this and makes the same present-only distinction for both fields,
+    // so on a mount that HAS a draft this gate changes nothing. The mount that has none is what it
+    // is for: a brief generated before extension generation shipped — or restored from a row written
+    // then — carries neither field, and `set([])` for it is indistinguishable from "the generator
+    // produced nothing". On a re-mount where the operator has typed their own entries and no draft
+    // has been written yet (drafts are saved on tab LEAVE, and a brief can re-emit before one), this
+    // is their only protection. Mutation-tested one `if` at a time: replacing either with
+    // `if (true)` fails `leaves hand-typed entries alone for a brief that carries no lists`, which
+    // adds to BOTH editors for exactly that reason — it did not, and the sitelink gate could be
+    // deleted green.
+    //
+    // Capped and de-duplicated server-side already; the editors' own add-guards are what hold the
+    // line against everything the operator does after this point.
+    //
+    // Seeded regardless of the selected Google channel, deliberately, exactly as the draft restore
+    // below does: `googleCalloutsPayload` and `googleSitelinksPayload` both gate on
+    // `googleCalloutsAvailable`, so a list seeded under Performance Max is HELD and not sent, and
+    // is still there if the operator switches to Search. `googleCalloutsWithheldWarning` is what
+    // tells them that is happening.
+    if (brief.googleCallouts !== undefined) {
+      this.googleCallouts.set([...brief.googleCallouts]);
+    }
+    // Each entry copied as well as the array, for the reason the draft restore gives: a sitelink is
+    // an object, and a shallow spread would leave the brief's own entries reachable from the editor.
+    if (brief.googleSitelinks !== undefined) {
+      this.googleSitelinks.set(brief.googleSitelinks.map((s) => ({ ...s })));
+    }
+
     if (brief.linkedInCopy) {
       this.linkedInVariants.set(brief.linkedInCopy.variants);
       // Seeded UNCONDITIONALLY, and the ticket's premise that this needs a "only when the parent

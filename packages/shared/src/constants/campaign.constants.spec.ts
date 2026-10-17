@@ -62,6 +62,7 @@ import {
   normalizeMicrosoftGeoTargets,
   resolveRedditOptimizationGoal,
   googleAdsEchoed,
+  googleAdsBoundExtensionText,
   googleAdsToLower,
   googleAdsTrimSpace,
   googleAdsUrlGoParseFlaw,
@@ -1034,6 +1035,24 @@ describe('Google Ads string rules', () => {
     ['an emoji at the cut, kept whole', `${'A'.repeat(31)}🎉🎉`, `${'A'.repeat(31)}🎉…`],
   ])('echoes %s', (_label, input, expected) => {
     expect(googleAdsEchoed(input)).toBe(expected);
+  });
+
+  // The extension bound the brief generator and the brief restore both call, so a callout or a
+  // sitelink label arriving from a model response or from an opaque stored row is held to the
+  // same rule the editor's own add-guard applies.
+  it.each([
+    ['a non-string', 42, 25, ''],
+    ['text inside the cap, trimmed', '  Free Admission  ', 25, 'Free Admission'],
+    ['U+0085, which Go trims and JS `trim` keeps', '\u0085Free\u0085', 25, 'Free'],
+    ['U+FEFF, which JS `trim` strips and Go keeps', '\ufeffFree', 25, '\ufeffFree'],
+    // Counted in runes, not UTF-16 units: `.slice(0, 3)` would cut this after the lone high
+    // surrogate of the second emoji and leave an unpaired one behind.
+    ['astral characters, counted as runes', '🎉🎉🎉🎉', 3, '🎉🎉🎉'],
+    // The cut lands immediately after a space, and a trailing space is a difference upstream's
+    // own duplicate check sees — so the bound re-trims after cutting.
+    ['a cut that lands on a space', 'Free Admission Today', 5, 'Free'],
+  ])('bounds %s', (_label, value, maxRunes, expected) => {
+    expect(googleAdsBoundExtensionText(value, maxRunes)).toBe(expected);
   });
 
   it.each([

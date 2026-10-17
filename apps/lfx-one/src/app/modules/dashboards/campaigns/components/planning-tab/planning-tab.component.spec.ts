@@ -1667,6 +1667,69 @@ describe('PlanningTabComponent email brief editing', () => {
     expect(details?.dates).toBe('');
     expect(details?.themes).toEqual([]);
   });
+
+  interface ExtensionInternals {
+    handleSSEEvent(e: SSEEvent<CampaignSSEEventType>): void;
+    handleRefineSSEEvent(e: SSEEvent<CampaignSSEEventType>, feedback: string): void;
+    googleCallouts(): string[];
+    googleSitelinks(): { text: string; finalUrl: string }[];
+    reset(): void;
+  }
+
+  function extensions(): ExtensionInternals {
+    return fixture.componentInstance as unknown as ExtensionInternals;
+  }
+
+  async function buildForExtensions(): Promise<void> {
+    fixture = TestBed.createComponent(PlanningTabComponent);
+    fixture.componentRef.setInput('programTypeConfig', programTypeConfig);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+
+  // The two extension events are carried straight through to the Implementation tab's editors,
+  // so an unhandled type here is a silently dropped list -- the generator ran, the operator was
+  // told it ran, and the editor opens empty.
+  it('holds the callout and sitelink lists the generate stream sends', async () => {
+    await buildForExtensions();
+
+    extensions().handleSSEEvent({ type: 'callouts', data: ['Free To Attend'] } as SSEEvent<CampaignSSEEventType>);
+    extensions().handleSSEEvent({
+      type: 'sitelinks',
+      data: [{ text: 'View the Agenda', finalUrl: 'https://events.example.com/agenda' }],
+    } as SSEEvent<CampaignSSEEventType>);
+
+    expect(extensions().googleCallouts()).toEqual(['Free To Attend']);
+    expect(extensions().googleSitelinks()).toEqual([{ text: 'View the Agenda', finalUrl: 'https://events.example.com/agenda' }]);
+  });
+
+  // The REFINE stream has no arm for either, because the server's refine path yields neither:
+  // re-generating an extension list would overwrite whatever the operator has since edited into
+  // it. A handler that quietly accepted them would undo that decision from the client side.
+  it('ignores callouts and sitelinks arriving on the refine stream', async () => {
+    await buildForExtensions();
+    extensions().handleSSEEvent({ type: 'callouts', data: ['Free To Attend'] } as SSEEvent<CampaignSSEEventType>);
+
+    extensions().handleRefineSSEEvent({ type: 'callouts', data: ['Replaced'] } as SSEEvent<CampaignSSEEventType>, 'more technical');
+
+    expect(extensions().googleCallouts()).toEqual(['Free To Attend']);
+  });
+
+  // New Brief must leave nothing of the discarded brief behind: a stale sitelink points the next
+  // event's ad at the previous event's agenda page.
+  it('clears both extension lists on reset', async () => {
+    await buildForExtensions();
+    extensions().handleSSEEvent({ type: 'callouts', data: ['Free To Attend'] } as SSEEvent<CampaignSSEEventType>);
+    extensions().handleSSEEvent({
+      type: 'sitelinks',
+      data: [{ text: 'View the Agenda', finalUrl: 'https://events.example.com/agenda' }],
+    } as SSEEvent<CampaignSSEEventType>);
+
+    extensions().reset();
+
+    expect(extensions().googleCallouts()).toEqual([]);
+    expect(extensions().googleSitelinks()).toEqual([]);
+  });
 });
 
 describe('PlanningTabComponent — HubSpot UTM states', () => {

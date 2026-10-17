@@ -27,6 +27,7 @@ vi.mock('../helpers/url-validation', () => ({
 import { CAMPAIGN_DELIVERY_TYPES } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 
+import { fetchSafeUrl } from '../helpers/url-validation';
 import { buildFinalUrl, CampaignProxyService, extractableHtml } from './campaign-proxy.service';
 
 const req = {} as unknown as Request;
@@ -602,6 +603,154 @@ describe('CampaignProxyService model JSON fences', () => {
     );
 
     expect((events.find((e) => e.type === 'event')?.data as { name: string }).name).toBe('KubeCon EU 2026');
+  });
+});
+
+/**
+ * The two Google ad extensions the brief now generates, and the gate they sit behind.
+ *
+ * Sitelinks are model-free — they come from the page's own hrefs through `verifyPageLink` — while
+ * callouts are a model call, so the two fail in different ways and are asserted separately. Both
+ * are guarded on a non-empty list rather than yielded unconditionally: an empty array is a value
+ * the Implementation tab assigns, so yielding one would clear a list the operator is holding.
+ */
+describe('CampaignProxyService Google extensions', () => {
+  let service: CampaignProxyService;
+  const originalEnv = { ...process.env };
+
+  async function drain(gen: AsyncGenerator<{ type: string; data: unknown }>): Promise<{ type: string; data: unknown }[]> {
+    const events: { type: string; data: unknown }[] = [];
+    for await (const e of gen) events.push(e);
+    return events;
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    process.env = { ...originalEnv };
+  });
+
+  const AGENDA_URL = 'https://events.example.com/agenda';
+  const CFP_URL = 'https://events.example.com/cfp';
+
+  /**
+   * One payload answers every AI call in the stream, which is what makes this block short: the
+   * extraction stage reads the event fields off it and the callout stage reads `callouts` off the
+   * same object, since `shapeCallouts` accepts the wrapped form the model intermittently returns.
+   *
+   * The callout list is deliberately dirty — a case variant, surrounding spaces, an over-long
+   * entry and a non-string — so the assertion pins the shaping rather than a pass-through.
+   */
+  const payload = JSON.stringify({
+    name: 'KubeCon EU 2026',
+    slug: 'kubecon-eu-2026',
+    agenda_url: AGENDA_URL,
+    cfp_url: CFP_URL,
+    callouts: ['Free To Attend', 'free to attend', '  Hands-On Labs  ', 42, 'A'.repeat(40)],
+  });
+
+  /** Stub every AI call to answer with the shared payload, and the scrape to carry both hrefs. */
+  function stubStream(): void {
+    process.env['AI_PROXY_URL'] = 'https://ai.example.test/v1/chat';
+    process.env['AI_API_KEY'] = 'test-key';
+    // Queued per test rather than set for the block: an unconsumed `mockImplementation` would
+    // outlive this describe and hand the file's other blocks markup they do not expect.
+    vi.mocked(fetchSafeUrl).mockResolvedValueOnce({
+      html: `<html><body><a href="${AGENDA_URL}">Agenda</a><a href="${CFP_URL}">CFP</a></body></html>`,
+      ok: true,
+      status: 200,
+      finalUrl: 'https://events.example.com/kubecon-eu-2026',
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        text: async () => payload,
+        json: async () => ({ choices: [{ message: { content: payload } }] }),
+        body: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"{}"}}]}\n\ndata: [DONE]\n\n'));
+            controller.close();
+          },
+        }),
+      }))
+    );
+    service = new CampaignProxyService();
+  }
+
+  it('emits sitelinks built from the page’s own verified links', async () => {
+    stubStream();
+
+    const events = await drain(
+      service.streamBrief(
+        req,
+        { url: 'https://events.example.com/kubecon-eu-2026', platforms: ['google-ads'] },
+        new AbortController().signal
+      ) as AsyncGenerator<{
+        type: string;
+        data: unknown;
+      }>
+    );
+
+    // The fixed labels, in `SITELINK_SOURCES` order, with no descriptions: the pair is
+    // all-or-nothing upstream and nothing on the page supplies either line.
+    expect(events.find((e) => e.type === 'sitelinks')?.data).toEqual([
+      { text: 'View the Agenda', finalUrl: AGENDA_URL },
+      { text: 'Submit a Talk', finalUrl: CFP_URL },
+    ]);
+  });
+
+  it('emits callouts shaped the way the editor would accept them', async () => {
+    stubStream();
+
+    const events = await drain(
+      service.streamBrief(
+        req,
+        { url: 'https://events.example.com/kubecon-eu-2026', platforms: ['google-ads'] },
+        new AbortController().signal
+      ) as AsyncGenerator<{
+        type: string;
+        data: unknown;
+      }>
+    );
+
+    expect(events.find((e) => e.type === 'callouts')?.data).toEqual(['Free To Attend', 'Hands-On Labs', 'A'.repeat(25)]);
+  });
+
+  // The whole block is gated on Google being selected: every other platform ignores these two
+  // extension types, so generating them would spend an AI call on a list nothing can dispatch.
+  it('emits neither for a brief with no Google channel', async () => {
+    stubStream();
+
+    const events = await drain(
+      service.streamBrief(req, { url: 'https://events.example.com/kubecon-eu-2026', platforms: ['meta-ads'] }, new AbortController().signal) as AsyncGenerator<{
+        type: string;
+        data: unknown;
+      }>
+    );
+
+    // Paired with a reached `done`: a stream that refused early also emits neither event, so the
+    // absence alone would pass against a brief that never got as far as the gate.
+    expect(events.some((e) => e.type === 'done')).toBe(true);
+    expect(events.some((e) => e.type === 'sitelinks' || e.type === 'callouts')).toBe(false);
+  });
+
+  // Refinement reworks copy the operator is already looking at and never re-scrapes, so it has no
+  // verified links to build sitelinks from — and re-generating callouts there would overwrite an
+  // extension list the operator may have edited by hand for a reason unrelated to the feedback.
+  it('emits neither on a refinement', async () => {
+    stubStream();
+
+    const events = await drain(
+      service.streamRefinedBrief(
+        req,
+        { currentCopy: {}, currentKeywords: [], feedback: 'more technical', platforms: ['google-ads'] },
+        new AbortController().signal
+      ) as AsyncGenerator<{ type: string; data: unknown }>
+    );
+
+    expect(events.some((e) => e.type === 'done')).toBe(true);
+    expect(events.some((e) => e.type === 'sitelinks' || e.type === 'callouts')).toBe(false);
   });
 });
 
