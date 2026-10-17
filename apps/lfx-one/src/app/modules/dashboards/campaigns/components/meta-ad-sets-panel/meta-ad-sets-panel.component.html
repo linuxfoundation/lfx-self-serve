@@ -93,6 +93,7 @@
           </thead>
           <tbody>
             @for (row of rows(); track row.adSet.id) {
+              @let adsExpanded = expandedAdSets().has(row.adSet.id);
               <tr class="border-b border-gray-100 last:border-0" [attr.data-testid]="'meta-ad-set-row-' + row.adSet.id">
                 <td class="px-3 py-2">
                   <div class="flex flex-wrap items-center gap-2">
@@ -108,6 +109,17 @@
                       <lfx-tag value="Created here" severity="secondary" [attr.data-testid]="'meta-ad-set-recorded-' + row.adSet.id" />
                     }
                   </div>
+                  <button
+                    type="button"
+                    (click)="toggleAds(row.adSet.id)"
+                    [attr.aria-expanded]="adsExpanded"
+                    [attr.aria-controls]="adsExpanded ? 'meta-ad-set-ads-region-' + campaignId() + '-' + row.adSet.id : null"
+                    [attr.aria-label]="(adsExpanded ? 'Hide ads of ' : 'Show ads of ') + row.name"
+                    class="mt-1 flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline"
+                    [attr.data-testid]="'meta-ad-set-ads-toggle-' + row.adSet.id">
+                    <i class="fa-light" [class]="adsExpanded ? 'fa-chevron-down' : 'fa-chevron-right'" aria-hidden="true"></i>
+                    {{ adsExpanded ? 'Hide ads' : 'Show ads' }}
+                  </button>
                 </td>
                 <td class="px-3 py-2 text-xs text-gray-700" [attr.data-testid]="'meta-ad-set-status-' + row.adSet.id">
                   @if (row.status) {
@@ -169,6 +181,20 @@
                   </div>
                 </td>
               </tr>
+              <!-- Read-only: mounted only while expanded, so the ad set's ads are read lazily. -->
+              @if (adsExpanded) {
+                <tr class="border-b border-gray-100 bg-gray-50 last:border-0" [attr.data-testid]="'meta-ad-set-ads-row-' + row.adSet.id">
+                  <td colspan="4" class="px-3 py-2" [id]="'meta-ad-set-ads-region-' + campaignId() + '-' + row.adSet.id">
+                    <lfx-meta-ad-set-ads
+                      [projectSlug]="projectSlug()"
+                      [briefId]="briefId()"
+                      [campaignId]="campaignId()"
+                      [adSetId]="row.adSet.id"
+                      [adSetName]="row.name"
+                      [reloadToken]="reloadToken()" />
+                  </td>
+                </tr>
+              }
             }
           </tbody>
         </table>

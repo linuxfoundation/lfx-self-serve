@@ -30,6 +30,8 @@ import { CampaignService } from '@services/campaign.service';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { catchError, EMPTY, map, of, switchMap } from 'rxjs';
 
+import { MetaAdSetAdsComponent } from '../meta-ad-set-ads/meta-ad-set-ads.component';
+
 /**
  * A Meta campaign's ad sets on the Optimize tab, with a pause/resume per ad set.
  *
@@ -42,10 +44,13 @@ import { catchError, EMPTY, map, of, switchMap } from 'rxjs';
  * Every action is disabled while any change to the campaign is in flight (`pending`) or the parent
  * has a reason to block it (`blockedReason`: a stale or unknown validator, another write). Only the
  * button whose action is actually running carries the spinner and `aria-busy`.
+ *
+ * Each ad set also expands into a read-only Ads section (`lfx-meta-ad-set-ads`), mounted only while
+ * expanded so its ads are read lazily, and re-read on the same `reloadToken`.
  */
 @Component({
   selector: 'lfx-meta-ad-sets-panel',
-  imports: [ButtonComponent, DatePipe, TagComponent],
+  imports: [ButtonComponent, DatePipe, MetaAdSetAdsComponent, TagComponent],
   templateUrl: './meta-ad-sets-panel.component.html',
   styleUrl: './meta-ad-sets-panel.component.scss',
 })
@@ -84,6 +89,8 @@ export class MetaAdSetsPanelComponent {
    * the list that was on screen before it.
    */
   protected readonly lastRead = signal<{ token: number; ok: boolean } | null>(null);
+  /** The ad sets whose Ads section is expanded. */
+  protected readonly expandedAdSets = signal<ReadonlySet<string>>(new Set());
 
   protected readonly rows: Signal<MetaAdSetPanelRow[]> = this.initRows();
   /** Whether no action may be pressed right now. */
@@ -139,6 +146,17 @@ export class MetaAdSetsPanelComponent {
       return;
     }
     this.request(row, row.recordAction, 'record');
+  }
+
+  /** Expands or collapses one ad set's read-only Ads section; expanding mounts it, which reads its ads. */
+  protected toggleAds(adSetId: string): void {
+    this.expandedAdSets.update((current) => {
+      const next = new Set(current);
+      if (!next.delete(adSetId)) {
+        next.add(adSetId);
+      }
+      return next;
+    });
   }
 
   protected retry(): void {
