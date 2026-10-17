@@ -15,6 +15,7 @@ import {
   campaignNegativeKeywordsFailureOutcome,
   mergeNegativeKeywordLastOutcomes,
   negativeKeywordOutcomeRows,
+  negativeKeywordsScopesMatch,
   redditKeywordNegativeAction,
   redditNegativeKeywordText,
   summarizeNegativeKeywordOutcomes,
@@ -347,5 +348,15 @@ describe('mergeNegativeKeywordLastOutcomes', () => {
       a: { outcome: 'UNCONFIRMED', label: 'Not confirmed', detail: 'verify first' },
     });
     expect(mergeNegativeKeywordLastOutcomes({}, ['a'], [], { state: 'failed', message: 'refused' })['a'].outcome).toBe('FAILED');
+  });
+});
+
+describe('negativeKeywordsScopesMatch', () => {
+  it('treats an empty brief id on the same project as the same scope, and anything else as another', () => {
+    expect(negativeKeywordsScopesMatch('tlf', 'b-1', 'tlf', 'b-1')).toBe(true);
+    expect(negativeKeywordsScopesMatch('tlf', '', 'tlf', 'b-1')).toBe(true);
+    expect(negativeKeywordsScopesMatch('tlf', 'b-1', 'tlf', '')).toBe(true);
+    expect(negativeKeywordsScopesMatch('tlf', 'b-2', 'tlf', 'b-1')).toBe(false);
+    expect(negativeKeywordsScopesMatch('cncf', '', 'tlf', 'b-1')).toBe(false);
   });
 });

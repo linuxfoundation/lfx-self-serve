@@ -15,6 +15,7 @@ import {
   campaignNegativeKeywordsFailureOutcome,
   campaignNegativeKeywordsKey,
   mergeNegativeKeywordLastOutcomes,
+  negativeKeywordsScopesMatch,
   negativeKeywordOutcomeRows,
   summarizeNegativeKeywordOutcomes,
 } from '@shared/utils/campaign-negative-keywords.utils';
@@ -225,11 +226,10 @@ export class CampaignNegativeKeywordsService {
   }
 
   /**
-   * Whether a request key belongs to the active scope. An EMPTY brief id on either side matches any
-   * brief of the same project: the page's brief id goes empty while a Proceed save runs, and stays
-   * empty after a failed one, and neither is a switch to another brief — so they must not drop the
-   * brief's results, nor a request the tab sent meanwhile under the empty id. Only a different
-   * project, or a different real brief id, is out of scope.
+   * Whether a request key belongs to the active scope, by `negativeKeywordsScopesMatch`: an EMPTY
+   * brief id on either side (a Proceed save in progress, or a failed one) is not a switch to another
+   * brief, so it must not drop the brief's results, nor a request the tab sent meanwhile under the
+   * empty id. Only a different project, or a different real brief id, is out of scope.
    */
   private inScope(key: string): boolean {
     const scope = this.activeScope;
@@ -241,7 +241,7 @@ export class CampaignNegativeKeywordsService {
     }
     const [activeProject, activeBrief] = scope.split('|');
     const [project, brief] = key.split('|');
-    return project === activeProject && (activeBrief === '' || brief === '' || brief === activeBrief);
+    return negativeKeywordsScopesMatch(project, brief, activeProject, activeBrief);
   }
 
   /** A request of the campaign in flight, a hold on it, or a keyword-targeting removal of it in flight. */

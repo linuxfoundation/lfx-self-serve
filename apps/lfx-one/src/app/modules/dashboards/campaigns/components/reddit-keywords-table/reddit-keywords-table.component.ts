@@ -31,13 +31,14 @@ import { CampaignNegativeKeywordsService } from '@services/campaign-negative-key
 import { CampaignService } from '@services/campaign.service';
 import {
   campaignNegativeKeywordsKey,
+  negativeKeywordsScopesMatch,
   negativeKeywordUnconfirmedAdvice,
   redditKeywordNegativeAction,
   redditNegativeKeywordText,
 } from '@shared/utils/campaign-negative-keywords.utils';
 import { ConfirmationService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
-import { catchError, finalize, map, of, skip, startWith, switchMap, take, takeUntil } from 'rxjs';
+import { catchError, filter, finalize, map, of, startWith, switchMap, take, takeUntil } from 'rxjs';
 
 /**
  * The Reddit keyword performance table on the Optimize tab, from campaign-service's
@@ -115,8 +116,11 @@ export class RedditKeywordsTableComponent {
    * request for another keyword of the campaign does not.
    */
   private readonly notSent = signal<Record<string, { read: string; lastOutcome: CampaignNegativeKeywordLastOutcome | null; message: string }>>({});
-  /** Emits when the page moves to another project or brief: an add's revision read in flight is abandoned. */
-  private readonly scopeChanges$ = toObservable(computed(() => `${this.projectSlug()}|${this.briefId()}`)).pipe(skip(1));
+  /**
+   * The page's (project, brief), for abandoning an add's revision read when the page LEAVES the scope
+   * the add was confirmed in (`negativeKeywordsScopesMatch`: a transient empty brief is not leaving).
+   */
+  private readonly scope$ = toObservable(computed(() => ({ projectSlug: this.projectSlug(), briefId: this.briefId() })));
   /** Identifies the keyword read the rows come from: changes on Refresh, Retry and window change. */
   private readonly readId: Signal<string> = computed(() => `${this.reloadToken()}|${this.retryToken()}|${this.selectedWindow()}`);
 
@@ -249,18 +253,20 @@ export class RedditKeywordsTableComponent {
    * for the read, so its editor (and any other sender) waits; the hold is released just before the
    * submit, and on every other end of the read (failure, a table destroyed mid-read).
    *
-   * Nothing is sent when the page moved to another project or brief, or the campaign stopped taking
-   * negatives (checked when the operator accepts AND again when the read answers, right before the
-   * submit — the table stays mounted across those changes, and a scope change also cancels the
-   * read); when the read fails or answers no revision; or when the service refuses the submit
-   * (another change to the campaign's keywords started first). The row says "Not sent" for each
-   * after the dialog.
+   * Nothing is sent when the page moved to another project or brief (a transient EMPTY brief id on
+   * the same project, as during a Proceed save, is not a move: `negativeKeywordsScopesMatch`), or
+   * the campaign stopped taking negatives (checked when the operator accepts AND again when the read
+   * answers, right before the submit — the table stays mounted across those changes, and leaving the
+   * scope also cancels the read); when the read fails or answers no revision; or when the service
+   * refuses the submit (another change to the campaign's keywords started first). Every one of those,
+   * a cancelled read included, leaves the row saying "Not sent": a confirmed add is never dropped silently.
    */
   private addNegative(projectSlug: string, briefId: string, row: RedditKeywordDisplayRow, target: RedditKeywordNegativeTarget, text: string): void {
     const { campaignId, campaignName } = target;
     const rowKey = row.key;
     const readId = this.readId();
     if (!this.stillTargets(projectSlug, briefId, row.campaignId, campaignId)) {
+      this.markNotSent(rowKey, readId, target, text, REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE);
       return;
     }
     if (this.revisionReads()[campaignId] !== undefined || !this.negativeKeywordsService.reserve(projectSlug, briefId, campaignId)) {
@@ -268,21 +274,27 @@ export class RedditKeywordsTableComponent {
       return;
     }
     this.revisionReads.update((reads) => ({ ...reads, [campaignId]: rowKey }));
+    let answered = false;
     this.notSent.update((all) => omitKey(all, rowKey));
     this.campaignService
       .getKeywordTargeting(projectSlug, briefId, campaignId)
       .pipe(
         take(1),
         // Leaving the project or brief abandons the read: nothing is sent for a scope the operator left.
-        takeUntil(this.scopeChanges$),
+        takeUntil(this.scope$.pipe(filter((scope) => !negativeKeywordsScopesMatch(scope.projectSlug, scope.briefId, projectSlug, briefId)))),
         finalize(() => {
           this.negativeKeywordsService.release(projectSlug, briefId, campaignId);
           this.revisionReads.update((reads) => omitKey(reads, campaignId));
+          // Abandoned before it answered (the page left the scope): never silently.
+          if (!answered && !this.destroyRef.destroyed) {
+            this.markNotSent(rowKey, readId, target, text, REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE);
+          }
         }),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe({
         next: (targeting) => {
+          answered = true;
           this.negativeKeywordsService.release(projectSlug, briefId, campaignId);
           this.revisionReads.update((reads) => omitKey(reads, campaignId));
           const revision = typeof targeting?.revision === 'string' && targeting.revision !== '' ? targeting.revision : null;
@@ -309,6 +321,7 @@ export class RedditKeywordsTableComponent {
           }
         },
         error: (err: unknown) => {
+          answered = true;
           console.error('Failed to read the Reddit keyword targeting revision for an add-as-negative:', err);
           this.markNotSent(rowKey, readId, target, text, REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR);
         },
@@ -321,9 +334,17 @@ export class RedditKeywordsTableComponent {
     this.notSent.update((all) => ({ ...all, [rowKey]: { read, lastOutcome, message } }));
   }
 
-  /** Whether the page is still on the (project, brief) an add was confirmed for, and the row's campaign still takes negatives. */
+  /**
+   * Whether the page is still in the scope an add was confirmed in (`negativeKeywordsScopesMatch`: a
+   * transient empty brief id on the same project still is) and the row's Reddit campaign still maps
+   * to the same campaign that takes negatives. The add is always sent under the CONFIRMED brief.
+   */
   private stillTargets(projectSlug: string, briefId: string, redditCampaignId: string, campaignId: string): boolean {
-    return this.projectSlug() === projectSlug && this.briefId() === briefId && this.targetFor(redditCampaignId)?.campaignId === campaignId;
+    if (!negativeKeywordsScopesMatch(this.projectSlug(), this.briefId(), projectSlug, briefId)) {
+      return false;
+    }
+    const targets = this.negativeTargets();
+    return Object.hasOwn(targets, redditCampaignId) && targets[redditCampaignId].campaignId === campaignId;
   }
 
   /** The brief campaign a row's add would write to, or `null`: none without a brief, nor for a campaign not offered. */

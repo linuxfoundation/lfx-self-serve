@@ -578,6 +578,45 @@ describe('RedditKeywordsTableComponent', () => {
         expect(TestBed.inject(CampaignNegativeKeywordsService).reservations()).toEqual({});
       });
 
+      // Leaving the scope cancels the read; the row still says why nothing went out.
+      it('says "Not sent" when leaving the brief cancels the read', () => {
+        fixture.componentRef.setInput('briefId', 'brief-2');
+        fixture.detectChanges();
+
+        expect(read.observed).toBe(false);
+        expect(TestBed.inject(CampaignNegativeKeywordsService).reservations()).toEqual({});
+        expect(q(`reddit-keyword-negative-not-sent-${A}`)!.textContent).toContain(REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE);
+      });
+
+      // The page's brief id goes empty while a Proceed save runs: that is not a switch to another brief.
+      it.each([
+        ['after the brief id comes back', true],
+        ['while the brief id is still empty', false],
+      ])('still sends through a transient empty brief id, answered %s', (_label, restore) => {
+        fixture.componentRef.setInput('briefId', '');
+        fixture.detectChanges();
+        if (restore) {
+          fixture.componentRef.setInput('briefId', 'brief-1');
+          fixture.detectChanges();
+        }
+        answer();
+
+        expect(addNegativeKeywords).toHaveBeenCalledWith('tlf', 'brief-1', 'c-uuid-a', [{ text: 'service mesh', matchType: 'Broad' }], 'rev-1');
+        expect(TestBed.inject(CampaignNegativeKeywordsService).reservations()).toEqual({});
+      });
+
+      it('sends nothing, and says so, when an empty brief id is followed by another brief', () => {
+        fixture.componentRef.setInput('briefId', '');
+        fixture.detectChanges();
+        fixture.componentRef.setInput('briefId', 'brief-2');
+        fixture.detectChanges();
+        answer();
+
+        expect(addNegativeKeywords).not.toHaveBeenCalled();
+        expect(TestBed.inject(CampaignNegativeKeywordsService).reservations()).toEqual({});
+        expect(q(`reddit-keyword-negative-not-sent-${A}`)!.textContent).toContain(REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE);
+      });
+
       it('says "Not sent" when the campaign is still listed but now maps to another campaign', () => {
         fixture.componentRef.setInput('negativeTargets', { t3_a: { campaignId: 'c-uuid-other', campaignName: 'KubeCon EU' } });
         fixture.detectChanges();

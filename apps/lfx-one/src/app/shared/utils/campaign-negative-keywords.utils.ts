@@ -132,6 +132,16 @@ export function summarizeNegativeKeywordOutcomes(
 }
 
 /**
+ * Whether two (project, brief) scopes of the negative-keyword lever are the same. An EMPTY brief id
+ * on either side matches any brief of the same project: the campaigns page's brief id goes empty
+ * while a Proceed save runs, and stays empty after a failed one, and neither is a switch to another
+ * brief. Only a different project, or a different real brief id, is another scope.
+ */
+export function negativeKeywordsScopesMatch(projectA: string, briefA: string, projectB: string, briefB: string): boolean {
+  return projectA === projectB && (briefA === '' || briefB === '' || briefA === briefB);
+}
+
+/**
  * The key one campaign's negative-keyword request is held under: (project, brief, campaign), so a
  * request can never render against another project's or brief's campaign. The separator cannot
  * occur in a project slug, a brief id or a campaign id.
