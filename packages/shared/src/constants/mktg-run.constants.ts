@@ -152,12 +152,13 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
   // server-side, and with fresh runs there is no chat follow-up to prefix.
   batchPreamble: [],
   fields: [
-    { key: 'project_name', question: 'Project name', kind: 'text', prefill: 'project-name' },
+    { key: 'project_name', question: 'Project name', kind: 'text', prefill: 'project-name', oneLine: true },
     {
       key: FOUNDATION_MESSAGE_DESCRIPTION_KEY,
       question: 'One-line description',
       kind: 'text',
       optional: true,
+      oneLine: true,
       prefill: 'project-description',
       placeholder: 'What the project does, in one line',
       missingPrefillHint: 'Not set on your LFX project — describe it in one line, or leave it to the sources.',

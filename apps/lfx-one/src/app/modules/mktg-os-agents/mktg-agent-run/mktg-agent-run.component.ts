@@ -829,10 +829,12 @@ export class MktgAgentRunComponent {
       // Optional fields never carry the required validator; a format rule
       // applies either way — an answer that IS given has to be usable.
       const validators = field.optional ? [] : [trimmedRequired()];
-      if (field.kind === 'text') {
+      if (field.kind === 'text' && field.oneLine) {
         // A single-line input hides a line break its control still holds (a
-        // prefill, a restored answer, a paste), and the BFF refuses the run
-        // as "must be one line" — so the form catches it where it is fixable.
+        // prefill, a restored answer, a paste), and this agent's BFF refuses
+        // the run as "must be one line" — so the form catches it where it is
+        // fixable. Other agents accept multi-line text here, so the rule is
+        // per field, not per control kind.
         validators.push(oneLineValidator());
       }
       if (field.format === 'github-repo-url') {

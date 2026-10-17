@@ -109,14 +109,14 @@ export function foundationMessageLinks(answer: string | undefined): string[] {
 
 /**
  * Validate a generate-request answers record: `project_name` required and one
- * line; the description optional and one line; every single-link field
- * (`FOUNDATION_MESSAGE_SOURCE_URL_KEYS`: the website, the press release, the
- * pages, the deck, the plan, the brand page) optional here — blank, "none",
- * or an http(s) URL (the agent's own rule; the source rule is checked on the
- * built payload); the other links optional, one http(s) URL per line, at
- * most `FOUNDATION_MESSAGE_MAX_OTHER_LINKS`; the notes optional, within
- * their cap; no unknown keys. There are no questions on this form: the agent
- * reads the sources, researches, and asks only the gaps afterwards.
+ * line; the description optional and one line; the website required and a
+ * real http(s) URL (never blank or "none"); the other single-link fields
+ * (`FOUNDATION_MESSAGE_SOURCE_URL_KEYS` minus the website: the press release,
+ * the pages, the deck, the plan, the brand page) optional — blank, "none", or
+ * an http(s) URL; the other links optional, one http(s) URL per line, at most
+ * `FOUNDATION_MESSAGE_MAX_OTHER_LINKS`; the notes optional, within their cap;
+ * no unknown keys. There are no questions on this form: the agent reads the
+ * sources, researches, and asks only the gaps afterwards.
  */
 export function validateFoundationMessageIntakeAnswers(answers: unknown): FoundationMessageValidationResult {
   if (typeof answers !== 'object' || answers === null || Array.isArray(answers)) {

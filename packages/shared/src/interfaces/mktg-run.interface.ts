@@ -134,6 +134,13 @@ export interface MktgIntakeField {
    */
   optional?: boolean;
   /**
+   * The agent's BFF refuses a line break in this answer ("must be one line"),
+   * so the form validates it where it is fixable. Only set on fields whose
+   * BFF enforces it; the other agents accept multi-line text in their `text`
+   * fields.
+   */
+  oneLine?: boolean;
+  /**
    * Offers a file upload beside the control (the Messaging Framework's deck
    * and plan: "upload or URL"). A file picked here joins the intake's
    * documents section already tagged with this kind — the requester never
