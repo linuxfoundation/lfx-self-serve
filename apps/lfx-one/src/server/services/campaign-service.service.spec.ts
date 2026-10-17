@@ -4657,9 +4657,7 @@ describe('CampaignServiceClient.getCampaignMetrics', () => {
     ['no brief id', 'cncf', '', 'c-1'],
     ['no campaign id', 'cncf', 'b-1', ''],
   ])('refuses a request with %s without calling the proxy', async (_label, slug, brief, campaign) => {
-    await expect(new CampaignServiceClient().getCampaignMetrics(req, slug, brief, campaign)).rejects.toThrow(
-      /requires the project, the brief and the campaign/
-    );
+    await expect(new CampaignServiceClient().getCampaignMetrics(req, slug, brief, campaign)).rejects.toBeInstanceOf(ServiceValidationError);
 
     expect(proxyRequest).not.toHaveBeenCalled();
   });

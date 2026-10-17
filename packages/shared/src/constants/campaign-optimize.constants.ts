@@ -363,6 +363,9 @@ export const CAMPAIGN_SETTINGS_READ_FALLBACK = 'The live settings could not be r
 // Live counters (one campaign's get-campaign-metrics read, on demand)
 // ---------------------------------------------------------------------------
 
+/** The email channel's platform token on a campaign row: its live counters are opens to date, with no cost. */
+export const CAMPAIGN_EMAIL_CHANNEL_PLATFORM = 'hubspot';
+
 /** The window a row's live counters cover, in words, keyed by campaign-service's `window`. */
 export const CAMPAIGN_METRICS_WINDOW_LABELS: Readonly<Record<CampaignMetricsWindow, string>> = {
   today: 'today',

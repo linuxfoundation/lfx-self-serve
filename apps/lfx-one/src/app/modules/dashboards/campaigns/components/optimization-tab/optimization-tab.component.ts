@@ -6,6 +6,7 @@ import { afterNextRender, Component, computed, DestroyRef, inject, Injector, inp
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import type {
   BriefMetrics,
+  BriefMetricsRow,
   CampaignBidChange,
   CampaignBidOutcome,
   CampaignConfirmedBid,
@@ -336,6 +337,12 @@ export class OptimizationTabComponent implements OnInit {
   protected readonly briefMetricsState = signal<'idle' | 'loading' | 'loaded' | 'error'>('idle');
   /** Bumped by Refresh (and the findings retry) to re-read the brief's metrics. */
   private readonly briefMetricsReload = signal(0);
+  /**
+   * The brief-wide read's row per campaign id. Each campaign row's live counters render from its
+   * `ok` row here with no read of their own; the row asks campaign-service itself only on Refresh,
+   * or for a campaign this read could not measure.
+   */
+  protected readonly briefMetricsRowsById: Signal<Partial<Record<string, BriefMetricsRow>>> = this.initBriefMetricsRowsById();
 
   /**
    * Each monitor finding joined to the brief campaign row it is about, with its ONE lever decided.
@@ -2074,6 +2081,16 @@ export class OptimizationTabComponent implements OnInit {
           this.metaError.set(extractErrorMessage(httpErr, 'Failed to load Meta accounts'));
         },
       });
+  }
+
+  private initBriefMetricsRowsById(): Signal<Partial<Record<string, BriefMetricsRow>>> {
+    return computed(() => {
+      const byId: Partial<Record<string, BriefMetricsRow>> = {};
+      for (const row of this.briefMetrics()?.rows ?? []) {
+        byId[row.campaign_id] = row;
+      }
+      return byId;
+    });
   }
 
   /**

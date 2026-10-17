@@ -2003,6 +2003,10 @@ export class CampaignServiceClient {
    * A pure read upstream; nothing is persisted. `cost_micros` is in the ad account's own currency
    * and the response names none.
    *
+   * The Optimize tab shows a row's counters from the brief-wide read it already makes, and calls
+   * this only when the operator refreshes one row, or asks about a row the brief-wide read could not
+   * measure (to get this read's precise 400/409 reason).
+   *
    * The window is a QUERY parameter and is omitted unless the caller names one, for the reason
    * `getBriefMetrics` gives: upstream picks a per-platform default (`last_7_days` on X Ads), and an
    * explicit `last_30_days` sent on the caller's behalf would turn that X read into a 400.
@@ -2014,10 +2018,20 @@ export class CampaignServiceClient {
     campaignId: string,
     window?: CampaignMetricsWindow
   ): Promise<CampaignServiceCampaignMetrics> {
-    if (projectSlug === '' || briefId === '' || campaignId === '') {
-      // Refused rather than sent, as `getBriefMetrics` refuses: an empty segment makes a different
-      // route that 404s at the gateway, which a caller cannot tell from campaign-service's own 404.
-      throw new Error('A campaign metrics read requires the project, the brief and the campaign it is scoped to.');
+    // Refused rather than sent, as `getBriefMetrics` refuses: an empty segment makes a different
+    // route that 404s at the gateway, which a caller cannot tell from campaign-service's own 404.
+    // Named per field, so the 400 says which one was missing.
+    for (const [field, value] of [
+      ['project', projectSlug],
+      ['briefId', briefId],
+      ['campaignId', campaignId],
+    ] as const) {
+      if (value === '') {
+        throw ServiceValidationError.forField(field, 'A campaign metrics read requires the project, the brief and the campaign it is scoped to.', {
+          operation: 'campaign_metrics_read',
+          service: 'campaign_service',
+        });
+      }
     }
     return this.microserviceProxy.proxyRequest<CampaignServiceCampaignMetrics>(
       req,

@@ -6198,7 +6198,7 @@ describe('CampaignController.getCampaignMetrics', () => {
     const res = buildRes();
     const next = vi.fn() as unknown as NextFunction;
 
-    await controller.getCampaignMetrics(metricsReq({ project: 'cncf', brief_id: BRIEF_ID, window: 'last_7_days' }), res, next);
+    await controller.getCampaignMetrics(metricsReq({ project: 'cncf', briefId: BRIEF_ID, window: 'last_7_days' }), res, next);
 
     expect(getCampaignMetrics).toHaveBeenCalledWith(expect.anything(), 'cncf', BRIEF_ID, CAMPAIGN_ID, 'last_7_days');
     expect(res.json).toHaveBeenCalledWith({ ...METRICS, window: 'last_7_days' });
@@ -6209,7 +6209,7 @@ describe('CampaignController.getCampaignMetrics', () => {
   it('passes undefined when no window is given, rather than a default', async () => {
     getCampaignMetrics.mockResolvedValue(METRICS);
 
-    await controller.getCampaignMetrics(metricsReq({ project: 'cncf', brief_id: BRIEF_ID }), buildRes(), vi.fn() as unknown as NextFunction);
+    await controller.getCampaignMetrics(metricsReq({ project: 'cncf', briefId: BRIEF_ID }), buildRes(), vi.fn() as unknown as NextFunction);
 
     expect(getCampaignMetrics).toHaveBeenCalledWith(expect.anything(), 'cncf', BRIEF_ID, CAMPAIGN_ID, undefined);
   });
@@ -6219,22 +6219,22 @@ describe('CampaignController.getCampaignMetrics', () => {
     isServerFeatureEnabled.mockReturnValue(false);
     const next = vi.fn() as unknown as NextFunction;
 
-    await controller.getCampaignMetrics(metricsReq({ project: 'cncf', brief_id: BRIEF_ID }), buildRes(), next);
+    await controller.getCampaignMetrics(metricsReq({ project: 'cncf', briefId: BRIEF_ID }), buildRes(), next);
 
     expect(getCampaignMetrics).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledWith(expect.any(ResourceNotFoundError));
   });
 
   it.each([
-    ['a campaign id that is not a UUID', { project: 'cncf', brief_id: BRIEF_ID }, 'c-1'],
-    ['no brief_id', { project: 'cncf' }, CAMPAIGN_ID],
-    ['a brief_id that is not a UUID', { project: 'cncf', brief_id: 'b-1' }, CAMPAIGN_ID],
-    ['a repeated brief_id param', { project: 'cncf', brief_id: [BRIEF_ID, BRIEF_ID] }, CAMPAIGN_ID],
-    ['no project', { brief_id: BRIEF_ID }, CAMPAIGN_ID],
-    ['a blank project', { project: '   ', brief_id: BRIEF_ID }, CAMPAIGN_ID],
-    ['an unrecognised window', { project: 'cncf', brief_id: BRIEF_ID, window: 'last_90_days' }, CAMPAIGN_ID],
-    ['a repeated window param', { project: 'cncf', brief_id: BRIEF_ID, window: ['today', 'today'] }, CAMPAIGN_ID],
-    ['an empty window param', { project: 'cncf', brief_id: BRIEF_ID, window: '' }, CAMPAIGN_ID],
+    ['a campaign id that is not a UUID', { project: 'cncf', briefId: BRIEF_ID }, 'c-1'],
+    ['no briefId', { project: 'cncf' }, CAMPAIGN_ID],
+    ['a briefId that is not a UUID', { project: 'cncf', briefId: 'b-1' }, CAMPAIGN_ID],
+    ['a repeated briefId param', { project: 'cncf', briefId: [BRIEF_ID, BRIEF_ID] }, CAMPAIGN_ID],
+    ['no project', { briefId: BRIEF_ID }, CAMPAIGN_ID],
+    ['a blank project', { project: '   ', briefId: BRIEF_ID }, CAMPAIGN_ID],
+    ['an unrecognised window', { project: 'cncf', briefId: BRIEF_ID, window: 'last_90_days' }, CAMPAIGN_ID],
+    ['a repeated window param', { project: 'cncf', briefId: BRIEF_ID, window: ['today', 'today'] }, CAMPAIGN_ID],
+    ['an empty window param', { project: 'cncf', briefId: BRIEF_ID, window: '' }, CAMPAIGN_ID],
   ])('refuses a request with %s', async (_label, query, campaignId) => {
     const next = vi.fn() as unknown as NextFunction;
 
@@ -6254,7 +6254,7 @@ describe('CampaignController.getCampaignMetrics', () => {
     const res = buildRes();
     const next = vi.fn() as unknown as NextFunction;
 
-    await controller.getCampaignMetrics(metricsReq({ project: 'cncf', brief_id: BRIEF_ID }), res, next);
+    await controller.getCampaignMetrics(metricsReq({ project: 'cncf', briefId: BRIEF_ID }), res, next);
 
     expect(res.json).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledWith(refusal);

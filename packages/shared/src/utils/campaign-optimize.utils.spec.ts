@@ -223,4 +223,22 @@ describe('buildCampaignLiveCounters', () => {
     expect(counters.ctrPct).toBe(0);
     expect(counters.windowLabel).toBe('the last 7 days');
   });
+
+  it('flags the email channel and shows no cost for it', () => {
+    const base = {
+      campaign_id: 'c-1',
+      platform_campaign_id: '123',
+      window: 'last_30_days' as const,
+      impressions: 1840,
+      clicks: 212,
+      cost_micros: 0,
+      ctr: 0.1152,
+    };
+
+    expect(buildCampaignLiveCounters(base, 'hubspot')).toEqual(expect.objectContaining({ isEmail: true, impressions: 1840, cost: null }));
+    expect(buildCampaignLiveCounters({ ...base, email: { sent: 9400, delivered: 9268, opens: 1840, clicks: 212, bounces: 95, unsubscribes: 17 } })).toEqual(
+      expect.objectContaining({ isEmail: true, cost: null })
+    );
+    expect(buildCampaignLiveCounters(base, 'meta-ads')).toEqual(expect.objectContaining({ isEmail: false, cost: '0.00' }));
+  });
 });

@@ -581,10 +581,12 @@ export class CampaignService {
    * Reads campaign-service's live metrics for ONE campaign on a brief: impressions, clicks, cost (in
    * micro-units of the ad account's own currency, which the response does not name) and CTR.
    *
-   * Every read reaches the campaign's ad platform, so callers ask for it on an operator's request
-   * rather than for every row at once. `window` is optional and not defaulted, for the reason
-   * `getBriefMetrics` gives. A failure is an HTTP error, not a row status: 400 means the platform has
-   * no metrics read, 409 that the campaign cannot be measured yet (campaign-service's sentence says why).
+   * Every read reaches the campaign's ad platform. The Optimize tab shows each row's counters from
+   * `getBriefMetrics` and calls this only for one row at a time: on Refresh, or for a row the
+   * brief-wide read could not measure. `window` is optional and not defaulted, for the reason
+   * `getBriefMetrics` gives. A failure is an HTTP error, not a row status: campaign-service's 400
+   * means the platform has no metrics read, 409 that the campaign cannot be measured yet (its
+   * sentence says why). The error is logged and rethrown; the caller decides what the row shows.
    */
   public getCampaignMetrics(
     projectSlug: string,
@@ -592,11 +594,16 @@ export class CampaignService {
     campaignId: string,
     window?: CampaignMetricsWindow
   ): Observable<CampaignServiceCampaignMetrics> {
-    let params = new HttpParams().set('project', projectSlug).set('brief_id', briefId);
+    let params = new HttpParams().set('project', projectSlug).set('briefId', briefId);
     if (window !== undefined) {
       params = params.set('window', window);
     }
-    return this.http.get<CampaignServiceCampaignMetrics>(`/api/campaigns/${encodeURIComponent(campaignId)}/metrics`, { params });
+    return this.http.get<CampaignServiceCampaignMetrics>(`/api/campaigns/${encodeURIComponent(campaignId)}/metrics`, { params }).pipe(
+      catchError((error) => {
+        console.error('Failed to read campaign live metrics', error);
+        return throwError(() => error);
+      })
+    );
   }
 
   public lookupHubSpotUtm(projectSlug: string, eventName: string): Observable<HubSpotUtmLookupResult> {

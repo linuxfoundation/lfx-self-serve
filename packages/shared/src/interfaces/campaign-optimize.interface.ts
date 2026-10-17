@@ -819,13 +819,21 @@ export interface CampaignSettingsDrawerState {
  * `get-campaign-metrics` read by `buildCampaignLiveCounters`.
  */
 export interface CampaignLiveCounters {
+  /**
+   * The HubSpot email channel. Its first counter is OPENS to date (campaign-service mirrors opens
+   * into `impressions`), its window selects emails by SEND date rather than scoping the counters,
+   * and it bills nothing per send, so there is no cost to show.
+   */
+  isEmail: boolean;
+  /** Impressions over the window on an ad platform; opens to date on the email channel. */
   impressions: number;
   clicks: number;
   /**
    * Cost in whole units of the ad ACCOUNT's own currency, to two decimals. campaign-service names no
-   * currency on this read (and performs no FX), so the amount is shown without a symbol.
+   * currency on this read (and performs no FX), so the amount is shown without a symbol. `null` on
+   * the email channel, whose upstream 0 is not a cost.
    */
-  cost: string;
+  cost: string | null;
   /** Click-through rate as a percentage (upstream sends a fraction), for the `adsPct` pipe. */
   ctrPct: number;
   /** The window the counters cover, as campaign-service reports it, in words. */

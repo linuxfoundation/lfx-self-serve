@@ -2037,16 +2037,19 @@ export class CampaignController {
 
   /**
    * Read campaign-service's live metrics for ONE campaign: impressions, clicks, cost and CTR, read
-   * from its platform on every request. The Optimize tab asks for it when the operator opens a
-   * row's live counters — never as a fan-out over every row, because each read reaches an ad
-   * platform whose rate budget is shared across foundations.
+   * from its platform on every request. The Optimize tab shows each row's counters from the
+   * brief-wide read (`getBriefMetrics`) it already makes on open, and calls this only when the
+   * operator refreshes one row, or clicks a row the brief-wide read could not measure, to get this
+   * read's precise reason. Each call reaches an ad platform whose rate budget is shared across
+   * foundations.
    *
    * Behind `LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS`, like the adoptable-brief list: the route is
    * addressed by a campaign-service brief, and with the flag off none exists here, so it answers
    * 404 rather than reaching upstream.
    *
-   * The query mirrors `getBriefMetrics` (`project`, `brief_id`, optional `window`, refused rather
-   * than defaulted or dropped), and both ids are checked as UUIDs, which upstream declares them.
+   * The query takes `project` and `briefId` (camelCase, like the sibling per-campaign Optimize reads)
+   * and an optional `window` refused rather than defaulted or dropped, as `getBriefMetrics` does.
+   * Both ids are checked as UUIDs, which upstream declares them.
    * Upstream's refusals are relayed as they come: 400 for a platform with no metrics read, 409 for
    * a campaign that cannot be measured yet or belongs to another account, 404 for a missing
    * connection, 5xx for a connection or platform failure.
@@ -2064,10 +2067,10 @@ export class CampaignController {
       return;
     }
 
-    const briefId = typeof req.query['brief_id'] === 'string' ? req.query['brief_id'].trim() : '';
+    const briefId = typeof req.query['briefId'] === 'string' ? req.query['briefId'].trim() : '';
     if (!isCampaignServiceJobId(briefId)) {
       next(
-        ServiceValidationError.forField('brief_id', "the brief UUID is required to read a campaign's metrics", {
+        ServiceValidationError.forField('briefId', "the brief UUID is required to read a campaign's metrics", {
           operation,
           service: 'campaign_controller',
           path: req.path,

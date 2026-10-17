@@ -4,7 +4,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { CAMPAIGN_LIVE_METRICS_READ_ERRORS, CAMPAIGN_LIVE_METRICS_UNSUPPORTED_MESSAGE } from '@lfx-one/shared/constants';
-import type { CampaignServiceCampaignMetrics } from '@lfx-one/shared/interfaces';
+import type { BriefMetricsRow, CampaignServiceCampaignMetrics } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -48,6 +48,88 @@ describe('CampaignLiveMetricsComponent (#3299)', () => {
     fixture.detectChanges();
   }
 
+  // The tab already holds this measurement from its brief-wide read: shown with no call of its own.
+  it("shows an ok brief-wide row's counters without reading, and reads only on Refresh", () => {
+    const row: BriefMetricsRow = { campaign_id: 'c-1', platform: 'meta-ads', status: 'ok', metrics: { ...METRICS, clicks: 99 } };
+    fixture.componentRef.setInput('briefRow', row);
+    fixture.detectChanges();
+
+    expect(getCampaignMetrics).not.toHaveBeenCalled();
+    expect(text('optimization-campaign-live-clicks-c-1')).toBe('99');
+    expect(button()!.textContent?.trim()).toBe('Refresh live counters');
+
+    load();
+    expect(getCampaignMetrics).toHaveBeenCalledTimes(1);
+    expect(text('optimization-campaign-live-clicks-c-1')).toBe('212');
+  });
+
+  // A row the brief-wide read could not measure states its reason, and a click asks for the precise one.
+  it("states a non-ok brief-wide row's reason, and reads this campaign only when clicked", () => {
+    fixture.componentRef.setInput('briefRow', { campaign_id: 'c-1', platform: 'meta-ads', status: 'not_ready', reason: 'the campaign has no data yet' });
+    fixture.detectChanges();
+
+    expect(getCampaignMetrics).not.toHaveBeenCalled();
+    expect(text('optimization-campaign-live-brief-reason-c-1')).toContain('the campaign has no data yet');
+    expect(q('optimization-campaign-live-counters-c-1')).toBeNull();
+
+    getCampaignMetrics.mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 409, error: { error: 'no data in the window', code: 'CLIENT_ERROR' } }))
+    );
+    load();
+    expect(getCampaignMetrics).toHaveBeenCalledTimes(1);
+    expect(text('optimization-campaign-live-error-c-1')).toBe('no data in the window');
+    expect(q('optimization-campaign-live-brief-reason-c-1')).toBeNull();
+  });
+
+  it.each([
+    ['project', 'projectSlug'],
+    ['brief', 'briefId'],
+  ])('offers no read while the %s is empty', (_label, inputName) => {
+    fixture.componentRef.setInput(inputName, '');
+    fixture.detectChanges();
+
+    expect(button()).toBeNull();
+    fixture.componentInstance.load();
+    fixture.detectChanges();
+    expect(getCampaignMetrics).not.toHaveBeenCalled();
+  });
+
+  // The BFF's own validation 400 says nothing about the platform: an error with a retry, not "unsupported".
+  it("treats the BFF's VALIDATION_ERROR 400 as a retryable error", () => {
+    getCampaignMetrics.mockReturnValueOnce(
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 400,
+            error: {
+              error: 'Validation failed for briefId',
+              code: 'VALIDATION_ERROR',
+              errors: [{ field: 'briefId', message: 'briefId must be a brief UUID' }],
+            },
+          })
+      )
+    );
+    load();
+
+    expect(q('optimization-campaign-live-unsupported-c-1')).toBeNull();
+    expect(text('optimization-campaign-live-error-c-1')).toBe('briefId must be a brief UUID');
+    expect(button()!.textContent?.trim()).toBe('Try again');
+  });
+
+  // The email channel mirrors opens into impressions and bills nothing: "Opens", and no cost.
+  it('labels the email channel counter Opens and shows no cost', () => {
+    fixture.componentRef.setInput('platform', 'hubspot');
+    getCampaignMetrics.mockReturnValue(
+      of({ ...METRICS, impressions: 1840, cost_micros: 0, email: { sent: 9400, delivered: 9268, opens: 1840, clicks: 212, bounces: 95, unsubscribes: 17 } })
+    );
+    load();
+
+    expect(text('optimization-campaign-live-impressions-label-c-1')).toBe('Opens');
+    expect(text('optimization-campaign-live-impressions-c-1')).toBe('1,840');
+    expect(q('optimization-campaign-live-cost-c-1')).toBeNull();
+    expect(text('optimization-campaign-live-window-c-1')).toContain('to date for the emails sent over the last 30 days');
+  });
+
   it('reads nothing until the operator asks', () => {
     expect(getCampaignMetrics).not.toHaveBeenCalled();
     expect(button()!.textContent?.trim()).toBe('Live counters');
@@ -64,6 +146,7 @@ describe('CampaignLiveMetricsComponent (#3299)', () => {
     expect(text('optimization-campaign-live-clicks-c-1')).toBe('212');
     expect(text('optimization-campaign-live-cost-c-1')).toBe('1,284.57');
     expect(text('optimization-campaign-live-cost-c-1')).not.toContain('$');
+    expect(text('optimization-campaign-live-impressions-label-c-1')).toBe('Impressions');
     expect(text('optimization-campaign-live-ctr-c-1')).toBe('1.15%');
     expect(text('optimization-campaign-live-window-c-1')).toContain('the last 30 days');
     expect(button()!.textContent?.trim()).toBe('Refresh live counters');
@@ -147,5 +230,18 @@ describe('CampaignLiveMetricsComponent (#3299)', () => {
     expect(getCampaignMetrics).toHaveBeenCalledTimes(1);
     expect(q('optimization-campaign-live-counters-c-2')).toBeNull();
     expect(q('optimization-campaign-live-load-c-2')!.textContent?.trim()).toBe('Live counters');
+  });
+
+  // The request belonged to c-1 as it was then: coming back to c-1 does not replay it unasked.
+  it('does not replay a request when the campaign changes away and back', () => {
+    load();
+    fixture.componentRef.setInput('campaignId', 'c-2');
+    fixture.detectChanges();
+    fixture.componentRef.setInput('campaignId', 'c-1');
+    fixture.detectChanges();
+
+    expect(getCampaignMetrics).toHaveBeenCalledTimes(1);
+    expect(q('optimization-campaign-live-counters-c-1')).toBeNull();
+    expect(button()!.textContent?.trim()).toBe('Live counters');
   });
 });

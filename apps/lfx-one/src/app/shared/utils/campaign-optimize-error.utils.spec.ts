@@ -171,6 +171,12 @@ describe('campaignLiveMetricsFailureState', () => {
     });
   });
 
+  // The BFF's own validation 400 is not a statement about the platform: an error, with its field message.
+  it("reports the BFF's own VALIDATION_ERROR 400 as an error, not as unsupported", () => {
+    const body = { error: 'Validation failed for briefId', code: 'VALIDATION_ERROR', errors: [{ field: 'briefId', message: 'briefId must be a brief UUID' }] };
+    expect(campaignLiveMetricsFailureState(httpError(400, body))).toEqual({ status: 'error', counters: null, message: 'briefId must be a brief UUID' });
+  });
+
   it.each([403, 404, 500, 503])('maps a %i to its fixed sentence, never the upstream text', (status) => {
     expect(campaignLiveMetricsFailureState(httpError(status, { error: 'upstream words', code: 'X' }))).toEqual({
       status: 'error',

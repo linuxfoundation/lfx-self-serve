@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  CAMPAIGN_EMAIL_CHANNEL_PLATFORM,
   CAMPAIGN_METRICS_WINDOW_LABELS,
   CAMPAIGN_REF_INT64_PLATFORMS,
   CAMPAIGN_SETTINGS_BID_AMOUNT_FIELD,
@@ -204,19 +205,25 @@ export function campaignBudgetPacingFromSettings(readback: CampaignServiceSettin
 }
 
 /**
- * A row's live counters from one `get-campaign-metrics` read.
+ * A row's live counters from one campaign-service measurement — a `get-campaign-metrics` read, or
+ * the same-shaped `metrics` of an `ok` row in the brief-wide read.
  *
  * Cost arrives in MICRO-units of the ad account's own currency and is shown in whole units to two
  * decimals, formatted like the tab's other amounts but WITHOUT a currency symbol: the read names no
  * currency, and a `$` on a EUR account would be a false claim. CTR arrives as a fraction and becomes
  * a percentage. The window is the one campaign-service reports, which may be narrower than 30 days
  * when the platform cannot serve that range (X Ads).
+ *
+ * The email channel (the row's `platform`, or an `email` object on the measurement) is flagged so
+ * the first counter reads as opens to date, and carries no cost: upstream's 0 there is not a spend.
  */
-export function buildCampaignLiveCounters(metrics: CampaignServiceCampaignMetrics): CampaignLiveCounters {
+export function buildCampaignLiveCounters(metrics: CampaignServiceCampaignMetrics, platform = ''): CampaignLiveCounters {
+  const isEmail = platform === CAMPAIGN_EMAIL_CHANNEL_PLATFORM || metrics.email !== undefined;
   return {
+    isEmail,
     impressions: metrics.impressions,
     clicks: metrics.clicks,
-    cost: (metrics.cost_micros / 1_000_000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+    cost: isEmail ? null : (metrics.cost_micros / 1_000_000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
     ctrPct: metrics.ctr * 100,
     windowLabel: CAMPAIGN_METRICS_WINDOW_LABELS[metrics.window] ?? metrics.window,
   };
