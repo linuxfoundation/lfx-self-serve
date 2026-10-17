@@ -534,6 +534,18 @@
                   </button>
                 </div>
               </div>
+              <!--
+                The row's live counters. Shown from the brief-wide metrics read the tab already makes
+                when this campaign's row there is `ok`; the row reads campaign-service for itself only
+                on Refresh, or when clicked after the brief-wide read could not measure it.
+              -->
+              <lfx-campaign-live-metrics
+                [projectSlug]="projectSlug()"
+                [briefId]="briefId()"
+                [campaignId]="row.campaign.id"
+                [campaignName]="row.campaign.campaign_name"
+                [platform]="row.campaign.platform"
+                [briefRow]="briefMetricsRowsById()[row.campaign.id] ?? null" />
               @if (budgetEditorOpen()[row.campaign.id]) {
                 <lfx-campaign-budget-form
                   [id]="'campaign-budget-panel-' + row.campaign.id"

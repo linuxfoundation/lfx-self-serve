@@ -871,6 +871,56 @@ export interface CampaignSettingsDrawerState {
   message: string;
 }
 
+/**
+ * One campaign's live counters as its Optimize-tab row shows them, built from campaign-service's
+ * `get-campaign-metrics` read by `buildCampaignLiveCounters`.
+ */
+export interface CampaignLiveCounters {
+  /**
+   * The HubSpot email channel. Its first counter is OPENS to date (campaign-service mirrors opens
+   * into `impressions`), its window selects emails by SEND date rather than scoping the counters,
+   * and it bills nothing per send, so there is no cost to show.
+   */
+  isEmail: boolean;
+  /** Impressions over the window on an ad platform; opens to date on the email channel. */
+  impressions: number;
+  clicks: number;
+  /**
+   * Cost in whole units, to two decimals, without a symbol: USD on LinkedIn, the ad ACCOUNT's own
+   * currency (which the read does not name) everywhere else — see `costLabel`. campaign-service
+   * performs no FX. `null` on the email channel, whose upstream 0 is not a cost.
+   */
+  cost: string | null;
+  /** The cost counter's label, naming its currency as far as the read lets it be named. */
+  costLabel: string;
+  /** Click-through rate as a percentage (upstream sends a fraction), for the `adsPct` pipe. */
+  ctrPct: number;
+  /** The window the counters cover, as campaign-service reports it, in words. */
+  windowLabel: string;
+}
+
+/**
+ * A row's on-demand live counters read: not asked yet, in flight, answered, not offered for the
+ * campaign's platform (upstream's 400), or refused. `unsupported` is a standing property of the
+ * platform, not a failure, so it is kept apart from `error` and offers no retry.
+ */
+export interface CampaignLiveMetricsState {
+  status: 'idle' | 'loading' | 'ready' | 'unsupported' | 'error';
+  counters: CampaignLiveCounters | null;
+  /** What to show for `unsupported` and `error`; `''` otherwise. */
+  message: string;
+}
+
+/**
+ * A row's OWN `get-campaign-metrics` read, tagged with the generation of the brief-wide row it
+ * settled against. A newer brief-wide result (a tab Refresh) outranks a read that settled before it.
+ */
+export interface CampaignLiveMetricsOwnRead {
+  state: CampaignLiveMetricsState;
+  /** The brief-wide row generation current when the read settled; meaningless while loading. */
+  generation: number;
+}
+
 /** The adopt dialog's brief picker read. */
 export interface CampaignAdoptBriefsState {
   status: 'loading' | 'ready' | 'error';

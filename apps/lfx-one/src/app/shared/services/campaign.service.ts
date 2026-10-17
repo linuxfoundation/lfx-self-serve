@@ -84,6 +84,7 @@ import type {
   CampaignRecordResult,
   CampaignRefPlatform,
   CampaignServiceCampaign,
+  CampaignServiceCampaignMetrics,
   CampaignServiceCampaignResolution,
   CampaignServiceKeywordTargeting,
   CampaignServiceKeywordTargetingRemovals,
@@ -575,6 +576,35 @@ export class CampaignService {
       params = params.set('window', window);
     }
     return this.http.get<BriefMetrics>('/api/campaigns/brief/metrics', { params });
+  }
+
+  /**
+   * Reads campaign-service's live metrics for ONE campaign on a brief: impressions, clicks, cost (in
+   * micro-units: USD on LinkedIn, the ad account's own currency elsewhere; the response names neither) and CTR.
+   *
+   * Every read reaches the campaign's ad platform. The Optimize tab shows each row's counters from
+   * `getBriefMetrics` and calls this only for one row at a time: on Refresh, or for a row the
+   * brief-wide read could not measure. `window` is optional and not defaulted, for the reason
+   * `getBriefMetrics` gives. A failure is an HTTP error, not a row status: campaign-service's 400
+   * means the platform has no metrics read, 409 that the campaign cannot be measured yet (its
+   * sentence says why). The error is logged and rethrown; the caller decides what the row shows.
+   */
+  public getCampaignMetrics(
+    projectSlug: string,
+    briefId: string,
+    campaignId: string,
+    window?: CampaignMetricsWindow
+  ): Observable<CampaignServiceCampaignMetrics> {
+    let params = new HttpParams().set('project', projectSlug).set('briefId', briefId);
+    if (window !== undefined) {
+      params = params.set('window', window);
+    }
+    return this.http.get<CampaignServiceCampaignMetrics>(`/api/campaigns/${encodeURIComponent(campaignId)}/metrics`, { params }).pipe(
+      catchError((error) => {
+        console.error('Failed to read campaign live metrics', error);
+        return throwError(() => error);
+      })
+    );
   }
 
   public lookupHubSpotUtm(projectSlug: string, eventName: string): Observable<HubSpotUtmLookupResult> {
