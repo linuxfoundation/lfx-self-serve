@@ -5,6 +5,9 @@ import type { DevPersonaPreset, PersonaOption, PersonaType } from '../interfaces
 
 export const VALID_PERSONAS: ReadonlySet<string> = new Set<string>(['contributor', 'maintainer', 'board-member', 'executive-director']);
 
+/** The executive-director persona, for server policies that admit EDs by persona. */
+export const EXECUTIVE_DIRECTOR_PERSONA: PersonaType = 'executive-director';
+
 export const BOARD_SCOPED_PERSONAS: ReadonlySet<PersonaType> = new Set(['board-member', 'executive-director']);
 
 export const PROJECT_SCOPED_PERSONAS: ReadonlySet<PersonaType> = new Set(['maintainer', 'contributor']);

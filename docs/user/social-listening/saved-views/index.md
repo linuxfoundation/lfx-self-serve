@@ -2,14 +2,14 @@
 title: Saved Views
 description: How to save, apply, share, and manage named filter views on the Social Listening feed in LFX Self Serve.
 display_order: 3
-audience: [executive-director]
+audience: [contributor, maintainer, board-member, executive-director]
 product_area: Social Listening
 tags: [social listening, saved views, filters, sharing, presets]
-last_updated: 2026-08-31
+last_updated: 2026-10-13
 intercom_collection: Social Listening
 ---
 
-This article applies to users with the **executive-director** persona and to **LF Staff**. A saved view is a named snapshot of your current Social Listening setup that you can reapply with one click.
+This article applies to users with the **executive-director** persona and to **LF Staff**. Members of a foundation's groups can use it too when that group's **Members Can View Social Listening** setting is on. A saved view is a named snapshot of your current Social Listening setup that you can reapply with one click.
 
 ## What a view captures
 

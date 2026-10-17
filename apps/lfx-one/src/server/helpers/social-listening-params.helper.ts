@@ -84,6 +84,11 @@ const VALID_SENTIMENTS = MENTION_SENTIMENT_OPTIONS.map((option) => option.value)
 const VALID_RELEVANCES = MENTION_RELEVANCE_OPTIONS.map((option) => option.value);
 const VALID_HAS_TITLE = MENTION_HAS_TITLE_OPTIONS.map((option) => option.value);
 
+/** Whether `slug` has the shape of a foundation slug — safe to pass to slug lookups and cache keys. */
+export function isValidFoundationSlug(slug: string): boolean {
+  return slug.length <= FOUNDATION_SLUG_MAX_LENGTH && FOUNDATION_SLUG_PATTERN.test(slug);
+}
+
 /** Required, format-checked foundation slug, capped at the cache-key builder's 64-char ceiling (`isFilterSafeIdentifier`). */
 export function parseFoundationSlug(req: Request, operation: string): string {
   const foundationSlug = getStringQueryParam(req, 'foundationSlug');
@@ -92,7 +97,7 @@ export function parseFoundationSlug(req: Request, operation: string): string {
     throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', { operation });
   }
 
-  if (foundationSlug.length > FOUNDATION_SLUG_MAX_LENGTH || !FOUNDATION_SLUG_PATTERN.test(foundationSlug)) {
+  if (!isValidFoundationSlug(foundationSlug)) {
     throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', { operation });
   }
 

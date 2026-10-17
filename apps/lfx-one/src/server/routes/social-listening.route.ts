@@ -5,17 +5,21 @@ import { Router } from 'express';
 
 import { SocialListeningController } from '../controllers/social-listening.controller';
 import { blockDuringImpersonation } from '../middleware/impersonation-readonly.middleware';
-import { requireDashboardAccess } from '../middleware/require-dashboard-access.middleware';
+import { requireSocialListeningAccess } from '../middleware/require-social-listening-access.middleware';
 
 const router = Router();
 
 const socialListeningController = new SocialListeningController();
 
+// Access probe — registered before the policy so a caller without access gets `canView: false`, not a 403.
+router.get('/access', (req, res, next) => socialListeningController.getAccess(req, res, next));
+
 /**
- * Social Listening is an executive-dashboard surface (LFXV2-3002): EDs and LF Staff. The policy wraps
- * the whole router so every current and future endpoint is covered; rate limiting is the app-wide one.
+ * Social Listening is an executive-dashboard surface (LFXV2-3002): EDs and LF Staff, plus members of a
+ * foundation's groups that opt in (lfx-self-serve-ops#387). The policy wraps the whole router so
+ * every current and future endpoint is covered; rate limiting is the app-wide one.
  */
-router.use(requireDashboardAccess);
+router.use(requireSocialListeningAccess);
 
 // Mentions feed + total — POST reads remain available during authorized impersonation.
 router.post('/mentions-feed', (req, res, next) => socialListeningController.getMentionsFeed(req, res, next));
