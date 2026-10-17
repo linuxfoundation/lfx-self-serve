@@ -413,8 +413,8 @@ export type RedditKeywordsWindow = MicrosoftKeywordsWindow;
 
 /**
  * One (campaign, keyword) row of campaign-service's `get-reddit-ads-keywords` (`reddit-ads-keyword`).
- * READ-ONLY: Reddit's KEYWORD report carries no keyword id, match type or status, so a row addresses
- * no action; Reddit keywords are acted on through the keyword-targeting levers.
+ * Reddit's KEYWORD report carries no keyword id, match type or status, so a row cannot address the
+ * keyword itself; its TEXT can still be added as a negative through `add-negative-keywords`.
  */
 export interface CampaignServiceRedditKeywordRow {
   /** Reddit's campaign id (map it with `/reddit-ads/campaign-ref`). */
@@ -454,10 +454,46 @@ export interface RedditKeywordMetrics {
   spend: number;
 }
 
-/** A Reddit keyword row as the table draws it: the campaign column's label precomputed. */
+/**
+ * The brief campaign a Reddit keyword row's "Add as negative" writes to, keyed by Reddit's campaign
+ * id: campaign-service's own campaign UUID, which `add-negative-keywords` is addressed by.
+ */
+export interface RedditKeywordNegativeTarget {
+  campaignId: string;
+  campaignName: string;
+}
+
+/**
+ * Where one Reddit keyword row's "Add as negative" stands.
+ *
+ * - `none`: no action is offered — the keyword's campaign is not an available Reddit campaign of
+ *   this brief, the delivery is attributed to no keyword, or the text is one the lever refuses.
+ * - `available`: the button is offered.
+ * - `busy`: a negative-keyword request of the campaign is in flight, or its revision is being read.
+ * - `negative`: this session's last request for the campaign confirmed the keyword as a negative.
+ */
+export interface RedditKeywordNegativeAction {
+  state: 'none' | 'available' | 'busy' | 'negative';
+  /** True on the row whose keyword is being sent (or whose revision is being read). */
+  sending: boolean;
+  /** The button's accessible name, naming the keyword and the campaign. `''` when nothing is offered. */
+  ariaLabel: string;
+  /** This keyword's outcome in the campaign's last request ("Added", "Not confirmed", ...), or `''`. */
+  outcomeLabel: string;
+  /** What to tell the operator beyond the label: the verify-first advice, the refusal, or `''`. */
+  outcomeDetail: string;
+  /**
+   * How the outcome reads when the operator must act on it: `warning` for not confirmed (it may have
+   * been added — verify first), `error` for not added or not sent, `none` otherwise.
+   */
+  outcomeTone: 'none' | 'warning' | 'error';
+}
+
+/** A Reddit keyword row as the table draws it: the campaign column's label and the row's action precomputed. */
 export interface RedditKeywordDisplayRow extends RedditKeywordMetrics {
   /** The brief's name for the campaign, or Reddit's campaign id when the brief does not know it. */
   campaignLabel: string;
+  negative: RedditKeywordNegativeAction;
 }
 
 /** Totals over the rows returned (a subtotal when the read was truncated). No conversions: Reddit's read has none. */

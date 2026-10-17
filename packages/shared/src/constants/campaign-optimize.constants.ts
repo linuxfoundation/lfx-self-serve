@@ -819,6 +819,13 @@ export const REDDIT_KEYWORDS_ERROR_MESSAGES: Readonly<Record<'notConnected' | 'd
 };
 
 /**
+ * What a Reddit keyword row says when its "Add as negative" could not read the `revision` Reddit
+ * requires (the read failed, or answered none): nothing was sent. The negative-keyword editor's own wording.
+ */
+export const REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR =
+  "The ad group's targeting couldn't be read, and Reddit needs it before keywords can be excluded. Nothing was sent.";
+
+/**
  * The statuses a keyword lever (keyword-targeting removal, negative-keyword add) may report as a
  * DEFINITE failure, and only when the BFF's own envelope carries them: campaign-service documents
  * 400 (malformed batch, unsupported platform, Reddit writes off) and 409 (refused before anything

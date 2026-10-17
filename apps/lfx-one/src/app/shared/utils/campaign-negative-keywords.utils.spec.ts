@@ -8,10 +8,16 @@ import {
   CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED,
   CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNKNOWN,
 } from '@lfx-one/shared/constants';
-import type { CampaignNegativeKeywordsResult } from '@lfx-one/shared/interfaces';
+import type { CampaignNegativeKeywordsRequestState, CampaignNegativeKeywordsResult } from '@lfx-one/shared/interfaces';
 import { describe, expect, it } from 'vitest';
 
-import { campaignNegativeKeywordsFailureOutcome, negativeKeywordOutcomeRows, summarizeNegativeKeywordOutcomes } from './campaign-negative-keywords.utils';
+import {
+  campaignNegativeKeywordsFailureOutcome,
+  negativeKeywordOutcomeRows,
+  redditKeywordNegativeAction,
+  redditNegativeKeywordText,
+  summarizeNegativeKeywordOutcomes,
+} from './campaign-negative-keywords.utils';
 
 const httpError = (status: number, error: unknown): HttpErrorResponse => new HttpErrorResponse({ status, statusText: 'x', error });
 
@@ -152,6 +158,110 @@ describe('campaignNegativeKeywordsFailureOutcome', () => {
     expect(campaignNegativeKeywordsFailureOutcome(httpError(400, { error: '', code: 'BAD_REQUEST' }))).toEqual({
       state: 'failed',
       message: CAMPAIGN_NEGATIVE_KEYWORDS_FAILURE_FALLBACK,
+    });
+  });
+});
+
+describe('redditNegativeKeywordText', () => {
+  it('parses the keyword as the editor parses a line', () => {
+    expect(redditNegativeKeywordText('  service   mesh ')).toBe('service mesh');
+  });
+
+  it.each([
+    ['no keyword', null],
+    ['a blank keyword', '   '],
+    ['disallowed characters', 'k8s!!'],
+    ['adjacent punctuation', "rock''n"],
+    ['more than one line', 'a\nb'],
+    ['a text over the length cap', 'x'.repeat(101)],
+  ])('is null for %s', (_label, keyword) => {
+    expect(redditNegativeKeywordText(keyword)).toBeNull();
+  });
+});
+
+describe('redditKeywordNegativeAction', () => {
+  const target = { campaignId: 'c-1', campaignName: 'KubeCon EU' };
+  const idle = { campaignReading: false, rowReading: false };
+  const request = (over: Partial<CampaignNegativeKeywordsRequestState> = {}): CampaignNegativeKeywordsRequestState => ({
+    pending: false,
+    outcomeRows: [],
+    batchOutcome: null,
+    batchKeywords: [],
+    sent: [],
+    matchType: 'Broad',
+    platform: 'reddit-ads',
+    settleCount: 1,
+    ...over,
+  });
+  const rows = (sent: string[], outcomes: ('APPLIED' | 'ALREADY_PRESENT' | 'FAILED' | 'UNCONFIRMED')[]) =>
+    negativeKeywordOutcomeRows(
+      sent,
+      'Broad',
+      { campaignId: 'c-1', appliedCount: 0, results: sent.map((text, i) => ({ text, matchType: 'Broad' as const, outcome: outcomes[i] })) },
+      'reddit-ads'
+    );
+
+  it('offers nothing without a target or a sendable keyword', () => {
+    expect(redditKeywordNegativeAction('service mesh', null, null, idle).state).toBe('none');
+    expect(redditKeywordNegativeAction(null, target, null, idle).state).toBe('none');
+    expect(redditKeywordNegativeAction('k8s!!', target, null, idle).state).toBe('none');
+  });
+
+  it('offers the add, named for the keyword and the campaign', () => {
+    expect(redditKeywordNegativeAction('service mesh', target, null, idle)).toEqual({
+      state: 'available',
+      sending: false,
+      ariaLabel: 'Add "service mesh" as a negative keyword to KubeCon EU',
+      outcomeLabel: '',
+      outcomeDetail: '',
+      outcomeTone: 'none',
+    });
+  });
+
+  it('is busy while a request of the campaign is in flight, sending only on the keyword it carries', () => {
+    const pending = request({ pending: true, sent: ['service mesh'] });
+    expect(redditKeywordNegativeAction('service mesh', target, pending, idle)).toMatchObject({ state: 'busy', sending: true });
+    expect(redditKeywordNegativeAction('gitops', target, pending, idle)).toMatchObject({ state: 'busy', sending: false });
+  });
+
+  it('is busy while the revision of the campaign is being read', () => {
+    expect(redditKeywordNegativeAction('gitops', target, null, { campaignReading: true, rowReading: true })).toMatchObject({ state: 'busy', sending: true });
+    expect(redditKeywordNegativeAction('gitops', target, null, { campaignReading: true, rowReading: false })).toMatchObject({ state: 'busy', sending: false });
+  });
+
+  // Positional: the outcome at the keyword's index in what was SENT.
+  it('shows a confirmed keyword as a negative and an unsettled one with its outcome', () => {
+    const settled = request({
+      sent: ['free', 'service mesh', 'gitops', 'jobs'],
+      outcomeRows: rows(['free', 'service mesh', 'gitops', 'jobs'], ['APPLIED', 'ALREADY_PRESENT', 'UNCONFIRMED', 'FAILED']),
+    });
+
+    expect(redditKeywordNegativeAction('free', target, settled, idle)).toMatchObject({ state: 'negative', outcomeLabel: 'Added', ariaLabel: '' });
+    expect(redditKeywordNegativeAction('service mesh', target, settled, idle)).toMatchObject({ state: 'negative', outcomeLabel: 'Already present' });
+    expect(redditKeywordNegativeAction('gitops', target, settled, idle)).toMatchObject({
+      state: 'available',
+      outcomeLabel: 'Not confirmed',
+      outcomeTone: 'warning',
+    });
+    expect(redditKeywordNegativeAction('jobs', target, settled, idle)).toMatchObject({ state: 'available', outcomeLabel: 'Not added', outcomeTone: 'error' });
+    expect(redditKeywordNegativeAction('other', target, settled, idle)).toMatchObject({ state: 'available', outcomeTone: 'none' });
+  });
+
+  it('words a request that produced no per-keyword results by its batch outcome', () => {
+    const refused = request({ sent: ['gitops'], batchKeywords: ['gitops'], batchOutcome: { state: 'failed', message: 'stale revision' } });
+    const unknown = request({ sent: ['gitops'], batchKeywords: ['gitops'], batchOutcome: { state: 'unconfirmed', message: 'verify first' } });
+
+    expect(redditKeywordNegativeAction('gitops', target, refused, idle)).toMatchObject({
+      state: 'available',
+      outcomeLabel: 'Not added',
+      outcomeDetail: 'stale revision',
+      outcomeTone: 'error',
+    });
+    expect(redditKeywordNegativeAction('gitops', target, unknown, idle)).toMatchObject({
+      state: 'available',
+      outcomeLabel: 'Not confirmed',
+      outcomeDetail: 'verify first',
+      outcomeTone: 'warning',
     });
   });
 });

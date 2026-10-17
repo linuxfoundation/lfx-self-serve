@@ -17,9 +17,13 @@ import type {
   CampaignNegativeKeywordOutcomeRow,
   CampaignNegativeKeywordResult,
   CampaignNegativeKeywordsBatchOutcome,
+  CampaignNegativeKeywordsRequestState,
   CampaignNegativeKeywordsResult,
   NegativeKeywordCampaignPlatform,
+  RedditKeywordNegativeAction,
+  RedditKeywordNegativeTarget,
 } from '@lfx-one/shared/interfaces';
+import { parseNegativeKeywordInput } from '@lfx-one/shared/utils';
 
 import { classifyCampaignWriteFailure } from './campaign-write-error.utils';
 
@@ -132,4 +136,80 @@ export function summarizeNegativeKeywordOutcomes(
  */
 export function campaignNegativeKeywordsKey(projectSlug: string, briefId: string, campaignId: string): string {
   return `${projectSlug}|${briefId}|${campaignId}`;
+}
+
+/**
+ * The text a Reddit keyword-report row would be sent as through `add-negative-keywords`: the
+ * keyword parsed exactly as the negative-keyword editor parses a line (whitespace collapsed, the
+ * lever's length and character rules applied). `null` when the row has no keyword or the lever
+ * would refuse its text, so no action is offered for it.
+ */
+export function redditNegativeKeywordText(keyword: string | null): string | null {
+  if (keyword === null || keyword.includes('\n') || keyword.includes('\r')) {
+    return null;
+  }
+  const parsed = parseNegativeKeywordInput(keyword);
+  return parsed.problems.length === 0 && parsed.keywords.length === 1 ? parsed.keywords[0] : null;
+}
+
+/**
+ * Where one Reddit keyword row's "Add as negative" stands, from the campaign's latest request in
+ * `CampaignNegativeKeywordsService` (shared with the campaign's own negative-keyword editor).
+ *
+ * The keyword's outcome is found by its position in what was SENT, never by matching the text the
+ * response echoed: `outcomeRows[i]` answers `sent[i]`. The sent list was parsed exactly as
+ * `redditNegativeKeywordText` parses the row, so the two compare as equal strings.
+ *
+ * `negative` only for a CONFIRMED outcome (added or already present). Reddit offers no read of a
+ * campaign's excluded keywords, so a negative this session did not confirm is not known here; the
+ * button stays offered, and upstream answers ALREADY_PRESENT without sending it again.
+ */
+export function redditKeywordNegativeAction(
+  keyword: string | null,
+  target: RedditKeywordNegativeTarget | null,
+  request: CampaignNegativeKeywordsRequestState | null,
+  revisionRead: { campaignReading: boolean; rowReading: boolean }
+): RedditKeywordNegativeAction {
+  const none: RedditKeywordNegativeAction = { state: 'none', sending: false, ariaLabel: '', outcomeLabel: '', outcomeDetail: '', outcomeTone: 'none' };
+  const text = redditNegativeKeywordText(keyword);
+  if (text === null || target === null) {
+    return none;
+  }
+  const ariaLabel = `Add "${text}" as a negative keyword to ${target.campaignName}`;
+  if (request?.pending) {
+    return { ...none, state: 'busy', sending: request.sent.includes(text), ariaLabel };
+  }
+  if (revisionRead.campaignReading) {
+    return { ...none, state: 'busy', sending: revisionRead.rowReading, ariaLabel };
+  }
+  const index = request === null ? -1 : request.sent.indexOf(text);
+  if (request === null || index === -1) {
+    return { ...none, state: 'available', ariaLabel };
+  }
+  if (request.batchOutcome !== null) {
+    const unconfirmed = request.batchOutcome.state === 'unconfirmed';
+    return {
+      ...none,
+      state: 'available',
+      ariaLabel,
+      outcomeLabel: CAMPAIGN_NEGATIVE_KEYWORD_OUTCOME_LABELS[unconfirmed ? 'UNCONFIRMED' : 'FAILED'],
+      outcomeDetail: request.batchOutcome.message,
+      outcomeTone: unconfirmed ? 'warning' : 'error',
+    };
+  }
+  const row = request.outcomeRows[index];
+  if (row === undefined) {
+    return { ...none, state: 'available', ariaLabel };
+  }
+  if (row.outcome === 'APPLIED' || row.outcome === 'ALREADY_PRESENT') {
+    return { ...none, state: 'negative', outcomeLabel: row.label };
+  }
+  return {
+    ...none,
+    state: 'available',
+    ariaLabel,
+    outcomeLabel: row.label,
+    outcomeDetail: row.detail,
+    outcomeTone: row.outcome === 'UNCONFIRMED' ? 'warning' : 'error',
+  };
 }
