@@ -9,6 +9,7 @@ import { MessageService } from 'primeng/api';
 import { Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { CampaignKeywordTargetingService } from './campaign-keyword-targeting.service';
 import { CampaignNegativeKeywordsService } from './campaign-negative-keywords.service';
 import { CampaignService } from './campaign.service';
 
@@ -39,7 +40,7 @@ describe('CampaignNegativeKeywordsService', () => {
     messageAdd = vi.fn();
     TestBed.configureTestingModule({
       providers: [
-        { provide: CampaignService, useValue: { addNegativeKeywords } },
+        { provide: CampaignService, useValue: { addNegativeKeywords, removeKeywordTargeting: vi.fn().mockReturnValue(new Subject()) } },
         { provide: MessageService, useValue: { add: messageAdd } },
       ],
     });
@@ -135,6 +136,44 @@ describe('CampaignNegativeKeywordsService', () => {
     expect(request.batchOutcome?.state).toBe('unconfirmed');
     expect(request.batchKeywords).toEqual(['alpha', 'beta']);
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', sticky: true }));
+  });
+
+  it('says whether it sent', () => {
+    expect(service.submit(submission())).toBe(true);
+    expect(service.submit(submission())).toBe(false);
+    expect(service.submit(submission({ campaignId: 'c-2', platform: 'reddit-ads', matchType: 'Broad' }))).toBe(false);
+    expect(addNegativeKeywords).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a held campaign until it is released, and holds nothing busy', () => {
+    expect(service.reserve('tlf', 'b-1', 'c-1')).toBe(true);
+    expect(service.reservations()).toEqual({ 'tlf|b-1|c-1': true });
+    expect(service.reserve('tlf', 'b-1', 'c-1')).toBe(false);
+    expect(service.submit(submission())).toBe(false);
+    expect(addNegativeKeywords).not.toHaveBeenCalled();
+
+    service.release('tlf', 'b-1', 'c-1');
+    expect(service.reservations()).toEqual({});
+    expect(service.submit(submission())).toBe(true);
+    // A campaign with a request in flight cannot be held.
+    expect(service.reserve('tlf', 'b-1', 'c-1')).toBe(false);
+  });
+
+  // A campaign's Reddit targeting is one domain: an add waits for a removal from it to settle.
+  it('refuses to send or hold while a keyword-targeting removal of the campaign is in flight', () => {
+    TestBed.inject(CampaignKeywordTargetingService).remove({
+      projectSlug: 'tlf',
+      briefId: 'b-1',
+      campaignId: 'c-1',
+      campaignName: 'KubeCon EU',
+      platform: 'reddit-ads',
+      request: { briefId: 'b-1', keywords: [{ keyword: 'mesh' }], revision: 'sha256:r1' },
+      sent: ['mesh'],
+    });
+
+    expect(service.reserve('tlf', 'b-1', 'c-1')).toBe(false);
+    expect(service.submit(submission({ platform: 'reddit-ads', matchType: 'Broad', revision: 'sha256:r1' }))).toBe(false);
+    expect(service.submit(submission({ campaignId: 'c-2' }))).toBe(true);
   });
 
   it('refuses a second request for the same campaign while one is in flight', () => {

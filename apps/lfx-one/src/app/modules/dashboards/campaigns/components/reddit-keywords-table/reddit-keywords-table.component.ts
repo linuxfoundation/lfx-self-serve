@@ -7,21 +7,30 @@ import { afterNextRender, Component, computed, DestroyRef, inject, input, Signal
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import {
+  CAMPAIGN_NEGATIVE_KEYWORD_NOT_SENT_LABEL,
   CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES,
   DEFAULT_REDDIT_KEYWORDS_WINDOW,
   LIVE_REGION_MOUNT_DELAY_MS,
   REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR,
+  REDDIT_KEYWORD_NEGATIVE_SUPERSEDED_MESSAGE,
   REDDIT_KEYWORDS_ERROR_MESSAGES,
   REDDIT_KEYWORDS_WINDOW_OPTIONS,
 } from '@lfx-one/shared/constants';
 import type { RedditKeywordDisplayRow, RedditKeywordNegativeTarget, RedditKeywordsView, RedditKeywordsWindow } from '@lfx-one/shared/interfaces';
+import { slugify } from '@lfx-one/shared/utils';
 import { AdsPctPipe } from '@pipes/campaign-optimization.pipe';
+import { CampaignKeywordTargetingService } from '@services/campaign-keyword-targeting.service';
 import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
 import { CampaignService } from '@services/campaign.service';
-import { campaignNegativeKeywordsKey, redditKeywordNegativeAction, redditNegativeKeywordText } from '@shared/utils/campaign-negative-keywords.utils';
+import {
+  campaignNegativeKeywordsKey,
+  negativeKeywordUnconfirmedAdvice,
+  redditKeywordNegativeAction,
+  redditNegativeKeywordText,
+} from '@shared/utils/campaign-negative-keywords.utils';
 import { ConfirmationService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
-import { catchError, map, of, startWith, switchMap, take } from 'rxjs';
+import { catchError, finalize, map, of, startWith, switchMap, take } from 'rxjs';
 
 /**
  * The Reddit keyword performance table on the Optimize tab, from campaign-service's
@@ -35,13 +44,17 @@ import { catchError, map, of, startWith, switchMap, take } from 'rxjs';
  *
  * - Offered only for a row whose Reddit campaign is an AVAILABLE Reddit campaign of this brief
  *   (`negativeTargets`, built from the rows that offer the editor) and whose text the lever accepts.
- * - Confirmed first. Then the campaign's keyword targeting is read for the `revision` Reddit
- *   requires (read AFTER the confirm, so it is as fresh as it can be), and the add is handed to the
- *   root `CampaignNegativeKeywordsService`, which sends it once, toasts its outcome and keeps it past
- *   this table. A read that answers no revision sends nothing.
- * - While a request of the campaign is in flight (from here or its editor) every row of that
- *   campaign is held; a keyword the last request confirmed (added or already present) shows as a
- *   negative instead of the button. Reddit offers no read of the excluded keywords themselves.
+ * - Confirmed first (with the verify-first advice when the keyword's last add was not confirmed).
+ *   Then the campaign is RESERVED in the root `CampaignNegativeKeywordsService` and its keyword
+ *   targeting is read for the `revision` Reddit requires (read AFTER the confirm, so it is as fresh
+ *   as it can be); the add is handed to that service, which sends it once, toasts its outcome and
+ *   keeps it past this table. A failed read, a read with no revision, or a submit the service
+ *   refuses sends nothing, and the row says "Not sent" until the table reads again.
+ * - A campaign's Reddit targeting is one domain: while a negative-keyword request or reservation of
+ *   it, or a keyword-targeting removal of it, is in flight, every row of that campaign is held (and
+ *   the campaign's editor and targeting panel hold too). A keyword the last request confirmed (added
+ *   or already present) shows as a negative instead of the button. Reddit offers no read of the
+ *   excluded keywords themselves.
  *
  * No conversions (the read requests none). Amounts are in the ad account's own currency: no `$`.
  * Every read failure is worded by status in fixed text.
@@ -57,6 +70,7 @@ import { catchError, map, of, startWith, switchMap, take } from 'rxjs';
 export class RedditKeywordsTableComponent {
   private readonly campaignService = inject(CampaignService);
   private readonly negativeKeywordsService = inject(CampaignNegativeKeywordsService);
+  private readonly keywordTargetingService = inject(CampaignKeywordTargetingService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -81,8 +95,14 @@ export class RedditKeywordsTableComponent {
   private readonly retryToken = signal(0);
   /** The row key whose campaign's revision is being read, by campaign UUID. */
   private readonly revisionReads = signal<Record<string, string>>({});
-  /** Rows whose revision read failed, so nothing was sent: the fixed sentence to show, by row key. */
-  private readonly revisionErrors = signal<Record<string, string>>({});
+  /**
+   * Rows whose add was not sent (the revision read failed or answered none, or another keyword change
+   * started first), by row key, with the keyword read they were made against: a Refresh, Retry or
+   * window change starts a new read and drops them.
+   */
+  private readonly notSent = signal<Record<string, { read: string; message: string }>>({});
+  /** Identifies the keyword read the rows come from: changes on Refresh, Retry and window change. */
+  private readonly readId: Signal<string> = computed(() => `${this.reloadToken()}|${this.retryToken()}|${this.selectedWindow()}`);
 
   protected readonly view: Signal<RedditKeywordsView> = this.initView();
   /** The rows with their campaign label and action precomputed, so the template calls no method. */
@@ -128,10 +148,12 @@ export class RedditKeywordsTableComponent {
     }
     const projectSlug = this.projectSlug();
     const briefId = this.briefId();
+    // The last request could not confirm this keyword: it may already be a negative, so say so first.
+    const verifyFirst = row.negative.outcomeTone === 'warning' ? ` ${negativeKeywordUnconfirmedAdvice('reddit-ads')}` : '';
     this.confirmationService.confirm({
       key: this.confirmKey,
       header: 'Add a negative keyword?',
-      message: `Add "${text}" as a negative keyword to ${target.campaignName}? ${CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES['reddit-ads'].destination} The campaign then stops serving where it matches. This changes a live campaign.`,
+      message: `Add "${text}" as a negative keyword to ${target.campaignName}? ${CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES['reddit-ads'].destination} The campaign then stops serving where it matches. This changes a live campaign.${verifyFirst}`,
       acceptLabel: 'Add as negative',
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-sm',
@@ -146,19 +168,29 @@ export class RedditKeywordsTableComponent {
       const projectSlug = this.projectSlug();
       const briefId = this.briefId();
       const requests = this.negativeKeywordsService.requests();
+      const reservations = this.negativeKeywordsService.reservations();
+      const removals = this.keywordTargetingService.removals();
       const reads = this.revisionReads();
-      const errors = this.revisionErrors();
+      const notSent = this.notSent();
+      const readId = this.readId();
       return (this.view().data?.keywords ?? []).map((row) => {
         const target = this.targetFor(row.campaignId);
-        const request = target === null ? null : (requests[campaignNegativeKeywordsKey(projectSlug, briefId, target.campaignId)] ?? null);
+        const key = target === null ? '' : campaignNegativeKeywordsKey(projectSlug, briefId, target.campaignId);
         const reading = target === null ? undefined : reads[target.campaignId];
-        const action = redditKeywordNegativeAction(row.keyword, target, request, { campaignReading: reading !== undefined, rowReading: reading === row.key });
-        // A failed revision read sent nothing; it is said only while no request outcome speaks for the keyword.
-        const revisionError = Object.hasOwn(errors, row.key) && action.state === 'available' && action.outcomeLabel === '' ? errors[row.key] : '';
+        const action = redditKeywordNegativeAction(row.keyword, target, requests[key] ?? null, {
+          campaignReading: reading !== undefined || !!reservations[key],
+          rowReading: reading === row.key,
+          targetingRemovalPending: !!removals[key]?.pending,
+        });
+        // An add that was not sent is said only while no request outcome speaks for the keyword.
+        const held = Object.hasOwn(notSent, row.key) && notSent[row.key].read === readId && action.state === 'available' && action.outcomeLabel === '';
         return {
           ...row,
           campaignLabel: Object.hasOwn(names, row.campaignId) ? names[row.campaignId] : row.campaignId,
-          negative: revisionError === '' ? action : { ...action, outcomeLabel: 'Not sent', outcomeDetail: revisionError, outcomeTone: 'error' as const },
+          testIdKey: slugify(row.key),
+          negative: held
+            ? { ...action, outcomeLabel: CAMPAIGN_NEGATIVE_KEYWORD_NOT_SENT_LABEL, outcomeDetail: notSent[row.key].message, outcomeTone: 'error' as const }
+            : action,
         };
       });
     });
@@ -192,53 +224,70 @@ export class RedditKeywordsTableComponent {
 
   /**
    * Reads the campaign's keyword targeting for the `revision` Reddit requires, then hands the add to
-   * the root service exactly as the campaign's editor does. The read is not retried and its failure
-   * sends nothing; a table destroyed mid-read sends nothing either. Nothing is sent when, while the
-   * dialog was open, the page moved to another project or brief or the campaign stopped taking
-   * negatives.
+   * the root service exactly as the campaign's editor does. The campaign is RESERVED in that service
+   * for the read, so its editor (and any other sender) waits; the hold is released just before the
+   * submit, and on every other end of the read (failure, a table destroyed mid-read).
+   *
+   * Nothing is sent when, while the dialog was open, the page moved to another project or brief or
+   * the campaign stopped taking negatives; when the read fails or answers no revision; or when the
+   * service refuses the submit (another change to the campaign's keywords started first). The row
+   * says "Not sent" for the last three.
    */
   private addNegative(projectSlug: string, briefId: string, row: RedditKeywordDisplayRow, target: RedditKeywordNegativeTarget, text: string): void {
     const { campaignId, campaignName } = target;
     const rowKey = row.key;
-    if (
-      this.projectSlug() !== projectSlug ||
-      this.briefId() !== briefId ||
-      this.targetFor(row.campaignId)?.campaignId !== campaignId ||
-      this.revisionReads()[campaignId] !== undefined ||
-      this.negativeKeywordsService.requests()[campaignNegativeKeywordsKey(projectSlug, briefId, campaignId)]?.pending
-    ) {
+    const readId = this.readId();
+    if (this.projectSlug() !== projectSlug || this.briefId() !== briefId || this.targetFor(row.campaignId)?.campaignId !== campaignId) {
+      return;
+    }
+    if (this.revisionReads()[campaignId] !== undefined || !this.negativeKeywordsService.reserve(projectSlug, briefId, campaignId)) {
+      this.markNotSent(rowKey, readId, REDDIT_KEYWORD_NEGATIVE_SUPERSEDED_MESSAGE);
       return;
     }
     this.revisionReads.update((reads) => ({ ...reads, [campaignId]: rowKey }));
-    this.revisionErrors.update((errors) => omitKey(errors, rowKey));
+    this.notSent.update((all) => omitKey(all, rowKey));
     this.campaignService
       .getKeywordTargeting(projectSlug, briefId, campaignId)
-      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .pipe(
+        take(1),
+        finalize(() => {
+          this.negativeKeywordsService.release(projectSlug, briefId, campaignId);
+          this.revisionReads.update((reads) => omitKey(reads, campaignId));
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
       .subscribe({
         next: (targeting) => {
+          this.negativeKeywordsService.release(projectSlug, briefId, campaignId);
           this.revisionReads.update((reads) => omitKey(reads, campaignId));
           const revision = typeof targeting?.revision === 'string' && targeting.revision !== '' ? targeting.revision : null;
           if (revision === null) {
-            this.revisionErrors.update((errors) => ({ ...errors, [rowKey]: REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR }));
+            this.markNotSent(rowKey, readId, REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR);
             return;
           }
-          const rules = CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES['reddit-ads'];
-          this.negativeKeywordsService.submit({
+          const sent = this.negativeKeywordsService.submit({
             projectSlug,
             briefId,
             campaignId,
             campaignName,
             platform: 'reddit-ads',
             keywords: [text],
-            matchType: rules.defaultMatchType,
+            matchType: CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES['reddit-ads'].defaultMatchType,
             revision,
           });
+          if (!sent) {
+            this.markNotSent(rowKey, readId, REDDIT_KEYWORD_NEGATIVE_SUPERSEDED_MESSAGE);
+          }
         },
-        error: () => {
-          this.revisionReads.update((reads) => omitKey(reads, campaignId));
-          this.revisionErrors.update((errors) => ({ ...errors, [rowKey]: REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR }));
+        error: (err: unknown) => {
+          console.error('Failed to read the Reddit keyword targeting revision for an add-as-negative:', err);
+          this.markNotSent(rowKey, readId, REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR);
         },
       });
+  }
+
+  private markNotSent(rowKey: string, read: string, message: string): void {
+    this.notSent.update((all) => ({ ...all, [rowKey]: { read, message } }));
   }
 
   /** The brief campaign a row's add would write to, or `null`: none without a brief, nor for a campaign not offered. */

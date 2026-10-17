@@ -56,7 +56,7 @@
     @case ('loaded') {
       @if (view().data; as report) {
         <div class="flex flex-col gap-1 text-xs text-gray-500">
-          <p data-testid="reddit-keywords-read-only">
+          <p data-testid="reddit-keywords-actions-note">
             Reddit reports no keyword id, so a keyword can't be paused or removed here: remove it from a campaign's Keyword targeting above. A keyword of this
             brief's campaigns can be added to its campaign's negative keywords.
           </p>
@@ -105,7 +105,7 @@
                       <td class="px-4 py-2.5 text-right">
                         <div class="flex flex-col items-end gap-1">
                           @if (row.negative.state === 'negative') {
-                            <span class="text-xs font-medium text-gray-600" [attr.data-testid]="'reddit-keyword-negative-' + $index"
+                            <span class="text-xs font-medium text-gray-600" [attr.data-testid]="'reddit-keyword-negative-' + row.testIdKey"
                               >Negative keyword: {{ row.negative.outcomeLabel }}</span
                             >
                           } @else if (row.negative.state !== 'none') {
@@ -118,14 +118,14 @@
                               [disabled]="row.negative.state === 'busy'"
                               [loading]="row.negative.sending"
                               (onClick)="confirmAddNegative(row)"
-                              [attr.data-testid]="'reddit-keyword-add-negative-' + $index" />
+                              [attr.data-testid]="'reddit-keyword-add-negative-' + row.testIdKey" />
                           }
                           @if (row.negative.outcomeTone !== 'none') {
                             <p
                               class="max-w-xs text-right text-xs"
                               [class.text-amber-700]="row.negative.outcomeTone === 'warning'"
                               [class.text-red-600]="row.negative.outcomeTone === 'error'"
-                              [attr.data-testid]="'reddit-keyword-negative-outcome-' + $index">
+                              [attr.data-testid]="'reddit-keyword-negative-outcome-' + row.testIdKey">
                               <span class="font-medium">{{ row.negative.outcomeLabel }}.</span> {{ row.negative.outcomeDetail }}
                             </p>
                           }

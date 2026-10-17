@@ -4,10 +4,17 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { LIVE_REGION_MOUNT_DELAY_MS, REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR, REDDIT_KEYWORDS_ERROR_MESSAGES } from '@lfx-one/shared/constants';
+import {
+  LIVE_REGION_MOUNT_DELAY_MS,
+  REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR,
+  REDDIT_KEYWORD_NEGATIVE_SUPERSEDED_MESSAGE,
+  REDDIT_KEYWORDS_ERROR_MESSAGES,
+} from '@lfx-one/shared/constants';
 import type { CampaignNegativeKeywordsResult, RedditKeywordMetricsResponse } from '@lfx-one/shared/interfaces';
+import { CampaignKeywordTargetingService } from '@services/campaign-keyword-targeting.service';
 import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
 import { CampaignService } from '@services/campaign.service';
+import { negativeKeywordUnconfirmedAdvice } from '@shared/utils/campaign-negative-keywords.utils';
 import { type Confirmation, ConfirmationService, MessageService } from 'primeng/api';
 import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -43,7 +50,10 @@ describe('RedditKeywordsTableComponent', () => {
       imports: [RedditKeywordsTableComponent],
       providers: [
         provideNoopAnimations(),
-        { provide: CampaignService, useValue: { getRedditKeywords, getKeywordTargeting, addNegativeKeywords } },
+        {
+          provide: CampaignService,
+          useValue: { getRedditKeywords, getKeywordTargeting, addNegativeKeywords, removeKeywordTargeting: vi.fn().mockReturnValue(new Subject()) },
+        },
         { provide: MessageService, useValue: { add: messageAdd } },
       ],
     }).compileComponents();
@@ -54,7 +64,7 @@ describe('RedditKeywordsTableComponent', () => {
 
   const q = (testId: string): HTMLElement | null => (fixture.nativeElement as HTMLElement).querySelector(`[data-testid="${testId}"]`);
 
-  it('reads the default window and renders the rows read-only, named where the brief knows the campaign', () => {
+  it('reads the default window and renders the rows, named where the brief knows the campaign, with no action outside a brief', () => {
     fixture.detectChanges();
 
     expect(getRedditKeywords).toHaveBeenCalledWith('tlf', 'last_30_days');
@@ -64,7 +74,7 @@ describe('RedditKeywordsTableComponent', () => {
     // An unknown campaign shows Reddit's id; a keyword-less row says so rather than showing a blank.
     expect(q('reddit-keyword-row-1')!.textContent).toContain('t3_b');
     expect(q('reddit-keyword-unattributed-1')!.textContent).toContain('Not attributed to a keyword');
-    expect(q('reddit-keywords-read-only')).not.toBeNull();
+    expect(q('reddit-keywords-actions-note')).not.toBeNull();
     expect(q('reddit-keywords-totals')!.textContent).toContain('Total');
     expect((fixture.nativeElement as HTMLElement).querySelector('button[aria-label^="Remove"], button[aria-label^="Pause"]')).toBeNull();
   });
@@ -183,12 +193,16 @@ describe('RedditKeywordsTableComponent', () => {
       });
     });
 
-    const addButton = (index: number): HTMLButtonElement | null =>
-      (q(`reddit-keyword-add-negative-${index}`)?.querySelector('button') as HTMLButtonElement | null) ?? null;
+    /** The rows' testid keys: `row.key` slugged. */
+    const A = 't3-a-service-mesh-0';
+    const B = 't3-b-1';
+
+    const addButton = (testIdKey: string): HTMLButtonElement | null =>
+      (q(`reddit-keyword-add-negative-${testIdKey}`)?.querySelector('button') as HTMLButtonElement | null) ?? null;
 
     /** Clicks the row's button and, unless told not to, accepts the confirmation as the operator would. */
-    function clickAdd(index: number, accept = true): void {
-      addButton(index)!.click();
+    function clickAdd(testIdKey: string, accept = true): void {
+      addButton(testIdKey)!.click();
       fixture.detectChanges();
       if (accept) {
         confirmations[confirmations.length - 1].accept!();
@@ -199,9 +213,9 @@ describe('RedditKeywordsTableComponent', () => {
     it('confirms, reads the revision, then adds the keyword as a Broad negative with it', () => {
       addNegativeKeywords.mockReturnValue(of(applied()));
       fixture.detectChanges();
-      expect(addButton(0)!.getAttribute('aria-label')).toBe('Add "service mesh" as a negative keyword to KubeCon EU');
+      expect(addButton(A)!.getAttribute('aria-label')).toBe('Add "service mesh" as a negative keyword to KubeCon EU');
 
-      clickAdd(0);
+      clickAdd(A);
 
       expect(confirmations).toHaveLength(1);
       expect(confirmations[0]).toMatchObject({ key: 'reddit-keywords-add-negative', acceptLabel: 'Add as negative' });
@@ -211,14 +225,14 @@ describe('RedditKeywordsTableComponent', () => {
       expect(addNegativeKeywords).toHaveBeenCalledWith('tlf', 'brief-1', 'c-uuid-a', [{ text: 'service mesh', matchType: 'Broad' }], 'rev-1');
       // The lever's own toast; the row now shows the keyword as a negative instead of the button.
       expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Negative keywords for KubeCon EU' }));
-      expect(addButton(0)).toBeNull();
-      expect(q('reddit-keyword-negative-0')!.textContent).toContain('Added');
+      expect(addButton(A)).toBeNull();
+      expect(q(`reddit-keyword-negative-${A}`)!.textContent).toContain('Added');
     });
 
     it('sends nothing until the operator accepts', () => {
       fixture.detectChanges();
 
-      clickAdd(0, false);
+      clickAdd(A, false);
 
       expect(confirmations).toHaveLength(1);
       expect(getKeywordTargeting).not.toHaveBeenCalled();
@@ -227,7 +241,7 @@ describe('RedditKeywordsTableComponent', () => {
 
     it('sends nothing when the campaign stopped taking negatives while the dialog was open', () => {
       fixture.detectChanges();
-      clickAdd(0, false);
+      clickAdd(A, false);
 
       fixture.componentRef.setInput('negativeTargets', {});
       fixture.detectChanges();
@@ -243,9 +257,9 @@ describe('RedditKeywordsTableComponent', () => {
       addNegativeKeywords.mockReturnValue(add);
       fixture.detectChanges();
 
-      clickAdd(0);
-      expect(addButton(0)!.disabled).toBe(true);
-      addButton(0)!.click();
+      clickAdd(A);
+      expect(addButton(A)!.disabled).toBe(true);
+      addButton(A)!.click();
       fixture.detectChanges();
       expect(confirmations).toHaveLength(1);
       expect(addNegativeKeywords).toHaveBeenCalledTimes(1);
@@ -253,7 +267,7 @@ describe('RedditKeywordsTableComponent', () => {
       add.next(applied());
       add.complete();
       fixture.detectChanges();
-      expect(q('reddit-keyword-negative-0')).not.toBeNull();
+      expect(q(`reddit-keyword-negative-${A}`)).not.toBeNull();
     });
 
     it('shows a keyword the campaign editor already confirmed as a negative, with no button', () => {
@@ -272,19 +286,19 @@ describe('RedditKeywordsTableComponent', () => {
       });
       fixture.detectChanges();
 
-      expect(addButton(0)).toBeNull();
-      expect(q('reddit-keyword-negative-0')!.textContent).toContain('Already present');
+      expect(addButton(A)).toBeNull();
+      expect(q(`reddit-keyword-negative-${A}`)!.textContent).toContain('Already present');
     });
 
     it('offers nothing for a campaign that does not take negatives now, nor without a brief, nor for unattributed delivery', () => {
       fixture.componentRef.setInput('negativeTargets', {});
       fixture.detectChanges();
-      expect(addButton(0)).toBeNull();
+      expect(addButton(A)).toBeNull();
 
       fixture.componentRef.setInput('negativeTargets', { t3_a: { campaignId: 'c-uuid-a', campaignName: 'KubeCon EU' } });
       fixture.componentRef.setInput('briefId', '');
       fixture.detectChanges();
-      expect(addButton(0)).toBeNull();
+      expect(addButton(A)).toBeNull();
 
       fixture.componentRef.setInput('briefId', 'brief-1');
       fixture.componentRef.setInput('negativeTargets', {
@@ -292,8 +306,8 @@ describe('RedditKeywordsTableComponent', () => {
         t3_b: { campaignId: 'c-uuid-b', campaignName: 'OSS NA' },
       });
       fixture.detectChanges();
-      expect(addButton(0)).not.toBeNull();
-      expect(addButton(1)).toBeNull();
+      expect(addButton(A)).not.toBeNull();
+      expect(addButton(B)).toBeNull();
     });
 
     it('offers nothing for keyword text the lever would refuse', () => {
@@ -303,7 +317,7 @@ describe('RedditKeywordsTableComponent', () => {
       fixture.detectChanges();
 
       expect(q('reddit-keyword-row-0')).not.toBeNull();
-      expect(addButton(0)).toBeNull();
+      expect(addButton('t3-a-k8s-0')).toBeNull();
     });
 
     // Reddit writes switched off upstream (REDDIT_KEYWORD_TARGETING_WRITES_ENABLED) answer 400 before
@@ -313,16 +327,16 @@ describe('RedditKeywordsTableComponent', () => {
       addNegativeKeywords.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 400, error: { error: message, code: 'BAD_REQUEST' } })));
       fixture.detectChanges();
 
-      clickAdd(0);
+      clickAdd(A);
 
-      const outcome = q('reddit-keyword-negative-outcome-0')!;
+      const outcome = q(`reddit-keyword-negative-outcome-${A}`)!;
       expect(outcome.textContent).toContain('Not added');
       expect(outcome.textContent).toContain(message);
       expect(outcome.classList).toContain('text-red-600');
       expect(messageAdd).toHaveBeenCalledWith(
         expect.objectContaining({ severity: 'error', summary: 'Negative keywords not added to KubeCon EU', sticky: true })
       );
-      expect(addButton(0)!.disabled).toBe(false);
+      expect(addButton(A)!.disabled).toBe(false);
     });
 
     it('shows a stale-revision conflict as not added, and reads the revision afresh on the next try', () => {
@@ -330,42 +344,154 @@ describe('RedditKeywordsTableComponent', () => {
       addNegativeKeywords.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: { error: message, code: 'CONFLICT' } })));
       fixture.detectChanges();
 
-      clickAdd(0);
-      expect(q('reddit-keyword-negative-outcome-0')!.textContent).toContain(message);
+      clickAdd(A);
+      expect(q(`reddit-keyword-negative-outcome-${A}`)!.textContent).toContain(message);
 
       getKeywordTargeting.mockReturnValue(of({ campaign_id: 'c-uuid-a', platform: 'reddit-ads', keywords: [], revision: 'rev-2' }));
       addNegativeKeywords.mockReturnValue(of(applied()));
-      clickAdd(0);
+      clickAdd(A);
 
       expect(getKeywordTargeting).toHaveBeenCalledTimes(2);
       expect(addNegativeKeywords).toHaveBeenLastCalledWith('tlf', 'brief-1', 'c-uuid-a', [{ text: 'service mesh', matchType: 'Broad' }], 'rev-2');
-      expect(q('reddit-keyword-negative-0')).not.toBeNull();
+      expect(q(`reddit-keyword-negative-${A}`)).not.toBeNull();
     });
 
     it('says an unconfirmed add may have landed, as a warning rather than a failure', () => {
       addNegativeKeywords.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, error: { error: 'x', code: 'BAD_GATEWAY' } })));
       fixture.detectChanges();
 
-      clickAdd(0);
+      clickAdd(A);
 
-      const outcome = q('reddit-keyword-negative-outcome-0')!;
+      const outcome = q(`reddit-keyword-negative-outcome-${A}`)!;
       expect(outcome.textContent).toContain('Not confirmed');
       expect(outcome.classList).toContain('text-amber-700');
       expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Negative keywords not confirmed for KubeCon EU' }));
     });
 
     it.each([
-      ['fails', () => throwError(() => new HttpErrorResponse({ status: 503, error: { error: 'x', code: 'SERVICE_UNAVAILABLE' } }))],
-      ['answers no revision', () => of({ campaign_id: 'c-uuid-a', platform: 'reddit-ads', keywords: [] })],
-    ])('sends nothing when the revision read %s', (_label, read) => {
+      ['fails', () => throwError(() => new HttpErrorResponse({ status: 503, error: { error: 'x', code: 'SERVICE_UNAVAILABLE' } })), true],
+      ['answers no revision', () => of({ campaign_id: 'c-uuid-a', platform: 'reddit-ads', keywords: [] }), false],
+    ])('sends nothing when the revision read %s', (_label, read, logs) => {
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
       getKeywordTargeting.mockReturnValue(read());
       fixture.detectChanges();
 
-      clickAdd(0);
+      clickAdd(A);
 
       expect(addNegativeKeywords).not.toHaveBeenCalled();
-      expect(q('reddit-keyword-negative-outcome-0')!.textContent).toContain(REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR);
-      expect(addButton(0)!.disabled).toBe(false);
+      expect(q(`reddit-keyword-negative-outcome-${A}`)!.textContent).toContain(REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR);
+      expect(logged).toHaveBeenCalledTimes(logs ? 1 : 0);
+      expect(addButton(A)!.disabled).toBe(false);
+    });
+
+    // The table reserves the campaign for its revision read, so nothing else can send meanwhile.
+    it('holds the campaign for its revision read: another send is refused, then the add goes out', () => {
+      const read = new Subject<{ campaign_id: string; platform: 'reddit-ads'; keywords: never[]; revision: string }>();
+      getKeywordTargeting.mockReturnValue(read);
+      addNegativeKeywords.mockReturnValue(of(applied()));
+      fixture.detectChanges();
+      clickAdd(A);
+
+      const service = TestBed.inject(CampaignNegativeKeywordsService);
+      expect(service.reservations()).toEqual({ 'tlf|brief-1|c-uuid-a': true });
+      const other = service.submit({
+        projectSlug: 'tlf',
+        briefId: 'brief-1',
+        campaignId: 'c-uuid-a',
+        campaignName: 'KubeCon EU',
+        platform: 'reddit-ads',
+        keywords: ['gitops'],
+        matchType: 'Broad',
+        revision: 'rev-0',
+      });
+      expect(other).toBe(false);
+
+      read.next({ campaign_id: 'c-uuid-a', platform: 'reddit-ads', keywords: [], revision: 'rev-1' });
+      read.complete();
+      fixture.detectChanges();
+
+      expect(service.reservations()).toEqual({});
+      expect(addNegativeKeywords).toHaveBeenCalledTimes(1);
+      expect(addNegativeKeywords).toHaveBeenCalledWith('tlf', 'brief-1', 'c-uuid-a', [{ text: 'service mesh', matchType: 'Broad' }], 'rev-1');
+    });
+
+    // A removal started while the read ran: the service refuses the add, and the row says it was not sent.
+    it('says "Not sent" when another keyword change of the campaign started during the revision read', () => {
+      const read = new Subject<{ campaign_id: string; platform: 'reddit-ads'; keywords: never[]; revision: string }>();
+      const removal = new Subject<never>();
+      getKeywordTargeting.mockReturnValue(read);
+      (TestBed.inject(CampaignService) as unknown as { removeKeywordTargeting: unknown }).removeKeywordTargeting = vi.fn().mockReturnValue(removal);
+      fixture.detectChanges();
+      clickAdd(A);
+
+      TestBed.inject(CampaignKeywordTargetingService).remove({
+        projectSlug: 'tlf',
+        briefId: 'brief-1',
+        campaignId: 'c-uuid-a',
+        campaignName: 'KubeCon EU',
+        platform: 'reddit-ads',
+        request: { briefId: 'brief-1', keywords: [{ keyword: 'mesh' }], revision: 'rev-1' },
+        sent: ['mesh'],
+      });
+      read.next({ campaign_id: 'c-uuid-a', platform: 'reddit-ads', keywords: [], revision: 'rev-1' });
+      read.complete();
+      fixture.detectChanges();
+
+      expect(addNegativeKeywords).not.toHaveBeenCalled();
+      // Held while the removal runs; once it settles the row says why nothing went out.
+      expect(addButton(A)!.disabled).toBe(true);
+      removal.error(new HttpErrorResponse({ status: 409, error: { error: 'changed', code: 'CONFLICT' } }));
+      fixture.detectChanges();
+
+      const outcome = q(`reddit-keyword-negative-outcome-${A}`)!;
+      expect(outcome.textContent).toContain('Not sent');
+      expect(outcome.textContent).toContain(REDDIT_KEYWORD_NEGATIVE_SUPERSEDED_MESSAGE);
+      expect(addButton(A)!.disabled).toBe(false);
+    });
+
+    it('holds the rows of a campaign while a keyword-targeting removal of it is in flight', () => {
+      fixture.detectChanges();
+      TestBed.inject(CampaignKeywordTargetingService).remove({
+        projectSlug: 'tlf',
+        briefId: 'brief-1',
+        campaignId: 'c-uuid-a',
+        campaignName: 'KubeCon EU',
+        platform: 'reddit-ads',
+        request: { briefId: 'brief-1', keywords: [{ keyword: 'mesh' }], revision: 'rev-1' },
+        sent: ['mesh'],
+      });
+      fixture.detectChanges();
+
+      expect(addButton(A)!.disabled).toBe(true);
+    });
+
+    it('asks to verify first when the last add of the keyword was not confirmed', () => {
+      addNegativeKeywords.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 502, error: { error: 'x', code: 'BAD_GATEWAY' } })));
+      fixture.detectChanges();
+      clickAdd(A);
+      expect(confirmations[0].message).not.toContain('before retrying');
+
+      clickAdd(A, false);
+
+      expect(confirmations[1].message).toContain(negativeKeywordUnconfirmedAdvice('reddit-ads'));
+    });
+
+    it('drops a "Not sent" note when the table reads again', () => {
+      getKeywordTargeting.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503, error: { error: 'x', code: 'SERVICE_UNAVAILABLE' } })));
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      fixture.detectChanges();
+      clickAdd(A);
+      expect(q(`reddit-keyword-negative-outcome-${A}`)).not.toBeNull();
+
+      fixture.componentRef.setInput('reloadToken', 1);
+      fixture.detectChanges();
+      expect(q(`reddit-keyword-negative-outcome-${A}`)).toBeNull();
+
+      clickAdd(A);
+      expect(q(`reddit-keyword-negative-outcome-${A}`)).not.toBeNull();
+      q('reddit-keywords-window-last_7_days')!.click();
+      fixture.detectChanges();
+      expect(q(`reddit-keyword-negative-outcome-${A}`)).toBeNull();
     });
   });
 });

@@ -21,6 +21,7 @@ import type {
   CampaignNegativeKeywordsResult,
   NegativeKeywordCampaignPlatform,
   RedditKeywordNegativeAction,
+  RedditKeywordNegativeHolds,
   RedditKeywordNegativeTarget,
 } from '@lfx-one/shared/interfaces';
 import { parseNegativeKeywordInput } from '@lfx-one/shared/utils';
@@ -160,6 +161,9 @@ export function redditNegativeKeywordText(keyword: string | null): string | null
  * response echoed: `outcomeRows[i]` answers `sent[i]`. The sent list was parsed exactly as
  * `redditNegativeKeywordText` parses the row, so the two compare as equal strings.
  *
+ * `busy` while the campaign's request is in flight, the table holds it for a revision read, or a
+ * keyword-targeting removal of it is in flight (its Reddit targeting is one domain).
+ *
  * `negative` only for a CONFIRMED outcome (added or already present). Reddit offers no read of a
  * campaign's excluded keywords, so a negative this session did not confirm is not known here; the
  * button stays offered, and upstream answers ALREADY_PRESENT without sending it again.
@@ -168,7 +172,7 @@ export function redditKeywordNegativeAction(
   keyword: string | null,
   target: RedditKeywordNegativeTarget | null,
   request: CampaignNegativeKeywordsRequestState | null,
-  revisionRead: { campaignReading: boolean; rowReading: boolean }
+  holds: RedditKeywordNegativeHolds
 ): RedditKeywordNegativeAction {
   const none: RedditKeywordNegativeAction = { state: 'none', sending: false, ariaLabel: '', outcomeLabel: '', outcomeDetail: '', outcomeTone: 'none' };
   const text = redditNegativeKeywordText(keyword);
@@ -179,8 +183,11 @@ export function redditKeywordNegativeAction(
   if (request?.pending) {
     return { ...none, state: 'busy', sending: request.sent.includes(text), ariaLabel };
   }
-  if (revisionRead.campaignReading) {
-    return { ...none, state: 'busy', sending: revisionRead.rowReading, ariaLabel };
+  if (holds.campaignReading) {
+    return { ...none, state: 'busy', sending: holds.rowReading, ariaLabel };
+  }
+  if (holds.targetingRemovalPending) {
+    return { ...none, state: 'busy', ariaLabel };
   }
   const index = request === null ? -1 : request.sent.indexOf(text);
   if (request === null || index === -1) {

@@ -129,6 +129,10 @@
     </div>
   }
 
+  @if (heldReason(); as reason) {
+    <p class="text-xs text-amber-700" [attr.data-testid]="'optimization-campaign-targeting-held-' + campaignId()">{{ reason }}</p>
+  }
+
   <div class="flex flex-wrap items-center gap-2">
     <lfx-button
       label="Remove selected"

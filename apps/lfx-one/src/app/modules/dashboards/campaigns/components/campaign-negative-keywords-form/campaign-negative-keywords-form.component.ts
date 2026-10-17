@@ -7,7 +7,7 @@ import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { ButtonComponent } from '@components/button/button.component';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
-import { CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES } from '@lfx-one/shared/constants';
+import { CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES, REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR } from '@lfx-one/shared/constants';
 import type {
   CampaignNegativeKeywordMatchType,
   CampaignNegativeKeywordMatchTypeOption,
@@ -21,6 +21,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { parseNegativeKeywordInput } from '@lfx-one/shared/utils';
 import { campaignNegativeKeywordsValidator } from '@lfx-one/shared/validators';
+import { CampaignKeywordTargetingService } from '@services/campaign-keyword-targeting.service';
 import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
 import { CampaignService } from '@services/campaign.service';
 import { campaignNegativeKeywordsKey, summarizeNegativeKeywordOutcomes } from '@shared/utils/campaign-negative-keywords.utils';
@@ -58,6 +59,7 @@ import { catchError, filter, map, of, startWith, switchMap, take } from 'rxjs';
 })
 export class CampaignNegativeKeywordsFormComponent {
   private readonly negativeKeywordsService = inject(CampaignNegativeKeywordsService);
+  private readonly keywordTargetingService = inject(CampaignKeywordTargetingService);
   private readonly campaignService = inject(CampaignService);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -74,6 +76,7 @@ export class CampaignNegativeKeywordsFormComponent {
   protected readonly rules: Signal<CampaignNegativeKeywordPlatformRules> = computed(() => CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES[this.platform()]);
   protected readonly maxKeywords: Signal<number> = computed(() => this.rules().maxKeywords);
   protected readonly matchTypeOptions: Signal<readonly CampaignNegativeKeywordMatchTypeOption[]> = computed(() => this.rules().matchTypes);
+  protected readonly revisionErrorMessage = REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR;
 
   public readonly form = new FormGroup({
     keywords: new FormControl<string>('', { nonNullable: true, validators: [campaignNegativeKeywordsValidator(() => this.maxKeywords())] }),
@@ -90,6 +93,21 @@ export class CampaignNegativeKeywordsFormComponent {
     () => this.negativeKeywordsService.requests()[campaignNegativeKeywordsKey(this.projectSlug(), this.briefId(), this.campaignId())] ?? null
   );
   protected readonly pending: Signal<boolean> = computed(() => this.request()?.pending ?? false);
+  /**
+   * Why a request cannot be sent although none of this campaign's is in flight, or `''`: another
+   * sender holds the campaign (the Reddit keyword table reading its revision), or a keyword-targeting
+   * removal of it is in flight — the campaign's Reddit targeting is one domain, written one change at a time.
+   */
+  protected readonly heldReason: Signal<string> = computed(() => {
+    const key = campaignNegativeKeywordsKey(this.projectSlug(), this.briefId(), this.campaignId());
+    if (this.negativeKeywordsService.reservations()[key]) {
+      return 'A negative keyword for this campaign is being added from the keyword table. Wait for it to finish.';
+    }
+    if (this.keywordTargetingService.removals()[key]?.pending) {
+      return "A removal from this campaign's keyword targeting is in progress. Wait for it to finish.";
+    }
+    return '';
+  });
   /** Bumped by every settled request of this campaign: the targeting the revision fingerprints may have changed. */
   private readonly settleCount: Signal<number> = computed(() => this.request()?.settleCount ?? 0);
   /** Per-keyword outcomes of the last request, in the order the keywords were SENT. */
@@ -147,7 +165,7 @@ export class CampaignNegativeKeywordsFormComponent {
   protected readonly revisionState: Signal<NegativeKeywordsRevisionState> = this.initRevisionState();
   /** Whether a request can be sent now: never while one is in flight, nor on Reddit before its revision is read. */
   protected readonly canSubmit: Signal<boolean> = computed(() => {
-    if (this.pending()) {
+    if (this.pending() || this.heldReason() !== '') {
       return false;
     }
     return !this.rules().requiresRevision || this.revisionState().status === 'ready';

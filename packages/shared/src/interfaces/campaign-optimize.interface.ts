@@ -489,10 +489,22 @@ export interface RedditKeywordNegativeAction {
   outcomeTone: 'none' | 'warning' | 'error';
 }
 
+/** What holds a Reddit keyword row's "Add as negative" besides the campaign's own negative-keyword request. */
+export interface RedditKeywordNegativeHolds {
+  /** The table is reading the campaign's revision (the campaign is reserved). */
+  campaignReading: boolean;
+  /** That read is for THIS row's keyword. */
+  rowReading: boolean;
+  /** A keyword-targeting removal of the campaign is in flight: its Reddit targeting is one domain. */
+  targetingRemovalPending: boolean;
+}
+
 /** A Reddit keyword row as the table draws it: the campaign column's label and the row's action precomputed. */
 export interface RedditKeywordDisplayRow extends RedditKeywordMetrics {
   /** The brief's name for the campaign, or Reddit's campaign id when the brief does not know it. */
   campaignLabel: string;
+  /** `key` as a testid-safe slug, for the row's action testids. */
+  testIdKey: string;
   negative: RedditKeywordNegativeAction;
 }
 

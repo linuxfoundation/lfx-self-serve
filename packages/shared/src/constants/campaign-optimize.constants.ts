@@ -826,6 +826,13 @@ export const REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR =
   "The ad group's targeting couldn't be read, and Reddit needs it before keywords can be excluded. Nothing was sent.";
 
 /**
+ * What a Reddit keyword row says when, by the time its revision read answered, another change to the
+ * campaign's keywords (a negative-keyword request or a keyword-targeting removal) had started: the
+ * add was not sent, and the operator tries again once that one settles.
+ */
+export const REDDIT_KEYWORD_NEGATIVE_SUPERSEDED_MESSAGE = 'Another keyword change for this campaign started first. Nothing was sent.';
+
+/**
  * The statuses a keyword lever (keyword-targeting removal, negative-keyword add) may report as a
  * DEFINITE failure, and only when the BFF's own envelope carries them: campaign-service documents
  * 400 (malformed batch, unsupported platform, Reddit writes off) and 409 (refused before anything

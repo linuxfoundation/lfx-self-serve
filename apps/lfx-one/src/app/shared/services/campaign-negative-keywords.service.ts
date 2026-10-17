@@ -9,6 +9,7 @@ import type {
   CampaignNegativeKeywordsSubmission,
   NegativeKeywordCampaignPlatform,
 } from '@lfx-one/shared/interfaces';
+import { CampaignKeywordTargetingService } from '@services/campaign-keyword-targeting.service';
 import { CampaignService } from '@services/campaign.service';
 import {
   campaignNegativeKeywordsFailureOutcome,
@@ -57,10 +58,13 @@ import { take } from 'rxjs';
 @Injectable({ providedIn: 'root' })
 export class CampaignNegativeKeywordsService {
   private readonly campaignService = inject(CampaignService);
+  // A campaign's Reddit targeting is one domain: an add is refused while a removal of it is in flight.
+  private readonly keywordTargetingService = inject(CampaignKeywordTargetingService);
   // App-root, like this service: the toast is what announces an outcome wherever the operator is.
   private readonly messageService = inject(MessageService);
 
   private readonly state = signal<Record<string, CampaignNegativeKeywordsRequestState>>({});
+  private readonly reserved = signal<Record<string, true>>({});
   /**
    * The key prefix of the campaigns page's (project, brief): `undefined` until `setScope` is first
    * called (nothing scoped), `null` once the page has released it.
@@ -69,6 +73,38 @@ export class CampaignNegativeKeywordsService {
 
   /** The latest request per `campaignNegativeKeywordsKey`. */
   public readonly requests: Signal<Record<string, CampaignNegativeKeywordsRequestState>> = this.state.asReadonly();
+  /**
+   * Campaigns (by `campaignNegativeKeywordsKey`) held by a caller that is about to send, e.g. the
+   * Reddit keyword table while it reads the revision. `submit` refuses a held campaign, so the
+   * campaign's editor (and anything else) waits until the holder releases it.
+   */
+  public readonly reservations: Signal<Record<string, true>> = this.reserved.asReadonly();
+
+  /**
+   * Holds one campaign for a send about to happen. `false` (nothing held) when a request of the
+   * campaign is in flight, it is already held, or a keyword-targeting removal of it is in flight.
+   */
+  public reserve(projectSlug: string, briefId: string, campaignId: string): boolean {
+    const key = campaignNegativeKeywordsKey(projectSlug, briefId, campaignId);
+    if (this.isBusy(key)) {
+      return false;
+    }
+    this.reserved.update((all) => ({ ...all, [key]: true }));
+    return true;
+  }
+
+  /** Releases a hold taken with `reserve`. */
+  public release(projectSlug: string, briefId: string, campaignId: string): void {
+    const key = campaignNegativeKeywordsKey(projectSlug, briefId, campaignId);
+    if (!this.reserved()[key]) {
+      return;
+    }
+    this.reserved.update((all) => {
+      const next = { ...all };
+      delete next[key];
+      return next;
+    });
+  }
 
   /**
    * Sends one request, unless one is already in flight for the campaign. `onAllSettled` runs once,
@@ -80,16 +116,20 @@ export class CampaignNegativeKeywordsService {
    *
    * `take(1)`, never cancelled and never retried: aborting would lose the outcome of keywords that
    * may already have been added, and a resend could add them twice.
+   *
+   * Returns whether the request was SENT. `false` when one is already in flight for the campaign,
+   * the campaign is held (`reserve`) or a keyword-targeting removal of it is in flight, or a Reddit
+   * request carries no revision: nothing was sent, and the caller says so.
    */
-  public submit(submission: CampaignNegativeKeywordsSubmission, onAllSettled?: () => void): void {
+  public submit(submission: CampaignNegativeKeywordsSubmission, onAllSettled?: () => void): boolean {
     const { projectSlug, briefId, campaignId, campaignName, platform, keywords, matchType } = submission;
     const key = campaignNegativeKeywordsKey(projectSlug, briefId, campaignId);
-    if (this.state()[key]?.pending) {
-      return;
+    if (this.isBusy(key)) {
+      return false;
     }
     const revision = CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES[platform].requiresRevision ? submission.revision : undefined;
     if (CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES[platform].requiresRevision && !revision) {
-      return;
+      return false;
     }
     const settleCount = this.state()[key]?.settleCount ?? 0;
     const base = { sent: keywords, matchType, platform };
@@ -124,6 +164,7 @@ export class CampaignNegativeKeywordsService {
           });
         },
       });
+    return true;
   }
 
   /**
@@ -182,6 +223,11 @@ export class CampaignNegativeKeywordsService {
     const [activeProject, activeBrief] = scope.split('|');
     const [project, brief] = key.split('|');
     return project === activeProject && (activeBrief === '' || brief === '' || brief === activeBrief);
+  }
+
+  /** A request of the campaign in flight, a hold on it, or a keyword-targeting removal of it in flight. */
+  private isBusy(key: string): boolean {
+    return !!this.state()[key]?.pending || !!this.reserved()[key] || !!this.keywordTargetingService.removals()[key]?.pending;
   }
 
   private set(key: string, request: CampaignNegativeKeywordsRequestState): void {

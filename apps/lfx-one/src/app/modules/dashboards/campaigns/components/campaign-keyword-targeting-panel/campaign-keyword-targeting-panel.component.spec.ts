@@ -13,6 +13,7 @@ import {
   KEYWORD_TARGETING_REMOVE_ALL_REASON,
 } from '@lfx-one/shared/constants';
 import type { CampaignServiceKeywordTargeting, CampaignServiceKeywordTargetingRemovals } from '@lfx-one/shared/interfaces';
+import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
 import { CampaignService } from '@services/campaign.service';
 import { Confirmation, ConfirmationService, MessageService } from 'primeng/api';
 import { of, Subject, throwError } from 'rxjs';
@@ -164,6 +165,28 @@ describe('CampaignKeywordTargetingPanelComponent', () => {
       expect(confirmations[0].message).toContain('"kubernetes"');
       expect(confirmations[0].message).toContain('Reddit');
       expect(removeKeywordTargeting).not.toHaveBeenCalled();
+    });
+
+    // On Reddit an add and a removal both rewrite the ad group's one targeting object.
+    it('holds Remove while a negative-keyword add to the campaign is reserved or in flight, and on accept', async () => {
+      await create('reddit-ads', reddit());
+      const negatives = TestBed.inject(CampaignNegativeKeywordsService);
+      tick('kubernetes');
+      expect(removeButton().disabled).toBe(false);
+
+      clickRemove();
+      negatives.reserve('tlf', 'b-1', 'c-1');
+      fixture.detectChanges();
+      expect(removeButton().disabled).toBe(true);
+      expect(q('optimization-campaign-targeting-held-c-1')).not.toBeNull();
+      // The dialog opened before the hold: accepting it now still sends nothing.
+      accept();
+      expect(removeKeywordTargeting).not.toHaveBeenCalled();
+
+      negatives.release('tlf', 'b-1', 'c-1');
+      fixture.detectChanges();
+      expect(removeButton().disabled).toBe(false);
+      expect(q('optimization-campaign-targeting-held-c-1')).toBeNull();
     });
 
     it("sends Reddit keywords by text with the read's revision, once", async () => {

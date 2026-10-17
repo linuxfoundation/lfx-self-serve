@@ -17,6 +17,7 @@ import type {
   KeywordTargetingRemovalState,
 } from '@lfx-one/shared/interfaces';
 import { CampaignKeywordTargetingService } from '@services/campaign-keyword-targeting.service';
+import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
 import { CampaignService } from '@services/campaign.service';
 import { keywordTargetingListItems, keywordTargetingReadErrorMessage, summarizeKeywordTargetingRemovals } from '@shared/utils/campaign-keyword-targeting.utils';
 import { campaignNegativeKeywordsKey } from '@shared/utils/campaign-negative-keywords.utils';
@@ -56,6 +57,7 @@ import { catchError, map, of, startWith, switchMap } from 'rxjs';
 export class CampaignKeywordTargetingPanelComponent {
   private readonly campaignService = inject(CampaignService);
   private readonly targetingService = inject(CampaignKeywordTargetingService);
+  private readonly negativeKeywordsService = inject(CampaignNegativeKeywordsService);
   private readonly confirmationService = inject(ConfirmationService);
 
   public readonly projectSlug = input.required<string>();
@@ -96,7 +98,19 @@ export class CampaignKeywordTargetingPanelComponent {
   });
   /** Why Remove is held back although something is ticked, or `''`. */
   protected readonly blockedReason: Signal<string> = this.initBlockedReason();
-  protected readonly canRemove: Signal<boolean> = computed(() => !this.removing() && this.selectedItems().length > 0 && this.blockedReason() === '');
+  /**
+   * Why no removal can start now, whatever is ticked, or `''`: a negative-keyword add to the same
+   * campaign is in flight or about to be sent (reserved). On Reddit both rewrite the ad group's one
+   * targeting object, so they are serialized here as well as by the revision check upstream.
+   */
+  protected readonly heldReason: Signal<string> = computed(() => {
+    const key = campaignNegativeKeywordsKey(this.projectSlug(), this.briefId(), this.campaignId());
+    const busy = !!this.negativeKeywordsService.requests()[key]?.pending || !!this.negativeKeywordsService.reservations()[key];
+    return busy ? 'Negative keywords are being added to this campaign. Wait for that to finish before removing keywords.' : '';
+  });
+  protected readonly canRemove: Signal<boolean> = computed(
+    () => !this.removing() && this.selectedItems().length > 0 && this.blockedReason() === '' && this.heldReason() === ''
+  );
   protected readonly outcomeSummary: Signal<string> = computed(() => summarizeKeywordTargetingRemovals(this.outcomeRows()));
   protected readonly batchKeywordsText: Signal<string> = computed(() => (this.removal()?.sent ?? []).join(', '));
   protected readonly removingAnnouncement: Signal<string> = computed(() => (this.removing() ? `Removing keywords from ${this.campaignName()}` : ''));
@@ -158,7 +172,8 @@ export class CampaignKeywordTargetingPanelComponent {
 
   /** Hands the removal to the root service, which sends it once and keeps its outcome past this panel. */
   private remove(targeting: CampaignServiceKeywordTargeting, items: KeywordTargetingListItem[]): void {
-    if (this.removing()) {
+    // Re-checked on accept: an add may have started while the dialog was open.
+    if (this.removing() || this.heldReason() !== '') {
       return;
     }
     const keywords: KeywordTargetingRemovalItem[] = items.map((item) => item.removalItem).filter((item): item is KeywordTargetingRemovalItem => item !== null);

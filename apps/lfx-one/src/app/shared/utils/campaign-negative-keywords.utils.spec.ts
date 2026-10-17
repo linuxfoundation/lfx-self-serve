@@ -181,7 +181,7 @@ describe('redditNegativeKeywordText', () => {
 
 describe('redditKeywordNegativeAction', () => {
   const target = { campaignId: 'c-1', campaignName: 'KubeCon EU' };
-  const idle = { campaignReading: false, rowReading: false };
+  const idle = { campaignReading: false, rowReading: false, targetingRemovalPending: false };
   const request = (over: Partial<CampaignNegativeKeywordsRequestState> = {}): CampaignNegativeKeywordsRequestState => ({
     pending: false,
     outcomeRows: [],
@@ -225,8 +225,19 @@ describe('redditKeywordNegativeAction', () => {
   });
 
   it('is busy while the revision of the campaign is being read', () => {
-    expect(redditKeywordNegativeAction('gitops', target, null, { campaignReading: true, rowReading: true })).toMatchObject({ state: 'busy', sending: true });
-    expect(redditKeywordNegativeAction('gitops', target, null, { campaignReading: true, rowReading: false })).toMatchObject({ state: 'busy', sending: false });
+    expect(redditKeywordNegativeAction('gitops', target, null, { ...idle, campaignReading: true, rowReading: true })).toMatchObject({
+      state: 'busy',
+      sending: true,
+    });
+    expect(redditKeywordNegativeAction('gitops', target, null, { ...idle, campaignReading: true, rowReading: false })).toMatchObject({
+      state: 'busy',
+      sending: false,
+    });
+  });
+
+  // A campaign's Reddit targeting is one domain: no add while a removal from it is in flight.
+  it('is busy while a keyword-targeting removal of the campaign is in flight', () => {
+    expect(redditKeywordNegativeAction('gitops', target, null, { ...idle, targetingRemovalPending: true })).toMatchObject({ state: 'busy', sending: false });
   });
 
   // Positional: the outcome at the keyword's index in what was SENT.
