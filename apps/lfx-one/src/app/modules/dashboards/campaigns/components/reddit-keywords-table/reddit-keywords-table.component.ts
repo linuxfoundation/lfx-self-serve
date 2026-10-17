@@ -270,13 +270,12 @@ export class RedditKeywordsTableComponent {
   private addNegative(projectSlug: string, briefId: string, row: RedditKeywordDisplayRow, target: RedditKeywordNegativeTarget, text: string): void {
     const { campaignId, campaignName } = target;
     const rowKey = row.key;
-    const readId = this.readId();
     if (!this.stillTargets(projectSlug, briefId, row.campaignId, campaignId)) {
-      this.markNotSent(rowKey, readId, target, text, REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE);
+      this.markNotSent(rowKey, target, text, REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE);
       return;
     }
     if (this.revisionReads()[campaignId] !== undefined || !this.negativeKeywordsService.reserve(projectSlug, campaignId)) {
-      this.markNotSent(rowKey, readId, target, text, REDDIT_KEYWORD_NEGATIVE_SUPERSEDED_MESSAGE);
+      this.markNotSent(rowKey, target, text, REDDIT_KEYWORD_NEGATIVE_SUPERSEDED_MESSAGE);
       return;
     }
     this.revisionReads.update((reads) => ({ ...reads, [campaignId]: rowKey }));
@@ -293,7 +292,7 @@ export class RedditKeywordsTableComponent {
           this.revisionReads.update((reads) => omitKey(reads, campaignId));
           // Abandoned before it answered (the page left the scope): never silently.
           if (!answered && !this.destroyRef.destroyed) {
-            this.markNotSent(rowKey, readId, target, text, REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE);
+            this.markNotSent(rowKey, target, text, REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE);
           }
         }),
         takeUntilDestroyed(this.destroyRef)
@@ -305,11 +304,11 @@ export class RedditKeywordsTableComponent {
           this.revisionReads.update((reads) => omitKey(reads, campaignId));
           const revision = typeof targeting?.revision === 'string' && targeting.revision !== '' ? targeting.revision : null;
           if (revision === null) {
-            this.markNotSent(rowKey, readId, target, text, REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR);
+            this.markNotSent(rowKey, target, text, REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR);
             return;
           }
           if (!this.stillTargets(projectSlug, briefId, row.campaignId, campaignId)) {
-            this.markNotSent(rowKey, readId, target, text, REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE);
+            this.markNotSent(rowKey, target, text, REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE);
             return;
           }
           const sent = this.negativeKeywordsService.submit({
@@ -323,18 +322,24 @@ export class RedditKeywordsTableComponent {
             revision,
           });
           if (!sent) {
-            this.markNotSent(rowKey, readId, target, text, REDDIT_KEYWORD_NEGATIVE_SUPERSEDED_MESSAGE);
+            this.markNotSent(rowKey, target, text, REDDIT_KEYWORD_NEGATIVE_SUPERSEDED_MESSAGE);
           }
         },
         error: (err: unknown) => {
           answered = true;
           console.error('Failed to read the Reddit keyword targeting revision for an add-as-negative:', err);
-          this.markNotSent(rowKey, readId, target, text, REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR);
+          this.markNotSent(rowKey, target, text, REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR);
         },
       });
   }
 
-  private markNotSent(rowKey: string, read: string, target: RedditKeywordNegativeTarget, text: string, message: string): void {
+  /**
+   * Records why a confirmed add went nowhere, stamped with the keyword read current NOW, when the
+   * note is recorded — not when the attempt started: a Refresh or window change clears the notes that
+   * existed before it, but never hides a failure that arrives after it.
+   */
+  private markNotSent(rowKey: string, target: RedditKeywordNegativeTarget, text: string, message: string): void {
+    const read = this.readId();
     const request = this.negativeKeywordsService.requests()[campaignNegativeKeywordsKey(this.projectSlug(), this.briefId(), target.campaignId)];
     const lastOutcome = request && Object.hasOwn(request.keywordOutcomes, text) ? request.keywordOutcomes[text] : null;
     this.notSent.update((all) => ({ ...all, [rowKey]: { read, lastOutcome, message } }));

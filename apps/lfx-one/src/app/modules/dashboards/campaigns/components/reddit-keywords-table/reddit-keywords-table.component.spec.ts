@@ -550,6 +550,82 @@ describe('RedditKeywordsTableComponent', () => {
       expect(confirmations[1].message).toContain(negativeKeywordUnconfirmedAdvice('reddit-ads'));
     });
 
+    // A note is stamped with the read current when it is RECORDED: a refresh during the revision read
+    // must not hide the failure that arrives after it.
+    it.each([
+      ['a Refresh', 'fails', () => fixture.componentRef.setInput('reloadToken', 1)],
+      ['a Refresh', 'answers no revision', () => fixture.componentRef.setInput('reloadToken', 1)],
+      ['a window change', 'fails', () => q('reddit-keywords-window-last_7_days')!.click()],
+      ['a window change', 'answers no revision', () => q('reddit-keywords-window-last_7_days')!.click()],
+    ])('shows the note when, after %s, the pending revision read %s', (_change, outcome, change) => {
+      const read = new Subject<{ campaign_id: string; platform: 'reddit-ads'; keywords: never[]; revision?: string }>();
+      getKeywordTargeting.mockReturnValue(read);
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      fixture.detectChanges();
+      clickAdd(A);
+
+      change();
+      fixture.detectChanges();
+      expect(q('reddit-keyword-row-0')).not.toBeNull();
+      if (outcome === 'fails') {
+        read.error(new HttpErrorResponse({ status: 503, error: { error: 'x', code: 'SERVICE_UNAVAILABLE' } }));
+      } else {
+        read.next({ campaign_id: 'c-uuid-a', platform: 'reddit-ads', keywords: [] });
+        read.complete();
+      }
+      fixture.detectChanges();
+
+      expect(addNegativeKeywords).not.toHaveBeenCalled();
+      const note = q(`reddit-keyword-negative-not-sent-${A}`)!;
+      expect(note.getAttribute('role')).toBe('alert');
+      expect(note.textContent).toContain(REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR);
+    });
+
+    it('shows a refused submit recorded after a Refresh', () => {
+      const read = new Subject<{ campaign_id: string; platform: 'reddit-ads'; keywords: never[]; revision: string }>();
+      const removal = new Subject<never>();
+      getKeywordTargeting.mockReturnValue(read);
+      (TestBed.inject(CampaignService) as unknown as { removeKeywordTargeting: unknown }).removeKeywordTargeting = vi.fn().mockReturnValue(removal);
+      fixture.detectChanges();
+      clickAdd(A);
+
+      fixture.componentRef.setInput('reloadToken', 1);
+      fixture.detectChanges();
+      TestBed.inject(CampaignKeywordTargetingService).remove({
+        projectSlug: 'tlf',
+        briefId: 'brief-1',
+        campaignId: 'c-uuid-a',
+        campaignName: 'KubeCon EU',
+        platform: 'reddit-ads',
+        request: { briefId: 'brief-1', keywords: [{ keyword: 'mesh' }], revision: 'rev-1' },
+        sent: ['mesh'],
+      });
+      read.next({ campaign_id: 'c-uuid-a', platform: 'reddit-ads', keywords: [], revision: 'rev-1' });
+      read.complete();
+      removal.error(new HttpErrorResponse({ status: 409, error: { error: 'changed', code: 'CONFLICT' } }));
+      fixture.detectChanges();
+
+      expect(addNegativeKeywords).not.toHaveBeenCalled();
+      expect(q(`reddit-keyword-negative-not-sent-${A}`)!.textContent).toContain(REDDIT_KEYWORD_NEGATIVE_SUPERSEDED_MESSAGE);
+    });
+
+    it('shows a scope-changed note recorded after a window change', () => {
+      const read = new Subject<{ campaign_id: string; platform: 'reddit-ads'; keywords: never[]; revision: string }>();
+      getKeywordTargeting.mockReturnValue(read);
+      fixture.detectChanges();
+      clickAdd(A);
+
+      q('reddit-keywords-window-last_7_days')!.click();
+      fixture.componentRef.setInput('negativeTargets', {});
+      fixture.detectChanges();
+      read.next({ campaign_id: 'c-uuid-a', platform: 'reddit-ads', keywords: [], revision: 'rev-1' });
+      read.complete();
+      fixture.detectChanges();
+
+      expect(addNegativeKeywords).not.toHaveBeenCalled();
+      expect(q(`reddit-keyword-negative-not-sent-${A}`)!.textContent).toContain(REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE);
+    });
+
     it('drops a "Not sent" note when the table reads again', () => {
       getKeywordTargeting.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503, error: { error: 'x', code: 'SERVICE_UNAVAILABLE' } })));
       vi.spyOn(console, 'error').mockImplementation(() => undefined);
