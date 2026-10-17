@@ -20,6 +20,7 @@ import type {
   RedditKeywordsWindow,
   RedditKeywordsWindowOption,
 } from '../interfaces/campaign-optimize.interface';
+import type { CampaignMetricsWindow } from '../interfaces/campaign.interface';
 import { CAMPAIGN_METRICS_WINDOWS, isCanonicalPositiveInt64, MICROSOFT_KEYWORDS_WINDOWS } from './campaign.constants';
 
 // ---------------------------------------------------------------------------
@@ -357,6 +358,45 @@ export const CAMPAIGN_SETTINGS_READ_CONFLICT_FALLBACK =
   'The live settings cannot be compared for this campaign: it was not created on its platform, or it belongs to a different ad account than this project now uses.';
 
 export const CAMPAIGN_SETTINGS_READ_FALLBACK = 'The live settings could not be read. Nothing was changed; try again.';
+
+// ---------------------------------------------------------------------------
+// Live counters (one campaign's get-campaign-metrics read, on demand)
+// ---------------------------------------------------------------------------
+
+/** The window a row's live counters cover, in words, keyed by campaign-service's `window`. */
+export const CAMPAIGN_METRICS_WINDOW_LABELS: Readonly<Record<CampaignMetricsWindow, string>> = {
+  today: 'today',
+  yesterday: 'yesterday',
+  last_7_days: 'the last 7 days',
+  last_14_days: 'the last 14 days',
+  last_30_days: 'the last 30 days',
+  this_month: 'this month',
+  last_month: 'last month',
+};
+
+/**
+ * Upstream's 400: no metrics read is wired for the campaign's platform. Not a failure, so it is shown
+ * as a property of the row and offers no retry.
+ */
+export const CAMPAIGN_LIVE_METRICS_UNSUPPORTED_MESSAGE = 'Live counters are not available for this platform.';
+
+/**
+ * What a row says when its live counters read is refused, by status. A 404 is either campaign-service
+ * (no connection for the channel) or this BFF (the read is not served while campaign-service briefs
+ * are off); the sentence covers both.
+ */
+export const CAMPAIGN_LIVE_METRICS_READ_ERRORS: Readonly<Record<number, string>> = {
+  403: 'You do not have permission to read this campaign.',
+  404: "Live counters are not available here: this project has no connection for the campaign's channel, or this deployment does not serve them.",
+  500: 'The live counters could not be read because of a connection problem an administrator must fix.',
+  503: 'The platform could not be reached, or answered with something LFX One could not trust. Try again.',
+};
+
+/** A 409's fallback when the response carried no readable reason. */
+export const CAMPAIGN_LIVE_METRICS_READ_CONFLICT_FALLBACK =
+  'The live counters cannot be read for this campaign: it is not created on its platform yet, reported no data for the window, or belongs to a different ad account than this project now uses.';
+
+export const CAMPAIGN_LIVE_METRICS_READ_FALLBACK = 'The live counters could not be read. Try again.';
 
 // ---------------------------------------------------------------------------
 // Act from Monitor

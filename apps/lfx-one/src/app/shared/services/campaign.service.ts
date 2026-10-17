@@ -84,6 +84,7 @@ import type {
   CampaignRecordResult,
   CampaignRefPlatform,
   CampaignServiceCampaign,
+  CampaignServiceCampaignMetrics,
   CampaignServiceCampaignResolution,
   CampaignServiceKeywordTargeting,
   CampaignServiceKeywordTargetingRemovals,
@@ -574,6 +575,28 @@ export class CampaignService {
       params = params.set('window', window);
     }
     return this.http.get<BriefMetrics>('/api/campaigns/brief/metrics', { params });
+  }
+
+  /**
+   * Reads campaign-service's live metrics for ONE campaign on a brief: impressions, clicks, cost (in
+   * micro-units of the ad account's own currency, which the response does not name) and CTR.
+   *
+   * Every read reaches the campaign's ad platform, so callers ask for it on an operator's request
+   * rather than for every row at once. `window` is optional and not defaulted, for the reason
+   * `getBriefMetrics` gives. A failure is an HTTP error, not a row status: 400 means the platform has
+   * no metrics read, 409 that the campaign cannot be measured yet (campaign-service's sentence says why).
+   */
+  public getCampaignMetrics(
+    projectSlug: string,
+    briefId: string,
+    campaignId: string,
+    window?: CampaignMetricsWindow
+  ): Observable<CampaignServiceCampaignMetrics> {
+    let params = new HttpParams().set('project', projectSlug).set('brief_id', briefId);
+    if (window !== undefined) {
+      params = params.set('window', window);
+    }
+    return this.http.get<CampaignServiceCampaignMetrics>(`/api/campaigns/${encodeURIComponent(campaignId)}/metrics`, { params });
   }
 
   public lookupHubSpotUtm(projectSlug: string, eventName: string): Observable<HubSpotUtmLookupResult> {

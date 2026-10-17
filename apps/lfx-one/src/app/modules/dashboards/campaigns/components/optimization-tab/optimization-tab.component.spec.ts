@@ -61,6 +61,7 @@ import { CampaignBidFormComponent } from '../campaign-bid-form/campaign-bid-form
 import { CampaignSettingsDrawerComponent } from '../campaign-settings-drawer/campaign-settings-drawer.component';
 import { CampaignBudgetFormComponent } from '../campaign-budget-form/campaign-budget-form.component';
 import { CampaignKeywordTargetingPanelComponent } from '../campaign-keyword-targeting-panel/campaign-keyword-targeting-panel.component';
+import { CampaignLiveMetricsComponent } from '../campaign-live-metrics/campaign-live-metrics.component';
 import { CampaignNegativeKeywordsFormComponent } from '../campaign-negative-keywords-form/campaign-negative-keywords-form.component';
 import { MetaAdSetsPanelComponent } from '../meta-ad-sets-panel/meta-ad-sets-panel.component';
 import { MicrosoftKeywordsTableComponent } from '../microsoft-keywords-table/microsoft-keywords-table.component';
@@ -4891,5 +4892,101 @@ describe('OptimizationTabComponent — Meta ad sets (#3299)', () => {
 
     const panel = fixture.debugElement.query(By.directive(MetaAdSetsPanelComponent)).componentInstance as MetaAdSetsPanelComponent;
     expect(panel.campaignId()).toBe('c-1');
+  });
+});
+
+/**
+ * Live counters on each campaign row (#3299): offered on every row, read only for the row the
+ * operator asks about — never fanned out over the rows on render — and scoped to the tab's brief.
+ */
+describe('OptimizationTabComponent — live counters (#3299)', () => {
+  let fixture: ComponentFixture<OptimizationTabComponent>;
+  let getCampaignMetrics: ReturnType<typeof vi.fn>;
+
+  const doc = (over: Partial<CampaignIndexDoc> = {}): CampaignIndexDoc => ({
+    id: 'c-1',
+    project_id: 'tlf',
+    brief_id: 'b-1',
+    platform: 'meta-ads',
+    platform_campaign_id: '1234567890',
+    campaign_name: 'KubeCon EU',
+    status: 'created',
+    version: 3,
+    etag: '"3"',
+    ...over,
+  });
+
+  beforeEach(async () => {
+    getCampaignMetrics = vi
+      .fn()
+      .mockReturnValue(
+        of({ campaign_id: 'c-2', platform_campaign_id: '99', window: 'last_7_days', impressions: 500, clicks: 25, cost_micros: 12500000, ctr: 0.05 })
+      );
+
+    await TestBed.configureTestingModule({
+      imports: [OptimizationTabComponent],
+      providers: [
+        provideNoopAnimations(),
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        {
+          provide: CampaignService,
+          useValue: {
+            getCampaignMetrics,
+            getMonitorData: vi.fn().mockReturnValue(of(null)),
+            getKeywords: vi.fn().mockReturnValue(of({ keywords: [] })),
+            getMicrosoftKeywords: vi.fn().mockReturnValue(of(null)),
+            getRedditKeywords: vi.fn().mockReturnValue(of(null)),
+            getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
+            getRedditAccounts: vi.fn().mockReturnValue(of([])),
+            getBriefMetrics: vi.fn().mockReturnValue(of({ brief_id: 'b-1', window: 'last_30_days', rows: [], ok_count: 0, action_items: [] })),
+            getMetaAccounts: vi.fn().mockReturnValue(of([])),
+          },
+        },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(OptimizationTabComponent);
+    fixture.componentRef.setInput('projectSlug', 'tlf');
+    fixture.componentRef.setInput('briefId', 'b-1');
+    fixture.componentRef.setInput('statusToggleEnabled', true);
+    fixture.componentRef.setInput('briefCampaigns', [doc(), doc({ id: 'c-2', platform: 'twitter-ads', campaign_name: 'OSS Summit' })]);
+    fixture.detectChanges();
+  });
+
+  const q = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+  it('offers live counters on every row without reading any of them', () => {
+    const panels = fixture.debugElement.queryAll(By.directive(CampaignLiveMetricsComponent)).map((de) => de.componentInstance as CampaignLiveMetricsComponent);
+
+    expect(panels.map((p) => [p.projectSlug(), p.briefId(), p.campaignId(), p.campaignName()])).toEqual([
+      ['tlf', 'b-1', 'c-1', 'KubeCon EU'],
+      ['tlf', 'b-1', 'c-2', 'OSS Summit'],
+    ]);
+    expect(q('optimization-campaign-row-c-1')!.contains(q('optimization-campaign-live-load-c-1'))).toBe(true);
+    expect(getCampaignMetrics).not.toHaveBeenCalled();
+  });
+
+  it("reads only the row the operator asks about, and shows that row's counters", () => {
+    (q('optimization-campaign-live-load-c-2') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(getCampaignMetrics).toHaveBeenCalledTimes(1);
+    expect(getCampaignMetrics).toHaveBeenCalledWith('tlf', 'b-1', 'c-2');
+    expect(q('optimization-campaign-live-counters-c-2')).not.toBeNull();
+    expect(q('optimization-campaign-live-counters-c-1')).toBeNull();
+    expect(q('optimization-campaign-live-window-c-2')!.textContent).toContain('the last 7 days');
+  });
+
+  it('leaves the row read-only: asking for counters calls no write', () => {
+    const service = TestBed.inject(CampaignService) as unknown as Record<string, ReturnType<typeof vi.fn>>;
+    (q('optimization-campaign-live-load-c-1') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    const called = Object.entries(service)
+      .filter(([, fn]) => fn.mock.calls.length > 0)
+      .map(([name]) => name);
+    expect(called).not.toContain('updateCampaignStatus');
+    expect(called).not.toContain('updateCampaignBudget');
+    expect(called).toContain('getCampaignMetrics');
   });
 });

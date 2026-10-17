@@ -121,6 +121,7 @@ import { catchError, EMPTY, map, of, skip, switchMap, take, type Subscription } 
 import { CampaignBidFormComponent } from '../campaign-bid-form/campaign-bid-form.component';
 import { CampaignBudgetFormComponent } from '../campaign-budget-form/campaign-budget-form.component';
 import { CampaignKeywordTargetingPanelComponent } from '../campaign-keyword-targeting-panel/campaign-keyword-targeting-panel.component';
+import { CampaignLiveMetricsComponent } from '../campaign-live-metrics/campaign-live-metrics.component';
 import { CampaignNegativeKeywordsFormComponent } from '../campaign-negative-keywords-form/campaign-negative-keywords-form.component';
 import { CampaignSettingsDrawerComponent } from '../campaign-settings-drawer/campaign-settings-drawer.component';
 import { MetaAdSetsPanelComponent } from '../meta-ad-sets-panel/meta-ad-sets-panel.component';
@@ -136,6 +137,7 @@ import { RedditKeywordsTableComponent } from '../reddit-keywords-table/reddit-ke
     CampaignBidFormComponent,
     CampaignBudgetFormComponent,
     CampaignKeywordTargetingPanelComponent,
+    CampaignLiveMetricsComponent,
     CampaignNegativeKeywordsFormComponent,
     CampaignSettingsDrawerComponent,
     EventLabelPipe,

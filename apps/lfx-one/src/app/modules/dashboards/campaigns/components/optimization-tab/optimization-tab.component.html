@@ -534,6 +534,15 @@
                   </button>
                 </div>
               </div>
+              <!--
+                The row's live counters, read from its platform only when the operator asks — never
+                for every row at once, since each read spends the ad platform's shared rate budget.
+              -->
+              <lfx-campaign-live-metrics
+                [projectSlug]="projectSlug()"
+                [briefId]="briefId()"
+                [campaignId]="row.campaign.id"
+                [campaignName]="row.campaign.campaign_name" />
               @if (budgetEditorOpen()[row.campaign.id]) {
                 <lfx-campaign-budget-form
                   [id]="'campaign-budget-panel-' + row.campaign.id"

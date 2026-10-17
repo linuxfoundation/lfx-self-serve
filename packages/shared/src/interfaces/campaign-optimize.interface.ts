@@ -814,6 +814,36 @@ export interface CampaignSettingsDrawerState {
   message: string;
 }
 
+/**
+ * One campaign's live counters as its Optimize-tab row shows them, built from campaign-service's
+ * `get-campaign-metrics` read by `buildCampaignLiveCounters`.
+ */
+export interface CampaignLiveCounters {
+  impressions: number;
+  clicks: number;
+  /**
+   * Cost in whole units of the ad ACCOUNT's own currency, to two decimals. campaign-service names no
+   * currency on this read (and performs no FX), so the amount is shown without a symbol.
+   */
+  cost: string;
+  /** Click-through rate as a percentage (upstream sends a fraction), for the `adsPct` pipe. */
+  ctrPct: number;
+  /** The window the counters cover, as campaign-service reports it, in words. */
+  windowLabel: string;
+}
+
+/**
+ * A row's on-demand live counters read: not asked yet, in flight, answered, not offered for the
+ * campaign's platform (upstream's 400), or refused. `unsupported` is a standing property of the
+ * platform, not a failure, so it is kept apart from `error` and offers no retry.
+ */
+export interface CampaignLiveMetricsState {
+  status: 'idle' | 'loading' | 'ready' | 'unsupported' | 'error';
+  counters: CampaignLiveCounters | null;
+  /** What to show for `unsupported` and `error`; `''` otherwise. */
+  message: string;
+}
+
 /** The adopt dialog's brief picker read. */
 export interface CampaignAdoptBriefsState {
   status: 'loading' | 'ready' | 'error';

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  CAMPAIGN_METRICS_WINDOW_LABELS,
   CAMPAIGN_REF_INT64_PLATFORMS,
   CAMPAIGN_SETTINGS_BID_AMOUNT_FIELD,
   CAMPAIGN_SETTINGS_BID_CURRENCY_FIELD,
@@ -10,8 +11,9 @@ import {
   CAMPAIGN_SETTINGS_VERDICT_LABELS,
   CAMPAIGN_SETTINGS_VERDICT_SEVERITIES,
 } from '../constants/campaign-optimize.constants';
-import type { CampaignBudgetPacingRead, CampaignServiceCampaignRef } from '../interfaces/campaign.interface';
+import type { CampaignBudgetPacingRead, CampaignServiceCampaignMetrics, CampaignServiceCampaignRef } from '../interfaces/campaign.interface';
 import type {
+  CampaignLiveCounters,
   CampaignRefVerdict,
   CampaignServiceSettingsField,
   CampaignServiceSettingsReadback,
@@ -199,6 +201,25 @@ export function campaignBudgetPacingFromSettings(readback: CampaignServiceSettin
   const fields = Array.isArray(readback?.fields) ? readback.fields : [];
   const upstream = fields.find((field) => field?.field === 'budget_type')?.upstream;
   return upstream === 'daily' || upstream === 'lifetime' ? upstream : 'unknown';
+}
+
+/**
+ * A row's live counters from one `get-campaign-metrics` read.
+ *
+ * Cost arrives in MICRO-units of the ad account's own currency and is shown in whole units to two
+ * decimals, formatted like the tab's other amounts but WITHOUT a currency symbol: the read names no
+ * currency, and a `$` on a EUR account would be a false claim. CTR arrives as a fraction and becomes
+ * a percentage. The window is the one campaign-service reports, which may be narrower than 30 days
+ * when the platform cannot serve that range (X Ads).
+ */
+export function buildCampaignLiveCounters(metrics: CampaignServiceCampaignMetrics): CampaignLiveCounters {
+  return {
+    impressions: metrics.impressions,
+    clicks: metrics.clicks,
+    cost: (metrics.cost_micros / 1_000_000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+    ctrPct: metrics.ctr * 100,
+    windowLabel: CAMPAIGN_METRICS_WINDOW_LABELS[metrics.window] ?? metrics.window,
+  };
 }
 
 /**

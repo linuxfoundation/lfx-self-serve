@@ -72,6 +72,10 @@ router.patch('/:campaignId/bid', (req, res, next) => campaignController.updateCa
 // campaign-service only: Microsoft Advertising, Reddit and X. Positional response: results[i] answers
 // negativeKeywords[i]. Reddit requires the keyword-targeting read's `revision`; the others refuse it.
 router.post('/:campaignId/negative-keywords', (req, res, next) => campaignController.addNegativeKeywords(req, res, next));
+// One campaign's live counters (`get-campaign-metrics`), read on demand. Takes `?project=&brief_id=` and an
+// optional `?window=`, like `/brief/metrics`. Behind LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS — 404 while it is off.
+// Registered after every fixed two-segment GET above, so none of them can be read as a campaign id.
+router.get('/:campaignId/metrics', (req, res, next) => campaignController.getCampaignMetrics(req, res, next));
 
 // --- Optimize: campaign-service reads and levers ------------------------------
 //
