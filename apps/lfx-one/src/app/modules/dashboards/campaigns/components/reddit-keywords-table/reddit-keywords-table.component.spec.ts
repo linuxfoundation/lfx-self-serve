@@ -747,6 +747,38 @@ describe('RedditKeywordsTableComponent', () => {
         expect(q(noteId)!.textContent).toContain(REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR);
       });
 
+      // Once a newer outcome hid the note, removing that outcome from display must not bring it back.
+      it.each([
+        ['above the table', true, 'a Dismiss', () => TestBed.inject(CampaignNegativeKeywordsService).dismiss('tlf', 'brief-1', 'c-uuid-a')],
+        ['above the table', true, 'a brief change dropping it', () => TestBed.inject(CampaignNegativeKeywordsService).setScope('tlf', 'brief-2')],
+        ['on the row', false, 'a Dismiss', () => TestBed.inject(CampaignNegativeKeywordsService).dismiss('tlf', 'brief-1', 'c-uuid-a')],
+        ['on the row', false, 'a brief change dropping it', () => TestBed.inject(CampaignNegativeKeywordsService).setScope('tlf', 'brief-2')],
+      ])('keeps a note %s hidden by a newer add gone after %s of that add', (_where, drop, _how, removeOutcome) => {
+        startAddThenChangeWindow(report({ keywords: drop ? [gitops(0)] : [gitops(0), mesh(1)] }));
+        const noteId = drop ? 'reddit-keywords-unplaced-not-sent-tlf-t3-a-service-mesh' : 'reddit-keyword-negative-not-sent-t3-a-service-mesh-1';
+        expect(q(noteId)).not.toBeNull();
+
+        addNegativeKeywords.mockReturnValue(of(applied()));
+        TestBed.inject(CampaignNegativeKeywordsService).submit({
+          projectSlug: 'tlf',
+          briefId: 'brief-1',
+          campaignId: 'c-uuid-a',
+          campaignName: 'KubeCon EU',
+          platform: 'reddit-ads',
+          keywords: ['service mesh'],
+          matchType: 'Broad',
+          revision: 'rev-2',
+        });
+        fixture.detectChanges();
+        expect(q(noteId)).toBeNull();
+
+        removeOutcome();
+        fixture.detectChanges();
+
+        expect(TestBed.inject(CampaignNegativeKeywordsService).requests()['tlf|brief-1|c-uuid-a']).toBeUndefined();
+        expect(q(noteId)).toBeNull();
+      });
+
       it('shows the note on every row of one report that sends the same text for the campaign', () => {
         startAddThenChangeWindow(report({ keywords: [mesh(0), { ...mesh(1), keyword: 'service  mesh', key: 't3_a|service  mesh|1' }] }));
 

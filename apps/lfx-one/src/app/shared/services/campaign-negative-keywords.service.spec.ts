@@ -151,6 +151,23 @@ describe('CampaignNegativeKeywordsService', () => {
     expect(outcomes['gamma'].outcome).toBe('APPLIED');
   });
 
+  // What decides "a newer outcome happened" must not depend on what is still on display.
+  it("raises each sent keyword's outcome high-water mark on every settle, and never clears it", () => {
+    service.submit(submission());
+    answer(0, ['UNCONFIRMED', 'APPLIED']);
+    expect(service.keywordOutcomeSeqs()).toEqual({ 'tlf|c-1|alpha': 1, 'tlf|c-1|beta': 1 });
+    service.submit(submission({ keywords: ['alpha'] }));
+    answer(1, ['APPLIED']);
+    expect(service.keywordOutcomeSeqs()).toEqual({ 'tlf|c-1|alpha': 2, 'tlf|c-1|beta': 1 });
+    expect(service.latestOutcomeSeq()).toBe(2);
+
+    service.dismiss('tlf', 'b-1', 'c-1');
+    service.setScope('tlf', 'b-2');
+    service.releaseScope();
+    expect(service.requests()).toEqual({});
+    expect(service.keywordOutcomeSeqs()).toEqual({ 'tlf|c-1|alpha': 2, 'tlf|c-1|beta': 1 });
+  });
+
   it('says whether it sent', () => {
     expect(service.submit(submission())).toBe(true);
     expect(service.submit(submission())).toBe(false);

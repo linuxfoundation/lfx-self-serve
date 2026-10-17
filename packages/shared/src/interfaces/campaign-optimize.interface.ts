@@ -516,6 +516,8 @@ export interface RedditKeywordNotSentNote {
   /** The project and Reddit campaign the add was for: a note is never shown under another project. */
   projectSlug: string;
   redditCampaignId: string;
+  /** campaign-service's campaign UUID the add was for: what the keyword's outcome high-water mark is keyed by. */
+  campaignId: string;
 }
 
 /** A not-sent note whose keyword is not in the report shown: listed above the table instead of on a row. */

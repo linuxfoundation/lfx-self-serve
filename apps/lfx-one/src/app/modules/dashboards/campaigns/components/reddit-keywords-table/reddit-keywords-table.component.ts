@@ -3,7 +3,7 @@
 
 import { DecimalPipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { afterNextRender, Component, computed, DestroyRef, inject, input, Signal, signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, effect, inject, input, Signal, signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import {
@@ -18,8 +18,6 @@ import {
   REDDIT_KEYWORDS_WINDOW_OPTIONS,
 } from '@lfx-one/shared/constants';
 import type {
-  CampaignNegativeKeywordLastOutcome,
-  CampaignNegativeKeywordsRequestState,
   RedditKeywordDisplayRow,
   RedditKeywordNegativeTarget,
   RedditKeywordNotSentNote,
@@ -35,11 +33,13 @@ import { CampaignService } from '@services/campaign.service';
 import {
   campaignKeywordWriteKey,
   campaignNegativeKeywordsKey,
+  keywordOutcomeSeqKey,
   negativeKeywordsScopesMatch,
   negativeKeywordUnconfirmedAdvice,
   redditKeywordNegativeAction,
   redditKeywordNoteKey,
   redditKeywordNoteShowable,
+  redditKeywordNoteSuperseded,
   redditNegativeKeywordText,
 } from '@shared/utils/campaign-negative-keywords.utils';
 import { ConfirmationService } from 'primeng/api';
@@ -165,6 +165,7 @@ export class RedditKeywordsTableComponent {
       const handle = setTimeout(() => this.liveRegionMounted.set(true), LIVE_REGION_MOUNT_DELAY_MS);
       this.destroyRef.onDestroy(() => clearTimeout(handle));
     });
+    this.initPruneSupersededNotes();
   }
 
   protected selectWindow(window: RedditKeywordsWindow): void {
@@ -213,6 +214,7 @@ export class RedditKeywordsTableComponent {
       const removalWrites = this.keywordTargetingService.pendingWrites();
       const reads = this.revisionReads();
       const notSent = this.notSent();
+      const seqs = this.negativeKeywordsService.keywordOutcomeSeqs();
       const readId = this.readId();
       return (this.view().data?.keywords ?? []).map((row) => {
         const target = this.targetFor(row.campaignId);
@@ -223,8 +225,7 @@ export class RedditKeywordsTableComponent {
         const noteKey = text === null ? '' : redditKeywordNoteKey(projectSlug, row.campaignId, text);
         const unsent = noteKey !== '' && Object.hasOwn(notSent, noteKey) ? notSent[noteKey] : null;
         const notSentMessage =
-          unsent !== null &&
-          redditKeywordNoteShowable(unsent, { projectSlug, readId, lastOutcome: this.lastOutcomeFor(row.campaignId, unsent.keyword, requests) })
+          unsent !== null && redditKeywordNoteShowable(unsent, { projectSlug, readId, latestKeywordSeq: this.latestKeywordSeq(unsent, seqs) })
             ? unsent.message
             : '';
         return {
@@ -261,12 +262,10 @@ export class RedditKeywordsTableComponent {
           return text === null ? '' : redditKeywordNoteKey(projectSlug, row.campaignId, text);
         })
       );
-      const requests = this.negativeKeywordsService.requests();
+      const seqs = this.negativeKeywordsService.keywordOutcomeSeqs();
       return Object.entries(this.notSent())
         .filter(
-          ([key, note]) =>
-            !placed.has(key) &&
-            redditKeywordNoteShowable(note, { projectSlug, readId, lastOutcome: this.lastOutcomeFor(note.redditCampaignId, note.keyword, requests) })
+          ([key, note]) => !placed.has(key) && redditKeywordNoteShowable(note, { projectSlug, readId, latestKeywordSeq: this.latestKeywordSeq(note, seqs) })
         )
         .map(([key, note]) => ({ key, testIdKey: slugify(key), keyword: note.keyword, campaignName: note.campaignName, message: note.message }));
     });
@@ -397,6 +396,7 @@ export class RedditKeywordsTableComponent {
         campaignName: target.campaignName,
         projectSlug,
         redditCampaignId,
+        campaignId: target.campaignId,
       },
     }));
   }
@@ -415,21 +415,26 @@ export class RedditKeywordsTableComponent {
   }
 
   /**
-   * A keyword's last write outcome on its campaign under the page's current (project, brief), `null`
-   * when it has none, or `undefined` when the campaign is no longer a target here (nothing can then
-   * supersede a note).
+   * Deletes every note a newer write outcome of its keyword has superseded: the high-water mark only
+   * grows, so such a note can never be shown again, and keeping it would only let it linger.
    */
-  private lastOutcomeFor(
-    redditCampaignId: string,
-    text: string,
-    requests: Record<string, CampaignNegativeKeywordsRequestState>
-  ): CampaignNegativeKeywordLastOutcome | null | undefined {
-    const target = this.targetFor(redditCampaignId);
-    if (target === null) {
-      return undefined;
-    }
-    const request = requests[campaignNegativeKeywordsKey(this.projectSlug(), this.briefId(), target.campaignId)];
-    return request && Object.hasOwn(request.keywordOutcomes, text) ? request.keywordOutcomes[text] : null;
+  private initPruneSupersededNotes(): void {
+    effect(() => {
+      const seqs = this.negativeKeywordsService.keywordOutcomeSeqs();
+      const notes = untracked(() => this.notSent());
+      const superseded = Object.entries(notes)
+        .filter(([, note]) => redditKeywordNoteSuperseded(note, this.latestKeywordSeq(note, seqs)))
+        .map(([key]) => key);
+      if (superseded.length > 0) {
+        untracked(() => this.notSent.update((all) => superseded.reduce((next, key) => omitKey(next, key), all)));
+      }
+    });
+  }
+
+  /** The keyword's outcome high-water mark for the campaign a note was recorded against. */
+  private latestKeywordSeq(note: RedditKeywordNotSentNote, seqs: Record<string, number>): number | undefined {
+    const key = keywordOutcomeSeqKey(note.projectSlug, note.campaignId, note.keyword);
+    return Object.hasOwn(seqs, key) ? seqs[key] : undefined;
   }
 
   /** The brief campaign a row's add would write to, or `null`: none without a brief, nor for a campaign not offered. */

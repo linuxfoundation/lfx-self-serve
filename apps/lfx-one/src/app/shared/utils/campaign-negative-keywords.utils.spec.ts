@@ -8,11 +8,12 @@ import {
   CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED,
   CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNKNOWN,
 } from '@lfx-one/shared/constants';
-import type { CampaignNegativeKeywordLastOutcome, CampaignNegativeKeywordsRequestState, CampaignNegativeKeywordsResult } from '@lfx-one/shared/interfaces';
+import type { CampaignNegativeKeywordsRequestState, CampaignNegativeKeywordsResult } from '@lfx-one/shared/interfaces';
 import { describe, expect, it } from 'vitest';
 
 import {
   campaignKeywordWriteKey,
+  keywordOutcomeSeqKey,
   campaignNegativeKeywordsFailureOutcome,
   mergeNegativeKeywordLastOutcomes,
   negativeKeywordOutcomeRows,
@@ -21,6 +22,7 @@ import {
   redditKeywordNegativeAction,
   redditKeywordNoteKey,
   redditKeywordNoteShowable,
+  redditKeywordNoteSuperseded,
   redditNegativeKeywordText,
   summarizeNegativeKeywordOutcomes,
 } from './campaign-negative-keywords.utils';
@@ -400,7 +402,6 @@ describe('redditKeywordNoteKey', () => {
 });
 
 describe('redditKeywordNoteShowable', () => {
-  const unconfirmed = { outcome: 'UNCONFIRMED' as const, label: 'Not confirmed', detail: 'verify', seq: 3 };
   const note = {
     read: 'r1',
     outcomeSeq: 3,
@@ -409,26 +410,33 @@ describe('redditKeywordNoteShowable', () => {
     campaignName: 'KubeCon EU',
     projectSlug: 'tlf',
     redditCampaignId: 't3_a',
+    campaignId: 'c-1',
   };
-  const current = (lastOutcome: CampaignNegativeKeywordLastOutcome | null | undefined, over: { projectSlug?: string; readId?: string } = {}) => ({
+  const current = (latestKeywordSeq: number | undefined, over: { projectSlug?: string; readId?: string } = {}) => ({
     projectSlug: 'tlf',
     readId: 'r1',
-    lastOutcome,
+    latestKeywordSeq,
     ...over,
   });
 
   it('shows a note only under its project and for the read it was recorded in', () => {
-    expect(redditKeywordNoteShowable(note, current(unconfirmed))).toBe(true);
-    expect(redditKeywordNoteShowable(note, current(unconfirmed, { projectSlug: 'cncf' }))).toBe(false);
-    expect(redditKeywordNoteShowable(note, current(unconfirmed, { readId: 'r2' }))).toBe(false);
+    expect(redditKeywordNoteShowable(note, current(undefined))).toBe(true);
+    expect(redditKeywordNoteShowable(note, current(undefined, { projectSlug: 'cncf' }))).toBe(false);
+    expect(redditKeywordNoteShowable(note, current(undefined, { readId: 'r2' }))).toBe(false);
   });
 
-  // Supersession is explicit: only an outcome with a larger seq is newer than the note.
-  it('is superseded only by a NEWER outcome, never by one that is gone or a campaign no longer targeted', () => {
-    expect(redditKeywordNoteShowable(note, current({ outcome: 'APPLIED', label: 'Added', detail: '', seq: 4 }))).toBe(false);
-    expect(redditKeywordNoteShowable(note, current({ outcome: 'APPLIED', label: 'Added', detail: '', seq: 2 }))).toBe(true);
-    // Dismissed (the saved request is gone): nothing newer happened.
-    expect(redditKeywordNoteShowable(note, current(null))).toBe(true);
-    expect(redditKeywordNoteShowable(note, current(undefined))).toBe(true);
+  // The keyword's high-water mark, not the outcome on display: only a later settle supersedes.
+  it("is superseded only once the keyword's high-water mark passes the note's seq", () => {
+    expect(redditKeywordNoteShowable(note, current(4))).toBe(false);
+    expect(redditKeywordNoteSuperseded(note, 4)).toBe(true);
+    expect(redditKeywordNoteShowable(note, current(3))).toBe(true);
+    expect(redditKeywordNoteShowable(note, current(2))).toBe(true);
+    expect(redditKeywordNoteSuperseded(note, undefined)).toBe(false);
+  });
+});
+
+describe('keywordOutcomeSeqKey', () => {
+  it('keys a keyword by its campaign write key and text, with no brief', () => {
+    expect(keywordOutcomeSeqKey('tlf', 'c-1', 'gitops')).toBe('tlf|c-1|gitops');
   });
 });

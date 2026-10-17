@@ -15,6 +15,7 @@ import {
   campaignKeywordWriteKey,
   campaignNegativeKeywordsFailureOutcome,
   campaignNegativeKeywordsKey,
+  keywordOutcomeSeqKey,
   mergeNegativeKeywordLastOutcomes,
   negativeKeywordsScopesMatch,
   pendingKeywordWrites,
@@ -72,6 +73,7 @@ export class CampaignNegativeKeywordsService {
   private readonly settled = signal<Record<string, number>>({});
   /** Stamps each settled request's per-keyword outcomes; only grows, so a larger value is a newer outcome. */
   private outcomeSeq = 0;
+  private readonly keywordSeqs = signal<Record<string, number>>({});
   /**
    * The key prefix of the campaigns page's (project, brief): `undefined` until `setScope` is first
    * called (nothing scoped), `null` once the page has released it.
@@ -91,6 +93,15 @@ export class CampaignNegativeKeywordsService {
   public readonly pendingWrites: Signal<Record<string, true>> = computed(() => pendingKeywordWrites(this.state()));
   /** How many requests of each campaign (by `campaignKeywordWriteKey`) have settled: a change means a revision read is stale. */
   public readonly settledWrites: Signal<Record<string, number>> = this.settled.asReadonly();
+
+  /**
+   * Each keyword's outcome HIGH-WATER mark, by `keywordOutcomeSeqKey` (campaign, not brief, plus the
+   * keyword as sent): the `seq` of its latest settled outcome. Updated on every settle and NEVER
+   * cleared — not by `dismiss`, `clearSettled`, `setScope` or `releaseScope` — so "a newer outcome
+   * happened" does not depend on what is still on display. It is bounded by the keywords sent in one
+   * session, and this root service ends with the page (see the class comment on sign-out).
+   */
+  public readonly keywordOutcomeSeqs: Signal<Record<string, number>> = this.keywordSeqs.asReadonly();
 
   /** The `seq` of the newest outcome recorded so far (`0` before any): an outcome with a larger one settled after now. */
   public latestOutcomeSeq(): number {
@@ -154,6 +165,18 @@ export class CampaignNegativeKeywordsService {
       return false;
     }
     const countSettle = (): void => this.settled.update((all) => ({ ...all, [writeKey]: (all[writeKey] ?? 0) + 1 }));
+    // One new seq per settle, raised as the high-water mark of every keyword sent.
+    const recordSeq = (): number => {
+      const seq = ++this.outcomeSeq;
+      this.keywordSeqs.update((all) => {
+        const next = { ...all };
+        for (const text of keywords) {
+          next[keywordOutcomeSeqKey(projectSlug, campaignId, text)] = seq;
+        }
+        return next;
+      });
+      return seq;
+    };
     const revision = CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES[platform].requiresRevision ? submission.revision : undefined;
     if (CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES[platform].requiresRevision && !revision) {
       return false;
@@ -183,7 +206,7 @@ export class CampaignNegativeKeywordsService {
             batchKeywords: [],
             ...base,
             settleCount: settleCount + 1,
-            keywordOutcomes: mergeNegativeKeywordLastOutcomes(keywordOutcomes, keywords, rows, null, ++this.outcomeSeq),
+            keywordOutcomes: mergeNegativeKeywordLastOutcomes(keywordOutcomes, keywords, rows, null, recordSeq()),
           });
           countSettle();
           if (!rows.some((row) => row.outcome === 'FAILED' || row.outcome === 'UNCONFIRMED')) {
@@ -200,7 +223,7 @@ export class CampaignNegativeKeywordsService {
             batchKeywords: keywords,
             ...base,
             settleCount: settleCount + 1,
-            keywordOutcomes: mergeNegativeKeywordLastOutcomes(keywordOutcomes, keywords, [], outcome, ++this.outcomeSeq),
+            keywordOutcomes: mergeNegativeKeywordLastOutcomes(keywordOutcomes, keywords, [], outcome, recordSeq()),
           });
           countSettle();
           this.messageService.add({

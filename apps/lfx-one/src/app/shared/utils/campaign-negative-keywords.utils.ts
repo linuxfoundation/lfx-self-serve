@@ -144,6 +144,14 @@ export function campaignKeywordWriteKey(projectSlug: string, campaignId: string)
   return `${projectSlug}|${campaignId}`;
 }
 
+/**
+ * The key of one keyword's outcome high-water mark (`CampaignNegativeKeywordsService.keywordOutcomeSeqs`):
+ * the campaign's `campaignKeywordWriteKey` plus the keyword as sent. Brief-independent, like the write key.
+ */
+export function keywordOutcomeSeqKey(projectSlug: string, campaignId: string, text: string): string {
+  return `${campaignKeywordWriteKey(projectSlug, campaignId)}|${text}`;
+}
+
 /** The keyword-write key of a per-brief request key (`campaignNegativeKeywordsKey`). */
 export function keywordWriteKeyOfRequestKey(requestKey: string): string {
   const [projectSlug, , campaignId] = requestKey.split('|');
@@ -178,18 +186,29 @@ export function redditKeywordNoteKey(projectSlug: string, redditCampaignId: stri
  * - only for the keyword read current when it was recorded (a Refresh, Retry or window change after
  *   it clears it);
  * - only while the keyword has no NEWER write outcome than when it was recorded: a later add of it,
- *   from the table or the editor, supersedes it. Newer is decided by the outcome's monotonic `seq`
- *   against the note's `outcomeSeq`, never by presence: an outcome that is simply GONE (`null`, its
- *   result dismissed) supersedes nothing, nor does `undefined` (the campaign is no longer a target).
+ *   from the table or the editor, supersedes it, for good (`redditKeywordNoteSuperseded`).
  */
 export function redditKeywordNoteShowable(
   note: RedditKeywordNotSentNote,
-  current: { projectSlug: string; readId: string; lastOutcome: CampaignNegativeKeywordLastOutcome | null | undefined }
+  current: { projectSlug: string; readId: string; latestKeywordSeq: number | undefined }
 ): boolean {
   if (note.projectSlug !== current.projectSlug || note.read !== current.readId) {
     return false;
   }
-  return current.lastOutcome === undefined || current.lastOutcome === null || current.lastOutcome.seq <= note.outcomeSeq;
+  return !redditKeywordNoteSuperseded(note, current.latestKeywordSeq);
+}
+
+/**
+ * Whether a newer write outcome of the note's keyword has settled since the note was recorded.
+ *
+ * Reads `latestKeywordSeq`, the keyword's outcome HIGH-WATER mark in
+ * `CampaignNegativeKeywordsService.keywordOutcomeSeqs` (`undefined` when it never had one), never
+ * the outcomes on display: those can be dismissed or dropped by a scope change, the high-water mark
+ * cannot. So dismissing an OLDER result keeps the note, and dismissing the NEWER one that hid it does
+ * not bring it back.
+ */
+export function redditKeywordNoteSuperseded(note: RedditKeywordNotSentNote, latestKeywordSeq: number | undefined): boolean {
+  return latestKeywordSeq !== undefined && latestKeywordSeq > note.outcomeSeq;
 }
 
 /**
