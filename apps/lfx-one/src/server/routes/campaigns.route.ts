@@ -27,7 +27,8 @@ router.post('/brief/refine', (req, res, next) => campaignController.refineBrief(
 router.post('/brief/persist', (req, res, next) => campaignController.persistBrief(req, res, next));
 router.get('/brief', (req, res, next) => campaignController.loadBrief(req, res, next));
 // Approves a brief that is already stored, and writes nothing to it. Two path segments after
-// `/brief`, so it cannot collide with `/brief/persist` or `/brief/metrics` above. Empty body: the
+// `/brief`, so it cannot collide with the single-segment `/brief/persist` or `/brief/metrics`
+// routes, whichever order they are registered in. Empty body: the
 // brief is the path, the foundation is `?project=`, and the validator is the request's `If-Match`.
 router.post('/brief/:briefId/approve', (req, res, next) => campaignController.approveBrief(req, res, next));
 // campaign-service's OWN metrics and action items for one brief. Distinct from `/monitor` and its

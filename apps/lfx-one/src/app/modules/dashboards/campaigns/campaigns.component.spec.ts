@@ -767,6 +767,22 @@ describe('CampaignsComponent brief persistence', () => {
         expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', 'W/"v2"', false);
       });
 
+      it('licenses the next save when the approval came back without a validator', async () => {
+        // An ordinary restore carries NO absence marker, so carrying it through unchanged would
+        // leave the session on `etag: null` with nothing licensing the ETag fallback, and the next
+        // Proceed would be refused `unverified-validator` for an approval that wrote nothing.
+        approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: null, approved: true }));
+        restore(brief, 'restored-a', false, 'W/"v1"');
+        await fixture.whenStable();
+
+        persistBrief.mockReturnValue(NEVER);
+        proceed();
+        await fixture.whenStable();
+
+        // The trailing `true` is the fallback licence.
+        expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', null, true);
+      });
+
       // Blank is what an unresolved foundation reads as, and the server refuses it — a brief is
       // approved inside one project. Returning silently would leave Create disabled under the
       // restore's own untroubled banner, which is the no-reason dead end this path replaces.

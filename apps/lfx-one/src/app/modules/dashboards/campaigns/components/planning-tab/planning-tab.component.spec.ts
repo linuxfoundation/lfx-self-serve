@@ -201,6 +201,30 @@ describe('PlanningTabComponent brief read-back', () => {
     // Still offered -- it is real, restorable content, and reviewing it is the point.
     expect(savedBrief()).toEqual(exampleBrief);
     expect(savedBriefWarning()).toContain('never approved');
+    // The paid restore is wired to `onRestoreSavedBrief`, which approves the stored row.
+    expect(savedBriefWarning()).toContain('Restoring it approves the stored brief.');
+  });
+
+  it('does not promise an approval on the email channel, which does not approve', async () => {
+    // One component serves both channels, but only the paid restore reaches
+    // `approveRestoredBrief`; the email tab is wired to `onRestoreSavedEmailBrief`, which
+    // restores without approving. Carrying the paid sentence here would be a promise the code
+    // never keeps.
+    fixture.componentRef.setInput('deliveryType', 'email');
+    // Settled before the lookup: a delivery-type change clears the saved-brief state on its own
+    // subscription, and letting that reset land after the lookup would blank the warning under
+    // test for the wrong reason.
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    campaignService.loadBrief.mockReturnValue(
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', etag: 'W/"v1"', approved: false }))
+    );
+
+    await typeEventUrl('https://events.example.com/kubecon-eu-2026');
+
+    expect(savedBriefWarning()).toContain('never approved');
+    expect(savedBriefWarning()).not.toContain('approves the stored brief');
   });
 
   it('announces the unapproved warning alongside the restore offer', async () => {
