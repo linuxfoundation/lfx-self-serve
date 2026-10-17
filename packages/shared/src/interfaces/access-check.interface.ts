@@ -59,6 +59,4 @@ export type AccessCheckAccessType =
   | 'member'
   | 'marketing_auditor'
   | 'campaign_manager'
-  /** Scheduled for removal from the model once `team:marketing-ops` moves to `global_marketing_ops`; drop it here first. */
-  | 'marketing_ops'
   | 'global_marketing_ops';
