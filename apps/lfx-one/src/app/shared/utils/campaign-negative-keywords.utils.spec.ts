@@ -12,10 +12,12 @@ import type { CampaignNegativeKeywordsRequestState, CampaignNegativeKeywordsResu
 import { describe, expect, it } from 'vitest';
 
 import {
+  campaignKeywordWriteKey,
   campaignNegativeKeywordsFailureOutcome,
   mergeNegativeKeywordLastOutcomes,
   negativeKeywordOutcomeRows,
   negativeKeywordsScopesMatch,
+  pendingKeywordWrites,
   redditKeywordNegativeAction,
   redditNegativeKeywordText,
   summarizeNegativeKeywordOutcomes,
@@ -183,7 +185,7 @@ describe('redditNegativeKeywordText', () => {
 
 describe('redditKeywordNegativeAction', () => {
   const target = { campaignId: 'c-1', campaignName: 'KubeCon EU' };
-  const idle = { campaignReading: false, rowReading: false, targetingRemovalPending: false };
+  const idle = { campaignReading: false, rowReading: false, negativeWritePending: false, targetingRemovalPending: false };
   /** A settled request, its per-keyword last outcomes built as the service builds them unless given. */
   const request = (over: Partial<CampaignNegativeKeywordsRequestState> = {}): CampaignNegativeKeywordsRequestState => {
     const base: CampaignNegativeKeywordsRequestState = {
@@ -243,6 +245,10 @@ describe('redditKeywordNegativeAction', () => {
       state: 'busy',
       sending: false,
     });
+  });
+
+  it('is busy while an add to the campaign runs under another brief key', () => {
+    expect(redditKeywordNegativeAction('gitops', target, null, { ...idle, negativeWritePending: true })).toMatchObject({ state: 'busy', sending: false });
   });
 
   // A campaign's Reddit targeting is one domain: no add while a removal from it is in flight.
@@ -358,5 +364,19 @@ describe('negativeKeywordsScopesMatch', () => {
     expect(negativeKeywordsScopesMatch('tlf', 'b-1', 'tlf', '')).toBe(true);
     expect(negativeKeywordsScopesMatch('tlf', 'b-2', 'tlf', 'b-1')).toBe(false);
     expect(negativeKeywordsScopesMatch('cncf', '', 'tlf', 'b-1')).toBe(false);
+  });
+});
+
+describe('keyword-write keys', () => {
+  it('key a campaign by project and campaign, whatever the brief', () => {
+    expect(campaignKeywordWriteKey('tlf', 'c-1')).toBe('tlf|c-1');
+    expect(
+      pendingKeywordWrites({
+        'tlf|b-1|c-1': { pending: true },
+        'tlf||c-1': { pending: true },
+        'tlf|b-1|c-2': { pending: false },
+        'cncf|b-1|c-3': { pending: true },
+      })
+    ).toEqual({ 'tlf|c-1': true, 'cncf|c-3': true });
   });
 });

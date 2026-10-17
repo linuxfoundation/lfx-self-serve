@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { inject, Injectable, Signal, signal } from '@angular/core';
+import { computed, inject, Injectable, Signal, signal } from '@angular/core';
 import { CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES } from '@lfx-one/shared/constants';
 import type {
   CampaignNegativeKeywordOutcomeRow,
@@ -12,10 +12,12 @@ import type {
 import { CampaignKeywordTargetingService } from '@services/campaign-keyword-targeting.service';
 import { CampaignService } from '@services/campaign.service';
 import {
+  campaignKeywordWriteKey,
   campaignNegativeKeywordsFailureOutcome,
   campaignNegativeKeywordsKey,
   mergeNegativeKeywordLastOutcomes,
   negativeKeywordsScopesMatch,
+  pendingKeywordWrites,
   negativeKeywordOutcomeRows,
   summarizeNegativeKeywordOutcomes,
 } from '@shared/utils/campaign-negative-keywords.utils';
@@ -67,6 +69,7 @@ export class CampaignNegativeKeywordsService {
 
   private readonly state = signal<Record<string, CampaignNegativeKeywordsRequestState>>({});
   private readonly reserved = signal<Record<string, true>>({});
+  private readonly settled = signal<Record<string, number>>({});
   /**
    * The key prefix of the campaigns page's (project, brief): `undefined` until `setScope` is first
    * called (nothing scoped), `null` once the page has released it.
@@ -76,18 +79,23 @@ export class CampaignNegativeKeywordsService {
   /** The latest request per `campaignNegativeKeywordsKey`. */
   public readonly requests: Signal<Record<string, CampaignNegativeKeywordsRequestState>> = this.state.asReadonly();
   /**
-   * Campaigns (by `campaignNegativeKeywordsKey`) held by a caller that is about to send, e.g. the
-   * Reddit keyword table while it reads the revision. `submit` refuses a held campaign, so the
-   * campaign's editor (and anything else) waits until the holder releases it.
+   * Campaigns (by `campaignKeywordWriteKey`: project and campaign, NOT brief) held by a caller that is
+   * about to send, e.g. the Reddit keyword table while it reads the revision. `submit` refuses a held
+   * campaign, so the campaign's editor (and anything else) waits until the holder releases it.
+   * Brief-independent because the page's brief id can change (go empty) under a write in flight.
    */
   public readonly reservations: Signal<Record<string, true>> = this.reserved.asReadonly();
+  /** The campaigns (by `campaignKeywordWriteKey`) with a request in flight under ANY brief key. */
+  public readonly pendingWrites: Signal<Record<string, true>> = computed(() => pendingKeywordWrites(this.state()));
+  /** How many requests of each campaign (by `campaignKeywordWriteKey`) have settled: a change means a revision read is stale. */
+  public readonly settledWrites: Signal<Record<string, number>> = this.settled.asReadonly();
 
   /**
    * Holds one campaign for a send about to happen. `false` (nothing held) when a request of the
    * campaign is in flight, it is already held, or a keyword-targeting removal of it is in flight.
    */
-  public reserve(projectSlug: string, briefId: string, campaignId: string): boolean {
-    const key = campaignNegativeKeywordsKey(projectSlug, briefId, campaignId);
+  public reserve(projectSlug: string, campaignId: string): boolean {
+    const key = campaignKeywordWriteKey(projectSlug, campaignId);
     if (this.isBusy(key)) {
       return false;
     }
@@ -95,9 +103,17 @@ export class CampaignNegativeKeywordsService {
     return true;
   }
 
+  /**
+   * Whether a keyword write of the campaign is held or in flight on either lever (a request or
+   * reservation here, or a keyword-targeting removal), under any brief key.
+   */
+  public isWriteHeld(projectSlug: string, campaignId: string): boolean {
+    return this.isBusy(campaignKeywordWriteKey(projectSlug, campaignId));
+  }
+
   /** Releases a hold taken with `reserve`. */
-  public release(projectSlug: string, briefId: string, campaignId: string): void {
-    const key = campaignNegativeKeywordsKey(projectSlug, briefId, campaignId);
+  public release(projectSlug: string, campaignId: string): void {
+    const key = campaignKeywordWriteKey(projectSlug, campaignId);
     if (!this.reserved()[key]) {
       return;
     }
@@ -126,9 +142,11 @@ export class CampaignNegativeKeywordsService {
   public submit(submission: CampaignNegativeKeywordsSubmission, onAllSettled?: () => void): boolean {
     const { projectSlug, briefId, campaignId, campaignName, platform, keywords, matchType } = submission;
     const key = campaignNegativeKeywordsKey(projectSlug, briefId, campaignId);
-    if (this.isBusy(key)) {
+    const writeKey = campaignKeywordWriteKey(projectSlug, campaignId);
+    if (this.isBusy(writeKey)) {
       return false;
     }
+    const countSettle = (): void => this.settled.update((all) => ({ ...all, [writeKey]: (all[writeKey] ?? 0) + 1 }));
     const revision = CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES[platform].requiresRevision ? submission.revision : undefined;
     if (CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES[platform].requiresRevision && !revision) {
       return false;
@@ -160,6 +178,7 @@ export class CampaignNegativeKeywordsService {
             settleCount: settleCount + 1,
             keywordOutcomes: mergeNegativeKeywordLastOutcomes(keywordOutcomes, keywords, rows, null),
           });
+          countSettle();
           if (!rows.some((row) => row.outcome === 'FAILED' || row.outcome === 'UNCONFIRMED')) {
             onAllSettled?.();
           }
@@ -176,6 +195,7 @@ export class CampaignNegativeKeywordsService {
             settleCount: settleCount + 1,
             keywordOutcomes: mergeNegativeKeywordLastOutcomes(keywordOutcomes, keywords, [], outcome),
           });
+          countSettle();
           this.messageService.add({
             severity: outcome.state === 'unconfirmed' ? 'warn' : 'error',
             summary: outcome.state === 'unconfirmed' ? `Negative keywords not confirmed for ${campaignName}` : `Negative keywords not added to ${campaignName}`,
@@ -244,9 +264,9 @@ export class CampaignNegativeKeywordsService {
     return negativeKeywordsScopesMatch(project, brief, activeProject, activeBrief);
   }
 
-  /** A request of the campaign in flight, a hold on it, or a keyword-targeting removal of it in flight. */
-  private isBusy(key: string): boolean {
-    return !!this.state()[key]?.pending || !!this.reserved()[key] || !!this.keywordTargetingService.removals()[key]?.pending;
+  /** By `campaignKeywordWriteKey`: a request of the campaign in flight, a hold on it, or a keyword-targeting removal of it in flight. */
+  private isBusy(writeKey: string): boolean {
+    return !!this.pendingWrites()[writeKey] || !!this.reserved()[writeKey] || !!this.keywordTargetingService.pendingWrites()[writeKey];
   }
 
   private set(key: string, request: CampaignNegativeKeywordsRequestState): void {

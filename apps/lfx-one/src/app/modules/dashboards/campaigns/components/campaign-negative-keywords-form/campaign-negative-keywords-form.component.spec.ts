@@ -328,13 +328,47 @@ describe('CampaignNegativeKeywordsFormComponent', () => {
     });
 
     // The Reddit keyword table holds the campaign while it reads the revision for its own add.
+    // The table's add keeps its confirmed brief while the page's brief id goes empty (a Proceed save).
+    it('holds submit under an empty brief id while an add to the campaign runs under its brief, then reads again', () => {
+      getKeywordTargeting.mockReturnValue(of(targeting('sha256:r1')));
+      setPlatform('reddit-ads');
+      fixture.componentRef.setInput('briefId', '');
+      fixture.detectChanges();
+      const add = new Subject<CampaignNegativeKeywordsResult>();
+      addNegativeKeywords.mockReturnValue(add);
+      const service = TestBed.inject(CampaignNegativeKeywordsService);
+      service.submit({
+        projectSlug: 'tlf',
+        briefId: 'b-1',
+        campaignId: 'c-1',
+        campaignName: 'KubeCon EU',
+        platform: 'reddit-ads',
+        keywords: ['free'],
+        matchType: 'Broad',
+        revision: 'sha256:r1',
+      });
+      fixture.detectChanges();
+      expect(submitButton().disabled).toBe(true);
+      expect(q('optimization-campaign-negatives-held-c-1')).not.toBeNull();
+      const reads = getKeywordTargeting.mock.calls.length;
+
+      add.next({ campaignId: 'c-1', appliedCount: 1, results: [{ text: 'free', matchType: 'Broad', outcome: 'APPLIED' }] });
+      add.complete();
+      fixture.detectChanges();
+
+      expect(q('optimization-campaign-negatives-held-c-1')).toBeNull();
+      expect(submitButton().disabled).toBe(false);
+      // The add changed the fingerprint: the editor read its revision again.
+      expect(getKeywordTargeting.mock.calls.length).toBe(reads + 1);
+    });
+
     it('holds submit while the keyword table has the campaign reserved, and says why', () => {
       getKeywordTargeting.mockReturnValue(of(targeting('sha256:r1')));
       setPlatform('reddit-ads');
       const service = TestBed.inject(CampaignNegativeKeywordsService);
       expect(submitButton().disabled).toBe(false);
 
-      service.reserve('tlf', 'b-1', 'c-1');
+      service.reserve('tlf', 'c-1');
       fixture.detectChanges();
       expect(submitButton().disabled).toBe(true);
       expect(q('optimization-campaign-negatives-held-c-1')!.textContent).toContain('keyword table');
@@ -342,7 +376,7 @@ describe('CampaignNegativeKeywordsFormComponent', () => {
       submit();
       expect(addNegativeKeywords).not.toHaveBeenCalled();
 
-      service.release('tlf', 'b-1', 'c-1');
+      service.release('tlf', 'c-1');
       fixture.detectChanges();
       expect(submitButton().disabled).toBe(false);
       expect(q('optimization-campaign-negatives-held-c-1')).toBeNull();

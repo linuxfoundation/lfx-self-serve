@@ -158,18 +158,38 @@ describe('CampaignNegativeKeywordsService', () => {
     expect(addNegativeKeywords).toHaveBeenCalledTimes(1);
   });
 
+  // Keyword writes are serialized per campaign, not per brief: the page's brief id can go empty under one.
+  it('holds a campaign across brief keys, counts its settles, and leaves other campaigns alone', () => {
+    expect(service.reserve('tlf', 'c-1')).toBe(true);
+    expect(service.submit(submission({ briefId: '' }))).toBe(false);
+    expect(service.submit(submission({ briefId: 'b-2' }))).toBe(false);
+    expect(service.isWriteHeld('tlf', 'c-1')).toBe(true);
+    expect(service.submit(submission({ campaignId: 'c-2' }))).toBe(true);
+    service.release('tlf', 'c-1');
+
+    expect(service.submit(submission())).toBe(true);
+    expect(service.pendingWrites()).toEqual({ 'tlf|c-1': true, 'tlf|c-2': true });
+    expect(service.submit(submission({ briefId: '' }))).toBe(false);
+    expect(service.reserve('tlf', 'c-1')).toBe(false);
+
+    answer(1, ['APPLIED', 'APPLIED']);
+    expect(service.pendingWrites()).toEqual({ 'tlf|c-2': true });
+    expect(service.settledWrites()['tlf|c-1']).toBe(1);
+    expect(service.isWriteHeld('tlf', 'c-1')).toBe(false);
+  });
+
   it('refuses a held campaign until it is released, and holds nothing busy', () => {
-    expect(service.reserve('tlf', 'b-1', 'c-1')).toBe(true);
-    expect(service.reservations()).toEqual({ 'tlf|b-1|c-1': true });
-    expect(service.reserve('tlf', 'b-1', 'c-1')).toBe(false);
+    expect(service.reserve('tlf', 'c-1')).toBe(true);
+    expect(service.reservations()).toEqual({ 'tlf|c-1': true });
+    expect(service.reserve('tlf', 'c-1')).toBe(false);
     expect(service.submit(submission())).toBe(false);
     expect(addNegativeKeywords).not.toHaveBeenCalled();
 
-    service.release('tlf', 'b-1', 'c-1');
+    service.release('tlf', 'c-1');
     expect(service.reservations()).toEqual({});
     expect(service.submit(submission())).toBe(true);
     // A campaign with a request in flight cannot be held.
-    expect(service.reserve('tlf', 'b-1', 'c-1')).toBe(false);
+    expect(service.reserve('tlf', 'c-1')).toBe(false);
   });
 
   // A campaign's Reddit targeting is one domain: an add waits for a removal from it to settle.
@@ -184,7 +204,7 @@ describe('CampaignNegativeKeywordsService', () => {
       sent: ['mesh'],
     });
 
-    expect(service.reserve('tlf', 'b-1', 'c-1')).toBe(false);
+    expect(service.reserve('tlf', 'c-1')).toBe(false);
     expect(service.submit(submission({ platform: 'reddit-ads', matchType: 'Broad', revision: 'sha256:r1' }))).toBe(false);
     expect(service.submit(submission({ campaignId: 'c-2' }))).toBe(true);
   });
@@ -211,24 +231,27 @@ describe('CampaignNegativeKeywordsService', () => {
     expect(unsettled).not.toHaveBeenCalled();
   });
 
+  // Outcomes are kept per brief; WRITES are serialized per campaign, so the same campaign under
+  // another brief waits for the first request to settle.
   it('keeps requests of different projects and briefs apart', () => {
     service.submit(submission());
-    service.submit(submission({ briefId: 'b-2' }));
     service.submit(submission({ projectSlug: 'cncf' }));
+    answer(0, ['APPLIED', 'APPLIED']);
+    service.submit(submission({ briefId: 'b-2' }));
 
     expect(addNegativeKeywords).toHaveBeenCalledTimes(3);
-    answer(1, ['FAILED', 'FAILED']);
+    answer(2, ['FAILED', 'FAILED']);
 
-    expect(service.requests()['tlf|b-1|c-1'].pending).toBe(true);
-    expect(service.requests()['tlf|b-2|c-1'].pending).toBe(false);
+    expect(service.requests()['tlf|b-1|c-1'].outcomeRows.map((row) => row.outcome)).toEqual(['APPLIED', 'APPLIED']);
+    expect(service.requests()['tlf|b-2|c-1'].outcomeRows.map((row) => row.outcome)).toEqual(['FAILED', 'FAILED']);
     expect(service.requests()['cncf|b-1|c-1'].pending).toBe(true);
   });
 
   it('clears the settled requests of one scope only, and never one in flight', () => {
     service.submit(submission({ campaignId: 'c-1' }));
     service.submit(submission({ campaignId: 'c-2' }));
-    service.submit(submission({ briefId: 'b-2' }));
     answer(0, ['APPLIED', 'APPLIED']);
+    service.submit(submission({ briefId: 'b-2' }));
     answer(2, ['APPLIED', 'APPLIED']);
 
     service.clearSettled('tlf', 'b-1');

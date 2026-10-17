@@ -132,6 +132,35 @@ export function summarizeNegativeKeywordOutcomes(
 }
 
 /**
+ * The key a campaign's KEYWORD WRITES are serialized under: (project, campaign), independent of the
+ * brief. The campaign UUID identifies the one upstream ad group / line item whose targeting both
+ * keyword levers (negative-keyword add, keyword-targeting removal) write, while the brief id the page
+ * holds can change under a write in flight (it goes empty during a Proceed save). Reservations,
+ * pending-write holds and settle counters all use this key; per-brief keys
+ * (`campaignNegativeKeywordsKey`) address only the outcomes shown.
+ */
+export function campaignKeywordWriteKey(projectSlug: string, campaignId: string): string {
+  return `${projectSlug}|${campaignId}`;
+}
+
+/** The keyword-write key of a per-brief request key (`campaignNegativeKeywordsKey`). */
+export function keywordWriteKeyOfRequestKey(requestKey: string): string {
+  const [projectSlug, , campaignId] = requestKey.split('|');
+  return campaignKeywordWriteKey(projectSlug ?? '', campaignId ?? '');
+}
+
+/** The keyword-write keys of every PENDING entry of a per-brief request map. */
+export function pendingKeywordWrites(entries: Readonly<Record<string, { pending: boolean }>>): Record<string, true> {
+  const pending: Record<string, true> = {};
+  for (const [key, entry] of Object.entries(entries)) {
+    if (entry.pending) {
+      pending[keywordWriteKeyOfRequestKey(key)] = true;
+    }
+  }
+  return pending;
+}
+
+/**
  * Whether two (project, brief) scopes of the negative-keyword lever are the same. An EMPTY brief id
  * on either side matches any brief of the same project: the campaigns page's brief id goes empty
  * while a Proceed save runs, and stays empty after a failed one, and neither is a switch to another
@@ -245,7 +274,7 @@ export function redditKeywordNegativeAction(
   if (holds.campaignReading) {
     return { ...none, ...outcome, state: 'busy', sending: holds.rowReading, ariaLabel };
   }
-  if (holds.targetingRemovalPending) {
+  if (holds.negativeWritePending || holds.targetingRemovalPending) {
     return { ...none, ...outcome, state: 'busy', ariaLabel, notSentMessage };
   }
   return { ...none, ...outcome, state: 'available', ariaLabel, notSentMessage };

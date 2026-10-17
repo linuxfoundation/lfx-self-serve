@@ -501,6 +501,8 @@ export interface RedditKeywordNegativeHolds {
   campaignReading: boolean;
   /** That read is for THIS row's keyword. */
   rowReading: boolean;
+  /** A negative-keyword request of the campaign is in flight under ANOTHER brief key (the page's brief id changed under it). */
+  negativeWritePending: boolean;
   /** A keyword-targeting removal of the campaign is in flight: its Reddit targeting is one domain. */
   targetingRemovalPending: boolean;
 }

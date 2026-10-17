@@ -24,7 +24,7 @@ import { campaignNegativeKeywordsValidator } from '@lfx-one/shared/validators';
 import { CampaignKeywordTargetingService } from '@services/campaign-keyword-targeting.service';
 import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
 import { CampaignService } from '@services/campaign.service';
-import { campaignNegativeKeywordsKey, summarizeNegativeKeywordOutcomes } from '@shared/utils/campaign-negative-keywords.utils';
+import { campaignKeywordWriteKey, campaignNegativeKeywordsKey, summarizeNegativeKeywordOutcomes } from '@shared/utils/campaign-negative-keywords.utils';
 import { controlTouchedSignal, controlValueSignal, touchedErrorSignal, touchedInvalidSignal } from '@shared/utils/form-control-signals.util';
 import { catchError, filter, map, of, startWith, switchMap, take } from 'rxjs';
 
@@ -99,17 +99,27 @@ export class CampaignNegativeKeywordsFormComponent {
    * removal of it is in flight — the campaign's Reddit targeting is one domain, written one change at a time.
    */
   protected readonly heldReason: Signal<string> = computed(() => {
-    const key = campaignNegativeKeywordsKey(this.projectSlug(), this.briefId(), this.campaignId());
-    if (this.negativeKeywordsService.reservations()[key]) {
+    // By campaign, not brief: a write in flight keeps its own brief while the page's goes empty.
+    const writeKey = campaignKeywordWriteKey(this.projectSlug(), this.campaignId());
+    if (this.negativeKeywordsService.reservations()[writeKey]) {
       return 'A negative keyword for this campaign is being added from the keyword table. Wait for it to finish.';
     }
-    if (this.keywordTargetingService.removals()[key]?.pending) {
+    if (this.negativeKeywordsService.pendingWrites()[writeKey] && !this.pending()) {
+      return 'Negative keywords are already being added to this campaign. Wait for that to finish.';
+    }
+    if (this.keywordTargetingService.pendingWrites()[writeKey]) {
       return "A removal from this campaign's keyword targeting is in progress. Wait for it to finish.";
     }
     return '';
   });
-  /** Bumped by every settled request of this campaign: the targeting the revision fingerprints may have changed. */
-  private readonly settleCount: Signal<number> = computed(() => this.request()?.settleCount ?? 0);
+  /**
+   * Bumped by every settled keyword write of this campaign on either lever, under any brief key: the
+   * targeting the revision fingerprints may have changed.
+   */
+  private readonly settleCount: Signal<number> = computed(() => {
+    const writeKey = campaignKeywordWriteKey(this.projectSlug(), this.campaignId());
+    return (this.negativeKeywordsService.settledWrites()[writeKey] ?? 0) + (this.keywordTargetingService.settledWrites()[writeKey] ?? 0);
+  });
   /** Per-keyword outcomes of the last request, in the order the keywords were SENT. */
   protected readonly outcomeRows: Signal<CampaignNegativeKeywordOutcomeRow[]> = computed(() => this.request()?.outcomeRows ?? []);
   /** The last request's outcome when it produced no per-keyword results at all. */

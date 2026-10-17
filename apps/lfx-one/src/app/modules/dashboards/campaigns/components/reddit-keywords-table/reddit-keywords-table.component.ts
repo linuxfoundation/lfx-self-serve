@@ -30,6 +30,7 @@ import { CampaignKeywordTargetingService } from '@services/campaign-keyword-targ
 import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
 import { CampaignService } from '@services/campaign.service';
 import {
+  campaignKeywordWriteKey,
   campaignNegativeKeywordsKey,
   negativeKeywordsScopesMatch,
   negativeKeywordUnconfirmedAdvice,
@@ -188,14 +189,17 @@ export class RedditKeywordsTableComponent {
       const projectSlug = this.projectSlug();
       const briefId = this.briefId();
       const requests = this.negativeKeywordsService.requests();
+      // Holds are by campaign (`campaignKeywordWriteKey`), not brief: a write in flight keeps its brief.
       const reservations = this.negativeKeywordsService.reservations();
-      const removals = this.keywordTargetingService.removals();
+      const negativeWrites = this.negativeKeywordsService.pendingWrites();
+      const removalWrites = this.keywordTargetingService.pendingWrites();
       const reads = this.revisionReads();
       const notSent = this.notSent();
       const readId = this.readId();
       return (this.view().data?.keywords ?? []).map((row) => {
         const target = this.targetFor(row.campaignId);
         const key = target === null ? '' : campaignNegativeKeywordsKey(projectSlug, briefId, target.campaignId);
+        const writeKey = target === null ? '' : campaignKeywordWriteKey(projectSlug, target.campaignId);
         const reading = target === null ? undefined : reads[target.campaignId];
         const unsent = Object.hasOwn(notSent, row.key) ? notSent[row.key] : null;
         const text = redditNegativeKeywordText(row.keyword);
@@ -210,9 +214,10 @@ export class RedditKeywordsTableComponent {
             target,
             requests[key] ?? null,
             {
-              campaignReading: reading !== undefined || !!reservations[key],
+              campaignReading: reading !== undefined || !!reservations[writeKey],
               rowReading: reading === row.key,
-              targetingRemovalPending: !!removals[key]?.pending,
+              negativeWritePending: !!negativeWrites[writeKey],
+              targetingRemovalPending: !!removalWrites[writeKey],
             },
             notSentMessage
           ),
@@ -269,7 +274,7 @@ export class RedditKeywordsTableComponent {
       this.markNotSent(rowKey, readId, target, text, REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE);
       return;
     }
-    if (this.revisionReads()[campaignId] !== undefined || !this.negativeKeywordsService.reserve(projectSlug, briefId, campaignId)) {
+    if (this.revisionReads()[campaignId] !== undefined || !this.negativeKeywordsService.reserve(projectSlug, campaignId)) {
       this.markNotSent(rowKey, readId, target, text, REDDIT_KEYWORD_NEGATIVE_SUPERSEDED_MESSAGE);
       return;
     }
@@ -283,7 +288,7 @@ export class RedditKeywordsTableComponent {
         // Leaving the project or brief abandons the read: nothing is sent for a scope the operator left.
         takeUntil(this.scope$.pipe(filter((scope) => !negativeKeywordsScopesMatch(scope.projectSlug, scope.briefId, projectSlug, briefId)))),
         finalize(() => {
-          this.negativeKeywordsService.release(projectSlug, briefId, campaignId);
+          this.negativeKeywordsService.release(projectSlug, campaignId);
           this.revisionReads.update((reads) => omitKey(reads, campaignId));
           // Abandoned before it answered (the page left the scope): never silently.
           if (!answered && !this.destroyRef.destroyed) {
@@ -295,7 +300,7 @@ export class RedditKeywordsTableComponent {
       .subscribe({
         next: (targeting) => {
           answered = true;
-          this.negativeKeywordsService.release(projectSlug, briefId, campaignId);
+          this.negativeKeywordsService.release(projectSlug, campaignId);
           this.revisionReads.update((reads) => omitKey(reads, campaignId));
           const revision = typeof targeting?.revision === 'string' && targeting.revision !== '' ? targeting.revision : null;
           if (revision === null) {

@@ -398,7 +398,7 @@ describe('RedditKeywordsTableComponent', () => {
       clickAdd(A);
 
       const service = TestBed.inject(CampaignNegativeKeywordsService);
-      expect(service.reservations()).toEqual({ 'tlf|brief-1|c-uuid-a': true });
+      expect(service.reservations()).toEqual({ 'tlf|c-uuid-a': true });
       const other = service.submit({
         projectSlug: 'tlf',
         briefId: 'brief-1',
@@ -451,6 +451,46 @@ describe('RedditKeywordsTableComponent', () => {
       const outcome = q(`reddit-keyword-negative-not-sent-${A}`)!;
       expect(outcome.textContent).toContain('Not sent');
       expect(outcome.textContent).toContain(REDDIT_KEYWORD_NEGATIVE_SUPERSEDED_MESSAGE);
+      expect(addButton(A)!.disabled).toBe(false);
+    });
+
+    // An add sent under another brief key (the page's brief id changed under it) still holds the campaign.
+    it("holds a campaign's rows while an add to it runs under another brief key, and not another campaign's", () => {
+      fixture.componentRef.setInput('negativeTargets', {
+        t3_a: { campaignId: 'c-uuid-a', campaignName: 'KubeCon EU' },
+        t3_b: { campaignId: 'c-uuid-b', campaignName: 'OSS NA' },
+      });
+      getRedditKeywords.mockReturnValue(
+        of(
+          report({
+            keywords: [
+              { key: 't3_a|service mesh|0', campaignId: 't3_a', keyword: 'service mesh', impressions: 1000, clicks: 50, ctr: 5, spend: 2.5 },
+              { key: 't3_b|gitops|1', campaignId: 't3_b', keyword: 'gitops', impressions: 900, clicks: 40, ctr: 4.4, spend: 2 },
+            ],
+          })
+        )
+      );
+      const add = new Subject<CampaignNegativeKeywordsResult>();
+      addNegativeKeywords.mockReturnValue(add);
+      fixture.detectChanges();
+      TestBed.inject(CampaignNegativeKeywordsService).submit({
+        projectSlug: 'tlf',
+        briefId: '',
+        campaignId: 'c-uuid-a',
+        campaignName: 'KubeCon EU',
+        platform: 'reddit-ads',
+        keywords: ['gitops'],
+        matchType: 'Broad',
+        revision: 'rev-0',
+      });
+      fixture.detectChanges();
+
+      expect(addButton(A)!.disabled).toBe(true);
+      expect(addButton('t3-b-gitops-1')!.disabled).toBe(false);
+
+      add.next({ campaignId: 'c-uuid-a', appliedCount: 1, results: [{ text: 'gitops', matchType: 'Broad', outcome: 'APPLIED' }] });
+      add.complete();
+      fixture.detectChanges();
       expect(addButton(A)!.disabled).toBe(false);
     });
 
@@ -554,7 +594,7 @@ describe('RedditKeywordsTableComponent', () => {
         addNegativeKeywords.mockReturnValue(of(applied()));
         fixture.detectChanges();
         clickAdd(A);
-        expect(TestBed.inject(CampaignNegativeKeywordsService).reservations()).toEqual({ 'tlf|brief-1|c-uuid-a': true });
+        expect(TestBed.inject(CampaignNegativeKeywordsService).reservations()).toEqual({ 'tlf|c-uuid-a': true });
       });
 
       function answer(): void {

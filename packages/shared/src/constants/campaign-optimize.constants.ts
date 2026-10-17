@@ -733,6 +733,9 @@ export const KEYWORD_TARGETING_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set
  */
 export const KEYWORD_TARGETING_REVISION_PLATFORMS: ReadonlySet<KeywordTargetingPlatform> = new Set<KeywordTargetingPlatform>(['reddit-ads']);
 
+/** Why Remove is held: a removal of the same campaign, sent under another brief id, is still running. */
+export const KEYWORD_TARGETING_REMOVAL_IN_PROGRESS_REASON = 'Another removal for this campaign is already running. Wait for it to finish.';
+
 /** Why a removal the operator CONFIRMED was not sent, stated on the panel rather than dropped silently. */
 export const KEYWORD_TARGETING_REMOVAL_NOT_SENT_MESSAGES: Readonly<Record<'busy' | 'held' | 'reread' | 'noRevision', string>> = {
   busy: 'Another removal for this campaign is already running. Nothing was sent.',

@@ -45,6 +45,22 @@ describe('CampaignKeywordTargetingService', () => {
     service = TestBed.inject(CampaignKeywordTargetingService);
   });
 
+  // The brief id the page holds can change (go empty) under a removal in flight: holds are per campaign.
+  it('refuses a second removal of the campaign under another brief key, counts settles per campaign, and leaves other campaigns alone', () => {
+    service.remove(submission());
+    service.remove(submission({ briefId: '' }));
+    service.remove(submission({ briefId: 'b-2' }));
+    expect(removeKeywordTargeting).toHaveBeenCalledTimes(1);
+    expect(service.pendingWrites()).toEqual({ 'tlf|c-1': true });
+
+    service.remove(submission({ campaignId: 'c-2' }));
+    expect(removeKeywordTargeting).toHaveBeenCalledTimes(2);
+
+    responses[0].error(new HttpErrorResponse({ status: 409, error: { error: 'changed', code: 'CONFLICT' } }));
+    expect(service.pendingWrites()).toEqual({ 'tlf|c-2': true });
+    expect(service.settledWrites()).toEqual({ 'tlf|c-1': 1 });
+  });
+
   it('sends the request as given, once, and keeps the outcomes in the order sent', () => {
     service.remove(submission());
 

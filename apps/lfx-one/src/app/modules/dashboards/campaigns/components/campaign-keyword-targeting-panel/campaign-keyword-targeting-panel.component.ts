@@ -7,6 +7,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import {
   CAMPAIGN_NEGATIVE_KEYWORD_NOT_SENT_LABEL,
   KEYWORD_TARGETING_PLATFORM_LABELS,
+  KEYWORD_TARGETING_REMOVAL_IN_PROGRESS_REASON,
   KEYWORD_TARGETING_REMOVAL_NOT_SENT_MESSAGES,
   KEYWORD_TARGETING_REMOVE_ALL_REASON,
   KEYWORD_TARGETING_REVISION_PLATFORMS,
@@ -27,7 +28,7 @@ import { CampaignKeywordTargetingService } from '@services/campaign-keyword-targ
 import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
 import { CampaignService } from '@services/campaign.service';
 import { keywordTargetingListItems, keywordTargetingReadErrorMessage, summarizeKeywordTargetingRemovals } from '@shared/utils/campaign-keyword-targeting.utils';
-import { campaignNegativeKeywordsKey } from '@shared/utils/campaign-negative-keywords.utils';
+import { campaignKeywordWriteKey, campaignNegativeKeywordsKey } from '@shared/utils/campaign-negative-keywords.utils';
 import { ConfirmationService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { catchError, map, of, startWith, switchMap } from 'rxjs';
@@ -90,12 +91,12 @@ export class CampaignKeywordTargetingPanelComponent {
   /** Whether this campaign's platform fingerprints its whole targeting (Reddit), so a negatives add touches it too. */
   private readonly sharesTargetingWithNegatives: Signal<boolean> = computed(() => KEYWORD_TARGETING_REVISION_PLATFORMS.has(this.platform()));
 
+  /** The brief-independent key this campaign's keyword writes are serialized under. */
+  private readonly writeKey: Signal<string> = computed(() => campaignKeywordWriteKey(this.projectSlug(), this.campaignId()));
   /** This campaign's latest removal, which outlives this panel. `null` before the first one. */
   private readonly removal: Signal<KeywordTargetingRemovalState | null> = computed(
     () => this.targetingService.removals()[campaignNegativeKeywordsKey(this.projectSlug(), this.briefId(), this.campaignId())] ?? null
   );
-  /** Bumped by every settled removal of this campaign, even one that settled while the panel was closed. */
-  private readonly settleCount: Signal<number> = computed(() => this.removal()?.settleCount ?? 0);
   /**
    * Bumped by every settled NEGATIVE-keyword request of this campaign (from its editor or the Reddit
    * keyword table) — on Reddit only. There the revision fingerprints the ad group's WHOLE targeting,
@@ -103,10 +104,13 @@ export class CampaignKeywordTargetingPanelComponent {
    * X's negatives are separate criteria with no revision, so they never invalidate X's read.
    */
   private readonly negativesSettleCount: Signal<number> = computed(() =>
-    this.sharesTargetingWithNegatives()
-      ? (this.negativeKeywordsService.requests()[campaignNegativeKeywordsKey(this.projectSlug(), this.briefId(), this.campaignId())]?.settleCount ?? 0)
-      : 0
+    this.sharesTargetingWithNegatives() ? (this.negativeKeywordsService.settledWrites()[this.writeKey()] ?? 0) : 0
   );
+  /**
+   * Bumped by every settled removal of this campaign under ANY brief key (the page's brief id can
+   * change under one), even one that settled while the panel was closed.
+   */
+  private readonly removalsSettleCount: Signal<number> = computed(() => this.targetingService.settledWrites()[this.writeKey()] ?? 0);
   protected readonly removing: Signal<boolean> = computed(() => this.removal()?.pending ?? false);
   /** Per-keyword outcomes of the last removal, in the order the keywords were SENT. */
   protected readonly outcomeRows: Signal<KeywordTargetingRemovalOutcomeRow[]> = computed(() => this.removal()?.outcomeRows ?? []);
@@ -130,11 +134,15 @@ export class CampaignKeywordTargetingPanelComponent {
    * negatives do not touch its keyword criteria, so they hold nothing there.
    */
   protected readonly heldReason: Signal<string> = computed(() => {
+    const writeKey = this.writeKey();
+    // A removal of this campaign sent under another brief key (the page's brief id changed under it).
+    if (this.targetingService.pendingWrites()[writeKey] && !this.removing()) {
+      return KEYWORD_TARGETING_REMOVAL_IN_PROGRESS_REASON;
+    }
     if (!this.sharesTargetingWithNegatives()) {
       return '';
     }
-    const key = campaignNegativeKeywordsKey(this.projectSlug(), this.briefId(), this.campaignId());
-    const busy = !!this.negativeKeywordsService.requests()[key]?.pending || !!this.negativeKeywordsService.reservations()[key];
+    const busy = !!this.negativeKeywordsService.pendingWrites()[writeKey] || !!this.negativeKeywordsService.reservations()[writeKey];
     return busy ? 'Negative keywords are being added to this campaign. Wait for that to finish before removing keywords.' : '';
   });
   protected readonly canRemove: Signal<boolean> = computed(
@@ -262,7 +270,7 @@ export class CampaignKeywordTargetingPanelComponent {
       briefId: this.briefId(),
       campaignId: this.campaignId(),
       reload: this.reload(),
-      settled: this.settleCount(),
+      settled: this.removalsSettleCount(),
       negativesSettled: this.negativesSettleCount(),
     }));
     return toSignal(

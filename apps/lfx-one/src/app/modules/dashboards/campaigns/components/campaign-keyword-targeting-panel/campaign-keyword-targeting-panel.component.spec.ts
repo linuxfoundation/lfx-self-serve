@@ -169,6 +169,27 @@ describe('CampaignKeywordTargetingPanelComponent', () => {
     });
 
     // On Reddit an add and a removal both rewrite the ad group's one targeting object.
+    it('holds Remove under an empty brief id while an add to the campaign is reserved, and not for another campaign', async () => {
+      await create('reddit-ads', reddit());
+      fixture.componentRef.setInput('briefId', '');
+      fixture.detectChanges();
+      const negatives = TestBed.inject(CampaignNegativeKeywordsService);
+      tick('kubernetes');
+
+      negatives.reserve('tlf', 'c-2');
+      fixture.detectChanges();
+      expect(removeButton().disabled).toBe(false);
+
+      negatives.reserve('tlf', 'c-1');
+      fixture.detectChanges();
+      expect(removeButton().disabled).toBe(true);
+      expect(q('optimization-campaign-targeting-held-c-1')).not.toBeNull();
+
+      negatives.release('tlf', 'c-1');
+      fixture.detectChanges();
+      expect(removeButton().disabled).toBe(false);
+    });
+
     it('holds Remove while a negative-keyword add to the campaign is reserved or in flight, and on accept', async () => {
       await create('reddit-ads', reddit());
       const negatives = TestBed.inject(CampaignNegativeKeywordsService);
@@ -176,7 +197,7 @@ describe('CampaignKeywordTargetingPanelComponent', () => {
       expect(removeButton().disabled).toBe(false);
 
       clickRemove();
-      negatives.reserve('tlf', 'b-1', 'c-1');
+      negatives.reserve('tlf', 'c-1');
       fixture.detectChanges();
       expect(removeButton().disabled).toBe(true);
       expect(q('optimization-campaign-targeting-held-c-1')).not.toBeNull();
@@ -185,7 +206,7 @@ describe('CampaignKeywordTargetingPanelComponent', () => {
       expect(removeKeywordTargeting).not.toHaveBeenCalled();
       expect(q('optimization-campaign-targeting-not-sent-c-1')!.textContent).toContain(KEYWORD_TARGETING_REMOVAL_NOT_SENT_MESSAGES.held);
 
-      negatives.release('tlf', 'b-1', 'c-1');
+      negatives.release('tlf', 'c-1');
       fixture.detectChanges();
       expect(removeButton().disabled).toBe(false);
       expect(q('optimization-campaign-targeting-held-c-1')).toBeNull();
