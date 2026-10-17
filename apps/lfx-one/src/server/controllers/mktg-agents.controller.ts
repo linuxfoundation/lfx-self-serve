@@ -428,9 +428,11 @@ export class MktgAgentsController {
    * and description, the website and any other links as URLs (the agent
    * fetches and researches them itself), the notes, the LFX project uid, and
    * the optional documents — an uploaded file as the text the BFF read from
-   * it, a link as its URL, each tagged with what it is. A draft needs at
-   * least one source (the website, a link, or a document that is not a logo
-   * package), the agent's own minimum to start. Every submission is a fresh
+   * it, a link as its URL, each tagged with what it is. The website is the
+   * one required source — a real http(s) page, never blank or "none", as
+   * `validateFoundationMessageIntakeAnswers` holds it — and every other
+   * source is optional: a link or a document alone is refused with a 400,
+   * matching the guided form's own rule. Every submission is a fresh
    * draft — a redraft from comments and a check of a hand-edited version are
    * later work, so a body with feedback or a prior version is refused rather
    * than silently ignored. Returns the session id + creator-binding owner

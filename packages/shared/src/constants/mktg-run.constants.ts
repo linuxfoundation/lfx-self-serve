@@ -432,6 +432,14 @@ export const MKTG_INTAKE_FORMAT_ERRORS: Record<MktgIntakeFieldFormat, Partial<Re
 };
 
 /**
+ * Blocking field-error copy for a single-line intake field (`kind: 'text'`)
+ * whose value holds a line break (`oneLineValidator`). The input hides the
+ * break, so without this the form looks valid and the BFF refuses the run
+ * with a cause the user cannot see.
+ */
+export const MKTG_INTAKE_ONE_LINE_ERROR = 'Keep this to one line — the line breaks in it would make the run fail.';
+
+/**
  * What the result says when the document was generated WITHOUT a README. The
  * agent tolerates a missing README by design — it marks the gaps TBD — but a
  * thinner document with no explanation reads as the agent underperforming.

@@ -841,6 +841,50 @@ describe('MktgAgentRunComponent', () => {
       expect(component['intakeForm'].controls['links'].value).toBe('');
     });
 
+    it('fills the one-line description from a multi-paragraph LFX description as ONE line, and submits it as one line', async () => {
+      // An LFX project description with paragraph breaks: the input would hide
+      // them while the control kept them, and the BFF refuses a description
+      // that is not one line — the run would fail with a cause nobody can see.
+      projects = { 'proj-one': { repository_url: '', description: 'An open release toolkit.\n\nBuilt by platform teams.\r\n  For everyone.  ' } };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(component['intakeForm'].controls['description'].value).toBe('An open release toolkit. Built by platform teams. For everyone.');
+      expect(fromLfxChip('description')).not.toBeNull();
+      expect(fieldError('description')).toBeNull();
+
+      fillRequired();
+      giveSource();
+      component['onSubmit']();
+      await fixture.whenStable();
+
+      expect(submitted().answers['description']).toBe('An open release toolkit. Built by platform teams. For everyone.');
+      expect(submitted().answers['description']).not.toMatch(/[\r\n]/);
+    });
+
+    it('blocks a multi-line value in the one-line description on the form, saying why, instead of sending a run the BFF refuses', async () => {
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      fillRequired();
+      giveSource();
+
+      // A paste, or a value restored into the control, that still holds its line breaks.
+      component['intakeForm'].controls['description'].setValue('An open release toolkit.\nBuilt by platform teams.');
+      await fixture.whenStable();
+
+      expect(fieldError('description')?.textContent).toContain('one line');
+      expect(component['intakeForm'].valid).toBe(false);
+      expect(component['submitDisabled']()).toBe(true);
+      component['onSubmit']();
+      expect(generate).not.toHaveBeenCalled();
+
+      component['intakeForm'].controls['description'].setValue('An open release toolkit. Built by platform teams.');
+      await fixture.whenStable();
+
+      expect(fieldError('description')).toBeNull();
+      expect(component['submitDisabled']()).toBe(false);
+    });
+
     it('submits every source field given, the other links from the rows, the notes and the documents — a link by its URL, a file by its text, each with its tag — and waits while a file is being read', async () => {
       activeContext.set(PROJECT_1);
       await fixture.whenStable();

@@ -18,6 +18,7 @@ import {
   MKTG_DOCUMENT_STATUS_REVIEWED_PREFIX,
   MKTG_DOCUMENT_TYPES,
   MKTG_INTAKE_FORMAT_ERRORS,
+  MKTG_INTAKE_ONE_LINE_ERROR,
   MKTG_README_SKIP_NOTES,
   MKTG_RUN_STAGES,
 } from '@lfx-one/shared/constants';
@@ -50,7 +51,7 @@ import {
   User,
 } from '@lfx-one/shared/interfaces';
 import { findMktgDocumentStatus, mktgAgentDocumentName } from '@lfx-one/shared/utils';
-import { githubRepoUrlValidator, sourceUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
+import { githubRepoUrlValidator, oneLineValidator, sourceUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 import { MessageService } from 'primeng/api';
 import type { FileSelectEvent } from 'primeng/fileupload';
 import { combineLatest, distinctUntilChanged, EMPTY, filter, map, Subscription, switchMap } from 'rxjs';
@@ -795,6 +796,10 @@ export class MktgAgentRunComponent {
         const message = field.format && error ? MKTG_INTAKE_FORMAT_ERRORS[field.format][error.reason] : undefined;
         if (message) {
           messages[field.key] = message;
+        } else if (errors?.['oneLine']) {
+          // The format rule, when there is one, names the more specific
+          // mistake; a line break in a one-line field is the fallback.
+          messages[field.key] = MKTG_INTAKE_ONE_LINE_ERROR;
         }
       }
       return messages;
@@ -824,6 +829,12 @@ export class MktgAgentRunComponent {
       // Optional fields never carry the required validator; a format rule
       // applies either way — an answer that IS given has to be usable.
       const validators = field.optional ? [] : [trimmedRequired()];
+      if (field.kind === 'text') {
+        // A single-line input hides a line break its control still holds (a
+        // prefill, a restored answer, a paste), and the BFF refuses the run
+        // as "must be one line" — so the form catches it where it is fixable.
+        validators.push(oneLineValidator());
+      }
       if (field.format === 'github-repo-url') {
         validators.push(githubRepoUrlValidator());
       } else if (field.format === 'github-url') {
@@ -1070,8 +1081,13 @@ export class MktgAgentRunComponent {
       }
       const control = this.intakeForm.controls[field.key];
       if (control && !control.value.trim()) {
-        control.setValue(trimmedValue);
-        this.recordPrefill(field.key, trimmedValue);
+        // A one-line field takes a one-line value: an LFX description with
+        // paragraph breaks is collapsed to single spaces, since the input
+        // would hide the breaks while the control — and the submission —
+        // kept them, and the BFF refuses a description that is not one line.
+        const fieldValue = field.kind === 'text' ? trimmedValue.replace(/\s+/g, ' ') : trimmedValue;
+        control.setValue(fieldValue);
+        this.recordPrefill(field.key, fieldValue);
         this.fromLfxApplied.update((flags) => ({ ...flags, [field.key]: true }));
       }
     }
