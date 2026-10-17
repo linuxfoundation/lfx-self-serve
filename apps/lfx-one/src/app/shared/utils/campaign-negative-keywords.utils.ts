@@ -236,7 +236,8 @@ export function redditNegativeKeywordText(keyword: string | null): string | null
  * button stays offered, and upstream answers ALREADY_PRESENT without sending it again.
  *
  * `notSentMessage` is the table's own latest attempt for this keyword that went nowhere; the caller
- * passes it only while the keyword has no newer write outcome, and it is shown alongside that outcome.
+ * passes it only while the keyword has no newer write outcome, and it is shown alongside that outcome
+ * — also when no action is offered any more (the campaign left the targets while the add was pending).
  */
 export function redditKeywordNegativeAction(
   keyword: string | null,
@@ -256,7 +257,9 @@ export function redditKeywordNegativeAction(
   };
   const text = redditNegativeKeywordText(keyword);
   if (text === null || target === null) {
-    return none;
+    // No action is offered (e.g. the campaign left the targets mid-add), but an add the operator
+    // confirmed that went nowhere is still said: it is never dropped silently.
+    return text === null ? none : { ...none, notSentMessage };
   }
   // The visible label first, so speech input ("click Add as negative") still matches.
   const ariaLabel = `Add as negative: ${text} (${target.campaignName})`;

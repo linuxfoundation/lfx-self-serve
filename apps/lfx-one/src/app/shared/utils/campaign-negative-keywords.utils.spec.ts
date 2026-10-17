@@ -218,6 +218,14 @@ describe('redditKeywordNegativeAction', () => {
     expect(redditKeywordNegativeAction('k8s!!', target, null, idle).state).toBe('none');
   });
 
+  it('still carries a not-sent note when no action is offered any more, but not for a row with no sendable keyword', () => {
+    expect(redditKeywordNegativeAction('service mesh', null, null, idle, 'Nothing was sent.')).toMatchObject({
+      state: 'none',
+      notSentMessage: 'Nothing was sent.',
+    });
+    expect(redditKeywordNegativeAction(null, null, null, idle, 'Nothing was sent.')).toMatchObject({ state: 'none', notSentMessage: '' });
+  });
+
   it('offers the add, named for the keyword and the campaign', () => {
     expect(redditKeywordNegativeAction('service mesh', target, null, idle)).toEqual({
       state: 'available',

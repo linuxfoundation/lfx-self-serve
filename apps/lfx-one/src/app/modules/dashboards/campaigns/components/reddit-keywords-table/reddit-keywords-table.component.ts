@@ -204,7 +204,8 @@ export class RedditKeywordsTableComponent {
         const unsent = Object.hasOwn(notSent, row.key) ? notSent[row.key] : null;
         const text = redditNegativeKeywordText(row.keyword);
         const lastOutcome = text !== null && requests[key] && Object.hasOwn(requests[key].keywordOutcomes, text) ? requests[key].keywordOutcomes[text] : null;
-        const notSentMessage = unsent !== null && unsent.read === readId && unsent.lastOutcome === lastOutcome ? unsent.message : '';
+        // Without a target there is no outcome to supersede the note: it stands until a new read.
+        const notSentMessage = unsent !== null && unsent.read === readId && (target === null || unsent.lastOutcome === lastOutcome) ? unsent.message : '';
         return {
           ...row,
           campaignLabel: Object.hasOwn(names, row.campaignId) ? names[row.campaignId] : row.campaignId,

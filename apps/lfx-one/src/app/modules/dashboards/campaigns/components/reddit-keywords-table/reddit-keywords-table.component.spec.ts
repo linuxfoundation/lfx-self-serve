@@ -254,6 +254,35 @@ describe('RedditKeywordsTableComponent', () => {
       expect(addNegativeKeywords).not.toHaveBeenCalled();
     });
 
+    // The row then offers no action, but the add the operator confirmed is still said to have gone nowhere.
+    it.each([
+      ['the confirmation', false],
+      ['the revision read', true],
+    ])('says "Not sent" as an alert when the campaign leaves the targets during %s', (_label, duringRead) => {
+      const read = new Subject<{ campaign_id: string; platform: 'reddit-ads'; keywords: never[]; revision: string }>();
+      getKeywordTargeting.mockReturnValue(read);
+      fixture.detectChanges();
+      clickAdd(A, duringRead);
+
+      fixture.componentRef.setInput('negativeTargets', {});
+      fixture.detectChanges();
+      if (duringRead) {
+        read.next({ campaign_id: 'c-uuid-a', platform: 'reddit-ads', keywords: [], revision: 'rev-1' });
+        read.complete();
+      } else {
+        confirmations[0].accept!();
+      }
+      fixture.detectChanges();
+
+      expect(addNegativeKeywords).not.toHaveBeenCalled();
+      expect(getKeywordTargeting).toHaveBeenCalledTimes(duringRead ? 1 : 0);
+      expect(TestBed.inject(CampaignNegativeKeywordsService).reservations()).toEqual({});
+      expect(addButton(A)).toBeNull();
+      const note = q(`reddit-keyword-negative-not-sent-${A}`)!;
+      expect(note.getAttribute('role')).toBe('alert');
+      expect(note.textContent).toContain(REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE);
+    });
+
     it('holds every row of the campaign while the add is in flight', () => {
       const add = new Subject<CampaignNegativeKeywordsResult>();
       addNegativeKeywords.mockReturnValue(add);
