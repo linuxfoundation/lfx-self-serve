@@ -725,6 +725,22 @@ export const META_AD_SET_NO_ACTION_REASON = 'This ad set cannot be paused or res
 /** The platforms whose campaigns have keyword targeting the Optimize tab can read and remove from. */
 export const KEYWORD_TARGETING_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<KeywordTargetingPlatform>(['reddit-ads', 'twitter-ads']);
 
+/**
+ * The keyword-targeting platforms whose read carries a `revision` fingerprinting the WHOLE targeting
+ * (excluded keywords included), which a removal must send back: Reddit. A negative-keyword add there
+ * rewrites the same object, so it makes a read stale and the two levers are serialized. X keeps each
+ * keyword as its own criterion with no revision, so its negatives neither invalidate nor hold a removal.
+ */
+export const KEYWORD_TARGETING_REVISION_PLATFORMS: ReadonlySet<KeywordTargetingPlatform> = new Set<KeywordTargetingPlatform>(['reddit-ads']);
+
+/** Why a removal the operator CONFIRMED was not sent, stated on the panel rather than dropped silently. */
+export const KEYWORD_TARGETING_REMOVAL_NOT_SENT_MESSAGES: Readonly<Record<'busy' | 'held' | 'reread' | 'noRevision', string>> = {
+  busy: 'Another removal for this campaign is already running. Nothing was sent.',
+  held: 'Negative keywords started being added to this campaign while you were confirming. Nothing was sent; try again once that finishes.',
+  reread: 'The keyword targeting was read again while you were confirming. Nothing was sent; check the list and try again.',
+  noRevision: 'The read did not include the version Reddit needs. Nothing was sent; reload the keyword targeting and try again.',
+};
+
 /** Each keyword-targeting platform's name in the panel's text. */
 export const KEYWORD_TARGETING_PLATFORM_LABELS: Readonly<Record<KeywordTargetingPlatform, string>> = {
   'reddit-ads': 'Reddit',

@@ -4,7 +4,14 @@
 import { Component, computed, inject, input, output, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
-import { KEYWORD_TARGETING_PLATFORM_LABELS, KEYWORD_TARGETING_REMOVE_ALL_REASON, MAX_KEYWORD_TARGETING_REMOVALS } from '@lfx-one/shared/constants';
+import {
+  CAMPAIGN_NEGATIVE_KEYWORD_NOT_SENT_LABEL,
+  KEYWORD_TARGETING_PLATFORM_LABELS,
+  KEYWORD_TARGETING_REMOVAL_NOT_SENT_MESSAGES,
+  KEYWORD_TARGETING_REMOVE_ALL_REASON,
+  KEYWORD_TARGETING_REVISION_PLATFORMS,
+  MAX_KEYWORD_TARGETING_REMOVALS,
+} from '@lfx-one/shared/constants';
 import type {
   CampaignServiceKeywordTargeting,
   KeywordTargetingListItem,
@@ -72,11 +79,16 @@ export class CampaignKeywordTargetingPanelComponent {
   public readonly closePanel = output<void>();
 
   protected readonly maxRemovals = MAX_KEYWORD_TARGETING_REMOVALS;
+  protected readonly notSentLabel = CAMPAIGN_NEGATIVE_KEYWORD_NOT_SENT_LABEL;
 
   /** Keys (`KeywordTargetingListItem.key`) of the keywords ticked for removal. */
   protected readonly selected = signal<ReadonlySet<string>>(new Set());
   /** Bumped by Reload to read the targeting again. A settled removal re-reads on its own. */
   private readonly reload = signal(0);
+  /** Why the last CONFIRMED removal was not sent, or `''`. Cleared by the next confirmation or a Reload. */
+  protected readonly notSentReason = signal('');
+  /** Whether this campaign's platform fingerprints its whole targeting (Reddit), so a negatives add touches it too. */
+  private readonly sharesTargetingWithNegatives: Signal<boolean> = computed(() => KEYWORD_TARGETING_REVISION_PLATFORMS.has(this.platform()));
 
   /** This campaign's latest removal, which outlives this panel. `null` before the first one. */
   private readonly removal: Signal<KeywordTargetingRemovalState | null> = computed(
@@ -86,11 +98,14 @@ export class CampaignKeywordTargetingPanelComponent {
   private readonly settleCount: Signal<number> = computed(() => this.removal()?.settleCount ?? 0);
   /**
    * Bumped by every settled NEGATIVE-keyword request of this campaign (from its editor or the Reddit
-   * keyword table). On Reddit the revision fingerprints the ad group's WHOLE targeting, excluded
-   * keywords included, so an add makes the revision this panel read stale: it reads again.
+   * keyword table) — on Reddit only. There the revision fingerprints the ad group's WHOLE targeting,
+   * excluded keywords included, so an add makes the revision this panel read stale: it reads again.
+   * X's negatives are separate criteria with no revision, so they never invalidate X's read.
    */
-  private readonly negativesSettleCount: Signal<number> = computed(
-    () => this.negativeKeywordsService.requests()[campaignNegativeKeywordsKey(this.projectSlug(), this.briefId(), this.campaignId())]?.settleCount ?? 0
+  private readonly negativesSettleCount: Signal<number> = computed(() =>
+    this.sharesTargetingWithNegatives()
+      ? (this.negativeKeywordsService.requests()[campaignNegativeKeywordsKey(this.projectSlug(), this.briefId(), this.campaignId())]?.settleCount ?? 0)
+      : 0
   );
   protected readonly removing: Signal<boolean> = computed(() => this.removal()?.pending ?? false);
   /** Per-keyword outcomes of the last removal, in the order the keywords were SENT. */
@@ -109,11 +124,15 @@ export class CampaignKeywordTargetingPanelComponent {
   /** Why Remove is held back although something is ticked, or `''`. */
   protected readonly blockedReason: Signal<string> = this.initBlockedReason();
   /**
-   * Why no removal can start now, whatever is ticked, or `''`: a negative-keyword add to the same
-   * campaign is in flight or about to be sent (reserved). On Reddit both rewrite the ad group's one
-   * targeting object, so they are serialized here as well as by the revision check upstream.
+   * Why no removal can start now, whatever is ticked, or `''`: on Reddit, a negative-keyword add to
+   * the same campaign is in flight or about to be sent (reserved). Both rewrite the ad group's one
+   * targeting object, so they are serialized here as well as by the revision check upstream. X's
+   * negatives do not touch its keyword criteria, so they hold nothing there.
    */
   protected readonly heldReason: Signal<string> = computed(() => {
+    if (!this.sharesTargetingWithNegatives()) {
+      return '';
+    }
     const key = campaignNegativeKeywordsKey(this.projectSlug(), this.briefId(), this.campaignId());
     const busy = !!this.negativeKeywordsService.requests()[key]?.pending || !!this.negativeKeywordsService.reservations()[key];
     return busy ? 'Negative keywords are being added to this campaign. Wait for that to finish before removing keywords.' : '';
@@ -147,6 +166,7 @@ export class CampaignKeywordTargetingPanelComponent {
       return;
     }
     this.selected.set(new Set());
+    this.notSentReason.set('');
     this.reload.update((n) => n + 1);
   }
 
@@ -166,6 +186,7 @@ export class CampaignKeywordTargetingPanelComponent {
     if (!this.canRemove() || !targeting) {
       return;
     }
+    this.notSentReason.set('');
     const names = items.map((item) => `"${item.keyword}"`).join(', ');
     const count = items.length === 1 ? '1 keyword' : `${items.length} keywords`;
     this.confirmationService.confirm({
@@ -182,17 +203,17 @@ export class CampaignKeywordTargetingPanelComponent {
 
   /** Hands the removal to the root service, which sends it once and keeps its outcome past this panel. */
   private remove(targeting: CampaignServiceKeywordTargeting, items: KeywordTargetingListItem[]): void {
-    // Re-checked on accept: an add may have started while the dialog was open, or the targeting been
-    // read again since (its revision is then newer than the one this removal would carry).
-    if (this.removing() || this.heldReason() !== '' || this.readState().targeting !== targeting) {
+    // Re-checked on accept: a removal or (on Reddit) an add may have started while the dialog was
+    // open, or the targeting been read again since (its list, and on Reddit its revision, is then
+    // newer than what this removal was confirmed against). A confirmed removal that is not sent says
+    // why; it is never dropped silently.
+    const notSent = this.removalNotSentReason(targeting);
+    if (notSent !== '') {
+      this.notSentReason.set(notSent);
       return;
     }
     const keywords: KeywordTargetingRemovalItem[] = items.map((item) => item.removalItem).filter((item): item is KeywordTargetingRemovalItem => item !== null);
     const isReddit = targeting.platform === 'reddit-ads';
-    // Reddit requires the read's revision; X refuses one whenever it is present, even empty.
-    if (isReddit && !targeting.revision) {
-      return;
-    }
     const request: KeywordTargetingRemovalsRequest = {
       briefId: this.briefId(),
       keywords,
@@ -210,9 +231,27 @@ export class CampaignKeywordTargetingPanelComponent {
     });
   }
 
+  /** Why a confirmed removal cannot be sent now, or `''`. */
+  private removalNotSentReason(targeting: CampaignServiceKeywordTargeting): string {
+    if (this.removing()) {
+      return KEYWORD_TARGETING_REMOVAL_NOT_SENT_MESSAGES.busy;
+    }
+    if (this.heldReason() !== '') {
+      return KEYWORD_TARGETING_REMOVAL_NOT_SENT_MESSAGES.held;
+    }
+    if (this.readState().targeting !== targeting) {
+      return KEYWORD_TARGETING_REMOVAL_NOT_SENT_MESSAGES.reread;
+    }
+    // Reddit requires the read's revision; X refuses one whenever it is present, even empty.
+    if (targeting.platform === 'reddit-ads' && !targeting.revision) {
+      return KEYWORD_TARGETING_REMOVAL_NOT_SENT_MESSAGES.noRevision;
+    }
+    return '';
+  }
+
   /**
-   * The live targeting, read again on Reload and whenever a removal or a negative-keyword request of
-   * this campaign settles (including one that settled while the panel was closed). While it is read
+   * The live targeting, read again on Reload and whenever a removal or (on Reddit) a negative-keyword
+   * request of this campaign settles (including one that settled while the panel was closed). While it is read
    * again the list is empty, so nothing can be removed against the old revision. Errors are worded by status, never by
    * upstream text.
    */

@@ -7,6 +7,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import {
   KEYWORD_TARGETING_READ_ERROR_MESSAGES,
   KEYWORD_TARGETING_REMOVAL_ERROR_MESSAGES,
+  KEYWORD_TARGETING_REMOVAL_NOT_SENT_MESSAGES,
   KEYWORD_TARGETING_REMOVAL_OUTCOME_UNCONFIRMED,
   KEYWORD_TARGETING_REMOVAL_UNCONFIRMED_ADVICE,
   KEYWORD_TARGETING_REMOVAL_UNCONFIRMED_CODE,
@@ -182,6 +183,7 @@ describe('CampaignKeywordTargetingPanelComponent', () => {
       // The dialog opened before the hold: accepting it now still sends nothing.
       accept();
       expect(removeKeywordTargeting).not.toHaveBeenCalled();
+      expect(q('optimization-campaign-targeting-not-sent-c-1')!.textContent).toContain(KEYWORD_TARGETING_REMOVAL_NOT_SENT_MESSAGES.held);
 
       negatives.release('tlf', 'b-1', 'c-1');
       fixture.detectChanges();
@@ -226,6 +228,69 @@ describe('CampaignKeywordTargetingPanelComponent', () => {
       clickRemove();
       accept();
       expect(removeKeywordTargeting).toHaveBeenCalledWith('tlf', 'c-1', { briefId: 'b-1', keywords: [{ keyword: 'kubernetes' }], revision: 'sha256:r2' });
+    });
+
+    // X keeps each keyword as its own criterion, with no whole-targeting revision: its negatives touch nothing here.
+    it('neither re-reads nor holds an X removal while an X negative-keyword add runs and settles', async () => {
+      await create('twitter-ads', x());
+      const add = new Subject<CampaignNegativeKeywordsResult>();
+      (TestBed.inject(CampaignService) as unknown as { addNegativeKeywords: unknown }).addNegativeKeywords = vi.fn().mockReturnValue(add);
+      removeKeywordTargeting.mockReturnValue(of({ campaign_id: 'c-1', results: [], applied_count: 0 }));
+      tick('k2');
+      clickRemove();
+
+      TestBed.inject(CampaignNegativeKeywordsService).submit({
+        projectSlug: 'tlf',
+        briefId: 'b-1',
+        campaignId: 'c-1',
+        campaignName: 'KubeCon EU',
+        platform: 'twitter-ads',
+        keywords: ['free'],
+        matchType: 'Exact',
+      });
+      fixture.detectChanges();
+      expect(removeButton().disabled).toBe(false);
+      expect(q('optimization-campaign-targeting-held-c-1')).toBeNull();
+
+      add.next({ campaignId: 'c-1', appliedCount: 1, results: [{ text: 'free', matchType: 'Exact', outcome: 'APPLIED' }] });
+      add.complete();
+      fixture.detectChanges();
+      expect(getKeywordTargeting).toHaveBeenCalledTimes(1);
+      accept();
+
+      expect(removeKeywordTargeting).toHaveBeenCalledWith('tlf', 'c-1', { briefId: 'b-1', keywords: [{ criterionId: 'k2' }] });
+      expect(q('optimization-campaign-targeting-not-sent-c-1')).toBeNull();
+    });
+
+    // A Remove confirmed against a read that has since been replaced is not sent, and says so.
+    it('says why a confirmed Reddit removal was not sent when the targeting was read again meanwhile', async () => {
+      await create('reddit-ads', reddit());
+      const add = new Subject<CampaignNegativeKeywordsResult>();
+      (TestBed.inject(CampaignService) as unknown as { addNegativeKeywords: unknown }).addNegativeKeywords = vi.fn().mockReturnValue(add);
+      tick('kubernetes');
+      clickRemove();
+
+      TestBed.inject(CampaignNegativeKeywordsService).submit({
+        projectSlug: 'tlf',
+        briefId: 'b-1',
+        campaignId: 'c-1',
+        campaignName: 'KubeCon EU',
+        platform: 'reddit-ads',
+        keywords: ['free'],
+        matchType: 'Broad',
+        revision: 'sha256:r1',
+      });
+      getKeywordTargeting.mockReturnValue(of(reddit({ revision: 'sha256:r2' })));
+      add.next({ campaignId: 'c-1', appliedCount: 1, results: [{ text: 'free', matchType: 'Broad', outcome: 'APPLIED' }] });
+      add.complete();
+      fixture.detectChanges();
+      accept();
+
+      expect(getKeywordTargeting).toHaveBeenCalledTimes(2);
+      expect(removeKeywordTargeting).not.toHaveBeenCalled();
+      const notSent = q('optimization-campaign-targeting-not-sent-c-1')!;
+      expect(notSent.getAttribute('role')).toBe('alert');
+      expect(notSent.textContent).toContain(KEYWORD_TARGETING_REMOVAL_NOT_SENT_MESSAGES.reread);
     });
 
     it("sends Reddit keywords by text with the read's revision, once", async () => {
