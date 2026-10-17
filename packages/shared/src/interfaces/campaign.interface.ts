@@ -444,6 +444,55 @@ export interface CampaignBriefPersistResult {
 }
 
 /**
+ * What `POST /api/campaigns/brief/:briefId/approve` reports back.
+ *
+ * Approval used to exist only as the tail of a save: `saveBrief` writes the row, then calls
+ * campaign-service's `approve-brief` with the write's own ETag. That left one state with no way
+ * out — a stored brief sitting in `draft`, because the write's approval failed or because a later
+ * replace reset it (campaign-service resets `status` to `draft` on every PUT). RESTORING such a
+ * brief deliberately suppresses the save, since re-saving would PUT a lossy reconstruction over
+ * the stored bytes, so the only path back to `approved` was also the one path the restore must
+ * not take. Campaign creation and audience building both refuse an unapproved brief, so the brief
+ * was durable and unusable at once. This endpoint approves the STORED row and writes nothing.
+ *
+ * Deliberately NOT `CampaignBriefPersistResult`: `created` is meaningless here (nothing is
+ * written), and the conflicts a save can hit are not the ones an approve can.
+ */
+export interface CampaignBriefApproveResult {
+  /** `false` when `LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS` is off — see `CampaignBriefPersistResult.enabled`. */
+  enabled: boolean;
+  /** The brief that was approved, echoed back so a caller holding several can match the answer to one. */
+  briefId: string;
+  /**
+   * The approved row's new validator, or `null` when the outcome left it unknowable.
+   *
+   * Approval bumps the row's `version` upstream, and the ETag mirrors the version — so the
+   * validator the caller approved WITH is stale the moment this succeeds, and a caller that
+   * keeps it would have its next save refused with a 412. Re-record this one.
+   */
+  etag: string | null;
+  /** Whether the stored brief is now `approved`. `false` with no `conflict` means the outcome is unknown. */
+  approved: boolean;
+  /**
+   * Why approval did not happen, when it did not. Absent means it did.
+   *
+   * `stale-brief`: the `If-Match` validator was rejected with a 412 — the row moved since the
+   * caller read it. The remedy is to reload the brief and approve the version that is actually
+   * stored, never to retry with the same validator.
+   *
+   * `brief-not-found`: the row is gone. Reached both from a typed 404 on the approve and from a
+   * 404 on the re-read this endpoint does when the caller holds no validator.
+   *
+   * `rejected`: campaign-service refused the approval outright (a 4xx that is neither of the
+   * above) — the brief is stored but campaign-service will not approve it as it stands.
+   *
+   * An indeterminate outcome (5xx, timeout) carries NO conflict and `approved: false`: the
+   * approval may or may not have landed, and claiming either way would be a guess.
+   */
+  conflict?: 'stale-brief' | 'brief-not-found' | 'rejected';
+}
+
+/**
  * The Implementation tab's view of whether the brief behind it is durable.
  *
  * `off` renders nothing — see `CampaignBriefPersistResult.enabled`. `error` carries a message
@@ -469,7 +518,7 @@ export interface CampaignBriefPersistenceState {
    * Is the stored brief APPROVED, and therefore usable for campaign creation?
    *
    * Explicit rather than inferred from `message` being non-null. campaign-service refuses a create
-   * from an unapproved brief outright — `internal/service/brief.go:439` returns 400 "brief must be
+   * from an unapproved brief outright — `BriefService.CreateCampaigns` returns 400 "brief must be
    * approved before creating campaigns" — so the Implementation tab has to know, and matching on
    * banner prose to find out would break the first time the copy is edited.
    *

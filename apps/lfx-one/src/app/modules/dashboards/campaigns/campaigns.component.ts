@@ -37,6 +37,7 @@ import type {
   BriefMetrics,
   BriefMetricsRow,
   CampaignAudience,
+  CampaignBriefApproveResult,
   CampaignBriefOutput,
   CampaignCapabilityReadState,
   CampaignBriefPersistResult,
@@ -349,6 +350,37 @@ export class CampaignsComponent {
     // The `stale-brief` message already names the consequence; this one now does too.
     'unverified-validator':
       'This brief could not be saved safely because its last saved version is unconfirmed. Proceed again to replace whatever is currently saved.',
+  };
+
+  /**
+   * What a failed approval of a RESTORED brief means to the user.
+   *
+   * Separate from `conflictMessages` above because the situations are: those report a save that
+   * did not happen, these report an approval that did not, and the brief is durable either way.
+   * Every one of them has to leave Create Campaign disabled with a reason, because the
+   * alternative — the behaviour this whole path replaces — was a disabled button and a banner
+   * advising the user to "ask an administrator", an action the product does not have.
+   *
+   * `unknown` is not a conflict the server returns; it is the absence of one, which the server
+   * uses for an outcome it cannot determine (a 5xx, a timeout) and this map needs a sentence for.
+   */
+  private readonly approveConflictMessages: Record<NonNullable<CampaignBriefApproveResult['conflict']> | 'unknown', string> = {
+    // Names the one action that helps. The stored row moved since this page read it, so the
+    // content on screen is not what is stored — approving again from the same stale read would be
+    // refused identically, and re-entering the URL is what fetches the version that exists now.
+    'stale-brief':
+      'This saved brief changed while you were working, so it was not approved. Reload and re-enter the event URL to open the version that is stored now.',
+    // The row is gone, so there is nothing to approve and nothing to reload. Proceeding from the
+    // Planning tab writes a new brief, which is the remedy — and the one this message names.
+    'brief-not-found': 'This saved brief no longer exists, so it could not be approved. Go back to Planning and proceed again to save a new one.',
+    // A refusal the service made deliberately, which this page cannot translate: the brief is
+    // stored, campaign-service declined to approve it as it stands, and no retry here changes
+    // that. The honest advice is the one path that produces a brief it will approve.
+    rejected: 'This saved brief could not be approved, so campaigns cannot be created from it. Go back to Planning and proceed again to save a new one.',
+    // Deliberately says "could not be confirmed", not "failed": the approval may well have
+    // landed and only its answer was lost. Re-restoring re-reads the stored status, which is the
+    // only way to find out, and costs nothing if it did land.
+    unknown: 'This saved brief could not be confirmed as approved. Reload and re-enter the event URL to try again.',
   };
 
   /**
@@ -2609,9 +2641,10 @@ export class CampaignsComponent {
       // replace that row rather than refusing as unowned (LFXV2-3200). Status stays `off`
       // because nothing is in flight — the id is provenance, not progress.
       const restoredKey = this.ownershipKey(this.activeFoundationSlug(), brief);
+      const restoredOwnership = restoredKey === null ? null : (this.knownBriefIds.get(restoredKey) ?? null);
       this.briefPersistence.set({
         status: 'off',
-        briefId: restoredKey === null ? null : (this.knownBriefIds.get(restoredKey)?.id ?? null),
+        briefId: restoredOwnership?.id ?? null,
         message: null,
         // The RESTORED brief's own approval, carried through the restore output. campaign-service
         // refuses a create from an unapproved brief, so filing one as create-ready here would
@@ -2625,6 +2658,23 @@ export class CampaignsComponent {
       // branch above, and asking first read the PREVIOUS id and guarded out. A restored brief
       // then reached Implementation with the capability permanently unknown.
       this.loadCreateCapabilities();
+      // A restored brief that upstream holds as `draft` is approved HERE, and this is the whole
+      // remedy for the dead end the restore offer used to lead to. campaign-service writes every
+      // brief as `draft` and resets an existing one to `draft` on every PUT, so a stored brief
+      // sitting unapproved is ordinary rather than exceptional — and campaign creation refuses
+      // one. The save that would normally approve it is exactly what this branch suppresses, so
+      // without this call Create Campaign stayed disabled with no action anywhere in the product
+      // that could enable it.
+      //
+      // Approving writes NOTHING: the stored bytes the restore exists to protect are untouched,
+      // which is why this is safe here where a re-save is not.
+      //
+      // Guarded on an id, not merely on `!restoredApproved`. With no known id there is no row to
+      // name, and `off` with a null brief id is the "no opinion" state `CampaignBriefPersistenceState`
+      // documents — not an unapproved brief.
+      if (!restoredApproved && restoredKey !== null && restoredOwnership !== null) {
+        this.approveRestoredBrief(restoredKey, restoredOwnership);
+      }
       return;
     }
     // The create path has no id yet — `persistBrief` mints one — so the read is triggered from
@@ -5418,7 +5468,11 @@ export class CampaignsComponent {
             approved: result.approved,
             message: result.approved
               ? null
-              : 'This brief was saved but not approved, so campaigns cannot be created from it yet. Ask an administrator to approve the stored brief.',
+              : // Names the one action that actually approves a stored brief. It used to say "ask an
+                // administrator to approve the stored brief", which described nothing the product
+                // could do; going back to Planning and re-entering the event URL offers the restore,
+                // and the restore now approves the row it hands over.
+                'This brief was saved but not approved, so campaigns cannot be created from it yet. Go back to Planning, re-enter the event URL and restore the saved brief to approve it.',
           });
         },
         // The message is intentionally about DURABILITY, not about the HTTP call: what the user
@@ -5487,6 +5541,115 @@ export class CampaignsComponent {
       this.pendingBriefSaves = Math.max(0, this.pendingBriefSaves - 1);
       this.briefSaveInFlight.set(this.pendingBriefSaves > 0);
     });
+  }
+
+  /**
+   * Approve a brief that is ALREADY STORED, after a restore handed it over unapproved.
+   *
+   * campaign-service writes every brief as `draft` and resets an existing one back to `draft` on
+   * every PUT, so a stored-but-unapproved row is the ordinary outcome of a save whose separate
+   * approve call did not land -- and campaign creation refuses such a row. The restore path
+   * deliberately suppresses the save that would otherwise retry the approval, so this is the only
+   * thing in the product that can get that brief out of `draft`.
+   *
+   * Writes NOTHING. The request carries no body: the stored bytes a restore exists to protect are
+   * untouched, which is why approving is safe on a path where re-saving is not.
+   *
+   * Not queued on `persistChain`, unlike `persistBrief`. That chain serializes WRITES to the row so
+   * two saves cannot interleave; this sends no content and is reached only from the restore branch,
+   * which has just replaced what is on screen. Queueing it behind an unrelated save of a previous
+   * brief would delay the only thing standing between the user and a disabled Create button.
+   */
+  private approveRestoredBrief(ownershipKey: string, known: { id: string; etag: string | null; absence?: 'overwrite' | 'unknown' }): void {
+    // NOT `++`. The caller bumped the generation as its first act -- the restore is the event that
+    // invalidates whatever was in flight -- and bumping again here would invalidate the restore's
+    // own banner writes, which are the ones this approval is about to replace.
+    const generation = this.briefPersistenceGeneration;
+    // Snapshotted for the same reasons `persistBrief` snapshots them: a DISCARD during the request
+    // means this session no longer holds the row, and an ownership epoch change means a different
+    // brief arrived for this event. Either way the new ETag below belongs to nobody on screen.
+    const ownershipAtSend = this.ownershipGeneration;
+    const ownershipEpochAtSend = this.ownershipEpochs.get(ownershipKey) ?? 0;
+    const projectSlug = this.activeFoundationSlug();
+    if (projectSlug === '') {
+      // Never sent blank, for the reason the server refuses a blank one: a brief is approved
+      // inside one foundation's project. Reported rather than returned silently -- a bare return
+      // leaves Create Campaign disabled with the restore's own `off` banner on screen, which is
+      // the no-reason dead end this whole path exists to remove.
+      this.briefPersistence.set({
+        status: 'error',
+        briefId: known.id,
+        message: 'No foundation is selected, so this saved brief could not be approved. Reload the campaigns page from the sidebar and restore it again.',
+        approved: false,
+      });
+      return;
+    }
+
+    firstValueFrom(this.campaignService.approveBrief(projectSlug, known.id, known.etag)).then(
+      (result) => {
+        // Latched before the generation check, for the reason `persistBrief` documents at length:
+        // `enabled` is a fact about the deployment, not about this brief, and dropping it with a
+        // superseded response would leave the session withholding the in-flight banner for good.
+        if (result.enabled) {
+          this.briefPersistenceEnabled.set(true);
+        }
+
+        // Approval bumps the row's `version`, so the validator the restore filed is now STALE.
+        // Recording the new one is what keeps the next save from being refused with a 412 the user
+        // did nothing to earn. Recorded before the generation check and under the same ownership
+        // guards as `persistBrief`: which row this session holds does not expire because the user
+        // navigated, but it does expire if the row was discarded or replaced.
+        const stillOurs =
+          ownershipAtSend === this.ownershipGeneration &&
+          (this.ownershipEpochs.get(ownershipKey) ?? 0) === ownershipEpochAtSend &&
+          this.knownBriefIds.get(ownershipKey)?.id === known.id;
+        if (result.enabled && result.approved && stillOurs) {
+          // With NO validator back, the restore's own marker is carried through rather than
+          // replaced with `'unknown'` -- and that is the difference between this and a save. An
+          // indeterminate WRITE leaves the caller not knowing what is stored, so `'unknown'`
+          // refuses the next save; an approve wrote nothing, so what this session knows about the
+          // row is exactly what the restore knew a moment ago. Downgrading it would refuse the
+          // next save of a brief the user restored and was told was ready, for a request that
+          // changed no content.
+          this.rememberBriefId(ownershipKey, {
+            id: known.id,
+            etag: result.etag,
+            ...(result.etag === null && known.absence !== undefined ? { absence: known.absence } : {}),
+          });
+        }
+
+        if (generation !== this.briefPersistenceGeneration) return;
+        // The flag is off upstream, so nothing was approved and nothing was refused either. The
+        // restore's own `off` state is still the honest one; replacing it with an error would
+        // report a failure that never happened.
+        if (!result.enabled) return;
+        if (!result.approved) {
+          this.briefPersistence.set({
+            status: 'error',
+            briefId: known.id,
+            message: this.approveConflictMessages[result.conflict ?? 'unknown'],
+            approved: false,
+          });
+          return;
+        }
+        // `off`, not `saved`: nothing was written, and claiming a save here would be the same lie
+        // in the opposite direction. The id stays as provenance and `approved` is now earned, which
+        // is the whole point -- `canSubmit` reads exactly this.
+        this.briefPersistence.set({ status: 'off', briefId: known.id, message: null, approved: true });
+      },
+      // A failed REQUEST leaves the stored brief exactly as it was: unapproved. Same message as the
+      // indeterminate outcome above, because the user's position is identical -- the brief is
+      // stored, Create is disabled, and re-entering the event URL is what retries it.
+      () => {
+        if (generation !== this.briefPersistenceGeneration) return;
+        this.briefPersistence.set({
+          status: 'error',
+          briefId: known.id,
+          message: this.approveConflictMessages['unknown'],
+          approved: false,
+        });
+      }
+    );
   }
 
   /**

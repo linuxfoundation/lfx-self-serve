@@ -489,7 +489,7 @@ export class PlanningTabComponent implements OnInit {
    * Whether that stored brief is APPROVED, carried alongside its id.
    *
    * The restore emits it because campaign-service refuses a create from an unapproved brief
-   * (`internal/service/brief.go:439`). Without it the parent files a restored brief as
+   * (`BriefService.CreateCampaigns`). Without it the parent files a restored brief as
    * create-ready and the Implementation tab enables Create for a request that cannot succeed —
    * the same defect the save path already guards, one restore apart.
    */
@@ -1674,16 +1674,19 @@ export class PlanningTabComponent implements OnInit {
       return 'This event has a saved brief that could not be opened, so a new one cannot be saved over it. Ask an administrator to remove the stored brief.';
     }
 
-    // A stored brief that never reached `approved` is a save whose approve step failed. It is
-    // durable, so restoring it is safe and correct, but campaign creation and audience building
-    // both gate on `approved` — a silent restore would hand the user a brief that cannot proceed
-    // and give no reason. Restoring cannot fix it here: approval is a separate upstream call with
-    // no route on this service yet, and re-SAVING would rewrite the stored bytes with
-    // `fromBriefResponse`'s lossy reconstruction, which is the one outcome the restore path
-    // exists to avoid. So this says what is wrong rather than pretending it is fine. The
-    // approve-only endpoint is tracked as LFXV2-3205.
+    // A stored brief that never reached `approved` is a save whose approve step failed, or simply
+    // a row campaign-service reset to `draft` on its last PUT. It is durable, so restoring it is
+    // safe and correct — and restoring it is also the REMEDY: the parent approves the stored row
+    // through `POST /api/campaigns/brief/:briefId/approve`, which writes nothing, rather than
+    // re-SAVING it with `fromBriefResponse`'s lossy reconstruction, the one outcome the restore
+    // path exists to avoid.
+    //
+    // This sentence used to end "ask an administrator to approve the stored brief" — an action
+    // that existed nowhere in the product, so the warning named a dead end. It still warns rather
+    // than staying silent, because the approval is a second request that can fail, and a user who
+    // sees Create disabled afterwards needs to have been told what was wrong to begin with.
     if (result.status === 'loaded' && !result.approved) {
-      return 'This event has a saved brief that was never approved, so campaigns cannot be created from it yet. Restore it to review, then ask an administrator to approve the stored brief.';
+      return 'This event has a saved brief that was never approved, so campaigns cannot be created from it yet. Restoring it approves the stored brief.';
     }
 
     return null;

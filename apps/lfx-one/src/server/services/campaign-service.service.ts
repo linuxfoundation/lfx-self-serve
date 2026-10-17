@@ -31,6 +31,7 @@ import type {
   ApiResponse,
   BriefMetrics,
   CampaignAudience,
+  CampaignBriefApproveResult,
   CampaignBriefLoadResult,
   CampaignBriefOutput,
   CampaignBidUpdateParams,
@@ -886,9 +887,12 @@ export class CampaignServiceClient {
     const brief = fromBriefResponse(found.brief);
     // Only the exact `approved` token counts. A brief left in `draft` by a failed approve step is
     // stored but unusable -- `build-audience` and campaign creation both gate on `approved` -- and
-    // restoring it suppresses the save that would otherwise retry. Any other or unreadable value
-    // is treated as NOT approved so the restore path re-approves; claiming approval we cannot see
-    // is the one answer that silently strands the brief.
+    // restoring it suppresses the save that would otherwise retry. So this value is what the
+    // restore path ACTS on: a `false` here is what makes it approve the stored row through
+    // `approveStoredBrief`, writing nothing. Any other or unreadable value is treated as NOT
+    // approved; claiming approval we cannot see is the one answer that silently strands the brief,
+    // because it skips that approval and leaves campaign creation refusing a brief the UI calls
+    // ready.
     const approved = found.brief.status === 'approved';
 
     // Defence in depth, and no longer the thing that keeps the surfaces apart. Since LFXV2-3198's
@@ -953,6 +957,115 @@ export class CampaignServiceClient {
     return brief === null
       ? { status: 'unreadable', briefId: response.data.id, brief: null, etag: readEtag(response), approved }
       : { status: 'loaded', briefId: response.data.id, brief, etag: readEtag(response), approved };
+  }
+
+  /**
+   * Approve a brief that is ALREADY STORED, writing nothing.
+   *
+   * The sibling of `approveBrief` above, and deliberately a separate method rather than a
+   * parameter on it: that one approves the response of a write it just made and reports a SAVE
+   * (`CampaignBriefPersistResult`, `created` and all), while this one is handed only an id and
+   * reports an approval. Folding them together would mean a result whose `created` field is a
+   * lie on one of the two paths.
+   *
+   * It exists because of the one state nothing else could leave. A stored brief sits in `draft`
+   * whenever the save's own approval failed, and `replaceBriefQuery` resets `status` to `draft`
+   * on every PUT — yet campaign creation and audience building both refuse an unapproved brief.
+   * RESTORING such a brief suppresses the save on purpose (re-saving would PUT
+   * `fromBriefResponse`'s lossy reconstruction over the stored `event_details`, `copy`,
+   * `keywords` and `targeting`), so before this method the only route back to `approved` was the
+   * one route the restore must never take, and Create Campaign stayed disabled forever.
+   *
+   * `knownEtag` is the validator the caller already holds — the one the restore read carried.
+   * When it holds NONE, this re-reads the row by id for a fresh one rather than refusing. That
+   * is deliberately weaker than `saveBrief`'s refusal to synthesise an `If-Match`, and safe for
+   * the opposite reason: a save sends CONTENT, so a self-read validator could silently overwrite
+   * an intervening writer's work; approving sends none, so the worst a self-read validator can
+   * do is approve exactly what is stored — which is what the user asked for, against content the
+   * restore just put on their screen. The client already treats this asymmetry as settled: a
+   * restore with no validator is recorded as `absence: 'overwrite'`, the marker for "no
+   * validator BY CHOICE".
+   */
+  public async approveStoredBrief(req: Request, projectSlug: string, briefId: string, knownEtag: string | null): Promise<CampaignBriefApproveResult> {
+    const basePath = `/projects/${encodePathSegment(projectSlug)}/briefs`;
+    const refused = { enabled: true as const, briefId, etag: null, approved: false };
+
+    let validator = knownEtag;
+    if (validator === null) {
+      const current = await this.loadBriefById(req, projectSlug, briefId);
+      // `unreadable` is approvable: the row exists and carries an ETag, and only
+      // `fromBriefResponse` failed to reconstruct it for the UI. Approval changes `status`, not
+      // content, so a row this service cannot render is still a row the user may approve.
+      if (current.status === 'none') {
+        logger.warning(req, 'campaign_approve_stored_brief', 'the brief to approve no longer exists', { briefId });
+        return { ...refused, conflict: 'brief-not-found' };
+      }
+      if (current.etag === null) {
+        // `approve-brief` declares `PreconditionRequired`, so an approval with no `If-Match` is
+        // refused upstream anyway. Reported as indeterminate rather than as a conflict: nothing
+        // was rejected, we simply never obtained the validator the call needs, and a reload may
+        // well produce one.
+        logger.warning(req, 'campaign_approve_stored_brief', 'campaign-service returned no ETag for the stored brief; cannot approve it', {
+          briefId,
+        });
+        return refused;
+      }
+      validator = current.etag;
+    }
+
+    try {
+      const approved = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(
+        req,
+        'LFX_V2_CAMPAIGN_SERVICE',
+        `${basePath}/${encodePathSegment(briefId)}/approve`,
+        'POST',
+        undefined,
+        undefined,
+        { 'If-Match': validator }
+      );
+      // The NEW validator, never the one we approved with. `approve-brief` does
+      // `version = version + 1` and the ETag mirrors the version, so the caller's existing
+      // validator is stale the instant this succeeds — keeping it would have the caller's next
+      // save refused with a 412 by its own approval.
+      return { enabled: true, briefId, etag: readEtag(approved), approved: true };
+    } catch (error) {
+      // The same classification `approveBrief` makes, for the same reasons, mapped onto this
+      // result's own conflicts. The one difference is that nothing was written here, so there is
+      // no `superseded-after-write`: a 412 is simply a stale validator, and a typed 404 is simply
+      // a brief that is gone.
+      //
+      // 408 is excluded from the 4xx arm because `ApiClientService` turns a local `AbortError`
+      // into `MicroserviceError(408, 'TIMEOUT')` — our own deadline, not a refusal, and the
+      // approval may have committed with its reply lost.
+      const staleValidator = error instanceof MicroserviceError && error.statusCode === 412;
+      const briefRemoved = error instanceof MicroserviceError && error.statusCode === 404 && isCampaignServiceNotFound(error.errorBody);
+      const definitelyRejected =
+        error instanceof MicroserviceError &&
+        error.statusCode >= 400 &&
+        error.statusCode < 500 &&
+        error.statusCode !== 412 &&
+        error.statusCode !== 408 &&
+        !briefRemoved;
+
+      logger.warning(req, 'campaign_approve_stored_brief', 'the stored brief could not be approved', {
+        briefId,
+        definitelyRejected,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      if (staleValidator) {
+        return { ...refused, conflict: 'stale-brief' };
+      }
+      if (briefRemoved) {
+        return { ...refused, conflict: 'brief-not-found' };
+      }
+      if (definitelyRejected) {
+        return { ...refused, conflict: 'rejected' };
+      }
+      // Indeterminate: a 5xx, a timeout, a reset. No conflict — the approval may have landed, and
+      // naming a reason the user could act on would be inventing one.
+      return refused;
+    }
   }
 
   /**

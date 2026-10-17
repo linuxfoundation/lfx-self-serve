@@ -1772,6 +1772,164 @@ describe('CampaignServiceClient.loadBriefById', () => {
 });
 
 /**
+ * Approving a brief that is ALREADY STORED, which is the only route out of `draft` that writes
+ * no content.
+ *
+ * The restore path suppresses its save on purpose — a PUT would overwrite the stored
+ * `event_details`, `copy`, `keywords` and `targeting` with `fromBriefResponse`'s lossy
+ * reconstruction — so these tests exist to pin that this method sends exactly one POST and never
+ * a write of the brief itself, and that each upstream refusal lands on the conflict the UI can
+ * say something true about.
+ */
+describe('CampaignServiceClient.approveStoredBrief', () => {
+  beforeEach(() => {
+    proxyRequestWithResponse.mockReset();
+    logger.warning.mockClear();
+  });
+
+  it('approves with the validator the caller already holds, without re-reading the row', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ status: 'approved', version: 2 }), { etag: '"2"' }));
+
+    const result = await new CampaignServiceClient().approveStoredBrief(req, 'tlf', 'b-1', '"1"');
+
+    expect(result).toEqual({ enabled: true, briefId: 'b-1', etag: '"2"', approved: true });
+    // One call, and it is the approve. A second call here would mean a read the caller's own
+    // validator made unnecessary; a PUT would mean the restore's content loss.
+    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
+    expect(proxyRequestWithResponse).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/briefs/b-1/approve', 'POST', undefined, undefined, {
+      'If-Match': '"1"',
+    });
+  });
+
+  // `approve-brief` does `version = version + 1` and the ETag mirrors the version, so returning
+  // the validator we approved WITH would have the caller's next save refused by its own approval.
+  it('returns the new validator the approval minted, not the one it approved with', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ status: 'approved' }), { etag: '"7"' }));
+
+    await expect(new CampaignServiceClient().approveStoredBrief(req, 'tlf', 'b-1', '"6"')).resolves.toMatchObject({ etag: '"7"' });
+  });
+
+  it('reports no validator rather than inventing one when the approval response carries no ETag', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ status: 'approved' })));
+
+    await expect(new CampaignServiceClient().approveStoredBrief(req, 'tlf', 'b-1', '"1"')).resolves.toEqual({
+      enabled: true,
+      briefId: 'b-1',
+      etag: null,
+      approved: true,
+    });
+  });
+
+  it('re-reads the row by id for a validator when the caller holds none', async () => {
+    proxyRequestWithResponse
+      .mockResolvedValueOnce(apiResponse(storedBrief({ status: 'draft' }), { etag: '"3"' }))
+      .mockResolvedValueOnce(apiResponse(storedBrief({ status: 'approved' }), { etag: '"4"' }));
+
+    const result = await new CampaignServiceClient().approveStoredBrief(req, 'tlf', 'b-1', null);
+
+    expect(result).toEqual({ enabled: true, briefId: 'b-1', etag: '"4"', approved: true });
+    expect(proxyRequestWithResponse.mock.calls.map((call: unknown[]) => [call[2], call[3]])).toEqual([
+      ['/projects/tlf/briefs/b-1', 'GET'],
+      ['/projects/tlf/briefs/b-1/approve', 'POST'],
+    ]);
+    // The validator sent is the one that read returned — not a synthesised or empty `If-Match`.
+    expect(proxyRequestWithResponse.mock.calls[1]?.[6]).toEqual({ 'If-Match': '"3"' });
+  });
+
+  it('reports the brief as gone when the re-read finds no row, instead of approving blind', async () => {
+    proxyRequestWithResponse.mockRejectedValueOnce(NOT_FOUND);
+
+    await expect(new CampaignServiceClient().approveStoredBrief(req, 'tlf', 'b-1', null)).resolves.toEqual({
+      enabled: true,
+      briefId: 'b-1',
+      etag: null,
+      approved: false,
+      conflict: 'brief-not-found',
+    });
+    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
+  });
+
+  // No conflict: nothing was rejected, we simply never obtained the validator `approve-brief`
+  // requires, and a reload may well produce one. Reported as a conflict it would tell the user
+  // their brief had moved or been deleted — neither of which happened.
+  it('reports an indeterminate result when the re-read returns no ETag', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ status: 'draft' })));
+
+    await expect(new CampaignServiceClient().approveStoredBrief(req, 'tlf', 'b-1', null)).resolves.toEqual({
+      enabled: true,
+      briefId: 'b-1',
+      etag: null,
+      approved: false,
+    });
+    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a stale validator as stale-brief, so the UI can say the row moved', async () => {
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('precondition failed', 412, 'PRECONDITION_FAILED'));
+
+    await expect(new CampaignServiceClient().approveStoredBrief(req, 'tlf', 'b-1', '"1"')).resolves.toEqual({
+      enabled: true,
+      briefId: 'b-1',
+      etag: null,
+      approved: false,
+      conflict: 'stale-brief',
+    });
+  });
+
+  it("reports campaign-service's own typed 404 on the approve as brief-not-found", async () => {
+    proxyRequestWithResponse.mockRejectedValueOnce(NOT_FOUND);
+
+    await expect(new CampaignServiceClient().approveStoredBrief(req, 'tlf', 'b-1', '"1"')).resolves.toMatchObject({
+      approved: false,
+      conflict: 'brief-not-found',
+    });
+  });
+
+  // The second case is the sibling's classification, not an oversight: `approveBrief` also keeps
+  // an untyped 404 in its "definitely rejected" arm, where only 412 and 408 are carved out. Only
+  // campaign-service's OWN typed 404 means the row is gone; anything else that a 4xx-speaking hop
+  // declined is a refusal, and the two methods must not disagree about which is which.
+  it.each([
+    ['a refusal the service actually made', new MicroserviceError('bad request', 400, 'BAD_REQUEST')],
+    ['an untyped 404, exactly as the save-path approval classifies it', new MicroserviceError('not found', 404, 'NOT_FOUND', { errorBody: null })],
+  ])('reports %s as rejected', async (_label, error) => {
+    proxyRequestWithResponse.mockRejectedValueOnce(error);
+
+    await expect(new CampaignServiceClient().approveStoredBrief(req, 'tlf', 'b-1', '"1"')).resolves.toMatchObject({
+      approved: false,
+      conflict: 'rejected',
+    });
+  });
+
+  // Neither of these is evidence the approval was refused: a 5xx may have committed and lost its
+  // reply, and `ApiClientService` turns our OWN local abort into `MicroserviceError(408)`. Both
+  // must come back without a conflict, so the UI reports "could not be confirmed" rather than
+  // naming a conflict that never happened.
+  it.each([
+    ['an upstream 5xx', new MicroserviceError('boom', 503, 'SERVICE_UNAVAILABLE')],
+    ['our own client-side timeout', new MicroserviceError('timeout', 408, 'TIMEOUT')],
+    ['a non-HTTP failure', new Error('socket hang up')],
+  ])('reports %s as indeterminate, with no conflict named', async (_label, error) => {
+    proxyRequestWithResponse.mockRejectedValueOnce(error);
+
+    await expect(new CampaignServiceClient().approveStoredBrief(req, 'tlf', 'b-1', '"1"')).resolves.toEqual({
+      enabled: true,
+      briefId: 'b-1',
+      etag: null,
+      approved: false,
+    });
+  });
+
+  it("addresses the caller's own foundation and escapes the brief id", async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ status: 'approved' }), { etag: '"2"' }));
+
+    await new CampaignServiceClient().approveStoredBrief(req, 'cncf', 'b 1/2', '"1"');
+
+    expect(proxyRequestWithResponse.mock.calls[0]?.[2]).toBe('/projects/cncf/briefs/b%201%2F2/approve');
+  });
+});
+
+/**
  * The create path's CONTRACT with campaign-service, which nothing else in this repo checks.
  *
  * Both defects these tests pin shipped in a branch whose build, lint and full server suite were
