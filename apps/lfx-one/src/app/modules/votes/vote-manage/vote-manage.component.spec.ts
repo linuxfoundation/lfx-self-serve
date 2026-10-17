@@ -506,5 +506,30 @@ describe('VoteManageComponent', () => {
       expect(committeeControl?.value).toEqual({ uid: COMMITTEE_UID, name: undefined });
       expect(committeeControl?.disabled).toBe(false);
     });
+
+    // GH-3781 review: the create-mode `vote` signal never populates (no :id route param), so without
+    // cloneSourceVote feeding the fallback, submission silently used the viewer's active project lens
+    // instead of the cloned vote's own project — wrong for a cross-project clone off the dashboard.
+    it("submits using the cloned source vote's own project_uid, not the viewer's active project lens", async () => {
+      const SOURCE_PROJECT_UID = 'source-project-uid';
+      activeContext.set({ uid: PROJECT_UID, slug: PROJECT_SLUG, name: 'Viewer Active Project' });
+      getProject.mockReturnValue(of({ uid: SOURCE_PROJECT_UID, writer: true }));
+      fetchVote.mockReturnValue(of(sourceVote({ project_uid: SOURCE_PROJECT_UID, committee_uid: COMMITTEE_UID })));
+      const fixture = await createComponent();
+
+      const form = fixture.componentInstance.form();
+      form.get('eligible_participants')?.setValue('project_members');
+      form.get('close_date')?.setValue(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+      const firstQuestion = (form.get('questions') as FormArray).at(0) as FormGroup;
+      firstQuestion.get('question')?.setValue('Approve the budget?');
+      (firstQuestion.get('options') as FormArray).at(0).setValue('Yes');
+      (firstQuestion.get('options') as FormArray).at(1).setValue('No');
+      form.updateValueAndValidity();
+
+      fixture.componentInstance.onSubmit();
+
+      expect(voteServiceMock.beginSpeculativeCreate).toHaveBeenCalledTimes(1);
+      expect(voteServiceMock.beginSpeculativeCreate.mock.calls[0][0]).toMatchObject({ project_uid: SOURCE_PROJECT_UID });
+    });
   });
 });

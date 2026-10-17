@@ -375,9 +375,15 @@ export class VotesTableComponent {
     this.clipboardShare.copyLink(toAbsoluteUrl(votePermalinkPath(uid), isPlatformBrowser(this.platformId)), 'Vote link copied to clipboard.');
   }
 
-  /** Opens the create form prefilled from this vote, carrying the row's own project/committee context (dashboard rows can span projects). */
+  /** Opens the create form prefilled from this vote, carrying the row's own project/committee context (dashboard rows can span projects).
+   *  Tier-prefixes the route from the source vote's own is_foundation (not getEntityCommands — that builder takes an id/leaf shaped for
+   *  edit/details routes, and create has neither) so vote-manage's entity-context sync lands the clone in the source's own project. */
   private cloneVote(vote: VoteTableRow): void {
-    this.router.navigate(['/votes', 'create'], { queryParams: { ...vote.editQueryParams, clone: vote.uid } });
+    let tierSegment: 'foundation' | 'project' | null = null;
+    if (vote.is_foundation === true) tierSegment = 'foundation';
+    else if (vote.is_foundation === false) tierSegment = 'project';
+    const commands = tierSegment ? ['/', tierSegment, 'votes', 'create'] : ['/votes', 'create'];
+    this.router.navigate(commands, { queryParams: { ...vote.editQueryParams, clone: vote.uid } });
   }
 
   private toVoteTableRow(vote: Vote): VoteTableRow {
