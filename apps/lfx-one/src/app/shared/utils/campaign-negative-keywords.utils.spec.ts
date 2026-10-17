@@ -8,7 +8,7 @@ import {
   CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED,
   CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNKNOWN,
 } from '@lfx-one/shared/constants';
-import type { CampaignNegativeKeywordsRequestState, CampaignNegativeKeywordsResult } from '@lfx-one/shared/interfaces';
+import type { CampaignNegativeKeywordLastOutcome, CampaignNegativeKeywordsRequestState, CampaignNegativeKeywordsResult } from '@lfx-one/shared/interfaces';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -204,7 +204,7 @@ describe('redditKeywordNegativeAction', () => {
     };
     return over.keywordOutcomes !== undefined
       ? base
-      : { ...base, keywordOutcomes: mergeNegativeKeywordLastOutcomes({}, base.pending ? [] : base.sent, base.outcomeRows, base.batchOutcome) };
+      : { ...base, keywordOutcomes: mergeNegativeKeywordLastOutcomes({}, base.pending ? [] : base.sent, base.outcomeRows, base.batchOutcome, 1) };
   };
   const rows = (sent: string[], outcomes: ('APPLIED' | 'ALREADY_PRESENT' | 'FAILED' | 'UNCONFIRMED')[]) =>
     negativeKeywordOutcomeRows(
@@ -304,11 +304,11 @@ describe('redditKeywordNegativeAction', () => {
 
   // A later request for OTHER keywords replaces the campaign's latest request, not a keyword's own last outcome.
   it("keeps a keyword's last outcome, and its verify-first tone, across a later request for other keywords", () => {
-    const first = mergeNegativeKeywordLastOutcomes({}, ['gitops'], rows(['gitops'], ['UNCONFIRMED']), null);
+    const first = mergeNegativeKeywordLastOutcomes({}, ['gitops'], rows(['gitops'], ['UNCONFIRMED']), null, 1);
     const later = request({
       sent: ['service mesh'],
       outcomeRows: rows(['service mesh'], ['APPLIED']),
-      keywordOutcomes: mergeNegativeKeywordLastOutcomes(first, ['service mesh'], rows(['service mesh'], ['APPLIED']), null),
+      keywordOutcomes: mergeNegativeKeywordLastOutcomes(first, ['service mesh'], rows(['service mesh'], ['APPLIED']), null, 2),
     });
 
     expect(redditKeywordNegativeAction('gitops', target, later, idle)).toMatchObject({
@@ -348,22 +348,24 @@ describe('mergeNegativeKeywordLastOutcomes', () => {
       'reddit-ads'
     );
     const merged = mergeNegativeKeywordLastOutcomes(
-      { c: { outcome: 'UNCONFIRMED', label: 'Not confirmed', detail: 'verify' }, b: { outcome: 'APPLIED', label: 'Added', detail: '' } },
+      { c: { outcome: 'UNCONFIRMED', label: 'Not confirmed', detail: 'verify', seq: 1 }, b: { outcome: 'APPLIED', label: 'Added', detail: '', seq: 1 } },
       sent,
       rows,
-      null
+      null,
+      2
     );
 
     expect(merged['a'].outcome).toBe('APPLIED');
     expect(merged['b'].outcome).toBe('FAILED');
-    expect(merged['c']).toEqual({ outcome: 'UNCONFIRMED', label: 'Not confirmed', detail: 'verify' });
+    expect(merged['a'].seq).toBe(2);
+    expect(merged['c']).toEqual({ outcome: 'UNCONFIRMED', label: 'Not confirmed', detail: 'verify', seq: 1 });
   });
 
   it("gives every keyword of a batch with no per-keyword results the batch's outcome", () => {
-    expect(mergeNegativeKeywordLastOutcomes({}, ['a'], [], { state: 'unconfirmed', message: 'verify first' })).toEqual({
-      a: { outcome: 'UNCONFIRMED', label: 'Not confirmed', detail: 'verify first' },
+    expect(mergeNegativeKeywordLastOutcomes({}, ['a'], [], { state: 'unconfirmed', message: 'verify first' }, 3)).toEqual({
+      a: { outcome: 'UNCONFIRMED', label: 'Not confirmed', detail: 'verify first', seq: 3 },
     });
-    expect(mergeNegativeKeywordLastOutcomes({}, ['a'], [], { state: 'failed', message: 'refused' })['a'].outcome).toBe('FAILED');
+    expect(mergeNegativeKeywordLastOutcomes({}, ['a'], [], { state: 'failed', message: 'refused' }, 4)['a'].outcome).toBe('FAILED');
   });
 });
 
@@ -398,23 +400,35 @@ describe('redditKeywordNoteKey', () => {
 });
 
 describe('redditKeywordNoteShowable', () => {
-  const unconfirmed = { outcome: 'UNCONFIRMED' as const, label: 'Not confirmed', detail: 'verify' };
+  const unconfirmed = { outcome: 'UNCONFIRMED' as const, label: 'Not confirmed', detail: 'verify', seq: 3 };
   const note = {
     read: 'r1',
-    lastOutcome: unconfirmed,
+    outcomeSeq: 3,
     message: 'Nothing was sent.',
     keyword: 'gitops',
     campaignName: 'KubeCon EU',
     projectSlug: 'tlf',
     redditCampaignId: 't3_a',
   };
+  const current = (lastOutcome: CampaignNegativeKeywordLastOutcome | null | undefined, over: { projectSlug?: string; readId?: string } = {}) => ({
+    projectSlug: 'tlf',
+    readId: 'r1',
+    lastOutcome,
+    ...over,
+  });
 
-  it('shows a note only under its project, for the read it was recorded in, until a newer outcome', () => {
-    expect(redditKeywordNoteShowable(note, { projectSlug: 'tlf', readId: 'r1', lastOutcome: unconfirmed })).toBe(true);
-    expect(redditKeywordNoteShowable(note, { projectSlug: 'cncf', readId: 'r1', lastOutcome: unconfirmed })).toBe(false);
-    expect(redditKeywordNoteShowable(note, { projectSlug: 'tlf', readId: 'r2', lastOutcome: unconfirmed })).toBe(false);
-    expect(redditKeywordNoteShowable(note, { projectSlug: 'tlf', readId: 'r1', lastOutcome: { outcome: 'APPLIED', label: 'Added', detail: '' } })).toBe(false);
-    // No target any more: nothing can supersede the note.
-    expect(redditKeywordNoteShowable(note, { projectSlug: 'tlf', readId: 'r1', lastOutcome: undefined })).toBe(true);
+  it('shows a note only under its project and for the read it was recorded in', () => {
+    expect(redditKeywordNoteShowable(note, current(unconfirmed))).toBe(true);
+    expect(redditKeywordNoteShowable(note, current(unconfirmed, { projectSlug: 'cncf' }))).toBe(false);
+    expect(redditKeywordNoteShowable(note, current(unconfirmed, { readId: 'r2' }))).toBe(false);
+  });
+
+  // Supersession is explicit: only an outcome with a larger seq is newer than the note.
+  it('is superseded only by a NEWER outcome, never by one that is gone or a campaign no longer targeted', () => {
+    expect(redditKeywordNoteShowable(note, current({ outcome: 'APPLIED', label: 'Added', detail: '', seq: 4 }))).toBe(false);
+    expect(redditKeywordNoteShowable(note, current({ outcome: 'APPLIED', label: 'Added', detail: '', seq: 2 }))).toBe(true);
+    // Dismissed (the saved request is gone): nothing newer happened.
+    expect(redditKeywordNoteShowable(note, current(null))).toBe(true);
+    expect(redditKeywordNoteShowable(note, current(undefined))).toBe(true);
   });
 });

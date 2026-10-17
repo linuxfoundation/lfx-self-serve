@@ -717,6 +717,36 @@ describe('RedditKeywordsTableComponent', () => {
         expect(q('reddit-keywords-unplaced-not-sent-tlf-t3-a-service-mesh')).toBeNull();
       });
 
+      // Dismissing the campaign's older result removes its saved request: that is not a newer outcome.
+      it.each([
+        ['above the table, when the new report drops the keyword', true],
+        ['on the row, when the new report still lists it', false],
+      ])('keeps a not-sent note through a Dismiss of the older unconfirmed result, %s', (_label, drop) => {
+        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        getRedditKeywords.mockImplementation((_slug: string, window: string) =>
+          of(window === 'last_7_days' ? report({ keywords: drop ? [gitops(0)] : [gitops(0), mesh(1)] }) : report())
+        );
+        addNegativeKeywords.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 502, error: { error: 'x', code: 'BAD_GATEWAY' } })));
+        fixture.detectChanges();
+        clickAdd(A);
+        expect(q(`reddit-keyword-negative-outcome-${A}`)!.textContent).toContain('Not confirmed');
+
+        read = new Subject();
+        getKeywordTargeting.mockReturnValue(read);
+        clickAdd(A);
+        q('reddit-keywords-window-last_7_days')!.click();
+        fixture.detectChanges();
+        read.error(new HttpErrorResponse({ status: 503, error: { error: 'x', code: 'SERVICE_UNAVAILABLE' } }));
+        fixture.detectChanges();
+        const noteId = drop ? 'reddit-keywords-unplaced-not-sent-tlf-t3-a-service-mesh' : 'reddit-keyword-negative-not-sent-t3-a-service-mesh-1';
+        expect(q(noteId)).not.toBeNull();
+
+        TestBed.inject(CampaignNegativeKeywordsService).dismiss('tlf', 'brief-1', 'c-uuid-a');
+        fixture.detectChanges();
+
+        expect(q(noteId)!.textContent).toContain(REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR);
+      });
+
       it('shows the note on every row of one report that sends the same text for the campaign', () => {
         startAddThenChangeWindow(report({ keywords: [mesh(0), { ...mesh(1), keyword: 'service  mesh', key: 't3_a|service  mesh|1' }] }));
 

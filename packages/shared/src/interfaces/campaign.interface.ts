@@ -3898,6 +3898,12 @@ export interface CampaignNegativeKeywordLastOutcome {
   label: string;
   /** The per-keyword detail, or the batch's message. */
   detail: string;
+  /**
+   * When it was recorded, as a sequence number that only grows across every settled request
+   * (`CampaignNegativeKeywordsService`): what decides whether an outcome is NEWER than something
+   * recorded against an earlier one, such as the Reddit keyword table's not-sent note.
+   */
+  seq: number;
 }
 
 /** One negative-keyword request, as the editor hands it to `CampaignNegativeKeywordsService`. */

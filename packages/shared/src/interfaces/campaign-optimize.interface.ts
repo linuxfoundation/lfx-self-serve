@@ -2,13 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { LINKEDIN_AUDIENCE_WINDOWS, TWITTER_AUDIENCE_WINDOWS } from '../constants/campaign-optimize.constants';
-import type {
-  CampaignMetricsWindow,
-  CampaignNegativeKeywordLastOutcome,
-  CampaignServiceCampaign,
-  CampaignServiceCampaignRef,
-  MicrosoftKeywordsWindow,
-} from './campaign.interface';
+import type { CampaignMetricsWindow, CampaignServiceCampaign, CampaignServiceCampaignRef, MicrosoftKeywordsWindow } from './campaign.interface';
 
 // ---------------------------------------------------------------------------
 // Optimize-tab reads and levers proxied to lfx-v2-campaign-service
@@ -509,8 +503,12 @@ export interface RedditKeywordNegativeAction {
 export interface RedditKeywordNotSentNote {
   /** The keyword read current when the note was recorded: a later read clears it. */
   read: string;
-  /** The keyword's last write outcome when recorded: a newer one supersedes the note. */
-  lastOutcome: CampaignNegativeKeywordLastOutcome | null;
+  /**
+   * The `seq` of the keyword's last write outcome when the note was recorded (`0` for none): only an
+   * outcome with a HIGHER `seq` supersedes the note. An outcome that is merely gone (its result
+   * dismissed) does not.
+   */
+  outcomeSeq: number;
   message: string;
   /** The keyword as it would have been sent. */
   keyword: string;

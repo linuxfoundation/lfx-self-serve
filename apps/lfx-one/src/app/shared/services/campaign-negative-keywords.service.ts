@@ -70,6 +70,8 @@ export class CampaignNegativeKeywordsService {
   private readonly state = signal<Record<string, CampaignNegativeKeywordsRequestState>>({});
   private readonly reserved = signal<Record<string, true>>({});
   private readonly settled = signal<Record<string, number>>({});
+  /** Stamps each settled request's per-keyword outcomes; only grows, so a larger value is a newer outcome. */
+  private outcomeSeq = 0;
   /**
    * The key prefix of the campaigns page's (project, brief): `undefined` until `setScope` is first
    * called (nothing scoped), `null` once the page has released it.
@@ -89,6 +91,11 @@ export class CampaignNegativeKeywordsService {
   public readonly pendingWrites: Signal<Record<string, true>> = computed(() => pendingKeywordWrites(this.state()));
   /** How many requests of each campaign (by `campaignKeywordWriteKey`) have settled: a change means a revision read is stale. */
   public readonly settledWrites: Signal<Record<string, number>> = this.settled.asReadonly();
+
+  /** The `seq` of the newest outcome recorded so far (`0` before any): an outcome with a larger one settled after now. */
+  public latestOutcomeSeq(): number {
+    return this.outcomeSeq;
+  }
 
   /**
    * Holds one campaign for a send about to happen. `false` (nothing held) when a request of the
@@ -176,7 +183,7 @@ export class CampaignNegativeKeywordsService {
             batchKeywords: [],
             ...base,
             settleCount: settleCount + 1,
-            keywordOutcomes: mergeNegativeKeywordLastOutcomes(keywordOutcomes, keywords, rows, null),
+            keywordOutcomes: mergeNegativeKeywordLastOutcomes(keywordOutcomes, keywords, rows, null, ++this.outcomeSeq),
           });
           countSettle();
           if (!rows.some((row) => row.outcome === 'FAILED' || row.outcome === 'UNCONFIRMED')) {
@@ -193,7 +200,7 @@ export class CampaignNegativeKeywordsService {
             batchKeywords: keywords,
             ...base,
             settleCount: settleCount + 1,
-            keywordOutcomes: mergeNegativeKeywordLastOutcomes(keywordOutcomes, keywords, [], outcome),
+            keywordOutcomes: mergeNegativeKeywordLastOutcomes(keywordOutcomes, keywords, [], outcome, ++this.outcomeSeq),
           });
           countSettle();
           this.messageService.add({

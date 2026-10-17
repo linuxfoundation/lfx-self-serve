@@ -177,9 +177,10 @@ export function redditKeywordNoteKey(projectSlug: string, redditCampaignId: stri
  * - only under the project it was recorded for (the table stays mounted across a project change);
  * - only for the keyword read current when it was recorded (a Refresh, Retry or window change after
  *   it clears it);
- * - only while the keyword has no NEWER write outcome than when it was recorded (a later add of it,
- *   from the table or the editor, supersedes it). `lastOutcome` is `undefined` when the keyword's
- *   campaign is no longer a target here, so no outcome can supersede the note.
+ * - only while the keyword has no NEWER write outcome than when it was recorded: a later add of it,
+ *   from the table or the editor, supersedes it. Newer is decided by the outcome's monotonic `seq`
+ *   against the note's `outcomeSeq`, never by presence: an outcome that is simply GONE (`null`, its
+ *   result dismissed) supersedes nothing, nor does `undefined` (the campaign is no longer a target).
  */
 export function redditKeywordNoteShowable(
   note: RedditKeywordNotSentNote,
@@ -188,7 +189,7 @@ export function redditKeywordNoteShowable(
   if (note.projectSlug !== current.projectSlug || note.read !== current.readId) {
     return false;
   }
-  return current.lastOutcome === undefined || note.lastOutcome === current.lastOutcome;
+  return current.lastOutcome === undefined || current.lastOutcome === null || current.lastOutcome.seq <= note.outcomeSeq;
 }
 
 /**
@@ -213,24 +214,26 @@ export function campaignNegativeKeywordsKey(projectSlug: string, briefId: string
 /**
  * Each keyword's last outcome after one settled request, merged over the earlier ones: the
  * keywords of this request take their new outcome (by POSITION in what was sent, or the batch's
- * outcome when there were no per-keyword results), every other keyword keeps its own.
+ * outcome when there were no per-keyword results), every other keyword keeps its own. `seq` stamps
+ * the new outcomes: the caller passes a number greater than any it passed before.
  */
 export function mergeNegativeKeywordLastOutcomes(
   previous: Readonly<Record<string, CampaignNegativeKeywordLastOutcome>>,
   sent: readonly string[],
   rows: readonly CampaignNegativeKeywordOutcomeRow[],
-  batchOutcome: CampaignNegativeKeywordsBatchOutcome | null
+  batchOutcome: CampaignNegativeKeywordsBatchOutcome | null,
+  seq: number
 ): Record<string, CampaignNegativeKeywordLastOutcome> {
   const next: Record<string, CampaignNegativeKeywordLastOutcome> = { ...previous };
   sent.forEach((text, index) => {
     if (batchOutcome !== null) {
       const outcome: CampaignNegativeKeywordOutcome = batchOutcome.state === 'unconfirmed' ? 'UNCONFIRMED' : 'FAILED';
-      next[text] = { outcome, label: CAMPAIGN_NEGATIVE_KEYWORD_OUTCOME_LABELS[outcome], detail: batchOutcome.message };
+      next[text] = { outcome, label: CAMPAIGN_NEGATIVE_KEYWORD_OUTCOME_LABELS[outcome], detail: batchOutcome.message, seq };
       return;
     }
     const row = rows[index];
     if (row !== undefined) {
-      next[text] = { outcome: row.outcome, label: row.label, detail: row.detail };
+      next[text] = { outcome: row.outcome, label: row.label, detail: row.detail, seq };
     }
   });
   return next;

@@ -385,15 +385,13 @@ export class RedditKeywordsTableComponent {
    */
   private markNotSent(projectSlug: string, redditCampaignId: string, target: RedditKeywordNegativeTarget, text: string, message: string): void {
     const read = this.readId();
-    // The keyword's outcome on the add's own campaign, under the page's current (project, brief): the
-    // same request the showable check reads, so the two compare like for like.
-    const request = this.negativeKeywordsService.requests()[campaignNegativeKeywordsKey(this.projectSlug(), this.briefId(), target.campaignId)];
-    const lastOutcome = request && Object.hasOwn(request.keywordOutcomes, text) ? request.keywordOutcomes[text] : null;
+    // Every outcome settled from now on has a larger `seq`: only such an outcome supersedes the note.
+    const outcomeSeq = this.negativeKeywordsService.latestOutcomeSeq();
     this.notSent.update((all) => ({
       ...all,
       [redditKeywordNoteKey(projectSlug, redditCampaignId, text)]: {
         read,
-        lastOutcome,
+        outcomeSeq,
         message,
         keyword: text,
         campaignName: target.campaignName,
