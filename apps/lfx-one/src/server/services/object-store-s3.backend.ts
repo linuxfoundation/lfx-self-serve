@@ -15,6 +15,8 @@ import {
 } from '@aws-sdk/client-s3';
 import { ObjectStoreBackend, ObjectStoreListEntry, ObjectStorePutInput, ObjectStoreReadResult } from '@lfx-one/shared/interfaces';
 
+import { PreconditionFailedError } from '../errors';
+
 /**
  * The S3 backend of the object store — one instance per purpose-keyed bucket,
  * sharing the service's single `S3Client`. Holds every S3-specific concern
@@ -92,23 +94,33 @@ export class S3ObjectStoreBackend implements ObjectStoreBackend {
   }
 
   public async putObject(key: string, input: ObjectStorePutInput): Promise<void> {
-    await this.client.send(
-      new PutObjectCommand({
-        Bucket: this.bucket,
-        Key: key,
-        Body: input.body,
-        ContentType: input.contentType,
-        CacheControl: input.cacheControl,
-        ...(input.metadata && { Metadata: input.metadata }),
-      })
-    );
+    try {
+      await this.client.send(
+        new PutObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+          Body: input.body,
+          ContentType: input.contentType,
+          CacheControl: input.cacheControl,
+          ...(input.metadata && { Metadata: input.metadata }),
+          ...(input.ifMatch && { IfMatch: input.ifMatch }),
+          ...(input.ifNoneMatch && { IfNoneMatch: input.ifNoneMatch }),
+        })
+      );
+    } catch (error) {
+      const status = (error as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode;
+      if (status === 412 || status === 409) {
+        throw new PreconditionFailedError();
+      }
+      throw error;
+    }
   }
 
   public async getObject(key: string): Promise<ObjectStoreReadResult | null> {
     try {
       const response = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
       const body = (await response.Body?.transformToString('utf-8')) ?? '';
-      return { body, metadata: response.Metadata ?? {} };
+      return { body, metadata: response.Metadata ?? {}, etag: response.ETag };
     } catch (error) {
       if (error instanceof NoSuchKey || isConfirmedNotFound(error)) {
         return null;
