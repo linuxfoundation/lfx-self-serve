@@ -1683,8 +1683,8 @@ export class ImplementationTabComponent implements OnInit {
     if (persistence.status === 'error' && persistence.briefId !== null) return false;
 
     // A durable but UNAPPROVED brief cannot create campaigns: campaign-service refuses outright —
-    // `internal/service/brief.go:439` returns 400 "brief must be approved before creating
-    // campaigns". The state is `saved` because the write genuinely landed, and its banner already
+    // campaign-service's `BriefService.CreateCampaigns` (`internal/service/brief.go`) returns 400
+    // "brief must be approved before creating campaigns". The state is `saved` because the write genuinely landed, and its banner already
     // says the brief is stored but not usable; leaving Create enabled invited the user to prove it
     // the hard way. Read from the explicit `approved` field rather than the banner prose, which
     // would break the first time the copy is edited.
