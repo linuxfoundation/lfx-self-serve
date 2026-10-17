@@ -138,6 +138,19 @@ describe('CampaignNegativeKeywordsService', () => {
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', sticky: true }));
   });
 
+  it("keeps each keyword's last outcome across the campaign's later requests", () => {
+    service.submit(submission());
+    answer(0, ['UNCONFIRMED', 'APPLIED']);
+    service.submit(submission({ keywords: ['gamma'] }));
+    expect(service.requests()['tlf|b-1|c-1'].keywordOutcomes['alpha'].outcome).toBe('UNCONFIRMED');
+    answer(1, ['APPLIED']);
+
+    const outcomes = service.requests()['tlf|b-1|c-1'].keywordOutcomes;
+    expect(outcomes['alpha'].outcome).toBe('UNCONFIRMED');
+    expect(outcomes['beta'].outcome).toBe('APPLIED');
+    expect(outcomes['gamma'].outcome).toBe('APPLIED');
+  });
+
   it('says whether it sent', () => {
     expect(service.submit(submission())).toBe(true);
     expect(service.submit(submission())).toBe(false);

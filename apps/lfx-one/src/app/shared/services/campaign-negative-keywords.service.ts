@@ -14,6 +14,7 @@ import { CampaignService } from '@services/campaign.service';
 import {
   campaignNegativeKeywordsFailureOutcome,
   campaignNegativeKeywordsKey,
+  mergeNegativeKeywordLastOutcomes,
   negativeKeywordOutcomeRows,
   summarizeNegativeKeywordOutcomes,
 } from '@shared/utils/campaign-negative-keywords.utils';
@@ -132,8 +133,10 @@ export class CampaignNegativeKeywordsService {
       return false;
     }
     const settleCount = this.state()[key]?.settleCount ?? 0;
+    // Carried across requests: a request for other keywords does not erase a keyword's last outcome.
+    const keywordOutcomes = this.state()[key]?.keywordOutcomes ?? {};
     const base = { sent: keywords, matchType, platform };
-    this.set(key, { pending: true, outcomeRows: [], batchOutcome: null, batchKeywords: [], ...base, settleCount });
+    this.set(key, { pending: true, outcomeRows: [], batchOutcome: null, batchKeywords: [], ...base, settleCount, keywordOutcomes });
 
     this.campaignService
       .addNegativeKeywords(
@@ -147,7 +150,15 @@ export class CampaignNegativeKeywordsService {
       .subscribe({
         next: (result) => {
           const rows = negativeKeywordOutcomeRows(keywords, matchType, result, platform);
-          this.settle(key, { pending: false, outcomeRows: rows, batchOutcome: null, batchKeywords: [], ...base, settleCount: settleCount + 1 });
+          this.settle(key, {
+            pending: false,
+            outcomeRows: rows,
+            batchOutcome: null,
+            batchKeywords: [],
+            ...base,
+            settleCount: settleCount + 1,
+            keywordOutcomes: mergeNegativeKeywordLastOutcomes(keywordOutcomes, keywords, rows, null),
+          });
           if (!rows.some((row) => row.outcome === 'FAILED' || row.outcome === 'UNCONFIRMED')) {
             onAllSettled?.();
           }
@@ -155,7 +166,15 @@ export class CampaignNegativeKeywordsService {
         },
         error: (err: unknown) => {
           const outcome = campaignNegativeKeywordsFailureOutcome(err);
-          this.settle(key, { pending: false, outcomeRows: [], batchOutcome: outcome, batchKeywords: keywords, ...base, settleCount: settleCount + 1 });
+          this.settle(key, {
+            pending: false,
+            outcomeRows: [],
+            batchOutcome: outcome,
+            batchKeywords: keywords,
+            ...base,
+            settleCount: settleCount + 1,
+            keywordOutcomes: mergeNegativeKeywordLastOutcomes(keywordOutcomes, keywords, [], outcome),
+          });
           this.messageService.add({
             severity: outcome.state === 'unconfirmed' ? 'warn' : 'error',
             summary: outcome.state === 'unconfirmed' ? `Negative keywords not confirmed for ${campaignName}` : `Negative keywords not added to ${campaignName}`,

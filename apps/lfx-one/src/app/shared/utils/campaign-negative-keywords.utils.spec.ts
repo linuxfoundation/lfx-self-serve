@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   campaignNegativeKeywordsFailureOutcome,
+  mergeNegativeKeywordLastOutcomes,
   negativeKeywordOutcomeRows,
   redditKeywordNegativeAction,
   redditNegativeKeywordText,
@@ -182,17 +183,24 @@ describe('redditNegativeKeywordText', () => {
 describe('redditKeywordNegativeAction', () => {
   const target = { campaignId: 'c-1', campaignName: 'KubeCon EU' };
   const idle = { campaignReading: false, rowReading: false, targetingRemovalPending: false };
-  const request = (over: Partial<CampaignNegativeKeywordsRequestState> = {}): CampaignNegativeKeywordsRequestState => ({
-    pending: false,
-    outcomeRows: [],
-    batchOutcome: null,
-    batchKeywords: [],
-    sent: [],
-    matchType: 'Broad',
-    platform: 'reddit-ads',
-    settleCount: 1,
-    ...over,
-  });
+  /** A settled request, its per-keyword last outcomes built as the service builds them unless given. */
+  const request = (over: Partial<CampaignNegativeKeywordsRequestState> = {}): CampaignNegativeKeywordsRequestState => {
+    const base: CampaignNegativeKeywordsRequestState = {
+      pending: false,
+      outcomeRows: [],
+      batchOutcome: null,
+      batchKeywords: [],
+      sent: [],
+      matchType: 'Broad',
+      platform: 'reddit-ads',
+      settleCount: 1,
+      keywordOutcomes: {},
+      ...over,
+    };
+    return over.keywordOutcomes !== undefined
+      ? base
+      : { ...base, keywordOutcomes: mergeNegativeKeywordLastOutcomes({}, base.pending ? [] : base.sent, base.outcomeRows, base.batchOutcome) };
+  };
   const rows = (sent: string[], outcomes: ('APPLIED' | 'ALREADY_PRESENT' | 'FAILED' | 'UNCONFIRMED')[]) =>
     negativeKeywordOutcomeRows(
       sent,
@@ -211,10 +219,11 @@ describe('redditKeywordNegativeAction', () => {
     expect(redditKeywordNegativeAction('service mesh', target, null, idle)).toEqual({
       state: 'available',
       sending: false,
-      ariaLabel: 'Add "service mesh" as a negative keyword to KubeCon EU',
+      ariaLabel: 'Add as negative: service mesh (KubeCon EU)',
       outcomeLabel: '',
       outcomeDetail: '',
       outcomeTone: 'none',
+      notSentMessage: '',
     });
   });
 
@@ -274,5 +283,69 @@ describe('redditKeywordNegativeAction', () => {
       outcomeDetail: 'verify first',
       outcomeTone: 'warning',
     });
+  });
+
+  // A later request for OTHER keywords replaces the campaign's latest request, not a keyword's own last outcome.
+  it("keeps a keyword's last outcome, and its verify-first tone, across a later request for other keywords", () => {
+    const first = mergeNegativeKeywordLastOutcomes({}, ['gitops'], rows(['gitops'], ['UNCONFIRMED']), null);
+    const later = request({
+      sent: ['service mesh'],
+      outcomeRows: rows(['service mesh'], ['APPLIED']),
+      keywordOutcomes: mergeNegativeKeywordLastOutcomes(first, ['service mesh'], rows(['service mesh'], ['APPLIED']), null),
+    });
+
+    expect(redditKeywordNegativeAction('gitops', target, later, idle)).toMatchObject({
+      state: 'available',
+      outcomeLabel: 'Not confirmed',
+      outcomeTone: 'warning',
+    });
+    expect(redditKeywordNegativeAction('service mesh', target, later, idle)).toMatchObject({ state: 'negative' });
+  });
+
+  it('shows the latest unsent attempt beside, not instead of, the last write outcome', () => {
+    const settled = request({ sent: ['gitops'], outcomeRows: rows(['gitops'], ['UNCONFIRMED']) });
+
+    expect(redditKeywordNegativeAction('gitops', target, settled, idle, 'Nothing was sent.')).toMatchObject({
+      state: 'available',
+      outcomeLabel: 'Not confirmed',
+      outcomeTone: 'warning',
+      notSentMessage: 'Nothing was sent.',
+    });
+  });
+});
+
+describe('mergeNegativeKeywordLastOutcomes', () => {
+  it('takes the new outcome of each keyword sent, by position, and keeps every other keyword', () => {
+    const sent = ['a', 'b'];
+    const rows = negativeKeywordOutcomeRows(
+      sent,
+      'Broad',
+      {
+        campaignId: 'c-1',
+        appliedCount: 1,
+        results: [
+          { text: 'a', matchType: 'Broad', outcome: 'APPLIED' },
+          { text: 'b', matchType: 'Broad', outcome: 'FAILED' },
+        ],
+      },
+      'reddit-ads'
+    );
+    const merged = mergeNegativeKeywordLastOutcomes(
+      { c: { outcome: 'UNCONFIRMED', label: 'Not confirmed', detail: 'verify' }, b: { outcome: 'APPLIED', label: 'Added', detail: '' } },
+      sent,
+      rows,
+      null
+    );
+
+    expect(merged['a'].outcome).toBe('APPLIED');
+    expect(merged['b'].outcome).toBe('FAILED');
+    expect(merged['c']).toEqual({ outcome: 'UNCONFIRMED', label: 'Not confirmed', detail: 'verify' });
+  });
+
+  it("gives every keyword of a batch with no per-keyword results the batch's outcome", () => {
+    expect(mergeNegativeKeywordLastOutcomes({}, ['a'], [], { state: 'unconfirmed', message: 'verify first' })).toEqual({
+      a: { outcome: 'UNCONFIRMED', label: 'Not confirmed', detail: 'verify first' },
+    });
+    expect(mergeNegativeKeywordLastOutcomes({}, ['a'], [], { state: 'failed', message: 'refused' })['a'].outcome).toBe('FAILED');
   });
 });

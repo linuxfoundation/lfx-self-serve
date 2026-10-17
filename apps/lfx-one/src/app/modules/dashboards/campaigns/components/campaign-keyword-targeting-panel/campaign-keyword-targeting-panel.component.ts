@@ -41,8 +41,10 @@ import { catchError, map, of, startWith, switchMap } from 'rxjs';
  * - The answer is POSITIONAL: `results[i]` answers the i-th keyword sent, so outcomes are zipped
  *   onto the list sent and kept in that order. UNCONFIRMED is "may or may not have been removed",
  *   never a failure.
- * - Every settled removal re-reads the targeting (also in a panel reopened after it), so the list
- *   (and Reddit's revision) is what the platform now holds; the outcomes stay on screen beside it.
+ * - Every settled removal, and every settled negative-keyword request of the campaign (Reddit's
+ *   revision covers its excluded keywords too), re-reads the targeting (also in a panel reopened
+ *   after it), so the list (and Reddit's revision) is what the platform now holds; the outcomes stay
+ *   on screen beside it.
  * - Every message is a fixed sentence keyed by outcome, code or status. Upstream text is never shown.
  * - Removing every keyword is held back: upstream refuses it (409), because the campaign would then
  *   serve on its other targeting alone.
@@ -82,6 +84,14 @@ export class CampaignKeywordTargetingPanelComponent {
   );
   /** Bumped by every settled removal of this campaign, even one that settled while the panel was closed. */
   private readonly settleCount: Signal<number> = computed(() => this.removal()?.settleCount ?? 0);
+  /**
+   * Bumped by every settled NEGATIVE-keyword request of this campaign (from its editor or the Reddit
+   * keyword table). On Reddit the revision fingerprints the ad group's WHOLE targeting, excluded
+   * keywords included, so an add makes the revision this panel read stale: it reads again.
+   */
+  private readonly negativesSettleCount: Signal<number> = computed(
+    () => this.negativeKeywordsService.requests()[campaignNegativeKeywordsKey(this.projectSlug(), this.briefId(), this.campaignId())]?.settleCount ?? 0
+  );
   protected readonly removing: Signal<boolean> = computed(() => this.removal()?.pending ?? false);
   /** Per-keyword outcomes of the last removal, in the order the keywords were SENT. */
   protected readonly outcomeRows: Signal<KeywordTargetingRemovalOutcomeRow[]> = computed(() => this.removal()?.outcomeRows ?? []);
@@ -172,8 +182,9 @@ export class CampaignKeywordTargetingPanelComponent {
 
   /** Hands the removal to the root service, which sends it once and keeps its outcome past this panel. */
   private remove(targeting: CampaignServiceKeywordTargeting, items: KeywordTargetingListItem[]): void {
-    // Re-checked on accept: an add may have started while the dialog was open.
-    if (this.removing() || this.heldReason() !== '') {
+    // Re-checked on accept: an add may have started while the dialog was open, or the targeting been
+    // read again since (its revision is then newer than the one this removal would carry).
+    if (this.removing() || this.heldReason() !== '' || this.readState().targeting !== targeting) {
       return;
     }
     const keywords: KeywordTargetingRemovalItem[] = items.map((item) => item.removalItem).filter((item): item is KeywordTargetingRemovalItem => item !== null);
@@ -200,8 +211,9 @@ export class CampaignKeywordTargetingPanelComponent {
   }
 
   /**
-   * The live targeting, read again on Reload and whenever a removal of this campaign settles
-   * (including one that settled while the panel was closed). Errors are worded by status, never by
+   * The live targeting, read again on Reload and whenever a removal or a negative-keyword request of
+   * this campaign settles (including one that settled while the panel was closed). While it is read
+   * again the list is empty, so nothing can be removed against the old revision. Errors are worded by status, never by
    * upstream text.
    */
   private initReadState(): Signal<KeywordTargetingReadState> {
@@ -212,6 +224,7 @@ export class CampaignKeywordTargetingPanelComponent {
       campaignId: this.campaignId(),
       reload: this.reload(),
       settled: this.settleCount(),
+      negativesSettled: this.negativesSettleCount(),
     }));
     return toSignal(
       toObservable(request).pipe(

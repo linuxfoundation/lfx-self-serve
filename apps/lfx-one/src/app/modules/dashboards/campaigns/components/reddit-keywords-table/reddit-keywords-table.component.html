@@ -120,13 +120,24 @@
                               (onClick)="confirmAddNegative(row)"
                               [attr.data-testid]="'reddit-keyword-add-negative-' + row.testIdKey" />
                           }
+                          <!-- Inserted as an outcome lands, so each is an alert: it is announced where it appears. -->
                           @if (row.negative.outcomeTone !== 'none') {
                             <p
+                              role="alert"
                               class="max-w-xs text-right text-xs"
                               [class.text-amber-700]="row.negative.outcomeTone === 'warning'"
                               [class.text-red-600]="row.negative.outcomeTone === 'error'"
                               [attr.data-testid]="'reddit-keyword-negative-outcome-' + row.testIdKey">
                               <span class="font-medium">{{ row.negative.outcomeLabel }}.</span> {{ row.negative.outcomeDetail }}
+                            </p>
+                          }
+                          <!-- The latest attempt from here, which went nowhere: beside the write outcome, never instead of it. -->
+                          @if (row.negative.notSentMessage) {
+                            <p
+                              role="alert"
+                              class="max-w-xs text-right text-xs text-red-600"
+                              [attr.data-testid]="'reddit-keyword-negative-not-sent-' + row.testIdKey">
+                              <span class="font-medium">{{ notSentLabel }}.</span> {{ row.negative.notSentMessage }}
                             </p>
                           }
                         </div>

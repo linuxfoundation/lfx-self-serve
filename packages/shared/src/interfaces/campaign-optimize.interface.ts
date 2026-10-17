@@ -478,15 +478,21 @@ export interface RedditKeywordNegativeAction {
   sending: boolean;
   /** The button's accessible name, naming the keyword and the campaign. `''` when nothing is offered. */
   ariaLabel: string;
-  /** This keyword's outcome in the campaign's last request ("Added", "Not confirmed", ...), or `''`. */
+  /** This keyword's LAST write outcome on the campaign ("Added", "Not confirmed", ...), or `''`. */
   outcomeLabel: string;
   /** What to tell the operator beyond the label: the verify-first advice, the refusal, or `''`. */
   outcomeDetail: string;
   /**
    * How the outcome reads when the operator must act on it: `warning` for not confirmed (it may have
-   * been added — verify first), `error` for not added or not sent, `none` otherwise.
+   * been added — verify first), `error` for not added, `none` otherwise.
    */
   outcomeTone: 'none' | 'warning' | 'error';
+  /**
+   * Why the latest attempt from the table was NOT sent (revision read failed or answered none, or
+   * another keyword change started first), or `''`. Shown beside the write outcome, never instead
+   * of it: the write outcome (and its verify-first advice) still describes the campaign.
+   */
+  notSentMessage: string;
 }
 
 /** What holds a Reddit keyword row's "Add as negative" besides the campaign's own negative-keyword request. */

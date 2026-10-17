@@ -12,6 +12,7 @@ import {
   KEYWORD_LEVER_DEFINITE_FAILURE_STATUSES,
 } from '@lfx-one/shared/constants';
 import type {
+  CampaignNegativeKeywordLastOutcome,
   CampaignNegativeKeywordMatchType,
   CampaignNegativeKeywordOutcome,
   CampaignNegativeKeywordOutcomeRow,
@@ -140,6 +141,32 @@ export function campaignNegativeKeywordsKey(projectSlug: string, briefId: string
 }
 
 /**
+ * Each keyword's last outcome after one settled request, merged over the earlier ones: the
+ * keywords of this request take their new outcome (by POSITION in what was sent, or the batch's
+ * outcome when there were no per-keyword results), every other keyword keeps its own.
+ */
+export function mergeNegativeKeywordLastOutcomes(
+  previous: Readonly<Record<string, CampaignNegativeKeywordLastOutcome>>,
+  sent: readonly string[],
+  rows: readonly CampaignNegativeKeywordOutcomeRow[],
+  batchOutcome: CampaignNegativeKeywordsBatchOutcome | null
+): Record<string, CampaignNegativeKeywordLastOutcome> {
+  const next: Record<string, CampaignNegativeKeywordLastOutcome> = { ...previous };
+  sent.forEach((text, index) => {
+    if (batchOutcome !== null) {
+      const outcome: CampaignNegativeKeywordOutcome = batchOutcome.state === 'unconfirmed' ? 'UNCONFIRMED' : 'FAILED';
+      next[text] = { outcome, label: CAMPAIGN_NEGATIVE_KEYWORD_OUTCOME_LABELS[outcome], detail: batchOutcome.message };
+      return;
+    }
+    const row = rows[index];
+    if (row !== undefined) {
+      next[text] = { outcome: row.outcome, label: row.label, detail: row.detail };
+    }
+  });
+  return next;
+}
+
+/**
  * The text a Reddit keyword-report row would be sent as through `add-negative-keywords`: the
  * keyword parsed exactly as the negative-keyword editor parses a line (whitespace collapsed, the
  * lever's length and character rules applied). `null` when the row has no keyword or the lever
@@ -157,9 +184,10 @@ export function redditNegativeKeywordText(keyword: string | null): string | null
  * Where one Reddit keyword row's "Add as negative" stands, from the campaign's latest request in
  * `CampaignNegativeKeywordsService` (shared with the campaign's own negative-keyword editor).
  *
- * The keyword's outcome is found by its position in what was SENT, never by matching the text the
- * response echoed: `outcomeRows[i]` answers `sent[i]`. The sent list was parsed exactly as
- * `redditNegativeKeywordText` parses the row, so the two compare as equal strings.
+ * The keyword's outcome is its LAST one on the campaign (`keywordOutcomes`, built by POSITION in
+ * what each request sent — never by the text a response echoed), so a later request for other
+ * keywords does not erase it. The sent lists were parsed exactly as `redditNegativeKeywordText`
+ * parses the row, so the two compare as equal strings.
  *
  * `busy` while the campaign's request is in flight, the table holds it for a revision read, or a
  * keyword-targeting removal of it is in flight (its Reddit targeting is one domain).
@@ -167,56 +195,48 @@ export function redditNegativeKeywordText(keyword: string | null): string | null
  * `negative` only for a CONFIRMED outcome (added or already present). Reddit offers no read of a
  * campaign's excluded keywords, so a negative this session did not confirm is not known here; the
  * button stays offered, and upstream answers ALREADY_PRESENT without sending it again.
+ *
+ * `notSentMessage` is the table's own latest attempt that went nowhere; the caller passes it only
+ * while no request of the campaign has settled since, and it is shown alongside the write outcome.
  */
 export function redditKeywordNegativeAction(
   keyword: string | null,
   target: RedditKeywordNegativeTarget | null,
   request: CampaignNegativeKeywordsRequestState | null,
-  holds: RedditKeywordNegativeHolds
+  holds: RedditKeywordNegativeHolds,
+  notSentMessage = ''
 ): RedditKeywordNegativeAction {
-  const none: RedditKeywordNegativeAction = { state: 'none', sending: false, ariaLabel: '', outcomeLabel: '', outcomeDetail: '', outcomeTone: 'none' };
+  const none: RedditKeywordNegativeAction = {
+    state: 'none',
+    sending: false,
+    ariaLabel: '',
+    outcomeLabel: '',
+    outcomeDetail: '',
+    outcomeTone: 'none',
+    notSentMessage: '',
+  };
   const text = redditNegativeKeywordText(keyword);
   if (text === null || target === null) {
     return none;
   }
-  const ariaLabel = `Add "${text}" as a negative keyword to ${target.campaignName}`;
+  // The visible label first, so speech input ("click Add as negative") still matches.
+  const ariaLabel = `Add as negative: ${text} (${target.campaignName})`;
   if (request?.pending) {
     return { ...none, state: 'busy', sending: request.sent.includes(text), ariaLabel };
   }
+  const last = request === null || !Object.hasOwn(request.keywordOutcomes, text) ? null : request.keywordOutcomes[text];
+  if (last !== null && (last.outcome === 'APPLIED' || last.outcome === 'ALREADY_PRESENT')) {
+    return { ...none, state: 'negative', outcomeLabel: last.label };
+  }
+  const outcome: Pick<RedditKeywordNegativeAction, 'outcomeLabel' | 'outcomeDetail' | 'outcomeTone'> =
+    last === null
+      ? { outcomeLabel: '', outcomeDetail: '', outcomeTone: 'none' }
+      : { outcomeLabel: last.label, outcomeDetail: last.detail, outcomeTone: last.outcome === 'UNCONFIRMED' ? 'warning' : 'error' };
   if (holds.campaignReading) {
-    return { ...none, state: 'busy', sending: holds.rowReading, ariaLabel };
+    return { ...none, ...outcome, state: 'busy', sending: holds.rowReading, ariaLabel };
   }
   if (holds.targetingRemovalPending) {
-    return { ...none, state: 'busy', ariaLabel };
+    return { ...none, ...outcome, state: 'busy', ariaLabel, notSentMessage };
   }
-  const index = request === null ? -1 : request.sent.indexOf(text);
-  if (request === null || index === -1) {
-    return { ...none, state: 'available', ariaLabel };
-  }
-  if (request.batchOutcome !== null) {
-    const unconfirmed = request.batchOutcome.state === 'unconfirmed';
-    return {
-      ...none,
-      state: 'available',
-      ariaLabel,
-      outcomeLabel: CAMPAIGN_NEGATIVE_KEYWORD_OUTCOME_LABELS[unconfirmed ? 'UNCONFIRMED' : 'FAILED'],
-      outcomeDetail: request.batchOutcome.message,
-      outcomeTone: unconfirmed ? 'warning' : 'error',
-    };
-  }
-  const row = request.outcomeRows[index];
-  if (row === undefined) {
-    return { ...none, state: 'available', ariaLabel };
-  }
-  if (row.outcome === 'APPLIED' || row.outcome === 'ALREADY_PRESENT') {
-    return { ...none, state: 'negative', outcomeLabel: row.label };
-  }
-  return {
-    ...none,
-    state: 'available',
-    ariaLabel,
-    outcomeLabel: row.label,
-    outcomeDetail: row.detail,
-    outcomeTone: row.outcome === 'UNCONFIRMED' ? 'warning' : 'error',
-  };
+  return { ...none, ...outcome, state: 'available', ariaLabel, notSentMessage };
 }

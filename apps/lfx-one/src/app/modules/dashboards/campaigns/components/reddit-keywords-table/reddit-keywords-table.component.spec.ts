@@ -213,7 +213,8 @@ describe('RedditKeywordsTableComponent', () => {
     it('confirms, reads the revision, then adds the keyword as a Broad negative with it', () => {
       addNegativeKeywords.mockReturnValue(of(applied()));
       fixture.detectChanges();
-      expect(addButton(A)!.getAttribute('aria-label')).toBe('Add "service mesh" as a negative keyword to KubeCon EU');
+      // The visible label leads the accessible name, so speech input still matches it.
+      expect(addButton(A)!.getAttribute('aria-label')).toBe('Add as negative: service mesh (KubeCon EU)');
 
       clickAdd(A);
 
@@ -333,6 +334,8 @@ describe('RedditKeywordsTableComponent', () => {
       expect(outcome.textContent).toContain('Not added');
       expect(outcome.textContent).toContain(message);
       expect(outcome.classList).toContain('text-red-600');
+      // Inserted as the outcome lands, so it is announced there.
+      expect(outcome.getAttribute('role')).toBe('alert');
       expect(messageAdd).toHaveBeenCalledWith(
         expect.objectContaining({ severity: 'error', summary: 'Negative keywords not added to KubeCon EU', sticky: true })
       );
@@ -379,7 +382,8 @@ describe('RedditKeywordsTableComponent', () => {
       clickAdd(A);
 
       expect(addNegativeKeywords).not.toHaveBeenCalled();
-      expect(q(`reddit-keyword-negative-outcome-${A}`)!.textContent).toContain(REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR);
+      expect(q(`reddit-keyword-negative-not-sent-${A}`)!.textContent).toContain(REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR);
+      expect(q(`reddit-keyword-negative-not-sent-${A}`)!.getAttribute('role')).toBe('alert');
       expect(logged).toHaveBeenCalledTimes(logs ? 1 : 0);
       expect(addButton(A)!.disabled).toBe(false);
     });
@@ -443,7 +447,7 @@ describe('RedditKeywordsTableComponent', () => {
       removal.error(new HttpErrorResponse({ status: 409, error: { error: 'changed', code: 'CONFLICT' } }));
       fixture.detectChanges();
 
-      const outcome = q(`reddit-keyword-negative-outcome-${A}`)!;
+      const outcome = q(`reddit-keyword-negative-not-sent-${A}`)!;
       expect(outcome.textContent).toContain('Not sent');
       expect(outcome.textContent).toContain(REDDIT_KEYWORD_NEGATIVE_SUPERSEDED_MESSAGE);
       expect(addButton(A)!.disabled).toBe(false);
@@ -481,17 +485,61 @@ describe('RedditKeywordsTableComponent', () => {
       vi.spyOn(console, 'error').mockImplementation(() => undefined);
       fixture.detectChanges();
       clickAdd(A);
-      expect(q(`reddit-keyword-negative-outcome-${A}`)).not.toBeNull();
+      expect(q(`reddit-keyword-negative-not-sent-${A}`)).not.toBeNull();
 
       fixture.componentRef.setInput('reloadToken', 1);
       fixture.detectChanges();
-      expect(q(`reddit-keyword-negative-outcome-${A}`)).toBeNull();
+      expect(q(`reddit-keyword-negative-not-sent-${A}`)).toBeNull();
 
       clickAdd(A);
-      expect(q(`reddit-keyword-negative-outcome-${A}`)).not.toBeNull();
+      expect(q(`reddit-keyword-negative-not-sent-${A}`)).not.toBeNull();
       q('reddit-keywords-window-last_7_days')!.click();
       fixture.detectChanges();
-      expect(q(`reddit-keyword-negative-outcome-${A}`)).toBeNull();
+      expect(q(`reddit-keyword-negative-not-sent-${A}`)).toBeNull();
+    });
+
+    // The newer attempt that went nowhere is shown, beside the older write outcome it does not erase.
+    it('shows a retry that was not sent beside the earlier unconfirmed outcome, and keeps the verify-first advice', () => {
+      addNegativeKeywords.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 502, error: { error: 'x', code: 'BAD_GATEWAY' } })));
+      fixture.detectChanges();
+      clickAdd(A);
+      expect(q(`reddit-keyword-negative-outcome-${A}`)!.textContent).toContain('Not confirmed');
+
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      getKeywordTargeting.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503, error: { error: 'x', code: 'SERVICE_UNAVAILABLE' } })));
+      clickAdd(A);
+
+      expect(q(`reddit-keyword-negative-outcome-${A}`)!.textContent).toContain('Not confirmed');
+      expect(q(`reddit-keyword-negative-not-sent-${A}`)!.textContent).toContain(REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR);
+      clickAdd(A, false);
+      expect(confirmations[confirmations.length - 1].message).toContain(negativeKeywordUnconfirmedAdvice('reddit-ads'));
+    });
+
+    // Each keyword keeps its own last outcome: an add of another keyword does not erase it.
+    it("keeps a keyword's unconfirmed outcome after another keyword of the campaign is added", () => {
+      getRedditKeywords.mockReturnValue(
+        of(
+          report({
+            keywords: [
+              { key: 't3_a|service mesh|0', campaignId: 't3_a', keyword: 'service mesh', impressions: 1000, clicks: 50, ctr: 5, spend: 2.5 },
+              { key: 't3_a|gitops|1', campaignId: 't3_a', keyword: 'gitops', impressions: 900, clicks: 40, ctr: 4.4, spend: 2 },
+            ],
+          })
+        )
+      );
+      addNegativeKeywords.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 502, error: { error: 'x', code: 'BAD_GATEWAY' } })));
+      fixture.detectChanges();
+      clickAdd(A);
+
+      addNegativeKeywords.mockReturnValue(
+        of({ campaignId: 'c-uuid-a', appliedCount: 1, results: [{ text: 'gitops', matchType: 'Broad', outcome: 'APPLIED' }] })
+      );
+      clickAdd('t3-a-gitops-1');
+
+      expect(q('reddit-keyword-negative-t3-a-gitops-1')).not.toBeNull();
+      expect(q(`reddit-keyword-negative-outcome-${A}`)!.textContent).toContain('Not confirmed');
+      clickAdd(A, false);
+      expect(confirmations[confirmations.length - 1].message).toContain(negativeKeywordUnconfirmedAdvice('reddit-ads'));
     });
   });
 });

@@ -3883,6 +3883,21 @@ export interface CampaignNegativeKeywordsRequestState {
   platform: NegativeKeywordCampaignPlatform;
   /** How many requests of this campaign have settled: a change means Reddit's revision must be read again. */
   settleCount: number;
+  /**
+   * Each keyword's LAST outcome on this campaign, by the text sent, across requests: a later request
+   * for other keywords does not erase it, so a keyword that was not confirmed keeps its
+   * verify-first advice until it is itself sent again.
+   */
+  keywordOutcomes: Record<string, CampaignNegativeKeywordLastOutcome>;
+}
+
+/** One keyword's last outcome on a campaign (`CampaignNegativeKeywordsRequestState.keywordOutcomes`). */
+export interface CampaignNegativeKeywordLastOutcome {
+  /** A batch with no per-keyword results counts as FAILED (refused) or UNCONFIRMED for each keyword sent. */
+  outcome: CampaignNegativeKeywordOutcome;
+  label: string;
+  /** The per-keyword detail, or the batch's message. */
+  detail: string;
 }
 
 /** One negative-keyword request, as the editor hands it to `CampaignNegativeKeywordsService`. */

@@ -12,7 +12,7 @@ import {
   KEYWORD_TARGETING_REMOVAL_UNCONFIRMED_CODE,
   KEYWORD_TARGETING_REMOVE_ALL_REASON,
 } from '@lfx-one/shared/constants';
-import type { CampaignServiceKeywordTargeting, CampaignServiceKeywordTargetingRemovals } from '@lfx-one/shared/interfaces';
+import type { CampaignNegativeKeywordsResult, CampaignServiceKeywordTargeting, CampaignServiceKeywordTargetingRemovals } from '@lfx-one/shared/interfaces';
 import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
 import { CampaignService } from '@services/campaign.service';
 import { Confirmation, ConfirmationService, MessageService } from 'primeng/api';
@@ -187,6 +187,45 @@ describe('CampaignKeywordTargetingPanelComponent', () => {
       fixture.detectChanges();
       expect(removeButton().disabled).toBe(false);
       expect(q('optimization-campaign-targeting-held-c-1')).toBeNull();
+    });
+
+    // Reddit's revision covers the excluded keywords too: an add makes the panel's read stale.
+    it('reads the targeting again when a negative-keyword add to the campaign settles, holding Remove until it answers', async () => {
+      await create('reddit-ads', reddit());
+      const negatives = TestBed.inject(CampaignNegativeKeywordsService);
+      const add = new Subject<CampaignNegativeKeywordsResult>();
+      (TestBed.inject(CampaignService) as unknown as { addNegativeKeywords: unknown }).addNegativeKeywords = vi.fn().mockReturnValue(add);
+      tick('kubernetes');
+      expect(getKeywordTargeting).toHaveBeenCalledTimes(1);
+
+      negatives.submit({
+        projectSlug: 'tlf',
+        briefId: 'b-1',
+        campaignId: 'c-1',
+        campaignName: 'KubeCon EU',
+        platform: 'reddit-ads',
+        keywords: ['free'],
+        matchType: 'Broad',
+        revision: 'sha256:r1',
+      });
+      const reread = new Subject<CampaignServiceKeywordTargeting>();
+      getKeywordTargeting.mockReturnValue(reread);
+      add.next({ campaignId: 'c-1', appliedCount: 1, results: [{ text: 'free', matchType: 'Broad', outcome: 'APPLIED' }] });
+      add.complete();
+      fixture.detectChanges();
+
+      expect(getKeywordTargeting).toHaveBeenCalledTimes(2);
+      expect(removeButton().disabled).toBe(true);
+
+      reread.next(reddit({ revision: 'sha256:r2' }));
+      reread.complete();
+      fixture.detectChanges();
+      removeKeywordTargeting.mockReturnValue(of({ campaign_id: 'c-1', results: [], applied_count: 0 }));
+      // Still ticked from before: the refreshed read lists it, so Remove is back, with the NEW revision.
+      expect(removeButton().disabled).toBe(false);
+      clickRemove();
+      accept();
+      expect(removeKeywordTargeting).toHaveBeenCalledWith('tlf', 'c-1', { briefId: 'b-1', keywords: [{ keyword: 'kubernetes' }], revision: 'sha256:r2' });
     });
 
     it("sends Reddit keywords by text with the read's revision, once", async () => {
