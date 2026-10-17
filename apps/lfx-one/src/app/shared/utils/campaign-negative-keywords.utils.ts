@@ -24,6 +24,7 @@ import type {
   RedditKeywordNegativeAction,
   RedditKeywordNegativeHolds,
   RedditKeywordNegativeTarget,
+  RedditKeywordNotSentNote,
 } from '@lfx-one/shared/interfaces';
 import { parseNegativeKeywordInput } from '@lfx-one/shared/utils';
 
@@ -168,6 +169,26 @@ export function pendingKeywordWrites(entries: Readonly<Record<string, { pending:
  */
 export function redditKeywordNoteKey(projectSlug: string, redditCampaignId: string, text: string): string {
   return `${projectSlug}|${redditCampaignId}|${text}`;
+}
+
+/**
+ * Whether a Reddit keyword's not-sent note may still be shown — the ONE rule for a note on a row and
+ * a note listed above the table:
+ * - only under the project it was recorded for (the table stays mounted across a project change);
+ * - only for the keyword read current when it was recorded (a Refresh, Retry or window change after
+ *   it clears it);
+ * - only while the keyword has no NEWER write outcome than when it was recorded (a later add of it,
+ *   from the table or the editor, supersedes it). `lastOutcome` is `undefined` when the keyword's
+ *   campaign is no longer a target here, so no outcome can supersede the note.
+ */
+export function redditKeywordNoteShowable(
+  note: RedditKeywordNotSentNote,
+  current: { projectSlug: string; readId: string; lastOutcome: CampaignNegativeKeywordLastOutcome | null | undefined }
+): boolean {
+  if (note.projectSlug !== current.projectSlug || note.read !== current.readId) {
+    return false;
+  }
+  return current.lastOutcome === undefined || note.lastOutcome === current.lastOutcome;
 }
 
 /**

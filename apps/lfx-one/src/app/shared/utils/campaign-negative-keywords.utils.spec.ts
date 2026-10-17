@@ -20,6 +20,7 @@ import {
   pendingKeywordWrites,
   redditKeywordNegativeAction,
   redditKeywordNoteKey,
+  redditKeywordNoteShowable,
   redditNegativeKeywordText,
   summarizeNegativeKeywordOutcomes,
 } from './campaign-negative-keywords.utils';
@@ -393,5 +394,27 @@ describe('keyword-write keys', () => {
 describe('redditKeywordNoteKey', () => {
   it('keys a note by project, Reddit campaign and the text as sent, with no report index', () => {
     expect(redditKeywordNoteKey('tlf', 't3_a', 'service mesh')).toBe('tlf|t3_a|service mesh');
+  });
+});
+
+describe('redditKeywordNoteShowable', () => {
+  const unconfirmed = { outcome: 'UNCONFIRMED' as const, label: 'Not confirmed', detail: 'verify' };
+  const note = {
+    read: 'r1',
+    lastOutcome: unconfirmed,
+    message: 'Nothing was sent.',
+    keyword: 'gitops',
+    campaignName: 'KubeCon EU',
+    projectSlug: 'tlf',
+    redditCampaignId: 't3_a',
+  };
+
+  it('shows a note only under its project, for the read it was recorded in, until a newer outcome', () => {
+    expect(redditKeywordNoteShowable(note, { projectSlug: 'tlf', readId: 'r1', lastOutcome: unconfirmed })).toBe(true);
+    expect(redditKeywordNoteShowable(note, { projectSlug: 'cncf', readId: 'r1', lastOutcome: unconfirmed })).toBe(false);
+    expect(redditKeywordNoteShowable(note, { projectSlug: 'tlf', readId: 'r2', lastOutcome: unconfirmed })).toBe(false);
+    expect(redditKeywordNoteShowable(note, { projectSlug: 'tlf', readId: 'r1', lastOutcome: { outcome: 'APPLIED', label: 'Added', detail: '' } })).toBe(false);
+    // No target any more: nothing can supersede the note.
+    expect(redditKeywordNoteShowable(note, { projectSlug: 'tlf', readId: 'r1', lastOutcome: undefined })).toBe(true);
   });
 });

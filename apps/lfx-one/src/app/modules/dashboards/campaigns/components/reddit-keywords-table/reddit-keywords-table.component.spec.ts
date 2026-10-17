@@ -670,6 +670,53 @@ describe('RedditKeywordsTableComponent', () => {
         expect(note.textContent).toContain(REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR);
       });
 
+      // The table stays mounted across a project change: a note is never shown under another project.
+      it('drops the above-table note when the page moves to another project', () => {
+        startAddThenChangeWindow(report({ keywords: [gitops(0)] }));
+        expect(q('reddit-keywords-unplaced-not-sent-tlf-t3-a-service-mesh')).not.toBeNull();
+
+        fixture.componentRef.setInput('projectSlug', 'cncf');
+        fixture.detectChanges();
+
+        expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid^="reddit-keywords-unplaced-not-sent-"]')).toBeNull();
+      });
+
+      it('never shows, under the new project, the note of an add cancelled by moving to it', () => {
+        read = new Subject();
+        getKeywordTargeting.mockReturnValue(read);
+        fixture.detectChanges();
+        clickAdd(A);
+
+        fixture.componentRef.setInput('projectSlug', 'cncf');
+        fixture.detectChanges();
+
+        expect(read.observed).toBe(false);
+        expect(addNegativeKeywords).not.toHaveBeenCalled();
+        expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid^="reddit-keywords-unplaced-not-sent-"]')).toBeNull();
+        expect(q(`reddit-keyword-negative-not-sent-${A}`)).toBeNull();
+      });
+
+      // A newer write outcome for the keyword (here from the campaign's editor) supersedes the note.
+      it('clears the above-table note once the keyword is added from the editor', () => {
+        startAddThenChangeWindow(report({ keywords: [gitops(0)] }));
+        expect(q('reddit-keywords-unplaced-not-sent-tlf-t3-a-service-mesh')).not.toBeNull();
+
+        addNegativeKeywords.mockReturnValue(of(applied()));
+        TestBed.inject(CampaignNegativeKeywordsService).submit({
+          projectSlug: 'tlf',
+          briefId: 'brief-1',
+          campaignId: 'c-uuid-a',
+          campaignName: 'KubeCon EU',
+          platform: 'reddit-ads',
+          keywords: ['service mesh'],
+          matchType: 'Broad',
+          revision: 'rev-2',
+        });
+        fixture.detectChanges();
+
+        expect(q('reddit-keywords-unplaced-not-sent-tlf-t3-a-service-mesh')).toBeNull();
+      });
+
       it('shows the note on every row of one report that sends the same text for the campaign', () => {
         startAddThenChangeWindow(report({ keywords: [mesh(0), { ...mesh(1), keyword: 'service  mesh', key: 't3_a|service  mesh|1' }] }));
 

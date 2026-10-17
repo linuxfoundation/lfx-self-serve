@@ -515,6 +515,9 @@ export interface RedditKeywordNotSentNote {
   /** The keyword as it would have been sent. */
   keyword: string;
   campaignName: string;
+  /** The project and Reddit campaign the add was for: a note is never shown under another project. */
+  projectSlug: string;
+  redditCampaignId: string;
 }
 
 /** A not-sent note whose keyword is not in the report shown: listed above the table instead of on a row. */

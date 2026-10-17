@@ -18,6 +18,8 @@ import {
   REDDIT_KEYWORDS_WINDOW_OPTIONS,
 } from '@lfx-one/shared/constants';
 import type {
+  CampaignNegativeKeywordLastOutcome,
+  CampaignNegativeKeywordsRequestState,
   RedditKeywordDisplayRow,
   RedditKeywordNegativeTarget,
   RedditKeywordNotSentNote,
@@ -37,6 +39,7 @@ import {
   negativeKeywordUnconfirmedAdvice,
   redditKeywordNegativeAction,
   redditKeywordNoteKey,
+  redditKeywordNoteShowable,
   redditNegativeKeywordText,
 } from '@shared/utils/campaign-negative-keywords.utils';
 import { ConfirmationService } from 'primeng/api';
@@ -219,9 +222,11 @@ export class RedditKeywordsTableComponent {
         const text = redditNegativeKeywordText(row.keyword);
         const noteKey = text === null ? '' : redditKeywordNoteKey(projectSlug, row.campaignId, text);
         const unsent = noteKey !== '' && Object.hasOwn(notSent, noteKey) ? notSent[noteKey] : null;
-        const lastOutcome = text !== null && requests[key] && Object.hasOwn(requests[key].keywordOutcomes, text) ? requests[key].keywordOutcomes[text] : null;
-        // Without a target there is no outcome to supersede the note: it stands until a new read.
-        const notSentMessage = unsent !== null && unsent.read === readId && (target === null || unsent.lastOutcome === lastOutcome) ? unsent.message : '';
+        const notSentMessage =
+          unsent !== null &&
+          redditKeywordNoteShowable(unsent, { projectSlug, readId, lastOutcome: this.lastOutcomeFor(row.campaignId, unsent.keyword, requests) })
+            ? unsent.message
+            : '';
         return {
           ...row,
           campaignLabel: Object.hasOwn(names, row.campaignId) ? names[row.campaignId] : row.campaignId,
@@ -256,8 +261,13 @@ export class RedditKeywordsTableComponent {
           return text === null ? '' : redditKeywordNoteKey(projectSlug, row.campaignId, text);
         })
       );
+      const requests = this.negativeKeywordsService.requests();
       return Object.entries(this.notSent())
-        .filter(([key, note]) => note.read === readId && !placed.has(key))
+        .filter(
+          ([key, note]) =>
+            !placed.has(key) &&
+            redditKeywordNoteShowable(note, { projectSlug, readId, lastOutcome: this.lastOutcomeFor(note.redditCampaignId, note.keyword, requests) })
+        )
         .map(([key, note]) => ({ key, testIdKey: slugify(key), keyword: note.keyword, campaignName: note.campaignName, message: note.message }));
     });
   }
@@ -306,11 +316,11 @@ export class RedditKeywordsTableComponent {
     const { campaignId, campaignName } = target;
     const noteKey = redditKeywordNoteKey(projectSlug, row.campaignId, text);
     if (!this.stillTargets(projectSlug, briefId, row.campaignId, campaignId)) {
-      this.markNotSent(noteKey, target, text, REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE);
+      this.markNotSent(projectSlug, row.campaignId, target, text, REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE);
       return;
     }
     if (this.revisionReads()[campaignId] !== undefined || !this.negativeKeywordsService.reserve(projectSlug, campaignId)) {
-      this.markNotSent(noteKey, target, text, REDDIT_KEYWORD_NEGATIVE_SUPERSEDED_MESSAGE);
+      this.markNotSent(projectSlug, row.campaignId, target, text, REDDIT_KEYWORD_NEGATIVE_SUPERSEDED_MESSAGE);
       return;
     }
     this.revisionReads.update((reads) => ({ ...reads, [campaignId]: noteKey }));
@@ -327,7 +337,7 @@ export class RedditKeywordsTableComponent {
           this.revisionReads.update((reads) => omitKey(reads, campaignId));
           // Abandoned before it answered (the page left the scope): never silently.
           if (!answered && !this.destroyRef.destroyed) {
-            this.markNotSent(noteKey, target, text, REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE);
+            this.markNotSent(projectSlug, row.campaignId, target, text, REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE);
           }
         }),
         takeUntilDestroyed(this.destroyRef)
@@ -339,11 +349,11 @@ export class RedditKeywordsTableComponent {
           this.revisionReads.update((reads) => omitKey(reads, campaignId));
           const revision = typeof targeting?.revision === 'string' && targeting.revision !== '' ? targeting.revision : null;
           if (revision === null) {
-            this.markNotSent(noteKey, target, text, REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR);
+            this.markNotSent(projectSlug, row.campaignId, target, text, REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR);
             return;
           }
           if (!this.stillTargets(projectSlug, briefId, row.campaignId, campaignId)) {
-            this.markNotSent(noteKey, target, text, REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE);
+            this.markNotSent(projectSlug, row.campaignId, target, text, REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE);
             return;
           }
           const sent = this.negativeKeywordsService.submit({
@@ -357,13 +367,13 @@ export class RedditKeywordsTableComponent {
             revision,
           });
           if (!sent) {
-            this.markNotSent(noteKey, target, text, REDDIT_KEYWORD_NEGATIVE_SUPERSEDED_MESSAGE);
+            this.markNotSent(projectSlug, row.campaignId, target, text, REDDIT_KEYWORD_NEGATIVE_SUPERSEDED_MESSAGE);
           }
         },
         error: (err: unknown) => {
           answered = true;
           console.error('Failed to read the Reddit keyword targeting revision for an add-as-negative:', err);
-          this.markNotSent(noteKey, target, text, REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR);
+          this.markNotSent(projectSlug, row.campaignId, target, text, REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR);
         },
       });
   }
@@ -373,11 +383,24 @@ export class RedditKeywordsTableComponent {
    * note is recorded — not when the attempt started: a Refresh or window change clears the notes that
    * existed before it, but never hides a failure that arrives after it.
    */
-  private markNotSent(noteKey: string, target: RedditKeywordNegativeTarget, text: string, message: string): void {
+  private markNotSent(projectSlug: string, redditCampaignId: string, target: RedditKeywordNegativeTarget, text: string, message: string): void {
     const read = this.readId();
+    // The keyword's outcome on the add's own campaign, under the page's current (project, brief): the
+    // same request the showable check reads, so the two compare like for like.
     const request = this.negativeKeywordsService.requests()[campaignNegativeKeywordsKey(this.projectSlug(), this.briefId(), target.campaignId)];
     const lastOutcome = request && Object.hasOwn(request.keywordOutcomes, text) ? request.keywordOutcomes[text] : null;
-    this.notSent.update((all) => ({ ...all, [noteKey]: { read, lastOutcome, message, keyword: text, campaignName: target.campaignName } }));
+    this.notSent.update((all) => ({
+      ...all,
+      [redditKeywordNoteKey(projectSlug, redditCampaignId, text)]: {
+        read,
+        lastOutcome,
+        message,
+        keyword: text,
+        campaignName: target.campaignName,
+        projectSlug,
+        redditCampaignId,
+      },
+    }));
   }
 
   /**
@@ -391,6 +414,24 @@ export class RedditKeywordsTableComponent {
     }
     const targets = this.negativeTargets();
     return Object.hasOwn(targets, redditCampaignId) && targets[redditCampaignId].campaignId === campaignId;
+  }
+
+  /**
+   * A keyword's last write outcome on its campaign under the page's current (project, brief), `null`
+   * when it has none, or `undefined` when the campaign is no longer a target here (nothing can then
+   * supersede a note).
+   */
+  private lastOutcomeFor(
+    redditCampaignId: string,
+    text: string,
+    requests: Record<string, CampaignNegativeKeywordsRequestState>
+  ): CampaignNegativeKeywordLastOutcome | null | undefined {
+    const target = this.targetFor(redditCampaignId);
+    if (target === null) {
+      return undefined;
+    }
+    const request = requests[campaignNegativeKeywordsKey(this.projectSlug(), this.briefId(), target.campaignId)];
+    return request && Object.hasOwn(request.keywordOutcomes, text) ? request.keywordOutcomes[text] : null;
   }
 
   /** The brief campaign a row's add would write to, or `null`: none without a brief, nor for a campaign not offered. */
