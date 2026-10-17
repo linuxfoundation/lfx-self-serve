@@ -6,7 +6,6 @@ import {
   FOUNDATION_MESSAGE_DOCUMENT_TITLE_MAX_CHARS,
   FOUNDATION_MESSAGE_FILE_NAME_HEADER,
   FOUNDATION_MESSAGE_FILE_UPLOAD_CONTENT_TYPE,
-  FOUNDATION_MESSAGE_NO_SOURCE_ERROR,
   FOUNDATION_MESSAGE_READ_REASONS,
   MKTG_AGENTS,
   MKTG_ARTIFACT_PARTITION_REGEX,
@@ -33,15 +32,11 @@ import {
   MktgDocumentExtractResponse,
   MktgHistoryRequest,
   MktgHistoryResponse,
-  MktgIntakeDocument,
   MktgReadText,
   MktgRunAnswer,
 } from '@lfx-one/shared/interfaces';
 import {
-  buildFoundationMessageFormPayload,
   countFoundationMessageWords,
-  hasFoundationMessageSource,
-  toFoundationMessageFormDocument,
   validateBrandKitIntakeAnswers,
   validateFoundationMessageAnswers,
   validateFoundationMessageDocuments,
@@ -461,14 +456,6 @@ export class MktgAgentsController {
       fail('feedback', 'A generate is always a fresh draft of the Messaging Framework; it takes no feedback or prior version.');
       return;
     }
-    // The agent's own minimum to start a draft: something to read. Checked
-    // on the typed form the service will render, so the gate and the
-    // rendering can never disagree about what counts as a source.
-    const submittedDocuments = ((documents ?? []) as MktgIntakeDocument[]).map((document) => toFoundationMessageFormDocument(document));
-    if (!hasFoundationMessageSource(buildFoundationMessageFormPayload(answers as Record<string, string>, { documents: submittedDocuments }))) {
-      fail('answers', FOUNDATION_MESSAGE_NO_SOURCE_ERROR);
-      return;
-    }
     // The project uid goes to the agent as data (its LFX lookups), never as
     // the storage partition — that is the result endpoint's, resolved
     // server-side. Shape-gated all the same so a crafted value never rides
@@ -596,8 +583,8 @@ export class MktgAgentsController {
 
   /**
    * POST /api/mktg-agents/foundation-message/documents/file
-   * Reads one uploaded document (PDF, Word .docx, Markdown or text;
-   * raw `application/octet-stream` body, at most 20 MB) to text and returns
+   * Reads one uploaded document (PDF, Word .docx, PowerPoint .pptx, Markdown
+   * or text; raw `application/octet-stream` body, at most 20 MB) to text and returns
    * it, so the form can show what was read and submit the text with the run.
    * The file name travels URI-encoded in the `X-File-Name` header — never the
    * URL, which the request logger writes — and is logged by extension only.

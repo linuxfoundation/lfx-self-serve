@@ -13,8 +13,6 @@ import { MarkdownRendererComponent } from '@components/markdown-renderer/markdow
 import { MessageComponent } from '@components/message/message.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import {
-  FOUNDATION_MESSAGE_LOGO_DOCUMENT_KIND,
-  FOUNDATION_MESSAGE_NO_SOURCE_ERROR,
   MKTG_AGENT_INTAKES,
   MKTG_AGENTS,
   MKTG_DOCUMENT_STATUS_REVIEWED_PREFIX,
@@ -51,7 +49,7 @@ import {
   ProjectContext,
   User,
 } from '@lfx-one/shared/interfaces';
-import { findMktgDocumentStatus, foundationMessageSourceUrl, mktgAgentDocumentName } from '@lfx-one/shared/utils';
+import { findMktgDocumentStatus, mktgAgentDocumentName } from '@lfx-one/shared/utils';
 import { githubRepoUrlValidator, sourceUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 import { MessageService } from 'primeng/api';
 import type { FileSelectEvent } from 'primeng/fileupload';
@@ -253,17 +251,8 @@ export class MktgAgentRunComponent {
   protected readonly showVersionChips = computed(() => this.versions().length > 1 && this.phase() !== 'running');
   protected readonly feedbackNote = computed(() => (this.currentVersion()?.feedback ?? '').slice(0, 120));
   protected readonly submitDisabled = computed(
-    () => !this.intakeValid() || this.phase() === 'running' || this.documentsBusy() || !this.dependenciesSatisfied() || !this.sourceGiven()
+    () => !this.intakeValid() || this.phase() === 'running' || this.documentsBusy() || !this.dependenciesSatisfied()
   );
-  /**
-   * Whether the form carries something for the agent to read, for intakes
-   * that require a source (`requiresSource`): a `source-url` field with a
-   * link (not "none"), a `source-url-list` field with at least one line, or
-   * a document that is not a logo package. Always true for other intakes.
-   */
-  protected readonly sourceGiven: Signal<boolean> = this.initSourceGiven();
-  /** The note under the form while a source is still missing; '' otherwise. */
-  protected readonly sourceNote = computed(() => (this.sourceGiven() ? '' : FOUNDATION_MESSAGE_NO_SOURCE_ERROR));
   /** True when the run is shown on the intake's asset view (every phase but the form). */
   protected readonly assetViewActive = computed(() => !!this.intake?.assetView && this.phase() !== 'form');
   /** The asset of the version on screen, for the asset view. */
@@ -294,10 +283,8 @@ export class MktgAgentRunComponent {
   });
   /** The `accept` attribute of a field's own upload: the documents section's readable types. */
   protected readonly uploadAccept: string = (this.intake?.documents?.fileExtensions ?? []).join(',');
-  /** What the asterisk means beside the submit button: on a sources form, that everything else is optional. */
-  protected readonly requiredNote: string = this.intake?.requiresSource
-    ? '* required — everything else is optional'
-    : '* required — answers are open-ended, in your own words';
+  /** What the asterisk means beside the submit button: the intake's own note, or the default for a question-style form. */
+  protected readonly requiredNote: string = this.intake?.requiredNote ?? '* required — answers are open-ended, in your own words';
   /** The questions the agent is waiting on, for the stepper. */
   protected readonly pendingQuestions = computed(() => this.questionsPending()?.questions ?? []);
   /** The feed's header line. */
@@ -776,26 +763,6 @@ export class MktgAgentRunComponent {
       footnote: group.footnote ?? '',
       fields: group.fieldKeys.map((key) => this.intake?.fields.find((field) => field.key === key)).filter((field): field is MktgIntakeField => !!field),
     }));
-  }
-
-  private initSourceGiven(): Signal<boolean> {
-    return computed(() => {
-      if (!this.intake?.requiresSource) {
-        return true;
-      }
-      // Depend on the form's value so this follows every keystroke.
-      this.intakeValue();
-      for (const field of this.intake.fields) {
-        const value = this.intakeForm.controls[field.key]?.value ?? '';
-        if (field.format === 'source-url' && foundationMessageSourceUrl(value) !== null) {
-          return true;
-        }
-        if (field.format === 'source-url-list' && value.trim() !== '') {
-          return true;
-        }
-      }
-      return this.documents().some((document) => document.tag !== FOUNDATION_MESSAGE_LOGO_DOCUMENT_KIND);
-    });
   }
 
   private initAskedRows(): Signal<MktgRunAnsweredQuestionRow[]> {

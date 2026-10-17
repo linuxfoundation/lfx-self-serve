@@ -209,4 +209,65 @@ describe('MktgFrameworkViewComponent', () => {
     expect(query('mktg-framework-view-findings')?.textContent).toContain('nums has 2 numbers');
     expect(query('mktg-framework-view-tab-sources')?.getAttribute('aria-selected')).toBe('true');
   });
+
+  it('moves between the tabs with the arrow keys, Home and End, wrapping round, and focuses the tab it lands on', async () => {
+    host.asset.set(ASSET);
+    host.state.set('ready');
+    await fixture.whenStable();
+    const tablist = query('mktg-framework-view-tabs') as HTMLElement;
+    const press = async (key: string): Promise<void> => {
+      tablist.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+      await fixture.whenStable();
+    };
+    const selected = (): string | null => element().querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.id ?? null;
+
+    // Only the selected tab is in the tab order; the keys move the selection along.
+    expect(query('mktg-framework-view-tab-framework')?.getAttribute('tabindex')).toBe('0');
+    expect(query('mktg-framework-view-tab-icps')?.getAttribute('tabindex')).toBe('-1');
+
+    await press('ArrowRight');
+    expect(selected()).toBe('mktg-framework-tab-icps');
+    expect(query('mktg-framework-view-panel-icps')).not.toBeNull();
+    expect(document.activeElement?.id).toBe('mktg-framework-tab-icps');
+    expect(query('mktg-framework-view-tab-icps')?.getAttribute('tabindex')).toBe('0');
+
+    await press('End');
+    expect(selected()).toBe('mktg-framework-tab-sources');
+    await press('ArrowRight');
+    expect(selected()).toBe('mktg-framework-tab-framework');
+    await press('ArrowLeft');
+    expect(selected()).toBe('mktg-framework-tab-sources');
+    await press('Home');
+    expect(selected()).toBe('mktg-framework-tab-framework');
+    expect(document.activeElement?.id).toBe('mktg-framework-tab-framework');
+
+    // Any other key is left alone.
+    await press('Enter');
+    expect(selected()).toBe('mktg-framework-tab-framework');
+  });
+
+  it('says so under each empty part: nothing to avoid, nothing read, no failed source, no gap, nothing to check', async () => {
+    host.asset.set({
+      ...ASSET,
+      content: { ...ASSET.content, mf: { ...ASSET.content.mf, avoid: [] } },
+      report: { sources_read: [], sources_failed: [], gaps: [], notes: '' },
+      checks: { findings: [] },
+    });
+    host.state.set('ready');
+    await fixture.whenStable();
+
+    expect(query('mktg-framework-view-avoid-empty')?.textContent).toContain('Nothing to avoid was stated.');
+    expect(query('mktg-framework-view-avoid')).toBeNull();
+
+    await tab('sources');
+    expect(query('mktg-framework-view-sources-read')).toBeNull();
+    expect(query('mktg-framework-view-sources-read-empty')?.textContent).toContain('Nothing was read.');
+    expect(query('mktg-framework-view-sources-failed')).toBeNull();
+    expect(query('mktg-framework-view-sources-failed-empty')?.textContent).toContain('Every source was read.');
+    expect(query('mktg-framework-view-gaps')).toBeNull();
+    expect(query('mktg-framework-view-gaps-empty')?.textContent).toContain('The sources left no gap.');
+    expect(query('mktg-framework-view-report-notes')).toBeNull();
+    expect(query('mktg-framework-view-findings')).toBeNull();
+    expect(query('mktg-framework-view-checks-empty')?.textContent).toContain('Nothing to check.');
+  });
 });

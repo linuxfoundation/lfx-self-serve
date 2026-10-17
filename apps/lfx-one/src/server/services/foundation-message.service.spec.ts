@@ -113,6 +113,7 @@ import type { Request } from 'express';
 import { FOUNDATION_MESSAGE_ANCHOR_QUESTIONS } from '@lfx-one/shared/constants';
 
 import { FoundationMessageService } from './foundation-message.service';
+import { logger } from './logger.service';
 
 const req = { path: '/api/mktg-agents/foundation-message/generate' } as unknown as Request;
 
@@ -342,6 +343,28 @@ describe('FoundationMessageService.startGeneration', () => {
     );
     // An untagged document is a plain document to the agent.
     expect(message).toContain('--- DOCUMENT 3: notes.md ---\nKIND: doc (document)\n');
+  });
+
+  it('logs the documents the agent gets — the press release, deck and plan link fields included — not the form documents alone', async () => {
+    await service.startGeneration(
+      req,
+      {
+        project_name: 'TestOrbit',
+        website_url: 'https://testorbit.example.org',
+        press_release_url: 'https://press.example.org/testorbit',
+        deck_url: 'https://docs.google.com/presentation/d/x',
+      },
+      [{ kind: 'file', title: 'plan.pdf', text: 'Plan text.', tag: 'plan' }],
+      undefined,
+      'foundation-message'
+    );
+
+    expect(logger.info).toHaveBeenCalledWith(
+      req,
+      'foundation_message_generate',
+      'Composed the Messaging Framework intake',
+      expect.objectContaining({ has_website: true, links: 0, documents: 3, documents_read: 1, document_kinds: ['press', 'deck', 'plan'] })
+    );
   });
 
   it('submits the typed form as the structured agent_input when GUILD_STRUCTURED_AGENT_INPUT=true', async () => {

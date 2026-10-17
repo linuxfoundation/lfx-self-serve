@@ -768,13 +768,13 @@ describe('MktgAgentRunComponent', () => {
       }
     });
 
-    it('requires the project name and the website — a real page, never "none" — and says so before the button; the website alone is a source', async () => {
+    it('requires the project name and the website — a real page, never "none" — and says beside the button that the rest is optional', async () => {
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
       // The project name is prefilled; the website is the one field left to give.
       expect(component['intakeForm'].valid).toBe(false);
       expect(component['submitDisabled']()).toBe(true);
-      expect(query('mktg-agent-run-source-note')?.textContent).toContain('at least one source');
+      expect(query('mktg-agent-run-submit-button')?.parentElement?.textContent).toContain('* required — everything else is optional');
       component['onSubmit']();
       expect(generate).not.toHaveBeenCalled();
 
@@ -783,12 +783,17 @@ describe('MktgAgentRunComponent', () => {
       expect(fieldError('website_url')?.textContent).toContain('https://');
       expect(component['submitDisabled']()).toBe(true);
 
+      // A deck alone does not open the button: the website is the one gate, as the BFF's validator holds it.
+      component['intakeForm'].controls['website_url'].setValue('');
+      component['intakeForm'].controls['deck_url'].setValue('https://docs.google.com/presentation/d/x');
+      await fixture.whenStable();
+      expect(component['submitDisabled']()).toBe(true);
+
       giveSource();
       await fixture.whenStable();
       expect(fieldError('website_url')).toBeNull();
       expect(component['intakeForm'].valid).toBe(true);
       expect(component['submitDisabled']()).toBe(false);
-      expect(query('mktg-agent-run-source-note')).toBeNull();
 
       component['intakeForm'].controls['project_name'].setValue('');
       expect(component['submitDisabled']()).toBe(true);

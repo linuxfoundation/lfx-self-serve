@@ -101,13 +101,16 @@ export class FoundationMessageService {
     const formDocuments = documents.map((document) => toFoundationMessageFormDocument(document));
     const payload = buildFoundationMessageFormPayload(answers, { documents: formDocuments, projectUid });
 
+    // Counted on the composed payload, not the form's documents alone: the
+    // press release, deck and plan link fields are documents to the agent too.
+    const composedDocuments = payload.documents ?? [];
     logger.info(req, 'foundation_message_generate', 'Composed the Messaging Framework intake', {
       has_website: !!payload.website_url,
       links: payload.links?.length ?? 0,
       has_notes: !!payload.notes,
-      documents: formDocuments.length,
-      documents_read: formDocuments.filter((document) => document.text !== undefined).length,
-      document_kinds: formDocuments.map((document) => document.kind),
+      documents: composedDocuments.length,
+      documents_read: composedDocuments.filter((document) => document.text !== undefined).length,
+      document_kinds: composedDocuments.map((document) => document.kind),
       has_project: !!projectUid,
     });
 

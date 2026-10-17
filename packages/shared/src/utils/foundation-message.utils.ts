@@ -36,7 +36,6 @@ import {
   FOUNDATION_MESSAGE_ISO_TIMESTAMP_REGEX,
   FOUNDATION_MESSAGE_KIND,
   FOUNDATION_MESSAGE_LINKS_KEY,
-  FOUNDATION_MESSAGE_LOGO_DOCUMENT_KIND,
   FOUNDATION_MESSAGE_MAX_COMMENTS,
   FOUNDATION_MESSAGE_MAX_DOCUMENTS,
   FOUNDATION_MESSAGE_MAX_OTHER_LINKS,
@@ -136,9 +135,23 @@ export function validateFoundationMessageIntakeAnswers(answers: unknown): Founda
     errors.push(`answers.${FOUNDATION_MESSAGE_DESCRIPTION_KEY} must be one line when provided`);
   }
 
+  // The website is the form's one required source (hand test, 17 Oct): a
+  // real page, never blank or "none". The agent itself would start from any
+  // source, but the guided form starts from the site, so the BFF holds the
+  // same line as the form's own validator.
+  const website = record[FOUNDATION_MESSAGE_WEBSITE_KEY];
+  const websiteUrl = typeof website === 'string' ? foundationMessageSourceUrl(website) : null;
+  if (website !== undefined && typeof website !== 'string') {
+    errors.push(`answers.${FOUNDATION_MESSAGE_WEBSITE_KEY} must be a string`);
+  } else if (websiteUrl === null) {
+    errors.push(`answers.${FOUNDATION_MESSAGE_WEBSITE_KEY} is required: the project's website, an http(s) URL`);
+  } else if (!FOUNDATION_MESSAGE_HTTP_URL_REGEX.test(websiteUrl)) {
+    errors.push(`answers.${FOUNDATION_MESSAGE_WEBSITE_KEY} must be an http(s) URL`);
+  }
+
   for (const key of FOUNDATION_MESSAGE_SOURCE_URL_KEYS) {
     const answer = record[key];
-    if (answer === undefined) {
+    if (answer === undefined || key === FOUNDATION_MESSAGE_WEBSITE_KEY) {
       continue;
     }
     if (typeof answer !== 'string') {
@@ -246,19 +259,6 @@ export function toFoundationMessageFormDocument(document: MktgIntakeDocument): F
   const title = document.title.trim();
   const kind = (DOCUMENT_KINDS.has(document.tag ?? '') ? document.tag : 'doc') as FoundationMessageDocumentKind;
   return document.kind === 'file' ? { title, kind, text: document.text ?? '' } : { title, kind, url: (document.url ?? '').trim() };
-}
-
-/**
- * Whether a form carries at least one source the agent can read: the
- * website, a link, or a document that is not a logo package (the input
- * contract's minimum to start a draft).
- */
-export function hasFoundationMessageSource(payload: Pick<FoundationMessageFormPayload, 'website_url' | 'links' | 'documents'>): boolean {
-  return (
-    payload.website_url !== undefined ||
-    (payload.links?.length ?? 0) > 0 ||
-    (payload.documents ?? []).some((document) => document.kind !== FOUNDATION_MESSAGE_LOGO_DOCUMENT_KIND)
-  );
 }
 
 // ---------------------------------------------------------------------------

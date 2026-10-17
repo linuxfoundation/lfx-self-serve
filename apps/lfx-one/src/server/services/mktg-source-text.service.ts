@@ -12,9 +12,10 @@ import { logger } from './logger.service';
 
 /**
  * Reads the files a Marketing OS agent needs to text, because the agents
- * cannot open files themselves: the Messaging Document's uploaded existing
- * documents (PDF, Word, Markdown, text). Links are not read here — the
- * Messaging Document agent fetches its own sources and document links.
+ * cannot open files themselves: the Messaging Framework's uploaded documents
+ * (PDF, Word .docx, PowerPoint .pptx, Markdown, text). Links are not read
+ * here — the Messaging Framework agent fetches its own sources and document
+ * links.
  * Never throws: whatever cannot be read comes back with its reason, and the
  * form tells the requester.
  *

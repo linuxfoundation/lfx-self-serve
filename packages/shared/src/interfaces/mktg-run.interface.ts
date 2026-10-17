@@ -851,12 +851,11 @@ export interface MktgAgentIntake {
    */
   assetView?: MktgAssetViewKind;
   /**
-   * A submission needs at least one source to read: a non-empty `source-url`
-   * or `source-url-list` field, or a document whose tag is not the logo
-   * package. The form says so and keeps the submit button disabled until one
-   * is given.
+   * What the asterisk beside the submit button means, when the run page's
+   * default ("answers are open-ended, in your own words") does not fit the
+   * form — a sources form says that everything else is optional.
    */
-  requiresSource?: boolean;
+  requiredNote?: string;
 }
 
 /** One generated document version for an agent run. */

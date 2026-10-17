@@ -17,7 +17,6 @@ import {
   foundationMessageIcpViews,
   foundationMessageQuestionLabel,
   foundationMessageQuestionsId,
-  hasFoundationMessageSource,
   isFoundationMessageAnswerSubstantive,
   readFoundationMessageContent,
   readFoundationMessageQuestions,
@@ -371,8 +370,14 @@ function buildEnvelope(overrides: Record<string, unknown> = {}): FoundationMessa
 }
 
 describe('validateFoundationMessageIntakeAnswers', () => {
-  it('accepts the project name alone, and every optional field when given well', () => {
-    expect(validateFoundationMessageIntakeAnswers({ project_name: 'Example Search' })).toEqual({ valid: true, errors: [] });
+  /** The two required answers; every test below adds to them. */
+  const required = (): Record<string, unknown> => ({ project_name: 'X', website_url: 'https://search.example.org' });
+
+  it('accepts the project name and the website alone, and every optional field when given well', () => {
+    expect(validateFoundationMessageIntakeAnswers({ project_name: 'Example Search', website_url: 'https://search.example.org' })).toEqual({
+      valid: true,
+      errors: [],
+    });
     expect(
       validateFoundationMessageIntakeAnswers({
         project_name: 'Example Search',
@@ -388,41 +393,56 @@ describe('validateFoundationMessageIntakeAnswers', () => {
         notes: 'Audience: platform teams.',
       })
     ).toEqual({ valid: true, errors: [] });
-    expect(validateFoundationMessageIntakeAnswers({ project_name: 'Example Search', website_url: 'none' }).valid).toBe(true);
   });
 
-  it('holds every single-link field to the same rule: blank, "none" or an http(s) URL', () => {
-    expect(validateFoundationMessageIntakeAnswers({ project_name: 'X', press_release_url: 'press.example.org' }).errors).toEqual([
+  it('requires the website — the form’s one required source — as a real page: blank and "none" are refused, as is a bad URL', () => {
+    const websiteRequired = "answers.website_url is required: the project's website, an http(s) URL";
+    expect(validateFoundationMessageIntakeAnswers({ project_name: 'Example Search' }).errors).toEqual([websiteRequired]);
+    expect(validateFoundationMessageIntakeAnswers({ project_name: 'Example Search', website_url: '' }).errors).toEqual([websiteRequired]);
+    expect(validateFoundationMessageIntakeAnswers({ project_name: 'Example Search', website_url: 'none' }).errors).toEqual([websiteRequired]);
+    expect(validateFoundationMessageIntakeAnswers({ project_name: 'X', website_url: 'search.example.org' }).errors).toEqual([
+      'answers.website_url must be an http(s) URL',
+    ]);
+    expect(validateFoundationMessageIntakeAnswers({ project_name: 'X', website_url: 42 }).errors).toEqual(['answers.website_url must be a string']);
+    // A deck or a link does not stand in for it: the form holds the same line.
+    expect(validateFoundationMessageIntakeAnswers({ project_name: 'X', deck_url: 'https://docs.google.com/presentation/d/x' }).errors).toEqual([
+      websiteRequired,
+    ]);
+    expect(validateFoundationMessageIntakeAnswers({ project_name: 'X', links: 'https://blog.example.org/a' }).errors).toEqual([websiteRequired]);
+  });
+
+  it('holds every optional single-link field to the same rule: blank, "none" or an http(s) URL', () => {
+    expect(validateFoundationMessageIntakeAnswers({ ...required(), press_release_url: 'press.example.org' }).errors).toEqual([
       'answers.press_release_url must be an http(s) URL or "none"',
     ]);
-    expect(validateFoundationMessageIntakeAnswers({ project_name: 'X', deck_url: 42 }).errors).toEqual(['answers.deck_url must be a string when provided']);
-    expect(validateFoundationMessageIntakeAnswers({ project_name: 'X', brand_page_url: 'https://search.example.org/brand' }).valid).toBe(true);
+    expect(validateFoundationMessageIntakeAnswers({ ...required(), deck_url: 42 }).errors).toEqual(['answers.deck_url must be a string when provided']);
+    expect(validateFoundationMessageIntakeAnswers({ ...required(), brand_page_url: 'https://search.example.org/brand' }).valid).toBe(true);
   });
 
-  it('refuses a missing or multi-line project name, a bad website, a bad link line, and unknown keys', () => {
-    expect(validateFoundationMessageIntakeAnswers({}).errors).toEqual(['answers.project_name is required and must be one line']);
-    expect(validateFoundationMessageIntakeAnswers({ project_name: 'Two\nlines' }).valid).toBe(false);
-    expect(validateFoundationMessageIntakeAnswers({ project_name: 'X', website_url: 'search.example.org' }).errors).toEqual([
-      'answers.website_url must be an http(s) URL or "none"',
+  it('refuses a missing or multi-line project name, a bad link line, and unknown keys', () => {
+    expect(validateFoundationMessageIntakeAnswers({}).errors).toEqual([
+      'answers.project_name is required and must be one line',
+      "answers.website_url is required: the project's website, an http(s) URL",
     ]);
-    expect(validateFoundationMessageIntakeAnswers({ project_name: 'X', links: 'https://a.example.org\nnot a link' }).errors).toEqual([
+    expect(validateFoundationMessageIntakeAnswers({ ...required(), project_name: 'Two\nlines' }).valid).toBe(false);
+    expect(validateFoundationMessageIntakeAnswers({ ...required(), links: 'https://a.example.org\nnot a link' }).errors).toEqual([
       'answers.links must be http(s) URLs, one per line',
     ]);
     // The agent takes 20 links; three of them are the page fields, so the other links stop at 17.
     expect(
-      validateFoundationMessageIntakeAnswers({ project_name: 'X', links: Array.from({ length: 18 }, (_, i) => `https://a.example.org/${i}`).join('\n') }).errors
+      validateFoundationMessageIntakeAnswers({ ...required(), links: Array.from({ length: 18 }, (_, i) => `https://a.example.org/${i}`).join('\n') }).errors
     ).toEqual(['answers.links takes at most 17 links']);
     expect(
-      validateFoundationMessageIntakeAnswers({ project_name: 'X', links: Array.from({ length: 17 }, (_, i) => `https://a.example.org/${i}`).join('\n') }).valid
+      validateFoundationMessageIntakeAnswers({ ...required(), links: Array.from({ length: 17 }, (_, i) => `https://a.example.org/${i}`).join('\n') }).valid
     ).toBe(true);
-    expect(validateFoundationMessageIntakeAnswers({ project_name: 'X', github_url: 'https://github.com/x' }).errors).toEqual([
+    expect(validateFoundationMessageIntakeAnswers({ ...required(), github_url: 'https://github.com/x' }).errors).toEqual([
       'answers.github_url is not an intake field key',
     ]);
-    expect(validateFoundationMessageIntakeAnswers({ project_name: 'X', description: 'a\nb' }).valid).toBe(false);
+    expect(validateFoundationMessageIntakeAnswers({ ...required(), description: 'a\nb' }).valid).toBe(false);
   });
 });
 
-describe('validateFoundationMessageDocuments and the source rule', () => {
+describe('validateFoundationMessageDocuments', () => {
   it('takes tagged links and files, and refuses an untagged, mis-tagged or malformed document', () => {
     expect(
       validateFoundationMessageDocuments([
@@ -454,14 +474,6 @@ describe('validateFoundationMessageDocuments and the source rule', () => {
       text: 'Deck',
     });
     expect(toFoundationMessageFormDocument({ kind: 'file', title: 'x.txt', text: 'X' })).toEqual({ title: 'x.txt', kind: 'doc', text: 'X' });
-  });
-
-  it('needs at least one source to draft: the website, a link, or a document that is not a logo package', () => {
-    expect(hasFoundationMessageSource({})).toBe(false);
-    expect(hasFoundationMessageSource({ website_url: 'https://search.example.org' })).toBe(true);
-    expect(hasFoundationMessageSource({ links: ['https://blog.example.org'] })).toBe(true);
-    expect(hasFoundationMessageSource({ documents: [{ kind: 'logo', url: 'https://search.example.org/logo.zip' }] })).toBe(false);
-    expect(hasFoundationMessageSource({ documents: [{ kind: 'deck', text: 'Deck' }] })).toBe(true);
   });
 });
 
@@ -509,10 +521,6 @@ describe('buildFoundationMessageFormPayload', () => {
       { title: 'Marketing or strategy plan', kind: 'plan', url: 'https://docs.google.com/document/d/plan' },
       { title: 'deck.pdf', kind: 'deck', text: 'Deck' },
     ]);
-    expect(hasFoundationMessageSource(buildFoundationMessageFormPayload({ project_name: 'X', press_release_url: 'https://press.example.org/x' }))).toBe(true);
-    expect(hasFoundationMessageSource(buildFoundationMessageFormPayload({ project_name: 'X', members_page_url: 'https://search.example.org/members' }))).toBe(
-      true
-    );
   });
 
   it('carries a revision through when one is given', () => {

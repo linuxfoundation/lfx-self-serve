@@ -279,7 +279,7 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
     tags: FOUNDATION_MESSAGE_DOCUMENT_KIND_OPTIONS.map((option) => ({ value: option.value, label: option.label })),
     defaultTag: FOUNDATION_MESSAGE_DEFAULT_DOCUMENT_KIND,
   },
-  requiresSource: true,
+  requiredNote: '* required — everything else is optional',
   freshRunPerSubmission: true,
   liveActivity: true,
   submitsProject: true,

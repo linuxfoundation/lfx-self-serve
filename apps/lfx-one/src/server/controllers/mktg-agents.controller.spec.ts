@@ -481,29 +481,33 @@ describe('MktgAgentsController', () => {
       expect(foundationMessageMocks.startGeneration).not.toHaveBeenCalled();
     });
 
-    it('needs at least one source to read — a logo package alone does not count', async () => {
+    it('needs the website — the form’s one required source; a deck or a link without it is refused, as on the form', async () => {
       foundationMessageMocks.startGeneration.mockResolvedValue('sess-1');
       tokenMocks.createSessionOwnerToken.mockReturnValue('owner-token');
-      const logo = [{ kind: 'link', title: 'Logo', url: 'https://testorbit.example.org/logo.zip', tag: 'logo' }];
+      const deck = [{ kind: 'file', title: 'deck.pdf', text: 'Deck.', tag: 'deck' }];
 
       await controller.generateFoundationMessage(generateReq({ answers: { project_name: 'TestOrbit', notes: 'Platform teams.' } }), buildRes(), next);
-      await controller.generateFoundationMessage(generateReq({ answers: { project_name: 'TestOrbit' }, documents: logo }), buildRes(), next);
-      expect(next.mock.calls.map(([error]) => error instanceof ServiceValidationError)).toEqual([true, true]);
-      expect(JSON.stringify((next.mock.calls[0][0] as ServiceValidationError).validationErrors)).toContain('at least one source');
-      expect(foundationMessageMocks.startGeneration).not.toHaveBeenCalled();
-
-      // A deck is a source; so is the website alone.
       await controller.generateFoundationMessage(
-        generateReq({ answers: { project_name: 'TestOrbit' }, documents: [{ kind: 'file', title: 'deck.pdf', text: 'Deck.', tag: 'deck' }] }),
+        generateReq({ answers: { project_name: 'TestOrbit', website_url: 'none' }, documents: deck }),
         buildRes(),
         next
       );
+      await controller.generateFoundationMessage(
+        generateReq({ answers: { project_name: 'TestOrbit', links: 'https://blog.example.org/launch' } }),
+        buildRes(),
+        next
+      );
+      expect(next.mock.calls.map(([error]) => error instanceof ServiceValidationError)).toEqual([true, true, true]);
+      expect(JSON.stringify((next.mock.calls[0][0] as ServiceValidationError).validationErrors)).toContain('website_url is required');
+      expect(foundationMessageMocks.startGeneration).not.toHaveBeenCalled();
+
+      // The website alone starts a draft.
       await controller.generateFoundationMessage(
         generateReq({ answers: { project_name: 'TestOrbit', website_url: 'https://testorbit.example.org' } }),
         buildRes(),
         next
       );
-      expect(foundationMessageMocks.startGeneration).toHaveBeenCalledTimes(2);
+      expect(foundationMessageMocks.startGeneration).toHaveBeenCalledTimes(1);
     });
 
     it('refuses feedback or a prior version — a generate is always a fresh draft', async () => {

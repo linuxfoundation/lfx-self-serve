@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgClass } from '@angular/common';
-import { Component, computed, input, Signal, signal } from '@angular/core';
+import { isPlatformBrowser, NgClass } from '@angular/common';
+import { Component, computed, inject, input, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { FOUNDATION_MESSAGE_MODE_LABELS, FOUNDATION_MESSAGE_VIEW_TABS } from '@lfx-one/shared/constants';
 import {
   FoundationMessageAudienceRow,
@@ -39,6 +39,8 @@ import {
   templateUrl: './mktg-framework-view.component.html',
 })
 export class MktgFrameworkViewComponent {
+  private readonly platformId = inject(PLATFORM_ID);
+
   // === Inputs ===
   /** The project the framework is for. */
   public readonly projectName = input.required<string>();
@@ -115,6 +117,38 @@ export class MktgFrameworkViewComponent {
   // === Protected methods ===
   protected onSelectTab(id: FoundationMessageViewTab): void {
     this.selectedTab.set(id);
+  }
+
+  /**
+   * Keyboard tabs: only the selected tab is in the tab order (roving
+   * tabindex), so the arrow keys, Home and End move the selection and the
+   * focus along the tablist. Other keys pass through.
+   */
+  protected onTabKeydown(event: KeyboardEvent): void {
+    const tabs = this.tabs();
+    const current = tabs.findIndex((tab) => tab.selected);
+    let next = current;
+    switch (event.key) {
+      case 'ArrowRight':
+        next = (current + 1) % tabs.length;
+        break;
+      case 'ArrowLeft':
+        next = (current - 1 + tabs.length) % tabs.length;
+        break;
+      case 'Home':
+        next = 0;
+        break;
+      case 'End':
+        next = tabs.length - 1;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    this.selectedTab.set(tabs[next].id);
+    if (isPlatformBrowser(this.platformId)) {
+      document.getElementById(tabs[next].tabId)?.focus();
+    }
   }
 
   // === Private initializers ===

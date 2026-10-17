@@ -165,10 +165,6 @@ export const FOUNDATION_MESSAGE_DEFAULT_DOCUMENT_KIND = 'doc';
 /** The document kind this agent ignores: a logo package is never a source. */
 export const FOUNDATION_MESSAGE_LOGO_DOCUMENT_KIND = 'logo';
 
-/** What the form says when a draft has nothing to read. */
-export const FOUNDATION_MESSAGE_NO_SOURCE_ERROR =
-  'Give the agent at least one source to read: the website, a link, or a document (a logo package does not count).';
-
 /** Most comments one redraft takes (the agent's own cap). */
 export const FOUNDATION_MESSAGE_MAX_COMMENTS = 30;
 

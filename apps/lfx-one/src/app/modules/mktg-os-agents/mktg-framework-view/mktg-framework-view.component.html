@@ -25,7 +25,7 @@
   </div>
 
   <!-- Tabs: one per part of the bundle; disabled until the framework exists -->
-  <div class="border-b border-gray-200" role="tablist" aria-label="Messaging framework" data-testid="mktg-framework-view-tabs">
+  <div class="border-b border-gray-200" role="tablist" aria-label="Messaging framework" data-testid="mktg-framework-view-tabs" (keydown)="onTabKeydown($event)">
     <div class="flex flex-wrap gap-x-1">
       @for (tab of tabs(); track tab.id) {
         <button
@@ -157,7 +157,7 @@
                   </tbody>
                 </table>
               } @else {
-                <p class="text-xs text-gray-500">Nothing to avoid was stated.</p>
+                <p class="text-xs text-gray-500" data-testid="mktg-framework-view-avoid-empty">Nothing to avoid was stated.</p>
               }
             </div>
           </div>
@@ -336,7 +336,7 @@
                 }
               </ul>
             } @else {
-              <p class="text-xs text-gray-500">Nothing was read.</p>
+              <p class="text-xs text-gray-500" data-testid="mktg-framework-view-sources-read-empty">Nothing was read.</p>
             }
           </div>
           <div class="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-2">
@@ -351,7 +351,7 @@
                 }
               </ul>
             } @else {
-              <p class="text-xs text-gray-500">Every source was read.</p>
+              <p class="text-xs text-gray-500" data-testid="mktg-framework-view-sources-failed-empty">Every source was read.</p>
             }
           </div>
           <div class="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-2">
@@ -363,7 +363,7 @@
                 }
               </ul>
             } @else {
-              <p class="text-xs text-gray-500">The sources left no gap.</p>
+              <p class="text-xs text-gray-500" data-testid="mktg-framework-view-gaps-empty">The sources left no gap.</p>
             }
           </div>
           <div class="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-2">
@@ -383,7 +383,7 @@
               </ul>
             }
             @if (reportNotes().length === 0 && findings().length === 0) {
-              <p class="text-xs text-gray-500">Nothing to check.</p>
+              <p class="text-xs text-gray-500" data-testid="mktg-framework-view-checks-empty">Nothing to check.</p>
             }
           </div>
         </div>
