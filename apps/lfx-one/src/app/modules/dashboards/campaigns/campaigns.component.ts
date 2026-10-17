@@ -5018,6 +5018,40 @@ export class CampaignsComponent {
    * renders through it after granting the staged overwrite; the Audience tab's brief banner uses it
    * directly, because nothing has shown the warning at the point that text is recorded.
    */
+  /**
+   * The two conflict tables, read through `Object.hasOwn` instead of indexed directly.
+   *
+   * Both are plain object literals, so they inherit `Object.prototype`: a `conflict` of
+   * `constructor`, `toString`, `valueOf`, `hasOwnProperty` or `__proto__` resolves to a truthy
+   * INHERITED member rather than to `undefined`. The value is not ours -- it is read off a JSON
+   * response from the BFF -- and the declared union is a compile-time claim the wire does not
+   * honour, so the table has to make the check at runtime. Indexed raw, a `__proto__` conflict put
+   * `[object Object]`, or a function's source, into the banner the user reads.
+   *
+   * Same accessor shape as `redditObjectiveParamsFor` / `metaObjectiveParamsFor`, which #3565 added
+   * for exactly this defect on the objective tables in this feature. Falling back to the `unknown`
+   * sentence rather than to an empty banner: an unrecognised conflict is an outcome this page
+   * cannot classify, which is precisely what that sentence describes.
+   */
+  private approveConflictMessageFor(conflict: CampaignBriefApproveResult['conflict']): string {
+    return conflict !== undefined && Object.hasOwn(this.approveConflictMessages, conflict)
+      ? this.approveConflictMessages[conflict]
+      : this.approveConflictMessages.unknown;
+  }
+
+  /**
+   * The save table's accessor. See `approveConflictMessageFor` for why the guard is needed.
+   *
+   * No `unknown` member to fall back to here -- that table's keys are all real refusals -- so the
+   * fallback says only what is true of an unrecognised one: the save did not happen and proceeding
+   * again is the retry. Named rather than blank, because this string IS the banner.
+   */
+  private conflictMessageFor(conflict: NonNullable<CampaignBriefPersistResult['conflict']>): string {
+    return Object.hasOwn(this.conflictMessages, conflict)
+      ? this.conflictMessages[conflict]
+      : 'This brief could not be saved. Proceed again to try saving it once more.';
+  }
+
   private emailConflictText(conflict: NonNullable<CampaignBriefPersistResult['conflict']>, consequence: string): string {
     // Capitalised, because the conflict message is a COMPLETE sentence ending in a period while
     // each consequence is a lowercase clause written to follow a comma. Joining them raw produced
@@ -5028,7 +5062,7 @@ export class CampaignsComponent {
     // stage re-entering the URL finds nothing until the operator picks the type back. That advice
     // is meaningless on paid, which has no type selector.
     const reselect = conflict === 'unowned-brief-exists' ? ' Re-select this email type first.' : '';
-    return `${this.conflictMessages[conflict]}${reselect} ${first.toUpperCase()}${rest.join('')}`.trimEnd();
+    return `${this.conflictMessageFor(conflict)}${reselect} ${first.toUpperCase()}${rest.join('')}`.trimEnd();
   }
 
   /**
@@ -5441,7 +5475,7 @@ export class CampaignsComponent {
             this.briefPersistence.set({
               status: 'error',
               briefId: result.briefId,
-              message: this.conflictMessages[result.conflict],
+              message: this.conflictMessageFor(result.conflict),
               approved: false,
             });
             return;
@@ -5637,15 +5671,32 @@ export class CampaignsComponent {
         }
 
         if (generation !== this.briefPersistenceGeneration) return;
-        // The flag is off upstream, so nothing was approved and nothing was refused either. The
-        // restore's own `off` state is still the honest one; replacing it with an error would
-        // report a failure that never happened.
-        if (!result.enabled) return;
+        // `enabled: false` HERE cannot mean "the cutover is dark" the way it does on a save.
+        // `loadBrief` is gated on the SAME `CampaignServiceBriefs` flag and answers a dark
+        // deployment with `{ status: 'off', briefId: null }`, which offers no restore at all --
+        // so a restore that got this far was served by a pod with the flag ON, and this answer
+        // came from a pod that has it off. That is a mixed rollout, not a dark one.
+        //
+        // Reported rather than returned silently, for the same reason as the blank-slug branch
+        // above: a bare return leaves the restore's own `off` banner on screen, which renders
+        // nothing, and Create Campaign disabled with no reason and no action -- the exact dead
+        // end this whole path exists to remove. Retrying is genuinely the remedy, because the
+        // next request may well land on one of the pods that already has the flag.
+        if (!result.enabled) {
+          this.briefPersistence.set({
+            status: 'error',
+            briefId: known.id,
+            message:
+              'This saved brief could not be approved because the request reached a server that is still being updated. Reload and re-enter the event URL to try again.',
+            approved: false,
+          });
+          return;
+        }
         if (!result.approved) {
           this.briefPersistence.set({
             status: 'error',
             briefId: known.id,
-            message: this.approveConflictMessages[result.conflict ?? 'unknown'],
+            message: this.approveConflictMessageFor(result.conflict),
             approved: false,
           });
           return;
@@ -5663,7 +5714,7 @@ export class CampaignsComponent {
         this.briefPersistence.set({
           status: 'error',
           briefId: known.id,
-          message: this.approveConflictMessages['unknown'],
+          message: this.approveConflictMessages.unknown,
           approved: false,
         });
       }
