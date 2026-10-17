@@ -579,7 +579,7 @@ export class CampaignService {
 
   /**
    * Reads campaign-service's live metrics for ONE campaign on a brief: impressions, clicks, cost (in
-   * micro-units of the ad account's own currency, which the response does not name) and CTR.
+   * micro-units: USD on LinkedIn, the ad account's own currency elsewhere; the response names neither) and CTR.
    *
    * Every read reaches the campaign's ad platform. The Optimize tab shows each row's counters from
    * `getBriefMetrics` and calls this only for one row at a time: on Refresh, or for a row the

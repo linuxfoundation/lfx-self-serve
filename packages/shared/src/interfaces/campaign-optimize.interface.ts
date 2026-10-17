@@ -829,11 +829,13 @@ export interface CampaignLiveCounters {
   impressions: number;
   clicks: number;
   /**
-   * Cost in whole units of the ad ACCOUNT's own currency, to two decimals. campaign-service names no
-   * currency on this read (and performs no FX), so the amount is shown without a symbol. `null` on
-   * the email channel, whose upstream 0 is not a cost.
+   * Cost in whole units, to two decimals, without a symbol: USD on LinkedIn, the ad ACCOUNT's own
+   * currency (which the read does not name) everywhere else — see `costLabel`. campaign-service
+   * performs no FX. `null` on the email channel, whose upstream 0 is not a cost.
    */
   cost: string | null;
+  /** The cost counter's label, naming its currency as far as the read lets it be named. */
+  costLabel: string;
   /** Click-through rate as a percentage (upstream sends a fraction), for the `adsPct` pipe. */
   ctrPct: number;
   /** The window the counters cover, as campaign-service reports it, in words. */
@@ -850,6 +852,16 @@ export interface CampaignLiveMetricsState {
   counters: CampaignLiveCounters | null;
   /** What to show for `unsupported` and `error`; `''` otherwise. */
   message: string;
+}
+
+/**
+ * A row's OWN `get-campaign-metrics` read, tagged with the generation of the brief-wide row it
+ * settled against. A newer brief-wide result (a tab Refresh) outranks a read that settled before it.
+ */
+export interface CampaignLiveMetricsOwnRead {
+  state: CampaignLiveMetricsState;
+  /** The brief-wide row generation current when the read settled; meaningless while loading. */
+  generation: number;
 }
 
 /** The adopt dialog's brief picker read. */

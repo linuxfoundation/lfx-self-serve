@@ -63,6 +63,66 @@ describe('CampaignLiveMetricsComponent (#3299)', () => {
     expect(text('optimization-campaign-live-clicks-c-1')).toBe('212');
   });
 
+  const okRow = (clicks: number): BriefMetricsRow => ({ campaign_id: 'c-1', platform: 'meta-ads', status: 'ok', metrics: { ...METRICS, clicks } });
+
+  // A tab Refresh lands a NEW brief-wide row after this row's own Refresh: the fresher answer wins.
+  it("shows a newer brief-wide result over the row's own earlier Refresh, without reading again", () => {
+    fixture.componentRef.setInput('briefRow', okRow(99));
+    fixture.detectChanges();
+    load();
+    expect(text('optimization-campaign-live-clicks-c-1')).toBe('212');
+
+    fixture.componentRef.setInput('briefRow', okRow(150));
+    fixture.detectChanges();
+
+    expect(text('optimization-campaign-live-clicks-c-1')).toBe('150');
+    expect(getCampaignMetrics).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears the row's own earlier error when a newer brief-wide result measures it", () => {
+    getCampaignMetrics.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503, error: { error: 'x', code: 'X' } })));
+    load();
+    expect(q('optimization-campaign-live-error-c-1')).not.toBeNull();
+
+    fixture.componentRef.setInput('briefRow', okRow(150));
+    fixture.detectChanges();
+
+    expect(q('optimization-campaign-live-error-c-1')).toBeNull();
+    expect(text('optimization-campaign-live-clicks-c-1')).toBe('150');
+  });
+
+  // A brief-wide row that lands while the row's own read is in flight is OLDER than that answer.
+  it('keeps an in-flight own read, and its answer, over a brief-wide row that landed meanwhile', () => {
+    const inFlight = new Subject<CampaignServiceCampaignMetrics>();
+    getCampaignMetrics.mockReturnValue(inFlight.asObservable());
+    fixture.componentRef.setInput('briefRow', okRow(99));
+    fixture.detectChanges();
+    load();
+
+    fixture.componentRef.setInput('briefRow', okRow(150));
+    fixture.detectChanges();
+    expect(q('optimization-campaign-live-loading-c-1')).not.toBeNull();
+    expect(q('optimization-campaign-live-counters-c-1')).toBeNull();
+
+    inFlight.next({ ...METRICS, clicks: 300 });
+    inFlight.complete();
+    fixture.detectChanges();
+    expect(text('optimization-campaign-live-clicks-c-1')).toBe('300');
+    expect(getCampaignMetrics).toHaveBeenCalledTimes(1);
+  });
+
+  // LinkedIn reports `costInUsd` whatever the account bills in; every other platform, the account's own.
+  it.each([
+    ['linkedin-ads', 'Cost (USD)'],
+    ['meta-ads', 'Cost (ad account currency)'],
+    ['reddit-ads', 'Cost (ad account currency)'],
+  ])('labels the cost of a %s row %s', (platform, label) => {
+    fixture.componentRef.setInput('platform', platform);
+    load();
+
+    expect(text('optimization-campaign-live-cost-label-c-1')).toBe(label);
+  });
+
   // A row the brief-wide read could not measure states its reason, and a click asks for the precise one.
   it("states a non-ok brief-wide row's reason, and reads this campaign only when clicked", () => {
     fixture.componentRef.setInput('briefRow', { campaign_id: 'c-1', platform: 'meta-ads', status: 'not_ready', reason: 'the campaign has no data yet' });

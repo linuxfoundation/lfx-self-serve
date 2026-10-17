@@ -2000,8 +2000,8 @@ export class CampaignServiceClient {
    * 500/503 for an unusable connection or a failed platform read. They are thrown, not mapped, so
    * the error middleware relays campaign-service's own status and sentence.
    *
-   * A pure read upstream; nothing is persisted. `cost_micros` is in the ad account's own currency
-   * and the response names none.
+   * A pure read upstream; nothing is persisted. `cost_micros` is USD on LinkedIn and the ad
+   * account's own currency elsewhere; the response names neither.
    *
    * The Optimize tab shows a row's counters from the brief-wide read it already makes, and calls
    * this only when the operator refreshes one row, or asks about a row the brief-wide read could not

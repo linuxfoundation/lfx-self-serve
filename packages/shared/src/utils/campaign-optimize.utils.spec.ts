@@ -240,5 +240,7 @@ describe('buildCampaignLiveCounters', () => {
       expect.objectContaining({ isEmail: true, cost: null })
     );
     expect(buildCampaignLiveCounters(base, 'meta-ads')).toEqual(expect.objectContaining({ isEmail: false, cost: '0.00' }));
+    expect(buildCampaignLiveCounters(base, 'linkedin-ads').costLabel).toBe('Cost (USD)');
+    expect(buildCampaignLiveCounters(base, 'twitter-ads').costLabel).toBe('Cost (ad account currency)');
   });
 });

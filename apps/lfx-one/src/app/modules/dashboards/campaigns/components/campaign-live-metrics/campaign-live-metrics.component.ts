@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { DecimalPipe } from '@angular/common';
-import { Component, computed, inject, input, linkedSignal, Signal } from '@angular/core';
+import { Component, computed, inject, input, linkedSignal, Signal, untracked } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import type { BriefMetricsRow, CampaignLiveMetricsState } from '@lfx-one/shared/interfaces';
+import type { BriefMetricsRow, CampaignLiveMetricsOwnRead, CampaignLiveMetricsState } from '@lfx-one/shared/interfaces';
 import { buildCampaignLiveCounters } from '@lfx-one/shared/utils';
 import { AdsPctPipe } from '@pipes/campaign-optimization.pipe';
 import { CampaignService } from '@services/campaign.service';
@@ -24,7 +24,12 @@ import { catchError, map, of, startWith, switchMap } from 'rxjs';
  * is written or cached.
  *
  * No window is sent, so campaign-service picks the platform's default (30 days, 7 on X Ads) and the
- * counters say which one they cover. Cost carries no currency symbol: the read names none.
+ * counters say which one they cover. Cost carries no currency symbol; its label says USD on
+ * LinkedIn (which reports `costInUsd`) and "ad account currency" elsewhere, where the read names none.
+ *
+ * Which answer is shown: an in-flight own read always (its spinner); then whichever SETTLED last of
+ * the row's own read and the brief-wide row. A tab Refresh that lands after a row's Refresh therefore
+ * replaces that row's counters (or error) with the fresh brief-wide ones, and asks nothing itself.
  */
 @Component({
   selector: 'lfx-campaign-live-metrics',
@@ -57,7 +62,17 @@ export class CampaignLiveMetricsComponent {
     computation: () => 0,
   });
 
-  private readonly ownRead: Signal<CampaignLiveMetricsState> = this.initOwnRead();
+  /**
+   * Bumped each time a NEW brief-wide row arrives (the input's identity changes — the tab's Refresh
+   * replaces the whole brief-wide result). An own read remembers the generation it settled against,
+   * so a brief-wide row that arrived after it outranks it.
+   */
+  private readonly briefGeneration = linkedSignal<BriefMetricsRow | null, number>({
+    source: () => this.briefRow(),
+    computation: (_row, previous) => (previous?.value ?? 0) + 1,
+  });
+
+  private readonly ownRead: Signal<CampaignLiveMetricsOwnRead> = this.initOwnRead();
   protected readonly state: Signal<CampaignLiveMetricsState> = this.initState();
   protected readonly buttonLabel: Signal<string> = this.initButtonLabel();
   /** The brief-wide read's reason for a row it could not measure, shown until the operator asks. */
@@ -75,14 +90,17 @@ export class CampaignLiveMetricsComponent {
    * This row's own reads, one per request. `switchMap` drops an answer the operator has moved past
    * (another campaign in this slot), so a slow read cannot paint over the current one.
    */
-  private initOwnRead(): Signal<CampaignLiveMetricsState> {
-    const idle: CampaignLiveMetricsState = { status: 'idle', counters: null, message: '' };
+  private initOwnRead(): Signal<CampaignLiveMetricsOwnRead> {
+    const idle: CampaignLiveMetricsOwnRead = { state: { status: 'idle', counters: null, message: '' }, generation: 0 };
     const request = computed(() => ({
       projectSlug: this.projectSlug(),
       briefId: this.briefId(),
       campaignId: this.campaignId(),
       attempt: this.attempts(),
     }));
+    // The generation is read when the answer SETTLES, not when the request starts: a brief-wide row
+    // that landed while this read was in flight is older than this answer and must not outrank it.
+    const settled = (state: CampaignLiveMetricsState): CampaignLiveMetricsOwnRead => ({ state, generation: untracked(this.briefGeneration) });
     return toSignal(
       toObservable(request).pipe(
         switchMap((target) => {
@@ -90,9 +108,9 @@ export class CampaignLiveMetricsComponent {
             return of(idle);
           }
           return this.campaignService.getCampaignMetrics(target.projectSlug, target.briefId, target.campaignId).pipe(
-            map((metrics): CampaignLiveMetricsState => ({ status: 'ready', counters: buildCampaignLiveCounters(metrics, this.platform()), message: '' })),
-            catchError((error: unknown) => of(campaignLiveMetricsFailureState(error))),
-            startWith<CampaignLiveMetricsState>({ status: 'loading', counters: null, message: '' })
+            map((metrics) => settled({ status: 'ready', counters: buildCampaignLiveCounters(metrics, untracked(this.platform)), message: '' })),
+            catchError((error: unknown) => of(settled(campaignLiveMetricsFailureState(error)))),
+            startWith<CampaignLiveMetricsOwnRead>({ state: { status: 'loading', counters: null, message: '' }, generation: 0 })
           );
         })
       ),
@@ -100,18 +118,25 @@ export class CampaignLiveMetricsComponent {
     );
   }
 
-  /** The row's own read once asked for; until then, the brief-wide row's measurement when it has one. */
+  /**
+   * An in-flight own read wins; a settled one wins until a newer brief-wide row arrives; otherwise
+   * the brief-wide row's measurement when it has one.
+   */
   private initState(): Signal<CampaignLiveMetricsState> {
+    const idle: CampaignLiveMetricsState = { status: 'idle', counters: null, message: '' };
     return computed(() => {
       const own = this.ownRead();
-      if (own.status !== 'idle') {
-        return own;
+      if (own.state.status === 'loading') {
+        return own.state;
+      }
+      if (own.state.status !== 'idle' && own.generation === this.briefGeneration()) {
+        return own.state;
       }
       const row = this.briefRow();
       if (row?.status === 'ok' && row.metrics) {
         return { status: 'ready', counters: buildCampaignLiveCounters(row.metrics, this.platform()), message: '' };
       }
-      return own;
+      return idle;
     });
   }
 

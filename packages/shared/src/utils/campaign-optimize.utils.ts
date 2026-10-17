@@ -3,6 +3,7 @@
 
 import {
   CAMPAIGN_EMAIL_CHANNEL_PLATFORM,
+  CAMPAIGN_LIVE_COST_LABELS,
   CAMPAIGN_METRICS_WINDOW_LABELS,
   CAMPAIGN_REF_INT64_PLATFORMS,
   CAMPAIGN_SETTINGS_BID_AMOUNT_FIELD,
@@ -11,6 +12,7 @@ import {
   CAMPAIGN_SETTINGS_UNKNOWN_NOTES,
   CAMPAIGN_SETTINGS_VERDICT_LABELS,
   CAMPAIGN_SETTINGS_VERDICT_SEVERITIES,
+  CAMPAIGN_USD_COST_PLATFORMS,
 } from '../constants/campaign-optimize.constants';
 import type { CampaignBudgetPacingRead, CampaignServiceCampaignMetrics, CampaignServiceCampaignRef } from '../interfaces/campaign.interface';
 import type {
@@ -208,9 +210,10 @@ export function campaignBudgetPacingFromSettings(readback: CampaignServiceSettin
  * A row's live counters from one campaign-service measurement — a `get-campaign-metrics` read, or
  * the same-shaped `metrics` of an `ok` row in the brief-wide read.
  *
- * Cost arrives in MICRO-units of the ad account's own currency and is shown in whole units to two
- * decimals, formatted like the tab's other amounts but WITHOUT a currency symbol: the read names no
- * currency, and a `$` on a EUR account would be a false claim. CTR arrives as a fraction and becomes
+ * Cost arrives in MICRO-units and is shown in whole units to two decimals, formatted like the tab's
+ * other amounts but WITHOUT a currency symbol. Its label names the currency as far as the read
+ * allows: USD on LinkedIn (`costInUsd`), "ad account currency" elsewhere, where the read names none
+ * and a `$` on a EUR account would be a false claim. CTR arrives as a fraction and becomes
  * a percentage. The window is the one campaign-service reports, which may be narrower than 30 days
  * when the platform cannot serve that range (X Ads).
  *
@@ -224,6 +227,7 @@ export function buildCampaignLiveCounters(metrics: CampaignServiceCampaignMetric
     impressions: metrics.impressions,
     clicks: metrics.clicks,
     cost: isEmail ? null : (metrics.cost_micros / 1_000_000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+    costLabel: CAMPAIGN_USD_COST_PLATFORMS.has(platform) ? CAMPAIGN_LIVE_COST_LABELS.usd : CAMPAIGN_LIVE_COST_LABELS.account,
     ctrPct: metrics.ctr * 100,
     windowLabel: CAMPAIGN_METRICS_WINDOW_LABELS[metrics.window] ?? metrics.window,
   };

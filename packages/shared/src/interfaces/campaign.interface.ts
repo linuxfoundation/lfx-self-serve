@@ -4672,8 +4672,10 @@ export interface CampaignServiceCampaignMetrics {
   impressions: number;
   clicks: number;
   /**
-   * Cost in MICRO-UNITS of the platform's OWN native currency — USD for LinkedIn/Reddit, X's
-   * billing unit for Twitter. campaign-service performs no FX conversion, so these must never be
+   * Cost in MICRO-UNITS. ALWAYS USD on LinkedIn (its Ad Analytics `costInUsd`, whatever the ad
+   * account bills in); the ad ACCOUNT's own currency everywhere else — Google Ads, Meta, Microsoft,
+   * Reddit (its report's "microcurrency") and X (`billed_charge_local_micro`), none of which the
+   * read names. campaign-service performs no FX conversion, so these must never be
    * summed across platforms: the result would carry no currency and no meaning. Always 0 on the
    * email channel, which bills no per-send cost; do not blend that 0 into a cross-channel CPA.
    */

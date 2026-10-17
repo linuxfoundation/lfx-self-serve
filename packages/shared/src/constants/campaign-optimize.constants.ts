@@ -366,6 +366,20 @@ export const CAMPAIGN_SETTINGS_READ_FALLBACK = 'The live settings could not be r
 /** The email channel's platform token on a campaign row: its live counters are opens to date, with no cost. */
 export const CAMPAIGN_EMAIL_CHANNEL_PLATFORM = 'hubspot';
 
+/**
+ * Platforms whose metrics read reports cost in USD whatever the ad account bills in: LinkedIn, whose
+ * Ad Analytics `costInUsd` campaign-service converts to micros. Every other platform reports the ad
+ * account's own currency (Google Ads, Meta, Microsoft, Reddit's "microcurrency", X's
+ * `billed_charge_local_micro`), which the read does not name.
+ */
+export const CAMPAIGN_USD_COST_PLATFORMS: ReadonlySet<string> = new Set(['linkedin-ads']);
+
+/** The live cost counter's label, by what the platform's read reports cost in. */
+export const CAMPAIGN_LIVE_COST_LABELS = {
+  usd: 'Cost (USD)',
+  account: 'Cost (ad account currency)',
+} as const;
+
 /** The window a row's live counters cover, in words, keyed by campaign-service's `window`. */
 export const CAMPAIGN_METRICS_WINDOW_LABELS: Readonly<Record<CampaignMetricsWindow, string>> = {
   today: 'today',
