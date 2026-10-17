@@ -11,9 +11,9 @@ import '@angular/compiler';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { LEGACY_VOTE_TIMEZONE } from '../constants/timezones.constants';
-import { getUserTimezone } from './date-time.utils';
 import { PollStatus, VoteResponseStatus, VoteRowParticipationState } from '../enums';
 import type { Vote, VoteFormValue, VoteResultsResponse } from '../interfaces/poll.interface';
+import { getUserTimezone } from './date-time.utils';
 import {
   buildCreateVoteRequest,
   buildDraftUpdateVoteRequest,
@@ -302,15 +302,26 @@ describe('mapVoteToCloneFormValue', () => {
     expect(cloned.close_time).toBe(source.close_time);
   });
 
-  it('resets the deadline to 7 days out when the source deadline has already passed', () => {
-    // NOW is 2025-05-01T00:00Z; +7 days in UTC is 2025-05-08 — stored zone pinned to UTC so the
-    // carrier's calendar fields land on that day regardless of the host's own local timezone.
-    const cloned = mapVoteToCloneFormValue(vote({ end_time: '2025-04-01T00:00:00Z', end_time_timezone: 'UTC' }), NOW);
+  it('resets the deadline to 7 days out in the organizer timezone when the source deadline has already passed', () => {
+    // NOW is 2025-05-01T00:00Z; +7 days in UTC is 2025-05-08 — host pinned to UTC so the carrier's
+    // calendar fields land on that day regardless of the source's own stored zone (here, Tokyo).
+    const previousTz = process.env.TZ;
+    process.env.TZ = 'UTC';
+    try {
+      const cloned = mapVoteToCloneFormValue(vote({ end_time: '2025-04-01T00:00:00Z', end_time_timezone: 'Asia/Tokyo' }), NOW);
 
-    expect(cloned.close_date?.getFullYear()).toBe(2025);
-    expect(cloned.close_date?.getMonth()).toBe(4);
-    expect(cloned.close_date?.getDate()).toBe(8);
-    expect(cloned.close_time).toBe('11:59 PM');
+      expect(cloned.timezone).toBe(getUserTimezone());
+      expect(cloned.close_date?.getFullYear()).toBe(2025);
+      expect(cloned.close_date?.getMonth()).toBe(4);
+      expect(cloned.close_date?.getDate()).toBe(8);
+      expect(cloned.close_time).toBe('11:59 PM');
+    } finally {
+      if (previousTz === undefined) {
+        delete process.env.TZ;
+      } else {
+        process.env.TZ = previousTz;
+      }
+    }
   });
 
   it("resets into the organizer's own timezone, not the legacy-vote fallback, when the source stored no zone", () => {
@@ -321,8 +332,18 @@ describe('mapVoteToCloneFormValue', () => {
   it('preserves committee, eligibility and questions from the source vote', () => {
     const source = vote({
       committee_uid: 'committee-uid',
-      committee_filters: 'voting_rep',
-      poll_questions: [{ question_id: 'q1', prompt: 'Who should join?', type: 'single_choice', choices: [{ choice_text: 'Alice' }, { choice_text: 'Bob' }] }],
+      committee_filters: ['voting_rep'],
+      poll_questions: [
+        {
+          question_id: 'q1',
+          prompt: 'Who should join?',
+          type: 'single_choice',
+          choices: [
+            { choice_id: 'c1', choice_text: 'Alice' },
+            { choice_id: 'c2', choice_text: 'Bob' },
+          ],
+        },
+      ],
     });
     const cloned = mapVoteToCloneFormValue(source, NOW);
 

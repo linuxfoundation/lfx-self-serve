@@ -921,9 +921,11 @@ export class VoteManageComponent {
         filter((cloneId): cloneId is string => !!cloneId && !this.route.snapshot.paramMap.has('id')),
         switchMap((cloneId) => {
           this.loading.set(true);
+          // Lock the form while the source vote loads so an organizer can't type into fields a slow
+          // fetch is about to overwrite with patchFormWithClonedVote.
+          this.form().disable();
           return this.voteService.fetchVote(cloneId).pipe(
             catchError(() => {
-              this.loading.set(false);
               this.messageService.add({
                 severity: 'error',
                 summary: 'Error',
@@ -932,10 +934,12 @@ export class VoteManageComponent {
               return of(null);
             })
           );
-        })
+        }),
+        takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((vote) => {
         this.loading.set(false);
+        this.form().enable();
         if (!vote) return;
         this.patchFormWithClonedVote(vote);
       });

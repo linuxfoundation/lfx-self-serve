@@ -191,7 +191,7 @@ export function mapVoteToCloneFormValue(vote: Vote, nowMs: number = Date.now()):
     return { ...base, title };
   }
 
-  const timezone = vote.end_time_timezone || getUserTimezone();
+  const timezone = getUserTimezone();
   const resetDate = addDays(new Date(nowMs), CLONE_VOTE_DEFAULT_DURATION_DAYS);
   return {
     ...base,
