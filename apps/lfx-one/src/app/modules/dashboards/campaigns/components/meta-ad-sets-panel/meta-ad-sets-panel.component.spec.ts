@@ -555,6 +555,27 @@ describe('MetaAdSetsPanelComponent', () => {
       expect(q('meta-ad-row-999')).not.toBeNull();
     });
 
+    it('forgets an expansion whose ad set a re-read no longer lists', () => {
+      listMetaAdSets.mockReturnValue(of(list([adSet(), adSet({ id: '222' })])));
+      listMetaAds.mockReturnValue(of(ads([ad()])));
+      render();
+      toggleAds('222');
+      toggleAds('111');
+
+      listMetaAdSets.mockReturnValue(of(list([adSet()])));
+      fixture.componentRef.setInput('reloadToken', 1);
+      fixture.detectChanges();
+      expect(q('meta-ad-set-ads-111')).not.toBeNull();
+
+      // Listed again later: it comes back collapsed, not reopened from the stale expansion.
+      listMetaAdSets.mockReturnValue(of(list([adSet(), adSet({ id: '222' })])));
+      fixture.componentRef.setInput('reloadToken', 2);
+      fixture.detectChanges();
+      expect(q('meta-ad-set-ads-222')).toBeNull();
+      expect(q('meta-ad-set-ads-toggle-222')!.getAttribute('aria-expanded')).toBe('false');
+      expect(q('meta-ad-set-ads-111')).not.toBeNull();
+    });
+
     it("re-reads an expanded ad set's ads when the parent bumps the reload token", () => {
       listMetaAdSets.mockReturnValue(of(list([adSet()])));
       listMetaAds.mockReturnValue(of(ads([ad()])));

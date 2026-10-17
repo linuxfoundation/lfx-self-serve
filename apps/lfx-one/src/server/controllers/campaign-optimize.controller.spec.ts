@@ -357,16 +357,21 @@ describe('CampaignOptimizeController.listMetaAds', () => {
   it.each([
     ['campaignId', { ...params, campaignId: '123' }, { project: 'tlf', briefId: BRIEF }],
     ['project', params, { briefId: BRIEF }],
+    ['project', params, { project: '', briefId: BRIEF }],
+    ['briefId', params, { project: 'tlf' }],
     ['briefId', params, { project: 'tlf', briefId: 'not-a-uuid' }],
     ['adSetId', { ...params, adSetId: '0123' }, { project: 'tlf', briefId: BRIEF }],
+    ['adSetId', { ...params, adSetId: '12a34' }, { project: 'tlf', briefId: BRIEF }],
     ['adSetId', { ...params, adSetId: '1'.repeat(33) }, { project: 'tlf', briefId: BRIEF }],
-    ['window', params, { project: 'tlf', briefId: BRIEF, window: 'forever' }],
+    ['window', params, { project: 'tlf', briefId: BRIEF, window: 'last_9_days' }],
     ['window', params, { project: 'tlf', briefId: BRIEF, window: ['today'] }],
-  ])('refuses a bad %s before any round trip', async (field, p, query) => {
+  ])('refuses a bad %s with a 400 field error before any round trip', async (field, p, query) => {
     await controller.listMetaAds(buildReq({ params: p, query }), res, next);
 
     expectFieldError(next, field);
+    expect(vi.mocked(next).mock.calls[0][0]).toMatchObject({ statusCode: 400 });
     expect(listMetaAds).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
   });
 
   it('hands an upstream failure to the error handler', async () => {

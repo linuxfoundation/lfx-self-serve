@@ -197,6 +197,9 @@ export class MetaAdSetsPanelComponent {
         this.errorMessage.set(error);
         this.state.set(data !== null ? 'loaded' : 'error');
         this.lastRead.set({ token: reload, ok: data !== null });
+        if (data !== null) {
+          this.pruneExpandedAdSets(data);
+        }
       });
   }
 
@@ -210,6 +213,7 @@ export class MetaAdSetsPanelComponent {
       const eligibility = this.eligibility();
       const stateNoteId = `meta-ad-sets-campaign-state-${this.campaignId()}`;
       const blockedNoteId = this.blockedReason() !== '' ? `meta-ad-sets-blocked-${this.campaignId()}` : null;
+      const expanded = this.expandedAdSets();
       return (Array.isArray(data.ad_sets) ? data.ad_sets : []).map((adSet) => {
         const row = toMetaAdSetDisplayRow(adSet, currency, eligibility);
         // The campaign-state reason first: it is why THIS action is refused; else the row-wide block.
@@ -217,6 +221,7 @@ export class MetaAdSetsPanelComponent {
           ...row,
           actionDescribedBy: row.actionBlockedReason !== '' ? stateNoteId : blockedNoteId,
           recordActionDescribedBy: row.recordActionBlockedReason !== '' ? stateNoteId : blockedNoteId,
+          adsExpanded: expanded.has(adSet.id),
         };
       });
     });
@@ -301,6 +306,15 @@ export class MetaAdSetsPanelComponent {
         ? `The re-read does not show ${name} as deliberately paused. Use ${fix} before resuming the campaign.`
         : `The re-read still shows ${name} as deliberately paused. Use ${fix} before resuming the campaign, or it will stay paused.`;
       return { advice, text, tone: 'font-medium text-red-600' };
+    });
+  }
+
+  /** Forgets an expansion whose ad set the latest read no longer lists, so it cannot reopen if the id returns. */
+  private pruneExpandedAdSets(data: CampaignServiceMetaAdSets): void {
+    const ids = new Set((Array.isArray(data.ad_sets) ? data.ad_sets : []).map((adSet) => adSet.id));
+    this.expandedAdSets.update((current) => {
+      const kept = [...current].filter((id) => ids.has(id));
+      return kept.length === current.size ? current : new Set(kept);
     });
   }
 

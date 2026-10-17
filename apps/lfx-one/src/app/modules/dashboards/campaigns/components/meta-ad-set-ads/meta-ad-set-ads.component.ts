@@ -4,7 +4,13 @@
 import { DatePipe, DecimalPipe, PercentPipe } from '@angular/common';
 import { afterNextRender, Component, computed, DestroyRef, inject, input, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { LIVE_REGION_MOUNT_DELAY_MS, META_AD_UNLISTED_NOTE, META_ADS_READ_FAILED_MESSAGE, META_ADS_TRUNCATED_NOTE } from '@lfx-one/shared/constants';
+import {
+  CAMPAIGN_METRICS_WINDOW_LABELS,
+  LIVE_REGION_MOUNT_DELAY_MS,
+  META_AD_UNLISTED_NOTE,
+  META_ADS_READ_FAILED_MESSAGE,
+  META_ADS_TRUNCATED_NOTE,
+} from '@lfx-one/shared/constants';
 import type { CampaignServiceMetaAds, MetaAdDisplayRow } from '@lfx-one/shared/interfaces';
 import { toMetaAdDisplayRow } from '@lfx-one/shared/utils';
 import { ButtonComponent } from '@components/button/button.component';
@@ -45,11 +51,12 @@ export class MetaAdSetAdsComponent {
   protected readonly errorMessage = signal('');
   /** Bumped by the in-section Retry; combined with the panel's reloadToken. */
   protected readonly retryToken = signal(0);
-
-  protected readonly rows: Signal<MetaAdDisplayRow[]> = this.initRows();
-
   /** Persistent and empty until after first render, so its text is announced (see the ad-set panel's region). */
   private readonly liveRegionMounted = signal(false);
+
+  protected readonly rows: Signal<MetaAdDisplayRow[]> = this.initRows();
+  /** The reporting window the counters cover, as the read names it ("Last 30 days"), or `''` before a read. */
+  protected readonly windowLabel: Signal<string> = this.initWindowLabel();
   protected readonly loadingAnnouncement: Signal<string> = computed(() => (this.liveRegionMounted() && this.state() === 'loading' ? 'Loading ads' : ''));
 
   public constructor() {
@@ -99,6 +106,19 @@ export class MetaAdSetAdsComponent {
         this.errorMessage.set(error);
         this.state.set(data !== null ? 'loaded' : 'error');
       });
+  }
+
+  /** An unknown window is shown verbatim rather than hidden: the counters still cover it. */
+  private initWindowLabel(): Signal<string> {
+    return computed(() => {
+      const window: unknown = this.data()?.window;
+      if (typeof window !== 'string' || window === '') {
+        return '';
+      }
+      return Object.hasOwn(CAMPAIGN_METRICS_WINDOW_LABELS, window)
+        ? CAMPAIGN_METRICS_WINDOW_LABELS[window as keyof typeof CAMPAIGN_METRICS_WINDOW_LABELS]
+        : window;
+    });
   }
 
   private initRows(): Signal<MetaAdDisplayRow[]> {

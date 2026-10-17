@@ -6,6 +6,9 @@
     <h5 class="text-xs font-semibold text-gray-900">Ads</h5>
     @if (data(); as list) {
       <span class="text-xs text-gray-500" [attr.data-testid]="'meta-ad-set-ads-read-at-' + adSetId()">Read {{ list.read_at | date: 'medium' }}</span>
+      @if (windowLabel()) {
+        <span class="text-xs text-gray-500" [attr.data-testid]="'meta-ad-set-ads-window-' + adSetId()">Counters: {{ windowLabel() }}</span>
+      }
     }
   </div>
 

@@ -728,10 +728,14 @@ export interface MetaAdDisplayRow {
   spend: number | null;
 }
 
-/** A display row as the ad-set panel binds it: the ids each action's `aria-describedby` points at, or `null`. */
+/**
+ * A display row as the ad-set panel binds it: the ids each action's `aria-describedby` points at,
+ * or `null`, and whether the row's read-only Ads section is expanded.
+ */
 export interface MetaAdSetPanelRow extends MetaAdSetDisplayRow {
   actionDescribedBy: string | null;
   recordActionDescribedBy: string | null;
+  adsExpanded: boolean;
 }
 
 /**

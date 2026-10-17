@@ -197,7 +197,12 @@ describe('toMetaAdDisplayRow', () => {
   });
 
   it('never turns a counter that is not a finite number into 0', () => {
-    const row = toMetaAdDisplayRow(ad({ impressions: null as unknown as number, cost_micros: Number.NaN, clicks: '3' as unknown as number }));
+    const raw = ad({ cost_micros: Number.NaN });
+    // @ts-expect-error -- an explicit null off the unvalidated wire
+    raw.impressions = null;
+    // @ts-expect-error -- a string off the unvalidated wire
+    raw.clicks = '3';
+    const row = toMetaAdDisplayRow(raw);
 
     expect(row).toMatchObject({ impressions: null, clicks: null, spend: null, ctr: 0.0228 });
   });

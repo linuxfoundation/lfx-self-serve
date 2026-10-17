@@ -799,9 +799,16 @@ export class CampaignService {
     if (window) {
       params = params.set('window', window);
     }
-    return this.http.get<CampaignServiceMetaAds>(`/api/campaigns/${encodeURIComponent(campaignId)}/meta-ad-sets/${encodeURIComponent(adSetId)}/ads`, {
-      params,
-    });
+    // Logged and rethrown, never defaulted: an empty list would read as "no ads", and the section
+    // states a failed read as such.
+    return this.http
+      .get<CampaignServiceMetaAds>(`/api/campaigns/${encodeURIComponent(campaignId)}/meta-ad-sets/${encodeURIComponent(adSetId)}/ads`, { params })
+      .pipe(
+        catchError((error: unknown) => {
+          console.error('Failed to list Meta ads', error);
+          return throwError(() => error);
+        })
+      );
   }
 
   /**
