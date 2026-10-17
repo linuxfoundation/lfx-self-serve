@@ -3,13 +3,21 @@
 
 import { addDays } from 'date-fns';
 import { FormControl, type FormGroup } from '@angular/forms';
-import { DRAFT_VOTE_DEFAULT_DURATION_DAYS, DRAFT_VOTE_PLACEHOLDER_QUESTION, VOTE_COMMENT_RESPONSE_MAX_LENGTH } from '../constants/poll.constants';
+import {
+  CLONE_VOTE_DEFAULT_DURATION_DAYS,
+  CLONE_VOTE_TITLE_PREFIX,
+  DRAFT_VOTE_DEFAULT_DURATION_DAYS,
+  DRAFT_VOTE_PLACEHOLDER_QUESTION,
+  VOTE_COMMENT_RESPONSE_MAX_LENGTH,
+  VOTE_DEFAULT_CLOSE_TIME,
+  VOTE_TITLE_MAX_LENGTH,
+} from '../constants/poll.constants';
 import { LEGACY_VOTE_TIMEZONE } from '../constants/timezones.constants';
 import { VOTES_STATS_WINDOW_DAYS } from '../constants/vote.constants';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import { PollStatus, VoteResponseStatus } from '../enums/poll.enum';
 import { maxCodePointsValidator } from '../validators/max-code-points.validator';
-import { combineDateTime, formatTo12HourInTimezone, parseTime12Hour, toZonedDateCarrier, wallTimeExistsInTimezone } from './date-time.utils';
+import { combineDateTime, formatTo12HourInTimezone, getUserTimezone, parseTime12Hour, toZonedDateCarrier, wallTimeExistsInTimezone } from './date-time.utils';
 import { normalizePollStatus } from './poll.utils';
 import type { PaginatedResponse } from '../interfaces/api.interface';
 import type { CommitteeReference } from '../interfaces/committee.interface';
@@ -144,11 +152,47 @@ export function mapVoteToFormValue(vote: Vote): VoteFormValue {
     committee,
     eligible_participants: mapFiltersToEligibility(vote.committee_filters),
     close_date: endDate ? toZonedDateCarrier(endDate, zone) : null,
-    close_time: endDate ? formatTo12HourInTimezone(endDate, zone) : '11:59 PM',
+    close_time: endDate ? formatTo12HourInTimezone(endDate, zone) : VOTE_DEFAULT_CLOSE_TIME,
     timezone: zone,
     allow_abstain: vote.allow_abstain ?? false,
     questions: (vote.poll_questions?.filter((question) => !isDraftPlaceholderPollQuestion(question)) ?? []).map(mapApiQuestionToFormValue),
     commentPrompts: (vote.poll_comment_prompts ?? []).map(mapApiCommentPromptToFormValue),
+  };
+}
+
+/**
+ * Maps a Vote API response to a VoteFormValue for prefilling the create form when cloning a vote
+ * @description Same field set as {@link mapVoteToFormValue} (committee, eligibility, questions, comment
+ * prompts, abstain) — cast ballots, results, and the source vote's status/uid are never part of a form
+ * value, so there is nothing to strip there. Eligibility is lossy in the same direction it already is for
+ * edit: {@link mapFiltersToEligibility} collapses any filter set missing a known option (e.g. Alternate,
+ * Emeritus) down to 'all', so a clone can re-expand to a broader electorate than the source actually had.
+ * Two fields are deliberately mutated: the title gets a "Copy of " prefix (skipped if already present, and
+ * clamped to VOTE_TITLE_MAX_LENGTH) so the organizer can tell the draft apart from the source vote, and a
+ * deadline that has already elapsed resets to CLONE_VOTE_DEFAULT_DURATION_DAYS out in the organizer's own
+ * timezone rather than the source's stored zone (a still-future deadline is reused as-is, in its own zone).
+ * @param vote - The source Vote entity to clone
+ * @param nowMs - Current time in epoch ms, injectable for deterministic tests (defaults to Date.now())
+ * @returns VoteFormValue to patch into the create form
+ */
+export function mapVoteToCloneFormValue(vote: Vote, nowMs: number = Date.now()): VoteFormValue {
+  const base = mapVoteToFormValue(vote);
+  const title = base.title.startsWith(CLONE_VOTE_TITLE_PREFIX) ? base.title : `${CLONE_VOTE_TITLE_PREFIX}${base.title}`.slice(0, VOTE_TITLE_MAX_LENGTH);
+
+  const endMs = vote.end_time ? Date.parse(vote.end_time) : NaN;
+  const deadlineInFuture = Number.isFinite(endMs) && endMs > nowMs;
+  if (deadlineInFuture) {
+    return { ...base, title };
+  }
+
+  const timezone = getUserTimezone();
+  const resetDate = addDays(new Date(nowMs), CLONE_VOTE_DEFAULT_DURATION_DAYS);
+  return {
+    ...base,
+    title,
+    timezone,
+    close_date: toZonedDateCarrier(resetDate, timezone),
+    close_time: VOTE_DEFAULT_CLOSE_TIME,
   };
 }
 

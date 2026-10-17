@@ -7,6 +7,7 @@ import { TestBed } from '@angular/core/testing';
 import { FormArray, FormGroup } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, NavigationEnd, Router } from '@angular/router';
+import { PollStatus } from '@lfx-one/shared/enums';
 import { Vote } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -419,6 +420,121 @@ describe('VoteManageComponent', () => {
       expect(voteServiceMock.markVoteOpened).toHaveBeenCalledWith(VOTE_UID);
       expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
       expect(router.navigate).toHaveBeenCalledWith(['/votes']);
+    });
+  });
+
+  // GH-3660: cloning opens the create form prefilled from a source vote, via ?clone=<uid>.
+  describe('clone flow (?clone=<uid>)', () => {
+    const CLONE_SOURCE_UID = 'vote-uid-source';
+
+    const sourceVote = (overrides: Partial<Vote> = {}): Vote => ({
+      uid: CLONE_SOURCE_UID,
+      name: 'Original board election',
+      status: PollStatus.ACTIVE,
+      project_uid: PROJECT_UID,
+      end_time: '2099-01-01T00:00:00Z',
+      ...overrides,
+    });
+
+    beforeEach(() => {
+      setRouteMode(null); // create mode — clone only applies without an :id route param
+      routeMock.queryParamMap = of(convertToParamMap({ clone: CLONE_SOURCE_UID }));
+      // cloneSourceVote feeds syncEntityProjectContextFallback, which calls getProject(...).pipe(...)
+      // once the clone fetch resolves — give it an Observable default so fixtures that don't care
+      // about project-access resolution don't throw on the outer beforeEach's bare vi.fn(). The
+      // project-access test below overrides this with its own resolved value.
+      getProject.mockReturnValue(of(null));
+    });
+
+    it('prefills the create form with the source vote, prefixing the title, and stays in create mode, without creating a vote', async () => {
+      fetchVote.mockReturnValue(
+        of(
+          sourceVote({
+            committee_uid: COMMITTEE_UID,
+            committee_filters: ['voting_rep'],
+            poll_questions: [
+              {
+                question_id: 'q1',
+                prompt: 'Who should join?',
+                type: 'single_choice',
+                choices: [
+                  { choice_id: 'c1', choice_text: 'Alice' },
+                  { choice_id: 'c2', choice_text: 'Bob' },
+                ],
+              },
+            ],
+            poll_comment_prompts: [{ prompt_id: 'p1', prompt: 'Any concerns?' }],
+          })
+        )
+      );
+      const fixture = await createComponent();
+
+      // Uses the tap-free fetch — getVote's signal write would leak the source vote into shared vote-detail state.
+      expect(voteServiceMock.fetchVote).toHaveBeenCalledWith(CLONE_SOURCE_UID);
+      expect(voteServiceMock.getVote).not.toHaveBeenCalled();
+      expect(fixture.componentInstance.mode()).toBe('create');
+
+      const form = fixture.componentInstance.form();
+      expect(form.get('title')?.value).toBe('Copy of Original board election');
+      expect(form.get('committee')?.value).toEqual({ uid: COMMITTEE_UID, name: undefined });
+      expect(form.get('eligible_participants')?.value).toBe('voting_rep');
+      expect((form.get('questions') as FormArray).length).toBe(1);
+      expect((form.get('questions') as FormArray).at(0).get('question')?.value).toBe('Who should join?');
+      expect((form.get('commentPrompts') as FormArray).length).toBe(1);
+      expect((form.get('commentPrompts') as FormArray).at(0).get('prompt')?.value).toBe('Any concerns?');
+      expect(voteServiceMock.createVote).not.toHaveBeenCalled();
+    });
+
+    it('does not fetch a clone source when an :id route param is present (edit mode)', async () => {
+      setRouteMode(VOTE_UID);
+      fetchVote.mockReturnValue(of(enrichedVote()));
+      await createComponent();
+
+      expect(voteServiceMock.fetchVote).not.toHaveBeenCalledWith(CLONE_SOURCE_UID);
+    });
+
+    it('surfaces an error and leaves the form blank when the clone source fails to load', async () => {
+      fetchVote.mockReturnValue(throwError(() => new Error('not found')));
+      const fixture = await createComponent();
+
+      expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
+      expect(fixture.componentInstance.form().get('title')?.value).toBe('');
+    });
+
+    it('leaves the clone prefill in control when both ?clone and ?committee_uid are present (committee_uid is ignored)', async () => {
+      routeMock.queryParamMap = of(convertToParamMap({ clone: CLONE_SOURCE_UID, committee_uid: 'other-committee-uid' }));
+      fetchVote.mockReturnValue(of(sourceVote({ committee_uid: COMMITTEE_UID })));
+      fetchCommittee.mockReturnValue(of({ uid: 'other-committee-uid', name: 'Other Committee' }));
+      const fixture = await createComponent();
+
+      const committeeControl = fixture.componentInstance.form().get('committee');
+      expect(committeeControl?.value).toEqual({ uid: COMMITTEE_UID, name: undefined });
+      expect(committeeControl?.disabled).toBe(false);
+    });
+
+    // GH-3781 review: the create-mode `vote` signal never populates (no :id route param), so without
+    // cloneSourceVote feeding the fallback, submission silently used the viewer's active project lens
+    // instead of the cloned vote's own project — wrong for a cross-project clone off the dashboard.
+    it("submits using the cloned source vote's own project_uid, not the viewer's active project lens", async () => {
+      const SOURCE_PROJECT_UID = 'source-project-uid';
+      activeContext.set({ uid: PROJECT_UID, slug: PROJECT_SLUG, name: 'Viewer Active Project' });
+      getProject.mockReturnValue(of({ uid: SOURCE_PROJECT_UID, writer: true }));
+      fetchVote.mockReturnValue(of(sourceVote({ project_uid: SOURCE_PROJECT_UID, committee_uid: COMMITTEE_UID })));
+      const fixture = await createComponent();
+
+      const form = fixture.componentInstance.form();
+      form.get('eligible_participants')?.setValue('project_members');
+      form.get('close_date')?.setValue(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+      const firstQuestion = (form.get('questions') as FormArray).at(0) as FormGroup;
+      firstQuestion.get('question')?.setValue('Approve the budget?');
+      (firstQuestion.get('options') as FormArray).at(0).setValue('Yes');
+      (firstQuestion.get('options') as FormArray).at(1).setValue('No');
+      form.updateValueAndValidity();
+
+      fixture.componentInstance.onSubmit();
+
+      expect(voteServiceMock.beginSpeculativeCreate).toHaveBeenCalledTimes(1);
+      expect(voteServiceMock.beginSpeculativeCreate.mock.calls[0][0]).toMatchObject({ project_uid: SOURCE_PROJECT_UID });
     });
   });
 });

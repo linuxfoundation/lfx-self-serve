@@ -5,7 +5,7 @@ import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { MyVotesQuickFilter, PollStatus, Vote, VoteResponseStatus } from '@lfx-one/shared';
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { VoteService } from '@services/vote.service';
@@ -282,6 +282,69 @@ describe('VotesTableComponent — row More menu', () => {
     expect(moreButton('active')).not.toBeNull();
     expect(moreButton('ended')).not.toBeNull();
     expect(moreButton('draft')).toBeNull();
+  });
+
+  it('adds a Clone item gated by hasPMOAccess, which navigates to the create form with ?clone=<uid>', async () => {
+    fixture.componentRef.setInput('hasPMOAccess', true);
+    const router = TestBed.inject(Router);
+    const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+    await settle();
+
+    moreButton('active')!.click();
+    await settle();
+
+    const items = table['rowActionMenuItems']();
+    expect(items.map((item) => item.label)).toEqual(['Copy link', 'Clone']);
+
+    items[1].command!({});
+
+    expect(navigate).toHaveBeenCalledWith(['/votes', 'create'], { queryParams: { clone: 'active' } });
+  });
+
+  it("carries the row's own project/committee context when cloning (dashboard rows can span projects)", async () => {
+    fixture.componentRef.setInput('hasPMOAccess', true);
+    fixture.componentRef.setInput('votes', [...ROWS, vote('foreign', { project_slug: 'other-project', committee_uid: 'other-committee-uid' })]);
+    const router = TestBed.inject(Router);
+    const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+    await settle();
+
+    moreButton('foreign')!.click();
+    await settle();
+
+    const items = table['rowActionMenuItems']();
+    items[1].command!({});
+
+    expect(navigate).toHaveBeenCalledWith(['/votes', 'create'], {
+      queryParams: { project: 'other-project', committee_uid: 'other-committee-uid', clone: 'foreign' },
+    });
+  });
+
+  it("tier-prefixes the clone create route from the source vote's own is_foundation", async () => {
+    fixture.componentRef.setInput('hasPMOAccess', true);
+    fixture.componentRef.setInput('votes', [...ROWS, vote('foundation-vote', { is_foundation: true }), vote('project-vote', { is_foundation: false })]);
+    const router = TestBed.inject(Router);
+    const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+    await settle();
+
+    moreButton('foundation-vote')!.click();
+    await settle();
+    table['rowActionMenuItems']()[1].command!({});
+    expect(navigate).toHaveBeenCalledWith(['/', 'foundation', 'votes', 'create'], { queryParams: { clone: 'foundation-vote' } });
+
+    moreButton('project-vote')!.click();
+    await settle();
+    table['rowActionMenuItems']()[1].command!({});
+    expect(navigate).toHaveBeenCalledWith(['/', 'project', 'votes', 'create'], { queryParams: { clone: 'project-vote' } });
+  });
+
+  it('omits Clone from the menu without hasPMOAccess', async () => {
+    fixture.componentRef.setInput('hasPMOAccess', false);
+    await settle();
+
+    moreButton('active')!.click();
+    await settle();
+
+    expect(table['rowActionMenuItems']().map((item) => item.label)).toEqual(['Copy link']);
   });
 
   it('opens the menu without selecting the row, and Copy link copies the absolute permalink', async () => {

@@ -5,6 +5,7 @@ import { formatDate, isPlatformBrowser } from '@angular/common';
 import { Component, computed, DestroyRef, effect, inject, input, model, output, PLATFORM_ID, signal, Signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { CardComponent } from '@components/card/card.component';
@@ -65,6 +66,7 @@ import { combineLatest, debounceTime, distinctUntilChanged, map, startWith, take
 })
 export class VotesTableComponent {
   // === Injections ===
+  private readonly router = inject(Router);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly messageService = inject(MessageService);
   private readonly voteService = inject(VoteService);
@@ -206,7 +208,11 @@ export class VotesTableComponent {
   protected toggleRowActionMenu(event: Event, vote: VoteTableRow, menu: MenuComponent): void {
     event.stopPropagation();
     this.rowActionMenuVoteUid.set(vote.uid);
-    this.rowActionMenuItems.set([{ label: 'Copy link', icon: 'fa-light fa-link', command: () => this.copyVoteLink(vote.uid) }]);
+    const items: MenuItem[] = [{ label: 'Copy link', icon: 'fa-light fa-link', command: () => this.copyVoteLink(vote.uid) }];
+    if (this.hasPMOAccess()) {
+      items.push({ label: 'Clone', icon: 'fa-light fa-copy', command: () => this.cloneVote(vote) });
+    }
+    this.rowActionMenuItems.set(items);
     menu.toggle(event);
   }
 
@@ -332,6 +338,17 @@ export class VotesTableComponent {
   /** Copies the vote's lens-independent permalink; access is checked when the link is opened, so anyone who sees the row may share it. */
   private copyVoteLink(uid: string): void {
     this.clipboardShare.copyLink(toAbsoluteUrl(votePermalinkPath(uid), isPlatformBrowser(this.platformId)), 'Vote link copied to clipboard.');
+  }
+
+  /** Opens the create form prefilled from this vote, carrying the row's own project/committee context (dashboard rows can span projects).
+   *  Tier-prefixes the route from the source vote's own is_foundation (not getEntityCommands — that builder takes an id/leaf shaped for
+   *  edit/details routes, and create has neither) so vote-manage's entity-context sync lands the clone in the source's own project. */
+  private cloneVote(vote: VoteTableRow): void {
+    let tierSegment: 'foundation' | 'project' | null = null;
+    if (vote.is_foundation === true) tierSegment = 'foundation';
+    else if (vote.is_foundation === false) tierSegment = 'project';
+    const commands = tierSegment ? ['/', tierSegment, 'votes', 'create'] : ['/votes', 'create'];
+    this.router.navigate(commands, { queryParams: { ...vote.editQueryParams, clone: vote.uid } });
   }
 
   private toVoteTableRow(vote: Vote): VoteTableRow {

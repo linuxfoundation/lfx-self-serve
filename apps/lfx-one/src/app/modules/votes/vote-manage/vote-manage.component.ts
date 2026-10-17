@@ -11,8 +11,10 @@ import {
   COMMITTEE_LABEL,
   OPEN_VOTE_CONFIRMATION,
   VOTE_COMMENT_PROMPT_MAX_LENGTH,
+  VOTE_DEFAULT_CLOSE_TIME,
   VOTE_LABEL,
   VOTE_QUESTION_MIN_LENGTH,
+  VOTE_TITLE_MAX_LENGTH,
   VOTE_TOTAL_STEPS,
 } from '@lfx-one/shared/constants';
 import { Committee, CommitteeReference, EntityWithProject, Vote, VoteFormValue } from '@lfx-one/shared/interfaces';
@@ -23,6 +25,7 @@ import {
   buildDraftVoteRequest,
   buildUpdateVoteRequest,
   getUserTimezone,
+  mapVoteToCloneFormValue,
   mapVoteToFormValue,
   markFormControlsAsTouched,
 } from '@lfx-one/shared/utils';
@@ -40,7 +43,7 @@ import { VoteService } from '@services/vote.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { StepperModule } from 'primeng/stepper';
-import { catchError, combineLatest, distinctUntilChanged, filter, map, Observable, of, switchMap, take, tap } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, filter, map, Observable, of, startWith, switchMap, take, tap } from 'rxjs';
 
 import { VoteBasicsComponent } from '../components/vote-basics/vote-basics.component';
 import { VoteQuestionComponent } from '../components/vote-question/vote-question.component';
@@ -95,6 +98,9 @@ export class VoteManageComponent {
   public readonly submitting = signal<boolean>(false);
   public readonly confirmingOpenVote = signal<boolean>(false);
   public readonly loading = signal<boolean>(false);
+  // Clone mode never populates `vote` (route has no :id, see initVote) — this carries the fetched
+  // source vote's own project/foundation context for entity-context sync and project-UID resolution.
+  private readonly cloneSourceVote = signal<Vote | null>(null);
   private readonly internalStep = signal<number>(1);
   private readonly committeeUidFromUrl = this.route.snapshot.queryParamMap.get('committee_uid');
 
@@ -114,6 +120,7 @@ export class VoteManageComponent {
 
   public constructor() {
     this.initCommitteeContext();
+    this.initCloneFromQuery();
     evictOnWriteAccessLoss(this.writeAccess);
 
     // Context-less edit links land in the VOTE's project (not the cookie-restored one);
@@ -204,7 +211,7 @@ export class VoteManageComponent {
       return;
     }
 
-    const projectUid = this.vote()?.project_uid || this.project()?.uid;
+    const projectUid = this.vote()?.project_uid || this.cloneSourceVote()?.project_uid || this.project()?.uid;
     if (!projectUid) {
       this.messageService.add({
         severity: 'error',
@@ -283,7 +290,7 @@ export class VoteManageComponent {
 
       // Speculative create (GH-2826 Design A): fire the plain create at dialog-open, hiding the ~3 s
       // create behind reading time; accept chains onto it, every dismiss path discards via reject.
-      const projectUid = this.project()?.uid;
+      const projectUid = this.cloneSourceVote()?.project_uid || this.project()?.uid;
       if (projectUid) {
         const speculativeRequest = buildCreateVoteRequest(this.form().getRawValue() as VoteFormValue, projectUid);
         this.voteService
@@ -396,7 +403,7 @@ export class VoteManageComponent {
       return;
     }
 
-    const projectUid = this.vote()?.project_uid || this.project()?.uid;
+    const projectUid = this.vote()?.project_uid || this.cloneSourceVote()?.project_uid || this.project()?.uid;
     if (!projectUid) {
       // Same discard reasoning as the invalid path above: a pending speculation (if any) must not
       // outlive an accept that cannot proceed.
@@ -492,7 +499,18 @@ export class VoteManageComponent {
    * Rebuilds the questions FormArray to match the vote's poll_questions.
    */
   private patchFormWithVote(vote: Vote): void {
-    const formValue = mapVoteToFormValue(vote);
+    this.patchFormWithValue(mapVoteToFormValue(vote));
+  }
+
+  /**
+   * Patches the (create-mode) form with a clone of a fetched Vote entity.
+   * Rebuilds the questions FormArray to match the source vote's poll_questions.
+   */
+  private patchFormWithClonedVote(vote: Vote): void {
+    this.patchFormWithValue(mapVoteToCloneFormValue(vote));
+  }
+
+  private patchFormWithValue(formValue: VoteFormValue): void {
     const form = this.form();
 
     // Patch scalar fields (Step 1)
@@ -548,12 +566,12 @@ export class VoteManageComponent {
     return new FormGroup(
       {
         // Step 1: Vote Basics
-        title: new FormControl('', [trimmedRequired(), trimmedMinLength(3), Validators.maxLength(200)]),
+        title: new FormControl('', [trimmedRequired(), trimmedMinLength(3), Validators.maxLength(VOTE_TITLE_MAX_LENGTH)]),
         description: new FormControl(''),
         committee: new FormControl<CommitteeReference | null>(null, [Validators.required, validCommitteeReference()]),
         eligible_participants: new FormControl('', [Validators.required]),
         close_date: new FormControl<Date | null>(null, [Validators.required]),
-        close_time: new FormControl<string>('11:59 PM', { nonNullable: true, validators: [Validators.required, validTimeFormat()] }),
+        close_time: new FormControl<string>(VOTE_DEFAULT_CLOSE_TIME, { nonNullable: true, validators: [Validators.required, validTimeFormat()] }),
         // The v2 mutation contract requires end_time_timezone on every request (responses keep it
         // optional for legacy votes); combineDateTime also needs a zone to build a meaningful end_time.
         timezone: new FormControl<string>(getUserTimezone(), { nonNullable: true, validators: [Validators.required] }),
@@ -607,10 +625,11 @@ export class VoteManageComponent {
     );
   }
 
-  /** Maps the loaded vote to the {@link EntityWithProject} shape; absent enrichment fields map to null. */
+  /** Maps the loaded vote to the {@link EntityWithProject} shape; absent enrichment fields map to null.
+   *  Falls back to cloneSourceVote since edit-mode's `vote` signal never populates in clone mode. */
   private initVoteEntityContext(): Signal<EntityWithProject | null> {
     return computed(() => {
-      const vote = this.vote();
+      const vote = this.vote() ?? this.cloneSourceVote();
       if (!vote) {
         return null;
       }
@@ -719,9 +738,15 @@ export class VoteManageComponent {
             return of(false);
           }
           // writerGuard admits no coordinator-style role for votes — project.writer only.
+          // startWith(undefined): a key change (e.g. clone's context sync re-targeting the
+          // active project mid-flight, GH-3781) must park this leg back at pending immediately,
+          // not leave the PREVIOUS key's resolved value in place while the new fetch is in
+          // flight — otherwise evictOnWriteAccessLoss can see a stale false and kick out an
+          // organizer the still-pending committee leg would have admitted.
           return this.projectService.getProject(key, false).pipe(
             map((project) => project?.writer === true),
-            catchError(() => of(false))
+            catchError(() => of(false)),
+            startWith(undefined)
           );
         })
       )
@@ -754,7 +779,11 @@ export class VoteManageComponent {
           uid
             ? this.committeeService.fetchCommittee(uid).pipe(
                 map((committee) => committee?.writer === true),
-                catchError(() => of(false))
+                catchError(() => of(false)),
+                // startWith(undefined): same reasoning as the project leg above — a uid change
+                // must park this leg at pending while the new committee fetch is in flight,
+                // rather than keep the PREVIOUS uid's resolved value in place.
+                startWith(undefined)
               )
             : of(false)
         )
@@ -878,6 +907,7 @@ export class VoteManageComponent {
     this.route.queryParamMap
       .pipe(
         take(1),
+        filter((params) => !params.get('clone')), // clone's own committee prefill stays editable; locking it here would fight that
         map((params) => params.get('committee_uid')),
         filter((uid): uid is string => !!uid && !this.route.snapshot.paramMap.has('id')),
         switchMap((uid) => this.committeeService.getCommittee(uid)),
@@ -893,6 +923,40 @@ export class VoteManageComponent {
         const committeeControl = this.form().get('committee');
         committeeControl?.setValue(ref);
         committeeControl?.disable();
+      });
+  }
+
+  /** Reads ?clone=<uid> from queryParams and prefills the create form from the source vote (create mode only). */
+  private initCloneFromQuery(): void {
+    this.route.queryParamMap
+      .pipe(
+        take(1),
+        map((params) => params.get('clone')),
+        filter((cloneId): cloneId is string => !!cloneId && !this.route.snapshot.paramMap.has('id')),
+        switchMap((cloneId) => {
+          this.loading.set(true);
+          // Lock the form while the source vote loads so an organizer can't type into fields a slow
+          // fetch is about to overwrite with patchFormWithClonedVote.
+          this.form().disable();
+          return this.voteService.fetchVote(cloneId).pipe(
+            catchError(() => {
+              this.messageService.add({
+                severity: 'error',
+                summary: 'Error',
+                detail: `Failed to load ${this.voteLabel.singular.toLowerCase()} to clone.`,
+              });
+              return of(null);
+            })
+          );
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((vote) => {
+        this.loading.set(false);
+        this.form().enable();
+        if (!vote) return;
+        this.cloneSourceVote.set(vote);
+        this.patchFormWithClonedVote(vote);
       });
   }
 }
