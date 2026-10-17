@@ -58,6 +58,7 @@ import {
   CampaignNegativeKeywordsResult,
   CampaignSSEEventType,
   CampaignStatusToggleParams,
+  CreativeAssetUploadResult,
   CampaignStatusUpdateResult,
   GenerateEmailCopyResult,
   HubSpotEmailMonitorResponse,
@@ -276,6 +277,20 @@ export class CampaignService {
   ): Observable<{ jobId: string; result?: CampaignCreateResponse; error?: string; indeterminate?: boolean }> {
     return this.http.post<{ jobId: string; result?: CampaignCreateResponse; error?: string; indeterminate?: boolean }>('/api/campaigns/create', request, {
       params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
+    });
+  }
+
+  /**
+   * Upload an image for a saved brief and get back the creative-asset id a Reddit create names as
+   * `imageAssetId`. The body is the file's raw bytes typed with its own MIME type — the BFF route
+   * refuses anything but PNG/JPEG up to `CREATIVE_ASSET_MAX_BYTES` and does the base64 encoding
+   * campaign-service's JSON wire needs. `project` and `brief_id` travel as query params, as for
+   * `createCampaign`, because they are path segments upstream.
+   */
+  public uploadCreativeAsset(file: Blob, projectSlug: string, briefId: string): Observable<CreativeAssetUploadResult> {
+    return this.http.post<CreativeAssetUploadResult>('/api/campaigns/brief/creative-assets', file, {
+      params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
+      headers: { 'Content-Type': file.type },
     });
   }
 

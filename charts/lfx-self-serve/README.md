@@ -199,6 +199,7 @@ changing a value here rather than by shipping a revert.
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN`      | Allows Demand Gen Google campaigns. Requires a campaign-service that understands `googleAdsConfig.channel` (LFXV2-3257)                                                                                                                                                                                                                                                                              | No       | off      |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_CHANNELS` | Offers Performance Max, Video and Display. Allows a Performance Max or Display CREATE; Video is only ever offered, never unlocked, because the Google Ads API cannot create one. Requires a campaign-service that knows those `googleAdsConfig.channel` values                                                                                                                                       | No       | off      |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_BIDDING`         | Offers the per-platform Bidding control (Automatic or Manual max CPC) for LinkedIn, Meta, Microsoft Ads and Reddit (#3299). Requires [campaign-service #332](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/332) deployed and the create pipeline on; see `values.yaml`                                                                                                             | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_ASSETS`   | Offers a PNG/JPEG image upload in the Reddit create section, sent as `imageAssetId` (decision D3). Requires campaign-service's creative-asset URL signing configured (`CREATIVE_ASSET_URL_SIGNING_KEY` + `CREATIVE_ASSET_PUBLIC_BASE_URL`) and the create pipeline on; see `values.yaml`                                                                                                             | No       | off      |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE`   | Serves campaign pause/resume from campaign-service, which is what makes Google Ads and LinkedIn pausable — see below                                                                                                                                                                                                                                                                                 | No       | `"true"` |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_INSIGHTS`        | Serves the Google Ads keyword and audience reads from campaign-service, scoped to the project's own campaigns — REQUIRES [campaign-service #190](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/190) deployed first; CHANGES THE NUMBERS — see the flag's own note in `values.yaml`                                                                                                 | No       | on       |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS` | Serves keyword pause/remove from campaign-service — REQUIRES [campaign-service #191](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/191) deployed first; the legacy path is already broken without the GADS\_\* vars. NOTE: two request-boundary changes apply even with this OFF, deliberately — a 50-row cap and a malformed-id refusal on `/keywords/actions`; see `values.yaml` | No       | on       |
@@ -338,6 +339,16 @@ would be lost while the job reports success. It also needs the create pipeline o
 legacy creator never reads `bidding`. Off (the default), the Bidding control is hidden and a create
 request carrying `bidding` is refused with a 400. On, the form sends `bidding` on every LinkedIn,
 Meta, Microsoft Ads and Reddit config — `{"strategy":"automatic"}` unless the operator picks Manual.
+
+`LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_ASSETS` is a fourth (decision D3): does the deployed
+campaign-service have creative-asset URL signing configured — `CREATIVE_ASSET_URL_SIGNING_KEY` and
+an https `CREATIVE_ASSET_PUBLIC_BASE_URL` (LFXV2-2665)? Reddit only fetches a promoted-post image from
+a public URL, and a short-lived signed URL is how an uploaded asset becomes one; without signing,
+campaign-service refuses every `redditConfig.imageAssetId` with a 400. It also needs the create
+pipeline on, because the legacy creator never reads `imageAssetId`. Off (the default), the Reddit
+section offers only the pasted image URL, the upload route refuses, and a create request carrying
+`imageAssetId` is refused with a 400. On, the section also offers a PNG/JPEG upload (up to 10 MB),
+stored against the brief and sent as `imageAssetId` in place of `imageUrl`.
 
 **Video is not unlocked by this flag, or by any flag.** The Google Ads API has no call that
 creates a Video campaign, so campaign-service refuses one in the first statement of

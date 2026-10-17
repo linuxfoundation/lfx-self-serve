@@ -210,6 +210,25 @@ export enum ServerFeatureFlag {
   CampaignServiceBidding = 'LFX_CUTOVER_CAMPAIGN_SERVICE_BIDDING',
 
   /**
+   * Offers an image UPLOAD in the Reddit section of the create flow, sent as
+   * `redditConfig.imageAssetId` instead of a pasted `imageUrl` (decision D3).
+   *
+   * A CAPABILITY flag, like `CampaignServiceBidding`: it says the DEPLOYED campaign-service has
+   * creative-asset URL signing configured (`CREATIVE_ASSET_URL_SIGNING_KEY` and
+   * `CREATIVE_ASSET_PUBLIC_BASE_URL`, LFXV2-2665). Without them campaign-service refuses every
+   * `imageAssetId` with a 400, because Reddit can only fetch an image from a public URL and the
+   * signed URL is how a stored asset becomes one. Turn it on only once both are set.
+   *
+   * Only meaningful while the create cutover is on (`cutoverOwnsCreate`): the legacy creator never
+   * reads `imageAssetId`, so the capability the client sees
+   * (`CampaignListResult.redditAssetUploadEnabled`) needs both. With it off the upload control is
+   * hidden, the upload route refuses, and the create route refuses a request carrying
+   * `redditConfig.imageAssetId` rather than dropping it. The pasted image URL is unaffected either
+   * way. OFF by default. Same accepted values as the flags above.
+   */
+  CampaignServiceRedditAssets = 'LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_ASSETS',
+
+  /**
    * Serve `PATCH /api/campaigns/:campaignId/status` from lfx-v2-campaign-service instead of the
    * per-platform SDK calls in `campaign-proxy.service.ts`. OFF keeps the current behaviour
    * byte-for-byte.
