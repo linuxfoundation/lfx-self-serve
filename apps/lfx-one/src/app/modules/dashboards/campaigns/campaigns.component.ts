@@ -5555,6 +5555,16 @@ export class CampaignsComponent {
    * Writes NOTHING. The request carries no body: the stored bytes a restore exists to protect are
    * untouched, which is why approving is safe on a path where re-saving is not.
    *
+   * NO in-flight banner, deliberately. The restore leaves `{ status: 'off', briefId, approved:
+   * false }`, which the implementation tab renders as nothing and `canSubmit` already reads as
+   * "cannot create" — so for the length of one request the user sees the tab they asked for with
+   * Create disabled, then either an enabled button or a message. Announcing the wait would need a
+   * new member of the `CampaignBriefPersistenceState.status` union (`'saving'` would claim a write
+   * that is not happening, and `off` renders no banner at all), a new `@switch` arm, an
+   * announcement case, AND a `canSubmit` guard — because a status with no guard falls through to
+   * `true` and would ENABLE Create mid-approval. That is a real regression risk bought for a
+   * sub-second window in which the button is already correctly disabled.
+   *
    * Not queued on `persistChain`, unlike `persistBrief`. That chain serializes WRITES to the row so
    * two saves cannot interleave; this sends no content and is reached only from the restore branch,
    * which has just replaced what is on screen. Queueing it behind an unrelated save of a previous
@@ -5611,10 +5621,18 @@ export class CampaignsComponent {
           // row is exactly what the restore knew a moment ago. Downgrading it would refuse the
           // next save of a brief the user restored and was told was ready, for a request that
           // changed no content.
+          //
+          // An ordinary restore carries NO marker at all (`absence` is undefined whenever its read
+          // returned a validator), so carrying it through unchanged would leave this session on
+          // `etag: null` with nothing licensing the fallback, and `persistBrief(..., owned?.absence
+          // === 'overwrite')` would refuse the next save as `unverified-validator` -- exactly the
+          // outcome the paragraph above promises to prevent. `'overwrite'` is the right default
+          // because it is what the restore itself records when ITS read carried no validator: no
+          // validator by choice, not an indeterminate write.
           this.rememberBriefId(ownershipKey, {
             id: known.id,
             etag: result.etag,
-            ...(result.etag === null && known.absence !== undefined ? { absence: known.absence } : {}),
+            ...(result.etag === null ? { absence: known.absence ?? ('overwrite' as const) } : {}),
           });
         }
 

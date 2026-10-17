@@ -1864,6 +1864,21 @@ describe('CampaignServiceClient.approveStoredBrief', () => {
     expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
   });
 
+  // A re-read that 503s is the same class of failure as an approve that 503s: indeterminate, no
+  // conflict. Throwing instead would be the one path where a caller got an exception rather than
+  // the result shape this method documents.
+  it('reports an indeterminate result when the re-read itself fails', async () => {
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('upstream unavailable', 503, 'UNAVAILABLE'));
+
+    await expect(new CampaignServiceClient().approveStoredBrief(req, 'tlf', 'b-1', null)).resolves.toEqual({
+      enabled: true,
+      briefId: 'b-1',
+      etag: null,
+      approved: false,
+    });
+    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
+  });
+
   it('reports a stale validator as stale-brief, so the UI can say the row moved', async () => {
     proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('precondition failed', 412, 'PRECONDITION_FAILED'));
 

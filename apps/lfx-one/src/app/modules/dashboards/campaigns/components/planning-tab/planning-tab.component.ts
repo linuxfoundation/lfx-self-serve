@@ -1685,8 +1685,15 @@ export class PlanningTabComponent implements OnInit {
     // that existed nowhere in the product, so the warning named a dead end. It still warns rather
     // than staying silent, because the approval is a second request that can fail, and a user who
     // sees Create disabled afterwards needs to have been told what was wrong to begin with.
+    //
+    // Branched on the channel because ONE component serves both: the paid restore is wired to
+    // `onRestoreSavedBrief`, which approves; the email restore is wired to
+    // `onRestoreSavedEmailBrief`, which does not. Promising the approval on the email tab would be
+    // a sentence the code never delivers, so that channel says only what is true of it.
     if (result.status === 'loaded' && !result.approved) {
-      return 'This event has a saved brief that was never approved, so campaigns cannot be created from it yet. Restoring it approves the stored brief.';
+      return this.isEmail()
+        ? 'This event has a saved brief that was never approved, so campaigns cannot be created from it yet. Restoring it brings the stored brief back for editing.'
+        : 'This event has a saved brief that was never approved, so campaigns cannot be created from it yet. Restoring it approves the stored brief.';
     }
 
     return null;

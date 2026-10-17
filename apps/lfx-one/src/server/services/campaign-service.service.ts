@@ -992,7 +992,20 @@ export class CampaignServiceClient {
 
     let validator = knownEtag;
     if (validator === null) {
-      const current = await this.loadBriefById(req, projectSlug, briefId);
+      // Caught, not allowed to escape. Every other way this method can fail returns a classified
+      // result, and a re-read that 503s is the same class of failure as an approve that 503s —
+      // indeterminate, no conflict. Letting it throw would be the one path where a caller handed
+      // this method an id got an exception instead of the result shape it documents.
+      let current;
+      try {
+        current = await this.loadBriefById(req, projectSlug, briefId);
+      } catch (error) {
+        logger.warning(req, 'campaign_approve_stored_brief', 'could not re-read the stored brief for a validator', {
+          briefId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return refused;
+      }
       // `unreadable` is approvable: the row exists and carries an ETag, and only
       // `fromBriefResponse` failed to reconstruct it for the UI. Approval changes `status`, not
       // content, so a row this service cannot render is still a row the user may approve.
