@@ -242,20 +242,44 @@ export class CampaignOptimizeController {
       return;
     }
 
-    const rawWindow = req.query['window'];
-    let window: CampaignMetricsWindow | undefined;
-    if (rawWindow !== undefined) {
-      if (typeof rawWindow !== 'string' || !(CAMPAIGN_METRICS_WINDOWS as readonly string[]).includes(rawWindow)) {
-        next(fieldError('window', `window must be one of: ${CAMPAIGN_METRICS_WINDOWS.join(', ')}`, operation, req));
-        return;
-      }
-      window = rawWindow as CampaignMetricsWindow;
+    const window = readMetricsWindow(req, operation, next);
+    if (window === null) {
+      return;
     }
 
     const startTime = logger.startOperation(req, operation, { campaignId: target.campaignId, window });
     try {
       const data = await this.optimizeService.listMetaAdSets(req, target, window);
       logger.success(req, operation, startTime, { campaignId: target.campaignId, adSetCount: data.ad_set_count });
+      res.json(data);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `GET /api/campaigns/:campaignId/meta-ad-sets/:adSetId/ads?project=&briefId=&window=`: the ads
+   * under one ad set. Read-only; there is no per-ad lever.
+   */
+  public async listMetaAds(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'campaign_meta_ads_list';
+    const target = readTargetFromQuery(req, operation, next);
+    if (!target) {
+      return;
+    }
+    const adSetId = readAdSetId(req, operation, next);
+    if (!adSetId) {
+      return;
+    }
+    const window = readMetricsWindow(req, operation, next);
+    if (window === null) {
+      return;
+    }
+
+    const startTime = logger.startOperation(req, operation, { campaignId: target.campaignId, adSetId, window });
+    try {
+      const data = await this.optimizeService.listMetaAds(req, { ...target, adSetId }, window);
+      logger.success(req, operation, startTime, { campaignId: target.campaignId, adSetId, adCount: data.ad_count, truncated: data.truncated });
       res.json(data);
     } catch (error) {
       next(error);
@@ -273,9 +297,8 @@ export class CampaignOptimizeController {
     if (!campaignId) {
       return;
     }
-    const adSetId = req.params['adSetId'];
-    if (typeof adSetId !== 'string' || !META_AD_SET_ID_PATTERN.test(adSetId)) {
-      next(fieldError('adSetId', 'adSetId must be a Meta ad set id: 1-32 digits without a leading zero', operation, req));
+    const adSetId = readAdSetId(req, operation, next);
+    if (!adSetId) {
       return;
     }
     const body = readBody<MetaAdSetStatusRequest>(req, operation, next);
@@ -469,6 +492,32 @@ function readCampaignId(req: Request, operation: string, next: NextFunction): st
     return null;
   }
   return campaignId;
+}
+
+/** The `:adSetId` route parameter when it is a Meta ad set id (upstream's pattern); otherwise reports a 400 and returns null. */
+function readAdSetId(req: Request, operation: string, next: NextFunction): string | null {
+  const adSetId = req.params['adSetId'];
+  if (typeof adSetId !== 'string' || !META_AD_SET_ID_PATTERN.test(adSetId)) {
+    next(fieldError('adSetId', 'adSetId must be a Meta ad set id: 1-32 digits without a leading zero', operation, req));
+    return null;
+  }
+  return adSetId;
+}
+
+/**
+ * The optional `window` query parameter: `undefined` when omitted (upstream defaults it), the
+ * window when it is one upstream declares, or `null` after reporting a 400.
+ */
+function readMetricsWindow(req: Request, operation: string, next: NextFunction): CampaignMetricsWindow | undefined | null {
+  const rawWindow = req.query['window'];
+  if (rawWindow === undefined) {
+    return undefined;
+  }
+  if (typeof rawWindow !== 'string' || !(CAMPAIGN_METRICS_WINDOWS as readonly string[]).includes(rawWindow)) {
+    next(fieldError('window', `window must be one of: ${CAMPAIGN_METRICS_WINDOWS.join(', ')}`, operation, req));
+    return null;
+  }
+  return rawWindow as CampaignMetricsWindow;
 }
 
 /** A brief id from the query or body when it is a UUID (upstream `Format(FormatUUID)`); otherwise reports a 400 and returns null. */

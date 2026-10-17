@@ -15,6 +15,7 @@ const {
   getRedditAdsKeywords,
   getCampaignSettings,
   listMetaAdSets,
+  listMetaAds,
   updateMetaAdSetStatus,
   adoptCampaign,
   getKeywordTargeting,
@@ -29,6 +30,7 @@ const {
   getRedditAdsKeywords: vi.fn(),
   getCampaignSettings: vi.fn(),
   listMetaAdSets: vi.fn(),
+  listMetaAds: vi.fn(),
   updateMetaAdSetStatus: vi.fn(),
   adoptCampaign: vi.fn(),
   getKeywordTargeting: vi.fn(),
@@ -46,6 +48,7 @@ vi.mock('../services/campaign-optimize.service', () => ({
     public getRedditAdsKeywords = getRedditAdsKeywords;
     public getCampaignSettings = getCampaignSettings;
     public listMetaAdSets = listMetaAdSets;
+    public listMetaAds = listMetaAds;
     public updateMetaAdSetStatus = updateMetaAdSetStatus;
     public adoptCampaign = adoptCampaign;
     public getKeywordTargeting = getKeywordTargeting;
@@ -322,6 +325,63 @@ describe('CampaignOptimizeController per-campaign reads', () => {
 
     await controller.listMetaAdSets(buildReq({ params: { campaignId: CAMPAIGN }, query: { project: 'tlf', briefId: BRIEF, window: 'forever' } }), res, next);
     expectFieldError(next, 'window');
+  });
+});
+
+describe('CampaignOptimizeController.listMetaAds', () => {
+  const params = { campaignId: CAMPAIGN, adSetId: '120210000000000888' };
+
+  it("reads one ad set's ads with the target from the route and query, and answers them as is", async () => {
+    const data = { ad_set_id: '120210000000000888', ads: [], ad_count: 0, truncated: true };
+    listMetaAds.mockResolvedValue(data);
+
+    await controller.listMetaAds(buildReq({ params, query: { project: 'tlf', briefId: BRIEF, window: 'last_14_days' } }), res, next);
+
+    expect(listMetaAds).toHaveBeenCalledWith(
+      expect.anything(),
+      { projectSlug: 'tlf', briefId: BRIEF, campaignId: CAMPAIGN, adSetId: '120210000000000888' },
+      'last_14_days'
+    );
+    expect(res.json).toHaveBeenCalledWith(data);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('leaves the window to upstream when it is omitted', async () => {
+    listMetaAds.mockResolvedValue({ ads: [], ad_count: 0, truncated: false });
+
+    await controller.listMetaAds(buildReq({ params, query: { project: 'tlf', briefId: BRIEF } }), res, next);
+
+    expect(listMetaAds).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ adSetId: '120210000000000888' }), undefined);
+  });
+
+  it.each([
+    ['campaignId', { ...params, campaignId: '123' }, { project: 'tlf', briefId: BRIEF }],
+    ['project', params, { briefId: BRIEF }],
+    ['project', params, { project: '', briefId: BRIEF }],
+    ['briefId', params, { project: 'tlf' }],
+    ['briefId', params, { project: 'tlf', briefId: 'not-a-uuid' }],
+    ['adSetId', { ...params, adSetId: '0123' }, { project: 'tlf', briefId: BRIEF }],
+    ['adSetId', { ...params, adSetId: '12a34' }, { project: 'tlf', briefId: BRIEF }],
+    ['adSetId', { ...params, adSetId: '1'.repeat(33) }, { project: 'tlf', briefId: BRIEF }],
+    ['window', params, { project: 'tlf', briefId: BRIEF, window: 'last_9_days' }],
+    ['window', params, { project: 'tlf', briefId: BRIEF, window: ['today'] }],
+  ])('refuses a bad %s with a 400 field error before any round trip', async (field, p, query) => {
+    await controller.listMetaAds(buildReq({ params: p, query }), res, next);
+
+    expectFieldError(next, field);
+    expect(vi.mocked(next).mock.calls[0][0]).toMatchObject({ statusCode: 400 });
+    expect(listMetaAds).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('hands an upstream failure to the error handler', async () => {
+    const failure = new Error('upstream 409');
+    listMetaAds.mockRejectedValue(failure);
+
+    await controller.listMetaAds(buildReq({ params, query: { project: 'tlf', briefId: BRIEF } }), res, next);
+
+    expect(next).toHaveBeenCalledWith(failure);
+    expect(res.json).not.toHaveBeenCalled();
   });
 });
 

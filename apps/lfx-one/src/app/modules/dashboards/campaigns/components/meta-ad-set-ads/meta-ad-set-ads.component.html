@@ -1,0 +1,119 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-2" [attr.data-testid]="'meta-ad-set-ads-' + adSetId()">
+  <div class="flex flex-wrap items-center justify-between gap-2">
+    <h5 class="text-xs font-semibold text-gray-900">Ads</h5>
+    @if (data(); as list) {
+      <span class="text-xs text-gray-500" [attr.data-testid]="'meta-ad-set-ads-read-at-' + adSetId()">Read {{ list.read_at | date: 'medium' }}</span>
+      @if (windowLabel()) {
+        <span class="text-xs text-gray-500" [attr.data-testid]="'meta-ad-set-ads-window-' + adSetId()">Counters: {{ windowLabel() }}</span>
+      }
+    }
+  </div>
+
+  <!-- Persistent and empty until a read starts: only its text changes (see liveRegionMounted). -->
+  <div role="status" aria-live="polite" class="sr-only" [attr.data-testid]="'meta-ad-set-ads-live-' + adSetId()">{{ loadingAnnouncement() }}</div>
+
+  @if (state() === 'loading' && !data()) {
+    <p class="flex items-center gap-2 text-xs text-gray-500" [attr.data-testid]="'meta-ad-set-ads-loading-' + adSetId()">
+      <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+      Loading ads...
+    </p>
+  } @else if (state() === 'error') {
+    <div class="flex flex-wrap items-center justify-between gap-3" role="alert" [attr.data-testid]="'meta-ad-set-ads-error-' + adSetId()">
+      <p class="text-xs text-gray-600">{{ errorMessage() }}</p>
+      <lfx-button
+        label="Retry"
+        icon="fa-light fa-rotate-right"
+        size="small"
+        severity="secondary"
+        [text]="true"
+        (onClick)="retry()"
+        [attr.data-testid]="'meta-ad-set-ads-retry-' + adSetId()" />
+    </div>
+  } @else if (data(); as list) {
+    @if (list.truncated === true) {
+      <p class="text-xs text-amber-700" [attr.data-testid]="'meta-ad-set-ads-truncated-' + adSetId()">{{ truncatedNote }}</p>
+    }
+    @if (rows().length === 0) {
+      <p class="text-xs text-gray-500" [attr.data-testid]="'meta-ad-set-ads-empty-' + adSetId()">Meta lists no ads for this ad set.</p>
+    } @else {
+      <div class="overflow-x-auto rounded-md border border-gray-200 bg-white">
+        <table class="w-full text-left text-xs">
+          <caption class="sr-only">
+            Ads of
+            {{
+              adSetName()
+            }}. Spend is in
+            {{
+              list.currency
+            }}.
+          </caption>
+          <thead>
+            <tr class="border-b border-gray-200 bg-gray-50">
+              <th scope="col" class="px-3 py-2 font-medium text-gray-500">Ad</th>
+              <th scope="col" class="px-3 py-2 font-medium text-gray-500">Status</th>
+              <th scope="col" class="px-3 py-2 text-right font-medium text-gray-500">Impressions</th>
+              <th scope="col" class="px-3 py-2 text-right font-medium text-gray-500">Clicks</th>
+              <th scope="col" class="px-3 py-2 text-right font-medium text-gray-500">CTR</th>
+              <th scope="col" class="px-3 py-2 text-right font-medium text-gray-500">Spend ({{ list.currency }})</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of rows(); track row.id) {
+              <tr class="border-b border-gray-100 last:border-0" [attr.data-testid]="'meta-ad-row-' + row.id">
+                <td class="px-3 py-2">
+                  <span class="block break-words text-gray-900">{{ row.name }}</span>
+                  @if (row.listed) {
+                    <span class="block break-words text-gray-500" [attr.data-testid]="'meta-ad-creative-' + row.id">Creative: {{ row.creative }}</span>
+                  } @else {
+                    <span class="block text-gray-500" [attr.data-testid]="'meta-ad-unlisted-' + row.id">{{ unlistedNote }}</span>
+                  }
+                </td>
+                <td class="px-3 py-2 text-gray-700" [attr.data-testid]="'meta-ad-status-' + row.id">
+                  @if (row.status) {
+                    {{ row.status }}
+                  } @else {
+                    <span class="text-gray-500">Not reported</span>
+                  }
+                  @if (row.effectiveStatus) {
+                    <span class="block text-gray-500">Effective: {{ row.effectiveStatus }}</span>
+                  }
+                </td>
+                <td class="px-3 py-2 text-right text-gray-700" [attr.data-testid]="'meta-ad-impressions-' + row.id">
+                  @if (row.impressions !== null) {
+                    {{ row.impressions | number }}
+                  } @else {
+                    <span class="text-gray-500">Not reported</span>
+                  }
+                </td>
+                <td class="px-3 py-2 text-right text-gray-700" [attr.data-testid]="'meta-ad-clicks-' + row.id">
+                  @if (row.clicks !== null) {
+                    {{ row.clicks | number }}
+                  } @else {
+                    <span class="text-gray-500">Not reported</span>
+                  }
+                </td>
+                <td class="px-3 py-2 text-right text-gray-700" [attr.data-testid]="'meta-ad-ctr-' + row.id">
+                  @if (row.ctr !== null) {
+                    {{ row.ctr | percent: '1.2-2' }}
+                  } @else {
+                    <span class="text-gray-500">Not reported</span>
+                  }
+                </td>
+                <td class="px-3 py-2 text-right text-gray-700" [attr.data-testid]="'meta-ad-spend-' + row.id">
+                  @if (row.spend !== null) {
+                    {{ row.spend | number: '1.2-2' }}
+                  } @else {
+                    <span class="text-gray-500">Not reported</span>
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  }
+</div>

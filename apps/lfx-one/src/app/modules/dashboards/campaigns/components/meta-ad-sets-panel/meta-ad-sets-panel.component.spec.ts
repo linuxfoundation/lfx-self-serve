@@ -11,8 +11,17 @@ import {
   META_AD_SET_DELIBERATE_RESUME_ADVICE,
   META_AD_SET_RESUME_BLOCKED_DEGRADED_REASON,
   META_AD_SET_RESUME_ELSEWHERE_REASON,
+  META_AD_UNLISTED_NOTE,
+  META_ADS_TRUNCATED_NOTE,
 } from '@lfx-one/shared/constants';
-import type { CampaignServiceMetaAdSet, CampaignServiceMetaAdSets, MetaAdSetToggleOutcome, MetaAdSetToggleRequest } from '@lfx-one/shared/interfaces';
+import type {
+  CampaignServiceMetaAd,
+  CampaignServiceMetaAds,
+  CampaignServiceMetaAdSet,
+  CampaignServiceMetaAdSets,
+  MetaAdSetToggleOutcome,
+  MetaAdSetToggleRequest,
+} from '@lfx-one/shared/interfaces';
 import { metaAdSetCampaignEligibility } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
 import { of, Subject, throwError } from 'rxjs';
@@ -23,6 +32,7 @@ import { MetaAdSetsPanelComponent } from './meta-ad-sets-panel.component';
 describe('MetaAdSetsPanelComponent', () => {
   let fixture: ComponentFixture<MetaAdSetsPanelComponent>;
   const listMetaAdSets = vi.fn();
+  const listMetaAds = vi.fn();
   let emitted: MetaAdSetToggleRequest[];
 
   const adSet = (over: Partial<CampaignServiceMetaAdSet> = {}): CampaignServiceMetaAdSet => ({
@@ -60,10 +70,11 @@ describe('MetaAdSetsPanelComponent', () => {
 
   beforeEach(async () => {
     listMetaAdSets.mockReset();
+    listMetaAds.mockReset();
     emitted = [];
     await TestBed.configureTestingModule({
       imports: [MetaAdSetsPanelComponent],
-      providers: [provideNoopAnimations(), { provide: CampaignService, useValue: { listMetaAdSets } }],
+      providers: [provideNoopAnimations(), { provide: CampaignService, useValue: { listMetaAdSets, listMetaAds } }],
     }).compileComponents();
   });
 
@@ -376,6 +387,206 @@ describe('MetaAdSetsPanelComponent', () => {
       fixture.detectChanges();
 
       expect((q('meta-ad-set-toggle-111') as HTMLButtonElement).disabled).toBe(true);
+    });
+  });
+
+  describe('read-only Ads section', () => {
+    const ad = (over: Partial<CampaignServiceMetaAd> = {}): CampaignServiceMetaAd => ({
+      id: '999',
+      listed: true,
+      name: 'Leads — Image A',
+      status: 'ACTIVE',
+      effective_status: 'ADSET_PAUSED',
+      creative_id: '777',
+      creative_name: 'Image A',
+      impressions: 1920,
+      clicks: 21,
+      cost_micros: 6_170_000,
+      ctr: 0.0228,
+      ...over,
+    });
+
+    const ads = (items: CampaignServiceMetaAd[], over: Partial<CampaignServiceMetaAds> = {}): CampaignServiceMetaAds => ({
+      campaign_id: 'c-1',
+      platform_campaign_id: '555',
+      ad_set_id: '111',
+      window: 'last_30_days',
+      currency: 'EUR',
+      read_at: '2026-10-15T09:30:00Z',
+      truncated: false,
+      ads: items,
+      ad_count: items.length,
+      ...over,
+    });
+
+    const toggleAds = (adSetId = '111'): void => {
+      (q(`meta-ad-set-ads-toggle-${adSetId}`) as HTMLButtonElement).click();
+      fixture.detectChanges();
+    };
+
+    it("reads an ad set's ads only once it is expanded, and renders name, status, creative and counters", () => {
+      listMetaAdSets.mockReturnValue(of(list([adSet()])));
+      listMetaAds.mockReturnValue(of(ads([ad()])));
+      render();
+
+      expect(listMetaAds).not.toHaveBeenCalled();
+      expect(q('meta-ad-set-ads-111')).toBeNull();
+      expect(q('meta-ad-set-ads-toggle-111')!.getAttribute('aria-expanded')).toBe('false');
+
+      toggleAds();
+
+      expect(listMetaAds).toHaveBeenCalledTimes(1);
+      expect(listMetaAds).toHaveBeenCalledWith('tlf', 'b-1', 'c-1', '111');
+      const toggle = q('meta-ad-set-ads-toggle-111')!;
+      expect(toggle.getAttribute('aria-expanded')).toBe('true');
+      expect(toggle.getAttribute('aria-controls')).toBe('meta-ad-set-ads-region-c-1-111');
+      expect(fixture.nativeElement.querySelector('#meta-ad-set-ads-region-c-1-111')).not.toBeNull();
+      expect(q('meta-ad-row-999')!.textContent).toContain('Leads — Image A');
+      expect(q('meta-ad-creative-999')!.textContent).toContain('Creative: Image A');
+      expect(q('meta-ad-status-999')!.textContent).toContain('ACTIVE');
+      expect(q('meta-ad-status-999')!.textContent).toContain('Effective: ADSET_PAUSED');
+      expect(q('meta-ad-impressions-999')!.textContent).toContain('1,920');
+      expect(q('meta-ad-clicks-999')!.textContent).toContain('21');
+      expect(q('meta-ad-ctr-999')!.textContent).toContain('2.28%');
+      expect(q('meta-ad-spend-999')!.textContent).toContain('6.17');
+      expect(q('meta-ad-set-ads-111')!.textContent).toContain('Spend (EUR)');
+      expect(q('meta-ad-set-ads-truncated-111')).toBeNull();
+    });
+
+    it('is strictly read-only: the section offers no per-ad action', () => {
+      listMetaAdSets.mockReturnValue(of(list([adSet()])));
+      listMetaAds.mockReturnValue(of(ads([ad(), ad({ id: '998', status: 'PAUSED' })])));
+      render();
+      toggleAds();
+
+      expect(q('meta-ad-set-ads-111')!.querySelectorAll('button')).toHaveLength(0);
+      expect(emitted).toEqual([]);
+    });
+
+    it('collapses without another read, and expanding again re-reads', () => {
+      listMetaAdSets.mockReturnValue(of(list([adSet()])));
+      listMetaAds.mockReturnValue(of(ads([ad()])));
+      render();
+      toggleAds();
+      toggleAds();
+
+      expect(q('meta-ad-set-ads-111')).toBeNull();
+      expect(q('meta-ad-set-ads-toggle-111')!.getAttribute('aria-expanded')).toBe('false');
+      expect(listMetaAds).toHaveBeenCalledTimes(1);
+
+      toggleAds();
+      expect(listMetaAds).toHaveBeenCalledTimes(2);
+    });
+
+    it('expands each ad set on its own', () => {
+      listMetaAdSets.mockReturnValue(of(list([adSet(), adSet({ id: '222' })])));
+      listMetaAds.mockReturnValue(of(ads([ad()])));
+      render();
+      toggleAds('222');
+
+      expect(listMetaAds).toHaveBeenCalledWith('tlf', 'b-1', 'c-1', '222');
+      expect(q('meta-ad-set-ads-222')).not.toBeNull();
+      expect(q('meta-ad-set-ads-111')).toBeNull();
+    });
+
+    it('notes a truncated listing', () => {
+      listMetaAdSets.mockReturnValue(of(list([adSet()])));
+      listMetaAds.mockReturnValue(of(ads([ad()], { truncated: true })));
+      render();
+      toggleAds();
+
+      expect(q('meta-ad-set-ads-truncated-111')!.textContent).toContain(META_ADS_TRUNCATED_NOTE);
+      expect(q('meta-ad-row-999')).not.toBeNull();
+    });
+
+    it('shows an unlisted ad by its id with its counters only', () => {
+      listMetaAdSets.mockReturnValue(of(list([adSet()])));
+      listMetaAds.mockReturnValue(of(ads([{ id: '888', listed: false, impressions: 40, clicks: 2, cost_micros: 500_000, ctr: 0.05 }])));
+      render();
+      toggleAds();
+
+      expect(q('meta-ad-row-888')!.textContent).toContain('888');
+      expect(q('meta-ad-unlisted-888')!.textContent).toContain(META_AD_UNLISTED_NOTE);
+      expect(q('meta-ad-creative-888')).toBeNull();
+      expect(q('meta-ad-status-888')!.textContent).toContain('Not reported');
+      expect(q('meta-ad-spend-888')!.textContent).toContain('0.50');
+    });
+
+    it('states an ad set with no ads', () => {
+      listMetaAdSets.mockReturnValue(of(list([adSet()])));
+      listMetaAds.mockReturnValue(of(ads([])));
+      render();
+      toggleAds();
+
+      expect(q('meta-ad-set-ads-empty-111')!.textContent).toContain('Meta lists no ads for this ad set.');
+    });
+
+    it('shows the loading state while the read is out', () => {
+      listMetaAdSets.mockReturnValue(of(list([adSet()])));
+      const pending = new Subject<CampaignServiceMetaAds>();
+      listMetaAds.mockReturnValue(pending);
+      render();
+      toggleAds();
+
+      expect(q('meta-ad-set-ads-loading-111')).not.toBeNull();
+      pending.next(ads([ad()]));
+      fixture.detectChanges();
+      expect(q('meta-ad-set-ads-loading-111')).toBeNull();
+      expect(q('meta-ad-row-999')).not.toBeNull();
+    });
+
+    it('states a failed read as an alert with a retry that reads again', () => {
+      listMetaAdSets.mockReturnValue(of(list([adSet()])));
+      listMetaAds.mockReturnValueOnce(
+        throwError(() => new HttpErrorResponse({ status: 409, error: { error: 'The ad set does not belong to this campaign.', code: 'CONFLICT' } }))
+      );
+      render();
+      toggleAds();
+
+      const error = q('meta-ad-set-ads-error-111')!;
+      expect(error.getAttribute('role')).toBe('alert');
+      expect(error.textContent).toContain('The ad set does not belong to this campaign.');
+
+      listMetaAds.mockReturnValue(of(ads([ad()])));
+      (q('meta-ad-set-ads-retry-111')!.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(listMetaAds).toHaveBeenCalledTimes(2);
+      expect(q('meta-ad-set-ads-error-111')).toBeNull();
+      expect(q('meta-ad-row-999')).not.toBeNull();
+    });
+
+    it('forgets an expansion whose ad set a re-read no longer lists', () => {
+      listMetaAdSets.mockReturnValue(of(list([adSet(), adSet({ id: '222' })])));
+      listMetaAds.mockReturnValue(of(ads([ad()])));
+      render();
+      toggleAds('222');
+      toggleAds('111');
+
+      listMetaAdSets.mockReturnValue(of(list([adSet()])));
+      fixture.componentRef.setInput('reloadToken', 1);
+      fixture.detectChanges();
+      expect(q('meta-ad-set-ads-111')).not.toBeNull();
+
+      // Listed again later: it comes back collapsed, not reopened from the stale expansion.
+      listMetaAdSets.mockReturnValue(of(list([adSet(), adSet({ id: '222' })])));
+      fixture.componentRef.setInput('reloadToken', 2);
+      fixture.detectChanges();
+      expect(q('meta-ad-set-ads-222')).toBeNull();
+      expect(q('meta-ad-set-ads-toggle-222')!.getAttribute('aria-expanded')).toBe('false');
+      expect(q('meta-ad-set-ads-111')).not.toBeNull();
+    });
+
+    it("re-reads an expanded ad set's ads when the parent bumps the reload token", () => {
+      listMetaAdSets.mockReturnValue(of(list([adSet()])));
+      listMetaAds.mockReturnValue(of(ads([ad()])));
+      render();
+      toggleAds();
+
+      fixture.componentRef.setInput('reloadToken', 1);
+      fixture.detectChanges();
+
+      expect(listMetaAds).toHaveBeenCalledTimes(2);
+      expect(q('meta-ad-set-ads-111')).not.toBeNull();
     });
   });
 });
