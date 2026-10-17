@@ -1,55 +1,108 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<button
-  #selectorTrigger
-  type="button"
-  class="box-border content-stretch flex gap-3 items-center overflow-clip p-3 relative w-full cursor-pointer hover:bg-gray-50 transition-colors rounded-[0.75rem] border border-gray-200 shadow-[0_2px_3px_-1px_rgba(0,0,0,0.08)]"
-  (click)="togglePanel($event, popover)"
-  role="combobox"
-  aria-haspopup="listbox"
-  aria-controls="org-selector-listbox"
-  [attr.aria-expanded]="popover.overlayVisible"
-  [attr.aria-label]="'Organization switcher, currently ' + displayName()"
-  data-testid="org-selector">
-  <div class="bg-gray-100 overflow-clip relative rounded-lg shrink-0 size-11 border border-gray-200" data-testid="org-selector-trigger-logo">
-    <div class="flex items-center justify-center size-full p-1.5">
-      @if (displayLogo()) {
-        <img [alt]="displayName()" class="w-full h-full object-contain" [src]="displayLogo()" data-testid="org-selector-trigger-logo-image" />
-      } @else {
-        <i class="fa-light fa-building text-gray-500 text-lg" aria-hidden="true" data-testid="org-selector-trigger-logo-fallback"></i>
-      }
+@if (variant() === 'navbar') {
+  <!-- Navbar context card (sidebar v2): logo tile, name, role line and the up/down switch chevron. -->
+  <button
+    #selectorTrigger
+    type="button"
+    class="lfxn__context lfxn__context--switchable lfxn__context--org"
+    [class.lfxn__context--static]="isSingleOrg()"
+    (click)="togglePanel($event, popover)"
+    [attr.role]="isSingleOrg() ? null : 'combobox'"
+    [attr.aria-haspopup]="isSingleOrg() ? null : 'listbox'"
+    [attr.aria-controls]="isSingleOrg() ? null : 'org-selector-listbox'"
+    [attr.aria-expanded]="isSingleOrg() ? null : isPanelOpen()"
+    [attr.aria-disabled]="isSingleOrg() || null"
+    [attr.aria-label]="'Organization switcher, currently ' + displayName()"
+    [attr.aria-describedby]="navbarRoleTooltip() ? roleDescriptionId : null"
+    data-testid="org-selector">
+    <span class="lfxn__context-body">
+      <span class="lfxn__tile lfxn__tile--logo" data-testid="org-selector-trigger-logo">
+        @if (displayLogo()) {
+          <img [src]="displayLogo()" alt="" data-testid="org-selector-trigger-logo-image" />
+        } @else {
+          <i class="fa-light fa-building" aria-hidden="true" data-testid="org-selector-trigger-logo-fallback"></i>
+        }
+      </span>
+      <span class="lfxn__context-text">
+        <span class="lfxn__context-name" [lfxNavTooltip]="displayName()" [lfxNavTooltipOnlyIfTruncated]="true" data-testid="org-selector-trigger-name">{{
+          displayName()
+        }}</span>
+        @if (selectedRoleLabel()) {
+          <span
+            class="lfxn__org-role"
+            data-testid="org-selector-trigger-role-badge"
+            [attr.aria-label]="'Role: ' + selectedRoleLabel()"
+            [attr.data-role-persona]="selectedRolePersona()"
+            [attr.data-role-label]="selectedRoleLabel()"
+            [lfxNavTooltip]="navbarRoleTooltip() || selectedRoleLabel()">
+            <i [ngClass]="selectedRoleIcon()" aria-hidden="true"></i>{{ selectedRoleLabel() }}
+          </span>
+          @if (navbarRoleTooltip()) {
+            <!-- The hover tooltip is out of reach for keyboard and screen-reader users; describe the button with it instead. -->
+            <span [id]="roleDescriptionId" class="sr-only">{{ navbarRoleTooltip() }}</span>
+          }
+        } @else {
+          <span class="lfxn__org-role" data-testid="org-selector-trigger-lens-label">Organization</span>
+        }
+      </span>
+    </span>
+    @if (!isSingleOrg()) {
+      <span class="lfxn__context-chevron" aria-hidden="true" data-testid="org-selector-trigger-chevron"></span>
+    }
+  </button>
+} @else {
+  <button
+    #selectorTrigger
+    type="button"
+    class="box-border content-stretch flex gap-3 items-center overflow-clip p-3 relative w-full cursor-pointer hover:bg-gray-50 transition-colors rounded-[0.75rem] border border-gray-200 shadow-[0_2px_3px_-1px_rgba(0,0,0,0.08)]"
+    (click)="togglePanel($event, popover)"
+    role="combobox"
+    aria-haspopup="listbox"
+    aria-controls="org-selector-listbox"
+    [attr.aria-expanded]="popover.overlayVisible"
+    [attr.aria-label]="'Organization switcher, currently ' + displayName()"
+    data-testid="org-selector">
+    <div class="bg-gray-100 overflow-clip relative rounded-lg shrink-0 size-11 border border-gray-200" data-testid="org-selector-trigger-logo">
+      <div class="flex items-center justify-center size-full p-1.5">
+        @if (displayLogo()) {
+          <img [alt]="displayName()" class="w-full h-full object-contain" [src]="displayLogo()" data-testid="org-selector-trigger-logo-image" />
+        } @else {
+          <i class="fa-light fa-building text-gray-500 text-lg" aria-hidden="true" data-testid="org-selector-trigger-logo-fallback"></i>
+        }
+      </div>
     </div>
-  </div>
 
-  <div class="flex flex-col gap-1.5 grow items-start relative min-w-0 overflow-hidden">
-    <p class="sidebar-org-name" [attr.title]="displayName()" data-testid="org-selector-trigger-name">{{ displayName() }}</p>
-    <div class="flex items-center gap-1.5 w-full min-w-0 text-left">
-      @if (selectedRoleLabel()) {
-        <i [ngClass]="selectedRoleIcon()" class="fa-fw text-[10px] text-gray-400 shrink-0" aria-hidden="true"></i>
-        <span
-          class="text-xs font-normal text-gray-400 leading-none truncate"
-          data-testid="org-selector-trigger-role-badge"
-          [attr.aria-label]="'Role: ' + selectedRoleLabel()"
-          [attr.data-role-persona]="selectedRolePersona()"
-          [attr.data-role-label]="selectedRoleLabel()"
-          [attr.title]="selectedRoleTooltip() || selectedRoleLabel()"
-          >{{ selectedRoleLabel() }}</span
-        >
-      } @else {
-        <span class="text-xs font-normal text-gray-400 leading-none truncate" data-testid="org-selector-trigger-lens-label">Organization</span>
-      }
+    <div class="flex flex-col gap-1.5 grow items-start relative min-w-0 overflow-hidden">
+      <p class="sidebar-org-name" [attr.title]="displayName()" data-testid="org-selector-trigger-name">{{ displayName() }}</p>
+      <div class="flex items-center gap-1.5 w-full min-w-0 text-left">
+        @if (selectedRoleLabel()) {
+          <i [ngClass]="selectedRoleIcon()" class="fa-fw text-[10px] text-gray-400 shrink-0" aria-hidden="true"></i>
+          <span
+            class="text-xs font-normal text-gray-400 leading-none truncate"
+            data-testid="org-selector-trigger-role-badge"
+            [attr.aria-label]="'Role: ' + selectedRoleLabel()"
+            [attr.data-role-persona]="selectedRolePersona()"
+            [attr.data-role-label]="selectedRoleLabel()"
+            [attr.title]="selectedRoleTooltip() || selectedRoleLabel()"
+            >{{ selectedRoleLabel() }}</span
+          >
+        } @else {
+          <span class="text-xs font-normal text-gray-400 leading-none truncate" data-testid="org-selector-trigger-lens-label">Organization</span>
+        }
+      </div>
     </div>
-  </div>
 
-  <i class="fa-light fa-angles-up-down shrink-0 text-gray-400" aria-hidden="true" data-testid="org-selector-trigger-chevron"></i>
-</button>
+    <i class="fa-light fa-angles-up-down shrink-0 text-gray-400" aria-hidden="true" data-testid="org-selector-trigger-chevron"></i>
+  </button>
+}
 
 <p-popover
   #popover
   appendTo="body"
   [style]="{ width: '28rem' }"
-  [styleClass]="panelStyleClass"
+  [styleClass]="panelStyleClass()"
   (onShow)="onPopoverShow()"
   (onHide)="onPopoverHide()"
   data-testid="org-selector-panel">

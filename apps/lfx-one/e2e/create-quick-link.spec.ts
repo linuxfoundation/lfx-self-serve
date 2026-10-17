@@ -45,7 +45,8 @@
  *       LFXV2-3248: the mobile drawer's own Create trigger (`create-rail-button-mobile`) opens a
  *       distinctly-testid'd popover (`create-menu-mobile`) anchored near the tapped button, not
  *       pinned at the desktop rail's fixed coordinates — regression guard for the `lg`-scoped
- *       rail-anchoring CSS in `lens-switcher.component.scss`.
+ *       rail-anchoring CSS of the former lens-switcher rail (the navbar anchors both menus to
+ *       their own trigger).
  *
  * What this suite does NOT attempt: a deterministic "committee target selectable for meeting but
  * not newsletter" scenario. That requires a fixture user with a specific, known grant shape
@@ -307,7 +308,7 @@ test.describe('Create Quick-Link — search-fallback for an inherited-writer (LF
 // The mobile drawer's own Create trigger is a separate element from the desktop rail button
 // (data-testid="create-rail-button-mobile"), opening a distinctly-testid'd copy of the same
 // popover (data-testid="create-menu-mobile") — see LFXV2-3248. The regression this suite guards
-// (lens-switcher.component.scss's rail-anchoring CSS) is gated at the `lg` breakpoint (1024px,
+// (the former lens-switcher rail's anchoring CSS) is gated at the `lg` breakpoint (1024px,
 // matching tailwind.config.js), so the skip boundary matches that rather than `md` (768px) —
 // a viewport in [768, 1024) still renders the mobile drawer (the app's own responsive split is
 // keyed on `lg`, not `md`), so gating the skip at `md` would incorrectly treat that range as
@@ -359,7 +360,7 @@ test.describe('Create Quick-Link — mobile trigger (LFXV2-3248)', () => {
     // change out of scope for this test-only commit. The class this test already relies on to
     // scope the SCSS override is the stable hook available today.
     //
-    // `.filter({ visible: true })`: `lfx-lens-switcher` mounts twice at once (desktop rail +
+    // `.filter({ visible: true })`: `lfx-navbar` mounts twice at once (desktop rail +
     // mobile drawer instances in main-layout.component.html), each with its own `.p-popover
     // .lfx-create-popover` panel. This only resolves to one element today because PrimeNG lazily
     // creates the panel DOM on first `show()`/`toggle()` — the never-toggled desktop instance's

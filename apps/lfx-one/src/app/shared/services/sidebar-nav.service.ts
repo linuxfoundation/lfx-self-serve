@@ -123,6 +123,21 @@ export class SidebarNavService {
   // active foundation/project. canWrite() is reactive to context changes.
   private readonly canSeeNewsletters: Signal<boolean> = this.initCanSeeNewsletters();
 
+  /**
+   * True while `sidebarItems` is empty only because what decides its shape is still loading — the
+   * persona detection, or (formation flag on) the active project's stage. Consumers that read an
+   * empty list as "no access" must wait for this to clear.
+   */
+  public readonly sidebarItemsPending = computed((): boolean => {
+    if (!this.personaService.personaLoaded()) return true;
+    return (
+      this.activeLens() === 'project' &&
+      this.isFormationEnabled() &&
+      !this.formationOverviewAllowed() &&
+      !this.projectContextService.activeProjectStageResolved()
+    );
+  });
+
   // Lens-aware sidebar items
   public readonly sidebarItems = computed((): SidebarMenuItem[] => {
     switch (this.activeLens()) {
@@ -246,7 +261,7 @@ export class SidebarNavService {
         },
         {
           label: 'My ' + COMMITTEE_LABEL.plural,
-          icon: 'fa-light fa-users-rectangle',
+          icon: 'fa-light fa-users-between-lines',
           routerLink: '/groups',
         },
         {
@@ -281,7 +296,7 @@ export class SidebarNavService {
       items: [
         {
           label: 'Akrites Program',
-          icon: 'fa-light fa-shield-halved',
+          icon: 'lfx-icon-akrites',
           routerLink: '/akrites',
         },
       ],
@@ -327,17 +342,17 @@ export class SidebarNavService {
       items: [
         {
           label: 'Mentee',
-          icon: 'fa-solid fa-user-graduate',
+          icon: 'fa-light fa-user-graduate',
           routerLink: '/mentorship/mentee',
         },
         {
           label: 'Mentor',
-          icon: 'fa-solid fa-user-tie',
+          icon: 'fa-light fa-user-tie',
           routerLink: '/mentorship/mentor',
         },
         {
           label: 'Admin',
-          icon: 'fa-solid fa-shield-halved',
+          icon: 'fa-light fa-shield-halved',
           routerLink: '/mentorship/admin',
         },
       ],
@@ -459,7 +474,7 @@ export class SidebarNavService {
       if (this.foundationHasProjects()) {
         items.push({
           label: 'Projects',
-          icon: 'fa-light fa-diagram-project',
+          icon: 'fa-light fa-folders',
           routerLink: '/foundation/projects',
           testId: 'sidebar-foundation-projects',
         });
@@ -490,7 +505,7 @@ export class SidebarNavService {
         },
         {
           label: COMMITTEE_LABEL.plural,
-          icon: 'fa-light fa-users-rectangle',
+          icon: 'fa-light fa-users-between-lines',
           routerLink: '/foundation/groups',
         },
         {
@@ -564,7 +579,7 @@ export class SidebarNavService {
           },
           {
             label: 'Social Listening',
-            icon: 'fa-light fa-ear-listen',
+            icon: 'fa-light fa-radar',
             routerLink: '/foundation/social-listening',
             testId: 'sidebar-metrics-social-listening',
           },
@@ -625,7 +640,7 @@ export class SidebarNavService {
     if (canSeeMarketingImpact) {
       marketingItems.push({
         label: 'Campaign Impact',
-        icon: 'fa-light fa-bullhorn',
+        icon: 'fa-light fa-bullseye-pointer',
         routerLink: '/foundation/marketing-impact',
         testId: 'sidebar-marketing-impact',
       });
@@ -672,7 +687,7 @@ export class SidebarNavService {
 
   private readonly projectGroupsNavItem: SidebarMenuItem = {
     label: COMMITTEE_LABEL.plural,
-    icon: 'fa-light fa-users-rectangle',
+    icon: 'fa-light fa-users-between-lines',
     routerLink: '/project/groups',
   };
 
@@ -839,7 +854,7 @@ export class SidebarNavService {
       },
       {
         label: 'Projects',
-        icon: 'fa-light fa-folder',
+        icon: 'fa-light fa-folders',
         routerLink: org('projects'),
       },
       // INFO: Future Epic implementation — the Governance page is hidden until built. Restore as a
@@ -869,8 +884,8 @@ export class SidebarNavService {
             icon: 'fa-light fa-graduation-cap',
             routerLink: org('training'),
           },
-          { label: 'Meetings', icon: 'fa-light fa-video', routerLink: org('meetings') },
-          { label: COMMITTEE_LABEL.plural, icon: 'fa-light fa-users-rectangle', routerLink: org('groups') },
+          { label: 'Meetings', icon: 'fa-light fa-calendar', routerLink: org('meetings') },
+          { label: COMMITTEE_LABEL.plural, icon: 'fa-light fa-users-between-lines', routerLink: org('groups') },
         ],
       },
       // Org admin — divider only (no section label); Profile sits under it.

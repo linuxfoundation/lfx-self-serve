@@ -153,7 +153,7 @@ class PersonaService {
 }
 ```
 
-Typical consumers: `lens-switcher.component.ts` (hides lenses the persona can't use), `sidebar.component.ts` (decides which nav items to render), and `ProjectContextService` (picks the right context based on `hasBoardRole`).
+Typical consumers: `navbar.component.ts` (hides lens tabs the persona can't use), `sidebar.component.ts` (decides which nav items to render), and `ProjectContextService` (picks the right context based on `hasBoardRole`).
 
 ## Project Context
 
@@ -282,7 +282,7 @@ Sequence for a typical page load:
 1. **SSR**: `resolvePersonaForSsr` fetches personas + organizations from cookie/NATS, populates `AuthContext`.
 2. **Hydration**: `PersonaService` signals populate from `AuthContext` via Angular TransferState.
 3. **Enrichment**: `refreshEnrichedPersonas()` fires in the background to hydrate `personaProjects`.
-4. **Lens gating**: `LensService.activeLens` clamps to the allowed set; `availableLenses` drives the lens-switcher UI.
+4. **Lens gating**: `LensService.activeLens` clamps to the allowed set; `availableLenses` drives the navbar lens tabs.
 5. **Feature page**: reads `activeLens` + `ProjectContextService.activeContext` to decide which data to fetch and which UI variants to render.
 
 ## Related

@@ -69,7 +69,7 @@ A user can carry both board and project roles simultaneously. In the sidebar len
 |                   | Transactions                  | `/profile/transactions`          |
 |                   | Settings                      | `/profile/settings`              |
 
-> **Profile & Account** is not a nav section: it is the sidebar user card (the card links to `/profile`) with a trailing `⋯` overflow menu that exposes the profile tabs above. The lens-switcher dock avatar menu also links to Profile & Account (`/profile`) and Settings (`/profile/settings`).
+> **Profile & Account** is not a nav section: on the Home lens the navbar's me card carries a "My Profile & Account" action (links to `/profile`), and the navbar footer account menu links to Profile & Account (`/profile`) and Settings (`/profile/settings`).
 
 ---
 

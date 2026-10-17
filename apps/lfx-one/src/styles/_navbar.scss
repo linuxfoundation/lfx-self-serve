@@ -1,0 +1,1454 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// Navbar v2 (sidebar redesign) — global stylesheet for `lfx-navbar`. Ported verbatim from the
+// design's `navbar.css` plus its floating (`lfxn-float`) and dark (`lfxn-dark`) overrides, with the
+// dark cascade resolved into the base rules. Values are exact pixel/hex values from the design and
+// deliberately do not follow the rem-based Tailwind scale (html is 14px) or the `lfxColors` tokens —
+// do not round them.
+//
+// Global rather than component-scoped: the project/org selectors' `navbar` variant renders the
+// context card inside their own hosts and the popovers/tooltips are appended to <body>, so the rules
+// could only reach them through `::ng-deep`, and the sheet is far beyond the per-component style
+// budget. Rules inside the navbar are scoped under `.lfxn-host` (a host class on `lfx-navbar`);
+// body-level surfaces are top-level. Every selector is `lfxn`-prefixed.
+
+/* stylelint-disable declaration-no-important */
+
+.lfxn-host {
+  // ---------- Floating frame: 8px inset from the viewport (left/top/bottom) ----------
+  .lfxn-float {
+    display: flex;
+    flex: 0 0 auto;
+    box-sizing: border-box;
+    height: 100%;
+    padding: 8px 0 8px 8px;
+  }
+
+  .lfxn-float--mobile {
+    padding: 8px;
+  }
+
+  // ---------- Panel ----------
+  .lfxn {
+    // Slate scale as the dark navbar re-maps it.
+    --color-slate-slate-50: #002741;
+    --color-slate-slate-100: #314158;
+    --color-slate-slate-200: #45556c;
+    --color-slate-slate-300: #45556c;
+    --color-slate-slate-400: #90a1b9;
+    --color-slate-slate-500: #90a1b9;
+    --color-slate-slate-600: #90a1b9;
+    --color-slate-slate-900: #cad5e2;
+    --color-azure-azure-500: rgb(0, 154, 255);
+    --color-azure-azure-600: rgb(0, 130, 217);
+
+    box-sizing: border-box;
+    width: 280px;
+    height: 100%;
+    flex-shrink: 0;
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: flex-start;
+    overflow: hidden;
+    border-radius: 14px;
+    background: var(--color-slate-slate-50);
+    font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+
+    * {
+      box-sizing: border-box;
+    }
+
+    button {
+      font-family: inherit;
+    }
+  }
+
+  .lfxn-float--mobile .lfxn {
+    width: 100%;
+  }
+
+  .lfxn__top {
+    align-self: stretch;
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    overflow: hidden;
+  }
+
+  // Header block: 12px padding, 16px gap
+  .lfxn__head {
+    align-self: stretch;
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 12px;
+  }
+
+  .lfxn__brand-row {
+    align-self: stretch;
+    flex-shrink: 0;
+    height: 24px;
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .lfxn__brand {
+    display: flex;
+    flex-direction: row;
+    gap: 4px;
+    align-items: center;
+    flex-shrink: 0;
+    padding: 4px 6px;
+    margin: -4px -6px;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    cursor: pointer;
+    transition: background 0.15s;
+
+    &:hover,
+    &.is-open {
+      background: rgba(255, 255, 255, 0.14);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--color-azure-azure-500);
+      outline-offset: 0;
+    }
+  }
+
+  .lfxn__brand-symbol {
+    display: block;
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+
+    path {
+      fill: #fff;
+    }
+  }
+
+  .lfxn__brand-menu {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 15px;
+    height: 15px;
+    flex-shrink: 0;
+    color: #cad5e2;
+    font-size: 12px;
+    line-height: 1;
+  }
+
+  .lfxn__head-actions {
+    display: flex;
+    flex-direction: row;
+    gap: 12px;
+    justify-content: flex-end;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  // Round icon button — 24px, full radius, 15px icon cell (design's IconButton, ghost-neutral by default).
+  .lfxn__icon-btn {
+    position: relative;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: row;
+    gap: 6px;
+    justify-content: center;
+    align-items: center;
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+    padding: 4px 8px;
+    border: 0;
+    border-radius: 9999px;
+    background: transparent;
+    color: var(--color-slate-slate-600);
+    cursor: pointer;
+    text-decoration: none;
+    transition: background-color 150ms ease-in-out;
+
+    &:hover {
+      background: var(--color-slate-slate-200);
+      color: var(--color-slate-slate-600);
+      text-decoration: none;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--color-azure-azure-500);
+      outline-offset: 1px;
+    }
+  }
+
+  .lfxn__icon-btn--accent {
+    background: var(--color-azure-azure-500);
+    color: #fff;
+
+    &:hover {
+      background: var(--color-azure-azure-600);
+      color: #fff;
+    }
+  }
+
+  .lfxn__icon-btn-glyph {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 15px;
+    height: 15px;
+    flex-shrink: 0;
+    font-size: 12px;
+    line-height: 1;
+  }
+
+  .lfxn__icon-btn-dot {
+    position: absolute;
+    top: 1px;
+    right: 1px;
+    width: 6px;
+    height: 6px;
+    border-radius: 9999px;
+    background: var(--color-azure-azure-500);
+  }
+
+  // ---------- Lens tabs ----------
+  .lfxn__tabs {
+    align-self: stretch;
+    flex-shrink: 0;
+    height: 28px;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    padding: 2px;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.07);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14);
+  }
+
+  .lfxn__tab {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    flex-direction: row;
+    gap: 4px;
+    justify-content: center;
+    align-items: center;
+    height: 24px;
+    padding: 0 8px;
+    border: 0;
+    background: none;
+    cursor: pointer;
+    overflow: hidden;
+    border-radius: 9999px;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 16px;
+    white-space: nowrap;
+    color: #cad5e2;
+    transition: color 150ms ease-in-out;
+
+    i {
+      font-size: 12px;
+      line-height: 1;
+      color: #cad5e2;
+      flex-shrink: 0;
+    }
+
+    &:hover {
+      color: #fff;
+    }
+
+    &.is-active {
+      font-weight: 500;
+      color: #0f172b;
+      background: #fff;
+      box-shadow:
+        0 1px 2px -1px rgba(0, 0, 0, 0.05),
+        0 1px 3px 0 rgba(0, 0, 0, 0.05);
+
+      i {
+        color: #009aff;
+      }
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--color-azure-azure-500);
+      outline-offset: -2px;
+    }
+  }
+
+  .lfxn__tab-rule {
+    width: 1px;
+    height: 12px;
+    flex-shrink: 0;
+    background: rgba(255, 255, 255, 0.12);
+  }
+
+  // ---------- Context card ----------
+  // The project/org selectors host their own card (variant="navbar"); stretch their host elements.
+  .lfxn__head lfx-project-selector,
+  .lfxn__head lfx-org-selector,
+  .lfxn__context-slot {
+    display: block;
+    align-self: stretch;
+    width: 100%;
+  }
+
+  .lfxn__context-slot.hidden,
+  .lfxn__context.hidden {
+    display: none;
+  }
+
+  .lfxn__context {
+    align-self: stretch;
+    flex-shrink: 0;
+    width: 100%;
+    height: auto;
+    min-height: 54px;
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px;
+    border: 0;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.07);
+    cursor: pointer;
+    text-align: left;
+    font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.14),
+      0 1px 2px -1px rgba(0, 0, 0, 0.05),
+      0 1px 3px 0 rgba(0, 0, 0, 0.05);
+    transition: box-shadow 150ms ease-in-out;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+
+    &:hover {
+      box-shadow:
+        0 0 0 1px rgba(255, 255, 255, 0.28),
+        0 1px 2px -1px rgba(0, 0, 0, 0.05),
+        0 1px 3px 0 rgba(0, 0, 0, 0.05);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--color-azure-azure-500);
+      outline-offset: 2px;
+    }
+  }
+
+  .lfxn__context-body {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .lfxn__context-text {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-start;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: visible;
+  }
+
+  .lfxn__context-name {
+    display: block;
+    max-width: 100%;
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 20px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #fff;
+  }
+
+  .lfxn__context-meta {
+    margin: 0;
+    font-size: 10px;
+    font-weight: 400;
+    line-height: 14px;
+    white-space: nowrap;
+    color: #90a1b9;
+  }
+
+  // A context card with nothing to switch to (single organization): no pointer, no hover ring.
+  .lfxn__context--static {
+    cursor: default;
+
+    &:hover {
+      box-shadow:
+        0 0 0 1px rgba(255, 255, 255, 0.14),
+        0 1px 2px -1px rgba(0, 0, 0, 0.05),
+        0 1px 3px 0 rgba(0, 0, 0, 0.05);
+    }
+  }
+
+  // Up/down chevron on switchable cards (projects, organization).
+  .lfxn__context-chevron {
+    flex: 0 0 auto;
+    width: 12px;
+    height: 14px;
+    margin-left: 8px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='14' viewBox='0 0 12 14' fill='none' stroke='%23CAD5E2' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 5l3-3 3 3M3 9l3 3 3-3'/%3E%3C/svg%3E")
+      center / 12px 14px no-repeat;
+  }
+
+  // Role pill under a project's name — outlined in the role's ink.
+  .lfxn__role {
+    --lfxn-role-ink: #e2e8f0;
+
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 18px;
+    margin-top: 4px;
+    padding: 0 7px;
+    border: 1px solid var(--lfxn-role-ink);
+    border-radius: 9999px;
+    background: transparent;
+    font-size: 10px;
+    font-weight: 500;
+    line-height: 16px;
+    white-space: nowrap;
+    color: var(--lfxn-role-ink);
+
+    i {
+      font-size: 9px;
+      line-height: 1;
+    }
+  }
+
+  // Role line under an organization's name — muted glyph + label.
+  .lfxn__org-role {
+    // Same metrics as the plain "Project" / "Foundation" meta line, so the name-to-role gap matches.
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    font-weight: 400;
+    line-height: 14px;
+    white-space: nowrap;
+    color: #90a1b9;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+
+    i {
+      font-size: 9px;
+      line-height: 1;
+    }
+  }
+
+  // Context tile: 32px logo square (or round photo on the me card).
+  .lfxn__tile {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    overflow: hidden;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.07);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1);
+    color: #cad5e2;
+    font-size: 13px;
+
+    > img {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+  }
+
+  .lfxn__tile--logo {
+    background: #fff;
+
+    > img {
+      padding: 5px;
+      object-fit: contain;
+    }
+
+    > i {
+      color: #45556c;
+    }
+  }
+
+  .lfxn__context--org .lfxn__tile--logo > img {
+    padding: 6px;
+  }
+
+  .lfxn__tile--photo {
+    border-radius: 9999px;
+    box-shadow: none;
+
+    > img {
+      object-fit: cover;
+    }
+  }
+
+  .lfxn__tile-initials,
+  .lfxn__avatar-initials {
+    font-size: 11px;
+    font-weight: 600;
+    color: #fff;
+  }
+
+  // Me card: identity row + role marks, then the My Profile / Account & Settings action strip.
+  .lfxn__context--me {
+    flex-wrap: wrap;
+    cursor: default;
+
+    .lfxn__context-body {
+      gap: 10px;
+    }
+
+    &,
+    &:hover {
+      box-shadow:
+        0 0 0 1px rgba(255, 255, 255, 0.14),
+        0 1px 2px -1px rgba(0, 0, 0, 0.05),
+        0 1px 3px 0 rgba(0, 0, 0, 0.05);
+    }
+  }
+
+  .lfxn__me-roles {
+    position: relative;
+    z-index: 5;
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    align-self: center;
+    margin-left: auto;
+  }
+
+  .lfxn__me-role {
+    --lfxn-role-ink: #85c2ff;
+
+    position: relative;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border: 1.5px solid var(--lfxn-role-ink);
+    border-radius: 9999px;
+    background: #12354d;
+    color: var(--lfxn-role-ink);
+    box-shadow: 0 0 0 2px #12354d;
+    cursor: default;
+
+    & + & {
+      margin-left: -3px;
+    }
+
+    i {
+      font-size: 10px;
+      line-height: 1;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--color-azure-azure-500);
+      outline-offset: 2px;
+    }
+  }
+
+  .lfxn__me-actions {
+    flex: 1 1 100%;
+    min-width: 0;
+    display: flex;
+    align-items: stretch;
+    margin: 10px -10px -10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .lfxn__me-action {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 6px;
+    height: 30px;
+    margin: 3px;
+    padding: 0 8px;
+    border-radius: 8px;
+    background: transparent;
+    font-size: 12px;
+    font-weight: 400;
+    white-space: nowrap;
+    overflow: hidden;
+    color: #cad5e2;
+    text-decoration: none;
+    cursor: pointer;
+
+    i {
+      font-size: 12px;
+    }
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+      text-decoration: none;
+    }
+
+    &.is-active {
+      font-weight: 600;
+      color: #fff;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--color-azure-azure-500);
+      outline-offset: -2px;
+    }
+  }
+
+  .lfxn__me-action-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .lfxn__me-action-trail {
+    margin-left: auto;
+  }
+
+  // ---------- Menu body: 8px 12px padding, 16px between blocks ----------
+  .lfxn__menu {
+    align-self: stretch;
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    // 20px at the bottom mirrors the 20px above the first item (12px header padding + 8px here).
+    padding: 8px 12px 20px;
+    overflow-y: auto;
+    // Scrolls, but with no visible scrollbar (Firefox / legacy Edge / WebKit).
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+
+    &::-webkit-scrollbar {
+      display: none;
+    }
+
+    // Soft fade on whichever edge has content scrolled past it, so rows dissolve under the
+    // header/footer instead of being cut off. Edges with nothing beyond them stay crisp.
+    --lfxn-fade-top: 0px;
+    --lfxn-fade-bottom: 0px;
+
+    mask-image: linear-gradient(to bottom, transparent 0, #000 var(--lfxn-fade-top), #000 calc(100% - var(--lfxn-fade-bottom)), transparent 100%);
+
+    &.is-fade-top {
+      --lfxn-fade-top: 28px;
+    }
+
+    &.is-fade-bottom {
+      --lfxn-fade-bottom: 28px;
+    }
+  }
+
+  .lfxn__group {
+    align-self: stretch;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .lfxn__items {
+    align-self: stretch;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .lfxn__items--nested {
+    margin-top: 2px;
+    padding-left: 23px;
+  }
+
+  .lfxn__nav-group {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .lfxn__section {
+    align-self: stretch;
+    flex-shrink: 0;
+    height: 14px;
+    display: flex;
+    flex-direction: row;
+    gap: 8px;
+    align-items: center;
+    padding: 0 8px;
+  }
+
+  .lfxn__section-label {
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 14px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    color: #62748e;
+  }
+
+  .lfxn__section-rule,
+  .lfxn__rule {
+    height: 1px;
+    border: 0;
+    background-image: repeating-linear-gradient(to right, var(--color-slate-slate-400) 0 1px, transparent 1px 5px);
+  }
+
+  .lfxn__section-rule {
+    flex-grow: 1;
+  }
+
+  .lfxn__rule {
+    align-self: stretch;
+    flex-shrink: 0;
+  }
+
+  // Menu items
+  .lfxn__item {
+    align-self: stretch;
+    flex-shrink: 0;
+    box-sizing: border-box;
+    width: 100%;
+    height: 27px;
+    display: flex;
+    flex-direction: row;
+    gap: 8px;
+    align-items: center;
+    padding: 6px 8px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    cursor: pointer;
+    overflow: hidden;
+    text-align: left;
+    text-decoration: none;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.25;
+    white-space: nowrap;
+    color: #cad5e2;
+    transition: background-color 150ms ease-in-out;
+
+    &:hover {
+      background: #314158;
+      color: #fff;
+      text-decoration: none;
+
+      .lfxn__item-icon {
+        color: #fff;
+      }
+    }
+
+    &.is-active {
+      font-weight: 500;
+      background: #62748e;
+      color: #fff;
+
+      .lfxn__item-icon {
+        color: #fff;
+      }
+    }
+
+    &.is-disabled {
+      opacity: 0.5;
+      pointer-events: none;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--color-azure-azure-500);
+      outline-offset: -2px;
+    }
+  }
+
+  .lfxn__item-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 15px;
+    flex-shrink: 0;
+    align-self: stretch;
+    color: #cad5e2;
+    font-size: 12px;
+    line-height: 1;
+
+    // Font Awesome injects SVGs at 1em with a baseline offset; pin them to the 12px glyph box.
+    .svg-inline--fa {
+      display: block;
+      height: 12px;
+      width: auto;
+      vertical-align: 0;
+    }
+  }
+
+  .lfxn__item-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .lfxn__item-trail {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--color-slate-slate-400);
+    font-size: 10px;
+  }
+
+  .lfxn__item-chevron {
+    transition: transform 200ms ease-in-out;
+
+    &.is-open {
+      transform: rotate(180deg);
+    }
+  }
+
+  // Empty lens menu (no permissions on the selected foundation / project): a message card that
+  // overlaps a faded preview of the menu, which emerges from beneath it and dissolves downward.
+  .lfxn__no-access {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .lfxn__empty {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 14px 12px;
+    border: 1px dashed rgba(255, 255, 255, 0.14);
+    border-radius: 10px;
+    // Opaque (the panel colour with a 7% white tint baked in) so the menu behind it is hidden.
+    background: #12364e;
+    box-shadow: 0 10px 18px -10px rgba(0, 0, 0, 0.45);
+  }
+
+  .lfxn__empty-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    margin-bottom: 2px;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.07);
+    color: #cad5e2;
+    font-size: 12px;
+  }
+
+  .lfxn__empty-title {
+    margin: 0;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 16px;
+    color: #fff;
+  }
+
+  .lfxn__empty-body {
+    margin: 0;
+    font-size: 12px;
+    line-height: 17px;
+    color: #90a1b9;
+  }
+
+  // Tucked ~2 rows up under the card, so the first rows read as continuing behind it.
+  .lfxn__ghost {
+    margin-top: -58px;
+    pointer-events: none;
+    user-select: none;
+    opacity: 0.6;
+    mask-image: linear-gradient(to bottom, #000 55%, transparent 100%);
+  }
+
+  // Loading placeholders on the dark surface.
+  .lfxn__skeleton {
+    display: block;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.07);
+  }
+
+  .lfxn__skeleton--item {
+    height: 27px;
+  }
+
+  .lfxn__skeleton--tile {
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    border-radius: 8px;
+  }
+
+  .lfxn__skeleton--line {
+    flex: 1 1 auto;
+    height: 12px;
+  }
+
+  .lfxn__context--loading {
+    cursor: default;
+  }
+
+  // ---------- Footer bar ----------
+  .lfxn__foot {
+    align-self: stretch;
+    flex: 0 0 auto;
+    height: 44px;
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-top: 1px solid #45556c;
+  }
+
+  .lfxn__user {
+    display: flex;
+    flex-direction: row;
+    gap: 8px;
+    align-items: center;
+    flex: 0 1 auto;
+    min-width: 0;
+    // Same hover tint as the brand button: padding grows the hit area, negative margin keeps layout.
+    padding: 4px 6px;
+    margin: -4px -6px;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    cursor: pointer;
+    transition: background 0.15s;
+
+    &:hover,
+    &.is-open {
+      background: rgba(255, 255, 255, 0.14);
+    }
+
+    > i {
+      width: 15px;
+      height: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      line-height: 1;
+      color: var(--color-slate-slate-600);
+      flex-shrink: 0;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--color-azure-azure-500);
+      outline-offset: 2px;
+    }
+  }
+
+  .lfxn__user-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 16px;
+    white-space: nowrap;
+    color: #f8fafc;
+  }
+
+  .lfxn__foot-actions {
+    display: flex;
+    flex-direction: row;
+    gap: 12px;
+    justify-content: flex-end;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  // The Create button's filled circle grows with it, which hides the icon's own growth; scale the
+  // glyph further so the + visibly expands too (1.15 × 1.2 ≈ 1.4 overall).
+  .lfxn__head-actions .lfxn__icon-btn-glyph {
+    transition: transform 150ms ease-out;
+  }
+
+  .lfxn__head-actions .lfxn__icon-btn:hover .lfxn__icon-btn-glyph,
+  .lfxn__head-actions .lfxn__icon-btn:focus-visible .lfxn__icon-btn-glyph {
+    transform: scale(1.2);
+
+    @media (prefers-reduced-motion: reduce) {
+      transform: none;
+    }
+  }
+
+  // Footer actions sit on the dark navy — a lighter slate than the default ghost icon for contrast.
+  .lfxn__foot-actions .lfxn__icon-btn {
+    color: #cad5e2;
+  }
+
+  // Footer actions and the Create button: icon turns white and the button grows slightly on hover/focus.
+  .lfxn__foot-actions .lfxn__icon-btn,
+  .lfxn__head-actions .lfxn__icon-btn {
+    transition:
+      background-color 150ms ease-in-out,
+      color 150ms ease-in-out,
+      transform 150ms ease-out;
+
+    &:hover,
+    &:focus-visible {
+      color: #fff;
+      transform: scale(1.15);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      transition:
+        background-color 150ms ease-in-out,
+        color 150ms ease-in-out;
+
+      &:hover,
+      &:focus-visible {
+        transform: none;
+      }
+    }
+  }
+
+  .lfxn__avatar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+    overflow: hidden;
+    border-radius: 9999px;
+    background: #314158;
+
+    > img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+  }
+}
+
+// ---------- Body-level surfaces (popovers, tooltips) ----------
+// ---------- Popovers (appended to <body>) ----------
+.lfxn-menu-popover.p-popover,
+.lfxn-brand-popover.p-popover {
+  &::before,
+  &::after {
+    display: none !important;
+  }
+
+  .p-popover-content {
+    padding: 0 !important;
+  }
+}
+
+// Brand menu — pinned under the brand row of the floating navbar, as drawn.
+.lfxn-brand-popover.p-popover {
+  position: fixed !important;
+  top: 56px !important;
+  left: 16px !important;
+  margin-top: 0 !important;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow:
+    0 10px 24px -8px rgba(15, 23, 43, 0.18),
+    0 2px 6px -2px rgba(15, 23, 43, 0.08);
+}
+
+// Under the impersonation banner the navbar sits 48px lower. Classes stacked so this wins on specificity.
+.lfxn-brand-popover.lfxn-brand-popover--banner-offset.p-popover {
+  top: 104px !important;
+}
+
+.lfxn-brand-menu {
+  display: flex;
+  flex-direction: column;
+  width: 340px;
+  max-width: calc(100vw - 32px);
+  padding: 6px;
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+}
+
+.lfxn-brand-menu__app {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px;
+  border-radius: 8px;
+  text-decoration: none;
+
+  &:hover {
+    background: #f8fafc;
+    text-decoration: none;
+  }
+}
+
+.lfxn-brand-menu__icon {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  font-size: 18px;
+  color: #45556c;
+}
+
+.lfxn-brand-menu__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.lfxn-brand-menu__name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #0f172b;
+}
+
+.lfxn-brand-menu__blurb {
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.45;
+  color: #62748e;
+  text-wrap: pretty;
+}
+
+.lfxn-brand-menu__ext {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #90a1b9;
+}
+
+.lfxn-brand-menu__rule {
+  height: 1px;
+  margin: 6px 4px;
+  background: #e2e8f0;
+}
+
+.lfxn-brand-menu__site {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  text-decoration: none;
+
+  &:hover {
+    background: #f8fafc;
+    text-decoration: none;
+  }
+
+  .lfxn-brand-menu__ext {
+    margin-top: 0;
+  }
+}
+
+.lfxn-brand-menu__site-name {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 400;
+  color: #314158;
+
+  svg {
+    display: block;
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+  }
+}
+
+// Account menu — pinned above the footer: 8px viewport inset + 44px footer + 6px gap.
+.lfxn-account-popover.p-popover {
+  position: fixed !important;
+  top: auto !important;
+  bottom: 58px !important;
+  left: 16px !important;
+  margin: 0 !important;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow:
+    0 10px 24px -8px rgba(15, 23, 43, 0.18),
+    0 2px 6px -2px rgba(15, 23, 43, 0.08);
+}
+
+.lfxn-account-menu {
+  display: flex;
+  flex-direction: column;
+  width: 264px;
+  padding: 6px;
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.lfxn-account-menu__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+}
+
+.lfxn-account-menu__avatar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: #314158;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+
+  > img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.lfxn-account-menu__identity {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.lfxn-account-menu__name,
+.lfxn-account-menu__email {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lfxn-account-menu__name {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+  color: #0f172b;
+}
+
+.lfxn-account-menu__email {
+  font-size: 12px;
+  line-height: 16px;
+  color: #62748e;
+}
+
+.lfxn-account-menu__rule {
+  height: 1px;
+  margin: 6px 4px;
+  background: #e2e8f0;
+}
+
+.lfxn-account-menu__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  text-decoration: none;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  color: #314158;
+  transition: background-color 150ms ease-in-out;
+
+  > i {
+    width: 16px;
+    flex: 0 0 auto;
+    text-align: center;
+    font-size: 13px;
+    color: #62748e;
+  }
+
+  &:hover {
+    background: #f8fafc;
+    color: #0f172b;
+    text-decoration: none;
+  }
+
+  &:focus-visible {
+    outline: 2px solid #009aff;
+    outline-offset: -2px;
+  }
+}
+
+// The Font Awesome kit picks its style by font-weight, but its fa-regular / fa-light classes don't pin
+// one — so an icon inherited a bold or medium parent's weight and rendered in a heavier style. Pin
+// them everywhere in the navbar, its context cards and its tooltips.
+.lfxn,
+.lfxn-tooltip {
+  .fa-regular {
+    font-weight: 400;
+  }
+
+  .fa-light {
+    font-weight: 300;
+  }
+
+  .fa-solid {
+    font-weight: 900;
+  }
+}
+
+// Navbar tooltip (NavTooltipDirective) — compact dark chip with a hairline border, fading and
+// rising 2px into place. Fixed to the viewport; the directive sets top/left.
+.lfxn-tooltip {
+  position: fixed;
+  z-index: 1100;
+  max-width: 240px;
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  background: #1c2433;
+  box-shadow:
+    0 4px 12px -2px rgba(0, 0, 0, 0.35),
+    0 1px 2px rgba(0, 0, 0, 0.25);
+  color: #e2e8f0;
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  // Short labels hug their text; longer sentences (org role descriptions) wrap at max-width.
+  width: max-content;
+  white-space: normal;
+  pointer-events: none;
+  opacity: 0;
+  -webkit-font-smoothing: antialiased;
+  transition:
+    opacity 120ms ease-out,
+    transform 120ms ease-out;
+
+  &.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    transition: opacity 120ms ease-out;
+  }
+}
+
+// Interactive tooltip (role marks): label over chips that jump to each project / foundation.
+.lfxn-tooltip--rich {
+  max-width: 260px;
+  padding: 8px;
+  white-space: normal;
+}
+
+.lfxn-tooltip--interactive {
+  pointer-events: auto;
+}
+
+.lfxn-tooltip__icon {
+  margin-right: 6px;
+  font-size: 11px;
+}
+
+// Interactive cards: the heading is the role, set apart from the chips under it.
+.lfxn-tooltip--rich .lfxn-tooltip__title {
+  padding: 0 2px;
+}
+
+.lfxn-tooltip--rich .lfxn-tooltip__label {
+  color: #fff;
+  font-weight: 600;
+}
+
+.lfxn-tooltip__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.lfxn-tooltip__chip {
+  display: inline-block;
+  max-width: 100%;
+  height: 22px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #cad5e2;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 20px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease-out,
+    color 120ms ease-out,
+    border-color 120ms ease-out;
+
+  &:hover,
+  &:focus-visible {
+    border-color: rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+  }
+
+  &:focus-visible {
+    outline: 2px solid #009aff;
+    outline-offset: 1px;
+  }
+}
+
+.lfxn-tooltip--top {
+  transform: translateY(2px);
+}
+
+.lfxn-tooltip--bottom {
+  transform: translateY(-2px);
+}
