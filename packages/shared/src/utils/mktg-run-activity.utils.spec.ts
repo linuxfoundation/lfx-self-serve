@@ -19,7 +19,7 @@ const payloads = (upTo = events.length): string[] => events.slice(0, upTo).map((
 /** Index of the first event after the questions turn that starts a model call — the answers arrived just before it. */
 const afterAnswers = events.findIndex(
   (event, index) =>
-    event['type'] === 'llm_start' && events.slice(0, index).some((earlier) => JSON.stringify(earlier).includes('messaging-document-questions/v1'))
+    event['type'] === 'llm_start' && events.slice(0, index).some((earlier) => JSON.stringify(earlier).includes('messaging-framework-questions/v1'))
 );
 const labels = (activity: MktgRunActivity[]): string[] => activity.map((step) => step.label);
 
@@ -53,12 +53,12 @@ describe('buildMktgRunActivity — the live feed from a real session', () => {
 
   it('adds the writing stretch after the answers, running until the check, then the check itself', () => {
     const writing = buildMktgRunActivity(payloads(afterAnswers + 1));
-    expect(writing.at(-1)).toMatchObject({ id: 'writing', kind: 'writing', label: 'Writing the document', status: 'running' });
+    expect(writing.at(-1)).toMatchObject({ id: 'writing', kind: 'writing', label: 'Writing the framework', status: 'running' });
 
     const whole = buildMktgRunActivity(payloads());
     expect(whole.slice(-2).map((step) => [step.kind, step.label, step.status])).toEqual([
-      ['writing', 'Writing the document', 'done'],
-      ['checking', 'Checking the document against the template', 'done'],
+      ['writing', 'Writing the framework', 'done'],
+      ['checking', 'Checking the framework', 'done'],
     ]);
   });
 
@@ -140,8 +140,8 @@ describe('mktgRunActivityPhases', () => {
 
 describe('mktgRunQuestionShortLabel', () => {
   it('gives each of the ten questions a short chip label, and any other its first two words', () => {
-    expect(mktgRunQuestionShortLabel('tagline_ctas_constraints', 'Tagline, CTAs and constraints')).toBe('Tagline');
-    expect(mktgRunQuestionShortLabel('proof_points', 'Proof points to confirm')).toBe('Proof points');
-    expect(mktgRunQuestionShortLabel('something_new', 'Something entirely new')).toBe('Something entirely');
+    expect(mktgRunQuestionShortLabel('Tagline')).toBe('Tagline');
+    expect(mktgRunQuestionShortLabel('Proof points to confirm')).toBe('Proof points');
+    expect(mktgRunQuestionShortLabel('Something entirely new')).toBe('Something entirely');
   });
 });

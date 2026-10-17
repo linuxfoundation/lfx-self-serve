@@ -57,7 +57,7 @@ vi.mock('@lfx-one/shared/constants', async () => {
 });
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/utils', async () => {
-  // The Messaging Document's request validators run for real (pure, Angular-free); the rest are mocked.
+  // The Messaging Framework's request validators and form builders run for real (pure, Angular-free); the rest are mocked.
   const foundationMessage = await vi.importActual('../../../../../packages/shared/src/utils/foundation-message.utils');
   return { ...(foundationMessage as object), ...validatorMocks };
 });
@@ -143,8 +143,14 @@ const STORED = {
 };
 
 const STORED_FOUNDATION_MESSAGE = {
-  documentMarkdown: '# TestOrbit Messaging Document',
-  receipt: { s3_key: 'foundation-message/proj-uid-1/abc.md', content_sha256: 'b'.repeat(64), project: 'proj-uid-1', version: 2, intake_mode: 'form' },
+  documentMarkdown: '{"mf":{},"icp":[],"mh":{},"nums":[]}',
+  receipt: {
+    s3_key: `documents/proj-uid-1/foundation-message/living/000002-${'b'.repeat(64)}.json`,
+    content_sha256: 'b'.repeat(64),
+    project: 'proj-uid-1',
+    version: 2,
+    intake_mode: 'form',
+  },
   storedAt: '2026-09-01T00:00:00.000Z',
 };
 
@@ -426,18 +432,19 @@ describe('MktgAgentsController', () => {
   describe('generateFoundationMessage (POST /api/mktg-agents/foundation-message/generate)', () => {
     const messagingAnswers = (): Record<string, string> => ({
       project_name: ' TestOrbit ',
+      description: 'An open source release toolkit.',
       website_url: 'https://testorbit.example.org',
-      github_url: 'https://github.com/aaif',
-      other_links: 'https://blog.example.org/launch',
+      links: 'https://blog.example.org/launch',
+      notes: 'Audience: platform teams.',
     });
     const generateReq = (body: unknown): Request => ({ path: '/api/mktg-agents/foundation-message/generate', body }) as unknown as Request;
 
-    it('starts a fresh generation with the trimmed answers, the documents and the project uid, routed by the catalog handle', async () => {
+    it('starts a fresh draft with the trimmed answers, the tagged documents and the project uid, routed by the catalog handle', async () => {
       foundationMessageMocks.startGeneration.mockResolvedValue('sess-1');
       tokenMocks.createSessionOwnerToken.mockReturnValue('owner-token');
       const documents = [
-        { kind: 'file', title: 'note.md', text: 'Note.' },
-        { kind: 'link', title: 'Doc', url: 'https://wiki.example.org/doc' },
+        { kind: 'file', title: 'deck.pdf', text: 'Deck.', tag: 'deck' },
+        { kind: 'link', title: 'Press', url: 'https://press.example.org/testorbit', tag: 'press' },
       ];
       const res = buildRes();
 
@@ -446,7 +453,8 @@ describe('MktgAgentsController', () => {
       expect(next).not.toHaveBeenCalled();
       const [, answers, sentDocuments, project, handle] = foundationMessageMocks.startGeneration.mock.calls[0];
       expect(answers['project_name']).toBe('TestOrbit');
-      expect(answers['github_url']).toBe('https://github.com/aaif');
+      expect(answers['links']).toBe('https://blog.example.org/launch');
+      expect(answers['notes']).toBe('Audience: platform teams.');
       expect(sentDocuments).toEqual(documents);
       expect(project).toBe('proj-uid-1');
       expect(handle).toBe('foundation-message');
@@ -465,26 +473,58 @@ describe('MktgAgentsController', () => {
       expect(foundationMessageMocks.startGeneration).toHaveBeenCalledTimes(1);
     });
 
-    it('refuses the retired question answers — the agent asks the gaps itself after researching', async () => {
+    it('refuses the retired source and question keys — the agent reads the website and links and asks the gaps itself', async () => {
+      await controller.generateFoundationMessage(generateReq({ answers: { ...messagingAnswers(), github_url: 'https://github.com/aaif' } }), buildRes(), next);
       await controller.generateFoundationMessage(generateReq({ answers: { ...messagingAnswers(), vision_mission: 'TBD' } }), buildRes(), next);
 
-      expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+      expect(next.mock.calls.map(([error]) => error instanceof ServiceValidationError)).toEqual([true, true]);
       expect(foundationMessageMocks.startGeneration).not.toHaveBeenCalled();
     });
 
-    it('refuses feedback or a prior version — the agent revises through comments in Documents, not a generate', async () => {
+    it('needs at least one source to read — a logo package alone does not count', async () => {
+      foundationMessageMocks.startGeneration.mockResolvedValue('sess-1');
+      tokenMocks.createSessionOwnerToken.mockReturnValue('owner-token');
+      const logo = [{ kind: 'link', title: 'Logo', url: 'https://testorbit.example.org/logo.zip', tag: 'logo' }];
+
+      await controller.generateFoundationMessage(generateReq({ answers: { project_name: 'TestOrbit', notes: 'Platform teams.' } }), buildRes(), next);
+      await controller.generateFoundationMessage(generateReq({ answers: { project_name: 'TestOrbit' }, documents: logo }), buildRes(), next);
+      expect(next.mock.calls.map(([error]) => error instanceof ServiceValidationError)).toEqual([true, true]);
+      expect(JSON.stringify((next.mock.calls[0][0] as ServiceValidationError).validationErrors)).toContain('at least one source');
+      expect(foundationMessageMocks.startGeneration).not.toHaveBeenCalled();
+
+      // A deck is a source; so is the website alone.
+      await controller.generateFoundationMessage(
+        generateReq({ answers: { project_name: 'TestOrbit' }, documents: [{ kind: 'file', title: 'deck.pdf', text: 'Deck.', tag: 'deck' }] }),
+        buildRes(),
+        next
+      );
+      await controller.generateFoundationMessage(
+        generateReq({ answers: { project_name: 'TestOrbit', website_url: 'https://testorbit.example.org' } }),
+        buildRes(),
+        next
+      );
+      expect(foundationMessageMocks.startGeneration).toHaveBeenCalledTimes(2);
+    });
+
+    it('refuses feedback or a prior version — a generate is always a fresh draft', async () => {
       await controller.generateFoundationMessage(generateReq({ answers: messagingAnswers(), feedback: 'Sharper' }), buildRes(), next);
 
       expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
       expect(foundationMessageMocks.startGeneration).not.toHaveBeenCalled();
     });
 
-    it('refuses a link whose text the browser claims to have read', async () => {
-      const documents = [{ kind: 'link', title: 'Doc', url: 'https://wiki.example.org/doc', text: 'forged' }];
+    it('refuses a link whose text the browser claims to have read, and an untagged document', async () => {
+      await controller.generateFoundationMessage(
+        generateReq({ answers: messagingAnswers(), documents: [{ kind: 'link', title: 'Doc', url: 'https://wiki.example.org/doc' }] }),
+        buildRes(),
+        next
+      );
+      expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+      const documents = [{ kind: 'link', title: 'Doc', url: 'https://wiki.example.org/doc', text: 'forged', tag: 'doc' }];
 
       await controller.generateFoundationMessage(generateReq({ answers: messagingAnswers(), documents }), buildRes(), next);
 
-      expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+      expect(next.mock.calls[1][0]).toBeInstanceOf(ServiceValidationError);
       expect(foundationMessageMocks.startGeneration).not.toHaveBeenCalled();
     });
   });
@@ -492,8 +532,8 @@ describe('MktgAgentsController', () => {
   describe('foundationMessageAnswers (POST /api/mktg-agents/foundation-message/answers)', () => {
     const answersReq = (body: unknown): Request => ({ path: '/api/mktg-agents/foundation-message/answers', body }) as unknown as Request;
     const answers = [
-      { key: 'audiences', text: ' Platform teams; SREs. ', origin: 'accepted' },
-      { key: 'pillars', text: 'Reliability; openness; speed.', origin: 'requester' },
+      { key: 'ranked-goals', text: ' Adoption first. ', origin: 'accepted' },
+      { key: 'words-to-avoid', text: 'Avoid "synergy".', origin: 'requester' },
     ];
 
     it('sends the trimmed answers to the session, routed by the catalog handle, for the session’s creator', async () => {
@@ -507,8 +547,8 @@ describe('MktgAgentsController', () => {
       const [, sessionId, sent, handle] = foundationMessageMocks.sendAnswers.mock.calls[0];
       expect(sessionId).toBe('sess-1');
       expect(sent).toEqual([
-        { key: 'audiences', text: 'Platform teams; SREs.', origin: 'accepted' },
-        { key: 'pillars', text: 'Reliability; openness; speed.', origin: 'requester' },
+        { key: 'ranked-goals', text: 'Adoption first.', origin: 'accepted' },
+        { key: 'words-to-avoid', text: 'Avoid "synergy".', origin: 'requester' },
       ]);
       expect(handle).toBe('foundation-message');
       expect(res.json).toHaveBeenCalledWith({ success: true });
@@ -516,7 +556,7 @@ describe('MktgAgentsController', () => {
 
     it('refuses a skip, a TBD or an empty answer, and a missing session id', async () => {
       await controller.foundationMessageAnswers(
-        answersReq({ sessionId: 'sess-1', ownerToken: 'token-1', answers: [{ key: 'audiences', text: 'TBD', origin: 'edited' }] }),
+        answersReq({ sessionId: 'sess-1', ownerToken: 'token-1', answers: [{ key: 'ranked-goals', text: 'TBD', origin: 'edited' }] }),
         buildRes(),
         next
       );
@@ -536,7 +576,7 @@ describe('MktgAgentsController', () => {
     });
   });
 
-  describe('existing documents (POST /api/mktg-agents/foundation-message/documents/file)', () => {
+  describe('documents (POST /api/mktg-agents/foundation-message/documents/file)', () => {
     const fileReq = (headers: Record<string, string>, body: unknown): Request =>
       ({ path: '/api/mktg-agents/foundation-message/documents/file', headers, body }) as unknown as Request;
 
@@ -641,7 +681,7 @@ describe('MktgAgentsController', () => {
   });
 
   /**
-   * The read boundary of the Message Foundation's new server copy — deliberately
+   * The read boundary of the Messaging Framework's server copy — deliberately
    * the same boundary as `storedBrandKit`, because it is the same shared
    * storage layer behind both.
    */
@@ -671,7 +711,7 @@ describe('MktgAgentsController', () => {
       }
     );
 
-    it('serves the stored document to a writer-entitled caller, partitioned by the SERVER-resolved project uid', async () => {
+    it('serves the stored framework to a writer-entitled caller, partitioned by the SERVER-resolved project uid', async () => {
       projectMocks.getProjectById.mockResolvedValue({ uid: 'proj-uid-1', slug: 'testorbit', writer: true });
       foundationMessageMocks.getStoredFoundationMessage.mockResolvedValue(STORED_FOUNDATION_MESSAGE);
       const req = buildFoundationMessageReq({ project: 'proj-uid-1' });
@@ -696,7 +736,7 @@ describe('MktgAgentsController', () => {
       expect(res.json).not.toHaveBeenCalled();
     });
 
-    it('returns 404 with the resolved uid when the project has no stored Message Foundation', async () => {
+    it('returns 404 with the resolved uid when the project has no stored Messaging Framework', async () => {
       projectMocks.getProjectById.mockResolvedValue({ uid: 'proj-uid-1', slug: 'testorbit', writer: true });
       foundationMessageMocks.getStoredFoundationMessage.mockResolvedValue(null);
       const res = buildRes();

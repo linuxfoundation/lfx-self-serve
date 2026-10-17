@@ -17,6 +17,7 @@ import {
   MktgGenerateProgress,
   MktgGenerateRequest,
   MktgRunActivity,
+  MktgRunAsset,
   MktgRunQuestion,
   MktgRunQuestionsPending,
   MktgRunResultResponse,
@@ -576,21 +577,28 @@ describe('MktgAgentRunService', () => {
     });
   });
 
-  describe('fresh-run intakes that research first (Messaging Document)', () => {
+  describe('fresh-run intakes that research first (Messaging Framework)', () => {
     const MF_STORAGE_KEY = `${MKTG_RUN_STORAGE_KEY_PREFIX}:${USER_SUB}:proj-1:foundation-setup`;
     const MF_ANSWERS: Record<string, string> = {
       project_name: 'TestOrbit',
-      github_url: 'https://github.com/aaif',
-      other_links: 'https://blog.example.org/launch',
+      website_url: 'https://testorbit.example.org',
+      links: 'https://blog.example.org/launch',
     };
     const QUESTIONS: MktgRunQuestion[] = [
-      { key: 'audiences', label: 'Audiences', question: 'Who?', why: 'Unclear.', suggestedAnswer: 'Platform teams.', basis: ['https://testorbit.example.org'] },
-      { key: 'pillars', label: 'Pillars', question: 'Which?', why: '', suggestedAnswer: '', basis: [] },
+      {
+        key: 'ranked-goals',
+        label: 'Ranked goals',
+        question: 'Which goals?',
+        why: 'Unclear.',
+        suggestedAnswer: 'Adoption first.',
+        basis: ['https://testorbit.example.org'],
+      },
+      { key: 'words-to-avoid', label: 'Words to avoid', question: 'Which words?', why: '', suggestedAnswer: '', basis: [] },
     ];
     const QUESTIONS_RESULT: MktgRunResultResponse = { status: 'questions', questions: QUESTIONS, questionsId: 'abc12345' };
     const ANSWERS = [
-      { key: 'audiences', text: 'Platform teams.', origin: 'accepted' as const },
-      { key: 'pillars', text: 'Reliability; openness.', origin: 'requester' as const },
+      { key: 'ranked-goals', text: 'Adoption first.', origin: 'accepted' as const },
+      { key: 'words-to-avoid', text: 'Avoid "synergy".', origin: 'requester' as const },
     ];
     /** Where answers POSTs went. */
     let answersCalls: unknown[][];
@@ -617,7 +625,7 @@ describe('MktgAgentRunService', () => {
 
     beforeEach(() => {
       answersCalls = [];
-      // Same contract-locked mock, retargeted at the Messaging Document
+      // Same contract-locked mock, retargeted at the Messaging Framework
       // endpoints: every submission is a generate POST on a FRESH session;
       // posting to the chat endpoint would be the regression. Answers go to
       // the answers endpoint, on the same session.
@@ -663,6 +671,27 @@ describe('MktgAgentRunService', () => {
       service.generate(mfRequest()).subscribe();
 
       expect(httpPost).toHaveBeenCalledWith(FOUNDATION_MESSAGE_INTAKE.endpoints.generate, { answers: MF_ANSWERS, project: 'proj-1' });
+    });
+
+    it('ends the poll on a ready result that carries the framework as an asset — no document at all — and stores the asset with the version', async () => {
+      const asset: MktgRunAsset = {
+        kind: 'messaging-framework',
+        content: { mf: { tagline: 'Release, open.' }, icp: [], mh: {}, nums: [] } as unknown as MktgRunAsset['content'],
+        report: { sources_read: [], sources_failed: [], gaps: [], notes: '' },
+        checks: { findings: [] },
+        mode: 'draft',
+      };
+      resultResponses = [{ status: 'pending' }, { status: 'ready', asset, version: 1 }];
+      const events: MktgGenerateProgress[] = [];
+      service.generate(mfRequest()).subscribe((event) => events.push(event));
+
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs + MKTG_RUN_POLL.intervalMs);
+
+      const landed = events.find((event) => event.type === 'document');
+      expect(landed).toBeDefined();
+      const stored = JSON.parse(window.localStorage.getItem(MF_STORAGE_KEY) ?? 'null') as MktgStoredAgentRun;
+      expect(stored.versions).toHaveLength(1);
+      expect(stored.versions[0]).toMatchObject({ version: 1, document: '', asset });
     });
 
     it('stops at the agent’s questions: emits them with the session to continue and completes, storing no version', async () => {
@@ -835,7 +864,7 @@ describe('MktgAgentRunService', () => {
 
     it('poll-retries a receipt-less ready result — this intake now persists, so a missing receipt is a failed write', async () => {
       // Was: "this intake persists nothing, so a receipt would never arrive".
-      // The Messaging Document's result endpoint writes through the shared
+      // The Messaging Framework's result endpoint writes through the shared
       // agent-artifact layer, so a ready result WITHOUT a receipt is a failed
       // server-side write — exactly the Brand Kit case, recovered by the same
       // bounded, idempotent retry. Without it the only copy of the document
@@ -870,7 +899,7 @@ describe('MktgAgentRunService', () => {
       expect(events[2]).toEqual({ type: 'persisted' });
     });
 
-    it('bounds the Messaging Document retry to the same shared budget', async () => {
+    it('bounds the Messaging Framework retry to the same shared budget', async () => {
       resultResponses = [{ status: 'ready', documentMarkdown: '# v1', version: 1 }];
       service.generate(mfRequest()).subscribe();
 

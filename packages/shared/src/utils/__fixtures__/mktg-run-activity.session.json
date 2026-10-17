@@ -682,7 +682,7 @@
       },
       "content": {
         "type": "text",
-        "data": "MESSAGING DOCUMENT — QUESTIONS (messaging-document-questions/v1)\n(trimmed)"
+        "data": "MESSAGING FRAMEWORK — QUESTIONS (messaging-framework-questions/v1)\n(trimmed)"
       }
     },
     {
@@ -712,7 +712,7 @@
       },
       "content": {
         "type": "text",
-        "data": "MESSAGING DOCUMENT — QUESTIONS (messaging-document-questions/v1)\n(trimmed)"
+        "data": "MESSAGING FRAMEWORK — QUESTIONS (messaging-framework-questions/v1)\n(trimmed)"
       }
     },
     {
@@ -767,7 +767,7 @@
         "created_at": "2026-10-15T19:08:06.518940+00:00",
         "updated_at": "2026-10-15T19:14:23.529155+00:00"
       },
-      "body": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_01Jac3MHEJQ9WvwtfNK61V9p\",\"name\":\"finalize_messaging_document\",\"input\":{}}}"
+      "body": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_01Jac3MHEJQ9WvwtfNK61V9p\",\"name\":\"finalize_messaging_framework\",\"input\":{}}}"
     },
     {
       "type": "agent_notification_message",

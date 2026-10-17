@@ -119,7 +119,7 @@ export class MktgAgentRunService {
     const stored = this.loadRun(request.projectUid, request.agentId);
     let attempt$: Observable<MktgRunAttempt>;
     if (!stored || request.intake.freshRunPerSubmission) {
-      // `freshRunPerSubmission` intakes (the Messaging Document) carry no
+      // `freshRunPerSubmission` intakes (the Messaging Framework) carry no
       // prior version or feedback: every submission is a first run on a fresh
       // session, appended to the stored run's history by `appendVersion`.
       attempt$ = this.startRun(request);
@@ -373,8 +373,10 @@ export class MktgAgentRunService {
     answeredQuestionsId?: string
   ): Observable<{ result: MktgRunResultResponse; terminal: boolean }> {
     const body = this.resultBody(session, projectUid);
+    // A ready result carries the document's Markdown, or — for an agent that
+    // writes a structured asset — the asset; either ends the poll.
     const isDocument = (result: MktgRunResultResponse): boolean =>
-      result.status === 'ready' && typeof result.documentMarkdown === 'string' && (result.version ?? 0) > priorVersion;
+      result.status === 'ready' && (typeof result.documentMarkdown === 'string' || !!result.asset) && (result.version ?? 0) > priorVersion;
     const isNewQuestions = (result: MktgRunResultResponse): boolean =>
       !!intake.endpoints.answers &&
       result.status === 'questions' &&
@@ -496,6 +498,8 @@ export class MktgAgentRunService {
       // always says version 1, so the run numbers its own history instead.
       version: request.intake.freshRunPerSubmission ? lastVersion + 1 : (result.version ?? lastVersion + 1),
       document: result.documentMarkdown ?? '',
+      // An agent that writes an asset instead of a document stores it with the version; the run page renders it on the asset view.
+      ...(result.asset && { asset: result.asset }),
       feedback: request.feedback,
       derivatives: result.derivatives,
       // Recorded per version: the submission that produced this document is

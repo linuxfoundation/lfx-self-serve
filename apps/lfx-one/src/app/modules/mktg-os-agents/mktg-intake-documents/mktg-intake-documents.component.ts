@@ -2,28 +2,36 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { Component, computed, DestroyRef, inject, input, model, Signal, signal } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, input, model, Signal, signal, untracked } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { FileUploadComponent } from '@components/file-upload/file-upload.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { SelectComponent } from '@components/select/select.component';
 import { FOUNDATION_MESSAGE_READ_REASONS } from '@lfx-one/shared/constants';
-import { MktgDocumentExtractResponse, MktgIntakeDocumentEntry, MktgIntakeDocumentRow, MktgIntakeDocumentsConfig } from '@lfx-one/shared/interfaces';
+import {
+  MktgDocumentExtractResponse,
+  MktgIntakeDocumentEntry,
+  MktgIntakeDocumentRow,
+  MktgIntakeDocumentsConfig,
+  MktgIntakeDocumentTag,
+} from '@lfx-one/shared/interfaces';
 import { sourceUrlValidator } from '@lfx-one/shared/validators';
 import type { FileSelectEvent } from 'primeng/fileupload';
 import { finalize, Observable, Subject, takeUntil } from 'rxjs';
 
 import { MktgIntakeDocumentsService } from '@services/mktg-intake-documents.service';
 
-// The optional existing-documents section of an intake (the Messaging
-// Document's Step 0a): uploaded files, each read to text by the BFF as soon
-// as it is added so the user sees what the agent will get — "read · 6,100
-// words", or why it could not be read — and links, which go to the agent as
-// they are: it fetches them itself.
+// The optional documents section of an intake (the Messaging Framework's):
+// uploaded files, each read to text by the BFF as soon as it is added so the
+// user sees what the agent will get — "read · 6,100 words", or why it could
+// not be read — and links, which go to the agent as they are: it fetches
+// them itself. Intakes that take a document kind offer a tag per document
+// (press release, deck, document, plan, logo package).
 @Component({
   selector: 'lfx-mktg-intake-documents',
-  imports: [NgClass, ReactiveFormsModule, ButtonComponent, FileUploadComponent, InputTextComponent],
+  imports: [NgClass, ReactiveFormsModule, ButtonComponent, FileUploadComponent, InputTextComponent, SelectComponent],
   templateUrl: './mktg-intake-documents.component.html',
 })
 export class MktgIntakeDocumentsComponent {
@@ -38,6 +46,8 @@ export class MktgIntakeDocumentsComponent {
   protected readonly linkForm = new FormGroup({
     url: new FormControl('', { nonNullable: true, validators: [sourceUrlValidator()] }),
   });
+  /** One tag control per document on the form (its id), for intakes with tags. */
+  protected readonly tagsForm = new FormGroup<Record<string, AbstractControl<string>>>({});
 
   // === Model signals ===
   /** The documents on the form, in the order added. */
@@ -48,6 +58,8 @@ export class MktgIntakeDocumentsComponent {
   // === Signals ===
   protected readonly pending = signal(0);
   protected readonly errorText = signal('');
+  /** The documents whose tag control exists — the rows show a picker for these only. */
+  private readonly tagControlIds = signal<Set<string>>(new Set());
 
   /** Fires to drop every read in flight (`cancelReads`). */
   private readonly cancelled$ = new Subject<void>();
@@ -56,6 +68,11 @@ export class MktgIntakeDocumentsComponent {
   protected readonly rows: Signal<MktgIntakeDocumentRow[]> = this.initRows();
   protected readonly atLimit = computed(() => this.documents().length + this.pending() >= this.config().maxDocuments);
   protected readonly acceptAttribute = computed(() => this.config().fileExtensions.join(','));
+  /** The tags the intake offers per document; empty for intakes without tags. */
+  protected readonly tagOptions: Signal<MktgIntakeDocumentTag[]> = computed(() => this.config().tags ?? []);
+  protected readonly hasTags = computed(() => this.tagOptions().length > 0);
+  /** The tag a new document gets: the intake's default, else the first option. */
+  private readonly defaultTag = computed(() => this.config().defaultTag ?? this.tagOptions()[0]?.value ?? '');
 
   // Literal class names so Tailwind's content scan generates them.
   private readonly statusClass: Record<'read' | 'unread' | 'link', string> = {
@@ -63,6 +80,34 @@ export class MktgIntakeDocumentsComponent {
     unread: 'text-amber-700',
     link: 'text-gray-500',
   };
+
+  public constructor() {
+    // The tag controls follow the documents: one per document on the form —
+    // added for a document that arrived without one (set by the run page),
+    // dropped when a document goes (removed by the user, or the whole list
+    // emptied by a project switch). The ids with a control are a signal so
+    // the rows render a picker only once its control exists.
+    effect(() => {
+      const documents = this.documents();
+      const hasTags = this.hasTags();
+      untracked(() => {
+        const ids = new Set(documents.map((document) => document.id));
+        for (const key of Object.keys(this.tagsForm.controls)) {
+          if (!ids.has(key)) {
+            this.tagsForm.removeControl(key);
+          }
+        }
+        if (hasTags) {
+          for (const document of documents) {
+            if (!this.tagsForm.contains(document.id)) {
+              this.addTagControl(document.id, document.tag ?? this.defaultTag());
+            }
+          }
+        }
+        this.tagControlIds.set(new Set(Object.keys(this.tagsForm.controls)));
+      });
+    });
+  }
 
   // === Public methods ===
   /**
@@ -125,15 +170,16 @@ export class MktgIntakeDocumentsComponent {
   private initRows(): Signal<MktgIntakeDocumentRow[]> {
     return computed(() =>
       this.documents().map((document) => {
+        const tagControl = this.tagControlIds().has(document.id) ? document.id : '';
         if (document.kind === 'link') {
-          return { id: document.id, badge: 'LINK', title: document.title, status: 'the agent reads it', statusClass: this.statusClass.link };
+          return { id: document.id, badge: 'LINK', title: document.title, status: 'the agent reads it', statusClass: this.statusClass.link, tagControl };
         }
         const words = document.words.toLocaleString('en-US');
         let status = document.reason ?? 'not read';
         if (document.read) {
           status = `read · ${words} words${document.truncated ? ' (cut to fit)' : ''}`;
         }
-        return { id: document.id, badge: 'FILE', title: document.title, status, statusClass: this.statusClass[document.read ? 'read' : 'unread'] };
+        return { id: document.id, badge: 'FILE', title: document.title, status, statusClass: this.statusClass[document.read ? 'read' : 'unread'], tagControl };
       })
     );
   }
@@ -145,7 +191,19 @@ export class MktgIntakeDocumentsComponent {
       return;
     }
     const id = `${entry.kind}-${Date.now().toString(36)}-${this.documents().length}`;
-    this.documents.update((documents) => [...documents, { ...entry, id }]);
+    const tag = this.hasTags() ? { tag: this.defaultTag() } : {};
+    this.documents.update((documents) => [...documents, { ...entry, ...tag, id }]);
+  }
+
+  /** One tag control for a document; the picker writes straight into the document it belongs to. */
+  private addTagControl(id: string, tag: string): void {
+    const control = new FormControl(tag, { nonNullable: true });
+    this.tagsForm.addControl(id, control);
+    control.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value) => {
+      this.documents.update((documents) => documents.map((document) => (document.id === id ? { ...document, tag: value } : document)));
+    });
+    // A document that arrived without a tag (set by the run page) carries the control's from now on.
+    this.documents.update((documents) => documents.map((document) => (document.id === id && document.tag === undefined ? { ...document, tag } : document)));
   }
 
   private entryFields(response: MktgDocumentExtractResponse): Pick<MktgIntakeDocumentEntry, 'title' | 'read' | 'words' | 'truncated' | 'reason'> {

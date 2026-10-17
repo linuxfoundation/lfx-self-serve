@@ -12,6 +12,8 @@ import { MarkdownRendererComponent } from '@components/markdown-renderer/markdow
 import { MessageComponent } from '@components/message/message.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import {
+  FOUNDATION_MESSAGE_LOGO_DOCUMENT_KIND,
+  FOUNDATION_MESSAGE_NO_SOURCE_ERROR,
   MKTG_AGENT_INTAKES,
   MKTG_AGENTS,
   MKTG_DOCUMENT_STATUS_REVIEWED_PREFIX,
@@ -39,6 +41,7 @@ import {
   MktgRunAnsweredQuestionRow,
   MktgRunActivity,
   MktgRunAnswerOrigin,
+  MktgRunAsset,
   MktgRunPhase,
   MktgRunQuestionsPending,
   MktgRunVersion,
@@ -46,7 +49,7 @@ import {
   ProjectContext,
   User,
 } from '@lfx-one/shared/interfaces';
-import { findMktgDocumentStatus, mktgAgentDocumentName } from '@lfx-one/shared/utils';
+import { findMktgDocumentStatus, foundationMessageSourceUrl, mktgAgentDocumentName } from '@lfx-one/shared/utils';
 import { githubRepoUrlValidator, sourceUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 import { MessageService } from 'primeng/api';
 import { combineLatest, distinctUntilChanged, EMPTY, filter, map, Subscription, switchMap } from 'rxjs';
@@ -58,6 +61,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 
+import { MktgFrameworkViewComponent, MktgFrameworkViewState } from '../mktg-framework-view/mktg-framework-view.component';
 import { MktgIntakeDocumentsComponent } from '../mktg-intake-documents/mktg-intake-documents.component';
 import { MktgRunActivityComponent } from '../mktg-run-activity/mktg-run-activity.component';
 import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questions.component';
@@ -68,7 +72,10 @@ import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questi
 // they could not settle, one at a time, each with a suggested answer to take
 // or replace, answered on the same run →) document result with versions and a
 // "Request changes" feedback box that regenerates as v+1 through the existing
-// chat/session BFF. The page is driven entirely by the shared intake registry
+// chat/session BFF. An agent whose output is a structured asset (the Messaging
+// Framework, `intake.assetView`) lands on the asset's own view instead: the
+// feed and the questions inside it while the run is live, then the rendered
+// asset. The page is driven entirely by the shared intake registry
 // (MKTG_AGENT_INTAKES), so additional agent forms slot in without touching the
 // shell.
 @Component({
@@ -82,6 +89,7 @@ import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questi
     TextareaComponent,
     MarkdownRendererComponent,
     MessageComponent,
+    MktgFrameworkViewComponent,
     MktgIntakeDocumentsComponent,
     MktgRunActivityComponent,
     MktgRunQuestionsComponent,
@@ -228,8 +236,34 @@ export class MktgAgentRunComponent {
   protected readonly showVersionChips = computed(() => this.versions().length > 1 && this.phase() !== 'running');
   protected readonly feedbackNote = computed(() => (this.currentVersion()?.feedback ?? '').slice(0, 120));
   protected readonly submitDisabled = computed(
-    () => !this.intakeValid() || this.phase() === 'running' || this.documentsBusy() || !this.dependenciesSatisfied()
+    () => !this.intakeValid() || this.phase() === 'running' || this.documentsBusy() || !this.dependenciesSatisfied() || !this.sourceGiven()
   );
+  /**
+   * Whether the form carries something for the agent to read, for intakes
+   * that require a source (`requiresSource`): a `source-url` field with a
+   * link (not "none"), a `source-url-list` field with at least one line, or
+   * a document that is not a logo package. Always true for other intakes.
+   */
+  protected readonly sourceGiven: Signal<boolean> = this.initSourceGiven();
+  /** The note under the form while a source is still missing; '' otherwise. */
+  protected readonly sourceNote = computed(() => (this.sourceGiven() ? '' : FOUNDATION_MESSAGE_NO_SOURCE_ERROR));
+  /** True when the run is shown on the intake's asset view (every phase but the form). */
+  protected readonly assetViewActive = computed(() => !!this.intake?.assetView && this.phase() !== 'form');
+  /** The asset of the version on screen, for the asset view. */
+  protected readonly currentAsset: Signal<MktgRunAsset | null> = computed(() => this.currentVersion()?.asset ?? null);
+  /** Where the asset view stands: generating while the feed shows, questions while the stepper does, ready on the result. */
+  protected readonly frameworkState: Signal<MktgFrameworkViewState> = computed(() => {
+    const phase = this.phase();
+    if (phase === 'running') {
+      return 'generating';
+    }
+    if (phase === 'questions') {
+      return 'questions';
+    }
+    return 'ready';
+  });
+  /** The version the asset view names: the one on screen on the result, nothing while a new run is live. */
+  protected readonly assetVersion = computed(() => (this.phase() === 'result' ? (this.currentVersion()?.version ?? null) : null));
   /** Field labels as shown: the registered question per field key. */
   protected readonly fieldLabels: Record<string, string> = Object.fromEntries((this.intake?.fields ?? []).map((field) => [field.key, field.question]));
   /** The questions the agent is waiting on, for the stepper. */
@@ -539,11 +573,14 @@ export class MktgAgentRunComponent {
     if (!current) {
       return;
     }
-    const blob = new Blob([current.document], { type: 'text/markdown' });
+    // An asset downloads as its JSON (the content as stored); a document as its Markdown.
+    const blob = current.asset
+      ? new Blob([JSON.stringify(current.asset.content, null, 2)], { type: 'application/json' })
+      : new Blob([current.document], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = `${this.docTitle()} v${current.version}.md`;
+    anchor.download = `${this.docTitle()} v${current.version}.${current.asset ? 'json' : 'md'}`;
     anchor.click();
     // Deferred: some browsers begin the download asynchronously, and revoking
     // synchronously can invalidate the blob URL before it is consumed.
@@ -677,6 +714,26 @@ export class MktgAgentRunComponent {
     }));
   }
 
+  private initSourceGiven(): Signal<boolean> {
+    return computed(() => {
+      if (!this.intake?.requiresSource) {
+        return true;
+      }
+      // Depend on the form's value so this follows every keystroke.
+      this.intakeValue();
+      for (const field of this.intake.fields) {
+        const value = this.intakeForm.controls[field.key]?.value ?? '';
+        if (field.format === 'source-url' && foundationMessageSourceUrl(value) !== null) {
+          return true;
+        }
+        if (field.format === 'source-url-list' && value.trim() !== '') {
+          return true;
+        }
+      }
+      return this.documents().some((document) => document.tag !== FOUNDATION_MESSAGE_LOGO_DOCUMENT_KIND);
+    });
+  }
+
   private initAskedRows(): Signal<MktgRunAnsweredQuestionRow[]> {
     return computed(() => {
       const version = this.currentVersion();
@@ -784,10 +841,11 @@ export class MktgAgentRunComponent {
   /** The form's existing documents as the generate request takes them: a link by its URL (the agent reads it), a file by its text. */
   private submittedDocuments(): MktgIntakeDocument[] {
     return this.documents().map((document): MktgIntakeDocument => {
+      const tag = document.tag ? { tag: document.tag } : {};
       if (document.kind === 'link') {
-        return { kind: 'link', title: document.title, url: document.url };
+        return { kind: 'link', title: document.title, url: document.url, ...tag };
       }
-      return { kind: 'file', title: document.title, text: document.text };
+      return { kind: 'file', title: document.title, text: document.text, ...tag };
     });
   }
 

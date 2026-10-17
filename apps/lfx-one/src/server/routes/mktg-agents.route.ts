@@ -46,13 +46,13 @@ router.post('/brand-kit/result', (req, res, next) => mktgAgentsController.brandK
 // GET /api/mktg-agents/brand-kit/stored - the project's latest persisted document (writer-entitled callers only)
 router.get('/brand-kit/stored', (req, res, next) => mktgAgentsController.storedBrandKit(req, res, next));
 
-// POST /api/mktg-agents/foundation-message/generate - start a one-shot Messaging Document generation
+// POST /api/mktg-agents/foundation-message/generate - start a Messaging Framework draft
 router.post('/foundation-message/generate', (req, res, next) => mktgAgentsController.generateFoundationMessage(req, res, next));
 
-// POST /api/mktg-agents/foundation-message/result - poll a generation session for the validated document
+// POST /api/mktg-agents/foundation-message/result - poll a generation session for the validated framework (or the agent's questions)
 router.post('/foundation-message/result', (req, res, next) => mktgAgentsController.foundationMessageResult(req, res, next));
 
-// POST /api/mktg-agents/foundation-message/documents/file - read one uploaded existing document to text (raw body, at most 20 MB)
+// POST /api/mktg-agents/foundation-message/documents/file - read one uploaded document to text (raw body, at most 20 MB)
 router.post(
   '/foundation-message/documents/file',
   express.raw({ type: FOUNDATION_MESSAGE_FILE_UPLOAD_CONTENT_TYPE, limit: FOUNDATION_MESSAGE_MAX_FILE_BYTES }),
@@ -69,7 +69,7 @@ router.post('/icp/generate', (req, res, next) => mktgAgentsController.generateIc
 // POST /api/mktg-agents/icp/result - poll a generation session for the validated document
 router.post('/icp/result', (req, res, next) => mktgAgentsController.icpResult(req, res, next));
 
-// GET /api/mktg-agents/foundation-message/stored - the project's latest persisted document (writer-entitled callers only)
+// GET /api/mktg-agents/foundation-message/stored - the project's latest stored framework (writer-entitled callers only)
 router.get('/foundation-message/stored', (req, res, next) => mktgAgentsController.storedFoundationMessage(req, res, next));
 
 // GET /api/mktg-agents/documents?project=<uid> - every stored Marketing OS document of the project, grouped by type (writer-entitled callers only)

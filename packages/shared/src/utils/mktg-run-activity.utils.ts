@@ -34,7 +34,7 @@ import {
   MKTG_RUN_ACTIVITY_PHASES,
   MKTG_RUN_ACTIVITY_QUESTIONS_MARKER,
   MKTG_RUN_ACTIVITY_TOOLS,
-  MKTG_RUN_QUESTION_SHORT_LABELS,
+  MKTG_RUN_QUESTION_CHIP_WORDS,
 } from '../constants/mktg-run-activity.constants';
 import type { MktgRunActivity, MktgRunActivityKind, MktgRunActivityPhase, MktgRunActivityStatus } from '../interfaces';
 
@@ -323,9 +323,9 @@ export function mktgRunActivityPhases(activity: MktgRunActivity[]): MktgRunActiv
   });
 }
 
-/** The short chip label of a question in the stepper ("Vision", "Proof points"). */
-export function mktgRunQuestionShortLabel(key: string, label: string): string {
-  return MKTG_RUN_QUESTION_SHORT_LABELS[key] ?? label.split(/\s+/).slice(0, 2).join(' ');
+/** The short chip label of a question in the stepper: the first words of its label ("Ranked goals", "Words to"). */
+export function mktgRunQuestionShortLabel(label: string): string {
+  return label.split(/\s+/).slice(0, MKTG_RUN_QUESTION_CHIP_WORDS).join(' ');
 }
 
 /** True for any of the kinds the feed knows — for callers narrowing untyped input. */

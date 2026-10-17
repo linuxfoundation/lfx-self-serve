@@ -79,6 +79,25 @@ export interface MktgArtifactEnvelope {
 }
 
 /**
+ * The envelope fields the document store reads from an agent that writes a
+ * structured asset instead of a document (the Messaging Framework): the JSON
+ * content, the sha the caller already recomputed over `JSON.stringify(content)`
+ * and verified, the draft version, and how intake was collected. Such an
+ * envelope is stored as a revision only — nothing is written to the
+ * pre-revision `.md` partition.
+ */
+export interface MktgArtifactJsonEnvelope {
+  /** The validated JSON content — serialized with `JSON.stringify` to the exact bytes persisted. */
+  content: Record<string, unknown>;
+  /** Lowercase hex SHA-256 of `JSON.stringify(content)` (UTF-8), ALREADY recomputed and verified by the caller. */
+  content_sha256: string;
+  /** Draft version within a run, starting at 1. */
+  version: number;
+  /** Intake log; only `mode` is read. */
+  intake: { mode: MktgArtifactIntakeMode };
+}
+
+/**
  * Receipt of a successful persistence write, for ANY agent. The generic
  * run-flow receipt ({@link MktgRunPersistReceipt}) plus the intake provenance
  * every Marketing OS contract records. Field names are snake_case (unlike the

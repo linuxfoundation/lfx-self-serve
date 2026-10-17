@@ -12,6 +12,7 @@
 
 import { FOUNDATION_MESSAGE_ANSWER_ORIGINS } from '../constants/foundation-message.constants';
 import type { MKTG_RUN_ACTIVITY_KINDS } from '../constants/mktg-run-activity.constants';
+import type { FoundationMessageChecks, FoundationMessageContent, FoundationMessageMode, FoundationMessageReport } from './foundation-message.interface';
 import type { MktgSessionInfo } from './mktg-chat.interface';
 
 /** How a single intake field is rendered on the run page. */
@@ -176,6 +177,13 @@ export interface MktgIntakeDocument {
   url?: string;
   /** The extracted text, for `kind: 'file'`. */
   text?: string;
+  /**
+   * What the document is, for intakes whose documents section offers tags
+   * ({@link MktgIntakeDocumentsConfig.tags}): the Messaging Framework's press
+   * release, deck, document, plan or logo package. Absent for intakes without
+   * tags.
+   */
+  tag?: string;
 }
 
 /** An existing document on the form, with what reading it produced. */
@@ -204,6 +212,16 @@ export interface MktgIntakeDocumentRow {
   status: string;
   /** Tailwind colour class of the status. */
   statusClass: string;
+  /** The tag picker's control name (the entry's id), for intakes with tags; '' otherwise. */
+  tagControl: string;
+}
+
+/** One tag a document on the form can carry: the agent's kind and what the form calls it. */
+export interface MktgIntakeDocumentTag {
+  /** The agent's document kind, e.g. `press`. */
+  value: string;
+  /** What the form calls it, e.g. `Press release`. */
+  label: string;
 }
 
 /** Response of the existing-document file endpoint: what LFX One read from an uploaded file. */
@@ -269,6 +287,13 @@ export interface MktgIntakeDocumentsConfig {
   fileExtensions: string[];
   /** BFF endpoint that reads an uploaded file (raw body) to text. */
   endpoints: { file: string };
+  /**
+   * Tags the requester picks per document (what it is), for agents whose
+   * form takes a document kind. Without them a document carries no tag.
+   */
+  tags?: MktgIntakeDocumentTag[];
+  /** The tag a new document gets until the requester changes it; required when `tags` is set. */
+  defaultTag?: string;
 }
 
 /**
@@ -466,9 +491,9 @@ export type MktgRunAnswerOrigin = (typeof FOUNDATION_MESSAGE_ANSWER_ORIGINS)[num
  * as the run's second step; the requester accepts or edits every one.
  */
 export interface MktgRunQuestion {
-  /** The field the answer fills; the answer travels back under it. */
+  /** The agent's stable id for the question (`ranked-goals`); the answer travels back under it. */
   key: string;
-  /** Short label. */
+  /** Short label, derived from the id (`Ranked goals`). */
   label: string;
   /** The question itself. */
   question: string;
@@ -616,8 +641,14 @@ export interface MktgRunResultResponse {
    * reports the same id is the block it already answered, not a new one.
    */
   questionsId?: string;
-  /** The validated document (Markdown). Present when ready. */
+  /** The validated document (Markdown). Present when ready, for agents that write a document. */
   documentMarkdown?: string;
+  /**
+   * The validated asset, for agents that write structured JSON instead of a
+   * document (the Messaging Framework). Present when ready; a ready result
+   * carries exactly one of `documentMarkdown` and `asset`.
+   */
+  asset?: MktgRunAsset;
   /** Draft version from the validated envelope. Present when ready. */
   version?: number;
   /** Word-count-locked derivatives from the validated envelope, when the agent's contract defines them. */
@@ -637,6 +668,27 @@ export interface MktgRunResultResponse {
    * it happens.
    */
   activity?: MktgRunActivity[];
+}
+
+/**
+ * The asset views the run page and the Documents area know how to render,
+ * besides a Markdown document. The Messaging Framework's is built inside the
+ * mktg-os-agents module; a shared asset-view registry is later work.
+ */
+export type MktgAssetViewKind = 'messaging-framework';
+
+/**
+ * A validated structured output — what an agent that writes JSON returns
+ * instead of a document: the Messaging Framework bundle with the report and
+ * checks the view shows beside it. Stored with the run's version and, by the
+ * BFF, as the revision's content.
+ */
+export interface MktgRunAsset {
+  kind: 'messaging-framework';
+  content: FoundationMessageContent;
+  report: FoundationMessageReport;
+  checks: FoundationMessageChecks;
+  mode: FoundationMessageMode;
 }
 
 /** One kind of step in a run's live activity feed — also the header phase it belongs to. */
@@ -776,14 +828,30 @@ export interface MktgAgentIntake {
    * timeline while the agent works.
    */
   liveActivity?: boolean;
+  /**
+   * The agent writes a structured asset, not a document: the run lands on
+   * this view — generating state, the feed and the questions while the run
+   * is live, then the rendered asset — instead of the document result card,
+   * and the Documents area renders its revisions with the same view.
+   */
+  assetView?: MktgAssetViewKind;
+  /**
+   * A submission needs at least one source to read: a non-empty `source-url`
+   * or `source-url-list` field, or a document whose tag is not the logo
+   * package. The form says so and keeps the submit button disabled until one
+   * is given.
+   */
+  requiresSource?: boolean;
 }
 
 /** One generated document version for an agent run. */
 export interface MktgRunVersion {
   /** 1-based version number; regeneration produces v+1. */
   version: number;
-  /** The generated document (Markdown) returned by the agent. */
+  /** The generated document (Markdown) returned by the agent; '' for an agent that writes an asset instead. */
   document: string;
+  /** The validated asset, for agents whose intake declares an `assetView`. */
+  asset?: MktgRunAsset;
   /** The feedback that produced this version, when it was a regeneration. */
   feedback?: string;
   /** Word-count-locked derivatives from the validated envelope, when the agent's contract defines them. */

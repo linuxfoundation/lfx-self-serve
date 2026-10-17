@@ -1,101 +1,132 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Messaging Document contract constants (messaging-document-output/v1, the
-// messaging-document-questions/v1 and messaging-document-answers/v1 turns) —
-// shared between the BFF's form renderer and envelope gates, the intake form
-// UI, and tests. The agent keeps its Guild name (foundation-message), its
-// store prefix and its catalog id (foundation-setup); only its document is
-// now Paul's Messaging Document. Mirrors marketing-os-agents
-// agents/foundation-message (src/envelope.ts, src/form.ts, src/questions.ts,
-// src/questions-turn.ts) and docs/contracts/messaging-document-*.md.
+// Messaging Framework contract constants (messaging-framework-output/v1, the
+// messaging-framework-questions/v1 and messaging-framework-answers/v1 turns)
+// — shared between the BFF's form renderer and envelope gates, the intake
+// form UI, the framework view and tests. The agent keeps its Guild name
+// (foundation-message), its store prefix and its catalog id (foundation-setup);
+// what it writes is the Messaging Framework: one JSON bundle (mf, icp, mh,
+// nums) with its report, never a Markdown document. Mirrors marketing-os-agents
+// agents/foundation-message 4.0.0 (src/envelope.ts, src/form.ts,
+// src/questions-turn.ts) and docs/contracts/messaging-framework-*.md.
 
 /** Contract discriminator the BFF accepts; unknown majors are rejected. */
-export const FOUNDATION_MESSAGE_CONTRACT_ID = 'messaging-document-output/v1';
+export const FOUNDATION_MESSAGE_CONTRACT_ID = 'messaging-framework-output/v1';
 
 /** Document kind within the contract. */
-export const FOUNDATION_MESSAGE_KIND = 'messaging-document';
+export const FOUNDATION_MESSAGE_KIND = 'messaging-framework';
 
 /** The Guild identifier the envelope's `agent.identifier` must carry. */
 export const FOUNDATION_MESSAGE_AGENT_IDENTIFIER = 'linux-foundation~foundation-message';
 
-/** Payload discriminator of the agent's generate form (`src/form.ts` GENERATE_FORM_TYPE). */
-export const FOUNDATION_MESSAGE_FORM_TYPE = 'messaging_document_intake_form';
+/** Payload discriminator of the agent's intake form (`src/form.ts` FORM_TYPE). */
+export const FOUNDATION_MESSAGE_FORM_TYPE = 'messaging_framework_intake_form';
 
-/** First line of the rendered generate form — the marker the agent's finalize tool parses back. */
-export const FOUNDATION_MESSAGE_GENERATE_HEADER = 'BATCH INTAKE SUBMISSION (Messaging Document — GENERATE)';
+/** How a run is produced: a new draft, a redraft from comments, or a check of a hand-edited version. */
+export const FOUNDATION_MESSAGE_MODES = ['draft', 'redraft', 'check'] as const;
 
-// ---------------------------------------------------------------------------
-// The sources — Paul's four Step 0b source labels, QUOTED VERBATIM from the
-// agent's src/questions.ts (dec-paul-prompt-fidelity). The agent fetches every
-// link itself (web fetch, Exa search): LFX One sends URLs only.
-// ---------------------------------------------------------------------------
+/** The two revision modes a form may carry (everything but a draft). */
+export const FOUNDATION_MESSAGE_REVISION_MODES = ['redraft', 'check'] as const;
 
-/** Step 0b — the four sources, in Paul's order ("none" is a valid answer). */
-export const FOUNDATION_MESSAGE_SOURCE_KINDS = ['website', 'readme', 'press_release', 'brand_page'] as const;
-
-/** Step 0b — Paul's label for each source. */
-export const FOUNDATION_MESSAGE_SOURCE_LABELS = {
-  website: 'the project or foundation website',
-  readme: 'the GitHub repo or README',
-  press_release: 'the launch press release (linuxfoundation.org/press or the project site)',
-  brand_page: 'an existing brand page or guidelines, if any',
+/** First line of the rendered form per mode — the marker the agent's finalize tool parses back. */
+export const FOUNDATION_MESSAGE_INTAKE_HEADERS = {
+  draft: 'BATCH INTAKE SUBMISSION (Messaging Framework — DRAFT)',
+  redraft: 'BATCH INTAKE SUBMISSION (Messaging Framework — REDRAFT)',
+  check: 'BATCH INTAKE SUBMISSION (Messaging Framework — CHECK)',
 } as const;
 
-/** The form key each source's URL travels under. */
-export const FOUNDATION_MESSAGE_SOURCE_URL_KEYS = {
-  website: 'website_url',
-  readme: 'github_url',
-  press_release: 'press_release_url',
-  brand_page: 'brand_page_url',
-} as const;
+// ---------------------------------------------------------------------------
+// The form: the project, its sources as links (the agent fetches every one
+// itself), the notes, and the documents, each tagged with what it is.
+// ---------------------------------------------------------------------------
 
-/** The form key of the optional list of further links (one per line on the form; an array in the payload). */
-export const FOUNDATION_MESSAGE_OTHER_LINKS_KEY = 'other_links';
+/** The intake answer keys the form collects, besides the documents. */
+export const FOUNDATION_MESSAGE_ANSWER_KEYS = ['project_name', 'description', 'website_url', 'links', 'notes'] as const;
 
-/** Most other links one run takes. */
-export const FOUNDATION_MESSAGE_MAX_OTHER_LINKS = 10;
+/** The form key of the one-line description. */
+export const FOUNDATION_MESSAGE_DESCRIPTION_KEY = 'description';
+
+/** The form key of the website. */
+export const FOUNDATION_MESSAGE_WEBSITE_KEY = 'website_url';
+
+/** The form key of the other links (one per line on the form; an array in the payload). */
+export const FOUNDATION_MESSAGE_LINKS_KEY = 'links';
+
+/** The form key of the notes (audience, segments, words to avoid). */
+export const FOUNDATION_MESSAGE_NOTES_KEY = 'notes';
+
+/** Most links one run takes (the agent's own cap). */
+export const FOUNDATION_MESSAGE_MAX_LINKS = 20;
+
+/** Longest notes text accepted (a product cap; the agent sets none). */
+export const FOUNDATION_MESSAGE_NOTES_MAX_CHARS = 10000;
 
 /**
- * The ten intake answer keys, in the agent's priority order (its
- * `ANSWER_KEYS`, src/questions.ts). The form asks none of them: the rendered
- * intake declares every one open (`ANSWERS ON THE FORM: 0 of 10 — open: …`),
- * and the agent asks back only the gaps its research leaves.
+ * The document kinds of the agent's input contract (`sources.files[].kind`),
+ * in the order the form offers them. A `logo` package is ignored by this
+ * agent and never counts as a source.
  */
-export const FOUNDATION_MESSAGE_ANSWER_KEYS = [
-  'vision_mission',
-  'category',
-  'audiences',
-  'alternatives',
-  'differentiation',
-  'use_cases',
-  'proof_points',
-  'pillars',
-  'objections',
-  'tagline_ctas_constraints',
+export const FOUNDATION_MESSAGE_DOCUMENT_KINDS = ['press', 'deck', 'doc', 'plan', 'logo'] as const;
+
+/** The agent's own label per kind, rendered after it on the form's `KIND:` line — verbatim from its `DOCUMENT_KIND_LABELS`. */
+export const FOUNDATION_MESSAGE_DOCUMENT_KIND_LABELS = {
+  press: 'press release',
+  deck: 'deck',
+  doc: 'document',
+  plan: 'integrated marketing plan',
+  logo: 'logo package',
+} as const;
+
+/** What the form's tag picker calls each kind. */
+export const FOUNDATION_MESSAGE_DOCUMENT_KIND_OPTIONS = [
+  { value: 'press', label: 'Press release' },
+  { value: 'deck', label: 'Deck' },
+  { value: 'doc', label: 'Document' },
+  { value: 'plan', label: 'Marketing plan' },
+  { value: 'logo', label: 'Logo package' },
 ] as const;
 
+/** The kind a document gets until the requester tags it. */
+export const FOUNDATION_MESSAGE_DEFAULT_DOCUMENT_KIND = 'doc';
+
+/** The document kind this agent ignores: a logo package is never a source. */
+export const FOUNDATION_MESSAGE_LOGO_DOCUMENT_KIND = 'logo';
+
+/** What the form says when a draft has nothing to read. */
+export const FOUNDATION_MESSAGE_NO_SOURCE_ERROR =
+  'Give the agent at least one source to read: the website, a link, or a document (a logo package does not count).';
+
+/** Most comments one redraft takes (the agent's own cap). */
+export const FOUNDATION_MESSAGE_MAX_COMMENTS = 30;
+
+/** A comment's field: a dotted / indexed path into the stored JSON (`mf.tagline`, `mf.goals[1].bite`, `icp[0].cta`, `mh.pillars[2].m`, `nums`). */
+export const FOUNDATION_MESSAGE_FIELD_PATH_REGEX = /^(mf|icp|mh|nums)(\.[A-Za-z0-9_-]+|\[\d+\])*$/;
+
 /** The agent's finalize tool: the only event source the BFF accepts an output envelope from (its tool RESULT). */
-export const FOUNDATION_MESSAGE_FINALIZE_TOOL = 'finalize_messaging_document';
+export const FOUNDATION_MESSAGE_FINALIZE_TOOL = 'finalize_messaging_framework';
+
+/** The agent's questions tool: its result is the questions turn the run stops on. */
+export const FOUNDATION_MESSAGE_ASK_TOOL = 'ask_requester';
 
 // ---------------------------------------------------------------------------
-// The questions turn (messaging-document-questions/v1) and the answers turn
-// (messaging-document-answers/v1): after reading the sources and researching,
+// The questions turn (messaging-framework-questions/v1) and the answers turn
+// (messaging-framework-answers/v1): after reading the sources and researching,
 // the agent asks ONLY the gaps, each with a suggested answer; the requester
 // accepts or edits every one and the answers go back to the same session.
 // ---------------------------------------------------------------------------
 
 /** Contract discriminator of the agent's questions block. */
-export const FOUNDATION_MESSAGE_QUESTIONS_CONTRACT_ID = 'messaging-document-questions/v1';
+export const FOUNDATION_MESSAGE_QUESTIONS_CONTRACT_ID = 'messaging-framework-questions/v1';
 
 /** First line of the agent's questions turn; a fenced ```json block with the questions follows. */
-export const FOUNDATION_MESSAGE_QUESTIONS_HEADER = 'MESSAGING DOCUMENT — QUESTIONS (messaging-document-questions/v1)';
+export const FOUNDATION_MESSAGE_QUESTIONS_HEADER = 'MESSAGING FRAMEWORK — QUESTIONS (messaging-framework-questions/v1)';
 
 /** Contract discriminator of the answers turn LFX One renders. */
-export const FOUNDATION_MESSAGE_ANSWERS_CONTRACT_ID = 'messaging-document-answers/v1';
+export const FOUNDATION_MESSAGE_ANSWERS_CONTRACT_ID = 'messaging-framework-answers/v1';
 
 /** First line of the rendered answers turn — the marker the agent parses back. */
-export const FOUNDATION_MESSAGE_ANSWERS_HEADER = 'MESSAGING DOCUMENT — ANSWERS (messaging-document-answers/v1)';
+export const FOUNDATION_MESSAGE_ANSWERS_HEADER = 'MESSAGING FRAMEWORK — ANSWERS (messaging-framework-answers/v1)';
 
 /**
  * Where an answer came from: `accepted` — the suggested answer, unchanged;
@@ -104,11 +135,14 @@ export const FOUNDATION_MESSAGE_ANSWERS_HEADER = 'MESSAGING DOCUMENT — ANSWERS
  */
 export const FOUNDATION_MESSAGE_ANSWER_ORIGINS = ['accepted', 'edited', 'requester'] as const;
 
-/** Most questions one questions turn may carry (Paul's ten, with room for a split one). */
-export const FOUNDATION_MESSAGE_MAX_QUESTIONS = 20;
+/** Most questions one questions turn may carry (the agent's own cap). */
+export const FOUNDATION_MESSAGE_MAX_QUESTIONS = 8;
 
-/** Shape of a question key: the agent's snake_case field keys. */
-export const FOUNDATION_MESSAGE_QUESTION_KEY_REGEX = /^[a-z0-9][a-z0-9_]{0,63}$/;
+/** Shape of a question id: the agent's stable kebab-case ids (`ranked-goals`, `words-to-avoid`), at most 40 characters. */
+export const FOUNDATION_MESSAGE_QUESTION_ID_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/** Longest question id. */
+export const FOUNDATION_MESSAGE_QUESTION_ID_MAX_CHARS = 40;
 
 /** Longest answer text accepted on the answers turn. */
 export const FOUNDATION_MESSAGE_ANSWER_MAX_CHARS = 4000;
@@ -124,120 +158,49 @@ export const FOUNDATION_MESSAGE_NON_ANSWER_REGEX = /^(?:tbd|skip|skipped|n\/?a|n
 export const FOUNDATION_MESSAGE_ANSWERS_ENDPOINT = '/api/mktg-agents/foundation-message/answers';
 
 // ---------------------------------------------------------------------------
-// Form shapes and draft statuses (src/form.ts)
+// Output contract gates (messaging-framework-output/v1, the JSON Schema)
 // ---------------------------------------------------------------------------
 
-/** Status of a draft generated with no answers (Paul's pre-fill mode). */
-export const FOUNDATION_MESSAGE_STATUS_PREFILLED = 'Draft — pre-filled';
+/** The source labels a proof point may carry: the skill's six plus the platform's `Notes` and `Web`. */
+export const FOUNDATION_MESSAGE_SOURCE_LABELS = ['Website', 'Press release', 'Deck', 'Docs', 'Plan', 'LFX field', 'Notes', 'Web'] as const;
 
-/** Status of a draft generated from the requester's answers (with or without documents). */
-export const FOUNDATION_MESSAGE_STATUS_FROM_DOCUMENTS = 'Draft — from your documents';
+/** The two kinds of segment. */
+export const FOUNDATION_MESSAGE_ICP_KINDS = ['Organization', 'Individual'] as const;
 
-/** Paul's draft labels; an envelope's `status` must start with one of them. */
-export const FOUNDATION_MESSAGE_DRAFT_STATUSES = [FOUNDATION_MESSAGE_STATUS_PREFILLED, FOUNDATION_MESSAGE_STATUS_FROM_DOCUMENTS] as const;
-
-/** The generate shapes the envelope's `intake.shape` records (the agent's GenerateShape). */
-export const FOUNDATION_MESSAGE_GENERATE_SHAPES = ['answers', 'documents-with-answers', 'prefill'] as const;
-
-// ---------------------------------------------------------------------------
-// Output contract gates (messaging-document-output/v1, contract §1a)
-// ---------------------------------------------------------------------------
+/** The three anchor questions every framework ends with, in order (the agent restores them on a check). */
+export const FOUNDATION_MESSAGE_ANCHOR_QUESTIONS = ['Which goal does this serve?', 'Which segment is it for?', 'Which key message does it carry?'] as const;
 
 /**
- * The template's level-2 sections, in order — Paul's messaging-document 1.0.0
- * template (the agent's REQUIRED_HEADINGS). Matching is heading-prefix per
- * line with a qualifier boundary and a curly apostrophe tolerated, mirroring
- * the agent's own gate. Must stay in lockstep with the agent — every run fails
- * validation otherwise.
+ * The array bounds of the content, as the schema states them (the agent
+ * enforces the skill's tighter counts on a draft and a redraft and records a
+ * breach in `checks.findings` on a check — so a hand-edited version can
+ * still be read).
  */
-export const FOUNDATION_MESSAGE_REQUIRED_HEADINGS = [
-  '## Review Sheet',
-  '## 1. Communications framework',
-  '## 2. Positioning',
-  '## 3. Project definition and governance',
-  '## 4. Copy primitives',
-  '## 5. Alternatives and differentiation',
-  '## 6. Messaging pillars',
-  '## 7. Message house',
-  '## 8. Proof points',
-  "## 9. Objections and what we don't claim",
-  '## 10. CTA anchors, terminology and origin',
-  '## 11. Open decisions and next steps',
-  '## Appendix A: Inputs and interview record',
-  '## Appendix B: Stat Bank',
-] as const;
-
-/** The 23 md.* fields of the sidecar, in the registry's order (input-doc-mapping.md §3). */
-export const FOUNDATION_MESSAGE_FIELD_IDS = [
-  'md.vision',
-  'md.mission',
-  'md.category',
-  'md.positioning',
-  'md.tagline',
-  'md.audiences',
-  'md.alternatives',
-  'md.use_cases',
-  'md.summary_25',
-  'md.summary_50',
-  'md.boilerplate',
-  'md.elevator_pitch',
-  'md.llms_txt',
-  'md.pillars',
-  'md.message_matrix',
-  'md.proof_points',
-  'md.objections',
-  'md.what_we_dont_claim',
-  'md.cta_anchors',
-  'md.terminology',
-  'md.origin_story',
-  'md.governance_sentence',
-  'md.trademark_sentence',
-] as const;
-
-/** The sidecar fields whose value is a list of objects; every other field's value is a string. */
-export const FOUNDATION_MESSAGE_LIST_FIELD_IDS = ['md.pillars', 'md.message_matrix', 'md.proof_points', 'md.objections'] as const;
-
-/** A sidecar field's status: approved only after the reviewer's Approve, never on a fresh draft. */
-export const FOUNDATION_MESSAGE_FIELD_STATUSES = ['approved', 'draft', 'tbd'] as const;
-
-/** F1 hard word caps of the length-locked copy primitives. */
-export const FOUNDATION_MESSAGE_COPY_PRIMITIVE_WORD_CAPS = {
-  'md.summary_25': 25,
-  'md.summary_50': 50,
-  'md.elevator_pitch': 90,
+export const FOUNDATION_MESSAGE_CONTENT_LIMITS = {
+  goals: { min: 1, max: 8 },
+  goalProof: { min: 1, max: 4 },
+  say: { min: 1, max: 12 },
+  avoid: { min: 0, max: 12 },
+  anchor: { min: 1, max: 5 },
+  icp: { min: 1, max: 10 },
+  icpGoals: { min: 1, max: Number.POSITIVE_INFINITY },
+  icpProof: { min: 1, max: 2 },
+  channels: { min: 1, max: 6 },
+  personas: { min: 1, max: 3 },
+  pillars: { min: 1, max: 5 },
+  pillarProof: { min: 1, max: 4 },
+  aud: { min: 1, max: 6 },
+  nums: { min: 1, max: 8 },
 } as const;
 
-/** F2 boilerplate sanity band in words (Paul's target is 100–150). */
-export const FOUNDATION_MESSAGE_BOILERPLATE_WORD_BAND = { min: 50, max: 250 } as const;
+/** The content keys of the bundle, in the order the framework view shows them. */
+export const FOUNDATION_MESSAGE_CONTENT_KEYS = ['mf', 'icp', 'mh', 'nums'] as const;
 
-/** F3: fields whose value must appear verbatim in the document. */
-export const FOUNDATION_MESSAGE_VERBATIM_FIELD_IDS = [
-  'md.summary_25',
-  'md.summary_50',
-  'md.boilerplate',
-  'md.elevator_pitch',
-  'md.llms_txt',
-  'md.governance_sentence',
-  'md.trademark_sentence',
-] as const;
+/** Shape of an id inside the content (goal and segment ids): lowercase kebab-case. */
+export const FOUNDATION_MESSAGE_CONTENT_ID_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-/** F4: most pillars and objections a document carries. */
-export const FOUNDATION_MESSAGE_MAX_PILLARS = 5;
-
-/**
- * Result-surface chips for the five copy primitives, in display order: the
- * derivative key the run shell stores, and the sidecar field it comes from.
- */
-export const FOUNDATION_MESSAGE_DERIVATIVE_CHIPS = [
-  { key: 'summary_25', field: 'md.summary_25', label: '25-word summary' },
-  { key: 'summary_50', field: 'md.summary_50', label: '50-word summary' },
-  { key: 'boilerplate', field: 'md.boilerplate', label: 'Boilerplate' },
-  { key: 'llms_txt', field: 'md.llms_txt', label: 'llms.txt' },
-  { key: 'elevator_pitch', field: 'md.elevator_pitch', label: 'Elevator pitch' },
-] as const;
-
-/** Minimum document length (chars) per the contract schema. */
-export const FOUNDATION_MESSAGE_MIN_DOCUMENT_LENGTH = 1000;
+/** Shape of a reference to a goal or segment id: padding is tolerated on input (a hand-edited version read on a check). */
+export const FOUNDATION_MESSAGE_CONTENT_ID_REF_REGEX = /^\s*[a-z0-9]+(?:-[a-z0-9]+)*\s*$/;
 
 /** Project slug pattern (lowercase kebab-case, ≤64 chars) from the contract schema. */
 export const FOUNDATION_MESSAGE_PROJECT_SLUG_REGEX = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
@@ -248,11 +211,34 @@ export const FOUNDATION_MESSAGE_SHA256_REGEX = /^[0-9a-f]{64}$/;
 /** ISO-8601 timestamp shape gate: date + time part required; offset/Z optional. */
 export const FOUNDATION_MESSAGE_ISO_TIMESTAMP_REGEX = /^\d{4}-\d{2}-\d{2}[Tt ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:[Zz]|[+-]\d{2}:?\d{2})?$/;
 
+/** A date as the contract writes it, YYYY-MM-DD. */
+export const FOUNDATION_MESSAGE_ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
 /** A URL the agent's form accepts (`HTTP_URL` in src/form.ts). */
 export const FOUNDATION_MESSAGE_HTTP_URL_REGEX = /^https?:\/\/\S+$/;
 
-/** The answer a requester gives for a source they do not have (Paul: "none" is a valid answer). */
+/** The answer a requester gives for a source they do not have ("none" is a valid answer). */
 export const FOUNDATION_MESSAGE_NONE_ANSWER = 'none';
+
+// ---------------------------------------------------------------------------
+// The framework view: what the asset page calls each part of the bundle
+// ---------------------------------------------------------------------------
+
+/** The tabs of the framework view, in order. */
+export const FOUNDATION_MESSAGE_VIEW_TABS = [
+  { id: 'framework', label: 'Framework' },
+  { id: 'icps', label: 'ICPs' },
+  { id: 'message-house', label: 'Message house' },
+  { id: 'numbers', label: 'Key numbers' },
+  { id: 'sources', label: 'Sources and gaps' },
+] as const;
+
+/** How the view names a run's mode. */
+export const FOUNDATION_MESSAGE_MODE_LABELS = {
+  draft: 'Draft',
+  redraft: 'Redraft',
+  check: 'Checked',
+} as const;
 
 // ---------------------------------------------------------------------------
 // BFF-side plumbing: the uploaded files LFX One reads to text before the run
@@ -260,8 +246,8 @@ export const FOUNDATION_MESSAGE_NONE_ANSWER = 'none';
 // ---------------------------------------------------------------------------
 
 /**
- * Size cap (chars) for a server-fetched README. The Messaging Document agent
- * fetches its own sources now; this serves the ICP's `readme_markdown` fetch
+ * Size cap (chars) for a server-fetched README. The Messaging Framework agent
+ * fetches its own sources; this serves the ICP's `readme_markdown` fetch
  * (`GithubReadmeService`). READMEs are prompt input, not storage — anything
  * past this is truncated with an explicit marker so the agent never sees a
  * silently clipped document.
@@ -271,19 +257,19 @@ export const FOUNDATION_MESSAGE_README_MAX_CHARS = 65536;
 /** Marker appended when the fetched README exceeds the size cap. */
 export const FOUNDATION_MESSAGE_README_TRUNCATION_MARKER = '\n\n…(README truncated by LFX before submission)';
 
-/** Size cap (chars) for the text of one existing document. */
+/** Size cap (chars) for the text of one uploaded document. */
 export const FOUNDATION_MESSAGE_DOCUMENT_MAX_CHARS = 60000;
 
 /** Marker appended when a document text exceeds its cap. */
 export const FOUNDATION_MESSAGE_TEXT_TRUNCATION_MARKER = '\n\n…(truncated by LFX before submission)';
 
-/** Most existing documents one run takes. */
+/** Most documents one run takes on the form (the agent allows 20; the read gate sizes this). */
 export const FOUNDATION_MESSAGE_MAX_DOCUMENTS = 6;
 
 /** Largest uploaded file LFX One reads (bytes). */
 export const FOUNDATION_MESSAGE_MAX_FILE_BYTES = 20 * 1024 * 1024;
 
-/** File types the existing-documents upload accepts: PDF, Word, Markdown and plain text. */
+/** File types the documents upload accepts: PDF, Word, Markdown and plain text. */
 export const FOUNDATION_MESSAGE_FILE_EXTENSIONS = ['.pdf', '.docx', '.md', '.txt'] as const;
 
 /** Content type of the raw upload body. */
@@ -305,7 +291,7 @@ export const FOUNDATION_MESSAGE_READ_REASONS = {
   busy: 'LFX One is still reading your other documents. Try this one again in a moment.',
 } as const;
 
-/** BFF endpoint that turns an uploaded existing document into text before the run (a link goes to the agent as is). */
+/** BFF endpoint that turns an uploaded document into text before the run (a link goes to the agent as is). */
 export const FOUNDATION_MESSAGE_DOCUMENT_ENDPOINTS = {
   file: '/api/mktg-agents/foundation-message/documents/file',
 } as const;

@@ -140,6 +140,25 @@ describe('MktgIntakeDocumentsComponent', () => {
     expect(host().querySelector<HTMLInputElement>('input[type="file"]')?.disabled).toBe(true);
   });
 
+  it('tags every document with the intake’s default kind and lets the requester change it — the tag rides the document', async () => {
+    component['linkForm'].controls.url.setValue('https://press.example.org/launch');
+    component['onAddLink']();
+    await fixture.whenStable();
+
+    const [added] = component.documents();
+    expect(added.tag).toBe(config.defaultTag);
+    expect(host().querySelector(`[data-test="mktg-intake-documents-tag-${added.id}"]`)).not.toBeNull();
+
+    component['tagsForm'].controls[added.id].setValue('press');
+    await fixture.whenStable();
+    expect(component.documents()[0].tag).toBe('press');
+
+    // The control goes with the document.
+    component['onRemove'](added.id);
+    await fixture.whenStable();
+    expect(component['tagsForm'].controls[added.id]).toBeUndefined();
+  });
+
   it('removes a document', async () => {
     component.documents.set([{ id: 'file-1', kind: 'file', title: 'notes.md', text: 'x', read: true, words: 1, truncated: false }]);
     await fixture.whenStable();

@@ -29,6 +29,7 @@ describe('MktgDocumentsComponent', () => {
       intakeMode: 'form',
       status: 'Draft — for review',
       contentSha256: 'a'.repeat(64),
+      format: 'markdown',
       commentCount: 0,
       latest: false,
       ...overrides,
