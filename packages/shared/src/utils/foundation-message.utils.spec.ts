@@ -579,7 +579,8 @@ describe('validateFoundationMessageEnvelope', () => {
 
   it('checks the content shapes: a pair is two strings, ids are kebab-case, the objection response may be null, no extra keys', () => {
     const content = buildContent();
-    content.mf.goals[0].proof = [['no source'] as unknown as [string, string]];
+    // @ts-expect-error a proof pair must have two strings; the validator is checked on data that breaks the interface
+    content.mf.goals[0].proof = [['no source']];
     expect(findFoundationMessageContentErrors(content)).toEqual(['content.mf.goals[0].proof[0] must be a [text, text] pair']);
 
     const okNull = buildContent();
@@ -642,8 +643,9 @@ describe('validateFoundationMessageEnvelope', () => {
 describe('the stored revision and the view models', () => {
   it('reads a stored JSON revision back as the run’s asset, with the sidecar’s report, checks and mode', () => {
     const envelope = buildEnvelope({ mode: 'check', checks: { findings: ['nums has 2 numbers; 3–4'] } });
-    const { content, ...sidecar } = envelope;
-    const asset = foundationMessageAssetOfRevision(JSON.stringify(content), sidecar as unknown as Record<string, unknown>);
+    const { content, ...rest } = envelope;
+    const sidecar: Record<string, unknown> = { ...rest };
+    const asset = foundationMessageAssetOfRevision(JSON.stringify(content), sidecar);
     expect(asset).toEqual({ kind: 'messaging-framework', content, report: envelope.report, checks: envelope.checks, mode: 'check' });
     // A migrated or hand-copied record without a sidecar still renders, with an empty report.
     expect(foundationMessageAssetOfRevision(JSON.stringify(content), null)).toMatchObject({
