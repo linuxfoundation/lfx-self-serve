@@ -835,16 +835,43 @@ describe('CampaignsComponent brief persistence', () => {
         expect(state().message).toContain('could not be confirmed as approved');
       });
 
-      it('keeps the restore state when the cutover is dark, instead of reporting a failure', async () => {
-        // `enabled: false` means nothing was approved AND nothing was refused. An error banner
-        // here would report a failure that never happened.
+      /**
+       * The objective-table defect of #3565, one feature across. `approveConflictMessages` is a
+       * plain object literal, so it inherits `Object.prototype`, and `conflict` is read off a JSON
+       * response rather than produced here -- the declared union is a compile-time claim the wire
+       * does not honour. Indexed raw, each of these resolved to a truthy INHERITED member and put
+       * `[object Object]`, or a function's source, into the banner the user reads. The assertion
+       * that matters is the `unknown` sentence: an unclassifiable conflict is exactly what it
+       * describes. `Object.hasOwn` is easy to "simplify" back into a truthiness test, so the keys
+       * are pinned by name.
+       */
+      it.each(['constructor', 'toString', 'valueOf', 'hasOwnProperty', '__proto__'])(
+        'falls back to the unknown message for an inherited %s conflict',
+        async (conflict) => {
+          approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: null, approved: false, conflict } as CampaignBriefApproveResult));
+
+          restore(brief, 'restored-a', false, 'W/"v1"');
+          await fixture.whenStable();
+
+          expect(state().status).toBe('error');
+          expect(state().message).toBe('This saved brief could not be confirmed as approved. Reload and re-enter the event URL to try again.');
+        }
+      );
+
+      it('names the mixed rollout when the approve lands on a pod that has not cut over', async () => {
+        // `enabled: false` cannot mean a dark deployment on this path. `loadBrief` is gated on the
+        // same flag and answers a dark one with no brief id at all, so no restore would have been
+        // offered -- reaching the approve proves one pod has the flag and this answer proves
+        // another does not. Staying on the restore's `off` state (which renders nothing) would
+        // leave Create disabled with no reason, the dead end this path exists to remove.
         approveBrief.mockReturnValue(of({ enabled: false, briefId: '', etag: null, approved: false }));
 
         restore(brief, 'restored-a', false, 'W/"v1"');
         await fixture.whenStable();
 
-        expect(state().status).toBe('off');
-        expect(state().message).toBeNull();
+        expect(state().status).toBe('error');
+        expect(state().approved).toBe(false);
+        expect(state().message).toContain('still being updated');
       });
 
       it('drops an approval that resolves after the user restored a different brief', async () => {
