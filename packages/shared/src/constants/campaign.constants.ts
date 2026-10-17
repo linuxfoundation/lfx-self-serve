@@ -2387,6 +2387,14 @@ export const CAMPAIGN_NEGATIVE_KEYWORD_OUTCOME_LABELS: Readonly<Record<CampaignN
   UNCONFIRMED: 'Not confirmed',
 };
 
+/**
+ * The label of a negative keyword the UI held back before any request: nothing was sent, so it is
+ * none of the platform's outcomes. Kept OUT of `CAMPAIGN_NEGATIVE_KEYWORD_OUTCOME_LABELS` on
+ * purpose: that record is also the set of outcomes accepted from upstream and counted in summaries,
+ * and an upstream "NOT_SENT" must never be read as one of them.
+ */
+export const CAMPAIGN_NEGATIVE_KEYWORD_NOT_SENT_LABEL = 'Not sent';
+
 /** What an UNCONFIRMED negative keyword tells the operator to do before trying it again. */
 export const CAMPAIGN_NEGATIVE_KEYWORD_UNCONFIRMED_ADVICE =
   "This keyword may have been added. Check the campaign's negative keywords in Microsoft Advertising before retrying.";
