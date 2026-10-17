@@ -19,9 +19,17 @@ import {
   VoteFilterState,
   VoteListResponse,
   VotePermalinkTarget,
+  VoteStatusCounts,
   VoteSummary,
 } from '@lfx-one/shared/interfaces';
-import { findCursorWalkStartIndex, getUserTimezone, matchesMyVotesQuickFilter, recordPageToken, resolveCursorWalkOutcome } from '@lfx-one/shared/utils';
+import {
+  countVotesByStatus,
+  findCursorWalkStartIndex,
+  getUserTimezone,
+  matchesMyVotesQuickFilter,
+  recordPageToken,
+  resolveCursorWalkOutcome,
+} from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
@@ -100,6 +108,8 @@ export class VotesDashboardComponent {
   protected readonly managementClosingOnly = signal(false);
   protected readonly managementSummaryLoading = signal(true);
   protected readonly managementSummaryError = signal(false);
+  protected readonly managementStatusCountsLoading = signal(true);
+  protected readonly managementStatusCountsError = signal(false);
 
   // === Lens ===
   protected readonly isMeLens: Signal<boolean> = computed(() => this.lensService.activeLens() === 'me');
@@ -130,6 +140,8 @@ export class VotesDashboardComponent {
   protected readonly managementSummaryScope = this.initManagementSummaryScope();
   protected readonly managementSummary = this.initManagementSummary();
   protected readonly managementVoteStatCards = this.initManagementVoteStatCards();
+  protected readonly managementStatusCountsScope = this.initManagementStatusCountsScope();
+  protected readonly managementStatusCounts: Signal<VoteStatusCounts | null> = this.initManagementStatusCounts();
   private readonly voteRequestScope = this.initVoteRequestScope();
   protected readonly votes: Signal<Vote[]> = this.initVotes();
   protected readonly selectedListVote: Signal<Vote | null> = this.initSelectedListVote();
@@ -140,6 +152,9 @@ export class VotesDashboardComponent {
   protected readonly filteredMyVotes: Signal<Vote[]> = this.initFilteredMyVotes();
   protected readonly myVotesSummaryScope: Signal<Vote[]> = this.initMyVotesSummaryScope();
   protected readonly myVoteStatCards: Signal<StatCardItem[]> = this.initMyVoteStatCards();
+  protected readonly myVotesStatusCounts: Signal<VoteStatusCounts | null> = this.initMyVotesStatusCounts();
+  /** Status-tab counts for the active lens; null while loading or after a failure, so tabs never show a false zero. */
+  protected readonly tabStatusCounts: Signal<VoteStatusCounts | null> = this.initTabStatusCounts();
   // True when any server-side filter is active; drives dashboard empty-state vs. table empty-state routing.
   // Trims `search` so whitespace-only input doesn't count as an active filter.
   protected readonly hasActiveFilters: Signal<boolean> = computed(() => {
@@ -332,6 +347,49 @@ export class VotesDashboardComponent {
     );
   }
 
+  /** Status-tab counts follow scope, search and Group only — never the status tab, closing-only toggle or pagination. */
+  private initManagementStatusCountsScope() {
+    return computed(
+      () => {
+        const lens = this.lensService.activeLens();
+        const uid = this.project()?.uid;
+        if ((lens !== 'project' && lens !== 'foundation') || !uid) return null;
+        const { search, group } = this.filters();
+        return { uid, lens, search: search.trim(), group };
+      },
+      { equal: (a, b) => a?.uid === b?.uid && a?.lens === b?.lens && a?.search === b?.search && a?.group === b?.group }
+    );
+  }
+
+  /**
+   * Server status-tab counts for the management lens (#3687). Writes are guarded by scope identity
+   * so a superseded response can't flag the current scope. The All tab's optimistic
+   * `mergeRecentlyOpenedVotes` overlay can show a just-opened vote as Active while these counts
+   * still read it as Draft; they converge on the next refresh once the index catches up (GH-2730).
+   */
+  private initManagementStatusCounts(): Signal<VoteStatusCounts | null> {
+    return toSignal(
+      combineLatest([toObservable(this.managementStatusCountsScope), this.refresh$]).pipe(
+        switchMap(([scope]) => {
+          this.managementStatusCountsLoading.set(!!scope);
+          this.managementStatusCountsError.set(false);
+          if (!scope) return of(null);
+          return this.voteService.getVoteStatusCountsByProject(scope.uid, scope.search || undefined, scope.group || undefined).pipe(
+            catchError(() => {
+              if (this.managementStatusCountsScope() === scope) this.managementStatusCountsError.set(true);
+              return of(null);
+            }),
+            finalize(() => {
+              if (this.managementStatusCountsScope() === scope) this.managementStatusCountsLoading.set(false);
+            }),
+            startWith(null)
+          );
+        })
+      ),
+      { initialValue: null }
+    );
+  }
+
   private initManagementVoteStatCards(): Signal<StatCardItem[]> {
     return computed(() => {
       const summary = this.managementSummary();
@@ -401,7 +459,7 @@ export class VotesDashboardComponent {
   }
 
   private initSearchQuery(): Signal<string> {
-    return computed(() => this.filters().search);
+    return computed(() => this.filters().search.trim());
   }
 
   private initGroupOptions(): Signal<{ label: string; value: string | null }[]> {
@@ -660,6 +718,25 @@ export class VotesDashboardComponent {
       const group = this.filters().group;
       const votes = this.filteredMyVotes();
       return group ? votes.filter((vote) => vote.committee_name === group) : votes;
+    });
+  }
+
+  /** Personal status-tab counts over the same scope as the list; quick filters and the status tab never narrow them. */
+  private initMyVotesStatusCounts(): Signal<VoteStatusCounts | null> {
+    return computed(() => {
+      if (this.myVotesLoading() || this.myVotesError()) return null;
+      // Mirrors the table's client-side name search (votes-table `initDisplayedVotes`) so each count equals its tab's rows.
+      const term = this.filters().search.toLowerCase();
+      const votes = this.myVotesSummaryScope();
+      return countVotesByStatus(term ? votes.filter((vote) => vote.name.toLowerCase().includes(term)) : votes);
+    });
+  }
+
+  private initTabStatusCounts(): Signal<VoteStatusCounts | null> {
+    return computed(() => {
+      if (this.isMeLens()) return this.myVotesStatusCounts();
+      if (this.managementStatusCountsLoading() || this.managementStatusCountsError()) return null;
+      return this.managementStatusCounts();
     });
   }
 

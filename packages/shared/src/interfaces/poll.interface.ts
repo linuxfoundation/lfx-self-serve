@@ -13,6 +13,19 @@ export interface VoteSummary {
   as_of: string;
 }
 
+/**
+ * Per-status vote totals for the votes table's status tabs (#3687).
+ * @description Buckets use the normalized poll status. `all` counts every vote in the matching
+ * collection, including rows whose status is unrecognized after normalization, so it equals the
+ * All-tab list total; unrecognized rows fall into no per-status bucket.
+ */
+export interface VoteStatusCounts {
+  all: number;
+  active: number;
+  disabled: number;
+  ended: number;
+}
+
 /** Closing-filtered lists carry their authoritative pre-pagination count. */
 export interface VoteListResponse extends PaginatedResponse<Vote> {
   total_records?: number;

@@ -26,6 +26,7 @@ import {
   VoteAnswerInput,
   VoteResultsResponse,
   VoteListResponse,
+  VoteStatusCounts,
   VoteSummary,
 } from '@lfx-one/shared/interfaces';
 import { catchError, map, Observable, of, retry, shareReplay, switchMap, take, tap, throwError, timer } from 'rxjs';
@@ -105,6 +106,23 @@ export class VoteService {
     return this.http.get<VoteSummary>('/api/votes/summary', { params }).pipe(
       catchError((error: unknown) => {
         console.error('Failed to load vote summary', {
+          status: error instanceof HttpErrorResponse ? error.status : undefined,
+        });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /** Status-tab count failures propagate: unavailable counts must never appear as confirmed zeros. */
+  public getVoteStatusCountsByProject(projectUid: string, searchName?: string, group?: string): Observable<VoteStatusCounts> {
+    let params = new HttpParams().set('parent', `project:${projectUid}`);
+    const name = searchName?.trim();
+    if (name) params = params.set('name', name);
+    const groupName = group?.trim();
+    if (groupName) params = params.set('group', groupName);
+    return this.http.get<VoteStatusCounts>('/api/votes/status-counts', { params }).pipe(
+      catchError((error: unknown) => {
+        console.error('Failed to load vote status counts', {
           status: error instanceof HttpErrorResponse ? error.status : undefined,
         });
         return throwError(() => error);
