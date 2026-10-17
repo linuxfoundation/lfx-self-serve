@@ -19,6 +19,7 @@ import {
   FOUNDATION_MESSAGE_ANSWERS_HEADER,
   FOUNDATION_MESSAGE_CONTENT_ID_REF_REGEX,
   FOUNDATION_MESSAGE_CONTENT_ID_REGEX,
+  FOUNDATION_MESSAGE_CONTENT_KEYS,
   FOUNDATION_MESSAGE_CONTENT_LIMITS,
   FOUNDATION_MESSAGE_CONTRACT_ID,
   FOUNDATION_MESSAGE_DESCRIPTION_KEY,
@@ -734,7 +735,8 @@ export function findFoundationMessageContentErrors(content: unknown): string[] {
     ...mhErrors(content['mh']),
     ...checkArray('content.nums', content['nums'], FOUNDATION_MESSAGE_CONTENT_LIMITS.nums, (entry, index) => pairAt(`content.nums[${index}]`, entry)),
   ];
-  const unknownKeys = Object.keys(content).filter((key) => !['mf', 'icp', 'mh', 'nums'].includes(key));
+  const allowedKeys = new Set<string>(FOUNDATION_MESSAGE_CONTENT_KEYS);
+  const unknownKeys = Object.keys(content).filter((key) => !allowedKeys.has(key));
   if (unknownKeys.length > 0) {
     errors.push(`content has unknown keys: ${unknownKeys.join(', ')}`);
   }
