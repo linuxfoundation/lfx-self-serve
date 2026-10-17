@@ -1,0 +1,123 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="vote-reminder-dialog">
+  <p class="text-[12.5px] text-gray-500 -mt-1">Send reminders to eligible voters who have not voted yet.</p>
+
+  @if (loading()) {
+    <div class="flex flex-col gap-2" data-testid="vote-reminder-dialog-loading">
+      @for (row of skeletonRows; track row) {
+        <p-skeleton width="100%" height="2.25rem"></p-skeleton>
+      }
+    </div>
+  } @else if (inactive()) {
+    <div role="status" data-testid="vote-reminder-dialog-inactive">
+      <lfx-empty-state
+        [withCard]="false"
+        icon="fa-light fa-clock"
+        title="This vote is no longer active."
+        subtitle="Reminders cannot be sent for this vote."></lfx-empty-state>
+    </div>
+  } @else if (loadError()) {
+    <div class="flex flex-col items-center gap-3 py-8 text-center" role="alert" data-testid="vote-reminder-dialog-error">
+      <i class="fa-light fa-triangle-exclamation text-2xl text-gray-400" aria-hidden="true"></i>
+      <p class="text-[12.5px] text-gray-600">{{ loadError() }}</p>
+      <lfx-button
+        label="Retry"
+        icon="fa-light fa-rotate-right"
+        severity="secondary"
+        [outlined]="true"
+        size="small"
+        (onClick)="retry()"
+        data-testid="vote-reminder-dialog-retry"></lfx-button>
+    </div>
+  } @else if (recipients().length === 0) {
+    <div data-testid="vote-reminder-dialog-empty">
+      <lfx-empty-state
+        [withCard]="false"
+        icon="fa-light fa-check-double"
+        title="Everyone has voted."
+        subtitle="There is no one left to remind on this vote."></lfx-empty-state>
+    </div>
+  } @else {
+    <div class="border border-gray-200 rounded-lg max-h-80 overflow-auto" data-testid="vote-reminder-dialog-table">
+      <table class="w-full border-collapse text-[12.5px]">
+        <thead>
+          <tr class="bg-gray-50 sticky top-0 z-10">
+            <th class="w-10 py-2.5 px-4 cursor-pointer" (click)="toggleSelectAll()" data-testid="vote-reminder-dialog-select-all">
+              <span id="vote-reminder-select-all-label" class="sr-only">Select all voters</span>
+              <lfx-checkbox
+                [form]="selectAllForm"
+                control="all"
+                [binary]="true"
+                inputId="vote-reminder-select-all"
+                ariaLabelledBy="vote-reminder-select-all-label"
+                (click)="$event.stopPropagation()"
+                (change)="toggleSelectAll()"></lfx-checkbox>
+            </th>
+            <th class="py-2.5 px-2 text-left text-[11.5px] font-medium text-gray-500">Name</th>
+            <th class="py-2.5 px-2 text-left text-[11.5px] font-medium text-gray-500">Email</th>
+            <th class="py-2.5 px-2 text-left text-[11.5px] font-medium text-gray-500">Organization</th>
+            <th class="py-2.5 px-2 text-left text-[11.5px] font-medium text-gray-500">Voting status</th>
+            <th class="py-2.5 px-4 text-left text-[11.5px] font-medium text-gray-500">Role</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (recipient of recipients(); track recipient.uid) {
+            <tr
+              class="border-t border-gray-100 cursor-pointer transition-colors"
+              [class.bg-blue-50]="selectedUids().has(recipient.uid)"
+              [class.hover:bg-gray-50]="!selectedUids().has(recipient.uid)"
+              (click)="toggleRecipient(recipient.uid)"
+              [attr.data-testid]="'vote-reminder-dialog-row-' + recipient.uid">
+              <td class="py-3 px-4">
+                <lfx-checkbox
+                  [form]="checkboxForm"
+                  [control]="recipient.uid"
+                  [binary]="true"
+                  [inputId]="'vote-reminder-select-' + recipient.uid"
+                  [ariaLabelledBy]="'vote-reminder-name-' + recipient.uid"
+                  (click)="$event.stopPropagation()"
+                  (change)="toggleRecipient(recipient.uid)"></lfx-checkbox>
+              </td>
+              <td class="py-3 px-2 font-semibold text-gray-900" [id]="'vote-reminder-name-' + recipient.uid">
+                {{ recipient.user_name || recipient.user_email || '—' }}
+              </td>
+              <td class="py-3 px-2 text-gray-500">{{ recipient.user_email || '—' }}</td>
+              <td class="py-3 px-2 text-gray-500">{{ recipient.user_org_name || '—' }}</td>
+              <td class="py-3 px-2 text-gray-500">{{ recipient.user_voting_status || '—' }}</td>
+              <td class="py-3 px-4 text-gray-500">{{ recipient.user_role || '—' }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</div>
+
+<div class="flex items-center justify-between gap-2 mt-4">
+  <span class="text-[11.5px] text-gray-500" aria-live="polite" data-testid="vote-reminder-dialog-count">
+    @if (!loading() && !loadError() && recipients().length > 0) {
+      {{ selectedCount() }} of {{ recipients().length }} selected
+    }
+  </span>
+  <div class="flex gap-2">
+    <lfx-button
+      label="Cancel"
+      severity="secondary"
+      [outlined]="true"
+      size="small"
+      [disabled]="sending()"
+      (onClick)="cancel()"
+      data-testid="vote-reminder-dialog-cancel"></lfx-button>
+    <lfx-button
+      label="Send"
+      icon="fa-light fa-paper-plane"
+      severity="info"
+      size="small"
+      [disabled]="selectedCount() === 0 || sending()"
+      [loading]="sending()"
+      (onClick)="send()"
+      data-testid="vote-reminder-dialog-send"></lfx-button>
+  </div>
+</div>

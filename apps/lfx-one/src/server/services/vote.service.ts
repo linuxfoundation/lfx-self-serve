@@ -1,7 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MIN_VIABLE_REQUEST_BUDGET_MS, VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT, VOTE_FGA_TUPLE_PROPAGATION_GRACE_MS } from '@lfx-one/shared/constants';
+import {
+  MIN_VIABLE_REQUEST_BUDGET_MS,
+  VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT,
+  VOTE_FGA_TUPLE_PROPAGATION_GRACE_MS,
+  VOTE_REMINDER_INACTIVE,
+  VOTE_REMINDER_PRECHECK_FAILED,
+  VOTE_REMINDER_SELECTION_STALE,
+} from '@lfx-one/shared/constants';
 import { IndexedVoteResponseStatus, PollStatus, VoteResponseStatus } from '@lfx-one/shared/enums';
 import {
   CreateVoteRequest,
@@ -13,20 +20,24 @@ import {
   PaginatedResponse,
   QueryServiceCountResponse,
   QueryServiceResponse,
+  SendVoteReminderResponse,
   UpdateVoteRequest,
   Vote,
   VoteListResponse,
+  VoteReminderRecipient,
   VoteSummary,
   VoteResultsResponse,
 } from '@lfx-one/shared/interfaces';
 import { compareVotesByRecency, computeIsFoundation, isVoteClosingSoon, normalizePollStatus, sortCommentResponsesByRecency } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
-import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { BaseApiError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-project-enrichment.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { fetchCurrentUserVoteResponses, getParentVoteId } from '../helpers/vote-response.helper';
+import { assertVoteWrite } from '../helpers/vote-write-access.helper';
+import { AccessCheckService } from './access-check.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { ProjectService } from './project.service';
@@ -139,6 +150,7 @@ export class VoteService {
 
   private microserviceProxy: MicroserviceProxyService;
   private projectService: ProjectService;
+  private readonly accessCheckService = new AccessCheckService();
 
   public constructor() {
     this.microserviceProxy = new MicroserviceProxyService();
@@ -194,7 +206,10 @@ export class VoteService {
     // Enrich list rows with canonical project fields — the vote index (VoteData) carries only
     // project_uid/name, so without this, consumers deriving per-row edit links get no slug/tier.
     // Runs on the returned slice only, not the full drained set.
-    const votes = includeProject ? await this.enrichWithProjectMetadata(req, page) : page;
+    const enriched = includeProject ? await this.enrichWithProjectMetadata(req, page) : page;
+    // Resolve the row's vote relation, not the active project's writer flag: committee writers
+    // can manage a vote too. The existing batch helper defaults failed checks to false.
+    const votes = await this.accessCheckService.addAccessToResources(req, enriched, 'vote');
 
     const nextOffset = offset + pageSize;
     const pageToken = nextOffset < sorted.length ? `offset:${nextOffset}` : undefined;
@@ -511,6 +526,125 @@ export class VoteService {
         vote_response_uid: payload.vote_response_uid,
       });
     }
+  }
+
+  // ============================================
+  // Reminders (#3769)
+  // ============================================
+
+  /**
+   * Lists the eligible voters who have not voted on a vote yet — the recipients a manager can
+   * remind. Includes both current and legacy parent keys, returning an identity-only projection.
+   * The caller must have run `assertVoteWrite` first — every vote auditor can read these rows.
+   * Eligibility is indexed and eventually consistent; the send rechecks it but cannot atomically
+   * exclude a ballot cast concurrently with upstream queuing.
+   */
+  public async getVoteReminderRecipients(req: Request, voteUid: string): Promise<VoteReminderRecipient[]> {
+    logger.debug(req, 'get_vote_reminder_recipients', 'Fetching vote_response rows for reminder recipients', { vote_uid: voteUid });
+
+    const vote = await this.getVoteById(req, voteUid);
+    const deadline = Date.parse(vote.end_time);
+    if (normalizePollStatus(vote.status) !== PollStatus.ACTIVE || !Number.isFinite(deadline) || deadline <= Date.now()) {
+      throw new ConflictError('This vote is no longer active.', VOTE_REMINDER_INACTIVE, {
+        operation: 'get_vote_reminder_recipients',
+        service: 'vote_service',
+      });
+    }
+
+    // failOnPartial: a truncated page set would silently leave voters out of the reminder list.
+    const rows = await fetchAllQueryResources<IndexedVoteResponse>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVoteResponse>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'vote_response',
+          filters_or: [`vote_uid:${voteUid}`, `poll_id:${voteUid}`],
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
+    );
+
+    const seen = new Set<string>();
+    const recipients = rows
+      .filter(
+        (row): row is IndexedVoteResponse & { uid: string } =>
+          getParentVoteId(row) === voteUid &&
+          row.vote_status === IndexedVoteResponseStatus.AWAITING_RESPONSE &&
+          !row.vote_creation_time &&
+          row.voter_removed !== true &&
+          !!row.uid
+      )
+      .filter((row) => {
+        if (seen.has(row.uid)) return false;
+        seen.add(row.uid);
+        return true;
+      })
+      .map((row) => ({
+        uid: row.uid,
+        user_name: row.user_name,
+        user_email: row.user_email,
+        user_org_name: row.user_org_name,
+        user_role: row.user_role,
+        user_voting_status: row.user_voting_status,
+      }))
+      .sort((a, b) => (a.user_name ?? '').localeCompare(b.user_name ?? ''));
+
+    logger.debug(req, 'get_vote_reminder_recipients', 'Filtered reminder recipients', {
+      vote_uid: voteUid,
+      row_count: rows.length,
+      recipient_count: recipients.length,
+    });
+
+    return recipients;
+  }
+
+  /**
+   * Resends the vote email to the given recipients via POST /votes/{uid}/bulk_resend, with the
+   * user's bearer token (no M2M) — the gateway enforces `vote:{uid}#writer`. The
+   * caller is writer-checked before reading identities. A stale selection rejects the whole batch
+   * rather than silently sending to a different set. Upstream still validates membership/state.
+   */
+  public async sendVoteReminders(req: Request, voteUid: string, recipientIds: string[]): Promise<SendVoteReminderResponse> {
+    try {
+      await assertVoteWrite(req, voteUid, 'send_vote_reminders');
+      const recipients = await this.getVoteReminderRecipients(req, voteUid);
+      const eligibleIds = new Set(recipients.map((recipient) => recipient.uid));
+      if (recipientIds.some((id) => !eligibleIds.has(id))) {
+        throw new ConflictError('The selected voters have changed. Refresh the voter list before sending.', VOTE_REMINDER_SELECTION_STALE, {
+          operation: 'send_vote_reminders',
+          service: 'vote_service',
+        });
+      }
+    } catch (error) {
+      // Keep the existing actionable permission, validation, rate-limit and state-conflict replies.
+      if (
+        error instanceof BaseApiError &&
+        ([400, 403, 429].includes(error.statusCode) || error.code === VOTE_REMINDER_INACTIVE || error.code === VOTE_REMINDER_SELECTION_STALE)
+      ) {
+        throw error;
+      }
+      // Only these checks are known not to have sent anything. Never mark a bulk_resend failure this way.
+      throw new MicroserviceError(
+        'No reminders were sent because the pre-send checks failed. Please try again.',
+        error instanceof BaseApiError ? error.statusCode : 500,
+        VOTE_REMINDER_PRECHECK_FAILED,
+        {
+          operation: 'send_vote_reminders',
+          service: 'vote_service',
+          originalError: error instanceof Error ? error : undefined,
+        }
+      );
+    }
+
+    logger.debug(req, 'send_vote_reminders', 'Resending vote email to recipients', {
+      vote_uid: voteUid,
+      recipient_count: recipientIds.length,
+    });
+
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/votes/${this.encodeVoteUid(voteUid)}/bulk_resend`, 'POST', undefined, {
+      recipient_ids: recipientIds,
+    });
+
+    return { recipient_count: recipientIds.length };
   }
 
   // ============================================
