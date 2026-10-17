@@ -29,7 +29,8 @@ import { catchError, map, of, startWith, switchMap } from 'rxjs';
  *
  * Which answer is shown: an in-flight own read always (its spinner); then whichever SETTLED last of
  * the row's own read and the brief-wide row. A tab Refresh that lands after a row's Refresh therefore
- * replaces that row's counters (or error) with the fresh brief-wide ones, and asks nothing itself.
+ * replaces that row's counters (or error) with the fresh brief-wide ones, and asks nothing itself;
+ * while the tab's read is reloading, or if it fails, the row keeps its own settled answer.
  */
 @Component({
   selector: 'lfx-campaign-live-metrics',
@@ -63,13 +64,15 @@ export class CampaignLiveMetricsComponent {
   });
 
   /**
-   * Bumped each time a NEW brief-wide row arrives (the input's identity changes — the tab's Refresh
-   * replaces the whole brief-wide result). An own read remembers the generation it settled against,
-   * so a brief-wide row that arrived after it outranks it.
+   * Bumped each time a NEW, non-null brief-wide row arrives (the input's identity changes — the tab's
+   * Refresh replaces the whole brief-wide result). Clearing the input to `null` is NOT newer: the tab
+   * does that at the start of every Refresh and leaves it there when the brief-wide read fails, and
+   * neither is a measurement. An own read remembers the generation it settled against, so only a
+   * brief-wide row that actually arrived after it outranks it.
    */
   private readonly briefGeneration = linkedSignal<BriefMetricsRow | null, number>({
     source: () => this.briefRow(),
-    computation: (_row, previous) => (previous?.value ?? 0) + 1,
+    computation: (row, previous) => (previous?.value ?? 0) + (row === null ? 0 : 1),
   });
 
   private readonly ownRead: Signal<CampaignLiveMetricsOwnRead> = this.initOwnRead();

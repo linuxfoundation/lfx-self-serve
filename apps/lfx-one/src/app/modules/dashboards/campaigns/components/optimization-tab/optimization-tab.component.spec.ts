@@ -5004,6 +5004,37 @@ describe('OptimizationTabComponent — live counters (#3299)', () => {
     expect(q('optimization-campaign-live-window-c-2')!.textContent).toContain('the last 7 days');
   });
 
+  // The tab's Refresh clears its brief-wide read first; a failed re-read must not take a row's own answer with it.
+  it("keeps a row's own refreshed counters through a tab Refresh whose brief-wide read fails", () => {
+    const service = TestBed.inject(CampaignService) as unknown as { getBriefMetrics: ReturnType<typeof vi.fn> };
+    (q('optimization-campaign-live-load-c-1') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(q('optimization-campaign-live-clicks-c-1')!.textContent?.trim()).toBe('25');
+
+    service.getBriefMetrics.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, statusText: 'Bad Gateway' })));
+    (fixture.componentInstance as unknown as { refresh(): void }).refresh();
+    fixture.detectChanges();
+
+    expect(service.getBriefMetrics).toHaveBeenCalledTimes(2);
+    expect(q('optimization-campaign-live-clicks-c-1')!.textContent?.trim()).toBe('25');
+    expect(getCampaignMetrics).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the fresh brief-wide counters once a tab Refresh succeeds after a row Refresh', () => {
+    const service = TestBed.inject(CampaignService) as unknown as { getBriefMetrics: ReturnType<typeof vi.fn> };
+    (q('optimization-campaign-live-load-c-1') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    const fresh = structuredClone(briefMetrics);
+    fresh.rows[0].metrics!.clicks = 77;
+    service.getBriefMetrics.mockReturnValue(of(fresh));
+    (fixture.componentInstance as unknown as { refresh(): void }).refresh();
+    fixture.detectChanges();
+
+    expect(q('optimization-campaign-live-clicks-c-1')!.textContent?.trim()).toBe('77');
+    expect(getCampaignMetrics).toHaveBeenCalledTimes(1);
+  });
+
   it('leaves the row read-only: refreshing counters calls no write', () => {
     const service = TestBed.inject(CampaignService) as unknown as Record<string, ReturnType<typeof vi.fn>>;
     (q('optimization-campaign-live-load-c-1') as HTMLButtonElement).click();

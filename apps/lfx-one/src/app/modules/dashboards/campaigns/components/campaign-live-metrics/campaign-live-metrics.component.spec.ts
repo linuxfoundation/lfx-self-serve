@@ -79,6 +79,42 @@ describe('CampaignLiveMetricsComponent (#3299)', () => {
     expect(getCampaignMetrics).toHaveBeenCalledTimes(1);
   });
 
+  // The tab clears the brief-wide row to null when its Refresh starts, and leaves it null if that
+  // read fails. Neither is a measurement, so the row's own settled answer stays until a real row lands.
+  it("keeps the row's own settled counters while the tab reloads, and if the tab-wide read fails", () => {
+    fixture.componentRef.setInput('briefRow', okRow(99));
+    fixture.detectChanges();
+    load();
+    expect(text('optimization-campaign-live-clicks-c-1')).toBe('212');
+
+    fixture.componentRef.setInput('briefRow', null);
+    fixture.detectChanges();
+    expect(text('optimization-campaign-live-clicks-c-1')).toBe('212');
+    expect(button()!.textContent?.trim()).toBe('Refresh live counters');
+
+    // A failed tab-wide read: the row stays null, and so does the answer shown.
+    fixture.detectChanges();
+    expect(text('optimization-campaign-live-clicks-c-1')).toBe('212');
+
+    // A fresh non-null row is a newer measurement, and supersedes it.
+    fixture.componentRef.setInput('briefRow', okRow(150));
+    fixture.detectChanges();
+    expect(text('optimization-campaign-live-clicks-c-1')).toBe('150');
+    expect(getCampaignMetrics).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the row's own settled error through a tab reload that clears the brief-wide row", () => {
+    fixture.componentRef.setInput('briefRow', okRow(99));
+    fixture.detectChanges();
+    getCampaignMetrics.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503, error: { error: 'x', code: 'X' } })));
+    load();
+    fixture.componentRef.setInput('briefRow', null);
+    fixture.detectChanges();
+
+    expect(q('optimization-campaign-live-error-c-1')).not.toBeNull();
+    expect(q('optimization-campaign-live-counters-c-1')).toBeNull();
+  });
+
   it("clears the row's own earlier error when a newer brief-wide result measures it", () => {
     getCampaignMetrics.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503, error: { error: 'x', code: 'X' } })));
     load();
