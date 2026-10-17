@@ -43,7 +43,7 @@ import { VoteService } from '@services/vote.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { StepperModule } from 'primeng/stepper';
-import { catchError, combineLatest, distinctUntilChanged, filter, map, Observable, of, switchMap, take, tap } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, filter, map, Observable, of, startWith, switchMap, take, tap } from 'rxjs';
 
 import { VoteBasicsComponent } from '../components/vote-basics/vote-basics.component';
 import { VoteQuestionComponent } from '../components/vote-question/vote-question.component';
@@ -738,9 +738,15 @@ export class VoteManageComponent {
             return of(false);
           }
           // writerGuard admits no coordinator-style role for votes — project.writer only.
+          // startWith(undefined): a key change (e.g. clone's context sync re-targeting the
+          // active project mid-flight, GH-3781) must park this leg back at pending immediately,
+          // not leave the PREVIOUS key's resolved value in place while the new fetch is in
+          // flight — otherwise evictOnWriteAccessLoss can see a stale false and kick out an
+          // organizer the still-pending committee leg would have admitted.
           return this.projectService.getProject(key, false).pipe(
             map((project) => project?.writer === true),
-            catchError(() => of(false))
+            catchError(() => of(false)),
+            startWith(undefined)
           );
         })
       )
@@ -773,7 +779,11 @@ export class VoteManageComponent {
           uid
             ? this.committeeService.fetchCommittee(uid).pipe(
                 map((committee) => committee?.writer === true),
-                catchError(() => of(false))
+                catchError(() => of(false)),
+                // startWith(undefined): same reasoning as the project leg above — a uid change
+                // must park this leg at pending while the new committee fetch is in flight,
+                // rather than keep the PREVIOUS uid's resolved value in place.
+                startWith(undefined)
               )
             : of(false)
         )
