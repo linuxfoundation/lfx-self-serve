@@ -260,6 +260,7 @@ export * from './github-url.interface';
 export * from './mktg-agent.interface';
 export * from './mktg-artifact.interface';
 export * from './mktg-document-store.interface';
+export * from './mktg-document-run.interface';
 export * from './mktg-chat.interface';
 export * from './mktg-run.interface';
 

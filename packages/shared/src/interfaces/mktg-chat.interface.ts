@@ -39,6 +39,10 @@ export interface MktgSessionInfo {
  * Omit/null `sessionId` to create a new session; provide it to post a follow-up.
  */
 export interface MktgChatRequest {
+  /** Project scope for a form-run follow-up that must remain visible in Documents. */
+  project?: string;
+  /** Prior envelope version for the form-run result gate, not a project revision number. */
+  priorVersion?: number;
   /** Catalog agent id; resolved server-side to a Guild routing handle. */
   agentId: string;
   /** User message text. */
