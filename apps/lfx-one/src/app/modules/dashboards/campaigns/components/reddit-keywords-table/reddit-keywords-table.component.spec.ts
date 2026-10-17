@@ -771,6 +771,9 @@ describe('RedditKeywordsTableComponent', () => {
         });
         fixture.detectChanges();
         expect(q(noteId)).toBeNull();
+        // Pruned from the table's state once the high-water mark passed it, not merely hidden.
+        const notes = (fixture.componentInstance as unknown as { notSent: () => Record<string, unknown> }).notSent();
+        expect(Object.hasOwn(notes, 'tlf|t3_a|service mesh')).toBe(false);
 
         removeOutcome();
         fixture.detectChanges();

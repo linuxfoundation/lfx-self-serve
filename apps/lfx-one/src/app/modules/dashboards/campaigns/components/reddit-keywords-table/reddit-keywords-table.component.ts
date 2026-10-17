@@ -3,7 +3,7 @@
 
 import { DecimalPipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { afterNextRender, Component, computed, DestroyRef, effect, inject, input, Signal, signal, untracked } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, inject, input, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import {
@@ -419,16 +419,16 @@ export class RedditKeywordsTableComponent {
    * grows, so such a note can never be shown again, and keeping it would only let it linger.
    */
   private initPruneSupersededNotes(): void {
-    effect(() => {
-      const seqs = this.negativeKeywordsService.keywordOutcomeSeqs();
-      const notes = untracked(() => this.notSent());
-      const superseded = Object.entries(notes)
-        .filter(([, note]) => redditKeywordNoteSuperseded(note, this.latestKeywordSeq(note, seqs)))
-        .map(([key]) => key);
-      if (superseded.length > 0) {
-        untracked(() => this.notSent.update((all) => superseded.reduce((next, key) => omitKey(next, key), all)));
-      }
-    });
+    toObservable(this.negativeKeywordsService.keywordOutcomeSeqs)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((seqs) => {
+        const superseded = Object.entries(this.notSent())
+          .filter(([, note]) => redditKeywordNoteSuperseded(note, this.latestKeywordSeq(note, seqs)))
+          .map(([key]) => key);
+        if (superseded.length > 0) {
+          this.notSent.update((all) => superseded.reduce((next, key) => omitKey(next, key), all));
+        }
+      });
   }
 
   /** The keyword's outcome high-water mark for the campaign a note was recorded against. */
