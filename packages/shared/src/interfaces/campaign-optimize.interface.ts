@@ -222,6 +222,38 @@ export interface CampaignServiceMetaAdSets {
   ad_set_count: number;
 }
 
+/** One Meta ad under an ad set (`meta-ad`). Every descriptive field is absent when `listed` is false. */
+export interface CampaignServiceMetaAd {
+  id: string;
+  /** false for an ad that delivered in the window but the listing did not return (deleted, archived, or past the cap). */
+  listed: boolean;
+  name?: string;
+  /** Configured status (ACTIVE, PAUSED, DELETED, ARCHIVED). */
+  status?: string;
+  /** Effective status, verbatim (e.g. ADSET_PAUSED, PENDING_REVIEW, DISAPPROVED). */
+  effective_status?: string;
+  creative_id?: string;
+  creative_name?: string;
+  impressions: number;
+  clicks: number;
+  cost_micros: number;
+  ctr: number;
+}
+
+/** `meta-ads`: the ads under ONE ad set of a Meta campaign, read live. Strictly read-only upstream. */
+export interface CampaignServiceMetaAds {
+  campaign_id: string;
+  platform_campaign_id: string;
+  ad_set_id: string;
+  window: CampaignMetricsWindow;
+  currency: string;
+  read_at: string;
+  /** true when the ad LISTING passed its page cap: `ads` holds the ads read, not every ad. Delivery is never truncated. */
+  truncated: boolean;
+  ads: CampaignServiceMetaAd[];
+  ad_count: number;
+}
+
 /**
  * `meta-ad-set-status-change`. `etag` is the campaign row's version: UNCHANGED for most changes,
  * but NEW when the call wrote or cleared the deliberate-pause record of the recorded ad set, so the
@@ -675,10 +707,35 @@ export interface MetaAdSetDisplayRow {
   budgetNote: string;
 }
 
-/** A display row as the ad-set panel binds it: the ids each action's `aria-describedby` points at, or `null`. */
+/** One ad as the ad-set panel's Ads section renders it (`toMetaAdDisplayRow`). Read-only: no action. */
+export interface MetaAdDisplayRow {
+  id: string;
+  /** The ad's name, or its id when Meta reported none. */
+  name: string;
+  listed: boolean;
+  /** Meta's configured status, or `null` when not reported. */
+  status: string | null;
+  /** The effective status when it differs from the configured one (e.g. ADSET_PAUSED), else `null`. */
+  effectiveStatus: string | null;
+  /** The creative's name, else its id, else what is missing. */
+  creative: string;
+  /** Counters, or `null` when the wire value is not a finite number. */
+  impressions: number | null;
+  clicks: number | null;
+  /** A fraction (clicks / impressions). */
+  ctr: number | null;
+  /** Whole units of the read's currency (`cost_micros / 1e6`). */
+  spend: number | null;
+}
+
+/**
+ * A display row as the ad-set panel binds it: the ids each action's `aria-describedby` points at,
+ * or `null`, and whether the row's read-only Ads section is expanded.
+ */
 export interface MetaAdSetPanelRow extends MetaAdSetDisplayRow {
   actionDescribedBy: string | null;
   recordActionDescribedBy: string | null;
+  adsExpanded: boolean;
 }
 
 /**
@@ -766,7 +823,7 @@ export interface CampaignAdoptableBriefsResponse {
 }
 
 /** The platforms whose Monitor rows offer actions: each has a campaign-ref resolve and adoption. */
-export type CampaignMonitorActPlatform = 'linkedin-ads' | 'reddit-ads' | 'meta-ads' | 'microsoft-ads';
+export type CampaignMonitorActPlatform = 'linkedin-ads' | 'reddit-ads' | 'meta-ads' | 'microsoft-ads' | 'twitter-ads';
 
 /** The lever a Monitor row action opens. */
 export type CampaignMonitorActLever = 'pause_resume' | 'budget' | 'bid';

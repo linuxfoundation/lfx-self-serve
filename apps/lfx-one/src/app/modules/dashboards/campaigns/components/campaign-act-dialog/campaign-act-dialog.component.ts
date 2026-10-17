@@ -18,6 +18,7 @@ import {
   CAMPAIGN_BID_BLOCKED_STALE_REASON,
   CAMPAIGN_BID_UNAVAILABLE_PLATFORM_REASON,
   CAMPAIGN_BID_UNAVAILABLE_UNPROVISIONED_REASON,
+  CAMPAIGN_BID_UNAVAILABLE_X_ADOPTED_REASON,
   CAMPAIGN_BUDGET_BLOCKED_PACING_CHECK_REASON,
   CAMPAIGN_BUDGET_BLOCKED_STALE_REASON,
   CAMPAIGN_BUDGET_BLOCKED_TOGGLE_REASON,
@@ -160,8 +161,11 @@ export class CampaignActDialogComponent {
         CAMPAIGN_BUDGET_UNAVAILABLE_UNPROVISIONED_REASON
       ) || (this.budgetPacing() === 'lifetime' ? CAMPAIGN_BUDGET_X_LIFETIME_REASON : '')
   );
-  protected readonly bidUnavailableReason: Signal<string> = computed(() =>
-    this.leverUnavailableReason(BID_WRITABLE_CAMPAIGN_PLATFORMS, CAMPAIGN_BID_UNAVAILABLE_PLATFORM_REASON, CAMPAIGN_BID_UNAVAILABLE_UNPROVISIONED_REASON)
+  /** An adopted X campaign has no line item recorded, and X bids live there, so its bid is withheld. */
+  protected readonly bidUnavailableReason: Signal<string> = computed(
+    () =>
+      this.leverUnavailableReason(BID_WRITABLE_CAMPAIGN_PLATFORMS, CAMPAIGN_BID_UNAVAILABLE_PLATFORM_REASON, CAMPAIGN_BID_UNAVAILABLE_UNPROVISIONED_REASON) ||
+      (this.data.platform === 'twitter-ads' && this.record()?.adopted === true ? CAMPAIGN_BID_UNAVAILABLE_X_ADOPTED_REASON : '')
   );
   protected readonly budgetBlockedReason = computed(
     () =>

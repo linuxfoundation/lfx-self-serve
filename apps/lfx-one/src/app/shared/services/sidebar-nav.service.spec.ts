@@ -16,6 +16,7 @@ import {
   MKTG_OS_AGENTS_LABEL,
   ORG_LENS_CLA_M3_ENABLED_FLAG,
   ORG_LENS_ROI_ENABLED_FLAG,
+  PROJECT_LENS_PARTICIPATING_ORGS_FLAG,
 } from '@lfx-one/shared/constants';
 import { Lens, SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
@@ -38,6 +39,8 @@ describe('SidebarNavService', () => {
   const mktgOsEnabled = signal(false);
   const orgEasyclaEnabled = signal(false);
   const orgRoiEnabled = signal(false);
+  // On by default: the other project-lens ordering tests expect the entry in place.
+  const participatingOrgsEnabled = signal(true);
   const orgSegment = signal<string | null>(null);
   const mentorshipEnabled = signal(false);
   const formationEnabled = signal(false);
@@ -74,6 +77,7 @@ describe('SidebarNavService', () => {
     mktgOsEnabled.set(false);
     orgEasyclaEnabled.set(false);
     orgRoiEnabled.set(false);
+    participatingOrgsEnabled.set(true);
     orgSegment.set(null);
     mentorshipEnabled.set(false);
     formationEnabled.set(false);
@@ -100,6 +104,7 @@ describe('SidebarNavService', () => {
               if (key === MKTG_OS_AGENTS_ENABLED_FLAG) return mktgOsEnabled;
               if (key === ORG_LENS_CLA_M3_ENABLED_FLAG) return orgEasyclaEnabled;
               if (key === ORG_LENS_ROI_ENABLED_FLAG) return orgRoiEnabled;
+              if (key === PROJECT_LENS_PARTICIPATING_ORGS_FLAG) return participatingOrgsEnabled;
               if (key === MENTORSHIP_ENABLED_FLAG) return mentorshipEnabled;
               if (key === FORMATION_ENABLED_FLAG) return formationEnabled;
               if (key === GATEWAZE_EMBED_ENABLED_FLAG) return gatewazeEmbedEnabled;
@@ -199,7 +204,7 @@ describe('SidebarNavService', () => {
     expect(labels(items)).not.toContain('Governance');
   });
 
-  it('keeps the project-lens Marketing OS entry between Documents and Governance', () => {
+  it('keeps the project-lens Marketing OS entry after Participating organizations and before Governance', () => {
     activeLens.set('project');
     mktgOsEnabled.set(true);
 
@@ -214,11 +219,11 @@ describe('SidebarNavService', () => {
       })
     );
     expect(findByLink(items, '/foundation/mktg-os-agents')).toBeUndefined();
-    expect(itemLabels.indexOf(MKTG_OS_AGENTS_LABEL.nav)).toBe(itemLabels.indexOf('Documents') + 1);
+    expect(itemLabels.indexOf(MKTG_OS_AGENTS_LABEL.nav)).toBe(itemLabels.indexOf('Participating organizations') + 1);
     expect(itemLabels.indexOf('Governance')).toBe(itemLabels.indexOf(MKTG_OS_AGENTS_LABEL.nav) + 1);
   });
 
-  it('shows Initiatives right after Documents on the project and foundation lenses only for writers with the flag on', () => {
+  it('shows Initiatives after the Documents-anchored entries on the project and foundation lenses only for writers with the flag on', () => {
     const service = TestBed.inject(SidebarNavService);
 
     for (const lens of ['project', 'foundation'] as const) {
@@ -238,8 +243,29 @@ describe('SidebarNavService', () => {
       expect(findByLink(items, `/${lens}/initiatives`)).toEqual(
         expect.objectContaining({ label: 'Crowdfunding Initiatives', testId: `sidebar-${lens}-initiatives` })
       );
-      expect(itemLabels.indexOf('Crowdfunding Initiatives')).toBe(itemLabels.indexOf('Documents') + 1);
+      // On the project lens Participating organizations sits between Documents and Initiatives.
+      const anchor = lens === 'project' ? 'Participating organizations' : 'Documents';
+      expect(itemLabels.indexOf('Crowdfunding Initiatives')).toBe(itemLabels.indexOf(anchor) + 1);
     }
+  });
+
+  it('shows Participating organizations right after Documents on the project lens only while its flag is on, for non-writers too, and not on the foundation lens', () => {
+    const service = TestBed.inject(SidebarNavService);
+    activeLens.set('project');
+    canWrite.set(false);
+    participatingOrgsEnabled.set(false);
+    expect(findByLink(service.sidebarItems(), '/project/participating-orgs')).toBeUndefined();
+
+    participatingOrgsEnabled.set(true);
+    const items = service.sidebarItems();
+    const itemLabels = labels(items);
+    expect(findByLink(items, '/project/participating-orgs')).toEqual(
+      expect.objectContaining({ label: 'Participating organizations', testId: 'sidebar-project-participating-orgs' })
+    );
+    expect(itemLabels.indexOf('Participating organizations')).toBe(itemLabels.indexOf('Documents') + 1);
+
+    activeLens.set('foundation');
+    expect(findByLink(service.sidebarItems(), '/project/participating-orgs')).toBeUndefined();
   });
 
   it('keeps the full project-lens nav without Formation when the flag is off, even for a Formation-stage project', () => {

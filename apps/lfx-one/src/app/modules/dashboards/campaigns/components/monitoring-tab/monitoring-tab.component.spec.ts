@@ -1087,15 +1087,29 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       );
     });
 
-    it('offers no actions on an X row, which shares the report-backed panel', async () => {
+    it.each([
+      ['monitor-act-toggle-1a2b3c', 'pause_resume', 'Pause or resume: KubeCon NA 2026 - Search'],
+      ['monitor-act-budget-1a2b3c', 'budget', 'Budget: KubeCon NA 2026 - Search'],
+      ['monitor-act-bid-1a2b3c', 'bid', 'Bid: KubeCon NA 2026 - Search'],
+    ])("offers %s on an X row, opening the act dialog with X's campaign id", async (testId, lever, header) => {
       await setup(allConnected);
+      const xRows = reportBacked().campaigns.map((c) => ({ ...c, campaignId: '1a2b3c' }));
+      service['getTwitterMonitorData'].mockReturnValue(of(reportBacked({ campaigns: xRows })));
       // X's button is hidden while the app disables the platform, so the panel is selected directly.
       (fixture.componentInstance as unknown as { setPlatform(p: string): void }).setPlatform('twitter');
       fixture.detectChanges();
 
       expect(service['getTwitterMonitorData']).toHaveBeenCalled();
-      expect(el('twitter-campaign-row-0')).not.toBeNull();
-      expect(fixture.nativeElement.querySelector('[data-testid^="monitor-act-"]')).toBeNull();
+      expect(el('monitor-act-twitter-ads-1a2b3c')).not.toBeNull();
+      (fixture.nativeElement.querySelector(`[data-testid="${testId}"] button`) as HTMLButtonElement).click();
+
+      expect(TestBed.inject(DialogService).open).toHaveBeenCalledWith(
+        CampaignActDialogComponent,
+        expect.objectContaining({
+          header,
+          data: { projectSlug: 'cncf', platform: 'twitter-ads', platformCampaignId: '1a2b3c', campaignName: 'KubeCon NA 2026 - Search', lever },
+        })
+      );
     });
   });
 
