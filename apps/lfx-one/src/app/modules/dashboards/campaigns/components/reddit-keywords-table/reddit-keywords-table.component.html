@@ -65,6 +65,16 @@
           }
         </div>
 
+        <!-- Adds that went nowhere for a keyword this report no longer lists: said here, never dropped. -->
+        @for (note of unplacedNotes(); track note.key) {
+          <p
+            role="alert"
+            class="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-xs text-red-600"
+            [attr.data-testid]="'reddit-keywords-unplaced-not-sent-' + note.testIdKey">
+            <span class="font-medium">{{ notSentLabel }}:</span> "{{ note.keyword }}" ({{ note.campaignName }}). {{ note.message }}
+          </p>
+        }
+
         @if (rows().length === 0) {
           <p class="rounded-lg border border-dashed border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-500" data-testid="reddit-keywords-empty">
             No Reddit keyword activity in this window.

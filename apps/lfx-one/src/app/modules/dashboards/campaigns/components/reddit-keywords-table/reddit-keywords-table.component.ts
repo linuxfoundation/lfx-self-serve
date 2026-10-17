@@ -18,10 +18,11 @@ import {
   REDDIT_KEYWORDS_WINDOW_OPTIONS,
 } from '@lfx-one/shared/constants';
 import type {
-  CampaignNegativeKeywordLastOutcome,
   RedditKeywordDisplayRow,
   RedditKeywordNegativeTarget,
+  RedditKeywordNotSentNote,
   RedditKeywordsView,
+  RedditKeywordUnplacedNote,
   RedditKeywordsWindow,
 } from '@lfx-one/shared/interfaces';
 import { slugify } from '@lfx-one/shared/utils';
@@ -35,6 +36,7 @@ import {
   negativeKeywordsScopesMatch,
   negativeKeywordUnconfirmedAdvice,
   redditKeywordNegativeAction,
+  redditKeywordNoteKey,
   redditNegativeKeywordText,
 } from '@shared/utils/campaign-negative-keywords.utils';
 import { ConfirmationService } from 'primeng/api';
@@ -58,9 +60,13 @@ import { catchError, filter, finalize, map, of, startWith, switchMap, take, take
  *   targeting is read for the `revision` Reddit requires (read AFTER the confirm, so it is as fresh
  *   as it can be); the add is handed to that service, which sends it once, toasts its outcome and
  *   keeps it past this table. A failed read, a read with no revision, or a submit the service
- *   refuses sends nothing, and the row says "Not sent" (as an alert, beside the keyword's last write
+ *   refuses sends nothing, and the keyword says "Not sent" (as an alert, beside its last write
  *   outcome, which it never hides) until the table reads again, the keyword is tried again, or the
  *   keyword gets a new write outcome. A request for another keyword of the campaign leaves it.
+ *   The note belongs to the KEYWORD (project, Reddit campaign id, text as sent), not to a report
+ *   row: a re-read that re-ranks the rows shows it on the keyword's new row (on each, if one report
+ *   lists the same text twice for the campaign), and one that no longer lists the keyword shows it
+ *   in an alert above the table instead, so it is never lost.
  * - Each keyword keeps its own last write outcome on the campaign (the service's `keywordOutcomes`),
  *   so a later add of another keyword does not erase a "not confirmed" and its verify-first advice.
  * - A campaign's Reddit targeting is one domain: while a negative-keyword request or reservation of
@@ -107,16 +113,20 @@ export class RedditKeywordsTableComponent {
   protected readonly selectedWindow = signal<RedditKeywordsWindow>(DEFAULT_REDDIT_KEYWORDS_WINDOW);
   /** Bumped by the in-panel Retry. */
   private readonly retryToken = signal(0);
-  /** The row key whose campaign's revision is being read, by campaign UUID. */
+  /**
+   * The keyword (by `redditKeywordNoteKey`) whose campaign's revision is being read, by campaign UUID.
+   * Read-independent, like the notes, so the row's spinner follows the keyword through a re-read.
+   */
   private readonly revisionReads = signal<Record<string, string>>({});
   /**
-   * Rows whose add was not sent (the revision read failed or answered none, or another keyword change
-   * started first, or the page left the campaign), by row key, with the keyword read they were made
-   * against and the keyword's own last write outcome then. A Refresh, Retry or window change (a new
-   * read), a later attempt for the SAME keyword, or a new write outcome for that keyword drops it; a
-   * request for another keyword of the campaign does not.
+   * Adds that were not sent (the revision read failed or answered none, or another keyword change
+   * started first, or the page left the campaign), by `redditKeywordNoteKey` — NOT by the row's
+   * index-bearing `key`, which a re-read re-ranks — with the keyword read current when recorded and
+   * the keyword's own last write outcome then. A Refresh, Retry or window change after it, a later
+   * attempt for the SAME keyword, or a new write outcome for that keyword drops it; a request for
+   * another keyword of the campaign does not.
    */
-  private readonly notSent = signal<Record<string, { read: string; lastOutcome: CampaignNegativeKeywordLastOutcome | null; message: string }>>({});
+  private readonly notSent = signal<Record<string, RedditKeywordNotSentNote>>({});
   /**
    * The page's (project, brief), for abandoning an add's revision read when the page LEAVES the scope
    * the add was confirmed in (`negativeKeywordsScopesMatch`: a transient empty brief is not leaving).
@@ -128,6 +138,11 @@ export class RedditKeywordsTableComponent {
   protected readonly view: Signal<RedditKeywordsView> = this.initView();
   /** The rows with their campaign label and action precomputed, so the template calls no method. */
   protected readonly rows: Signal<RedditKeywordDisplayRow[]> = this.initRows();
+  /**
+   * Not-sent notes of this read whose keyword is not in the report shown (a re-read dropped it), so
+   * they are listed above the table rather than lost: a confirmed add is never dropped silently.
+   */
+  protected readonly unplacedNotes: Signal<RedditKeywordUnplacedNote[]> = this.initUnplacedNotes();
   /**
    * Set LIVE_REGION_MOUNT_DELAY_MS after this component's first render, so the live region below
    * exists, EMPTY, before any loading text reaches it. A role="status" element inserted with its text already
@@ -201,8 +216,9 @@ export class RedditKeywordsTableComponent {
         const key = target === null ? '' : campaignNegativeKeywordsKey(projectSlug, briefId, target.campaignId);
         const writeKey = target === null ? '' : campaignKeywordWriteKey(projectSlug, target.campaignId);
         const reading = target === null ? undefined : reads[target.campaignId];
-        const unsent = Object.hasOwn(notSent, row.key) ? notSent[row.key] : null;
         const text = redditNegativeKeywordText(row.keyword);
+        const noteKey = text === null ? '' : redditKeywordNoteKey(projectSlug, row.campaignId, text);
+        const unsent = noteKey !== '' && Object.hasOwn(notSent, noteKey) ? notSent[noteKey] : null;
         const lastOutcome = text !== null && requests[key] && Object.hasOwn(requests[key].keywordOutcomes, text) ? requests[key].keywordOutcomes[text] : null;
         // Without a target there is no outcome to supersede the note: it stands until a new read.
         const notSentMessage = unsent !== null && unsent.read === readId && (target === null || unsent.lastOutcome === lastOutcome) ? unsent.message : '';
@@ -216,7 +232,7 @@ export class RedditKeywordsTableComponent {
             requests[key] ?? null,
             {
               campaignReading: reading !== undefined || !!reservations[writeKey],
-              rowReading: reading === row.key,
+              rowReading: noteKey !== '' && reading === noteKey,
               negativeWritePending: !!negativeWrites[writeKey],
               targetingRemovalPending: !!removalWrites[writeKey],
             },
@@ -224,6 +240,25 @@ export class RedditKeywordsTableComponent {
           ),
         };
       });
+    });
+  }
+
+  private initUnplacedNotes(): Signal<RedditKeywordUnplacedNote[]> {
+    return computed(() => {
+      if (this.view().state !== 'loaded') {
+        return [];
+      }
+      const projectSlug = this.projectSlug();
+      const readId = this.readId();
+      const placed = new Set(
+        (this.view().data?.keywords ?? []).map((row) => {
+          const text = redditNegativeKeywordText(row.keyword);
+          return text === null ? '' : redditKeywordNoteKey(projectSlug, row.campaignId, text);
+        })
+      );
+      return Object.entries(this.notSent())
+        .filter(([key, note]) => note.read === readId && !placed.has(key))
+        .map(([key, note]) => ({ key, testIdKey: slugify(key), keyword: note.keyword, campaignName: note.campaignName, message: note.message }));
     });
   }
 
@@ -269,18 +304,18 @@ export class RedditKeywordsTableComponent {
    */
   private addNegative(projectSlug: string, briefId: string, row: RedditKeywordDisplayRow, target: RedditKeywordNegativeTarget, text: string): void {
     const { campaignId, campaignName } = target;
-    const rowKey = row.key;
+    const noteKey = redditKeywordNoteKey(projectSlug, row.campaignId, text);
     if (!this.stillTargets(projectSlug, briefId, row.campaignId, campaignId)) {
-      this.markNotSent(rowKey, target, text, REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE);
+      this.markNotSent(noteKey, target, text, REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE);
       return;
     }
     if (this.revisionReads()[campaignId] !== undefined || !this.negativeKeywordsService.reserve(projectSlug, campaignId)) {
-      this.markNotSent(rowKey, target, text, REDDIT_KEYWORD_NEGATIVE_SUPERSEDED_MESSAGE);
+      this.markNotSent(noteKey, target, text, REDDIT_KEYWORD_NEGATIVE_SUPERSEDED_MESSAGE);
       return;
     }
-    this.revisionReads.update((reads) => ({ ...reads, [campaignId]: rowKey }));
+    this.revisionReads.update((reads) => ({ ...reads, [campaignId]: noteKey }));
     let answered = false;
-    this.notSent.update((all) => omitKey(all, rowKey));
+    this.notSent.update((all) => omitKey(all, noteKey));
     this.campaignService
       .getKeywordTargeting(projectSlug, briefId, campaignId)
       .pipe(
@@ -292,7 +327,7 @@ export class RedditKeywordsTableComponent {
           this.revisionReads.update((reads) => omitKey(reads, campaignId));
           // Abandoned before it answered (the page left the scope): never silently.
           if (!answered && !this.destroyRef.destroyed) {
-            this.markNotSent(rowKey, target, text, REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE);
+            this.markNotSent(noteKey, target, text, REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE);
           }
         }),
         takeUntilDestroyed(this.destroyRef)
@@ -304,11 +339,11 @@ export class RedditKeywordsTableComponent {
           this.revisionReads.update((reads) => omitKey(reads, campaignId));
           const revision = typeof targeting?.revision === 'string' && targeting.revision !== '' ? targeting.revision : null;
           if (revision === null) {
-            this.markNotSent(rowKey, target, text, REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR);
+            this.markNotSent(noteKey, target, text, REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR);
             return;
           }
           if (!this.stillTargets(projectSlug, briefId, row.campaignId, campaignId)) {
-            this.markNotSent(rowKey, target, text, REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE);
+            this.markNotSent(noteKey, target, text, REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE);
             return;
           }
           const sent = this.negativeKeywordsService.submit({
@@ -322,13 +357,13 @@ export class RedditKeywordsTableComponent {
             revision,
           });
           if (!sent) {
-            this.markNotSent(rowKey, target, text, REDDIT_KEYWORD_NEGATIVE_SUPERSEDED_MESSAGE);
+            this.markNotSent(noteKey, target, text, REDDIT_KEYWORD_NEGATIVE_SUPERSEDED_MESSAGE);
           }
         },
         error: (err: unknown) => {
           answered = true;
           console.error('Failed to read the Reddit keyword targeting revision for an add-as-negative:', err);
-          this.markNotSent(rowKey, target, text, REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR);
+          this.markNotSent(noteKey, target, text, REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR);
         },
       });
   }
@@ -338,11 +373,11 @@ export class RedditKeywordsTableComponent {
    * note is recorded — not when the attempt started: a Refresh or window change clears the notes that
    * existed before it, but never hides a failure that arrives after it.
    */
-  private markNotSent(rowKey: string, target: RedditKeywordNegativeTarget, text: string, message: string): void {
+  private markNotSent(noteKey: string, target: RedditKeywordNegativeTarget, text: string, message: string): void {
     const read = this.readId();
     const request = this.negativeKeywordsService.requests()[campaignNegativeKeywordsKey(this.projectSlug(), this.briefId(), target.campaignId)];
     const lastOutcome = request && Object.hasOwn(request.keywordOutcomes, text) ? request.keywordOutcomes[text] : null;
-    this.notSent.update((all) => ({ ...all, [rowKey]: { read, lastOutcome, message } }));
+    this.notSent.update((all) => ({ ...all, [noteKey]: { read, lastOutcome, message, keyword: text, campaignName: target.campaignName } }));
   }
 
   /**

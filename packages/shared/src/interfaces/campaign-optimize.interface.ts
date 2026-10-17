@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import type { LINKEDIN_AUDIENCE_WINDOWS, TWITTER_AUDIENCE_WINDOWS } from '../constants/campaign-optimize.constants';
-import type { CampaignMetricsWindow, CampaignServiceCampaign, CampaignServiceCampaignRef, MicrosoftKeywordsWindow } from './campaign.interface';
+import type {
+  CampaignMetricsWindow,
+  CampaignNegativeKeywordLastOutcome,
+  CampaignServiceCampaign,
+  CampaignServiceCampaignRef,
+  MicrosoftKeywordsWindow,
+} from './campaign.interface';
 
 // ---------------------------------------------------------------------------
 // Optimize-tab reads and levers proxied to lfx-v2-campaign-service
@@ -493,6 +499,31 @@ export interface RedditKeywordNegativeAction {
    * of it: the write outcome (and its verify-first advice) still describes the campaign.
    */
   notSentMessage: string;
+}
+
+/**
+ * A confirmed "Add as negative" that went nowhere, kept by the table under a READ-INDEPENDENT key
+ * (`redditKeywordNoteKey`: project, Reddit campaign id, keyword as sent) so it survives a re-read
+ * that re-ranks or drops rows.
+ */
+export interface RedditKeywordNotSentNote {
+  /** The keyword read current when the note was recorded: a later read clears it. */
+  read: string;
+  /** The keyword's last write outcome when recorded: a newer one supersedes the note. */
+  lastOutcome: CampaignNegativeKeywordLastOutcome | null;
+  message: string;
+  /** The keyword as it would have been sent. */
+  keyword: string;
+  campaignName: string;
+}
+
+/** A not-sent note whose keyword is not in the report shown: listed above the table instead of on a row. */
+export interface RedditKeywordUnplacedNote {
+  key: string;
+  testIdKey: string;
+  keyword: string;
+  campaignName: string;
+  message: string;
 }
 
 /** What holds a Reddit keyword row's "Add as negative" besides the campaign's own negative-keyword request. */

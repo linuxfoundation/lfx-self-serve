@@ -626,6 +626,58 @@ describe('RedditKeywordsTableComponent', () => {
       expect(q(`reddit-keyword-negative-not-sent-${A}`)!.textContent).toContain(REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE);
     });
 
+    // Notes belong to the keyword, not to a report row: a re-read re-ranks the rows and drops some.
+    describe('across a re-read that re-ranks the rows', () => {
+      const mesh = (index: number) => ({
+        key: `t3_a|service mesh|${index}`,
+        campaignId: 't3_a',
+        keyword: 'service mesh',
+        impressions: 500,
+        clicks: 5,
+        ctr: 1,
+        spend: 1,
+      });
+      const gitops = (index: number) => ({ key: `t3_a|gitops|${index}`, campaignId: 't3_a', keyword: 'gitops', impressions: 900, clicks: 9, ctr: 1, spend: 1 });
+      let read: Subject<{ campaign_id: string; platform: 'reddit-ads'; keywords: never[] }>;
+
+      function startAddThenChangeWindow(nextWindow: RedditKeywordMetricsResponse): void {
+        read = new Subject();
+        getKeywordTargeting.mockReturnValue(read);
+        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        getRedditKeywords.mockImplementation((_slug: string, window: string) => of(window === 'last_7_days' ? nextWindow : report()));
+        fixture.detectChanges();
+        clickAdd(A);
+        q('reddit-keywords-window-last_7_days')!.click();
+        fixture.detectChanges();
+        read.error(new HttpErrorResponse({ status: 503, error: { error: 'x', code: 'SERVICE_UNAVAILABLE' } }));
+        fixture.detectChanges();
+      }
+
+      it("shows the note on the keyword's new row", () => {
+        startAddThenChangeWindow(report({ keywords: [gitops(0), mesh(1)] }));
+
+        expect(q('reddit-keyword-negative-not-sent-t3-a-service-mesh-1')!.textContent).toContain(REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR);
+        expect(q('reddit-keyword-negative-not-sent-t3-a-gitops-0')).toBeNull();
+        expect(q('reddit-keywords-unplaced-not-sent-tlf-t3-a-service-mesh')).toBeNull();
+      });
+
+      it('lists the note above the table when the new report no longer has the keyword', () => {
+        startAddThenChangeWindow(report({ keywords: [gitops(0)] }));
+
+        const note = q('reddit-keywords-unplaced-not-sent-tlf-t3-a-service-mesh')!;
+        expect(note.getAttribute('role')).toBe('alert');
+        expect(note.textContent).toContain('"service mesh" (KubeCon EU)');
+        expect(note.textContent).toContain(REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR);
+      });
+
+      it('shows the note on every row of one report that sends the same text for the campaign', () => {
+        startAddThenChangeWindow(report({ keywords: [mesh(0), { ...mesh(1), keyword: 'service  mesh', key: 't3_a|service  mesh|1' }] }));
+
+        expect(q('reddit-keyword-negative-not-sent-t3-a-service-mesh-0')).not.toBeNull();
+        expect(q('reddit-keyword-negative-not-sent-t3-a-service-mesh-1')).not.toBeNull();
+      });
+    });
+
     it('drops a "Not sent" note when the table reads again', () => {
       getKeywordTargeting.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503, error: { error: 'x', code: 'SERVICE_UNAVAILABLE' } })));
       vi.spyOn(console, 'error').mockImplementation(() => undefined);

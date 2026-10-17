@@ -161,6 +161,16 @@ export function pendingKeywordWrites(entries: Readonly<Record<string, { pending:
 }
 
 /**
+ * The read-independent key of one Reddit keyword's not-sent note: (project, Reddit campaign id,
+ * keyword as `redditNegativeKeywordText` sends it). A report row's own `key` carries its index in
+ * one read, so it does not survive a re-read that re-ranks the rows. Two rows of one report that
+ * send the same text for the same campaign share the note, and both show it.
+ */
+export function redditKeywordNoteKey(projectSlug: string, redditCampaignId: string, text: string): string {
+  return `${projectSlug}|${redditCampaignId}|${text}`;
+}
+
+/**
  * Whether two (project, brief) scopes of the negative-keyword lever are the same. An EMPTY brief id
  * on either side matches any brief of the same project: the campaigns page's brief id goes empty
  * while a Proceed save runs, and stays empty after a failed one, and neither is a switch to another

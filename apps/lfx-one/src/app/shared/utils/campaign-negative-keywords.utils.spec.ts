@@ -19,6 +19,7 @@ import {
   negativeKeywordsScopesMatch,
   pendingKeywordWrites,
   redditKeywordNegativeAction,
+  redditKeywordNoteKey,
   redditNegativeKeywordText,
   summarizeNegativeKeywordOutcomes,
 } from './campaign-negative-keywords.utils';
@@ -386,5 +387,11 @@ describe('keyword-write keys', () => {
         'cncf|b-1|c-3': { pending: true },
       })
     ).toEqual({ 'tlf|c-1': true, 'cncf|c-3': true });
+  });
+});
+
+describe('redditKeywordNoteKey', () => {
+  it('keys a note by project, Reddit campaign and the text as sent, with no report index', () => {
+    expect(redditKeywordNoteKey('tlf', 't3_a', 'service mesh')).toBe('tlf|t3_a|service mesh');
   });
 });
