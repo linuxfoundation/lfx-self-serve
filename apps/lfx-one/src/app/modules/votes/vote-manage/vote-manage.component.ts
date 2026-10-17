@@ -98,6 +98,9 @@ export class VoteManageComponent {
   public readonly submitting = signal<boolean>(false);
   public readonly confirmingOpenVote = signal<boolean>(false);
   public readonly loading = signal<boolean>(false);
+  // Clone mode never populates `vote` (route has no :id, see initVote) — this carries the fetched
+  // source vote's own project/foundation context for entity-context sync and project-UID resolution.
+  private readonly cloneSourceVote = signal<Vote | null>(null);
   private readonly internalStep = signal<number>(1);
   private readonly committeeUidFromUrl = this.route.snapshot.queryParamMap.get('committee_uid');
 
@@ -208,7 +211,7 @@ export class VoteManageComponent {
       return;
     }
 
-    const projectUid = this.vote()?.project_uid || this.project()?.uid;
+    const projectUid = this.vote()?.project_uid || this.cloneSourceVote()?.project_uid || this.project()?.uid;
     if (!projectUid) {
       this.messageService.add({
         severity: 'error',
@@ -287,7 +290,7 @@ export class VoteManageComponent {
 
       // Speculative create (GH-2826 Design A): fire the plain create at dialog-open, hiding the ~3 s
       // create behind reading time; accept chains onto it, every dismiss path discards via reject.
-      const projectUid = this.project()?.uid;
+      const projectUid = this.cloneSourceVote()?.project_uid || this.project()?.uid;
       if (projectUid) {
         const speculativeRequest = buildCreateVoteRequest(this.form().getRawValue() as VoteFormValue, projectUid);
         this.voteService
@@ -400,7 +403,7 @@ export class VoteManageComponent {
       return;
     }
 
-    const projectUid = this.vote()?.project_uid || this.project()?.uid;
+    const projectUid = this.vote()?.project_uid || this.cloneSourceVote()?.project_uid || this.project()?.uid;
     if (!projectUid) {
       // Same discard reasoning as the invalid path above: a pending speculation (if any) must not
       // outlive an accept that cannot proceed.
@@ -622,10 +625,11 @@ export class VoteManageComponent {
     );
   }
 
-  /** Maps the loaded vote to the {@link EntityWithProject} shape; absent enrichment fields map to null. */
+  /** Maps the loaded vote to the {@link EntityWithProject} shape; absent enrichment fields map to null.
+   *  Falls back to cloneSourceVote since edit-mode's `vote` signal never populates in clone mode. */
   private initVoteEntityContext(): Signal<EntityWithProject | null> {
     return computed(() => {
-      const vote = this.vote();
+      const vote = this.vote() ?? this.cloneSourceVote();
       if (!vote) {
         return null;
       }
@@ -941,6 +945,7 @@ export class VoteManageComponent {
         this.loading.set(false);
         this.form().enable();
         if (!vote) return;
+        this.cloneSourceVote.set(vote);
         this.patchFormWithClonedVote(vote);
       });
   }
