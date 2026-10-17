@@ -11,6 +11,8 @@
 // agents/foundation-message 4.0.0 (src/envelope.ts, src/form.ts,
 // src/questions-turn.ts) and docs/contracts/messaging-framework-*.md.
 
+import type { FoundationMessageUrlDocumentField } from '../interfaces/foundation-message.interface';
+
 /** Contract discriminator the BFF accepts; unknown majors are rejected. */
 export const FOUNDATION_MESSAGE_CONTRACT_ID = 'messaging-framework-output/v1';
 
@@ -41,14 +43,48 @@ export const FOUNDATION_MESSAGE_INTAKE_HEADERS = {
 // itself), the notes, and the documents, each tagged with what it is.
 // ---------------------------------------------------------------------------
 
-/** The intake answer keys the form collects, besides the documents. */
-export const FOUNDATION_MESSAGE_ANSWER_KEYS = ['project_name', 'description', 'website_url', 'links', 'notes'] as const;
+/**
+ * The intake answer keys the form collects, besides the documents: the
+ * project, then one labelled field per source the agent reads (hand test,
+ * 17 Oct: a guided form, not a bare links box), then the notes.
+ */
+export const FOUNDATION_MESSAGE_ANSWER_KEYS = [
+  'project_name',
+  'description',
+  'website_url',
+  'press_release_url',
+  'members_page_url',
+  'projects_page_url',
+  'deck_url',
+  'plan_url',
+  'brand_page_url',
+  'links',
+  'notes',
+] as const;
 
 /** The form key of the one-line description. */
 export const FOUNDATION_MESSAGE_DESCRIPTION_KEY = 'description';
 
-/** The form key of the website. */
+/** The form key of the website — the one required source. */
 export const FOUNDATION_MESSAGE_WEBSITE_KEY = 'website_url';
+
+/** The form key of the launch press release or announcement (a `press` document to the agent). */
+export const FOUNDATION_MESSAGE_PRESS_RELEASE_KEY = 'press_release_url';
+
+/** The form key of the members or partners page (a link to the agent). */
+export const FOUNDATION_MESSAGE_MEMBERS_PAGE_KEY = 'members_page_url';
+
+/** The form key of the projects or products page (a link to the agent). */
+export const FOUNDATION_MESSAGE_PROJECTS_PAGE_KEY = 'projects_page_url';
+
+/** The form key of the existing deck or pitch given as a link (a `deck` document to the agent; an upload goes to the documents). */
+export const FOUNDATION_MESSAGE_DECK_KEY = 'deck_url';
+
+/** The form key of the marketing or strategy plan given as a link (a `plan` document to the agent; an upload goes to the documents). */
+export const FOUNDATION_MESSAGE_PLAN_KEY = 'plan_url';
+
+/** The form key of the brand page (a link to the agent). */
+export const FOUNDATION_MESSAGE_BRAND_PAGE_KEY = 'brand_page_url';
 
 /** The form key of the other links (one per line on the form; an array in the payload). */
 export const FOUNDATION_MESSAGE_LINKS_KEY = 'links';
@@ -56,8 +92,44 @@ export const FOUNDATION_MESSAGE_LINKS_KEY = 'links';
 /** The form key of the notes (audience, segments, words to avoid). */
 export const FOUNDATION_MESSAGE_NOTES_KEY = 'notes';
 
-/** Most links one run takes (the agent's own cap). */
+/**
+ * The single-link fields of the form, in form order: each takes one
+ * `https://` link, blank, or "none". The website is the only required one.
+ */
+export const FOUNDATION_MESSAGE_SOURCE_URL_KEYS = [
+  FOUNDATION_MESSAGE_WEBSITE_KEY,
+  FOUNDATION_MESSAGE_PRESS_RELEASE_KEY,
+  FOUNDATION_MESSAGE_MEMBERS_PAGE_KEY,
+  FOUNDATION_MESSAGE_PROJECTS_PAGE_KEY,
+  FOUNDATION_MESSAGE_DECK_KEY,
+  FOUNDATION_MESSAGE_PLAN_KEY,
+  FOUNDATION_MESSAGE_BRAND_PAGE_KEY,
+] as const;
+
+/**
+ * The link fields that reach the agent as a tagged DOCUMENT (`documents[]`
+ * with the matching kind, titled after the field), because the agent reads a
+ * press release, a deck and a plan differently from a page. The rest of the
+ * single-link fields reach it as plain `links`.
+ */
+export const FOUNDATION_MESSAGE_URL_DOCUMENT_FIELDS: Readonly<Record<string, FoundationMessageUrlDocumentField>> = {
+  [FOUNDATION_MESSAGE_PRESS_RELEASE_KEY]: { kind: 'press', title: 'Launch press release or announcement' },
+  [FOUNDATION_MESSAGE_DECK_KEY]: { kind: 'deck', title: 'Existing deck or pitch' },
+  [FOUNDATION_MESSAGE_PLAN_KEY]: { kind: 'plan', title: 'Marketing or strategy plan' },
+};
+
+/** The single-link fields that reach the agent as plain `links`, in the order they go first. */
+export const FOUNDATION_MESSAGE_URL_LINK_KEYS = [
+  FOUNDATION_MESSAGE_MEMBERS_PAGE_KEY,
+  FOUNDATION_MESSAGE_PROJECTS_PAGE_KEY,
+  FOUNDATION_MESSAGE_BRAND_PAGE_KEY,
+] as const;
+
+/** Most links one run takes (the agent's own cap), the page fields and the other links together. */
 export const FOUNDATION_MESSAGE_MAX_LINKS = 20;
+
+/** Most OTHER links the form takes: the agent's cap less the page fields that travel as links. */
+export const FOUNDATION_MESSAGE_MAX_OTHER_LINKS = FOUNDATION_MESSAGE_MAX_LINKS - FOUNDATION_MESSAGE_URL_LINK_KEYS.length;
 
 /** Longest notes text accepted (a product cap; the agent sets none). */
 export const FOUNDATION_MESSAGE_NOTES_MAX_CHARS = 10000;
@@ -269,8 +341,8 @@ export const FOUNDATION_MESSAGE_MAX_DOCUMENTS = 6;
 /** Largest uploaded file LFX One reads (bytes). */
 export const FOUNDATION_MESSAGE_MAX_FILE_BYTES = 20 * 1024 * 1024;
 
-/** File types the documents upload accepts: PDF, Word, Markdown and plain text. */
-export const FOUNDATION_MESSAGE_FILE_EXTENSIONS = ['.pdf', '.docx', '.md', '.txt'] as const;
+/** File types the documents upload accepts: PDF, Word, PowerPoint, Markdown and plain text. */
+export const FOUNDATION_MESSAGE_FILE_EXTENSIONS = ['.pdf', '.docx', '.pptx', '.md', '.txt'] as const;
 
 /** Content type of the raw upload body. */
 export const FOUNDATION_MESSAGE_FILE_UPLOAD_CONTENT_TYPE = 'application/octet-stream';
@@ -283,7 +355,7 @@ export const FOUNDATION_MESSAGE_DOCUMENT_TITLE_MAX_CHARS = 200;
 
 /** What the form says when an uploaded document could not be read, per reason. */
 export const FOUNDATION_MESSAGE_READ_REASONS = {
-  unsupported: 'Not a PDF, Word (.docx), Markdown or text file.',
+  unsupported: 'Not a PDF, Word (.docx), PowerPoint (.pptx), Markdown or text file.',
   encrypted: 'The PDF is password-protected or encrypted. Export it without a password and upload it again.',
   'no-text': 'No text found — a scanned PDF or an image cannot be read. Upload a text version.',
   'too-complex': 'This document is too long or too complex to read here. Upload a shorter version, or export it again as PDF or text.',

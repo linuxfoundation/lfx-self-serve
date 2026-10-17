@@ -15,8 +15,13 @@ import type { MKTG_RUN_ACTIVITY_KINDS } from '../constants/mktg-run-activity.con
 import type { FoundationMessageChecks, FoundationMessageContent, FoundationMessageMode, FoundationMessageReport } from './foundation-message.interface';
 import type { MktgSessionInfo } from './mktg-chat.interface';
 
-/** How a single intake field is rendered on the run page. */
-export type MktgIntakeFieldKind = 'text' | 'textarea';
+/**
+ * How a single intake field is rendered on the run page: one line, several
+ * lines, or a repeatable list of links (`url-list`: one `https://` link per
+ * row with an "Add another link" control; the answer is the rows joined by
+ * newlines, so it validates and travels like a `source-url-list` textarea).
+ */
+export type MktgIntakeFieldKind = 'text' | 'textarea' | 'url-list';
 
 /**
  * LFX data source a field can be pre-filled from. Prefilled fields render a
@@ -128,6 +133,16 @@ export interface MktgIntakeField {
    * omitted from the submitted answers when the trimmed value is empty.
    */
   optional?: boolean;
+  /**
+   * Offers a file upload beside the control (the Messaging Framework's deck
+   * and plan: "upload or URL"). A file picked here joins the intake's
+   * documents section already tagged with this kind — the requester never
+   * tags it by hand — and is read to text there like any other upload.
+   * Needs an intake with a documents section.
+   */
+  uploadTag?: string;
+  /** Most rows a `url-list` field takes; the "Add another link" control stops there. */
+  maxItems?: number;
 }
 
 /**

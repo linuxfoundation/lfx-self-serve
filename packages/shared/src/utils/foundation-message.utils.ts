@@ -39,7 +39,7 @@ import {
   FOUNDATION_MESSAGE_LOGO_DOCUMENT_KIND,
   FOUNDATION_MESSAGE_MAX_COMMENTS,
   FOUNDATION_MESSAGE_MAX_DOCUMENTS,
-  FOUNDATION_MESSAGE_MAX_LINKS,
+  FOUNDATION_MESSAGE_MAX_OTHER_LINKS,
   FOUNDATION_MESSAGE_MAX_QUESTIONS,
   FOUNDATION_MESSAGE_MODES,
   FOUNDATION_MESSAGE_NON_ANSWER_REGEX,
@@ -52,7 +52,10 @@ import {
   FOUNDATION_MESSAGE_QUESTIONS_CONTRACT_ID,
   FOUNDATION_MESSAGE_REVISION_MODES,
   FOUNDATION_MESSAGE_SHA256_REGEX,
+  FOUNDATION_MESSAGE_SOURCE_URL_KEYS,
   FOUNDATION_MESSAGE_TEXT_TRUNCATION_MARKER,
+  FOUNDATION_MESSAGE_URL_DOCUMENT_FIELDS,
+  FOUNDATION_MESSAGE_URL_LINK_KEYS,
   FOUNDATION_MESSAGE_WEBSITE_KEY,
 } from '../constants/foundation-message.constants';
 import {
@@ -107,12 +110,14 @@ export function foundationMessageLinks(answer: string | undefined): string[] {
 
 /**
  * Validate a generate-request answers record: `project_name` required and one
- * line; the description optional and one line; the website optional — blank,
- * "none", or an http(s) URL (the agent's own rule); the links optional, one
- * http(s) URL per line, at most `FOUNDATION_MESSAGE_MAX_LINKS`; the notes
- * optional, within their cap; no unknown keys. There are no questions on this
- * form: the agent reads the sources, researches, and asks only the gaps
- * afterwards.
+ * line; the description optional and one line; every single-link field
+ * (`FOUNDATION_MESSAGE_SOURCE_URL_KEYS`: the website, the press release, the
+ * pages, the deck, the plan, the brand page) optional here — blank, "none",
+ * or an http(s) URL (the agent's own rule; the source rule is checked on the
+ * built payload); the other links optional, one http(s) URL per line, at
+ * most `FOUNDATION_MESSAGE_MAX_OTHER_LINKS`; the notes optional, within
+ * their cap; no unknown keys. There are no questions on this form: the agent
+ * reads the sources, researches, and asks only the gaps afterwards.
  */
 export function validateFoundationMessageIntakeAnswers(answers: unknown): FoundationMessageValidationResult {
   if (typeof answers !== 'object' || answers === null || Array.isArray(answers)) {
@@ -131,15 +136,18 @@ export function validateFoundationMessageIntakeAnswers(answers: unknown): Founda
     errors.push(`answers.${FOUNDATION_MESSAGE_DESCRIPTION_KEY} must be one line when provided`);
   }
 
-  const website = record[FOUNDATION_MESSAGE_WEBSITE_KEY];
-  if (website !== undefined) {
-    if (typeof website !== 'string') {
-      errors.push(`answers.${FOUNDATION_MESSAGE_WEBSITE_KEY} must be a string when provided`);
-    } else {
-      const url = foundationMessageSourceUrl(website);
-      if (url !== null && !FOUNDATION_MESSAGE_HTTP_URL_REGEX.test(url)) {
-        errors.push(`answers.${FOUNDATION_MESSAGE_WEBSITE_KEY} must be an http(s) URL or "none"`);
-      }
+  for (const key of FOUNDATION_MESSAGE_SOURCE_URL_KEYS) {
+    const answer = record[key];
+    if (answer === undefined) {
+      continue;
+    }
+    if (typeof answer !== 'string') {
+      errors.push(`answers.${key} must be a string when provided`);
+      continue;
+    }
+    const url = foundationMessageSourceUrl(answer);
+    if (url !== null && !FOUNDATION_MESSAGE_HTTP_URL_REGEX.test(url)) {
+      errors.push(`answers.${key} must be an http(s) URL or "none"`);
     }
   }
 
@@ -149,8 +157,8 @@ export function validateFoundationMessageIntakeAnswers(answers: unknown): Founda
       errors.push(`answers.${FOUNDATION_MESSAGE_LINKS_KEY} must be a string when provided`);
     } else {
       const entries = foundationMessageLinks(links);
-      if (entries.length > FOUNDATION_MESSAGE_MAX_LINKS) {
-        errors.push(`answers.${FOUNDATION_MESSAGE_LINKS_KEY} takes at most ${FOUNDATION_MESSAGE_MAX_LINKS} links`);
+      if (entries.length > FOUNDATION_MESSAGE_MAX_OTHER_LINKS) {
+        errors.push(`answers.${FOUNDATION_MESSAGE_LINKS_KEY} takes at most ${FOUNDATION_MESSAGE_MAX_OTHER_LINKS} links`);
       }
       if (entries.some((link) => !FOUNDATION_MESSAGE_HTTP_URL_REGEX.test(link))) {
         errors.push(`answers.${FOUNDATION_MESSAGE_LINKS_KEY} must be http(s) URLs, one per line`);
@@ -260,8 +268,12 @@ export function hasFoundationMessageSource(payload: Pick<FoundationMessageFormPa
 /**
  * Build the `messaging_framework_intake_form` payload from a VALIDATED
  * answers record. The project name, description and notes pass through
- * trimmed but otherwise verbatim; a "none" or blank website is omitted; blank
- * optionals are omitted.
+ * trimmed but otherwise verbatim; a "none" or blank link field is omitted;
+ * blank optionals are omitted. The guided form's link fields map to the
+ * contract by key: the press release, the deck and the plan become tagged
+ * `documents` (`FOUNDATION_MESSAGE_URL_DOCUMENT_FIELDS`), ahead of the
+ * documents given on the form; the members, projects and brand pages become
+ * `links`, ahead of the other links.
  */
 export function buildFoundationMessageFormPayload(answers: Record<string, string>, inputs: FoundationMessageFormInputs = {}): FoundationMessageFormPayload {
   const payload: FoundationMessageFormPayload = { type: FOUNDATION_MESSAGE_FORM_TYPE, project_name: (answers['project_name'] ?? '').trim() };
@@ -279,12 +291,21 @@ export function buildFoundationMessageFormPayload(answers: Record<string, string
   if (website !== null) {
     payload.website_url = website;
   }
-  const links = foundationMessageLinks(answers[FOUNDATION_MESSAGE_LINKS_KEY]);
+  const pageLinks = FOUNDATION_MESSAGE_URL_LINK_KEYS.map((key) => foundationMessageSourceUrl(answers[key])).filter((url): url is string => url !== null);
+  const links = [...pageLinks, ...foundationMessageLinks(answers[FOUNDATION_MESSAGE_LINKS_KEY])];
   if (links.length > 0) {
     payload.links = links;
   }
-  if (inputs.documents && inputs.documents.length > 0) {
-    payload.documents = inputs.documents;
+  const fieldDocuments: FoundationMessageFormDocument[] = [];
+  for (const [key, field] of Object.entries(FOUNDATION_MESSAGE_URL_DOCUMENT_FIELDS)) {
+    const url = foundationMessageSourceUrl(answers[key]);
+    if (url !== null) {
+      fieldDocuments.push({ title: field.title, kind: field.kind, url });
+    }
+  }
+  const documents = [...fieldDocuments, ...(inputs.documents ?? [])];
+  if (documents.length > 0) {
+    payload.documents = documents;
   }
   const notes = (answers[FOUNDATION_MESSAGE_NOTES_KEY] ?? '').trim();
   if (notes) {

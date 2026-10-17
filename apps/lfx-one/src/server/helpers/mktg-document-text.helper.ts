@@ -11,11 +11,11 @@ import { Worker } from 'node:worker_threads';
 
 /**
  * Turns an uploaded file into the text an agent with no file access reads
- * (the Messaging Document's existing documents): PDF (Mozilla's pdf.js,
- * through unpdf), Word .docx (mammoth), Markdown and plain text, told apart
- * by their bytes. No source or link is read here — the agent fetches its own
- * sources. Nothing here fetches; nothing throws — what cannot be read comes
- * back with its reason.
+ * (the Messaging Framework's documents): PDF (Mozilla's pdf.js, through
+ * unpdf), Word .docx (mammoth), PowerPoint .pptx (the slides' text runs),
+ * Markdown and plain text, told apart by their bytes. No source or link is
+ * read here — the agent fetches its own sources. Nothing here fetches;
+ * nothing throws — what cannot be read comes back with its reason.
  */
 export class MktgDocumentText {
   /**
@@ -83,11 +83,17 @@ export class MktgDocumentText {
     }, () => parentPort.postMessage({ reason: 'unsupported' }));
   `;
 
-  /** Wall-clock limit for one .docx; a caller whose own budget has less left may only lower it. */
+  /** Wall-clock limit for one .docx or .pptx; a caller whose own budget has less left may only lower it. */
   public static readonly maxDocxMillis = 500;
 
-  /** Most entries a .docx's zip may list; a real one has a few dozen parts. */
+  /** Most entries a .docx's or .pptx's zip may list; a real one has a few dozen parts, a long deck a few hundred. */
   private static readonly maxDocxEntries = 1_000;
+
+  /** The part every PowerPoint file has; a zip with it is read as slides, any other zip as a Word file. */
+  private static readonly pptxPresentationPart = 'ppt/presentation.xml';
+
+  /** A slide part, with its number: `ppt/slides/slide12.xml`. */
+  private static readonly pptxSlidePart = /^ppt\/slides\/slide(\d+)\.xml$/i;
 
   /**
    * Most bytes a .docx's markup (its `.xml` and `.rels` parts, everything
@@ -100,8 +106,9 @@ export class MktgDocumentText {
 
   /**
    * The text of an uploaded file. The format is told from the bytes, not the
-   * file name: a PDF by its header, a Word file by its zip signature, and
-   * anything else without a NUL byte as text (Markdown is kept as written).
+   * file name: a PDF by its header, a Word or PowerPoint file by its zip
+   * signature (then by the parts inside), and anything else without a NUL
+   * byte as text (Markdown is kept as written).
    *
    * @param bytes - The raw bytes
    * @param maxMillis - A tighter wall-clock limit than the format's own (`maxPdfMillis`, `maxDocxMillis`)
@@ -132,7 +139,7 @@ export class MktgDocumentText {
       return MktgDocumentText.pdfText(bytes, Math.min(maxMillis, MktgDocumentText.maxPdfMillis));
     }
     if (head.startsWith('PK\u0003\u0004')) {
-      return MktgDocumentText.docxText(bytes, Math.min(maxMillis, MktgDocumentText.maxDocxMillis));
+      return MktgDocumentText.officeText(bytes, Math.min(maxMillis, MktgDocumentText.maxDocxMillis));
     }
     if (bytes.includes(0)) {
       return MktgDocumentText.none('unsupported');
@@ -234,31 +241,35 @@ export class MktgDocumentText {
     });
   }
 
-  // === Word (.docx) ===
+  // === Word (.docx) and PowerPoint (.pptx) ===
 
   /**
-   * A .docx body's text through mammoth, a blank line between paragraphs.
-   * mammoth only ever sees a copy holding the file's markup (`docxMarkup`), so
-   * what it parses is capped before it starts. The deadline is a race, and is
-   * checked again before mammoth starts; mammoth's XML parse itself cannot be
-   * interrupted, so a parse already running when the deadline passes finishes
-   * in the background, bounded by the markup cap. A zip listing more than
-   * `maxDocxEntries` parts, markup over the cap or a passed deadline is
-   * `too-complex`; a broken archive, or one that is not a Word document, is
-   * `unsupported`.
+   * An Office file's text: a .docx body through mammoth, a blank line between
+   * paragraphs; a .pptx as its slides' text, slide by slide (`pptxText`).
+   * Either parser only ever sees a copy holding the file's markup
+   * (`officeMarkup`), so what it parses is capped before it starts. The
+   * deadline is a race, and is checked again before the parse starts;
+   * mammoth's XML parse itself cannot be interrupted, so a parse already
+   * running when the deadline passes finishes in the background, bounded by
+   * the markup cap. A zip listing more than `maxDocxEntries` parts, markup
+   * over the cap or a passed deadline is `too-complex`; a broken archive, or
+   * one that is neither a Word nor a PowerPoint document, is `unsupported`.
    */
-  private static async docxText(bytes: Buffer, maxMillis: number): Promise<MktgReadText> {
+  private static async officeText(bytes: Buffer, maxMillis: number): Promise<MktgReadText> {
     const deadline = performance.now() + maxMillis;
     let timer: NodeJS.Timeout | undefined;
     const expiry = new Promise<MktgReadText>((resolve) => {
       timer = setTimeout(() => resolve(MktgDocumentText.none('too-complex')), maxMillis);
     });
     const extraction = (async (): Promise<MktgReadText> => {
-      const markup = await MktgDocumentText.docxMarkup(bytes, deadline);
+      const markup = await MktgDocumentText.officeMarkup(bytes, deadline);
       if (markup === null || performance.now() >= deadline) {
         return MktgDocumentText.none('too-complex');
       }
-      const { value } = await mammoth.extractRawText({ buffer: markup });
+      if (markup.file(MktgDocumentText.pptxPresentationPart) !== null) {
+        return MktgDocumentText.pptxText(markup);
+      }
+      const { value } = await mammoth.extractRawText({ buffer: await markup.generateAsync({ type: 'nodebuffer', compression: 'STORE' }) });
       return MktgDocumentText.ok(value.replace(/\n{3,}/g, '\n\n'));
     })().catch(() => MktgDocumentText.none('unsupported'));
     try {
@@ -269,13 +280,67 @@ export class MktgDocumentText {
   }
 
   /**
-   * A copy of a .docx holding only its `.xml` and `.rels` parts, stored
-   * uncompressed, or null once they inflate past `maxDocxMarkupBytes` together
-   * or the deadline passes. Nothing else is inflated: images and embedded files
-   * are never read for text, so a compression bomb among them costs nothing,
-   * and a main document hidden under another name is simply not in the copy.
+   * A .pptx's text: its slides in order (`slide1.xml`, `slide2.xml`, …
+   * `slide10.xml` — by number, not by name), each slide's text runs
+   * (`<a:t>`) joined per paragraph (`<a:p>`), a line per paragraph and a
+   * blank line between slides. Notes, masters and layouts are not read: they
+   * are boilerplate, not the deck. The markup copy is already capped, so this
+   * walk is bounded by it.
    */
-  private static async docxMarkup(bytes: Buffer, deadline: number): Promise<Buffer | null> {
+  private static async pptxText(markup: JSZip): Promise<MktgReadText> {
+    const slides = Object.values(markup.files)
+      .map((file) => ({ file, number: Number(MktgDocumentText.pptxSlidePart.exec(file.name)?.[1] ?? Number.NaN) }))
+      .filter((slide) => !Number.isNaN(slide.number))
+      .sort((a, b) => a.number - b.number);
+    const texts: string[] = [];
+    for (const slide of slides) {
+      const xml = await slide.file.async('string');
+      const paragraphs = xml
+        .split(/<\/a:p>/)
+        .map((paragraph) =>
+          Array.from(paragraph.matchAll(/<a:t[^>]*>([^<]*)<\/a:t>/g), (match) => MktgDocumentText.decodeXml(match[1]))
+            .join('')
+            .trim()
+        )
+        .filter((line) => line !== '');
+      if (paragraphs.length > 0) {
+        texts.push(paragraphs.join('\n'));
+      }
+    }
+    return MktgDocumentText.ok(texts.join('\n\n'));
+  }
+
+  /** The five XML entities and numeric character references, decoded; anything else is kept as written. */
+  private static decodeXml(text: string): string {
+    return text.replace(/&(amp|lt|gt|quot|apos|#x[0-9a-fA-F]+|#\d+);/g, (entity, name: string) => {
+      switch (name) {
+        case 'amp':
+          return '&';
+        case 'lt':
+          return '<';
+        case 'gt':
+          return '>';
+        case 'quot':
+          return '"';
+        case 'apos':
+          return "'";
+        default: {
+          const code = name.startsWith('#x') ? Number.parseInt(name.slice(2), 16) : Number.parseInt(name.slice(1), 10);
+          return Number.isNaN(code) || code > 0x10ffff ? entity : String.fromCodePoint(code);
+        }
+      }
+    });
+  }
+
+  /**
+   * A copy of a .docx or .pptx holding only its `.xml` and `.rels` parts,
+   * stored uncompressed, or null once they inflate past `maxDocxMarkupBytes`
+   * together or the deadline passes. Nothing else is inflated: images and
+   * embedded files are never read for text, so a compression bomb among them
+   * costs nothing, and a main document hidden under another name is simply
+   * not in the copy.
+   */
+  private static async officeMarkup(bytes: Buffer, deadline: number): Promise<JSZip | null> {
     if (!MktgDocumentText.zipEntriesWithin(bytes, MktgDocumentText.maxDocxEntries)) {
       return null;
     }
@@ -309,7 +374,7 @@ export class MktgDocumentText {
       }
       copy.file(entry.name, Buffer.concat(chunks));
     }
-    return copy.generateAsync({ type: 'nodebuffer', compression: 'STORE' });
+    return copy;
   }
 
   /**

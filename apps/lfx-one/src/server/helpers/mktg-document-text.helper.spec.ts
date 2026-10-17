@@ -139,12 +139,32 @@ describe('MktgDocumentText.read — Word and text', () => {
     expect(read).toEqual({ text: 'Example Search positioning brief\n\nVision & mission\n\nPillar\tone', truncated: false });
   });
 
-  it('refuses a corrupt zip, and a zip that is not a Word document', async () => {
+  it('refuses a corrupt zip, and a zip that is neither a Word nor a PowerPoint document', async () => {
     const corrupt = Buffer.concat([Buffer.from('PK\u0003\u0004', 'latin1'), Buffer.from('garbage')]);
-    const notWord = await zip({ 'ppt/presentation.xml': '<p:presentation/>' });
+    const notOffice = await zip({ 'xl/workbook.xml': '<workbook/>' });
 
     expect((await MktgDocumentText.read(corrupt)).reason).toBe('unsupported');
-    expect((await MktgDocumentText.read(notWord)).reason).toBe('unsupported');
+    expect((await MktgDocumentText.read(notOffice)).reason).toBe('unsupported');
+  });
+
+  it('reads a .pptx slide by slide, in slide order, a line per paragraph, entities decoded; a deck with no text has none', async () => {
+    const a = 'http://schemas.openxmlformats.org/drawingml/2006/main';
+    const slide = (paragraphs: string[][]): string =>
+      `<p:sld xmlns:a="${a}"><p:cSld><p:spTree><p:sp><p:txBody>${paragraphs
+        .map((runs) => `<a:p>${runs.map((run) => `<a:r><a:rPr lang="en-US"/><a:t>${run}</a:t></a:r>`).join('')}</a:p>`)
+        .join('')}</p:txBody></p:sp></p:spTree></p:cSld></p:sld>`;
+    const deck = await zip({
+      'ppt/presentation.xml': '<p:presentation/>',
+      'ppt/slides/slide10.xml': slide([['Ten']]),
+      'ppt/slides/slide2.xml': slide([['Members ', '&amp; partners'], ['']]),
+      'ppt/slides/slide1.xml': slide([['Example Search'], ['Open', ' search, &#8220;for all&#8221;']]),
+      'ppt/notesSlides/notesSlide1.xml': slide([['Speaker notes stay out']]),
+      'ppt/media/image1.png': Buffer.alloc(16),
+    });
+    const empty = await zip({ 'ppt/presentation.xml': '<p:presentation/>', 'ppt/slides/slide1.xml': slide([['  ']]) });
+
+    expect(await MktgDocumentText.read(deck)).toEqual({ text: 'Example Search\nOpen search, “for all”\n\nMembers & partners\n\nTen', truncated: false });
+    expect((await MktgDocumentText.read(empty)).reason).toBe('no-text');
   });
 
   it('refuses a .docx whose markup inflates past the cap (a compression bomb) before mammoth reads it', async () => {

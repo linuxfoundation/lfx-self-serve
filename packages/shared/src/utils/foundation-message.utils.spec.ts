@@ -378,11 +378,25 @@ describe('validateFoundationMessageIntakeAnswers', () => {
         project_name: 'Example Search',
         description: 'An open source search suite.',
         website_url: 'https://search.example.org',
+        press_release_url: 'https://www.linuxfoundation.org/press/example-search',
+        members_page_url: 'https://search.example.org/members',
+        projects_page_url: 'https://search.example.org/projects',
+        deck_url: 'https://docs.google.com/presentation/d/x',
+        plan_url: 'none',
+        brand_page_url: '',
         links: 'https://blog.example.org/a\n\nhttps://blog.example.org/b',
         notes: 'Audience: platform teams.',
       })
     ).toEqual({ valid: true, errors: [] });
     expect(validateFoundationMessageIntakeAnswers({ project_name: 'Example Search', website_url: 'none' }).valid).toBe(true);
+  });
+
+  it('holds every single-link field to the same rule: blank, "none" or an http(s) URL', () => {
+    expect(validateFoundationMessageIntakeAnswers({ project_name: 'X', press_release_url: 'press.example.org' }).errors).toEqual([
+      'answers.press_release_url must be an http(s) URL or "none"',
+    ]);
+    expect(validateFoundationMessageIntakeAnswers({ project_name: 'X', deck_url: 42 }).errors).toEqual(['answers.deck_url must be a string when provided']);
+    expect(validateFoundationMessageIntakeAnswers({ project_name: 'X', brand_page_url: 'https://search.example.org/brand' }).valid).toBe(true);
   });
 
   it('refuses a missing or multi-line project name, a bad website, a bad link line, and unknown keys', () => {
@@ -394,9 +408,13 @@ describe('validateFoundationMessageIntakeAnswers', () => {
     expect(validateFoundationMessageIntakeAnswers({ project_name: 'X', links: 'https://a.example.org\nnot a link' }).errors).toEqual([
       'answers.links must be http(s) URLs, one per line',
     ]);
+    // The agent takes 20 links; three of them are the page fields, so the other links stop at 17.
     expect(
-      validateFoundationMessageIntakeAnswers({ project_name: 'X', links: Array.from({ length: 21 }, (_, i) => `https://a.example.org/${i}`).join('\n') }).errors
-    ).toEqual(['answers.links takes at most 20 links']);
+      validateFoundationMessageIntakeAnswers({ project_name: 'X', links: Array.from({ length: 18 }, (_, i) => `https://a.example.org/${i}`).join('\n') }).errors
+    ).toEqual(['answers.links takes at most 17 links']);
+    expect(
+      validateFoundationMessageIntakeAnswers({ project_name: 'X', links: Array.from({ length: 17 }, (_, i) => `https://a.example.org/${i}`).join('\n') }).valid
+    ).toBe(true);
     expect(validateFoundationMessageIntakeAnswers({ project_name: 'X', github_url: 'https://github.com/x' }).errors).toEqual([
       'answers.github_url is not an intake field key',
     ]);
@@ -468,6 +486,33 @@ describe('buildFoundationMessageFormPayload', () => {
       documents: [{ title: 'deck.pdf', kind: 'deck', text: 'Deck' }],
       notes: 'Platform teams.',
     });
+  });
+
+  it('maps the guided fields to the contract: the press release, deck and plan as tagged documents ahead of the given ones, the pages as links ahead of the other links', () => {
+    const payload = buildFoundationMessageFormPayload(
+      {
+        project_name: 'Example Search',
+        website_url: 'https://search.example.org',
+        press_release_url: ' https://www.linuxfoundation.org/press/example-search ',
+        members_page_url: 'https://search.example.org/members',
+        projects_page_url: 'none',
+        deck_url: '',
+        plan_url: 'https://docs.google.com/document/d/plan',
+        brand_page_url: 'https://search.example.org/brand',
+        links: 'https://blog.example.org/a',
+      },
+      { documents: [{ title: 'deck.pdf', kind: 'deck', text: 'Deck' }] }
+    );
+    expect(payload.links).toEqual(['https://search.example.org/members', 'https://search.example.org/brand', 'https://blog.example.org/a']);
+    expect(payload.documents).toEqual([
+      { title: 'Launch press release or announcement', kind: 'press', url: 'https://www.linuxfoundation.org/press/example-search' },
+      { title: 'Marketing or strategy plan', kind: 'plan', url: 'https://docs.google.com/document/d/plan' },
+      { title: 'deck.pdf', kind: 'deck', text: 'Deck' },
+    ]);
+    expect(hasFoundationMessageSource(buildFoundationMessageFormPayload({ project_name: 'X', press_release_url: 'https://press.example.org/x' }))).toBe(true);
+    expect(hasFoundationMessageSource(buildFoundationMessageFormPayload({ project_name: 'X', members_page_url: 'https://search.example.org/members' }))).toBe(
+      true
+    );
   });
 
   it('carries a revision through when one is given', () => {

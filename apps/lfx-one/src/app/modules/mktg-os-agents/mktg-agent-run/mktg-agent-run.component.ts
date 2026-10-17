@@ -4,9 +4,10 @@
 import { isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
 import { Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
+import { FileUploadComponent } from '@components/file-upload/file-upload.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { MessageComponent } from '@components/message/message.component';
@@ -53,6 +54,7 @@ import {
 import { findMktgDocumentStatus, foundationMessageSourceUrl, mktgAgentDocumentName } from '@lfx-one/shared/utils';
 import { githubRepoUrlValidator, sourceUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 import { MessageService } from 'primeng/api';
+import type { FileSelectEvent } from 'primeng/fileupload';
 import { combineLatest, distinctUntilChanged, EMPTY, filter, map, Subscription, switchMap } from 'rxjs';
 
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
@@ -86,6 +88,7 @@ import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questi
     NgTemplateOutlet,
     ReactiveFormsModule,
     ButtonComponent,
+    FileUploadComponent,
     InputTextComponent,
     TextareaComponent,
     MarkdownRendererComponent,
@@ -149,6 +152,15 @@ export class MktgAgentRunComponent {
   protected readonly feedbackForm = new FormGroup({
     feedback: new FormControl('', { nonNullable: true }),
   });
+  /**
+   * One control per row of every `url-list` field (the Messaging Framework's
+   * other links), named by row id. The rows are the editing surface only:
+   * their non-blank values, joined by newlines, are written into the field's
+   * own control in `intakeForm`, which keeps the validator, the answer
+   * memory and the submitted answer exactly as a `source-url-list` textarea
+   * would — so nothing downstream knows the field is a list of boxes.
+   */
+  protected readonly linkRowsForm = new FormGroup<Record<string, AbstractControl<string>>>({});
 
   // === Signals ===
   protected readonly phase = signal<MktgRunPhase>('form');
@@ -221,6 +233,10 @@ export class MktgAgentRunComponent {
   protected readonly lastAnswers = signal<Record<string, string>>({});
   /** True while the answers are on their way to the agent. */
   protected readonly answersSending = signal(false);
+  /** The row ids of every `url-list` field, in display order, keyed by field key. */
+  protected readonly linkRows = signal<Record<string, string[]>>({});
+  /** Ever-increasing counter behind the row ids, so a removed row's id is never reused. */
+  private linkRowSerial = 0;
 
   // === Computed ===
   private readonly intakeValid = toSignal(this.intakeForm.statusChanges.pipe(map((status) => status === 'VALID')), { initialValue: this.intakeForm.valid });
@@ -267,6 +283,21 @@ export class MktgAgentRunComponent {
   protected readonly assetVersion = computed(() => (this.phase() === 'result' ? (this.currentVersion()?.version ?? null) : null));
   /** Field labels as shown: the registered question per field key. */
   protected readonly fieldLabels: Record<string, string> = Object.fromEntries((this.intake?.fields ?? []).map((field) => [field.key, field.question]));
+  /** Whether each `url-list` field can take another row (under its `maxItems`). */
+  protected readonly canAddLinkRow: Signal<Record<string, boolean>> = computed(() => {
+    const rows = this.linkRows();
+    return Object.fromEntries(
+      (this.intake?.fields ?? [])
+        .filter((field) => field.kind === 'url-list')
+        .map((field) => [field.key, (rows[field.key]?.length ?? 0) < (field.maxItems ?? Number.POSITIVE_INFINITY)])
+    );
+  });
+  /** The `accept` attribute of a field's own upload: the documents section's readable types. */
+  protected readonly uploadAccept: string = (this.intake?.documents?.fileExtensions ?? []).join(',');
+  /** What the asterisk means beside the submit button: on a sources form, that everything else is optional. */
+  protected readonly requiredNote: string = this.intake?.requiresSource
+    ? '* required — everything else is optional'
+    : '* required — answers are open-ended, in your own words';
   /** The questions the agent is waiting on, for the stepper. */
   protected readonly pendingQuestions = computed(() => this.questionsPending()?.questions ?? []);
   /** The feed's header line. */
@@ -427,6 +458,8 @@ export class MktgAgentRunComponent {
   protected readonly documentsAgentKey: string | null = MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === this.agent?.id)?.agentKey ?? null;
 
   public constructor() {
+    // One empty row per list field from the start, so the form never shows a list with no box.
+    this.seedLinkRows();
     // The deferred timers must not outlive the view (their callbacks only
     // write signals today, but an unmanaged timer is a foot-gun).
     this.destroyRef.onDestroy(() => {
@@ -486,6 +519,8 @@ export class MktgAgentRunComponent {
           // Order is the precedence — LFX project data > an answer given to
           // another agent > empty.
           this.applyRememberedAnswers(context.uid);
+          // A remembered list answer lands in the field's control; the rows follow it.
+          this.seedLinkRows();
         });
     }
   }
@@ -516,6 +551,34 @@ export class MktgAgentRunComponent {
 
   protected onEditInputs(): void {
     this.phase.set('form');
+  }
+
+  /** Another empty row on a `url-list` field, up to its `maxItems`. */
+  protected onAddLinkRow(key: string): void {
+    if (!this.canAddLinkRow()[key]) {
+      return;
+    }
+    this.addLinkRow(key, '');
+  }
+
+  /** Drops a row of a `url-list` field; the field keeps at least one (empty) row to type into. */
+  protected onRemoveLinkRow(key: string, rowId: string): void {
+    this.linkRowsForm.removeControl(rowId);
+    this.linkRows.update((rows) => ({ ...rows, [key]: (rows[key] ?? []).filter((id) => id !== rowId) }));
+    if ((this.linkRows()[key] ?? []).length === 0) {
+      this.addLinkRow(key, '');
+    }
+    this.syncLinkField(key);
+  }
+
+  /**
+   * A file picked on a field that offers an upload (the deck, the plan): it
+   * joins the documents section, read to text there, already tagged with the
+   * field's kind — the requester never tags it by hand.
+   */
+  protected onFieldFilesSelected(field: MktgIntakeField, event: FileSelectEvent): void {
+    // `files` is this selection only; the uploader resets its input itself.
+    this.documentsSection()?.addFiles(Array.from(event.files), field.uploadTag);
   }
 
   /** Sends the answers to the agent's questions on the same run; the page polls on for the document. */
@@ -801,10 +864,11 @@ export class MktgAgentRunComponent {
         // only a value that is not a GitHub URL at all is refused.
         validators.push(githubRepoUrlValidator({ acceptOwner: true }));
       } else if (field.format === 'source-url') {
-        // A page the agent fetches itself: an https:// link, or Paul's "none".
-        validators.push(sourceUrlValidator());
+        // A page the agent fetches itself: an https:// link, or "none" — but
+        // a REQUIRED source (the website) has to be a real page.
+        validators.push(sourceUrlValidator({ none: !!field.optional }));
       } else if (field.format === 'source-url-list') {
-        // Several such links, one per line.
+        // Several such links, one per line (or one per row, for a `url-list`).
         validators.push(sourceUrlValidator({ list: true }));
       }
       controls[field.key] = new FormControl('', { nonNullable: true, validators });
@@ -901,6 +965,63 @@ export class MktgAgentRunComponent {
   }
 
   /**
+   * Reconciles the rows of every `url-list` field with the field's control:
+   * one row per link it holds, or one empty row. Called whenever the control
+   * was written from outside the rows — a reset, a restored run, a remembered
+   * answer — so the boxes always show what the answer is. Existing rows are
+   * kept and given the new values (their ids are the `@for` track keys, so
+   * the boxes are not torn down on every project switch); extra rows go,
+   * missing ones are added.
+   */
+  private seedLinkRows(): void {
+    for (const field of this.intake?.fields ?? []) {
+      if (field.kind !== 'url-list') {
+        continue;
+      }
+      const links = (this.intakeForm.controls[field.key]?.value ?? '')
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line !== '');
+      const values = links.length > 0 ? links : [''];
+      const kept = [...(this.linkRows()[field.key] ?? [])];
+      for (const rowId of kept.splice(values.length)) {
+        this.linkRowsForm.removeControl(rowId);
+      }
+      // The kept rows take their values quietly: the control already holds them, so nothing is echoed back.
+      kept.forEach((rowId, index) => this.linkRowsForm.controls[rowId]?.setValue(values[index], { emitEvent: false }));
+      this.linkRows.update((rows) => ({ ...rows, [field.key]: kept }));
+      for (const value of values.slice(kept.length)) {
+        this.addLinkRow(field.key, value);
+      }
+    }
+  }
+
+  /** One more row on a `url-list` field, holding `value`; typing into it rewrites the field's control. */
+  private addLinkRow(key: string, value: string): void {
+    this.linkRowSerial += 1;
+    const rowId = `${key}-${this.linkRowSerial}`;
+    const control = new FormControl(value, { nonNullable: true });
+    this.linkRowsForm.addControl(rowId, control);
+    control.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.syncLinkField(key));
+    this.linkRows.update((rows) => ({ ...rows, [key]: [...(rows[key] ?? []), rowId] }));
+  }
+
+  /** Writes a `url-list` field's rows — the non-blank ones, one per line — into the field's own control. */
+  private syncLinkField(key: string): void {
+    const control = this.intakeForm.controls[key];
+    if (!control) {
+      return;
+    }
+    const joined = (this.linkRows()[key] ?? [])
+      .map((rowId) => this.linkRowsForm.controls[rowId]?.value.trim() ?? '')
+      .filter((link) => link !== '')
+      .join('\n');
+    if (control.value !== joined) {
+      control.setValue(joined);
+    }
+  }
+
+  /**
    * Resets ALL run state for the (new) active project, then restores that
    * project's stored run and applies its LFX prefill. Runs on every active
    * context change so one project's session, answers and versions can never
@@ -956,6 +1077,8 @@ export class MktgAgentRunComponent {
     // repository-url / project-description follow from the getProject lookup
     // chained in the constructor.
     this.applyPrefill('project-name', context.name);
+    // The reset and a restored run both wrote the list fields' controls; the rows follow them.
+    this.seedLinkRows();
   }
 
   /**

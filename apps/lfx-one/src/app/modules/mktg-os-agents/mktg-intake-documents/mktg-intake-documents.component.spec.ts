@@ -98,9 +98,9 @@ describe('MktgIntakeDocumentsComponent', () => {
   });
 
   it('refuses a file type it cannot read before uploading it, and never adds a file with no text', async () => {
-    component['onFilesSelected'](fileEvent(new File(['x'], 'deck.pptx')));
+    component['onFilesSelected'](fileEvent(new File(['x'], 'deck.key')));
     expect(readFile).not.toHaveBeenCalled();
-    expect(component['errorText']()).toContain('deck.pptx');
+    expect(component['errorText']()).toContain('deck.key');
 
     readFile.mockReturnValue(of<MktgDocumentExtractResponse>({ title: 'scan.pdf', read: false, words: 0, truncated: false, reason: 'No text found.' }));
     component['onFilesSelected'](fileEvent(new File(['%PDF'], 'scan.pdf')));
@@ -157,6 +157,23 @@ describe('MktgIntakeDocumentsComponent', () => {
     component['onRemove'](added.id);
     await fixture.whenStable();
     expect(component['tagsForm'].controls[added.id]).toBeUndefined();
+  });
+
+  it('lists a file handed over by an intake field with that field’s tag, read like any upload; an unknown tag falls back to the default', async () => {
+    readFile.mockImplementation((_config: MktgIntakeDocumentsConfig, file: File) =>
+      of<MktgDocumentExtractResponse>({ title: file.name, read: true, words: 2, truncated: false, text: 'Deck text' })
+    );
+
+    component.addFiles([new File(['x'], 'board-deck.pdf')], 'deck');
+    component.addFiles([new File(['x'], 'other.pdf')], 'brand');
+    await fixture.whenStable();
+
+    expect(component.documents().map((document) => [document.title, document.tag])).toEqual([
+      ['board-deck.pdf', 'deck'],
+      ['other.pdf', config.defaultTag],
+    ]);
+    expect(readFile).toHaveBeenCalledTimes(2);
+    expect(component['tagsForm'].controls[component.documents()[0].id].value).toBe('deck');
   });
 
   it('removes a document', async () => {

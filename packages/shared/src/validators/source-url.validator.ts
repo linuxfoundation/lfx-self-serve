@@ -6,16 +6,19 @@ import { AbstractControl, ValidationErrors, ValidatorFn } from '@angular/forms';
 import { FOUNDATION_MESSAGE_NONE_ANSWER } from '../constants/foundation-message.constants';
 
 /**
- * A source link an agent fetches itself: blank, Paul's "none", or one
- * `https://` link — with `list`, one such link per line, blank lines ignored.
- * Raises `{ sourceUrl: { reason: 'unrecognized' } }` for anything else,
- * including a plain `http://` link: a source is a public page, and a
- * mistyped scheme is the mistake worth catching while the user is looking.
+ * A source link an agent fetches itself: blank, the agent's "none", or one
+ * `https://` link — with `list`, one such link per line, blank lines ignored;
+ * with `none: false`, "none" is refused like any other non-link (a REQUIRED
+ * source, the Messaging Framework's website, has to be a real page). Raises
+ * `{ sourceUrl: { reason: 'unrecognized' } }` for anything else, including a
+ * plain `http://` link: a source is a public page, and a mistyped scheme is
+ * the mistake worth catching while the user is looking.
  */
-export function sourceUrlValidator(options: { list?: boolean } = {}): ValidatorFn {
+export function sourceUrlValidator(options: { list?: boolean; none?: boolean } = {}): ValidatorFn {
+  const acceptsNone = !options.list && options.none !== false;
   return (control: AbstractControl): ValidationErrors | null => {
     const value = typeof control.value === 'string' ? control.value.trim() : '';
-    if (!value || (!options.list && value.toLowerCase() === FOUNDATION_MESSAGE_NONE_ANSWER)) {
+    if (!value || (acceptsNone && value.toLowerCase() === FOUNDATION_MESSAGE_NONE_ANSWER)) {
       return null;
     }
     const entries = options.list

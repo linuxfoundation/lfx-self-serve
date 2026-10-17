@@ -284,6 +284,18 @@ export interface FoundationMessageFormDocument {
   text?: string;
 }
 
+/**
+ * How a single-link intake field that names a document (the press release,
+ * the deck, the plan) reaches the agent: as a `documents[]` entry of this
+ * kind, titled after the field so the agent knows what it is reading.
+ */
+export interface FoundationMessageUrlDocumentField {
+  /** The agent's document kind. */
+  kind: FoundationMessageDocumentKind;
+  /** The document's title on the rendered form: the field's label. */
+  title: string;
+}
+
 /** One reviewer comment on a redraft: the field it is about and what should change. */
 export interface FoundationMessageReviewComment {
   /** A dotted / indexed path into the stored JSON (`mf.tagline`, `icp[0].cta`). */

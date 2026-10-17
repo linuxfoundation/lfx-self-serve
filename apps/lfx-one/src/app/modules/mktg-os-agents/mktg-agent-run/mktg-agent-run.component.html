@@ -196,15 +196,75 @@
                         [describedBy]="fieldFormatErrors()[field.key] ? 'mktg-intake-' + field.key + '-error' : ''"
                         [invalid]="!!fieldFormatErrors()[field.key]"
                         [dataTest]="'mktg-intake-' + field.key" />
+                    } @else if (field.kind === 'url-list') {
+                      <!-- A repeatable list of links: one box per link, "Add another link" for the next. The rows feed the field's own control. -->
+                      <div class="flex flex-col gap-2" [formGroup]="linkRowsForm" [attr.data-testid]="'mktg-agent-run-list-' + field.key">
+                        @for (rowId of linkRows()[field.key]; track rowId; let index = $index) {
+                          <div class="flex items-center gap-2" [attr.data-testid]="'mktg-agent-run-list-row-' + rowId">
+                            <label class="sr-only" [for]="'mktg-intake-' + rowId">{{ fieldLabels[field.key] }} {{ index + 1 }}</label>
+                            <div class="flex-1 min-w-0">
+                              <lfx-input-text
+                                [id]="'mktg-intake-' + rowId"
+                                [form]="linkRowsForm"
+                                [control]="rowId"
+                                type="url"
+                                [placeholder]="field.placeholder ?? ''"
+                                [describedBy]="fieldFormatErrors()[field.key] ? 'mktg-intake-' + field.key + '-error' : ''"
+                                [invalid]="!!fieldFormatErrors()[field.key]"
+                                [dataTest]="'mktg-intake-' + rowId" />
+                            </div>
+                            <lfx-button
+                              icon="fa-light fa-xmark"
+                              [text]="true"
+                              size="small"
+                              [ariaLabel]="'Remove ' + fieldLabels[field.key] + ' ' + (index + 1)"
+                              [attr.data-testid]="'mktg-agent-run-list-remove-' + rowId"
+                              (onClick)="onRemoveLinkRow(field.key, rowId)" />
+                          </div>
+                        }
+                        <div>
+                          <lfx-button
+                            label="Add another link"
+                            icon="fa-light fa-plus"
+                            [outlined]="true"
+                            size="small"
+                            [disabled]="!canAddLinkRow()[field.key]"
+                            [attr.data-testid]="'mktg-agent-run-list-add-' + field.key"
+                            (onClick)="onAddLinkRow(field.key)" />
+                        </div>
+                      </div>
                     } @else {
-                      <lfx-input-text
-                        [id]="'mktg-intake-' + field.key"
-                        [form]="intakeForm"
-                        [control]="field.key"
-                        [placeholder]="field.placeholder ?? ''"
-                        [describedBy]="fieldFormatErrors()[field.key] ? 'mktg-intake-' + field.key + '-error' : ''"
-                        [invalid]="!!fieldFormatErrors()[field.key]"
-                        [dataTest]="'mktg-intake-' + field.key" />
+                      <div class="flex flex-wrap items-center gap-2">
+                        <div class="flex-1 min-w-72">
+                          <lfx-input-text
+                            [id]="'mktg-intake-' + field.key"
+                            [form]="intakeForm"
+                            [control]="field.key"
+                            [placeholder]="field.placeholder ?? ''"
+                            [describedBy]="fieldFormatErrors()[field.key] ? 'mktg-intake-' + field.key + '-error' : ''"
+                            [invalid]="!!fieldFormatErrors()[field.key]"
+                            [required]="!field.optional"
+                            [dataTest]="'mktg-intake-' + field.key" />
+                        </div>
+                        <!-- "Upload or URL": a file picked here joins the documents section below, already tagged with this field's kind. -->
+                        @if (field.uploadTag && intake.documents) {
+                          <lfx-file-upload
+                            mode="basic"
+                            [auto]="true"
+                            [customUpload]="true"
+                            [multiple]="true"
+                            [accept]="uploadAccept"
+                            [disabled]="documentsBusy()"
+                            chooseLabel="Upload file"
+                            chooseStyleClass="p-button-outlined"
+                            [dataTest]="'mktg-intake-' + field.key + '-upload'"
+                            (onSelect)="onFieldFilesSelected(field, $event)">
+                            <ng-template #chooseicon>
+                              <i class="fa-light fa-arrow-up-from-bracket" aria-hidden="true"></i>
+                            </ng-template>
+                          </lfx-file-upload>
+                        }
+                      </div>
                     }
                     @if (field.hint) {
                       <span class="text-xs text-gray-400">{{ field.hint }}</span>
@@ -293,7 +353,7 @@
                     icon="fa-light fa-sparkles"
                     [disabled]="submitDisabled()"
                     data-testid="mktg-agent-run-submit-button" />
-                  <span class="text-xs text-gray-400">* required — answers are open-ended, in your own words</span>
+                  <span class="text-xs text-gray-400">{{ requiredNote }}</span>
                 </div>
               </form>
             }

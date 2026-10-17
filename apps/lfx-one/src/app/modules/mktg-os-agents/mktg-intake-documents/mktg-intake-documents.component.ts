@@ -104,6 +104,34 @@ export class MktgIntakeDocumentsComponent {
     this.errorText.set('');
   }
 
+  /**
+   * Reads the given files to text and lists each one that has any, tagged
+   * `tag` when given (a file picked on an intake field that names its kind —
+   * the deck, the plan) and the intake's default kind otherwise. Public so the
+   * run page's per-field uploads land in this one list, read the same way.
+   */
+  public addFiles(files: File[], tag?: string): void {
+    this.errorText.set('');
+    for (const file of files) {
+      const rejection = this.fileRejection(file);
+      if (rejection) {
+        this.errorText.set(rejection);
+        continue;
+      }
+      this.track(this.documentsService.readFile(this.config(), file)).subscribe({
+        next: (response) => {
+          // A file the server could not read has no text to send: it is not added, and the user is told why.
+          if (!response.read || !response.text) {
+            this.errorText.set(`${file.name}: ${response.reason ?? FOUNDATION_MESSAGE_READ_REASONS['no-text']}`);
+            return;
+          }
+          this.add({ kind: 'file', text: response.text, ...this.entryFields(response) }, tag);
+        },
+        error: () => this.errorText.set(`${file.name}: LFX One couldn’t read this file. Try again, or paste its text into a .txt file.`),
+      });
+    }
+  }
+
   // === Protected methods ===
   /** A link is listed as given and sent to the agent as its URL; nothing is read here. */
   protected onAddLink(): void {
@@ -124,25 +152,7 @@ export class MktgIntakeDocumentsComponent {
 
   protected onFilesSelected(event: FileSelectEvent): void {
     // `files` is this selection only (`currentFiles` is everything the uploader has seen); the uploader resets its input itself.
-    this.errorText.set('');
-    for (const file of Array.from(event.files)) {
-      const rejection = this.fileRejection(file);
-      if (rejection) {
-        this.errorText.set(rejection);
-        continue;
-      }
-      this.track(this.documentsService.readFile(this.config(), file)).subscribe({
-        next: (response) => {
-          // A file the server could not read has no text to send: it is not added, and the user is told why.
-          if (!response.read || !response.text) {
-            this.errorText.set(`${file.name}: ${response.reason ?? FOUNDATION_MESSAGE_READ_REASONS['no-text']}`);
-            return;
-          }
-          this.add({ kind: 'file', text: response.text, ...this.entryFields(response) });
-        },
-        error: () => this.errorText.set(`${file.name}: LFX One couldn’t read this file. Try again, or paste its text into a .txt file.`),
-      });
-    }
+    this.addFiles(Array.from(event.files));
   }
 
   protected onRemove(id: string): void {
@@ -168,14 +178,16 @@ export class MktgIntakeDocumentsComponent {
   }
 
   // === Private helpers ===
-  private add(entry: Omit<MktgIntakeDocumentEntry, 'id'>): void {
+  /** Lists a document, tagged `tag` when given and the intake offers tags, else the intake's default kind. */
+  private add(entry: Omit<MktgIntakeDocumentEntry, 'id'>, tag?: string): void {
     if (this.documents().length >= this.config().maxDocuments) {
       this.errorText.set(`At most ${this.config().maxDocuments} documents.`);
       return;
     }
     const id = `${entry.kind}-${Date.now().toString(36)}-${this.documents().length}`;
-    const tag = this.hasTags() ? { tag: this.defaultTag() } : {};
-    this.documents.update((documents) => [...documents, { ...entry, ...tag, id }]);
+    const known = this.tagOptions().some((option) => option.value === tag);
+    const tagged = this.hasTags() ? { tag: known && tag ? tag : this.defaultTag() } : {};
+    this.documents.update((documents) => [...documents, { ...entry, ...tagged, id }]);
   }
 
   /** Reconciles the tag controls with the documents on the form: one control per document, none for a document that is gone. */

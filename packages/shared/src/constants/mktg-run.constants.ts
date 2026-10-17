@@ -6,6 +6,8 @@ import { BRAND_KIT_FORM_PREAMBLE_LINES, BRAND_KIT_INTAKE_QUESTIONS } from './bra
 import {
   FOUNDATION_MESSAGE_ANSWER_MAX_CHARS,
   FOUNDATION_MESSAGE_ANSWERS_ENDPOINT,
+  FOUNDATION_MESSAGE_BRAND_PAGE_KEY,
+  FOUNDATION_MESSAGE_DECK_KEY,
   FOUNDATION_MESSAGE_DEFAULT_DOCUMENT_KIND,
   FOUNDATION_MESSAGE_DESCRIPTION_KEY,
   FOUNDATION_MESSAGE_DOCUMENT_ENDPOINTS,
@@ -14,8 +16,12 @@ import {
   FOUNDATION_MESSAGE_LINKS_KEY,
   FOUNDATION_MESSAGE_MAX_DOCUMENTS,
   FOUNDATION_MESSAGE_MAX_FILE_BYTES,
-  FOUNDATION_MESSAGE_MAX_LINKS,
+  FOUNDATION_MESSAGE_MAX_OTHER_LINKS,
+  FOUNDATION_MESSAGE_MEMBERS_PAGE_KEY,
   FOUNDATION_MESSAGE_NOTES_KEY,
+  FOUNDATION_MESSAGE_PLAN_KEY,
+  FOUNDATION_MESSAGE_PRESS_RELEASE_KEY,
+  FOUNDATION_MESSAGE_PROJECTS_PAGE_KEY,
   FOUNDATION_MESSAGE_WEBSITE_KEY,
 } from './foundation-message.constants';
 import { ICP_FORM_PREAMBLE_LINES, ICP_GAP_FILL_QUESTIONS, ICP_Q_GITHUB_URL, ICP_Q_PROJECT_NAME, ICP_REQUIRED_HEADINGS } from './icp.constants';
@@ -101,19 +107,26 @@ export const BRAND_KIT_INTAKE: MktgAgentIntake = {
 /**
  * Messaging Framework intake (marketing-os-agents agents/foundation-message
  * 4.0.0, messaging-framework-output/v1; wi-messaging-framework-intake-and-run).
- * The form from the design (Agent run, Asset view), in three parts:
+ * A GUIDED form (hand test, 17 Oct: the first cut was "too unguided — I did
+ * not even know myself what to put there"), in three parts:
  *
  * - Project: the name and the one-line description, both from LFX.
- * - Sources: the website and any other links, as URLs only. The agent
- *   fetches every link itself and researches the rest (web fetch, Exa
- *   search); "none" is a valid answer. A draft needs at least one source —
- *   the website, a link, or a document that is not a logo package
- *   (`requiresSource`).
- * - Notes: audience, segments and words to avoid, in the requester's words.
+ * - Sources: one labelled field per source the agent reads, each with a
+ *   one-line explanation and an example, in this order — the website (the
+ *   one required field), the launch press release, the members page, the
+ *   projects page, the deck (upload or link), the plan (upload or link),
+ *   the brand page, and a repeatable list of other links. Every link field
+ *   maps to the agent's contract by key (`FOUNDATION_MESSAGE_URL_DOCUMENT_FIELDS`
+ *   → `documents[]` with the matching kind; the pages → `links`); the agent
+ *   fetches every one itself and researches the rest (web fetch, Exa search,
+ *   the LF press archive when no press release is given).
+ * - Notes: audiences, the goals for the year, words to avoid, in the
+ *   requester's words.
  *
- * Documents come last: PDF, Word, Markdown or text files, turned into text by
- * the BFF, and links the agent reads itself, each tagged with what it is
- * (press release, deck, document, marketing plan, logo package).
+ * Other documents come last: files uploaded here (PDF, Word, PowerPoint,
+ * Markdown or text, read to text by the BFF) and document links, each tagged
+ * with what it is. A file picked on the deck or plan field lands here already
+ * tagged (`uploadTag`).
  *
  * There are no questions on this form. After reading and researching, the
  * agent asks only the gaps it could not settle, each with a suggested answer
@@ -134,7 +147,7 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
   formTitleAction: 'Build',
   documentName: 'Messaging framework',
   intro:
-    'Runs first; it needs no other document. Give the agent your website, links and documents: it reads every one, researches the rest on its own, and comes back with questions only for what the sources leave open — each with a suggested answer for you to accept or edit. The result is your messaging framework: vision, mission, positioning, tagline, goal columns, ideal customer profiles, message house and key numbers, stored as a new revision in Documents.',
+    'Give the agent the places it should read. It reads every source you give it, searches the web and LFX itself for the rest, and asks you only when something is still missing — each question comes with a suggested answer to accept or edit. Everything but the website is optional: leave a field empty when you do not have it. The result is your messaging framework: vision, mission, positioning, tagline, goal columns, ideal customer profiles, message house and key numbers, stored as a new revision in Documents.',
   // Never sent: the generate endpoint renders the agent's own intake form
   // server-side, and with fresh runs there is no chat follow-up to prefix.
   batchPreamble: [],
@@ -153,20 +166,75 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
       key: FOUNDATION_MESSAGE_WEBSITE_KEY,
       question: 'Website',
       kind: 'text',
+      placeholder: 'https://aaif.io',
+      hint: 'The project’s public site. The agent starts here and follows what it finds.',
+      format: 'source-url',
+    },
+    {
+      key: FOUNDATION_MESSAGE_PRESS_RELEASE_KEY,
+      question: 'Launch press release or announcement',
+      kind: 'text',
       optional: true,
-      placeholder: 'https://… or none',
-      hint: 'The project or foundation website.',
+      placeholder: 'https://www.linuxfoundation.org/press/…',
+      hint: 'The LF or project press release that announced the project. Leave it empty and the agent searches the LF press archive itself.',
+      format: 'source-url',
+    },
+    {
+      key: FOUNDATION_MESSAGE_MEMBERS_PAGE_KEY,
+      question: 'Members or partners page',
+      kind: 'text',
+      optional: true,
+      placeholder: 'https://aaif.io/members',
+      hint: 'The page that lists who backs the project — members, partners, sponsors.',
+      format: 'source-url',
+    },
+    {
+      key: FOUNDATION_MESSAGE_PROJECTS_PAGE_KEY,
+      question: 'Projects or products page',
+      kind: 'text',
+      optional: true,
+      placeholder: 'https://aaif.io/projects',
+      hint: 'The page that lists what the project ships or hosts — sub-projects, products, specifications.',
+      format: 'source-url',
+    },
+    {
+      key: FOUNDATION_MESSAGE_DECK_KEY,
+      question: 'Existing deck or pitch',
+      kind: 'text',
+      optional: true,
+      placeholder: 'https://docs.google.com/presentation/d/…',
+      hint: 'A board deck, a pitch, a keynote. Upload the file (PDF, PowerPoint, Word, Markdown or text) or give its link; an upload appears under Other documents below, tagged Deck.',
+      format: 'source-url',
+      uploadTag: 'deck',
+    },
+    {
+      key: FOUNDATION_MESSAGE_PLAN_KEY,
+      question: 'Marketing or strategy plan',
+      kind: 'text',
+      optional: true,
+      placeholder: 'https://docs.google.com/document/d/…',
+      hint: 'The marketing plan, the strategy for the year, the goals as written down. Upload the file or give its link; an upload appears under Other documents below, tagged Marketing plan.',
+      format: 'source-url',
+      uploadTag: 'plan',
+    },
+    {
+      key: FOUNDATION_MESSAGE_BRAND_PAGE_KEY,
+      question: 'Brand page',
+      kind: 'text',
+      optional: true,
+      placeholder: 'https://aaif.io/brand',
+      hint: 'The brand or style guidelines page, when the project has one — how it already describes itself.',
       format: 'source-url',
     },
     {
       key: FOUNDATION_MESSAGE_LINKS_KEY,
       question: 'Other links',
-      kind: 'textarea',
-      rows: 3,
+      kind: 'url-list',
       optional: true,
-      placeholder: 'One link per line — the repository, docs, blog posts, member pages, anything the agent should read',
-      hint: `Up to ${FOUNDATION_MESSAGE_MAX_LINKS} links.`,
+      placeholder: 'https://…',
+      hint: `Anything else public worth reading: the repository, the docs, a blog post, a talk. Up to ${FOUNDATION_MESSAGE_MAX_OTHER_LINKS}.`,
       format: 'source-url-list',
+      maxItems: FOUNDATION_MESSAGE_MAX_OTHER_LINKS,
     },
     {
       key: FOUNDATION_MESSAGE_NOTES_KEY,
@@ -174,8 +242,9 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
       kind: 'textarea',
       rows: 4,
       optional: true,
-      placeholder: 'Who the audience is, which segments matter, words to avoid — anything the sources do not say',
-      hint: 'In your own words. The agent treats this as information, not instructions.',
+      placeholder:
+        'Audiences: AI platform teams building agents\nGoals this year: 20 new members, the first stable release\nAvoid “the standard for agents” unless a source states it',
+      hint: 'Who the audiences are, the goals for the year, words to avoid — anything the sources do not say. The agent treats this as information, not instructions.',
     },
   ],
   fieldGroups: [
@@ -183,17 +252,26 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
     {
       id: 'sources',
       title: 'Sources',
-      hint: 'links only — “none” is a valid answer',
+      hint: 'the website is required; the rest is optional',
       footnote:
-        'The agent reads every link itself and researches the rest on its own, so it never asks you to restate what the sources say. It needs at least one source: the website, a link, or a document below.',
-      fieldKeys: [FOUNDATION_MESSAGE_WEBSITE_KEY, FOUNDATION_MESSAGE_LINKS_KEY],
+        'The agent reads every link itself and researches the rest on its own, so it never asks you to restate what the sources say. Leave a field empty when you do not have it.',
+      fieldKeys: [
+        FOUNDATION_MESSAGE_WEBSITE_KEY,
+        FOUNDATION_MESSAGE_PRESS_RELEASE_KEY,
+        FOUNDATION_MESSAGE_MEMBERS_PAGE_KEY,
+        FOUNDATION_MESSAGE_PROJECTS_PAGE_KEY,
+        FOUNDATION_MESSAGE_DECK_KEY,
+        FOUNDATION_MESSAGE_PLAN_KEY,
+        FOUNDATION_MESSAGE_BRAND_PAGE_KEY,
+        FOUNDATION_MESSAGE_LINKS_KEY,
+      ],
     },
-    { id: 'notes', title: 'Notes', hint: 'audience, segments, words to avoid', fieldKeys: [FOUNDATION_MESSAGE_NOTES_KEY] },
+    { id: 'notes', title: 'Notes', hint: 'audiences, goals, words to avoid', fieldKeys: [FOUNDATION_MESSAGE_NOTES_KEY] },
   ],
   documents: {
-    title: 'Documents',
-    hint: 'Press releases, decks, the marketing plan, other documents, a logo package. Tag each one.',
-    footnote: `Accepted: PDF, Word (.docx), Markdown and plain text, up to ${FOUNDATION_MESSAGE_MAX_FILE_BYTES / (1024 * 1024)} MB each — read here and sent as text. A link (a Google Doc, a wiki page) is sent as is; the agent reads it. A logo package is passed on for later agents and never read as a source.`,
+    title: 'Other documents',
+    hint: 'Anything else the agent should read, and the logo package. Tag each one.',
+    footnote: `Accepted: PDF, Word (.docx), PowerPoint (.pptx), Markdown and plain text, up to ${FOUNDATION_MESSAGE_MAX_FILE_BYTES / (1024 * 1024)} MB each — read here and sent as text. A link (a Google Doc, a wiki page) is sent as is; the agent reads it. A file uploaded on the deck or plan field above lands here with its tag. A logo package is passed on for later agents and never read as a source.`,
     maxDocuments: FOUNDATION_MESSAGE_MAX_DOCUMENTS,
     maxFileBytes: FOUNDATION_MESSAGE_MAX_FILE_BYTES,
     fileExtensions: [...FOUNDATION_MESSAGE_FILE_EXTENSIONS],
@@ -346,10 +424,10 @@ export const MKTG_INTAKE_FORMAT_ERRORS: Record<MktgIntakeFieldFormat, Partial<Re
       'That doesn’t look like a GitHub URL. Enter the project’s repository or organization URL, e.g. https://github.com/org/repo or https://github.com/org.',
   },
   'source-url': {
-    unrecognized: 'Enter the full link, starting with https://, or “none”.',
+    unrecognized: 'Enter the full link, starting with https://.',
   },
   'source-url-list': {
-    unrecognized: 'Every line must be a full link, starting with https://.',
+    unrecognized: 'Every link must be a full link, starting with https://.',
   },
 };
 
