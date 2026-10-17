@@ -196,8 +196,8 @@ export function redditNegativeKeywordText(keyword: string | null): string | null
  * campaign's excluded keywords, so a negative this session did not confirm is not known here; the
  * button stays offered, and upstream answers ALREADY_PRESENT without sending it again.
  *
- * `notSentMessage` is the table's own latest attempt that went nowhere; the caller passes it only
- * while no request of the campaign has settled since, and it is shown alongside the write outcome.
+ * `notSentMessage` is the table's own latest attempt for this keyword that went nowhere; the caller
+ * passes it only while the keyword has no newer write outcome, and it is shown alongside that outcome.
  */
 export function redditKeywordNegativeAction(
   keyword: string | null,

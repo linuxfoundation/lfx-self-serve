@@ -833,6 +833,13 @@ export const REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR =
 export const REDDIT_KEYWORD_NEGATIVE_SUPERSEDED_MESSAGE = 'Another keyword change for this campaign started first. Nothing was sent.';
 
 /**
+ * What a Reddit keyword row says when, by the time its revision read answered, the page had moved
+ * to another project or brief or the campaign had stopped taking negative keywords: nothing was sent.
+ */
+export const REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE =
+  "This campaign can't take negative keywords from here any more (the page changed project or brief, or the campaign changed). Nothing was sent.";
+
+/**
  * The statuses a keyword lever (keyword-targeting removal, negative-keyword add) may report as a
  * DEFINITE failure, and only when the BFF's own envelope carries them: campaign-service documents
  * 400 (malformed batch, unsupported platform, Reddit writes off) and 409 (refused before anything

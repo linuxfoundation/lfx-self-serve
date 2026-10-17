@@ -7,6 +7,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import {
   LIVE_REGION_MOUNT_DELAY_MS,
   REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR,
+  REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE,
   REDDIT_KEYWORD_NEGATIVE_SUPERSEDED_MESSAGE,
   REDDIT_KEYWORDS_ERROR_MESSAGES,
 } from '@lfx-one/shared/constants';
@@ -540,6 +541,79 @@ describe('RedditKeywordsTableComponent', () => {
       expect(q(`reddit-keyword-negative-outcome-${A}`)!.textContent).toContain('Not confirmed');
       clickAdd(A, false);
       expect(confirmations[confirmations.length - 1].message).toContain(negativeKeywordUnconfirmedAdvice('reddit-ads'));
+    });
+
+    // The table stays mounted across scope changes: a read that answers late must not write to a
+    // campaign the operator has left.
+    describe('when the scope changes while the revision read is pending', () => {
+      let read: Subject<{ campaign_id: string; platform: 'reddit-ads'; keywords: never[]; revision: string }>;
+
+      beforeEach(() => {
+        read = new Subject();
+        getKeywordTargeting.mockReturnValue(read);
+        addNegativeKeywords.mockReturnValue(of(applied()));
+        fixture.detectChanges();
+        clickAdd(A);
+        expect(TestBed.inject(CampaignNegativeKeywordsService).reservations()).toEqual({ 'tlf|brief-1|c-uuid-a': true });
+      });
+
+      function answer(): void {
+        if (!read.closed) {
+          read.next({ campaign_id: 'c-uuid-a', platform: 'reddit-ads', keywords: [], revision: 'rev-1' });
+          read.complete();
+        }
+        fixture.detectChanges();
+      }
+
+      it.each([
+        ['the project changes', () => fixture.componentRef.setInput('projectSlug', 'cncf')],
+        ['the brief changes', () => fixture.componentRef.setInput('briefId', 'brief-2')],
+        ['the campaign leaves the targets', () => fixture.componentRef.setInput('negativeTargets', {})],
+      ])('sends nothing and releases the campaign when %s', (_label, change) => {
+        change();
+        fixture.detectChanges();
+        answer();
+
+        expect(addNegativeKeywords).not.toHaveBeenCalled();
+        expect(TestBed.inject(CampaignNegativeKeywordsService).reservations()).toEqual({});
+      });
+
+      it('says "Not sent" when the campaign is still listed but now maps to another campaign', () => {
+        fixture.componentRef.setInput('negativeTargets', { t3_a: { campaignId: 'c-uuid-other', campaignName: 'KubeCon EU' } });
+        fixture.detectChanges();
+        answer();
+
+        expect(addNegativeKeywords).not.toHaveBeenCalled();
+        expect(TestBed.inject(CampaignNegativeKeywordsService).reservations()).toEqual({});
+        expect(q(`reddit-keyword-negative-not-sent-${A}`)!.textContent).toContain(REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE);
+      });
+    });
+
+    // A's note belongs to A: only a new read, a later attempt for A or a new outcome for A clears it.
+    it('keeps keyword A\'s "Not sent" while keyword B of the same campaign is added', () => {
+      getRedditKeywords.mockReturnValue(
+        of(
+          report({
+            keywords: [
+              { key: 't3_a|service mesh|0', campaignId: 't3_a', keyword: 'service mesh', impressions: 1000, clicks: 50, ctr: 5, spend: 2.5 },
+              { key: 't3_a|gitops|1', campaignId: 't3_a', keyword: 'gitops', impressions: 900, clicks: 40, ctr: 4.4, spend: 2 },
+            ],
+          })
+        )
+      );
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      getKeywordTargeting.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503, error: { error: 'x', code: 'SERVICE_UNAVAILABLE' } })));
+      fixture.detectChanges();
+      clickAdd(A);
+      expect(q(`reddit-keyword-negative-not-sent-${A}`)).not.toBeNull();
+
+      addNegativeKeywords.mockReturnValue(
+        of({ campaignId: 'c-uuid-a', appliedCount: 1, results: [{ text: 'gitops', matchType: 'Broad', outcome: 'APPLIED' }] })
+      );
+      clickAdd('t3-a-gitops-1');
+
+      expect(q('reddit-keyword-negative-t3-a-gitops-1')).not.toBeNull();
+      expect(q(`reddit-keyword-negative-not-sent-${A}`)!.textContent).toContain(REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR);
     });
   });
 });
