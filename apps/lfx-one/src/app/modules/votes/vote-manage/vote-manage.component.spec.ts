@@ -439,6 +439,11 @@ describe('VoteManageComponent', () => {
     beforeEach(() => {
       setRouteMode(null); // create mode — clone only applies without an :id route param
       routeMock.queryParamMap = of(convertToParamMap({ clone: CLONE_SOURCE_UID }));
+      // cloneSourceVote feeds syncEntityProjectContextFallback, which calls getProject(...).pipe(...)
+      // once the clone fetch resolves — give it an Observable default so fixtures that don't care
+      // about project-access resolution don't throw on the outer beforeEach's bare vi.fn(). The
+      // project-access test below overrides this with its own resolved value.
+      getProject.mockReturnValue(of(null));
     });
 
     it('prefills the create form with the source vote, prefixing the title, and stays in create mode, without creating a vote', async () => {
