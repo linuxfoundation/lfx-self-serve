@@ -414,7 +414,7 @@ describe('VotesTableComponent — row More menu', () => {
     });
   });
 
-  it('tier-prefixes the clone create route from the source vote\'s own is_foundation', async () => {
+  it("tier-prefixes the clone create route from the source vote's own is_foundation", async () => {
     fixture.componentRef.setInput('hasPMOAccess', true);
     fixture.componentRef.setInput('votes', [...ROWS, vote('foundation-vote', { is_foundation: true }), vote('project-vote', { is_foundation: false })]);
     const router = TestBed.inject(Router);
