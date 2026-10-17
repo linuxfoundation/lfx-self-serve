@@ -59,10 +59,10 @@ import { UserService } from './user.service';
  * session via the chat/session BFF; `regenerateViaGenerate` intakes (e.g. the
  * ICP) send the same through the validated generate endpoint on a FRESH
  * session, replacing the stored run's session while keeping its version
- * history; and `freshRunPerSubmission` intakes (the Messaging Document) send
+ * history; and `freshRunPerSubmission` intakes (the Messaging Framework) send
  * every submission as a fresh first-run generate with no prior version and no
  * feedback, the run shell numbering the versions. An agent that researches
- * first (the Messaging Document) may answer the poll with `questions` instead
+ * first (the Messaging Framework) may answer the poll with `questions` instead
  * of a document: the run stops at a questions step, and `answerQuestions`
  * sends the answers to the SAME session and polls on. Either way the
  * document comes exclusively

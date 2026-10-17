@@ -35,6 +35,7 @@ import {
   MktgIntakeDocument,
   MktgIntakeDocumentEntry,
   MktgIntakeField,
+  MktgFrameworkViewState,
   MktgIntakePrefillSource,
   MktgResolvedFieldGroup,
   MktgRunAnswer,
@@ -61,7 +62,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 
-import { MktgFrameworkViewComponent, MktgFrameworkViewState } from '../mktg-framework-view/mktg-framework-view.component';
+import { MktgFrameworkViewComponent } from '../mktg-framework-view/mktg-framework-view.component';
 import { MktgIntakeDocumentsComponent } from '../mktg-intake-documents/mktg-intake-documents.component';
 import { MktgRunActivityComponent } from '../mktg-run-activity/mktg-run-activity.component';
 import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questions.component';

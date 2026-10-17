@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { Component, computed, DestroyRef, effect, inject, input, model, Signal, signal, untracked } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Component, computed, DestroyRef, inject, input, model, Signal, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { FileUploadComponent } from '@components/file-upload/file-upload.component';
@@ -19,7 +19,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { sourceUrlValidator } from '@lfx-one/shared/validators';
 import type { FileSelectEvent } from 'primeng/fileupload';
-import { finalize, Observable, Subject, takeUntil } from 'rxjs';
+import { combineLatest, finalize, Observable, Subject, takeUntil } from 'rxjs';
 
 import { MktgIntakeDocumentsService } from '@services/mktg-intake-documents.service';
 
@@ -87,26 +87,9 @@ export class MktgIntakeDocumentsComponent {
     // dropped when a document goes (removed by the user, or the whole list
     // emptied by a project switch). The ids with a control are a signal so
     // the rows render a picker only once its control exists.
-    effect(() => {
-      const documents = this.documents();
-      const hasTags = this.hasTags();
-      untracked(() => {
-        const ids = new Set(documents.map((document) => document.id));
-        for (const key of Object.keys(this.tagsForm.controls)) {
-          if (!ids.has(key)) {
-            this.tagsForm.removeControl(key);
-          }
-        }
-        if (hasTags) {
-          for (const document of documents) {
-            if (!this.tagsForm.contains(document.id)) {
-              this.addTagControl(document.id, document.tag ?? this.defaultTag());
-            }
-          }
-        }
-        this.tagControlIds.set(new Set(Object.keys(this.tagsForm.controls)));
-      });
-    });
+    combineLatest([toObservable(this.documents), toObservable(this.hasTags)])
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(([documents, hasTags]) => this.syncTagControls(documents, hasTags));
   }
 
   // === Public methods ===
@@ -193,6 +176,24 @@ export class MktgIntakeDocumentsComponent {
     const id = `${entry.kind}-${Date.now().toString(36)}-${this.documents().length}`;
     const tag = this.hasTags() ? { tag: this.defaultTag() } : {};
     this.documents.update((documents) => [...documents, { ...entry, ...tag, id }]);
+  }
+
+  /** Reconciles the tag controls with the documents on the form: one control per document, none for a document that is gone. */
+  private syncTagControls(documents: MktgIntakeDocumentEntry[], hasTags: boolean): void {
+    const ids = new Set(documents.map((document) => document.id));
+    for (const key of Object.keys(this.tagsForm.controls)) {
+      if (!ids.has(key)) {
+        this.tagsForm.removeControl(key);
+      }
+    }
+    if (hasTags) {
+      for (const document of documents) {
+        if (!this.tagsForm.contains(document.id)) {
+          this.addTagControl(document.id, document.tag ?? this.defaultTag());
+        }
+      }
+    }
+    this.tagControlIds.set(new Set(Object.keys(this.tagsForm.controls)));
   }
 
   /** One tag control for a document; the picker writes straight into the document it belongs to. */

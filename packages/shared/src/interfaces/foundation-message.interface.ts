@@ -468,6 +468,19 @@ export interface FoundationMessageNumberRow {
   label: string;
 }
 
+/** Where the framework view stands: the run is still working (the feed or the questions are projected in), or the framework is on screen. */
+export type MktgFrameworkViewState = 'generating' | 'questions' | 'ready';
+
+/** One tab of the framework view as its template binds it. */
+export interface MktgFrameworkViewTab {
+  id: FoundationMessageViewTab;
+  label: string;
+  selected: boolean;
+  tabClass: string;
+  panelId: string;
+  tabId: string;
+}
+
 /** One audience row of the message house as the framework view renders it. */
 export interface FoundationMessageAudienceRow {
   name: string;

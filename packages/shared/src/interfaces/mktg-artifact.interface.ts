@@ -84,11 +84,12 @@ export interface MktgArtifactEnvelope {
  * content, the sha the caller already recomputed over `JSON.stringify(content)`
  * and verified, the draft version, and how intake was collected. Such an
  * envelope is stored as a revision only — nothing is written to the
- * pre-revision `.md` partition.
+ * pre-revision `.md` partition. `T` is the agent's content type (e.g.
+ * `FoundationMessageContent`), so a typed envelope passes without a cast.
  */
-export interface MktgArtifactJsonEnvelope {
+export interface MktgArtifactJsonEnvelope<T extends object = Record<string, unknown>> {
   /** The validated JSON content — serialized with `JSON.stringify` to the exact bytes persisted. */
-  content: Record<string, unknown>;
+  content: T;
   /** Lowercase hex SHA-256 of `JSON.stringify(content)` (UTF-8), ALREADY recomputed and verified by the caller. */
   content_sha256: string;
   /** Draft version within a run, starting at 1. */

@@ -71,6 +71,7 @@ import {
   FoundationMessagePillarView,
   FoundationMessageProofView,
   FoundationMessageQuestion,
+  FoundationMessageReport,
   FoundationMessageValidationResult,
 } from '../interfaces/foundation-message.interface';
 import { MktgIntakeDocument, MktgRunAnswer, MktgRunAnswerOrigin, MktgRunAsset, MktgRunQuestion } from '../interfaces/mktg-run.interface';
@@ -896,6 +897,11 @@ export function readFoundationMessageContent(text: string): FoundationMessageCon
   return findFoundationMessageContentErrors(parsed).length === 0 ? (parsed as FoundationMessageContent) : null;
 }
 
+/** True when `value` passes every report gate: a stored sidecar's report is read only through this. */
+export function isFoundationMessageReport(value: unknown): value is FoundationMessageReport {
+  return reportErrors(value).length === 0;
+}
+
 /** The run's asset out of a validated envelope: what the run page shows and the stored version keeps. */
 export function foundationMessageAsset(envelope: FoundationMessageEnvelope): MktgRunAsset {
   return { kind: 'messaging-framework', content: envelope.content, report: envelope.report, checks: envelope.checks, mode: envelope.mode };
@@ -918,10 +924,7 @@ export function foundationMessageAssetOfRevision(text: string, sidecar: Record<s
   return {
     kind: 'messaging-framework',
     content,
-    report:
-      isObject(report) && reportErrors(report).length === 0
-        ? (report as unknown as MktgRunAsset['report'])
-        : { sources_read: [], sources_failed: [], gaps: [], notes: '' },
+    report: isFoundationMessageReport(report) ? report : { sources_read: [], sources_failed: [], gaps: [], notes: '' },
     checks:
       isObject(checks) && Array.isArray(checks['findings'])
         ? { findings: checks['findings'].filter((finding): finding is string => typeof finding === 'string') }

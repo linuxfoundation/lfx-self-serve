@@ -3,10 +3,10 @@
 
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { MktgRunAsset } from '@lfx-one/shared/interfaces';
+import { MktgFrameworkViewState, MktgRunAsset } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { MktgFrameworkViewComponent, MktgFrameworkViewState } from './mktg-framework-view.component';
+import { MktgFrameworkViewComponent } from './mktg-framework-view.component';
 
 /** A host that projects the feed or the questions into the view, as the run page does. */
 @Component({

@@ -38,11 +38,10 @@ export type MktgIntakePrefillSource = 'project-name' | 'repository-url' | 'proje
  *   a GitHub organization). For the Brand Kit, whose BFF sends the URL to
  *   the agent as text and fetches nothing, so an organization URL is a usable
  *   answer to "the project's GitHub repo or README" (hand test, 2026-10-12).
- * - `source-url`: a page the agent fetches itself (the Messaging Document's
- *   website, press release and brand page) — an `https://` link, or "none"
- *   (Paul: "none" is a valid answer).
+ * - `source-url`: a page the agent fetches itself (the Messaging Framework's
+ *   website) — an `https://` link, or "none".
  * - `source-url-list`: several such links, one per line (the Messaging
- *   Document's other links); blank lines are ignored.
+ *   Framework's links); blank lines are ignored.
  */
 export type MktgIntakeFieldFormat = 'github-repo-url' | 'github-url' | 'source-url' | 'source-url-list';
 
@@ -813,8 +812,9 @@ export interface MktgAgentIntake {
   /**
    * Every submission, the first and every edit-inputs resubmit, is a FRESH
    * generate with no prior version and no feedback: the agent's generate form
-   * carries neither (the Messaging Document is revised by comment-and-revise
-   * in Documents instead). The run page offers no "Request changes" box, and
+   * carries neither (for the Messaging Framework, a redraft from comments and
+   * a check of a hand-edited version are later work). The run page offers no
+   * "Request changes" box, and
    * the run shell numbers its own versions, since each envelope says version 1.
    */
   freshRunPerSubmission?: boolean;

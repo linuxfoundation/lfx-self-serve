@@ -118,10 +118,10 @@ export class MktgDocumentStoreService {
    * refusal and storage failure degrades to null at WARN, like the artifact
    * write, and the next poll retries.
    */
-  public async persistJsonGeneration(
+  public async persistJsonGeneration<T extends object>(
     req: Request,
     spec: MktgArtifactSpec,
-    envelope: MktgArtifactJsonEnvelope,
+    envelope: MktgArtifactJsonEnvelope<T>,
     projectUid: string | undefined,
     sessionId: string
   ): Promise<MktgArtifactPersistReceipt | null> {
@@ -660,8 +660,8 @@ export class MktgDocumentStoreService {
    * JSON text (the bytes its sha was verified over) as the content, the rest
    * of the envelope as the sidecar.
    */
-  private jsonSource(envelope: MktgArtifactJsonEnvelope): MktgRevisionContentSource {
-    const { content, ...sidecar } = envelope as MktgArtifactJsonEnvelope & Record<string, unknown>;
+  private jsonSource<T extends object>(envelope: MktgArtifactJsonEnvelope<T>): MktgRevisionContentSource {
+    const { content, ...sidecar } = envelope as MktgArtifactJsonEnvelope<T> & Record<string, unknown>;
     return {
       text: JSON.stringify(content),
       contentSha256: envelope.content_sha256,

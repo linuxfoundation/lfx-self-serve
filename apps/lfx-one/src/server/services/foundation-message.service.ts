@@ -227,14 +227,7 @@ export class FoundationMessageService {
     sessionId: string,
     projectUid?: string
   ): Promise<FoundationMessagePersistReceipt | null> {
-    const { content, ...rest } = envelope;
-    return this.documentStore.persistJsonGeneration(
-      req,
-      this.artifactSpec,
-      { ...rest, content: content as unknown as Record<string, unknown> },
-      projectUid,
-      sessionId
-    );
+    return this.documentStore.persistJsonGeneration(req, this.artifactSpec, envelope, projectUid, sessionId);
   }
 
   /**

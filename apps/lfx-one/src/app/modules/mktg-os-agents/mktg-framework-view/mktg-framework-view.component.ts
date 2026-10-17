@@ -12,6 +12,8 @@ import {
   FoundationMessageNumberRow,
   FoundationMessagePillarView,
   FoundationMessageViewTab,
+  MktgFrameworkViewState,
+  MktgFrameworkViewTab,
   MktgRunAsset,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -22,19 +24,6 @@ import {
   foundationMessageNumberRows,
   foundationMessagePillarViews,
 } from '@lfx-one/shared/utils';
-
-/** Where the view stands: the run is still working (the feed or the questions are projected in), or the framework is on screen. */
-export type MktgFrameworkViewState = 'generating' | 'questions' | 'ready';
-
-/** One tab as the template binds it. */
-interface TabView {
-  id: FoundationMessageViewTab;
-  label: string;
-  selected: boolean;
-  tabClass: string;
-  panelId: string;
-  tabId: string;
-}
 
 // The Messaging Framework asset view (design: Agent run, Asset view): the
 // framework's own page inside the mktg-os-agents module, with one tab per
@@ -84,7 +73,7 @@ export class MktgFrameworkViewComponent {
     }
     return '';
   });
-  protected readonly tabs: Signal<TabView[]> = this.initTabs();
+  protected readonly tabs: Signal<MktgFrameworkViewTab[]> = this.initTabs();
   protected readonly goals: Signal<FoundationMessageGoalView[]> = computed(() => {
     const content = this.content();
     return content ? foundationMessageGoalViews(content) : [];
@@ -129,7 +118,7 @@ export class MktgFrameworkViewComponent {
   }
 
   // === Private initializers ===
-  private initTabs(): Signal<TabView[]> {
+  private initTabs(): Signal<MktgFrameworkViewTab[]> {
     return computed(() =>
       FOUNDATION_MESSAGE_VIEW_TABS.map((tab) => {
         const selected = tab.id === this.selectedTab();
