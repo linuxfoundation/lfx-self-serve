@@ -210,7 +210,7 @@ export class IcpService {
         documentBytes,
         'text/markdown; charset=utf-8',
         'private',
-        { version: String(envelope.version) },
+        { version: String(envelope.version), 'revision-managed': 'true' },
         // The bytes are immutable, but their metadata is not content: when a
         // later draft reproduces this document verbatim, the stored labels
         // still describe the draft that wrote it first. Strictly newer, never

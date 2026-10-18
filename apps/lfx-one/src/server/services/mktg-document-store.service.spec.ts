@@ -23,6 +23,7 @@ const store = vi.hoisted(() => ({
   failPutsMatching: null as RegExp | null,
   failListsMatching: null as RegExp | null,
   failGetsMatching: null as RegExp | null,
+  missingBodyKey: null as string | null,
 }));
 const loggerMocks = vi.hoisted(() => ({
   startOperation: vi.fn(() => 0),
@@ -108,6 +109,7 @@ vi.mock('./object-store.service', () => ({
     public async getObject(_req: unknown, _purpose: string, key: string): Promise<{ body: string; metadata: Record<string, string>; etag?: string } | null> {
       if (store.failGetsMatching?.test(key)) throw new Error('store unavailable');
       store.reads.push(key);
+      if (key === store.missingBodyKey) return null;
       const object = store.objects.get(key);
       return object ? { body: object.body, metadata: object.metadata, etag: store.omitEtag ? undefined : String(object.lastModified.getTime()) } : null;
     }
@@ -175,6 +177,12 @@ function revisionKeys(): string[] {
   return [...store.objects.keys()].filter((key) => key.startsWith('documents/') && /\/[0-9]{6}-[a-f0-9]{64}\.json$/.test(key)).sort();
 }
 
+function storedObject(key: string) {
+  const object = store.objects.get(key);
+  if (!object) throw new Error('Expected synthetic object to exist');
+  return object;
+}
+
 function storedRecord(key: string): MktgRevisionRecord {
   return JSON.parse(store.objects.get(key)?.body ?? '{}') as MktgRevisionRecord;
 }
@@ -195,6 +203,7 @@ describe('MktgDocumentStoreService', () => {
     store.failPutsMatching = null;
     store.failListsMatching = null;
     store.failGetsMatching = null;
+    store.missingBodyKey = null;
     directoryMocks.getUserInfo.mockImplementation(async (_req: Request, userId: string) => ({
       success: true,
       data: { name: userId === 'auth0|selector' ? 'The selector' : 'The writer' },
@@ -466,6 +475,59 @@ describe('MktgDocumentStoreService', () => {
     it.each([401, 403])('does not turn an authorization error %s into an empty listing', async (statusCode) => {
       vi.spyOn(service, 'getDocument').mockRejectedValue(new MicroserviceError('Access denied', statusCode, 'FORBIDDEN'));
       await expect(service.listDocuments(req, PROJECT)).rejects.toMatchObject({ statusCode });
+    });
+  });
+
+  describe('PR persistence regressions', () => {
+    it.each([true, false])('first ICP save produces one revision with an existing same-SHA artifact (managed=%s)', async (managed) => {
+      const generated = envelope('# ICP');
+      store.objects.set(`icp/${PROJECT}/${generated.content_sha256}.md`, {
+        body: generated.document_markdown,
+        metadata: { version: '1', ...(managed && { 'revision-managed': 'true' }) },
+        lastModified: new Date(0),
+      });
+      const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === 'icp') as MktgDocumentType;
+      await service.recordGeneration(req, type, PROJECT, generated, 'icp');
+      expect(revisionKeys()).toHaveLength(1);
+      expect(storedRecord(revisionKeys()[0]).origin).toBe('generated');
+    });
+
+    it('deduplicates a repeated pre-upgrade poll without generation metadata or a pointer', async () => {
+      const generated = envelope('# One');
+      const first = await service.recordGeneration(req, BRAND_KIT, PROJECT, generated, 'old-session');
+      storedObject(first.key).metadata = { origin: 'generated', sequence: '1' };
+      store.objects.delete(`documents/${PROJECT}/brand-kit/living/current.json`);
+      const repeated = await service.recordGeneration(req, BRAND_KIT, PROJECT, generated, 'old-session');
+      expect(repeated.id).toBe(first.id);
+      expect(revisionKeys()).toHaveLength(1);
+      expect(store.objects.has(`documents/${PROJECT}/brand-kit/living/current.json`)).toBe(false);
+    });
+
+    it('bounds long status metadata while a loaded revision keeps the full status', async () => {
+      const status = `Draft — ${'x'.repeat(3000)}`;
+      const saved = await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope(`# One\nStatus: ${status}`), 'one');
+      const metadata = storedObject(saved.key).metadata;
+      expect(Object.entries(metadata).reduce((bytes, [key, value]) => bytes + Buffer.byteLength(key + value), 0)).toBeLessThan(2048);
+      expect(Buffer.from(metadata['status'], 'base64').toString()).toBe(`${status.slice(0, 199)}…`);
+      expect((await service.getDocument(req, PROJECT, BRAND_KIT, 'living'))?.revisions[0].status).toHaveLength(200);
+      expect((await service.getRevision(req, PROJECT, BRAND_KIT, 'living', saved.id))?.revision.status).toBe(status);
+    });
+
+    it.each(['corrupt', 'missing'])('tries older valid legacy artifacts when the newest is %s', async (fault) => {
+      seedLegacy('# Older');
+      const newest = seedLegacy('# Newer');
+      if (fault === 'corrupt') storedObject(newest).body = 'mismatching bytes';
+      else store.missingBodyKey = newest;
+      await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# Generated'), 'generated');
+      expect(storedRecord(revisionKeys()[0]).bundle.markdown).toBe('# Older');
+      expect(loggerMocks.warning).toHaveBeenCalledWith(req, 'mktg_document_store_legacy', expect.stringContaining('skipping'), expect.any(Object));
+    });
+
+    it('computes legacy status when the body is opened, not on metadata-only listings', async () => {
+      const markdown = '# Legacy\nStatus: Draft — Review';
+      seedLegacy(markdown);
+      expect((await service.getDocument(req, PROJECT, BRAND_KIT, 'living'))?.revisions[0].status).toBe('');
+      expect((await service.getRevision(req, PROJECT, BRAND_KIT, 'living', `legacy-${sha(markdown)}`))?.revision.status).toBe('Draft — Review');
     });
   });
 

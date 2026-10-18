@@ -33,8 +33,9 @@ for historical data when no current record exists yet.
 
 A bounded retry handles competing new writers. The generation token in revision
 metadata deduplicates overlapping result polls, including one-off run polls.
+Historical revisions without that token are matched by session and content hash.
 A failed revision write drops the receipt so a later poll retries. Pre-revision
-artifacts become revision 1 on the next run.
+artifacts become revision 1 on the next run, excluding that run's own artifact.
 Make current never retries a stale comparison: it returns 412 so the caller can
 reload rather than silently overwrite a concurrent choice. The file backend
 uses an exclusive per-key directory across processes for the same comparison;
@@ -49,8 +50,9 @@ writer's lock. S3 passes the original ETag through `If-Match`.
 
 Listings provide IDs, sequence and time; bounded metadata-only HEAD requests
 provide new revision summaries. Opening a revision downloads and integrity-checks
-only that revision's body. Historical writers stored only origin/sequence
-metadata; those entries load their immutable bodies under
+only that revision's body. Status metadata is capped at 200 characters (with an
+ellipsis); opening the body supplies the full status. Historical writers stored
+only origin/sequence metadata; those entries load their immutable bodies under
 the same concurrency bound to preserve date, intake mode, status, comments, and
 restoration provenance without migration. Missing intake modes render a neutral
 label, not an invented form run. Project listings read at most four documents

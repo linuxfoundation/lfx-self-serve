@@ -139,6 +139,9 @@ export const MKTG_DOCUMENT_TYPES: MktgDocumentType[] = [
 /** Collapsed document-view history keeps this many newest revisions, plus open/current rows. */
 export const MKTG_DOCUMENT_REVISION_PREVIEW_COUNT = 5;
 
+/** Maximum status characters stored in S3 metadata, including the truncation ellipsis. */
+export const MKTG_REVISION_STATUS_METADATA_MAX_CHARS = 200;
+
 /** Historical attribution placeholder when no author record was stored. */
 export const MKTG_REVISION_UNKNOWN_AUTHOR_LABEL = 'no name (stored before names were recorded)';
 
