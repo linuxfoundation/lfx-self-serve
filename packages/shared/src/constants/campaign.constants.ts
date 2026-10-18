@@ -1841,7 +1841,7 @@ export function googleAdsToLower(text: string): string {
 }
 
 /**
- * An untrusted extension string \u2014 a callout, a sitelink label, a sitelink description \u2014 trimmed and
+ * An untrusted extension string — a callout, a sitelink label, a sitelink description — trimmed and
  * bounded to `maxRunes`, or `''` when there is nothing usable in it.
  *
  * Shared rather than written twice because two places take extension text from outside this app and

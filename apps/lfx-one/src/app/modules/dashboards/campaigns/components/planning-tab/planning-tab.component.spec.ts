@@ -1673,6 +1673,7 @@ describe('PlanningTabComponent email brief editing', () => {
     handleRefineSSEEvent(e: SSEEvent<CampaignSSEEventType>, feedback: string): void;
     googleCallouts(): string[];
     googleSitelinks(): { text: string; finalUrl: string }[];
+    onProceedToImplementation(): void;
     reset(): void;
   }
 
@@ -1729,6 +1730,36 @@ describe('PlanningTabComponent email brief editing', () => {
 
     expect(extensions().googleCallouts()).toEqual([]);
     expect(extensions().googleSitelinks()).toEqual([]);
+  });
+
+  /**
+   * The hand-off is where `[]` and absence stop meaning the same thing. `populateFromBrief` and
+   * `applyDraft` seed the Implementation tab's editors on `!== undefined`, so an emitted `[]`
+   * CLEARS an editor the operator may have filled by hand, and stores `[]` on the saved row —
+   * making the `null`-vs-`[]` contract those two functions are built on unreachable.
+   *
+   * Both halves are asserted, because an emitter hard-coded to `undefined` would pass the empty
+   * case on its own.
+   */
+  it('emits the extension lists only when the generator produced them', async () => {
+    await buildForExtensions();
+    const emitted: CampaignBriefOutput[] = [];
+    fixture.componentInstance.proceedToImplementation.subscribe((brief: CampaignBriefOutput) => emitted.push(brief));
+
+    extensions().onProceedToImplementation();
+
+    expect(emitted[0].googleCallouts).toBeUndefined();
+    expect(emitted[0].googleSitelinks).toBeUndefined();
+
+    extensions().handleSSEEvent({ type: 'callouts', data: ['Free To Attend'] } as SSEEvent<CampaignSSEEventType>);
+    extensions().handleSSEEvent({
+      type: 'sitelinks',
+      data: [{ text: 'View the Agenda', finalUrl: 'https://events.example.com/agenda' }],
+    } as SSEEvent<CampaignSSEEventType>);
+    extensions().onProceedToImplementation();
+
+    expect(emitted[1].googleCallouts).toEqual(['Free To Attend']);
+    expect(emitted[1].googleSitelinks).toEqual([{ text: 'View the Agenda', finalUrl: 'https://events.example.com/agenda' }]);
   });
 });
 

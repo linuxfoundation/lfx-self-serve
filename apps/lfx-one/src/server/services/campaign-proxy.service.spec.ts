@@ -24,7 +24,7 @@ vi.mock('../helpers/url-validation', () => ({
   fetchSafeUrl: vi.fn(async (url: string) => ({ html: '<html><body></body></html>', ok: true, status: 200, finalUrl: url })),
 }));
 
-import { CAMPAIGN_DELIVERY_TYPES } from '@lfx-one/shared/constants';
+import { CAMPAIGN_DELIVERY_TYPES, GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES, GOOGLE_ADS_MAX_FINAL_URL_BYTES } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 
 import { fetchSafeUrl } from '../helpers/url-validation';
@@ -637,25 +637,38 @@ describe('CampaignProxyService Google extensions', () => {
    * extraction stage reads the event fields off it and the callout stage reads `callouts` off the
    * same object, since `shapeCallouts` accepts the wrapped form the model intermittently returns.
    *
-   * The callout list is deliberately dirty — a case variant, surrounding spaces, an over-long
-   * entry and a non-string — so the assertion pins the shaping rather than a pass-through.
+   * The callout list is deliberately dirty — a case variant, surrounding spaces, a non-string, an
+   * entry exactly at the rune cap and one a single rune past it — so the assertion pins the shaping
+   * rather than a pass-through, and pins both sides of the cap.
    */
   const payload = JSON.stringify({
     name: 'KubeCon EU 2026',
     slug: 'kubecon-eu-2026',
     agenda_url: AGENDA_URL,
     cfp_url: CFP_URL,
-    callouts: ['Free To Attend', 'free to attend', '  Hands-On Labs  ', 42, 'A'.repeat(40)],
+    callouts: [
+      'Free To Attend',
+      'free to attend',
+      '  Hands-On Labs  ',
+      42,
+      'B'.repeat(GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES),
+      'A'.repeat(GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES + 1),
+    ],
   });
 
-  /** Stub every AI call to answer with the shared payload, and the scrape to carry both hrefs. */
-  function stubStream(): void {
+  /**
+   * Stub every AI call to answer with a payload, and the scrape to carry the hrefs that payload
+   * names. Both are overridable so a test can hand the generator its own event fields and its own
+   * page without rewriting the stub.
+   */
+  function stubStream(overrides: { payload?: string; html?: string } = {}): void {
+    const body = overrides.payload ?? payload;
     process.env['AI_PROXY_URL'] = 'https://ai.example.test/v1/chat';
     process.env['AI_API_KEY'] = 'test-key';
     // Queued per test rather than set for the block: an unconsumed `mockImplementation` would
     // outlive this describe and hand the file's other blocks markup they do not expect.
     vi.mocked(fetchSafeUrl).mockResolvedValueOnce({
-      html: `<html><body><a href="${AGENDA_URL}">Agenda</a><a href="${CFP_URL}">CFP</a></body></html>`,
+      html: overrides.html ?? `<html><body><a href="${AGENDA_URL}">Agenda</a><a href="${CFP_URL}">CFP</a></body></html>`,
       ok: true,
       status: 200,
       finalUrl: 'https://events.example.com/kubecon-eu-2026',
@@ -665,8 +678,8 @@ describe('CampaignProxyService Google extensions', () => {
       vi.fn(async () => ({
         ok: true,
         status: 200,
-        text: async () => payload,
-        json: async () => ({ choices: [{ message: { content: payload } }] }),
+        text: async () => body,
+        json: async () => ({ choices: [{ message: { content: body } }] }),
         body: new ReadableStream<Uint8Array>({
           start(controller) {
             controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"{}"}}]}\n\ndata: [DONE]\n\n'));
@@ -714,7 +727,51 @@ describe('CampaignProxyService Google extensions', () => {
       }>
     );
 
-    expect(events.find((e) => e.type === 'callouts')?.data).toEqual(['Free To Attend', 'Hands-On Labs', 'A'.repeat(25)]);
+    // Both sides of the rune cap, and the asymmetry that matters: the at-cap entry survives whole
+    // and the one-past-cap entry is GONE, not shortened. Truncating would make the generator the
+    // only place in the feature that invents wording — `addGoogleCallout` refuses over-long text
+    // rather than rewriting it, and so does upstream's `validateCallouts`.
+    expect(events.find((e) => e.type === 'callouts')?.data).toEqual(['Free To Attend', 'Hands-On Labs', 'B'.repeat(GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES)]);
+  });
+
+  /**
+   * The byte cap on a sitelink destination, which the generator is the one path into the editor
+   * that could skip: `addGoogleSitelink` refuses an over-long URL the operator types, the
+   * controller refuses the create, and the brief-restore path drops a stored row. A seeded row that
+   * skipped it would open the editor holding a chip the operator cannot have typed and cannot
+   * submit, whose only exit is deleting a row they did not add.
+   *
+   * A real page href can run past 2084 bytes — a registration or agenda link carrying a long
+   * tracking query is the ordinary shape — so this is a live branch, not a theoretical one. Both
+   * URLs are ASCII, so their byte length is their character length.
+   */
+  it('drops a verified page link whose destination runs past the final-url byte cap', async () => {
+    const overBase = 'https://events.example.com/agenda?q=';
+    const atBase = 'https://events.example.com/cfp?q=';
+    const overCapUrl = overBase + 'a'.repeat(GOOGLE_ADS_MAX_FINAL_URL_BYTES + 1 - overBase.length);
+    const atCapUrl = atBase + 'a'.repeat(GOOGLE_ADS_MAX_FINAL_URL_BYTES - atBase.length);
+    expect(new TextEncoder().encode(overCapUrl).length).toBe(GOOGLE_ADS_MAX_FINAL_URL_BYTES + 1);
+    expect(new TextEncoder().encode(atCapUrl).length).toBe(GOOGLE_ADS_MAX_FINAL_URL_BYTES);
+
+    stubStream({
+      payload: JSON.stringify({ name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', agenda_url: overCapUrl, cfp_url: atCapUrl, callouts: [] }),
+      html: `<html><body><a href="${overCapUrl}">Agenda</a><a href="${atCapUrl}">CFP</a></body></html>`,
+    });
+
+    const events = await drain(
+      service.streamBrief(
+        req,
+        { url: 'https://events.example.com/kubecon-eu-2026', platforms: ['google-ads'] },
+        new AbortController().signal
+      ) as AsyncGenerator<{
+        type: string;
+        data: unknown;
+      }>
+    );
+
+    // Asserted as the whole list, not with a `not.toContain`: the at-cap entry has to still be
+    // there, or a guard that dropped everything would pass this test.
+    expect(events.find((e) => e.type === 'sitelinks')?.data).toEqual([{ text: 'Submit a Talk', finalUrl: atCapUrl }]);
   });
 
   // The whole block is gated on Google being selected: every other platform ignores these two

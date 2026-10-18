@@ -7,10 +7,12 @@ import {
   GOOGLE_ADS_GEO_TARGET_MAP,
   GOOGLE_ADS_MAX_CALLOUTS,
   GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
+  GOOGLE_ADS_MAX_FINAL_URL_BYTES,
   GOOGLE_ADS_MAX_SITELINKS,
   GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES,
   googleAdsBoundExtensionText,
   googleAdsToLower,
+  googleAdsTrimSpace,
   JOB_LOST_MESSAGE,
   META_CHAR_LIMITS,
 } from '@lfx-one/shared/constants';
@@ -2668,6 +2670,11 @@ const SITELINK_SOURCES: readonly { key: string; text: string }[] = [
  * an add past {@link GOOGLE_ADS_MAX_SITELINKS} rather than growing. Four candidates against a cap
  * of twenty means the slice is inert today; it is here so the cap is enforced by the code that
  * produces the list rather than by the table's current length.
+ *
+ * An entry whose destination is past {@link GOOGLE_ADS_MAX_FINAL_URL_BYTES} is dropped on the same
+ * terms, for the reason the editor's add-guard and the controller's dispatch check exist: a chip
+ * the operator can neither have typed nor submit is a dead end whose only exit is deleting a row
+ * they did not add.
  */
 function buildSitelinksFromPage(eventDetails: Record<string, unknown> | null, pageLinks: Map<string, string>, pageBaseUrl: string): CampaignSitelink[] {
   if (!eventDetails) return [];
@@ -2682,6 +2689,14 @@ function buildSitelinksFromPage(eventDetails: Record<string, unknown> | null, pa
     // than upstream: two rows they must read twice to tell apart, one of them mislabelled.
     if (seen.has(finalUrl)) continue;
     seen.add(finalUrl);
+    // The same byte cap the other four places enforce, applied here because this is the one path
+    // into the editor that bypasses the editor. `addGoogleSitelink` refuses an over-long URL the
+    // operator types, the controller refuses the create, and the brief-restore path drops a stored
+    // row; a seeded row that skipped it would open the editor holding a chip the operator cannot
+    // have typed and cannot submit. A page href really can run past it — a registration link
+    // carrying a long tracking query is the realistic shape. Bytes, not runes: the limit is
+    // Google's and it counts the encoded URL.
+    if (new TextEncoder().encode(finalUrl).length > GOOGLE_ADS_MAX_FINAL_URL_BYTES) continue;
     const text = googleAdsBoundExtensionText(source.text, GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES);
     if (!text) continue;
     sitelinks.push({ text, finalUrl });
@@ -2699,6 +2714,8 @@ function buildSitelinksFromPage(eventDetails: Record<string, unknown> | null, pa
  * De-duplication is case-insensitive because the editor's own add-guard is
  * (`googleAdsToLower(c) === key`): a list seeded with both "Free To Attend" and "free to attend"
  * would show the operator two rows they then cannot re-add after deleting either.
+ *
+ * An over-long answer is DROPPED, not shortened — see the comment on the rune check below.
  */
 function shapeCallouts(parsed: unknown): string[] {
   const raw = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>)['callouts'] : parsed;
@@ -2706,8 +2723,19 @@ function shapeCallouts(parsed: unknown): string[] {
   const callouts: string[] = [];
   const seen = new Set<string>();
   for (const entry of raw) {
-    const text = googleAdsBoundExtensionText(entry, GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES);
+    if (typeof entry !== 'string') continue;
+    const text = googleAdsTrimSpace(entry);
     if (!text) continue;
+    // Dropped rather than bounded to the cap, which is where this path parts company with the
+    // restore path's {@link googleAdsBoundExtensionText}. Every other guard in this feature REFUSES
+    // over-long text instead of rewriting it — `addGoogleCallout` returns false, and upstream's
+    // `validateCallouts` refuses the whole create — so shortening here would make the generator the
+    // one place in the system that invents wording nobody wrote: a 28-rune answer would seed the
+    // editor as a phrase cut mid-word and ship that way if the operator did not catch it. Bounding
+    // is defensible on the restore path, where the alternative is losing an entry the operator
+    // typed; the generator has no such excuse, and the prompt asks for 8-12 candidates already
+    // under the cap, so losing the odd over-runner costs nothing.
+    if ([...text].length > GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES) continue;
     const key = googleAdsToLower(text);
     if (seen.has(key)) continue;
     seen.add(key);

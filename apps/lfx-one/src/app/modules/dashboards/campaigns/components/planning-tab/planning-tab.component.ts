@@ -1306,8 +1306,15 @@ export class PlanningTabComponent implements OnInit {
       eventDetails: details,
       structuredCopy: this.structuredCopy(),
       keywords: this.keywords(),
-      googleCallouts: this.googleCallouts(),
-      googleSitelinks: this.googleSitelinks(),
+      // `undefined` when the generator produced nothing, never `[]`, because the two mean different
+      // things from here on: `[]` is a list and CLEARS the Implementation tab's editor, while
+      // absence leaves entries the operator typed by hand alone. Emitting `[]` unconditionally
+      // would store `[]` on every row this app writes and make the `null`-vs-`[]` contract
+      // `toBriefInput` and `populateFromBrief` are built on unreachable. Neither signal is operator-
+      // editable on this tab — they are set from the stream and cleared on reset — so an empty one
+      // can only mean the list was never generated.
+      googleCallouts: this.googleCallouts().length > 0 ? this.googleCallouts() : undefined,
+      googleSitelinks: this.googleSitelinks().length > 0 ? this.googleSitelinks() : undefined,
       hsUtm: this.hsUtm(),
       totalBudget: budgetStr && Number.isFinite(Number(budgetStr)) ? Number(budgetStr) : null,
       driveFolderUrl: this.briefForm.controls.driveFolderUrl.value.trim(),

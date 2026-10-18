@@ -29,6 +29,7 @@ import {
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   googleAdsBoundExtensionText,
   googleAdsToLower,
+  googleAdsTrimSpace,
   JOB_LOST_MESSAGE,
 } from '@lfx-one/shared/constants';
 import { encodePathSegment } from '../helpers/url-validation';
@@ -3687,6 +3688,9 @@ function asCallouts(value: unknown): string[] | undefined {
  * dropped rather than carried, so the editor never opens on a pair that `googleads/assets.go`
  * would reject on dispatch.
  */
+/** Hoisted out of {@link asSitelinks}' loop — one encoder for the whole module, not one per row. */
+const SITELINK_URL_ENCODER = new TextEncoder();
+
 function asSitelinks(value: unknown): CampaignSitelink[] | undefined {
   if (!Array.isArray(value)) {
     return undefined;
@@ -3701,7 +3705,11 @@ function asSitelinks(value: unknown): CampaignSitelink[] | undefined {
     }
 
     const text = googleAdsBoundExtensionText(record['text'], GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES);
-    const finalUrl = asText(record['finalUrl']).trim();
+    // Trimmed with Go's space set, not JS's, for the same reason `text` above is: the editor's
+    // `addGoogleSitelink` trims the destination with `googleAdsTrimSpace`, and the two disagree on
+    // characters this field really can carry. JS `trim` leaves U+0085 in place, `new URL()` then
+    // throws on it, and `isServableSitelinkUrl` would drop a row the editor itself would accept.
+    const finalUrl = googleAdsTrimSpace(asText(record['finalUrl']));
     if (text === '' || !isServableSitelinkUrl(finalUrl)) {
       continue;
     }
@@ -3711,7 +3719,7 @@ function asSitelinks(value: unknown): CampaignSitelink[] | undefined {
     // the editor holding a chip the operator cannot have typed and cannot submit — a dead end whose
     // only exit is deleting a row they did not add. Bytes, not runes: the limit is Google's and it
     // counts the encoded URL.
-    if (new TextEncoder().encode(finalUrl).length > GOOGLE_ADS_MAX_FINAL_URL_BYTES) {
+    if (SITELINK_URL_ENCODER.encode(finalUrl).length > GOOGLE_ADS_MAX_FINAL_URL_BYTES) {
       continue;
     }
     // Keyed on the LABEL, not the destination, because that is the editor's guard

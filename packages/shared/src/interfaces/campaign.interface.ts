@@ -374,24 +374,35 @@ export interface CampaignBriefOutput {
    * Google callout extensions the brief generated, for the Implementation tab's editor to open on.
    *
    * A SEED, not a decision: the operator adds, edits and removes entries there exactly as before,
-   * and {@link CampaignImplementationDraft.googleCallouts} is what survives a tab leave. Absent
-   * and empty agree — both open an empty editor, which is what every brief did before generation
-   * existed — so an older brief restored from storage is not a special case here.
+   * and {@link CampaignImplementationDraft.googleCallouts} is what survives a tab leave.
    *
-   * Already capped to {@link GOOGLE_ADS_MAX_CALLOUTS} and trimmed to
-   * {@link GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES} by the generator, so the editor never opens holding
-   * a list it would refuse the operator for typing.
+   * Absent and empty do NOT agree, and the difference is load-bearing. `undefined` means the brief
+   * carries no list at all — a brief generated before this feature shipped, or restored from a row
+   * written then — and the Implementation tab leaves its editor untouched for it, so entries the
+   * operator typed by hand survive. `[]` is a list, and assigning it CLEARS that editor. The brief
+   * restore path is written to the same rule: it returns `undefined`, never `[]`, for a stored row
+   * that carries no list.
+   *
+   * Already capped to {@link GOOGLE_ADS_MAX_CALLOUTS} by the generator, which also DROPS an entry
+   * past {@link GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES} rather than shortening it — so the editor never
+   * opens holding a list it would refuse the operator for typing, and never holding a phrase cut
+   * mid-word that nobody wrote. (The restore path bounds instead, because there the alternative is
+   * losing an entry the operator typed.)
    */
   googleCallouts?: string[];
   /**
    * Google sitelink extensions the brief derived from the event page's own links.
    *
-   * Held on exactly the same terms as {@link googleCallouts}: a seed the operator edits, absent
-   * and empty agreeing.
+   * Held on exactly the same terms as {@link googleCallouts}: a seed the operator edits, with
+   * absent and empty meaning different things.
    *
-   * Every entry's `finalUrl` is a link the scraped page actually carries — the generator builds
-   * these from the URLs `verifyPageLink` already confirmed, never from model output — so a
-   * sitelink cannot point at a destination the model composed.
+   * Two producers, and they guarantee different things about `finalUrl`. The GENERATOR builds each
+   * one from a URL `verifyPageLink` already confirmed the scraped page carries, so a generated
+   * sitelink cannot point at a destination the model composed. The brief RESTORE path rebuilds the
+   * list from campaign-service's opaque `copy` blob, which carries no page provenance to check; it
+   * guarantees only what it can enforce on the value itself — an absolute http(s) URL within
+   * {@link GOOGLE_ADS_MAX_FINAL_URL_BYTES}, a bounded label, and no duplicate labels. Do not treat
+   * a value read off this field as page-verified.
    *
    * The URLs are UNTAGGED here, and deliberately. campaign-service tags every sitelink
    * destination itself (`googleads/assets.go` calls the same `buildTaggedFinalURL` the ad's own

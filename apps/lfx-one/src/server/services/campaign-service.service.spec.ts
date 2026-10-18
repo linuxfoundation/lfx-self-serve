@@ -1341,6 +1341,26 @@ describe('fromBriefResponse', () => {
     expect(fromBriefResponse(storedBrief({ copy: { googleSitelinks } }))?.googleSitelinks).toEqual([{ text: 'Venue & Travel', finalUrl: atCap }]);
   });
 
+  /**
+   * Trimmed with Go's space set, not JS's. `googleAdsTrimSpace` follows Go's `unicode.IsSpace`,
+   * which includes U+0085 (NEL) — a character JS `trim` leaves exactly where it is. The editor's
+   * `addGoogleSitelink` trims the destination that way, so a stored row carrying one is a row the
+   * editor itself would accept; trimmed the JS way the leftover U+0085 makes `new URL()` throw and
+   * the row is dropped on restore, which the operator reads as the app losing their sitelink.
+   */
+  it('trims a stored finalUrl with Go\u2019s space set, not JS\u2019s', () => {
+    // A stored destination that arrived with a NEL around it. Pinned with an assertion first, so
+    // this case cannot quietly stop testing anything: JS `trim` really does leave U+0085 in place,
+    // which is the whole reason the restore path cannot use it here.
+    const stored = '\u0085 https://example.test/agenda \u0085';
+    expect(stored.trim()).not.toBe('https://example.test/agenda');
+    const googleSitelinks = [{ text: 'View the Agenda', finalUrl: stored }];
+
+    expect(fromBriefResponse(storedBrief({ copy: { googleSitelinks } }))?.googleSitelinks).toEqual([
+      { text: 'View the Agenda', finalUrl: 'https://example.test/agenda' },
+    ]);
+  });
+
   // De-duplicated on the LABEL, which is the editor's guard and upstream's rule: Google Ads
   // refuses duplicate sitelink text and is indifferent to two labels sharing one URL.
   it('de-duplicates stored sitelinks on their label, not their destination', () => {
