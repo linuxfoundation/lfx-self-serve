@@ -1025,3 +1025,100 @@ export function foundationMessageNumberRows(content: FoundationMessageContent): 
 export function foundationMessageAudienceRows(content: FoundationMessageContent): FoundationMessageAudienceRow[] {
   return content.mh.aud.map(([name, lead]) => ({ name, lead }));
 }
+
+// ---------------------------------------------------------------------------
+// The framework as a Markdown document, for the agents that read it as one
+// ---------------------------------------------------------------------------
+
+/**
+ * The framework as one Markdown document: what a dependent agent that takes
+ * the Messaging Framework as a document reads (the ICP's
+ * `message_foundation_markdown`, a Markdown document by its contract). The
+ * stored revision stays the JSON; this is only how it is handed over. The
+ * sections, labels and order follow the framework view's tabs, every text is
+ * verbatim, and goal and segment ids resolve to their titles and names the
+ * way the view resolves them. The sources report is left out: it is about the
+ * run, not the framework.
+ */
+export function renderFoundationMessageMarkdown(content: FoundationMessageContent): string {
+  const lines: string[] = ['# Messaging framework', ''];
+  const field = (label: string, value: string): void => {
+    if (value.trim()) {
+      lines.push(`**${label}:** ${value}`, '');
+    }
+  };
+  const list = (heading: string, items: string[]): void => {
+    if (items.length > 0) {
+      lines.push(heading, '', ...items.map((item) => `- ${item}`), '');
+    }
+  };
+  const proof = (rows: FoundationMessageProofView[]): string[] => rows.map((row) => `${row.fact} (${row.source})`);
+
+  lines.push('## Framework', '');
+  field('Vision', content.mf.vision);
+  field('Mission', content.mf.mission);
+  field('Positioning', content.mf.positioning);
+  field('Tagline', content.mf.tagline);
+
+  lines.push('### Goal columns', '');
+  for (const goal of foundationMessageGoalViews(content)) {
+    lines.push(`#### ${goal.n}. ${goal.t}`, '');
+    field('Value proposition', goal.vp);
+    field('Key message', goal.key);
+    field('Sound bite', goal.bite);
+    field('For', goal.segmentNames.join(', '));
+    list('Proof:', proof(goal.proofRows));
+  }
+  field('Cross-cutting', content.mf.crosscut);
+  list('### Say', content.mf.say);
+  list(
+    '### Avoid',
+    foundationMessageAvoidRows(content).map((row) => `${row.avoid} → say instead: ${row.instead}`)
+  );
+  list('### Every piece of content answers', content.mf.anchor);
+  if (content.mf.notes.trim()) {
+    lines.push('### For the reviewer', '', content.mf.notes, '');
+  }
+
+  lines.push('## ICPs', '');
+  for (const icp of foundationMessageIcpViews(content)) {
+    lines.push(`### ${icp.name} (${icp.kind})`, '');
+    field('Who', icp.who);
+    field('Goals', icp.goalTitles.join(', '));
+    field('Need', icp.need);
+    field('Value', icp.value);
+    field('Lead', icp.lead);
+    list('Proof:', proof(icp.proofRows));
+    field('Call to action', icp.cta);
+    field('Channels', icp.channels.join(', '));
+    field('Objection', icp.objectionResponse ? `${icp.objectionText} Response: ${icp.objectionResponse}` : icp.objectionText);
+    list(
+      'Personas:',
+      icp.personaRows.map((row) => `${row.role}: ${row.cares}`)
+    );
+    field('Basis', icp.basis);
+  }
+
+  lines.push('## Message house', '');
+  field('Umbrella', content.mh.umbrella);
+  field('Line', content.mh.line);
+  for (const pillar of foundationMessagePillarViews(content)) {
+    lines.push(`### ${pillar.t}`, '');
+    if (pillar.m.trim()) {
+      lines.push(pillar.m, '');
+    }
+    list('Proof:', proof(pillar.proofRows));
+  }
+  field('Foundation', content.mh.found);
+  list(
+    '### Audiences',
+    foundationMessageAudienceRows(content).map((row) => `${row.name}: ${row.lead}`)
+  );
+
+  list(
+    '## Key numbers',
+    foundationMessageNumberRows(content).map((row) => `${row.number}: ${row.label}`)
+  );
+
+  return `${lines.join('\n').trimEnd()}\n`;
+}

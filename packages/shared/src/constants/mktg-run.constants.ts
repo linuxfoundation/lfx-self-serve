@@ -140,7 +140,9 @@ export const BRAND_KIT_INTAKE: MktgAgentIntake = {
  * fresh draft (`freshRunPerSubmission`): the form carries no prior version or
  * feedback (a redraft from comments and a check of a hand-edited version are
  * later work), and each result is stored as a new revision of the project's
- * foundation-message document, as the JSON content.
+ * foundation-message document, as the JSON content. A dependent agent that
+ * takes it as a document (the ICP's `message_foundation_markdown`) gets it
+ * rendered to Markdown (`renderFoundationMessageMarkdown`), never the JSON.
  */
 export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
   agentId: 'foundation-setup',

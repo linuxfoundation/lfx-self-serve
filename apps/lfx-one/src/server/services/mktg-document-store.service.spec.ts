@@ -260,7 +260,8 @@ describe('MktgDocumentStoreService', () => {
       expect(revision?.sidecar).toMatchObject({ report: { gaps: ['No member count.'] } });
 
       const latest = await service.readLatest(req, FRAMEWORK_SPEC, PROJECT);
-      expect(latest).toMatchObject({ documentMarkdown: JSON.stringify(generated.content), receipt: { s3_key: revisionKeys()[0], version: 1 } });
+      // The format travels with the bytes, so a dependent agent's read renders the JSON instead of attaching it as Markdown.
+      expect(latest).toMatchObject({ documentMarkdown: JSON.stringify(generated.content), format: 'json', receipt: { s3_key: revisionKeys()[0], version: 1 } });
     });
 
     it('records a JSON generation once per session and bytes, adds a revision per new generation, and restores an older one as JSON', async () => {
@@ -344,6 +345,7 @@ describe('MktgDocumentStoreService', () => {
 
       const latest = await service.readLatest(req, SPEC, PROJECT);
       expect(latest?.documentMarkdown).toBe('# First\n');
+      expect(latest?.format).toBe('markdown');
       expect(latest?.receipt.s3_key).toBe(`brand-kit/${PROJECT}/${sha('# First\n')}.md`);
     });
 

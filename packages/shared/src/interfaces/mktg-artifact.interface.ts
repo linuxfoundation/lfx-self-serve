@@ -7,6 +7,7 @@
 // one implementation instead of eight copies of it.
 
 import type { MKTG_ARTIFACT_INTAKE_MODES } from '../constants/mktg-artifact.constants';
+import type { MktgRevisionFormat } from './mktg-document-store.interface';
 import type { MktgRunPersistReceipt } from './mktg-run.interface';
 
 /**
@@ -123,8 +124,14 @@ export interface MktgArtifactPersistReceipt extends MktgRunPersistReceipt {
  * partition (see {@link MktgRunPersistReceipt.version}).
  */
 export interface MktgArtifactStoredResponse {
-  /** The persisted document (Markdown), integrity-checked against the content-addressed key. */
+  /**
+   * The persisted content, integrity-checked against the content-addressed
+   * key: the Markdown document, or — when {@link format} is `json` — the JSON
+   * text of the asset (the Messaging Framework), byte for byte as stored.
+   */
   documentMarkdown: string;
+  /** What {@link documentMarkdown} holds; absent means Markdown (every pre-revision object). */
+  format?: MktgRevisionFormat;
   /**
    * Receipt metadata of the returned object — the same fields minted by the
    * write path. `version` / `intake_mode` are read back from the object's

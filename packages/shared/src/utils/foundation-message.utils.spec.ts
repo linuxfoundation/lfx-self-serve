@@ -22,6 +22,7 @@ import {
   readFoundationMessageQuestions,
   renderFoundationMessageAnswersText,
   renderFoundationMessageFormText,
+  renderFoundationMessageMarkdown,
   toFoundationMessageFormDocument,
   validateFoundationMessageAnswers,
   validateFoundationMessageComments,
@@ -745,5 +746,93 @@ describe('the stored revision and the view models', () => {
     // Padded ids (a hand-edited version read on a check) still resolve.
     content.mf.goals[0].icps = [' vendors '];
     expect(foundationMessageGoalViews(content)[0].segmentNames).toEqual(['Vendors']);
+  });
+});
+
+describe('renderFoundationMessageMarkdown', () => {
+  it('renders the framework as a Markdown document in the view’s order, every text verbatim, never as JSON', () => {
+    const markdown = renderFoundationMessageMarkdown(buildContent());
+
+    expect(markdown.startsWith('# Messaging framework\n')).toBe(true);
+    expect(markdown.endsWith('\n')).toBe(true);
+    expect(markdown).not.toContain('{');
+    const order = [
+      '## Framework',
+      '### Goal columns',
+      '### Say',
+      '### Avoid',
+      '### Every piece of content answers',
+      '## ICPs',
+      '## Message house',
+      '## Key numbers',
+    ];
+    const positions = order.map((heading) => markdown.indexOf(`\n${heading}\n`));
+    expect(positions.every((position) => position > 0)).toBe(true);
+    expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+
+    expect(markdown).toContain('**Positioning:** For platform teams, Example Search is the open search engine.');
+    expect(markdown).toContain('**Tagline:** Search, open.');
+    expect(markdown).toContain('#### 1. Adoption');
+    expect(markdown).toContain('**Value proposition:** Adoption value proposition, benefit first.');
+    expect(markdown).toContain('**Sound bite:** Adoption in open source');
+    expect(markdown).toContain('- 1,200 members (Website)');
+    expect(markdown).toContain('- best-in-class → say instead: proven in production');
+    expect(markdown).toContain(`- ${FOUNDATION_MESSAGE_ANCHOR_QUESTIONS[0]}`);
+    expect(markdown).toContain('### For the reviewer\n\nCheck the member count.');
+    expect(markdown).toContain('**Umbrella:** Open search for everyone.');
+    expect(markdown).toContain('### Proven\n\nProven message.');
+    expect(markdown).toContain('- Vendors: Vendors lead message.');
+    expect(markdown).toContain('- 40: releases a year');
+  });
+
+  it('resolves goal and segment ids to their titles and names, and renders a segment in full', () => {
+    const markdown = renderFoundationMessageMarkdown(buildContent());
+
+    expect(markdown).toContain('**For:** Vendors, End users');
+    expect(markdown).toContain(
+      [
+        '### End users (Organization)',
+        '',
+        '**Who:** End users, described.',
+        '',
+        '**Goals:** Adoption, Community',
+        '',
+        '**Need:** A need.',
+        '',
+        '**Value:** A value.',
+        '',
+        '**Lead:** End users lead message.',
+        '',
+        'Proof:',
+        '',
+        '- A fact (Website)',
+        '',
+        '**Call to action:** Join the project.',
+        '',
+        '**Channels:** Events, Newsletter',
+        '',
+        '**Objection:** Too early? Response: Adopters are in production.',
+        '',
+        'Personas:',
+        '',
+        '- CTO: risk',
+        '',
+        '**Basis:** Website',
+      ].join('\n')
+    );
+  });
+
+  it('leaves out what the framework leaves empty: no blank labels, no empty lists, an unanswered objection alone', () => {
+    const content = buildContent();
+    content.mf.notes = '';
+    content.mf.avoid = [];
+    content.icp[0].objection = ['Too early?', null];
+
+    const markdown = renderFoundationMessageMarkdown(content);
+
+    expect(markdown).not.toContain('### For the reviewer');
+    expect(markdown).not.toContain('### Avoid');
+    expect(markdown).toContain('**Objection:** Too early?\n');
+    expect(markdown).not.toMatch(/\*\*[^*]+:\*\* *\n/);
   });
 });

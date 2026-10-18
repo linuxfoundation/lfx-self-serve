@@ -363,7 +363,11 @@ export interface MktgDependencyDocument {
   source: 'server' | 'browser';
   /** Latest stored draft version. */
   version: number;
-  /** The stored document (Markdown). */
+  /**
+   * The stored document as a dependent agent reads it: always Markdown. A
+   * structured asset (the Messaging Framework's JSON) is rendered to
+   * Markdown when it is resolved, never handed over as JSON text.
+   */
   document: string;
 }
 

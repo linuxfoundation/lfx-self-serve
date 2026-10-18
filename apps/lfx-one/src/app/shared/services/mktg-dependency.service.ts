@@ -3,8 +3,9 @@
 
 import { inject, Injectable } from '@angular/core';
 import { MKTG_AGENT_INTAKES } from '@lfx-one/shared/constants';
-import { MktgDependencyDocument } from '@lfx-one/shared/interfaces';
-import { catchError, forkJoin, map, Observable, of, Subject } from 'rxjs';
+import { MktgDependencyDocument, MktgRevisionFormat } from '@lfx-one/shared/interfaces';
+import { readFoundationMessageContent, renderFoundationMessageMarkdown } from '@lfx-one/shared/utils';
+import { catchError, forkJoin, Observable, of, Subject, switchMap } from 'rxjs';
 
 import { MktgAgentRunService } from './mktg-agent-run.service';
 import { MktgArtifactService } from './mktg-artifact.service';
@@ -76,14 +77,11 @@ export class MktgDependencyService {
       return browserFallback$;
     }
     return this.artifactService.getStored(storedEndpoint, projectUid).pipe(
-      map(
-        (stored): MktgDependencyDocument => ({
-          agentId,
-          source: 'server',
-          version: stored.receipt.version,
-          document: stored.documentMarkdown,
-        })
-      ),
+      switchMap((stored): Observable<MktgDependencyDocument | null> => {
+        const document = this.markdownOf(stored.documentMarkdown, stored.format);
+        // Stored JSON that is not a framework has no Markdown reading: the browser copy, like any other miss.
+        return document === null ? browserFallback$ : of({ agentId, source: 'server', version: stored.receipt.version, document });
+      }),
       catchError(() => browserFallback$)
     );
   }
@@ -110,16 +108,33 @@ export class MktgDependencyService {
    * This browser's stored run for the agent, reduced to its latest version's
    * document. An agent that writes an asset (the Messaging Framework) stores
    * an empty document and the asset beside it, so its document is the
-   * asset content's JSON text — the same bytes the server's stored read
-   * returns for it.
+   * asset content read exactly as the server's stored JSON is read
+   * ({@link markdownOf}): shape-checked, then rendered to Markdown. Browser
+   * storage is not re-validated on load, so the check is what keeps a stale
+   * or hand-edited asset from reaching the renderer.
    */
   private loadBrowserDocument(projectUid: string, agentId: string): MktgDependencyDocument | null {
     const run = this.runService.loadRun(projectUid, agentId);
     const latest = run?.versions.at(-1);
-    const document = latest?.document || (latest?.asset ? JSON.stringify(latest.asset.content) : '');
+    const document = latest?.document || (latest?.asset ? (this.markdownOf(JSON.stringify(latest.asset.content), 'json') ?? '') : '');
     if (!latest || !document) {
       return null;
     }
     return { agentId, source: 'browser', version: latest.version, document };
+  }
+
+  /**
+   * A stored document as a dependent agent reads it. Every consumer takes a
+   * Markdown document (the ICP's `message_foundation_markdown` among them),
+   * so a JSON revision — the Messaging Framework's — is rendered to Markdown
+   * rather than handed over as JSON text. Null for JSON that is not a
+   * framework, which has no Markdown reading.
+   */
+  private markdownOf(text: string, format: MktgRevisionFormat | undefined): string | null {
+    if (format !== 'json') {
+      return text;
+    }
+    const content = readFoundationMessageContent(text);
+    return content ? renderFoundationMessageMarkdown(content) : null;
   }
 }

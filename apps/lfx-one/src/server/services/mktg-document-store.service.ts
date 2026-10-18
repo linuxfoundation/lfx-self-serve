@@ -402,6 +402,7 @@ export class MktgDocumentStoreService {
           // JSON revision is stored nowhere else, so its own key is the receipt's.
           return {
             documentMarkdown: bundle.markdown,
+            format: bundle.format ?? 'markdown',
             receipt: {
               s3_key: bundle.format === 'json' ? revision.key : buildMktgArtifactObjectKey(spec, project, bundle.contentSha256),
               content_sha256: bundle.contentSha256,
