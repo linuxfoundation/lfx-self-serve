@@ -130,6 +130,20 @@ list pagination takes a fresh snapshot, so counts can legitimately differ at a d
 Existing cursor recovery handles shrinking sets. Refresh/re-entry reloads totals and rows,
 but cannot promise immediate convergence of the search index after mutations.
 
+### Personal vote-feed completeness
+
+`GET /api/votes/my-votes` returns `{ votes, complete }`. Invitation enumeration retains
+successfully fetched pages when a later page exhausts retries, but marks the feed incomplete.
+Failed or empty required vote-detail reads also mark it incomplete while keeping other usable
+votes. A first-page failure still fails the request. Optional project metadata does not prove
+invitation or vote-detail completeness.
+
+The Me-lens status tabs show unavailable counts unless `complete` is explicitly true; a
+partial feed with no usable rows is not a confirmed zero. Filtering or switching status tabs
+does not change completeness. Refresh fetches a new feed and restores counts on complete success.
+The frontend also accepts legacy array responses, retaining their rows with unknown completeness
+and withholding exact tab totals.
+
 ## Backend: Complete Fetch (All Pages)
 
 When the server needs all records (e.g., meeting registrants for invitation checks), use the `fetchAllQueryResources` helper:

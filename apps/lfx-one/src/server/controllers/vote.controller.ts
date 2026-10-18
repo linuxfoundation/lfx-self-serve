@@ -129,7 +129,8 @@ export class VoteController {
       const myVotes = await this.voteService.getMyVotes(req);
 
       logger.success(req, 'get_my_votes', startTime, {
-        vote_count: myVotes.length,
+        vote_count: myVotes.votes.length,
+        complete: myVotes.complete,
       });
 
       res.json(myVotes);

@@ -265,6 +265,16 @@ export interface Vote {
   response_status?: VoteResponseStatus;
 }
 
+/** Personal feed retains usable votes even when enumeration or required detail reads are incomplete. */
+export interface MyVotesResponse {
+  votes: Vote[];
+  /** Only true when all invitation pages and referenced vote details loaded successfully. */
+  complete: boolean;
+}
+
+/** Legacy arrays have unknown completeness and must not be presented as exact totals. */
+export type MyVotesApiResponse = MyVotesResponse | Vote[];
+
 /** Optional personal-feed filter shared by the summary and client-side table. */
 export type MyVotesQuickFilter = 'closing-soon' | 'needs-vote';
 

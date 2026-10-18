@@ -1538,7 +1538,8 @@ describe('VoteService', () => {
       getProjectsByIds.mockResolvedValue(new Map([[PROJECT_UID, project]]));
       computeIsFoundation.mockReturnValue(true);
 
-      const votes = await service.getMyVotes(req);
+      const { votes, complete } = await service.getMyVotes(req);
+      expect(complete).toBe(true);
 
       expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', `/votes/${MY_VOTE_UID}`, 'GET');
       expect(getProjectsByIds).toHaveBeenCalledWith(req, [PROJECT_UID]);
@@ -1591,7 +1592,8 @@ describe('VoteService', () => {
       proxyRequest.mockImplementation((_req: unknown, _service: string, path: string) => Promise.resolve(details[path.replace('/votes/', '')]));
       getProjectsByIds.mockResolvedValue(new Map());
 
-      const votes = await service.getMyVotes(req);
+      const { votes, complete } = await service.getMyVotes(req);
+      expect(complete).toBe(true);
 
       expect(votes.map((v) => v.uid)).toEqual([UID_A, UID_B, UID_C]);
     });
@@ -1605,7 +1607,8 @@ describe('VoteService', () => {
       proxyRequest.mockResolvedValue(detailVote);
       getProjectsByIds.mockResolvedValue(new Map());
 
-      const votes = await service.getMyVotes(req);
+      const { votes, complete } = await service.getMyVotes(req);
+      expect(complete).toBe(true);
 
       expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/votes/poll-v1-9', 'GET');
       expect(votes[0]).toMatchObject({ response_status: VoteResponseStatus.RESPONDED });
@@ -1615,13 +1618,65 @@ describe('VoteService', () => {
       getUsernameFromAuth.mockResolvedValue(null);
       getEffectiveEmail.mockReturnValue(null);
 
-      const votes = await service.getMyVotes(req);
+      const { votes, complete } = await service.getMyVotes(req);
+      expect(complete).toBe(true);
 
       expect(votes).toEqual([]);
       // The helper short-circuits before the paginator, so neither the vote_response query nor
       // any per-vote detail fetch may fire.
       expect(fetchAllQueryResources).not.toHaveBeenCalled();
       expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    it.each([false, true])('preserves available rows and marks an exhausted later-page scan incomplete (empty first page: %s)', async (empty) => {
+      const actual = await vi.importActual<typeof import('../helpers/query-service.helper')>('../helpers/query-service.helper');
+      fetchAllQueryResources.mockImplementationOnce(actual.fetchAllQueryResources);
+      const failure = Object.assign(new Error('Temporary query failure'), { statusCode: 503 });
+      proxyRequest.mockImplementation((_req: Request, _service: string, path: string, _method: string, params?: Record<string, unknown>) => {
+        if (path !== '/query/resources') return Promise.resolve(detailVote);
+        if (params?.['page_token']) return Promise.reject(failure);
+        return Promise.resolve({
+          resources: empty ? [] : [{ data: { vote_uid: MY_VOTE_UID, username: 'spec-user' } }],
+          page_token: 'cursor-2',
+        });
+      });
+      getProjectsByIds.mockResolvedValue(new Map());
+
+      const result = await service.getMyVotes(req);
+
+      expect(result.complete).toBe(false);
+      expect(result.votes.map((vote) => vote.uid)).toEqual(empty ? [] : [MY_VOTE_UID]);
+      expect(proxyRequest.mock.calls.filter((call) => call[2] === '/query/resources')).toHaveLength(4);
+
+      fetchAllQueryResources.mockImplementationOnce(actual.fetchAllQueryResources);
+      proxyRequest.mockResolvedValue({ resources: [] });
+      await expect(service.getMyVotes(req)).resolves.toEqual({ votes: [], complete: true });
+    });
+
+    it.each([503, 404, null])('keeps successful details but marks skipped detail reads incomplete: %s', async (statusCode) => {
+      fetchAllQueryResources.mockResolvedValue([
+        { vote_uid: MY_VOTE_UID, username: 'spec-user' },
+        { vote_uid: 'unavailable-vote', username: 'spec-user' },
+      ]);
+      proxyRequest.mockImplementation((_req: Request, _service: string, path: string) => {
+        if (path === `/votes/${MY_VOTE_UID}`) return Promise.resolve(detailVote);
+        if (statusCode === null) return Promise.resolve(null);
+        return Promise.reject(Object.assign(new Error('Detail unavailable'), { statusCode }));
+      });
+      getProjectsByIds.mockResolvedValue(new Map());
+
+      const result = await service.getMyVotes(req);
+
+      expect(result.complete).toBe(false);
+      expect(result.votes).toEqual([expect.objectContaining({ uid: MY_VOTE_UID })]);
+    });
+
+    it('does not report complete empty success when every detail read fails', async () => {
+      fetchAllQueryResources.mockResolvedValue([{ vote_uid: MY_VOTE_UID, username: 'spec-user' }]);
+      proxyRequest.mockRejectedValue(Object.assign(new Error('Detail unavailable'), { statusCode: 503 }));
+      getProjectsByIds.mockResolvedValue(new Map());
+
+      await expect(service.getMyVotes(req)).resolves.toEqual({ votes: [], complete: false });
     });
   });
 

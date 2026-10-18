@@ -105,6 +105,7 @@ export class VotesDashboardComponent {
   protected readonly myVotesStatusTab = signal<string>('all');
   protected readonly myVotesNowMs = signal(Date.now());
   protected readonly myVotesError = signal(false);
+  protected readonly myVotesComplete = signal(false);
   protected readonly managementClosingOnly = signal(false);
   protected readonly managementSummaryLoading = signal(true);
   protected readonly managementSummaryError = signal(false);
@@ -659,6 +660,7 @@ export class VotesDashboardComponent {
     return toSignal(
       combineLatest([lens$, this.refresh$]).pipe(
         switchMap(([lens]) => {
+          this.myVotesComplete.set(false);
           if (lens !== 'me') {
             this.myVotesLoading.set(false);
             return of([] as Vote[]);
@@ -666,10 +668,11 @@ export class VotesDashboardComponent {
           this.myVotesLoading.set(true);
           this.myVotesError.set(false);
           return this.voteService.getMyVotes().pipe(
+            tap((response) => this.myVotesComplete.set(response.complete === true)),
             // Optimistic merge (GH-2730), same overlay as the project lens: just-opened votes'
             // known-active status over stale index rows. Unconditional here — the Me lens has no
             // server-side status filter (its filtering is client-side over these rows).
-            map((votes) => this.voteService.mergeRecentlyOpenedVotes(votes)),
+            map((response) => this.voteService.mergeRecentlyOpenedVotes(response.votes)),
             tap(() => this.myVotesNowMs.set(Date.now())),
             catchError(() => {
               this.myVotesError.set(true);
@@ -724,7 +727,7 @@ export class VotesDashboardComponent {
   /** Personal status-tab counts over the same scope as the list; quick filters and the status tab never narrow them. */
   private initMyVotesStatusCounts(): Signal<VoteStatusCounts | null> {
     return computed(() => {
-      if (this.myVotesLoading() || this.myVotesError()) return null;
+      if (this.myVotesLoading() || this.myVotesError() || !this.myVotesComplete()) return null;
       // Mirrors the table's client-side name search (votes-table `initDisplayedVotes`) so each count equals its tab's rows.
       const term = this.filters().search.toLowerCase();
       const votes = this.myVotesSummaryScope();

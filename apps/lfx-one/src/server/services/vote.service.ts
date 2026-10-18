@@ -10,6 +10,7 @@ import {
   IndexedVote,
   IndexedVoteResponse,
   MyVoteResponse,
+  MyVotesResponse,
   PaginatedResponse,
   QueryServiceCountResponse,
   QueryServiceResponse,
@@ -541,9 +542,14 @@ export class VoteService {
    * Fetches votes the current user has been invited to.
    * Queries vote_response records by user_email and username using filters_or.
    */
-  public async getMyVotes(req: Request): Promise<Vote[]> {
-    // Single identity-resolved vote_response row source (GH #2985) — same query Pending Actions reads.
-    const responses = await fetchCurrentUserVoteResponses(req, this.microserviceProxy);
+  public async getMyVotes(req: Request): Promise<MyVotesResponse> {
+    let complete = true;
+    // Keep usable rows after a later-page failure, but never present them as exact counts.
+    const responses = await fetchCurrentUserVoteResponses(req, this.microserviceProxy, {
+      onPartial: () => {
+        complete = false;
+      },
+    });
 
     // Parent-vote keying mirrors fetchPendingVotes via the shared getParentVoteId rule (GH #2985):
     // `vote_uid` with its v1 alias `poll_id` as fallback. Without the fallback a poll_id-only
@@ -558,7 +564,7 @@ export class VoteService {
     const voteUids = [...new Set(responses.map(getParentVoteId).filter((uid): uid is string => !!uid))];
 
     if (voteUids.length === 0) {
-      return [];
+      return { votes: [], complete };
     }
 
     logger.debug(req, 'get_my_votes', 'Found user vote responses', {
@@ -572,13 +578,17 @@ export class VoteService {
       voteUids.map(async (uid): Promise<Vote | null> => {
         try {
           const vote = await this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', `/votes/${this.encodeVoteUid(uid)}`, 'GET');
-          if (!vote) return vote;
+          if (!vote) {
+            complete = false;
+            return null;
+          }
           const decorated: Vote = {
             ...vote,
             response_status: respondedVoteUids.has(uid) ? VoteResponseStatus.RESPONDED : VoteResponseStatus.AWAITING_RESPONSE,
           };
           return decorated;
         } catch (error) {
+          complete = false;
           logger.warning(req, 'get_my_votes', 'Failed to fetch vote details, skipping', {
             vote_uid: uid,
             error: error instanceof Error ? error.message : 'Unknown error',
@@ -592,7 +602,7 @@ export class VoteService {
     // comparator the project/committee list reads apply, so Me lens agrees with every other surface.
     const sorted = votes.filter((v): v is Vote => v !== null).sort(compareVotesByRecency);
 
-    return this.enrichWithProjectMetadata(req, sorted);
+    return { votes: await this.enrichWithProjectMetadata(req, sorted), complete };
   }
 
   /** POST /vote_responses requires the pre-allocated invitation row's UID — a fresh UUID returns 404 upstream. */

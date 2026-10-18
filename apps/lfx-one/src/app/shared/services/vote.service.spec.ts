@@ -139,6 +139,27 @@ describe('VoteService', () => {
     expect(next).toHaveBeenCalledWith(result);
   });
 
+  it.each([true, false])('preserves personal-feed rows and completeness: %s', (complete) => {
+    const result = { votes: [buildVote()], complete };
+    http.get.mockReturnValue(of(result));
+    const next = vi.fn();
+
+    service.getMyVotes().subscribe(next);
+
+    expect(http.get).toHaveBeenCalledWith('/api/votes/my-votes');
+    expect(next).toHaveBeenCalledExactlyOnceWith(result);
+  });
+
+  it.each([false, true])('keeps legacy array rows without treating their totals as complete (empty: %s)', (empty) => {
+    const votes = empty ? [] : [buildVote()];
+    http.get.mockReturnValue(of(votes));
+    const next = vi.fn();
+
+    service.getMyVotes().subscribe(next);
+
+    expect(next).toHaveBeenCalledExactlyOnceWith({ votes, complete: false });
+  });
+
   it('propagates personal-feed HTTP failures instead of reporting confirmed empty success', () => {
     const failure = new Error('Personal feed unavailable');
     http.get.mockReturnValue(throwError(() => failure));

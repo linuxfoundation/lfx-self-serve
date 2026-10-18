@@ -4,12 +4,18 @@
 import type { Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getVotes, getVotesSummary, getVoteStatusCounts } = vi.hoisted(() => ({ getVotes: vi.fn(), getVotesSummary: vi.fn(), getVoteStatusCounts: vi.fn() }));
+const { getVotes, getVotesSummary, getVoteStatusCounts, getMyVotes } = vi.hoisted(() => ({
+  getVotes: vi.fn(),
+  getVotesSummary: vi.fn(),
+  getVoteStatusCounts: vi.fn(),
+  getMyVotes: vi.fn(),
+}));
 vi.mock('../services/vote.service', () => ({
   VoteService: class {
     public getVotes = getVotes;
     public getVotesSummary = getVotesSummary;
     public getVoteStatusCounts = getVoteStatusCounts;
+    public getMyVotes = getMyVotes;
   },
 }));
 vi.mock('../services/logger.service', () => ({ logger: { startOperation: vi.fn(), success: vi.fn(), sanitize: vi.fn((value: unknown) => value) } }));
@@ -25,6 +31,28 @@ describe('VoteController management reads', () => {
   const next = vi.fn();
   const request = (query: Record<string, unknown>) => ({ query }) as unknown as Request;
   beforeEach(() => vi.resetAllMocks());
+
+  it.each([true, false])('preserves personal-feed completeness in the HTTP response: %s', async (complete) => {
+    const result = { votes: [{ uid: 'synthetic-vote' }], complete };
+    getMyVotes.mockResolvedValue(result);
+    const req = request({});
+
+    await controller.getMyVotes(req, res, next);
+
+    expect(getMyVotes).toHaveBeenCalledWith(req);
+    expect(json).toHaveBeenCalledWith(result);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('propagates a first-page personal-feed failure instead of sending a confirmed empty response', async () => {
+    const error = new Error('Personal feed unavailable');
+    getMyVotes.mockRejectedValue(error);
+
+    await controller.getMyVotes(request({}), res, next);
+
+    expect(next).toHaveBeenCalledWith(error);
+    expect(json).not.toHaveBeenCalled();
+  });
 
   it.each([
     {},

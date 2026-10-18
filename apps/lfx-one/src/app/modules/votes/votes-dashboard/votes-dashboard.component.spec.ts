@@ -7,7 +7,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import { PollStatus, VoteResponseStatus } from '@lfx-one/shared';
-import { Lens, ProjectContext, Vote, VoteListResponse, VotePermalinkTarget, VoteSummary } from '@lfx-one/shared/interfaces';
+import { Lens, MyVotesResponse, ProjectContext, Vote, VoteListResponse, VotePermalinkTarget, VoteSummary } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
@@ -76,7 +76,7 @@ describe('VotesDashboardComponent personal summary', () => {
     vi.setSystemTime(NOW);
     activeLens = signal<Lens>('me');
     activeContext = signal<ProjectContext | null>(null);
-    getMyVotes = vi.fn(() => of(feed));
+    getMyVotes = vi.fn(() => of({ votes: feed, complete: true }));
     TestBed.configureTestingModule({
       imports: [VotesDashboardComponent],
       providers: [
@@ -476,7 +476,9 @@ describe('VotesDashboardComponent personal summary', () => {
     expect(dashboard['myVotesQuickFilter']()).toBeNull();
     expect(rows()).toEqual(['responded', 'soon', 'later']);
     await selectSummary('needs-vote');
-    getMyVotes.mockReturnValueOnce(of(feed.map((item) => (item.uid === 'soon' ? { ...item, response_status: VoteResponseStatus.RESPONDED } : item))));
+    getMyVotes.mockReturnValueOnce(
+      of({ votes: feed.map((item) => (item.uid === 'soon' ? { ...item, response_status: VoteResponseStatus.RESPONDED } : item)), complete: true })
+    );
     dashboard['onVoteSubmitted']();
     await settle();
     expect(cards()[1].value).toBe(1);
@@ -494,7 +496,7 @@ describe('VotesDashboardComponent personal summary', () => {
   it.each([false, true])('keeps controls through loading/failure and retries to confirmed %s-empty success', async (empty) => {
     table.searchForm.patchValue({ search: 'Ballot', group: 'Alpha Group' });
     await settle();
-    const request = new Subject<Vote[]>();
+    const request = new Subject<MyVotesResponse>();
     getMyVotes.mockReturnValueOnce(request);
     dashboard['refreshVotes']();
     await settle();
@@ -510,7 +512,7 @@ describe('VotesDashboardComponent personal summary', () => {
     expect(table.searchForm.controls.group.value).toBe('Alpha Group');
     expect(table.searchForm.controls.search.value).toBe('Ballot');
     expect(fixture.nativeElement.textContent).not.toContain("Votes you've been invited to participate in will appear here.");
-    getMyVotes.mockReturnValueOnce(of(empty ? [] : feed));
+    getMyVotes.mockReturnValueOnce(of({ votes: empty ? [] : feed, complete: true }));
     element('votes-retry')!.querySelector('button')!.click();
     await settle();
     expect(element('votes-load-error')).toBeNull();
@@ -618,7 +620,7 @@ describe('VotesDashboardComponent personal summary', () => {
   });
 
   it('withholds personal tab counts while loading or after a failure, then shows confirmed zeros', async () => {
-    const request = new Subject<Vote[]>();
+    const request = new Subject<MyVotesResponse>();
     getMyVotes.mockReturnValueOnce(request);
     dashboard['refreshVotes']();
     await settle();
@@ -626,11 +628,40 @@ describe('VotesDashboardComponent personal summary', () => {
     request.error(new HttpErrorResponse({ status: 503 }));
     await settle();
     expect(dashboard['tabStatusCounts']()).toBeNull();
-    getMyVotes.mockReturnValueOnce(of([]));
+    getMyVotes.mockReturnValueOnce(of({ votes: [], complete: true }));
     dashboard['refreshVotes']();
     await settle();
     expect(dashboard['tabStatusCounts']()).toEqual({ all: 0, active: 0, disabled: 0, ended: 0 });
     expect(tabLabels()).toEqual(['All (0)', 'Active (0)', 'Ended (0)']);
+  });
+
+  it.each([false, true])('keeps partial personal rows usable without reporting exact tab totals (empty: %s)', async (empty) => {
+    const votes = empty ? [] : [feed[0]];
+    getMyVotes.mockReturnValueOnce(of({ votes, complete: false }));
+    dashboard['refreshVotes']();
+    await settle();
+
+    expect(dashboard['myVotesError']()).toBe(false);
+    expect(dashboard['tabStatusCounts']()).toBeNull();
+    expect(tabLabels()).toEqual(['All (–)', 'Active (–)', 'Ended (–)']);
+    expect(rows()).toEqual(votes.map((vote) => vote.uid));
+    expect(element('votes-load-error')).toBeNull();
+    const tabs: NodeListOf<HTMLElement> = fixture.nativeElement.querySelectorAll('[data-testid="votes-status-tabs"] [data-testid^="filter-pill-"]');
+    expect(Array.from(tabs, (tab) => tab.getAttribute('aria-label'))).toEqual([
+      'All, count unavailable',
+      'Active, count unavailable',
+      'Ended, count unavailable',
+    ]);
+
+    // Filtering the usable rows cannot turn an unknown scope into a confirmed zero.
+    table.searchForm.patchValue({ search: 'no matching vote' });
+    await settle();
+    expect(dashboard['tabStatusCounts']()).toBeNull();
+    table.searchForm.patchValue({ search: '' });
+    dashboard['refreshVotes']();
+    await settle();
+    expect(dashboard['tabStatusCounts']()).toEqual({ all: 7, active: 6, disabled: 0, ended: 1 });
+    expect(tabLabels()).toEqual(['All (7)', 'Active (6)', 'Ended (1)']);
   });
 
   describe('permalink target', () => {

@@ -19,6 +19,8 @@ import {
   EnableVoteRequest,
   EnableVoteResponse,
   MyVoteResponse,
+  MyVotesApiResponse,
+  MyVotesResponse,
   PaginatedResponse,
   QueryServiceCountResponse,
   UpdateVoteRequest,
@@ -53,8 +55,10 @@ export class VoteService {
     error: unknown;
   } | null = null;
 
-  public getMyVotes(): Observable<Vote[]> {
-    return this.http.get<Vote[]>('/api/votes/my-votes').pipe(
+  public getMyVotes(): Observable<MyVotesResponse> {
+    return this.http.get<MyVotesApiResponse>('/api/votes/my-votes').pipe(
+      // A legacy server's array carries no completeness proof; keep its rows but withhold totals.
+      map((response) => (Array.isArray(response) ? { votes: response, complete: false } : response)),
       catchError((error: unknown) => {
         console.error('Failed to load personal votes', {
           status: error instanceof HttpErrorResponse ? error.status : undefined,
