@@ -394,6 +394,8 @@ export * from './brand-kit.interface';
 
 // Message Foundation generation contract interfaces
 export * from './foundation-message.interface';
+// Marketing OS asset print documents (Download PDF)
+export * from './mktg-print.interface';
 export * from './icp.interface';
 
 // Social Listening interfaces (LFXV2-3002)

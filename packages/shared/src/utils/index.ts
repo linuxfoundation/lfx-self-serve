@@ -88,6 +88,7 @@ export * from './mktg-artifact.utils';
 export * from './mktg-document-store.utils';
 export * from './mktg-document.utils';
 export * from './mktg-envelope.utils';
+export * from './mktg-print.utils';
 export * from './mktg-session-event.utils';
 export * from './mktg-run-activity.utils';
 export * from './newsletter.utils';

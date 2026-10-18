@@ -1,0 +1,33 @@
+/* Copyright The Linux Foundation and each contributor to LFX. */
+/* SPDX-License-Identifier: MIT */
+
+/* Only what Tailwind cannot express is here: the brand's custom properties
+   (the colours and the typeface every page reads — the project's kit, or the
+   LF look), and colour that prints as it shows. The layout is Tailwind
+   utilities in the template; styles.scss pins the sheet and shows this
+   document alone while it prints. */
+
+:host {
+  display: block;
+}
+
+.lfx-framework-print {
+  --mfp-dark: black;
+  --mfp-accent: black;
+  --mfp-tint: white;
+  --mfp-on-dark: white;
+  --mfp-font: sans-serif;
+
+  /* The cover's dark ground, the tinted cards and the accent rules are the brand: they print, whatever the dialog's "background graphics" says. */
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+/* styles.scss sets Inter on headings, paragraphs and controls in the base
+   layer, which beats inheritance: inside the print they inherit the brand's
+   typeface from the document instead, as in the brand kit book. */
+@layer tailwind-base {
+  .lfx-framework-print :is(h1, h2, h3, h4, h5, h6, p, label, button, input) {
+    font-family: inherit;
+  }
+}

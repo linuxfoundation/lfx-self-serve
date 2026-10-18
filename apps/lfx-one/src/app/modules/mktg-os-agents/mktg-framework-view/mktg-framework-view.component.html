@@ -22,6 +22,29 @@
         {{ stateLabel() }}
       </span>
     }
+    @if (ready()) {
+      <div class="grow"></div>
+      <!-- What you can do with the framework, as on the Brand Kit's web view: print it as one document, or (a later item, inert until it ships) export it to Google Slides. -->
+      <div class="flex flex-wrap items-center gap-2" data-testid="mktg-framework-view-actions">
+        <lfx-button
+          label="Download PDF"
+          icon="fa-light fa-file-pdf"
+          [outlined]="true"
+          size="small"
+          ariaLabel="Download the messaging framework as a PDF (prints it as one document)"
+          data-testid="mktg-framework-view-download-pdf"
+          (onClick)="onDownloadPdf()" />
+        <lfx-button
+          label="Export to Google Slides"
+          icon="fa-light fa-presentation-screen"
+          [outlined]="true"
+          size="small"
+          [disabled]="true"
+          badge="coming soon"
+          ariaLabel="Export to Google Slides — coming soon"
+          data-testid="mktg-framework-view-export-slides" />
+      </div>
+    }
   </div>
 
   <!-- Tabs: one per part of the bundle; disabled until the framework exists -->
@@ -398,6 +421,13 @@
           </div>
         </div>
       }
+    }
+
+    <!-- The print rendering: never shown on screen; Download PDF prints it alone (styles.scss). -->
+    @if (printView(); as print) {
+      <div [class]="printOnlyClass" data-testid="mktg-framework-view-print">
+        <lfx-mktg-framework-print [view]="print" />
+      </div>
     }
   }
 </section>

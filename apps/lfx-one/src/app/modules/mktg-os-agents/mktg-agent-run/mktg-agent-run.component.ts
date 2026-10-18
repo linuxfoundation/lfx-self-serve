@@ -339,6 +339,8 @@ export class MktgAgentRunComponent {
   protected readonly assetChangeNote = computed(
     () => `To change the ${(this.intake?.documentName ?? 'document').toLowerCase()}, edit the inputs and generate again; the result is a new revision.`
   );
+  /** The project's stored Brand Kit, which the framework's print (Download PDF) is set in; null for the LF look. */
+  protected readonly printKit: Signal<BrandKitRevision | null> = this.initPrintKit();
   /** Where the asset view stands: generating while the feed shows, questions while the stepper does, ready on the result. */
   protected readonly frameworkState: Signal<MktgFrameworkViewState> = computed(() => {
     const phase = this.phase();
@@ -820,6 +822,25 @@ export class MktgAgentRunComponent {
   }
 
   // === Private initializers ===
+  /**
+   * The project's Brand Kit, read once there is a framework on the asset
+   * view to print — never during SSR, and never for an agent without an
+   * asset view. Any failed read is the LF look, not an error: the framework
+   * still prints.
+   */
+  private initPrintKit(): Signal<BrandKitRevision | null> {
+    const projectUid = computed(() =>
+      isPlatformBrowser(this.platformId) && this.intake?.assetView && this.currentFrameworkAsset() !== null ? this.projectContext.activeContextUid() : ''
+    );
+    return toSignal(
+      toObservable(projectUid).pipe(
+        distinctUntilChanged(),
+        switchMap((uid) => (uid ? this.dependencyService.resolveBrandKit(uid) : of(null)))
+      ),
+      { initialValue: null }
+    );
+  }
+
   private initCurrentVersion(): Signal<MktgRunVersion | null> {
     return computed(() => {
       const versions = this.versions();

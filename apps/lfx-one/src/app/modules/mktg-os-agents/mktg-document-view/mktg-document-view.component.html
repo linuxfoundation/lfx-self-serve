@@ -50,6 +50,7 @@
               state="ready"
               [version]="current.revision.number"
               [note]="revisionNote()"
+              [kit]="printKit()"
               data-testid="mktg-document-view-framework" />
           } @else if (boilerplates(); as boilerplatesAsset) {
             <!-- A Boilerplates revision is the four lengths, on the Boilerplates view; its report and checks come from the sidecar. -->

@@ -9,6 +9,7 @@ import { provideRouter, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { BRAND_KIT_CONTRACT_ID, MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
 import { MktgDocumentDetailResponse, MktgDocumentType, MktgRevisionResponse, MktgRevisionSummary, ProjectContext } from '@lfx-one/shared/interfaces';
+import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { brandKitTestRevision } from '@shared/testing/brand-kit-test-data';
 import { ProjectContextService } from '@services/project-context.service';
@@ -54,6 +55,7 @@ describe('MktgDocumentViewComponent', () => {
     getRevision: ReturnType<typeof vi.fn>;
     restoreRevision: ReturnType<typeof vi.fn>;
   };
+  let resolveBrandKit: ReturnType<typeof vi.fn>;
 
   function query(testId: string): HTMLElement | null {
     return harness.routeNativeElement?.querySelector(`[data-testid="${testId}"]`) ?? null;
@@ -79,6 +81,7 @@ describe('MktgDocumentViewComponent', () => {
       ),
       restoreRevision: vi.fn(() => of({ ...detail, revision: RESTORED })),
     };
+    resolveBrandKit = vi.fn(() => of(null));
     const activeContext = signal<ProjectContext | null>(PROJECT);
 
     await TestBed.configureTestingModule({
@@ -89,6 +92,7 @@ describe('MktgDocumentViewComponent', () => {
         { provide: MktgDocumentStoreService, useValue: store },
         // The Boilerplates view says a failed copy through the app's toasts.
         MessageService,
+        { provide: MktgDependencyService, useValue: { resolveBrandKit } },
       ],
     }).compileComponents();
   });
@@ -140,6 +144,8 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('brand-kit-web-view-title')?.textContent?.trim()).toBe('Project One Brand Kit');
     expect(query('brand-kit-web-view-version')?.textContent?.trim()).toBe(`v${LATEST.number}`);
     expect(query('brand-kit-web-view-print')?.className).toContain('lfx-brand-kit-print-only');
+    // Only a framework's print reads the project's kit: the kit is its own brand.
+    expect(resolveBrandKit).not.toHaveBeenCalled();
   });
 
   it('renders a Messaging Framework revision (JSON content) on the framework’s own view, full width, with the sidecar’s report', async () => {
@@ -219,6 +225,12 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-framework-view-sources-read')?.textContent).toContain('testorbit.example.org');
     // The revisions panel is as built: open and restore any other revision.
     expect(query('mktg-document-view-revisions')).not.toBeNull();
+    // Download PDF prints the framework in the LF look: the project has no Brand Kit.
+    expect(resolveBrandKit).toHaveBeenCalledWith('proj-1');
+    expect(query('mktg-framework-view-download-pdf')?.querySelector('button')?.disabled).toBe(false);
+    expect(query('mktg-framework-view-print')?.className).toContain('lfx-framework-print-only');
+    expect(query('mktg-framework-print')?.getAttribute('data-brand')).toBe('lf');
+    expect(query('mktg-framework-print-version')?.textContent).toContain('Version 2');
   });
 
   it('renders a Boilerplates revision (JSON content) on the Boilerplates view, full width, with the sidecar’s report and word counts', async () => {

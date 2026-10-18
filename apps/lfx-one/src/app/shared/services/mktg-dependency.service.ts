@@ -3,9 +3,9 @@
 
 import { HttpErrorResponse, HttpStatusCode } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { MKTG_AGENT_INTAKES } from '@lfx-one/shared/constants';
-import { MktgDependencyDocument, MktgRevisionFormat } from '@lfx-one/shared/interfaces';
-import { readFoundationMessageContent, renderFoundationMessageMarkdown } from '@lfx-one/shared/utils';
+import { BRAND_KIT_INTAKE, MKTG_AGENT_INTAKES } from '@lfx-one/shared/constants';
+import { BrandKitRevision, MktgDependencyDocument, MktgRevisionFormat } from '@lfx-one/shared/interfaces';
+import { readBrandKitRevision, readFoundationMessageContent, renderFoundationMessageMarkdown } from '@lfx-one/shared/utils';
 import { catchError, forkJoin, map, Observable, of, Subject, switchMap, throwError } from 'rxjs';
 
 import { MktgAgentRunService } from './mktg-agent-run.service';
@@ -122,6 +122,24 @@ export class MktgDependencyService {
         return document === null ? browserFallback$ : of({ agentId, source: 'server', version: stored.receipt.version, document });
       }),
       catchError(() => browserFallback$)
+    );
+  }
+
+  /**
+   * The project's stored Brand Kit — its latest revision, read from the
+   * revision's sidecar — or null when the project has none. A print of
+   * another asset (Download PDF) is set in the kit's colours, typeface and
+   * logo when there is one, and in the LF look otherwise; so here, unlike a
+   * gate, any failed read (403, a 5xx, the network) is also null: the
+   * document still prints, in the LF look.
+   */
+  public resolveBrandKit(projectUid: string): Observable<BrandKitRevision | null> {
+    if (!projectUid) {
+      return of(null);
+    }
+    return this.resolveDependency(projectUid, BRAND_KIT_INTAKE.agentId, true).pipe(
+      map((document) => readBrandKitRevision(document?.sidecar ?? null)),
+      catchError(() => of(null))
     );
   }
 

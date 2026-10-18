@@ -17,6 +17,7 @@ import {
   MktgRevisionSummary,
 } from '@lfx-one/shared/interfaces';
 import { boilerplatesAssetOfRevision, describeMktgRevision, foundationMessageAssetOfRevision, readBrandKitRevision } from '@lfx-one/shared/utils';
+import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { catchError, distinctUntilChanged, filter, map, of, switchMap, tap } from 'rxjs';
@@ -50,6 +51,7 @@ import { MktgFrameworkViewComponent } from '../mktg-framework-view/mktg-framewor
 })
 export class MktgDocumentViewComponent {
   // === Injections ===
+  private readonly dependencyService = inject(MktgDependencyService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly documentStore = inject(MktgDocumentStoreService);
   private readonly platformId = inject(PLATFORM_ID);
@@ -117,6 +119,8 @@ export class MktgDocumentViewComponent {
   protected readonly projectName = computed(() => this.projectContext.activeContext()?.name ?? '');
   /** A short word on the revision's standing, beside the asset's version. */
   protected readonly revisionNote = computed(() => (this.view()?.revision.latest ? 'latest' : ''));
+  /** The project's stored Brand Kit, which a framework revision's print (Download PDF) is set in; null for the LF look. */
+  protected readonly printKit: Signal<BrandKitRevision | null> = this.initPrintKit();
 
   private readonly request$ = toObservable(
     computed(() => ({ project: this.projectContext.activeContextUid(), ...this.params(), revisionId: this.revisionParam() }))
@@ -183,6 +187,22 @@ export class MktgDocumentViewComponent {
   }
 
   // === Private initializers ===
+  /**
+   * The project's Brand Kit, read only while a framework revision is on
+   * screen (a kit or a Markdown document prints nothing of this) and only in
+   * the browser. Any failed read is the LF look, not an error.
+   */
+  private initPrintKit(): Signal<BrandKitRevision | null> {
+    const projectUid = computed(() => (isPlatformBrowser(this.platformId) && this.asset() !== null ? this.projectContext.activeContextUid() : ''));
+    return toSignal(
+      toObservable(projectUid).pipe(
+        distinctUntilChanged(),
+        switchMap((uid) => (uid ? this.dependencyService.resolveBrandKit(uid) : of(null)))
+      ),
+      { initialValue: null }
+    );
+  }
+
   private initTitle(): Signal<string> {
     return computed(() => {
       const view = this.view();

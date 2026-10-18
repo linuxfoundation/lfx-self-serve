@@ -122,6 +122,7 @@ export * from './org-lens-roi.constants';
 export * from './boilerplates.constants';
 export * from './brand-kit.constants';
 export * from './foundation-message.constants';
+export * from './mktg-print.constants';
 export * from './icp.constants';
 export * from './open-profile-banner.constants';
 export * from './social-listening.constants';

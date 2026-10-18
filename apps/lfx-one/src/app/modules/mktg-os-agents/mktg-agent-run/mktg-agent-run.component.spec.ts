@@ -123,6 +123,7 @@ describe('MktgAgentRunComponent', () => {
   let generate: ReturnType<typeof vi.fn>;
   let answerQuestions: ReturnType<typeof vi.fn>;
   let resolveDependencies: ReturnType<typeof vi.fn>;
+  let resolveBrandKit: ReturnType<typeof vi.fn>;
   let rememberAnswers: ReturnType<typeof vi.fn>;
   let notifyDocumentsChanged: ReturnType<typeof vi.fn>;
   let readFile: ReturnType<typeof vi.fn>;
@@ -172,6 +173,7 @@ describe('MktgAgentRunComponent', () => {
     resolveDependencies = vi.fn((projectUid: string, agentIds: string[]) =>
       of(Object.fromEntries(agentIds.map((agentId) => [agentId, dependencyDocs[`${projectUid}:${agentId}`] ?? null])))
     );
+    resolveBrandKit = vi.fn(() => of(null));
 
     await TestBed.configureTestingModule({
       imports: [MktgAgentRunComponent],
@@ -187,7 +189,7 @@ describe('MktgAgentRunComponent', () => {
         { provide: ProjectService, useValue: { getProject } },
         { provide: UserService, useValue: { user: userSignal } },
         { provide: MktgAgentRunService, useValue: { loadRun, generate, answerQuestions } },
-        { provide: MktgDependencyService, useValue: { resolveDependencies, notifyDocumentsChanged } },
+        { provide: MktgDependencyService, useValue: { resolveDependencies, resolveBrandKit, notifyDocumentsChanged } },
         { provide: MktgIntakeDocumentsService, useValue: { readFile } },
         {
           provide: MktgAnswerMemoryService,
@@ -1847,6 +1849,21 @@ describe('MktgAgentRunComponent', () => {
       await fixture.whenStable();
       expect(component['phase']()).toBe('form');
       expect(component['intakeForm'].controls['project_name'].value).toBe('TestOrbit');
+    });
+
+    it('prints the framework in the project’s Brand Kit: Download PDF in the framework’s header, the kit read for the print, no inert button left on the page', async () => {
+      resolveBrandKit.mockReturnValue(of(brandKitTestRevision()));
+      storedRuns = { 'proj-1:foundation-setup': assetRun([{ version: 1, document: '', asset: ASSET, createdAt: '2026-10-17T00:00:00.000Z' }]) };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(resolveBrandKit).toHaveBeenCalledWith('proj-1');
+      expect(query('mktg-framework-view-download-pdf')?.querySelector('button')?.disabled).toBe(false);
+      expect(query('mktg-framework-view-export-slides')?.querySelector('button')?.disabled).toBe(true);
+      expect(query('mktg-framework-print')?.getAttribute('data-brand')).toBe('kit');
+      expect(query('mktg-agent-run-download-pdf')).toBeNull();
+      expect(query('mktg-agent-run-export-slides')).toBeNull();
     });
 
     it('restores a run the earlier Markdown form saved to the form, its answers kept — never an empty generating shell', async () => {

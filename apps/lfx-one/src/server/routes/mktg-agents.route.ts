@@ -46,7 +46,7 @@ router.post('/brand-kit/answers', (req, res, next) => mktgAgentsController.brand
 // POST /api/mktg-agents/brand-kit/result - poll a generation session for the validated kit
 router.post('/brand-kit/result', (req, res, next) => mktgAgentsController.brandKitResult(req, res, next));
 
-// GET /api/mktg-agents/brand-kit/stored - the project's latest persisted document (writer-entitled callers only)
+// GET /api/mktg-agents/brand-kit/stored - the project's latest persisted document (writer-entitled callers only); ?sidecar=true - the same latest revision with its envelope JSON and date (what another asset's print is branded from)
 router.get('/brand-kit/stored', (req, res, next) => mktgAgentsController.storedBrandKit(req, res, next));
 
 // POST /api/mktg-agents/foundation-message/generate - start a Messaging Framework draft
