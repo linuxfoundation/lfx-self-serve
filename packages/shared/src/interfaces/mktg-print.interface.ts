@@ -56,6 +56,20 @@ export interface FoundationMessagePrintSection {
   title: string;
 }
 
+/** One goal column as the print binds it: the view's column, with its segments as one line. */
+export interface FoundationMessagePrintGoal extends FoundationMessageGoalView {
+  /** `End users, Maintainers`: the segment names joined, '' when the column names none. */
+  segmentLabel: string;
+}
+
+/** One segment as the print binds it: the view's segment, with its goals and channels as one line each. */
+export interface FoundationMessagePrintIcp extends FoundationMessageIcpView {
+  /** `Adoption, Contribution`: the goal titles joined, '' when the segment serves none. */
+  goalLabel: string;
+  /** `Docs · Slack`: the channels joined. */
+  channelsLabel: string;
+}
+
 /** The Messaging Framework as its print lays it out: every string and colour the document binds. */
 export interface FoundationMessagePrintView {
   brand: MktgPrintBrand;
@@ -70,8 +84,8 @@ export interface FoundationMessagePrintView {
   sections: FoundationMessagePrintSection[];
   mf: FoundationMessageMf;
   mh: FoundationMessageMh;
-  goals: FoundationMessageGoalView[];
-  icps: FoundationMessageIcpView[];
+  goals: FoundationMessagePrintGoal[];
+  icps: FoundationMessagePrintIcp[];
   pillars: FoundationMessagePillarView[];
   avoidRows: FoundationMessageAvoidRow[];
   numbers: FoundationMessageNumberRow[];

@@ -122,8 +122,8 @@
               </ul>
             </div>
             <p class="border-l-[2pt] border-[color:var(--mfp-accent)] pl-[6pt] italic">“{{ goal.bite }}”</p>
-            @if (goal.segmentNames.length > 0) {
-              <p class="text-[8pt] opacity-75">For {{ goal.segmentNames.join(', ') }}</p>
+            @if (goal.segmentLabel) {
+              <p class="text-[8pt] opacity-75">For {{ goal.segmentLabel }}</p>
             }
           </article>
         }
@@ -192,8 +192,8 @@
           <span class="text-[7.5pt] opacity-60">Basis: {{ icp.basis }}</span>
         </div>
         <p>{{ icp.who }}</p>
-        @if (icp.goalTitles.length > 0) {
-          <p class="text-[8pt] opacity-75">Goals: {{ icp.goalTitles.join(', ') }}</p>
+        @if (icp.goalLabel) {
+          <p class="text-[8pt] opacity-75">Goals: {{ icp.goalLabel }}</p>
         }
         <dl class="grid grid-cols-[78pt_1fr] gap-x-[10pt] gap-y-[4pt] text-[9pt]">
           <dt [class]="eyebrow">Need</dt>
@@ -216,7 +216,7 @@
           <dt [class]="eyebrow">Call to action</dt>
           <dd>{{ icp.cta }}</dd>
           <dt [class]="eyebrow">Channels</dt>
-          <dd>{{ icp.channels.join(' · ') }}</dd>
+          <dd>{{ icp.channelsLabel }}</dd>
           <dt [class]="eyebrow">Objection</dt>
           <dd class="flex flex-col gap-[1pt]">
             <span>{{ icp.objectionText }}</span>

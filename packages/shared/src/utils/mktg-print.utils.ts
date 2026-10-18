@@ -17,7 +17,14 @@ import {
 } from '../constants/mktg-print.constants';
 import type { BrandKitRevision } from '../interfaces/brand-kit.interface';
 import type { FoundationMessageContent } from '../interfaces/foundation-message.interface';
-import type { FoundationMessagePrintSection, FoundationMessagePrintView, MktgPrintBrand, MktgPrintLogo } from '../interfaces/mktg-print.interface';
+import type {
+  FoundationMessagePrintGoal,
+  FoundationMessagePrintIcp,
+  FoundationMessagePrintSection,
+  FoundationMessagePrintView,
+  MktgPrintBrand,
+  MktgPrintLogo,
+} from '../interfaces/mktg-print.interface';
 import { brandKitIsLight, brandKitTint } from './brand-kit-book.utils';
 import { brandKitFontStack, brandKitGoogleFontsUrl, brandKitLogoImage, brandKitWeights } from './brand-kit.utils';
 import {
@@ -97,6 +104,20 @@ export function foundationMessagePrintSections(): FoundationMessagePrintSection[
   }));
 }
 
+/** The goal columns with their segments as one line, so the template joins nothing. */
+export function foundationMessagePrintGoals(content: FoundationMessageContent): FoundationMessagePrintGoal[] {
+  return foundationMessageGoalViews(content).map((goal) => ({ ...goal, segmentLabel: goal.segmentNames.join(', ') }));
+}
+
+/** The segments with their goals and channels as one line each, so the template joins nothing. */
+export function foundationMessagePrintIcps(content: FoundationMessageContent): FoundationMessagePrintIcp[] {
+  return foundationMessageIcpViews(content).map((icp) => ({
+    ...icp,
+    goalLabel: icp.goalTitles.join(', '),
+    channelsLabel: icp.channels.join(' · '),
+  }));
+}
+
 /**
  * The Messaging Framework as one printed document: a cover, then the
  * framework, the ICPs, the message house and the key numbers — the view's
@@ -122,8 +143,8 @@ export function buildFoundationMessagePrintView(
     sections: foundationMessagePrintSections(),
     mf: content.mf,
     mh: content.mh,
-    goals: foundationMessageGoalViews(content),
-    icps: foundationMessageIcpViews(content),
+    goals: foundationMessagePrintGoals(content),
+    icps: foundationMessagePrintIcps(content),
     pillars: foundationMessagePillarViews(content),
     avoidRows: foundationMessageAvoidRows(content),
     numbers: foundationMessageNumberRows(content),

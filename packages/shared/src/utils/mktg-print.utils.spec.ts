@@ -23,19 +23,53 @@ interface KitOptions {
   googleFonts?: boolean;
 }
 
-/** The fields of a kit a print reads: the colours, the type chapter and the logo files. */
+/**
+ * A whole kit, every required field filled with a placeholder, so the fixture
+ * is type-checked against the interface (no cast). The fields a print reads
+ * (the dark, the type chapter's Google Fonts flag and the logo files) take
+ * their values from `options`.
+ */
 function kitWith(options: KitOptions = {}): BrandKitRevision {
   return {
     projectName: 'Orbit',
-    kit: { dark: options.dark ?? '#20232A', accent: '#3A86FF' },
+    project: 'orbit',
+    version: 1,
+    mode: 'draft',
+    kit: { colors: [], font: 'Space Grotesk', fontNote: '', attrs: [], dark: options.dark ?? '#20232A', accent: '#3A86FF', spark: '#3A86FF', word: 'ORBIT' },
     chapters: {
-      type: { family: 'Space Grotesk', weights: [400, 600], google_fonts: options.googleFonts ?? true, fallback: 'Arial' },
       logo: {
         files: { primary: options.primary ?? null, stacked: null, symbol: null, reversed: options.reversed ?? null },
+        symbol_viewbox: null,
         placeholder: options.placeholder ?? false,
+        system: 'One lockup, one symbol.',
+        colorways: [],
+        clear_space: 'X.',
+        minimum_size: { screen_px: 32, print_mm: 10, symbol_px: 16, rule: 'Below that, the symbol.' },
+        symbol: 'The ring.',
+        partnership: [],
+        watchouts: [],
       },
+      color: { summary: 'Ink on white.', palette: [], proportion: [], contrast: { rule: 'AA.', pairs: [] } },
+      type: {
+        family: 'Space Grotesk',
+        weights: [400, 600],
+        source: 'site',
+        google_fonts: options.googleFonts ?? true,
+        fallback: 'Arial',
+        note: '',
+        summary: 'Space Grotesk throughout.',
+        scale: [],
+        rules: [],
+      },
+      visual: { icons: { rules: [], recommended: 'Lucide' }, imagery: { rule: 'Real people.', avoid: [] } },
+      usage: { summary: 'Dark grounds for impact.', examples: [] },
+      voice: { umbrella: 'Orbit ships open releases.', line: 'Release, open', source: 'From the messaging framework', note: '', attributes: [] },
     },
-  } as unknown as BrandKitRevision;
+    report: { sources_read: [], sources_failed: [], gaps: [], notes: '' },
+    websiteUrl: 'https://orbit.example.org',
+    generatedAt: '2026-10-18T00:00:00Z',
+    agentVersion: '2.1.0',
+  };
 }
 
 const CONTENT: FoundationMessageContent = {
@@ -137,11 +171,29 @@ describe('the framework’s print', () => {
     expect(view.versionLabel).toBe('Version 4');
     expect(view.goals[0].segmentNames).toEqual(['End users']);
     expect(view.icps[0].goalTitles).toEqual(['Adoption']);
+    expect([view.goals[0].segmentLabel, view.icps[0].goalLabel, view.icps[0].channelsLabel]).toEqual(['End users', 'Adoption', 'Docs']);
     expect(view.avoidRows).toEqual([{ avoid: 'synergy', instead: 'working together' }]);
     expect(view.numbers).toEqual([{ number: '1,200', label: 'members' }]);
     expect(view.audiences).toEqual([{ name: 'End users', lead: 'Ship with confidence.' }]);
     expect(view.brand.source).toBe('lf');
     expect(buildFoundationMessagePrintView(CONTENT, 'TestOrbit', null, kitWith()).versionLabel).toBe('');
     expect(buildFoundationMessagePrintView(CONTENT, 'TestOrbit', null, kitWith()).brand.source).toBe('kit');
+  });
+
+  it('joins the lists the print sets as one line, and leaves a line empty when there is nothing to list', () => {
+    const many: FoundationMessageContent = {
+      ...CONTENT,
+      mf: { ...CONTENT.mf, goals: [{ ...CONTENT.mf.goals[0], icps: ['users', 'maintainers'] }] },
+      icp: [
+        { ...CONTENT.icp[0], channels: ['Docs', 'Slack'] },
+        { ...CONTENT.icp[0], id: 'maintainers', name: 'Maintainers', goals: [], channels: [] },
+      ],
+    };
+    const view = buildFoundationMessagePrintView(many, 'TestOrbit', 1, null);
+    expect(view.goals[0].segmentLabel).toBe('End users, Maintainers');
+    expect(view.icps.map((icp) => [icp.goalLabel, icp.channelsLabel])).toEqual([
+      ['Adoption', 'Docs · Slack'],
+      ['', ''],
+    ]);
   });
 });
