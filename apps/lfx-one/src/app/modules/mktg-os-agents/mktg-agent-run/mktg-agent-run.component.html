@@ -110,16 +110,33 @@
               }
 
               <!-- Every stored framework is a document with revisions in the Documents area. -->
-              <div class="flex flex-wrap items-center justify-between gap-2 px-1 text-xs text-gray-500" data-testid="mktg-agent-run-documents-note">
-                <span>Every revision of this framework is kept in Documents, where you can view and restore it.</span>
-                <div class="flex items-center gap-1">
+              <!-- What you can do with the framework (hand test, 18 Oct): the kit's outputs, shown but inert until they ship, and a new run from edited inputs. No raw-JSON download: nobody reads it. -->
+              <div
+                class="bg-white border border-gray-200 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3"
+                data-testid="mktg-agent-run-new-run">
+                <div class="flex flex-col gap-0.5 min-w-0">
+                  <span class="text-sm font-medium text-gray-900">Every revision is kept in Documents.</span>
+                  <span class="text-xs text-gray-500">To change the framework, edit the inputs and generate again; the result is a new revision.</span>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
                   <lfx-button
-                    label="Download JSON"
-                    icon="fa-light fa-download"
-                    [text]="true"
+                    label="Download PDF"
+                    icon="fa-light fa-file-pdf"
+                    [outlined]="true"
                     size="small"
-                    data-testid="mktg-agent-run-download-button"
-                    (onClick)="onDownload()" />
+                    [disabled]="true"
+                    badge="coming soon"
+                    ariaLabel="Download PDF — coming soon"
+                    data-testid="mktg-agent-run-download-pdf" />
+                  <lfx-button
+                    label="Export to Google Slides"
+                    icon="fa-light fa-presentation-screen"
+                    [outlined]="true"
+                    size="small"
+                    [disabled]="true"
+                    badge="coming soon"
+                    ariaLabel="Export to Google Slides — coming soon"
+                    data-testid="mktg-agent-run-export-slides" />
                   @if (documentsAgentKey) {
                     <lfx-button
                       label="Go to Documents"
@@ -129,20 +146,13 @@
                       data-testid="mktg-agent-run-documents-link"
                       (onClick)="onOpenDocuments()" />
                   }
+                  <lfx-button
+                    label="Edit inputs"
+                    icon="fa-light fa-pen"
+                    size="small"
+                    data-testid="mktg-agent-run-edit-inputs-button"
+                    (onClick)="onEditInputs()" />
                 </div>
-              </div>
-
-              <!-- No feedback box: this agent's generate takes none. A new run from edited inputs is stored as a new revision. -->
-              <div
-                class="bg-white border border-gray-200 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3"
-                data-testid="mktg-agent-run-new-run">
-                <span class="text-xs text-gray-500">Change your sources or documents and generate again; each result is stored as a new revision.</span>
-                <lfx-button
-                  label="Edit inputs"
-                  icon="fa-light fa-pen"
-                  [outlined]="true"
-                  data-testid="mktg-agent-run-edit-inputs-button"
-                  (onClick)="onEditInputs()" />
               </div>
             }
           </div>
