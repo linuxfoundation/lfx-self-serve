@@ -4,7 +4,7 @@ description: How to view, update, and close polls in LFX Self Serve.
 audience: [maintainer, board-member, executive-director]
 product_area: Votes
 tags: [votes, manage, polls, results]
-last_updated: 2026-05-22
+last_updated: 2026-10-18
 intercom_collection: Votes
 ---
 
@@ -14,7 +14,7 @@ This article applies to users with **maintainer**, **board-member**, or **execut
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
 2. Select **Votes** from the left navigation sidebar.
-3. The votes dashboard lists all polls for your active project context.
+3. The votes dashboard opens on the **Active** tab, listing open polls for your active project context. Select **All**, **Draft**, or **Ended** to see polls with other statuses.
 4. Select a poll to open its detail view.
 
 ## Cast your vote

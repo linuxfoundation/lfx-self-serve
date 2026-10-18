@@ -147,6 +147,12 @@ export class VotesTableComponent {
     const f = this.filterState();
     return this.statusTab() !== 'all' || !!f.search.trim() || !!f.group || !!this.quickFilter() || this.scopeActive();
   });
+  // Filters beyond the status tab. When any applies, an empty result can't claim the status itself has no votes.
+  protected readonly hasAdditionalFilters = computed(() => {
+    const f = this.filterState();
+    return !!f.search || !!f.group || !!this.quickFilter() || this.scopeActive();
+  });
+  protected readonly emptyStateCopy: Signal<{ title: string; subtitle: string }> = this.initEmptyStateCopy();
 
   protected readonly rppOptions = computed<number[] | undefined>(() => {
     const count = this.lazy() ? this.totalRecords() : this.displayedVotes().length;
@@ -294,17 +300,46 @@ export class VotesTableComponent {
       toObservable(this.statusTab),
     ])
       .pipe(
+        // Trim the effective search (the control keeps the typed text) so whitespace-only input neither hides rows nor counts as a filter.
         map(([formValue, statusTab]) => ({
-          search: formValue.search ?? '',
+          search: (formValue.search ?? '').trim(),
           status: statusTab !== 'all' ? (statusTab as PollStatus) : null,
           group: formValue.group ?? null,
         })),
+        // Padding-only search edits now map to the same filters; don't re-emit them and reset the parent's pagination.
+        distinctUntilChanged((a, b) => a.search === b.search && a.status === b.status && a.group === b.group),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((filters) => {
         this.filterState.set(filters);
         this.filtersChange.emit(filters);
       });
+  }
+
+  private initEmptyStateCopy(): Signal<{ title: string; subtitle: string }> {
+    return computed(() => {
+      if (this.hasAdditionalFilters()) {
+        return { title: 'No votes match your filters', subtitle: 'Try changing your search or filters, or reset filters to see all votes.' };
+      }
+      switch (this.statusTab()) {
+        case PollStatus.ACTIVE:
+          return { title: 'No active votes', subtitle: 'There are no votes open for voting in this view. Select All to see votes with other statuses.' };
+        case PollStatus.DISABLED:
+          return { title: 'No draft votes', subtitle: 'Votes saved as drafts will appear here before they are opened for voting.' };
+        case PollStatus.ENDED:
+          return { title: 'No ended votes yet', subtitle: 'Votes will appear here after voting ends.' };
+        default:
+          break;
+      }
+      // All tab: lazy tables back the project/foundation dashboard; client tables list the viewer's invitations.
+      if (!this.lazy()) {
+        return { title: 'No votes yet', subtitle: "Votes you've been invited to participate in will appear here." };
+      }
+      return {
+        title: 'No votes yet',
+        subtitle: this.hasPMOAccess() ? 'Create a vote to gather decisions from project groups.' : 'Votes for this project or foundation will appear here.',
+      };
+    });
   }
 
   private initDisplayedVotes(): Signal<VoteTableRow[]> {

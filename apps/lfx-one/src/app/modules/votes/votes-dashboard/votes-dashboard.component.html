@@ -61,7 +61,11 @@
       <lfx-empty-state
         icon="fa-light fa-check-to-slot"
         [title]="'No ' + (voteLabelPlural | lowercase) + ' yet'"
-        [subtitle]="'Create a ' + (voteLabel | lowercase) + ' to gather decisions from project groups.'"
+        [subtitle]="
+          canWrite()
+            ? 'Create a ' + (voteLabel | lowercase) + ' to gather decisions from project groups.'
+            : voteLabelPlural + ' for this project or foundation will appear here.'
+        "
         [ctaLabel]="canWrite() ? 'Create ' + voteLabel : undefined"
         [ctaRoute]="canWrite() ? ['/votes', 'create'] : undefined"
         data-testid="votes-empty-state-card">
@@ -88,7 +92,7 @@
         [showStatusCounts]="isMeLens() || isManagementVotesLens()"
         [statusCounts]="tabStatusCounts()"
         [(statusTab)]="myVotesStatusTab"
-        [quickFilter]="isMeLens() ? myVotesQuickFilter() : null"
+        [quickFilter]="tableQuickFilter()"
         [quickFilterNowMs]="myVotesNowMs()"
         [scopeActive]="isMeLens() && (!!foundationFilter() || !!projectFilter())"
         (statusTabSelected)="onStatusTabSelected($event)"

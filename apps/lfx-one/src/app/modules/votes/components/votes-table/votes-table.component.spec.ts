@@ -183,6 +183,16 @@ describe('VotesTableComponent — personal summary filters', () => {
     (fixture.nativeElement.querySelector(`[data-testid="filter-pill-${status}"]`) as HTMLButtonElement).click();
     await settle();
   }
+  function emptyState(): HTMLElement | null {
+    return fixture.nativeElement.querySelector('[data-testid="votes-table-empty-state"]');
+  }
+  async function clickReset(): Promise<void> {
+    const reset = Array.from(fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLButtonElement>).find(
+      (button) => button.textContent?.trim() === 'Reset filters'
+    )!;
+    reset.click();
+    await settle(true);
+  }
 
   it.each([
     ['closing-soon', ['z', 'a', 'responded']],
@@ -197,6 +207,9 @@ describe('VotesTableComponent — personal summary filters', () => {
 
   it('retains autonomous tab filtering when the model is unbound', async () => {
     await render();
+    // Committee Votes embeds the table unbound — its default stays All; only the voting pages bind Active.
+    expect(table.statusTab()).toBe('all');
+    expect(rows()).toEqual(VOTES.map((v) => v.uid));
     await tab(PollStatus.ENDED);
     expect(rows()).toEqual(['ended']);
     await tab(PollStatus.ACTIVE);
@@ -244,17 +257,13 @@ describe('VotesTableComponent — personal summary filters', () => {
     host.quick.set(null);
     host.status.set('all');
     await settle(true);
-    expect(fixture.nativeElement.textContent).toContain('No results found');
+    expect(emptyState()?.textContent).toContain('No votes match your filters');
     table.searchForm.controls.search.setValue('absent');
     await settle(true);
-    expect(fixture.nativeElement.textContent).toContain('No results found');
+    expect(emptyState()?.textContent).toContain('No votes match your filters');
     expect(fixture.nativeElement.querySelector('[data-testid="votes-search-input"] input')).toBeTruthy();
     expect(fixture.nativeElement.querySelector('[data-testid="votes-group-filter"]')).toBeTruthy();
-    const reset = Array.from(fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLButtonElement>).find(
-      (button) => button.textContent?.trim() === 'Reset filters'
-    )!;
-    reset.click();
-    await settle(true);
+    await clickReset();
     expect(table.searchForm.controls.search.value).toBe('');
     expect(rows()).toEqual(VOTES.map((v) => v.uid));
   });
@@ -268,7 +277,7 @@ describe('VotesTableComponent — personal summary filters', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="votes-search-input"]')).toBeNull();
     fixture.componentRef.setInput('serverFiltersActive', true);
     await settle();
-    expect(fixture.nativeElement.textContent).toContain('No results found');
+    expect(emptyState()?.textContent).toContain('No votes yet');
     expect(fixture.nativeElement.querySelector('[data-testid="votes-search-input"]')).toBeTruthy();
     expect(fixture.nativeElement.querySelector('[data-testid="votes-group-filter"]')).toBeTruthy();
     expect(fixture.nativeElement.textContent).toContain('Reset filters');
@@ -319,6 +328,156 @@ describe('VotesTableComponent — personal summary filters', () => {
     expect(table.searchForm.controls.search.value).toBe('Board');
     await settle(true);
     expect(rows()).toEqual(['other']);
+  });
+});
+
+describe('VotesTableComponent — empty-state copy', () => {
+  let fixture: ComponentFixture<VotesTableComponent>;
+  let table: VotesTableComponent;
+  const STATUS_COPY = [
+    [PollStatus.ACTIVE, 'No active votes', 'There are no votes open for voting in this view. Select All to see votes with other statuses.'],
+    [PollStatus.DISABLED, 'No draft votes', 'Votes saved as drafts will appear here before they are opened for voting.'],
+    [PollStatus.ENDED, 'No ended votes yet', 'Votes will appear here after voting ends.'],
+  ] as const;
+  const NO_MATCH = ['No votes match your filters', 'Try changing your search or filters, or reset filters to see all votes.'];
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [VotesTableComponent],
+      providers: [provideRouter([]), provideNoopAnimations(), { provide: VoteService, useValue: {} }, { provide: MessageService, useValue: {} }],
+    }).compileComponents();
+    fixture = TestBed.createComponent(VotesTableComponent);
+    table = fixture.componentInstance;
+    fixture.componentRef.setInput('groupOptions', GROUPS);
+    fixture.componentRef.setInput('quickFilterNowMs', NOW);
+  });
+  afterEach(() => fixture?.destroy());
+
+  async function settle(debounce = true): Promise<void> {
+    if (debounce) await new Promise((resolve) => setTimeout(resolve, 350));
+    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+  function rows(): string[] {
+    return Array.from(fixture.nativeElement.querySelectorAll('tr[data-testid^="votes-row-"]') as NodeListOf<HTMLElement>).map((row) =>
+      row.getAttribute('data-testid')!.replace('votes-row-', '')
+    );
+  }
+  function copy(): [string, string] | null {
+    const empty = fixture.nativeElement.querySelector('[data-testid="votes-table-empty-state"]') as HTMLElement | null;
+    if (!empty) return null;
+    return [empty.querySelector('h3')!.textContent!.trim(), empty.querySelector('p')!.textContent!.trim()];
+  }
+  /** Renders an empty result for `status`: client mode filters out that status locally; lazy mode receives no server rows. */
+  async function renderEmpty(status: string, lazy: boolean): Promise<void> {
+    fixture.componentRef.setInput('lazy', lazy);
+    fixture.componentRef.setInput('serverFiltersActive', lazy);
+    fixture.componentRef.setInput('votes', lazy ? [] : VOTES.filter((v) => v.status !== status));
+    fixture.componentRef.setInput('statusTab', status);
+    await settle();
+  }
+
+  for (const lazy of [false, true]) {
+    it.each(STATUS_COPY)(`names the empty %s status (lazy: ${lazy})`, async (status, title, subtitle) => {
+      await renderEmpty(status, lazy);
+      expect(copy()).toEqual([title, subtitle]);
+      expect(fixture.nativeElement.querySelector('[data-testid="votes-search-input"]')).toBeTruthy();
+      expect(fixture.nativeElement.querySelector('[data-testid="votes-status-tabs"]')).toBeTruthy();
+    });
+
+    it.each(['search', 'group', 'quick filter', 'scope'])(`prefers no-match copy over status copy for %s (lazy: ${lazy})`, async (kind) => {
+      await renderEmpty(PollStatus.ACTIVE, lazy);
+      if (kind === 'search') table.searchForm.controls.search.setValue('absent');
+      if (kind === 'group') table.searchForm.controls.group.setValue('Audi Group');
+      if (kind === 'quick filter') fixture.componentRef.setInput('quickFilter', 'closing-soon');
+      if (kind === 'scope') fixture.componentRef.setInput('scopeActive', true);
+      await settle();
+      expect(copy()).toEqual(NO_MATCH);
+    });
+  }
+
+  it.each([
+    [false, "Votes you've been invited to participate in will appear here."],
+    [true, 'Votes for this project or foundation will appear here.'],
+  ])('uses All copy for the table context (lazy: %s, read-only)', async (lazy, subtitle) => {
+    fixture.componentRef.setInput('lazy', lazy);
+    fixture.componentRef.setInput('serverFiltersActive', true);
+    fixture.componentRef.setInput('scopeActive', false);
+    fixture.componentRef.setInput('votes', []);
+    await settle();
+    if (!lazy) {
+      // Unfiltered client All never reaches the filtered branch; it keeps the invitation message.
+      expect(copy()).toBeNull();
+      expect(fixture.nativeElement.textContent).toContain(subtitle);
+      return;
+    }
+    expect(copy()).toEqual(['No votes yet', subtitle]);
+  });
+
+  it('offers creation wording on the lazy All copy only to writers', async () => {
+    fixture.componentRef.setInput('lazy', true);
+    fixture.componentRef.setInput('serverFiltersActive', true);
+    fixture.componentRef.setInput('hasPMOAccess', true);
+    fixture.componentRef.setInput('votes', []);
+    await settle();
+    expect(copy()).toEqual(['No votes yet', 'Create a vote to gather decisions from project groups.']);
+    fixture.componentRef.setInput('statusTab', PollStatus.DISABLED);
+    await settle();
+    // Status copy stays neutral even for writers.
+    expect(copy()).toEqual(['No draft votes', 'Votes saved as drafts will appear here before they are opened for voting.']);
+  });
+
+  it('treats whitespace-only search as no search, keeping populated Active rows and the typed text', async () => {
+    const emitted: string[] = [];
+    table.filtersChange.subscribe((state) => emitted.push(state.search));
+    fixture.componentRef.setInput('votes', VOTES);
+    fixture.componentRef.setInput('statusTab', PollStatus.ACTIVE);
+    await settle();
+    emitted.length = 0;
+    table.searchForm.controls.search.setValue('   ');
+    await settle();
+    expect(rows()).toEqual(['z', 'a', 'responded', 'distant', 'other', 'unrelated']);
+    expect(copy()).toBeNull();
+    expect(table.searchForm.controls.search.value).toBe('   ');
+    expect(emitted).toEqual([]);
+    table.searchForm.controls.search.setValue('  budget  ');
+    await settle();
+    expect(rows()).toEqual(['unrelated']);
+    expect(emitted).toEqual(['budget']);
+  });
+
+  it('suppresses the empty state while loading', async () => {
+    fixture.componentRef.setInput('loading', true);
+    await renderEmpty(PollStatus.ACTIVE, true);
+    expect(copy()).toBeNull();
+    fixture.componentRef.setInput('loading', false);
+    await settle(false);
+    expect(copy()?.[0]).toBe('No active votes');
+  });
+
+  it('hides Draft when the Draft tab is disabled and falls back to All', async () => {
+    fixture.componentRef.setInput('showDraftTab', false);
+    fixture.componentRef.setInput('votes', VOTES);
+    fixture.componentRef.setInput('statusTab', PollStatus.DISABLED);
+    await settle();
+    expect(fixture.nativeElement.querySelector(`[data-testid="filter-pill-${PollStatus.DISABLED}"]`)).toBeNull();
+    expect(table.statusTab()).toBe('all');
+  });
+
+  it('recovers from an empty Active view through Reset filters to All', async () => {
+    await renderEmpty(PollStatus.ACTIVE, false);
+    expect(copy()?.[0]).toBe('No active votes');
+    table.searchForm.controls.search.setValue('Board');
+    await settle();
+    expect(copy()).toEqual(NO_MATCH);
+    const reset = Array.from(fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLButtonElement>).find(
+      (button) => button.textContent?.trim() === 'Reset filters'
+    )!;
+    reset.click();
+    await settle();
+    expect(table.statusTab()).toBe('all');
+    expect(table.searchForm.controls.search.value).toBe('');
+    expect(rows()).toEqual(['ended']);
   });
 });
 

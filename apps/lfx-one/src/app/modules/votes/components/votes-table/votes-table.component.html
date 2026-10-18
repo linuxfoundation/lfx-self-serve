@@ -70,11 +70,12 @@
         <lfx-empty-state
           [withCard]="false"
           icon="fa-light fa-eyes"
-          title="No results found"
-          subtitle="Try adjusting your filter criteria"
+          [title]="emptyStateCopy().title"
+          [subtitle]="emptyStateCopy().subtitle"
           ctaLabel="Reset filters"
           ctaIcon="fa-light fa-arrow-rotate-left"
-          (ctaClick)="resetFilters()">
+          (ctaClick)="resetFilters()"
+          data-testid="votes-table-empty-state">
         </lfx-empty-state>
       } @else {
         <lfx-table
