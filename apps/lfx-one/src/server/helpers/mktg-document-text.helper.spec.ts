@@ -167,6 +167,25 @@ describe('MktgDocumentText.read — Word and text', () => {
     expect((await MktgDocumentText.read(empty)).reason).toBe('no-text');
   });
 
+  it('reads a .pptx in presentation order, not by slide file name, and leaves out slide parts the deck does not list', async () => {
+    const a = 'http://schemas.openxmlformats.org/drawingml/2006/main';
+    const slide = (text: string): string =>
+      `<p:sld xmlns:a="${a}"><p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>${text}</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>`;
+    // Slide 3 was moved to the front: the slide list changed, the part names did not; slide 4 was dropped from the list.
+    const deck = await zip({
+      'ppt/presentation.xml':
+        '<p:presentation xmlns:r="r"><p:sldIdLst><p:sldId id="258" r:id="rId9"/><p:sldId id="256" r:id="rId7"/><p:sldId r:id="rId8" id="257"/></p:sldIdLst></p:presentation>',
+      'ppt/_rels/presentation.xml.rels':
+        '<Relationships><Relationship Id="rId7" Type="slide" Target="slides/slide1.xml"/><Relationship Target="slides/slide2.xml" Id="rId8" Type="slide"/><Relationship Id="rId9" Type="slide" Target="/ppt/slides/slide3.xml"/><Relationship Id="rId1" Type="slideMaster" Target="slideMasters/slideMaster1.xml"/></Relationships>',
+      'ppt/slides/slide1.xml': slide('One'),
+      'ppt/slides/slide2.xml': slide('Two'),
+      'ppt/slides/slide3.xml': slide('Three, moved first'),
+      'ppt/slides/slide4.xml': slide('Hidden from the list'),
+    });
+
+    expect(await MktgDocumentText.read(deck)).toEqual({ text: 'Three, moved first\n\nOne\n\nTwo', truncated: false });
+  });
+
   it('reads a .pptx soft line break (<a:br/>) as a new line, not a join of the two lines', async () => {
     const a = 'http://schemas.openxmlformats.org/drawingml/2006/main';
     const run = (text: string): string => `<a:r><a:rPr lang="en-US"/><a:t>${text}</a:t></a:r>`;

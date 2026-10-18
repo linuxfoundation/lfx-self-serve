@@ -95,6 +95,9 @@ export class MktgDocumentText {
   /** A slide part, with its number: `ppt/slides/slide12.xml`. */
   private static readonly pptxSlidePart = /^ppt\/slides\/slide(\d+)\.xml$/i;
 
+  /** The presentation's relationships: each `r:id` of its slide list resolves to a slide part here. */
+  private static readonly pptxPresentationRels = 'ppt/_rels/presentation.xml.rels';
+
   /**
    * Most bytes a .docx's markup (its `.xml` and `.rels` parts, everything
    * mammoth parses for text) may inflate to, all parts together. mammoth's XML
@@ -280,8 +283,7 @@ export class MktgDocumentText {
   }
 
   /**
-   * A .pptx's text: its slides in order (`slide1.xml`, `slide2.xml`, …
-   * `slide10.xml` — by number, not by name), each slide's text runs
+   * A .pptx's text: its slides in presentation order, each slide's text runs
    * (`<a:t>`) joined per paragraph (`<a:p>`), a line per paragraph and per
    * soft line break (`<a:br/>`, Shift+Enter), and a blank line between
    * slides. Notes, masters and layouts are not read: they are boilerplate,
@@ -289,13 +291,10 @@ export class MktgDocumentText {
    * walk is bounded by it.
    */
   private static async pptxText(markup: JSZip): Promise<MktgReadText> {
-    const slides = Object.values(markup.files)
-      .map((file) => ({ file, number: Number(MktgDocumentText.pptxSlidePart.exec(file.name)?.[1] ?? Number.NaN) }))
-      .filter((slide) => !Number.isNaN(slide.number))
-      .sort((a, b) => a.number - b.number);
+    const slides = await MktgDocumentText.pptxSlidesInOrder(markup);
     const texts: string[] = [];
     for (const slide of slides) {
-      const xml = await slide.file.async('string');
+      const xml = await slide.async('string');
       const paragraphs = xml
         .split(/<\/a:p>/)
         .map((paragraph) =>
@@ -314,6 +313,52 @@ export class MktgDocumentText {
       }
     }
     return MktgDocumentText.ok(texts.join('\n\n'));
+  }
+
+  /**
+   * The deck's slide parts in presentation order: the slide list
+   * (`<p:sldId r:id=…>` in `ppt/presentation.xml`) resolved through the
+   * presentation's relationships. Moving a slide reorders that list without
+   * renaming its part, and a part the list does not reference is not in the
+   * deck. A file whose list or relationships cannot be read falls back to the
+   * slide parts by number (`slide2.xml` before `slide10.xml`).
+   */
+  private static async pptxSlidesInOrder(markup: JSZip): Promise<JSZip.JSZipObject[]> {
+    const presentation = await markup.file(MktgDocumentText.pptxPresentationPart)?.async('string');
+    const rels = await markup.file(MktgDocumentText.pptxPresentationRels)?.async('string');
+    if (presentation !== undefined && rels !== undefined) {
+      const targets = new Map<string, string>();
+      for (const [tag] of rels.matchAll(/<Relationship\b[^>]*>/g)) {
+        const id = MktgDocumentText.xmlAttribute(tag, 'Id');
+        const target = MktgDocumentText.xmlAttribute(tag, 'Target');
+        if (id !== null && target !== null) {
+          targets.set(id, target.startsWith('/') ? target.slice(1) : `ppt/${target}`);
+        }
+      }
+      const ordered = Array.from(presentation.matchAll(/<p:sldId\b[^>]*>/g), ([tag]) => {
+        const id = MktgDocumentText.xmlAttribute(tag, 'r:id');
+        const part = id === null ? undefined : targets.get(id);
+        return part === undefined ? null : markup.file(part);
+      }).filter((file): file is JSZip.JSZipObject => file !== null);
+      if (ordered.length > 0) {
+        return ordered;
+      }
+    }
+    return Object.values(markup.files)
+      .map((file) => ({ file, number: Number(MktgDocumentText.pptxSlidePart.exec(file.name)?.[1] ?? Number.NaN) }))
+      .filter((slide) => !Number.isNaN(slide.number))
+      .sort((a, b) => a.number - b.number)
+      .map((slide) => slide.file);
+  }
+
+  /** One attribute's value from a single start tag, or null; the tag is one `<…>` match, so the scan is linear in it. */
+  private static xmlAttribute(tag: string, name: string): string | null {
+    for (const [, attribute, value] of tag.matchAll(/([\w:.-]+)\s*=\s*"([^"]*)"/g)) {
+      if (attribute === name) {
+        return value;
+      }
+    }
+    return null;
   }
 
   /** The five XML entities and numeric character references, decoded; anything else is kept as written. */
