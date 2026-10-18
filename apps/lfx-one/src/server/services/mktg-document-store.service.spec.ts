@@ -33,6 +33,12 @@ const loggerMocks = vi.hoisted(() => ({
   info: vi.fn(),
 }));
 const projectMocks = vi.hoisted(() => ({ getProjectById: vi.fn() }));
+const directoryMocks = vi.hoisted(() => ({ getUserInfo: vi.fn() }));
+vi.mock('./user.service', () => ({
+  UserService: class {
+    public getUserInfo = directoryMocks.getUserInfo;
+  },
+}));
 
 vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-artifact.utils')),
@@ -112,6 +118,7 @@ import { MKTG_ARTIFACT_SPECS, MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/consta
 import type { MktgArtifactEnvelope, MktgArtifactJsonEnvelope, MktgDocumentType, MktgRevisionRecord } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
+import { MicroserviceError, ResourceNotFoundError } from '../errors';
 import { MktgDocumentStoreService } from './mktg-document-store.service';
 import { ObjectStoreService } from './object-store.service';
 
@@ -188,6 +195,10 @@ describe('MktgDocumentStoreService', () => {
     store.failPutsMatching = null;
     store.failListsMatching = null;
     store.failGetsMatching = null;
+    directoryMocks.getUserInfo.mockImplementation(async (_req: Request, userId: string) => ({
+      success: true,
+      data: { name: userId === 'auth0|selector' ? 'The selector' : 'The writer' },
+    }));
     projectMocks.getProjectById.mockResolvedValue({ uid: PROJECT, writer: true });
     service = new MktgDocumentStoreService();
   });
@@ -365,6 +376,99 @@ describe('MktgDocumentStoreService', () => {
     });
   });
 
+  describe('PR attribution and listing regressions', () => {
+    it('stores only the opaque subject and resolves one directory name per ID per request', async () => {
+      await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# One'), 'one');
+      await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# Two'), 'two');
+      const detail = await service.getDocument(req, PROJECT, BRAND_KIT, 'living');
+      expect(detail?.revisions.every((revision) => revision.author?.name === 'The writer')).toBe(true);
+      expect(directoryMocks.getUserInfo).toHaveBeenCalledExactlyOnceWith(req, 'auth0|not-the-lfid');
+      for (const key of revisionKeys()) {
+        expect(store.objects.get(key)?.metadata['author-id']).toBe('auth0|not-the-lfid');
+        expect(store.objects.get(key)?.metadata).not.toHaveProperty('author');
+      }
+      expect(JSON.stringify([...store.objects.values()])).not.toMatch(/synthetic-writer|The writer/);
+      expect(JSON.stringify(detail)).not.toContain('auth0|');
+    });
+
+    it.each([new Error('NATS timeout'), new ResourceNotFoundError('User'), new MicroserviceError('NATS unavailable', 503, 'SERVICE_UNAVAILABLE')])(
+      'lookup failure %s shows no name without failing reads and warns once per ID',
+      async (failure) => {
+        await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# One'), 'one');
+        await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# Two'), 'two');
+        directoryMocks.getUserInfo.mockRejectedValue(failure);
+        const detail = await service.getDocument(req, PROJECT, BRAND_KIT, 'living');
+        expect(detail?.revisions.map((revision) => revision.author)).toEqual([{ name: null }, { name: null }]);
+        expect(detail?.current?.changedBy).toEqual({ name: null });
+        expect(directoryMocks.getUserInfo).toHaveBeenCalledTimes(1);
+        expect(loggerMocks.warning.mock.calls.filter((call) => call[1] === 'mktg_document_store_author')).toHaveLength(1);
+        await expect(service.listDocuments(req, PROJECT)).resolves.toMatchObject({ project: PROJECT });
+      }
+    );
+
+    it('handles an unsuccessful directory response directly and warns once for the stored author', async () => {
+      await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# One'), 'one');
+      directoryMocks.getUserInfo.mockResolvedValue({ success: false, error: 'user not found' });
+      const detail = await service.getDocument(req, PROJECT, BRAND_KIT, 'living');
+      expect(detail?.revisions[0].author).toEqual({ name: null });
+      expect(detail?.current?.changedBy).toEqual({ name: null });
+      expect(directoryMocks.getUserInfo).toHaveBeenCalledTimes(1);
+      expect(loggerMocks.warning).toHaveBeenCalledExactlyOnceWith(req, 'mktg_document_store_author', 'Author lookup failed — showing no name');
+    });
+
+    it('bounds distinct directory reads and discards the memo between requests', async () => {
+      for (let index = 0; index < 9; index++) {
+        const saved = await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope(`# ${index}`), `session-${index}`);
+        const object = store.objects.get(saved.key);
+        if (!object) throw new Error('Expected synthetic revision to exist');
+        object.metadata['author-id'] = `auth0|writer-${index}`;
+      }
+      let active = 0;
+      let maximum = 0;
+      directoryMocks.getUserInfo.mockImplementation(async () => {
+        active++;
+        maximum = Math.max(maximum, active);
+        await Promise.resolve();
+        active--;
+        return { success: true, data: { name: 'The writer' } };
+      });
+      await service.getDocument(req, PROJECT, BRAND_KIT, 'living');
+      await service.getDocument(req, PROJECT, BRAND_KIT, 'living');
+      expect(maximum).toBe(4);
+      expect(directoryMocks.getUserInfo).toHaveBeenCalledTimes(10); // Nine authors plus the selector.
+      await service.getDocument({ ...req } as Request, PROJECT, BRAND_KIT, 'living');
+      expect(directoryMocks.getUserInfo).toHaveBeenCalledTimes(20);
+    });
+
+    it('never uses a directory username when no display name is returned', async () => {
+      await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# One'), 'one');
+      directoryMocks.getUserInfo.mockResolvedValue({ success: true, username: 'synthetic-writer', data: {} });
+      expect((await service.getDocument(req, PROJECT, BRAND_KIT, 'living'))?.revisions[0].author).toEqual({ name: null });
+    });
+
+    it('omits a corrupt document without failing other documents in the project', async () => {
+      await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# One'), 'one');
+      const run = await service.recordGeneration(req, LINKEDIN, PROJECT, envelope('# Run'), 'run');
+      const pointer = store.objects.get(`documents/${PROJECT}/brand-kit/living/current.json`);
+      if (!pointer) throw new Error('Expected synthetic pointer to exist');
+      pointer.body = 'not json';
+      const listed = await service.listDocuments(req, PROJECT);
+      expect(listed.groups.find((group) => group.type.agentKey === 'brand-kit')?.documents).toEqual([]);
+      expect(listed.groups.find((group) => group.type.agentKey === 'linkedin-post')?.documents[0].documentId).toBe(run.record.documentId);
+      expect(loggerMocks.warning).toHaveBeenCalledWith(
+        req,
+        'mktg_document_store_list',
+        'Document unreadable — omitting',
+        expect.objectContaining({ err: expect.any(Error) })
+      );
+    });
+
+    it.each([401, 403])('does not turn an authorization error %s into an empty listing', async (statusCode) => {
+      vi.spyOn(service, 'getDocument').mockRejectedValue(new MicroserviceError('Access denied', statusCode, 'FORBIDDEN'));
+      await expect(service.listDocuments(req, PROJECT)).rejects.toMatchObject({ statusCode });
+    });
+  });
+
   describe('documents stored before revisions existed', () => {
     it('shows the pre-revision document as revision 1, Markdown only, without writing anything', async () => {
       const legacyMarkdown = '# Old Brand Kit\n';
@@ -415,8 +519,8 @@ describe('MktgDocumentStoreService', () => {
       expect(restored?.detail.revisions).toHaveLength(2);
       expect(revisionKeys()).toHaveLength(2);
       const current = JSON.parse(store.objects.get(`documents/${PROJECT}/brand-kit/living/current.json`)!.body);
-      expect(current).toMatchObject({ revisionId: first!.id, changedBy: { username: 'synthetic-writer', name: 'The writer' }, changedAt: expect.any(String) });
-      expect(restored?.detail.current).toEqual({ revisionId: current.revisionId, changedAt: current.changedAt, changedBy: current.changedBy });
+      expect(current).toMatchObject({ revisionId: first!.id, changedBy: 'auth0|not-the-lfid', changedAt: expect.any(String) });
+      expect(restored?.detail.current).toEqual({ revisionId: current.revisionId, changedAt: current.changedAt, changedBy: { name: 'The writer' } });
       expect(restored?.detail.current).not.toHaveProperty('revisionIds');
 
       const latest = await service.readLatest(req, SPEC, PROJECT);
@@ -430,16 +534,16 @@ describe('MktgDocumentStoreService', () => {
       await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# Second'), 'second');
       const selector = {
         ...req,
-        oidc: { user: { 'https://sso.linuxfoundation.org/claims/username': 'synthetic-selector', name: 'The selector' } },
+        oidc: { user: { sub: 'auth0|selector', 'https://sso.linuxfoundation.org/claims/username': 'synthetic-selector', name: 'The selector' } },
       } as unknown as Request;
       const selected = await service.restoreRevision(selector, PROJECT, BRAND_KIT, 'living', first.id);
       const opened = await service.getRevision(req, PROJECT, BRAND_KIT, 'living', first.id);
-      expect(opened?.revision.author).toEqual({ username: 'synthetic-writer', name: 'The writer' });
+      expect(opened?.revision.author).toEqual({ name: 'The writer' });
       expect(opened?.current).toEqual(selected?.detail.current);
       expect(opened?.current).toMatchObject({
         revisionId: first.id,
         changedAt: expect.any(String),
-        changedBy: { username: 'synthetic-selector', name: 'The selector' },
+        changedBy: { name: 'The selector' },
       });
       expect((await service.getDocument(req, PROJECT, BRAND_KIT, 'living'))?.current).toEqual(opened?.current);
       const noOp = await service.restoreRevision(req, PROJECT, BRAND_KIT, 'living', first.id);

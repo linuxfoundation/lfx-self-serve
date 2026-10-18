@@ -37,29 +37,32 @@ export type MktgDocumentKind = 'living' | 'run';
  */
 export type MktgRevisionOrigin = 'generated' | 'revised' | 'restored' | 'legacy';
 
-/** Attribution kept outside immutable hashed bytes so it can be anonymized. */
+/** Public attribution resolved from the directory at read time; never includes a stored identity. */
 export interface MktgRevisionAuthor {
-  /** Effective LFID login handle, never an Auth0 subject. */
-  username: string;
-  name: string;
+  name: string | null;
 }
 
-/** Mutable commit point. Only revisions named here are committed by new writers. */
+/** Server-only stored record; never an API response. Names are resolved at read time. */
 export interface MktgDocumentCurrentRecord {
   revisionId: string;
   changedAt: string;
-  changedBy: MktgRevisionAuthor | null;
-  /** Existing revisions plus committed new revisions; excludes interrupted writes. */
+  /** Opaque effective Auth0 subject, never a name, username or email. */
+  changedBy: string | null;
+  /** Only these revisions are committed; interrupted writes remain invisible. */
   revisionIds: string[];
 }
 
-/** Public selection attribution, without the internal committed-revision manifest. */
-export type MktgDocumentCurrentSelection = Pick<MktgDocumentCurrentRecord, 'revisionId' | 'changedAt' | 'changedBy'>;
-
-/** A current pointer and its opaque compare-and-swap token. */
+/** Server-only stored record and compare-and-swap token; never an API response. */
 export interface MktgDocumentCurrentSnapshot {
   record: MktgDocumentCurrentRecord | null;
   etag?: string;
+}
+
+/** Public selection attribution, without stored user IDs or the committed-revision manifest. */
+export interface MktgDocumentCurrentSelection {
+  revisionId: string;
+  changedAt: string;
+  changedBy: MktgRevisionAuthor | null;
 }
 
 /** One document type of the store, in the order the Documents area lists them. */
@@ -322,7 +325,7 @@ export interface MktgRevisionRow {
   revision: MktgRevisionSummary;
   /** "How it was made". */
   how: string;
-  /** Name, LFID fallback, or the historical no-author label. */
+  /** Resolved name, unavailable-name label, or the historical no-author label. */
   authorLabel: string;
 }
 

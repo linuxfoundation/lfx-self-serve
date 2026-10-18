@@ -60,21 +60,27 @@ import { Request } from 'express';
 import { createHash } from 'node:crypto';
 
 import { AuthenticationError, MicroserviceError, PreconditionFailedError, ServiceValidationError } from '../errors';
-import { getEffectiveName, getEffectiveUsername } from '../utils/auth-helper';
+import { getEffectiveSub } from '../utils/auth-helper';
 import { logger } from './logger.service';
 import { MktgArtifactService } from './mktg-artifact.service';
 import { ObjectStoreService } from './object-store.service';
+import { UserService } from './user.service';
 
 /**
  * Immutable revision bundles, mutable current pointer. The pointer is also the
  * commit boundary: its revisionIds exclude orphan objects from interrupted or
  * losing concurrent writes. No pointer means the historical listing is current.
- * Attribution lives in mutable object metadata, never the hashed revision body.
+ * Attribution stores an opaque user ID only, outside the hashed revision body.
+ * Names, usernames and emails are never stored as attribution in these objects:
+ * names are resolved at read time so erasure never requires rewriting history.
  */
 export class MktgDocumentStoreService {
   private readonly objectStore = new ObjectStoreService();
   private readonly artifactService = new MktgArtifactService();
+  private readonly authors = new WeakMap<Request, Map<string, Promise<MktgRevisionAuthor>>>();
+  private userService?: UserService;
 
+  /** Persist the compatibility artifact, then publish its revision before returning a receipt. */
   public async persistGeneration(
     req: Request,
     spec: MktgArtifactSpec,
@@ -116,6 +122,7 @@ export class MktgDocumentStoreService {
     }
   }
 
+  /** A failed revision write drops the receipt so the next result poll retries. */
   public async recordPersisted<T extends MktgRunPersistReceipt>(
     req: Request,
     agentKey: MktgDocumentAgentKey,
@@ -168,6 +175,8 @@ export class MktgDocumentStoreService {
    * A CAS publishes a revision and moves current together. Losing writers retry
    * against the committed listing; overlapping polls find the winner's token.
    * An explicitly supplied basedOnId survives a retry (the writer's actual base).
+   * Pre-revision documents become revision 1; same-generation polls are no-ops
+   * under If-None-Match.
    */
   public async recordRevision(
     req: Request,
@@ -237,7 +246,14 @@ export class MktgDocumentStoreService {
         // Four documents in flight; each uses serial metadata/body reads so the
         // total I/O fan-out, not just the per-document fan-out, stays at four.
         const details = await Promise.all(
-          documentIds.slice(offset, offset + MKTG_DOCUMENT_READ_CONCURRENCY).map((id) => this.getDocument(req, project, type, id, 1))
+          documentIds.slice(offset, offset + MKTG_DOCUMENT_READ_CONCURRENCY).map((id) =>
+            this.getDocument(req, project, type, id, 1).catch((err: unknown) => {
+              // Access failures must still fail the request, not masquerade as missing documents.
+              if (!(err instanceof MicroserviceError) || err.statusCode < 500) throw err;
+              logger.warning(req, 'mktg_document_store_list', 'Document unreadable — omitting', { project, documentId: id, err });
+              return null;
+            })
+          )
         );
         for (const detail of details) {
           if (!detail) continue;
@@ -267,6 +283,7 @@ export class MktgDocumentStoreService {
     return { project, groups };
   }
 
+  /** Read summaries and the current selection with bounded I/O, without downloading new revision bodies. */
   public async getDocument(
     req: Request,
     project: string,
@@ -278,6 +295,7 @@ export class MktgDocumentStoreService {
     return this.readDocument(req, project, type, documentId, snapshot, readConcurrency);
   }
 
+  /** Read one integrity-checked revision body with its document's navigation summaries. */
   public async getRevision(
     req: Request,
     project: string,
@@ -302,7 +320,7 @@ export class MktgDocumentStoreService {
     const detail = await this.readDocument(req, project, type, documentId, snapshot);
     const view = detail ? await this.readRevision(req, detail, revisionId) : null;
     if (!view) return null;
-    let current = this.currentSelection(snapshot.record);
+    let current = await this.currentSelection(req, snapshot.record);
     if (!view.revision.latest) {
       const committed = await this.writeCurrent(
         req,
@@ -314,7 +332,7 @@ export class MktgDocumentStoreService {
         view.revisions.map((entry) => entry.id)
       );
       if (!committed) throw new PreconditionFailedError('The document changed while making a revision current. Reload and try again.');
-      current = this.currentSelection(committed);
+      current = await this.currentSelection(req, committed);
     }
     const revisions = view.revisions.map((entry) => ({ ...entry, latest: entry.id === view.revision.id }));
     return { detail: { project, type, documentId, revisions, current }, revision: { ...view.revision, latest: true } };
@@ -413,7 +431,18 @@ export class MktgDocumentStoreService {
   ): Promise<MktgDocumentDetailResponse | null> {
     const entries = await this.listRevisions(req, project, type, documentId, snapshot, readConcurrency);
     if (entries.length) {
-      const summaries = entries.map((entry, index) => this.summary(entry, index + 1));
+      const summaries: MktgRevisionSummary[] = [];
+      // Directory lookups share the metadata/body read bound, including serial project listings.
+      for (let offset = 0; offset < entries.length; offset += readConcurrency) {
+        summaries.push(
+          ...(await Promise.all(
+            entries.slice(offset, offset + readConcurrency).map(async (entry, index) => ({
+              ...this.summary(entry, offset + index + 1),
+              author: await this.resolveAuthor(req, entry.metadata?.['author-id']),
+            }))
+          ))
+        );
+      }
       const numberById = new Map(summaries.map((summary) => [summary.id, summary.number]));
       summaries.forEach((summary, index) => {
         summary.latest = summary.id === (snapshot.record?.revisionId ?? entries.at(-1)?.id);
@@ -421,7 +450,7 @@ export class MktgDocumentStoreService {
         summary.basedOnNumber = numberById.get(entries[index].record?.basedOnId ?? metadata['based-on'] ?? '') ?? null;
         summary.restoredFromNumber = numberById.get(entries[index].record?.restoredFromId ?? metadata['restored-from'] ?? '') ?? null;
       });
-      return { project, type, documentId, revisions: summaries.reverse(), current: this.currentSelection(snapshot.record) };
+      return { project, type, documentId, revisions: summaries.reverse(), current: await this.currentSelection(req, snapshot.record) };
     }
     // A committed pointer with no readable entries is not a pre-revision document.
     if (snapshot.record || !allowLegacy) return null;
@@ -456,6 +485,7 @@ export class MktgDocumentStoreService {
     return { ...detail, revision: selected, markdown: stored.record.bundle.markdown, sidecar: stored.record.bundle.sidecar };
   }
 
+  /** Capture the manifest and CAS token together; corrupt pointers must never select another revision. */
   private async readCurrent(req: Request, project: string, type: MktgDocumentType, documentId: string): Promise<MktgDocumentCurrentSnapshot> {
     const object = await this.objectStore.getObject(req, 'marketing-os-artifacts', this.currentKey(project, type, documentId));
     if (!object) return { record: null };
@@ -472,6 +502,7 @@ export class MktgDocumentStoreService {
     }
   }
 
+  /** Commit selection and visible revision IDs atomically, returning null on a lost comparison. */
   private async writeCurrent(
     req: Request,
     project: string,
@@ -491,15 +522,17 @@ export class MktgDocumentStoreService {
     return written ? record : null;
   }
 
-  private currentSelection(record: MktgDocumentCurrentRecord | null): MktgDocumentCurrentSelection | null {
+  /** Resolve selection attribution without leaking the stored subject or revision manifest. */
+  private async currentSelection(req: Request, record: MktgDocumentCurrentRecord | null): Promise<MktgDocumentCurrentSelection | null> {
     if (!record) return null;
-    return { revisionId: record.revisionId, changedAt: record.changedAt, changedBy: record.changedBy };
+    return { revisionId: record.revisionId, changedAt: record.changedAt, changedBy: await this.resolveAuthor(req, record.changedBy) };
   }
 
   private currentKey(project: string, type: MktgDocumentType, documentId: string): string {
     return `${buildMktgDocumentPrefix(project, type.agentKey, documentId)}${MKTG_DOCUMENT_CURRENT_KEY}`;
   }
 
+  /** List committed revisions with bounded HEADs and body fallback for historical metadata. */
   private async listRevisions(
     req: Request,
     project: string,
@@ -564,6 +597,7 @@ export class MktgDocumentStoreService {
     }
   }
 
+  /** Create immutable bytes if absent; a repeated identical PUT is an idempotent success. */
   private async writeRevision(
     req: Request,
     project: string,
@@ -586,7 +620,7 @@ export class MktgDocumentStoreService {
     const body = JSON.stringify(record);
     const hash = this.sha256(body);
     const key = buildMktgRevisionKey(project, type.agentKey, documentId, sequence, hash);
-    const author = record.origin === 'legacy' ? null : this.author(req);
+    const authorId = record.origin === 'legacy' ? null : this.author(req);
     const metadata: Record<string, string> = {
       managed: 'true',
       origin: record.origin,
@@ -599,7 +633,7 @@ export class MktgDocumentStoreService {
       'comment-count': String(record.comments.length),
       'based-on': record.basedOnId ?? '',
       'restored-from': record.restoredFromId ?? '',
-      author: Buffer.from(JSON.stringify(author)).toString('base64'),
+      ...(authorId && { 'author-id': authorId }),
       ...(generation && { generation }),
     };
     const written = await this.objectStore.putConditionalObject(req, 'marketing-os-artifacts', key, {
@@ -618,12 +652,6 @@ export class MktgDocumentStoreService {
 
   private summary(entry: MktgListedRevision, number: number): MktgRevisionSummary {
     const metadata = entry.metadata ?? {};
-    let author: MktgRevisionAuthor | null = null;
-    try {
-      author = JSON.parse(Buffer.from(metadata['author'] ?? '', 'base64').toString('utf8')) as MktgRevisionAuthor;
-    } catch {
-      /* Historical revisions have no attribution. */
-    }
     return {
       id: entry.id,
       number,
@@ -637,7 +665,6 @@ export class MktgDocumentStoreService {
       commentCount: entry.record?.comments?.length ?? Number(metadata['comment-count'] ?? 0),
       draftVersion: entry.record?.source.draftVersion ?? (Number(metadata['draft-version']) || undefined),
       latest: false,
-      author,
       basedOnNumber: null,
     };
   }
@@ -712,10 +739,42 @@ export class MktgDocumentStoreService {
     return value === 'json' ? 'json' : 'markdown';
   }
 
-  private author(req: Request): MktgRevisionAuthor {
-    const username = getEffectiveUsername(req);
-    if (!username) throw new AuthenticationError('The requesting writer could not be identified.');
-    return { username, name: getEffectiveName(req) ?? '' };
+  /** Store only the effective opaque subject; an incomplete impersonation identity fails closed. */
+  private author(req: Request): string {
+    // The stored ID must be opaque: the operator rejected usernames and names on #3773.
+    // getEffectiveSub's deprecation concerns upstream API arguments, not a stored opaque key.
+    const userId = getEffectiveSub(req);
+    if (!userId) throw new AuthenticationError('The requesting writer could not be identified.');
+    return userId;
+  }
+
+  /** Request-scoped promise memoization prevents repeat lookups/warnings, including failed directory reads. */
+  private async resolveAuthor(req: Request, userId: string | null | undefined): Promise<MktgRevisionAuthor | null> {
+    if (!userId) return null;
+    let authors = this.authors.get(req);
+    if (!authors) {
+      authors = new Map();
+      this.authors.set(req, authors);
+    }
+    let author = authors.get(userId);
+    if (!author) {
+      author = (async () => {
+        try {
+          this.userService ??= new UserService();
+          const response = await this.userService.getUserInfo(req, userId);
+          if (!response.success) {
+            logger.warning(req, 'mktg_document_store_author', 'Author lookup failed — showing no name');
+            return { name: null };
+          }
+          return { name: response.data?.name || null };
+        } catch (err) {
+          logger.warning(req, 'mktg_document_store_author', 'Author lookup failed — showing no name', { err });
+          return { name: null };
+        }
+      })();
+      authors.set(userId, author);
+    }
+    return author;
   }
 
   private corruptDocument(message: string): MicroserviceError {

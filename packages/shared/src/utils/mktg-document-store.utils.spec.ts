@@ -83,8 +83,9 @@ describe('mktg-document-store utils', () => {
   });
 
   it.each([
-    { author: { username: 'synthetic-writer', name: 'The writer' }, expected: 'The writer' },
-    { author: { username: 'synthetic-writer', name: '' }, expected: 'synthetic-writer' },
+    { author: { name: 'The writer' }, expected: 'The writer' },
+    { author: { name: '' }, expected: 'name unavailable' },
+    { author: { name: null }, expected: 'name unavailable' },
     { author: null, expected: 'no name (stored before names were recorded)' },
     { author: undefined, expected: 'no name (stored before names were recorded)' },
   ])('describes revision authors consistently: %j', ({ author, expected }) => {
