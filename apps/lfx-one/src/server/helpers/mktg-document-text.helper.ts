@@ -282,9 +282,10 @@ export class MktgDocumentText {
   /**
    * A .pptx's text: its slides in order (`slide1.xml`, `slide2.xml`, …
    * `slide10.xml` — by number, not by name), each slide's text runs
-   * (`<a:t>`) joined per paragraph (`<a:p>`), a line per paragraph and a
-   * blank line between slides. Notes, masters and layouts are not read: they
-   * are boilerplate, not the deck. The markup copy is already capped, so this
+   * (`<a:t>`) joined per paragraph (`<a:p>`), a line per paragraph and per
+   * soft line break (`<a:br/>`, Shift+Enter), and a blank line between
+   * slides. Notes, masters and layouts are not read: they are boilerplate,
+   * not the deck. The markup copy is already capped, so this
    * walk is bounded by it.
    */
   private static async pptxText(markup: JSZip): Promise<MktgReadText> {
@@ -298,9 +299,14 @@ export class MktgDocumentText {
       const paragraphs = xml
         .split(/<\/a:p>/)
         .map((paragraph) =>
-          Array.from(paragraph.matchAll(/<a:t[^>]*>([^<]*)<\/a:t>/g), (match) => MktgDocumentText.decodeXml(match[1]))
+          Array.from(paragraph.matchAll(/<a:t[^>]*>([^<]*)<\/a:t>|<a:br\b[^>]*>/g), (match) =>
+            match[1] === undefined ? '\n' : MktgDocumentText.decodeXml(match[1])
+          )
             .join('')
-            .trim()
+            .split('\n')
+            .map((line) => line.trim())
+            .filter((line) => line !== '')
+            .join('\n')
         )
         .filter((line) => line !== '');
       if (paragraphs.length > 0) {

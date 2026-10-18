@@ -167,6 +167,19 @@ describe('MktgDocumentText.read — Word and text', () => {
     expect((await MktgDocumentText.read(empty)).reason).toBe('no-text');
   });
 
+  it('reads a .pptx soft line break (<a:br/>) as a new line, not a join of the two lines', async () => {
+    const a = 'http://schemas.openxmlformats.org/drawingml/2006/main';
+    const run = (text: string): string => `<a:r><a:rPr lang="en-US"/><a:t>${text}</a:t></a:r>`;
+    const deck = await zip({
+      'ppt/presentation.xml': '<p:presentation/>',
+      'ppt/slides/slide1.xml': `<p:sld xmlns:a="${a}"><p:cSld><p:spTree><p:sp><p:txBody><a:bodyPr/><a:p>${run('Revenue: ')}${run(
+        '$1m'
+      )}<a:br><a:rPr lang="en-US"/></a:br>${run('Pipeline: $2m')}<a:br/></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>`,
+    });
+
+    expect(await MktgDocumentText.read(deck)).toEqual({ text: 'Revenue: $1m\nPipeline: $2m', truncated: false });
+  });
+
   it('refuses a .docx whose markup inflates past the cap (a compression bomb) before mammoth reads it', async () => {
     const parse = vi.spyOn(mammoth, 'extractRawText');
     const bomb = await zip({ 'word/document.xml': `<w:document>${' '.repeat(40 * 1024 * 1024)}</w:document>` });
