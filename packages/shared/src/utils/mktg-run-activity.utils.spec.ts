@@ -139,9 +139,12 @@ describe('mktgRunActivityPhases', () => {
 });
 
 describe('mktgRunQuestionShortLabel', () => {
-  it('gives each of the ten questions a short chip label, and any other its first two words', () => {
+  it('shows a short label whole and cuts a long one without ending on a connector (hand test, 18 Oct: "Words to")', () => {
     expect(mktgRunQuestionShortLabel('Tagline')).toBe('Tagline');
+    expect(mktgRunQuestionShortLabel('Words to avoid')).toBe('Words to avoid');
+    expect(mktgRunQuestionShortLabel('Ranked goals')).toBe('Ranked goals');
     expect(mktgRunQuestionShortLabel('Proof points to confirm')).toBe('Proof points');
-    expect(mktgRunQuestionShortLabel('Something entirely new')).toBe('Something entirely');
+    expect(mktgRunQuestionShortLabel('Tagline, CTAs and constraints')).toBe('Tagline, CTAs');
+    expect(mktgRunQuestionShortLabel('Something entirely new and long')).toBe('Something entirely new');
   });
 });

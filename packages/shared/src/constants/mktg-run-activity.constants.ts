@@ -92,5 +92,28 @@ export const MKTG_RUN_ACTIVITY_OPAQUE_PATH_SEGMENTS: readonly string[] = ['wp-js
 /** The contract line a questions turn starts with — where the writing stretch of a run begins. */
 export const MKTG_RUN_ACTIVITY_QUESTIONS_MARKER = FOUNDATION_MESSAGE_QUESTIONS_CONTRACT_ID;
 
-/** Most words of a question's label the stepper's chip shows. */
-export const MKTG_RUN_QUESTION_CHIP_WORDS = 2;
+/**
+ * Most words of a question's label the stepper's chip shows. The agent's
+ * labels come from its question ids ("Ranked goals", "Words to avoid") and are
+ * shown whole up to this length; a longer one is cut, never on a connector.
+ */
+export const MKTG_RUN_QUESTION_CHIP_WORDS = 3;
+
+/** Words a chip label never ends on: a cut there reads as a broken phrase ("Words to"). */
+export const MKTG_RUN_QUESTION_CHIP_TRAILING_STOPWORDS: readonly string[] = [
+  'a',
+  'an',
+  'and',
+  'as',
+  'at',
+  'by',
+  'for',
+  'from',
+  'in',
+  'of',
+  'on',
+  'or',
+  'the',
+  'to',
+  'with',
+];
