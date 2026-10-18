@@ -170,7 +170,7 @@ describe('MktgDocumentViewComponent', () => {
           ...detail,
           revisions: [{ ...LATEST, latest: false }, RESTORED],
           revision: RESTORED,
-          current: { revisionId: RESTORED.id, changedAt: '2026-10-15T13:00:00.000Z', changedBy: { username: 'synthetic-selector', name: 'The selector' } },
+          current: { revisionId: RESTORED.id, changedAt: '2026-10-15T13:00:00.000Z', changedBy: { name: 'The selector' } },
         })
       ),
     };
@@ -229,12 +229,11 @@ describe('MktgDocumentViewComponent', () => {
     { name: 'The writer', latest: false },
     { name: '', latest: false },
   ])('renders exact revision spacing and attribution for %j', async ({ name, latest }) => {
-    const current = { ...LATEST, latest, origin: 'revised' as const, commentCount: 1, author: { username: 'synthetic-writer', name } };
+    const current = { ...LATEST, latest, origin: 'revised' as const, commentCount: 1, author: { name: name || null } };
     store.getRevision.mockReturnValue(of({ ...detail, revisions: [current, { ...OLDER, latest: !latest }], revision: current, markdown: '# Current' }));
     await render('/documents/brand-kit/living');
     const row = query('mktg-document-view-revision-label-2')?.textContent;
-    expect(row).toBe(`v2 · 13 Oct${latest ? ' · Current' : ''} · revised from 1 comment · ${name || 'synthetic-writer'}`);
-    expect(row).not.toContain('stored before names were recorded');
+    expect(row).toBe(`v2 · 13 Oct${latest ? ' · Current' : ''} · revised from 1 comment · ${name || 'name unavailable'}`);
     expect(query('mktg-document-view-revision-1')?.textContent).toContain('no name (stored before names were recorded)');
   });
 
@@ -249,14 +248,14 @@ describe('MktgDocumentViewComponent', () => {
         current: {
           revisionId: LATEST.id,
           changedAt: '2026-10-14T12:00:00.000Z',
-          changedBy: { username: 'synthetic-selector', name },
+          changedBy: { name: name || null },
         },
       })
     );
     await render(`/documents/brand-kit/living?revision=${opened.id}`);
     const since = query('mktg-document-view-current-since-2')?.textContent;
     expect(since).toMatch(/^Current since 14 Oct 2026, \d{2}:\d{2} · /);
-    expect(since).toContain(name || 'synthetic-selector');
+    expect(since).toContain(name || 'name unavailable');
     expect(query('mktg-document-view-current-since-1')).toBeNull();
   });
 

@@ -712,12 +712,14 @@ describe('MktgDocumentStoreService', () => {
       expect((await service.getDocument(req, PROJECT, BRAND_KIT, 'living'))?.revisions[0].status).toBe('');
       expect((await service.getRevision(req, PROJECT, BRAND_KIT, 'living', `legacy-${sha(markdown)}`))?.revision.status).toBe('Draft — Review');
     });
+  });
+
   it('commits overlapping polls once, with attribution outside hashed bytes', async () => {
     const generated = envelope('# Concurrent\n');
     await Promise.all([service.persistGeneration(req, SPEC, generated, PROJECT, 'same'), service.persistGeneration(req, SPEC, generated, PROJECT, 'same')]);
     const detail = await service.getDocument(req, PROJECT, BRAND_KIT, 'living');
     expect(detail?.revisions).toHaveLength(1);
-    expect(detail?.revisions[0].author).toEqual({ username: 'synthetic-writer', name: 'The writer' });
+    expect(detail?.revisions[0].author).toEqual({ name: 'The writer' });
     expect(store.objects.get(revisionKeys()[0])?.body).not.toContain('The writer');
   });
 
@@ -900,23 +902,42 @@ describe('MktgDocumentStoreService', () => {
     });
   });
 
-  it('refuses authoring without an LFID instead of persisting the Auth0 subject', async () => {
-    const unidentified = { oidc: { user: { sub: 'auth0|unlinked', name: 'The writer' } } } as unknown as Request;
-    await expect(service.recordGeneration(unidentified, BRAND_KIT, PROJECT, envelope('# New'), 'new')).rejects.toMatchObject({ statusCode: 401 });
-    expect(store.objects.size).toBe(0);
+  it.each([false, true])('handles a missing effective sub (impersonating=%s)', async (impersonating) => {
+    const unidentified = {
+      oidc: {
+        user: { ...(impersonating && { sub: 'auth0|operator' }), 'https://sso.linuxfoundation.org/claims/username': 'synthetic-writer', name: 'The writer' },
+      },
+      impersonationActive: impersonating,
+      appSession: { impersonationUser: { username: 'synthetic-target', name: 'The target' } },
+    } as unknown as Request;
+    const writing = service.recordGeneration(unidentified, BRAND_KIT, PROJECT, envelope('# New'), 'new');
+    if (impersonating) {
+      const saved = await writing;
+      expect(storedObject(saved.key).metadata).not.toHaveProperty('author-id');
+      expect(JSON.parse(storedObject(`documents/${PROJECT}/brand-kit/living/current.json`).body).changedBy).toBeNull();
+      expect(JSON.stringify([...store.objects.values()])).not.toContain('auth0|operator');
+    } else {
+      await expect(writing).rejects.toMatchObject({ statusCode: 401 });
+      expect(store.objects.size).toBe(0);
+    }
   });
 
-  it('persists the effective impersonation target LFID and name, not the operator', async () => {
+  it('persists only the effective impersonation target sub and resolves the target name on read', async () => {
     const impersonated = {
       ...req,
       impersonationActive: true,
       appSession: { impersonationUser: { username: 'synthetic-target', sub: 'auth0|target', name: 'The target' } },
     } as unknown as Request;
     await service.recordGeneration(impersonated, BRAND_KIT, PROJECT, envelope('# Target'), 'target');
+    directoryMocks.getUserInfo.mockResolvedValue({ success: true, data: { name: 'The target' } });
     const detail = await service.getDocument(req, PROJECT, BRAND_KIT, 'living');
-    expect(detail?.revisions[0].author).toEqual({ username: 'synthetic-target', name: 'The target' });
+    expect(detail?.revisions[0].author).toEqual({ name: 'The target' });
+    expect(directoryMocks.getUserInfo).toHaveBeenCalledExactlyOnceWith(req, 'auth0|target');
     const current = JSON.parse(store.objects.get(`documents/${PROJECT}/brand-kit/living/current.json`)!.body);
-    expect(current.changedBy).toEqual({ username: 'synthetic-target', name: 'The target' });
+    expect(current.changedBy).toBe('auth0|target');
+    expect(store.objects.get(revisionKeys()[0])?.metadata['author-id']).toBe('auth0|target');
+    expect(JSON.stringify([...store.objects.values()])).not.toMatch(/synthetic-target|The target|synthetic-writer|The writer/);
+    expect(JSON.stringify(detail)).not.toContain('auth0|');
   });
 
   it('reads summaries without bodies and limits larger metadata batches', async () => {

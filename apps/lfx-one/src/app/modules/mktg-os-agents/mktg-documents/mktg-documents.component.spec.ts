@@ -169,23 +169,22 @@ describe('MktgDocumentsComponent', () => {
     expect(query('mktg-documents-document-subtitle')?.textContent).toContain('revision 1 of 2');
   });
 
-  it.each(['The writer', ''])('shows stored name %j or its LFID, without labelling an existing author as historical', async (name) => {
+  it.each(['The writer', null])('shows resolved name %j or the no-name label', async (name) => {
     store.getDocument.mockReturnValue(
       of({
         ...detail,
         revisions: [
-          revision(3, { latest: true, origin: 'revised', commentCount: 4, basedOnNumber: 1, author: { username: 'synthetic-writer', name } }),
+          revision(3, { latest: true, origin: 'revised', commentCount: 4, basedOnNumber: 1, author: { name } }),
           ...detail.revisions.map((entry) => ({ ...entry, latest: false })),
         ],
       })
     );
     await render();
     expect(query('mktg-documents-revision-when-3')?.textContent).not.toMatch(/ {2}/);
-    expect(query('mktg-documents-revision-how-3')?.textContent).toBe(`revised from 4 comments · based on v1 · ${name || 'synthetic-writer'}`);
+    expect(query('mktg-documents-revision-how-3')?.textContent).toBe(`revised from 4 comments · based on v1 · ${name || 'name unavailable'}`);
     const row = query('mktg-documents-revision-3')?.textContent?.replace(/\s+/g, ' ');
     expect(row).toMatch(/v3.*13 Oct.*revised from 4 comments · based on v1.*Current/);
-    expect(row).toContain(`revised from 4 comments · based on v1 · ${name || 'synthetic-writer'}`);
-    expect(row).not.toContain('stored before names were recorded');
+    expect(row).toContain(`revised from 4 comments · based on v1 · ${name || 'name unavailable'}`);
     expect(query('mktg-documents-revision-1')?.textContent).toContain('no name (stored before names were recorded)');
   });
 

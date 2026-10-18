@@ -110,9 +110,7 @@
                       @if (current.current; as selection) {
                         <p class="mt-1 text-xs text-gray-500" [attr.data-testid]="'mktg-document-view-current-since-' + row.revision.number">
                           <span [textContent]="'Current since ' + (selection.changedAt | date: 'd MMM y, HH:mm')"></span>
-                          @if (selection.changedBy; as actor) {
-                            <span [textContent]="' · ' + (actor.name || actor.username)"></span>
-                          }
+                          <span [textContent]="' · ' + currentSelectorLabel()"></span>
                         </p>
                       }
                     }

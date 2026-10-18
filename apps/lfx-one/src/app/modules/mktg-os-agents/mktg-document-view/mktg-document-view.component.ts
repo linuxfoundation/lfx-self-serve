@@ -96,6 +96,7 @@ export class MktgDocumentViewComponent {
         }))
       : [];
   });
+  protected readonly currentSelectorLabel = computed(() => describeMktgRevisionAuthor(this.view()?.current?.changedBy));
   protected readonly shortHash: Signal<string> = computed(() => {
     const sha = this.view()?.revision.contentSha256 ?? '';
     return sha ? `${sha.slice(0, 4)}…${sha.slice(-4)}` : '';
