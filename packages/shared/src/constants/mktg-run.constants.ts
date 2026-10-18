@@ -14,10 +14,8 @@ import {
   FOUNDATION_MESSAGE_DOCUMENT_KIND_OPTIONS,
   FOUNDATION_MESSAGE_FILE_EXTENSIONS,
   FOUNDATION_MESSAGE_GITHUB_KEY,
-  FOUNDATION_MESSAGE_LINKS_KEY,
   FOUNDATION_MESSAGE_MAX_DOCUMENTS,
   FOUNDATION_MESSAGE_MAX_FILE_BYTES,
-  FOUNDATION_MESSAGE_MAX_OTHER_LINKS,
   FOUNDATION_MESSAGE_MEMBERS_PAGE_KEY,
   FOUNDATION_MESSAGE_PLAN_KEY,
   FOUNDATION_MESSAGE_PRESS_RELEASE_KEY,
@@ -123,7 +121,7 @@ export const BRAND_KIT_INTAKE: MktgAgentIntake = {
  *   (web fetch, Exa search, the LF press archive when no press release is
  *   given).
  *
- * Other documents come last: files uploaded here (PDF, Word, PowerPoint,
+ * Other links and documents come last: files uploaded here (PDF, Word, PowerPoint,
  * Markdown or text, read to text by the BFF) and document links, each tagged
  * with what it is. A file picked on the deck or plan field lands here already
  * tagged (`uploadTag`).
@@ -215,7 +213,7 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
       kind: 'text',
       optional: true,
       placeholder: 'https://docs.google.com/presentation/d/…',
-      hint: 'A board deck, a pitch, a keynote. Upload the file (PDF, PowerPoint, Word, Markdown or text) or give its link; an upload appears under Other documents below, tagged Deck.',
+      hint: 'A board deck, a pitch, a keynote. Upload the file (PDF, PowerPoint, Word, Markdown or text) or give its link; an upload appears under Other links and documents below, tagged Deck.',
       format: 'source-url',
       uploadTag: 'deck',
     },
@@ -225,7 +223,7 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
       kind: 'text',
       optional: true,
       placeholder: 'https://docs.google.com/document/d/…',
-      hint: 'The marketing plan, the strategy for the year, the goals as written down. Upload the file or give its link; an upload appears under Other documents below, tagged Marketing plan.',
+      hint: 'The marketing plan, the strategy for the year, the goals as written down. Upload the file or give its link; an upload appears under Other links and documents below, tagged Marketing plan.',
       format: 'source-url',
       uploadTag: 'plan',
     },
@@ -237,16 +235,6 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
       placeholder: 'https://aaif.io/brand',
       hint: 'The brand or style guidelines page, when the project has one — how it already describes itself.',
       format: 'source-url',
-    },
-    {
-      key: FOUNDATION_MESSAGE_LINKS_KEY,
-      question: 'Other links',
-      kind: 'url-list',
-      optional: true,
-      placeholder: 'https://…',
-      hint: `Anything else public worth reading: the docs, a blog post, a talk. Up to ${FOUNDATION_MESSAGE_MAX_OTHER_LINKS}.`,
-      format: 'source-url-list',
-      maxItems: FOUNDATION_MESSAGE_MAX_OTHER_LINKS,
     },
   ],
   fieldGroups: [
@@ -266,13 +254,12 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
         FOUNDATION_MESSAGE_DECK_KEY,
         FOUNDATION_MESSAGE_PLAN_KEY,
         FOUNDATION_MESSAGE_BRAND_PAGE_KEY,
-        FOUNDATION_MESSAGE_LINKS_KEY,
       ],
     },
   ],
   documents: {
-    title: 'Other documents',
-    hint: 'Anything else the agent should read, and the logo package. Tag each one.',
+    title: 'Other links and documents',
+    hint: 'Anything else worth reading — the docs, a blog post, a talk — and the logo package. Add a link or upload a file, then tag it.',
     footnote: `Accepted: PDF, Word (.docx), PowerPoint (.pptx), Markdown and plain text, up to ${FOUNDATION_MESSAGE_MAX_FILE_BYTES / (1024 * 1024)} MB each — read here and sent as text. A link (a Google Doc, a wiki page) is sent as is; the agent reads it. A file uploaded on the deck or plan field above lands here with its tag. A logo package is passed on for later agents and never read as a source.`,
     maxDocuments: FOUNDATION_MESSAGE_MAX_DOCUMENTS,
     maxFileBytes: FOUNDATION_MESSAGE_MAX_FILE_BYTES,

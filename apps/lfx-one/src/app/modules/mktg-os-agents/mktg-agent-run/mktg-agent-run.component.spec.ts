@@ -729,7 +729,6 @@ describe('MktgAgentRunComponent', () => {
         'Existing deck or pitch',
         'Marketing or strategy plan',
         'Brand page',
-        'Other links',
       ]);
       for (const key of ['website_url', 'github_url', 'press_release_url', 'members_page_url', 'projects_page_url', 'deck_url', 'plan_url', 'brand_page_url']) {
         expect(sources?.querySelector(`[data-test="mktg-intake-${key}"]`)).not.toBeNull();
@@ -745,18 +744,18 @@ describe('MktgAgentRunComponent', () => {
       expect(query('mktg-intake-deck_url-upload')).not.toBeNull();
       expect(query('mktg-intake-plan_url-upload')).not.toBeNull();
       expect(query('mktg-intake-members_page_url-upload')).toBeNull();
-      // Other links: one empty row to start, and a control for the next.
-      expect(query('mktg-agent-run-list-links')).not.toBeNull();
-      expect(component['linkRows']()['links']).toHaveLength(1);
-      expect(query('mktg-agent-run-list-add-links')).not.toBeNull();
+      // No separate "Other links" list (hand test, 18 Oct): extra links and uploads share one section at the end.
+      expect(query('mktg-agent-run-list-links')).toBeNull();
+      expect(host().querySelector('[data-test="mktg-intake-links"]')).toBeNull();
       // No notes field and no notes group (hand test, 18 Oct): audiences, goals and words to avoid come up as the agent's gap questions.
       expect(query('mktg-agent-run-group-notes')).toBeNull();
       expect(host().querySelector('[data-test="mktg-intake-notes"]')).toBeNull();
       // The intro says what the agent does with the form and what is optional.
-      expect(host().textContent).toContain('Everything but the website is optional');
+      expect(host().textContent).toContain('Only the website is required');
       // No questions on the form: the agent asks only the gaps afterwards.
       expect(query('mktg-agent-run-group-questions')).toBeNull();
       expect(query('mktg-intake-documents')).not.toBeNull();
+      expect(query('mktg-intake-documents')?.textContent).toContain('Other links and documents');
       // Runs first: no Brand Kit chip and no missing-dependency gate.
       expect(query('mktg-agent-run-attachments')).toBeNull();
       expect(query('mktg-agent-run-missing-dependency')).toBeNull();
@@ -804,7 +803,7 @@ describe('MktgAgentRunComponent', () => {
       expect(component['submitDisabled']()).toBe(true);
     });
 
-    it('takes "none" or an https:// link on the optional link fields, blocks anything else saying why, and builds the other links from its rows', async () => {
+    it('takes "none" or an https:// link on the optional link fields, blocks anything else saying why', async () => {
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
       fillRequired();
@@ -820,30 +819,6 @@ describe('MktgAgentRunComponent', () => {
       component['intakeForm'].controls['press_release_url'].setValue('https://press.example.org/launch');
       await fixture.whenStable();
       expect(fieldError('press_release_url')).toBeNull();
-
-      // The rows write the field's own control, one link per line; a bad row blocks with the reason; a removed row leaves the list.
-      const row = (index: number): string => component['linkRows']()['links'][index];
-      component['linkRowsForm'].controls[row(0)].setValue('https://blog.example.org/a');
-      component['onAddLinkRow']('links');
-      component['linkRowsForm'].controls[row(1)].setValue('not a link');
-      await fixture.whenStable();
-      expect(component['intakeForm'].controls['links'].value).toBe('https://blog.example.org/a\nnot a link');
-      expect(fieldError('links')?.textContent).toContain('Every link');
-      expect(component['submitDisabled']()).toBe(true);
-      component['linkRowsForm'].controls[row(1)].setValue('https://blog.example.org/b');
-      await fixture.whenStable();
-      expect(fieldError('links')).toBeNull();
-      expect(component['submitDisabled']()).toBe(false);
-      expect(query('mktg-agent-run-list-row-' + row(1))).not.toBeNull();
-
-      component['onRemoveLinkRow']('links', row(0));
-      await fixture.whenStable();
-      expect(component['linkRows']()['links']).toHaveLength(1);
-      expect(component['intakeForm'].controls['links'].value).toBe('https://blog.example.org/b');
-      // The last row is never removed, only emptied.
-      component['onRemoveLinkRow']('links', row(0));
-      expect(component['linkRows']()['links']).toHaveLength(1);
-      expect(component['intakeForm'].controls['links'].value).toBe('');
     });
 
     it('fills the one-line description from a multi-paragraph LFX description as ONE line, and submits it as one line', async () => {
@@ -890,7 +865,7 @@ describe('MktgAgentRunComponent', () => {
       expect(component['submitDisabled']()).toBe(false);
     });
 
-    it('submits every source field given, the other links from the rows and the documents — a link by its URL, a file by its text, each with its tag — and waits while a file is being read', async () => {
+    it('submits every source field given and the documents — a link by its URL, a file by its text, each with its tag — and waits while a file is being read', async () => {
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
       fillRequired();
@@ -898,7 +873,6 @@ describe('MktgAgentRunComponent', () => {
       component['intakeForm'].controls['github_url'].setValue('https://github.com/testorbit/testorbit');
       component['intakeForm'].controls['press_release_url'].setValue('https://press.example.org/launch');
       component['intakeForm'].controls['members_page_url'].setValue('https://testorbit.example.org/members');
-      component['linkRowsForm'].controls[component['linkRows']()['links'][0]].setValue('https://blog.example.org/launch');
       component['documents'].set([
         {
           id: 'link-1',
@@ -927,7 +901,6 @@ describe('MktgAgentRunComponent', () => {
         github_url: 'https://github.com/testorbit/testorbit',
         press_release_url: 'https://press.example.org/launch',
         members_page_url: 'https://testorbit.example.org/members',
-        links: 'https://blog.example.org/launch',
       });
       expect(submitted().documents).toEqual([
         { kind: 'link', title: 'https://wiki.example.org/positioning', url: 'https://wiki.example.org/positioning', tag: 'doc' },
@@ -935,20 +908,15 @@ describe('MktgAgentRunComponent', () => {
       ]);
     });
 
-    it('shows a restored run’s other links one per row, and lists a file picked on the deck field under the documents, already tagged as a deck', async () => {
+    it('lists a file picked on the deck field under the documents, already tagged as a deck', async () => {
       storedRuns = {
         'proj-1:foundation-setup': {
           ...assetRun([]),
-          answers: { project_name: 'TestOrbit', website_url: 'https://testorbit.example.org', links: 'https://a.example.org\nhttps://b.example.org' },
+          answers: { project_name: 'TestOrbit', website_url: 'https://testorbit.example.org' },
         },
       };
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
-
-      const rows = component['linkRows']()['links'];
-      expect(rows).toHaveLength(2);
-      expect(rows.map((rowId) => component['linkRowsForm'].controls[rowId].value)).toEqual(['https://a.example.org', 'https://b.example.org']);
-      expect(component['intakeForm'].controls['links'].value).toBe('https://a.example.org\nhttps://b.example.org');
 
       readFile.mockReturnValue(of<MktgDocumentExtractResponse>({ title: 'board-deck.pptx', read: true, words: 3, truncated: false, text: 'Deck text here' }));
       const deckField = component['intake']?.fields.find((field) => field.key === 'deck_url');
