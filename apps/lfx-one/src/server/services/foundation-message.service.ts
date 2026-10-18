@@ -19,7 +19,7 @@ import {
   extractFoundationMessageQuestions,
   extractMktgAgentTexts,
   extractMktgEnvelopeCandidates,
-  extractMktgToolResults,
+  extractMktgCurrentTurnToolResults,
   foundationMessageDerivatives,
   foundationMessageQuestionsId,
   getMktgSessionOutcome,
@@ -153,12 +153,19 @@ export class FoundationMessageService {
     // What the agent has done so far, in plain sentences, for the run page's live feed — on every status.
     const activity = buildMktgRunActivity(payloads);
 
-    if (!envelope || envelope.version <= minimumVersion) {
+    // Draft numbers can restart at 1 on a same-session follow-up. Freshness
+    // comes from finalize call order within the latest queued turn, not version.
+    if (!envelope) {
       const outcome = getMktgSessionOutcome(payloads);
       const questions = this.findLatestQuestions(req, payloads);
-      // A non-empty terminal rejection supersedes an older questions block.
-      // Without a final notification, preserve questions found in agent text.
-      if (outcome.ended && !extractFoundationMessageQuestions(outcome.replyText) && (outcome.replyText || !questions)) {
+      const questionsIndex = payloads.reduce(
+        (latest, payload, index) => (extractMktgAgentTexts(payload).some((text) => !!extractFoundationMessageQuestions(text)) ? index : latest),
+        -1
+      );
+      const laterReply = getMktgSessionOutcome(payloads.slice(questionsIndex + 1)).replyText;
+      // Only a notification AFTER the latest questions can supersede them.
+      // An earlier rejection must not override later assistant stream questions.
+      if (outcome.ended && !extractFoundationMessageQuestions(outcome.replyText) && (laterReply || !questions)) {
         return { status: 'failed', failureText: outcome.replyText, activity };
       }
       if (questions) {
@@ -170,6 +177,7 @@ export class FoundationMessageService {
     logger.info(req, 'foundation_message_result', 'Messaging Document ready', {
       project: envelope.project,
       version: envelope.version,
+      minimum_version_hint: minimumVersion,
       mode: envelope.mode,
       shape: envelope.intake.shape,
       status: envelope.status,
@@ -247,9 +255,10 @@ export class FoundationMessageService {
   }
 
   /**
-   * The authoritative envelope of the session: the LATEST valid result of the
-   * agent's finalize tool (`finalize_messaging_document`), read only from
-   * that tool's result events — a page the agent fetched or a search hit is
+   * The authoritative envelope of the latest queued turn: the LATEST valid
+   * result of the agent's finalize tool (`finalize_messaging_document`). Old
+   * call ids repeated in transcript snapshots do not finalize a follow-up.
+   * Read only that tool's result events — a page the agent fetched or a search hit is
    * a tool result too, but of another tool, and nothing else in a payload is
    * looked at. The raw payloads are chronological, so a later valid finalize
    * (the agent fixed a gate failure and finalized again) supersedes an
@@ -262,29 +271,27 @@ export class FoundationMessageService {
     let candidateCount = 0;
     let invalidCount = 0;
 
-    for (const payload of payloads) {
-      for (const resultText of extractMktgToolResults(payload, FOUNDATION_MESSAGE_FINALIZE_TOOL)) {
-        for (const candidate of extractMktgEnvelopeCandidates(resultText, FOUNDATION_MESSAGE_CONTRACT_ID)) {
-          candidateCount++;
-          const result = validateFoundationMessageEnvelope(candidate);
-          if (!result.valid) {
-            invalidCount++;
-            logger.debug(req, 'foundation_message_result', 'Rejected envelope candidate', { errors: result.errors });
-            continue;
-          }
-          // Safe: validateFoundationMessageEnvelope passed every schema gate.
-          const envelope = candidate as FoundationMessageEnvelope;
-          const recomputedSha = createHash('sha256').update(Buffer.from(envelope.document_markdown, 'utf8')).digest('hex');
-          if (recomputedSha !== envelope.content_sha256) {
-            invalidCount++;
-            logger.warning(req, 'foundation_message_result', 'Envelope content_sha256 does not match the document bytes — discarding candidate', {
-              expected: envelope.content_sha256,
-              recomputed: recomputedSha,
-            });
-            continue;
-          }
-          latest = envelope;
+    for (const resultText of extractMktgCurrentTurnToolResults(payloads, FOUNDATION_MESSAGE_FINALIZE_TOOL)) {
+      for (const candidate of extractMktgEnvelopeCandidates(resultText, FOUNDATION_MESSAGE_CONTRACT_ID)) {
+        candidateCount++;
+        const result = validateFoundationMessageEnvelope(candidate);
+        if (!result.valid) {
+          invalidCount++;
+          logger.debug(req, 'foundation_message_result', 'Rejected envelope candidate', { errors: result.errors });
+          continue;
         }
+        // Safe: validateFoundationMessageEnvelope passed every schema gate.
+        const envelope = candidate as FoundationMessageEnvelope;
+        const recomputedSha = createHash('sha256').update(Buffer.from(envelope.document_markdown, 'utf8')).digest('hex');
+        if (recomputedSha !== envelope.content_sha256) {
+          invalidCount++;
+          logger.warning(req, 'foundation_message_result', 'Envelope content_sha256 does not match the document bytes — discarding candidate', {
+            expected: envelope.content_sha256,
+            recomputed: recomputedSha,
+          });
+          continue;
+        }
+        latest = envelope;
       }
     }
 

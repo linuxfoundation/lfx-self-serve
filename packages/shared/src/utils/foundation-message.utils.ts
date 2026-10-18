@@ -767,7 +767,7 @@ export function validateFoundationMessageEnvelope(candidate: unknown): Foundatio
  * derivative chip keys. A `tbd` primitive is left out — a chip must never
  * offer "Needs input" as copy.
  */
-export function foundationMessageDerivatives(envelope: FoundationMessageEnvelope): Record<string, string> {
+export function foundationMessageDerivatives(envelope: Pick<FoundationMessageEnvelope, 'fields'>): Record<string, string> {
   const derivatives: Record<string, string> = {};
   for (const chip of FOUNDATION_MESSAGE_DERIVATIVE_CHIPS) {
     const field = envelope.fields[chip.field];

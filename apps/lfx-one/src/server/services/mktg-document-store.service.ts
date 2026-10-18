@@ -14,6 +14,7 @@ import {
   MKTG_RUN_DOCUMENT_ID_PREFIX,
 } from '@lfx-one/shared/constants';
 import {
+  FoundationMessageEnvelope,
   MktgArtifactEnvelope,
   MktgArtifactIntakeMode,
   MktgArtifactPersistReceipt,
@@ -48,6 +49,7 @@ import {
   extractMktgArtifactKeySha,
   findMktgDocumentStatus,
   findMktgDocumentType,
+  foundationMessageDerivatives,
   parseMktgLegacyRevisionId,
   parseMktgRevisionKey,
 } from '@lfx-one/shared/utils';
@@ -287,7 +289,12 @@ export class MktgDocumentStoreService {
       }
       const summaries = this.summarize(revisions);
       const revision = summaries.find((summary) => summary.id === found.id) as MktgRevisionSummary;
-      const derivatives = found.record.bundle.sidecar?.['derivatives'];
+      const sidecar = found.record.bundle.sidecar;
+      const fields = sidecar?.['fields'];
+      const derivatives =
+        type.agentKey === 'foundation-message' && fields && typeof fields === 'object' && !Array.isArray(fields)
+          ? foundationMessageDerivatives({ fields: fields as FoundationMessageEnvelope['fields'] })
+          : sidecar?.['derivatives'];
       return {
         ...this.detail(project, type, documentId, summaries),
         revision,

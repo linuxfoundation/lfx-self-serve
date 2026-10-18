@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { extractMktgAgentTexts, extractMktgToolResults, getMktgSessionOutcome } from './mktg-session-event.utils';
+import { extractMktgAgentTexts, extractMktgToolResults, extractMktgCurrentTurnToolResults, getMktgSessionOutcome } from './mktg-session-event.utils';
 
 const FINALIZE = 'finalize_messaging_document';
 const ENVELOPE = '{"contract":"messaging-document-output/v1","version":1}';
@@ -63,6 +63,28 @@ describe('getMktgSessionOutcome', () => {
     expect(
       getMktgSessionOutcome([event('agent_notification_message', agent, 'Old turn'), event('runtime_done'), event('runtime_start'), event('runtime_done')])
     ).toEqual({ ended: true, replyText: '' });
+  });
+});
+
+describe('extractMktgCurrentTurnToolResults', () => {
+  const prior = llmStart([
+    { role: 'assistant', content: [use('old-finalize', FINALIZE)] },
+    { role: 'user', content: [result('old-finalize', ENVELOPE)] },
+  ]);
+  const queued = JSON.stringify({ type: 'mktg_session_turn_started' });
+
+  it('ignores old finalize calls repeated in a queued turn transcript', () => {
+    expect(extractMktgCurrentTurnToolResults([prior, queued, prior], FINALIZE)).toEqual([]);
+  });
+
+  it('accepts a fresh finalize call even when its version and bytes repeat the prior output', () => {
+    const replay = llmStart([
+      { role: 'assistant', content: [use('old-finalize', FINALIZE)] },
+      { role: 'user', content: [result('old-finalize', ENVELOPE)] },
+      { role: 'assistant', content: [use('new-finalize', FINALIZE)] },
+      { role: 'user', content: [result('new-finalize', ENVELOPE)] },
+    ]);
+    expect(extractMktgCurrentTurnToolResults([prior, queued, replay], FINALIZE)).toEqual([ENVELOPE]);
   });
 });
 

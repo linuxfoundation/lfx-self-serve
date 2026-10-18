@@ -417,6 +417,7 @@ export const MKTG_DOCUMENT_STATUS_LEAD_REGEX = /^(?:[\s#>|*_-]*|[\s#>|*_-]*statu
 
 /** Legacy result-UI exports retained until the intake migration/cleanup layers. */
 export const MKTG_RUN_STAGES = ['Submitting your intake', 'Agent drafting the document', 'Validating required sections'] as const;
+/** Prefix of the reviewed label — the one status that is no longer a draft. */
 export const MKTG_DOCUMENT_STATUS_REVIEWED_PREFIX = 'ED-reviewed';
 
 /** localStorage key prefix for stored runs; full key is `<prefix>:<projectUid>:<agentId>`. */

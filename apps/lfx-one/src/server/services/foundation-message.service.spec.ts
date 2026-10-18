@@ -355,12 +355,14 @@ describe('FoundationMessageService.getResult', () => {
     expect(await service.getResult(req, 'session-1')).toMatchObject({ status: 'ready' });
   });
 
-  it('preserves agent questions when completion has no final notification text', async () => {
-    guildMocks.getRawEventPayloads.mockResolvedValue([
-      llmStartPayload([{ role: 'assistant', content: [{ type: 'text', text: questionsText([AUDIENCES_QUESTION]) }] }]),
-      JSON.stringify({ type: 'runtime_done', task: { id: 'synthetic-task', entity_type: 'EntTaskAgent' } }),
-    ]);
+  it.each([false, true])('preserves stream questions without a later notification, with earlier rejection=%s', async (earlierRejection) => {
+    const stream = llmStartPayload([{ role: 'assistant', content: [{ type: 'text', text: questionsText([AUDIENCES_QUESTION]) }] }]);
+    const rejection = JSON.stringify({ type: 'agent_notification_message', content: { type: 'text', data: 'The intake was rejected.' } });
+    const done = JSON.stringify({ type: 'runtime_done', task: { id: 'synthetic-task', entity_type: 'EntTaskAgent' } });
+    guildMocks.getRawEventPayloads.mockResolvedValue([...(earlierRejection ? [rejection] : []), stream, done]);
     expect(await service.getResult(req, 'session-1')).toMatchObject({ status: 'questions' });
+    guildMocks.getRawEventPayloads.mockResolvedValue([stream, rejection, done]);
+    expect(await service.getResult(req, 'session-1')).toMatchObject({ status: 'failed', failureText: 'The intake was rejected.' });
   });
 
   it('does not fail a queued turn from the prior completion while its runtime_start is pending', async () => {
@@ -499,10 +501,9 @@ describe('FoundationMessageService.getResult', () => {
     expect(result.version).toBe(1);
   });
 
-  it('does not persist the prior envelope for a server-tracked follow-up', async () => {
+  it('does not use draft numbering as a freshness gate for Messaging finalizations', async () => {
     guildMocks.getRawEventPayloads.mockResolvedValue([toolResultPayload(buildEnvelope())]);
-    expect(await service.getResult(req, 'session-1', 'synthetic-project', undefined, 1)).toMatchObject({ status: 'pending' });
-    expect(objectStoreMocks.putContentAddressedObject).not.toHaveBeenCalled();
+    expect(await service.getResult(req, 'session-1', undefined, undefined, 1)).toMatchObject({ status: 'ready', version: 1 });
   });
 
   it('returns the validated document with its copy primitives when the envelope passes every gate', async () => {
@@ -587,6 +588,26 @@ describe('FoundationMessageService persistence', () => {
     });
     // Recorded as a revision of the project's foundation-message document, keyed by the run's session.
     expect(documentStoreMocks.recordedSessions).toEqual(['session-1']);
+  });
+
+  it('persists a same-session follow-up whose latest finalize restarts at version 1', async () => {
+    const prior = buildEnvelope({ version: 2 });
+    const next = buildEnvelope({ version: 1, document_markdown: buildDocument('# Revised Synthetic Messaging Document') });
+    const priorPayload = toolResultPayload(prior, 'prior-finalize');
+    guildMocks.getRawEventPayloads.mockResolvedValue([priorPayload]);
+    await service.getResult(req, 'session-1', PROJECT_UID);
+    const queued = JSON.stringify({ type: 'mktg_session_turn_started' });
+    guildMocks.getRawEventPayloads.mockResolvedValue([priorPayload, queued, priorPayload]);
+    expect(await service.getResult(req, 'session-1', PROJECT_UID, undefined, 2)).toMatchObject({ status: 'pending' });
+    guildMocks.getRawEventPayloads.mockResolvedValue([priorPayload, queued, priorPayload, toolResultPayload(next, 'next-finalize')]);
+    const result = await service.getResult(req, 'session-1', PROJECT_UID, undefined, 2);
+    expect(result).toMatchObject({
+      status: 'ready',
+      version: 1,
+      documentMarkdown: next['document_markdown'],
+      persistence: { content_sha256: next['content_sha256'] },
+    });
+    expect(documentStoreMocks.recordedSessions).toEqual(['session-1', 'session-1']);
   });
 
   it('never writes into a partition the caller cannot write: no writer grant, no persistence', async () => {

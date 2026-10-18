@@ -187,6 +187,31 @@ export function extractMktgAgentTexts(payload: string): string[] {
  * fetch fail on cannot plant the pair where only a transcript block counts.
  */
 export function extractMktgToolResults(payload: string, toolName: string): string[] {
+  return extractToolResultEntries(payload, toolName).map((result) => result.text);
+}
+
+/**
+ * Finalize results belonging to the latest queued turn, in event order.
+ * A later LLM snapshot can repeat earlier tool results: their call ids must
+ * not satisfy a follow-up, even when the agent restarts draft numbering at 1.
+ * A fresh call with identical output still counts as a new finalization.
+ */
+export function extractMktgCurrentTurnToolResults(payloads: string[], toolName: string): string[] {
+  const priorCallIds = new Set<string>();
+  let current: { id: string; text: string }[] = [];
+  for (const payload of payloads) {
+    const event = parseEmbeddedJson(payload);
+    if (isRecord(event) && event['type'] === MKTG_SESSION_TURN_STARTED) {
+      current.forEach((result) => priorCallIds.add(result.id));
+      current = [];
+    } else {
+      current.push(...extractToolResultEntries(payload, toolName).filter((result) => !priorCallIds.has(result.id)));
+    }
+  }
+  return current.map((result) => result.text);
+}
+
+function extractToolResultEntries(payload: string, toolName: string): { id: string; text: string }[] {
   const event = readableEvent(payload);
   if (event === undefined) {
     return [];
@@ -218,7 +243,7 @@ export function extractMktgToolResults(payload: string, toolName: string): strin
     }
     return true;
   });
-  return results.filter((result) => callIds.has(result.id)).map((result) => result.text);
+  return results.filter((result) => callIds.has(result.id));
 }
 
 /**

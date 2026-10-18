@@ -30,6 +30,7 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-artifact.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-document-store.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-document.utils')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/foundation-message.utils')),
 }));
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/constants', async () => ({
@@ -75,7 +76,7 @@ vi.mock('./object-store.service', () => ({
 }));
 
 import { MKTG_ARTIFACT_SPECS, MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
-import type { MktgArtifactEnvelope, MktgDocumentType, MktgReadmeSkipReason, MktgRevisionRecord } from '@lfx-one/shared/interfaces';
+import type { FoundationMessageEnvelope, MktgArtifactEnvelope, MktgDocumentType, MktgReadmeSkipReason, MktgRevisionRecord } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
 import { MktgDocumentStoreService } from './mktg-document-store.service';
@@ -177,6 +178,49 @@ describe('MktgDocumentStoreService', () => {
       expect(read?.markdown).toBe('# First\n');
       expect(read?.source?.sessionId).toBe('session-1');
       expect(read?.derivatives).toEqual({ summary: 'Short copy' });
+    });
+
+    it('reads Messaging copy primitives from md fields, excluding empty and tbd values', async () => {
+      const fields: FoundationMessageEnvelope['fields'] = {
+        'md.summary_25': { value: 'Synthetic project summary.', source: 'Asked', status: 'draft' },
+        'md.summary_50': { value: 'Needs input', source: 'Needs input', status: 'tbd' },
+        'md.boilerplate': { value: '  ', source: 'Asked', status: 'draft' },
+        'md.llms_txt': { value: '# Synthetic project', source: 'Asked', status: 'draft' },
+        'md.elevator_pitch': { value: 'Synthetic pitch.', source: 'Asked', status: 'draft' },
+      };
+      const generated: FoundationMessageEnvelope = {
+        ...envelope('# Synthetic Messaging Document\n\nSynthetic project summary.\n# Synthetic project\nSynthetic pitch.\n'),
+        contract: 'messaging-document-output/v1',
+        kind: 'messaging-document',
+        project: 'synthetic-project',
+        project_name: 'Synthetic Project',
+        mode: 'generate',
+        status: 'Draft — from your documents',
+        fields,
+        brand_seed: {
+          project_name: 'Synthetic Project',
+          logo: { light: null, dark: null },
+          palette: null,
+          fonts: null,
+          _source: { logo: 'none', palette: 'none', fonts: 'none' },
+        },
+        inputs_record: { documents: [], sources: [], lfx_records: [], answers: [] },
+        intake: { mode: 'form', shape: 'answers', completed_at: '2026-10-15T10:00:00Z' },
+        revision: null,
+        capabilities: { web_fetch: false, lfx_mcp: false },
+        generated_at: '2026-10-15T10:00:00Z',
+        agent: { identifier: 'synthetic-owner~foundation-message', agent_version: '2.0.0', prompt_manifest_sha256: 'b'.repeat(64) },
+      };
+      const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === 'foundation-message') as MktgDocumentType;
+      const receipt = await service.persistGeneration(req, MKTG_ARTIFACT_SPECS['foundation-message'], generated, PROJECT, 'messaging-session');
+      const location = receipt?.document;
+      expect(location).toBeDefined();
+      if (!location) {
+        throw new Error('Missing synthetic Messaging receipt');
+      }
+      const read = await service.getRevision(req, PROJECT, type, location.documentId, location.revisionId);
+      expect(read?.derivatives).toEqual({ summary_25: 'Synthetic project summary.', llms_txt: '# Synthetic project', elevator_pitch: 'Synthetic pitch.' });
+      expect(storedRecord(revisionKeys()[0]).bundle.sidecar).not.toHaveProperty('derivatives');
     });
 
     it('records only a known README-less reason, never arbitrary client text', async () => {
