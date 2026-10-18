@@ -7603,6 +7603,134 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
 
     expect(internals().briefOutput()?.googleCallouts).toEqual(['Generated callout']);
   });
+
+  /**
+   * #3810 round 2 (Copilot and Cursor, independently): the carry was keyed on the event SLUG, and
+   * the slug cannot tell "the same brief, refined" from "the same event, generated again".
+   *
+   * The route is real and sits in the Planning tab's own template: `planning-new-brief-btn` calls
+   * `reset()`, which puts the step back to `input` and re-arms Generate without leaving the event.
+   * A full generate emits NEW callouts and sitelinks; the draft from the last Implement visit then
+   * replaced them, so the regenerated brief opened — and `persistBrief` stored it — carrying the
+   * previous generation's extensions.
+   *
+   * The whole class is "every transition that replaces the brief", and each member has a test here
+   * rather than this one route being patched: refine must still carry (both the first and the
+   * second time), restore must not, and Start Over must leave nothing behind.
+   */
+  const regeneratedBrief = (slug: string): CampaignBriefOutput =>
+    ({
+      ...briefFor(slug),
+      googleCallouts: ['Regenerated callout'],
+      googleSitelinks: [{ text: 'Book now', finalUrl: 'https://example.com/book' }],
+    }) as unknown as CampaignBriefOutput;
+
+  it('drops the edits when the same event is generated again, rather than overwriting the new lists', () => {
+    internals().onProceedToImplementation(briefWithExtensions('kubecon-eu-2026'));
+    internals().implementationDraft.set({
+      ...completeDraftFor('kubecon-eu-2026'),
+      googleCallouts: ['Early bird pricing'],
+      googleSitelinks: [{ text: 'Operator link', finalUrl: 'https://example.com/schedule' }],
+    });
+
+    // New Brief → Generate: same event, same slug, different lists.
+    internals().onProceedToImplementation(regeneratedBrief('kubecon-eu-2026'));
+
+    expect(internals().briefOutput()?.googleCallouts).toEqual(['Regenerated callout']);
+    expect(internals().briefOutput()?.googleSitelinks).toEqual([{ text: 'Book now', finalUrl: 'https://example.com/book' }]);
+  });
+
+  it('still carries the edits on a SECOND refine of the same brief', () => {
+    // The trap in the obvious fix. Comparing the incoming lists against the brief ON SCREEN works
+    // once and then stops: after the first carry the on-screen brief holds the operator's edits
+    // while Planning still holds the generator's originals, so the second refine compares unequal
+    // and silently drops the edits. The baseline is therefore recorded from the INCOMING brief,
+    // before the carry, which keeps it equal to what Planning keeps handing back.
+    internals().onProceedToImplementation(briefWithExtensions('kubecon-eu-2026'));
+    internals().implementationDraft.set({ ...completeDraftFor('kubecon-eu-2026'), googleCallouts: ['Early bird pricing'] });
+
+    internals().onProceedToImplementation(briefWithExtensions('kubecon-eu-2026'));
+    expect(internals().briefOutput()?.googleCallouts).toEqual(['Early bird pricing']);
+
+    // Refine a second time. The edit is re-entered because the first Proceed cleared the draft,
+    // exactly as a returning operator would re-enter the editor and have it seeded from the brief.
+    internals().implementationDraft.set({ ...completeDraftFor('kubecon-eu-2026'), googleCallouts: ['Early bird pricing'] });
+    internals().onProceedToImplementation(briefWithExtensions('kubecon-eu-2026'));
+
+    expect(internals().briefOutput()?.googleCallouts).toEqual(['Early bird pricing']);
+  });
+
+  it('carries nothing on the first Proceed of a session, when no brief has been handed over yet', () => {
+    // Fail-closed: a draft with no baseline behind it is a draft typed over nothing this page
+    // handed out, so it has no claim on the incoming lists.
+    internals().implementationDraft.set({ ...completeDraftFor('kubecon-eu-2026'), googleCallouts: ['Stale'] });
+
+    internals().onProceedToImplementation(briefWithExtensions('kubecon-eu-2026'));
+
+    expect(internals().briefOutput()?.googleCallouts).toEqual(['Generated callout']);
+  });
+
+  it('does not carry onto a restored brief, and records its lists for what follows', () => {
+    const restore = internals() as unknown as { onProceedToImplementation(b: CampaignBriefOutput, alreadyPersisted: boolean): void };
+
+    internals().onProceedToImplementation(briefWithExtensions('kubecon-eu-2026'));
+    internals().implementationDraft.set({ ...completeDraftFor('kubecon-eu-2026'), googleCallouts: ['Early bird pricing'] });
+
+    // A restore writes nothing, so substituting into it would show values no stored row holds.
+    const restored = regeneratedBrief('kubecon-eu-2026');
+    restore.onProceedToImplementation(restored, true);
+    expect(internals().briefOutput()).toBe(restored);
+
+    // And the baseline moved with it: edits typed over the RESTORED brief carry back onto it, and
+    // the pre-restore generation's lists no longer match anything.
+    internals().implementationDraft.set({ ...completeDraftFor('kubecon-eu-2026'), googleCallouts: ['After restore'] });
+    internals().onProceedToImplementation(regeneratedBrief('kubecon-eu-2026'));
+    expect(internals().briefOutput()?.googleCallouts).toEqual(['After restore']);
+  });
+
+  it('carries nothing after Start Over, which clears the baseline with the draft', () => {
+    internals().onProceedToImplementation(briefWithExtensions('kubecon-eu-2026'));
+    internals().implementationDraft.set({ ...completeDraftFor('kubecon-eu-2026'), googleCallouts: ['Early bird pricing'] });
+
+    internals().resetToPlanning();
+    // Re-seeded the way a stale draft would survive if anything ever held one past the reset: the
+    // baseline alone must be enough to refuse the carry.
+    internals().implementationDraft.set({ ...completeDraftFor('kubecon-eu-2026'), googleCallouts: ['Early bird pricing'] });
+
+    internals().onProceedToImplementation(briefWithExtensions('kubecon-eu-2026'));
+
+    expect(internals().briefOutput()?.googleCallouts).toEqual(['Generated callout']);
+  });
+
+  it('gates each extension list on its own, so one regenerated list does not void the other', () => {
+    internals().onProceedToImplementation(briefWithExtensions('kubecon-eu-2026'));
+    internals().implementationDraft.set({
+      ...completeDraftFor('kubecon-eu-2026'),
+      googleCallouts: ['Early bird pricing'],
+      googleSitelinks: [{ text: 'Operator link', finalUrl: 'https://example.com/schedule' }],
+    });
+
+    // Callouts regenerated, sitelinks handed back unchanged.
+    const mixed = {
+      ...briefWithExtensions('kubecon-eu-2026'),
+      googleCallouts: ['Regenerated callout'],
+    } as unknown as CampaignBriefOutput;
+    internals().onProceedToImplementation(mixed);
+
+    expect(internals().briefOutput()?.googleCallouts).toEqual(['Regenerated callout']);
+    expect(internals().briefOutput()?.googleSitelinks).toEqual([{ text: 'Operator link', finalUrl: 'https://example.com/schedule' }]);
+  });
+
+  it('treats a reordered list as regenerated, since positional edits no longer line up', () => {
+    const twoCallouts = { ...briefFor('kubecon-eu-2026'), googleCallouts: ['First', 'Second'] } as unknown as CampaignBriefOutput;
+    internals().onProceedToImplementation(twoCallouts);
+    internals().implementationDraft.set({ ...completeDraftFor('kubecon-eu-2026'), googleCallouts: ['First edited', 'Second'] });
+
+    const reordered = { ...briefFor('kubecon-eu-2026'), googleCallouts: ['Second', 'First'] } as unknown as CampaignBriefOutput;
+    internals().onProceedToImplementation(reordered);
+
+    expect(internals().briefOutput()?.googleCallouts).toEqual(['Second', 'First']);
+  });
 });
 
 /** A draft with every REQUIRED member of {@link CampaignImplementationDraft} present. */
