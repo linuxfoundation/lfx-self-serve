@@ -173,9 +173,19 @@
               </ol>
             </div>
             @if (framework.mf.notes) {
+              <!-- The agent writes each choice with a link to the page it rests on (4.0.2); restricted Markdown renders the links and nothing else. -->
               <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 flex flex-col gap-2">
                 <h3 class="text-sm font-semibold text-amber-800">For the reviewer</h3>
-                <p class="text-sm whitespace-pre-wrap text-amber-900" data-testid="mktg-framework-view-notes">{{ framework.mf.notes }}</p>
+                <div class="text-sm text-amber-900 [&_a]:underline [&_a]:text-amber-900 hover:[&_a]:text-amber-700" data-testid="mktg-framework-view-notes">
+                  <lfx-markdown-renderer [content]="framework.mf.notes" [breaks]="true" [restricted]="true" />
+                </div>
+                <button
+                  type="button"
+                  class="self-start text-xs font-medium text-amber-800 underline hover:text-amber-900"
+                  data-testid="mktg-framework-view-notes-sources"
+                  (click)="onSelectTab('sources')">
+                  Sources read, failed and gaps
+                </button>
               </div>
             }
           </div>

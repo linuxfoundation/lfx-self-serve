@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, NgClass } from '@angular/common';
+import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { Component, computed, inject, input, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { FOUNDATION_MESSAGE_MODE_LABELS, FOUNDATION_MESSAGE_VIEW_TABS } from '@lfx-one/shared/constants';
 import {
@@ -35,7 +36,7 @@ import {
 // here. Purely presentational: the run page and the Documents area feed it.
 @Component({
   selector: 'lfx-mktg-framework-view',
-  imports: [NgClass],
+  imports: [NgClass, MarkdownRendererComponent],
   templateUrl: './mktg-framework-view.component.html',
 })
 export class MktgFrameworkViewComponent {
