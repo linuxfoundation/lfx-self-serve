@@ -454,8 +454,16 @@ export class CampaignsComponent {
    *
    * Encoding the reason rather than the absence keeps them apart. A save with an `'unknown'`
    * validator sends none, and the server's ownership check still decides whether it may replace.
+   *
+   * ### Why `approved` is OPTIONAL rather than defaulted
+   * It records the approval state THIS SESSION last established for the row, and only the two
+   * paths that actually learned it write it: a save (which reads `approved` off its own result)
+   * and a successful approval of a restored brief. Everywhere else it stays absent, which means
+   * "this session does not know" — and callers then fall back to whatever the restore offer
+   * carried, i.e. the behavior that existed before this field. Defaulting it to `false` would
+   * turn that honest ignorance into a false claim and re-approve rows that are already approved.
    */
-  private knownBriefIds = new Map<string, { id: string; etag: string | null; absence?: 'overwrite' | 'unknown' }>();
+  private knownBriefIds = new Map<string, { id: string; etag: string | null; absence?: 'overwrite' | 'unknown'; approved?: boolean }>();
 
   /**
    * Bumped on every write to `knownBriefIds`, so a computed can depend on the map.
@@ -466,6 +474,27 @@ export class CampaignsComponent {
    * `rememberBriefId` is what keeps this in step -- do not call `knownBriefIds.set` directly.
    */
   private readonly knownBriefIdsVersion = signal(0);
+
+  /**
+   * Bumped whenever THIS component has changed a stored brief row, to invalidate Planning's cache.
+   *
+   * `lfx-planning-tab` looks a brief up once per `(slug, project, delivery, stage)` and caches the
+   * answer; it is visibility-toggled rather than destroyed, so that answer outlives every write
+   * made here. Two dead ends came out of that: a save whose approve step did not land told the
+   * user to go back to Planning and restore — but Planning had legitimately found nothing before
+   * the save and never looked again, so no Restore button appeared; and a restore that APPROVED
+   * the row left the cache holding the pre-approval validator and `approved: false`.
+   *
+   * Bound to the PAID planner only. Two instances are mounted at once (see the template), and the
+   * one write path that can strand a row this way — `approveRestoredBrief`, reached from
+   * `onProceedToImplementation`'s already-persisted branch — is paid-only; `onRestoreSavedEmailBrief`
+   * is a separate handler that does not approve.
+   *
+   * The value is opaque: only the CHANGE matters. Planning folds it into its lookup key so a
+   * bump gets past the `distinctUntilChanged` that would otherwise drop a re-emission of an
+   * unchanged key — which is exactly how the stale answer survived.
+   */
+  protected readonly savedBriefRefreshToken = signal(0);
 
   /**
    * True while `onRestoreSavedBrief` is adopting a restored brief's own program.
@@ -637,6 +666,20 @@ export class CampaignsComponent {
    * away, which is exactly the behavior `persistBrief` documents it must not have.
    */
   private persistChain: Promise<void> = Promise.resolve();
+
+  /**
+   * In-flight approvals, keyed by ownership key, so a save for the same row can wait for one.
+   *
+   * An approval bumps the row's `version`, and `approveRestoredBrief` records the new validator
+   * only when its response lands. A save that reads `knownBriefIds` in that window sends the
+   * pre-approval ETag and is refused with a 412 the user did nothing to earn.
+   *
+   * Keyed rather than session-wide for the reason `persistBrief`'s own docblock gives for not
+   * queueing behind unrelated work: a save for event B must not wait on an approval for event A.
+   * Deadlock is not reachable — `approveRestoredBrief` is only called from the already-persisted
+   * branch, which never calls `persistBrief`.
+   */
+  private readonly pendingApprovals = new Map<string, Promise<void>>();
 
   /**
    * The foundation the current `briefPersistence` was filed under.
@@ -3840,7 +3883,26 @@ export class CampaignsComponent {
       // rely on. Treating `undefined` as "present" would withhold the overwrite licence and
       // refuse the first save after a restore as `unverified-validator`.
       const validator = etag ?? null;
-      this.rememberBriefId(key, { id: briefId, etag: validator, ...(validator === null ? { absence: 'overwrite' as const } : {}) });
+      // The OFFER is not always the freshest account of this row. Planning caches its lookup and
+      // is visibility-toggled rather than destroyed, so after this session approved a restored
+      // brief — which files the post-approval ETag and `approved: true` here — a second Restore
+      // replays the PRE-approval pair the cache still holds. Overwriting a validator this session
+      // knows to be newer with a stale one earns a 412 on the next save, and replaying
+      // `approved: false` re-runs an approval against a row that is already approved.
+      //
+      // Guarded on the id, not just the key: a different id under the same key is a different row
+      // and this session's record says nothing about it, so the offer is then the only account
+      // there is and is taken verbatim.
+      const held = this.knownBriefIds.get(key);
+      const record: { id: string; etag: string | null; absence?: 'overwrite' | 'unknown'; approved?: boolean } =
+        held !== undefined && held.id === briefId ? held : { id: briefId, etag: validator, ...(validator === null ? { absence: 'overwrite' as const } : {}) };
+      this.rememberBriefId(key, record);
+      // Read off `record`, NOT off `held`: when the id guard above rejected `held` it describes a
+      // different row, and its approval state says nothing about this one. `=== true` rather than a
+      // truthiness test, because absent means this session never learned the row's approval state,
+      // and the offer's own `approved` is then the only answer available.
+      this.onProceedToImplementation(brief, true, approved || record.approved === true);
+      return;
     }
     this.onProceedToImplementation(brief, true, approved);
   }
@@ -4199,7 +4261,7 @@ export class CampaignsComponent {
   }
 
   /** Single write path for `knownBriefIds`, so `knownBriefIdsVersion` cannot drift from the map. */
-  private rememberBriefId(key: string, value: { id: string; etag: string | null; absence?: 'overwrite' | 'unknown' }): void {
+  private rememberBriefId(key: string, value: { id: string; etag: string | null; absence?: 'overwrite' | 'unknown'; approved?: boolean }): void {
     this.knownBriefIds.set(key, value);
     this.knownBriefIdsVersion.update((v) => v + 1);
   }
@@ -5335,7 +5397,18 @@ export class CampaignsComponent {
     this.pendingBriefSaves += 1;
     this.briefSaveInFlight.set(true);
 
-    this.persistChain = this.persistChain.then(() => {
+    this.persistChain = this.persistChain.then(async () => {
+      // An approval for THIS row rewrites the validator below, and does it outside the save queue
+      // — `approveRestoredBrief` is not enqueued, because queueing an approval behind an unrelated
+      // save is what the queue's own docblock argues against. So the one ordering that matters is
+      // taken here instead: read the validator only once any approval for this exact key has
+      // settled, or this save sends the pre-approval ETag and earns a 412 nobody caused.
+      //
+      // Swallowed because a FAILED approval is not this save's problem: the approve arm has
+      // already reported it, and the recorded validator is then simply unchanged.
+      if (ownershipKey !== null) {
+        await this.pendingApprovals.get(ownershipKey)?.catch(() => undefined);
+      }
       // Resolved as this item starts, so a predecessor's created id is already recorded. Safe to
       // read late because it is keyed by `(project, event)`: only a save of THIS event can have
       // filed it, whatever else happened while this one waited.
@@ -5407,9 +5480,14 @@ export class CampaignsComponent {
             // A null etag here is UNKNOWN, not permission: the write returned no validator, or
             // its approval outcome was indeterminate. The next save must not silently fall back
             // to a freshly read one on the strength of it.
+            // `approved` is recorded here because this result is where the session LEARNS it: the
+            // write and its approval were one call, and `result.approved` is that call's answer
+            // for this exact row. A later restore reads it back rather than trusting the offer
+            // Planning cached before this save ran.
             this.rememberBriefId(ownershipKey, {
               id: result.briefId,
               etag: result.etag,
+              approved: result.approved,
               ...(result.etag === null ? { absence: 'unknown' as const } : {}),
             });
           }
@@ -5469,7 +5547,11 @@ export class CampaignsComponent {
               if (owned !== undefined) {
                 // EXPLICIT: the user has just been shown the stale-brief warning. The next save
                 // may take the freshly read validator, which is what proceeding means.
-                this.rememberBriefId(ownershipKey, { id: owned.id, etag: null, absence: 'overwrite' });
+                // Spread rather than rebuilt, so `approved` survives: a conflict means this save
+                // did not change the row, so whatever approval state the session had recorded for
+                // it is still the truth. Rebuilding the record would drop it and send the next
+                // restore back to the offer's stale answer.
+                this.rememberBriefId(ownershipKey, { ...owned, etag: null, absence: 'overwrite' });
               }
             }
             this.briefPersistence.set({
@@ -5495,6 +5577,10 @@ export class CampaignsComponent {
           // Implementation tab opened before the persist resolved, so the entry-time attempt
           // guarded itself out. Without this the create path never learns the capability.
           this.loadCreateCapabilitiesFor(result.briefId);
+          // The row on the server is now different from whatever Planning last looked up — it may
+          // not even have existed then. Reached only past the conflict and `!enabled` returns
+          // above, so it fires exactly when a write actually landed.
+          this.savedBriefRefreshToken.update((token) => token + 1);
 
           this.briefPersistence.set({
             status: 'saved',
@@ -5504,9 +5590,15 @@ export class CampaignsComponent {
               ? null
               : // Names the one action that actually approves a stored brief. It used to say "ask an
                 // administrator to approve the stored brief", which described nothing the product
-                // could do; going back to Planning and re-entering the event URL offers the restore,
-                // and the restore now approves the row it hands over.
-                'This brief was saved but not approved, so campaigns cannot be created from it yet. Go back to Planning, re-enter the event URL and restore the saved brief to approve it.',
+                // could do; the restore now approves the row it hands over.
+                //
+                // It no longer says to RE-ENTER the event URL, because that instruction could not
+                // be followed: `onUrlInput` emits nothing for an unchanged URL and nothing at all
+                // for an empty one, so retyping the same address was dropped and no Restore button
+                // ever appeared. The save above bumps `savedBriefRefreshToken` instead, which
+                // re-runs Planning's lookup against the row this save just created — so the offer
+                // is simply there when the user arrives.
+                'This brief was saved but not approved, so campaigns cannot be created from it yet. Go back to Planning and restore the saved brief to approve it.',
           });
         },
         // The message is intentionally about DURABILITY, not about the HTTP call: what the user
@@ -5604,7 +5696,7 @@ export class CampaignsComponent {
    * which has just replaced what is on screen. Queueing it behind an unrelated save of a previous
    * brief would delay the only thing standing between the user and a disabled Create button.
    */
-  private approveRestoredBrief(ownershipKey: string, known: { id: string; etag: string | null; absence?: 'overwrite' | 'unknown' }): void {
+  private approveRestoredBrief(ownershipKey: string, known: { id: string; etag: string | null; absence?: 'overwrite' | 'unknown'; approved?: boolean }): void {
     // NOT `++`. The caller bumped the generation as its first act -- the restore is the event that
     // invalidates whatever was in flight -- and bumping again here would invalidate the restore's
     // own banner writes, which are the ones this approval is about to replace.
@@ -5629,7 +5721,7 @@ export class CampaignsComponent {
       return;
     }
 
-    firstValueFrom(this.campaignService.approveBrief(projectSlug, known.id, known.etag)).then(
+    const request: Promise<void> = firstValueFrom(this.campaignService.approveBrief(projectSlug, known.id, known.etag)).then(
       (result) => {
         // Latched before the generation check, for the reason `persistBrief` documents at length:
         // `enabled` is a fact about the deployment, not about this brief, and dropping it with a
@@ -5666,6 +5758,7 @@ export class CampaignsComponent {
           this.rememberBriefId(ownershipKey, {
             id: known.id,
             etag: result.etag,
+            approved: true,
             ...(result.etag === null ? { absence: known.absence ?? ('overwrite' as const) } : {}),
           });
         }
@@ -5693,6 +5786,24 @@ export class CampaignsComponent {
           return;
         }
         if (!result.approved) {
+          // The SAME escape the save path grants, for the same reason and against the same wall.
+          // A refused approval leaves this session holding a validator the server has rejected;
+          // every retry re-sends it and is refused identically, while the message says to try
+          // again. The user has now BEEN WARNED, which is the entire content of `'overwrite'` --
+          // something was displayed and something was chosen -- so the next attempt may fall back
+          // to a freshly read validator instead of replaying the one that just failed.
+          //
+          // Guarded on `stillOurs` so a refusal for a row this session no longer holds cannot
+          // hand out permission over whatever arrived in its place, and on the id for the same
+          // reason: `knownBriefIds` may already describe a different brief under this key.
+          if (stillOurs) {
+            const owned = this.knownBriefIds.get(ownershipKey);
+            if (owned !== undefined) {
+              // Spread, so `approved` is not invented: the approval was REFUSED, so whatever the
+              // session knew about the row's approval state is unchanged by this answer.
+              this.rememberBriefId(ownershipKey, { ...owned, etag: null, absence: 'overwrite' });
+            }
+          }
           this.briefPersistence.set({
             status: 'error',
             briefId: known.id,
@@ -5705,6 +5816,10 @@ export class CampaignsComponent {
         // in the opposite direction. The id stays as provenance and `approved` is now earned, which
         // is the whole point -- `canSubmit` reads exactly this.
         this.briefPersistence.set({ status: 'off', briefId: known.id, message: null, approved: true });
+        // The row is approved now and its validator has moved, while Planning still holds the
+        // pre-approval pair it handed over. Without this a second Restore replays that stale pair
+        // -- a stale ETag and `approved: false` -- at this component.
+        this.savedBriefRefreshToken.update((token) => token + 1);
       },
       // A failed REQUEST leaves the stored brief exactly as it was: unapproved. Same message as the
       // indeterminate outcome above, because the user's position is identical -- the brief is
@@ -5719,6 +5834,24 @@ export class CampaignsComponent {
         });
       }
     );
+
+    // Published so a save for this SAME key can wait for it. An approval moves the row's version,
+    // so a `persistBrief` that reads `knownBriefIds` while this is in flight sends the validator
+    // the restore filed and earns a 412 the user did nothing to cause. Per key, never session-wide
+    // -- a save for a different event must not queue behind an unrelated approval.
+    this.pendingApprovals.set(ownershipKey, request);
+    void request
+      // Settled, not succeeded: a rejected approval also stops blocking, and the arms above have
+      // already reported it. Swallowing here only prevents an unhandled rejection on this
+      // bookkeeping branch -- `request` itself never rejects, since both arms are handled.
+      .catch(() => undefined)
+      .then(() => {
+        // Identity-checked, so a later approval for the same key that started while this one was
+        // in flight is not deleted by this one finishing.
+        if (this.pendingApprovals.get(ownershipKey) === request) {
+          this.pendingApprovals.delete(ownershipKey);
+        }
+      });
   }
 
   /**

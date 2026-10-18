@@ -114,6 +114,26 @@ export class PlanningTabComponent implements OnInit {
   public readonly emailStage = input<CampaignEmailStage | ''>('');
 
   /**
+   * Bumped by the parent whenever it has CHANGED the stored row this planner last looked up.
+   *
+   * The lookup below caches its answer in `savedBrief` and friends, and nothing ever invalidated
+   * that cache from outside: this component is visibility-toggled rather than destroyed, so its
+   * answer outlives every write the parent makes to the same row. Two dead ends came out of that.
+   * A save whose approve step did not land told the user to "go back to Planning and restore the
+   * saved brief" — but the lookup had legitimately found nothing before that save, `onUrlInput`
+   * emits nothing for an unchanged URL, and no Restore button ever appeared. And a restore that
+   * APPROVED the row left this cache holding the pre-approval validator and `approved: false`,
+   * so a second Restore replayed a stale pair at the parent.
+   *
+   * An INPUT rather than a `viewChild` call on the parent, because two instances of this
+   * component are mounted at once (paid and email are visibility-toggled, see
+   * `campaigns.component.html`) and the parent has to address exactly one of them. The value is
+   * opaque — only CHANGE matters, which is why it joins the lookup key below rather than being
+   * read anywhere.
+   */
+  public readonly savedBriefRefreshToken = input(0);
+
+  /**
    * DOM id for the readonly UTM field, unique per INSTANCE.
    *
    * Two `lfx-planning-tab` instances stay mounted at once -- paid and email are
@@ -585,6 +605,13 @@ export class PlanningTabComponent implements OnInit {
   // keep the previous stage's restore offer on screen for a brief the new stage does not have.
   private readonly emailStage$ = toObservable(this.emailStage);
 
+  // Part of the lookup key for a different reason than the three above: the others name a
+  // DIFFERENT row, this one says the SAME row changed. Folding it into the key is what lets a
+  // parent-side write get past `distinctUntilChanged`, which would otherwise drop a re-emission
+  // of an unchanged `(slug, project, delivery, stage)` — and dropping it is exactly how the
+  // cached answer outlived the row it described. See `savedBriefRefreshToken`.
+  private readonly savedBriefRefreshToken$ = toObservable(this.savedBriefRefreshToken);
+
   // === Lifecycle ===
   public ngOnInit(): void {
     this.urlInput$.pipe(debounceTime(500), takeUntilDestroyed(this.destroyRef)).subscribe((eventName) => this.lookupHubSpot(eventName));
@@ -614,7 +641,7 @@ export class PlanningTabComponent implements OnInit {
     // exists. `onUrlInput` and the foundation subscription below both clear the offer
     // eagerly; without this guard the late response simply sets it again, for an event or a
     // foundation the user has already left.
-    combineLatest([this.slugInput$, this.activeFoundationSlug$, this.deliveryType$, this.emailStage$])
+    combineLatest([this.slugInput$, this.activeFoundationSlug$, this.deliveryType$, this.emailStage$, this.savedBriefRefreshToken$])
       .pipe(
         // Runs for BOTH surfaces. This was `filter(() => !this.isEmail())` while brief storage had
         // no delivery dimension: one row per `(foundation, event)` meant the row an email caller
@@ -633,8 +660,8 @@ export class PlanningTabComponent implements OnInit {
         // the surfaces apart now, but a stale upstream mid-rollout is exactly when a mismatched row
         // would arrive.
         distinctUntilChanged(
-          ([slug, project, delivery, stage], [nextSlug, nextProject, nextDelivery, nextStage]) =>
-            slug === nextSlug && project === nextProject && delivery === nextDelivery && stage === nextStage
+          ([slug, project, delivery, stage, token], [nextSlug, nextProject, nextDelivery, nextStage, nextToken]) =>
+            slug === nextSlug && project === nextProject && delivery === nextDelivery && stage === nextStage && token === nextToken
         ),
         debounceTime(500),
         switchMap(([slug, project, delivery, stage]) =>

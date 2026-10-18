@@ -717,6 +717,74 @@ describe('PlanningTabComponent brief read-back', () => {
     expect(restored).toHaveLength(1);
     expect(restored[0].briefId).toBe('brief-xyz');
   });
+
+  /**
+   * The cache this component keeps has to be invalidatable from outside, or the parent's writes
+   * are invisible here forever.
+   *
+   * The lookup caches per `(slug, project, delivery, stage)` and this component is
+   * visibility-toggled rather than destroyed, so the answer outlives every row change the parent
+   * makes. The save-without-approval path depends on exactly this: the lookup legitimately found
+   * NOTHING, the save then created the row, and the banner tells the user to go to Planning and
+   * restore it. Without the token the key is unchanged, `distinctUntilChanged` drops the
+   * re-emission, no second lookup runs, and no Restore button ever appears — a message naming an
+   * action the product cannot perform.
+   */
+  it('re-runs the lookup when the parent reports it changed the stored row', async () => {
+    campaignService.loadBrief.mockReturnValue(
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'none', brief: null, briefId: null, etag: null, approved: false }))
+    );
+    await typeEventUrl('https://events.example.com/kubecon-eu-2026');
+
+    expect(campaignService.loadBrief).toHaveBeenCalledTimes(1);
+    expect(savedBrief()).toBeNull();
+
+    // The parent saved the row this lookup had just found nothing for.
+    campaignService.loadBrief.mockReturnValue(
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-new', etag: 'W/"v1"', approved: false }))
+    );
+    fixture.componentRef.setInput('savedBriefRefreshToken', 1);
+    fixture.detectChanges();
+    await new Promise((resolve) => setTimeout(resolve, BRIEF_LOOKUP_DEBOUNCE_WAIT_MS));
+    await fixture.whenStable();
+
+    expect(campaignService.loadBrief).toHaveBeenCalledTimes(2);
+    expect(savedBrief()).toEqual(exampleBrief);
+  });
+
+  /**
+   * The token is OPAQUE — only change matters — so an unchanged one must not cost a request.
+   * Re-setting the same value is what every unrelated change detection pass does.
+   */
+  it('does not re-run the lookup when the token is set to the value it already holds', async () => {
+    campaignService.loadBrief.mockReturnValue(
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', etag: 'W/"v1"', approved: true }))
+    );
+    await typeEventUrl('https://events.example.com/kubecon-eu-2026');
+    expect(campaignService.loadBrief).toHaveBeenCalledTimes(1);
+
+    fixture.componentRef.setInput('savedBriefRefreshToken', 0);
+    fixture.detectChanges();
+    await new Promise((resolve) => setTimeout(resolve, BRIEF_LOOKUP_DEBOUNCE_WAIT_MS));
+    await fixture.whenStable();
+
+    expect(campaignService.loadBrief).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * And a bump before any URL has been typed must not fire a lookup for an empty slug. The token
+   * observable emits immediately (it is a signal), so adding it to the `combineLatest` could have
+   * started the pipeline on its own; `slugInput$` is a plain Subject with no initial value, which
+   * is what keeps the gate closed.
+   */
+  it('does not look anything up when the token bumps before a url is entered', async () => {
+    fixture.componentRef.setInput('savedBriefRefreshToken', 1);
+    fixture.detectChanges();
+    await new Promise((resolve) => setTimeout(resolve, BRIEF_LOOKUP_DEBOUNCE_WAIT_MS));
+    await fixture.whenStable();
+
+    expect(campaignService.loadBrief).not.toHaveBeenCalled();
+  });
 });
 
 /**
