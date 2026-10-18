@@ -1315,6 +1315,15 @@ describe('fromBriefResponse', () => {
     ['a relative destination', '/agenda'],
     ['an unparseable destination', 'not a url'],
     ['a missing destination', undefined],
+    // The four this path accepted while it was a scheme check of its own rather than the shared
+    // predicate. Every one parses fine under `new URL()` and is refused by the controller's
+    // `googleSitelinkUrlRefusal` at create, so seeding one opened the editor holding a chip the
+    // operator could not have typed and could not submit — and the only refusal they would ever
+    // see named a row they never added.
+    ['embedded credentials', 'https://user:pw@example.test/agenda'],
+    ['no // after the scheme', 'https:example.test/agenda'],
+    ['a `;` separating query parameters, which Go refuses', 'https://example.test/agenda?track=platform;day=2'],
+    ['a stray `%` that is not an escape', 'https://example.test/agenda?q=100%'],
   ])('drops a sitelink with %s', (_label, finalUrl) => {
     const googleSitelinks = [
       { text: 'View the Agenda', finalUrl },

@@ -774,6 +774,40 @@ describe('CampaignProxyService Google extensions', () => {
     expect(events.find((e) => e.type === 'sitelinks')?.data).toEqual([{ text: 'Submit a Talk', finalUrl: atCapUrl }]);
   });
 
+  /**
+   * The other half of the same dead end, and the one `verifyPageLink` leaves open.
+   *
+   * Being a real href on the event's own page settles provenance, not servability.
+   * `normalizeForCompare` admits only http(s) and `pageHref` rebuilds from `host`, so scheme,
+   * hostname and embedded credentials cannot be wrong on this path — but a `;` separating query
+   * parameters survives it, and older registration and tracking links really do use one. Go's
+   * `url.ParseQuery` refuses it, so `googleSitelinkUrlRefusal` refuses the create; seeding it would
+   * open the editor holding a chip the operator cannot have typed and cannot submit.
+   */
+  it('drops a verified page link whose query uses a `;` separator Go refuses', async () => {
+    const semicolonUrl = 'https://events.example.com/agenda?track=platform;day=2';
+    const cleanUrl = 'https://events.example.com/cfp?track=platform&day=2';
+
+    stubStream({
+      payload: JSON.stringify({ name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', agenda_url: semicolonUrl, cfp_url: cleanUrl, callouts: [] }),
+      html: `<html><body><a href="${semicolonUrl}">Agenda</a><a href="${cleanUrl}">CFP</a></body></html>`,
+    });
+
+    const events = await drain(
+      service.streamBrief(
+        req,
+        { url: 'https://events.example.com/kubecon-eu-2026', platforms: ['google-ads'] },
+        new AbortController().signal
+      ) as AsyncGenerator<{
+        type: string;
+        data: unknown;
+      }>
+    );
+
+    // The whole list, so a guard that dropped both would not pass.
+    expect(events.find((e) => e.type === 'sitelinks')?.data).toEqual([{ text: 'Submit a Talk', finalUrl: cleanUrl }]);
+  });
+
   // The whole block is gated on Google being selected: every other platform ignores these two
   // extension types, so generating them would spend an AI call on a list nothing can dispatch.
   it('emits neither for a brief with no Google channel', async () => {

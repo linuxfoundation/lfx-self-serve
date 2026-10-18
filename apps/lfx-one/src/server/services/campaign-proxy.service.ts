@@ -13,6 +13,7 @@ import {
   googleAdsBoundExtensionText,
   googleAdsToLower,
   googleAdsTrimSpace,
+  isGoogleAdsServableUrl,
   JOB_LOST_MESSAGE,
   META_CHAR_LIMITS,
 } from '@lfx-one/shared/constants';
@@ -2635,6 +2636,9 @@ ${platformInstruction}`;
 ${platformInstruction}`;
 }
 
+/** Hoisted out of {@link buildSitelinksFromPage}'s loop — one encoder for the whole module, not one per row. */
+const SITELINK_URL_ENCODER = new TextEncoder();
+
 /**
  * The event-page links that become sitelinks, each with the label it is given.
  *
@@ -2671,10 +2675,10 @@ const SITELINK_SOURCES: readonly { key: string; text: string }[] = [
  * of twenty means the slice is inert today; it is here so the cap is enforced by the code that
  * produces the list rather than by the table's current length.
  *
- * An entry whose destination is past {@link GOOGLE_ADS_MAX_FINAL_URL_BYTES} is dropped on the same
- * terms, for the reason the editor's add-guard and the controller's dispatch check exist: a chip
- * the operator can neither have typed nor submit is a dead end whose only exit is deleting a row
- * they did not add.
+ * An entry whose destination is past {@link GOOGLE_ADS_MAX_FINAL_URL_BYTES}, or that
+ * {@link isGoogleAdsServableUrl} refuses, is dropped on the same terms, for the reason the editor's
+ * add-guard and the controller's dispatch check exist: a chip the operator can neither have typed
+ * nor submit is a dead end whose only exit is deleting a row they did not add.
  */
 function buildSitelinksFromPage(eventDetails: Record<string, unknown> | null, pageLinks: Map<string, string>, pageBaseUrl: string): CampaignSitelink[] {
   if (!eventDetails) return [];
@@ -2683,6 +2687,21 @@ function buildSitelinksFromPage(eventDetails: Record<string, unknown> | null, pa
   for (const source of SITELINK_SOURCES) {
     const finalUrl = verifyPageLink(eventDetails[source.key], pageLinks, pageBaseUrl);
     if (!finalUrl) continue;
+    // Being a real href on the event's own page is not the same as being a destination Google will
+    // serve. `verifyPageLink` answers provenance and nothing more.
+    //
+    // It does settle part of this already — `normalizeForCompare` admits only http(s), and
+    // `pageHref` rebuilds the href from `host`, which drops any userinfo — so scheme, hostname and
+    // credentials cannot be wrong on THIS path. What survives it is everything `new URL()` accepts
+    // and Go's parser does not: a `;` separating query parameters, which older registration and
+    // tracking links really do use, and a stray `%` that is not an escape. Either is refused by
+    // `googleSitelinkUrlRefusal` at create, so seeding one would open the editor holding a chip the
+    // operator cannot have typed and cannot submit.
+    //
+    // The whole predicate is applied rather than the flaw test alone, because which parts are
+    // already guaranteed is a fact about `verifyPageLink`'s internals, and a guard that silently
+    // depends on them breaks the day they change.
+    if (!isGoogleAdsServableUrl(finalUrl)) continue;
     // One page can legitimately answer two of these keys with the same href — a combined
     // "attend" page serving as both venue and agenda is common. Google refuses duplicate
     // sitelink TEXT, not duplicate destinations, so this is about the operator's list rather
@@ -2696,7 +2715,7 @@ function buildSitelinksFromPage(eventDetails: Record<string, unknown> | null, pa
     // have typed and cannot submit. A page href really can run past it — a registration link
     // carrying a long tracking query is the realistic shape. Bytes, not runes: the limit is
     // Google's and it counts the encoded URL.
-    if (new TextEncoder().encode(finalUrl).length > GOOGLE_ADS_MAX_FINAL_URL_BYTES) continue;
+    if (SITELINK_URL_ENCODER.encode(finalUrl).length > GOOGLE_ADS_MAX_FINAL_URL_BYTES) continue;
     const text = googleAdsBoundExtensionText(source.text, GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES);
     if (!text) continue;
     sitelinks.push({ text, finalUrl });

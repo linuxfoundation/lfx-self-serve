@@ -30,6 +30,7 @@ import {
   googleAdsBoundExtensionText,
   googleAdsToLower,
   googleAdsTrimSpace,
+  isGoogleAdsServableUrl,
   JOB_LOST_MESSAGE,
 } from '@lfx-one/shared/constants';
 import { encodePathSegment } from '../helpers/url-validation';
@@ -3708,9 +3709,14 @@ function asSitelinks(value: unknown): CampaignSitelink[] | undefined {
     // Trimmed with Go's space set, not JS's, for the same reason `text` above is: the editor's
     // `addGoogleSitelink` trims the destination with `googleAdsTrimSpace`, and the two disagree on
     // characters this field really can carry. JS `trim` leaves U+0085 in place, `new URL()` then
-    // throws on it, and `isServableSitelinkUrl` would drop a row the editor itself would accept.
+    // throws on it, and the guard below would drop a row the editor itself would accept.
     const finalUrl = googleAdsTrimSpace(asText(record['finalUrl']));
-    if (text === '' || !isServableSitelinkUrl(finalUrl)) {
+    // The same accept set the editor's add guard and the controller's dispatch refusal use, not a
+    // scheme check: a stored row carrying embedded credentials, a `;` in its query or a stray `%`
+    // parses fine under `new URL()` and is refused by `googleSitelinkUrlRefusal` at create. Seeding
+    // it would open the editor holding a chip the operator cannot have typed and cannot submit, and
+    // the only refusal they would ever see names a row they never added.
+    if (text === '' || !isGoogleAdsServableUrl(finalUrl)) {
       continue;
     }
     // The byte cap is checked here and not only at dispatch, because the three other places that
@@ -3742,19 +3748,6 @@ function asSitelinks(value: unknown): CampaignSitelink[] | undefined {
     }
   }
   return sitelinks;
-}
-
-/** Whether a stored sitelink destination is an absolute http(s) URL — the only kind Google Ads serves. */
-function isServableSitelinkUrl(url: string): boolean {
-  if (url === '') {
-    return false;
-  }
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
-  } catch {
-    return false;
-  }
 }
 
 /**

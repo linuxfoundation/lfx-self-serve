@@ -91,7 +91,7 @@ import {
   REDDIT_VIDEO_GOALS,
   googleAdsToLower,
   googleAdsTrimSpace,
-  googleAdsUrlGoParseFlaw,
+  isGoogleAdsServableUrl,
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -4231,27 +4231,15 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * Whether a destination URL is one the ad platforms will serve.
    *
-   * The same accept set as the BFF's sitelink guard and upstream's `validateServableURL`: absolute,
-   * http(s), with a hostname and no embedded credentials, and none of the Go parser flaws
-   * {@link googleAdsUrlGoParseFlaw} names. Three tiers hold this contract
-   * because none of them can call the others — so the rule for changing it is that all three move
-   * together, and this one must never be the strictest: a URL refused here never reaches the BFF
-   * guard that would have named the real reason.
+   * The accept set itself is {@link isGoogleAdsServableUrl}, shared with the two BFF paths that
+   * judge the same destinations, so this tier cannot drift stricter than the guard that would have
+   * named the real reason — a URL refused only here is refused with no explanation at all.
+   *
+   * The trim stays at this tier rather than moving into the shared predicate: the trimmed value is
+   * what {@link addGoogleSitelink} goes on to STORE, so this must judge exactly the string it keeps.
    */
   private isServableDestination(raw: string): boolean {
-    const value = googleAdsTrimSpace(raw);
-    if (value === '' || googleAdsUrlGoParseFlaw(value)) return false;
-
-    let parsed: URL;
-    try {
-      parsed = new URL(value);
-    } catch {
-      return false;
-    }
-
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
-    if (parsed.hostname === '') return false;
-    return parsed.username === '' && parsed.password === '';
+    return isGoogleAdsServableUrl(googleAdsTrimSpace(raw));
   }
 
   /** One typed bidding number, or `undefined` when the field is blank or cannot be a number. */

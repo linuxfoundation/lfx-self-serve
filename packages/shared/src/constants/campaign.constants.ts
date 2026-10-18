@@ -1820,6 +1820,42 @@ export function googleAdsUrlGoParseFlaw(url: string): boolean {
 }
 
 /**
+ * Whether a destination URL is one upstream's `validateServableURL` will serve: absolute, http(s),
+ * with a hostname, no embedded credentials, and none of the Go parser flaws
+ * {@link googleAdsUrlGoParseFlaw} names.
+ *
+ * The accept set lived in three hand-written copies before this existed — the Implementation tab's
+ * add guard, the controller's dispatch refusal, and the brief-restore path — and the third had
+ * drifted to a scheme check alone, so a URL with embedded credentials or a `;` in its query was
+ * seeded into the editor and then refused at create with no way to see why from the editor. One
+ * definition is the only arrangement in which "the same accept set" stays a fact rather than a
+ * comment, since the tiers cannot call each other's private methods.
+ *
+ * The argument must ALREADY be trimmed, with {@link googleAdsTrimSpace} rather than
+ * `String.prototype.trim` — the two disagree on U+0085 and U+FEFF, and the trimmed value is the one
+ * the caller goes on to store, so trimming here instead would judge a string no caller keeps.
+ *
+ * `describeDestinationUrl` (`campaign.controller.ts`) deliberately stays separate: it reports WHICH
+ * refusal a URL hits, as a token the error messages name, and it judges brief destinations for all
+ * five platforms rather than Google sitelinks. Its accept set is this one — `ok`/`ok-http` plus the
+ * same flaw test — and the two must move together.
+ */
+export function isGoogleAdsServableUrl(trimmedUrl: string): boolean {
+  if (trimmedUrl === '' || googleAdsUrlGoParseFlaw(trimmedUrl)) return false;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmedUrl);
+  } catch {
+    return false;
+  }
+
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+  if (parsed.hostname === '') return false;
+  return parsed.username === '' && parsed.password === '';
+}
+
+/**
  * Caller-supplied text cut short for an error message, by code point so an emoji is never split
  * into a lone surrogate. The text comes from an unvalidated body, so the echo is bounded.
  */

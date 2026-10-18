@@ -66,6 +66,7 @@ import {
   googleAdsToLower,
   googleAdsTrimSpace,
   googleAdsUrlGoParseFlaw,
+  isGoogleAdsServableUrl,
   isGoSpaceCode,
   PAUSE_ONLY_CAMPAIGN_PLATFORMS,
   campaignResumeWithheldForPlatform,
@@ -1180,5 +1181,50 @@ describe('budget-writable platforms (#3299)', () => {
     for (const platform of DAILY_ONLY_BUDGET_CAMPAIGN_PLATFORMS) {
       expect(BUDGET_WRITABLE_CAMPAIGN_PLATFORMS.has(platform)).toBe(true);
     }
+  });
+});
+
+/**
+ * The accept set the editor's add guard, the brief-restore path and the sitelink generator all
+ * share, and whose refusals `describeDestinationUrl` (`campaign.controller.ts`) reports by name.
+ *
+ * It existed as three hand-written copies before, and the third had drifted to a scheme check
+ * alone — so these cases pin the set itself rather than any one tier's use of it.
+ */
+describe('isGoogleAdsServableUrl', () => {
+  it.each([
+    ['a plain https URL', 'https://events.example.org/register', true],
+    ['a plain http URL, which four of five platforms accept', 'http://events.example.org/register', true],
+    ['a URL with an ordinary & query', 'https://events.example.org/r?a=1&b=2', true],
+    ['an empty string', '', false],
+    ['a relative path', '/register', false],
+    ['an unparseable value', 'not a url', false],
+    ['a javascript: destination', 'javascript:alert(1)', false],
+    ['a mailto: destination', 'mailto:hello@example.org', false],
+    ['a URL with no hostname', 'https:///register', false],
+    ['embedded credentials', 'https://user:pw@events.example.org/', false],
+    ['an empty userinfo, which Go still refuses', 'https://@events.example.org/', false],
+    ['no // after the scheme', 'https:events.example.org/register', false],
+    ['a `;` separating query parameters', 'https://events.example.org/r?a=1;b=2', false],
+    ['a stray `%` that is not an escape', 'https://events.example.org/r?q=100%', false],
+    ['a backslash in the authority', 'https://events.example.org\\evil/', false],
+  ])('judges %s', (_label, url, expected) => {
+    expect(isGoogleAdsServableUrl(url)).toBe(expected);
+  });
+
+  /**
+   * The contract the docblock states: the argument must ALREADY be trimmed, with
+   * `googleAdsTrimSpace` rather than `String.prototype.trim`. The two disagree on U+0085 and
+   * U+FEFF, and the trimmed value is the one the caller goes on to store — so trimming inside
+   * would judge a string no caller keeps.
+   */
+  it('refuses an untrimmed value rather than trimming it', () => {
+    const url = 'https://events.example.org/register';
+    expect(isGoogleAdsServableUrl(` ${url} `)).toBe(false);
+    expect(isGoogleAdsServableUrl(googleAdsTrimSpace(` ${url} `))).toBe(true);
+    // U+0085 is whitespace to Go and not to `String.prototype.trim`, which is why callers must use
+    // `googleAdsTrimSpace`: `.trim()` would leave it in and this would still refuse.
+    expect(`\u0085${url}`.trim()).toBe(`\u0085${url}`);
+    expect(isGoogleAdsServableUrl(googleAdsTrimSpace(`\u0085${url}`))).toBe(true);
   });
 });

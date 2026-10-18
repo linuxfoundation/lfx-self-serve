@@ -7500,7 +7500,134 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
     // Event B's own generated copy stands.
     expect(headlineInput()?.value).toBe('Generated A');
   });
+
+  /**
+   * #3810 (Copilot): the draft clear is right for everything refine REGENERATES and wrong for the
+   * two extension lists, which it does not.
+   *
+   * Refine for the same event hands back a brief carrying the callouts and sitelinks the generator
+   * produced the first time — the operator has been editing them since, and the clear puts the
+   * originals back over their work. The slug guard one level down cannot catch it: refining the
+   * SAME event is the whole scenario, so the slugs agree.
+   */
+  const briefWithExtensions = (slug: string): CampaignBriefOutput =>
+    ({
+      ...briefFor(slug),
+      googleCallouts: ['Generated callout'],
+      googleSitelinks: [{ text: 'Register', finalUrl: 'https://example.com/register' }],
+    }) as unknown as CampaignBriefOutput;
+
+  it('keeps an edited callout list when the same event is refined and proceeded again', async () => {
+    // Driven through the mounted child rather than by hand-building a draft, so the carry is shown
+    // composing with the draft `buildDraft` actually emits — the editor's own edits are then layered
+    // onto that real draft the way `draftChange` would.
+    internals().onProceedToImplementation(briefWithExtensions('kubecon-eu-2026'));
+    internals().selectTab('implementation', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const emitted = internals().implementationDraft();
+    expect(emitted).not.toBeNull();
+    expect(emitted!.eventSlug).toBe('kubecon-eu-2026');
+    internals().implementationDraft.set({ ...emitted!, googleCallouts: ['Early bird pricing'] });
+
+    // Back to Planning, refine, proceed again — the SAME event, so a new brief object carrying the
+    // generator's original list arrives while the operator's edit lives only in the draft. The
+    // child's `eventSlug` guard cannot help: the slugs agree, which is the whole scenario.
+    internals().selectTab('planning', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    internals().onProceedToImplementation(briefWithExtensions('kubecon-eu-2026'));
+    internals().selectTab('implementation', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(internals().briefOutput()?.googleCallouts).toEqual(['Early bird pricing']);
+    // And the regenerated copy still wins for the fields refine actually produces.
+    expect(headlineInput()?.value).toBe('Generated A');
+  });
+
+  it('leaves a brief that carries no extension lists exactly as it arrived', () => {
+    // `buildDraft` always emits both fields as arrays, so without the empty-and-absent exception a
+    // second Proceed would add `googleCallouts: []` to a brief that never had one — a field written
+    // into the persisted row recording a clearance of a list that was never there.
+    internals().onProceedToImplementation(briefFor('kubecon-eu-2026'));
+    internals().implementationDraft.set(completeDraftFor('kubecon-eu-2026'));
+
+    const plain = briefFor('kubecon-eu-2026');
+    internals().onProceedToImplementation(plain);
+
+    expect(internals().briefOutput()).toBe(plain);
+  });
+
+  it('carries an emptied extension list as [], so a full clear-out is not undone', () => {
+    // The case Copilot named explicitly. On `CampaignBriefOutput` absent and empty differ — `[]`
+    // CLEARS the editor, `undefined` leaves it alone — so dropping an empty list here would put the
+    // generator's entries back over a deliberate removal.
+    internals().onProceedToImplementation(briefWithExtensions('kubecon-eu-2026'));
+    internals().implementationDraft.set({
+      ...completeDraftFor('kubecon-eu-2026'),
+      googleCallouts: [],
+      googleSitelinks: [],
+    });
+
+    internals().onProceedToImplementation(briefWithExtensions('kubecon-eu-2026'));
+
+    expect(internals().briefOutput()?.googleCallouts).toEqual([]);
+    expect(internals().briefOutput()?.googleSitelinks).toEqual([]);
+  });
+
+  it('carries edited sitelinks and leaves the regenerated fields alone', () => {
+    internals().onProceedToImplementation(briefWithExtensions('kubecon-eu-2026'));
+    const edited = { text: 'Operator link', finalUrl: 'https://example.com/schedule' };
+    internals().implementationDraft.set({ ...completeDraftFor('kubecon-eu-2026'), googleSitelinks: [edited] });
+
+    internals().onProceedToImplementation(briefWithExtensions('kubecon-eu-2026'));
+
+    expect(internals().briefOutput()?.googleSitelinks).toEqual([{ text: 'Operator link', finalUrl: 'https://example.com/schedule' }]);
+    // Deep-copied, not aliased — the entry the editor goes on to mutate must not be the same object
+    // the brief (and the row persisted from it) now holds.
+    expect(internals().briefOutput()?.googleSitelinks?.[0]).not.toBe(edited);
+    // Everything refine DOES regenerate is untouched by the carry.
+    expect(internals().briefOutput()?.googleCallouts).toEqual(['Generated callout']);
+  });
+
+  it('does not carry one event extensions onto a different event brief', () => {
+    internals().onProceedToImplementation(briefWithExtensions('event-a'));
+    internals().implementationDraft.set({
+      ...completeDraftFor('event-a'),
+      googleCallouts: ['Event A only'],
+    });
+
+    internals().onProceedToImplementation(briefWithExtensions('event-b'));
+
+    expect(internals().briefOutput()?.googleCallouts).toEqual(['Generated callout']);
+  });
 });
+
+/** A draft with every REQUIRED member of {@link CampaignImplementationDraft} present. */
+function completeDraftFor(slug: string): CampaignImplementationDraft {
+  return {
+    eventName: 'KubeCon',
+    countryCode: 'US',
+    registrationUrl: 'https://example.com',
+    headlines: ['Generated A', 'Generated B'],
+    descriptions: ['Generated desc'],
+    budgetUsd: 500,
+    searchBudgetPct: 100,
+    startDate: '2026-01-01',
+    endDate: '2026-02-01',
+    includeSearch: true,
+    includeDemandGen: false,
+    includePerformanceMax: false,
+    includeVideo: false,
+    includeDisplay: false,
+    linkedInAccountId: '',
+    linkedInGeoTargets: [],
+    linkedInTargetingProfile: 'mcp',
+    eventSlug: slug,
+  };
+}
 
 /**
  * The HubSpot template picker (LFXV2-3198).

@@ -2593,8 +2593,15 @@ export class CampaignsComponent {
     // and proceed again for the SAME event, so the slugs match and stale edits would silently
     // overwrite the copy just generated. Ordinary Implement/Insights tab switches do not come
     // through here, so they keep the draft — which is the whole point of holding it.
+    //
+    // The clear is right for everything the brief REGENERATES — refine produces new copy, and the
+    // old edits to it belong to the brief being replaced. It is wrong for the two extension lists,
+    // which refine does not regenerate: the incoming brief carries the same callouts and sitelinks
+    // the operator has already been editing, so clearing restores the generator's originals over
+    // their edits. Carried BEFORE the clear, since the clear is what makes them unreachable.
+    const handedOver = alreadyPersisted ? brief : this.briefWithCarriedExtensions(brief);
     this.implementationDraft.set(null);
-    this.briefOutput.set(brief);
+    this.briefOutput.set(handedOver);
     this.selectedTab.set('implementation');
     if (alreadyPersisted) {
       // Bump the generation even though nothing is being saved. `persistBrief` normally does
@@ -2629,7 +2636,7 @@ export class CampaignsComponent {
     }
     // The create path has no id yet — `persistBrief` mints one — so the read is triggered from
     // its success arm rather than here. See `loadCreateCapabilitiesFor`.
-    this.persistBrief(brief);
+    this.persistBrief(handedOver);
   }
 
   /** A brief restored from campaign-service: hand it over WITHOUT writing it back. */
@@ -5147,6 +5154,60 @@ export class CampaignsComponent {
       );
     }
     return '';
+  }
+
+  /**
+   * The incoming brief with the operator's current callouts and sitelinks in place of the ones it
+   * was generated with — the narrow exception to the draft clear in {@link onProceedToImplementation}.
+   *
+   * Only these two fields are carried, and only because the Planning tab's refine does not
+   * regenerate them: every other field the draft holds IS reproduced by the brief that replaces it,
+   * so carrying those would be the stale-edit bug the clear exists to prevent. Refine for the same
+   * event hands back the same extension lists the operator has since edited, so without this the
+   * generator's originals silently overwrite their work and the only clue is the editor's contents
+   * changing.
+   *
+   * It rides on the brief rather than on a surviving partial draft because
+   * {@link CampaignImplementationDraft} declares most of its members REQUIRED, so an
+   * extensions-only draft is not expressible — and `applyDraft` patches its form block
+   * unconditionally, so a hypothetical partial one would write `undefined` over the seeded event
+   * identity. One substituted brief needs neither.
+   *
+   * The same object is handed to the child and to `persistBrief`, so what the editor opens on and
+   * what the row stores cannot diverge. The restore path is excluded by its caller for exactly that
+   * reason: it writes nothing, so substituting there would show values no stored row holds.
+   *
+   * An empty list is carried as `[]`, not dropped. On {@link CampaignBriefOutput} `[]` CLEARS the
+   * editor while absent leaves it untouched, so `[]` is the only value that preserves "the operator
+   * removed every entry" — and the polarity is safe to rely on here because this draft was built by
+   * `buildDraft` in this same session, which always emits both fields as arrays. (The opposite rule
+   * on the draft itself — absent and empty agree — is about drafts persisted before the fields
+   * existed, which this in-memory signal can never hold.)
+   *
+   * The one case an empty list is NOT written is the brief that carries no list of its own, and
+   * that exception exists precisely BECAUSE `buildDraft` always emits arrays: a brief generated
+   * before this feature, or for a platform set that produces no extensions, would otherwise come
+   * back from a second Proceed carrying `googleCallouts: []` it never had — a field added to the
+   * persisted row to record a clearance of a list that was never there. Absent and empty-draft
+   * agree only here, where both mean "no extensions were ever in play".
+   */
+  private briefWithCarriedExtensions(brief: CampaignBriefOutput): CampaignBriefOutput {
+    const draft = this.implementationDraft();
+    // The same guard `applyDraft` applies one level down: a draft belongs to the event it was typed
+    // against, and the brief on screen may be for a different one.
+    if (!draft || draft.eventSlug !== brief.eventDetails.slug) return brief;
+
+    const callouts = draft.googleCallouts;
+    const sitelinks = draft.googleSitelinks;
+    const carryCallouts = callouts !== undefined && !(brief.googleCallouts === undefined && callouts.length === 0);
+    const carrySitelinks = sitelinks !== undefined && !(brief.googleSitelinks === undefined && sitelinks.length === 0);
+    if (!carryCallouts && !carrySitelinks) return brief;
+
+    return {
+      ...brief,
+      ...(carryCallouts ? { googleCallouts: [...callouts] } : {}),
+      ...(carrySitelinks ? { googleSitelinks: sitelinks.map((s) => ({ ...s })) } : {}),
+    };
   }
 
   /**
