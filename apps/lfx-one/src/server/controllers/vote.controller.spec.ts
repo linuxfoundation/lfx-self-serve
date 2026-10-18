@@ -32,15 +32,35 @@ describe('VoteController management reads', () => {
   const request = (query: Record<string, unknown>) => ({ query }) as unknown as Request;
   beforeEach(() => vi.resetAllMocks());
 
-  it.each([true, false])('preserves personal-feed completeness in the HTTP response: %s', async (complete) => {
+  it.each([true, false])('returns personal-feed completeness when explicitly requested: %s', async (complete) => {
     const result = { votes: [{ uid: 'synthetic-vote' }], complete };
     getMyVotes.mockResolvedValue(result);
-    const req = request({});
+    const req = request({ include_status: 'true' });
 
     await controller.getMyVotes(req, res, next);
 
     expect(getMyVotes).toHaveBeenCalledWith(req);
     expect(json).toHaveBeenCalledWith(result);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])('preserves the default array response even for an incomplete feed: %s', async (complete) => {
+    const result = { votes: [{ uid: 'synthetic-vote' }], complete };
+    getMyVotes.mockResolvedValue(result);
+
+    await controller.getMyVotes(request({}), res, next);
+
+    expect(json).toHaveBeenCalledExactlyOnceWith(result.votes);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it.each(['false', 'TRUE', '', ['true'], { value: 'true' }])('does not opt into the envelope for a noncanonical flag: %j', async (includeStatus) => {
+    const result = { votes: [], complete: false };
+    getMyVotes.mockResolvedValue(result);
+
+    await controller.getMyVotes(request({ include_status: includeStatus }), res, next);
+
+    expect(json).toHaveBeenCalledExactlyOnceWith([]);
     expect(next).not.toHaveBeenCalled();
   });
 

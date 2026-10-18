@@ -139,14 +139,17 @@ describe('VoteService', () => {
     expect(next).toHaveBeenCalledWith(result);
   });
 
-  it.each([true, false])('preserves personal-feed rows and completeness: %s', (complete) => {
+  it.each([true, false])('requests the opt-in envelope and preserves personal-feed completeness: %s', (complete) => {
     const result = { votes: [buildVote()], complete };
     http.get.mockReturnValue(of(result));
     const next = vi.fn();
 
     service.getMyVotes().subscribe(next);
 
-    expect(http.get).toHaveBeenCalledWith('/api/votes/my-votes');
+    const [url, options] = http.get.mock.calls[0];
+    expect(url).toBe('/api/votes/my-votes');
+    expect(options.params.keys()).toEqual(['include_status']);
+    expect(options.params.get('include_status')).toBe('true');
     expect(next).toHaveBeenCalledExactlyOnceWith(result);
   });
 

@@ -56,7 +56,8 @@ export class VoteService {
   } | null = null;
 
   public getMyVotes(): Observable<MyVotesResponse> {
-    return this.http.get<MyVotesApiResponse>('/api/votes/my-votes').pipe(
+    const params = new HttpParams().set('include_status', 'true');
+    return this.http.get<MyVotesApiResponse>('/api/votes/my-votes', { params }).pipe(
       // A legacy server's array carries no completeness proof; keep its rows but withhold totals.
       map((response) => (Array.isArray(response) ? { votes: response, complete: false } : response)),
       catchError((error: unknown) => {

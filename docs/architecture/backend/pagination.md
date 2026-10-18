@@ -132,8 +132,11 @@ but cannot promise immediate convergence of the search index after mutations.
 
 ### Personal vote-feed completeness
 
-`GET /api/votes/my-votes` returns `{ votes, complete }`. Invitation enumeration retains
-successfully fetched pages when a later page exhausts retries, but marks the feed incomplete.
+`GET /api/votes/my-votes` preserves its array response by default for already-open browser
+clients. New clients request `include_status=true` to receive `{ votes, complete }`, following
+the personal-newsletter feed's opt-in convention. Only the exact single string `true` opts in.
+Invitation enumeration retains successfully fetched pages when a later page exhausts retries,
+but marks the feed incomplete.
 Failed or empty required vote-detail reads also mark it incomplete while keeping other usable
 votes. A first-page failure still fails the request. Optional project metadata does not prove
 invitation or vote-detail completeness.

@@ -133,7 +133,8 @@ export class VoteController {
         complete: myVotes.complete,
       });
 
-      res.json(myVotes);
+      // Preserve the array contract for already-open browsers; new clients explicitly opt in.
+      res.json(req.query['include_status'] === 'true' ? myVotes : myVotes.votes);
     } catch (error) {
       next(error);
     }
