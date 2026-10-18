@@ -21,6 +21,7 @@ import {
   BrandKitChapterSummary,
   BrandKitColorwayTile,
   BrandKitContrastView,
+  BrandKitLogoImage,
   BrandKitLogoSlot,
   BrandKitPaletteCard,
   BrandKitPaletteEntry,
@@ -90,13 +91,20 @@ export function brandKitTint(dark: string): string {
   return `color-mix(in srgb, ${dark} 6%, white)`;
 }
 
-/** The four colorway tiles, in the contract's order: full colour on white, reversed on the dark, full colour on the tint, one-colour black. */
-export function brandKitColorwayTiles(kit: BrandKitRevision, tint: string): BrandKitColorwayTile[] {
+/**
+ * The four colorway tiles, in the contract's order: full colour on white,
+ * reversed on the dark, full colour on the tint, one-colour black. The
+ * reversed tile draws the supplied reversed artwork as it is; only without
+ * one does it filter the primary lockup to white.
+ */
+export function brandKitColorwayTiles(kit: BrandKitRevision, tint: string, logos: Record<BrandKitLogoSlot, BrandKitLogoImage | null>): BrandKitColorwayTile[] {
+  const primary = logos.primary;
+  const reversed = logos.reversed ? { logo: logos.reversed, logoFilter: '' } : { logo: primary, logoFilter: 'brightness(0) invert(1)' };
   const grounds = [
-    { ground: 'white', light: true, logoFilter: '' },
-    { ground: kit.kit.dark, light: false, logoFilter: 'brightness(0) invert(1)' },
-    { ground: tint, light: true, logoFilter: '' },
-    { ground: 'white', light: true, logoFilter: 'brightness(0)' },
+    { ground: 'white', light: true, logo: primary, logoFilter: '' },
+    { ground: kit.kit.dark, light: false, ...reversed },
+    { ground: tint, light: true, logo: primary, logoFilter: '' },
+    { ground: 'white', light: true, logo: primary, logoFilter: 'brightness(0)' },
   ];
   return kit.chapters.logo.colorways.map((colorway, index) => ({ name: colorway.name, ...(grounds[index] ?? grounds[0]) }));
 }
@@ -285,7 +293,7 @@ export function buildBrandKitBookView(kit: BrandKitRevision, version?: number | 
     symbol: brandKitSymbolImage(kit.chapters.logo.files, kit.chapters.logo.symbol_viewbox),
     placeholder: kit.chapters.logo.placeholder,
     logo: kit.chapters.logo,
-    colorways: brandKitColorwayTiles(kit, tint),
+    colorways: brandKitColorwayTiles(kit, tint, logos),
     minimumSizes: [
       { label: '48 px', px: 48 },
       { label: '40 px', px: 40 },

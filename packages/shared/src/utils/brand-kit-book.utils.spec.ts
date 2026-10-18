@@ -159,6 +159,21 @@ describe('the book’s view model', () => {
     expect(view.builtFrom).not.toContain('https://');
   });
 
+  it('draws the supplied reversed artwork unfiltered on the reversed tile, and filters the primary lockup only without one', () => {
+    const colorways = ['Full colour', 'Reversed', 'On the tint', 'One colour'].map((name) => ({ name, ground: 'x', logo: 'x' }));
+    const withColorways = (kit: BrandKitRevision): BrandKitRevision => ({ ...kit, chapters: { ...kit.chapters, logo: { ...kit.chapters.logo, colorways } } });
+    const primary = { ref: 'orbit-horizontal.svg', svg: SVG };
+    const supplied = buildBrandKitBookView(withColorways(kitWith({ primary, reversed: { ref: 'orbit-reversed.svg', svg: SVG } }))).colorways;
+    expect(supplied.map((tile) => [tile.logo?.name, tile.logoFilter])).toEqual([
+      ['orbit-horizontal.svg', ''],
+      ['orbit-reversed.svg', ''],
+      ['orbit-horizontal.svg', ''],
+      ['orbit-horizontal.svg', 'brightness(0)'],
+    ]);
+    const fallback = buildBrandKitBookView(withColorways(kitWith({ primary }))).colorways[1];
+    expect([fallback.logo?.name, fallback.logoFilter]).toEqual(['orbit-horizontal.svg', 'brightness(0) invert(1)']);
+  });
+
   it('says where each palette value was found without a raw URL: the logo by name, a stylesheet by its site', () => {
     const view = buildBrandKitBookView(kitWith({ primary: { ref: CDN_LOGO_URL, svg: SVG } }));
     expect(view.palette.map((card) => card.source)).toEqual([

@@ -20,6 +20,16 @@
   --bk-font: sans-serif;
 }
 
+/* styles.scss sets Inter on headings, paragraphs and controls in the base
+   layer, which beats inheritance: inside the book they inherit the kit's
+   typeface from the sheet instead. Same layer, so a Tailwind font utility
+   (the watchouts' wrong-typeface sample) still wins. */
+@layer tailwind-base {
+  .lfx-brand-kit-book :is(h1, h2, h3, h4, h5, h6, p, label, button, input) {
+    font-family: inherit;
+  }
+}
+
 /* A letter sheet in landscape (11 × 8.5 in) that fills its column; the cqw units inside measure against it. */
 .lfx-brand-kit-page {
   container-type: inline-size;

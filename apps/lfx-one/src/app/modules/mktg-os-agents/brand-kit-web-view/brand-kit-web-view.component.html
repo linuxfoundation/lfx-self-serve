@@ -209,7 +209,7 @@
               <article [class]="card" data-testid="brand-kit-web-view-colorway">
                 <div class="h-32" [class]="sample" [ngClass]="{ 'border border-gray-200': colorway.light }" [style.background]="colorway.ground">
                   <div class="flex h-full w-full items-center justify-center" [style.filter]="colorway.logoFilter || null">
-                    <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: v.logos.primary, what: 'Logo' }" />
+                    <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: colorway.logo, what: 'Logo' }" />
                   </div>
                 </div>
                 <span class="text-sm text-gray-800">{{ colorway.name }}</span>

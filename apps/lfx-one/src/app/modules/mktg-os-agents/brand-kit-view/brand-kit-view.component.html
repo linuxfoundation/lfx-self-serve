@@ -173,7 +173,7 @@
               <div [class]="tile" data-testid="brand-kit-colorway-tile">
                 <div [class]="colorway.light ? tileBox + ' ' + bordered : tileBox" [style.background]="colorway.ground">
                   <div [class]="logoBox" [style.filter]="colorway.logoFilter || null" [style.color]="colorway.light ? v.dark : 'white'">
-                    <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: v.logos.primary, what: 'Logo' }" />
+                    <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: colorway.logo, what: 'Logo' }" />
                   </div>
                 </div>
                 <span [class]="caption">{{ colorway.name }}</span>

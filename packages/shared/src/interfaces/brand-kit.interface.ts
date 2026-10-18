@@ -447,7 +447,9 @@ export interface BrandKitColorwayTile {
   ground: string;
   /** True when the tile is white or light and needs a hairline border. */
   light: boolean;
-  /** CSS filter drawing the logo reversed (white) or one-colour black; '' for full colour. */
+  /** The artwork drawn on the tile: the supplied reversed file on the reversed tile when there is one, else the primary lockup. */
+  logo: BrandKitLogoImage | null;
+  /** CSS filter drawing the primary lockup reversed (white) or one-colour black; '' for full colour or supplied reversed artwork. */
   logoFilter: string;
 }
 
