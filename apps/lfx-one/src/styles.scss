@@ -6,11 +6,17 @@
 
 @layer tailwind-base, primeng, tailwind-utilities;
 
-/* The Brand Kit book prints from the page (Download PDF): while the body carries
-   the print class (BRAND_KIT_PRINT_BODY_CLASS, set by the kit view for the print
-   only), the book is the only thing on paper — 16 letter pages, landscape, one
-   per sheet. Global because the book sits inside the app shell, whose chrome
-   must not print around it. */
+/* The Brand Kit book is the kit's PRINT rendering: on screen the kit is its web
+   view, and the book in its print-only wrapper (BRAND_KIT_PRINT_ONLY_CLASS) is
+   never shown there. Download PDF prints it: while the body carries the print
+   class (BRAND_KIT_PRINT_BODY_CLASS, set by the web view for the print only),
+   the book is the only thing on paper — 16 letter pages, landscape, one per
+   sheet. Global because the book sits inside the app shell, whose chrome must
+   not print around it. */
+.lfx-brand-kit-print-only {
+  display: none;
+}
+
 @media print {
   /* A named page, so only the book prints landscape — every other print keeps its own setup. */
   @page brand-kit {
@@ -27,6 +33,10 @@
 
     & * {
       visibility: hidden;
+    }
+
+    .lfx-brand-kit-print-only {
+      display: block;
     }
 
     .lfx-brand-kit-book,

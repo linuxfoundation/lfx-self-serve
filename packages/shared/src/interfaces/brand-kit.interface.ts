@@ -17,6 +17,7 @@ import {
   BRAND_KIT_LOGO_SLOTS,
   BRAND_KIT_MODES,
   BRAND_KIT_TYPE_STEPS,
+  BRAND_KIT_WEB_VIEW_TABS,
 } from '../constants/brand-kit.constants';
 import type { MktgArtifactPersistReceipt, MktgArtifactStoredResponse } from './mktg-artifact.interface';
 import type {
@@ -50,6 +51,9 @@ export type BrandKitLogoFileKind = (typeof BRAND_KIT_LOGO_FILE_KINDS)[number] | 
 
 /** One of the four logo slots. */
 export type BrandKitLogoSlot = (typeof BRAND_KIT_LOGO_SLOTS)[number];
+
+/** One tab of the kit's web view. */
+export type BrandKitWebViewTabId = (typeof BRAND_KIT_WEB_VIEW_TABS)[number]['id'];
 
 // ---------------------------------------------------------------------------
 // The kit tokens and the six chapters
@@ -428,8 +432,10 @@ export interface BrandKitBookPage {
 
 /** A logo as a page draws it: the image source, or the placeholder text when there is no artwork. */
 export interface BrandKitLogoImage {
-  /** The file reference, for the caption and the alt text. */
+  /** The file reference (a name, `<zip>/<entry>` or a URL): never shown — `name` is. */
   ref: string;
+  /** The file as a reader knows it, for the caption and the alt text: its own name, or "the logo you supplied" when that name is an opaque hash. */
+  name: string;
   /** A data URL of the SVG, or null when the file is not an SVG (a PNG or a ZIP member the envelope carries no bytes for) or there is no file. */
   src: string | null;
 }
@@ -518,6 +524,25 @@ export interface BrandKitUsageView {
 export interface BrandKitIconView {
   label: string;
   icon: string;
+}
+
+/** One chapter as the web view's overview summarises it, with the tab that opens it. */
+export interface BrandKitChapterSummary {
+  id: BrandKitWebViewTabId;
+  /** `01`. */
+  number: string;
+  title: string;
+  summary: string;
+}
+
+/** One tab of the kit's web view, with its ARIA ids and classes. */
+export interface BrandKitWebViewTab {
+  id: BrandKitWebViewTabId;
+  label: string;
+  selected: boolean;
+  tabClass: string;
+  tabId: string;
+  panelId: string;
 }
 
 /**

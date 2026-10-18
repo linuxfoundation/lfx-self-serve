@@ -10,16 +10,19 @@
 import {
   BRAND_KIT_BACK_COVER_NOTICE,
   BRAND_KIT_BOOK_PAGES,
+  BRAND_KIT_CHAPTERS,
   BRAND_KIT_ICON_SAMPLES,
   BRAND_KIT_TYPE_SPECIMEN,
   BRAND_KIT_WEIGHT_NAMES,
 } from '../constants/brand-kit.constants';
 import {
   BrandKitBookView,
+  BrandKitChapterSummary,
   BrandKitColorwayTile,
   BrandKitContrastView,
   BrandKitLogoSlot,
   BrandKitPaletteCard,
+  BrandKitPaletteEntry,
   BrandKitRevision,
   BrandKitTypeScaleView,
   BrandKitUsageView,
@@ -31,6 +34,7 @@ import {
   brandKitFontStack,
   brandKitForProject,
   brandKitGoogleFontsUrl,
+  brandKitLogoFileName,
   brandKitLogoImage,
   brandKitMonthYear,
   brandKitPageNumber,
@@ -90,6 +94,26 @@ export function brandKitWatchoutTiles(kit: BrandKitRevision): BrandKitWatchoutVi
   return kit.chapters.logo.watchouts.map((label, index) => ({ label, ...(draws[index] ?? draws[0]) }));
 }
 
+/**
+ * Where a palette value was found, in words — never a raw URL: a logo file by
+ * its name, a page or stylesheet by its site's host, anything else as the kit
+ * gives it.
+ */
+export function brandKitFoundIn(foundIn: BrandKitPaletteEntry['found_in']): string {
+  const label = BRAND_KIT_FOUND_IN_LABELS[foundIn.kind];
+  if (foundIn.kind === 'page') {
+    return label;
+  }
+  const source = foundIn.source.trim();
+  let where = source;
+  if (foundIn.kind === 'logo') {
+    where = brandKitLogoFileName(source) ?? 'the logo you supplied';
+  } else if (/^https?:\/\//i.test(source)) {
+    where = brandKitWebsiteHost(source) || 'the site';
+  }
+  return where ? `${label} — ${where}` : label;
+}
+
 /** The palette cards, with where each value was found. */
 export function brandKitPaletteCards(kit: BrandKitRevision): BrandKitPaletteCard[] {
   return kit.chapters.color.palette.map((entry) => ({
@@ -97,7 +121,7 @@ export function brandKitPaletteCards(kit: BrandKitRevision): BrandKitPaletteCard
     hex: entry.hex,
     rgb: entry.rgb.join(' '),
     role: entry.role,
-    source: entry.found_in.kind === 'page' ? BRAND_KIT_FOUND_IN_LABELS.page : `${BRAND_KIT_FOUND_IN_LABELS[entry.found_in.kind]} — ${entry.found_in.source}`,
+    source: brandKitFoundIn(entry.found_in),
     light: brandKitIsLight(entry.hex),
   }));
 }
@@ -140,15 +164,64 @@ export function brandKitUsageTiles(kit: BrandKitRevision): BrandKitUsageView[] {
   }));
 }
 
-/** The contents page's note on what the kit was built from. */
+/** Items in words: `a`, `a and b`, `a, b and c`. */
+function inWords(items: string[]): string {
+  if (items.length <= 1) {
+    return items.join('');
+  }
+  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+}
+
+/**
+ * The logo artwork the kit was built from, in words: the files by their own
+ * names, and the ones whose name is an opaque hash (a CDN upload) counted as
+ * the logo files you supplied. Never a URL — a raw URL is one unbroken token
+ * that runs across the page.
+ */
+export function brandKitArtworkInWords(kit: BrandKitRevision): string {
+  const refs = [
+    ...new Set(
+      Object.values(kit.chapters.logo.files)
+        .filter((file): file is NonNullable<typeof file> => file !== null)
+        .map((file) => file.ref)
+    ),
+  ];
+  if (refs.length === 0) {
+    return 'placeholder marks (no logo files yet)';
+  }
+  const names = [...new Set(refs.map(brandKitLogoFileName).filter((name): name is string => name !== null))];
+  const unnamed = refs.filter((ref) => brandKitLogoFileName(ref) === null).length;
+  if (names.length === 0) {
+    return unnamed === 1 ? 'the logo you supplied' : `the ${unnamed} logo files you supplied`;
+  }
+  const lead = names.length === 1 && unnamed === 0 ? 'the logo file' : 'the logo files';
+  const rest = [...names];
+  if (unnamed === 1) {
+    rest.push('one more logo file you supplied');
+  } else if (unnamed > 1) {
+    rest.push(`${unnamed} more logo files you supplied`);
+  }
+  return `${lead} ${inWords(rest)}`;
+}
+
+/** The contents page's note on what the kit was built from (the web view's overview says the same). */
 export function brandKitBuiltFrom(kit: BrandKitRevision): string {
-  const files = Object.values(kit.chapters.logo.files)
-    .filter((file): file is NonNullable<typeof file> => file !== null)
-    .map((file) => file.ref);
-  const artwork = files.length > 0 ? [...new Set(files)].join(', ') : 'placeholder marks (no logo files yet)';
   // The voice always comes from the project's messaging framework — the run
   // never starts without one, so there is no site-derived stand-in.
-  return `Built from ${artwork}, the messaging framework and the brand colors found in the logo artwork. For the full voice, persona and messaging rules, see the messaging framework.`;
+  return `Built from ${brandKitArtworkInWords(kit)}, the messaging framework and the brand colors found in the logo artwork. For the full voice, persona and messaging rules, see the messaging framework.`;
+}
+
+/** The six chapters as the web view's overview summarises them, each with the tab that opens it. */
+export function brandKitChapterSummaries(kit: BrandKitRevision): BrandKitChapterSummary[] {
+  const summaries: Record<(typeof BRAND_KIT_CHAPTERS)[number]['id'], string> = {
+    logo: kit.chapters.logo.system,
+    color: kit.chapters.color.summary,
+    type: kit.chapters.type.summary,
+    visual: kit.chapters.visual.imagery.rule,
+    usage: kit.chapters.usage.summary,
+    voice: kit.chapters.voice.umbrella,
+  };
+  return BRAND_KIT_CHAPTERS.map((chapter) => ({ id: chapter.id, number: chapter.number, title: chapter.title, summary: summaries[chapter.id] }));
 }
 
 /** The whole book, computed once from the kit. */

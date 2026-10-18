@@ -272,7 +272,8 @@ export const BRAND_KIT_ISO_TIMESTAMP_REGEX = /^\d{4}-\d{2}-\d{2}[Tt ]\d{2}:\d{2}
 
 // ---------------------------------------------------------------------------
 // The book: the kit view renders the six chapters as the reference kit's 16
-// letter pages, landscape, printed from the page with Download PDF.
+// letter pages, landscape — the print rendering, printed with Download PDF
+// from the web view (on screen the kit is the web view).
 // ---------------------------------------------------------------------------
 
 /** The six chapters, numbered as the running head prints them. */
@@ -343,6 +344,40 @@ export const BRAND_KIT_GOOGLE_FONTS_CSS_URL = 'https://fonts.googleapis.com/css2
 
 /** The body class set while the book prints, so the page shows the book alone (see styles.scss). */
 export const BRAND_KIT_PRINT_BODY_CLASS = 'lfx-print-brand-kit';
+
+/** The class of the book's wrapper on screen: never shown there, shown only while the book prints (see styles.scss). */
+export const BRAND_KIT_PRINT_ONLY_CLASS = 'lfx-brand-kit-print-only';
+
+/**
+ * A logo file's stem (its name without the extension and a `-838x203` size
+ * suffix) that names nothing a reader would recognise: a long hex hash, a
+ * UUID, or a long run of letters and digits with no separator — what CDNs
+ * such as Sanity name uploads. The kit then says "the logo you supplied".
+ */
+export const BRAND_KIT_OPAQUE_FILE_STEM_REGEX = /^(?:|[0-9a-f]{12,}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}|(?=[a-z]*\d)(?=\d*[a-z])[a-z0-9]{20,})$/i;
+
+// ---------------------------------------------------------------------------
+// The web view: the kit on screen, as an app page (the book is for print)
+// ---------------------------------------------------------------------------
+
+/** The tabs of the kit's web view, in order: the overview, the six chapters, then the run's report. */
+export const BRAND_KIT_WEB_VIEW_TABS = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'logo', label: 'Logo' },
+  { id: 'color', label: 'Color' },
+  { id: 'type', label: 'Type' },
+  { id: 'visual', label: 'Visual' },
+  { id: 'usage', label: 'Usage' },
+  { id: 'voice', label: 'Voice' },
+  { id: 'sources', label: 'Sources and gaps' },
+] as const;
+
+/** How the web view names a run's mode. */
+export const BRAND_KIT_MODE_LABELS = {
+  draft: 'Draft',
+  redraft: 'Redraft',
+  check: 'Checked',
+} as const;
 
 /** The trademark line of the back cover; `[Project]` is replaced by the project name. */
 export const BRAND_KIT_BACK_COVER_NOTICE =

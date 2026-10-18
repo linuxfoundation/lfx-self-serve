@@ -45,7 +45,7 @@ import { MessageService } from 'primeng/api';
 import { concat, from, NEVER, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { BrandKitViewComponent } from '../brand-kit-view/brand-kit-view.component';
+import { BrandKitWebViewComponent } from '../brand-kit-web-view/brand-kit-web-view.component';
 import { MktgIntakeDocumentsComponent } from '../mktg-intake-documents/mktg-intake-documents.component';
 import { MktgIntakeLogoFilesComponent } from '../mktg-intake-logo-files/mktg-intake-logo-files.component';
 import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questions.component';
@@ -968,7 +968,7 @@ describe('MktgAgentRunComponent', () => {
       });
     });
 
-    it('renders a stored version’s kit as the book — no Markdown preview, no .md download, no section checklist', async () => {
+    it('renders a stored version’s kit as the web view — the book kept for print only, no document card, no .md download, no section checklist', async () => {
       storedRuns = {
         'proj-1:brand-kit': {
           agentId: 'brand-kit',
@@ -985,19 +985,22 @@ describe('MktgAgentRunComponent', () => {
 
       expect(query('mktg-agent-run-result')).not.toBeNull();
       expect(query('mktg-agent-run-brand-kit')).not.toBeNull();
-      expect(fixture.debugElement.query(By.directive(BrandKitViewComponent))).not.toBeNull();
+      expect(fixture.debugElement.query(By.directive(BrandKitWebViewComponent))).not.toBeNull();
+      // The kit is an app page with its own header and actions: no document card around it.
+      expect(query('mktg-agent-run-doc-title')).toBeNull();
       expect(query('mktg-agent-run-view-button')).toBeNull();
       expect(query('mktg-agent-run-download-button')).toBeNull();
       expect(query('mktg-agent-run-doc-preview')).toBeNull();
-      expect(query('mktg-agent-run-sections')?.className).toContain('hidden');
-      // The book: 16 pages, the cover first, the palette with every colour sourced, the contrast table, the voice.
-      expect(host().querySelectorAll('.lfx-brand-kit-page')).toHaveLength(16);
-      expect(query('brand-kit-page-cover')?.textContent).toContain('Brand Kit');
-      expect(query('brand-kit-swatch-F37625')?.textContent).toContain('From the site’s CSS — https://one.example.org');
-      expect(query('brand-kit-contrast-0')?.textContent).toContain('8.3:1');
-      expect(query('brand-kit-page-voice')?.textContent).toContain('Where organizations fund Project One.');
-      // The later item shows, inert.
-      expect(query('brand-kit-view-export-slides')?.querySelector('button')?.disabled).toBe(true);
+      expect(query('mktg-agent-run-sections')).toBeNull();
+      expect(query('brand-kit-web-view-title')?.textContent?.trim()).toBe('Project One Brand Kit');
+      expect(query('brand-kit-web-view-version')?.textContent?.trim()).toBe('v1');
+      expect(query('brand-kit-web-view-built-from')?.textContent).toContain('Built from the logo file logo.svg');
+      // The book is there for Download PDF only, in its print-only wrapper.
+      expect(query('brand-kit-web-view-print')?.className).toContain('lfx-brand-kit-print-only');
+      expect(query('brand-kit-web-view-print')?.querySelectorAll('.lfx-brand-kit-page')).toHaveLength(16);
+      expect(query('brand-kit-web-view-download-pdf')?.querySelector('button')?.disabled).toBe(false);
+      // The slideshow is the later Google Slides export: shown, inert.
+      expect(query('brand-kit-web-view-export-slides')?.querySelector('button')?.disabled).toBe(true);
       // A kit is revised from edited inputs, never from a feedback box.
       expect(query('mktg-agent-run-regenerate-button')).toBeNull();
       expect(query('mktg-agent-run-new-run')).not.toBeNull();

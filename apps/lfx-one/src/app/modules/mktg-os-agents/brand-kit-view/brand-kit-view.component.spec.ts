@@ -4,28 +4,25 @@
 import { PLATFORM_ID } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { BRAND_KIT_PRINT_BODY_CLASS } from '@lfx-one/shared/constants';
 import { BrandKitRevision } from '@lfx-one/shared/interfaces';
 import { brandKitTestRevision } from '@shared/testing/brand-kit-test-data';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { BrandKitViewComponent } from './brand-kit-view.component';
 
 /**
- * Locks the kit view's own behaviour — what the run page's spec, which only
- * checks that the book mounts, cannot see: Download PDF's print class on the
- * body and its removal after the print and on destroy, the SSR guard, the
+ * Locks the book's own behaviour — the kit's print rendering, which the web
+ * view holds in a print-only wrapper and prints with Download PDF (the print
+ * itself is the web view's spec): the 16 pages with no toolbar of their own,
+ * the layout utilities, the logo files named and never shown as URLs, and the
  * Google Fonts stylesheet appended once per URL in the browser and never on
- * the server, and the report toggle with its gap count.
+ * the server.
  */
 describe('BrandKitViewComponent', () => {
   let fixture: ComponentFixture<BrandKitViewComponent>;
-  let component: BrandKitViewComponent;
-  let print: ReturnType<typeof vi.spyOn>;
 
   const host = (): HTMLElement => fixture.nativeElement as HTMLElement;
   const query = (testId: string): HTMLElement | null => host().querySelector(`[data-testid="${testId}"]`);
-  const button = (testId: string): HTMLButtonElement | null => query(testId)?.querySelector('button') ?? null;
   const fontLinks = (): HTMLLinkElement[] => Array.from(document.head.querySelectorAll<HTMLLinkElement>('link[id^="brand-kit-font-"]'));
 
   const configure = async (platformId: 'browser' | 'server', kit: BrandKitRevision = brandKitTestRevision()): Promise<void> => {
@@ -35,28 +32,21 @@ describe('BrandKitViewComponent', () => {
     }).compileComponents();
     fixture = TestBed.createComponent(BrandKitViewComponent);
     fixture.componentRef.setInput('kit', kit);
-    component = fixture.componentInstance;
     await fixture.whenStable();
   };
 
-  beforeEach(() => {
-    // jsdom has no printer: the dialog is the browser's, and the test only needs to see it was asked for.
-    print = vi.spyOn(window, 'print').mockImplementation(() => undefined);
-  });
-
   afterEach(() => {
-    print.mockRestore();
     fontLinks().forEach((link) => link.remove());
-    document.body.classList.remove(BRAND_KIT_PRINT_BODY_CLASS);
   });
 
   describe('in the browser', () => {
     beforeEach(async () => configure('browser'));
 
-    it('lays the kit out as the 16 pages with the toolbar, and names every share on the proportion bar', () => {
+    it('lays the kit out as the 16 pages with no toolbar of its own (the web view has the actions), and names every share on the proportion bar', () => {
       expect(host().querySelectorAll('.lfx-brand-kit-page')).toHaveLength(16);
-      expect(query('brand-kit-view-toolbar')).not.toBeNull();
-      expect(button('brand-kit-view-export-slides')?.disabled).toBe(true);
+      expect(query('brand-kit-view-toolbar')).toBeNull();
+      expect(query('brand-kit-view-download-pdf')).toBeNull();
+      expect(query('brand-kit-view-report')).toBeNull();
       // The bar's segments are paint; the accessible name lists what each one is.
       expect(query('brand-kit-proportion')?.getAttribute('aria-label')).toBe(
         'How much of a surface each color takes: Charcoal 55%, White 30%, Orange 10%, Mid gray 5%'
@@ -95,25 +85,6 @@ describe('BrandKitViewComponent', () => {
       });
     });
 
-    it('Download PDF marks the body for the print, asks the browser to print, and clears the mark when the print ends', () => {
-      button('brand-kit-view-download-pdf')?.click();
-
-      expect(document.body.classList.contains(BRAND_KIT_PRINT_BODY_CLASS)).toBe(true);
-      expect(print).toHaveBeenCalledTimes(1);
-
-      window.dispatchEvent(new Event('afterprint'));
-      expect(document.body.classList.contains(BRAND_KIT_PRINT_BODY_CLASS)).toBe(false);
-    });
-
-    it('clears the print mark when the view is destroyed with the dialog still up', () => {
-      button('brand-kit-view-download-pdf')?.click();
-      expect(document.body.classList.contains(BRAND_KIT_PRINT_BODY_CLASS)).toBe(true);
-
-      fixture.destroy();
-
-      expect(document.body.classList.contains(BRAND_KIT_PRINT_BODY_CLASS)).toBe(false);
-    });
-
     it('appends the Google Fonts stylesheet once per URL, however many times the kit is set', async () => {
       const links = fontLinks();
       expect(links).toHaveLength(1);
@@ -142,54 +113,27 @@ describe('BrandKitViewComponent', () => {
       expect(fontLinks()).toHaveLength(0);
     });
 
-    it('opens the report with the sources read, the sources that failed and the gaps, and counts the gaps and failures on the toggle', async () => {
+    it('names a logo file by its own name, never its URL, and breaks long tokens inside their column', async () => {
       const kit = brandKitTestRevision();
-      kit.report = {
-        sources_read: ['https://one.example.org', 'logo.svg'],
-        sources_failed: [{ name: 'https://one.example.org/brand', reason: 'HTTP 404' }],
-        gaps: ['No stacked lockup was given.', 'The brand page could not be read.'],
-        notes: 'Two files were read.',
-      };
+      kit.chapters.logo.files.primary = { ref: 'https://cdn.example.org/images/a1/production/orbit-logo%20horizontal.png?w=200', svg: null };
       fixture.componentRef.setInput('kit', kit);
       await fixture.whenStable();
 
-      expect(component['gapCount']()).toBe(3);
-      expect(query('brand-kit-view-report-toggle')?.querySelector('.p-badge')?.textContent?.trim()).toBe('3');
-      expect(query('brand-kit-view-report')).toBeNull();
-
-      button('brand-kit-view-report-toggle')?.click();
-      await fixture.whenStable();
-
-      const report = query('brand-kit-view-report');
-      expect(report?.textContent).toContain('logo.svg');
-      expect(report?.textContent).toContain('https://one.example.org/brand');
-      expect(report?.textContent).toContain('HTTP 404');
-      expect(report?.textContent).toContain('No stacked lockup was given.');
-      expect(report?.textContent).toContain('Two files were read.');
-      expect(button('brand-kit-view-report-toggle')?.getAttribute('aria-expanded')).toBe('true');
-
-      button('brand-kit-view-report-toggle')?.click();
-      await fixture.whenStable();
-      expect(query('brand-kit-view-report')).toBeNull();
-    });
-
-    it('shows no count on the toggle when every chapter is sourced', () => {
-      expect(component['gapCount']()).toBe(0);
-      expect(query('brand-kit-view-report-toggle')?.querySelector('.p-badge')).toBeNull();
+      const book = query('brand-kit-book');
+      expect(book?.textContent).toContain('orbit-logo horizontal.png');
+      expect(book?.textContent).not.toContain('https://cdn.example.org');
+      expect(query('brand-kit-page-contents')?.textContent).toContain('Built from the logo file orbit-logo horizontal.png,');
+      // Every page's sheet makes its text wrap anywhere, so no value runs across the next column.
+      expect(query('brand-kit-page-contents')?.firstElementChild?.classList.contains('[overflow-wrap:anywhere]')).toBe(true);
     });
   });
 
   describe('on the server', () => {
     beforeEach(async () => configure('server'));
 
-    it('renders the book without touching the head, and never prints', () => {
+    it('renders the book without touching the head', () => {
       expect(host().querySelectorAll('.lfx-brand-kit-page')).toHaveLength(16);
       expect(fontLinks()).toHaveLength(0);
-
-      component['onDownloadPdf']();
-
-      expect(print).not.toHaveBeenCalled();
-      expect(document.body.classList.contains(BRAND_KIT_PRINT_BODY_CLASS)).toBe(false);
     });
   });
 });

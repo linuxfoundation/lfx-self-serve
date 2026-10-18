@@ -69,8 +69,8 @@ import { ICP_FORM_PREAMBLE_LINES, ICP_GAP_FILL_QUESTIONS, ICP_Q_GITHUB_URL, ICP_
  * shown as the run's outcome.
  *
  * The result is a JSON kit, not a Markdown document: the run page renders it
- * with the kit view (the six chapters as the reference kit's 16 pages,
- * printed with Download PDF). Every submission is a fresh generate
+ * with the kit's web view (an app page, one tab per chapter), which prints
+ * the reference kit's 16-page book with Download PDF. Every submission is a fresh generate
  * (`freshRunPerSubmission`); each result is stored as a new revision of the
  * project's Brand Kit document, whose Markdown rendering is what sibling
  * agents attach.
@@ -80,7 +80,7 @@ export const BRAND_KIT_INTAKE: MktgAgentIntake = {
   formTitleAction: 'Build',
   documentName: 'Brand Kit',
   intro:
-    'Upload the logo files and give the agent the website: it inspects the artwork, reads the site’s CSS and the brand page, sources every colour, and comes back with questions only for what is still open — each with a suggested answer to accept or edit. Your project’s latest Messaging Framework is attached automatically; the Voice chapter comes from it. The kit is laid out as a 16-page book you can print to PDF. Every result is stored as a new revision in Documents.',
+    'Upload the logo files and give the agent the website: it inspects the artwork, reads the site’s CSS and the brand page, sources every colour, and comes back with questions only for what is still open — each with a suggested answer to accept or edit. Your project’s latest Messaging Framework is attached automatically; the Voice chapter comes from it. The kit opens here as a page, one tab per chapter, and downloads as a 16-page PDF. Every result is stored as a new revision in Documents.',
   // Never sent: the generate endpoint renders the agent's own intake form
   // server-side, and with fresh runs there is no chat follow-up to prefix.
   batchPreamble: [],

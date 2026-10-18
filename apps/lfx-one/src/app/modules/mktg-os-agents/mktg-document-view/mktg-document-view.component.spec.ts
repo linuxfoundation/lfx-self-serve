@@ -111,7 +111,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-hash')?.textContent).toContain(OLDER.contentSha256);
   });
 
-  it('renders a Brand Kit revision as the kit book, from its sidecar — not the Markdown, not the framework view', async () => {
+  it('renders a Brand Kit revision on the kit’s web view, full width, from its sidecar — the book for print only, not the Markdown, not the framework view', async () => {
     const kit = brandKitTestRevision();
     const sidecar = {
       contract: BRAND_KIT_CONTRACT_ID,
@@ -133,6 +133,10 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-brand-kit')).not.toBeNull();
     expect(query('mktg-document-view-framework')).toBeNull();
     expect(query('mktg-document-view-document')).toBeNull();
+    expect(query('mktg-document-view-brand-kit')?.parentElement?.className).toContain('basis-full');
+    expect(query('brand-kit-web-view-title')?.textContent?.trim()).toBe('Project One Brand Kit');
+    expect(query('brand-kit-web-view-version')?.textContent?.trim()).toBe(`v${LATEST.number}`);
+    expect(query('brand-kit-web-view-print')?.className).toContain('lfx-brand-kit-print-only');
   });
 
   it('renders a Messaging Framework revision (JSON content) on the framework’s own view, full width, with the sidecar’s report', async () => {

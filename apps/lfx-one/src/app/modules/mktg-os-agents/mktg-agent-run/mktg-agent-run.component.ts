@@ -68,7 +68,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 
-import { BrandKitViewComponent } from '../brand-kit-view/brand-kit-view.component';
+import { BrandKitWebViewComponent } from '../brand-kit-web-view/brand-kit-web-view.component';
 import { MktgFrameworkViewComponent } from '../mktg-framework-view/mktg-framework-view.component';
 import { MktgIntakeDocumentsComponent } from '../mktg-intake-documents/mktg-intake-documents.component';
 import { MktgIntakeLogoFilesComponent } from '../mktg-intake-logo-files/mktg-intake-logo-files.component';
@@ -100,7 +100,7 @@ import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questi
     TextareaComponent,
     MarkdownRendererComponent,
     MessageComponent,
-    BrandKitViewComponent,
+    BrandKitWebViewComponent,
     MktgFrameworkViewComponent,
     MktgIntakeDocumentsComponent,
     MktgIntakeLogoFilesComponent,

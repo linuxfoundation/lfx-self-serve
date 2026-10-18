@@ -44,6 +44,7 @@ import {
   BRAND_KIT_MAX_LOGO_PAYLOAD_CHARS,
   BRAND_KIT_MIN_DOCUMENT_LENGTH,
   BRAND_KIT_MODES,
+  BRAND_KIT_OPAQUE_FILE_STEM_REGEX,
   BRAND_KIT_PALETTE_MAX,
   BRAND_KIT_PALETTE_MIN,
   BRAND_KIT_PROJECT_SLUG_REGEX,
@@ -1140,12 +1141,41 @@ export function brandKitSvgWithViewBox(svg: string, viewBox: string): string {
   return svg.slice(0, root.index) + sized + svg.slice(root.index + root[0].length);
 }
 
+/**
+ * A logo file as a reader knows it: the last segment of its reference (a file
+ * name, `<zip>/<entry>`, or the URL of an SVG the agent fetched — query and
+ * fragment dropped), percent-decoded. Null when that name is an opaque,
+ * hash-like one (a CDN's upload id, say) that would tell the reader nothing,
+ * or when there is no name at all. Never returns a URL.
+ */
+export function brandKitLogoFileName(ref: string): string | null {
+  const path = ref.trim().split(/[?#]/)[0];
+  const segment =
+    path
+      .split('/')
+      .filter((part) => part !== '' && !/^[a-z][a-z0-9+.-]*:$/i.test(part))
+      .pop() ?? '';
+  let name = segment;
+  try {
+    name = decodeURIComponent(segment);
+  } catch {
+    // A malformed escape: the segment as it is.
+  }
+  name = name.trim();
+  // A bare host (the URL had no path) is not a file name.
+  if (name === '' || (path.includes('://') && path.split('/').filter((part) => part !== '').length <= 2)) {
+    return null;
+  }
+  const stem = name.replace(/\.[a-z0-9]{1,5}$/i, '').replace(/[-_]\d+x\d+$/i, '');
+  return BRAND_KIT_OPAQUE_FILE_STEM_REGEX.test(stem) ? null : name;
+}
+
 /** A logo as a page draws it, or null without a file. */
 export function brandKitLogoImage(ref: BrandKitLogoRef | null): BrandKitLogoImage | null {
   if (!ref) {
     return null;
   }
-  return { ref: ref.ref, src: ref.svg ? brandKitSvgDataUrl(ref.svg) : null };
+  return { ref: ref.ref, name: brandKitLogoFileName(ref.ref) ?? 'the logo you supplied', src: ref.svg ? brandKitSvgDataUrl(ref.svg) : null };
 }
 
 /** The symbol as a page draws it: the symbol file, else the primary lockup cropped to the symbol's viewBox, else null. */
@@ -1153,8 +1183,9 @@ export function brandKitSymbolImage(files: BrandKitChapters['logo']['files'], sy
   if (files.symbol) {
     return brandKitLogoImage(files.symbol);
   }
-  if (files.primary?.svg && symbolViewBox) {
-    return { ref: files.primary.ref, src: brandKitSvgDataUrl(brandKitSvgWithViewBox(files.primary.svg, symbolViewBox)) };
+  const primary = brandKitLogoImage(files.primary);
+  if (primary && files.primary?.svg && symbolViewBox) {
+    return { ...primary, src: brandKitSvgDataUrl(brandKitSvgWithViewBox(files.primary.svg, symbolViewBox)) };
   }
   return null;
 }
