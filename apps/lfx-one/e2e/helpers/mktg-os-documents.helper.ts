@@ -42,8 +42,9 @@ export function documentFixture(revisionCount: 3 | 9 = 3, currentNumber = 2): Mk
     author: null,
   }));
   for (const revision of revisions) {
-    if (revision.number > 2) revision.author = { username: 'synthetic-writer', name: 'The writer' };
-    if (revision.number === 2) revision.author = { username: 'synthetic-writer-without-name', name: '' };
+    if (revision.number > 2) revision.author = { name: 'The writer' };
+    // v2 has a stored author whose name is unavailable; v1 has no author record.
+    if (revision.number === 2) revision.author = { name: null };
   }
   revisions[0] = { ...revisions[0], origin: 'revised', commentCount: 4, basedOnNumber: 1 };
   const selected = revisions.find((revision) => revision.latest);
@@ -53,7 +54,7 @@ export function documentFixture(revisionCount: 3 | 9 = 3, currentNumber = 2): Mk
     type: DOCUMENT_TYPE,
     documentId: 'living',
     revisions,
-    current: { revisionId: selected.id, changedAt: '2026-10-14T12:00:00.000Z', changedBy: { username: 'synthetic-selector', name: 'The writer' } },
+    current: { revisionId: selected.id, changedAt: '2026-10-14T12:00:00.000Z', changedBy: { name: 'The writer' } },
   };
 }
 
@@ -142,7 +143,7 @@ export async function setupDocuments(
       detail = {
         ...detail,
         revisions: detail.revisions.map((revision) => ({ ...revision, latest: revision.id === revisionId })),
-        current: { revisionId, changedAt: '2026-10-15T13:00:00.000Z', changedBy: { username: 'synthetic-selector', name: 'The writer' } },
+        current: { revisionId, changedAt: '2026-10-15T13:00:00.000Z', changedBy: { name: 'The writer' } },
       };
       return fulfillDocumentJson(route, { ...detail, revision: { ...selected, latest: true } });
     }

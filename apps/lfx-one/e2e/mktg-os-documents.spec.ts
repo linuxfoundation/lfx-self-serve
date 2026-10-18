@@ -18,14 +18,12 @@ test.describe('Marketing OS current revisions', () => {
     await expect(page.getByTestId('mktg-documents-revision-3')).toContainText('revised from 4 comments · based on v1');
     await expect(page.getByTestId('mktg-documents-revision-2')).toContainText('Current');
     await expect(page.getByTestId('mktg-documents-revision-1')).toContainText('no name (stored before names were recorded)');
-    await expect(page.getByTestId('mktg-documents-revision-2')).toContainText('synthetic-writer-without-name');
-    await expect(page.getByTestId('mktg-documents-revision-2')).not.toContainText('stored before names were recorded');
+    await expect(page.getByTestId('mktg-documents-revision-2')).toContainText('name unavailable');
     await page.getByTestId('mktg-documents-view-latest').click();
     await expect(page.getByTestId('mktg-document-view-revision-chip')).toContainText('Revision 2 of 3');
     await expect(page.getByTestId('mktg-document-view-revision-3')).toContainText(/revised from 4 comments · based on v1\s*· The writer/);
     await expect(page.getByTestId('mktg-document-view-revision-1')).toContainText('no name (stored before names were recorded)');
-    await expect(page.getByTestId('mktg-document-view-revision-2')).toContainText('synthetic-writer-without-name');
-    await expect(page.getByTestId('mktg-document-view-revision-2')).not.toContainText('stored before names were recorded');
+    await expect(page.getByTestId('mktg-document-view-revision-2')).toContainText('name unavailable');
     await expect(page.getByTestId('mktg-document-view-current-since-2')).toContainText('Current since 14 Oct 2026');
     await expect(page.getByTestId('mktg-document-view-current-since-2')).toContainText('The writer');
     await expect(page.getByTestId('mktg-document-view-current-since-3')).toHaveCount(0);

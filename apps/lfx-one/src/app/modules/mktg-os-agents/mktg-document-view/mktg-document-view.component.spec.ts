@@ -163,7 +163,7 @@ describe('MktgDocumentViewComponent', () => {
     const revisions = Array.from({ length: 9 }, (_, index) =>
       revision(9 - index, {
         latest: 9 - index === currentNumber,
-        author: { username: 'synthetic-writer', name: 'The writer' },
+        author: { name: 'The writer' },
       })
     );
     const current = revisions.find((entry) => entry.latest);
@@ -174,7 +174,7 @@ describe('MktgDocumentViewComponent', () => {
       current: {
         revisionId: current.id,
         changedAt: '2026-10-14T12:00:00.000Z',
-        changedBy: { username: 'synthetic-selector', name: 'The selector' },
+        changedBy: { name: 'The selector' },
       },
     };
     store.getDocument.mockImplementation((project: string) => of({ ...history, project }));
@@ -348,7 +348,7 @@ describe('MktgDocumentViewComponent', () => {
 
   it('makes the full truncated history summary available on keyboard focus rather than title', async () => {
     const name = 'The writer responsible for the synthetic revision and its detailed review notes';
-    const selected = { ...OLDER, author: { username: 'synthetic-writer', name } };
+    const selected = { ...OLDER, author: { name } };
     store.getRevision.mockReturnValue(of({ ...detail, revisions: [LATEST, selected], revision: selected, markdown: '# Older' }));
     await render(`/documents/brand-kit/living?revision=${OLDER.id}`);
     const summary = query('mktg-document-view-history-bar-summary');
@@ -362,8 +362,8 @@ describe('MktgDocumentViewComponent', () => {
   });
 
   it.each([
-    { author: { username: 'synthetic-writer', name: 'The writer' }, label: 'The writer' },
-    { author: { username: 'synthetic-writer', name: '' }, label: 'synthetic-writer' },
+    { author: { name: 'The writer' }, label: 'The writer' },
+    { author: { name: null }, label: 'name unavailable' },
     { author: null, label: 'no name (stored before names were recorded)' },
   ])('uses the row attribution policy in the history bar: %j', async ({ author, label }) => {
     const selected = { ...OLDER, author };
