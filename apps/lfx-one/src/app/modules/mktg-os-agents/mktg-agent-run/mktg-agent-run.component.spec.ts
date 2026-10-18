@@ -821,6 +821,23 @@ describe('MktgAgentRunComponent', () => {
       expect(fieldError('press_release_url')).toBeNull();
     });
 
+    it('fills the website and the GitHub repository from the LFX project, marked From LFX, and leaves them editable', async () => {
+      // Hand test, 18 Oct: "it should get the github from the lfx ui. website too if it has it".
+      projects = { 'proj-one': { repository_url: 'https://github.com/testorbit/testorbit', website_url: 'https://testorbit.example.org', description: '' } };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(component['intakeForm'].controls['website_url'].value).toBe('https://testorbit.example.org');
+      expect(component['intakeForm'].controls['github_url'].value).toBe('https://github.com/testorbit/testorbit');
+      expect(fromLfxChip('website_url')).not.toBeNull();
+      expect(fromLfxChip('github_url')).not.toBeNull();
+      expect(fieldError('website_url')).toBeNull();
+
+      component['intakeForm'].controls['website_url'].setValue('https://www.testorbit.example.org');
+      await fixture.whenStable();
+      expect(fromLfxChip('website_url')).toBeNull();
+    });
+
     it('fills the one-line description from a multi-paragraph LFX description as ONE line, and submits it as one line', async () => {
       // An LFX project description with paragraph breaks: the input would hide
       // them while the control kept them, and the BFF refuses a description

@@ -500,6 +500,7 @@ export class MktgAgentRunComponent {
           this.dependencyDocs.set(dependencies);
           if (project) {
             this.applyPrefill('repository-url', project.repository_url);
+            this.applyPrefill('website-url', project.website_url);
             this.applyPrefill('project-description', project.description);
           }
           // STRICTLY after the LFX prefill: prior answers fill only what LFX

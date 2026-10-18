@@ -28,7 +28,7 @@ export type MktgIntakeFieldKind = 'text' | 'textarea' | 'url-list';
  * "From LFX" chip and stay editable — the marketplace never re-asks what LFX
  * already knows.
  */
-export type MktgIntakePrefillSource = 'project-name' | 'repository-url' | 'project-description';
+export type MktgIntakePrefillSource = 'project-name' | 'repository-url' | 'website-url' | 'project-description';
 
 /**
  * Format rule enforced on a field's value. Unlike the agents' own contracts —
