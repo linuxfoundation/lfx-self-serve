@@ -52,7 +52,7 @@
         [badge]="gapCount() > 0 ? gapCount().toString() : undefined"
         ariaLabel="Open the run's report: sources read, failed and gaps"
         data-testid="brand-kit-web-view-report"
-        (onClick)="onSelectTab('sources')" />
+        (onClick)="onGoToTab('sources')" />
     </div>
   </div>
 
@@ -134,7 +134,7 @@
                   type="button"
                   class="self-start text-xs font-medium text-blue-600 hover:text-blue-800"
                   [attr.data-testid]="'brand-kit-web-view-open-' + chapter.id"
-                  (click)="onSelectTab(chapter.id)">
+                  (click)="onGoToTab(chapter.id)">
                   Open {{ chapter.title }}
                 </button>
               </article>

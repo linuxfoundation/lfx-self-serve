@@ -209,17 +209,36 @@ export class MktgIntakeLogoFilesComponent {
     return '';
   }
 
-  /** The file name a link stands for: its last path segment, or the host when the path has none. */
+  /**
+   * The file name a link stands for: the base name of its last path segment
+   * once decoded (an encoded `/` or `\` is a separator, as the server's name
+   * rule reads it), or the host when the path has none. The link itself is
+   * sent to the agent as given.
+   */
   private linkFileName(url: string): string {
+    let parsed: URL;
     try {
-      const parsed = new URL(url);
-      const segment = parsed.pathname
-        .split('/')
-        .filter((part) => part !== '')
-        .pop();
-      return decodeURIComponent(segment ?? parsed.hostname);
+      parsed = new URL(url);
     } catch {
       return url;
     }
+    const segment = parsed.pathname
+      .split('/')
+      .filter((part) => part !== '')
+      .pop();
+    if (segment === undefined) {
+      return parsed.hostname;
+    }
+    let decoded = segment;
+    try {
+      decoded = decodeURIComponent(segment);
+    } catch {
+      // A malformed escape: the segment as written is still a file name.
+    }
+    const base = decoded
+      .split(/[/\\\r\n]/)
+      .filter((part) => part.trim() !== '')
+      .pop();
+    return base?.trim() ?? parsed.hostname;
   }
 }

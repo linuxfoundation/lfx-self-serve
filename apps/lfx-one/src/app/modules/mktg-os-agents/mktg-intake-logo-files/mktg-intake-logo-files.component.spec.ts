@@ -217,6 +217,19 @@ describe('MktgIntakeLogoFilesComponent', () => {
     expect(names()).toEqual(['Logo Mark.svg', 'one.example.org']);
   });
 
+  it('names a link after the base name of its decoded last segment, so an encoded separator never reaches the server', () => {
+    const url = 'https://one.example.org/files/brand%2Flogo.svg';
+    component['linkForm'].controls.url.setValue(url);
+    component['onAddLink']();
+    component['linkForm'].controls.url.setValue('https://two.example.org/kit%5Cmark.png');
+    component['onAddLink']();
+    component['linkForm'].controls.url.setValue('https://three.example.org/bad%E0%A4%A.svg');
+    component['onAddLink']();
+
+    expect(names()).toEqual(['logo.svg', 'mark.png', 'bad%E0%A4%A.svg']);
+    expect(component.files()[0].file).toEqual({ name: 'logo.svg', url });
+  });
+
   it('refuses a link that is not https://, and an empty one', () => {
     component['linkForm'].controls.url.setValue('http://one.example.org/logo.svg');
     component['onAddLink']();

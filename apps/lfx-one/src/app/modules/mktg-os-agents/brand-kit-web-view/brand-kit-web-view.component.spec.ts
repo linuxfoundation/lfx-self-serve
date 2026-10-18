@@ -143,6 +143,9 @@ describe('BrandKitWebViewComponent', () => {
       await fixture.whenStable();
       expect(tab('color').getAttribute('aria-selected')).toBe('true');
       expect(query('brand-kit-web-view-panel-color')).not.toBeNull();
+      // The clicked button went with the Overview panel: focus lands on the tab it opened, once that has rendered.
+      await new Promise((resolve) => setTimeout(resolve));
+      expect(document.activeElement).toBe(tab('color'));
     });
 
     it('Overview: a logo on a CDN is named as the logo you supplied — never its URL', async () => {
