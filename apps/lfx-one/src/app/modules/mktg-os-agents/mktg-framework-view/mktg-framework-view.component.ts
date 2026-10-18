@@ -121,6 +121,23 @@ export class MktgFrameworkViewComponent {
   }
 
   /**
+   * A shortcut from inside a panel (the reviewer note's "Sources read, failed
+   * and gaps") opens that tab and moves focus onto it: the button that was
+   * clicked leaves the page with the old panel, so keyboard focus would
+   * otherwise fall back to the document.
+   */
+  protected onGoToTab(id: FoundationMessageViewTab): void {
+    this.selectedTab.set(id);
+    if (isPlatformBrowser(this.platformId)) {
+      const tab = this.tabs().find((entry) => entry.id === id);
+      if (tab) {
+        // After the view updates, so the tab button is the selected, focusable one.
+        setTimeout(() => document.getElementById(tab.tabId)?.focus());
+      }
+    }
+  }
+
+  /**
    * Keyboard tabs: only the selected tab is in the tab order (roving
    * tabindex), so the arrow keys, Home and End move the selection and the
    * focus along the tablist. Other keys pass through.

@@ -270,4 +270,19 @@ describe('MktgFrameworkViewComponent', () => {
     expect(query('mktg-framework-view-findings')).toBeNull();
     expect(query('mktg-framework-view-checks-empty')?.textContent).toContain('Nothing to check.');
   });
+
+  it('opens the Sources tab from the reviewer note and moves keyboard focus onto that tab', async () => {
+    host.asset.set(ASSET);
+    host.state.set('ready');
+    await fixture.whenStable();
+    document.body.appendChild(element());
+
+    query('mktg-framework-view-notes-sources')?.click();
+    await fixture.whenStable();
+    await new Promise((resolve) => setTimeout(resolve));
+
+    expect(query('mktg-framework-view-panel-sources')).not.toBeNull();
+    expect(document.activeElement).toBe(query('mktg-framework-view-tab-sources'));
+    element().remove();
+  });
 });
