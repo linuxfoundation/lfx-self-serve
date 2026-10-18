@@ -153,6 +153,15 @@ describe('MktgIntakeLogoFilesComponent', () => {
     expect(component.busy()).toBe(true);
   });
 
+  it('counts the reads in flight against the payload cap, so one pick of several large files is not all read', () => {
+    useHandReader();
+    // 24 bytes are 32 base64 characters each: under the per-file cap of 40, but two of them pass the payload cap of 60.
+    component['onFilesSelected'](fileEvent(new File([new Uint8Array(24)], 'a.png'), new File([new Uint8Array(24)], 'b.png')));
+
+    expect(HandFileReader.instances).toHaveLength(1);
+    expect(component['errorText']()).toBe('b.png would take the files over what one request can carry — add it as a link instead.');
+  });
+
   it('refuses a file that would take all the files past what one request can carry', () => {
     useHandReader();
     component['onFilesSelected'](fileEvent(new File(['x'], 'a.svg'), new File(['x'], 'b.svg')));

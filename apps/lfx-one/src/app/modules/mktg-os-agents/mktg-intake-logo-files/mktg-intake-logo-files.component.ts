@@ -56,6 +56,8 @@ export class MktgIntakeLogoFilesComponent {
 
   /** The reads in flight; `cancelReads` and the section's end drop them. */
   private readonly readers = new Set<FileReader>();
+  /** The fewest characters the reads in flight will add, reserved so one pick of several large files cannot all be read past the payload cap. */
+  private readonly pendingChars = signal(0);
 
   public constructor() {
     // Only the readers go: the section is gone, so its models are not written.
@@ -71,6 +73,7 @@ export class MktgIntakeLogoFilesComponent {
   public cancelReads(): void {
     this.abortReads();
     this.pending.set(0);
+    this.pendingChars.set(0);
     this.busy.set(false);
     this.errorText.set('');
   }
@@ -123,12 +126,15 @@ export class MktgIntakeLogoFilesComponent {
   private read(file: File): void {
     const kind = brandKitLogoFileKind(file.name);
     const reader = new FileReader();
+    const reserved = this.sentCharsAtLeast(file);
     this.readers.add(reader);
     this.pending.update((count) => count + 1);
+    this.pendingChars.update((chars) => chars + reserved);
     this.busy.set(true);
     const done = (): void => {
       this.readers.delete(reader);
       this.pending.update((count) => count - 1);
+      this.pendingChars.update((chars) => chars - reserved);
       this.busy.set(this.pending() > 0);
     };
     reader.onload = () => {
@@ -212,7 +218,7 @@ export class MktgIntakeLogoFilesComponent {
     if (sentChars > this.config().maxFileChars) {
       return `${file.name} is too big to send with the form — add it as a link instead.`;
     }
-    if (this.payloadChars() + sentChars > this.config().maxPayloadChars) {
+    if (this.payloadChars() + this.pendingChars() + sentChars > this.config().maxPayloadChars) {
       return `${file.name} would take the files over what one request can carry — add it as a link instead.`;
     }
     return '';
