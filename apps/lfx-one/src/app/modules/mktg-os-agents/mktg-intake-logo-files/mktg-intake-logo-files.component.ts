@@ -206,7 +206,26 @@ export class MktgIntakeLogoFilesComponent {
     if (this.atLimit()) {
       return `At most ${this.config().maxFiles} files.`;
     }
+    // Refused from its size before any read, so a large package is never
+    // inflated into memory only to be refused; the read re-checks the exact length.
+    const sentChars = this.sentCharsAtLeast(file);
+    if (sentChars > this.config().maxFileChars) {
+      return `${file.name} is too big to send with the form — add it as a link instead.`;
+    }
+    if (this.payloadChars() + sentChars > this.config().maxPayloadChars) {
+      return `${file.name} would take the files over what one request can carry — add it as a link instead.`;
+    }
     return '';
+  }
+
+  /**
+   * The fewest characters a file can take on the form, from its byte size:
+   * base64 is exactly four characters per three bytes, and an SVG's text is
+   * at least a third of its UTF-8 bytes (no character takes more than three
+   * bytes per UTF-16 unit), so nothing that would fit is refused here.
+   */
+  private sentCharsAtLeast(file: File): number {
+    return brandKitLogoFileKind(file.name) === 'svg' ? Math.ceil(file.size / 3) : Math.ceil(file.size / 3) * 4;
   }
 
   /**

@@ -139,6 +139,20 @@ describe('MktgIntakeLogoFilesComponent', () => {
     expect(component.busy()).toBe(false);
   });
 
+  it('refuses a file from its size before reading it, so a large package is never read only to be refused', () => {
+    useHandReader();
+    // 31 bytes are 44 base64 characters, over the cap of 40; an SVG of 121 bytes is at least 41 characters.
+    component['onFilesSelected'](fileEvent(new File([new Uint8Array(31)], 'kit.zip')));
+    expect(component['errorText']()).toBe('kit.zip is too big to send with the form — add it as a link instead.');
+    component['onFilesSelected'](fileEvent(new File(['x'.repeat(121)], 'huge.svg')));
+    expect(component['errorText']()).toBe('huge.svg is too big to send with the form — add it as a link instead.');
+
+    // 120 bytes of SVG might still be 40 characters, so it is read and the exact length decides.
+    component['onFilesSelected'](fileEvent(new File(['x'.repeat(120)], 'edge.svg')));
+    expect(HandFileReader.instances).toHaveLength(1);
+    expect(component.busy()).toBe(true);
+  });
+
   it('refuses a file that would take all the files past what one request can carry', () => {
     useHandReader();
     component['onFilesSelected'](fileEvent(new File(['x'], 'a.svg'), new File(['x'], 'b.svg')));
