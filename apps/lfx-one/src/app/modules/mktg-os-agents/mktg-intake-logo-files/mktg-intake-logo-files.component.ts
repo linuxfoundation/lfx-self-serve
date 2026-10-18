@@ -51,13 +51,15 @@ export class MktgIntakeLogoFilesComponent {
   // === Computed ===
   protected readonly atLimit = computed(() => this.files().length + this.pending() >= this.config().maxFiles);
   protected readonly acceptAttribute = computed(() => this.config().fileExtensions.join(','));
-  /** Characters the files on the form already take of the one request body. */
-  private readonly payloadChars = computed(() => this.files().reduce((total, entry) => total + (entry.file.text ?? entry.file.base64 ?? '').length, 0));
+  /** UTF-8 bytes the files on the form already take of the one request body (the BFF's body limit counts bytes, not characters). */
+  private readonly payloadBytes = computed(() =>
+    this.files().reduce((total, entry) => total + (entry.file.text !== undefined ? this.utf8Bytes(entry.file.text) : (entry.file.base64 ?? '').length), 0)
+  );
 
   /** The reads in flight; `cancelReads` and the section's end drop them. */
   private readonly readers = new Set<FileReader>();
-  /** The fewest characters the reads in flight will add, reserved so one pick of several large files cannot all be read past the payload cap. */
-  private readonly pendingChars = signal(0);
+  /** The bytes the reads in flight will add, reserved so one pick of several large files cannot all be read past the payload cap. */
+  private readonly pendingBytes = signal(0);
 
   public constructor() {
     // Only the readers go: the section is gone, so its models are not written.
@@ -73,7 +75,7 @@ export class MktgIntakeLogoFilesComponent {
   public cancelReads(): void {
     this.abortReads();
     this.pending.set(0);
-    this.pendingChars.set(0);
+    this.pendingBytes.set(0);
     this.busy.set(false);
     this.errorText.set('');
   }
@@ -126,15 +128,15 @@ export class MktgIntakeLogoFilesComponent {
   private read(file: File): void {
     const kind = brandKitLogoFileKind(file.name);
     const reader = new FileReader();
-    const reserved = this.sentCharsAtLeast(file);
+    const reserved = this.sentBytes(file);
     this.readers.add(reader);
     this.pending.update((count) => count + 1);
-    this.pendingChars.update((chars) => chars + reserved);
+    this.pendingBytes.update((bytes) => bytes + reserved);
     this.busy.set(true);
     const done = (): void => {
       this.readers.delete(reader);
       this.pending.update((count) => count - 1);
-      this.pendingChars.update((chars) => chars - reserved);
+      this.pendingBytes.update((bytes) => bytes - reserved);
       this.busy.set(this.pending() > 0);
     };
     reader.onload = () => {
@@ -149,7 +151,7 @@ export class MktgIntakeLogoFilesComponent {
         this.errorText.set(`${file.name} is too big to send with the form — add it as a link instead.`);
         return;
       }
-      if (this.payloadChars() + content.length > this.config().maxPayloadChars) {
+      if (this.payloadBytes() + (kind === 'svg' ? this.utf8Bytes(content) : content.length) > this.config().maxPayloadChars) {
         this.errorText.set(`${file.name} would take the files over what one request can carry — add it as a link instead.`);
         return;
       }
@@ -214,11 +216,10 @@ export class MktgIntakeLogoFilesComponent {
     }
     // Refused from its size before any read, so a large package is never
     // inflated into memory only to be refused; the read re-checks the exact length.
-    const sentChars = this.sentCharsAtLeast(file);
-    if (sentChars > this.config().maxFileChars) {
+    if (this.sentCharsAtLeast(file) > this.config().maxFileChars) {
       return `${file.name} is too big to send with the form — add it as a link instead.`;
     }
-    if (this.payloadChars() + this.pendingChars() + sentChars > this.config().maxPayloadChars) {
+    if (this.payloadBytes() + this.pendingBytes() + this.sentBytes(file) > this.config().maxPayloadChars) {
       return `${file.name} would take the files over what one request can carry — add it as a link instead.`;
     }
     return '';
@@ -232,6 +233,15 @@ export class MktgIntakeLogoFilesComponent {
    */
   private sentCharsAtLeast(file: File): number {
     return brandKitLogoFileKind(file.name) === 'svg' ? Math.ceil(file.size / 3) : Math.ceil(file.size / 3) * 4;
+  }
+
+  /** The UTF-8 bytes a file adds to the request body: an SVG's text is its own bytes, base64 one byte per character. */
+  private sentBytes(file: File): number {
+    return brandKitLogoFileKind(file.name) === 'svg' ? file.size : Math.ceil(file.size / 3) * 4;
+  }
+
+  private utf8Bytes(text: string): number {
+    return new TextEncoder().encode(text).length;
   }
 
   /**

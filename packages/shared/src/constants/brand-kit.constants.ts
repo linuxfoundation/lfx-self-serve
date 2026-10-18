@@ -127,9 +127,10 @@ export const BRAND_KIT_MAX_LOGO_FILES = 12;
 export const BRAND_KIT_MAX_LOGO_FILE_CHARS = 2_000_000;
 
 /**
- * All logo files of one form together, in characters: the generate request
- * is one JSON body, and the BFF's body parser takes 15 MB — the form says so
- * before the request is refused on the way out.
+ * All logo files of one form together, in UTF-8 bytes: the generate request
+ * is one JSON body, and the BFF's body parser takes 15 MB of bytes — the form
+ * says so before the request is refused on the way out. The 3 MB left over
+ * carries the answers, the attached framework and JSON escaping.
  */
 export const BRAND_KIT_MAX_LOGO_PAYLOAD_CHARS = 12_000_000;
 

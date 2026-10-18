@@ -147,8 +147,10 @@ describe('MktgIntakeLogoFilesComponent', () => {
     component['onFilesSelected'](fileEvent(new File(['x'.repeat(121)], 'huge.svg')));
     expect(component['errorText']()).toBe('huge.svg is too big to send with the form — add it as a link instead.');
 
-    // 120 bytes of SVG might still be 40 characters, so it is read and the exact length decides.
-    component['onFilesSelected'](fileEvent(new File(['x'.repeat(120)], 'edge.svg')));
+    // An SVG is as many request bytes as its file: 61 bytes pass the payload cap of 60 before any read; 60 bytes are read.
+    component['onFilesSelected'](fileEvent(new File(['x'.repeat(61)], 'over.svg')));
+    expect(component['errorText']()).toBe('over.svg would take the files over what one request can carry — add it as a link instead.');
+    component['onFilesSelected'](fileEvent(new File(['x'.repeat(60)], 'edge.svg')));
     expect(HandFileReader.instances).toHaveLength(1);
     expect(component.busy()).toBe(true);
   });
@@ -160,6 +162,20 @@ describe('MktgIntakeLogoFilesComponent', () => {
 
     expect(HandFileReader.instances).toHaveLength(1);
     expect(component['errorText']()).toBe('b.png would take the files over what one request can carry — add it as a link instead.');
+  });
+
+  it('measures the request in UTF-8 bytes, so an SVG of multi-byte text cannot pass the body limit by its character count', () => {
+    useHandReader();
+    component['onFilesSelected'](fileEvent(new File(['x'], 'a.svg')));
+    // 23 characters, 18 of them CJK, are 59 UTF-8 bytes: under the per-file cap of 40 characters and the payload cap of 60 bytes.
+    HandFileReader.instances[0].finish('<svg>'.padEnd(23, '字'));
+    expect(names()).toEqual(['a.svg']);
+
+    component['onFilesSelected'](fileEvent(new File(['x'], 'b.svg')));
+    // 6 more bytes pass the cap, though the two files are only 29 characters.
+    HandFileReader.instances[1].finish('<svg/>');
+    expect(names()).toEqual(['a.svg']);
+    expect(component['errorText']()).toBe('b.svg would take the files over what one request can carry — add it as a link instead.');
   });
 
   it('refuses a file that would take all the files past what one request can carry', () => {
