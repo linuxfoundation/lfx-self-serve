@@ -9,7 +9,16 @@
 import { describe, expect, it } from 'vitest';
 
 import { BrandKitLogoRef, BrandKitRevision } from '../interfaces/brand-kit.interface';
-import { brandKitArtworkInWords, brandKitBuiltFrom, brandKitChapterSummaries, brandKitFoundIn, buildBrandKitBookView } from './brand-kit-book.utils';
+import {
+  brandKitArtworkInWords,
+  brandKitBuiltFrom,
+  brandKitChapterSummaries,
+  brandKitContrastRatio,
+  brandKitFoundIn,
+  brandKitLabelInk,
+  brandKitLuminance,
+  buildBrandKitBookView,
+} from './brand-kit-book.utils';
 import { brandKitLogoFileName } from './brand-kit.utils';
 
 /** A logo uploaded to a CDN that names files by a content hash and the image size: one long unbroken token. */
@@ -179,5 +188,38 @@ describe('the book’s view model', () => {
       'Dark grounds for impact.',
       'Orbit ships open releases.',
     ]);
+  });
+
+  it('sets every swatch label in a colour that reaches WCAG AA on it — black on a medium orange, where white and the dark both fall short', () => {
+    const orange = '#F37625';
+    const dark = '#4D4E4E';
+    const onOrange = (inkLuminance: number): number => brandKitContrastRatio(brandKitLuminance(orange), inkLuminance);
+    expect(onOrange(1)).toBeLessThan(4.5);
+    expect(onOrange(brandKitLuminance(dark))).toBeLessThan(4.5);
+
+    expect(brandKitLabelInk(orange, dark)).toBe('black');
+    expect(onOrange(0)).toBeGreaterThanOrEqual(4.5);
+    // The kit's dark wherever it is legible, white on a dark swatch.
+    expect(brandKitLabelInk('#E9EEF5', '#20232A')).toBe('#20232A');
+    expect(brandKitLabelInk('#20232A', '#20232A')).toBe('white');
+
+    const inkLuminance = (ink: string): number => {
+      if (ink === 'white') {
+        return 1;
+      }
+      return ink === 'black' ? 0 : brandKitLuminance(ink);
+    };
+    const cards = buildBrandKitBookView(kitWith({})).palette;
+    for (const card of cards) {
+      expect(brandKitContrastRatio(brandKitLuminance(card.hex), inkLuminance(card.ink))).toBeGreaterThanOrEqual(4.5);
+    }
+    expect(cards.find((card) => card.name === 'Ink')?.ink).toBe('white');
+    expect(cards.find((card) => card.name === 'White')?.ink).toBe('#20232A');
+  });
+
+  it('prints the version the page shows, the kit’s own draft version when none is given', () => {
+    expect(buildBrandKitBookView({ ...kitWith({}), version: 1 }).versionLabel).toBe('V1.0');
+    expect(buildBrandKitBookView({ ...kitWith({}), version: 1 }, 3).versionLabel).toBe('V3.0');
+    expect(buildBrandKitBookView({ ...kitWith({}), version: 2 }, null).versionLabel).toBe('V2.0');
   });
 });

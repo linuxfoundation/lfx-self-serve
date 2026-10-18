@@ -679,6 +679,34 @@ describe('MktgAgentRunComponent', () => {
       expect(request.logoFiles).toEqual([{ name: 'logo.svg', text: '<svg/>' }]);
     });
 
+    it('fills the website from the LFX project, marked From LFX and editable, like the framework intake', async () => {
+      projects = { 'proj-one': { repository_url: '', website_url: 'https://one.example.org', description: '' } };
+      dependencyDocs = { 'proj-1:foundation-setup': latestFramework };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(component['intakeForm'].controls['website_url'].value).toBe('https://one.example.org');
+      expect(fromLfxChip('website_url')).not.toBeNull();
+      expect(fieldError('website_url')).toBeNull();
+
+      component['intakeForm'].controls['website_url'].setValue('https://www.one.example.org');
+      await fixture.whenStable();
+      expect(fromLfxChip('website_url')).toBeNull();
+    });
+
+    it('drops a logo file still being read when the project changes — the old project’s artwork never lands on the new form', async () => {
+      dependencyDocs = { 'proj-1:foundation-setup': latestFramework };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      const section = fixture.debugElement.query(By.directive(MktgIntakeLogoFilesComponent)).componentInstance as MktgIntakeLogoFilesComponent;
+      const cancelReads = vi.spyOn(section, 'cancelReads');
+
+      activeContext.set(PROJECT_2);
+      await fixture.whenStable();
+
+      expect(cancelReads).toHaveBeenCalled();
+    });
+
     it('shows the live feed, then the questions, on their own — no document title, status chip or kit until there is a kit', async () => {
       dependencyDocs = { 'proj-1:foundation-setup': latestFramework };
       activeContext.set(PROJECT_1);

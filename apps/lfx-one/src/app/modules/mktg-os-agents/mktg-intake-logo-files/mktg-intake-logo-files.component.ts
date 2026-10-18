@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, input, model, PLATFORM_ID, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, model, PLATFORM_ID, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { FileUploadComponent } from '@components/file-upload/file-upload.component';
@@ -17,7 +17,9 @@ import type { FileSelectEvent } from 'primeng/fileupload';
 // its text, a PNG or a ZIP as its base64 bytes — and sent with the form; and
 // links to files on the site, which the agent fetches itself. The section
 // says what the agent will get for each, and refuses what the one request
-// body cannot carry before the run is refused on the way out.
+// body cannot carry before the run is refused on the way out. A read still
+// in flight belongs to the context it started in: the run page cancels it
+// on a project or user switch (`cancelReads`), and it ends with the section.
 @Component({
   selector: 'lfx-mktg-intake-logo-files',
   imports: [ReactiveFormsModule, ButtonComponent, FileUploadComponent, InputTextComponent],
@@ -25,6 +27,7 @@ import type { FileSelectEvent } from 'primeng/fileupload';
 })
 export class MktgIntakeLogoFilesComponent {
   // === Injections ===
+  private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
 
   // === Inputs ===
@@ -50,6 +53,27 @@ export class MktgIntakeLogoFilesComponent {
   protected readonly acceptAttribute = computed(() => this.config().fileExtensions.join(','));
   /** Characters the files on the form already take of the one request body. */
   private readonly payloadChars = computed(() => this.files().reduce((total, entry) => total + (entry.file.text ?? entry.file.base64 ?? '').length, 0));
+
+  /** The reads in flight; `cancelReads` and the section's end drop them. */
+  private readonly readers = new Set<FileReader>();
+
+  public constructor() {
+    // Only the readers go: the section is gone, so its models are not written.
+    this.destroyRef.onDestroy(() => this.abortReads());
+  }
+
+  // === Public methods ===
+  /**
+   * Drops every read in flight, so a file picked for the previous project or
+   * user never lands on the form the run page has just reset for the next
+   * one: the section stays mounted across the switch.
+   */
+  public cancelReads(): void {
+    this.abortReads();
+    this.pending.set(0);
+    this.busy.set(false);
+    this.errorText.set('');
+  }
 
   // === Protected methods ===
   /** A link is listed as given and sent to the agent as its URL; nothing is read here. */
@@ -99,9 +123,11 @@ export class MktgIntakeLogoFilesComponent {
   private read(file: File): void {
     const kind = brandKitLogoFileKind(file.name);
     const reader = new FileReader();
+    this.readers.add(reader);
     this.pending.update((count) => count + 1);
     this.busy.set(true);
     const done = (): void => {
+      this.readers.delete(reader);
       this.pending.update((count) => count - 1);
       this.busy.set(this.pending() > 0);
     };
@@ -139,13 +165,34 @@ export class MktgIntakeLogoFilesComponent {
     }
   }
 
+  /**
+   * Every file goes on the form here, so the server's rules hold for each:
+   * at most `maxFiles`, and each trimmed name once — a link can take the
+   * name of an upload still being read, and the server refuses the whole
+   * request on a repeated name.
+   */
   private add(file: MktgIntakeLogoFile, badge: string, status: string): void {
     if (this.files().length >= this.config().maxFiles) {
       this.errorText.set(`At most ${this.config().maxFiles} files.`);
       return;
     }
+    const name = file.name.trim();
+    if (this.files().some((entry) => entry.file.name.trim() === name)) {
+      this.errorText.set(`${name} is already on the form.`);
+      return;
+    }
     const id = `${badge.toLowerCase()}-${Date.now().toString(36)}-${this.files().length}`;
     this.files.update((files) => [...files, { id, file, badge, status }]);
+  }
+
+  /** Stops every read in flight without a callback: neither its file nor its error reaches the form. */
+  private abortReads(): void {
+    for (const reader of this.readers) {
+      reader.onload = null;
+      reader.onerror = null;
+      reader.abort();
+    }
+    this.readers.clear();
   }
 
   private fileRejection(file: File): string {

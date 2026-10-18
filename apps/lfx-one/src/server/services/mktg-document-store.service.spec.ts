@@ -451,6 +451,7 @@ describe('MktgDocumentStoreService', () => {
 
         expect(latest?.documentMarkdown).toBe(draft('Newer draft'));
         expect(latest?.receipt.version).toBe(2);
+        expect(latest?.revisionNumber).toBe(2);
         expect(latest?.storedAt).toBeTruthy();
         expect(latest?.sidecar).toMatchObject({ contract: 'brand-kit-output/v1', version: 2 });
         expect(latest?.sidecar).not.toHaveProperty('document_markdown');
@@ -477,6 +478,26 @@ describe('MktgDocumentStoreService', () => {
         });
         // The stored record is untouched: its sidecar still holds the rest of the envelope only.
         expect(storedRecord(revisionKeys()[0]).bundle.sidecar).not.toHaveProperty('content');
+      });
+
+      it('numbers the revision as Documents does — every fresh run is draft 1, and a revision failing its checks is not counted', async () => {
+        await service.persistGeneration(req, SPEC, envelope(draft('First'), 1), PROJECT, 'session-1');
+        await service.persistGeneration(req, SPEC, envelope(draft('Broken'), 1), PROJECT, 'session-2');
+        await service.persistGeneration(req, SPEC, envelope(draft('Second'), 1), PROJECT, 'session-3');
+        await service.persistGeneration(req, SPEC, envelope(draft('Third'), 1), PROJECT, 'session-4');
+        const tamperedKey = revisionKeys()[1];
+        const tampered = store.objects.get(tamperedKey);
+        store.objects.set(tamperedKey, { ...(tampered as { body: string; metadata: Record<string, string>; lastModified: Date }), body: '{"tampered":true}' });
+
+        const latest = await service.readLatest(req, SPEC, PROJECT, { withSidecar: true });
+        const detail = await service.getDocument(req, PROJECT, BRAND_KIT, 'living');
+
+        expect(latest?.documentMarkdown).toBe(draft('Third'));
+        expect(latest?.receipt.version).toBe(1);
+        expect(latest?.revisionNumber).toBe(3);
+        expect(detail?.revisions.find((revision) => revision.latest)?.number).toBe(3);
+        // The plain read names no revision: the marketplace's dependency check reads only the newest.
+        expect((await service.readLatest(req, SPEC, PROJECT))?.revisionNumber).toBeUndefined();
       });
 
       it('is null when the document has no revision — the pre-revision document carries no sidecar and never stands in', async () => {

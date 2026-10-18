@@ -131,6 +131,8 @@ export class MktgAgentRunComponent {
   private generationSub: Subscription | null = null;
   /** The existing-documents section, when the intake has one and the form is on screen: its file reads are cancelled with the generation. */
   private readonly documentsSection = viewChild(MktgIntakeDocumentsComponent);
+  /** The logo-files section, when the intake has one and the form is on screen: its file reads are cancelled the same way. */
+  private readonly logoFilesSection = viewChild(MktgIntakeLogoFilesComponent);
   /** Deferred phase-set timer from completeRun — cleared on destroy so no timer outlives the view. */
   private phaseTimer: ReturnType<typeof setTimeout> | null = null;
   /** Reset timer for the transient "Copied" chip state — cleared on destroy. */
@@ -1232,8 +1234,9 @@ export class MktgAgentRunComponent {
     this.filledFromMemoryApplied.set({});
     this.prefillAppliedValues.set({});
     this.copiedDerivative.set('');
-    // A file still being read for the previous context must not land in this one: the section stays mounted, so its reads are cancelled here.
+    // A file still being read for the previous context must not land in this one: the sections stay mounted, so their reads are cancelled here.
     this.documentsSection()?.cancelReads();
+    this.logoFilesSection()?.cancelReads();
     this.documents.set([]);
     this.logoFiles.set([]);
     this.logoFilesBusy.set(false);

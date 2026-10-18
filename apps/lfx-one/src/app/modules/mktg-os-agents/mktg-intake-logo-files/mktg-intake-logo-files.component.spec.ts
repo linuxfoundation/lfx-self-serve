@@ -25,6 +25,8 @@ class HandFileReader {
   public onerror: (() => void) | null = null;
   /** Which read was asked for — an SVG goes as text, anything else as a data URL. */
   public read: 'text' | 'dataUrl' | null = null;
+  /** Whether the read was aborted; a real reader fires neither `onload` nor `onerror` after it. */
+  public aborted = false;
 
   public constructor() {
     HandFileReader.instances.push(this);
@@ -45,6 +47,10 @@ class HandFileReader {
 
   public fail(): void {
     this.onerror?.();
+  }
+
+  public abort(): void {
+    this.aborted = true;
   }
 }
 
@@ -221,6 +227,45 @@ describe('MktgIntakeLogoFilesComponent', () => {
     component['onAddLink']();
     expect(component.files()).toEqual([]);
     expect(component['errorText']()).toBe('Enter the full link to the file, starting with https://.');
+  });
+
+  it('drops the reads in flight on cancelReads — a file picked before a project switch never lands on the next form', () => {
+    useHandReader();
+    component['onFilesSelected'](fileEvent(new File(['x'], 'a.svg'), new File(['x'], 'b.png')));
+    expect(component.busy()).toBe(true);
+
+    component.cancelReads();
+
+    expect(HandFileReader.instances.every((reader) => reader.aborted)).toBe(true);
+    expect(component.busy()).toBe(false);
+    expect(component['pending']()).toBe(0);
+    HandFileReader.instances[0].finish('<svg/>');
+    HandFileReader.instances[1].fail();
+    expect(component.files()).toEqual([]);
+    expect(component['errorText']()).toBe('');
+  });
+
+  it('aborts the reads in flight when the section goes', () => {
+    useHandReader();
+    component['onFilesSelected'](fileEvent(new File(['x'], 'a.svg')));
+
+    fixture.destroy();
+
+    expect(HandFileReader.instances[0].aborted).toBe(true);
+    expect(HandFileReader.instances[0].onload).toBeNull();
+  });
+
+  it('refuses a finished read whose name a link took while it was being read — the server refuses a repeated name', () => {
+    useHandReader();
+    component['onFilesSelected'](fileEvent(new File(['x'], 'logo.svg')));
+    component['linkForm'].controls.url.setValue('https://one.example.org/logo.svg');
+    component['onAddLink']();
+
+    HandFileReader.instances[0].finish('<svg/>');
+
+    expect(names()).toEqual(['logo.svg']);
+    expect(component.files()[0].badge).toBe('LINK');
+    expect(component['errorText']()).toBe('logo.svg is already on the form.');
   });
 
   it('removes a file from the form', async () => {

@@ -432,28 +432,22 @@ export class MktgDocumentStoreService {
     // hand that agent obsolete content.
     let listed: MktgListedRevision[];
     try {
+      if (withSidecar) {
+        // Every revision is read, so the one attached is named by its number
+        // in Documents: the count of the revisions that pass their integrity
+        // checks up to it, exactly as the Revisions table numbers them.
+        const revisions = await this.readRevisions(req, project, type, MKTG_LIVING_DOCUMENT_ID);
+        const latest = revisions[revisions.length - 1];
+        return latest
+          ? { ...this.latestResponse(spec, project, latest), revisionNumber: revisions.length, sidecar: this.envelopeSidecar(latest.record.bundle) }
+          : null;
+      }
       listed = await this.listRevisions(req, project, type, MKTG_LIVING_DOCUMENT_ID);
       for (const entry of [...listed].reverse()) {
         const revision = await this.loadRevision(req, entry);
-        if (!revision) {
-          continue;
+        if (revision) {
+          return this.latestResponse(spec, project, revision);
         }
-        const { bundle, source, createdAt } = revision.record;
-        // A Markdown revision has a pre-revision twin at the artifact key; a
-        // JSON revision is stored nowhere else, so its own key is the receipt's.
-        return {
-          documentMarkdown: bundle.markdown,
-          format: bundle.format ?? 'markdown',
-          receipt: {
-            s3_key: bundle.format === 'json' ? revision.key : buildMktgArtifactObjectKey(spec, project, bundle.contentSha256),
-            content_sha256: bundle.contentSha256,
-            project,
-            version: source.draftVersion,
-            intake_mode: source.intakeMode,
-          },
-          storedAt: createdAt,
-          ...(withSidecar && { sidecar: this.envelopeSidecar(bundle) }),
-        };
       }
     } catch (error) {
       if (withSidecar) {
@@ -484,7 +478,8 @@ export class MktgDocumentStoreService {
       });
       return null;
     }
-    return withSidecar ? null : this.artifactService.readLatest(req, spec, project);
+    // Reached only by the plain read: the sidecar read returned in the try.
+    return this.artifactService.readLatest(req, spec, project);
   }
 
   /**
@@ -607,6 +602,25 @@ export class MktgDocumentStoreService {
     });
 
     return { id: buildMktgRevisionId(sequence, sha), key, record };
+  }
+
+  /** A stored revision as the latest read serves it: its Markdown, the receipt rebuilt from its record, and its date. */
+  private latestResponse(spec: MktgArtifactSpec, project: string, revision: MktgStoredRevision): MktgArtifactStoredResponse {
+    const { bundle, source, createdAt } = revision.record;
+    // A Markdown revision has a pre-revision twin at the artifact key; a
+    // JSON revision is stored nowhere else, so its own key is the receipt's.
+    return {
+      documentMarkdown: bundle.markdown,
+      format: bundle.format ?? 'markdown',
+      receipt: {
+        s3_key: bundle.format === 'json' ? revision.key : buildMktgArtifactObjectKey(spec, project, bundle.contentSha256),
+        content_sha256: bundle.contentSha256,
+        project,
+        version: source.draftVersion,
+        intake_mode: source.intakeMode,
+      },
+      storedAt: createdAt,
+    };
   }
 
   /** Summaries for the Revisions table, newest first, numbered by write order. */

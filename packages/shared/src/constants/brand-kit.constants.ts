@@ -237,6 +237,9 @@ export const BRAND_KIT_TYPE_STEPS = ['display', 'h2', 'h3', 'eyebrow', 'body', '
 /** The WCAG grades the contrast table prints, best first. */
 export const BRAND_KIT_CONTRAST_GRADES = ['AAA', 'AA', 'Large text only', 'Fails'] as const;
 
+/** The contrast a swatch's label must reach on its swatch: WCAG AA for normal text, since the labels are small. */
+export const BRAND_KIT_LABEL_MIN_CONTRAST = 4.5;
+
 /** Where a palette value was found. */
 export const BRAND_KIT_FOUND_IN_KINDS = ['logo', 'site_css', 'brand_page', 'page', 'unsourced'] as const;
 

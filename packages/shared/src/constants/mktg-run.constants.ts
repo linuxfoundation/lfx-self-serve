@@ -90,6 +90,7 @@ export const BRAND_KIT_INTAKE: MktgAgentIntake = {
       key: BRAND_KIT_FIELD_KEYS.websiteUrl,
       question: 'Website',
       kind: 'text',
+      prefill: 'website-url',
       placeholder: 'https://…',
       hint: 'The agent reads the home page, its CSS and the font links for the typeface and the colours.',
       format: 'https-url',

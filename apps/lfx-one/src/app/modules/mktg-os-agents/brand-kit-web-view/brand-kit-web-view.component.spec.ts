@@ -73,6 +73,9 @@ describe('BrandKitWebViewComponent', () => {
       await fixture.whenStable();
       expect(query('brand-kit-web-view-version')?.textContent?.trim()).toBe('v3');
       expect(query('brand-kit-web-view-header')?.textContent).toContain('latest');
+      // The printed book says what the page says: Download PDF of v3 prints V3.0, never the kit's own draft version.
+      expect(query('brand-kit-web-view-print')?.textContent).toContain('V3.0');
+      expect(query('brand-kit-web-view-print')?.textContent).not.toContain('V1.0');
     });
 
     it('keeps the book in its print-only wrapper — never on screen — and wraps every text block', () => {

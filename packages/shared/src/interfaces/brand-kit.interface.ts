@@ -460,8 +460,10 @@ export interface BrandKitPaletteCard {
   role: string;
   /** Where the value was found, in words, with its source. */
   source: string;
-  /** True when the swatch is light and its label must be dark. */
+  /** True when the swatch is light and needs a border to stand off a white ground. */
   light: boolean;
+  /** The colour the swatch's name is set in on it: one that reaches WCAG AA there (`brandKitLabelInk`). */
+  ink: string;
 }
 
 /** One row of the book's contrast table, with the colours to draw the sample. */

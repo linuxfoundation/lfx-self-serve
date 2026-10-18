@@ -349,7 +349,7 @@
               class="flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white"
               [attr.data-testid]="'brand-kit-web-view-swatch-' + swatch.hex.slice(1)">
               <div class="flex h-24 items-end p-3 text-sm font-medium" [ngClass]="{ 'border-b border-gray-200': swatch.light }" [style.background]="swatch.hex">
-                <span [style.color]="swatch.light ? v.dark : 'white'">{{ swatch.name }}</span>
+                <span [style.color]="swatch.ink">{{ swatch.name }}</span>
               </div>
               <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 p-4 text-sm">
                 <dt class="text-gray-500">HEX</dt>
@@ -710,7 +710,7 @@
 
   <!-- The book, the kit's print rendering: never shown on screen (styles.scss), shown alone while Download PDF prints. -->
   <div [class]="printOnlyClass" data-testid="brand-kit-web-view-print">
-    <lfx-brand-kit-view [kit]="kit()" />
+    <lfx-brand-kit-view [kit]="kit()" [version]="versionNumber()" />
   </div>
 </section>
 

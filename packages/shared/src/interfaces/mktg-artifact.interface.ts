@@ -142,6 +142,13 @@ export interface MktgArtifactStoredResponse {
   /** ISO-8601 timestamp the object was stored (S3 LastModified), when the store reports one. */
   storedAt?: string;
   /**
+   * The revision's number in Documents (its position among the document's
+   * revisions, in write order), on a sidecar read — what names the revision
+   * a consumer attaches. Not `receipt.version`: that is the agent's draft
+   * version within its run, which restarts at 1 on every fresh run.
+   */
+  revisionNumber?: number;
+  /**
    * The revision's sidecar JSON — the envelope's structured fields — on a
    * sidecar read (`?sidecar=true`: the latest stored revision with it),
    * which is what a consumer attaching the document as JSON needs. The

@@ -36,9 +36,11 @@ export class BrandKitViewComponent {
   // === Inputs ===
   /** The kit to lay out. */
   public readonly kit = input.required<BrandKitRevision>();
+  /** The version the cover and the running heads print — the one the page shows; the kit's own when not given. */
+  public readonly version = input<number | null>(null);
 
   // === Computed ===
-  protected readonly view: Signal<BrandKitBookView> = computed(() => buildBrandKitBookView(this.kit()));
+  protected readonly view: Signal<BrandKitBookView> = computed(() => buildBrandKitBookView(this.kit(), this.version()));
   /** The proportion bar's accessible name: every colour and its share, since the segments themselves are paint. */
   protected readonly proportionLabel = computed(
     () =>

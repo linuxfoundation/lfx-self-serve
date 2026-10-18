@@ -12,6 +12,7 @@ import {
   BRAND_KIT_BOOK_PAGES,
   BRAND_KIT_CHAPTERS,
   BRAND_KIT_ICON_SAMPLES,
+  BRAND_KIT_LABEL_MIN_CONTRAST,
   BRAND_KIT_TYPE_SPECIMEN,
   BRAND_KIT_WEIGHT_NAMES,
 } from '../constants/brand-kit.constants';
@@ -55,9 +56,28 @@ export function brandKitLuminance(hex: string): number {
   return 0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5);
 }
 
-/** True for a light colour — one whose label has to be dark. */
+/** True for a light colour — one that needs a border to stand off a white ground. */
 export function brandKitIsLight(hex: string): boolean {
   return brandKitLuminance(hex) > 0.5;
+}
+
+/** WCAG contrast ratio of two relative luminances, lighter over darker. */
+export function brandKitContrastRatio(first: number, second: number): number {
+  return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+}
+
+/**
+ * The colour a swatch's name is set in, on the swatch: the kit's dark when
+ * it reaches WCAG AA there, so the brand's own pairing shows wherever it is
+ * legible; otherwise white or black, whichever contrasts more. A medium
+ * colour (an orange) gets black: white, and often the dark, fall short.
+ */
+export function brandKitLabelInk(hex: string, dark: string): string {
+  const ground = brandKitLuminance(hex);
+  if (brandKitContrastRatio(ground, brandKitLuminance(dark)) >= BRAND_KIT_LABEL_MIN_CONTRAST) {
+    return dark;
+  }
+  return brandKitContrastRatio(ground, 1) >= brandKitContrastRatio(ground, 0) ? 'white' : 'black';
 }
 
 /** A px size on the 11 in page in container-width units, so the page scales with its box and prints at size. */
@@ -123,6 +143,7 @@ export function brandKitPaletteCards(kit: BrandKitRevision): BrandKitPaletteCard
     role: entry.role,
     source: brandKitFoundIn(entry.found_in),
     light: brandKitIsLight(entry.hex),
+    ink: brandKitLabelInk(entry.hex, kit.kit.dark),
   }));
 }
 
@@ -224,8 +245,13 @@ export function brandKitChapterSummaries(kit: BrandKitRevision): BrandKitChapter
   return BRAND_KIT_CHAPTERS.map((chapter) => ({ id: chapter.id, number: chapter.number, title: chapter.title, summary: summaries[chapter.id] }));
 }
 
-/** The whole book, computed once from the kit. */
-export function buildBrandKitBookView(kit: BrandKitRevision): BrandKitBookView {
+/**
+ * The whole book, computed once from the kit. `version` is the number the
+ * page around the book shows — the Documents revision, or the run's version —
+ * so the printed cover says what the screen says; the kit's own draft
+ * version when none is given.
+ */
+export function buildBrandKitBookView(kit: BrandKitRevision, version?: number | null): BrandKitBookView {
   const { dark, accent } = kit.kit;
   const tint = brandKitTint(dark);
   const lightGray = kit.chapters.color.palette.find((entry) => /light/i.test(entry.name) && brandKitIsLight(entry.hex))?.hex ?? tint;
@@ -240,7 +266,7 @@ export function buildBrandKitBookView(kit: BrandKitRevision): BrandKitBookView {
     projectName: kit.projectName,
     projectCaps: kit.projectName.toUpperCase(),
     host: brandKitWebsiteHost(kit.websiteUrl),
-    versionLabel: `V${kit.version}.0`,
+    versionLabel: `V${version ?? kit.version}.0`,
     monthYear,
     runningHead: `${kit.projectName} Brand Kit`,
     footer: `${kit.projectName} · a Linux Foundation project`,

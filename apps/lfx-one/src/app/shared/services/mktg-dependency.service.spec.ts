@@ -300,6 +300,16 @@ describe('MktgDependencyService', () => {
         expect(resolved[FOUNDATION_MESSAGE_INTAKE.agentId]?.document).toBe(renderFoundationMessageMarkdown(content));
       });
 
+      it('names the revision by its number in Documents, not the agent’s draft version — a third fresh run is v3, though its draft is 1', async () => {
+        getStored.mockReturnValue(of({ documentMarkdown: '# Latest messaging framework', receipt: { version: 1 }, revisionNumber: 3, sidecar: {} }));
+
+        const resolved = await new Promise<Record<string, MktgDependencyDocument | null>>((resolve) =>
+          service.resolveDependencies('proj-1', [FOUNDATION_MESSAGE_INTAKE.agentId], sidecarIds).subscribe(resolve)
+        );
+
+        expect(resolved[FOUNDATION_MESSAGE_INTAKE.agentId]?.version).toBe(3);
+      });
+
       it('resolves to null on a 404 — no revision at all — and never falls back to this browser’s stored run, which carries no sidecar', async () => {
         getStored.mockReturnValue(throwError(() => new HttpErrorResponse({ status: HttpStatusCode.NotFound, statusText: 'Not Found' })));
         loadRun.mockReturnValue(storedRun('# Browser message foundation', FOUNDATION_MESSAGE_INTAKE.agentId));

@@ -88,7 +88,8 @@ export class MktgDependencyService {
           (stored): MktgDependencyDocument => ({
             agentId,
             source: 'server',
-            version: stored.receipt.version,
+            // The chip names the revision attached as Documents numbers it; the receipt's version is the agent's draft version within its run.
+            version: stored.revisionNumber ?? stored.receipt.version,
             // The document is Markdown like on every read; what a `json` attachment submits is the sidecar, untouched.
             // A JSON revision with no Markdown reading still answers: the gate reads the sidecar, not this.
             document: this.markdownOf(stored.documentMarkdown, stored.format) ?? '',
