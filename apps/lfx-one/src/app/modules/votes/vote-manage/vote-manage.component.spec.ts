@@ -604,6 +604,56 @@ describe('VoteManageComponent', () => {
 
       expect(voteServiceMock.beginSpeculativeCreate.mock.calls[0][0]).toMatchObject({ project_uid: PROJECT_B_UID });
     });
+
+    // GH-3781 review (PRRT_kwDOPMiRQ86tqxLp / tqxLw / tqx6M / tqyZn, 4 bots): clearing ?clone replaced
+    // the FormGroup via form.set(...), but `formValue` was a one-time toSignal pinned to the discarded
+    // group's valueChanges, so canGoNext/isDraftSavable never saw edits to the replacement form, and
+    // `internalStep` was never reset — an organizer who had advanced past Basics on the clone stayed
+    // stranded on that step with a blank form. Drives Step 1 through nextStep() (not onSubmit()
+    // directly) so a regression that only breaks Next, not submit, would still fail this test.
+    it('keeps Next reactive and resets the step when the component is reused for a project with no ?clone', async () => {
+      const queryParams$ = new Subject<ParamMap>();
+      routeMock.queryParamMap = queryParams$.asObservable();
+      fetchVote.mockReturnValue(of(sourceVote({ committee_uid: COMMITTEE_UID, committee_filters: [CommitteeMemberVotingStatus.VOTING_REP] })));
+      const fixture = await createComponent();
+
+      queryParams$.next(convertToParamMap({ clone: CLONE_SOURCE_UID }));
+      await TestBed.inject(ApplicationRef).whenStable();
+      // Finish Step 1 on the clone (the prefill alone doesn't guarantee every validator passes) and advance.
+      const cloneForm = fixture.componentInstance.form();
+      cloneForm.get('close_date')?.setValue(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+      cloneForm.get('close_time')?.setValue('11:59 PM');
+      cloneForm.updateValueAndValidity();
+      await TestBed.inject(ApplicationRef).whenStable();
+      fixture.componentInstance.nextStep();
+      await TestBed.inject(ApplicationRef).whenStable();
+      expect(fixture.componentInstance.currentStep()).toBe(2);
+
+      // Reused for project B's create flow — the dialog dropped ?clone entirely.
+      const PROJECT_B_UID = 'project-uid-b';
+      activeContext.set({ uid: PROJECT_B_UID, slug: 'project-b', name: 'Project B' });
+      getProject.mockReturnValue(of({ uid: PROJECT_B_UID, writer: true }));
+      queryParams$.next(convertToParamMap({}));
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(fixture.componentInstance.currentStep()).toBe(1);
+      expect(fixture.componentInstance.canGoNext()).toBe(false);
+
+      const form = fixture.componentInstance.form();
+      form.get('title')?.setValue('A brand new vote for project B');
+      form.get('committee')?.setValue({ uid: COMMITTEE_UID, name: undefined });
+      form.get('eligible_participants')?.setValue('project_members');
+      form.get('close_date')?.setValue(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+      form.updateValueAndValidity();
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(fixture.componentInstance.canGoNext()).toBe(true);
+
+      fixture.componentInstance.nextStep();
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(fixture.componentInstance.currentStep()).toBe(2);
+    });
   });
 
   // GH-3781 review (PRRT_kwDOPMiRQ86tkpJN): pins the write-access-leg `startWith(undefined)` fix —

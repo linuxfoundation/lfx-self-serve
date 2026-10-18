@@ -648,9 +648,22 @@ export class VoteManageComponent {
     return computed(() => this.projectContextService.activeContext());
   }
 
+  /** Reactive to `this.form` itself, not just one FormGroup instance's `valueChanges` — the clone-clear
+   *  cleanup path (`initCloneFromQuery()`) replaces the form via `form.set(...)` on a reused component,
+   *  and a subscription pinned to the discarded group would silently stop tracking edits, leaving
+   *  `canGoNext`/`isDraftSavable` stuck on the old form's last value. */
   private initFormValue(): Signal<Record<string, unknown>> {
-    const form = this.form();
-    return toSignal(form.valueChanges.pipe(map(() => form.getRawValue())), { initialValue: form.getRawValue() });
+    return toSignal(
+      toObservable(this.form).pipe(
+        switchMap((form) =>
+          form.valueChanges.pipe(
+            map(() => form.getRawValue()),
+            startWith(form.getRawValue())
+          )
+        )
+      ),
+      { initialValue: this.form().getRawValue() }
+    );
   }
 
   private initCanGoPrevious(): Signal<boolean> {
@@ -944,11 +957,12 @@ export class VoteManageComponent {
         distinctUntilChanged(),
         switchMap((cloneId) => {
           if (!cloneId || this.route.snapshot.paramMap.has('id')) {
-            // Clone removed (or never applicable) on a reused component — drop any stale source/form
+            // Clone removed (or never applicable) on a reused component — drop any stale source/form/step
             // state left over from a prior activation instead of letting it keep winning at submit time.
             if (this.cloneSourceVote()) {
               this.cloneSourceVote.set(null);
               this.form.set(this.createFormGroup());
+              this.internalStep.set(1);
             }
             return of(null);
           }
