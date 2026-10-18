@@ -149,7 +149,7 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
   formTitleAction: 'Build',
   documentName: 'Messaging framework',
   intro:
-    'Give the agent the places it should read. It reads every source you give it, searches the web and LFX itself for the rest, and asks you only when something is still missing — each question comes with a suggested answer to accept or edit. Everything but the website is optional: leave a field empty when you do not have it. The result is your messaging framework: vision, mission, positioning, tagline, goal columns, ideal customer profiles, message house and key numbers, stored as a new revision in Documents.',
+    'Give the agent its sources. It reads them, searches the web and LFX for the rest, and asks you only for what is still missing, with a suggested answer each time. Only the website is required. You get a messaging framework: vision, mission, positioning, tagline, goals, ICPs, message house and key numbers, saved as a new revision in Documents.',
   // Never sent: the generate endpoint renders the agent's own intake form
   // server-side, and with fresh runs there is no chat follow-up to prefix.
   batchPreamble: [],
