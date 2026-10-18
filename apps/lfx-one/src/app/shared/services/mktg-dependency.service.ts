@@ -106,13 +106,20 @@ export class MktgDependencyService {
     );
   }
 
-  /** This browser's stored run for the agent, reduced to its latest version's document. */
+  /**
+   * This browser's stored run for the agent, reduced to its latest version's
+   * document. An agent that writes an asset (the Messaging Framework) stores
+   * an empty document and the asset beside it, so its document is the
+   * asset content's JSON text — the same bytes the server's stored read
+   * returns for it.
+   */
   private loadBrowserDocument(projectUid: string, agentId: string): MktgDependencyDocument | null {
     const run = this.runService.loadRun(projectUid, agentId);
     const latest = run?.versions.at(-1);
-    if (!latest?.document) {
+    const document = latest?.document || (latest?.asset ? JSON.stringify(latest.asset.content) : '');
+    if (!latest || !document) {
       return null;
     }
-    return { agentId, source: 'browser', version: latest.version, document: latest.document };
+    return { agentId, source: 'browser', version: latest.version, document };
   }
 }

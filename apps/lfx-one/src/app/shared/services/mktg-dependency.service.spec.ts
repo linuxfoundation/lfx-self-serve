@@ -3,7 +3,7 @@
 
 import { TestBed } from '@angular/core/testing';
 import { BRAND_KIT_INTAKE, FOUNDATION_MESSAGE_INTAKE } from '@lfx-one/shared/constants';
-import { MktgStoredAgentRun } from '@lfx-one/shared/interfaces';
+import { MktgRunAsset, MktgStoredAgentRun } from '@lfx-one/shared/interfaces';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgArtifactService } from '@services/mktg-artifact.service';
 import { of, throwError } from 'rxjs';
@@ -196,6 +196,24 @@ describe('MktgDependencyService', () => {
           source: 'browser',
           version: 3,
           document: '# Browser message foundation',
+        },
+      });
+    });
+
+    it('falls back to this browser’s stored Messaging Framework asset as its content’s JSON text, the bytes the server read returns', async () => {
+      const content = { mf: { tagline: 'Release, open.' } } as unknown as MktgRunAsset['content'];
+      const asset = { kind: 'messaging-framework', mode: 'draft', content, report: {}, checks: { findings: [] } } as unknown as MktgRunAsset;
+      const run = storedRun('', FOUNDATION_MESSAGE_INTAKE.agentId);
+      loadRun.mockReturnValue({ ...run, versions: [{ ...run.versions[0], asset }] });
+
+      const resolved = await new Promise((resolve) => service.resolveDependencies('proj-1', [FOUNDATION_MESSAGE_INTAKE.agentId]).subscribe(resolve));
+
+      expect(resolved).toEqual({
+        [FOUNDATION_MESSAGE_INTAKE.agentId]: {
+          agentId: FOUNDATION_MESSAGE_INTAKE.agentId,
+          source: 'browser',
+          version: 3,
+          document: JSON.stringify(content),
         },
       });
     });

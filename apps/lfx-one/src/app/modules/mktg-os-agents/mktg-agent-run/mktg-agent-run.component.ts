@@ -246,7 +246,15 @@ export class MktgAgentRunComponent {
   protected readonly formTitle = computed(() => `${this.intake?.formTitleAction} the ${this.projectName()} ${this.intake?.documentName}`);
   protected readonly docTitle = computed(() => `${this.projectName()} ${this.intake?.documentName}`);
   protected readonly submitLabel = computed(() => `Generate ${this.intake?.documentName}`);
-  protected readonly versions = computed(() => this.run()?.versions ?? []);
+  /**
+   * The run's versions this page can show. On an asset view only those with
+   * an asset: a run the earlier Markdown form saved in this browser has none,
+   * and restores to the form (its answers kept) instead of an empty shell.
+   */
+  protected readonly versions = computed(() => {
+    const versions = this.run()?.versions ?? [];
+    return this.intake?.assetView ? versions.filter((version) => !!version.asset) : versions;
+  });
   protected readonly currentVersion: Signal<MktgRunVersion | null> = this.initCurrentVersion();
   protected readonly nextVersion = computed(() => (this.versions().at(-1)?.version ?? 0) + 1);
   protected readonly showVersionChips = computed(() => this.versions().length > 1 && this.phase() !== 'running');
@@ -1048,8 +1056,8 @@ export class MktgAgentRunComponent {
       // patchValue ignores keys without a control — answers persisted by the
       // retired Brand Kit gate UI (e.g. brand_kit_markdown) restore cleanly.
       this.intakeForm.patchValue(stored.answers);
-      this.viewVersion.set(stored.versions.at(-1)?.version ?? null);
-      if (stored.versions.length > 0) {
+      this.viewVersion.set(this.versions().at(-1)?.version ?? null);
+      if (this.versions().length > 0) {
         this.phase.set('result');
       }
     }

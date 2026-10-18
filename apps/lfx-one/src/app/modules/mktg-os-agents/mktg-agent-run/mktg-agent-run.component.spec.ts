@@ -719,7 +719,7 @@ describe('MktgAgentRunComponent', () => {
       expect(project?.querySelector('[data-test="mktg-intake-project_name"]')).not.toBeNull();
       expect(project?.querySelector('[data-test="mktg-intake-description"]')).not.toBeNull();
       const sources = query('mktg-agent-run-group-sources');
-      const labels = Array.from(sources?.querySelectorAll('label:not(.sr-only)') ?? []).map((label) => label.textContent?.replace('*', '').trim());
+      const labels = Array.from(sources?.querySelectorAll('label:not(.sr-only)') ?? []).map((label) => label.textContent?.replaceAll('*', '').trim());
       expect(labels).toEqual([
         'Website',
         'GitHub repository or README',
@@ -1191,6 +1191,19 @@ describe('MktgAgentRunComponent', () => {
       await fixture.whenStable();
       expect(component['phase']()).toBe('form');
       expect(component['intakeForm'].controls['project_name'].value).toBe('TestOrbit');
+    });
+
+    it('restores a run the earlier Markdown form saved to the form, its answers kept — never an empty generating shell', async () => {
+      storedRuns = {
+        'proj-1:foundation-setup': assetRun([{ version: 1, document: '# An earlier Messaging Document', createdAt: '2026-10-01T00:00:00.000Z' }]),
+      };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(component['phase']()).toBe('form');
+      expect(query('mktg-agent-run-result')).toBeNull();
+      expect(component['versions']()).toEqual([]);
+      expect(component['intakeForm'].controls['website_url'].value).toBe('https://testorbit.example.org');
     });
 
     it('downloads the framework as its JSON', async () => {
