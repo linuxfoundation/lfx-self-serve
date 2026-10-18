@@ -18,6 +18,7 @@ import {
   VOTE_TOTAL_STEPS,
 } from '@lfx-one/shared/constants';
 import { Committee, CommitteeReference, EntityWithProject, Vote, VoteFormValue } from '@lfx-one/shared/interfaces';
+import { PollType } from '@lfx-one/shared';
 import { CommitteeService } from '@services/committee.service';
 import {
   buildCreateVoteRequest,
@@ -741,8 +742,9 @@ export class VoteManageComponent {
           // startWith(undefined): a key change (e.g. clone's context sync re-targeting the
           // active project mid-flight, GH-3781) must park this leg back at pending immediately,
           // not leave the PREVIOUS key's resolved value in place while the new fetch is in
-          // flight — otherwise evictOnWriteAccessLoss can see a stale false and kick out an
-          // organizer the still-pending committee leg would have admitted.
+          // flight — otherwise, if the committee leg has already resolved to a definite false,
+          // the stale previous-key project value could combine with it into a false `writeAccess`
+          // before the new key's own fetch has had a chance to resolve true.
           return this.projectService.getProject(key, false).pipe(
             map((project) => project?.writer === true),
             catchError(() => of(false)),
@@ -780,9 +782,11 @@ export class VoteManageComponent {
             ? this.committeeService.fetchCommittee(uid).pipe(
                 map((committee) => committee?.writer === true),
                 catchError(() => of(false)),
-                // startWith(undefined): same reasoning as the project leg above — a uid change
-                // must park this leg at pending while the new committee fetch is in flight,
-                // rather than keep the PREVIOUS uid's resolved value in place.
+                // startWith(undefined): a uid change must park this leg at pending while the new
+                // committee fetch is in flight, rather than keep the PREVIOUS uid's resolved value
+                // in place — otherwise a stale resolved committee value could combine with an
+                // already-resolved false project leg into a false `writeAccess` before this leg's
+                // own fetch for the new uid has had a chance to resolve true.
                 startWith(undefined)
               )
             : of(false)
@@ -955,6 +959,18 @@ export class VoteManageComponent {
         this.loading.set(false);
         this.form().enable();
         if (!vote) return;
+        // This form has no poll-type/num-winners UI and can only represent a generic, non-anonymous
+        // ballot — prefilling from a ranked-choice or pseudo-anonymous source would silently submit a
+        // plain plurality vote in its place. Updates are only permitted while a vote is disabled, so
+        // once a published election has ballots coming in a silently-wrong clone can't be corrected.
+        if ((vote.poll_type ?? PollType.GENERIC) !== PollType.GENERIC || vote.pseudo_anonymity) {
+          this.messageService.add({
+            severity: 'warn',
+            summary: 'Cannot clone',
+            detail: `Ranked-choice and anonymous ${this.voteLabel.plural.toLowerCase()} can't be cloned yet.`,
+          });
+          return;
+        }
         this.cloneSourceVote.set(vote);
         this.patchFormWithClonedVote(vote);
       });

@@ -11,6 +11,7 @@ import '@angular/compiler';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { LEGACY_VOTE_TIMEZONE } from '../constants/timezones.constants';
+import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import { PollStatus, VoteResponseStatus, VoteRowParticipationState } from '../enums';
 import type { Vote, VoteFormValue, VoteResultsResponse } from '../interfaces/poll.interface';
 import { getUserTimezone } from './date-time.utils';
@@ -23,6 +24,7 @@ import {
   computeVoteParticipationStats,
   computeVoteRowParticipation,
   isVoteClosingSoon,
+  mapFiltersToEligibility,
   mapVoteToCloneFormValue,
   mapVoteToFormValue,
   matchesMyVotesQuickFilter,
@@ -332,7 +334,7 @@ describe('mapVoteToCloneFormValue', () => {
   it('preserves committee, eligibility and questions from the source vote', () => {
     const source = vote({
       committee_uid: 'committee-uid',
-      committee_filters: ['voting_rep'],
+      committee_filters: [CommitteeMemberVotingStatus.VOTING_REP, CommitteeMemberVotingStatus.ALTERNATE_VOTING_REP],
       poll_questions: [
         {
           question_id: 'q1',
@@ -348,8 +350,18 @@ describe('mapVoteToCloneFormValue', () => {
     const cloned = mapVoteToCloneFormValue(source, NOW);
 
     expect(cloned.committee?.uid).toBe('committee-uid');
-    expect(cloned.eligible_participants).toBe('voting_rep');
+    expect(cloned.eligible_participants).toBe('voting_rep,alternate_voting_rep');
     expect(cloned.questions).toEqual([{ question: 'Who should join?', response_type: 'single', options: ['Alice', 'Bob'] }]);
+  });
+});
+
+describe('mapFiltersToEligibility', () => {
+  // Pins the real widening rule: it keys on presence of Observer/Emeritus, not on absence of
+  // Alternate/Emeritus — a set missing Alternate/Emeritus but containing neither Observer nor
+  // Emeritus is NOT widened to 'all'.
+  it("widens to 'all' when the filter set contains Observer or Emeritus, not merely when it omits Alternate/Emeritus", () => {
+    expect(mapFiltersToEligibility([CommitteeMemberVotingStatus.VOTING_REP, CommitteeMemberVotingStatus.EMERITUS])).toBe('all');
+    expect(mapFiltersToEligibility([CommitteeMemberVotingStatus.VOTING_REP])).toBe('voting_rep');
   });
 });
 

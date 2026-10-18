@@ -19,6 +19,7 @@ import { PollStatus, VoteResponseStatus, VoteRowParticipationState } from '../en
 import { maxCodePointsValidator } from '../validators/max-code-points.validator';
 import { combineDateTime, formatTo12HourInTimezone, getUserTimezone, parseTime12Hour, toZonedDateCarrier, wallTimeExistsInTimezone } from './date-time.utils';
 import { normalizePollStatus } from './poll.utils';
+import { truncateToUtf16Units } from './string.utils';
 import type { PaginatedResponse } from '../interfaces/api.interface';
 import type { CommitteeReference } from '../interfaces/committee.interface';
 import type {
@@ -171,8 +172,9 @@ function computeParticipationPercent(responses: number, invited: number): number
  * @description Same field set as {@link mapVoteToFormValue} (committee, eligibility, questions, comment
  * prompts, abstain) — cast ballots, results, and the source vote's status/uid are never part of a form
  * value, so there is nothing to strip there. Eligibility is lossy in the same direction it already is for
- * edit: {@link mapFiltersToEligibility} collapses any filter set missing a known option (e.g. Alternate,
- * Emeritus) down to 'all', so a clone can re-expand to a broader electorate than the source actually had.
+ * edit: {@link mapFiltersToEligibility} widens to 'all' whenever the filter set contains Observer or
+ * Emeritus (not merely when it is missing Alternate/Emeritus), so a clone can re-expand to a broader
+ * electorate than the source actually had.
  * Two fields are deliberately mutated: the title gets a "Copy of " prefix (skipped if already present, and
  * clamped to VOTE_TITLE_MAX_LENGTH) so the organizer can tell the draft apart from the source vote, and a
  * deadline that has already elapsed resets to CLONE_VOTE_DEFAULT_DURATION_DAYS out in the organizer's own
@@ -183,7 +185,9 @@ function computeParticipationPercent(responses: number, invited: number): number
  */
 export function mapVoteToCloneFormValue(vote: Vote, nowMs: number = Date.now()): VoteFormValue {
   const base = mapVoteToFormValue(vote);
-  const title = base.title.startsWith(CLONE_VOTE_TITLE_PREFIX) ? base.title : `${CLONE_VOTE_TITLE_PREFIX}${base.title}`.slice(0, VOTE_TITLE_MAX_LENGTH);
+  const title = base.title.startsWith(CLONE_VOTE_TITLE_PREFIX)
+    ? base.title
+    : truncateToUtf16Units(`${CLONE_VOTE_TITLE_PREFIX}${base.title}`, VOTE_TITLE_MAX_LENGTH);
 
   const endMs = vote.end_time ? Date.parse(vote.end_time) : NaN;
   const deadlineInFuture = Number.isFinite(endMs) && endMs > nowMs;

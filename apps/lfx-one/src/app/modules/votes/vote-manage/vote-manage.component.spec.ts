@@ -7,7 +7,7 @@ import { TestBed } from '@angular/core/testing';
 import { FormArray, FormGroup } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, NavigationEnd, Router } from '@angular/router';
-import { PollStatus } from '@lfx-one/shared/enums';
+import { CommitteeMemberVotingStatus, PollStatus } from '@lfx-one/shared/enums';
 import { Vote } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -38,6 +38,7 @@ describe('VoteManageComponent', () => {
   let fetchVote: ReturnType<typeof vi.fn>;
   let getProject: ReturnType<typeof vi.fn>;
   let fetchCommittee: ReturnType<typeof vi.fn>;
+  let getCommittee: ReturnType<typeof vi.fn>;
   let routerEvents$: BehaviorSubject<NavigationEnd>;
   let setProject: ReturnType<typeof vi.fn>;
   let messageAdd: ReturnType<typeof vi.fn>;
@@ -112,6 +113,7 @@ describe('VoteManageComponent', () => {
     messageAdd = vi.fn();
     // Committee leg grants write access by default so the eviction predicate stays quiet.
     fetchCommittee = vi.fn().mockReturnValue(of({ uid: COMMITTEE_UID, writer: true }));
+    getCommittee = vi.fn().mockReturnValue(of(null));
     routerEvents$ = new BehaviorSubject<NavigationEnd>(new NavigationEnd(0, '/project/votes/x/edit', '/project/votes/x/edit'));
     setRouteMode(VOTE_UID);
     activeContext.set(null);
@@ -166,7 +168,7 @@ describe('VoteManageComponent', () => {
         {
           provide: CommitteeService,
           useValue: {
-            getCommittee: vi.fn().mockReturnValue(of(null)),
+            getCommittee,
             fetchCommittee,
           },
         },
@@ -451,7 +453,7 @@ describe('VoteManageComponent', () => {
         of(
           sourceVote({
             committee_uid: COMMITTEE_UID,
-            committee_filters: ['voting_rep'],
+            committee_filters: [CommitteeMemberVotingStatus.VOTING_REP, CommitteeMemberVotingStatus.ALTERNATE_VOTING_REP],
             poll_questions: [
               {
                 question_id: 'q1',
@@ -477,7 +479,7 @@ describe('VoteManageComponent', () => {
       const form = fixture.componentInstance.form();
       expect(form.get('title')?.value).toBe('Copy of Original board election');
       expect(form.get('committee')?.value).toEqual({ uid: COMMITTEE_UID, name: undefined });
-      expect(form.get('eligible_participants')?.value).toBe('voting_rep');
+      expect(form.get('eligible_participants')?.value).toBe('voting_rep,alternate_voting_rep');
       expect((form.get('questions') as FormArray).length).toBe(1);
       expect((form.get('questions') as FormArray).at(0).get('question')?.value).toBe('Who should join?');
       expect((form.get('commentPrompts') as FormArray).length).toBe(1);
@@ -504,9 +506,14 @@ describe('VoteManageComponent', () => {
     it('leaves the clone prefill in control when both ?clone and ?committee_uid are present (committee_uid is ignored)', async () => {
       routeMock.queryParamMap = of(convertToParamMap({ clone: CLONE_SOURCE_UID, committee_uid: 'other-committee-uid' }));
       fetchVote.mockReturnValue(of(sourceVote({ committee_uid: COMMITTEE_UID })));
-      fetchCommittee.mockReturnValue(of({ uid: 'other-committee-uid', name: 'Other Committee' }));
+      // initCommitteeContext (the ?committee_uid lock) reads via getCommittee — assert it's never
+      // called and that committeeContext (the signal that actually gates the locked committee card)
+      // stays null, not just that the form control carries the clone's own value.
+      getCommittee.mockReturnValue(of({ uid: 'other-committee-uid', name: 'Other Committee' }));
       const fixture = await createComponent();
 
+      expect(getCommittee).not.toHaveBeenCalled();
+      expect(fixture.componentInstance.committeeContext()).toBeNull();
       const committeeControl = fixture.componentInstance.form().get('committee');
       expect(committeeControl?.value).toEqual({ uid: COMMITTEE_UID, name: undefined });
       expect(committeeControl?.disabled).toBe(false);
@@ -536,5 +543,55 @@ describe('VoteManageComponent', () => {
       expect(voteServiceMock.beginSpeculativeCreate).toHaveBeenCalledTimes(1);
       expect(voteServiceMock.beginSpeculativeCreate.mock.calls[0][0]).toMatchObject({ project_uid: SOURCE_PROJECT_UID });
     });
+
+    // GH-3781 review (PRRT_kwDOPMiRQ86tkpJN): the clone fetch disables the form while in flight
+    // (initCloneFromQuery's `this.form().disable()` / `.enable()` pair) so a slow fetch can't let
+    // the organizer type into a form about to be overwritten by the prefill. Every other clone test
+    // resolves fetchVote synchronously via `of(...)`, so that disable/enable pair is never observed —
+    // deleting it would leave every other test here green.
+    it('disables the form while the clone source is in flight and re-enables it once prefilled', async () => {
+      const clone$ = new Subject<Vote>();
+      fetchVote.mockReturnValue(clone$.asObservable());
+      const fixture = await createComponent();
+
+      expect(fixture.componentInstance.form().disabled).toBe(true);
+
+      clone$.next(sourceVote({ committee_uid: COMMITTEE_UID }));
+      clone$.complete();
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(fixture.componentInstance.form().disabled).toBe(false);
+    });
+  });
+
+  // GH-3781 review (PRRT_kwDOPMiRQ86tkpJN): pins the write-access-leg `startWith(undefined)` fix —
+  // a context switch (e.g. clone's syncEntityProjectContextFallback re-targeting activeContext to the
+  // source vote's own project) must park the changed leg at pending instead of exposing a stale
+  // resolved value while the new key's fetch is in flight, so evictOnWriteAccessLoss never observes a
+  // spurious false and navigates away mid-switch.
+  it('does not evict while a project-context switch leaves the write-access legs pending', async () => {
+    const PROJECT_B_UID = 'project-uid-b';
+    const PROJECT_B_SLUG = 'project-b';
+    setRouteMode(null); // create mode — projectKey$ is driven directly off activeContext
+    routeMock.queryParamMap = of(convertToParamMap({})); // no ?clone/?committee_uid — isolate the write-access race
+    activeContext.set({ uid: PROJECT_UID, slug: PROJECT_SLUG, name: 'Project A' });
+    const projectBFetch$ = new Subject<{ uid: string; writer: boolean }>();
+    getProject.mockImplementation((key: string) => (key === PROJECT_SLUG ? of({ uid: PROJECT_UID, writer: true }) : projectBFetch$.asObservable()));
+    const router = TestBed.inject(Router);
+    await createComponent();
+
+    expect(router.navigateByUrl).not.toHaveBeenCalled();
+
+    // Simulate the clone context sync re-targeting activeContext mid-flight, before the new
+    // project's write-access fetch has resolved.
+    activeContext.set({ uid: PROJECT_B_UID, slug: PROJECT_B_SLUG, name: 'Project B' });
+    await TestBed.inject(ApplicationRef).whenStable();
+    expect(router.navigateByUrl).not.toHaveBeenCalled();
+
+    projectBFetch$.next({ uid: PROJECT_B_UID, writer: true });
+    projectBFetch$.complete();
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    expect(router.navigateByUrl).not.toHaveBeenCalled();
   });
 });
