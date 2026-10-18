@@ -383,6 +383,7 @@ describe('validateFoundationMessageIntakeAnswers', () => {
         project_name: 'Example Search',
         description: 'An open source search suite.',
         website_url: 'https://search.example.org',
+        github_url: 'https://github.com/example/search',
         press_release_url: 'https://www.linuxfoundation.org/press/example-search',
         members_page_url: 'https://search.example.org/members',
         projects_page_url: 'https://search.example.org/projects',
@@ -390,7 +391,6 @@ describe('validateFoundationMessageIntakeAnswers', () => {
         plan_url: 'none',
         brand_page_url: '',
         links: 'https://blog.example.org/a\n\nhttps://blog.example.org/b',
-        notes: 'Audience: platform teams.',
       })
     ).toEqual({ valid: true, errors: [] });
   });
@@ -417,6 +417,12 @@ describe('validateFoundationMessageIntakeAnswers', () => {
     ]);
     expect(validateFoundationMessageIntakeAnswers({ ...required(), deck_url: 42 }).errors).toEqual(['answers.deck_url must be a string when provided']);
     expect(validateFoundationMessageIntakeAnswers({ ...required(), brand_page_url: 'https://search.example.org/brand' }).valid).toBe(true);
+    // The repository or README: any https link the agent can fetch, a README's included.
+    expect(validateFoundationMessageIntakeAnswers({ ...required(), github_url: 'https://github.com/example/search/blob/main/README.md' }).valid).toBe(true);
+    expect(validateFoundationMessageIntakeAnswers({ ...required(), github_url: 'none' }).valid).toBe(true);
+    expect(validateFoundationMessageIntakeAnswers({ ...required(), github_url: 'github.com/example/search' }).errors).toEqual([
+      'answers.github_url must be an http(s) URL or "none"',
+    ]);
   });
 
   it('refuses a missing or multi-line project name, a bad link line, and unknown keys', () => {
@@ -428,15 +434,16 @@ describe('validateFoundationMessageIntakeAnswers', () => {
     expect(validateFoundationMessageIntakeAnswers({ ...required(), links: 'https://a.example.org\nnot a link' }).errors).toEqual([
       'answers.links must be http(s) URLs, one per line',
     ]);
-    // The agent takes 20 links; three of them are the page fields, so the other links stop at 17.
+    // The agent takes 20 links; four of them are the repository and page fields, so the other links stop at 16.
     expect(
-      validateFoundationMessageIntakeAnswers({ ...required(), links: Array.from({ length: 18 }, (_, i) => `https://a.example.org/${i}`).join('\n') }).errors
-    ).toEqual(['answers.links takes at most 17 links']);
+      validateFoundationMessageIntakeAnswers({ ...required(), links: Array.from({ length: 17 }, (_, i) => `https://a.example.org/${i}`).join('\n') }).errors
+    ).toEqual(['answers.links takes at most 16 links']);
     expect(
-      validateFoundationMessageIntakeAnswers({ ...required(), links: Array.from({ length: 17 }, (_, i) => `https://a.example.org/${i}`).join('\n') }).valid
+      validateFoundationMessageIntakeAnswers({ ...required(), links: Array.from({ length: 16 }, (_, i) => `https://a.example.org/${i}`).join('\n') }).valid
     ).toBe(true);
-    expect(validateFoundationMessageIntakeAnswers({ ...required(), github_url: 'https://github.com/x' }).errors).toEqual([
-      'answers.github_url is not an intake field key',
+    // The notes field is gone from the form (hand test, 18 Oct): the agent's gap questions gather what it held.
+    expect(validateFoundationMessageIntakeAnswers({ ...required(), notes: 'Audience: platform teams.' }).errors).toEqual([
+      'answers.notes is not an intake field key',
     ]);
     expect(validateFoundationMessageIntakeAnswers({ ...required(), description: 'a\nb' }).valid).toBe(false);
   });
@@ -485,7 +492,6 @@ describe('buildFoundationMessageFormPayload', () => {
         description: '',
         website_url: 'None',
         links: 'https://a.example.org\n\n https://b.example.org ',
-        notes: ' Platform teams. ',
       },
       { projectUid: 'proj-uid-1', documents: [{ title: 'deck.pdf', kind: 'deck', text: 'Deck' }], runDate: '2026-10-17' }
     );
@@ -496,15 +502,17 @@ describe('buildFoundationMessageFormPayload', () => {
       project_uid: 'proj-uid-1',
       links: ['https://a.example.org', 'https://b.example.org'],
       documents: [{ title: 'deck.pdf', kind: 'deck', text: 'Deck' }],
-      notes: 'Platform teams.',
     });
+    // No notes field on the form, so the payload never carries notes.
+    expect(payload.notes).toBeUndefined();
   });
 
-  it('maps the guided fields to the contract: the press release, deck and plan as tagged documents ahead of the given ones, the pages as links ahead of the other links', () => {
+  it('maps the guided fields to the contract: the press release, deck and plan as tagged documents ahead of the given ones, the repository and the pages as links ahead of the other links', () => {
     const payload = buildFoundationMessageFormPayload(
       {
         project_name: 'Example Search',
         website_url: 'https://search.example.org',
+        github_url: ' https://github.com/example/search ',
         press_release_url: ' https://www.linuxfoundation.org/press/example-search ',
         members_page_url: 'https://search.example.org/members',
         projects_page_url: 'none',
@@ -515,7 +523,12 @@ describe('buildFoundationMessageFormPayload', () => {
       },
       { documents: [{ title: 'deck.pdf', kind: 'deck', text: 'Deck' }] }
     );
-    expect(payload.links).toEqual(['https://search.example.org/members', 'https://search.example.org/brand', 'https://blog.example.org/a']);
+    expect(payload.links).toEqual([
+      'https://github.com/example/search',
+      'https://search.example.org/members',
+      'https://search.example.org/brand',
+      'https://blog.example.org/a',
+    ]);
     expect(payload.documents).toEqual([
       { title: 'Launch press release or announcement', kind: 'press', url: 'https://www.linuxfoundation.org/press/example-search' },
       { title: 'Marketing or strategy plan', kind: 'plan', url: 'https://docs.google.com/document/d/plan' },

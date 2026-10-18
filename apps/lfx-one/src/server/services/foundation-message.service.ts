@@ -107,7 +107,6 @@ export class FoundationMessageService {
     logger.info(req, 'foundation_message_generate', 'Composed the Messaging Framework intake', {
       has_website: !!payload.website_url,
       links: payload.links?.length ?? 0,
-      has_notes: !!payload.notes,
       documents: composedDocuments.length,
       documents_read: composedDocuments.filter((document) => document.text !== undefined).length,
       document_kinds: composedDocuments.map((document) => document.kind),

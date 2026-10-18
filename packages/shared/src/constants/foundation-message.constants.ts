@@ -40,18 +40,21 @@ export const FOUNDATION_MESSAGE_INTAKE_HEADERS = {
 
 // ---------------------------------------------------------------------------
 // The form: the project, its sources as links (the agent fetches every one
-// itself), the notes, and the documents, each tagged with what it is.
+// itself), and the documents, each tagged with what it is. There is no notes
+// field (hand test, 18 Oct): audiences, goals and words to avoid are gathered
+// by the agent's own gap questions after it has read and researched.
 // ---------------------------------------------------------------------------
 
 /**
  * The intake answer keys the form collects, besides the documents: the
  * project, then one labelled field per source the agent reads (hand test,
- * 17 Oct: a guided form, not a bare links box), then the notes.
+ * 17 Oct: a guided form, not a bare links box).
  */
 export const FOUNDATION_MESSAGE_ANSWER_KEYS = [
   'project_name',
   'description',
   'website_url',
+  'github_url',
   'press_release_url',
   'members_page_url',
   'projects_page_url',
@@ -59,7 +62,6 @@ export const FOUNDATION_MESSAGE_ANSWER_KEYS = [
   'plan_url',
   'brand_page_url',
   'links',
-  'notes',
 ] as const;
 
 /** The form key of the one-line description. */
@@ -67,6 +69,14 @@ export const FOUNDATION_MESSAGE_DESCRIPTION_KEY = 'description';
 
 /** The form key of the website — the one required source. */
 export const FOUNDATION_MESSAGE_WEBSITE_KEY = 'website_url';
+
+/**
+ * The form key of the GitHub repository or README (hand test, 18 Oct: "add
+ * the GitHub"). The 4.0.0 contract has no repository key of its own, so it
+ * reaches the agent as the first of its `links`; the same key as the Brand
+ * Kit's and the ICP's, so the answer memory carries it between the forms.
+ */
+export const FOUNDATION_MESSAGE_GITHUB_KEY = 'github_url';
 
 /** The form key of the launch press release or announcement (a `press` document to the agent). */
 export const FOUNDATION_MESSAGE_PRESS_RELEASE_KEY = 'press_release_url';
@@ -89,15 +99,13 @@ export const FOUNDATION_MESSAGE_BRAND_PAGE_KEY = 'brand_page_url';
 /** The form key of the other links (one per line on the form; an array in the payload). */
 export const FOUNDATION_MESSAGE_LINKS_KEY = 'links';
 
-/** The form key of the notes (audience, segments, words to avoid). */
-export const FOUNDATION_MESSAGE_NOTES_KEY = 'notes';
-
 /**
  * The single-link fields of the form, in form order: each takes one
  * `https://` link, blank, or "none". The website is the only required one.
  */
 export const FOUNDATION_MESSAGE_SOURCE_URL_KEYS = [
   FOUNDATION_MESSAGE_WEBSITE_KEY,
+  FOUNDATION_MESSAGE_GITHUB_KEY,
   FOUNDATION_MESSAGE_PRESS_RELEASE_KEY,
   FOUNDATION_MESSAGE_MEMBERS_PAGE_KEY,
   FOUNDATION_MESSAGE_PROJECTS_PAGE_KEY,
@@ -118,8 +126,9 @@ export const FOUNDATION_MESSAGE_URL_DOCUMENT_FIELDS: Readonly<Record<string, Fou
   [FOUNDATION_MESSAGE_PLAN_KEY]: { kind: 'plan', title: 'Marketing or strategy plan' },
 };
 
-/** The single-link fields that reach the agent as plain `links`, in the order they go first. */
+/** The single-link fields that reach the agent as plain `links`, in the order they go first: the repository, then the pages. */
 export const FOUNDATION_MESSAGE_URL_LINK_KEYS = [
+  FOUNDATION_MESSAGE_GITHUB_KEY,
   FOUNDATION_MESSAGE_MEMBERS_PAGE_KEY,
   FOUNDATION_MESSAGE_PROJECTS_PAGE_KEY,
   FOUNDATION_MESSAGE_BRAND_PAGE_KEY,
@@ -128,11 +137,8 @@ export const FOUNDATION_MESSAGE_URL_LINK_KEYS = [
 /** Most links one run takes (the agent's own cap), the page fields and the other links together. */
 export const FOUNDATION_MESSAGE_MAX_LINKS = 20;
 
-/** Most OTHER links the form takes: the agent's cap less the page fields that travel as links. */
+/** Most OTHER links the form takes: the agent's cap less the repository and page fields that travel as links. */
 export const FOUNDATION_MESSAGE_MAX_OTHER_LINKS = FOUNDATION_MESSAGE_MAX_LINKS - FOUNDATION_MESSAGE_URL_LINK_KEYS.length;
-
-/** Longest notes text accepted (a product cap; the agent sets none). */
-export const FOUNDATION_MESSAGE_NOTES_MAX_CHARS = 10000;
 
 /**
  * The document kinds of the agent's input contract (`sources.files[].kind`),

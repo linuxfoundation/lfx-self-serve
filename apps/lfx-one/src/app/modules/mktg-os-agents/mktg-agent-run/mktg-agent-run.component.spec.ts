@@ -711,7 +711,7 @@ describe('MktgAgentRunComponent', () => {
 
     beforeEach(async () => configure('browser', 'foundation-setup'));
 
-    it('renders the guided form: the project, one labelled source field per thing the agent reads, in order, each with its explanation and example; the repeatable other links; the notes; the documents', async () => {
+    it('renders the guided form: the project, one labelled source field per thing the agent reads, in order, each with its explanation and example; the repeatable other links; the documents', async () => {
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
 
@@ -722,6 +722,7 @@ describe('MktgAgentRunComponent', () => {
       const labels = Array.from(sources?.querySelectorAll('label:not(.sr-only)') ?? []).map((label) => label.textContent?.replace('*', '').trim());
       expect(labels).toEqual([
         'Website',
+        'GitHub repository or README',
         'Launch press release or announcement',
         'Members or partners page',
         'Projects or products page',
@@ -730,13 +731,16 @@ describe('MktgAgentRunComponent', () => {
         'Brand page',
         'Other links',
       ]);
-      for (const key of ['website_url', 'press_release_url', 'members_page_url', 'projects_page_url', 'deck_url', 'plan_url', 'brand_page_url']) {
+      for (const key of ['website_url', 'github_url', 'press_release_url', 'members_page_url', 'projects_page_url', 'deck_url', 'plan_url', 'brand_page_url']) {
         expect(sources?.querySelector(`[data-test="mktg-intake-${key}"]`)).not.toBeNull();
       }
       // Each source says what it is for and shows an example value.
       expect(sources?.textContent).toContain('searches the LF press archive itself');
       expect(sources?.querySelector<HTMLInputElement>('[data-test="mktg-intake-members_page_url"]')?.placeholder).toBe('https://aaif.io/members');
       expect(sources?.querySelector<HTMLInputElement>('[data-test="mktg-intake-website_url"]')?.placeholder).toBe('https://aaif.io');
+      // The GitHub field (hand test, 18 Oct) sits right after the website, optional, with its own hint.
+      expect(sources?.querySelector<HTMLInputElement>('[data-test="mktg-intake-github_url"]')?.placeholder).toBe('https://github.com/…');
+      expect(sources?.textContent).toContain('Leave it empty and the agent looks for it itself');
       // The deck and the plan take an upload or a link; the pages take a link only.
       expect(query('mktg-intake-deck_url-upload')).not.toBeNull();
       expect(query('mktg-intake-plan_url-upload')).not.toBeNull();
@@ -745,11 +749,12 @@ describe('MktgAgentRunComponent', () => {
       expect(query('mktg-agent-run-list-links')).not.toBeNull();
       expect(component['linkRows']()['links']).toHaveLength(1);
       expect(query('mktg-agent-run-list-add-links')).not.toBeNull();
-      expect(query('mktg-agent-run-group-notes')?.querySelector('[data-test="mktg-intake-notes"]')).not.toBeNull();
+      // No notes field and no notes group (hand test, 18 Oct): audiences, goals and words to avoid come up as the agent's gap questions.
+      expect(query('mktg-agent-run-group-notes')).toBeNull();
+      expect(host().querySelector('[data-test="mktg-intake-notes"]')).toBeNull();
       // The intro says what the agent does with the form and what is optional.
       expect(host().textContent).toContain('Everything but the website is optional');
-      // No GitHub field and no questions: the agent finds the repository itself and asks only the gaps afterwards.
-      expect(host().querySelector('[data-test="mktg-intake-github_url"]')).toBeNull();
+      // No questions on the form: the agent asks only the gaps afterwards.
       expect(query('mktg-agent-run-group-questions')).toBeNull();
       expect(query('mktg-intake-documents')).not.toBeNull();
       // Runs first: no Brand Kit chip and no missing-dependency gate.
@@ -885,15 +890,15 @@ describe('MktgAgentRunComponent', () => {
       expect(component['submitDisabled']()).toBe(false);
     });
 
-    it('submits every source field given, the other links from the rows, the notes and the documents — a link by its URL, a file by its text, each with its tag — and waits while a file is being read', async () => {
+    it('submits every source field given, the other links from the rows and the documents — a link by its URL, a file by its text, each with its tag — and waits while a file is being read', async () => {
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
       fillRequired();
       giveSource();
+      component['intakeForm'].controls['github_url'].setValue('https://github.com/testorbit/testorbit');
       component['intakeForm'].controls['press_release_url'].setValue('https://press.example.org/launch');
       component['intakeForm'].controls['members_page_url'].setValue('https://testorbit.example.org/members');
       component['linkRowsForm'].controls[component['linkRows']()['links'][0]].setValue('https://blog.example.org/launch');
-      component['intakeForm'].controls['notes'].setValue('Audience: platform teams.');
       component['documents'].set([
         {
           id: 'link-1',
@@ -915,14 +920,14 @@ describe('MktgAgentRunComponent', () => {
       component['onSubmit']();
       await fixture.whenStable();
 
-      // Blank optionals stay out; the BFF maps each key to the agent's contract (press → a press document, members → a link).
+      // Blank optionals stay out; the BFF maps each key to the agent's contract (press → a press document, github and members → links).
       expect(submitted().answers).toEqual({
         project_name: 'TestOrbit',
         website_url: 'https://testorbit.example.org',
+        github_url: 'https://github.com/testorbit/testorbit',
         press_release_url: 'https://press.example.org/launch',
         members_page_url: 'https://testorbit.example.org/members',
         links: 'https://blog.example.org/launch',
-        notes: 'Audience: platform teams.',
       });
       expect(submitted().documents).toEqual([
         { kind: 'link', title: 'https://wiki.example.org/positioning', url: 'https://wiki.example.org/positioning', tag: 'doc' },
@@ -1223,7 +1228,7 @@ describe('MktgAgentRunComponent', () => {
       }
     });
 
-    it('restores a run stored by the previous Messaging Document form cleanly — its retired answer keys are ignored', async () => {
+    it('restores a run stored by the previous Messaging Document form cleanly — its retired answer keys are ignored, its repository URL is kept', async () => {
       storedRuns = {
         'proj-1:foundation-setup': {
           agentId: 'foundation-setup',
@@ -1243,7 +1248,8 @@ describe('MktgAgentRunComponent', () => {
 
       const restored = component['intakeForm'].getRawValue();
       expect(restored['project_name']).toBe('TestOrbit');
-      expect(restored).not.toHaveProperty('github_url');
+      // The GitHub field is back on the form (hand test, 18 Oct), so the old form's repository URL fills it.
+      expect(restored['github_url']).toBe('https://github.com/example-org/testorbit');
       expect(restored).not.toHaveProperty('other_links');
     });
   });

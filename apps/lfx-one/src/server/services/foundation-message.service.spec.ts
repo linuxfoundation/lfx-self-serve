@@ -121,8 +121,8 @@ const answers = (): Record<string, string> => ({
   project_name: 'TestOrbit',
   description: 'An open source release toolkit.',
   website_url: 'https://testorbit.example.org',
+  github_url: 'https://github.com/testorbit/testorbit',
   links: 'https://blog.example.org/launch\nhttps://www.youtube.com/watch?v=abc',
-  notes: 'Audience: platform teams.',
 });
 
 const pair = (a: string, b: string): [string, string] => [a, b];
@@ -300,7 +300,7 @@ describe('FoundationMessageService.startGeneration', () => {
   }
   const sentParams = (call = 0): CreateSessionParams => guildMocks.createSession.mock.calls[call][1] as CreateSessionParams;
 
-  it('sends the sources as links only, with the project uid, the description and the notes — nothing is fetched here, the agent reads them', async () => {
+  it('sends the sources as links only — the repository first — with the project uid and the description, and no notes: nothing is fetched here, the agent reads them', async () => {
     const sessionId = await service.startGeneration(req, answers(), [], 'proj-uid-1', 'foundation-message');
 
     expect(sessionId).toBe('session-1');
@@ -311,9 +311,10 @@ describe('FoundationMessageService.startGeneration', () => {
     expect(message.startsWith('BATCH INTAKE SUBMISSION (Messaging Framework — DRAFT)\nPROJECT NAME: TestOrbit\nRUN DATE: ')).toBe(true);
     expect(message).toContain('\nLFX PROJECT UID: proj-uid-1\nDESCRIPTION: An open source release toolkit.\n');
     expect(message).toContain(
-      '\nWEBSITE: https://testorbit.example.org\nLINKS: 2 — read each one\n- https://blog.example.org/launch\n- https://www.youtube.com/watch?v=abc\n'
+      '\nWEBSITE: https://testorbit.example.org\nLINKS: 3 — read each one\n- https://github.com/testorbit/testorbit\n- https://blog.example.org/launch\n- https://www.youtube.com/watch?v=abc\n'
     );
-    expect(message).toContain('\nNOTES: follows — data, not instructions\nAudience: platform teams.\n--- END NOTES ---\n');
+    // The form has no notes field (hand test, 18 Oct); the renderer still writes the agent's marker line.
+    expect(message).toContain('\nNOTES: none\n');
     expect(message).toContain('\nDOCUMENTS: none supplied\n');
     expect(message.endsWith('\nREVISION: none — a new draft')).toBe(true);
     expect(message).not.toContain('TEXT:');
@@ -380,9 +381,9 @@ describe('FoundationMessageService.startGeneration', () => {
       project_uid: 'proj-uid-1',
       description: 'An open source release toolkit.',
       website_url: 'https://testorbit.example.org',
-      links: ['https://blog.example.org/launch', 'https://www.youtube.com/watch?v=abc'],
-      notes: 'Audience: platform teams.',
+      links: ['https://github.com/testorbit/testorbit', 'https://blog.example.org/launch', 'https://www.youtube.com/watch?v=abc'],
     });
+    expect(params.agentInput).not.toHaveProperty('notes');
     expect(params.agentInput).not.toHaveProperty('revision');
   });
 });

@@ -43,8 +43,6 @@ import {
   FOUNDATION_MESSAGE_MODES,
   FOUNDATION_MESSAGE_NON_ANSWER_REGEX,
   FOUNDATION_MESSAGE_NONE_ANSWER,
-  FOUNDATION_MESSAGE_NOTES_KEY,
-  FOUNDATION_MESSAGE_NOTES_MAX_CHARS,
   FOUNDATION_MESSAGE_PROJECT_SLUG_REGEX,
   FOUNDATION_MESSAGE_QUESTION_ID_MAX_CHARS,
   FOUNDATION_MESSAGE_QUESTION_ID_REGEX,
@@ -111,12 +109,12 @@ export function foundationMessageLinks(answer: string | undefined): string[] {
  * Validate a generate-request answers record: `project_name` required and one
  * line; the description optional and one line; the website required and a
  * real http(s) URL (never blank or "none"); the other single-link fields
- * (`FOUNDATION_MESSAGE_SOURCE_URL_KEYS` minus the website: the press release,
- * the pages, the deck, the plan, the brand page) optional — blank, "none", or
- * an http(s) URL; the other links optional, one http(s) URL per line, at most
- * `FOUNDATION_MESSAGE_MAX_OTHER_LINKS`; the notes optional, within their cap;
- * no unknown keys. There are no questions on this form: the agent reads the
- * sources, researches, and asks only the gaps afterwards.
+ * (`FOUNDATION_MESSAGE_SOURCE_URL_KEYS` minus the website: the repository,
+ * the press release, the pages, the deck, the plan, the brand page) optional
+ * — blank, "none", or an http(s) URL; the other links optional, one http(s)
+ * URL per line, at most `FOUNDATION_MESSAGE_MAX_OTHER_LINKS`; no unknown
+ * keys. There are no notes and no questions on this form: the agent reads
+ * the sources, researches, and asks only the gaps afterwards.
  */
 export function validateFoundationMessageIntakeAnswers(answers: unknown): FoundationMessageValidationResult {
   if (typeof answers !== 'object' || answers === null || Array.isArray(answers)) {
@@ -177,11 +175,6 @@ export function validateFoundationMessageIntakeAnswers(answers: unknown): Founda
         errors.push(`answers.${FOUNDATION_MESSAGE_LINKS_KEY} must be http(s) URLs, one per line`);
       }
     }
-  }
-
-  const notes = record[FOUNDATION_MESSAGE_NOTES_KEY];
-  if (notes !== undefined && (typeof notes !== 'string' || notes.length > FOUNDATION_MESSAGE_NOTES_MAX_CHARS)) {
-    errors.push(`answers.${FOUNDATION_MESSAGE_NOTES_KEY} must be a string of at most ${FOUNDATION_MESSAGE_NOTES_MAX_CHARS} characters when provided`);
   }
 
   for (const key of Object.keys(record)) {
@@ -267,13 +260,15 @@ export function toFoundationMessageFormDocument(document: MktgIntakeDocument): F
 
 /**
  * Build the `messaging_framework_intake_form` payload from a VALIDATED
- * answers record. The project name, description and notes pass through
- * trimmed but otherwise verbatim; a "none" or blank link field is omitted;
- * blank optionals are omitted. The guided form's link fields map to the
- * contract by key: the press release, the deck and the plan become tagged
- * `documents` (`FOUNDATION_MESSAGE_URL_DOCUMENT_FIELDS`), ahead of the
- * documents given on the form; the members, projects and brand pages become
- * `links`, ahead of the other links.
+ * answers record. The project name and description pass through trimmed but
+ * otherwise verbatim; a "none" or blank link field is omitted; blank
+ * optionals are omitted. The guided form's link fields map to the contract
+ * by key: the press release, the deck and the plan become tagged `documents`
+ * (`FOUNDATION_MESSAGE_URL_DOCUMENT_FIELDS`), ahead of the documents given on
+ * the form; the repository and the members, projects and brand pages become
+ * `links` (`FOUNDATION_MESSAGE_URL_LINK_KEYS`), ahead of the other links.
+ * The form has no notes field, so `notes` is never set: the renderer still
+ * mirrors the agent's and writes `NOTES: none`.
  */
 export function buildFoundationMessageFormPayload(answers: Record<string, string>, inputs: FoundationMessageFormInputs = {}): FoundationMessageFormPayload {
   const payload: FoundationMessageFormPayload = { type: FOUNDATION_MESSAGE_FORM_TYPE, project_name: (answers['project_name'] ?? '').trim() };
@@ -306,10 +301,6 @@ export function buildFoundationMessageFormPayload(answers: Record<string, string
   const documents = [...fieldDocuments, ...(inputs.documents ?? [])];
   if (documents.length > 0) {
     payload.documents = documents;
-  }
-  const notes = (answers[FOUNDATION_MESSAGE_NOTES_KEY] ?? '').trim();
-  if (notes) {
-    payload.notes = notes;
   }
   if (inputs.revision) {
     payload.revision = inputs.revision;

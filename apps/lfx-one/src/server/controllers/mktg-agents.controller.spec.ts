@@ -434,8 +434,8 @@ describe('MktgAgentsController', () => {
       project_name: ' TestOrbit ',
       description: 'An open source release toolkit.',
       website_url: 'https://testorbit.example.org',
+      github_url: 'https://github.com/testorbit/testorbit',
       links: 'https://blog.example.org/launch',
-      notes: 'Audience: platform teams.',
     });
     const generateReq = (body: unknown): Request => ({ path: '/api/mktg-agents/foundation-message/generate', body }) as unknown as Request;
 
@@ -454,7 +454,7 @@ describe('MktgAgentsController', () => {
       const [, answers, sentDocuments, project, handle] = foundationMessageMocks.startGeneration.mock.calls[0];
       expect(answers['project_name']).toBe('TestOrbit');
       expect(answers['links']).toBe('https://blog.example.org/launch');
-      expect(answers['notes']).toBe('Audience: platform teams.');
+      expect(answers['github_url']).toBe('https://github.com/testorbit/testorbit');
       expect(sentDocuments).toEqual(documents);
       expect(project).toBe('proj-uid-1');
       expect(handle).toBe('foundation-message');
@@ -473,11 +473,16 @@ describe('MktgAgentsController', () => {
       expect(foundationMessageMocks.startGeneration).toHaveBeenCalledTimes(1);
     });
 
-    it('refuses the retired source and question keys — the agent reads the website and links and asks the gaps itself', async () => {
-      await controller.generateFoundationMessage(generateReq({ answers: { ...messagingAnswers(), github_url: 'https://github.com/aaif' } }), buildRes(), next);
+    it('refuses the retired source, notes and question keys — the agent reads the website and links and asks the gaps itself', async () => {
+      await controller.generateFoundationMessage(
+        generateReq({ answers: { ...messagingAnswers(), other_links: 'https://blog.example.org/a' } }),
+        buildRes(),
+        next
+      );
+      await controller.generateFoundationMessage(generateReq({ answers: { ...messagingAnswers(), notes: 'Audience: platform teams.' } }), buildRes(), next);
       await controller.generateFoundationMessage(generateReq({ answers: { ...messagingAnswers(), vision_mission: 'TBD' } }), buildRes(), next);
 
-      expect(next.mock.calls.map(([error]) => error instanceof ServiceValidationError)).toEqual([true, true]);
+      expect(next.mock.calls.map(([error]) => error instanceof ServiceValidationError)).toEqual([true, true, true]);
       expect(foundationMessageMocks.startGeneration).not.toHaveBeenCalled();
     });
 
@@ -486,7 +491,11 @@ describe('MktgAgentsController', () => {
       tokenMocks.createSessionOwnerToken.mockReturnValue('owner-token');
       const deck = [{ kind: 'file', title: 'deck.pdf', text: 'Deck.', tag: 'deck' }];
 
-      await controller.generateFoundationMessage(generateReq({ answers: { project_name: 'TestOrbit', notes: 'Platform teams.' } }), buildRes(), next);
+      await controller.generateFoundationMessage(
+        generateReq({ answers: { project_name: 'TestOrbit', github_url: 'https://github.com/testorbit/testorbit' } }),
+        buildRes(),
+        next
+      );
       await controller.generateFoundationMessage(
         generateReq({ answers: { project_name: 'TestOrbit', website_url: 'none' }, documents: deck }),
         buildRes(),

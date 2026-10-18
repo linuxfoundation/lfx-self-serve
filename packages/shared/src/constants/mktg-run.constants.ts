@@ -13,12 +13,12 @@ import {
   FOUNDATION_MESSAGE_DOCUMENT_ENDPOINTS,
   FOUNDATION_MESSAGE_DOCUMENT_KIND_OPTIONS,
   FOUNDATION_MESSAGE_FILE_EXTENSIONS,
+  FOUNDATION_MESSAGE_GITHUB_KEY,
   FOUNDATION_MESSAGE_LINKS_KEY,
   FOUNDATION_MESSAGE_MAX_DOCUMENTS,
   FOUNDATION_MESSAGE_MAX_FILE_BYTES,
   FOUNDATION_MESSAGE_MAX_OTHER_LINKS,
   FOUNDATION_MESSAGE_MEMBERS_PAGE_KEY,
-  FOUNDATION_MESSAGE_NOTES_KEY,
   FOUNDATION_MESSAGE_PLAN_KEY,
   FOUNDATION_MESSAGE_PRESS_RELEASE_KEY,
   FOUNDATION_MESSAGE_PROJECTS_PAGE_KEY,
@@ -108,31 +108,33 @@ export const BRAND_KIT_INTAKE: MktgAgentIntake = {
  * Messaging Framework intake (marketing-os-agents agents/foundation-message
  * 4.0.0, messaging-framework-output/v1; wi-messaging-framework-intake-and-run).
  * A GUIDED form (hand test, 17 Oct: the first cut was "too unguided — I did
- * not even know myself what to put there"), in three parts:
+ * not even know myself what to put there"), in two parts:
  *
  * - Project: the name and the one-line description, both from LFX.
  * - Sources: one labelled field per source the agent reads, each with a
  *   one-line explanation and an example, in this order — the website (the
- *   one required field), the launch press release, the members page, the
+ *   one required field), the GitHub repository or README (hand test, 18 Oct:
+ *   "add the GitHub"), the launch press release, the members page, the
  *   projects page, the deck (upload or link), the plan (upload or link),
  *   the brand page, and a repeatable list of other links. Every link field
  *   maps to the agent's contract by key (`FOUNDATION_MESSAGE_URL_DOCUMENT_FIELDS`
- *   → `documents[]` with the matching kind; the pages → `links`); the agent
- *   fetches every one itself and researches the rest (web fetch, Exa search,
- *   the LF press archive when no press release is given).
- * - Notes: audiences, the goals for the year, words to avoid, in the
- *   requester's words.
+ *   → `documents[]` with the matching kind; the repository and the pages →
+ *   `links`); the agent fetches every one itself and researches the rest
+ *   (web fetch, Exa search, the LF press archive when no press release is
+ *   given).
  *
  * Other documents come last: files uploaded here (PDF, Word, PowerPoint,
  * Markdown or text, read to text by the BFF) and document links, each tagged
  * with what it is. A file picked on the deck or plan field lands here already
  * tagged (`uploadTag`).
  *
- * There are no questions on this form. After reading and researching, the
- * agent asks only the gaps it could not settle, each with a suggested answer
- * (`endpoints.answers`): the run shows them one at a time on the same run,
- * every answer required, and the answers go back to the same session. The
- * questions and answers are stored with the version.
+ * There are no notes and no questions on this form (hand test, 18 Oct:
+ * "remove notes"). After reading and researching, the agent asks only the
+ * gaps it could not settle — audiences, the goals for the year, words to
+ * avoid — each with a suggested answer (`endpoints.answers`): the run shows
+ * them one at a time on the same run, every answer required, and the
+ * answers go back to the same session. The questions and answers are stored
+ * with the version.
  *
  * The output is not a document but the framework's JSON bundle, so the run
  * lands on the framework's own view (`assetView`): the feed and the questions
@@ -169,6 +171,15 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
       kind: 'text',
       placeholder: 'https://aaif.io',
       hint: 'The project’s public site. The agent starts here and follows what it finds.',
+      format: 'source-url',
+    },
+    {
+      key: FOUNDATION_MESSAGE_GITHUB_KEY,
+      question: 'GitHub repository or README',
+      kind: 'text',
+      optional: true,
+      placeholder: 'https://github.com/…',
+      hint: 'The project’s repository or its README. Purpose, licence, governance and adopters come from there. Leave it empty and the agent looks for it itself.',
       format: 'source-url',
     },
     {
@@ -233,19 +244,9 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
       kind: 'url-list',
       optional: true,
       placeholder: 'https://…',
-      hint: `Anything else public worth reading: the repository, the docs, a blog post, a talk. Up to ${FOUNDATION_MESSAGE_MAX_OTHER_LINKS}.`,
+      hint: `Anything else public worth reading: the docs, a blog post, a talk. Up to ${FOUNDATION_MESSAGE_MAX_OTHER_LINKS}.`,
       format: 'source-url-list',
       maxItems: FOUNDATION_MESSAGE_MAX_OTHER_LINKS,
-    },
-    {
-      key: FOUNDATION_MESSAGE_NOTES_KEY,
-      question: 'Notes',
-      kind: 'textarea',
-      rows: 4,
-      optional: true,
-      placeholder:
-        'Audiences: AI platform teams building agents\nGoals this year: 20 new members, the first stable release\nAvoid “the standard for agents” unless a source states it',
-      hint: 'Who the audiences are, the goals for the year, words to avoid — anything the sources do not say. The agent treats this as information, not instructions.',
     },
   ],
   fieldGroups: [
@@ -258,6 +259,7 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
         'The agent reads every link itself and researches the rest on its own, so it never asks you to restate what the sources say. Leave a field empty when you do not have it.',
       fieldKeys: [
         FOUNDATION_MESSAGE_WEBSITE_KEY,
+        FOUNDATION_MESSAGE_GITHUB_KEY,
         FOUNDATION_MESSAGE_PRESS_RELEASE_KEY,
         FOUNDATION_MESSAGE_MEMBERS_PAGE_KEY,
         FOUNDATION_MESSAGE_PROJECTS_PAGE_KEY,
@@ -267,7 +269,6 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
         FOUNDATION_MESSAGE_LINKS_KEY,
       ],
     },
-    { id: 'notes', title: 'Notes', hint: 'audiences, goals, words to avoid', fieldKeys: [FOUNDATION_MESSAGE_NOTES_KEY] },
   ],
   documents: {
     title: 'Other documents',
