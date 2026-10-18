@@ -562,6 +562,48 @@ describe('VoteManageComponent', () => {
 
       expect(fixture.componentInstance.form().disabled).toBe(false);
     });
+
+    // GH-3781 review (PRRT_kwDOPMiRQ86tqj1g): the rail's Create Vote dialog navigates within this
+    // same `create` route (e.g. ?project=A&clone=X -> ?project=B) without a full reload, and
+    // Angular's default RouteReuseStrategy reuses this component instance rather than reconstructing
+    // it. A one-shot (`take(1)`) clone read would leave cloneSourceVote — and every submission path's
+    // project-uid resolution — pinned to project A's clone forever. Pins the reactive fix: removing
+    // ?clone on a reused instance clears the stale source and form, so submission uses the current
+    // project instead of the old clone's.
+    it('clears the stale clone source and form state when the component is reused for a project with no ?clone', async () => {
+      const queryParams$ = new Subject<ParamMap>();
+      routeMock.queryParamMap = queryParams$.asObservable();
+      fetchVote.mockReturnValue(of(sourceVote({ committee_uid: COMMITTEE_UID })));
+      const fixture = await createComponent();
+
+      queryParams$.next(convertToParamMap({ clone: CLONE_SOURCE_UID }));
+      await TestBed.inject(ApplicationRef).whenStable();
+      expect(fixture.componentInstance.form().get('title')?.value).toBe('Copy of Original board election');
+
+      // Reused for project B's create flow — the dialog dropped ?clone entirely.
+      const PROJECT_B_UID = 'project-uid-b';
+      activeContext.set({ uid: PROJECT_B_UID, slug: 'project-b', name: 'Project B' });
+      getProject.mockReturnValue(of({ uid: PROJECT_B_UID, writer: true }));
+      queryParams$.next(convertToParamMap({}));
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(fixture.componentInstance.form().get('title')?.value).toBe('');
+
+      const form = fixture.componentInstance.form();
+      form.get('title')?.setValue('A brand new vote for project B');
+      form.get('committee')?.setValue({ uid: COMMITTEE_UID, name: undefined });
+      form.get('eligible_participants')?.setValue('project_members');
+      form.get('close_date')?.setValue(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+      const firstQuestion = (form.get('questions') as FormArray).at(0) as FormGroup;
+      firstQuestion.get('question')?.setValue('Approve the budget?');
+      (firstQuestion.get('options') as FormArray).at(0).setValue('Yes');
+      (firstQuestion.get('options') as FormArray).at(1).setValue('No');
+      form.updateValueAndValidity();
+
+      fixture.componentInstance.onSubmit();
+
+      expect(voteServiceMock.beginSpeculativeCreate.mock.calls[0][0]).toMatchObject({ project_uid: PROJECT_B_UID });
+    });
   });
 
   // GH-3781 review (PRRT_kwDOPMiRQ86tkpJN): pins the write-access-leg `startWith(undefined)` fix —

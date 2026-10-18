@@ -930,14 +930,28 @@ export class VoteManageComponent {
       });
   }
 
-  /** Reads ?clone=<uid> from queryParams and prefills the create form from the source vote (create mode only). */
+  /** Reads ?clone=<uid> from queryParams and prefills the create form from the source vote (create mode only).
+   *  Reactive rather than one-shot: the rail's Create Vote dialog navigates within this same `create`
+   *  route (e.g. `?project=A&clone=X` -> `?project=B`), and Angular's default RouteReuseStrategy reuses
+   *  this component instance instead of reconstructing it (same gotcha documented in
+   *  committee-overview.component.ts / weekly-brief-card.component.ts). A `take(1)` read would leave
+   *  `cloneSourceVote` — and every submission path's project-uid resolution — pinned to the old clone
+   *  forever; switchMap cancels any in-flight fetch and the removal branch clears the stale state. */
   private initCloneFromQuery(): void {
     this.route.queryParamMap
       .pipe(
-        take(1),
         map((params) => params.get('clone')),
-        filter((cloneId): cloneId is string => !!cloneId && !this.route.snapshot.paramMap.has('id')),
+        distinctUntilChanged(),
         switchMap((cloneId) => {
+          if (!cloneId || this.route.snapshot.paramMap.has('id')) {
+            // Clone removed (or never applicable) on a reused component — drop any stale source/form
+            // state left over from a prior activation instead of letting it keep winning at submit time.
+            if (this.cloneSourceVote()) {
+              this.cloneSourceVote.set(null);
+              this.form.set(this.createFormGroup());
+            }
+            return of(null);
+          }
           this.loading.set(true);
           // Lock the form while the source vote loads so an organizer can't type into fields a slow
           // fetch is about to overwrite with patchFormWithClonedVote.
