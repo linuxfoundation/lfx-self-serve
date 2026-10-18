@@ -218,6 +218,16 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-back-link')?.getAttribute('href')).toMatch(/^\/documents\?/);
   });
 
+  it('requests an explicit current pointer even when its revision is missing from the summaries', async () => {
+    const missing = `000003-${'3'.repeat(64)}`;
+    store.getDocument.mockReturnValue(of({ ...detail, current: { revisionId: missing, changedAt: '2026-10-15T13:00:00.000Z', changedBy: { name: null } } }));
+    store.getRevision.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+    await render('/documents/brand-kit/living');
+    expect(store.getRevision).toHaveBeenCalledExactlyOnceWith('proj-1', 'brand-kit', 'living', missing);
+    expect(query('mktg-document-view-error')?.textContent).toContain('This document has no such revision.');
+    expect(query('mktg-document-view-document')).toBeNull();
+  });
+
   it.each(['/project/mktg-os-agents', '/foundation/mktg-os-agents'])('keeps the Documents back link in its %s host', async (host) => {
     await render(`${host}/documents/brand-kit/living`);
     expect(query('mktg-document-view-back-link')?.getAttribute('href')).toBe(`${host}/documents?type=brand-kit`);

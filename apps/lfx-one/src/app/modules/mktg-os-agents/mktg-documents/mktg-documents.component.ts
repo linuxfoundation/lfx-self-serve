@@ -178,9 +178,10 @@ export class MktgDocumentsComponent {
     this.documentStore.restoreRevision(project, detail.type.agentKey, detail.documentId, revision.id).subscribe({
       next: (restored) => {
         this.restoringId.set(null);
+        if (this.destroyRef.destroyed || this.projectContext.activeContextUid() !== project) return;
+        this.documents.update((documents) => this.withCurrentRevision(documents, detail, restored.revision));
         if (!this.sameDocument(project, detail.type.agentKey)) return;
         this.detail.set(restored);
-        this.documents.update((documents) => this.withCurrentRevision(documents, detail, restored.revision));
         this.notice.set(`Revision ${revision.number} is now current. No revision was added.`);
       },
       error: (error: HttpErrorResponse) => {

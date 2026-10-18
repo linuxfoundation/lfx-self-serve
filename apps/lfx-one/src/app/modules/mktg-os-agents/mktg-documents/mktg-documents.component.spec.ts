@@ -11,7 +11,7 @@ import { MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
 import { MktgDocumentDetailResponse, MktgDocumentsResponse, MktgDocumentType, MktgRevisionSummary, ProjectContext } from '@lfx-one/shared/interfaces';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { NEVER, of, throwError } from 'rxjs';
+import { NEVER, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgDocumentsComponent } from './mktg-documents.component';
@@ -186,6 +186,23 @@ describe('MktgDocumentsComponent', () => {
     expect(row).toMatch(/v3.*13 Oct.*revised from 4 comments · based on v1.*Current/);
     expect(row).toContain(`revised from 4 comments · based on v1 · ${name || 'name unavailable'}`);
     expect(query('mktg-documents-revision-1')?.textContent).toContain('no name (stored before names were recorded)');
+  });
+
+  it('updates the initiating type badge after a type switch without replacing the new detail or notice', async () => {
+    const pending = new Subject<unknown>();
+    store.restoreRevision.mockReturnValue(pending);
+    await render();
+    query('mktg-documents-restore-1')?.click();
+    await TestBed.inject(Router).navigateByUrl('/?type=foundation-message');
+    await fixture.whenStable();
+    pending.next({ ...detail, revisions: [revision(2), revision(1, { latest: true })], revision: revision(1, { latest: true }) });
+    pending.complete();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('v1 · current');
+    expect(query('mktg-documents-empty-living')).not.toBeNull();
+    expect(query('mktg-documents-document-subtitle')).toBeNull();
+    expect(query('mktg-documents-notice')).toBeNull();
   });
 
   it('clears the success notice when another project is opened', async () => {

@@ -178,7 +178,7 @@ export class MktgDocumentViewComponent {
                         request.project,
                         request.agentKey,
                         request.documentId,
-                        (detail.revisions.find((revision) => revision.latest) ?? detail.revisions[0]).id
+                        detail.current?.revisionId ?? (detail.revisions.find((revision) => revision.latest) ?? detail.revisions[0]).id
                       )
                     )
                   );
