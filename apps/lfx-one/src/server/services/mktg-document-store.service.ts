@@ -392,8 +392,15 @@ export class MktgDocumentStoreService {
       return this.artifactService.readLatest(req, spec, project);
     }
 
+    // The pre-revision copy is served only when a lookup that succeeded found
+    // no revisions. A failed lookup, or revisions none of which can be read,
+    // serve nothing: the pre-revision copy is older than every revision (a
+    // JSON generation never updates it), and a dependent agent prefers the
+    // server's answer over the browser's current asset, so serving it would
+    // hand that agent obsolete content.
+    let listed: MktgListedRevision[];
     try {
-      const listed = await this.listRevisions(req, project, type, MKTG_LIVING_DOCUMENT_ID);
+      listed = await this.listRevisions(req, project, type, MKTG_LIVING_DOCUMENT_ID);
       for (const entry of [...listed].reverse()) {
         const revision = await this.loadRevision(req, entry);
         if (revision) {
@@ -415,13 +422,22 @@ export class MktgDocumentStoreService {
         }
       }
     } catch (error) {
-      logger.warning(req, 'mktg_document_store_read_latest', 'Revision read failed — falling back to the pre-revision document', {
+      logger.warning(req, 'mktg_document_store_read_latest', 'Revision read failed — serving no stored document', {
         agent: type.agentKey,
         project,
         err: error,
       });
+      return null;
     }
 
+    if (listed.length > 0) {
+      logger.warning(req, 'mktg_document_store_read_latest', 'No stored revision could be read — serving no stored document', {
+        agent: type.agentKey,
+        project,
+        revisions: listed.length,
+      });
+      return null;
+    }
     return this.artifactService.readLatest(req, spec, project);
   }
 
