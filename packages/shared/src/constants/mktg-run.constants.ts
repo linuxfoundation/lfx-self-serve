@@ -114,7 +114,7 @@ export const BRAND_KIT_INTAKE: MktgAgentIntake = {
  *   one required field), the GitHub repository or README (hand test, 18 Oct:
  *   "add the GitHub"), the launch press release, the members page, the
  *   projects page, the deck (upload or link), the plan (upload or link),
- *   the brand page, and a repeatable list of other links. Every link field
+ *   and the brand page. Every link field
  *   maps to the agent's contract by key (`FOUNDATION_MESSAGE_URL_DOCUMENT_FIELDS`
  *   → `documents[]` with the matching kind; the repository and the pages →
  *   `links`); the agent fetches every one itself and researches the rest

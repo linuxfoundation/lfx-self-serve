@@ -711,7 +711,7 @@ describe('MktgAgentRunComponent', () => {
 
     beforeEach(async () => configure('browser', 'foundation-setup'));
 
-    it('renders the guided form: the project, one labelled source field per thing the agent reads, in order, each with its explanation and example; the repeatable other links; the documents', async () => {
+    it('renders the guided form: the project, one labelled source field per thing the agent reads, in order, each with its explanation and example; other links and documents in one section', async () => {
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
 

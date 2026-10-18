@@ -111,8 +111,9 @@ export function foundationMessageLinks(answer: string | undefined): string[] {
  * real http(s) URL (never blank or "none"); the other single-link fields
  * (`FOUNDATION_MESSAGE_SOURCE_URL_KEYS` minus the website: the repository,
  * the press release, the pages, the deck, the plan, the brand page) optional
- * — blank, "none", or an http(s) URL; the other links optional, one http(s)
- * URL per line, at most `FOUNDATION_MESSAGE_MAX_OTHER_LINKS`; no unknown
+ * — blank, "none", or an http(s) URL; a `links` answer (which the form no
+ * longer sends) optional, one http(s) URL per line, at most
+ * `FOUNDATION_MESSAGE_MAX_OTHER_LINKS`; no unknown
  * keys. There are no notes and no questions on this form: the agent reads
  * the sources, researches, and asks only the gaps afterwards.
  */
@@ -266,7 +267,8 @@ export function toFoundationMessageFormDocument(document: MktgIntakeDocument): F
  * by key: the press release, the deck and the plan become tagged `documents`
  * (`FOUNDATION_MESSAGE_URL_DOCUMENT_FIELDS`), ahead of the documents given on
  * the form; the repository and the members, projects and brand pages become
- * `links` (`FOUNDATION_MESSAGE_URL_LINK_KEYS`), ahead of the other links.
+ * `links` (`FOUNDATION_MESSAGE_URL_LINK_KEYS`), ahead of any `links` answer
+ * (which the form no longer sends).
  * The form has no notes field, so `notes` is never set: the renderer still
  * mirrors the agent's and writes `NOTES: none`.
  */

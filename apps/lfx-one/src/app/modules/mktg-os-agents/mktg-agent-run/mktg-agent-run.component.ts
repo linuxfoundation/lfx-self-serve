@@ -152,8 +152,8 @@ export class MktgAgentRunComponent {
     feedback: new FormControl('', { nonNullable: true }),
   });
   /**
-   * One control per row of every `url-list` field (the Messaging Framework's
-   * other links), named by row id. The rows are the editing surface only:
+   * One control per row of every `url-list` field, named by row id (no
+   * intake has one at present). The rows are the editing surface only:
    * their non-blank values, joined by newlines, are written into the field's
    * own control in `intakeForm`, which keeps the validator, the answer
    * memory and the submitted answer exactly as a `source-url-list` textarea

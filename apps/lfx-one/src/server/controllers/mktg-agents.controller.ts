@@ -425,7 +425,7 @@ export class MktgAgentsController {
   /**
    * POST /api/mktg-agents/foundation-message/generate
    * Starts a Messaging Framework draft from the intake form: the project name
-   * and description, the website, the repository and any other links as URLs
+   * and description, the website, the repository and the page fields as URLs
    * (the agent fetches and researches them itself), the LFX project uid, and
    * the optional documents — an uploaded file as the text the BFF read from
    * it, a link as its URL, each tagged with what it is. The website is the

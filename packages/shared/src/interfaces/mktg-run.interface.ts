@@ -45,8 +45,8 @@ export type MktgIntakePrefillSource = 'project-name' | 'repository-url' | 'proje
  *   answer to "the project's GitHub repo or README" (hand test, 2026-10-12).
  * - `source-url`: a page the agent fetches itself (the Messaging Framework's
  *   website) — an `https://` link, or "none".
- * - `source-url-list`: several such links, one per line (the Messaging
- *   Framework's links); blank lines are ignored.
+ * - `source-url-list`: several such links, one per line; blank lines are
+ *   ignored. No intake uses it at present.
  */
 export type MktgIntakeFieldFormat = 'github-repo-url' | 'github-url' | 'source-url' | 'source-url-list';
 

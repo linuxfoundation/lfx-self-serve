@@ -46,9 +46,12 @@ export const FOUNDATION_MESSAGE_INTAKE_HEADERS = {
 // ---------------------------------------------------------------------------
 
 /**
- * The intake answer keys the form collects, besides the documents: the
+ * The intake answer keys the BFF accepts, besides the documents: the
  * project, then one labelled field per source the agent reads (hand test,
- * 17 Oct: a guided form, not a bare links box).
+ * 17 Oct: a guided form, not a bare links box), and `links`, which the
+ * form no longer collects (hand test, 18 Oct: other links go in through
+ * the documents section, tagged) but the validator and the payload builder
+ * still take.
  */
 export const FOUNDATION_MESSAGE_ANSWER_KEYS = [
   'project_name',
@@ -96,7 +99,12 @@ export const FOUNDATION_MESSAGE_PLAN_KEY = 'plan_url';
 /** The form key of the brand page (a link to the agent). */
 export const FOUNDATION_MESSAGE_BRAND_PAGE_KEY = 'brand_page_url';
 
-/** The form key of the other links (one per line on the form; an array in the payload). */
+/**
+ * The answer key of extra links as a newline-separated string (an array in
+ * the payload). The form no longer collects it — since the hand test of 18
+ * Oct other links go in through the documents section, tagged — but the BFF
+ * validator and the payload builder still accept it.
+ */
 export const FOUNDATION_MESSAGE_LINKS_KEY = 'links';
 
 /**
@@ -134,10 +142,10 @@ export const FOUNDATION_MESSAGE_URL_LINK_KEYS = [
   FOUNDATION_MESSAGE_BRAND_PAGE_KEY,
 ] as const;
 
-/** Most links one run takes (the agent's own cap), the page fields and the other links together. */
+/** Most links one run takes (the agent's own cap): the repository and page fields and any `links` answer together. */
 export const FOUNDATION_MESSAGE_MAX_LINKS = 20;
 
-/** Most OTHER links the form takes: the agent's cap less the repository and page fields that travel as links. */
+/** Most entries the `links` answer takes: the agent's cap less the repository and page fields that travel as links. */
 export const FOUNDATION_MESSAGE_MAX_OTHER_LINKS = FOUNDATION_MESSAGE_MAX_LINKS - FOUNDATION_MESSAGE_URL_LINK_KEYS.length;
 
 /**
