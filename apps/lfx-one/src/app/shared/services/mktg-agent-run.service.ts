@@ -62,10 +62,12 @@ import { UserService } from './user.service';
  * history; and `freshRunPerSubmission` intakes (the Messaging Framework) send
  * every submission as a fresh first-run generate with no prior version and no
  * feedback, the run shell numbering the versions. An agent that researches
- * first (the Messaging Framework) may answer the poll with `questions` instead
- * of a document: the run stops at a questions step, and `answerQuestions`
- * sends the answers to the SAME session and polls on. Either way the
- * document comes exclusively
+ * first (the Messaging Framework, the Brand Kit) may answer the poll with
+ * `questions` instead of a document: the run stops at a questions step, and
+ * `answerQuestions` sends the answers to the SAME session and polls on. An
+ * agent may also answer with `refused` (the Brand Kit without a messaging
+ * framework): it did not run, the reply is the outcome, and nothing is
+ * stored or retried. Either way the document comes exclusively
  * from the agent's result endpoint, which returns only schema-validated,
  * sha256-verified envelopes — raw chat text is never treated as the document.
  * Each run (session + answers + versions) persists in localStorage, keyed to
@@ -97,9 +99,15 @@ export class MktgAgentRunService {
    * Generates (or regenerates) an agent document. Emits, in order:
    *
    * - `submitted` — the generate/chat POST resolved.
+   * - `activity` — for intakes with a live feed (`liveActivity`), between
+   *   `submitted` and the outcome: the whole feed so far, on every poll
+   *   that changed it, the last one included.
    * - `questions` — INSTEAD of a document, and last: the agent asks the gaps
    *   it could not settle from the sources. The run continues through
    *   {@link answerQuestions} on the same session.
+   * - `refused` — INSTEAD of a document, and last: the agent did not run
+   *   (the Brand Kit with no messaging framework) and replied why; the
+   *   session is over, nothing is stored or retried.
    * - `document` — the validated document landed, with the updated stored run.
    * - `persisted` — OPTIONAL and last: the server-side copy exists. Emitted
    *   only for agents that persist their document (`persistsDocument`) whose
@@ -211,6 +219,7 @@ export class MktgAgentRunService {
     const body: MktgRunGenerateBody = {
       answers: request.answers,
       ...(request.documents?.length && { documents: request.documents }),
+      ...(request.logoFiles?.length && { logoFiles: request.logoFiles }),
       // The agent's own LFX lookups need the project; the storage partition is
       // the result poll's business, resolved server-side.
       ...(request.intake.submitsProject && request.projectUid && { project: request.projectUid }),
@@ -300,7 +309,9 @@ export class MktgAgentRunService {
 
   /**
    * What one generate attempt (or one answers round) ends in: the agent's
-   * questions, which end the stream, or the document with its stored run and
+   * questions, which end the stream; its refusal reply, which ends it too
+   * (the Brand Kit without a messaging framework — the session is over and
+   * the reply is the outcome); or the document with its stored run and
    * the bounded persistence retry behind it. `answered` is the round the
    * attempt is continuing, when it is one: its block is ignored by the poll
    * and stored with the version.
@@ -327,6 +338,10 @@ export class MktgAgentRunService {
             })
           );
         }
+        if (result.status === 'refused') {
+          // The agent did not run: nothing to store, nothing to retry.
+          return concat(activity$, of<MktgGenerateProgress>({ type: 'refused', reply: result.reply ?? '' }));
+        }
         return concat(
           activity$,
           of<MktgGenerateProgress>({ type: 'document', run: this.appendVersion(request, attempt, result, answered) }),
@@ -340,7 +355,8 @@ export class MktgAgentRunService {
    * Polls the agent's validated result endpoint (owner token in the POST body,
    * never the query string) until it reports a `ready` document with a version
    * newer than the prior draft's — or, for intakes with an answers endpoint, a
-   * `questions` block other than the one already answered. The endpoint
+   * `questions` block other than the one already answered — or the agent's
+   * `refused` reply, which ends the session. The endpoint
    * surfaces only schema-validated, sha256-verified envelopes, so agent status
    * chatter can never be mistaken for the document — anything else stays
    * `pending`.
@@ -383,7 +399,8 @@ export class MktgAgentRunService {
       (result.questions?.length ?? 0) > 0 &&
       !!result.questionsId &&
       result.questionsId !== answeredQuestionsId;
-    const isTerminal = (result: MktgRunResultResponse): boolean => isDocument(result) || isNewQuestions(result);
+    const isRefused = (result: MktgRunResultResponse): boolean => result.status === 'refused' && !!result.reply;
+    const isTerminal = (result: MktgRunResultResponse): boolean => isDocument(result) || isNewQuestions(result) || isRefused(result);
     return defer(() => {
       // One wall-clock deadline for the whole wait: with a live feed the poll
       // emits along the way, so a per-emission timeout would never fire.
@@ -507,6 +524,8 @@ export class MktgAgentRunService {
       // and a restored run both read.
       readme: attempt.readme,
       ...(answered && { questions: answered.questions, answers: answered.answers }),
+      // The Brand Kit's revision is a JSON kit: stored with the version so the kit view renders it back without a poll.
+      ...(result.brandKit && { brandKit: result.brandKit }),
       createdAt: new Date().toISOString(),
     };
     const run: MktgStoredAgentRun = {

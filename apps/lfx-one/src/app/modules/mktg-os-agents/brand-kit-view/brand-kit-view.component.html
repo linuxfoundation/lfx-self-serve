@@ -1,0 +1,830 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@let v = view();
+<!--
+  The book's utility sets, declared once and reused on every page. Sizes are
+  arbitrary container-width values (cqw) on purpose: the design is a letter
+  sheet in landscape, and the page scales with its box on screen and prints
+  at size, which no spacing-scale step can do. Colours and the typeface are
+  the kit's custom properties (the component's SCSS), never the app's palette.
+-->
+@let sheet =
+  'box-border flex h-full w-full flex-col bg-white p-[4.2cqw_5cqw_3.2cqw] font-[family-name:var(--bk-font)] text-[1.25cqw] leading-normal text-[color:var(--bk-dark)]';
+@let head = 'flex items-baseline justify-between text-[0.95cqw] uppercase tracking-[0.22em] opacity-75';
+@let foot = 'mt-auto flex items-baseline justify-between pt-[1.5cqw] text-[0.95cqw] tracking-[0.02em] opacity-75';
+@let body = 'grid min-h-0 flex-1 grid-cols-[30%_1fr] gap-[5cqw] pt-[3cqw]';
+@let title = 'mb-[1.6cqw] text-[3.4cqw] font-medium leading-[1.1] tracking-[-0.01em]';
+@let prose = 'text-[1.25cqw] leading-[1.55] [&_p]:mb-[1.2cqw]';
+@let rules = 'm-0 pl-[1.6cqw] [&>li]:mb-[0.6cqw]';
+@let eyebrow = 'text-[0.95cqw] uppercase tracking-[0.22em] opacity-70';
+@let caption = 'text-[1cqw] opacity-70';
+@let tile = 'flex min-h-0 flex-col gap-[1cqw]';
+@let tileBox = 'flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-[0.8cqw] p-[2cqw]';
+@let bordered = 'border border-black/10';
+@let grid2 = 'grid min-h-0 auto-rows-[minmax(0,1fr)] grid-cols-2 gap-[2.2cqw]';
+@let grid3 = 'grid min-h-0 auto-rows-[minmax(0,1fr)] grid-cols-3 gap-[2cqw]';
+@let logoBox = 'flex h-full w-full items-center justify-center';
+@let placeholder =
+  'flex h-full w-full items-center justify-center rounded-[0.6cqw] border-[0.15cqw] border-dashed border-current p-[1cqw] text-center text-[1cqw] uppercase tracking-[0.12em] opacity-50';
+@let reversed = 'brightness-0 invert';
+@let usageLine = 'text-[2cqw] font-medium leading-[1.15]';
+@let accentBar = 'h-[0.35cqw] w-[4cqw] bg-[color:var(--bk-accent)]';
+@let voiceBlock = 'border-b border-black/[0.08] py-[1.6cqw]';
+@let voiceLine = 'mt-[0.6cqw] text-[1.9cqw] font-medium leading-[1.3]';
+@let page = 'lfx-brand-kit-page w-full overflow-hidden rounded-lg border border-black/[0.08] bg-white shadow-sm';
+
+<div class="flex flex-col gap-4" data-testid="brand-kit-view">
+  @if (toolbar()) {
+    <!-- The toolbar never prints (styles.scss shows the book alone). -->
+    <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3" data-testid="brand-kit-view-toolbar">
+      <div class="flex flex-col min-w-0">
+        <span class="text-sm font-semibold text-gray-900">{{ v.runningHead }} · {{ v.versionLabel }}</span>
+        <span class="text-xs text-gray-500"
+          >16 letter pages, landscape. Download PDF prints the book from this page: choose “Save as PDF” in the print dialog.</span
+        >
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <lfx-button
+          label="Download PDF"
+          icon="fa-light fa-file-pdf"
+          size="small"
+          ariaLabel="Print the brand kit book to PDF"
+          data-testid="brand-kit-view-download-pdf"
+          (onClick)="onDownloadPdf()" />
+        <!-- Export to Google Slides is a later item: shown so the kit's outputs are visible, inert until it ships. -->
+        <lfx-button
+          label="Export to Google Slides"
+          icon="fa-light fa-presentation-screen"
+          [outlined]="true"
+          size="small"
+          [disabled]="true"
+          badge="coming soon"
+          ariaLabel="Export to Google Slides — coming soon"
+          data-testid="brand-kit-view-export-slides" />
+        <lfx-button
+          [label]="reportOpen() ? 'Hide the report' : 'Report'"
+          icon="fa-light fa-clipboard-list"
+          [text]="true"
+          size="small"
+          [badge]="gapCount() > 0 ? gapCount().toString() : undefined"
+          [ariaExpanded]="reportOpen()"
+          data-testid="brand-kit-view-report-toggle"
+          (onClick)="onToggleReport()" />
+      </div>
+    </div>
+
+    <!-- The agent's report: for the reviewer, never part of the kit. -->
+    @if (reportOpen()) {
+      <div class="grid grid-cols-1 gap-4 rounded-xl border border-gray-200 bg-white px-4 py-4 text-sm md:grid-cols-2" data-testid="brand-kit-view-report">
+        <div class="flex flex-col gap-1.5">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-500">Sources read</h3>
+          @if (v.report.sources_read.length === 0) {
+            <span class="text-gray-500">None.</span>
+          }
+          <ul class="flex flex-col gap-1 text-gray-800">
+            @for (source of v.report.sources_read; track $index) {
+              <li class="break-all">{{ source }}</li>
+            }
+          </ul>
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-500">Sources that failed</h3>
+          @if (v.report.sources_failed.length === 0) {
+            <span class="text-gray-500">None.</span>
+          }
+          <ul class="flex flex-col gap-1 text-gray-800">
+            @for (failed of v.report.sources_failed; track $index) {
+              <li class="break-all">
+                {{ failed.name }} <span class="text-gray-500">— {{ failed.reason }}</span>
+              </li>
+            }
+          </ul>
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-500">Gaps</h3>
+          @if (v.report.gaps.length === 0) {
+            <span class="text-gray-500">None — every chapter is sourced.</span>
+          }
+          <ul class="flex flex-col gap-1 text-gray-800">
+            @for (gap of v.report.gaps; track $index) {
+              <li>{{ gap }}</li>
+            }
+          </ul>
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-500">Notes</h3>
+          <p class="whitespace-pre-wrap text-gray-800">{{ v.report.notes || 'None.' }}</p>
+        </div>
+      </div>
+    }
+  }
+
+  <!-- The book. Colours and the typeface are the kit's, as custom properties every page reads. -->
+  <div
+    class="lfx-brand-kit-book flex flex-col gap-6"
+    [style.--bk-dark]="v.dark"
+    [style.--bk-accent]="v.accent"
+    [style.--bk-tint]="v.tint"
+    [style.--bk-light-gray]="v.lightGray"
+    [style.--bk-font]="v.fontStack"
+    data-testid="brand-kit-book">
+    <!-- 01 · Cover -->
+    <section [class]="page" aria-label="Cover" data-testid="brand-kit-page-cover">
+      <div [class]="sheet" class="lfx-brand-kit-dark-grid relative">
+        <div [class]="head">
+          <span>{{ v.projectCaps }} · A Linux Foundation project</span>
+          <span>{{ v.versionLabel }}</span>
+        </div>
+        <div class="flex flex-1 flex-col justify-center">
+          <h2 class="mb-[2cqw] text-[7cqw] font-medium leading-none tracking-[-0.02em]">Brand Kit</h2>
+          <p class="max-w-[50%] text-[1.7cqw] leading-[1.4] opacity-90">
+            {{ v.voice.line }}. Logos, color, type and usage on one reference, for members, partners and the press.
+          </p>
+        </div>
+        @if (v.logos.primary?.src; as src) {
+          <div class="absolute bottom-[9cqw] right-[5cqw] h-[10cqw] w-[22cqw]" [class]="reversed" aria-hidden="true">
+            <img class="h-full w-full object-contain" [src]="src" alt="" />
+          </div>
+        }
+        <div [class]="foot">
+          <span>{{ v.projectName }} · a Linux Foundation project</span>
+          <span
+            >{{ v.host }}
+            @if (v.host) {
+              &nbsp;·&nbsp;
+            }
+            {{ v.versionLabel }}
+            @if (v.monthYear) {
+              &nbsp;·&nbsp;{{ v.monthYear }}
+            }
+          </span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 02 · Contents -->
+    <section [class]="page" aria-label="Contents" data-testid="brand-kit-page-contents">
+      <div [class]="sheet">
+        <div [class]="head">
+          <span>Contents</span><span>{{ v.runningHead }}</span>
+        </div>
+        <div [class]="body">
+          <div>
+            <h2 [class]="title">What’s inside</h2>
+            <div [class]="prose">
+              <p>{{ v.builtFrom }}</p>
+            </div>
+          </div>
+          <dl class="grid content-start grid-cols-[4cqw_1fr] gap-y-[0.9cqw] text-[1.25cqw]">
+            @for (row of v.contents; track row.number) {
+              <dt class="opacity-60">{{ row.number }}</dt>
+              <dd class="m-0">{{ row.title }}</dd>
+            }
+          </dl>
+        </div>
+        <div [class]="foot">
+          <span>{{ v.footer }}</span
+          ><span>02</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 03 · Logo system -->
+    <section [class]="page" aria-label="Logo system" data-testid="brand-kit-page-logo-system">
+      <div [class]="sheet">
+        <div [class]="head">
+          <span>01 Logo</span><span>{{ v.runningHead }}</span>
+        </div>
+        <div [class]="body">
+          <div>
+            <h2 [class]="title">Logo system</h2>
+            <div [class]="prose">
+              <p>{{ v.logo.system }}</p>
+              <p>Logo artwork is supplied as files. Never retype the wordmark.</p>
+            </div>
+          </div>
+          <div class="flex min-h-0 flex-col gap-[2cqw]">
+            <div [class]="tile" class="flex-[2]">
+              <span [class]="eyebrow">Primary · horizontal lockup</span>
+              <div [class]="tileBox + ' ' + bordered">
+                <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: v.logos.primary, what: 'Horizontal lockup' }" />
+              </div>
+            </div>
+            <div [class]="grid2" class="flex-1">
+              <div [class]="tile">
+                <span [class]="eyebrow">Stacked lockup</span>
+                <div [class]="tileBox + ' ' + bordered">
+                  <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: v.logos.stacked ?? v.logos.primary, what: 'Stacked lockup' }" />
+                </div>
+              </div>
+              <div [class]="tile">
+                <span [class]="eyebrow">Symbol</span>
+                <div [class]="tileBox + ' ' + bordered">
+                  <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: v.symbol, what: 'Symbol' }" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div [class]="foot">
+          <span>{{ v.footer }}</span
+          ><span>03</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 04 · Colorways -->
+    <section [class]="page" aria-label="Colorways" data-testid="brand-kit-page-colorways">
+      <div [class]="sheet">
+        <div [class]="head">
+          <span>01 Logo</span><span>{{ v.runningHead }}</span>
+        </div>
+        <div [class]="body">
+          <div>
+            <h2 [class]="title">Colorways</h2>
+            <div [class]="prose">
+              <p>
+                Full color on white and light grounds. Reversed (white) on {{ v.darkName }} and dark imagery. One-color black for print, engraving and embossing
+                only.
+              </p>
+              <p>Accent colors are never logo colors.</p>
+            </div>
+          </div>
+          <div [class]="grid2">
+            @for (colorway of v.colorways; track colorway.name) {
+              <div [class]="tile" data-testid="brand-kit-colorway-tile">
+                <div [class]="colorway.light ? tileBox + ' ' + bordered : tileBox" [style.background]="colorway.ground">
+                  <div [class]="logoBox" [style.filter]="colorway.logoFilter || null" [style.color]="colorway.light ? v.dark : 'white'">
+                    <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: v.logos.primary, what: 'Logo' }" />
+                  </div>
+                </div>
+                <span [class]="caption">{{ colorway.name }}</span>
+              </div>
+            }
+          </div>
+        </div>
+        <div [class]="foot">
+          <span>{{ v.footer }}</span
+          ><span>04</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 05 · Clear space & minimum size -->
+    <section [class]="page" aria-label="Clear space and minimum size" data-testid="brand-kit-page-clear-space">
+      <div [class]="sheet">
+        <div [class]="head">
+          <span>01 Logo</span><span>{{ v.runningHead }}</span>
+        </div>
+        <div [class]="body">
+          <div>
+            <h2 [class]="title">Clear space &amp; minimum size</h2>
+            <div [class]="prose">
+              <p>{{ v.logo.clear_space }}</p>
+              <p>
+                Minimum size: {{ v.logo.minimum_size.screen_px }} px tall on screen, {{ v.logo.minimum_size.print_mm }} mm in print.
+                {{ v.logo.minimum_size.rule }} (minimum {{ v.logo.minimum_size.symbol_px }} px).
+              </p>
+            </div>
+          </div>
+          <div class="flex min-h-0 flex-col gap-[2cqw]">
+            <!-- The clear-space diagram: the lockup inside a frame one X from every edge. -->
+            <div class="relative flex min-h-0 flex-1 items-center justify-center border-[0.12cqw] border-dashed border-black/30 p-[6cqw]">
+              <span class="absolute left-1/2 top-[1.2cqw] text-[1.1cqw] opacity-60">X</span>
+              <span class="absolute bottom-[1.2cqw] left-1/2 text-[1.1cqw] opacity-60">X</span>
+              <span class="absolute left-[1.2cqw] top-1/2 text-[1.1cqw] opacity-60">X</span>
+              <span class="absolute right-[1.2cqw] top-1/2 text-[1.1cqw] opacity-60">X</span>
+              <div class="h-full max-h-[12cqw] w-full">
+                <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: v.logos.primary, what: 'Logo' }" />
+              </div>
+            </div>
+            <div class="flex flex-col gap-[1cqw]">
+              <span [class]="eyebrow">Scaling</span>
+              <div class="flex items-end gap-[3cqw]">
+                @for (size of v.minimumSizes; track size.label) {
+                  <div class="flex flex-col items-start gap-[0.6cqw]">
+                    <div class="aspect-[10/3] w-auto" [style.height.px]="size.px">
+                      <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: v.logos.primary, what: 'Logo' }" />
+                    </div>
+                    <span [class]="caption">{{ size.label }}</span>
+                  </div>
+                }
+                <div class="flex flex-col items-start gap-[0.6cqw]">
+                  <div [style.height.px]="v.logo.minimum_size.symbol_px" [style.width.px]="v.logo.minimum_size.symbol_px">
+                    <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: v.symbol, what: 'Symbol' }" />
+                  </div>
+                  <span [class]="caption">Symbol {{ v.logo.minimum_size.symbol_px }} px</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div [class]="foot">
+          <span>{{ v.footer }}</span
+          ><span>05</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 06 · Symbol & symbol in shape -->
+    <section [class]="page" aria-label="Symbol and symbol in shape" data-testid="brand-kit-page-symbol">
+      <div [class]="sheet">
+        <div [class]="head">
+          <span>01 Logo</span><span>{{ v.runningHead }}</span>
+        </div>
+        <div [class]="body">
+          <div>
+            <h2 [class]="title">Symbol &amp; symbol in shape</h2>
+            <div [class]="prose">
+              <p>{{ v.logo.symbol }}</p>
+              <p>For contained uses, place the symbol in a circle or rounded square, with one X of padding to the edge.</p>
+            </div>
+          </div>
+          <div class="flex min-h-0 flex-col gap-[2cqw]">
+            <div class="flex min-h-0 flex-1 flex-col gap-[1cqw]">
+              <span [class]="eyebrow">Variants</span>
+              <div [class]="grid3" class="flex-1">
+                @for (colorway of v.colorways; track colorway.name; let i = $index) {
+                  @if (i !== 2) {
+                    <div [class]="tile">
+                      <div [class]="colorway.light ? tileBox + ' ' + bordered : tileBox" [style.background]="colorway.ground">
+                        <div
+                          [class]="logoBox"
+                          class="max-w-[40%]"
+                          [style.filter]="colorway.logoFilter || null"
+                          [style.color]="colorway.light ? v.dark : 'white'">
+                          <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: v.symbol, what: 'Symbol' }" />
+                        </div>
+                      </div>
+                      <span [class]="caption">{{ colorway.name }}</span>
+                    </div>
+                  }
+                }
+              </div>
+            </div>
+            <div class="flex min-h-0 flex-1 flex-col gap-[1cqw]">
+              <span [class]="eyebrow">In shape</span>
+              <div class="flex min-h-0 flex-1 items-center gap-[3cqw]">
+                <div class="flex aspect-square h-full items-center justify-center rounded-full p-[2.4cqw] text-white" [style.background]="v.dark">
+                  <div [class]="logoBox + ' ' + reversed">
+                    <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: v.symbol, what: 'Symbol' }" />
+                  </div>
+                </div>
+                <div [class]="bordered" class="flex aspect-square h-full items-center justify-center rounded-[1.6cqw] p-[2.4cqw]" [style.background]="v.tint">
+                  <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: v.symbol, what: 'Symbol' }" />
+                </div>
+                <div class="flex aspect-square h-full items-center justify-center rounded-[1.6cqw] p-[2.4cqw] text-white" [style.background]="v.accent">
+                  <div [class]="logoBox + ' ' + reversed">
+                    <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: v.symbol, what: 'Symbol' }" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div [class]="foot">
+          <span>{{ v.footer }}</span
+          ><span>06</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 07 · Partnership lockup -->
+    <section [class]="page" aria-label="Partnership lockup" data-testid="brand-kit-page-partnership">
+      <div [class]="sheet">
+        <div [class]="head">
+          <span>01 Logo</span><span>{{ v.runningHead }}</span>
+        </div>
+        <div [class]="body">
+          <div>
+            <h2 [class]="title">Partnership lockup</h2>
+            <ul [class]="rules + ' ' + prose">
+              @for (rule of v.logo.partnership; track $index) {
+                <li>{{ rule }}</li>
+              }
+            </ul>
+          </div>
+          <div class="flex min-h-0 flex-col gap-[2cqw]">
+            <div [class]="tileBox + ' ' + bordered" class="gap-[3cqw]">
+              <div class="h-[60%] w-[32%]">
+                <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: v.logos.primary, what: 'Logo' }" />
+              </div>
+              <div class="h-[55%] w-[0.18cqw]" [style.background]="v.dark"></div>
+              <div [class]="placeholder" class="h-[60%] w-[32%]">Partner logo</div>
+            </div>
+            <div [class]="tileBox" class="gap-[3cqw]" [style.background]="v.dark">
+              <div [class]="reversed" class="h-[60%] w-[32%]">
+                <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: v.logos.primary, what: 'Logo' }" />
+              </div>
+              <div class="h-[55%] w-[0.18cqw] bg-white"></div>
+              <div [class]="placeholder" class="h-[60%] w-[32%] text-white">Partner logo</div>
+            </div>
+          </div>
+        </div>
+        <div [class]="foot">
+          <span>{{ v.footer }}</span
+          ><span>07</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 08 · Watchouts -->
+    <section [class]="page" aria-label="Watchouts" data-testid="brand-kit-page-watchouts">
+      <div [class]="sheet">
+        <div [class]="head">
+          <span>01 Logo</span><span>{{ v.runningHead }}</span>
+        </div>
+        <div [class]="body">
+          <div>
+            <h2 [class]="title">Watchouts</h2>
+            <div [class]="prose">
+              <p>
+                Consistency is what makes the mark recognizable. When in doubt: full color on white, or reversed on {{ v.darkName }}, with X of clear space.
+              </p>
+            </div>
+          </div>
+          <div [class]="grid3">
+            @for (watchout of v.watchouts; track watchout.label) {
+              <div [class]="tile" data-testid="brand-kit-watchout-tile">
+                <div [class]="tileBox + ' ' + bordered" class="relative" [style.background]="watchout.ground || null">
+                  <span class="absolute right-[0.8cqw] top-[0.4cqw] text-[1.6cqw] leading-none" [style.color]="v.accent" aria-hidden="true">✕</span>
+                  @if (watchout.retyped) {
+                    <span class="font-serif text-[1.6cqw] font-semibold">{{ v.projectName }}</span>
+                  } @else {
+                    <div [class]="logoBox" class="max-w-[70%]" [style.transform]="watchout.transform || null" [style.filter]="watchout.filter || null">
+                      <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: v.logos.primary, what: 'Logo' }" />
+                    </div>
+                  }
+                </div>
+                <span [class]="caption">{{ watchout.label }}</span>
+              </div>
+            }
+          </div>
+        </div>
+        <div [class]="foot">
+          <span>{{ v.footer }}</span
+          ><span>08</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 09 · Color palette -->
+    <section [class]="page" aria-label="Color palette" data-testid="brand-kit-page-palette">
+      <div [class]="sheet">
+        <div [class]="head">
+          <span>02 Color</span><span>{{ v.runningHead }}</span>
+        </div>
+        <div [class]="body">
+          <div>
+            <h2 [class]="title">Color palette</h2>
+            <div [class]="prose">
+              <p>{{ v.color.summary }}</p>
+              <p>Values come from the logo artwork, the site and the brand page; each card says where.</p>
+            </div>
+          </div>
+          <div class="flex min-h-0 flex-col gap-[2.4cqw]">
+            <div class="grid gap-[1.6cqw]" [style.grid-template-columns]="'repeat(' + v.palette.length + ', minmax(0, 1fr))'">
+              @for (card of v.palette; track card.hex) {
+                <div class="flex flex-col gap-[0.6cqw] text-[1cqw] leading-[1.4]" [attr.data-testid]="'brand-kit-swatch-' + card.hex.slice(1)">
+                  <div
+                    class="flex h-[9cqw] items-end rounded-[0.8cqw] p-[1cqw] text-[1.05cqw] tracking-[0.06em]"
+                    [class.border]="card.light"
+                    [class.border-black/10]="card.light"
+                    [style.background]="card.hex"
+                    [style.color]="card.light ? v.dark : 'white'">
+                    {{ card.name }}
+                  </div>
+                  <span class="font-medium">HEX {{ card.hex }}</span>
+                  <span>RGB {{ card.rgb }}</span>
+                  <span>{{ card.role }}</span>
+                  <span [class]="caption">{{ card.source }}</span>
+                </div>
+              }
+            </div>
+            <div class="flex flex-col gap-[1cqw]">
+              <span [class]="eyebrow">Proportion</span>
+              <!-- The segments are paint: the name lists every share, and the legend below prints them. -->
+              <div
+                class="flex h-[2.4cqw] overflow-hidden rounded-[0.6cqw] border border-black/[0.08]"
+                role="img"
+                [attr.aria-label]="proportionLabel()"
+                data-testid="brand-kit-proportion">
+                @for (row of v.proportion; track row.hex) {
+                  <div [style.width.%]="row.share" [style.background]="row.hex"></div>
+                }
+              </div>
+              <div [class]="caption" class="flex flex-wrap gap-x-[2cqw] gap-y-[0.4cqw]">
+                @for (row of v.proportion; track row.hex) {
+                  <span>{{ row.name }} {{ row.share }}%</span>
+                }
+              </div>
+            </div>
+          </div>
+        </div>
+        <div [class]="foot">
+          <span>{{ v.footer }}</span
+          ><span>09</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 10 · Color contrast -->
+    <section [class]="page" aria-label="Color contrast" data-testid="brand-kit-page-contrast">
+      <div [class]="sheet">
+        <div [class]="head">
+          <span>02 Color</span><span>{{ v.runningHead }}</span>
+        </div>
+        <div [class]="body">
+          <div>
+            <h2 [class]="title">Color contrast</h2>
+            <div [class]="prose">
+              <p>{{ v.color.contrast.rule }}</p>
+            </div>
+          </div>
+          <div class="flex min-h-0 flex-col overflow-hidden">
+            @for (row of v.contrast; track row.foreground + row.background) {
+              <div
+                class="grid grid-cols-[4cqw_1fr_auto_auto] items-center gap-[1.6cqw] border-b border-black/[0.08] py-[0.5cqw] text-[1.15cqw]"
+                [attr.data-testid]="'brand-kit-contrast-' + $index">
+                <span
+                  class="flex h-[3cqw] w-[4cqw] items-center justify-center rounded-[0.5cqw] border border-black/10 text-[1.4cqw] font-semibold"
+                  [style.background]="row.backgroundHex"
+                  [style.color]="row.foregroundHex"
+                  aria-hidden="true"
+                  >Aa</span
+                >
+                <span>{{ row.foreground }} on {{ row.background }}</span>
+                <span class="tabular-nums">{{ row.ratio }}</span>
+                <span class="min-w-[9cqw] text-right text-[1cqw] tracking-[0.04em]" [ngClass]="{ 'opacity-50': !row.passes }">{{ row.grade }}</span>
+              </div>
+            }
+          </div>
+        </div>
+        <div [class]="foot">
+          <span>{{ v.footer }}</span
+          ><span>10</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 11 · Typography -->
+    <section [class]="page" aria-label="Typography" data-testid="brand-kit-page-typography">
+      <div [class]="sheet">
+        <div [class]="head">
+          <span>03 Type</span><span>{{ v.runningHead }}</span>
+        </div>
+        <div [class]="body">
+          <div>
+            <h2 [class]="title">Typography</h2>
+            <div [class]="prose">
+              <p>{{ v.type.summary }}</p>
+              @if (v.type.note) {
+                <p>{{ v.type.note }}</p>
+              }
+              <ul [class]="rules">
+                @for (rule of v.type.rules; track $index) {
+                  <li>{{ rule }}</li>
+                }
+              </ul>
+            </div>
+          </div>
+          <div class="flex min-h-0 flex-col overflow-hidden">
+            <p class="mb-[1.4cqw] text-[4cqw] font-medium leading-[1.1] tracking-[-0.015em]">{{ v.voice.line }}</p>
+            <p class="mb-[1.6cqw] break-all text-[1.3cqw] tracking-[0.02em]">{{ v.specimen }}</p>
+            <div class="mb-[1.8cqw] flex gap-[2.6cqw]">
+              @for (weight of v.weights; track weight.weight) {
+                <div class="flex flex-col gap-[0.3cqw] text-[0.95cqw] opacity-80">
+                  <span class="text-[2.6cqw] leading-none" [style.font-weight]="weight.weight">Aa</span>
+                  <span>{{ weight.label }}</span>
+                </div>
+              }
+            </div>
+            @for (row of v.scale; track row.label) {
+              <div class="grid grid-cols-[10cqw_11cqw_1fr] items-baseline gap-[1.6cqw] border-t border-black/[0.08] py-[0.5cqw] text-[1cqw]">
+                <span>{{ row.label }}</span>
+                <span class="opacity-70">{{ row.spec }}</span>
+                <!-- The body row's sample is the voice umbrella, which can run long: it wraps rather than being cut on one line. -->
+                <span
+                  class="min-w-0 break-words"
+                  [style.font-weight]="row.fontWeight"
+                  [style.font-size]="row.fontSize"
+                  [style.line-height]="row.lineHeight"
+                  [style.text-transform]="row.textTransform"
+                  [style.letter-spacing]="row.letterSpacing"
+                  >{{ row.sample }}</span
+                >
+              </div>
+            }
+          </div>
+        </div>
+        <div [class]="foot">
+          <span>{{ v.footer }}</span
+          ><span>11</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 12 · Iconography -->
+    <section [class]="page" aria-label="Iconography" data-testid="brand-kit-page-iconography">
+      <div [class]="sheet">
+        <div [class]="head">
+          <span>04 Visual</span><span>{{ v.runningHead }}</span>
+        </div>
+        <div [class]="body">
+          <div>
+            <h2 [class]="title">Iconography</h2>
+            <ul [class]="rules + ' ' + prose">
+              @for (rule of v.visual.icons.rules; track $index) {
+                <li>{{ rule }}</li>
+              }
+            </ul>
+          </div>
+          <div class="flex min-h-0 flex-col justify-between">
+            <div class="grid min-h-0 grid-cols-4 gap-x-[1.8cqw] gap-y-[3cqw]">
+              @for (icon of v.icons; track icon.label) {
+                <div class="flex flex-col items-center gap-[0.8cqw] text-[1cqw]">
+                  <i class="text-[3cqw]" [class]="icon.icon" aria-hidden="true"></i>
+                  <span>{{ icon.label }}</span>
+                </div>
+              }
+            </div>
+            <p [class]="caption">Recommended set: {{ v.visual.icons.recommended }}</p>
+          </div>
+        </div>
+        <div [class]="foot">
+          <span>{{ v.footer }}</span
+          ><span>12</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 13 · Imagery & graphic elements -->
+    <section [class]="page" aria-label="Imagery and graphic elements" data-testid="brand-kit-page-imagery">
+      <div [class]="sheet">
+        <div [class]="head">
+          <span>04 Visual</span><span>{{ v.runningHead }}</span>
+        </div>
+        <div [class]="body">
+          <div>
+            <h2 [class]="title">Imagery &amp; graphic elements</h2>
+            <div [class]="prose">
+              <p>{{ v.visual.imagery.rule }}</p>
+              <span [class]="eyebrow">Avoid</span>
+              <ul [class]="rules">
+                @for (item of v.visual.imagery.avoid; track $index) {
+                  <li>{{ item }}</li>
+                }
+              </ul>
+            </div>
+          </div>
+          <div class="flex min-h-0 flex-col gap-[2cqw]">
+            <div class="lfx-brand-kit-dark-grid flex min-h-0 flex-1 items-end rounded-[0.8cqw] p-[2.4cqw]">
+              <div class="flex flex-col gap-[0.8cqw]">
+                <span [class]="eyebrow" class="opacity-100">— Eyebrow</span>
+                <span [class]="usageLine">{{ v.voice.line }}</span>
+              </div>
+            </div>
+            <div [class]="grid2">
+              <div class="flex flex-col items-start gap-[1cqw]">
+                <span [class]="eyebrow">Buttons</span>
+                <span class="inline-block rounded-[0.5cqw] bg-[color:var(--bk-accent)] px-[1.6cqw] py-[0.8cqw] text-[1.1cqw] font-medium text-white"
+                  >Primary button</span
+                >
+                <span
+                  class="inline-block rounded-[0.5cqw] border-[0.12cqw] border-[color:var(--bk-dark)] px-[1.6cqw] py-[0.8cqw] text-[1.1cqw] font-medium text-[color:var(--bk-dark)]"
+                  >Secondary</span
+                >
+              </div>
+              <div class="flex flex-col gap-[1cqw]">
+                <span [class]="eyebrow">Call-out card</span>
+                <div class="rounded-[0.8cqw] border-l-[0.5cqw] border-[color:var(--bk-accent)] bg-[color:var(--bk-tint)] p-[1.6cqw] text-[1.15cqw]">
+                  One per view, for the main call to action.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div [class]="foot">
+          <span>{{ v.footer }}</span
+          ><span>13</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 14 · Example usage -->
+    <section [class]="page" aria-label="Example usage" data-testid="brand-kit-page-usage">
+      <div [class]="sheet">
+        <div [class]="head">
+          <span>05 Usage</span><span>{{ v.runningHead }}</span>
+        </div>
+        <div [class]="body">
+          <div>
+            <h2 [class]="title">Example usage</h2>
+            <div [class]="prose">
+              <p>{{ v.usage.summary }}</p>
+            </div>
+          </div>
+          <div [class]="grid2">
+            @for (usage of v.usageTiles; track usage.caption) {
+              <div [class]="tile" data-testid="brand-kit-usage-tile">
+                <!-- The usage tiles: dark grounds for impact, white for documents, the typeface throughout. -->
+                <div
+                  class="flex min-h-0 flex-1 flex-col justify-end gap-[0.8cqw] overflow-hidden rounded-[0.8cqw] p-[2cqw]"
+                  [ngClass]="usage.dark ? 'bg-[color:var(--bk-dark)] text-white' : 'border border-black/10 bg-white text-[color:var(--bk-dark)]'">
+                  @switch (usage.layout) {
+                    @case ('social') {
+                      <span [class]="usageLine">{{ v.voice.line }}</span>
+                      <span [class]="caption" class="opacity-85">{{ v.host }}</span>
+                    }
+                    @case ('report') {
+                      <span [class]="eyebrow">— Report</span>
+                      <span [class]="usageLine">{{ v.projectName }} annual report · [year]</span>
+                    }
+                    @case ('announcement') {
+                      <div [class]="accentBar"></div>
+                      <span [class]="usageLine">[Partner] joins {{ v.projectName }}</span>
+                    }
+                    @default {
+                      <div [class]="accentBar"></div>
+                      <span [class]="usageLine">{{ v.voice.line }}</span>
+                    }
+                  }
+                </div>
+                <span [class]="caption">{{ usage.caption }}</span>
+              </div>
+            }
+          </div>
+        </div>
+        <div [class]="foot">
+          <span>{{ v.footer }}</span
+          ><span>14</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 15 · Voice in brief -->
+    <section [class]="page" aria-label="Voice in brief" data-testid="brand-kit-page-voice">
+      <div [class]="sheet">
+        <div [class]="head">
+          <span>06 Voice</span><span>{{ v.runningHead }}</span>
+        </div>
+        <div [class]="body">
+          <div>
+            <h2 [class]="title">Voice in brief</h2>
+            <div [class]="prose">
+              <p>{{ v.voice.note }}</p>
+              <p [class]="caption">{{ v.voice.source }}</p>
+            </div>
+          </div>
+          <div class="flex min-h-0 flex-col">
+            <div [class]="voiceBlock">
+              <span [class]="eyebrow">Umbrella message</span>
+              <p [class]="voiceLine">{{ v.voice.umbrella }}</p>
+            </div>
+            <div [class]="voiceBlock">
+              <span [class]="eyebrow">Brand line</span>
+              <p [class]="voiceLine">{{ v.voice.line }}</p>
+            </div>
+            <div [class]="grid2" class="pt-[2cqw]">
+              @for (attribute of v.voice.attributes; track attribute.name) {
+                <div class="flex flex-col gap-[0.4cqw]">
+                  <span class="font-medium">{{ attribute.name }}</span>
+                  <span [class]="prose">{{ attribute.line }}</span>
+                </div>
+              }
+            </div>
+          </div>
+        </div>
+        <div [class]="foot">
+          <span>{{ v.footer }}</span
+          ><span>15</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 16 · Back cover -->
+    <section [class]="page" aria-label="Back cover" data-testid="brand-kit-page-back-cover">
+      <div [class]="sheet" class="lfx-brand-kit-dark-grid">
+        <div class="flex flex-1 flex-col items-center justify-center">
+          <p class="mb-[1cqw] text-center text-[2.2cqw] uppercase tracking-[0.22em]">{{ v.voice.line }}</p>
+          <p [class]="caption" class="opacity-90">{{ v.host }}</p>
+        </div>
+        <p class="mx-auto max-w-[85%] text-center text-[0.95cqw] opacity-70">{{ v.backCoverNotice }}</p>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- A logo as drawn: the artwork, or a placeholder naming what goes there (no file, or a PNG/ZIP member the kit carries no bytes for). -->
+<ng-template #logoTpl let-image let-what="what">
+  <div class="flex h-full w-full items-center justify-center">
+    @if (image?.src; as src) {
+      <img class="max-h-full max-w-full object-contain" [src]="src" [alt]="what + ' — ' + image.ref" />
+    } @else if (image) {
+      <span [class]="placeholder">{{ image.ref }}</span>
+    } @else {
+      <span [class]="placeholder">{{ what }}</span>
+    }
+  </div>
+</ng-template>

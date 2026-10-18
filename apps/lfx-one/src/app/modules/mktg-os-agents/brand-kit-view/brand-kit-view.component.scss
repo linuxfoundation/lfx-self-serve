@@ -1,0 +1,40 @@
+/* Copyright The Linux Foundation and each contributor to LFX. */
+/* SPDX-License-Identifier: MIT */
+
+/* Only what Tailwind cannot express is here: the kit's custom properties
+   (the colours and the typeface every page reads — the project's, never the
+   app's), the page as a size container, and the cover's dark grid. The
+   layout itself is Tailwind utilities in the template; its sizes are in
+   container-width units (cqw) so a page scales with its box and prints at
+   letter size (styles.scss pins the sheet in print). */
+
+:host {
+  display: block;
+}
+
+.lfx-brand-kit-book {
+  --bk-dark: black;
+  --bk-accent: black;
+  --bk-tint: white;
+  --bk-light-gray: silver;
+  --bk-font: sans-serif;
+}
+
+/* A letter sheet in landscape (11 × 8.5 in) that fills its column; the cqw units inside measure against it. */
+.lfx-brand-kit-page {
+  container-type: inline-size;
+  aspect-ratio: 11 / 8.5;
+}
+
+/* The dark grid of the cover and the back cover: a quiet grid on the dark, lit softly from one side. */
+.lfx-brand-kit-dark-grid {
+  color: white;
+  background-color: var(--bk-dark);
+  background-image:
+    radial-gradient(ellipse at 15% 20%, rgb(255 255 255 / 0.14), transparent 55%), linear-gradient(rgb(255 255 255 / 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / 0.07) 1px, transparent 1px);
+  background-size:
+    100% 100%,
+    4.5cqw 4.5cqw,
+    4.5cqw 4.5cqw;
+}

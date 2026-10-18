@@ -1,9 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse, HttpStatusCode } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { BRAND_KIT_INTAKE, FOUNDATION_MESSAGE_ANCHOR_QUESTIONS, FOUNDATION_MESSAGE_INTAKE } from '@lfx-one/shared/constants';
-import { FoundationMessageContent, MktgRunAsset, MktgStoredAgentRun } from '@lfx-one/shared/interfaces';
+import { FoundationMessageContent, MktgDependencyDocument, MktgRunAsset, MktgStoredAgentRun } from '@lfx-one/shared/interfaces';
 import { renderFoundationMessageMarkdown } from '@lfx-one/shared/utils';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgArtifactService } from '@services/mktg-artifact.service';
@@ -253,6 +254,100 @@ describe('MktgDependencyService', () => {
           version: 2,
           document: '# Server message foundation',
         },
+      });
+    });
+
+    describe('with sidecar — the Brand Kit’s messaging framework, the latest revision whatever its review status', () => {
+      const sidecarIds = [FOUNDATION_MESSAGE_INTAKE.agentId];
+
+      it('reads the server’s latest revision, with its date and its sidecar JSON', async () => {
+        getStored.mockReturnValue(
+          of({
+            documentMarkdown: '# Latest messaging framework',
+            receipt: { version: 2 },
+            storedAt: '2026-10-16T09:00:00.000Z',
+            sidecar: { fields: { 'md.tagline': { value: 'Open standards', source: 'Site', status: 'draft' } } },
+          })
+        );
+
+        const resolved = await new Promise((resolve) =>
+          service.resolveDependencies('proj-1', [FOUNDATION_MESSAGE_INTAKE.agentId], sidecarIds).subscribe(resolve)
+        );
+
+        expect(getStored).toHaveBeenCalledWith(FOUNDATION_MESSAGE_INTAKE.endpoints.stored, 'proj-1', true);
+        expect(resolved).toEqual({
+          [FOUNDATION_MESSAGE_INTAKE.agentId]: {
+            agentId: FOUNDATION_MESSAGE_INTAKE.agentId,
+            source: 'server',
+            version: 2,
+            document: '# Latest messaging framework',
+            storedAt: '2026-10-16T09:00:00.000Z',
+            sidecar: { fields: { 'md.tagline': { value: 'Open standards', source: 'Site', status: 'draft' } } },
+          },
+        });
+      });
+
+      it('keeps a JSON framework revision’s sidecar — the stored record the Brand Kit submits — as is, and gives its document as Markdown', async () => {
+        const content = buildFramework();
+        const sidecar = { contract: 'messaging-framework-output/v1', content, report: { sources_read: [], sources_failed: [], gaps: [], notes: '' } };
+        getStored.mockReturnValue(of({ documentMarkdown: JSON.stringify(content), format: 'json', receipt: { version: 3 }, sidecar }));
+
+        const resolved = await new Promise<Record<string, MktgDependencyDocument | null>>((resolve) =>
+          service.resolveDependencies('proj-1', [FOUNDATION_MESSAGE_INTAKE.agentId], sidecarIds).subscribe(resolve)
+        );
+
+        expect(resolved[FOUNDATION_MESSAGE_INTAKE.agentId]?.sidecar).toEqual(sidecar);
+        expect(resolved[FOUNDATION_MESSAGE_INTAKE.agentId]?.document).toBe(renderFoundationMessageMarkdown(content));
+      });
+
+      it('resolves to null on a 404 — no revision at all — and never falls back to this browser’s stored run, which carries no sidecar', async () => {
+        getStored.mockReturnValue(throwError(() => new HttpErrorResponse({ status: HttpStatusCode.NotFound, statusText: 'Not Found' })));
+        loadRun.mockReturnValue(storedRun('# Browser message foundation', FOUNDATION_MESSAGE_INTAKE.agentId));
+
+        const resolved = await new Promise((resolve) =>
+          service.resolveDependencies('proj-1', [FOUNDATION_MESSAGE_INTAKE.agentId], sidecarIds).subscribe(resolve)
+        );
+
+        expect(resolved).toEqual({ [FOUNDATION_MESSAGE_INTAKE.agentId]: null });
+        expect(loadRun).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['a 403', new HttpErrorResponse({ status: HttpStatusCode.Forbidden, statusText: 'Forbidden' })],
+        ['a 500', new HttpErrorResponse({ status: HttpStatusCode.InternalServerError, statusText: 'Server Error' })],
+        ['a network failure', new Error('network down')],
+      ])('logs and rethrows %s instead of reporting it as "no revision"', async (_label, failure) => {
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        getStored.mockReturnValue(throwError(() => failure));
+
+        const outcome = await new Promise<{ error?: unknown; value?: unknown }>((resolve) =>
+          service.resolveDependencies('proj-1', [FOUNDATION_MESSAGE_INTAKE.agentId], sidecarIds).subscribe({
+            next: (value) => resolve({ value }),
+            error: (error: unknown) => resolve({ error }),
+          })
+        );
+
+        expect(outcome).toEqual({ error: failure });
+        expect(consoleError).toHaveBeenCalledWith(
+          '[mktg-dependency] latest revision read failed',
+          expect.objectContaining({ agentId: FOUNDATION_MESSAGE_INTAKE.agentId, projectUid: 'proj-1', error: failure })
+        );
+        expect(loadRun).not.toHaveBeenCalled();
+        consoleError.mockRestore();
+      });
+
+      it('leaves the other ids of the same batch on the plain latest read', async () => {
+        getStored.mockImplementation((endpoint: string, _projectUid: string, withSidecar?: boolean) =>
+          of({ documentMarkdown: `# ${endpoint} ${withSidecar ? 'with sidecar' : 'markdown only'}`, receipt: { version: 1 } })
+        );
+
+        const resolved = await new Promise<Record<string, MktgDependencyDocument | null>>((resolve) =>
+          service.resolveDependencies('proj-1', ['brand-kit', FOUNDATION_MESSAGE_INTAKE.agentId], sidecarIds).subscribe(resolve)
+        );
+
+        expect(getStored).toHaveBeenCalledWith(BRAND_KIT_INTAKE.endpoints.stored, 'proj-1');
+        expect(resolved['brand-kit']?.document).toContain('markdown only');
+        expect(resolved[FOUNDATION_MESSAGE_INTAKE.agentId]?.document).toContain('with sidecar');
       });
     });
 

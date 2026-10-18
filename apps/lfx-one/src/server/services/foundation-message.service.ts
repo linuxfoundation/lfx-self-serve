@@ -188,9 +188,15 @@ export class FoundationMessageService {
    * included, as the JSON text of its content — which is what sibling agents
    * (the ICP) attach. Falls back to the pre-revision read path (a Markdown
    * document from before 4.0.0) when the document has no revisions yet.
+   *
+   * `withSidecar`: the same latest revision with its envelope JSON (the
+   * stored sidecar, the framework back under `content`) and date — what the
+   * Brand Kit attaches as the project's messaging framework (the latest
+   * regardless of its review status: Approve is a later item). Null when the
+   * document has no revision.
    */
-  public async getStoredFoundationMessage(req: Request, project: string): Promise<FoundationMessageStoredResponse | null> {
-    return this.documentStore.readLatest(req, this.artifactSpec, project);
+  public async getStoredFoundationMessage(req: Request, project: string, withSidecar = false): Promise<FoundationMessageStoredResponse | null> {
+    return this.documentStore.readLatest(req, this.artifactSpec, project, { withSidecar });
   }
 
   /**

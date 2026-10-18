@@ -1,8 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { GithubRepoUrlErrorReason, MktgAgentIntake, MktgIntakeField, MktgIntakeFieldFormat, MktgReadmeSkipReason } from '../interfaces';
-import { BRAND_KIT_FORM_PREAMBLE_LINES, BRAND_KIT_INTAKE_QUESTIONS } from './brand-kit.constants';
+import type { GithubRepoUrlErrorReason, MktgAgentIntake, MktgIntakeFieldFormat, MktgReadmeSkipReason } from '../interfaces';
+import {
+  BRAND_KIT_ANSWERS_ENDPOINT,
+  BRAND_KIT_FIELD_KEYS,
+  BRAND_KIT_FRAMEWORK_ANSWER_KEY,
+  BRAND_KIT_LOGO_FILE_EXTENSIONS,
+  BRAND_KIT_MAX_LOGO_FILE_CHARS,
+  BRAND_KIT_MAX_LOGO_FILES,
+  BRAND_KIT_MAX_LOGO_PAYLOAD_CHARS,
+  BRAND_KIT_REQUIRED_HEADINGS,
+} from './brand-kit.constants';
 import {
   FOUNDATION_MESSAGE_ANSWER_MAX_CHARS,
   FOUNDATION_MESSAGE_ANSWERS_ENDPOINT,
@@ -29,76 +38,128 @@ import { ICP_FORM_PREAMBLE_LINES, ICP_GAP_FILL_QUESTIONS, ICP_Q_GITHUB_URL, ICP_
 // labels, browser persistence key, and result polling cadence.
 
 /**
- * Presentation layered onto Paul's verbatim brand-kit questions — control
- * kind, sizing, LFX prefill sources, and hints. Keyed by the question keys of
- * `BRAND_KIT_INTAKE_QUESTIONS`; the question wording itself is deliberately
- * NOT restated here (single verbatim copy, dec-paul-prompt-fidelity).
- */
-const BRAND_KIT_FIELD_PRESENTATION: Record<(typeof BRAND_KIT_INTAKE_QUESTIONS)[number]['key'], Omit<MktgIntakeField, 'key' | 'question'>> = {
-  project_name: { kind: 'text', prefill: 'project-name' },
-  // Q2 asks for the repo or README URL. The Brand Kit BFF passes the answer
-  // to the agent as text and fetches no README from it, so a GitHub
-  // organization URL (e.g. https://github.com/opensearch-project) is a usable
-  // answer too — accepted here (hand test, 2026-10-12); only a value that is
-  // not a GitHub URL at all is refused.
-  github_url: { kind: 'text', prefill: 'repository-url', format: 'github-url' },
-  one_line_description: {
-    kind: 'text',
-    prefill: 'project-description',
-    missingPrefillHint: 'Not set on your LFX project — describe it in your own words.',
-  },
-  primary_audience: { kind: 'textarea', rows: 2 },
-  voice_adjectives: { kind: 'text', placeholder: 'In your own words — statements are fine too' },
-  constraints: { kind: 'textarea', rows: 2 },
-  reference_brands: { kind: 'textarea', rows: 2 },
-};
-
-/**
- * Brand Kit Agent batch intake. The seven questions are DERIVED from
- * `BRAND_KIT_INTAKE_QUESTIONS` — Paul's intake wording quoted verbatim from
- * the brand-kit agent's own `src/questions.ts` (marketing-os-agents
- * `agents/brand-kit-ts`), never paraphrased and never duplicated — with the
- * form presentation layered on top. The batch preamble is the same
- * `BRAND_KIT_FORM_PREAMBLE_LINES` the BFF's `renderBrandKitFormMessage` sends,
- * so the agent's MODE RULES trigger identically for regeneration follow-ups.
+ * Brand Kit intake (marketing-os-agents agents/brand-kit 2.1.0,
+ * wi-brand-kit-page). The form asks for what a kit cannot be sourced
+ * without: the project (from LFX), the website the agent reads for its CSS
+ * and typeface, the logo files (SVG, PNG or ZIP, read in the browser and
+ * sent with the form; or a link the agent fetches), an existing brand page
+ * and notes. There are no questions on this form: after inspecting the
+ * artwork and reading the site, the agent asks only the gaps it could not
+ * settle — the logo files when none were uploaded, the colours, the
+ * typeface — each with a suggested answer, on the same run
+ * (`endpoints.answers`).
+ *
+ * The kit runs AFTER the messaging framework (the plugin's run order:
+ * messaging framework, then brand kit): the project's LATEST stored
+ * messaging framework revision is attached automatically — the chip names
+ * it with its version and date and links to the Messaging Framework page —
+ * and its JSON always goes to the agent, whose Voice chapter comes from it.
+ * The latest revision regardless of its review status (product decision,
+ * 17 Oct 2026: LFX One has no Approve action yet, so an approved-only gate
+ * could never open; Approve is a later item). A project with no framework
+ * revision at all cannot run the agent: the Run button is disabled with
+ * "Run the messaging framework first" and that link. Nor can one whose
+ * latest revision carries no voice the agent can read (positioning and
+ * tagline both still "tbd", or a restored revision without its sidecar):
+ * the same rule the BFF validator applies, so Run is disabled with the
+ * attachment's `incompleteNote` and that link instead of a 400 the user
+ * could never retry out of. The attachment is required and server-only, so
+ * no site-derived voice ever stands in. The agent itself (2.1.0) refuses a
+ * run without a framework up front; that reply, should it ever come, is
+ * shown as the run's outcome.
+ *
+ * The result is a JSON kit, not a Markdown document: the run page renders it
+ * with the kit view (the six chapters as the reference kit's 16 pages,
+ * printed with Download PDF). Every submission is a fresh generate
+ * (`freshRunPerSubmission`); each result is stored as a new revision of the
+ * project's Brand Kit document, whose Markdown rendering is what sibling
+ * agents attach.
  */
 export const BRAND_KIT_INTAKE: MktgAgentIntake = {
   agentId: 'brand-kit',
-  formTitleAction: 'Develop',
+  formTitleAction: 'Build',
   documentName: 'Brand Kit',
   intro:
-    'Seven questions, answered in your own words. Fields marked “From LFX” are pre-filled from your project — edit anything. Logos, colors, and fonts are generated for you; they are not inputs.',
-  batchPreamble: [...BRAND_KIT_FORM_PREAMBLE_LINES],
-  fields: BRAND_KIT_INTAKE_QUESTIONS.map((question) => ({
-    key: question.key,
-    question: question.question,
-    ...BRAND_KIT_FIELD_PRESENTATION[question.key],
-  })),
-  sections: [
-    'Review Sheet',
-    'How to Use This Document',
-    '1. Project Definition',
-    '2. Positioning',
-    '3. Voice & Language',
-    '4. Primary Audiences',
-    '5. Key Brand Strengths',
-    '6. Competitive Differentiation & Guardrails',
-    '7. Visual Identity — Five Components',
-    '8. Tagline Options (Starter Set)',
-    'Appendix A: Document Architecture',
-    'Appendix B: Source Intake',
-    'Appendix C: LFX Project Record & Research Sweep',
+    'Upload the logo files and give the agent the website: it inspects the artwork, reads the site’s CSS and the brand page, sources every colour, and comes back with questions only for what is still open — each with a suggested answer to accept or edit. Your project’s latest Messaging Framework is attached automatically; the Voice chapter comes from it. The kit is laid out as a 16-page book you can print to PDF. Every result is stored as a new revision in Documents.',
+  // Never sent: the generate endpoint renders the agent's own intake form
+  // server-side, and with fresh runs there is no chat follow-up to prefix.
+  batchPreamble: [],
+  fields: [
+    { key: BRAND_KIT_FIELD_KEYS.projectName, question: 'Project name', kind: 'text', prefill: 'project-name' },
+    {
+      key: BRAND_KIT_FIELD_KEYS.websiteUrl,
+      question: 'Website',
+      kind: 'text',
+      placeholder: 'https://…',
+      hint: 'The agent reads the home page, its CSS and the font links for the typeface and the colours.',
+      format: 'https-url',
+    },
+    {
+      key: BRAND_KIT_FIELD_KEYS.brandPageUrl,
+      question: 'Brand page or guidelines',
+      kind: 'text',
+      optional: true,
+      placeholder: 'https://… or none',
+      hint: 'Published palette values and the named typeface win over what the agent infers.',
+      format: 'source-url',
+    },
+    {
+      key: BRAND_KIT_FIELD_KEYS.notes,
+      question: 'Notes',
+      kind: 'textarea',
+      rows: 3,
+      optional: true,
+      placeholder: 'Audience, words to avoid, anything the agent should know',
+    },
   ],
+  fieldGroups: [
+    {
+      id: 'sources',
+      title: 'The project and its site',
+      hint: 'links only — the agent reads them itself',
+      fieldKeys: [BRAND_KIT_FIELD_KEYS.projectName, BRAND_KIT_FIELD_KEYS.websiteUrl, BRAND_KIT_FIELD_KEYS.brandPageUrl, BRAND_KIT_FIELD_KEYS.notes],
+    },
+  ],
+  logoFiles: {
+    title: 'Logo files',
+    hint: 'the horizontal lockup, the stacked lockup and the symbol',
+    footnote: `SVG, PNG or ZIP, up to ${BRAND_KIT_MAX_LOGO_FILES} files — read here and sent with the form. A file too big to send, or one on the site, goes as a link (SVG only); the agent fetches it. With no file, the agent asks for them. The kit never draws or reconstructs a mark.`,
+    maxFiles: BRAND_KIT_MAX_LOGO_FILES,
+    maxFileChars: BRAND_KIT_MAX_LOGO_FILE_CHARS,
+    maxPayloadChars: BRAND_KIT_MAX_LOGO_PAYLOAD_CHARS,
+    fileExtensions: [...BRAND_KIT_LOGO_FILE_EXTENSIONS],
+  },
+  // The messaging framework, required: the LATEST stored revision of the
+  // project's messaging framework document (approved or not — Approve is a
+  // later item), submitted as its JSON under the agent's own form key. Not
+  // in the catalog's `dependsOn` on purpose — the marketplace card stays
+  // open and the intake page itself says what is needed, with the link to
+  // the Messaging Framework page.
+  attachments: [
+    {
+      sourceAgentId: 'foundation-setup',
+      answerKey: BRAND_KIT_FRAMEWORK_ANSWER_KEY,
+      documentName: 'Messaging Framework',
+      format: 'json',
+      incompleteNote: 'The messaging framework has no positioning or tagline yet — finish it first.',
+    },
+  ],
+  freshRunPerSubmission: true,
+  liveActivity: true,
+  submitsProject: true,
+  fullWidth: true,
+  sections: BRAND_KIT_REQUIRED_HEADINGS.map((heading) => heading.replace(/^## /, '')),
   endpoints: {
     generate: '/api/mktg-agents/brand-kit/generate',
     result: '/api/mktg-agents/brand-kit/result',
+    answers: BRAND_KIT_ANSWERS_ENDPOINT,
     stored: '/api/mktg-agents/brand-kit/stored',
   },
-  // The result endpoint writes every validated document to the project's
-  // storage partition and reports the receipt (dec-brand-kit-storage-v2), so a
-  // receipt-less ready result is a failed write the run shell must retry —
-  // without the server copy, this agent's own dependents stay locked for every
-  // browser but the one that generated the kit.
+  // The result endpoint stores every validated kit as a revision of the
+  // project's Brand Kit document and reports the receipt, so a receipt-less
+  // ready result is a failed write the run shell must retry — without the
+  // server copy, this agent's dependents stay locked for every browser but
+  // the one that generated the kit.
   persistsDocument: true,
 };
 
@@ -422,6 +483,9 @@ export const MKTG_INTAKE_FORMAT_ERRORS: Record<MktgIntakeFieldFormat, Partial<Re
   'source-url-list': {
     unrecognized: 'Every link must be a full link, starting with https://.',
   },
+  'https-url': {
+    unrecognized: 'Enter the full link, starting with https://.',
+  },
 };
 
 /**
@@ -546,23 +610,6 @@ export const MKTG_RUN_POLL = {
 } as const;
 
 /**
- * Result-polling cadence for the STANDALONE Brand Kit intake form. Separate
- * from {@link MKTG_RUN_POLL} because the two surfaces bound the wait
- * differently — the run shell holds a wall-clock deadline while this form
- * counts attempts — but it lives here, not as module-level state inside
- * `apps/lfx-one`, so the cadence is reviewable next to the run shell's and
- * both stay in the shared package where the repo's constants belong.
- */
-export const MKTG_BRAND_KIT_FORM_POLL = {
-  /** Interval between result polls. */
-  intervalMs: 10000,
-  /** Poll budget for one generation (~5 minutes at the interval above). */
-  maxAttempts: 30,
-  /** Consecutive transient poll failures tolerated before giving up. */
-  maxConsecutiveErrors: 3,
-} as const;
-
-/**
  * Extra result polls spent in the background when a persisting agent's ready
  * result arrives WITHOUT its persistence receipt (dec-brand-kit-storage-v2).
  * Each poll re-runs the idempotent content-addressed server-side write, so a
@@ -570,7 +617,6 @@ export const MKTG_BRAND_KIT_FORM_POLL = {
  * document itself is already displayed, so this never delays the user.
  * Bounded because the condition can also be permanent (bucket intentionally
  * unconfigured, document over the size cap) and must not poll for the full
- * generation budget. ONE policy for every Brand Kit surface — the form-first
- * run shell and the standalone intake form.
+ * generation budget.
  */
 export const MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS = 3;

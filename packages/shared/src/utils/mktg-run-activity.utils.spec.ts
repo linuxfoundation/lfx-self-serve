@@ -108,6 +108,31 @@ describe('buildMktgRunActivity — the live feed from a real session', () => {
     };
     expect(buildMktgRunActivity(['not json', JSON.stringify(unknown)])).toEqual([]);
   });
+
+  it('names a Brand Kit run by its own sentences, not the framework’s', () => {
+    const toolCall = (createdAt: string, name: string): string =>
+      JSON.stringify({
+        type: 'llm_done',
+        created_at: createdAt,
+        body: `data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_x","name":"${name}","input":{}}}`,
+      });
+    const brandKitRun = [
+      toolCall('2026-10-16T08:00:00Z', 'inspect_logo_files'),
+      JSON.stringify({
+        type: 'agent_notification_progress',
+        created_at: '2026-10-16T08:01:00Z',
+        content: { type: 'text', data: 'BRAND KIT — QUESTIONS (brand-kit-questions/v1)' },
+      }),
+      JSON.stringify({ type: 'llm_start', created_at: '2026-10-16T08:02:00Z' }),
+      toolCall('2026-10-16T08:03:00Z', 'finalize_brand_kit'),
+      JSON.stringify({ type: 'llm_start', created_at: '2026-10-16T08:04:00Z' }),
+    ];
+    expect(buildMktgRunActivity(brandKitRun).map((step) => [step.kind, step.label, step.status])).toEqual([
+      ['reading', 'Inspecting the logo files', 'done'],
+      ['writing', 'Writing the document', 'done'],
+      ['checking', 'Checking the document against the template', 'done'],
+    ]);
+  });
 });
 
 describe('mktgRunActivityReadingLabel', () => {

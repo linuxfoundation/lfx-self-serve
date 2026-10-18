@@ -7,7 +7,7 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
+import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import {
   FOUNDATION_MESSAGE_ANSWER_MAX_CHARS,
   FOUNDATION_MESSAGE_READ_REASONS,
@@ -17,6 +17,8 @@ import {
   MKTG_README_SKIP_NOTES,
 } from '@lfx-one/shared/constants';
 import {
+  MktgAgent,
+  MktgAgentIntake,
   MktgAnswerMemory,
   MktgDependencyDocument,
   MktgDocumentExtractResponse,
@@ -36,15 +38,61 @@ import { MktgAnswerMemoryService } from '@services/mktg-answer-memory.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgIntakeDocumentsService } from '@services/mktg-intake-documents.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { brandKitTestRevision } from '@shared/testing/brand-kit-test-data';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { concat, from, NEVER, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { BrandKitViewComponent } from '../brand-kit-view/brand-kit-view.component';
 import { MktgIntakeDocumentsComponent } from '../mktg-intake-documents/mktg-intake-documents.component';
+import { MktgIntakeLogoFilesComponent } from '../mktg-intake-logo-files/mktg-intake-logo-files.component';
 import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questions.component';
 import { MktgAgentRunComponent } from './mktg-agent-run.component';
+
+/**
+ * A fixture agent for the shell's OWN logic — the LFX prefill sources, a
+ * format rule, the section checklist, the chat follow-up path — registered
+ * in the catalog for this spec only. No shipping intake carries every one of
+ * those shapes any more (the Brand Kit became a logo-upload form with a JSON
+ * kit for a result), and the shell's behaviour is what these cases lock, not
+ * any one agent's form.
+ */
+const SHELL_AGENT: MktgAgent = {
+  id: 'shell-fixture',
+  number: 99,
+  name: 'Shell Fixture Agent',
+  tags: ['Fixture'],
+  status: 'active',
+  description: 'A fixture.',
+  icon: 'fa-light fa-flask',
+  accent: 'gray',
+  guildAgentHandle: 'shell-fixture',
+};
+const SHELL_INTAKE: MktgAgentIntake = {
+  agentId: SHELL_AGENT.id,
+  formTitleAction: 'Develop',
+  documentName: 'Fixture Document',
+  intro: 'A fixture intake.',
+  batchPreamble: ['BATCH INTAKE SUBMISSION (fixture).'],
+  fields: [
+    { key: 'project_name', question: "What's the name of the LF project?", kind: 'text', prefill: 'project-name' },
+    { key: 'github_url', question: "What's the URL of the project's GitHub repo or README?", kind: 'text', prefill: 'repository-url', format: 'github-url' },
+    {
+      key: 'one_line_description',
+      question: 'One-line description — what does it do, beyond the name?',
+      kind: 'text',
+      prefill: 'project-description',
+      missingPrefillHint: 'Not set on your LFX project — describe it in your own words.',
+    },
+    { key: 'voice_adjectives', question: 'Three adjectives for the voice you want?', kind: 'textarea', rows: 2 },
+  ],
+  sections: ['Review Sheet', 'How to Use This Document', '1. Project Definition', '2. Positioning', 'Appendix A: Document Architecture'],
+  endpoints: { generate: '/api/mktg-agents/shell-fixture/generate', result: '/api/mktg-agents/shell-fixture/result' },
+};
+MKTG_AGENTS.push(SHELL_AGENT);
+MKTG_AGENT_INTAKES[SHELL_AGENT.id] = SHELL_INTAKE;
 
 /**
  * Locks the run page's own logic — the pieces the service spec cannot see:
@@ -80,7 +128,7 @@ describe('MktgAgentRunComponent', () => {
   let readFile: ReturnType<typeof vi.fn>;
 
   const storedRun = (projectUid: string, document: string, answers: Record<string, string>): MktgStoredAgentRun => ({
-    agentId: 'brand-kit',
+    agentId: SHELL_AGENT.id,
     projectUid,
     sessionId: `sess-${projectUid}`,
     ownerToken: `token-${projectUid}`,
@@ -104,7 +152,7 @@ describe('MktgAgentRunComponent', () => {
     return { icon: row.querySelector('i')?.className ?? '', sr: row.querySelector('.sr-only')?.textContent?.trim() ?? '' };
   };
 
-  const configure = async (platformId: 'browser' | 'server' = 'browser', agentId = 'brand-kit'): Promise<void> => {
+  const configure = async (platformId: 'browser' | 'server' = 'browser', agentId = SHELL_AGENT.id): Promise<void> => {
     activeContext = signal<ProjectContext | null>(null);
     userSignal = signal<User | null>({ sub: 'auth0|user-1' } as User);
     storedRuns = {};
@@ -263,7 +311,7 @@ describe('MktgAgentRunComponent', () => {
       rememberedAnswers = {
         'proj-1': {
           project_name: { value: 'Reused Name', agentId: 'foundation-setup', savedAt: '2026-08-20T00:00:00.000Z' },
-          voice_adjectives: { value: 'confident, technical', agentId: 'brand-kit', savedAt: '2026-08-20T00:00:00.000Z' },
+          voice_adjectives: { value: 'confident, technical', agentId: SHELL_AGENT.id, savedAt: '2026-08-20T00:00:00.000Z' },
         },
       };
       activeContext.set(PROJECT_1);
@@ -282,7 +330,7 @@ describe('MktgAgentRunComponent', () => {
       // describe their project right next to the description it just filled.
       projects = { 'proj-one': { repository_url: '', description: '' } };
       rememberedAnswers = {
-        'proj-1': { one_line_description: { value: 'A runtime for agents.', agentId: 'brand-kit', savedAt: '2026-08-20T00:00:00.000Z' } },
+        'proj-1': { one_line_description: { value: 'A runtime for agents.', agentId: SHELL_AGENT.id, savedAt: '2026-08-20T00:00:00.000Z' } },
       };
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
@@ -329,7 +377,7 @@ describe('MktgAgentRunComponent', () => {
     it('brings the LFX-empty hint back when the answer it stood down for is cleared', async () => {
       projects = { 'proj-one': { repository_url: '', description: '' } };
       rememberedAnswers = {
-        'proj-1': { one_line_description: { value: 'A runtime for agents.', agentId: 'brand-kit', savedAt: '2026-08-20T00:00:00.000Z' } },
+        'proj-1': { one_line_description: { value: 'A runtime for agents.', agentId: SHELL_AGENT.id, savedAt: '2026-08-20T00:00:00.000Z' } },
       };
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
@@ -405,7 +453,7 @@ describe('MktgAgentRunComponent', () => {
 
       expect(rememberAnswers).toHaveBeenCalledWith(
         'proj-1',
-        'brand-kit',
+        SHELL_AGENT.id,
         expect.objectContaining({ github_url: 'https://github.com/example-org/example-repo', project_name: 'answer for project_name' })
       );
     });
@@ -562,7 +610,7 @@ describe('MktgAgentRunComponent', () => {
       activeContext.set(PROJECT_2);
       await fixture.whenStable();
 
-      expect(loadRun).toHaveBeenCalledWith('proj-2', 'brand-kit');
+      expect(loadRun).toHaveBeenCalledWith('proj-2', SHELL_AGENT.id);
       expect(query('mktg-agent-run-result')).toBeNull();
       expect(query('mktg-agent-run-form')).not.toBeNull();
       expect(component['intakeForm'].getRawValue()).toMatchObject({ project_name: 'Project Two' });
@@ -578,7 +626,385 @@ describe('MktgAgentRunComponent', () => {
    * GitHub URL at all is refused. The ICP block below keeps refusing the
    * same account URL, because its BFF needs a repository README.
    */
-  describe('Brand Kit — github_url accepts an organization URL', () => {
+  describe('Brand Kit — the logo files and the kit', () => {
+    /** The project's latest stored messaging framework revision — approved or not — as the dependency service resolves it. */
+    const latestFramework: MktgDependencyDocument = {
+      agentId: 'foundation-setup',
+      source: 'server',
+      version: 2,
+      document: '# Project One Messaging Framework',
+      storedAt: '2026-10-17T09:00:00.000Z',
+      sidecar: {
+        contract: 'messaging-document-output/v1',
+        fields: { 'md.tagline': { value: 'Open standards for orbital computing', source: 'Site', status: 'approved' } },
+      },
+    };
+
+    beforeEach(async () => configure('browser', 'brand-kit'));
+
+    it('asks for the project, the website, the brand page and notes, offers the logo-files section, and submits the files with the form', async () => {
+      dependencyDocs = { 'proj-1:foundation-setup': latestFramework };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(Object.keys(component['intakeForm'].controls)).toEqual(['project_name', 'website_url', 'brand_page_url', 'notes']);
+      expect(fixture.debugElement.query(By.directive(MktgIntakeLogoFilesComponent))).not.toBeNull();
+      expect(query('mktg-intake-documents')).toBeNull();
+      // The page spans the whole width: the result is laid out as pages.
+      expect(query('mktg-agent-run-page')?.className).toContain('w-full');
+      expect(query('mktg-agent-run-page')?.className).not.toContain('container');
+
+      component['intakeForm'].controls['website_url'].setValue('none');
+      await fixture.whenStable();
+      expect(fieldError('website_url')?.textContent).toContain('https://');
+      expect(component['submitDisabled']()).toBe(true);
+
+      component['intakeForm'].controls['website_url'].setValue('https://one.example.org');
+      component['logoFiles'].set([{ id: 'svg-1', file: { name: 'logo.svg', text: '<svg/>' }, badge: 'SVG', status: '1 KB, sent as text' }]);
+      component['logoFilesBusy'].set(true);
+      expect(component['submitDisabled']()).toBe(true);
+      component['logoFilesBusy'].set(false);
+      await fixture.whenStable();
+      expect(component['submitDisabled']()).toBe(false);
+
+      component['onSubmit']();
+      await fixture.whenStable();
+      const request = generate.mock.calls[0][0] as MktgGenerateRequest;
+      // The latest messaging framework always goes with the form, as its JSON.
+      expect(request.answers).toEqual({
+        project_name: 'Project One',
+        website_url: 'https://one.example.org',
+        messaging_framework: JSON.stringify(latestFramework.sidecar),
+      });
+      expect(request.logoFiles).toEqual([{ name: 'logo.svg', text: '<svg/>' }]);
+    });
+
+    it('shows the live feed, then the questions, on their own — no document title, status chip or kit until there is a kit', async () => {
+      dependencyDocs = { 'proj-1:foundation-setup': latestFramework };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      component['intakeForm'].controls['website_url'].setValue('https://one.example.org');
+      await fixture.whenStable();
+      const questions = new Subject<MktgGenerateProgress>();
+      generate.mockReturnValue(
+        concat(
+          from<MktgGenerateProgress[]>([
+            { type: 'submitted' },
+            {
+              type: 'activity',
+              activity: [{ id: 'step-1', kind: 'reading', label: 'Inspecting the logo files', status: 'running', startedAt: '2026-10-18T08:00:00Z' }],
+            },
+          ]),
+          questions
+        )
+      );
+
+      component['onSubmit']();
+      await fixture.whenStable();
+
+      expect(component['phase']()).toBe('running');
+      expect(query('mktg-agent-run-live')?.querySelector('[data-testid="mktg-run-activity-step-step-1"]')?.textContent).toContain('Inspecting the logo files');
+      expect(query('mktg-agent-run-doc-title')).toBeNull();
+      expect(query('mktg-agent-run-doc-status')).toBeNull();
+      expect(query('mktg-agent-run-brand-kit')).toBeNull();
+      expect(query('mktg-agent-run-result')).toBeNull();
+
+      questions.next({
+        type: 'questions',
+        pending: {
+          attempt: { session: { agentId: 'brand-kit', sessionId: 'sess-bk', ownerToken: 'token-bk' }, priorVersion: 0 },
+          questionsId: 'bk123456',
+          questions: [
+            { key: 'colors', label: 'Colors', question: 'Which colours are the brand’s?', why: 'The CSS names none.', suggestedAnswer: '#F37625', basis: [] },
+          ],
+        },
+      });
+      await fixture.whenStable();
+
+      expect(component['phase']()).toBe('questions');
+      expect(query('mktg-agent-run-questions')).not.toBeNull();
+      expect(query('mktg-agent-run-live')).toBeNull();
+      expect(query('mktg-agent-run-doc-title')).toBeNull();
+      expect(query('mktg-agent-run-brand-kit')).toBeNull();
+    });
+
+    it('attaches a framework stored as JSON — the envelope the BFF serves, the framework under `content` — and submits it as is', async () => {
+      const jsonFramework: MktgDependencyDocument = {
+        agentId: 'foundation-setup',
+        source: 'server',
+        version: 3,
+        document: JSON.stringify({
+          mf: { positioning: 'For platform teams.', tagline: 'Release, open.' },
+          icp: [],
+          mh: { umbrella: 'For platform teams.', line: 'Release, open.' },
+          nums: [],
+        }),
+        storedAt: '2026-10-18T09:00:00.000Z',
+        sidecar: {
+          contract: 'messaging-framework-output/v1',
+          content: {
+            mf: { positioning: 'For platform teams.', tagline: 'Release, open.' },
+            icp: [],
+            mh: { umbrella: 'For platform teams.', line: 'Release, open.' },
+            nums: [],
+          },
+          report: { sources_read: [], sources_failed: [], gaps: [], notes: '' },
+        },
+      };
+      dependencyDocs = { 'proj-1:foundation-setup': jsonFramework };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      component['intakeForm'].controls['website_url'].setValue('https://one.example.org');
+      await fixture.whenStable();
+
+      expect(query('mktg-agent-run-attachment-foundation-setup')?.textContent?.replace(/\s+/g, ' ')).toContain('Uses the latest messaging framework · v3');
+      expect(query('mktg-agent-run-missing-dependency')).toBeNull();
+      expect(component['submitDisabled']()).toBe(false);
+
+      component['onSubmit']();
+      await fixture.whenStable();
+
+      expect((generate.mock.calls[0][0] as MktgGenerateRequest).answers['messaging_framework']).toBe(JSON.stringify(jsonFramework.sidecar));
+    });
+
+    describe('the latest messaging framework — the run order is the framework first, then the kit', () => {
+      const fillRequired = (): void => {
+        component['intakeForm'].controls['website_url'].setValue('https://one.example.org');
+      };
+
+      it('resolves the framework from the server’s latest revision with its sidecar — approved or not, never this browser’s run', async () => {
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+
+        expect(resolveDependencies).toHaveBeenCalledWith('proj-1', ['foundation-setup'], ['foundation-setup']);
+      });
+
+      it('shows the attached revision — "Uses the latest messaging framework · v2 · 17 Oct", linking to its page — and never asks for it on the form', async () => {
+        const router = TestBed.inject(Router);
+        const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+        dependencyDocs = { 'proj-1:foundation-setup': latestFramework };
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+
+        const chip = query('mktg-agent-run-attachment-foundation-setup');
+        expect(chip?.textContent?.replace(/\s+/g, ' ')).toContain('Uses the latest messaging framework · v2 · 17 Oct');
+        expect(chip?.textContent).not.toContain('approved');
+        expect(host().querySelector('[data-test="mktg-intake-messaging_framework"]')).toBeNull();
+        expect(query('mktg-agent-run-missing-dependency')).toBeNull();
+        expect(query('mktg-agent-run-missing-dependency-link')).toBeNull();
+
+        (chip as HTMLButtonElement | null)?.click();
+
+        expect(navigate).toHaveBeenCalledWith(['..', 'foundation-setup'], expect.objectContaining({ queryParamsHandling: 'preserve' }));
+      });
+
+      it('disables Run with "Run the messaging framework first" and links to the Messaging Framework page only when the project has no revision at all', async () => {
+        const router = TestBed.inject(Router);
+        const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+        fillRequired();
+        await fixture.whenStable();
+
+        expect(component['submitDisabled']()).toBe(true);
+        expect(query('mktg-agent-run-submit-button')?.querySelector('button')?.disabled).toBe(true);
+        expect(query('mktg-agent-run-missing-dependency')?.textContent).toContain('Run the messaging framework first');
+        expect(query('mktg-agent-run-attachment-foundation-setup')).toBeNull();
+        const link = query('mktg-agent-run-missing-dependency-link');
+        expect(link?.textContent).toContain('Open the Messaging Framework page');
+
+        link?.querySelector('button')?.click();
+
+        expect(navigate).toHaveBeenCalledWith(['..', 'foundation-setup'], expect.objectContaining({ queryParamsHandling: 'preserve' }));
+        component['onSubmit']();
+        expect(generate).not.toHaveBeenCalled();
+      });
+
+      /**
+       * The latest revision exists but the agent can read no voice from it
+       * — the same rule the BFF validator applies, so the page stops here
+       * instead of submitting a run that would 400 on every retry.
+       */
+      const expectIncompleteFrameworkStop = (): void => {
+        expect(component['submitDisabled']()).toBe(true);
+        expect(query('mktg-agent-run-submit-button')?.querySelector('button')?.disabled).toBe(true);
+        expect(query('mktg-agent-run-missing-dependency')?.textContent).toContain(
+          'The messaging framework has no positioning or tagline yet — finish it first.'
+        );
+        expect(query('mktg-agent-run-missing-dependency')?.textContent).not.toContain('Run the messaging framework first');
+        expect(query('mktg-agent-run-missing-dependency-link')?.textContent).toContain('Open the Messaging Framework page');
+        expect(query('mktg-agent-run-attachment-foundation-setup')).toBeNull();
+        component['onSubmit']();
+        expect(generate).not.toHaveBeenCalled();
+      };
+
+      it('stops with "no positioning or tagline yet — finish it first" when the latest revision has both voice fields still tbd', async () => {
+        const tbd = { value: 'Needs input', source: 'Asked', status: 'tbd' };
+        dependencyDocs = {
+          'proj-1:foundation-setup': {
+            ...latestFramework,
+            sidecar: { contract: 'messaging-document-output/v1', fields: { 'md.positioning': tbd, 'md.tagline': tbd } },
+          },
+        };
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+        fillRequired();
+        await fixture.whenStable();
+
+        expectIncompleteFrameworkStop();
+      });
+
+      it('stops the same way when the latest revision carries no sidecar at all (a restored legacy revision)', async () => {
+        dependencyDocs = {
+          'proj-1:foundation-setup': {
+            agentId: latestFramework.agentId,
+            source: latestFramework.source,
+            version: latestFramework.version,
+            document: latestFramework.document,
+            storedAt: latestFramework.storedAt,
+          },
+        };
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+        fillRequired();
+        await fixture.whenStable();
+
+        expectIncompleteFrameworkStop();
+      });
+
+      it('shows a failed check with Try again — never "Run the messaging framework first" — when the read fails, and re-resolves from the button', async () => {
+        resolveDependencies.mockReturnValueOnce(throwError(() => new Error('503 from the BFF')));
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+        fillRequired();
+        await fixture.whenStable();
+
+        expect(component['submitDisabled']()).toBe(true);
+        expect(query('mktg-agent-run-missing-dependency')?.textContent).toContain('Could not check the project’s Messaging Framework — try again.');
+        expect(query('mktg-agent-run-missing-dependency')?.textContent).not.toContain('Run the messaging framework');
+        expect(query('mktg-agent-run-missing-dependency-link')).toBeNull();
+        expect(query('mktg-agent-run-attachment-foundation-setup')).toBeNull();
+
+        dependencyDocs = { 'proj-1:foundation-setup': latestFramework };
+        query('mktg-agent-run-dependency-retry')?.querySelector('button')?.click();
+        await fixture.whenStable();
+
+        expect(resolveDependencies).toHaveBeenCalledTimes(2);
+        expect(query('mktg-agent-run-missing-dependency')).toBeNull();
+        expect(query('mktg-agent-run-dependency-retry')).toBeNull();
+        expect(query('mktg-agent-run-attachment-foundation-setup')?.textContent).toContain('messaging framework · v2');
+        expect(component['submitDisabled']()).toBe(false);
+      });
+
+      it('reports a check that fails at submit time as such, not as a failed run', async () => {
+        dependencyDocs = { 'proj-1:foundation-setup': latestFramework };
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+        fillRequired();
+        await fixture.whenStable();
+        resolveDependencies.mockReturnValueOnce(throwError(() => new Error('503 from the BFF')));
+
+        component['onSubmit']();
+        await fixture.whenStable();
+
+        expect(generate).not.toHaveBeenCalled();
+        expect(component['phase']()).toBe('form');
+        expect(query('mktg-agent-run-error')?.textContent).toContain('Could not check the project’s Messaging Framework — try again.');
+        expect(query('mktg-agent-run-dependency-retry')).not.toBeNull();
+      });
+
+      it('stays disabled, with no note, while the framework is still resolving', async () => {
+        resolveDependencies.mockReturnValueOnce(new Subject<Record<string, MktgDependencyDocument | null>>().asObservable());
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+        fillRequired();
+        await fixture.whenStable();
+
+        expect(component['submitDisabled']()).toBe(true);
+        expect(query('mktg-agent-run-missing-dependency')).toBeNull();
+      });
+
+      it('aborts the submit honestly when the revision is gone by submit time', async () => {
+        dependencyDocs = { 'proj-1:foundation-setup': latestFramework };
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+        fillRequired();
+        await fixture.whenStable();
+        dependencyDocs = {};
+
+        component['onSubmit']();
+        await fixture.whenStable();
+
+        expect(generate).not.toHaveBeenCalled();
+        expect(component['phase']()).toBe('form');
+        expect(query('mktg-agent-run-error')?.textContent).toContain('Run the messaging framework first');
+      });
+
+      it('shows the agent’s refusal reply as the run’s outcome — back on the form, nothing stored — should the agent still refuse', async () => {
+        dependencyDocs = { 'proj-1:foundation-setup': latestFramework };
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+        fillRequired();
+        await fixture.whenStable();
+        generate.mockReturnValue(
+          from<MktgGenerateProgress[]>([
+            { type: 'submitted' },
+            {
+              type: 'refused',
+              reply:
+                'The Brand Kit request for Project One has no approved messaging framework attached, so this run was not started: nothing was read, inspected or built.',
+            },
+          ])
+        );
+
+        component['onSubmit']();
+        await fixture.whenStable();
+
+        expect(component['phase']()).toBe('form');
+        expect(query('mktg-agent-run-error')?.textContent).toContain('this run was not started');
+        expect(query('mktg-agent-run-result')).toBeNull();
+        expect(component['run']()).toBeNull();
+        expect(component['intakeForm'].controls['website_url'].value).toBe('https://one.example.org');
+      });
+    });
+
+    it('renders a stored version’s kit as the book — no Markdown preview, no .md download, no section checklist', async () => {
+      storedRuns = {
+        'proj-1:brand-kit': {
+          agentId: 'brand-kit',
+          projectUid: 'proj-1',
+          sessionId: 'sess-bk',
+          ownerToken: 'token-bk',
+          answers: { project_name: 'Project One', website_url: 'https://one.example.org' },
+          versions: [{ version: 1, document: '# Project One Brand Kit', brandKit: brandKitTestRevision(), createdAt: '2026-10-17T00:00:00.000Z' }],
+          savedAt: new Date().toISOString(),
+        },
+      };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(query('mktg-agent-run-result')).not.toBeNull();
+      expect(query('mktg-agent-run-brand-kit')).not.toBeNull();
+      expect(fixture.debugElement.query(By.directive(BrandKitViewComponent))).not.toBeNull();
+      expect(query('mktg-agent-run-view-button')).toBeNull();
+      expect(query('mktg-agent-run-download-button')).toBeNull();
+      expect(query('mktg-agent-run-doc-preview')).toBeNull();
+      expect(query('mktg-agent-run-sections')?.className).toContain('hidden');
+      // The book: 16 pages, the cover first, the palette with every colour sourced, the contrast table, the voice.
+      expect(host().querySelectorAll('.lfx-brand-kit-page')).toHaveLength(16);
+      expect(query('brand-kit-page-cover')?.textContent).toContain('Brand Kit');
+      expect(query('brand-kit-swatch-F37625')?.textContent).toContain('From the site’s CSS — https://one.example.org');
+      expect(query('brand-kit-contrast-0')?.textContent).toContain('8.3:1');
+      expect(query('brand-kit-page-voice')?.textContent).toContain('Where organizations fund Project One.');
+      // The later item shows, inert.
+      expect(query('brand-kit-view-export-slides')?.querySelector('button')?.disabled).toBe(true);
+      // A kit is revised from edited inputs, never from a feedback box.
+      expect(query('mktg-agent-run-regenerate-button')).toBeNull();
+      expect(query('mktg-agent-run-new-run')).not.toBeNull();
+    });
+  });
+
+  describe('github_url format rule — an organization URL is a usable answer', () => {
     beforeEach(async () => configure());
 
     const fillAll = (githubUrl: string): void => {
@@ -1400,7 +1826,8 @@ describe('MktgAgentRunComponent', () => {
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
 
-      expect(resolveDependencies).toHaveBeenCalledWith('proj-1', expect.arrayContaining(['brand-kit', 'foundation-setup']));
+      // Neither optional attachment is approved-only: both resolve to the latest stored document.
+      expect(resolveDependencies).toHaveBeenCalledWith('proj-1', expect.arrayContaining(['brand-kit', 'foundation-setup']), []);
     });
 
     it('omits the four optional gap-fill answers when left blank', async () => {

@@ -141,4 +141,13 @@ export interface MktgArtifactStoredResponse {
   receipt: MktgArtifactPersistReceipt;
   /** ISO-8601 timestamp the object was stored (S3 LastModified), when the store reports one. */
   storedAt?: string;
+  /**
+   * The revision's sidecar JSON — the envelope's structured fields — on a
+   * sidecar read (`?sidecar=true`: the latest stored revision with it),
+   * which is what a consumer attaching the document as JSON needs. The
+   * plain latest read carries the Markdown only: a Brand Kit sidecar holds
+   * the logo artwork, and the marketplace resolves every dependency on
+   * every load.
+   */
+  sidecar?: Record<string, unknown> | null;
 }

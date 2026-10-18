@@ -189,7 +189,12 @@ export interface MktgRevisionResponse extends MktgDocumentDetailResponse {
   revision: MktgRevisionSummary;
   /** The content text: the Markdown document, or the JSON text of the asset when `revision.format` is `json`. */
   markdown: string;
-  /** The rest of the envelope the revision was stored from (the report, the inputs record …); null for a migrated revision. */
+  /**
+   * The revision's sidecar — the envelope's structured fields — when the
+   * stored record has one; null for a migrated revision. The Brand Kit view
+   * renders the kit from it; the framework view reads the report and the
+   * inputs record from it.
+   */
   sidecar: Record<string, unknown> | null;
 }
 
