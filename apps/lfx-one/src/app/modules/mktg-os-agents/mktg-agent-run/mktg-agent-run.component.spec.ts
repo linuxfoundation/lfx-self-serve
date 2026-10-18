@@ -988,9 +988,11 @@ describe('MktgAgentRunComponent', () => {
 
         expect(component['phase']()).toBe('running');
         expect(query('mktg-agent-run-asset')).not.toBeNull();
-        expect(query('mktg-framework-view-title')?.textContent).toContain('Project One Messaging framework');
-        expect(query('mktg-framework-view-state')?.textContent).toContain('Generating');
-        expect(query('mktg-framework-view-generating')?.querySelector('[data-testid="mktg-run-activity-title"]')?.textContent).toContain('Researching');
+        // The live page is the feed alone (hand test, 18 Oct): no document title, status chip or tabs until there is a document.
+        expect(query('mktg-framework-view')).toBeNull();
+        expect(query('mktg-framework-view-title')).toBeNull();
+        expect(query('mktg-framework-view-tabs')).toBeNull();
+        expect(query('mktg-agent-run-live')?.querySelector('[data-testid="mktg-run-activity-title"]')?.textContent).toContain('Researching');
         expect(query('mktg-run-activity-step-step-1')?.textContent).toContain('Reading testorbit.example.org');
         expect(query('mktg-run-activity-step-step-2')?.textContent).toContain('“TestOrbit adopters”');
         expect(query('mktg-run-activity-status')?.textContent).toContain('Searching the web');
@@ -1000,7 +1002,7 @@ describe('MktgAgentRunComponent', () => {
       });
     });
 
-    describe('the questions step — after research, only the gaps, one at a time inside the asset view, each answer starting as the suggestion', () => {
+    describe('the questions step — after research, only the gaps, one at a time on their own page, each answer starting as the suggestion', () => {
       const stepper = (): MktgRunQuestionsComponent =>
         fixture.debugElement.query(By.directive(MktgRunQuestionsComponent)).componentInstance as MktgRunQuestionsComponent;
       // An lfx-button carries the test id on its host; the click has to reach the button inside.
@@ -1031,10 +1033,11 @@ describe('MktgAgentRunComponent', () => {
         await fixture.whenStable();
       });
 
-      it('asks one question at a time inside the framework shell: the question, the why, the basis links, and one box holding the suggested answer', () => {
+      it('asks one question at a time on its own page: the question, the why, the basis links, and one box holding the suggested answer', () => {
         expect(component['phase']()).toBe('questions');
-        expect(query('mktg-framework-view-state')?.textContent).toContain('Waiting for your answers');
-        expect(query('mktg-framework-view-generating')?.querySelector('[data-testid="mktg-agent-run-questions"]')).not.toBeNull();
+        // The questions page stands alone too: no document shell around it.
+        expect(query('mktg-framework-view')).toBeNull();
+        expect(query('mktg-agent-run-questions')).not.toBeNull();
         expect(query('mktg-run-questions-progress')?.textContent).toContain('Question 1 of 2');
         expect(query('mktg-run-questions-card-ranked-goals')?.textContent).toContain('Which goals matter most this year?');
         expect(query('mktg-run-questions-card-words-to-avoid')).toBeNull();

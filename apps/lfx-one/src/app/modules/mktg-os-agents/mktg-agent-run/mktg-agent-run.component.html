@@ -51,30 +51,31 @@
         }
 
         @if (assetViewActive()) {
-          <!-- ASSET VIEW: the run lands on the framework's own page — the feed and the questions while it is live, then the rendered framework. -->
+          <!-- ASSET VIEW: while the run is live the page is the feed, or the questions, on their own — no document title, status or tabs until there is a document (hand test, 18 Oct); the rendered framework takes the page once it exists. -->
           <div
             class="w-full px-6 lg:px-10 pt-6 pb-10 flex flex-col gap-4"
             [attr.data-testid]="phase() === 'result' ? 'mktg-agent-run-result' : 'mktg-agent-run-asset'">
-            <lfx-mktg-framework-view [projectName]="projectName()" [asset]="currentAsset()" [state]="frameworkState()" [version]="assetVersion()">
-              @if (phase() === 'running') {
+            @if (phase() === 'questions') {
+              <div class="bg-white border border-gray-200 rounded-xl overflow-hidden" data-testid="mktg-agent-run-questions">
+                <lfx-mktg-run-questions
+                  [questions]="pendingQuestions()"
+                  [projectName]="projectName()"
+                  [previousAnswers]="lastAnswers()"
+                  [busy]="answersSending()"
+                  (answered)="onAnswerQuestions($event)" />
+              </div>
+            } @else if (phase() === 'result') {
+              <lfx-mktg-framework-view [projectName]="projectName()" [asset]="currentAsset()" [state]="frameworkState()" [version]="assetVersion()" />
+            } @else {
+              <div class="bg-white border border-gray-200 rounded-xl overflow-hidden" data-testid="mktg-agent-run-live">
                 <lfx-mktg-run-activity
                   [activity]="activity()"
                   [title]="activityTitle()"
                   [startedAt]="activityStartedAt()"
                   [icon]="agent.icon"
                   [iconClass]="agentIconClass" />
-              }
-              @if (phase() === 'questions') {
-                <div data-testid="mktg-agent-run-questions">
-                  <lfx-mktg-run-questions
-                    [questions]="pendingQuestions()"
-                    [projectName]="projectName()"
-                    [previousAnswers]="lastAnswers()"
-                    [busy]="answersSending()"
-                    (answered)="onAnswerQuestions($event)" />
-                </div>
-              }
-            </lfx-mktg-framework-view>
+              </div>
+            }
 
             @if (phase() === 'result') {
               <!-- What the agent asked before writing this version, and what went back — stored with the version. -->
