@@ -77,14 +77,20 @@ describe('VoteReminderDialogComponent', () => {
     expect(sendButton(fixture).disabled).toBe(false);
   });
 
-  it('allows both horizontal and vertical scrolling within the recipient table height limit', async () => {
-    const { fixture } = await mount(of(RECIPIENTS));
+  it('keeps larger recipient lists scrollable within a viewport-aware height limit', async () => {
+    const recipients = Array.from({ length: 12 }, (_, index) => ({
+      uid: `r-${index + 1}`,
+      user_name: `Test Voter ${index + 1}`,
+      user_email: `user-${index + 1}@example.test`,
+    }));
+    const { fixture } = await mount(of(recipients));
     current = fixture;
     const table = byTestId(fixture, 'vote-reminder-dialog-table')!;
+    expect(table.querySelectorAll('tbody tr')).toHaveLength(12);
     expect(table.classList.contains('overflow-auto')).toBe(true);
     expect(table.classList.contains('overflow-hidden')).toBe(false);
     expect(table.classList.contains('overflow-y-auto')).toBe(false);
-    expect(table.classList.contains('max-h-80')).toBe(true);
+    expect(table.classList.contains('max-h-[min(32rem,calc(90dvh-14rem))]')).toBe(true);
   });
 
   it('layers the sticky header above the positioned recipient checkboxes', async () => {

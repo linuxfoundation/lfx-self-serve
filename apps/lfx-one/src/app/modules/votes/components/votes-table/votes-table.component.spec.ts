@@ -334,7 +334,12 @@ describe('VotesTableComponent — row More menu', () => {
 
     expect(openDialog).toHaveBeenCalledWith(
       VoteReminderDialogComponent,
-      expect.objectContaining({ header: 'Send vote reminder', modal: true, data: { vote: expect.objectContaining({ uid: 'active' }) } })
+      expect.objectContaining({
+        header: 'Send vote reminder',
+        width: 'min(960px, 96vw)',
+        modal: true,
+        data: { vote: expect.objectContaining({ uid: 'active' }) },
+      })
     );
   });
 

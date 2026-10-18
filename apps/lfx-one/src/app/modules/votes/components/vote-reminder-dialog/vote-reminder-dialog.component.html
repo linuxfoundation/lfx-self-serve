@@ -40,7 +40,8 @@
         subtitle="There is no one left to remind on this vote."></lfx-empty-state>
     </div>
   } @else {
-    <div class="border border-gray-200 rounded-lg max-h-80 overflow-auto" data-testid="vote-reminder-dialog-table">
+    <!-- Fit about 10 desktop rows while reserving viewport space for the dialog header and actions. -->
+    <div class="border border-gray-200 rounded-lg max-h-[min(32rem,calc(90dvh-14rem))] overflow-auto" data-testid="vote-reminder-dialog-table">
       <table class="w-full border-collapse text-[12.5px]">
         <thead>
           <tr class="bg-gray-50 sticky top-0 z-10">

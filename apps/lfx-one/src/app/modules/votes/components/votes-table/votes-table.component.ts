@@ -223,7 +223,7 @@ export class VotesTableComponent {
   protected openReminderDialog(vote: VoteTableRow): void {
     this.dialogService.open(VoteReminderDialogComponent, {
       header: 'Send vote reminder',
-      width: '760px',
+      width: 'min(960px, 96vw)',
       modal: true,
       closable: true,
       draggable: false,
