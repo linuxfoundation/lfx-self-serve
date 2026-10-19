@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { formatDate, isPlatformBrowser } from '@angular/common';
+import { DOCUMENT, formatDate, isPlatformBrowser } from '@angular/common';
 import { Component, computed, DestroyRef, effect, inject, input, model, output, PLATFORM_ID, signal, Signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -17,12 +17,25 @@ import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PollStatus, VOTE_LABEL, VoteResponseStatus } from '@lfx-one/shared';
 import { VoteRowParticipationState } from '@lfx-one/shared/enums';
-import { FilterPillOption, MyVotesQuickFilter, Vote, VoteFilterState, VoteStatusCounts, VoteTableRow } from '@lfx-one/shared/interfaces';
 import {
+  FilterPillOption,
+  GroupsIOMailingList,
+  MyVotesQuickFilter,
+  Vote,
+  VoteFilterState,
+  VoteMailingListReminderDialogData,
+  VoteStatusCounts,
+  VoteTableRow,
+} from '@lfx-one/shared/interfaces';
+import {
+  buildMailtoHref,
+  buildVoteMailingListReminder,
   computeVoteRowParticipation,
   getEntityCommands,
+  getMailingListEmail,
   getUserTimezone,
   getVoteEndedEarlyDetailTooltip,
+  isMailtoSafeEmail,
   isVoteEndedEarly,
   matchesMyVotesQuickFilter,
   toAbsoluteUrl,
@@ -35,6 +48,7 @@ import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 import { VoteDeadlinePipe } from '@pipes/vote-deadline.pipe';
 import { ClipboardShareService } from '@services/clipboard-share.service';
+import { MailingListService } from '@services/mailing-list.service';
 import { VoteService } from '@services/vote.service';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -42,6 +56,7 @@ import { DialogService } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
 import { combineLatest, debounceTime, distinctUntilChanged, map, startWith, take } from 'rxjs';
 
+import { VoteMailingListReminderDialogComponent } from '../vote-mailing-list-reminder-dialog/vote-mailing-list-reminder-dialog.component';
 import { VoteReminderDialogComponent } from '../vote-reminder-dialog/vote-reminder-dialog.component';
 
 @Component({
@@ -77,8 +92,10 @@ export class VotesTableComponent {
   private readonly voteService = inject(VoteService);
   private readonly clipboardShare = inject(ClipboardShareService);
   private readonly dialogService = inject(DialogService);
+  private readonly mailingListService = inject(MailingListService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly document = inject(DOCUMENT);
 
   // === Constants ===
   protected readonly voteLabel = VOTE_LABEL;
@@ -233,6 +250,12 @@ export class VotesTableComponent {
     // Managers only, and only while the vote is open — upstream rejects reminders for any other status.
     if (vote.writer === true && vote.status === PollStatus.ACTIVE) {
       items.push({ label: 'Send reminder', icon: 'fa-light fa-envelope', command: () => this.openReminderDialog(vote) });
+      items.push({
+        label: 'Reminder mailing list',
+        icon: 'fa-light fa-envelopes-bulk',
+        tooltipOptions: { tooltipLabel: 'Opens your mail app to send a reminder email to the mailing list', tooltipPosition: 'left' },
+        command: () => this.sendMailingListReminder(vote),
+      });
     }
     if (this.hasPMOAccess()) {
       items.push({ label: 'Clone', icon: 'fa-light fa-copy', command: () => this.cloneVote(vote) });
@@ -251,6 +274,44 @@ export class VotesTableComponent {
       draggable: false,
       data: { vote },
     });
+  }
+
+  /**
+   * Opens a `mailto:` reminder draft to the vote's committee mailing list in the manager's own mail app (#3658),
+   * asking which list only when the committee has several. Nothing is sent from LFX.
+   */
+  protected sendMailingListReminder(vote: VoteTableRow): void {
+    // Upstream requires a committee on every vote; a row without one is treated like a committee without lists.
+    if (!vote.committee_uid) {
+      this.showNoMailingListToast();
+      return;
+    }
+
+    this.mailingListService
+      .getMailingListsByCommittee(vote.committee_uid)
+      .pipe(
+        take(1),
+        // Unsafe addresses never reach a mailto: link — a crafted group_name/domain could add recipients or headers.
+        map((lists) => (lists ?? []).filter((list) => isMailtoSafeEmail(getMailingListEmail(list)))),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: (lists) => {
+          if (lists.length === 0) {
+            this.showNoMailingListToast();
+          } else if (lists.length === 1) {
+            this.openMailingListReminderDraft(vote, lists[0]);
+          } else {
+            this.openMailingListPicker(vote, lists);
+          }
+        },
+        error: () =>
+          this.messageService.add({
+            severity: 'error',
+            summary: "Couldn't load mailing lists",
+            detail: "Couldn't load this group's mailing lists. Please try again.",
+          }),
+      });
   }
 
   protected resetFilters(): void {
@@ -414,6 +475,50 @@ export class VotesTableComponent {
     else if (vote.is_foundation === false) tierSegment = 'project';
     const commands = tierSegment ? ['/', tierSegment, 'votes', 'create'] : ['/votes', 'create'];
     this.router.navigate(commands, { queryParams: { ...vote.editQueryParams, clone: vote.uid } });
+  }
+
+  /** Several lists: the picker closes with the chosen list, or with nothing on Cancel. */
+  private openMailingListPicker(vote: VoteTableRow, lists: GroupsIOMailingList[]): void {
+    this.dialogService
+      .open(VoteMailingListReminderDialogComponent, {
+        header: 'Reminder mailing list',
+        width: 'min(480px, 96vw)',
+        modal: true,
+        closable: true,
+        draggable: false,
+        data: { vote, lists } satisfies VoteMailingListReminderDialogData,
+      })
+      ?.onClose.pipe(take(1))
+      .subscribe((list?: GroupsIOMailingList) => {
+        if (list) {
+          this.openMailingListReminderDraft(vote, list);
+        }
+      });
+  }
+
+  private openMailingListReminderDraft(vote: VoteTableRow, list: GroupsIOMailingList): void {
+    const isBrowser = isPlatformBrowser(this.platformId);
+    const draft = buildVoteMailingListReminder(vote, toAbsoluteUrl(votePermalinkPath(vote.uid), isBrowser));
+    const href = buildMailtoHref(getMailingListEmail(list), draft);
+    if (!href) {
+      this.messageService.add({
+        severity: 'error',
+        summary: "Couldn't open email",
+        detail: 'This reminder is too long to open in your email app.',
+      });
+      return;
+    }
+    if (isBrowser) {
+      this.document.location.href = href;
+    }
+  }
+
+  private showNoMailingListToast(): void {
+    this.messageService.add({
+      severity: 'info',
+      summary: 'No mailing list',
+      detail: 'This group has no mailing list. Use Copy link or Send reminder instead.',
+    });
   }
 
   private toVoteTableRow(vote: Vote): VoteTableRow {

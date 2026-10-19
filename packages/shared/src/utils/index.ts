@@ -26,6 +26,7 @@ export * from './url.utils';
 export * from './poll.utils';
 export * from './survey.utils';
 export * from './vote.utils';
+export * from './vote-mailing-list-reminder.utils';
 export * from './committee.utils';
 export * from './activity-feed.utils';
 export * from './compact-cache.utils';
