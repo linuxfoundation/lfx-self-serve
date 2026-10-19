@@ -13,6 +13,7 @@ import { ActivatedRoute, convertToParamMap, Navigation, provideRouter, Router } 
 import {
   CCLA_SIGN_COPY,
   ORG_CLA_DESIGNEE_REFUSAL_COPY,
+  ORG_CLA_DESIGNEE_RESTING_COPY,
   ORG_CLA_DOWNLOAD_COPY,
   ORG_CLA_IDENTIFY_MANAGER_COPY,
   ORG_CLA_LOCKED_TAB_COPY,
@@ -634,6 +635,7 @@ describe('OrgEasyclaDetailComponent', () => {
         expect(checkPermission).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'sign', PROJECT_SFID);
         expect(byTestId(fixture, 'org-easycla-detail-designee-identified')).toBeNull();
         expect(fixture.nativeElement.textContent).toContain(ORG_CLA_NOT_STARTED_COPY.steps[0].body);
+        expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.textContent).toContain('Start the CLA process');
       });
 
       it('asks the question before any attestation when the viewer cannot sign yet', async () => {
@@ -681,8 +683,16 @@ describe('OrgEasyclaDetailComponent', () => {
 
         expect(question.close).toHaveBeenCalledExactlyOnceWith(undefined);
         expect(openedComponents()).toEqual([OrgEasyclaManagerQuestionDialogComponent]);
-        expect(byTestId(fixture, 'org-easycla-detail-designee-identified')).not.toBeNull();
-        expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(false);
+        expect(byTestId(fixture, 'org-easycla-detail-designee-identified')?.textContent).toContain(
+          "You've been identified as the initial CLA Manager from your company for this project."
+        );
+        expect(byTestId(fixture, 'org-easycla-detail-designee-role')?.textContent).toContain('When this CLA is signed, you will be the initial CLA Manager.');
+        expect(fixture.nativeElement.textContent).not.toContain(ORG_CLA_NOT_STARTED_COPY.steps[0].body);
+        const proceed = byTestId(fixture, 'org-easycla-detail-start-cla');
+        expect(proceed?.textContent).toContain('Proceed with signing');
+        expect(proceed?.querySelector('button')?.getAttribute('aria-label')).toBe(ORG_CLA_DESIGNEE_RESTING_COPY.proceedLabel);
+        expect(proceed?.querySelector('button')?.disabled).toBe(false);
+        expect(byTestId(fixture, 'org-easycla-detail-review-copy')).not.toBeNull();
       });
 
       it('does not ask again after a Yes in this session: the next activation opens attestation', async () => {
@@ -884,12 +894,13 @@ describe('OrgEasyclaDetailComponent', () => {
         expect(byTestId(fixture, 'org-easycla-detail-designee-notice')).toBeNull();
       });
 
-      it('skips the question and shows the designee copy when the viewer can already sign', async () => {
+      it('skips the question and shows the designee resting state with Proceed with signing when the viewer can already sign', async () => {
         checkPermission.mockReturnValue(of(true));
         openDialog.mockReturnValue(closingWith(undefined));
         const fixture = await renderSignable();
 
-        expect(byTestId(fixture, 'org-easycla-detail-designee-identified')).not.toBeNull();
+        expect(byTestId(fixture, 'org-easycla-detail-designee-identified')?.textContent).toContain(ORG_CLA_DESIGNEE_RESTING_COPY.identified);
+        expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.textContent).toContain(ORG_CLA_DESIGNEE_RESTING_COPY.proceedLabel);
         clickStart(fixture);
 
         expect(openedComponents()).toEqual([OrgEasyclaAttestationComponent]);

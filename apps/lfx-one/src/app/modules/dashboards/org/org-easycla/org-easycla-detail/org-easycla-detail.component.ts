@@ -27,7 +27,7 @@ import {
   CCLA_SIGN_COPY,
   ORG_CLA_AUTO_ECLA_LOCKED_HINT,
   ORG_CLA_DESIGNEE_REFUSAL_COPY,
-  ORG_CLA_DESIGNEE_START_COPY,
+  ORG_CLA_DESIGNEE_RESTING_COPY,
   ORG_CLA_DETAIL_TABS,
   ORG_CLA_DOWNLOAD_COPY,
   ORG_CLA_EASYCLA_ROLE_MISSING_COPY,
@@ -614,7 +614,7 @@ export class OrgEasyclaDetailComponent {
    */
   protected readonly signingChoice = computed(() => this.signingChoiceFrom(this.claGroup()));
 
-  protected readonly designeeStartCopy = ORG_CLA_DESIGNEE_START_COPY;
+  protected readonly designeeRestingCopy = ORG_CLA_DESIGNEE_RESTING_COPY;
 
   /** The Sign pair check's answer, tagged with the pair it was asked for so a stale one cannot apply. */
   private readonly signCheck = signal<{ pair: string; allowed: boolean } | null>(null);
@@ -659,9 +659,12 @@ export class OrgEasyclaDetailComponent {
 
   protected readonly startDisabledReason: Signal<string> = this.initStartDisabledReason();
 
+  /** Proceed with signing once the viewer is the designee: the question is behind them, and this opens attestation. */
+  protected readonly startLabel = computed(() => (this.alreadyDesignee() ? this.designeeRestingCopy.proceedLabel : this.notStartedCopy.startLabel));
+
   protected readonly startAriaLabel = computed(() => {
     const reason = this.startDisabledReason();
-    return reason ? `${this.notStartedCopy.startLabel} — ${reason}` : this.notStartedCopy.startLabel;
+    return reason ? `${this.startLabel()} — ${reason}` : this.startLabel();
   });
 
   protected readonly identifySomeoneElseAriaLabel = computed(() => {
