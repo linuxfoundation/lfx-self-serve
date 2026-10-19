@@ -23,9 +23,12 @@ import {
   MyVotesResponse,
   PaginatedResponse,
   QueryServiceCountResponse,
+  SendVoteReminderRequest,
+  SendVoteReminderResponse,
   UpdateVoteRequest,
   Vote,
   VoteAnswerInput,
+  VoteReminderRecipient,
   VoteResultsResponse,
   VoteListResponse,
   VoteStatusCounts,
@@ -299,6 +302,17 @@ export class VoteService {
       take(1),
       tap(() => this.voteDetailCache.delete(voteUid))
     );
+  }
+
+  /** Eligible voters who have not voted yet — vote managers only (#3769). */
+  public getReminderRecipients(voteUid: string): Observable<VoteReminderRecipient[]> {
+    return this.http.get<VoteReminderRecipient[]>(`/api/votes/${encodeURIComponent(voteUid)}/reminder-recipients`).pipe(take(1));
+  }
+
+  /** Resends the vote email to the given recipients (#3769). */
+  public sendReminders(voteUid: string, recipientIds: string[]): Observable<SendVoteReminderResponse> {
+    const body: SendVoteReminderRequest = { recipient_ids: recipientIds };
+    return this.http.post<SendVoteReminderResponse>(`/api/votes/${encodeURIComponent(voteUid)}/reminders`, body).pipe(take(1));
   }
 
   /**

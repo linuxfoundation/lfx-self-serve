@@ -47,3 +47,12 @@ export const VOTE_DETAIL_CACHE_TTL_MS = 10 * 1000;
  * list merges the known-open status over stale index rows while the search index catches up.
  */
 export const RECENTLY_OPENED_VOTE_TTL_MS = 30 * 1000;
+
+/** Reminder reads/sends reject an inactive poll with this state-conflict code. */
+export const VOTE_REMINDER_INACTIVE = 'VOTE_REMINDER_INACTIVE';
+
+/** No reminders were sent because at least one selected recipient is no longer eligible. */
+export const VOTE_REMINDER_SELECTION_STALE = 'VOTE_REMINDER_SELECTION_STALE';
+
+/** Pre-send checks failed before bulk_resend was attempted; retrying cannot duplicate this attempt. */
+export const VOTE_REMINDER_PRECHECK_FAILED = 'VOTE_REMINDER_PRECHECK_FAILED';

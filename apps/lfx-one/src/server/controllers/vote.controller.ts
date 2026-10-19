@@ -7,6 +7,7 @@ import {
   CreateVoteRequest,
   CreateVoteResponseRequest,
   EnableVoteRequest,
+  SendVoteReminderRequest,
   UpdateVoteRequest,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -19,7 +20,8 @@ import { codePointLength } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
-import { validateRequestBody, validateRequiredParameter, validateUidParameter } from '../helpers/validation.helper';
+import { validateArrayParameter, validateRequestBody, validateRequiredParameter, validateUidParameter } from '../helpers/validation.helper';
+import { assertVoteWrite } from '../helpers/vote-write-access.helper';
 import { logger } from '../services/logger.service';
 import { VoteService } from '../services/vote.service';
 
@@ -524,6 +526,89 @@ export class VoteController {
       });
 
       res.json(vote);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /votes/:uid/reminder-recipients — eligible voters who have not voted yet (#3769).
+   * Gated on `vote#writer` before any query-service read: every vote auditor can read the
+   * underlying `vote_response` rows, so the index grant alone is not a manager check.
+   */
+  public async getVoteReminderRecipients(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = logger.startOperation(req, 'get_vote_reminder_recipients', {
+      vote_uid: uid,
+    });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'get_vote_reminder_recipients',
+          service: 'vote_controller',
+        })
+      ) {
+        return;
+      }
+
+      await assertVoteWrite(req, uid, 'get_vote_reminder_recipients');
+
+      const recipients = await this.voteService.getVoteReminderRecipients(req, uid);
+
+      logger.success(req, 'get_vote_reminder_recipients', startTime, {
+        vote_uid: uid,
+        recipient_count: recipients.length,
+      });
+
+      res.json(recipients);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /votes/:uid/reminders — resends the vote email to the selected recipients (#3769).
+   * The service writer-checks before re-reading eligible non-voters; a stale selection rejects
+   * the whole batch. Upstream additionally validates membership and active state.
+   */
+  public async sendVoteReminders(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const payload: SendVoteReminderRequest = req.body;
+    const startTime = logger.startOperation(req, 'send_vote_reminders', {
+      vote_uid: uid,
+      recipient_count: Array.isArray(payload?.recipient_ids) ? payload.recipient_ids.length : undefined,
+    });
+
+    try {
+      const validationContext = { operation: 'send_vote_reminders', service: 'vote_controller' } as const;
+
+      if (!validateUidParameter(uid, req, next, validationContext)) {
+        return;
+      }
+
+      if (!validateRequestBody(payload, req, next, validationContext)) {
+        return;
+      }
+
+      if (!validateArrayParameter(payload.recipient_ids, 'recipient_ids', req, next, validationContext)) {
+        return;
+      }
+
+      if (payload.recipient_ids.some((id) => typeof id !== 'string' || id.trim() === '')) {
+        throw ServiceValidationError.forField('recipient_ids', 'recipient_ids must contain only non-empty strings', validationContext);
+      }
+
+      const recipientIds = [...new Set(payload.recipient_ids)];
+
+      const result = await this.voteService.sendVoteReminders(req, uid, recipientIds);
+
+      logger.success(req, 'send_vote_reminders', startTime, {
+        vote_uid: uid,
+        recipient_count: result.recipient_count,
+      });
+
+      res.json(result);
     } catch (error) {
       next(error);
     }
