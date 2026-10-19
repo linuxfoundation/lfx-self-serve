@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { computed, inject, Injectable, Signal } from '@angular/core';
+import { computed, inject, Injectable, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import {
   AKRITES_ENABLED_FLAG,
@@ -38,7 +38,7 @@ import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { WriterGrantsService } from '@services/writer-grants.service';
-import { map, of, startWith, switchMap } from 'rxjs';
+import { finalize, map, of, startWith, switchMap } from 'rxjs';
 
 /**
  * Builds the lens-aware sidebar menu items. Extracted from MainLayoutComponent so both the main
@@ -123,11 +123,14 @@ export class SidebarNavService {
   // active foundation/project. canWrite() is reactive to context changes.
   private readonly canSeeNewsletters: Signal<boolean> = this.initCanSeeNewsletters();
 
+  /** In flight while the foundation-lens auditor/root-writer probe (`foundationAuditorBootstrap`) runs. */
+  private readonly foundationAuditorProbePending = signal(false);
+
   /**
    * True while `sidebarItems` is empty only because what decides its shape is still loading — the
-   * persona detection, the scoped marketing-grant probe, the writer-grant summary (foundation lens), or
-   * (formation flag on) the active project's stage. Consumers that read an empty list as "no access"
-   * must wait for this to clear.
+   * persona detection, the scoped marketing-grant probe, the writer-grant summary and auditor probe
+   * (foundation lens), or (formation flag on) the active project's stage. Consumers that read an
+   * empty list as "no access" must wait for this to clear.
    */
   public readonly sidebarItemsPending = computed((): boolean => {
     if (!this.personaService.personaLoaded()) return true;
@@ -137,6 +140,8 @@ export class SidebarNavService {
     // The idle-deferred sweep (inherited access) is too slow to hold the menu for; if it widens later,
     // the menu simply fills in.
     if (this.activeLens() === 'foundation' && !this.writerGrantsService.summaryResolved()) return true;
+    // The auditor / root-writer probe can surface the Formations item on its own.
+    if (this.activeLens() === 'foundation' && this.foundationAuditorProbePending()) return true;
     return (
       this.activeLens() === 'project' &&
       this.isFormationEnabled() &&
@@ -448,7 +453,12 @@ export class SidebarNavService {
    */
   private readonly foundationAuditorBootstrap: Signal<unknown> = toSignal(
     toObservable(computed(() => this.userService.authenticated() && this.activeLens() === 'foundation')).pipe(
-      switchMap((shouldProbe) => (shouldProbe ? this.personaService.refreshEnrichedPersonas() : of(null)))
+      switchMap((shouldProbe) => {
+        if (!shouldProbe) return of(null);
+        this.foundationAuditorProbePending.set(true);
+        // Settles whichever way the probe ends (or is switched away), so a failure never pins "pending".
+        return this.personaService.refreshEnrichedPersonas().pipe(finalize(() => this.foundationAuditorProbePending.set(false)));
+      })
     ),
     { initialValue: null }
   );

@@ -837,6 +837,20 @@ describe('SidebarNavService', () => {
       expect(service.sidebarItemsPending()).toBe(false);
     });
 
+    it('waits for the foundation-lens auditor probe until it settles', () => {
+      const probe = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn(() => probe);
+      authenticated.set(true);
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+
+      expect(service.sidebarItemsPending()).toBe(true);
+
+      probe.next({});
+      probe.complete();
+      expect(service.sidebarItemsPending()).toBe(false);
+    });
+
     it('waits for the scoped marketing-grant probe of the selected foundation', () => {
       const probe = new Subject<unknown>();
       refreshEnrichedPersonas = vi.fn(() => probe);
@@ -848,7 +862,9 @@ describe('SidebarNavService', () => {
 
       expect(service.sidebarItemsPending()).toBe(true);
 
+      // The same stubbed probe also answers the foundation-lens auditor probe, which waits for completion.
       probe.next({});
+      probe.complete();
       expect(service.sidebarItemsPending()).toBe(false);
     });
   });
