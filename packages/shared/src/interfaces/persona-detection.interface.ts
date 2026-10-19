@@ -101,6 +101,13 @@ export interface PersonaApiResponse extends PersonaDetections {
    * Kept so the frontend contract is unchanged.
    */
   isCampaignManagerRootGrant: boolean;
+  /**
+   * True when a marketing grant check behind {@link isMarketingAuditor} / {@link isCampaignManager}
+   * (ROOT or project-scoped, including its slug lookup) failed upstream instead of answering. Those
+   * booleans still fail closed to `false`; this tells the client the `false` means "couldn't check",
+   * not "denied", so it can offer a retry. Absent on responses that never ran the checks.
+   */
+  marketingGrantCheckFailed?: boolean;
 }
 
 export interface SsrPersonaResult {

@@ -12,10 +12,14 @@ const { checkSingleAccess, checkAccess, getProjectIdBySlug, natsRequest, logger 
   logger: { warning: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn(), success: vi.fn(), startOperation: vi.fn(() => 0) },
 }));
 
+// The strict variants answer from the same stubs (a stub that rejects stands in for an upstream
+// failure), so tests read the same either way; only the service's handling of a rejection differs.
 vi.mock('./access-check.service', () => ({
   AccessCheckService: vi.fn().mockImplementation(() => ({
     checkSingleAccess,
     checkAccess,
+    checkSingleAccessStrict: (...args: unknown[]) => checkSingleAccess(...args),
+    checkAccessStrict: (...args: unknown[]) => checkAccess(...args),
   })),
 }));
 
@@ -305,6 +309,41 @@ describe('PersonaDetectionService', () => {
 
       expect(response.isCampaignManager).toBe(false);
       expect(logger.warning).toHaveBeenCalled();
+    });
+
+    it('reports a failed project grant check as unverified, not as a denial', async () => {
+      personaEnv();
+      checkSingleAccess.mockImplementation((_req: Request, args: { access: string }) =>
+        args.access === 'campaign_manager' ? Promise.reject(new Error('fga unavailable')) : Promise.resolve(false)
+      );
+      getProjectIdBySlug.mockResolvedValue({ uid: 'uid-project', slug: 'some-project', exists: true });
+
+      const response = await service.getPersonas(req, 'some-project', 'campaign_manager');
+
+      expect(response.isCampaignManager).toBe(false);
+      expect(response.marketingGrantCheckFailed).toBe(true);
+    });
+
+    it('reports a slug lookup that times out as unverified, asking the lookup not to read it as a missing project', async () => {
+      personaEnv();
+      checkSingleAccess.mockResolvedValue(false);
+      getProjectIdBySlug.mockRejectedValue(new Error('timeout'));
+
+      const response = await service.getPersonas({} as unknown as Request, 'some-project', 'campaign_manager');
+
+      expect(getProjectIdBySlug).toHaveBeenCalledWith(expect.anything(), 'some-project', { unavailableAsMissing: false });
+      expect(response.marketingGrantCheckFailed).toBe(true);
+    });
+
+    it('reports a plain denial as verified', async () => {
+      personaEnv();
+      checkSingleAccess.mockResolvedValue(false);
+      getProjectIdBySlug.mockResolvedValue({ uid: 'uid-project', slug: 'some-project', exists: true });
+
+      const response = await service.getPersonas({} as unknown as Request, 'some-project', 'campaign_manager');
+
+      expect(response.isCampaignManager).toBe(false);
+      expect(response.marketingGrantCheckFailed).toBe(false);
     });
   });
 

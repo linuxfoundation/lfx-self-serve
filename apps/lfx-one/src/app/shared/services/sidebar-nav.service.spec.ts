@@ -987,6 +987,23 @@ describe('SidebarNavService', () => {
       expect(service.menuLookupFailed()).toBe(false);
     });
 
+    it('flags a scoped probe whose answer arrived but whose grant checks could not be verified', () => {
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>((...[, slug]) =>
+        slug ? of({ error: null, marketingGrantCheckFailed: true }) : of({})
+      );
+      marketingOpsEnabled.set(true);
+      authenticated.set(true);
+      selectedFoundation.set({ slug: 'cncf' });
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+      expect(service.menuLookupFailed()).toBe(true);
+
+      // Retry: the checks answer this time.
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>(() => of({ error: null, marketingGrantCheckFailed: false }));
+      service.retryMenuLookups();
+      expect(service.menuLookupFailed()).toBe(false);
+    });
+
     it('keeps an older retry from overwriting a newer probe for the same scope after A → B → A', () => {
       refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>((...[, slug]) =>
         slug === 'cncf' ? of(null) : of({ error: null })

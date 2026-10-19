@@ -53,6 +53,10 @@ export class PersonaDetectionService {
   // Dedupes the projectSlug -> uid NATS lookup within a single request — checkMarketingAuditorAccess
   // and checkCampaignManagerAccess both resolve the same slug in the same getPersonas Promise.all.
   private readonly projectSlugRequestCache = new WeakMap<Request, Map<string, Promise<{ uid: string; exists: boolean }>>>();
+  // Requests on which a marketing grant check (ROOT or project-scoped) could not be verified upstream.
+  // Every such check still fails closed to `false`; this only lets getPersonas tell the client
+  // "couldn't check" apart from "denied" (`marketingGrantCheckFailed`).
+  private readonly failedMarketingGrantChecks = new WeakSet<Request>();
 
   public constructor() {
     this.natsService = new NatsService();
@@ -172,6 +176,7 @@ export class PersonaDetectionService {
       isCampaignManager,
       isMarketingAuditorRootGrant,
       isCampaignManagerRootGrant: false,
+      marketingGrantCheckFailed: this.failedMarketingGrantChecks.has(req),
     };
   }
 
@@ -294,11 +299,12 @@ export class PersonaDetectionService {
     const promise = resolveRootProjectUid(req, this.natsService)
       .then(async (rootUid) => {
         if (!rootUid) return none;
-        const results = await this.accessCheckService.checkAccess(req, [{ resource: 'project', id: rootUid, access: 'global_marketing_ops' }]);
+        const results = await this.accessCheckService.checkAccessStrict(req, [{ resource: 'project', id: rootUid, access: 'global_marketing_ops' }]);
         return { globalMarketingOps: results.get(`${rootUid}#global_marketing_ops`) ?? false };
       })
       .catch((error) => {
         logger.warning(req, 'check_root_campaign_manager', 'Root global_marketing_ops check failed, assuming no access', { err: error });
+        this.failedMarketingGrantChecks.add(req);
         return none;
       });
     this.rootMarketingOpsRequestCache.set(req, promise);
@@ -316,9 +322,11 @@ export class PersonaDetectionService {
     try {
       const { uid, exists } = await this.resolveProjectSlug(req, projectSlug);
       if (!exists) return false;
-      return await this.accessCheckService.checkSingleAccess(req, { resource: 'project', id: uid, access });
+      // Strict: an upstream failure must throw into the catch below, not come back as a denial.
+      return await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: uid, access });
     } catch (error) {
       logger.warning(req, operation, `Project ${access} check failed, assuming no access`, { err: error, projectSlug });
+      if (access !== 'writer_guard') this.failedMarketingGrantChecks.add(req);
       return false;
     }
   }
@@ -333,7 +341,8 @@ export class PersonaDetectionService {
     const cached = cache.get(projectSlug);
     if (cached) return cached;
 
-    const promise = this.projectService.getProjectIdBySlug(req, projectSlug);
+    // A slug lookup that times out is a failure here, not an unknown project, so callers can report it.
+    const promise = this.projectService.getProjectIdBySlug(req, projectSlug, { unavailableAsMissing: false });
     cache.set(projectSlug, promise);
     return promise;
   }
@@ -350,10 +359,11 @@ export class PersonaDetectionService {
     const promise = resolveRootProjectUid(req, this.natsService)
       .then((rootUid) => {
         if (!rootUid) return false;
-        return this.accessCheckService.checkSingleAccess(req, { resource: 'project', id: rootUid, access });
+        return this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: rootUid, access });
       })
       .catch((error) => {
         logger.warning(req, operation, `Root ${access} check failed, assuming no access`, { err: error });
+        if (access === 'marketing_auditor') this.failedMarketingGrantChecks.add(req);
         return false;
       });
     cache.set(req, promise);

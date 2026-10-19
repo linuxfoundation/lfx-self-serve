@@ -25,7 +25,7 @@ import {
   SURVEY_LABEL,
   VOTE_LABEL,
 } from '@lfx-one/shared/constants';
-import { SidebarMenuItem } from '@lfx-one/shared/interfaces';
+import { PersonaApiResponse, SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { isFormationStageGate, isGwEmbedAllowedForSlug } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { AnalyticsService } from '@services/analytics.service';
@@ -467,7 +467,7 @@ export class SidebarNavService {
         }
         const generation = this.startMarketingProbe(slug);
         return this.personaService.refreshEnrichedPersonas(false, slug).pipe(
-          tap((response) => this.recordMarketingProbe(slug, generation, !response || !!response.error)),
+          tap((response) => this.recordMarketingProbe(slug, generation, this.marketingProbeFailed(response))),
           map(() => slug)
         );
       })
@@ -966,8 +966,16 @@ export class SidebarNavService {
     ])
       .pipe(finalize(() => this.retryPending.set(false)))
       .subscribe(([, scoped]) => {
-        if (slug) this.recordMarketingProbe(slug, generation, !scoped || !!scoped.error);
+        if (slug) this.recordMarketingProbe(slug, generation, this.marketingProbeFailed(scoped));
       });
+  }
+
+  /**
+   * A scoped marketing probe failed when it got no answer, an upstream `error`, or an answer whose grant
+   * checks couldn't be verified — its `false` grants then mean "couldn't check", not "denied".
+   */
+  private marketingProbeFailed(response: PersonaApiResponse | null): boolean {
+    return !response || !!response.error || !!response.marketingGrantCheckFailed;
   }
 
   /** Marks a new marketing probe for `slug` as the latest, returning its generation. */
