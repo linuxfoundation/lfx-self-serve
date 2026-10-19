@@ -8,6 +8,10 @@ import { CAMPAIGN_ADOPT_PLATFORMS } from './campaign-optimize.constants';
 import { lfxColors } from './colors.constants';
 import {
   isCanonicalGoogleAdsResourceId,
+  CREATIVE_ASSET_MAX_BYTES,
+  CREATIVE_ASSET_MIME_TYPES,
+  isCreativeAssetMimeType,
+  sniffCreativeAssetMimeType,
   BUDGET_WRITABLE_CAMPAIGN_PLATFORMS,
   DAILY_ONLY_BUDGET_CAMPAIGN_PLATFORMS,
   CAMPAIGN_ALERT_THRESHOLDS,
@@ -1162,6 +1166,38 @@ describe('Google Ads campaign criteria vocabularies', () => {
 
   it('caps each demographic exclusion list at 20, the per-list bound upstream checks twice', () => {
     expect(GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS).toBe(20);
+  });
+});
+
+describe('creative-asset upload allowlist', () => {
+  // campaign-service's `upload-creative-asset` content_type enum; anything else is refused upstream.
+  it('admits exactly PNG and JPEG', () => {
+    expect([...CREATIVE_ASSET_MIME_TYPES]).toEqual(['image/png', 'image/jpeg']);
+    expect(isCreativeAssetMimeType('image/png')).toBe(true);
+    expect(isCreativeAssetMimeType('image/jpeg')).toBe(true);
+    for (const other of ['image/gif', 'image/webp', 'image/jpg', 'IMAGE/PNG', '', undefined, 42]) {
+      expect(isCreativeAssetMimeType(other)).toBe(false);
+    }
+  });
+
+  // Below campaign-service's own 30 MiB decoded ceiling, so nothing this app sends is refused there for size.
+  it('bounds an upload at 10 MiB, inside the upstream 30 MiB ceiling', () => {
+    expect(CREATIVE_ASSET_MAX_BYTES).toBe(10 * 1024 * 1024);
+    expect(CREATIVE_ASSET_MAX_BYTES).toBeLessThan(30 * 1024 * 1024);
+  });
+
+  it('sniffs the PNG signature and the JPEG SOI marker, and nothing else', () => {
+    expect(sniffCreativeAssetMimeType(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]))).toBe('image/png');
+    expect(sniffCreativeAssetMimeType(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]))).toBe('image/jpeg');
+    // A truncated PNG signature, a GIF and an empty body are not images this upload accepts.
+    expect(sniffCreativeAssetMimeType(new Uint8Array([0x89, 0x50, 0x4e, 0x47]))).toBeNull();
+    expect(sniffCreativeAssetMimeType(new TextEncoder().encode('GIF89a'))).toBeNull();
+    expect(sniffCreativeAssetMimeType(new Uint8Array())).toBeNull();
+    // Only a real byte buffer is read: a request body tampered into an array or a string whose
+    // indexes spell a PNG signature is not an image (CodeQL type confusion).
+    expect(sniffCreativeAssetMimeType([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00])).toBeNull();
+    expect(sniffCreativeAssetMimeType('\x89PNG\r\n\x1a\n')).toBeNull();
+    expect(sniffCreativeAssetMimeType(undefined)).toBeNull();
   });
 });
 

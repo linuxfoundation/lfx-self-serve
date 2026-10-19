@@ -4620,6 +4620,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       // TRUE with every flag off, unlike its Google sibling: both creators author the promoted
       // post since #3432, so the capability no longer tracks the cutover (`canCreateRedditCreative`).
       redditCreativeEnabled: true,
+      redditAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,
     });
@@ -4779,6 +4780,36 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
+  /**
+   * The Reddit image-upload capability (decision D3) needs the create cutover AND its own flag:
+   * the legacy creator never reads `imageAssetId`, and a campaign-service without URL signing
+   * refuses it.
+   */
+  it.each([
+    [{ create: true, briefs: true, jobs: true, assets: true }, true],
+    [{ create: true, briefs: true, jobs: true, assets: false }, false],
+    [{ create: false, briefs: true, jobs: true, assets: true }, false],
+    [{ create: true, briefs: false, jobs: true, assets: true }, false],
+    [{ create: true, briefs: true, jobs: false, assets: true }, false],
+  ])('reports the Reddit image-upload capability only when the cutover owns the create and the flag is on (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      if (flag === ServerFeatureFlag.CampaignServiceRedditAssets) return flags.assets;
+      return false;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.redditAssetUploadEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
   // A TRUNCATED list is worse than an error, which is what failOnPartial buys. The caller cannot
   // tell a short list from a complete one, and the campaigns missing from it are live and
   // spending — so a page-two failure must propagate rather than quietly return page one.
@@ -4811,6 +4842,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       // TRUE with every flag off, unlike its Google sibling: both creators author the promoted
       // post since #3432, so the capability no longer tracks the cutover (`canCreateRedditCreative`).
       redditCreativeEnabled: true,
+      redditAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,
     });
@@ -5573,6 +5605,70 @@ describe('CampaignServiceClient.getConnection', () => {
     proxyRequest.mockRejectedValueOnce(upstream);
 
     await expect(new CampaignServiceClient().getConnection(req, 'cncf', 'linkedin-ads')).rejects.toBe(upstream);
+  });
+});
+
+describe('CampaignServiceClient.uploadCreativeAsset', () => {
+  const BRIEF = '6f9619ff-8b86-d011-b42d-00c04fc964ff';
+  const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01]);
+  const stored = {
+    id: '3f2504e0-4f89-11d3-9a0c-0305e82c3301',
+    project_id: 'tlf',
+    brief_id: BRIEF,
+    mime_type: 'image/png',
+    byte_size: PNG.byteLength,
+    checksum: 'ab'.repeat(32),
+  };
+
+  beforeEach(() => {
+    proxyRequestWithResponse.mockReset();
+  });
+
+  // The wire is JSON with base64 `bytes`, sent as a Buffer so the API client declares its
+  // Content-Length — campaign-service's upload admission charges an undeclared body the whole
+  // upload budget and sheds concurrent ones with a 503.
+  it('posts the image base64-encoded in a JSON Buffer body to the brief and maps a 201 to created', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce({ ...apiResponse({ ...stored, created: 'true' }), status: 201 });
+
+    const result = await new CampaignServiceClient().uploadCreativeAsset(req, 'tlf', BRIEF, 'image/png', PNG);
+
+    expect(result).toEqual({ id: stored.id, mimeType: 'image/png', byteSize: PNG.byteLength, checksum: stored.checksum, created: true });
+    const [, service, path, method, query, body, headers] = proxyRequestWithResponse.mock.calls[0];
+    expect(service).toBe('LFX_V2_CAMPAIGN_SERVICE');
+    expect(path).toBe(`/projects/tlf/briefs/${BRIEF}/creative-assets`);
+    expect(method).toBe('POST');
+    expect(query).toBeUndefined();
+    expect(Buffer.isBuffer(body)).toBe(true);
+    expect(JSON.parse((body as Buffer).toString('utf8'))).toEqual({ content_type: 'image/png', bytes: PNG.toString('base64') });
+    expect(headers).toEqual({ 'Content-Type': 'application/json' });
+  });
+
+  it('reports an identical image already stored (200) as not created, with the same usable id', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ ...stored, created: 'false' }));
+
+    const result = await new CampaignServiceClient().uploadCreativeAsset(req, 'tlf', BRIEF, 'image/png', PNG);
+
+    expect(result.id).toBe(stored.id);
+    expect(result.created).toBe(false);
+  });
+
+  it.each([
+    ['another brief', { ...stored, brief_id: '00000000-0000-0000-0000-000000000000' }],
+    ['no id', { ...stored, id: '' }],
+    ['a type outside the allowlist', { ...stored, mime_type: 'image/gif' }],
+  ])('refuses an answer naming %s with a 502 rather than handing back an id the create cannot use', async (_label, data) => {
+    proxyRequestWithResponse.mockResolvedValueOnce({ ...apiResponse(data), status: 201 });
+
+    await expect(new CampaignServiceClient().uploadCreativeAsset(req, 'tlf', BRIEF, 'image/png', PNG)).rejects.toMatchObject({ statusCode: 502 });
+  });
+
+  it('lets an upstream refusal through with its own status', async () => {
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('the image is not a decodable image', 400, 'BAD_REQUEST'));
+
+    await expect(new CampaignServiceClient().uploadCreativeAsset(req, 'tlf', BRIEF, 'image/png', PNG)).rejects.toMatchObject({
+      statusCode: 400,
+      message: 'the image is not a decodable image',
+    });
   });
 });
 

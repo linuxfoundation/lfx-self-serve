@@ -9,6 +9,7 @@ import type {
   CAMPAIGN_EMAIL_STAGES,
   CAMPAIGN_EMAIL_VARIANTS,
   CAMPAIGN_METRICS_WINDOWS,
+  CREATIVE_ASSET_MIME_TYPES,
   GOOGLE_ADS_AGE_RANGE_MAP,
   GOOGLE_ADS_DEVICES,
   GOOGLE_ADS_GENDERS,
@@ -98,6 +99,42 @@ export type SelectableRedditObjective = (typeof REDDIT_SELECTABLE_OBJECTIVES)[nu
 
 /** One of the promoted-post CTA labels Reddit accepts — see `REDDIT_CALL_TO_ACTIONS`. */
 export type RedditCallToAction = (typeof REDDIT_CALL_TO_ACTIONS)[number];
+
+/** An image type a creative-asset upload accepts — see `CREATIVE_ASSET_MIME_TYPES`. */
+export type CreativeAssetMimeType = (typeof CREATIVE_ASSET_MIME_TYPES)[number];
+
+/** Where an image upload in the create form stands; a finished upload is its asset id being set. */
+export type CreativeAssetUploadStatus = 'idle' | 'uploading' | 'error';
+
+/**
+ * A creative asset campaign-service stored for a brief (`upload-creative-asset`), as the BFF
+ * returns it to the browser.
+ *
+ * `created` is false when an identical image had already been uploaded to the same brief:
+ * campaign-service dedupes on the content checksum and returns the existing row (200 rather than
+ * 201), so the `id` is equally usable either way.
+ */
+export interface CreativeAssetUploadResult {
+  id: string;
+  mimeType: CreativeAssetMimeType;
+  byteSize: number;
+  checksum: string;
+  created: boolean;
+}
+
+/**
+ * campaign-service's `CreativeAsset` as the upload answers it (`design/brief.go`). `created` is
+ * the string `"true"`/`"false"` upstream, mirroring its 201/200 split.
+ */
+export interface CampaignServiceCreativeAsset {
+  id: string;
+  project_id: string;
+  brief_id: string;
+  mime_type: string;
+  byte_size: number;
+  checksum: string;
+  created?: 'true' | 'false';
+}
 
 /** One of the concrete video optimization goals Reddit accepts — see `REDDIT_VIDEO_GOALS`. */
 export type RedditVideoGoal = (typeof REDDIT_VIDEO_GOALS)[number];
@@ -810,6 +847,31 @@ export interface CampaignImplementationDraft {
   redditImageUrl?: string;
   redditCallToAction?: RedditCallToAction | '';
   /**
+   * An uploaded Reddit image (`RedditCampaignCreateRequest.imageAssetId`), the file name it was
+   * chosen as, and the brief it was uploaded to, so a tab switch keeps the upload rather than
+   * asking for it again. The asset exists upstream for that ONE brief, so it is sent only while the
+   * brief being created from is still that brief. Round-trips regardless of
+   * `redditAssetUploadEnabled`, for the reason the three above do.
+   */
+  redditImageAssetId?: string;
+  redditImageAssetName?: string;
+  redditImageAssetBriefId?: string;
+  /**
+   * The file name of a Reddit image upload still in flight when the draft was taken. The request
+   * outlives the tab (`CampaignService.uploadCreativeAsset`), so a remount resumes it by brief
+   * instead of losing the image the operator picked; empty when nothing is uploading.
+   */
+  redditImageUploadPendingName?: string;
+  /** The brief that upload was started for, so a remount resumes that upload, not the current brief's. */
+  redditImageUploadPendingBriefId?: string;
+  /**
+   * A failed upload's reason and the brief it was for, kept until the operator removes or replaces
+   * the image, so a tab switch cannot lift the block it raises (`uploadFailed`) and let Create send
+   * the campaign without the image they chose. Empty when no upload has failed.
+   */
+  redditImageUploadFailedMessage?: string;
+  redditImageUploadFailedBriefId?: string;
+  /**
    * The Reddit video goal, carried for the same reason as the objective. Kept whatever the
    * objective is, so switching away from Video Views and back does not lose the choice; only the
    * REQUEST is gated on the objective. `''` is "not chosen yet", which blocks a Video Views create.
@@ -1266,6 +1328,17 @@ export interface RedditCampaignCreateRequest {
    * create. Both arms refuse a bad one before anything upstream is created.
    */
   imageUrl?: string;
+  /**
+   * The alternative to `imageUrl`: the id of an image uploaded to THIS brief through
+   * `POST /api/campaigns/brief/creative-assets`. campaign-service serves it to Reddit at a
+   * short-lived signed URL (LFXV2-2665). Exactly one of `imageUrl` / `imageAssetId`, and never with
+   * `postUrl` — upstream refuses any such combination with a 400.
+   *
+   * campaign-service only: the legacy creator does not read it, and campaign-service refuses it
+   * unless its URL signing is configured. Hence `CampaignListResult.redditAssetUploadEnabled`, and
+   * the create route refuses this field while that capability is off rather than dropping it.
+   */
+  imageAssetId?: string;
   /**
    * Button label on an authored post, matched case-insensitively against `REDDIT_CALL_TO_ACTIONS`.
    * Empty resolves on either arm to `DEFAULT_REDDIT_CALL_TO_ACTION`.
@@ -4230,6 +4303,18 @@ export interface CampaignListResult {
    */
   redditCreativeEnabled: boolean;
   /**
+   * Whether the Reddit section may offer an image UPLOAD, sent as `redditConfig.imageAssetId`.
+   *
+   * Needs the campaign-service create path to serve the create AND the
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_ASSETS` flag, which says the deployed campaign-service has
+   * its creative-asset URL signing configured (signing key + public base URL). Neither alone is
+   * enough: the legacy creator never reads `imageAssetId`, and a campaign-service without signing
+   * refuses it ("stored creative assets are not enabled for Reddit"). Modelled on the client like
+   * the capabilities above (`boolean | null`, `null` for unanswered), which withholds the control;
+   * the pasted image URL stays offered either way.
+   */
+  redditAssetUploadEnabled: boolean;
+  /**
    * Whether the create flow may offer the per-platform Bidding control (#3299).
    *
    * True only when the campaign-service create path serves the create AND the
@@ -4404,6 +4489,17 @@ export interface CampaignBiddingCapabilityBlock {
    * could not read anything; saving the brief starts the read. `unsupported`: the answer is no.
    */
   kind: 'pending' | 'failed' | 'unsaved' | 'unsupported';
+  message: string;
+}
+
+/**
+ * Why Create is blocked for an uploaded Reddit image the draft still holds but the request cannot
+ * carry, because the upload capability is unanswered or answered no. The kinds mean what they do on
+ * `CampaignBiddingCapabilityBlock`: the same capability read answers both. `otherBrief`: the upload
+ * was made for a different brief than the one now open, so it is never sent whatever the capability.
+ */
+export interface CampaignRedditImageAssetBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'otherBrief' | 'uploadFailed';
   message: string;
 }
 

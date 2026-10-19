@@ -60,6 +60,7 @@ import {
   CampaignSSEEventType,
   CampaignStatusToggleParams,
   CampaignStatusUpdateResult,
+  CreativeAssetUploadResult,
   GenerateEmailCopyResult,
   HubSpotEmailMonitorResponse,
   HubSpotEmailSearchResult,
@@ -102,13 +103,15 @@ import type {
   RedditKeywordsWindow,
 } from '@lfx-one/shared/interfaces';
 import { retryTransientHttpError } from '@shared/utils/http-error.utils';
-import { catchError, exhaustMap, last, map, Observable, of, take, takeWhile, throwError, timer } from 'rxjs';
+import { catchError, exhaustMap, last, map, Observable, of, ReplaySubject, share, Subject, take, takeUntil, takeWhile, throwError, timer } from 'rxjs';
 
 import { SseService } from './sse.service';
 
 @Injectable({ providedIn: 'root' })
 export class CampaignService {
   private readonly http = inject(HttpClient);
+  /** The latest creative-asset upload, kept until its answer is taken up or it is cancelled: see `uploadCreativeAsset`. */
+  private creativeAssetUpload: { briefId: string; upload$: Observable<CreativeAssetUploadResult>; cancel: Subject<void> } | null = null;
   private readonly sse = inject(SseService);
 
   public generateBrief(projectSlug: string, request: CampaignBriefRequest): Observable<SSEEvent<CampaignSSEEventType>> {
@@ -306,6 +309,56 @@ export class CampaignService {
     return this.http.post<{ jobId: string; result?: CampaignCreateResponse; error?: string; indeterminate?: boolean }>('/api/campaigns/create', request, {
       params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
     });
+  }
+
+  /**
+   * Upload an image for a saved brief and get back the creative-asset id a Reddit create names as
+   * `imageAssetId`. The body is the file's raw bytes typed with its own MIME type — the BFF route
+   * refuses anything but PNG/JPEG up to `CREATIVE_ASSET_MAX_BYTES` and does the base64 encoding
+   * campaign-service's JSON wire needs. `project` and `brief_id` travel as query params, as for
+   * `createCampaign`, because they are path segments upstream.
+   */
+  public uploadCreativeAsset(file: Blob, projectSlug: string, briefId: string): Observable<CreativeAssetUploadResult> {
+    // A new upload replaces any other outright, and aborts it: two concurrent uploads compete for
+    // campaign-service's upload budget, which sheds with a 503, so a discarded one could fail the pick.
+    this.cancelCreativeAssetUpload();
+    const cancel = new Subject<void>();
+    // Shared and replayed, never reset: the Implementation tab is destroyed on a tab switch, and
+    // unsubscribing must not abort the upload or lose its answer. A remount resumes it by brief
+    // (`resumeCreativeAssetUpload`) and gets the id, or the refusal, it would have seen. Only
+    // `cancel` (a new pick, or Remove) aborts the request.
+    const upload$ = this.http
+      .post<CreativeAssetUploadResult>('/api/campaigns/brief/creative-assets', file, {
+        params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
+        headers: { 'Content-Type': file.type },
+      })
+      .pipe(
+        takeUntil(cancel),
+        share({ connector: () => new ReplaySubject<CreativeAssetUploadResult>(1), resetOnError: false, resetOnComplete: false, resetOnRefCountZero: false })
+      );
+    // Only the latest upload is kept. The tab resumes the brief it is showing, so an older one (an
+    // abandoned brief, a left page) has no one to resume it and would otherwise hold its image, up
+    // to CREATIVE_ASSET_MAX_BYTES, for the rest of the session.
+    this.creativeAssetUpload = { briefId, upload$, cancel };
+    return upload$;
+  }
+
+  /** The brief's latest upload, in flight or answered but not yet taken up, or null. */
+  public resumeCreativeAssetUpload(briefId: string): Observable<CreativeAssetUploadResult> | null {
+    return this.creativeAssetUpload?.briefId === briefId ? this.creativeAssetUpload.upload$ : null;
+  }
+
+  /** Drop `upload$` once its answer is taken up, if it is still the latest. The request has finished. */
+  public forgetCreativeAssetUpload(upload$: Observable<CreativeAssetUploadResult>): void {
+    if (this.creativeAssetUpload?.upload$ === upload$) {
+      this.creativeAssetUpload = null;
+    }
+  }
+
+  /** Abort the latest upload and drop it: replaced by a new pick, or removed. */
+  public cancelCreativeAssetUpload(): void {
+    this.creativeAssetUpload?.cancel.next();
+    this.creativeAssetUpload = null;
   }
 
   public getCreateResult(jobId: string, projectSlug: string): Observable<CampaignJobOutcome | null> {

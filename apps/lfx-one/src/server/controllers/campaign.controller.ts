@@ -62,6 +62,9 @@ import {
   CAMPAIGN_METRICS_WINDOWS,
   CAMPAIGN_PLATFORMS,
   CAMPAIGN_SERVICE_BUDGET_UNWRITABLE_MESSAGE_PREFIX,
+  CREATIVE_ASSET_MAX_BYTES,
+  CREATIVE_ASSET_TOO_LARGE_MESSAGE,
+  CREATIVE_ASSET_WRONG_TYPE_MESSAGE,
   DEFAULT_CAMPAIGN_BID_TYPE,
   GOOGLE_ADS_AGE_RANGES,
   GOOGLE_ADS_AGE_RANGE_MAP,
@@ -149,8 +152,10 @@ import {
   googleAdsTrimSpace,
   googleAdsUrlGoParseFlaw,
   isCanonicalGoogleAdsResourceId,
+  isCreativeAssetMimeType,
   isGoSpaceCode,
   isMicrosoftMatchType,
+  sniffCreativeAssetMimeType,
 } from '@lfx-one/shared/constants';
 
 import { META_ACCOUNTS, REDDIT_ACCOUNTS } from '../constants';
@@ -176,6 +181,7 @@ import {
   asResumeRefusal,
   CampaignServiceClient,
   canCreateWithBidding,
+  canUseRedditCreativeAssets,
   deriveEventSlug,
   isCampaignServiceJobId,
   isCampaignServiceNotFound,
@@ -666,6 +672,20 @@ export class CampaignController {
       if (unservedBiddingField !== null) {
         next(
           ServiceValidationError.forField(unservedBiddingField, 'bidding options are not enabled on this deployment; omit bidding to use automatic bidding', {
+            operation: 'campaign_create',
+            service: 'campaign_controller',
+          })
+        );
+        return;
+      }
+
+      // An uploaded Reddit image is refused, not dropped, when this deployment cannot use it — the
+      // same reasoning as `bidding` above. The form never sends it in that state
+      // (`redditAssetUploadEnabled` hides the upload control).
+      const unservedRedditAssetField = this.unservedRedditAssetField(body);
+      if (unservedRedditAssetField !== null) {
+        next(
+          ServiceValidationError.forField(unservedRedditAssetField, 'uploaded Reddit images are not enabled on this deployment; supply an image URL instead', {
             operation: 'campaign_create',
             service: 'campaign_controller',
           })
@@ -2104,6 +2124,84 @@ export class CampaignController {
         actionItemCount: result.action_items.length,
       });
       res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `POST /api/campaigns/brief/creative-assets?project=&brief_id=` — the raw image bytes, typed
+   * `image/png` or `image/jpeg`, stored against the brief by campaign-service's
+   * `upload-creative-asset`. Answers `{ id, mimeType, byteSize, checksum, created }` with 201 when
+   * the image was stored and 200 when an identical one already was (the id is usable either way).
+   *
+   * Refused before anything is sent upstream: the capability off (`canUseRedditCreativeAssets` —
+   * nothing could use the asset), a missing `project` or `brief_id`, a type outside
+   * `CREATIVE_ASSET_MIME_TYPES` or bytes that are not the type they claim (415), an empty body
+   * (400). Over `CREATIVE_ASSET_MAX_BYTES` is a 413 from the route's raw parser before this runs;
+   * the length is re-checked here so a direct caller of this method gets the same answer.
+   * Upstream 4xx/5xx pass through with campaign-service's own message. Only ids, type and size are
+   * logged, never the bytes.
+   */
+  public async uploadCreativeAsset(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'campaign_upload_creative_asset';
+    const fail = (field: string, message: string): void => {
+      next(ServiceValidationError.forField(field, message, { operation, service: 'campaign_controller' }));
+    };
+
+    if (!canUseRedditCreativeAssets()) {
+      fail('file', 'image uploads are not enabled on this deployment; paste an image URL instead');
+      return;
+    }
+
+    const briefId = typeof req.query['brief_id'] === 'string' ? req.query['brief_id'].trim() : '';
+    if (briefId.length === 0) {
+      fail('brief_id', 'save the brief before uploading an image for it');
+      return;
+    }
+    // Refused, not defaulted, for the reason `getBriefMetrics` refuses: a constant here would
+    // write into another foundation's brief.
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug.length === 0) {
+      fail('project', 'no foundation is selected; reload the campaigns page from the sidebar');
+      return;
+    }
+
+    // `express.raw` skips a body whose type is not on its list, so a wrong type arrives here with
+    // no Buffer — told apart from an empty file by the declared type, not by the body.
+    const declaredType = (req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
+    const image: unknown = req.body;
+    if (!isCreativeAssetMimeType(declaredType) || !Buffer.isBuffer(image)) {
+      next(this.unsupportedCreativeAsset(req, operation));
+      return;
+    }
+    if (image.byteLength === 0) {
+      fail('file', 'the image is empty');
+      return;
+    }
+    if (image.byteLength > CREATIVE_ASSET_MAX_BYTES) {
+      next(
+        new MicroserviceError(CREATIVE_ASSET_TOO_LARGE_MESSAGE, 413, 'PAYLOAD_TOO_LARGE', {
+          operation,
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+    // The declared type is the browser's claim; campaign-service re-sniffs and would refuse a
+    // mismatch with a 400. Checking the magic bytes here gives that the wrong-type answer without
+    // a base64 round trip.
+    if (sniffCreativeAssetMimeType(image) !== declaredType) {
+      next(this.unsupportedCreativeAsset(req, operation));
+      return;
+    }
+
+    const startTime = logger.startOperation(req, operation, { briefId, projectSlug, contentType: declaredType, byteSize: image.byteLength });
+    try {
+      const asset = await this.campaignServiceClient.uploadCreativeAsset(req, projectSlug, briefId, declaredType, image);
+      logger.success(req, operation, startTime, { briefId, assetId: asset.id, created: asset.created });
+      res.status(asset.created ? 201 : 200).json(asset);
     } catch (error) {
       next(error);
     }
@@ -3964,6 +4062,29 @@ export class CampaignController {
           })
       )
     );
+  }
+
+  /** 415 for an upload that is not a PNG or JPEG, or whose bytes are not the type declared. */
+  private unsupportedCreativeAsset(req: Request, operation: string): MicroserviceError {
+    return new MicroserviceError(CREATIVE_ASSET_WRONG_TYPE_MESSAGE, 415, 'UNSUPPORTED_MEDIA_TYPE', {
+      operation,
+      service: 'campaign_controller',
+      path: req.path,
+    });
+  }
+
+  /**
+   * `redditConfig.imageAssetId` when this deployment cannot honour it, else `null`.
+   *
+   * `in`, as for bidding: an explicit `imageAssetId: null` is still the field, and campaign-service
+   * would refuse it. Off means either the legacy creator serves (it never reads the field, so the
+   * campaign would have no ad) or campaign-service's URL signing is unconfigured (it refuses).
+   */
+  private unservedRedditAssetField(body: CampaignCreateRequest): string | null {
+    if (canUseRedditCreativeAssets()) return null;
+    const config: unknown = body?.redditConfig;
+    if (config !== null && typeof config === 'object' && 'imageAssetId' in config) return 'redditConfig.imageAssetId';
+    return null;
   }
 
   /** The first lane config carrying `bidding` while this deployment cannot honour it (see `createCampaign`), or `null`. */

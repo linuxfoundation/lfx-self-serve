@@ -32,6 +32,7 @@ import {
   googleAdsTrimSpace,
   isGoogleAdsServableUrl,
   JOB_LOST_MESSAGE,
+  isCreativeAssetMimeType,
 } from '@lfx-one/shared/constants';
 import { encodePathSegment } from '../helpers/url-validation';
 import { coerceCampaignEventDetails } from '@lfx-one/shared/utils/campaign-event-details.utils';
@@ -69,6 +70,7 @@ import type {
   CampaignServiceCampaignResolution,
   CampaignServiceConnection,
   CampaignServiceCreateResult,
+  CampaignServiceCreativeAsset,
   CampaignServiceHubSpotCampaign,
   CampaignServiceHubSpotCampaigns,
   CampaignServiceHubSpotEmailMonitor,
@@ -82,6 +84,8 @@ import type {
   CampaignServiceNegativeKeywords,
   CampaignSitelink,
   CampaignToggleStatus,
+  CreativeAssetMimeType,
+  CreativeAssetUploadResult,
   GenerateEmailCopyResult,
   HubSpotEmailSearchResult,
   HubSpotMarketingEmail,
@@ -518,6 +522,19 @@ export function canCreateWithBidding(): boolean {
   return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBidding);
 }
 
+/**
+ * Whether a Reddit create may reference an uploaded image by `imageAssetId` (decision D3).
+ *
+ * Needs the campaign-service create path to serve the create AND the Reddit-assets flag, which
+ * says that service's creative-asset URL signing is configured. Either alone fails: the legacy
+ * creator never reads `imageAssetId` (the campaign would be created with no ad), and an unsigned
+ * campaign-service refuses the field with a 400. Gates the upload route as well as the create
+ * field, because an upload nothing can use is a stored image and a confused operator.
+ */
+export function canUseRedditCreativeAssets(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceRedditAssets);
+}
+
 export class CampaignServiceClient {
   private readonly microserviceProxy: MicroserviceProxyService;
 
@@ -584,6 +601,7 @@ export class CampaignServiceClient {
         googleChannelsEnabled: canCreateGoogleChannels(),
         googleCreativeEnabled: cutoverOwnsCreate(),
         redditCreativeEnabled: canCreateRedditCreative(),
+        redditAssetUploadEnabled: canUseRedditCreativeAssets(),
         biddingEnabled: canCreateWithBidding(),
       };
     }
@@ -641,6 +659,7 @@ export class CampaignServiceClient {
       googleChannelsEnabled: canCreateGoogleChannels(),
       googleCreativeEnabled: cutoverOwnsCreate(),
       redditCreativeEnabled: canCreateRedditCreative(),
+      redditAssetUploadEnabled: canUseRedditCreativeAssets(),
       biddingEnabled: canCreateWithBidding(),
     };
   }
@@ -1936,6 +1955,87 @@ export class CampaignServiceClient {
       // Recounted from the mapped results rather than copied, so it cannot disagree with them
       // when an entry above was downgraded to UNCONFIRMED.
       appliedCount: results.filter((r) => r.outcome === 'APPLIED' || r.outcome === 'ALREADY_PRESENT').length,
+    };
+  }
+
+  /**
+   * Store an image against a brief (`upload-creative-asset`) and return its asset id, which a
+   * Reddit create then names as `redditConfig.imageAssetId` (decision D3).
+   *
+   * The wire is JSON with the image base64-encoded in `bytes` — not multipart — because that is
+   * what the endpoint declares (`design/brief.go`). The body is serialized HERE and handed to the
+   * API client as a Buffer, which is the one shape it sends with an explicit `Content-Length`:
+   * campaign-service's upload admission prices a request by its declared length and charges an
+   * undeclared (chunked) one the whole upload budget, so undeclared uploads run one at a time and
+   * a concurrent one is shed with a 503 (campaign-service #183/#343, `pkg/uploadclient`).
+   *
+   * The caller has already bounded the image (`CREATIVE_ASSET_MAX_BYTES`) and checked its type;
+   * campaign-service re-sniffs, re-bounds and decodes it in full, and its 400s carry a readable
+   * reason that passes through. 201 and 200 are both success: 200 is an identical image already
+   * stored for this brief, returned unchanged.
+   *
+   * The answer is VALIDATED, not cast: its id is what the create will send, and an id that is not
+   * the asset just stored would fail the Reddit platform later, after the operator has moved on.
+   */
+  public async uploadCreativeAsset(
+    req: Request,
+    projectSlug: string,
+    briefId: string,
+    contentType: CreativeAssetMimeType,
+    image: Buffer
+  ): Promise<CreativeAssetUploadResult> {
+    const path = `/projects/${encodePathSegment(projectSlug)}/briefs/${encodePathSegment(briefId)}/creative-assets`;
+    const body = Buffer.from(JSON.stringify({ content_type: contentType, bytes: image.toString('base64') }), 'utf8');
+
+    logger.debug(req, 'upload_creative_asset', 'Uploading creative asset to campaign-service', {
+      brief_id: briefId,
+      content_type: contentType,
+      byte_size: image.byteLength,
+    });
+
+    const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceCreativeAsset>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      path,
+      'POST',
+      // The body is the SIXTH argument: a payload in the query position goes out with no body.
+      undefined,
+      body,
+      // A Buffer body carries no Content-Type of its own (the client only defaults JSON for
+      // non-Buffer data), so it is stated here.
+      { 'Content-Type': 'application/json' }
+    );
+
+    const asset = response.data;
+    const usable =
+      typeof asset?.id === 'string' &&
+      asset.id.length > 0 &&
+      typeof asset.brief_id === 'string' &&
+      asset.brief_id.toLowerCase() === briefId.toLowerCase() &&
+      isCreativeAssetMimeType(asset.mime_type) &&
+      typeof asset.byte_size === 'number' &&
+      typeof asset.checksum === 'string';
+    if (!usable) {
+      logger.warning(req, 'upload_creative_asset', 'Upstream answered the upload with an unusable asset', {
+        brief_id: briefId,
+        echoed_brief_id: asset?.brief_id,
+        status: response.status,
+      });
+      throw new MicroserviceError('Creative asset upload answer was unusable', 502, 'BAD_GATEWAY', {
+        operation: 'upload_creative_asset',
+        service: 'campaign_service_client',
+        path,
+        clientMessage: 'The image upload could not be confirmed. Please try again.',
+      });
+    }
+
+    return {
+      id: asset.id,
+      mimeType: asset.mime_type as CreativeAssetMimeType,
+      byteSize: asset.byte_size,
+      checksum: asset.checksum,
+      // The STATUS is authoritative upstream (201 stored, 200 already existed); `created` mirrors it.
+      created: response.status === 201,
     };
   }
 

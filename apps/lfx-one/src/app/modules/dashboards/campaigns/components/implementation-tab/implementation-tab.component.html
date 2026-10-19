@@ -773,7 +773,9 @@
           }
 
           @if (googleBiddingError()) {
-            <p role="alert" class="text-xs text-red-600" data-testid="implementation-google-bidding-error">{{ googleBiddingError() }}</p>
+            <p role="alert" class="text-xs text-red-600" data-testid="implementation-google-bidding-error">
+              {{ googleBiddingError() }}
+            </p>
           }
         </div>
       }
@@ -1691,6 +1693,65 @@
                   <p class="text-xs text-gray-500">Button on the composed post. Ignored when a post URL is set.</p>
                 </div>
               </div>
+
+              <!-- Upload the image instead of pasting a URL (decision D3). Offered only on an explicit
+                   yes from `redditAssetUploadAvailable()`: the legacy creator never reads an uploaded
+                   image, and campaign-service refuses one until its URL signing is configured. The
+                   image URL above stays offered either way; the upload wins when both are present. -->
+              <!-- Always mounted, like the asset block's region below: a live region created with the
+                   control as upload support settles would miss its first announcement. -->
+              <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-reddit-image-status-live">
+                {{ redditImageUploadLiveMessage() }}
+              </div>
+              @if (redditAssetUploadAvailable()) {
+                <div class="flex flex-col gap-1" data-testid="implementation-reddit-image-upload">
+                  <label class="text-xs font-medium text-gray-700" for="reddit-image-file">Or upload an image</label>
+                  <input
+                    id="reddit-image-file"
+                    type="file"
+                    [attr.accept]="creativeAssetAccept"
+                    (change)="onRedditImageFileChange($event)"
+                    [attr.aria-describedby]="redditImageFileDescribedBy()"
+                    [attr.aria-invalid]="redditImageUploadStatus() === 'error' ? 'true' : null"
+                    class="text-sm text-gray-900 file:mr-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:text-gray-700 hover:file:bg-gray-50"
+                    data-testid="implementation-reddit-image-file" />
+                  <p id="reddit-image-file-hint" class="text-xs text-gray-500">
+                    PNG or JPEG, up to 10 MB. Used instead of the image URL; ignored when a post URL is set.
+                  </p>
+                  <!-- Progress and success are announced by the always-mounted live region above the
+                       control; this is the visible line the input is described by. The refusal is its
+                       own alert. -->
+                  <p id="reddit-image-file-status" class="text-xs text-gray-700" data-testid="implementation-reddit-image-status">
+                    {{ redditImageUploadStatusMessage() }}
+                  </p>
+                  @if (redditImageUploadStatus() === 'uploading') {
+                    <div>
+                      <button
+                        type="button"
+                        (click)="onRedditImageAssetRemove()"
+                        class="text-xs font-medium text-blue-600 hover:underline"
+                        data-testid="implementation-reddit-image-cancel">
+                        Cancel upload
+                      </button>
+                    </div>
+                  } @else if (redditImageAssetId()) {
+                    <div>
+                      <button
+                        type="button"
+                        (click)="onRedditImageAssetRemove()"
+                        class="text-xs font-medium text-blue-600 hover:underline"
+                        data-testid="implementation-reddit-image-remove">
+                        Remove uploaded image
+                      </button>
+                    </div>
+                  }
+                  @if (redditImageUploadStatus() === 'error') {
+                    <p id="reddit-image-file-error" role="alert" class="text-xs text-red-600" data-testid="implementation-reddit-image-error">
+                      {{ redditImageUploadError() }}
+                    </p>
+                  }
+                </div>
+              }
             }
 
             <!-- Said BEFORE the create, beside the controls that answer it. The same product
@@ -1703,6 +1764,48 @@
                  the contrast reason the Google warning records. -->
             @if (redditNoAdWarning()) {
               <p class="text-xs text-amber-700" data-testid="implementation-reddit-no-ad-warning">{{ redditNoAdWarning() }}</p>
+            }
+
+            <!-- A retained uploaded image the request cannot carry yet (the upload control above is
+                 hidden while the capability is not an explicit yes). Outside that control so its
+                 actions stay reachable; the live region is always mounted and only its text changes. -->
+            <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-reddit-image-asset-block-live">
+              {{ redditImageAssetBlockMessage() }}
+            </div>
+            @if (redditImageAssetBlock(); as block) {
+              <div
+                class="flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
+                [class.bg-gray-50]="block.kind === 'pending'"
+                [class.text-gray-700]="block.kind === 'pending'"
+                [class.bg-amber-50]="block.kind !== 'pending'"
+                [class.text-amber-800]="block.kind !== 'pending'"
+                [attr.data-testid]="'implementation-reddit-image-asset-block-' + block.kind">
+                <p class="flex items-center gap-2">
+                  @if (block.kind === 'pending') {
+                    <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+                  }
+                  {{ block.message }}
+                </p>
+                <!-- Remove is offered in EVERY state, pending included: a read can stall. -->
+                <div class="flex items-center gap-2">
+                  @if (block.kind === 'failed') {
+                    <lfx-button
+                      label="Retry"
+                      size="small"
+                      severity="secondary"
+                      [outlined]="true"
+                      (onClick)="retryBiddingCapability.emit()"
+                      data-testid="implementation-reddit-image-asset-block-retry" />
+                  }
+                  <lfx-button
+                    label="Remove uploaded image"
+                    size="small"
+                    severity="secondary"
+                    [text]="true"
+                    (onClick)="onRedditImageAssetRemove()"
+                    data-testid="implementation-reddit-image-asset-block-remove" />
+                </div>
+              </div>
             }
           </div>
 

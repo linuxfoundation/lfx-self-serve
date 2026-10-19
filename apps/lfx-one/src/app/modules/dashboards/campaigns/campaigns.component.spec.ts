@@ -1947,6 +1947,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
+            redditAssetUploadEnabled: false,
             biddingEnabled: false,
           })
         );
@@ -1981,6 +1982,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
+            redditAssetUploadEnabled: false,
             biddingEnabled: false,
           })
         );
@@ -2026,6 +2028,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: true,
             googleCreativeEnabled: true,
             redditCreativeEnabled: true,
+            redditAssetUploadEnabled: false,
             biddingEnabled: false,
           })
         );
@@ -2056,6 +2059,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
+            redditAssetUploadEnabled: false,
             biddingEnabled: true,
           })
         );
@@ -2137,6 +2141,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
+            redditAssetUploadEnabled: false,
             biddingEnabled: false,
           })
         );
@@ -2181,6 +2186,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
+            redditAssetUploadEnabled: false,
             biddingEnabled: false,
           })
         );
@@ -2196,6 +2202,7 @@ describe('CampaignsComponent brief persistence', () => {
           googleChannelsEnabled: false,
           googleCreativeEnabled: false,
           redditCreativeEnabled: false,
+          redditAssetUploadEnabled: false,
           biddingEnabled: false,
         });
         capability.complete();
@@ -2227,6 +2234,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
+            redditAssetUploadEnabled: false,
             biddingEnabled: false,
           })
         );
@@ -2259,6 +2267,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
+            redditAssetUploadEnabled: false,
             biddingEnabled: false,
           })
         );
@@ -2286,6 +2295,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
+            redditAssetUploadEnabled: false,
             biddingEnabled: false,
           })
         );
@@ -2326,6 +2336,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
+            redditAssetUploadEnabled: false,
             biddingEnabled: false,
           })
         );
@@ -2367,6 +2378,7 @@ describe('CampaignsComponent brief persistence', () => {
           googleChannelsEnabled: false,
           googleCreativeEnabled: false,
           redditCreativeEnabled: false,
+          redditAssetUploadEnabled: false,
           biddingEnabled: false,
         });
         pending.complete();
@@ -2408,6 +2420,7 @@ describe('CampaignsComponent brief persistence', () => {
           googleChannelsEnabled: false,
           googleCreativeEnabled: false,
           redditCreativeEnabled: false,
+          redditAssetUploadEnabled: false,
           biddingEnabled: false,
         });
         second.complete();
@@ -2433,6 +2446,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
+            redditAssetUploadEnabled: false,
             biddingEnabled: false,
           })
         );
@@ -2460,6 +2474,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: true,
             redditCreativeEnabled: true,
+            redditAssetUploadEnabled: false,
             biddingEnabled: false,
           })
         );
@@ -2477,6 +2492,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: true,
             redditCreativeEnabled: true,
+            redditAssetUploadEnabled: false,
             biddingEnabled: false,
           })
         );
@@ -2503,6 +2519,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: true,
             redditCreativeEnabled: true,
+            redditAssetUploadEnabled: false,
             biddingEnabled: true,
           })
         );
@@ -2538,6 +2555,7 @@ describe('CampaignsComponent brief persistence', () => {
           googleChannelsEnabled: false,
           googleCreativeEnabled: true,
           redditCreativeEnabled: true,
+          redditAssetUploadEnabled: false,
           biddingEnabled: false,
         });
         await fixture.whenStable();
@@ -2570,6 +2588,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: true,
             redditCreativeEnabled: true,
+            redditAssetUploadEnabled: false,
             biddingEnabled: false,
           })
         );
@@ -2602,6 +2621,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: true,
             redditCreativeEnabled: true,
+            redditAssetUploadEnabled: false,
             biddingEnabled: false,
           })
         );
@@ -2637,6 +2657,7 @@ describe('CampaignsComponent brief persistence', () => {
           googleChannelsEnabled: false,
           googleCreativeEnabled: true,
           redditCreativeEnabled: true,
+          redditAssetUploadEnabled: false,
           biddingEnabled: false,
         });
         await fixture.whenStable();
@@ -2703,6 +2724,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleChannelsEnabled: false,
             googleCreativeEnabled: true,
             redditCreativeEnabled: true,
+            redditAssetUploadEnabled: false,
             biddingEnabled: false,
           })
         );
@@ -11010,6 +11032,7 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
       googleChannelsEnabled: false,
       googleCreativeEnabled: false,
       redditCreativeEnabled: false,
+      redditAssetUploadEnabled: false,
       biddingEnabled,
     });
 

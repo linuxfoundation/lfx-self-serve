@@ -1,12 +1,46 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Router } from 'express';
+import { CREATIVE_ASSET_MAX_BYTES, CREATIVE_ASSET_MIME_TYPES, CREATIVE_ASSET_TOO_LARGE_MESSAGE } from '@lfx-one/shared/constants';
+import express, { NextFunction, Request, Response, Router } from 'express';
 
 import { AudienceBuilderController } from '../controllers/audience-builder.controller';
 import { CampaignController } from '../controllers/campaign.controller';
 import { CampaignOptimizeController } from '../controllers/campaign-optimize.controller';
+import { MicroserviceError } from '../errors';
 import { requireCampaignManager } from '../middleware/require-marketing-access.middleware';
+
+/**
+ * Converts the raw body parser's size-limit error (`entity.too.large`) into a 413 before it
+ * reaches the global error handler, which keeps the real status only for BaseApiError instances
+ * and would otherwise flatten it into a 500. Mirrors `mentorship-mentee.route.ts`.
+ */
+function handleCreativeAssetParseError(err: unknown, req: Request, _res: Response, next: NextFunction): void {
+  if (err && typeof err === 'object' && (err as { type?: string }).type === 'entity.too.large') {
+    next(
+      new MicroserviceError(CREATIVE_ASSET_TOO_LARGE_MESSAGE, 413, 'PAYLOAD_TOO_LARGE', {
+        operation: 'campaign_upload_creative_asset',
+        service: 'campaign_controller',
+        path: req.path,
+      })
+    );
+    return;
+  }
+  // Every other body-parser refusal (an aborted upload, an unsupported Content-Encoding, a size
+  // that disagrees with Content-Length) is the client's, and keeps its 4xx rather than becoming a 500.
+  const status = err && typeof err === 'object' ? (err as { status?: unknown }).status : undefined;
+  if (typeof status === 'number' && status >= 400 && status < 500) {
+    next(
+      new MicroserviceError('The image upload could not be read. Please try again.', status, status === 415 ? 'UNSUPPORTED_MEDIA_TYPE' : 'BAD_REQUEST', {
+        operation: 'campaign_upload_creative_asset',
+        service: 'campaign_controller',
+        path: req.path,
+      })
+    );
+    return;
+  }
+  next(err);
+}
 
 const router = Router();
 const campaignController = new CampaignController();
@@ -37,6 +71,15 @@ router.post('/brief/:briefId/approve', (req, res, next) => campaignController.ap
 // not a drop-in replacement for them; nothing is cut over to it yet.
 router.get('/brief/metrics', (req, res, next) => campaignController.getBriefMetrics(req, res, next));
 router.post('/create', (req, res, next) => campaignController.createCampaign(req, res, next));
+// An image for the brief, stored by campaign-service and named by `redditConfig.imageAssetId`
+// (decision D3). The body is the raw PNG/JPEG bytes, buffered here (at most
+// CREATIVE_ASSET_MAX_BYTES) so the upstream JSON body can be sent with a declared Content-Length.
+router.post(
+  '/brief/creative-assets',
+  express.raw({ type: [...CREATIVE_ASSET_MIME_TYPES], limit: CREATIVE_ASSET_MAX_BYTES }),
+  handleCreativeAssetParseError,
+  (req: Request, res: Response, next: NextFunction) => campaignController.uploadCreativeAsset(req, res, next)
+);
 router.get('/list', (req, res, next) => campaignController.listBriefCampaigns(req, res, next));
 router.get('/jobs/:jobId', (req, res, next) => campaignController.getJobStatus(req, res, next));
 // The email channel's template picker. Registered before `/hubspot/utm` only for reading order —

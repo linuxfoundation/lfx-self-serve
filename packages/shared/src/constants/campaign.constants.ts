@@ -34,6 +34,7 @@ import type {
   CampaignTabOption,
   CampaignToggleAction,
   CampaignToggleStatus,
+  CreativeAssetMimeType,
   GoogleCreativeEitherOrRule,
   GoogleCreativeFieldSpec,
   KeywordActionOutcome,
@@ -2622,6 +2623,55 @@ export const DEFAULT_REDDIT_CALL_TO_ACTION = 'Learn More';
  * mirroring upstream must not have. Use `[...headline].length`.
  */
 export const MAX_REDDIT_HEADLINE_LENGTH = 300;
+
+/**
+ * The image types a creative-asset upload accepts — campaign-service's `upload-creative-asset`
+ * `content_type` enum (`design/brief.go`), which re-sniffs the bytes and refuses anything else.
+ *
+ * The one list both sides of this app check against: the browser's file picker and pre-upload
+ * check, and the BFF route that refuses a body before it is base64-encoded and forwarded.
+ */
+export const CREATIVE_ASSET_MIME_TYPES = ['image/png', 'image/jpeg'] as const;
+
+/**
+ * The largest image this app uploads as a creative asset, in bytes (10 MiB).
+ *
+ * Deliberately BELOW campaign-service's own 30 MiB decoded ceiling. The BFF buffers the whole
+ * image, then a base64 JSON body a third larger, to send upstream with a declared `Content-Length`
+ * (campaign-service's upload admission prices a request by that header and runs undeclared uploads
+ * one at a time), so this bound is what keeps one upload's memory on this tier small. It is also
+ * comfortably above any ad image an operator would hand Reddit, which re-hosts the image itself.
+ */
+export const CREATIVE_ASSET_MAX_BYTES = 10 * 1024 * 1024;
+
+/** Shown, and answered by the BFF, when an image exceeds `CREATIVE_ASSET_MAX_BYTES`. */
+export const CREATIVE_ASSET_TOO_LARGE_MESSAGE = 'The image is larger than 10 MB. Choose a smaller PNG or JPEG.';
+
+/** Shown, and answered by the BFF, when a file is not one of `CREATIVE_ASSET_MIME_TYPES`. */
+export const CREATIVE_ASSET_WRONG_TYPE_MESSAGE = 'Only PNG and JPEG images can be uploaded.';
+
+/**
+ * The creative-asset type the leading bytes of an image actually are, or `null`.
+ *
+ * Checked by the BFF before forwarding, because a declared `Content-Type` is the caller's claim:
+ * campaign-service re-sniffs and refuses a mismatch anyway, so this only turns that upstream 400
+ * into the same readable refusal the wrong-type case gets, without a round trip. PNG is its fixed
+ * eight-byte signature; JPEG is the SOI marker followed by the start of the next marker.
+ */
+export function sniffCreativeAssetMimeType(bytes: unknown): CreativeAssetMimeType | null {
+  // Only a real byte buffer is read: the BFF hands this a request body, which a tampered request
+  // could make an array or a string whose `length`/indexes would be read as bytes.
+  if (Array.isArray(bytes) || !(bytes instanceof Uint8Array)) return null;
+  const png = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  if (bytes.length >= png.length && png.every((b, i) => bytes[i] === b)) return 'image/png';
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
+  return null;
+}
+
+/** Whether a declared MIME type is one `CREATIVE_ASSET_MIME_TYPES` admits. */
+export function isCreativeAssetMimeType(value: unknown): value is CreativeAssetMimeType {
+  return typeof value === 'string' && (CREATIVE_ASSET_MIME_TYPES as readonly string[]).includes(value);
+}
 
 /**
  * The concrete video optimization goals Reddit accepts — `validVideoGoals` in the same upstream
