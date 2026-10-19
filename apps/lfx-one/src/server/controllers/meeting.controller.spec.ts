@@ -1402,6 +1402,20 @@ describe('MeetingController', () => {
       );
     });
 
+    it('logs the removing username, email and removed registrant IDs on success', async () => {
+      vi.mocked(getUsernameFromAuth).mockResolvedValueOnce('alice');
+      const req = buildReq();
+
+      await controller.removeMyMeetingRegistration(req, buildRes(), next);
+
+      expect(logger.success).toHaveBeenCalledWith(
+        req,
+        'remove_my_meeting_registration',
+        expect.anything(),
+        expect.objectContaining({ username: 'alice', email: 'user@example.com', removed_registrant_ids: ['reg-1'] })
+      );
+    });
+
     it.each([[undefined], ['some-other-page'], ['']])('logs an unrecognised or missing removal source (%s) as unknown', async (header) => {
       const req = buildReq({}, header === undefined ? {} : { 'x-lfx-removal-source': header });
 

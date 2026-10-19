@@ -1228,6 +1228,9 @@ export class MeetingController {
       logger.success(req, 'remove_my_meeting_registration', startTime, {
         meeting_id: uid,
         source,
+        username,
+        email: userEmail,
+        removed_registrant_ids: result.removed_registrant_ids,
         removed_count: result.removed_registrant_ids.length,
         remaining_count: result.remaining_registrant_ids.length,
       });
