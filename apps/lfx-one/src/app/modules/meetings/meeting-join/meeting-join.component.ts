@@ -1785,6 +1785,9 @@ export class MeetingJoinComponent implements OnInit {
       return;
     }
 
+    // A new Zoom tab would bury the confirmation; stays off for the visit, including after the param is dropped.
+    this.hasAutoJoined.set(true);
+
     if (!this.authenticated()) {
       window.location.href = `/login?returnTo=${encodeURIComponent(this.router.url)}`;
       return;

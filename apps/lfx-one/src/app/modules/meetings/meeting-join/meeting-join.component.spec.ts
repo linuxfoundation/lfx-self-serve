@@ -33,6 +33,7 @@ import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { BehaviorSubject, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { ConfirmDialog } from 'primeng/confirmdialog';
 import { MeetingJoinComponent } from './meeting-join.component';
 
 // Regression coverage for GH-1731's guest-add orchestration: the join page maintains an optimistic
@@ -55,6 +56,7 @@ describe('MeetingJoinComponent', () => {
   let getPastMeetingTranscript: ReturnType<typeof vi.fn>;
   let getPublicMeetingOccurrences: ReturnType<typeof vi.fn>;
   let removeMyMeetingRegistration: ReturnType<typeof vi.fn>;
+  let getPublicMeetingJoinUrl: ReturnType<typeof vi.fn>;
   let getMeetingRsvpForCurrentUser: ReturnType<typeof vi.fn>;
   let removedIds: ReturnType<typeof signal<ReadonlySet<string>>>;
   let toastAdd: ReturnType<typeof vi.fn>;
@@ -130,6 +132,7 @@ describe('MeetingJoinComponent', () => {
     getPastMeetingParticipants = vi.fn().mockReturnValue(of([]));
     getPastMeetingTranscript = vi.fn().mockReturnValue(of(null));
     getPublicMeetingOccurrences = vi.fn().mockReturnValue(of({ past: [], future: [] }));
+    getPublicMeetingJoinUrl = vi.fn().mockReturnValue(of({ link: undefined }));
     removeMyMeetingRegistration = vi.fn().mockReturnValue(of({ removed_registrant_ids: [], remaining_registrant_ids: [] }));
     getMeetingRsvpForCurrentUser = vi.fn().mockReturnValue(of(null));
     removedIds = signal<ReadonlySet<string>>(new Set());
@@ -162,7 +165,7 @@ describe('MeetingJoinComponent', () => {
             getPublicMeeting,
             getPublicPastMeeting,
             getPublicMeetingOccurrences,
-            getPublicMeetingJoinUrl: vi.fn().mockReturnValue(of({ link: undefined })),
+            getPublicMeetingJoinUrl,
             getMyMeetingRegistrants,
             removeMyMeetingRegistration,
             removedRegistrationMeetingIds: removedIds,
@@ -1293,6 +1296,69 @@ describe('MeetingJoinComponent', () => {
         expect(confirm).not.toHaveBeenCalled();
         expect(removeMyMeetingRegistration).not.toHaveBeenCalled();
         expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'info', summary: 'Not registered' }));
+      });
+
+      describe('while the meeting is joinable', () => {
+        const JOIN_LINK = 'https://zoom.us/j/1234567890';
+        const joinableMeeting = () => buildMeeting({ organizer: false, invited: true, start_time: new Date().toISOString() });
+
+        afterEach(() => vi.restoreAllMocks());
+
+        it('opens Zoom without the link (control for the tests below)', async () => {
+          const open = vi.spyOn(window, 'open').mockReturnValue(null);
+          getPublicMeetingJoinUrl.mockReturnValue(of({ link: JOIN_LINK }));
+
+          await createFixture(joinableMeeting());
+
+          expect(open).toHaveBeenCalledTimes(1);
+        });
+
+        it('does not open Zoom behind the prompt, even when the join URL arrives after the param is dropped', async () => {
+          queryParamMap$.next(convertToParamMap({ action: 'leave' }));
+          const open = vi.spyOn(window, 'open').mockReturnValue(null);
+          const confirm = confirmSpy();
+          const joinUrl$ = new Subject<{ link: string }>();
+          getPublicMeetingJoinUrl.mockReturnValue(joinUrl$);
+
+          await createFixture(joinableMeeting());
+          expect(confirm).toHaveBeenCalledTimes(1);
+          expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { action: null } }));
+
+          joinUrl$.next({ link: JOIN_LINK });
+          await TestBed.inject(ApplicationRef).whenStable();
+
+          expect(open).not.toHaveBeenCalled();
+        });
+      });
+
+      it('shows the real confirmation on an emailed page load and removes the viewer once they confirm', async () => {
+        queryParamMap$.next(convertToParamMap({ action: 'leave' }));
+        const invitedMeeting = buildMeeting({ organizer: false, invited: true });
+        // The live refetch behind the seed must agree with it, or the page would see an un-invited viewer.
+        getPublicMeeting.mockReturnValue(of({ meeting: invitedMeeting, project: buildProject() }));
+        TestBed.inject(TransferState).set(MEETING_JOIN_STATE_KEY, {
+          meeting: { ...invitedMeeting, project: buildProject() },
+          loadedViaPastMeetingId: false,
+          pastMeetingFullAccess: false,
+          meetingLoadFailed: false,
+        });
+
+        await TestBed.compileComponents();
+        const fixture = TestBed.createComponent(MeetingJoinComponent);
+        await TestBed.inject(ApplicationRef).whenStable();
+        fixture.detectChanges();
+        // PrimeNG renders the dialog body behind an open animation that never completes here, so its buttons can't be
+        // clicked; the real service and dialog component are still in play, which is what a lost prompt would break.
+        const dialog = () => fixture.debugElement.query(By.directive(ConfirmDialog)).componentInstance as ConfirmDialog;
+        await vi.waitFor(() => expect(dialog().visible).toBe(true));
+
+        expect(dialog().confirmation?.header).toBe('Remove Yourself');
+        expect(removeMyMeetingRegistration).not.toHaveBeenCalled();
+
+        dialog().onAccept();
+        await TestBed.inject(ApplicationRef).whenStable();
+
+        expect(removeMyMeetingRegistration).toHaveBeenCalledWith(MEETING_ID, 'email-link');
       });
 
       it('does nothing without the action param', async () => {
