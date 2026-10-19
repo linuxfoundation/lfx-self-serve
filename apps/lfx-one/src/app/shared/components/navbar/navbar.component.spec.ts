@@ -36,7 +36,7 @@ const createNavbar = async (
   items: SidebarMenuItem[],
   personas: PersonaType[] = [],
   personaProjects: Partial<Record<PersonaType, PersonaProject[]>> = {},
-  { lens = 'me', itemsPending = false }: { lens?: Lens; itemsPending?: boolean } = {}
+  { lens = 'me', itemsPending = false, enriched = true }: { lens?: Lens; itemsPending?: boolean; enriched?: boolean } = {}
 ): Promise<NavbarView> => {
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
@@ -73,6 +73,7 @@ const createNavbar = async (
           isRootWriter: signal(false),
           personaProjects: signal(personaProjects),
           detectedProjects: signal([{ projectUid: 'uid-k8s', isFoundation: false }]),
+          enrichedPersonasLoaded: signal(enriched),
           allPersonas: signal(personas),
           currentPersona: signal('contributor'),
         },
@@ -141,6 +142,16 @@ describe('NavbarComponent', () => {
       { key: 'kubernetes', label: 'Kubernetes' },
       { key: 'cncf', label: 'cncf' },
     ]);
+  });
+
+  it('ignores the raw (unenriched) tier and falls back to the role’s scope until enrichment lands', async () => {
+    const projects = { 'board-member': [{ projectUid: 'uid-k8s', projectSlug: 'kubernetes', projectName: 'Kubernetes' }] };
+
+    const [unenriched] = (await createNavbar([], ['board-member'], projects, { enriched: false })).roleMarks();
+    const [enriched] = (await createNavbar([], ['board-member'], projects)).roleMarks();
+
+    expect(unenriched.projects[0].isFoundation).toBe(true);
+    expect(enriched.projects[0].isFoundation).toBe(false);
   });
 
   it('shows the no-access state once an empty project or foundation menu has resolved', async () => {

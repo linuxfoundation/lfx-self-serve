@@ -63,6 +63,7 @@ describe('SidebarNavService', () => {
   const personaLoaded = signal(true);
   const marketingOpsEnabled = signal(false);
   const authenticated = signal(false);
+  const writerGrantsResolved = signal(true);
   let refreshEnrichedPersonas = vi.fn((): Observable<unknown> => of({}));
 
   const labels = (items: SidebarMenuItem[]): string[] => items.map((item) => item.label);
@@ -101,6 +102,7 @@ describe('SidebarNavService', () => {
     personaLoaded.set(true);
     marketingOpsEnabled.set(false);
     authenticated.set(false);
+    writerGrantsResolved.set(true);
     refreshEnrichedPersonas = vi.fn((): Observable<unknown> => of({}));
 
     TestBed.configureTestingModule({
@@ -154,7 +156,7 @@ describe('SidebarNavService', () => {
           },
         },
         { provide: UserService, useValue: { authenticated } },
-        { provide: WriterGrantsService, useValue: { hasWriterFoundation: signal(false) } },
+        { provide: WriterGrantsService, useValue: { hasWriterFoundation: signal(false), resolved: writerGrantsResolved } },
         {
           provide: AnalyticsService,
           useValue: { getFoundationProjectsDetailGrouped: vi.fn(() => of({ totalCount: 0 })) },
@@ -820,6 +822,18 @@ describe('SidebarNavService', () => {
 
       expect(service.sidebarItemsPending()).toBe(true);
       personaLoaded.set(true);
+      expect(service.sidebarItemsPending()).toBe(false);
+    });
+
+    it('waits for the writer grants on the foundation lens only', () => {
+      writerGrantsResolved.set(false);
+      const service = TestBed.inject(SidebarNavService);
+
+      expect(service.sidebarItemsPending()).toBe(true);
+      activeLens.set('me');
+      expect(service.sidebarItemsPending()).toBe(false);
+      activeLens.set('foundation');
+      writerGrantsResolved.set(true);
       expect(service.sidebarItemsPending()).toBe(false);
     });
 

@@ -125,13 +125,16 @@ export class SidebarNavService {
 
   /**
    * True while `sidebarItems` is empty only because what decides its shape is still loading — the
-   * persona detection, the scoped marketing-grant probe, or (formation flag on) the active project's
-   * stage. Consumers that read an empty list as "no access" must wait for this to clear.
+   * persona detection, the scoped marketing-grant probe, the writer grants (foundation lens), or
+   * (formation flag on) the active project's stage. Consumers that read an empty list as "no access"
+   * must wait for this to clear.
    */
   public readonly sidebarItemsPending = computed((): boolean => {
     if (!this.personaService.personaLoaded()) return true;
     // A scoped marketing grant can be the only thing that fills the menu; wait for its probe too.
     if (this.marketingPersonaSlug() !== this.marketingScopeSlug()) return true;
+    // A foundation writer grant (fast path or deferred sweep) can be what unlocks the foundation menu.
+    if (this.activeLens() === 'foundation' && !this.writerGrantsService.resolved()) return true;
     return (
       this.activeLens() === 'project' &&
       this.isFormationEnabled() &&

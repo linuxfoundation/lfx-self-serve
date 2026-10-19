@@ -6,8 +6,8 @@ import { TestBed } from '@angular/core/testing';
 import { HttpClient } from '@angular/common/http';
 import { WriterSummary } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
-import { of } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { of, Subject } from 'rxjs';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProjectService } from './project.service';
 import { UserService } from './user.service';
@@ -61,5 +61,50 @@ describe('WriterGrantsService', () => {
     expect(getWriterSummary).toHaveBeenCalledTimes(1);
     expect(service.hasWriterFoundation()).toBe(true);
     expect(service.hasWriterProject()).toBe(false);
+  });
+
+  describe('resolved', () => {
+    afterEach(() => vi.useRealTimers());
+
+    it('is resolved at once when there is no session', () => {
+      userService.authenticated.set(false);
+      const service = TestBed.inject(WriterGrantsService);
+
+      TestBed.inject(ApplicationRef).tick();
+
+      expect(service.resolved()).toBe(true);
+    });
+
+    it('stays pending through the fast path and resolves only once the deferred sweep settles', () => {
+      vi.useFakeTimers();
+      const sweep = new Subject<never[]>();
+      getProjects.mockReturnValue(sweep);
+      userService.authenticated.set(true);
+      const service = TestBed.inject(WriterGrantsService);
+
+      TestBed.inject(ApplicationRef).tick();
+      expect(service.resolved()).toBe(false);
+
+      vi.runAllTimers();
+      expect(getProjects).toHaveBeenCalledTimes(1);
+      expect(service.resolved()).toBe(false);
+
+      sweep.next([]);
+      sweep.complete();
+      expect(service.resolved()).toBe(true);
+    });
+
+    it('resolves without the sweep when the fast path already granted both', () => {
+      vi.useFakeTimers();
+      getWriterSummary.mockReturnValue(of({ hasWriterFoundation: true, hasWriterProject: true } as WriterSummary));
+      userService.authenticated.set(true);
+      const service = TestBed.inject(WriterGrantsService);
+
+      TestBed.inject(ApplicationRef).tick();
+      vi.runAllTimers();
+
+      expect(getProjects).not.toHaveBeenCalled();
+      expect(service.resolved()).toBe(true);
+    });
   });
 });

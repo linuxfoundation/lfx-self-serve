@@ -335,7 +335,12 @@ export class NavbarComponent extends SidebarComponent {
       // Hidden for root-writers — executive-director is spoofed for them, not naturally detected.
       if (!this.showPersonaBadge()) return [];
       const personaProjects = this.navbarPersonaService.personaProjects();
-      const foundationByUid = new Map(this.navbarPersonaService.detectedProjects().map((project) => [project.projectUid, project.isFoundation]));
+      // Raw detection marks every project `isFoundation: false` until enrichment resolves the tier, so
+      // only trust detection once enriched; before that, the role's own scope decides.
+      const enriched = this.navbarPersonaService.enrichedPersonasLoaded();
+      const foundationByUid = new Map(
+        enriched ? this.navbarPersonaService.detectedProjects().map((project) => [project.projectUid, project.isFoundation]) : []
+      );
       const priority = new Map(PERSONA_PRIORITY.map((persona, index) => [persona, index]));
       return [...this.navbarPersonaService.allPersonas()]
         .sort((a, b) => (priority.get(a) ?? Number.MAX_SAFE_INTEGER) - (priority.get(b) ?? Number.MAX_SAFE_INTEGER))
