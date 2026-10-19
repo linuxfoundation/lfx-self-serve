@@ -655,6 +655,7 @@ describe('MeetingCardComponent — remove myself', () => {
     const component = await mount(meeting, options);
 
     expect(component.canLeaveMeeting()).toBe(false);
+    expect(component.isRegisteredAttendee()).toBe(false);
   });
 
   it.each([
@@ -664,6 +665,7 @@ describe('MeetingCardComponent — remove myself', () => {
     const component = await mount({ ...INVITEE, organizer: true, ...extra } as Meeting);
 
     expect(component.canLeaveMeeting()).toBe(true);
+    expect(component.isRegisteredAttendee()).toBe(true);
 
     component.confirmLeaveMeeting();
 
