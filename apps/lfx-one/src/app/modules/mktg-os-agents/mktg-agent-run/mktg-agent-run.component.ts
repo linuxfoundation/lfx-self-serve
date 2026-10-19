@@ -62,7 +62,7 @@ import { findMktgDocumentStatus, isMktgSlidesExportAgentKey, mktgAgentDocumentNa
 import { githubRepoUrlValidator, httpsUrlValidator, oneLineValidator, sourceUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 import { MessageService } from 'primeng/api';
 import type { FileSelectEvent } from 'primeng/fileupload';
-import { catchError, combineLatest, distinctUntilChanged, EMPTY, filter, map, Observable, of, Subscription, switchMap } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, EMPTY, filter, map, Observable, of, startWith, Subscription, switchMap } from 'rxjs';
 
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgAnswerMemoryService } from '@services/mktg-answer-memory.service';
@@ -854,7 +854,9 @@ export class MktgAgentRunComponent {
     return toSignal(
       toObservable(projectUid).pipe(
         distinctUntilChanged(),
-        switchMap((uid) => (uid ? this.dependencyService.resolveBrandKit(uid) : of(null)))
+        // A project switch drops the previous project's kit at once: until the new
+        // project's kit resolves, the print takes the LF look, never another project's brand.
+        switchMap((uid) => (uid ? this.dependencyService.resolveBrandKit(uid).pipe(startWith(null)) : of(null)))
       ),
       { initialValue: null }
     );

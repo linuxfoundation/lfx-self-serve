@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { computed, signal } from '@angular/core';
+import { computed, signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
@@ -15,7 +15,7 @@ import { MktgSlidesExportService } from '@services/mktg-slides-export.service';
 import { brandKitTestRevision } from '@shared/testing/brand-kit-test-data';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
-import { of, throwError } from 'rxjs';
+import { NEVER, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgDocumentViewComponent } from './mktg-document-view.component';
@@ -57,6 +57,7 @@ describe('MktgDocumentViewComponent', () => {
     restoreRevision: ReturnType<typeof vi.fn>;
   };
   let resolveBrandKit: ReturnType<typeof vi.fn>;
+  let activeContext: WritableSignal<ProjectContext | null>;
   let slidesExport: { last: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; poll: ReturnType<typeof vi.fn> };
 
   function query(testId: string): HTMLElement | null {
@@ -75,6 +76,69 @@ describe('MktgDocumentViewComponent', () => {
     harness.detectChanges();
   }
 
+  /** A Messaging Framework document whose latest revision is the framework's JSON, as the store serves it. */
+  function useFrameworkRevision(): void {
+    const FRAMEWORK = MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'foundation-message') as MktgDocumentType;
+    const content = {
+      mf: {
+        vision: 'A vision.',
+        mission: 'A mission.',
+        positioning: 'For platform teams.',
+        tagline: 'Release, open.',
+        goals: [
+          { id: 'adoption', n: 1, t: 'Adoption', vp: 'VP.', key: 'Key.', proof: [['1,200 members', 'Website']], bite: 'Adoption in the open', icps: ['users'] },
+        ],
+        crosscut: 'Every column grows the audience.',
+        say: ['open'],
+        avoid: [['synergy', 'working together']],
+        anchor: ['Which goal does this serve?'],
+        notes: '',
+      },
+      icp: [
+        {
+          id: 'users',
+          name: 'End users',
+          kind: 'Individual',
+          who: 'Engineers.',
+          goals: ['adoption'],
+          need: 'Need.',
+          value: 'Value.',
+          lead: 'Lead for users.',
+          proof: [['A fact', 'Docs']],
+          cta: 'Try it.',
+          channels: ['Docs'],
+          objection: ['Too early?', null],
+          personas: [['SRE', 'uptime']],
+          basis: 'Website',
+        },
+      ],
+      mh: {
+        umbrella: 'Umbrella.',
+        line: 'Release, open.',
+        pillars: [{ t: 'Open', m: 'Open message.', p: [['Fact', 'Web']] }],
+        found: 'A Linux Foundation project.',
+        aud: [['End users', 'Lead for users.']],
+      },
+      nums: [['1,200', 'members']],
+    };
+    const jsonRevision = revision(2, { latest: true, format: 'json', status: '' });
+    store.getDocument.mockReturnValue(of({ ...detail, type: FRAMEWORK, revisions: [jsonRevision] }));
+    store.getRevision.mockReturnValue(
+      of({
+        ...detail,
+        type: FRAMEWORK,
+        revisions: [jsonRevision],
+        revision: jsonRevision,
+        markdown: JSON.stringify(content),
+        sidecar: {
+          report: { sources_read: ['https://testorbit.example.org'], sources_failed: [], gaps: ['No member count.'], notes: '' },
+          checks: { findings: [] },
+          mode: 'draft',
+        },
+      })
+    );
+  }
+
   beforeEach(async () => {
     store = {
       getDocument: vi.fn(() => of(detail)),
@@ -89,7 +153,7 @@ describe('MktgDocumentViewComponent', () => {
       start: vi.fn(() => of()),
       poll: vi.fn(() => of()),
     };
-    const activeContext = signal<ProjectContext | null>(PROJECT);
+    activeContext = signal<ProjectContext | null>(PROJECT);
 
     await TestBed.configureTestingModule({
       providers: [
@@ -162,65 +226,7 @@ describe('MktgDocumentViewComponent', () => {
   });
 
   it('renders a Messaging Framework revision (JSON content) on the framework’s own view, full width, with the sidecar’s report', async () => {
-    const FRAMEWORK = MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'foundation-message') as MktgDocumentType;
-    const content = {
-      mf: {
-        vision: 'A vision.',
-        mission: 'A mission.',
-        positioning: 'For platform teams.',
-        tagline: 'Release, open.',
-        goals: [
-          { id: 'adoption', n: 1, t: 'Adoption', vp: 'VP.', key: 'Key.', proof: [['1,200 members', 'Website']], bite: 'Adoption in the open', icps: ['users'] },
-        ],
-        crosscut: 'Every column grows the audience.',
-        say: ['open'],
-        avoid: [['synergy', 'working together']],
-        anchor: ['Which goal does this serve?'],
-        notes: '',
-      },
-      icp: [
-        {
-          id: 'users',
-          name: 'End users',
-          kind: 'Individual',
-          who: 'Engineers.',
-          goals: ['adoption'],
-          need: 'Need.',
-          value: 'Value.',
-          lead: 'Lead for users.',
-          proof: [['A fact', 'Docs']],
-          cta: 'Try it.',
-          channels: ['Docs'],
-          objection: ['Too early?', null],
-          personas: [['SRE', 'uptime']],
-          basis: 'Website',
-        },
-      ],
-      mh: {
-        umbrella: 'Umbrella.',
-        line: 'Release, open.',
-        pillars: [{ t: 'Open', m: 'Open message.', p: [['Fact', 'Web']] }],
-        found: 'A Linux Foundation project.',
-        aud: [['End users', 'Lead for users.']],
-      },
-      nums: [['1,200', 'members']],
-    };
-    const jsonRevision = revision(2, { latest: true, format: 'json', status: '' });
-    store.getDocument.mockReturnValue(of({ ...detail, type: FRAMEWORK, revisions: [jsonRevision] }));
-    store.getRevision.mockReturnValue(
-      of({
-        ...detail,
-        type: FRAMEWORK,
-        revisions: [jsonRevision],
-        revision: jsonRevision,
-        markdown: JSON.stringify(content),
-        sidecar: {
-          report: { sources_read: ['https://testorbit.example.org'], sources_failed: [], gaps: ['No member count.'], notes: '' },
-          checks: { findings: [] },
-          mode: 'draft',
-        },
-      })
-    );
+    useFrameworkRevision();
 
     await render('/documents/foundation-message/living');
 
@@ -291,6 +297,22 @@ describe('MktgDocumentViewComponent', () => {
     harness.routeNativeElement?.querySelector<HTMLButtonElement>('[data-testid="mktg-boilerplates-view-tab-sources"]')?.click();
     await settle();
     expect(query('mktg-boilerplates-view-gaps')?.textContent).toContain('No launch year.');
+  });
+
+  it('drops the previous project’s Brand Kit from the print the moment the project changes', async () => {
+    useFrameworkRevision();
+    // Project 1 has a kit; project 2's kit never resolves while the print is open.
+    resolveBrandKit.mockImplementation((uid: string) => (uid === 'proj-1' ? of(brandKitTestRevision()) : NEVER));
+    await render('/documents/foundation-message/living');
+    await settle();
+    const brand = (): string | null | undefined => query('mktg-framework-print')?.getAttribute('data-brand');
+    expect(brand()).not.toBe('lf');
+
+    activeContext.set({ uid: 'proj-2', name: 'Other', slug: 'other' });
+    await settle();
+    expect(resolveBrandKit).toHaveBeenCalledWith('proj-2');
+    // Until project 2's kit arrives, the print is in the LF look — never project 1's brand.
+    expect(brand() ?? 'lf').toBe('lf');
   });
 
   it('says the document has no such revision on a 404', async () => {

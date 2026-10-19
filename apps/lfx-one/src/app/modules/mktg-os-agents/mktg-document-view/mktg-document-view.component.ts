@@ -27,7 +27,7 @@ import {
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { catchError, distinctUntilChanged, filter, map, of, switchMap, tap } from 'rxjs';
+import { catchError, distinctUntilChanged, filter, map, of, startWith, switchMap, tap } from 'rxjs';
 
 import { BrandKitWebViewComponent } from '../brand-kit-web-view/brand-kit-web-view.component';
 import { MktgBoilerplatesViewComponent } from '../mktg-boilerplates-view/mktg-boilerplates-view.component';
@@ -214,7 +214,9 @@ export class MktgDocumentViewComponent {
     return toSignal(
       toObservable(projectUid).pipe(
         distinctUntilChanged(),
-        switchMap((uid) => (uid ? this.dependencyService.resolveBrandKit(uid) : of(null)))
+        // A project switch drops the previous project's kit at once: until the new
+        // project's kit resolves, the print takes the LF look, never another project's brand.
+        switchMap((uid) => (uid ? this.dependencyService.resolveBrandKit(uid).pipe(startWith(null)) : of(null)))
       ),
       { initialValue: null }
     );
