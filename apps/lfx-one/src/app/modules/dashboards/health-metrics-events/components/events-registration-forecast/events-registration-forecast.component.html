@@ -155,7 +155,7 @@
         <h4 class="text-sm font-medium text-gray-900">Every upcoming event &middot; pace against goal</h4>
         <span class="text-xs text-gray-500">worst first</span>
       </div>
-      <lfx-table [value]="rowViews()" data-testid="events-registration-forecast-table">
+      <lfx-table [rowHover]="false" [value]="rowViews()" data-testid="events-registration-forecast-table">
         <ng-template #header>
           <tr>
             <th scope="col"><span class="text-xs font-medium text-gray-500">Event</span></th>

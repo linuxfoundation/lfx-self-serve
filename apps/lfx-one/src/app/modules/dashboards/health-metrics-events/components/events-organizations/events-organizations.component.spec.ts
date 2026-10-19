@@ -128,6 +128,28 @@ describe('EventsOrganizationsComponent', () => {
     expect(query('events-orgs-row-0014100000BetaAAAA-membership')?.textContent?.trim()).toBe('Non-member');
   });
 
+  it('links a member to the Members directory and a non-member to Non-Members, each searched by name', async () => {
+    await render(
+      response({ rows: [organization(), organization({ accountId: '0014100000BetaAAAA', accountName: 'Beta Coastal', isMember: false })], totalRecords: 2 })
+    );
+
+    expect(query(`events-orgs-row-${ACCOUNT_ID}-name`)?.getAttribute('href')).toBe('/foundation/health-metrics/members?memSearch=Acme%20Motors#list');
+    expect(query('events-orgs-row-0014100000BetaAAAA-name')?.getAttribute('href')).toBe('/foundation/health-metrics/non-members?nonSearch=Beta%20Coastal#orgs');
+  });
+
+  it('opens the organization from anywhere on its row', async () => {
+    await render();
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+    query(`events-orgs-row-${ACCOUNT_ID}`)?.click();
+
+    expect(navigate).toHaveBeenCalledWith(['/foundation/health-metrics', 'members'], {
+      fragment: 'list',
+      queryParams: { memSearch: 'Acme Motors', memTier: null, memNps: null, memPage: null },
+      queryParamsHandling: 'merge',
+    });
+  });
+
   it('re-reads from page 1 when the segment changes, and writes it to the URL with the fragment kept', async () => {
     await render(response({ totalRecords: 80, scopeTotal: 80 }), { orgPage: '3' });
     getEventsOrganizations.mockClear();

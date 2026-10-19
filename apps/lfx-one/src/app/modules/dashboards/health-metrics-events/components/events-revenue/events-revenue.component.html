@@ -110,7 +110,7 @@
   }
 
   <ng-template #eventsTable let-rows let-testId="testId">
-    <lfx-table [value]="rows" [attr.data-testid]="testId">
+    <lfx-table [rowHover]="false" [value]="rows" [attr.data-testid]="testId">
       <ng-template #header>
         <tr>
           <th scope="col"><span class="text-xs font-medium text-gray-500">Event</span></th>

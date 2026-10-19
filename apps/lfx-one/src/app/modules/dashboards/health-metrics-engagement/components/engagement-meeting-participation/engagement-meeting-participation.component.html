@@ -71,7 +71,7 @@
             <button
               type="button"
               class="text-sm tabular-nums text-blue-600 hover:underline"
-              (click)="onSectionLink('reps')"
+              (click)="onNeverAttended()"
               data-testid="engagement-meeting-participation-never-attended">
               {{ totalPeriod()?.neverAttended ?? '—' }}
             </button>
@@ -104,13 +104,30 @@
         <ng-template #body let-view>
           @let row = view.row;
           @let period = view.period;
-          <tr [attr.data-testid]="'engagement-meeting-participation-row-' + row.label">
+          <!-- The whole row opens its detail: governance opens Members board attendance, every other type scrolls
+               to Group attendance. The name carries the same target for keyboard users. -->
+          <tr class="cursor-pointer" (click)="onRowPicked(row.governance)" [attr.data-testid]="'engagement-meeting-participation-row-' + row.label">
             <td>
               <div class="flex flex-col gap-0.5">
-                <span class="text-sm font-medium text-gray-900">{{ row.label }}</span>
                 @if (row.governance) {
-                  <!-- Plain text, not a link: the Members tab has no route until its own story lands. -->
+                  <a
+                    [routerLink]="boardRoute"
+                    fragment="board"
+                    queryParamsHandling="preserve"
+                    (click)="$event.stopPropagation()"
+                    class="self-start text-sm font-medium text-gray-900 hover:underline focus-visible:underline"
+                    [attr.data-testid]="'engagement-meeting-participation-row-' + row.label + '-link'"
+                    >{{ row.label }}</a
+                  >
                   <span class="text-[12px] text-gray-500">governance · detail in Members →</span>
+                } @else {
+                  <button
+                    type="button"
+                    (click)="$event.stopPropagation(); onSectionLink('committees')"
+                    class="self-start text-left text-sm font-medium text-gray-900 hover:underline focus-visible:underline"
+                    [attr.data-testid]="'engagement-meeting-participation-row-' + row.label + '-link'">
+                    {{ row.label }}
+                  </button>
                 }
               </div>
             </td>

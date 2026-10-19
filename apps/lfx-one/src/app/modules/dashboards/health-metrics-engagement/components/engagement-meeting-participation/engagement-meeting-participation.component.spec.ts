@@ -239,14 +239,45 @@ describe('EngagementMeetingParticipationComponent', () => {
     expect(text('engagement-meeting-participation-hero')).toContain('No data');
   });
 
-  it('cross-links the hero counts to the sections that own them', async () => {
+  it('cross-links the hero counts, landing Never attended on its filter', async () => {
     const picked: unknown[] = [];
     await render(response(), {}, (key) => picked.push(key));
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
 
     fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-active-groups"]').click();
     fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-never-attended"]').click();
 
-    expect(picked).toEqual(['committees', 'reps']);
+    expect(navigate).toHaveBeenCalledWith(
+      [],
+      expect.objectContaining({ queryParams: { repFilter: 'never' }, queryParamsHandling: 'merge', preserveFragment: true, replaceUrl: true })
+    );
+    await vi.waitFor(() => expect(picked).toEqual(['committees', 'reps']));
+  });
+
+  it('links the governance row to Members board attendance', async () => {
+    await render();
+
+    const link: HTMLAnchorElement = fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Board-link"]');
+    expect(link.getAttribute('href')).toBe('/foundation/health-metrics/members#board');
+  });
+
+  it('opens Members board attendance from anywhere on the governance row', async () => {
+    await render();
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+    fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Board"]').click();
+
+    expect(navigate).toHaveBeenCalledWith(['/foundation/health-metrics', 'members'], { fragment: 'board', queryParamsHandling: 'preserve' });
+  });
+
+  it('scrolls any other meeting type to Group attendance, once per click on the row or its name', async () => {
+    const picked: unknown[] = [];
+    await render(response(), {}, (key) => picked.push(key));
+
+    fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Marketing"]').click();
+    fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Marketing-link"]').click();
+
+    expect(picked).toEqual(['committees', 'committees']);
   });
 
   // The container holds a deep link until every section settles and re-holds it on the next

@@ -26,7 +26,10 @@ import {
   HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS,
   HEALTH_METRICS_EVENTS_SPONSORSHIP_GOAL_NOT_SET,
 } from '../constants/health-metrics-events.constants';
+import { HEALTH_METRICS_BASE_PATH } from '../constants/health-metrics-engagement.constants';
 import { HEALTH_METRICS_L2_RANGES } from '../constants/health-metrics-l2.constants';
+import { HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_SEARCH_LENGTH, HEALTH_METRICS_MEMBERS_QUERY_PARAMS } from '../constants/health-metrics-members.constants';
+import { HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_SEARCH_LENGTH, HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS } from '../constants/health-metrics-non-members.constants';
 import { formatIsoDateLabel } from './date-time.utils';
 import { formatCurrency } from './number.utils';
 
@@ -44,6 +47,7 @@ import type {
   HealthMetricsEventsGeography,
   HealthMetricsEventsGeographyView,
   HealthMetricsEventsOrganization,
+  HealthMetricsEventsOrganizationLink,
   HealthMetricsEventsOrganizationRowView,
   HealthMetricsEventsPast,
   HealthMetricsEventsPastEvent,
@@ -106,6 +110,33 @@ export function buildHealthMetricsEventsOrganizationRowView(organization: Health
     proposalsLabel: organization.proposals ? formatHealthMetricsEventsCount(organization.proposals) : '—',
     speakersLabel: formatHealthMetricsEventsCount(organization.speakers),
     eventsLabel: formatHealthMetricsEventsCount(organization.events),
+    link: buildHealthMetricsEventsOrganizationLink(organization),
+  };
+}
+
+/** A member opens the Members directory and a non-member opens Non-Members company participation, each searched by name with other filters cleared. */
+export function buildHealthMetricsEventsOrganizationLink(organization: HealthMetricsEventsOrganization): HealthMetricsEventsOrganizationLink {
+  if (organization.isMember) {
+    return {
+      commands: [HEALTH_METRICS_BASE_PATH, 'members'],
+      fragment: 'list',
+      queryParams: {
+        [HEALTH_METRICS_MEMBERS_QUERY_PARAMS.directorySearch]: organization.accountName.slice(0, HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_SEARCH_LENGTH),
+        [HEALTH_METRICS_MEMBERS_QUERY_PARAMS.directoryTier]: null,
+        [HEALTH_METRICS_MEMBERS_QUERY_PARAMS.directoryNps]: null,
+        [HEALTH_METRICS_MEMBERS_QUERY_PARAMS.directoryPage]: null,
+      },
+    };
+  }
+
+  return {
+    commands: [HEALTH_METRICS_BASE_PATH, 'non-members'],
+    fragment: 'orgs',
+    queryParams: {
+      [HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS.orgsSearch]: organization.accountName.slice(0, HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_SEARCH_LENGTH),
+      [HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS.orgsFilter]: null,
+      [HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS.orgsPage]: null,
+    },
   };
 }
 

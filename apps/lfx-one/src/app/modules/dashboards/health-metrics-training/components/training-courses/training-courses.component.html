@@ -49,6 +49,7 @@
         data-testid="training-courses-no-match" />
     } @else {
       <lfx-table
+        [rowHover]="false"
         [value]="rowViews()"
         [loading]="loading()"
         [lazy]="true"

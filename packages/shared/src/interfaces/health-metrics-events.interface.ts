@@ -10,6 +10,8 @@ import type {
 } from '../constants/health-metrics-events.constants';
 import type { FilterPillOption } from './dashboard-metric.interface';
 import type { HealthMetricsL2Range, HealthMetricsL2SubNavItem } from './health-metrics-l2.interface';
+import type { HealthMetricsMembersQueryParams } from './health-metrics-members.interface';
+import type { HealthMetricsNonMembersQueryParams } from './health-metrics-non-members.interface';
 
 /** Section key from the design's `E2VIEWS`; doubles as the URL fragment and the scroll-spy allowlist. */
 export type HealthMetricsEventsSectionKey = (typeof HEALTH_METRICS_EVENTS_SECTIONS)[number]['key'];
@@ -611,6 +613,16 @@ export interface HealthMetricsEventsOrganizationRowView {
   proposalsLabel: string;
   speakersLabel: string;
   eventsLabel: string;
+  /** Where the row opens: the Members directory or Non-Members company participation, searched by the organization's name. */
+  link: HealthMetricsEventsOrganizationLink;
+}
+
+/** A row's in-app target, bound to `routerLink` / `fragment` / `queryParams`. */
+export interface HealthMetricsEventsOrganizationLink {
+  commands: readonly string[];
+  fragment: 'list' | 'orgs';
+  /** Merged into the current query string; `null` clears a filter the URL already carries. */
+  queryParams: Readonly<HealthMetricsMembersQueryParams> | Readonly<HealthMetricsNonMembersQueryParams>;
 }
 
 /** Foundation scope for sponsorship; every period ships in one read, so the range stays client-side. */
