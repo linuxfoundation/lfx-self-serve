@@ -342,10 +342,11 @@ export class MktgAgentRunService {
           // The agent did not run: nothing to store, nothing to retry.
           return concat(activity$, of<MktgGenerateProgress>({ type: 'refused', reply: result.reply ?? '' }));
         }
+        const run = this.appendVersion(request, attempt, result, answered);
         return concat(
           activity$,
-          of<MktgGenerateProgress>({ type: 'document', run: this.appendVersion(request, attempt, result, answered) }),
-          this.retryPersistence(request, attempt.session, result)
+          of<MktgGenerateProgress>({ type: 'document', run }),
+          this.retryPersistence(request, attempt.session, result, run.versions.at(-1)?.version ?? 0)
         );
       })
     );
@@ -460,13 +461,21 @@ export class MktgAgentRunService {
    * just a spent attempt, exactly as on the standalone Brand Kit form, and the
    * budget is shared with it (`MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS`). Its ONE
    * emission is `{ type: 'persisted' }` when a receipt finally arrives, after
-   * which polling stops. That event exists because dependency resolution
+   * which polling stops. The receipt's hash is written onto the stored
+   * `version` it persisted, and the event carries that run: the hash is what
+   * names the version's stored revision, so an export of it reads exactly
+   * that revision and never the document's latest. That event exists because dependency resolution
    * prefers the SERVER copy over any browser-stored run: a v2 announced while
    * the write was still failing would leave consumers attached to the server's
    * v1 with nothing to tell them it had been superseded. No project scope
    * means the BFF never persists at all, so there is nothing to retry.
    */
-  private retryPersistence(request: MktgGenerateRequest, session: MktgSessionInfo, result: MktgRunResultResponse): Observable<MktgGenerateProgress> {
+  private retryPersistence(
+    request: MktgGenerateRequest,
+    session: MktgSessionInfo,
+    result: MktgRunResultResponse,
+    version: number
+  ): Observable<MktgGenerateProgress> {
     if (!request.intake.persistsDocument || result.persistence || !request.projectUid) {
       return EMPTY;
     }
@@ -489,8 +498,23 @@ export class MktgAgentRunService {
       // one that emits, and the stream completes right after it.
       takeWhile((response) => !response.persistence, true),
       filter((response) => !!response.persistence),
-      map((): MktgGenerateProgress => ({ type: 'persisted' }))
+      map((response): MktgGenerateProgress => ({ type: 'persisted', run: this.recordReceipt(request, version, response.persistence?.content_sha256 ?? '') }))
     );
+  }
+
+  /** Writes a late persistence receipt's hash onto the stored version it persisted and saves the run; null when the run is no longer stored. */
+  private recordReceipt(request: MktgGenerateRequest, version: number, contentSha256: string): MktgStoredAgentRun | null {
+    const stored = this.loadRun(request.projectUid, request.agentId);
+    if (!stored || !contentSha256) {
+      return stored;
+    }
+    const run: MktgStoredAgentRun = {
+      ...stored,
+      versions: stored.versions.map((entry) => (entry.version === version ? { ...entry, contentSha256 } : entry)),
+      savedAt: new Date().toISOString(),
+    };
+    this.saveRun(run);
+    return run;
   }
 
   /** Result-endpoint body: the owner token travels in the body (never the query string), with the run's project scope when there is one. */

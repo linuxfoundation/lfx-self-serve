@@ -517,7 +517,23 @@ describe('MktgAgentRunService', () => {
       await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 5);
       expect(resultCalls()).toHaveLength(2);
       expect(events).toHaveLength(3);
-      expect(events[2]).toEqual({ type: 'persisted' });
+      expect(events[2].type).toBe('persisted');
+    });
+
+    it('writes a late receipt’s hash onto the version it persisted, so an export of it reads that exact revision', async () => {
+      resultResponses = [READY_NO_RECEIPT, READY_WITH_RECEIPT];
+      const events: MktgGenerateProgress[] = [];
+      service.generate(generateRequest()).subscribe((event) => events.push(event));
+
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+      const document = events.find((event) => event.type === 'document');
+      expect(document?.type === 'document' ? document.run.versions.at(-1)?.contentSha256 : 'missing').toBeUndefined();
+
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+      const persisted = events.find((event) => event.type === 'persisted');
+      expect(persisted?.type === 'persisted' ? persisted.run?.versions.at(-1)?.contentSha256 : undefined).toBe('abc');
+      // The stored run carries it too, so a restored run exports the same revision.
+      expect(service.loadRun('proj-1', generateRequest().agentId)?.versions.at(-1)?.contentSha256).toBe('abc');
     });
 
     it('keeps the hash of what the server stored with the version, which names the revision an export reads', async () => {
@@ -569,7 +585,7 @@ describe('MktgAgentRunService', () => {
       expect(resultCalls()).toHaveLength(3);
       expect(error).toBeUndefined();
       expect(events).toHaveLength(3);
-      expect(events[2]).toEqual({ type: 'persisted' });
+      expect(events[2].type).toBe('persisted');
     });
 
     it('does not retry a run with no project scope — the BFF never persists without one, so there is nothing to write', async () => {
@@ -931,7 +947,7 @@ describe('MktgAgentRunService', () => {
       await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 10);
       expect(mfResultCalls()).toHaveLength(2);
       expect(events).toHaveLength(3);
-      expect(events[2]).toEqual({ type: 'persisted' });
+      expect(events[2].type).toBe('persisted');
     });
 
     it('bounds the Messaging Framework retry to the same shared budget', async () => {

@@ -433,7 +433,7 @@ describe('MktgAgentRunComponent', () => {
       const progress: MktgGenerateProgress[] = [
         { type: 'submitted' },
         { type: 'document', run: storedRun('proj-1', '# Kit v2', { project_name: 'TestOrbit' }) },
-        { type: 'persisted' },
+        { type: 'persisted', run: null },
       ];
       generate.mockImplementation(() => from(progress));
       activeContext.set(PROJECT_1);
@@ -1055,7 +1055,15 @@ describe('MktgAgentRunComponent', () => {
           sessionId: 'sess-bk',
           ownerToken: 'token-bk',
           answers: { project_name: 'Project One', website_url: 'https://one.example.org' },
-          versions: [{ version: 1, document: '# Project One Brand Kit', brandKit: brandKitTestRevision(), createdAt: '2026-10-17T00:00:00.000Z' }],
+          versions: [
+            {
+              version: 1,
+              document: '# Project One Brand Kit',
+              brandKit: brandKitTestRevision(),
+              contentSha256: 'd'.repeat(64),
+              createdAt: '2026-10-17T00:00:00.000Z',
+            },
+          ],
           savedAt: new Date().toISOString(),
         },
       };
@@ -1078,12 +1086,31 @@ describe('MktgAgentRunComponent', () => {
       expect(query('brand-kit-web-view-print')?.className).toContain('lfx-brand-kit-print-only');
       expect(query('brand-kit-web-view-print')?.querySelectorAll('.lfx-brand-kit-page')).toHaveLength(16);
       expect(query('brand-kit-web-view-download-pdf')?.querySelector('button')?.disabled).toBe(false);
-      // Export to Google Slides reads the project's stored kit (the version carries no stored hash here: the latest revision).
+      // Export to Google Slides reads the stored revision the version's hash names.
       expect(query('brand-kit-web-view-export-slides')?.querySelector('button')?.disabled).toBe(false);
-      expect(slidesExport.last).toHaveBeenCalledWith({ project: 'proj-1', agentKey: 'brand-kit', documentId: 'living' });
+      expect(slidesExport.last).toHaveBeenCalledWith({ project: 'proj-1', agentKey: 'brand-kit', documentId: 'living', contentSha256: 'd'.repeat(64) });
       // A kit is revised from edited inputs, never from a feedback box.
       expect(query('mktg-agent-run-regenerate-button')).toBeNull();
       expect(query('mktg-agent-run-new-run')).not.toBeNull();
+    });
+
+    it('keeps Export to Google Slides off while the version names no stored revision, never exporting the latest in its place', async () => {
+      storedRuns = {
+        'proj-1:brand-kit': {
+          agentId: 'brand-kit',
+          projectUid: 'proj-1',
+          sessionId: 'sess-bk',
+          ownerToken: 'token-bk',
+          answers: { project_name: 'Project One', website_url: 'https://one.example.org' },
+          versions: [{ version: 1, document: '# Project One Brand Kit', brandKit: brandKitTestRevision(), createdAt: '2026-10-17T00:00:00.000Z' }],
+          savedAt: new Date().toISOString(),
+        },
+      };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(query('brand-kit-web-view-export-slides')?.querySelector('button')?.disabled).toBe(true);
+      expect(slidesExport.last).not.toHaveBeenCalled();
     });
   });
 

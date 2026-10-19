@@ -361,18 +361,19 @@ export class MktgAgentRunComponent {
   /**
    * The stored revision Export to Google Slides reads for the version on
    * screen: the agent's living document, the revision named by the hash of
-   * what the server stored for this version (the latest revision when the
-   * version carries none). Null outside the result and for an agent whose
-   * document does not export.
+   * what the server stored for this version. Null outside the result, for an
+   * agent whose document does not export, and while the version carries no
+   * hash (its server copy has not landed yet): the export never falls back
+   * to the document's latest revision, which may be another version.
    */
   protected readonly slidesExportTarget: Signal<MktgSlidesExportTarget | null> = computed(() => {
     const agentKey = MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === this.agent?.id)?.agentKey;
     const project = this.projectContext.activeContextUid();
     const version = this.currentVersion();
-    if (this.phase() !== 'result' || !version || !project || !isMktgSlidesExportAgentKey(agentKey)) {
+    if (this.phase() !== 'result' || !version?.contentSha256 || !project || !isMktgSlidesExportAgentKey(agentKey)) {
       return null;
     }
-    return { project, agentKey, documentId: MKTG_LIVING_DOCUMENT_ID, ...(version.contentSha256 && { contentSha256: version.contentSha256 }) };
+    return { project, agentKey, documentId: MKTG_LIVING_DOCUMENT_ID, contentSha256: version.contentSha256 };
   });
   /** Field labels as shown: the registered question per field key. */
   protected readonly fieldLabels: Record<string, string> = Object.fromEntries((this.intake?.fields ?? []).map((field) => [field.key, field.question]));
@@ -1520,7 +1521,11 @@ export class MktgAgentRunComponent {
       // The server copy landed on a retry after the document was already
       // announced. Dependency resolution prefers the server copy, so
       // without this second announcement consumers would stay attached
-      // to the PREVIOUS server version until a page reload.
+      // to the PREVIOUS server version until a page reload. The run now
+      // names the version's stored revision, which its export reads.
+      if (progress.run) {
+        this.run.set(progress.run);
+      }
       this.dependencyService.notifyDocumentsChanged(projectUid);
       return;
     }
